@@ -89,9 +89,10 @@ upcall_s_fail(s_fail_args *args) {
 struct s_malloc_args {
     size_t nbytes;
     type_desc *td;
+    uintptr_t result;
 };
 
-extern "C" CDECL uintptr_t
+extern "C" CDECL void
 upcall_s_malloc(s_malloc_args *args) {
     rust_task *task = rust_scheduler::get_task();
     LOG_UPCALL_ENTRY(task);
@@ -115,7 +116,7 @@ upcall_s_malloc(s_malloc_args *args) {
     LOG(task, mem,
         "upcall malloc(%" PRIdPTR ", 0x%" PRIxPTR ") = 0x%" PRIxPTR,
         args->nbytes, args->td, (uintptr_t)p);
-    return (uintptr_t) p;
+    args->result = (uintptr_t) p;
 }
 
 struct s_free_args {
@@ -358,8 +359,9 @@ upcall_fail(char const *expr,
 
 extern "C" CDECL uintptr_t
 upcall_malloc(size_t nbytes, type_desc *td) {
-    s_malloc_args args = {nbytes, td};
-    return upcall_s_malloc(&args);
+    s_malloc_args args = {nbytes, td, 0};
+    upcall_call_shim_on_c_stack(&args, (void*)upcall_s_malloc);
+    return args.result;
 }
 
 /**
