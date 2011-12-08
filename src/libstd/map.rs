@@ -120,7 +120,8 @@ mod chained {
     }
 
     type t<copy K, copy V> = {
-        mutable size: uint,
+        mutable size: uint,       // number of entries.
+        mutable cap_bits: uint,   // number of chains == 2^cap_bits
         mutable chains: [mutable chain<K,V>],
         hasher: hashfn<K>,
         eqer: eqfn<K>
@@ -130,6 +131,12 @@ mod chained {
         not_found;
         found_first(uint, @entry<K,V>);
         found_after(@entry<K,V>, @entry<K,V>);
+    }
+
+    fn chain_idx<copy K, copy V>(tbl: t<K,V>,
+                                 h: uint) -> uint {
+        let mask = (1u << tbl.cap_bits) - 1u;
+        ret h & mask;
     }
 
     fn search_rem<copy K, copy V>(tbl: t<K,V>,
@@ -165,7 +172,7 @@ mod chained {
 
     fn search_tbl<copy K, copy V>(
         tbl: t<K,V>, k: K, h: uint) -> search_result<K,V> {
-        let idx = h % vec::len(tbl.chains);
+        let idx = chain_idx(tbl, h);
         alt tbl.chains[idx] {
           absent. {
             log("search_tbl", "absent", "comparisons", 0u,
@@ -190,7 +197,7 @@ mod chained {
         alt search_tbl(tbl, k, hash) {
           not_found. {
             tbl.size += 1u;
-            let idx = hash % vec::len(tbl.chains);
+            let idx = chain_idx(tbl, hash);
             let old_chain = tbl.chains[idx];
             tbl.chains[idx] = present(@{
                 hash: hash,
@@ -246,8 +253,8 @@ mod chained {
         }
     }
 
-    fn chains<copy K, copy V>(nchains: uint) -> [mutable chain<K,V>] {
-        ret vec::init_elt_mut(absent, nchains);
+    fn mk_chains<copy K, copy V>(nbits: uint) -> [mutable chain<K,V>] {
+        ret vec::init_elt_mut(absent, 1u << nbits);
     }
 
     fn foreach_entry<copy K, copy V>(chain0: chain<K,V>,
@@ -276,11 +283,10 @@ mod chained {
 
     fn rehash<copy K, copy V>(tbl: t<K,V>) {
         let old_chains = tbl.chains;
-        let n_old_chains = vec::len(old_chains);
-        let n_new_chains: uint = uint::next_power_of_two(n_old_chains + 1u);
-        tbl.chains = chains(n_new_chains);
+        tbl.cap_bits += 1u;
+        tbl.chains = mk_chains(tbl.cap_bits);
         foreach_chain(old_chains) { |entry|
-            let idx = entry.hash % n_new_chains;
+            let idx = chain_idx(tbl, entry.hash);
             entry.next = tbl.chains[idx];
             tbl.chains[idx] = present(entry);
         }
@@ -344,9 +350,10 @@ mod chained {
     }
 
     fn mk<copy K, copy V>(hasher: hashfn<K>, eqer: eqfn<K>) -> hashmap<K,V> {
-        let initial_capacity: uint = 32u; // 2^5
+        let initial_bits: uint = 5u;
         let t = @{mutable size: 0u,
-                  mutable chains: chains(initial_capacity),
+                  mutable cap_bits: initial_bits,
+                  mutable chains: mk_chains(initial_bits),
                   hasher: hasher,
                   eqer: eqer};
         ret o(t, {num:3, den:4});
