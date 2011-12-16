@@ -8,7 +8,7 @@ import token::can_begin_expr;
 import codemap::span;
 import util::interner;
 import ast::{node_id, spanned};
-import front::attr;
+import syntax::print::pprust;
 
 tag restriction { UNRESTRICTED; RESTRICT_NO_CALL_EXPRS; RESTRICT_NO_BAR_OP; }
 
@@ -999,28 +999,22 @@ fn parse_syntax_ext_naked(p: parser, lo: uint) -> @ast::expr {
 }
 
 fn parse_dot_or_call_expr(p: parser) -> @ast::expr {
-    let b = parse_bottom_expr(p);
-    if expr_has_value(b) { parse_dot_or_call_expr_with(p, b) }
-    else { b }
-}
-
-fn parse_dot_or_call_expr_with(p: parser, e: @ast::expr) -> @ast::expr {
+    let e = parse_bottom_expr(p);
     let lo = e.span.lo;
     let hi = e.span.hi;
-    let e = e;
-    while true {
+    while expr_has_value(e) {
         alt p.peek() {
           token::LPAREN. {
             if p.get_restriction() == RESTRICT_NO_CALL_EXPRS {
                 ret e;
-            } else {
-                // Call expr.
-                let es = parse_seq(token::LPAREN, token::RPAREN,
-                                   seq_sep(token::COMMA), parse_expr, p);
-                hi = es.span.hi;
-                let nd = ast::expr_call(e, es.node, false);
-                e = mk_expr(p, lo, hi, nd);
             }
+
+            // Call expr.
+            let es = parse_seq(token::LPAREN, token::RPAREN,
+                               seq_sep(token::COMMA), parse_expr, p);
+            hi = es.span.hi;
+            let nd = ast::expr_call(e, es.node, false);
+            e = mk_expr(p, lo, hi, nd);
           }
           token::LBRACKET. {
             p.bump();
@@ -1043,6 +1037,24 @@ fn parse_dot_or_call_expr_with(p: parser, e: @ast::expr) -> @ast::expr {
                 e = mk_expr(p, lo, hi, ast::expr_field(e, p.get_str(i), tys));
               }
               t { unexpected(p, t); }
+            }
+          }
+          token::LBRACE. when is_bar(p.look_ahead(1u)) {
+            if p.get_restriction() == RESTRICT_NO_CALL_EXPRS {
+                ret e;
+            }
+
+            p.bump();
+            let blk = parse_fn_block_expr(p);
+            alt e.node {
+              ast::expr_call(f, args, false) {
+                e = @{node: ast::expr_call(f, args + [blk], true)
+                      with *e};
+              }
+              _ {
+                e = mk_expr(p, lo, p.get_last_hi_pos(),
+                            ast::expr_call(e, [blk], true));
+              }
             }
           }
           _ { ret e; }
@@ -1153,6 +1165,9 @@ fn parse_more_binops(p: parser, lhs: @ast::expr, min_prec: int) ->
     let peeked = p.peek();
     if peeked == token::BINOP(token::OR) &&
        p.get_restriction() == RESTRICT_NO_BAR_OP { ret lhs; }
+    log("parse_more_binops",
+        "lhs", pprust::expr_to_str(lhs),
+        "peeked", token::to_str(p.get_reader(), peeked));
     for cur: op_spec in *p.get_prec_table() {
         if cur.prec > min_prec && cur.tok == peeked {
             p.bump();
@@ -1594,22 +1609,6 @@ fn parse_stmt(p: parser) -> @ast::stmt {
           none. {
             // Remainder are line-expr stmts.
             let e = parse_expr(p);
-            // See if it is a block call
-            if expr_has_value(e) && p.peek() == token::LBRACE &&
-               is_bar(p.look_ahead(1u)) {
-                p.bump();
-                let blk = parse_fn_block_expr(p);
-                alt e.node {
-                  ast::expr_call(f, args, false) {
-                    e = @{node: ast::expr_call(f, args + [blk], true)
-                        with *e};
-                  }
-                  _ {
-                    e = mk_expr(p, lo, p.get_last_hi_pos(),
-                                ast::expr_call(e, [blk], true));
-                  }
-                }
-            }
             ret @spanned(lo, e.span.hi, ast::stmt_expr(e, p.get_id()));
           }
           _ { p.fatal("expected statement"); }
@@ -1635,6 +1634,11 @@ fn expr_has_value(e: @ast::expr) -> bool {
       ast::expr_for(_, _, blk) | ast::expr_do_while(blk, _) {
         !option::is_none(blk.node.expr)
       }
+
+      // Strictly speaking, a call like `foo() {|e| e}` can have a value, but
+      // we treat it as though it does not for parsing purposes because
+      // expressions like `foo(a, b) { |c| ... } + d` are hard to parse to the
+      // naked eye.
       ast::expr_call(_, _, true) { false }
       _ { true }
     }
