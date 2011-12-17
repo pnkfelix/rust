@@ -81,6 +81,10 @@ fn new_parser_from_source_str(sess: parse_sess, cfg: ast::crate_cfg,
     ret new_parser(sess, cfg, rdr, ftype);
 }
 
+fn accepts_calls(p: parser) -> bool {
+    ret p.get_restriction() != RESTRICT_NO_CALL_EXPRS;
+}
+
 fn new_parser(sess: parse_sess, cfg: ast::crate_cfg, rdr: lexer::reader,
               ftype: file_type) -> parser {
     obj stdio_parser(sess: parse_sess,
@@ -777,7 +781,9 @@ fn parse_bottom_expr(p: parser) -> @ast::expr {
         expect(p, token::RPAREN);
         if vec::len(es) == 1u {
             ret mk_expr(p, lo, hi, es[0].node);
-        } else { ret mk_expr(p, lo, hi, ast::expr_tup(es)); }
+        } else {
+            ret mk_expr(p, lo, hi, ast::expr_tup(es));
+        }
     } else if p.peek() == token::LBRACE {
         p.bump();
         if is_word(p, "mutable") ||
@@ -1002,13 +1008,16 @@ fn parse_dot_or_call_expr(p: parser) -> @ast::expr {
     let e = parse_bottom_expr(p);
     let lo = e.span.lo;
     let hi = e.span.hi;
-    while expr_has_value(e) {
+    while expr_requires_semi_to_be_a_stmt(*e) {
+        // Expressions like `if {} else {}` or `while {}` can be followed by
+        // binary operators but not parentheses.  This is basically because
+        // parentheses are often used to start an expression (tuple
+        // expression) whereas binary operators, dots, and so forth are not
+        // (it *does* create a theoretically ambiguous scenario with leading -
+        // and +, but this never causes issues in practice as a statement like
+        // `-5` doesn't have much purpose).
         alt p.peek() {
-          token::LPAREN. {
-            if p.get_restriction() == RESTRICT_NO_CALL_EXPRS {
-                ret e;
-            }
-
+          token::LPAREN. when accepts_calls(p) {
             // Call expr.
             let es = parse_seq(token::LPAREN, token::RPAREN,
                                seq_sep(token::COMMA), parse_expr, p);
@@ -1039,11 +1048,7 @@ fn parse_dot_or_call_expr(p: parser) -> @ast::expr {
               t { unexpected(p, t); }
             }
           }
-          token::LBRACE. when is_bar(p.look_ahead(1u)) {
-            if p.get_restriction() == RESTRICT_NO_CALL_EXPRS {
-                ret e;
-            }
-
+          token::LBRACE. when accepts_calls(p) && is_bar(p.look_ahead(1u)) {
             p.bump();
             let blk = parse_fn_block_expr(p);
             alt e.node {
@@ -1161,7 +1166,6 @@ const ternary_prec: int = 0;
 
 fn parse_more_binops(p: parser, lhs: @ast::expr, min_prec: int) ->
    @ast::expr {
-    if !expr_has_value(lhs) { ret lhs; }
     let peeked = p.peek();
     if peeked == token::BINOP(token::OR) &&
        p.get_restriction() == RESTRICT_NO_BAR_OP { ret lhs; }
@@ -1245,11 +1249,6 @@ fn parse_if_expr_1(p: parser) ->
         let elexpr = parse_else_expr(p);
         els = some(elexpr);
         hi = elexpr.span.hi;
-    } else if !option::is_none(thn.node.expr) {
-        let sp = option::get(thn.node.expr).span;
-        p.span_fatal(sp, "`if` without `else` can not produce a result");
-        //TODO: If a suggestion mechanism appears, suggest that the
-        //user may have forgotten a ';'
     }
     ret {cond: cond, then: thn, els: els, lo: lo, hi: hi};
 }
@@ -1351,7 +1350,7 @@ fn parse_for_expr(p: parser) -> @ast::expr {
     let decl = parse_local(p, false);
     expect_word(p, "in");
     let seq = parse_expr(p);
-    let body = parse_block_no_value(p);
+    let body = parse_block(p);
     let hi = body.span.hi;
     ret mk_expr(p, lo, hi, ast::expr_for(decl, seq, body));
 }
@@ -1359,14 +1358,14 @@ fn parse_for_expr(p: parser) -> @ast::expr {
 fn parse_while_expr(p: parser) -> @ast::expr {
     let lo = p.get_last_lo_pos();
     let cond = parse_expr(p);
-    let body = parse_block_no_value(p);
+    let body = parse_block(p);
     let hi = body.span.hi;
     ret mk_expr(p, lo, hi, ast::expr_while(cond, body));
 }
 
 fn parse_do_while_expr(p: parser) -> @ast::expr {
     let lo = p.get_last_lo_pos();
-    let body = parse_block_no_value(p);
+    let body = parse_block(p);
     expect_word(p, "while");
     let cond = parse_expr(p);
     let hi = cond.span.hi;
@@ -1616,37 +1615,9 @@ fn parse_stmt(p: parser) -> @ast::stmt {
     }
 }
 
-fn expr_has_value(e: @ast::expr) -> bool {
-    alt e.node {
-      ast::expr_if(_, th, els) | ast::expr_if_check(_, th, els) {
-        if option::is_none(els) { false }
-        else { !option::is_none(th.node.expr) ||
-            expr_has_value(option::get(els)) }
-      }
-      ast::expr_alt(_, arms) {
-        let found_expr = false;
-        for arm in arms {
-            if !option::is_none(arm.body.node.expr) { found_expr = true; }
-        }
-        found_expr
-      }
-      ast::expr_block(blk) | ast::expr_while(_, blk) |
-      ast::expr_for(_, _, blk) | ast::expr_do_while(blk, _) {
-        !option::is_none(blk.node.expr)
-      }
-
-      // Strictly speaking, a call like `foo() {|e| e}` can have a value, but
-      // we treat it as though it does not for parsing purposes because
-      // expressions like `foo(a, b) { |c| ... } + d` are hard to parse to the
-      // naked eye.
-      ast::expr_call(_, _, true) { false }
-      _ { true }
-    }
-}
-
 fn stmt_is_expr(stmt: @ast::stmt) -> bool {
     ret alt stmt.node {
-      ast::stmt_expr(e, _) { expr_has_value(e) }
+      ast::stmt_expr(e, _) { true }
       _ { false }
     };
 }
@@ -1659,16 +1630,30 @@ fn stmt_to_expr(stmt: @ast::stmt) -> option::t<@ast::expr> {
     } else { none };
 }
 
+fn expr_requires_semi_to_be_a_stmt(expr: ast::expr) -> bool {
+    alt expr.node {
+      ast::expr_if(_, _, _) | ast::expr_if_check(_, _, _) |
+      ast::expr_alt(_, _) | ast::expr_block(_) | ast::expr_while(_, _) |
+      ast::expr_for(_, _, _) | ast::expr_do_while(_, _) |
+      ast::expr_call(_, _, true) {
+        false
+      }
+      _ {
+        true
+      }
+    }
+}
+
 fn stmt_ends_with_semi(stmt: ast::stmt) -> bool {
     alt stmt.node {
       ast::stmt_decl(d, _) {
         ret alt d.node {
               ast::decl_local(_) { true }
               ast::decl_item(_) { false }
-            }
+            };
       }
       ast::stmt_expr(e, _) {
-        ret expr_has_value(e);
+        ret expr_requires_semi_to_be_a_stmt(*e);
       }
     }
 }
@@ -1685,17 +1670,6 @@ fn parse_block(p: parser) -> ast::blk {
         expect(p, token::LBRACE);
         be parse_block_tail(p, lo, ast::default_blk);
     }
-}
-
-fn parse_block_no_value(p: parser) -> ast::blk {
-    let blk = parse_block(p);
-    if !option::is_none(blk.node.expr) {
-        let sp = option::get(blk.node.expr).span;
-        p.span_fatal(sp, "this block must not have a result");
-        //TODO: If a suggestion mechanism appears, suggest that the
-        //user may have forgotten a ';'
-    }
-    ret blk;
 }
 
 // Precondition: already parsed the '{' or '#{'
@@ -1895,7 +1869,7 @@ fn parse_item_res(p: parser, attrs: [ast::attribute]) -> @ast::item {
     expect(p, token::COLON);
     let t = parse_ty(p, false);
     expect(p, token::RPAREN);
-    let dtor = parse_block_no_value(p);
+    let dtor = parse_block(p);
     let decl =
         {inputs:
              [{mode: ast::by_ref, ty: t, ident: arg_ident,
@@ -2292,19 +2266,11 @@ fn parse_rest_import_name(p: parser, first: ast::ident,
         alt p.peek() {
           token::IDENT(_, _) { identifiers += [parse_ident(p)]; }
 
-
-
-
-
           //the lexer can't tell the different kinds of stars apart ) :
           token::BINOP(token::STAR.) {
             glob = true;
             p.bump();
           }
-
-
-
-
 
           token::LBRACE. {
             fn parse_import_ident(p: parser) -> ast::import_ident {
@@ -2321,10 +2287,6 @@ fn parse_rest_import_name(p: parser, first: ast::ident,
             }
             from_idents = some(from_idents_);
           }
-
-
-
-
 
           _ {
             p.fatal("expecting an identifier, or '*'");
