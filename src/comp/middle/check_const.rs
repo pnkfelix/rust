@@ -48,7 +48,8 @@ fn check_expr(sess: session, e: @expr, &&is_const: bool, v: visit::vt<bool>) {
             sess.span_err(e.span,
                           "string constants are not supported");
           }
-          expr_lit(_) | expr_binary(_, _, _) | expr_unary(_, _) {}
+          expr_lit(_) | expr_binary(_, _, _) | expr_unary(_, _) {
+          }
           _ {
             sess.span_err(e.span,
                           "constant contains unimplemented expression type");

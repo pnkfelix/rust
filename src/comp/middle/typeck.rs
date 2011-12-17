@@ -1661,12 +1661,16 @@ fn check_expr_with_unifier(fcx: @fn_ctxt, expr: @ast::expr, unify: unifier,
               some(els) {
                 let thn_t = block_ty(fcx.ccx.tcx, thn);
                 els_bot = check_expr_with(fcx, els, thn_t);
-                let elsopt_t = expr_ty(fcx.ccx.tcx, els);
-                if !ty::type_is_bot(fcx.ccx.tcx, elsopt_t) {
-                    elsopt_t
-                } else { thn_t }
+                let els_t = expr_ty(fcx.ccx.tcx, els);
+                if !ty::type_is_bot(fcx.ccx.tcx, els_t) {
+                    els_t
+                } else {
+                    thn_t
+                }
               }
-              none. { ty::mk_nil(fcx.ccx.tcx) }
+              none. {
+                ty::mk_nil(fcx.ccx.tcx)
+              }
             };
         write::ty_only_fixup(fcx, id, if_t);
         ret then_bot & els_bot;
@@ -2561,14 +2565,13 @@ fn check_fn(ccx: @crate_ctxt, f: ast::_fn, id: ast::node_id,
     check_constraints(fcx, decl.constraints, decl.inputs);
     check_block(fcx, body);
 
-    // We unify the tail expr's type with the
-    // function result type, if there is a tail expr.
-    alt body.node.expr {
-      some(tail_expr) {
-        let tail_expr_ty = expr_ty(ccx.tcx, tail_expr);
-        demand::simple(fcx, tail_expr.span, fcx.ret_ty, tail_expr_ty);
-      }
-      none. { }
+    // If the function does not return nil, then unify
+    // the type of the tail expr (if any) with the return type.
+    if !ty::type_is_nil(ccx.tcx, fcx.ret_ty) {
+        option::may(body.node.expr) { |tail_expr|
+            let tail_expr_ty = expr_ty(ccx.tcx, tail_expr);
+            demand::simple(fcx, tail_expr.span, fcx.ret_ty, tail_expr_ty);
+        }
     }
 
     let args = ty::ty_fn_args(ccx.tcx, ty::node_id_to_type(ccx.tcx, id));
