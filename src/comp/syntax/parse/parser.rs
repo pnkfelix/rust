@@ -992,7 +992,7 @@ fn parse_dot_or_call_expr(p: parser) -> @ast::expr {
     let e = parse_bottom_expr(p);
     let lo = e.span.lo;
     let hi = e.span.hi;
-    while expr_has_value(e) {
+    while expr_requires_semi(e) {
         alt p.peek() {
           token::LPAREN. {
             if p.get_restriction() == RESTRICT_NO_CALL_EXPRS {
@@ -1622,14 +1622,19 @@ fn expr_has_value(e: @ast::expr) -> bool {
       ast::expr_for(_, _, blk) | ast::expr_do_while(blk, _) {
         !option::is_none(blk.node.expr)
       }
-
-      // Strictly speaking, a call like `foo() {|e| e}` can have a value, but
-      // we treat it as though it does not for parsing purposes because
-      // expressions like `foo(a, b) { |c| ... } + d` are hard to parse to the
-      // naked eye.
-      ast::expr_call(_, _, true) { false }
       _ { true }
     }
+}
+
+fn expr_requires_semi(e: @ast::expr) -> bool {
+    if !expr_has_value(e) {
+        ret false;
+    }
+
+    ret alt e.node {
+      ast::expr_call(_, _, true) { false }
+      _ { true }
+    };
 }
 
 fn stmt_is_expr(stmt: @ast::stmt) -> bool {
@@ -1656,7 +1661,7 @@ fn stmt_ends_with_semi(stmt: ast::stmt) -> bool {
             }
       }
       ast::stmt_expr(e, _) {
-        ret expr_has_value(e);
+        ret expr_requires_semi(e);
       }
     }
 }
