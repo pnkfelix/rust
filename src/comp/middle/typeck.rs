@@ -8,7 +8,7 @@ import util::common::*;
 import syntax::codemap::span;
 import middle::ty;
 import middle::ty::{node_id_to_type, arg, bind_params_in_type, block_ty,
-                    expr_ty, field, node_type_table, mk_nil,
+                    expr_ty, stmt_ty, field, node_type_table, mk_nil,
                     ty_param_substs_opt_and_ty, ty_param_kinds_and_ty};
 import util::ppaux::ty_to_str;
 import middle::ty::unify::{ures_ok, ures_err, fix_ok, fix_err};
@@ -2391,20 +2391,20 @@ fn check_block(fcx0: @fn_ctxt, blk: ast::blk) -> bool {
         }
         bot |= check_stmt(fcx, s);
     }
-    alt blk.node.expr {
-      none. { write::nil_ty(fcx.ccx.tcx, blk.node.id); }
-      some(e) {
-        if bot && !warned {
-            fcx.ccx.tcx.sess.span_warn(e.span, "unreachable expression");
-        }
-        bot |= check_expr(fcx, e);
-        let ety = expr_ty(fcx.ccx.tcx, e);
-        write::ty_only_fixup(fcx, blk.node.id, ety);
-      }
-    }
+
+    // Determine the result of the block (generally the type of last stmt):
     if bot {
         write::ty_only_fixup(fcx, blk.node.id, ty::mk_bot(fcx.ccx.tcx));
+    } else {
+        alt vec::last(blk.node.stmts) {
+          option::some(last_stmt) {
+            let t = stmt_ty(fcx.ccx.tcx, last_stmt);
+            write::ty_only_fixup(fcx, blk.node.id, t);
+          }
+          _ { write::nil_ty(fcx.ccx.tcx, blk.node.id); }
+        }
     }
+
     ret bot;
 }
 

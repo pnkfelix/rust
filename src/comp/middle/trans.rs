@@ -4246,15 +4246,25 @@ fn trans_block_dps(bcx: @block_ctxt, b: ast::blk, dest: dest)
     -> @block_ctxt {
     let bcx = bcx;
     block_locals(b) {|local| bcx = alloc_local(bcx, local); };
-    for s: @ast::stmt in b.node.stmts {
-        bcx = trans_stmt(bcx, *s);
-    }
-    alt b.node.expr {
-      some(e) {
-        let bt = ty::type_is_bot(bcx_tcx(bcx), ty::expr_ty(bcx_tcx(bcx), e));
-        bcx = trans_expr(bcx, e, bt ? ignore : dest);
-      }
-      _ { assert dest == ignore || bcx.unreachable; }
+
+    let stmts = b.node.stmts;
+    if check vec::is_not_empty(stmts) {
+        vec::iter_slice(b.node.stmts, 0u, vec::len(stmts) - 1u) { |s|
+            bcx = trans_stmt(bcx, *s);
+        }
+        alt vec::last_total(stmts) {
+          @{node:ast::stmt_expr(e, _), _} {
+            let bt = ty::type_is_bot(bcx_tcx(bcx),
+                                     ty::expr_ty(bcx_tcx(bcx), e));
+            bcx = trans_expr(bcx, e, bt ? ignore : dest);
+          }
+          s {
+            bcx = trans_stmt(bcx, *s);
+            bcx = store_in_dest(bcx, C_nil(), dest);
+          }
+        }
+    } else { // empty block:
+        bcx = store_in_dest(bcx, C_nil(), dest);
     }
     ret trans_block_cleanups(bcx, find_scope_cx(bcx));
 }
@@ -4512,8 +4522,7 @@ fn trans_closure(cx: @local_ctxt, sp: span, f: ast::_fn, llfndecl: ValueRef,
     // trans_mod, trans_item, trans_obj, et cetera) and those that do
     // (trans_block, trans_expr, et cetera).
     if ty::type_is_bot(cx.ccx.tcx, block_ty) ||
-       ty::type_is_nil(cx.ccx.tcx, block_ty) ||
-       option::is_none(f.body.node.expr) {
+       ty::type_is_nil(cx.ccx.tcx, block_ty) {
         bcx = trans_block_dps(bcx, f.body, ignore);
     } else if ty::type_is_immediate(cx.ccx.tcx, block_ty) {
         let cell = empty_dest_cell();

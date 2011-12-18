@@ -41,6 +41,7 @@ export def_has_ty_params;
 export eq_ty;
 export expr_has_ty_params;
 export expr_ty;
+export stmt_ty;
 export expr_ty_params_and_ty;
 export expr_is_lval;
 export fold_ty;
@@ -1662,6 +1663,15 @@ fn pat_ty(cx: ctxt, pat: @ast::pat) -> t {
 // expr_ty_params_and_ty() below.
 fn expr_ty(cx: ctxt, expr: @ast::expr) -> t {
     ret node_id_to_monotype(cx, expr.id);
+}
+
+// Type of the statement as a monotype.
+// If this is not an expression, result is nil.
+fn stmt_ty(cx: ctxt, stmt: @ast::stmt) -> t {
+    ret alt stmt {
+      ast::stmt_expr(expr, _) { expr_ty(cx, expr) }
+      _ { mk_nil(cx) }
+    };
 }
 
 fn expr_ty_params_and_ty(cx: ctxt, expr: @ast::expr) -> {params: [t], ty: t} {

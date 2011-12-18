@@ -701,6 +701,15 @@ fn iter<T>(v: [const T], f: block(T)) {
 }
 
 /*
+Function: iter_slice
+
+Iterates over a slice of a vector
+*/
+fn iter_slice<T>(v: [const T], start: uint, end: uint, f: block(T)) {
+    iter_slicei(v, start, end) { |_i, v| f(v) }
+}
+
+/*
 Function: iteri
 
 Iterates over a vector's elements and indexes
@@ -711,6 +720,18 @@ element's value and index.
 fn iteri<T>(v: [const T], f: block(uint, T)) {
     let i = 0u, l = len(v);
     while i < l { f(i, v[i]); i += 1u; }
+}
+
+/*
+Function: iter_slicei
+
+Iterates over a slice of a vector and the indices in the slice
+*/
+fn iter_slicei<T>(v: [const T], start: uint, end: uint, f: block(uint, T)) {
+    assert (start <= end);
+    assert (end <= len(v));
+    let i = start;
+    while i < end { f(i, v[i]); i += 1u; }
 }
 
 /*
