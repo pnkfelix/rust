@@ -8,7 +8,7 @@ fn block_nosemi() -> int { { 0 } - 1 }
 
 fn if_semi() -> int { if true { f() } else { f() }; -1 }
 
-fn if_nosemi() -> int { if true { 0 } else { 0 } - 1 }
+fn if_nosemi() -> int { ret if true { 0 } else { 0 } - 1; }
 
 fn alt_semi() -> int { alt true { true { f() } }; -1 }
 

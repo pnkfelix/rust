@@ -10,7 +10,12 @@ import util::interner;
 import ast::{node_id, spanned};
 import syntax::print::pprust;
 
-tag restriction { UNRESTRICTED; RESTRICT_NO_CALL_EXPRS; RESTRICT_NO_BAR_OP; }
+tag restriction {
+    UNRESTRICTED;
+    RESTRICT_NO_CALL_EXPRS;
+    RESTRICT_NO_BAR_OP;
+    RESTRICT_TOP_LEVEL_EXPR;
+}
 
 tag file_type { CRATE_FILE; SOURCE_FILE; }
 
@@ -764,16 +769,25 @@ fn is_bar(t: token::token) -> bool {
 
 fn parse_bottom_expr(p: parser) -> @ast::expr {
     log("parse_bottom_expr", token::to_str(p.get_reader(), p.peek()));
-    alt parse_opt_stmt_expr(p) {
-      some(e) { ret e; }
-      none { /* fallthrough */ }
-    }
-
     let lo = p.get_lo_pos();
     let hi = p.get_hi_pos();
 
     let ex: ast::expr_;
-    if p.peek() == token::LPAREN {
+    if eat_word(p, "if") {
+        ret parse_if_expr(p);
+    } else if eat_word(p, "for") {
+        ret parse_for_expr(p);
+    } else if eat_word(p, "while") {
+        ret parse_while_expr(p);
+    } else if eat_word(p, "do") {
+        ret parse_do_while_expr(p);
+    } else if eat_word(p, "alt") {
+        ret parse_alt_expr(p);
+    } else if eat_word(p, "unchecked") {
+        ret parse_block_expr(p, lo, ast::unchecked_blk);
+    } else if eat_word(p, "unsafe") {
+        ret parse_block_expr(p, lo, ast::unsafe_blk);
+    } else if p.peek() == token::LPAREN {
         let lo = p.get_lo_pos();
         let hi = p.get_hi_pos();
 
@@ -977,29 +991,6 @@ fn parse_bottom_expr(p: parser) -> @ast::expr {
     ret mk_expr(p, lo, hi, ex);
 }
 
-fn parse_opt_stmt_expr(p: parser) -> option::t<@ast::expr> {
-    let lo = p.get_lo_pos();
-    let e: @ast::expr;
-    if eat_word(p, "if") {
-        e = parse_if_expr(p);
-    } else if eat_word(p, "for") {
-        e = parse_for_expr(p);
-    } else if eat_word(p, "while") {
-        e = parse_while_expr(p);
-    } else if eat_word(p, "do") {
-        e = parse_do_while_expr(p);
-    } else if eat_word(p, "alt") {
-        e = parse_alt_expr(p);
-    } else if eat_word(p, "unchecked") {
-        e = parse_block_expr(p, lo, ast::unchecked_blk);
-    } else if eat_word(p, "unsafe") {
-        e = parse_block_expr(p, lo, ast::unsafe_blk);
-    } else {
-        ret option::none;
-    }
-    ret option::some(e);
-}
-
 fn parse_block_expr(p: parser,
                     lo: uint,
                     blk_mode: ast::blk_check_mode) -> @ast::expr {
@@ -1035,9 +1026,10 @@ fn parse_syntax_ext_naked(p: parser, lo: uint) -> @ast::expr {
 fn parse_dot_or_call_expr(p: parser) -> @ast::expr {
     let e = parse_bottom_expr(p);
     let {lo, hi, _} = e.span;
+
     // Expressions like `if {} else {}` or `while {}` cannot be followed by
     // dots, calls, and the like.
-    while true {
+    while !expr_is_complete(p, *e) {
         alt p.peek() {
           token::LPAREN. when accepts_calls(p) {
             // Call expr.
@@ -1193,10 +1185,16 @@ fn parse_more_binops(p: parser,
                      lhs: @ast::expr,
                      min_prec: int) -> @ast::expr {
     let peeked = p.peek();
+
     if peeked == token::BINOP(token::OR) &&
        p.get_restriction() == RESTRICT_NO_BAR_OP {
         ret lhs;
     }
+
+    if expr_is_complete(p, *lhs) {
+        ret lhs;
+    }
+
     for cur: op_spec in *p.get_prec_table() {
         if cur.prec > min_prec && cur.tok == peeked {
             p.bump();
@@ -1207,12 +1205,14 @@ fn parse_more_binops(p: parser,
             ret parse_more_binops(p, bin, min_prec);
         }
     }
+
     if as_prec > min_prec && eat_word(p, "as") {
         let rhs = parse_ty(p, true);
         let _as =
             mk_expr(p, lhs.span.lo, rhs.span.hi, ast::expr_cast(lhs, rhs));
         ret parse_more_binops(p, _as, min_prec);
     }
+
     ret lhs;
 }
 
@@ -1628,18 +1628,8 @@ fn parse_stmt(p: parser) -> @ast::stmt {
           }
         }
 
-        // Try "expressions" like `if {} else {}` and `while {}` which,
-        // when at the top level, do not require semicolons and also
-        // cannot be followed by operators and the like.
-        alt parse_opt_stmt_expr(p) {
-          some(e) {
-            ret @spanned(lo, e.span.hi, ast::stmt_expr(e, p.get_id()));
-          }
-          none. { /* fallthrough */ }
-        }
-
         // Remainder are line-expr stmts.
-        let e = parse_expr(p);
+        let e = parse_expr_res(p, RESTRICT_TOP_LEVEL_EXPR);
         ret @spanned(lo, e.span.hi, ast::stmt_expr(e, p.get_id()));
     }
 }
@@ -1657,6 +1647,11 @@ fn stmt_to_expr(stmt: @ast::stmt) -> option::t<@ast::expr> {
           ast::stmt_expr(e, _) { some(e) }
         }
     } else { none };
+}
+
+fn expr_is_complete(p: parser, expr: ast::expr) -> bool {
+    ret p.get_restriction() == RESTRICT_TOP_LEVEL_EXPR &&
+        !expr_requires_semi_to_be_a_stmt(expr);
 }
 
 fn expr_requires_semi_to_be_a_stmt(expr: ast::expr) -> bool {
