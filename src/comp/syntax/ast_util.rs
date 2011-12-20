@@ -234,13 +234,13 @@ fn new_def_id_hash<copy T>() -> std::map::hashmap<def_id, T> {
 }
 
 fn block_from_expr(e: @expr) -> blk {
-    let blk_ = default_block([], option::some::<@expr>(e), e.id);
+    let stmt = @{node: ast::stmt_expr(e, e.id), span: e.span};
+    let blk_ = default_block([stmt], e.id);
     ret {node: blk_, span: e.span};
 }
 
-fn default_block(stmts1: [@stmt], expr1: option::t<@expr>, id1: node_id) ->
-   blk_ {
-    {view_items: [], stmts: stmts1, expr: expr1, id: id1, rules: default_blk}
+fn default_block(stmts1: [@stmt], id1: node_id) -> blk_ {
+    {view_items: [], stmts: stmts1, id: id1, rules: default_blk}
 }
 
 fn obj_field_from_anon_obj_field(f: anon_obj_field) -> obj_field {

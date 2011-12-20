@@ -157,7 +157,6 @@ fn visit_block(cx: @ctx, b: ast::blk, sc: scope, v: vt<scope>) {
           }
         }
     }
-    visit::visit_expr_opt(b.node.expr, sc, v);
 }
 
 fn add_bindings_for_let(cx: ctx, &bs: [binding], loc: @ast::local) {

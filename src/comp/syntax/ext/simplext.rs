@@ -521,13 +521,12 @@ fn p_t_s_r_path(cx: ext_ctxt, p: @path, s: selector, b: binders) {
 }
 
 fn block_to_ident(blk: blk_) -> option::t<ident> {
-    if vec::len(blk.stmts) != 0u { ret none; }
-    ret alt blk.expr {
-          some(expr) {
-            alt expr.node { expr_path(pth) { path_to_ident(pth) } _ { none } }
-          }
-          none. { none }
-        }
+    alt vec::last(blk.stmts) {
+      some(@{node: ast::stmt_expr(@{node: expr_path(pth), _}, _), _}) {
+        path_to_ident(pth)
+      }
+      none. { none }
+    }
 }
 
 fn p_t_s_r_mac(cx: ext_ctxt, mac: ast::mac, s: selector, b: binders) {

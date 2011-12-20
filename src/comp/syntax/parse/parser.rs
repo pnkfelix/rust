@@ -1694,7 +1694,7 @@ fn parse_block(p: parser) -> ast::blk {
 // necessary, and this should take a qualifier.
 // some blocks start with "#{"...
 fn parse_block_tail(p: parser, lo: uint, s: ast::blk_check_mode) -> ast::blk {
-    let view_items = [], stmts = [], expr = none;
+    let view_items = [], stmts = [];
     while is_word(p, "import") { view_items += [parse_view_item(p)]; }
     while p.peek() != token::RBRACE {
         alt p.peek() {
@@ -1703,27 +1703,15 @@ fn parse_block_tail(p: parser, lo: uint, s: ast::blk_check_mode) -> ast::blk {
           }
           _ {
             let stmt = parse_stmt(p);
-            alt stmt_to_expr(stmt) {
-              some(e) {
-                alt p.peek() {
-                  token::SEMI. { p.bump(); stmts += [stmt]; }
-                  token::RBRACE. { expr = some(e); }
-                  t {
-                    if stmt_ends_with_semi(*stmt) {
-                        p.fatal("expected ';' or '}' after " +
-                                    "expression but found " +
-                                    token::to_str(p.get_reader(), t));
-                    }
-                    stmts += [stmt];
-                  }
-                }
-              }
-              none. {
-                // Not an expression statement.
-                stmts += [stmt];
-
+            stmts += [stmt];
+            alt p.peek() {
+              token::SEMI. { p.bump(); }
+              token::RBRACE. { }
+              t {
                 if stmt_ends_with_semi(*stmt) {
-                    expect(p, token::SEMI);
+                    p.fatal("expected ';' or '}' after " +
+                            "expression but found " +
+                            token::to_str(p.get_reader(), t));
                 }
               }
             }
@@ -1732,7 +1720,7 @@ fn parse_block_tail(p: parser, lo: uint, s: ast::blk_check_mode) -> ast::blk {
     }
     let hi = p.get_hi_pos();
     p.bump();
-    let bloc = {view_items: view_items, stmts: stmts, expr: expr,
+    let bloc = {view_items: view_items, stmts: stmts,
                 id: p.get_id(), rules: s};
     ret spanned(lo, hi, bloc);
 }

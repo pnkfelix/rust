@@ -582,14 +582,6 @@ fn print_possibly_embedded_block(s: ps, blk: ast::blk, embedded: embed_type,
     for st: @ast::stmt in blk.node.stmts {
         print_stmt(s, *st);
     }
-    alt blk.node.expr {
-      some(expr) {
-        space_if_not_bol(s);
-        print_expr(s, expr);
-        maybe_print_trailing_comment(s, expr.span, some(blk.span.hi));
-      }
-      _ { }
-    }
     bclose_(s, blk.span, indented);
     s.ann.post(ann_node);
 }

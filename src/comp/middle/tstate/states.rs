@@ -675,44 +675,23 @@ fn find_pre_post_state_stmt(fcx: fn_ctxt, pres: prestate, s: @stmt) -> bool {
 
 /* Updates the pre- and post-states of statements in the block,
    returns a boolean flag saying whether any pre- or poststates changed */
-fn find_pre_post_state_block(fcx: fn_ctxt, pres0: prestate, b: blk) -> bool {
+fn find_pre_post_state_block(fcx: fn_ctxt, pres: prestate, b: blk) -> bool {
     /* First, set the pre-states and post-states for every expression */
 
-    let pres = pres0;
+    let post = pres;
+
     /* Iterate over each stmt. The new prestate is <pres>. The poststate
      consist of improving <pres> with whatever variables this stmt
      initializes.  Then <pres> becomes the new poststate. */
 
     let changed = false;
     for s: @stmt in b.node.stmts {
-        changed |= find_pre_post_state_stmt(fcx, pres, s);
-        pres = stmt_poststate(fcx.ccx, *s);
-    }
-    let post = pres;
-    alt b.node.expr {
-      none. { }
-      some(e) {
-        changed |= find_pre_post_state_expr(fcx, pres, e);
-        post = expr_poststate(fcx.ccx, e);
-      }
+        changed |= find_pre_post_state_stmt(fcx, post, s);
+        post = stmt_poststate(fcx.ccx, *s);
     }
 
-    set_prestate_ann(fcx.ccx, b.node.id, pres0);
+    set_prestate_ann(fcx.ccx, b.node.id, pres);
     set_poststate_ann(fcx.ccx, b.node.id, post);
-
-
-    /*
-        log_err "For block:";
-        log_block_err(b);
-        log_err "poststate = ";
-        log_states_err(block_states(fcx.ccx, b));
-        log_err "pres0:";
-        log_tritv_err(fcx, pres0);
-        log_err "post:";
-        log_tritv_err(fcx, post);
-        log_err "changed = ";
-        log_err changed;
-    */
 
     ret changed;
 }
@@ -737,10 +716,8 @@ fn find_pre_post_state_fn(fcx: fn_ctxt, f: _fn) -> bool {
 
     let changed = find_pre_post_state_block(fcx, block_pre, f.body);
 
-    // Treat the tail expression as a return statement
-    alt f.body.node.expr {
-      some(tailexpr) {
-
+    // Treat the tail expression (if any) as a return statement
+    option::may(ty::block_final_expr(fcx.ccx.tcx, f.body)) { |tailexpr|
         // We don't want to clear the diverges bit for bottom typed things,
         // which really do diverge. I feel like there is a cleaner way
         // to do this than checking the type.
@@ -750,8 +727,6 @@ fn find_pre_post_state_fn(fcx: fn_ctxt, f: _fn) -> bool {
             kill_poststate_(fcx, fcx.enclosing.i_diverge, post);
             set_poststate_ann(fcx.ccx, f.body.node.id, post);
         }
-      }
-      none. {/* fallthrough */ }
     }
 
     /*

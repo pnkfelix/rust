@@ -4521,8 +4521,11 @@ fn trans_closure(cx: @local_ctxt, sp: span, f: ast::_fn, llfndecl: ValueRef,
     // translation calls that don't have a return value (trans_crate,
     // trans_mod, trans_item, trans_obj, et cetera) and those that do
     // (trans_block, trans_expr, et cetera).
+    let ret_ty = ty::ret_ty_of_fn(bcx_tcx(bcx), id);
     if ty::type_is_bot(cx.ccx.tcx, block_ty) ||
-       ty::type_is_nil(cx.ccx.tcx, block_ty) {
+        ty::type_is_nil(cx.ccx.tcx, block_ty) ||
+        ty::type_is_bot(cx.ccx.tcx, ret_ty) ||
+        ty::type_is_nil(cx.ccx.tcx, ret_ty) {
         bcx = trans_block_dps(bcx, f.body, ignore);
     } else if ty::type_is_immediate(cx.ccx.tcx, block_ty) {
         let cell = empty_dest_cell();

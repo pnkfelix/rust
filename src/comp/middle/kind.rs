@@ -64,8 +64,14 @@ fn check_expr(e: @expr, cx: ctx, v: visit::vt<ctx>) {
 
     alt e.node {
       expr_assign(_, ex) | expr_assign_op(_, _, ex) |
-      expr_block({node: {expr: some(ex), _}, _}) |
       expr_unary(box(_), ex) | expr_unary(uniq(_), ex) { maybe_copy(cx, ex); }
+
+      expr_block(blk) {
+        option::may(ty::block_final_expr(cx.tcx, blk)) { |ex|
+            maybe_copy(cx, ex);
+        }
+      }
+
       expr_ret(some(ex)) { maybe_copy(cx, ex); }
       expr_copy(expr) { check_copy_ex(cx, expr, false); }
       // Vector add copies.

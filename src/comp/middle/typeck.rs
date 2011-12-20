@@ -1660,8 +1660,12 @@ fn check_expr_with_unifier(fcx: @fn_ctxt, expr: @ast::expr, unify: unifier,
             alt elsopt {
               some(els) {
                 let thn_t = block_ty(fcx.ccx.tcx, thn);
+                log #fmt("thn_t=%s", ty_to_str(fcx.ccx.tcx, thn_t));
                 els_bot = check_expr_with(fcx, els, thn_t);
                 let els_t = expr_ty(fcx.ccx.tcx, els);
+                log #fmt("els_bot=%s els_t=%s",
+                         (els_bot ? "true" : "false"),
+                         ty_to_str(fcx.ccx.tcx, els_t));
                 if !ty::type_is_bot(fcx.ccx.tcx, els_t) {
                     els_t
                 } else {
@@ -1855,7 +1859,11 @@ fn check_expr_with_unifier(fcx: @fn_ctxt, expr: @ast::expr, unify: unifier,
                 check_then_else(fcx, thn, elsopt, id, expr.span);
       }
       ast::expr_ternary(_, _, _) {
-        bot = check_expr(fcx, ast_util::ternary_to_if(expr));
+        let blk_expr = ast_util::ternary_to_if(expr);
+        log #fmt("Ternary = %s, Block = %s",
+                 expr_to_str(expr),
+                 expr_to_str(blk_expr));
+        bot = check_expr(fcx, blk_expr);
       }
       ast::expr_assert(e) {
         bot = check_expr_with(fcx, e, ty::mk_bool(tcx));
@@ -1962,13 +1970,19 @@ fn check_expr_with_unifier(fcx: @fn_ctxt, expr: @ast::expr, unify: unifier,
         }
       }
       ast::expr_block(b) {
-        // If this is an unchecked block, turn off purity-checking
         bot = check_block(fcx, b);
-        let typ =
-            alt b.node.expr {
-              some(expr) { expr_ty(tcx, expr) }
-              none. { ty::mk_nil(tcx) }
-            };
+        let typ = alt vec::last(b.node.stmts) {
+          some(stmt) {
+            log #fmt("Last stmt of block %s is %s",
+                     expr_to_str(expr),
+                     stmt_to_str(*stmt));
+            stmt_ty(tcx, stmt)
+          }
+          none. { ty::mk_nil(tcx) }
+        };
+        log #fmt("Type of block %s is %s",
+                 expr_to_str(expr),
+                 ty_to_str(tcx, typ));
         write::ty_only_fixup(fcx, id, typ);
       }
       ast::expr_bind(f, args) {
@@ -2077,6 +2091,9 @@ fn check_expr_with_unifier(fcx: @fn_ctxt, expr: @ast::expr, unify: unifier,
             elt_ts += [ety];
         }
         let typ = ty::mk_tup(fcx.ccx.tcx, elt_ts);
+        log #fmt("expr_tup: ex=%s typ=%s",
+                 expr_to_str(expr),
+                 ty_to_str(tcx, typ));
         write::ty_only_fixup(fcx, id, typ);
       }
       ast::expr_rec(fields, base) {
@@ -2351,25 +2368,28 @@ fn check_decl_local(fcx: @fn_ctxt, local: @ast::local) -> bool {
 }
 
 fn check_stmt(fcx: @fn_ctxt, stmt: @ast::stmt) -> bool {
-    let node_id;
     let bot = false;
     alt stmt.node {
-      ast::stmt_decl(decl, id) {
-        node_id = id;
+      ast::stmt_decl(decl, stmt_id) {
         alt decl.node {
           ast::decl_local(ls) {
             for (_, l) in ls { bot |= check_decl_local(fcx, l); }
           }
           ast::decl_item(_) {/* ignore for now */ }
         }
+        write::nil_ty(fcx.ccx.tcx, stmt_id);
       }
-      ast::stmt_expr(expr, id) { node_id = id; bot = check_expr(fcx, expr); }
+      ast::stmt_expr(expr, stmt_id) {
+        bot = check_expr(fcx, expr);
+        let t = ty::expr_ty(fcx.ccx.tcx, expr);
+        write::ty_only_fixup(fcx, stmt_id, t);
+      }
     }
-    write::nil_ty(fcx.ccx.tcx, node_id);
     ret bot;
 }
 
 fn check_block(fcx0: @fn_ctxt, blk: ast::blk) -> bool {
+    // If this is an unchecked block, turn off purity-checking
     let fcx = alt blk.node.rules {
       ast::unchecked_blk. { @{purity: ast::impure_fn with *fcx0} }
       ast::unsafe_blk. { @{purity: ast::unsafe_fn with *fcx0} }
@@ -2399,6 +2419,10 @@ fn check_block(fcx0: @fn_ctxt, blk: ast::blk) -> bool {
         alt vec::last(blk.node.stmts) {
           option::some(last_stmt) {
             let t = stmt_ty(fcx.ccx.tcx, last_stmt);
+            log #fmt("check_block=%s last_stmt=%s t=%s",
+                    block_to_str(blk),
+                    stmt_to_str(*last_stmt),
+                    ty_to_str(fcx.ccx.tcx, t));
             write::ty_only_fixup(fcx, blk.node.id, t);
           }
           _ { write::nil_ty(fcx.ccx.tcx, blk.node.id); }
@@ -2563,14 +2587,14 @@ fn check_fn(ccx: @crate_ctxt, f: ast::_fn, id: ast::node_id,
           ccx: ccx};
 
     check_constraints(fcx, decl.constraints, decl.inputs);
-    check_block(fcx, body);
+    let bot = check_block(fcx, body);
 
-    // If the function does not return nil, then unify
-    // the type of the tail expr (if any) with the return type.
-    if !ty::type_is_nil(ccx.tcx, fcx.ret_ty) {
-        option::may(body.node.expr) { |tail_expr|
-            let tail_expr_ty = expr_ty(ccx.tcx, tail_expr);
-            demand::simple(fcx, tail_expr.span, fcx.ret_ty, tail_expr_ty);
+    // If the function implicitly returns the value of its last statement,
+    // then unify the type of the tail stmt with the return type.
+    if !bot && !ty::type_is_nil(ccx.tcx, fcx.ret_ty) {
+        option::may(vec::last(body.node.stmts)) { |tail_stmt|
+            let tail_stmt_ty = stmt_ty(ccx.tcx, tail_stmt);
+            demand::simple(fcx, tail_stmt.span, fcx.ret_ty, tail_stmt_ty);
         }
     }
 

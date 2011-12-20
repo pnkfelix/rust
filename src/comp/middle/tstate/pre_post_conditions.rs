@@ -667,16 +667,9 @@ fn find_pre_post_block(fcx: fn_ctxt, b: blk) {
         */
     }
     for s: @stmt in b.node.stmts { do_one_(fcx, s); }
-    fn do_inner_(fcx: fn_ctxt, &&e: @expr) { find_pre_post_expr(fcx, e); }
-    let do_inner = bind do_inner_(fcx, _);
-    option::map::<@expr, ()>(b.node.expr, do_inner);
 
     let pps: [pre_and_post] = [];
     for s: @stmt in b.node.stmts { pps += [stmt_pp(fcx.ccx, *s)]; }
-    alt b.node.expr {
-      none. {/* no-op */ }
-      some(e) { pps += [expr_pp(fcx.ccx, e)]; }
-    }
 
     let block_precond = seq_preconds(fcx, pps);
 
@@ -703,12 +696,11 @@ fn find_pre_post_fn(fcx: fn_ctxt, f: _fn) {
 
     find_pre_post_block(fcx, f.body);
 
-
     // Treat the tail expression as a return statement
-    alt f.body.node.expr {
-      some(tailexpr) { set_postcond_false(fcx.ccx, tailexpr.id); }
-      none. {/* fallthrough */ }
-    }
+    //NDM alt f.body.node.expr {
+    //NDM   some(tailexpr) { set_postcond_false(fcx.ccx, tailexpr.id); }
+    //NDM   none. {/* fallthrough */ }
+    //NDM }
 }
 
 fn fn_pre_post(f: _fn, tps: [ty_param], sp: span, i: fn_ident, id: node_id,

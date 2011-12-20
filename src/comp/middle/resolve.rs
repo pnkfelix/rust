@@ -407,7 +407,6 @@ fn visit_block_with_scope(b: ast::blk, sc: scopes, v: vt<scopes>) {
         *pos += 1u;;
         *loc = 0u;
     }
-    visit::visit_expr_opt(b.node.expr, block_sc, v);
 }
 
 fn visit_decl_with_scope(d: @decl, sc: scopes, v: vt<scopes>) {

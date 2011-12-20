@@ -31,6 +31,7 @@ export args_eq;
 export ast_constr_to_constr;
 export bind_params_in_type;
 export block_ty;
+export block_final_expr;
 export constr;
 export cast_type;
 export constr_general;
@@ -1647,6 +1648,16 @@ fn block_ty(cx: ctxt, b: ast::blk) -> t {
     ret node_id_to_type(cx, b.node.id);
 }
 
+// Returns the "result" expression of the block, if any.
+fn block_final_expr(cx: ctxt, b: ast::blk) -> option::t<@ast::expr> {
+    if type_is_bot(cx, block_ty(cx, b)) {
+        ret none;
+    }
+    ret alt vec::last(b.node.stmts) {
+      option::some(@{node: ast::stmt_expr(ex, _), _}) { some(ex) }
+      option::none. { none }
+    };
+}
 
 // Returns the type of a pattern as a monotype. Like @expr_ty, this function
 // doesn't provide type parameter substitutions.
@@ -1668,7 +1679,7 @@ fn expr_ty(cx: ctxt, expr: @ast::expr) -> t {
 // Type of the statement as a monotype.
 // If this is not an expression, result is nil.
 fn stmt_ty(cx: ctxt, stmt: @ast::stmt) -> t {
-    ret alt stmt {
+    ret alt stmt.node {
       ast::stmt_expr(expr, _) { expr_ty(cx, expr) }
       _ { mk_nil(cx) }
     };

@@ -202,7 +202,7 @@ fn mk_tests(cx: test_ctxt) -> @ast::item {
     let test_descs = mk_test_desc_vec(cx);
 
     let body_: ast::blk_ =
-        default_block([], option::some(test_descs), cx.sess.next_node_id());
+        default_block([test_descs], cx.sess.next_node_id());
     let body = nospan(body_);
 
     let fn_ = {decl: decl, proto: proto, body: body};
@@ -241,7 +241,7 @@ fn mk_test_desc_vec_ty(cx: test_ctxt) -> @ast::ty {
     ret @nospan(ast::ty_vec(vec_mt));
 }
 
-fn mk_test_desc_vec(cx: test_ctxt) -> @ast::expr {
+fn mk_test_desc_vec(cx: test_ctxt) -> @ast::stmt {
     log #fmt["building test vector from %u tests", vec::len(cx.testfns)];
     let descs = [];
     for test: test in cx.testfns {
@@ -249,8 +249,10 @@ fn mk_test_desc_vec(cx: test_ctxt) -> @ast::expr {
         descs += [mk_test_desc_rec(cx, test_)];
     }
 
-    ret @{id: cx.sess.next_node_id(),
-          node: ast::expr_vec(descs, ast::imm),
+    let expr = @{id: cx.sess.next_node_id(),
+                 node: ast::expr_vec(descs, ast::imm),
+                 span: dummy_sp()};
+    ret @{node: ast::stmt_expr(expr, cx.sess.next_node_id()),
           span: dummy_sp()};
 }
 
@@ -336,7 +338,6 @@ fn mk_test_wrapper(cx: test_ctxt,
     let wrapper_body: ast::blk = nospan({
         view_items: [],
         stmts: [@call_stmt],
-        expr: option::none,
         id: cx.sess.next_node_id(),
         rules: ast::default_blk
     });
@@ -389,8 +390,7 @@ fn mk_main(cx: test_ctxt) -> @ast::item {
     let test_main_call_expr = mk_test_main_call(cx);
 
     let body_: ast::blk_ =
-        default_block([], option::some(test_main_call_expr),
-                      cx.sess.next_node_id());
+        default_block([test_main_call_expr], cx.sess.next_node_id());
     let body = {node: body_, span: dummy_sp()};
 
     let fn_ = {decl: decl, proto: proto, body: body};
@@ -405,7 +405,7 @@ fn mk_main(cx: test_ctxt) -> @ast::item {
     ret @item;
 }
 
-fn mk_test_main_call(cx: test_ctxt) -> @ast::expr {
+fn mk_test_main_call(cx: test_ctxt) -> @ast::stmt {
 
     // Get the args passed to main so we can pass the to test_main
     let args_path =
@@ -446,11 +446,13 @@ fn mk_test_main_call(cx: test_ctxt) -> @ast::expr {
         ast::expr_call(@test_main_path_expr,
                        [@args_path_expr, @test_call_expr], false);
 
-    let test_main_call_expr: ast::expr =
-        {id: cx.sess.next_node_id(), node: test_main_call_expr_,
-         span: dummy_sp()};
+    let test_main_call_expr: @ast::expr =
+        @{id: cx.sess.next_node_id(),
+          node: test_main_call_expr_,
+          span: dummy_sp()};
 
-    ret @test_main_call_expr;
+    ret @{node: ast::stmt_expr(test_main_call_expr, cx.sess.next_node_id()),
+          span: dummy_sp()};
 }
 
 // Local Variables:
