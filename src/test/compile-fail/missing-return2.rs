@@ -1,8 +1,6 @@
-// error-pattern: not all control paths return a value
+// error-pattern: expected int but found ()
 
 fn f() -> int {
-    // Make sure typestate doesn't interpret this alt expression
-    // as the function result
     alt true { true { } }
 }
 

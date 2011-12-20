@@ -1440,13 +1440,36 @@ fn require_pure_call(ccx: @crate_ctxt, caller_purity: ast::purity,
 
 type unifier = fn(@fn_ctxt, span, ty::t, ty::t) -> ty::t;
 
+fn check_expr_as_stmt(fcx: @fn_ctxt, expr: @ast::expr) -> bool {
+    alt expr.node {
+      ast::expr_if(cond, thn, elsopt) {
+        ret check_if(fcx, expr, cond, thn, elsopt, false);
+      }
+      ast::expr_if_check(cond, thn, elsopt) {
+        ret check_if_check(fcx, expr, cond, thn, elsopt, false);
+      }
+      ast::expr_alt(cond, arms) {
+        ret check_alt(fcx, expr, cond, arms, false);
+      }
+      ast::expr_block(blk) {
+        let bot = check_block_as_stmt(fcx, blk);
+        let t = ty::node_id_to_monotype(fcx.ccx.tcx, blk.node.id);
+        write::ty_only_fixup(fcx, expr.id, t);
+        ret bot;
+      }
+      _ { ret check_expr(fcx, expr); }
+    }
+}
+
 fn check_expr(fcx: @fn_ctxt, expr: @ast::expr) -> bool {
     fn dummy_unify(_fcx: @fn_ctxt, _sp: span, _expected: ty::t, actual: ty::t)
        -> ty::t {
         actual
     }
-    ret check_expr_with_unifier(fcx, expr, dummy_unify, 0u);
+    let nil_t = ty::mk_nil(fcx.ccx.tcx);
+    ret check_expr_with_unifier(fcx, expr, dummy_unify, nil_t);
 }
+
 fn check_expr_with(fcx: @fn_ctxt, expr: @ast::expr, expected: ty::t) -> bool {
     ret check_expr_with_unifier(fcx, expr, demand::simple, expected);
 }
@@ -1494,6 +1517,123 @@ fn lookup_method(fcx: @fn_ctxt, isc: resolve::iscopes,
         }
     }
     result
+}
+
+fn check_for(fcx: @fn_ctxt,
+             for_expr: @ast::expr,
+             local: @ast::local,
+             seq: @ast::expr,
+             body: ast::blk) -> bool {
+    // Check the sequence and determine the element type
+    let tcx = fcx.ccx.tcx;
+    let bot = check_expr(fcx, seq);
+    let ety = expr_ty(tcx, seq);
+    let element_ty = alt structure_of(fcx, for_expr.span, ety) {
+      ty::ty_vec(vec_elt_ty) { vec_elt_ty.ty }
+      ty::ty_str. { ty::mk_mach_uint(tcx, ast::ty_u8) }
+      _ {
+        tcx.sess.span_fatal(for_expr.span,
+                            "mismatched types: expected vector or string "
+                            + "but found " + ty_to_str(tcx, ety));
+      }
+    };
+
+    // Check the body
+    let locid = lookup_local(fcx, local.span, local.node.id);
+    let element_ty = demand::simple(fcx, local.span, element_ty,
+                                    ty::mk_var(fcx.ccx.tcx, locid));
+    bot |= check_decl_local(fcx, local);
+    check_block_as_stmt(fcx, body);
+
+    // Unify type of decl with element type of the seq
+    demand::simple(fcx, local.span,
+                   ty::node_id_to_type(fcx.ccx.tcx, local.node.id),
+                   element_ty);
+    write::nil_ty(fcx.ccx.tcx, for_expr.id);
+    ret bot;
+}
+
+// Helper for checking `alt` expressions in both stmts/exprs
+fn check_alt(fcx: @fn_ctxt, alt_expr: @ast::expr,
+             cond_expr: @ast::expr, arms: [ast::arm],
+             as_expr: bool) -> bool {
+    let tcx = fcx.ccx.tcx;
+    let bot = check_expr(fcx, cond_expr);
+
+    // Typecheck the patterns first, so that we get types for all the
+    // bindings.
+    let pattern_ty = ty::expr_ty(tcx, cond_expr);
+    for arm: ast::arm in arms {
+        let id_map = ast_util::pat_id_map(arm.pats[0]);
+        for p: @ast::pat in arm.pats {
+            check_pat(fcx, id_map, p, pattern_ty);
+        }
+    }
+
+    // Now typecheck the arms.
+    let result_ty = next_ty_var(fcx);
+    let arm_non_bot = false;
+    for arm: ast::arm in arms {
+        alt arm.guard {
+          some(e) { check_expr_with(fcx, e, ty::mk_bool(tcx)); }
+          none. { }
+        }
+        if !check_block(fcx, arm.body, as_expr) { arm_non_bot = true; }
+        let bty = block_ty(tcx, arm.body);
+        result_ty = demand::simple(fcx, arm.body.span, result_ty, bty);
+    }
+    bot |= !arm_non_bot;
+    if !arm_non_bot { result_ty = ty::mk_bot(tcx); }
+    write::ty_only_fixup(fcx, alt_expr.id, result_ty);
+    ret bot;
+}
+
+// Helper for checking `if` expressions in both stmts/exprs
+fn check_if(fcx: @fn_ctxt, if_expr: @ast::expr,
+            cond: @ast::expr, thn: ast::blk,
+            elsopt: option::t<@ast::expr>,
+            as_expr: bool) -> bool {
+    let tcx = fcx.ccx.tcx;
+    ret check_expr_with(fcx, cond, ty::mk_bool(tcx)) |
+        check_then_else(fcx, thn, elsopt,
+                        if_expr.id, if_expr.span, as_expr);
+}
+
+// Helper for checking `if check` expressions in both stmts/exprs
+fn check_if_check(fcx: @fn_ctxt, if_expr: @ast::expr,
+                  cond: @ast::expr, thn: ast::blk,
+                  elsopt: option::t<@ast::expr>,
+                  as_expr: bool) -> bool {
+    ret check_pred_expr(fcx, cond) |
+        check_then_else(fcx, thn, elsopt,
+                        if_expr.id, if_expr.span, as_expr);
+}
+
+// A generic function for checking the then and else in an if
+// or if-check
+fn check_then_else(fcx: @fn_ctxt, thn: ast::blk,
+                   elsopt: option::t<@ast::expr>, id: ast::node_id,
+                   _sp: span, as_expr: bool) -> bool {
+    let then_bot = check_block(fcx, thn, as_expr);
+    let els_bot = false;
+    let if_t =
+        alt elsopt {
+          some(els) {
+            let thn_t = block_ty(fcx.ccx.tcx, thn);
+            els_bot = check_expr_with(fcx, els, thn_t);
+            let els_t = expr_ty(fcx.ccx.tcx, els);
+            if !ty::type_is_bot(fcx.ccx.tcx, els_t) {
+                els_t
+            } else {
+                thn_t
+            }
+          }
+          none. {
+            ty::mk_nil(fcx.ccx.tcx)
+          }
+        };
+    write::ty_only_fixup(fcx, id, if_t);
+    ret then_bot & els_bot;
 }
 
 fn check_expr_with_unifier(fcx: @fn_ctxt, expr: @ast::expr, unify: unifier,
@@ -1629,51 +1769,6 @@ fn check_expr_with_unifier(fcx: @fn_ctxt, expr: @ast::expr, unify: unifier,
         }
         write::ty_only_fixup(fcx, id, rt_1);
         ret bot;
-    }
-
-    // A generic function for checking for or for-each loops
-    fn check_for(fcx: @fn_ctxt, local: @ast::local,
-                 element_ty: ty::t, body: ast::blk,
-                 node_id: ast::node_id) -> bool {
-        let locid = lookup_local(fcx, local.span, local.node.id);
-        let element_ty = demand::simple(fcx, local.span, element_ty,
-                                        ty::mk_var(fcx.ccx.tcx, locid));
-        let bot = check_decl_local(fcx, local);
-        check_block(fcx, body);
-        // Unify type of decl with element type of the seq
-        demand::simple(fcx, local.span,
-                       ty::node_id_to_type(fcx.ccx.tcx, local.node.id),
-                       element_ty);
-        write::nil_ty(fcx.ccx.tcx, node_id);
-        ret bot;
-    }
-
-
-    // A generic function for checking the then and else in an if
-    // or if-check
-    fn check_then_else(fcx: @fn_ctxt, thn: ast::blk,
-                       elsopt: option::t<@ast::expr>, id: ast::node_id,
-                       _sp: span) -> bool {
-        let then_bot = check_block(fcx, thn);
-        let els_bot = false;
-        let if_t =
-            alt elsopt {
-              some(els) {
-                let thn_t = block_ty(fcx.ccx.tcx, thn);
-                els_bot = check_expr_with(fcx, els, thn_t);
-                let els_t = expr_ty(fcx.ccx.tcx, els);
-                if !ty::type_is_bot(fcx.ccx.tcx, els_t) {
-                    els_t
-                } else {
-                    thn_t
-                }
-              }
-              none. {
-                ty::mk_nil(fcx.ccx.tcx)
-              }
-            };
-        write::ty_only_fixup(fcx, id, if_t);
-        ret then_bot & els_bot;
     }
 
     // Checks the compatibility
@@ -1850,9 +1945,7 @@ fn check_expr_with_unifier(fcx: @fn_ctxt, expr: @ast::expr, unify: unifier,
         write::nil_ty(tcx, id);
       }
       ast::expr_if_check(cond, thn, elsopt) {
-        bot =
-            check_pred_expr(fcx, cond) |
-                check_then_else(fcx, thn, elsopt, id, expr.span);
+        bot = check_if_check(fcx, expr, cond, thn, elsopt, true);
       }
       ast::expr_ternary(_, _, _) {
         bot = check_expr(fcx, ast_util::ternary_to_if(expr));
@@ -1886,62 +1979,23 @@ fn check_expr_with_unifier(fcx: @fn_ctxt, expr: @ast::expr, unify: unifier,
         check_binop_type_compat(fcx, expr.span, expr_ty(tcx, lhs), op);
       }
       ast::expr_if(cond, thn, elsopt) {
-        bot =
-            check_expr_with(fcx, cond, ty::mk_bool(tcx)) |
-                check_then_else(fcx, thn, elsopt, id, expr.span);
+        bot = check_if(fcx, expr, cond, thn, elsopt, true);
       }
       ast::expr_for(decl, seq, body) {
-        bot = check_expr(fcx, seq);
-        let elt_ty;
-        let ety = expr_ty(tcx, seq);
-        alt structure_of(fcx, expr.span, ety) {
-          ty::ty_vec(vec_elt_ty) { elt_ty = vec_elt_ty.ty; }
-          ty::ty_str. { elt_ty = ty::mk_mach_uint(tcx, ast::ty_u8); }
-          _ {
-            tcx.sess.span_fatal(expr.span,
-                                "mismatched types: expected vector or string "
-                                + "but found " + ty_to_str(tcx, ety));
-          }
-        }
-        bot |= check_for(fcx, decl, elt_ty, body, id);
+        bot |= check_for(fcx, expr, decl, seq, body);
       }
       ast::expr_while(cond, body) {
         bot = check_expr_with(fcx, cond, ty::mk_bool(tcx));
-        check_block(fcx, body);
+        check_block_as_stmt(fcx, body);
         write::ty_only_fixup(fcx, id, ty::mk_nil(tcx));
       }
       ast::expr_do_while(body, cond) {
         bot = check_expr_with(fcx, cond, ty::mk_bool(tcx)) |
-              check_block(fcx, body);
+              check_block_as_stmt(fcx, body);
         write::ty_only_fixup(fcx, id, block_ty(tcx, body));
       }
-      ast::expr_alt(expr, arms) {
-        bot = check_expr(fcx, expr);
-
-        // Typecheck the patterns first, so that we get types for all the
-        // bindings.
-        let pattern_ty = ty::expr_ty(tcx, expr);
-        for arm: ast::arm in arms {
-            let id_map = ast_util::pat_id_map(arm.pats[0]);
-            for p: @ast::pat in arm.pats {
-                check_pat(fcx, id_map, p, pattern_ty);
-            }
-        }
-        // Now typecheck the blocks.
-        let result_ty = next_ty_var(fcx);
-        let arm_non_bot = false;
-        for arm: ast::arm in arms {
-            alt arm.guard {
-              some(e) { check_expr_with(fcx, e, ty::mk_bool(tcx)); }
-              none. { }
-            }
-            if !check_block(fcx, arm.body) { arm_non_bot = true; }
-            let bty = block_ty(tcx, arm.body);
-            result_ty = demand::simple(fcx, arm.body.span, result_ty, bty);
-        }
-        bot |= !arm_non_bot;
-        if !arm_non_bot { result_ty = ty::mk_bot(tcx); }
-        write::ty_only_fixup(fcx, id, result_ty);
+      ast::expr_alt(cond, arms) {
+        bot = check_alt(fcx, expr, cond, arms, true);
       }
       ast::expr_fn(f, captures) {
         let fty = ty_of_fn_decl(tcx, m_check_tyvar(fcx), f.decl,
@@ -1963,8 +2017,7 @@ fn check_expr_with_unifier(fcx: @fn_ctxt, expr: @ast::expr, unify: unifier,
         capture::check_capture_clause(tcx, expr.id, f.proto, *captures);
       }
       ast::expr_block(b) {
-        // If this is an unchecked block, turn off purity-checking
-        bot = check_block(fcx, b);
+        bot = check_block_as_expr(fcx, b);
         let typ =
             alt b.node.expr {
               some(expr) { expr_ty(tcx, expr) }
@@ -2411,13 +2464,25 @@ fn check_stmt(fcx: @fn_ctxt, stmt: @ast::stmt) -> bool {
           ast::decl_item(_) {/* ignore for now */ }
         }
       }
-      ast::stmt_expr(expr, id) { node_id = id; bot = check_expr(fcx, expr); }
+      ast::stmt_expr(expr, id) {
+        node_id = id;
+        bot = check_expr_as_stmt(fcx, expr);
+      }
     }
     write::nil_ty(fcx.ccx.tcx, node_id);
     ret bot;
 }
 
-fn check_block(fcx0: @fn_ctxt, blk: ast::blk) -> bool {
+fn check_block_as_stmt(fcx0: @fn_ctxt, blk: ast::blk) -> bool {
+    ret check_block(fcx0, blk, false);
+}
+
+fn check_block_as_expr(fcx0: @fn_ctxt, blk: ast::blk) -> bool {
+    ret check_block(fcx0, blk, true);
+}
+
+fn check_block(fcx0: @fn_ctxt, blk: ast::blk, as_expr: bool) -> bool {
+    // If this is an unchecked block, turn off purity-checking
     let fcx = alt blk.node.rules {
       ast::unchecked_blk. { @{purity: ast::impure_fn with *fcx0} }
       ast::unsafe_blk. { @{purity: ast::unsafe_fn with *fcx0} }
@@ -2446,8 +2511,12 @@ fn check_block(fcx0: @fn_ctxt, blk: ast::blk) -> bool {
             fcx.ccx.tcx.sess.span_warn(e.span, "unreachable expression");
         }
         bot |= check_expr(fcx, e);
-        let ety = expr_ty(fcx.ccx.tcx, e);
-        write::ty_only_fixup(fcx, blk.node.id, ety);
+        if as_expr {
+            let ety = expr_ty(fcx.ccx.tcx, e);
+            write::ty_only_fixup(fcx, blk.node.id, ety);
+        } else {
+            write::nil_ty(fcx.ccx.tcx, blk.node.id);
+        }
       }
     }
     if bot {
@@ -2611,11 +2680,13 @@ fn check_fn(ccx: @crate_ctxt, f: ast::_fn, id: ast::node_id,
           ccx: ccx};
 
     check_constraints(fcx, decl.constraints, decl.inputs);
-    check_block(fcx, body);
 
     // If the function does not return nil, then unify
     // the type of the tail expr (if any) with the return type.
-    if !ty::type_is_nil(ccx.tcx, fcx.ret_ty) {
+    if ty::type_is_nil(ccx.tcx, fcx.ret_ty) {
+        check_block_as_stmt(fcx, body);
+    } else {
+        check_block_as_expr(fcx, body);
         option::may(body.node.expr) { |tail_expr|
             let tail_expr_ty = expr_ty(ccx.tcx, tail_expr);
             demand::simple(fcx, tail_expr.span, fcx.ret_ty, tail_expr_ty);
