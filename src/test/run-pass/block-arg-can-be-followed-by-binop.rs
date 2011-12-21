@@ -1,6 +1,3 @@
-use std;
-import std::math;
-
 fn main() {
     let v = [-1f, 0f, 1f, 2f, 3f];
 

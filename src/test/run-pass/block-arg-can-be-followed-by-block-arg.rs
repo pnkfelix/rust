@@ -1,8 +1,3 @@
-// error-pattern: expecting ;, found {
-
-use std;
-import std::math;
-
 fn main() {
     fn f(i: block() -> uint) -> uint { i() }
     let v = [-1f, 0f, 1f, 2f, 3f];
