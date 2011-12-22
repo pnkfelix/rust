@@ -42,221 +42,10 @@ import util::ppaux::{ty_to_str, ty_to_short_str};
 
 import trans_common::*;
 import trans_build::*;
+import trans_::metrics::*;
 
 import trans_objects::{trans_anon_obj, trans_obj};
 import tvec = trans_vec;
-
-fn type_of_1(bcx: @block_ctxt, t: ty::t) -> TypeRef {
-    let cx = bcx_ccx(bcx);
-    check type_has_static_size(cx, t);
-    type_of(cx, bcx.sp, t)
-}
-
-fn type_of(cx: @crate_ctxt, sp: span, t: ty::t) : type_has_static_size(cx, t)
-   -> TypeRef {
-    // Should follow from type_has_static_size -- argh.
-    // FIXME (requires Issue #586)
-    check non_ty_var(cx, t);
-    type_of_inner(cx, sp, t)
-}
-
-fn type_of_explicit_args(cx: @crate_ctxt, sp: span, inputs: [ty::arg]) ->
-   [TypeRef] {
-    let atys = [];
-    for arg in inputs {
-        let arg_ty = arg.ty;
-        // FIXME: would be nice to have a constraint on arg
-        // that would obviate the need for this check
-        check non_ty_var(cx, arg_ty);
-        let llty = type_of_inner(cx, sp, arg_ty);
-        atys += [arg.mode == ast::by_val ? llty : T_ptr(llty)];
-    }
-    ret atys;
-}
-
-
-// NB: must keep 4 fns in sync:
-//
-//  - type_of_fn
-//  - create_llargs_for_fn_args.
-//  - new_fn_ctxt
-//  - trans_args
-fn type_of_fn(cx: @crate_ctxt, sp: span,
-              is_method: bool, inputs: [ty::arg],
-              output: ty::t, ty_param_count: uint)
-   : non_ty_var(cx, output) -> TypeRef {
-    let atys: [TypeRef] = [];
-
-    // Arg 0: Output pointer.
-    let out_ty = T_ptr(type_of_inner(cx, sp, output));
-    atys += [out_ty];
-
-    // Arg 1: Env (closure-bindings / self-obj)
-    if is_method {
-        atys += [T_ptr(cx.rust_object_type)];
-    } else {
-        atys += [T_opaque_boxed_closure_ptr(cx)];
-    }
-
-    // Args >2: ty params, if not acquired via capture...
-    if !is_method {
-        let i = 0u;
-        while i < ty_param_count { atys += [T_ptr(cx.tydesc_type)]; i += 1u; }
-    }
-    // ... then explicit args.
-    atys += type_of_explicit_args(cx, sp, inputs);
-    ret T_fn(atys, llvm::LLVMVoidType());
-}
-
-// Given a function type and a count of ty params, construct an llvm type
-fn type_of_fn_from_ty(cx: @crate_ctxt, sp: span, fty: ty::t,
-                      ty_param_count: uint)
-    : returns_non_ty_var(cx, fty) -> TypeRef {
-    // FIXME: Check should be unnecessary, b/c it's implied
-    // by returns_non_ty_var(t). Make that a postcondition
-    // (see Issue #586)
-    let ret_ty = ty::ty_fn_ret(cx.tcx, fty);
-    check non_ty_var(cx, ret_ty);
-    ret type_of_fn(cx, sp, false, ty::ty_fn_args(cx.tcx, fty),
-                   ret_ty, ty_param_count);
-}
-
-fn type_of_inner(cx: @crate_ctxt, sp: span, t: ty::t)
-    : non_ty_var(cx, t) -> TypeRef {
-    // Check the cache.
-
-    if cx.lltypes.contains_key(t) { ret cx.lltypes.get(t); }
-    let llty = alt ty::struct(cx.tcx, t) {
-      ty::ty_native(_) { T_ptr(T_i8()) }
-      ty::ty_nil. { T_nil() }
-      ty::ty_bot. {
-        T_nil() /* ...I guess? */
-      }
-      ty::ty_bool. { T_bool() }
-      ty::ty_int(t) { T_int_ty(cx, t) }
-      ty::ty_uint(t) { T_uint_ty(cx, t) }
-      ty::ty_float(t) { T_float_ty(cx, t) }
-      ty::ty_str. { T_ptr(T_vec(cx, T_i8())) }
-      ty::ty_tag(did, _) { type_of_tag(cx, sp, did, t) }
-      ty::ty_box(mt) {
-        let mt_ty = mt.ty;
-        check non_ty_var(cx, mt_ty);
-        T_ptr(T_box(cx, type_of_inner(cx, sp, mt_ty))) }
-      ty::ty_uniq(mt) {
-        let mt_ty = mt.ty;
-        check non_ty_var(cx, mt_ty);
-        T_ptr(type_of_inner(cx, sp, mt_ty)) }
-      ty::ty_vec(mt) {
-        let mt_ty = mt.ty;
-        if ty::type_has_dynamic_size(cx.tcx, mt_ty) {
-            T_ptr(cx.opaque_vec_type)
-        } else {
-            // should be unnecessary
-            check non_ty_var(cx, mt_ty);
-            T_ptr(T_vec(cx, type_of_inner(cx, sp, mt_ty))) }
-      }
-      ty::ty_ptr(mt) {
-        let mt_ty = mt.ty;
-        check non_ty_var(cx, mt_ty);
-        T_ptr(type_of_inner(cx, sp, mt_ty)) }
-      ty::ty_rec(fields) {
-        let tys: [TypeRef] = [];
-        for f: ty::field in fields {
-            let mt_ty = f.mt.ty;
-            check non_ty_var(cx, mt_ty);
-            tys += [type_of_inner(cx, sp, mt_ty)];
-        }
-        T_struct(tys)
-      }
-      ty::ty_fn(_, _, _, _, _) {
-        // FIXME: could be a constraint on ty_fn
-        check returns_non_ty_var(cx, t);
-        T_fn_pair(cx, type_of_fn_from_ty(cx, sp, t, 0u))
-      }
-      ty::ty_native_fn(args, out) {
-        let nft = native_fn_wrapper_type(cx, sp, 0u, t);
-        T_fn_pair(cx, nft)
-      }
-      ty::ty_obj(meths) { cx.rust_object_type }
-      ty::ty_res(_, sub, tps) {
-        let sub1 = ty::substitute_type_params(cx.tcx, tps, sub);
-        check non_ty_var(cx, sub1);
-        // FIXME #1184: Resource flag is larger than necessary
-        ret T_struct([cx.int_type, type_of_inner(cx, sp, sub1)]);
-      }
-      ty::ty_var(_) {
-        // Should be unreachable b/c of precondition.
-        // FIXME: would be nice to have a way of expressing this
-        // through postconditions, and then making it sound to omit
-        // cases in the alt
-        std::util::unreachable()
-      }
-      ty::ty_param(_, _) { T_typaram(cx.tn) }
-      ty::ty_send_type. | ty::ty_type. { T_ptr(cx.tydesc_type) }
-      ty::ty_tup(elts) {
-        let tys = [];
-        for elt in elts {
-            check non_ty_var(cx, elt);
-            tys += [type_of_inner(cx, sp, elt)];
-        }
-        T_struct(tys)
-      }
-      ty::ty_opaque_closure. {
-        T_opaque_closure(cx)
-      }
-      _ {
-        log_err ("type_of_inner not implemented for ",
-                ty::struct(cx.tcx, t));
-        fail "type_of_inner not implemented for this kind of type";
-      }
-    };
-    cx.lltypes.insert(t, llty);
-    ret llty;
-}
-
-fn type_of_tag(cx: @crate_ctxt, sp: span, did: ast::def_id, t: ty::t)
-    -> TypeRef {
-    let degen = vec::len(*ty::tag_variants(cx.tcx, did)) == 1u;
-    if check type_has_static_size(cx, t) {
-        let size = static_size_of_tag(cx, sp, t);
-        if !degen { T_tag(cx, size) }
-        else if size == 0u { T_struct([T_tag_variant(cx)]) }
-        else { T_array(T_i8(), size) }
-    }
-    else {
-        if degen { T_struct([T_tag_variant(cx)]) }
-        else { T_opaque_tag(cx) }
-    }
-}
-
-fn type_of_ty_param_kinds_and_ty(lcx: @local_ctxt, sp: span,
-                                 tpt: ty::ty_param_kinds_and_ty) -> TypeRef {
-    let cx = lcx.ccx;
-    let t = tpt.ty;
-    alt ty::struct(cx.tcx, t) {
-      ty::ty_fn(_, _, _, _, _) | ty::ty_native_fn(_, _) {
-        check returns_non_ty_var(cx, t);
-        ret type_of_fn_from_ty(cx, sp, t, vec::len(tpt.kinds));
-      }
-      _ {
-        // fall through
-      }
-    }
-    // FIXME: could have a precondition on tpt, but that
-    // doesn't work right now because one predicate can't imply
-    // another
-    check (type_has_static_size(cx, t));
-    type_of(cx, sp, t)
-}
-
-fn type_of_or_i8(bcx: @block_ctxt, typ: ty::t) -> TypeRef {
-    let ccx = bcx_ccx(bcx);
-    if check type_has_static_size(ccx, typ) {
-        let sp = bcx.sp;
-        type_of(ccx, sp, typ)
-    } else { T_i8() }
-}
-
 
 // Name sanitation. LLVM will happily accept identifiers with weird names, but
 // gas doesn't!
@@ -374,68 +163,6 @@ fn trans_shared_free(cx: @block_ctxt, v: ValueRef) -> @block_ctxt {
     ret cx;
 }
 
-fn umax(cx: @block_ctxt, a: ValueRef, b: ValueRef) -> ValueRef {
-    let cond = ICmp(cx, lib::llvm::LLVMIntULT, a, b);
-    ret Select(cx, cond, b, a);
-}
-
-fn umin(cx: @block_ctxt, a: ValueRef, b: ValueRef) -> ValueRef {
-    let cond = ICmp(cx, lib::llvm::LLVMIntULT, a, b);
-    ret Select(cx, cond, a, b);
-}
-
-fn align_to(cx: @block_ctxt, off: ValueRef, align: ValueRef) -> ValueRef {
-    let mask = Sub(cx, align, C_int(bcx_ccx(cx), 1));
-    let bumped = Add(cx, off, mask);
-    ret And(cx, bumped, Not(cx, mask));
-}
-
-
-// Returns the real size of the given type for the current target.
-fn llsize_of_real(cx: @crate_ctxt, t: TypeRef) -> uint {
-    ret llvm::LLVMStoreSizeOfType(cx.td.lltd, t);
-}
-
-// Returns the real alignment of the given type for the current target.
-fn llalign_of_real(cx: @crate_ctxt, t: TypeRef) -> uint {
-    ret llvm::LLVMPreferredAlignmentOfType(cx.td.lltd, t);
-}
-
-fn llsize_of(cx: @crate_ctxt, t: TypeRef) -> ValueRef {
-    ret llvm::LLVMConstIntCast(lib::llvm::llvm::LLVMSizeOf(t), cx.int_type,
-                               False);
-}
-
-fn llalign_of(cx: @crate_ctxt, t: TypeRef) -> ValueRef {
-    ret llvm::LLVMConstIntCast(lib::llvm::llvm::LLVMAlignOf(t), cx.int_type,
-                               False);
-}
-
-fn size_of(cx: @block_ctxt, t: ty::t) -> result {
-    size_of_(cx, t, align_total)
-}
-
-tag align_mode {
-    align_total;
-    align_next(ty::t);
-}
-
-fn size_of_(cx: @block_ctxt, t: ty::t, mode: align_mode) -> result {
-    let ccx = bcx_ccx(cx);
-    if check type_has_static_size(ccx, t) {
-        let sp = cx.sp;
-        rslt(cx, llsize_of(bcx_ccx(cx), type_of(ccx, sp, t)))
-    } else { dynamic_size_of(cx, t, mode) }
-}
-
-fn align_of(cx: @block_ctxt, t: ty::t) -> result {
-    let ccx = bcx_ccx(cx);
-    if check type_has_static_size(ccx, t) {
-        let sp = cx.sp;
-        rslt(cx, llalign_of(bcx_ccx(cx), type_of(ccx, sp, t)))
-    } else { dynamic_align_of(cx, t) }
-}
-
 fn alloca(cx: @block_ctxt, t: TypeRef) -> ValueRef {
     if cx.unreachable { ret llvm::LLVMGetUndef(t); }
     ret Alloca(new_raw_block_ctxt(cx.fcx, cx.fcx.llstaticallocas), t);
@@ -455,9 +182,7 @@ fn dynastack_alloca(cx: @block_ctxt, t: TypeRef, n: ValueRef, ty: ty::t) ->
     }
 
     let dynastack_alloc = bcx_ccx(bcx).upcalls.dynastack_alloc;
-    let llsz = Mul(dy_cx,
-                   C_uint(bcx_ccx(bcx), llsize_of_real(bcx_ccx(bcx), t)),
-                   n);
+    let llsz = Mul(dy_cx, llsize_of(bcx_ccx(bcx), t), n);
 
     let ti = none;
     let lltydesc = get_tydesc(cx, ty, false, tps_normal, ti).result.val;
@@ -470,348 +195,6 @@ fn mk_obstack_token(ccx: @crate_ctxt, fcx: @fn_ctxt) ->
    ValueRef {
     let cx = new_raw_block_ctxt(fcx, fcx.lldynamicallocas);
     ret Call(cx, ccx.upcalls.dynastack_mark, []);
-}
-
-
-// Creates a simpler, size-equivalent type. The resulting type is guaranteed
-// to have (a) the same size as the type that was passed in; (b) to be non-
-// recursive. This is done by replacing all boxes in a type with boxed unit
-// types.
-fn simplify_type(ccx: @crate_ctxt, typ: ty::t) -> ty::t {
-    fn simplifier(ccx: @crate_ctxt, typ: ty::t) -> ty::t {
-        alt ty::struct(ccx.tcx, typ) {
-          ty::ty_box(_) { ret ty::mk_imm_box(ccx.tcx, ty::mk_nil(ccx.tcx)); }
-          ty::ty_uniq(_) {
-            ret ty::mk_imm_uniq(ccx.tcx, ty::mk_nil(ccx.tcx));
-          }
-          ty::ty_fn(_, _, _, _, _) {
-            ret ty::mk_tup(ccx.tcx,
-                           [ty::mk_imm_box(ccx.tcx, ty::mk_nil(ccx.tcx)),
-                            ty::mk_imm_box(ccx.tcx, ty::mk_nil(ccx.tcx))]);
-          }
-          ty::ty_obj(_) {
-            ret ty::mk_tup(ccx.tcx,
-                           [ty::mk_imm_box(ccx.tcx, ty::mk_nil(ccx.tcx)),
-                            ty::mk_imm_box(ccx.tcx, ty::mk_nil(ccx.tcx))]);
-          }
-          ty::ty_res(_, sub, tps) {
-            let sub1 = ty::substitute_type_params(ccx.tcx, tps, sub);
-            ret ty::mk_tup(ccx.tcx,
-                           [ty::mk_int(ccx.tcx), simplify_type(ccx, sub1)]);
-          }
-          _ { ret typ; }
-        }
-    }
-    ret ty::fold_ty(ccx.tcx, ty::fm_general(bind simplifier(ccx, _)), typ);
-}
-
-
-// Computes the size of the data part of a non-dynamically-sized tag.
-fn static_size_of_tag(cx: @crate_ctxt, sp: span, t: ty::t)
-    : type_has_static_size(cx, t) -> uint {
-    if cx.tag_sizes.contains_key(t) { ret cx.tag_sizes.get(t); }
-    alt ty::struct(cx.tcx, t) {
-      ty::ty_tag(tid, subtys) {
-        // Compute max(variant sizes).
-
-        let max_size = 0u;
-        let variants = ty::tag_variants(cx.tcx, tid);
-        for variant: ty::variant_info in *variants {
-            let tup_ty = simplify_type(cx, ty::mk_tup(cx.tcx, variant.args));
-            // Perform any type parameter substitutions.
-
-            tup_ty = ty::substitute_type_params(cx.tcx, subtys, tup_ty);
-            // Here we possibly do a recursive call.
-
-            // FIXME: Avoid this check. Since the parent has static
-            // size, any field must as well. There should be a way to
-            // express that with constrained types.
-            check (type_has_static_size(cx, tup_ty));
-            let this_size = llsize_of_real(cx, type_of(cx, sp, tup_ty));
-            if max_size < this_size { max_size = this_size; }
-        }
-        cx.tag_sizes.insert(t, max_size);
-        ret max_size;
-      }
-      _ {
-        cx.tcx.sess.span_fatal(sp, "non-tag passed to static_size_of_tag()");
-      }
-    }
-}
-
-fn dynamic_size_of(cx: @block_ctxt, t: ty::t, mode: align_mode) -> result {
-    fn align_elements(cx: @block_ctxt, elts: [ty::t],
-                      mode: align_mode) -> result {
-        //
-        // C padding rules:
-        //
-        //
-        //   - Pad after each element so that next element is aligned.
-        //   - Pad after final structure member so that whole structure
-        //     is aligned to max alignment of interior.
-        //
-
-        let off = C_int(bcx_ccx(cx), 0);
-        let max_align = C_int(bcx_ccx(cx), 1);
-        let bcx = cx;
-        for e: ty::t in elts {
-            let elt_align = align_of(bcx, e);
-            bcx = elt_align.bcx;
-            let elt_size = size_of(bcx, e);
-            bcx = elt_size.bcx;
-            let aligned_off = align_to(bcx, off, elt_align.val);
-            off = Add(bcx, aligned_off, elt_size.val);
-            max_align = umax(bcx, max_align, elt_align.val);
-        }
-        off = alt mode {
-          align_total. {
-            align_to(bcx, off, max_align)
-          }
-          align_next(t) {
-            let {bcx, val: align} = align_of(bcx, t);
-            align_to(bcx, off, align)
-          }
-        };
-        ret rslt(bcx, off);
-    }
-    alt ty::struct(bcx_tcx(cx), t) {
-      ty::ty_param(p, _) {
-        let szptr = field_of_tydesc(cx, t, false, abi::tydesc_field_size);
-        ret rslt(szptr.bcx, Load(szptr.bcx, szptr.val));
-      }
-      ty::ty_rec(flds) {
-        let tys: [ty::t] = [];
-        for f: ty::field in flds { tys += [f.mt.ty]; }
-        ret align_elements(cx, tys, mode);
-      }
-      ty::ty_tup(elts) {
-        let tys = [];
-        for tp in elts { tys += [tp]; }
-        ret align_elements(cx, tys, mode);
-      }
-      ty::ty_tag(tid, tps) {
-        let bcx = cx;
-        let ccx = bcx_ccx(bcx);
-        // Compute max(variant sizes).
-
-        let max_size: ValueRef = alloca(bcx, ccx.int_type);
-        Store(bcx, C_int(ccx, 0), max_size);
-        let variants = ty::tag_variants(bcx_tcx(bcx), tid);
-        for variant: ty::variant_info in *variants {
-            // Perform type substitution on the raw argument types.
-
-            let raw_tys: [ty::t] = variant.args;
-            let tys: [ty::t] = [];
-            for raw_ty: ty::t in raw_tys {
-                let t = ty::substitute_type_params(bcx_tcx(cx), tps, raw_ty);
-                tys += [t];
-            }
-            let rslt = align_elements(bcx, tys, mode);
-            bcx = rslt.bcx;
-            let this_size = rslt.val;
-            let old_max_size = Load(bcx, max_size);
-            Store(bcx, umax(bcx, this_size, old_max_size), max_size);
-        }
-        let max_size_val = Load(bcx, max_size);
-        let total_size =
-            if vec::len(*variants) != 1u {
-                Add(bcx, max_size_val, llsize_of(ccx, ccx.int_type))
-            } else { max_size_val };
-        ret rslt(bcx, total_size);
-      }
-    }
-}
-
-fn dynamic_align_of(cx: @block_ctxt, t: ty::t) -> result {
-// FIXME: Typestate constraint that shows this alt is
-// exhaustive
-    alt ty::struct(bcx_tcx(cx), t) {
-      ty::ty_param(p, _) {
-        let aptr = field_of_tydesc(cx, t, false, abi::tydesc_field_align);
-        ret rslt(aptr.bcx, Load(aptr.bcx, aptr.val));
-      }
-      ty::ty_rec(flds) {
-        let a = C_int(bcx_ccx(cx), 1);
-        let bcx = cx;
-        for f: ty::field in flds {
-            let align = align_of(bcx, f.mt.ty);
-            bcx = align.bcx;
-            a = umax(bcx, a, align.val);
-        }
-        ret rslt(bcx, a);
-      }
-      ty::ty_tag(_, _) {
-        ret rslt(cx, C_int(bcx_ccx(cx), 1)); // FIXME: stub
-      }
-      ty::ty_tup(elts) {
-        let a = C_int(bcx_ccx(cx), 1);
-        let bcx = cx;
-        for e in elts {
-            let align = align_of(bcx, e);
-            bcx = align.bcx;
-            a = umax(bcx, a, align.val);
-        }
-        ret rslt(bcx, a);
-      }
-    }
-}
-
-// Increment a pointer by a given amount and then cast it to be a pointer
-// to a given type.
-fn bump_ptr(bcx: @block_ctxt, t: ty::t, base: ValueRef, sz: ValueRef) ->
-   ValueRef {
-    let raw = PointerCast(bcx, base, T_ptr(T_i8()));
-    let bumped = GEP(bcx, raw, [sz]);
-    let ccx = bcx_ccx(bcx);
-    if check type_has_static_size(ccx, t) {
-        let sp = bcx.sp;
-        let typ = T_ptr(type_of(ccx, sp, t));
-        PointerCast(bcx, bumped, typ)
-    } else { bumped }
-}
-
-// GEP_tup_like is a pain to use if you always have to precede it with a
-// check.
-fn GEP_tup_like_1(cx: @block_ctxt, t: ty::t, base: ValueRef, ixs: [int])
-    -> result {
-    check type_is_tup_like(cx, t);
-    ret GEP_tup_like(cx, t, base, ixs);
-}
-
-// Replacement for the LLVM 'GEP' instruction when field-indexing into a
-// tuple-like structure (tup, rec) with a static index. This one is driven off
-// ty::struct and knows what to do when it runs into a ty_param stuck in the
-// middle of the thing it's GEP'ing into. Much like size_of and align_of,
-// above.
-fn GEP_tup_like(cx: @block_ctxt, t: ty::t, base: ValueRef, ixs: [int])
-    : type_is_tup_like(cx, t) -> result {
-    // It might be a static-known type. Handle this.
-    if !ty::type_has_dynamic_size(bcx_tcx(cx), t) {
-        ret rslt(cx, GEPi(cx, base, ixs));
-    }
-    // It is a dynamic-containing type that, if we convert directly to an LLVM
-    // TypeRef, will be all wrong; there's no proper LLVM type to represent
-    // it, and the lowering function will stick in i8* values for each
-    // ty_param, which is not right; the ty_params are all of some dynamic
-    // size.
-    //
-    // What we must do instead is sadder. We must look through the indices
-    // manually and split the input type into a prefix and a target. We then
-    // measure the prefix size, bump the input pointer by that amount, and
-    // cast to a pointer-to-target type.
-
-    // Given a type, an index vector and an element number N in that vector,
-    // calculate index X and the type that results by taking the first X-1
-    // elements of the type and splitting the Xth off. Return the prefix as
-    // well as the innermost Xth type.
-
-    fn split_type(ccx: @crate_ctxt, t: ty::t, ixs: [int], n: uint) ->
-       {prefix: [ty::t], target: ty::t} {
-        let len: uint = vec::len::<int>(ixs);
-        // We don't support 0-index or 1-index GEPs: The former is nonsense
-        // and the latter would only be meaningful if we supported non-0
-        // values for the 0th index (we don't).
-
-        assert (len > 1u);
-        if n == 0u {
-            // Since we're starting from a value that's a pointer to a
-            // *single* structure, the first index (in GEP-ese) should just be
-            // 0, to yield the pointee.
-
-            assert (ixs[n] == 0);
-            ret split_type(ccx, t, ixs, n + 1u);
-        }
-        assert (n < len);
-        let ix: int = ixs[n];
-        let prefix: [ty::t] = [];
-        let i: int = 0;
-        while i < ix {
-            prefix += [ty::get_element_type(ccx.tcx, t, i as uint)];
-            i += 1;
-        }
-        let selected = ty::get_element_type(ccx.tcx, t, i as uint);
-        if n == len - 1u {
-            // We are at the innermost index.
-
-            ret {prefix: prefix, target: selected};
-        } else {
-            // Not the innermost index; call self recursively to dig deeper.
-            // Once we get an inner result, append it current prefix and
-            // return to caller.
-
-            let inner = split_type(ccx, selected, ixs, n + 1u);
-            prefix += inner.prefix;
-            ret {prefix: prefix with inner};
-        }
-    }
-    // We make a fake prefix tuple-type here; luckily for measuring sizes
-    // the tuple parens are associative so it doesn't matter that we've
-    // flattened the incoming structure.
-
-    let s = split_type(bcx_ccx(cx), t, ixs, 0u);
-
-    let args = [];
-    for typ: ty::t in s.prefix { args += [typ]; }
-    let prefix_ty = ty::mk_tup(bcx_tcx(cx), args);
-
-    let bcx = cx;
-    let sz = size_of_(bcx, prefix_ty, align_next(s.target));
-    ret rslt(sz.bcx, bump_ptr(sz.bcx, s.target, base, sz.val));
-}
-
-
-// Replacement for the LLVM 'GEP' instruction when field indexing into a tag.
-// This function uses GEP_tup_like() above and automatically performs casts as
-// appropriate. @llblobptr is the data part of a tag value; its actual type is
-// meaningless, as it will be cast away.
-fn GEP_tag(cx: @block_ctxt, llblobptr: ValueRef, tag_id: ast::def_id,
-           variant_id: ast::def_id, ty_substs: [ty::t],
-           ix: uint) : valid_variant_index(ix, cx, tag_id, variant_id) ->
-   result {
-    let variant = ty::tag_variant_with_id(bcx_tcx(cx), tag_id, variant_id);
-    // Synthesize a tuple type so that GEP_tup_like() can work its magic.
-    // Separately, store the type of the element we're interested in.
-
-    let arg_tys = variant.args;
-
-    let true_arg_tys: [ty::t] = [];
-    for aty: ty::t in arg_tys {
-        let arg_ty = ty::substitute_type_params(bcx_tcx(cx), ty_substs, aty);
-        true_arg_tys += [arg_ty];
-    }
-
-    // We know that ix < len(variant.args) -- so
-    // it's safe to do this. (Would be nice to have
-    // typestate guarantee that a dynamic bounds check
-    // error can't happen here, but that's in the future.)
-    let elem_ty = true_arg_tys[ix];
-
-    let tup_ty = ty::mk_tup(bcx_tcx(cx), true_arg_tys);
-    // Cast the blob pointer to the appropriate type, if we need to (i.e. if
-    // the blob pointer isn't dynamically sized).
-
-    let llunionptr: ValueRef;
-    let sp = cx.sp;
-    let ccx = bcx_ccx(cx);
-    if check type_has_static_size(ccx, tup_ty) {
-        let llty = type_of(ccx, sp, tup_ty);
-        llunionptr = TruncOrBitCast(cx, llblobptr, T_ptr(llty));
-    } else { llunionptr = llblobptr; }
-
-    // Do the GEP_tup_like().
-    // Silly check -- postcondition on mk_tup?
-    check type_is_tup_like(cx, tup_ty);
-    let rs = GEP_tup_like(cx, tup_ty, llunionptr, [0, ix as int]);
-    // Cast the result to the appropriate type, if necessary.
-
-    let rs_ccx = bcx_ccx(rs.bcx);
-    let val =
-        if check type_has_static_size(rs_ccx, elem_ty) {
-            let llelemty = type_of(rs_ccx, sp, elem_ty);
-            PointerCast(rs.bcx, rs.val, T_ptr(llelemty))
-        } else { rs.val };
-
-    ret rslt(rs.bcx, val);
 }
 
 // trans_shared_malloc: expects a type indicating which pointer type we want
@@ -1117,7 +500,6 @@ fn set_glue_inlining(cx: @local_ctxt, f: ValueRef, t: ty::t) {
     } else { set_always_inline(f); }
 }
 
-
 // Generates the declaration for (but doesn't emit) a type descriptor.
 fn declare_tydesc(cx: @local_ctxt, sp: span, t: ty::t, ty_params: [uint],
                   is_obj_body: bool) ->
@@ -1376,7 +758,8 @@ fn make_free_glue(bcx: @block_ctxt, v: ValueRef, t: ty::t) {
         trans_uniq::make_free_glue(bcx, v, t)
       }
       ty::ty_vec(_) | ty::ty_str. {
-        tvec::make_free_glue(bcx, PointerCast(bcx, v, type_of_1(bcx, t)), t)
+        let casted_v = PointerCast(bcx, v, type_of_1(bcx, t));
+        tvec::make_free_glue(bcx, casted_v, t)
       }
       ty::ty_obj(_) {
         // Call through the obj's own fields-drop glue first.
@@ -1662,9 +1045,8 @@ fn iter_structural_ty(cx: @block_ctxt, av: ValueRef, t: ty::t,
       ty::ty_rec(fields) {
         let i: int = 0;
         for fld: ty::field in fields {
-            // Silly check
-            check type_is_tup_like(cx, t);
-            let {bcx: bcx, val: llfld_a} = GEP_tup_like(cx, t, av, [0, i]);
+            let {bcx: bcx, val: llfld_a} =
+                GEP_tup_like_1(cx, t, av, [0, i]);
             cx = f(bcx, llfld_a, fld.mt.ty);
             i += 1;
         }
@@ -1672,9 +1054,8 @@ fn iter_structural_ty(cx: @block_ctxt, av: ValueRef, t: ty::t,
       ty::ty_tup(args) {
         let i = 0;
         for arg in args {
-            // Silly check
-            check type_is_tup_like(cx, t);
-            let {bcx: bcx, val: llfld_a} = GEP_tup_like(cx, t, av, [0, i]);
+            let {bcx: bcx, val: llfld_a} =
+                GEP_tup_like_1(cx, t, av, [0, i]);
             cx = f(bcx, llfld_a, arg);
             i += 1;
         }
@@ -1684,9 +1065,8 @@ fn iter_structural_ty(cx: @block_ctxt, av: ValueRef, t: ty::t,
         let inner1 = ty::substitute_type_params(tcx, tps, inner);
         let inner_t_s = ty::substitute_type_params(tcx, tps, inner);
         let tup_t = ty::mk_tup(tcx, [ty::mk_int(tcx), inner_t_s]);
-        // Silly check
-        check type_is_tup_like(cx, tup_t);
-        let {bcx: bcx, val: llfld_a} = GEP_tup_like(cx, tup_t, av, [0, 1]);
+        let {bcx: bcx, val: llfld_a} =
+            GEP_tup_like_1(cx, tup_t, av, [0, 1]);
         ret f(bcx, llfld_a, inner1);
       }
       ty::ty_tag(tid, tps) {
@@ -4488,9 +3868,8 @@ fn populate_fn_ctxt_from_llself(fcx: @fn_ctxt, llself: val_self_pair) {
     }
     i = 0;
     for f: ast::obj_field in fcx.lcx.obj_fields {
-        // FIXME: silly check
-        check type_is_tup_like(bcx, fields_tup_ty);
-        let rslt = GEP_tup_like(bcx, fields_tup_ty, obj_fields, [0, i]);
+        let rslt =
+            GEP_tup_like_1(bcx, fields_tup_ty, obj_fields, [0, i]);
         bcx = llstaticallocas_block_ctxt(fcx);
         let llfield = rslt.val;
         fcx.llobjfields.insert(f.id, llfield);
@@ -4612,9 +3991,8 @@ fn trans_res_ctor(cx: @local_ctxt, sp: span, dtor: ast::_fn,
         llretptr = BitCast(bcx, llretptr, llret_t);
     }
 
-    // FIXME: silly checks
-    check type_is_tup_like(bcx, tup_t);
-    let {bcx, val: dst} = GEP_tup_like(bcx, tup_t, llretptr, [0, 1]);
+    let {bcx, val: dst} =
+        GEP_tup_like_1(bcx, tup_t, llretptr, [0, 1]);
     bcx = memmove_ty(bcx, dst, arg, arg_t);
     check type_is_tup_like(bcx, tup_t);
     let flag = GEP_tup_like(bcx, tup_t, llretptr, [0, 0]);
@@ -4686,7 +4064,8 @@ fn trans_tag_variant(cx: @local_ctxt, tag_id: ast::node_id,
     let v_id = ast_util::local_def(variant.node.id);
     for va: ast::variant_arg in variant.node.args {
         check (valid_variant_index(i, bcx, t_id, v_id));
-        let rslt = GEP_tag(bcx, llblobptr, t_id, v_id, ty_param_substs, i);
+        let rslt =
+            GEP_tag(bcx, llblobptr, t_id, v_id, ty_param_substs, i);
         bcx = rslt.bcx;
         let lldestptr = rslt.val;
         // If this argument to this function is a tag, it'll have come in to
@@ -5225,22 +4604,6 @@ fn native_fn_ty_param_count(cx: @crate_ctxt, id: ast::node_id) -> uint {
       }
     }
     ret count;
-}
-
-fn native_fn_wrapper_type(cx: @crate_ctxt, sp: span, ty_param_count: uint,
-                          x: ty::t) -> TypeRef {
-    alt ty::struct(cx.tcx, x) {
-      ty::ty_native_fn(args, out) {
-        check non_ty_var(cx, out);
-        ret type_of_fn(cx, sp, false, args, out, ty_param_count);
-      }
-    }
-}
-
-fn raw_native_fn_type(ccx: @crate_ctxt, sp: span, args: [ty::arg],
-                      ret_ty: ty::t) -> TypeRef {
-    check type_has_static_size(ccx, ret_ty);
-    ret T_fn(type_of_explicit_args(ccx, sp, args), type_of(ccx, sp, ret_ty));
 }
 
 fn link_name(i: @ast::native_item) -> str {

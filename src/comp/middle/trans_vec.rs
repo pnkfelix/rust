@@ -3,11 +3,12 @@ import option::none;
 import syntax::ast;
 import lib::llvm::llvm::{ValueRef, TypeRef};
 import back::abi;
-import trans::{call_memmove, trans_shared_malloc, llsize_of, type_of_or_i8,
-               INIT, copy_val, load_if_immediate, size_of,
+import trans::{call_memmove, trans_shared_malloc,
+               INIT, copy_val, load_if_immediate,
                get_tydesc,
                node_id_type, new_sub_block_ctxt, tps_normal, do_spill_noroot,
                dest};
+import trans_::metrics::*;
 import trans_build::*;
 import trans_common::*;
 

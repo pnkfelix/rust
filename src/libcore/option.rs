@@ -84,6 +84,13 @@ fn may<T>(opt: t<T>, f: block(T)) {
     alt opt { none. {/* nothing */ } some(t) { f(t); } }
 }
 
+fn to_vec<copy T>(opt: t<T>) -> [T] {
+    ret alt opt {
+      none. { [] }
+      some(v) { [v] }
+    };
+}
+
 // Local Variables:
 // mode: rust;
 // fill-column: 78;

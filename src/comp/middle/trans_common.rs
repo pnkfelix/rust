@@ -19,7 +19,8 @@ import lib::llvm::{True, False, Bool};
 import metadata::{csearch};
 
 // FIXME: These should probably be pulled in here too.
-import trans::{type_of_fn, drop_ty};
+import trans::{drop_ty};
+import trans_::metrics::type_of_fn;
 
 obj namegen(mutable i: int) {
     fn next(prefix: str) -> str { i += 1; ret prefix + int::str(i); }
@@ -88,7 +89,6 @@ type crate_ctxt =
      item_symbols: hashmap<ast::node_id, str>,
      mutable main_fn: option::t<ValueRef>,
      link_meta: link::link_meta,
-     tag_sizes: hashmap<ty::t, uint>,
      discrims: hashmap<ast::def_id, ValueRef>,
      discrim_symbols: hashmap<ast::node_id, str>,
      consts: hashmap<ast::node_id, ValueRef>,

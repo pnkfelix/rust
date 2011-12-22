@@ -12,18 +12,7 @@ import syntax::codemap::span;
 import back::link::{
     mangle_internal_name_by_path,
     mangle_internal_name_by_path_and_seq};
-import trans::{
-    trans_shared_malloc,
-    type_of_inner,
-    size_of,
-    node_id_type,
-    INIT,
-    trans_shared_free,
-    drop_ty,
-    new_sub_block_ctxt,
-    load_if_immediate,
-    dest
-};
+import trans_::metrics::*;
 
 // ___Good to know (tm)__________________________________________________
 //
@@ -241,10 +230,10 @@ fn store_environment(
     // Copy expr values into boxed bindings.
     // Silly check
     vec::iteri(bound_values) { |i, bv|
-        let bound = trans::GEP_tup_like_1(bcx, box_ty, box,
-                                          [0, abi::box_rc_field_body,
-                                           abi::closure_elt_bindings,
-                                           i as int]);
+        let bound = GEP_tup_like_1(bcx, box_ty, box,
+                                   [0, abi::box_rc_field_body,
+                                    abi::closure_elt_bindings,
+                                    i as int]);
         bcx = bound.bcx;
         alt bv {
           env_expr(e) {

@@ -12,6 +12,7 @@ import syntax::ast::def_id;
 import syntax::codemap::span;
 
 import trans_common::*;
+import trans_::metrics::*;
 
 // An option identifying a branch (either a literal, a tag variant or a range)
 tag opt {
@@ -276,8 +277,8 @@ fn extract_variant_args(bcx: @block_ctxt, pat_id: ast::node_id,
     while i < size {
         check (valid_variant_index(i, bcx, vdefs_tg, vdefs_var));
         let r =
-            trans::GEP_tag(bcx, blobptr, vdefs_tg, vdefs_var, ty_param_substs,
-                           i);
+            GEP_tag(bcx, blobptr, vdefs_tg,
+                             vdefs_var, ty_param_substs, i);
         bcx = r.bcx;
         args += [r.val];
         i += 1u;
@@ -416,7 +417,7 @@ fn compile_submatch(bcx: @block_ctxt, m: match, vals: [ValueRef], f: mk_fail,
             let ix = option::get(ty::field_idx(field_name, fields));
             // not sure how to get rid of this check
             check type_is_tup_like(bcx, rec_ty);
-            let r = trans::GEP_tup_like(bcx, rec_ty, val, [0, ix as int]);
+            let r = GEP_tup_like(bcx, rec_ty, val, [0, ix as int]);
             rec_vals += [r.val];
             bcx = r.bcx;
         }
@@ -435,7 +436,7 @@ fn compile_submatch(bcx: @block_ctxt, m: match, vals: [ValueRef], f: mk_fail,
         while i < n_tup_elts {
             // how to get rid of this check?
             check type_is_tup_like(bcx, tup_ty);
-            let r = trans::GEP_tup_like(bcx, tup_ty, val, [0, i as int]);
+            let r = GEP_tup_like(bcx, tup_ty, val, [0, i as int]);
             tup_vals += [r.val];
             bcx = r.bcx;
             i += 1u;
@@ -694,7 +695,7 @@ fn bind_irrefutable_pat(bcx: @block_ctxt, pat: @ast::pat, val: ValueRef,
             // check unnecessary.
             check (type_has_static_size(ccx, ty));
             check non_ty_var(ccx, ty);
-            let llty = trans::type_of(ccx, pat.span, ty);
+            let llty = type_of(ccx, pat.span, ty);
             let alloc = trans::alloca(bcx, llty);
             bcx = trans::copy_val(bcx, trans::INIT, alloc,
                                   trans::load_if_immediate(bcx, val, ty), ty);
@@ -722,9 +723,7 @@ fn bind_irrefutable_pat(bcx: @block_ctxt, pat: @ast::pat, val: ValueRef,
             alt ty::struct(ccx.tcx, rec_ty) { ty::ty_rec(fields) { fields } };
         for f: ast::field_pat in fields {
             let ix = option::get(ty::field_idx(f.ident, rec_fields));
-            // how to get rid of this check?
-            check type_is_tup_like(bcx, rec_ty);
-            let r = trans::GEP_tup_like(bcx, rec_ty, val, [0, ix as int]);
+            let r = GEP_tup_like_1(bcx, rec_ty, val, [0, ix as int]);
             bcx = bind_irrefutable_pat(r.bcx, f.pat, r.val, make_copy);
         }
       }
@@ -732,9 +731,7 @@ fn bind_irrefutable_pat(bcx: @block_ctxt, pat: @ast::pat, val: ValueRef,
         let tup_ty = ty::node_id_to_monotype(ccx.tcx, pat.id);
         let i = 0u;
         for elem in elems {
-            // how to get rid of this check?
-            check type_is_tup_like(bcx, tup_ty);
-            let r = trans::GEP_tup_like(bcx, tup_ty, val, [0, i as int]);
+            let r = GEP_tup_like_1(bcx, tup_ty, val, [0, i as int]);
             bcx = bind_irrefutable_pat(r.bcx, elem, r.val, make_copy);
             i += 1u;
         }

@@ -7,6 +7,7 @@ import driver::session;
 import middle::{trans, trans_common};
 import middle::trans_common::{crate_ctxt, val_ty, C_bytes,
                               C_named_struct, C_struct, T_tag_variant};
+import middle::trans_::metrics;
 import middle::ty;
 import middle::ty::field;
 import syntax::ast;
@@ -121,9 +122,9 @@ fn largest_variants(ccx: @crate_ctxt, tag_id: ast::def_id) -> [uint] {
                 // (Could add a postcondition to type_contains_params,
                 // once we implement Issue #586.)
                 check (trans_common::type_has_static_size(ccx, elem_t));
-                let llty = trans::type_of(ccx, dummy_sp(), elem_t);
-                min_size += trans::llsize_of_real(ccx, llty);
-                min_align += trans::llalign_of_real(ccx, llty);
+                let llty = metrics::type_of(ccx, dummy_sp(), elem_t);
+                min_size += metrics::llsize_of_real(ccx, llty);
+                min_align += metrics::llalign_of_real(ccx, llty);
             }
         }
 
@@ -200,12 +201,12 @@ fn compute_static_tag_size(ccx: @crate_ctxt, largest_variants: [uint],
             // on tag_variants that would obviate the need for
             // this check. (Issue #586)
             check (trans_common::type_has_static_size(ccx, typ));
-            lltys += [trans::type_of(ccx, dummy_sp(), typ)];
+            lltys += [metrics::type_of(ccx, dummy_sp(), typ)];
         }
 
         let llty = trans_common::T_struct(lltys);
-        let dp = trans::llsize_of_real(ccx, llty) as u16;
-        let variant_align = trans::llalign_of_real(ccx, llty) as u8;
+        let dp = metrics::llsize_of_real(ccx, llty) as u16;
+        let variant_align = metrics::llalign_of_real(ccx, llty) as u8;
 
         if max_size < dp { max_size = dp; }
         if max_align < variant_align { max_align = variant_align; }
@@ -216,8 +217,8 @@ fn compute_static_tag_size(ccx: @crate_ctxt, largest_variants: [uint],
     // aligned quantity, we don't align it.
     if vec::len(*variants) > 1u {
         let variant_t = T_tag_variant(ccx);
-        max_size += trans::llsize_of_real(ccx, variant_t) as u16;
-        let align = trans::llalign_of_real(ccx, variant_t) as u8;
+        max_size += metrics::llsize_of_real(ccx, variant_t) as u16;
+        let align = metrics::llalign_of_real(ccx, variant_t) as u8;
         if max_align < align { max_align = align; }
     }
 

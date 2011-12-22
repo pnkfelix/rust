@@ -2,18 +2,8 @@ import syntax::ast;
 import lib::llvm::llvm::ValueRef;
 import trans_common::*;
 import trans_build::*;
-import trans::{
-    trans_shared_malloc,
-    type_of_inner,
-    size_of,
-    node_id_type,
-    INIT,
-    trans_shared_free,
-    drop_ty,
-    new_sub_block_ctxt,
-    load_if_immediate,
-    dest
-};
+import trans_::metrics::*;
+import trans::*;
 
 export trans_uniq, make_free_glue, type_is_unique_box, autoderef, duplicate,
        alloc_uniq;

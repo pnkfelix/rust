@@ -15,6 +15,7 @@ import syntax::codemap::span;
 import trans_common::*;
 import trans::*;
 import trans_build::*;
+import trans_::metrics::*;
 
 export trans_anon_obj;
 export trans_obj;
@@ -132,15 +133,13 @@ fn trans_obj(cx: @local_ctxt, sp: span, ob: ast::_obj, ctor_id: ast::node_id,
         // the types of the object's fields, so that the fields can be freed
         // later.
 
-        // postcondition on create_object_body_type?
-        check type_is_tup_like(bcx, body_ty);
         let body_tydesc =
-            GEP_tup_like(bcx, body_ty, body, [0, abi::obj_body_elt_tydesc]);
+            GEP_tup_like_1(bcx, body_ty, body,
+                           [0, abi::obj_body_elt_tydesc]);
         bcx = body_tydesc.bcx;
-
-        check type_is_tup_like(bcx, body_ty);
         let r =
-            GEP_tup_like(bcx, body_ty, body, [0, abi::obj_body_elt_typarams]);
+            GEP_tup_like_1(bcx, body_ty, body,
+                           [0, abi::obj_body_elt_typarams]);
         bcx = r.bcx;
         let body_typarams = r.val;
 
@@ -312,10 +311,8 @@ fn trans_anon_obj(bcx: @block_ctxt, sp: span, anon_obj: ast::anon_obj,
         // the user of the object.  So the tydesc is needed to keep track of
         // the types of the object's fields, so that the fields can be freed
         // later.
-        // postcondition on create_object_body_type?
-        check type_is_tup_like(bcx, body_ty);
         let body_tydesc =
-            GEP_tup_like(bcx, body_ty, body, [0, abi::obj_body_elt_tydesc]);
+            GEP_tup_like_1(bcx, body_ty, body, [0, abi::obj_body_elt_tydesc]);
         bcx = body_tydesc.bcx;
         let ti = none;
         let body_td = get_tydesc(bcx, body_ty, true, tps_normal, ti).result;
@@ -765,9 +762,8 @@ fn process_fwding_mthd(cx: @local_ctxt, sp: span, m: @ty::method,
                     T_ptr(type_of(cx_ccx, sp, body_ty)));
 
     // Now, reach into the body and grab the inner_obj.
-    check type_is_tup_like(bcx, body_ty);
     let llinner_obj =
-        GEP_tup_like(bcx, body_ty, llself_obj_body,
+        GEP_tup_like_1(bcx, body_ty, llself_obj_body,
                      [0, abi::obj_body_elt_inner_obj]);
     bcx = llinner_obj.bcx;
 
