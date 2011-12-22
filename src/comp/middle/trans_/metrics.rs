@@ -225,8 +225,9 @@ fn type_of_inner(cx: @crate_ctxt, sp: span, t: ty::t)
 }
 
 fn type_of_tag(ccx: @crate_ctxt, sp: span,
-               did: ast::def_id, tps: [ty::t], t: ty::t)
+               did: ast::def_id, tps: [ty::t], _t: ty::t)
     -> TypeRef {
+    let tcx = ccx_tcx(ccx);
 
     // Creates a simpler, size-equivalent type. The resulting type is
     // guaranteed to have (a) the same size as the type that was
@@ -237,26 +238,25 @@ fn type_of_tag(ccx: @crate_ctxt, sp: span,
     // have infinite size, just the lltype representation).
     fn simplify_type(ccx: @crate_ctxt, typ: ty::t) -> ty::t {
         fn simplifier(ccx: @crate_ctxt, typ: ty::t) -> ty::t {
+            fn imm_box(ccx: @crate_ctxt) -> ty::t {
+                ret ty::mk_imm_box(ccx.tcx, ty::mk_nil(ccx.tcx));
+            }
             alt ty::struct(ccx.tcx, typ) {
-              ty::ty_box(_) { ret ty::mk_imm_box(ccx.tcx,
-                                                 ty::mk_nil(ccx.tcx)); }
+              ty::ty_box(_) { ret imm_box(ccx); }
               ty::ty_uniq(_) {
                 ret ty::mk_imm_uniq(ccx.tcx, ty::mk_nil(ccx.tcx));
               }
               ty::ty_fn(_, _, _, _, _) {
-                ret ty::mk_tup(ccx.tcx,
-                               [ty::mk_imm_box(ccx.tcx, ty::mk_nil(ccx.tcx)),
-                                ty::mk_imm_box(ccx.tcx, ty::mk_nil(ccx.tcx))]);
+                ret ty::mk_tup(ccx.tcx, [imm_box(ccx), imm_box(ccx)]);
               }
               ty::ty_obj(_) {
-                ret ty::mk_tup(ccx.tcx,
-                               [ty::mk_imm_box(ccx.tcx, ty::mk_nil(ccx.tcx)),
-                                ty::mk_imm_box(ccx.tcx, ty::mk_nil(ccx.tcx))]);
+                ret ty::mk_tup(ccx.tcx, [imm_box(ccx), imm_box(ccx)]);
               }
               ty::ty_res(_, sub, tps) {
                 let sub1 = ty::substitute_type_params(ccx.tcx, tps, sub);
                 ret ty::mk_tup(ccx.tcx,
-                               [ty::mk_int(ccx.tcx), simplify_type(ccx, sub1)]);
+                               [ty::mk_int(ccx.tcx),
+                                simplify_type(ccx, sub1)]);
               }
               ty::ty_named(t, @str) {
                 ret simplifier(ccx, t);
@@ -264,35 +264,37 @@ fn type_of_tag(ccx: @crate_ctxt, sp: span,
               _ { ret typ; }
             }
         }
-        ret ty::fold_ty(ccx.tcx, ty::fm_general(bind simplifier(ccx, _)), typ);
+        ret ty::fold_ty(ccx.tcx,
+                        ty::fm_general(bind simplifier(ccx, _)),
+                        typ);
     }
 
     let variants = ty::tag_variants(ccx.tcx, did);
-    let llvariant_types = vec::map(variants, { |variant|
+    let llvariant_types = vec::map(*variants, { |variant|
         // Compute a non-recursive form of the type data.
-        let tup_ty = ty::mk_tup(cx.tcx, variant.args);
-        tup_ty = simplify_type(cx, tup_ty);
-        tup_ty = ty::substitute_type_params(cx.tcx, subtys, tup_ty);
-        check type_has_static_size(cx, tup_ty);
-        type_of(cx, sp, tup_ty);
+        let tup_ty = ty::mk_tup(tcx, variant.args);
+        tup_ty = simplify_type(ccx, tup_ty);
+        tup_ty = ty::substitute_type_params(tcx, tps, tup_ty);
+        check type_has_static_size(ccx, tup_ty);
+        type_of(ccx, sp, tup_ty)
     });
 
     ret alt shape::tag_kind(ccx, did) {
-      tk_unit. {
+      shape::tk_unit. {
         llvariant_types[0]
       }
 
-      tk_enum. {
-        T_tag_variant(cx)
+      shape::tk_enum. {
+        T_tag_variant(ccx)
       }
 
-      tk_complex. {
+      shape::tk_complex. {
         // Find the max size/alignment of all variants, and
         // select the variant with largest alignment as a representative.
         let max_size = 0u, max_align = 0u, llrepr_ty = option::none;
         vec::iter(llvariant_types) { |llvariant_ty|
-            let size = llsize_of_real(cx, llvariant_ty);
-            let align = llalign_of_real(cx, llvariant_ty);
+            let size = llsize_of_real(ccx, llvariant_ty);
+            let align = llalign_of_real(ccx, llvariant_ty);
 
             // Find the variant with the largest alignment.
             if option::is_none(llrepr_ty) || align > max_align {
@@ -301,19 +303,19 @@ fn type_of_tag(ccx: @crate_ctxt, sp: span,
             }
 
             // Track largest size.
-            max_size = uint::max(align, max_size);
+            max_size = uint::max(size, max_size);
         }
 
         // Pad the final size of the representative with extra
         // bytes if needed to make sure we leave enough space.
         let llrepr_ty = option::get(llrepr_ty);
-        let size = llsize_of_real(cx, llrepr_ty);
+        let size = llsize_of_real(ccx, llrepr_ty);
         if size < max_size {
             let pad = T_array(T_i8(), max_size - size);
             llrepr_ty = T_struct([llrepr_ty, pad]);
         }
 
-        T_struct([T_tag_variant(cx), llrepr_ty])
+        T_struct([T_tag_variant(ccx), llrepr_ty])
       }
     }
 }
@@ -381,6 +383,12 @@ fn align_of(bcx: @block_ctxt, t: ty::t) -> result {
     if check type_has_static_size(ccx, t) {
         rslt(bcx, llalign_of(ccx, type_of(ccx, bcx.sp, t)))
     } else { dynamic_align_of(bcx, t) }
+}
+
+fn blob_offset_of(_bcx: @block_ctxt,
+                  _tag_id: ast::def_id,
+                  _tps: [ty::t]) -> result {
+    fail "TODO";
 }
 
 fn align_to(cx: @block_ctxt, off: ValueRef, align: ValueRef) -> ValueRef {
@@ -678,52 +686,48 @@ fn GEP_tup_like(bcx0: @block_ctxt, t: ty::t, base: ValueRef, ixs: [int])
     ret rslt(bcx, bump_ptr(bcx, s.target, base, sz));
 }
 
+/*
+
+Note to self:
+
+What is needed here-- this function takes an llblobptr, which is a
+pointer to the data area of the tag. But this is bad, the caller
+cannot know that offset, not really.  The function should take a
+pointer to the tag value as a whole.  It must then compute the offset
+of the data, which might be a dynamic value.  This is basically a
+third metric, like sizeof() and alignof().  Otherwise the code can
+more-or-less remain the same.
+
+*/
+
 
 // Replacement for the LLVM 'GEP' instruction when field indexing into a tag.
 // This function uses GEP_tup_like() above and automatically performs casts as
 // appropriate. @llblobptr is the data part of a tag value; its actual type is
 // meaningless, as it will be cast away.
-fn GEP_tag(bcx: @block_ctxt, llblobptr: ValueRef, tag_id: ast::def_id,
+fn GEP_tag(bcx: @block_ctxt, lltagptr: ValueRef, tag_id: ast::def_id,
            variant_id: ast::def_id, ty_substs: [ty::t],
            ix: uint) : valid_variant_index(ix, bcx, tag_id, variant_id) ->
    result {
     let ccx = bcx_ccx(bcx);
     let tcx = bcx_tcx(bcx);
 
+    // Compute offset and type of the blob and then create a ptr to it.
+    let {bcx, val:bloboffs} = blob_offset_of(bcx, tag_id, ty_substs);
     let variant = ty::tag_variant_with_id(tcx, tag_id, variant_id);
-    // Synthesize a tuple type so that GEP_tup_like() can work its magic.
-    // Separately, store the type of the element we're interested in.
+    let true_arg_tys = vec::map(variant.args, { |aty|
+        ty::substitute_type_params(tcx, ty_substs, aty)
+    });
+    let blob_ty = ty::mk_tup(tcx, true_arg_tys);
+    let llblobptr = bump_ptr(bcx, blob_ty, lltagptr, bloboffs);
 
-    let arg_tys = variant.args;
-
-    let true_arg_tys: [ty::t] = [];
-    for aty: ty::t in arg_tys {
-        let arg_ty = ty::substitute_type_params(tcx, ty_substs, aty);
-        true_arg_tys += [arg_ty];
-    }
-
-    // We know that ix < len(variant.args) -- so
-    // it's safe to do this. (Would be nice to have
-    // typestate guarantee that a dynamic bounds check
-    // error can't happen here, but that's in the future.)
+    // Get type of the element we are targeting.  Here ix must be valid.
     let elem_ty = true_arg_tys[ix];
 
-    let tup_ty = ty::mk_tup(tcx, true_arg_tys);
-    // Cast the blob pointer to the appropriate type, if we need to (i.e. if
-    // the blob pointer isn't dynamically sized).
-
-    let llunionptr: ValueRef;
-    if check type_has_static_size(ccx, tup_ty) {
-        let llty = type_of(ccx, bcx.sp, tup_ty);
-        llunionptr = TruncOrBitCast(bcx, llblobptr, T_ptr(llty));
-    } else { llunionptr = llblobptr; }
-
     // Do the GEP_tup_like().
-    // Silly check -- postcondition on mk_tup?
-    check type_is_tup_like(bcx, tup_ty);
-    let rs = GEP_tup_like(bcx, tup_ty, llunionptr, [0, ix as int]);
-    // Cast the result to the appropriate type, if necessary.
+    let rs = GEP_tup_like_1(bcx, blob_ty, llblobptr, [0, ix as int]);
 
+    // Cast the result to the appropriate type, if necessary.
     let rs_ccx = bcx_ccx(rs.bcx);
     let val =
         if check type_has_static_size(rs_ccx, elem_ty) {

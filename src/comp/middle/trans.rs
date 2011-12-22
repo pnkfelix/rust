@@ -1012,7 +1012,7 @@ fn iter_structural_ty(cx: @block_ctxt, av: ValueRef, t: ty::t,
         ret next_cx;
     }
 
-    fn iter_variant(cx: @block_ctxt, a_tup: ValueRef,
+    fn iter_variant(cx: @block_ctxt, a_tag: ValueRef,
                     variant: ty::variant_info, tps: [ty::t], tid: ast::def_id,
                     f: val_and_ty_fn) -> @block_ctxt {
         if vec::len::<ty::t>(variant.args) == 0u { ret cx; }
@@ -1025,7 +1025,7 @@ fn iter_structural_ty(cx: @block_ctxt, av: ValueRef, t: ty::t,
             let v_id = variant.id;
             for a: ty::arg in args {
                 check (valid_variant_index(j, cx, tid, v_id));
-                let rslt = GEP_tag(cx, a_tup, tid, v_id, tps, j);
+                let rslt = GEP_tag(cx, a_tag, tid, v_id, tps, j);
                 let llfldp_a = rslt.val;
                 cx = rslt.bcx;
                 let ty_subst = ty::substitute_type_params(ccx.tcx, tps, a.ty);
@@ -1082,7 +1082,6 @@ fn iter_structural_ty(cx: @block_ctxt, av: ValueRef, t: ty::t,
         let lltagty = T_opaque_tag_ptr(ccx);
         let av_tag = PointerCast(cx, av, lltagty);
         let lldiscrim_a_ptr = GEPi(cx, av_tag, [0, 0]);
-        let llunion_a_ptr = GEPi(cx, av_tag, [0, 1]);
         let lldiscrim_a = Load(cx, lldiscrim_a_ptr);
 
         // NB: we must hit the discriminant first so that structural
@@ -1100,7 +1099,7 @@ fn iter_structural_ty(cx: @block_ctxt, av: ValueRef, t: ty::t,
                                        uint::to_str(i, 10u));
             AddCase(llswitch, C_int(ccx, i as int), variant_cx.llbb);
             variant_cx =
-                iter_variant(variant_cx, llunion_a_ptr, variant, tps, tid, f);
+                iter_variant(variant_cx, av, variant, tps, tid, f);
             Br(variant_cx, next_cx.llbb);
             i += 1u;
         }
@@ -2094,7 +2093,8 @@ fn trans_var(cx: @block_ctxt, sp: span, def: ast::def, id: ast::node_id)
             let tag_ty = node_id_type(ccx, id);
             let alloc_result = alloc_ty(cx, tag_ty);
             let lltagblob = alloc_result.val;
-            let lltagty = type_of_tag(ccx, sp, tid, tag_ty);
+            let tag_tps = ty::ty_tag_tps(ccx.tcx, tag_ty);
+            let lltagty = type_of_tag(ccx, sp, tid, tag_tps, tag_ty);
             let bcx = alloc_result.bcx;
             let lltagptr = PointerCast(bcx, lltagblob, T_ptr(lltagty));
             let lldiscrimptr = GEPi(bcx, lltagptr, [0, 0]);
@@ -4017,8 +4017,7 @@ fn trans_tag_variant(cx: @local_ctxt, tag_id: ast::node_id,
     // Translate variant arguments to function arguments.
 
     let fn_args: [ast::arg] = [];
-    let i = 0u;
-    for varg: ast::variant_arg in variant.node.args {
+    vec::iteri(variant.node.args) { |i, varg|
         fn_args +=
             [{mode: ast::by_copy,
               ty: varg.ty,
@@ -4037,11 +4036,9 @@ fn trans_tag_variant(cx: @local_ctxt, tag_id: ast::node_id,
     let fcx = new_fn_ctxt(cx, variant.span, llfndecl);
     create_llargs_for_fn_args(fcx, no_self, fn_args, ty_params);
     let ty_param_substs: [ty::t] = [];
-    i = 0u;
-    for tp: ast::ty_param in ty_params {
+    vec::iteri(ty_params) { |i, tp|
         ty_param_substs += [ty::mk_param(ccx.tcx, i,
                                          ast_util::ty_param_kind(tp))];
-        i += 1u;
     }
     let arg_tys = arg_tys_of_fn(ccx, variant.node.id);
     let bcx = new_top_block_ctxt(fcx);
@@ -4049,23 +4046,18 @@ fn trans_tag_variant(cx: @local_ctxt, tag_id: ast::node_id,
     bcx = copy_args_to_allocas(fcx, bcx, fn_args, arg_tys);
 
     // Cast the tag to a type we can GEP into.
-    let llblobptr =
-        if is_degen {
-            fcx.llretptr
-        } else {
-            let lltagptr =
-                PointerCast(bcx, fcx.llretptr, T_opaque_tag_ptr(ccx));
-            let lldiscrimptr = GEPi(bcx, lltagptr, [0, 0]);
-            Store(bcx, C_int(ccx, index), lldiscrimptr);
-            GEPi(bcx, lltagptr, [0, 1])
-        };
-    i = 0u;
+    if !is_degen {
+        let lltagptr =
+            PointerCast(bcx, fcx.llretptr, T_opaque_tag_ptr(ccx));
+        let lldiscrimptr = GEPi(bcx, lltagptr, [0, 0]);
+        Store(bcx, C_int(ccx, index), lldiscrimptr);
+    }
     let t_id = ast_util::local_def(tag_id);
     let v_id = ast_util::local_def(variant.node.id);
-    for va: ast::variant_arg in variant.node.args {
+    vec::iteri(variant.node.args) { |i, va|
         check (valid_variant_index(i, bcx, t_id, v_id));
         let rslt =
-            GEP_tag(bcx, llblobptr, t_id, v_id, ty_param_substs, i);
+            GEP_tag(bcx, fcx.llretptr, t_id, v_id, ty_param_substs, i);
         bcx = rslt.bcx;
         let lldestptr = rslt.val;
         // If this argument to this function is a tag, it'll have come in to
@@ -4077,7 +4069,6 @@ fn trans_tag_variant(cx: @local_ctxt, tag_id: ast::node_id,
             lldestptr = PointerCast(bcx, lldestptr, val_ty(llarg));
         }
         bcx = memmove_ty(bcx, lldestptr, llarg, arg_ty);
-        i += 1u;
     }
     build_return(bcx);
     finish_fn(fcx, lltop);
@@ -5019,7 +5010,6 @@ fn trans_crate(sess: session::session, crate: @ast::crate, tcx: ty::ctxt,
     tn.associate("tydesc", tydesc_type);
     let hasher = ty::hash_ty;
     let eqer = ty::eq_ty;
-    let tag_sizes = map::mk_hashmap::<ty::t, uint>(hasher, eqer);
     let tydescs = map::mk_hashmap::<ty::t, @tydesc_info>(hasher, eqer);
     let lltypes = map::mk_hashmap::<ty::t, TypeRef>(hasher, eqer);
     let sha1s = map::mk_hashmap::<ty::t, str>(hasher, eqer);
@@ -5044,7 +5034,6 @@ fn trans_crate(sess: session::session, crate: @ast::crate, tcx: ty::ctxt,
           item_symbols: new_int_hash::<str>(),
           mutable main_fn: none::<ValueRef>,
           link_meta: link_meta,
-          tag_sizes: tag_sizes,
           discrims: ast_util::new_def_id_hash::<ValueRef>(),
           discrim_symbols: new_int_hash::<str>(),
           consts: new_int_hash::<ValueRef>(),

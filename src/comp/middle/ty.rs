@@ -122,6 +122,7 @@ export ty_fn;
 export ty_fn_proto;
 export ty_fn_ret;
 export ty_fn_ret_style;
+export ty_tag_tps;
 export ty_int;
 export ty_str;
 export ty_vec;
@@ -1556,6 +1557,14 @@ fn ty_fn_proto(cx: ctxt, fty: t) -> ast::proto {
         ret ast::proto_shared(ast::sugar_normal);
       }
       _ { cx.sess.bug("ty_fn_proto() called on non-fn type"); }
+    }
+}
+
+fn ty_tag_tps(cx: ctxt, fty: t) -> [t] {
+    let sty = struct(cx, fty);
+    alt sty {
+      ty::ty_tag(_, tps) { ret tps; }
+      _ { cx.sess.bug("ty_fn_ret() called on non-fn type"); }
     }
 }
 

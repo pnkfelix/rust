@@ -32,6 +32,8 @@ pure fn mul(x: uint, y: uint) -> uint { ret x * y; }
 /* Function: div */
 pure fn div(x: uint, y: uint) -> uint { ret x / y; }
 
+pure fn max(x: uint, y: uint) -> uint { if x > y { x } else { y } }
+
 /* Function: div_ceil
 
    Divide two numbers, return the result, rounded up.

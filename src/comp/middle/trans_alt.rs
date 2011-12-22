@@ -261,24 +261,15 @@ fn extract_variant_args(bcx: @block_ctxt, pat_id: ast::node_id,
    {vals: [ValueRef], bcx: @block_ctxt} {
     let ccx = bcx.fcx.lcx.ccx, bcx = bcx;
     let ty_param_substs = ty::node_id_to_type_params(ccx.tcx, pat_id);
-    let blobptr = val;
-    let variants = ty::tag_variants(ccx.tcx, vdefs.tg);
     let args = [];
     let size =
         vec::len(ty::tag_variant_with_id(ccx.tcx, vdefs.tg, vdefs.var).args);
-    if size > 0u && vec::len(*variants) != 1u {
-        let tagptr =
-            PointerCast(bcx, val, trans_common::T_opaque_tag_ptr(ccx));
-        blobptr = GEPi(bcx, tagptr, [0, 1]);
-    }
     let i = 0u;
     let vdefs_tg = vdefs.tg;
     let vdefs_var = vdefs.var;
     while i < size {
         check (valid_variant_index(i, bcx, vdefs_tg, vdefs_var));
-        let r =
-            GEP_tag(bcx, blobptr, vdefs_tg,
-                             vdefs_var, ty_param_substs, i);
+        let r = GEP_tag(bcx, val, vdefs_tg, vdefs_var, ty_param_substs, i);
         bcx = r.bcx;
         args += [r.val];
         i += 1u;
