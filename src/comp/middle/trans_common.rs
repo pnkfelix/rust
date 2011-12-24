@@ -101,7 +101,7 @@ type crate_ctxt =
      type_sha1s: hashmap<ty::t, str>,
      type_short_names: hashmap<ty::t, str>,
      tcx: ty::ctxt,
-     mut_map: mut::mut_map,
+     mutbl_map: mutbl::mutbl_map,
      copy_map: alias::copy_map,
      last_uses: last_use::last_uses,
      method_map: typeck::method_map,

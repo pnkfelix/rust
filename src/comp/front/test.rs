@@ -233,7 +233,7 @@ fn mk_test_desc_vec_ty(cx: test_ctxt) -> @ast::ty {
     let test_desc_ty: ast::ty =
         nospan(ast::ty_path(test_desc_ty_path, cx.sess.next_node_id()));
 
-    let vec_mt: ast::mt = {ty: @test_desc_ty, mut: ast::imm};
+    let vec_mt: ast::mt = {ty: @test_desc_ty, mutbl: ast::imm};
 
     ret @nospan(ast::ty_vec(vec_mt));
 }
@@ -265,7 +265,7 @@ fn mk_test_desc_rec(cx: test_ctxt, test: test) -> @ast::expr {
          span: span};
 
     let name_field: ast::field =
-        nospan({mut: ast::imm, ident: "name", expr: @name_expr});
+        nospan({mutbl: ast::imm, ident: "name", expr: @name_expr});
 
     let fn_path = @nospan({global: false, idents: path, types: []});
 
@@ -277,7 +277,7 @@ fn mk_test_desc_rec(cx: test_ctxt, test: test) -> @ast::expr {
     let fn_wrapper_expr = mk_test_wrapper(cx, fn_expr, span);
 
     let fn_field: ast::field =
-        nospan({mut: ast::imm, ident: "fn", expr: fn_wrapper_expr});
+        nospan({mutbl: ast::imm, ident: "fn", expr: fn_wrapper_expr});
 
     let ignore_lit: ast::lit = nospan(ast::lit_bool(test.ignore));
 
@@ -287,7 +287,7 @@ fn mk_test_desc_rec(cx: test_ctxt, test: test) -> @ast::expr {
          span: span};
 
     let ignore_field: ast::field =
-        nospan({mut: ast::imm, ident: "ignore", expr: @ignore_expr});
+        nospan({mutbl: ast::imm, ident: "ignore", expr: @ignore_expr});
 
     let fail_lit: ast::lit = nospan(ast::lit_bool(test.should_fail));
 
@@ -297,7 +297,7 @@ fn mk_test_desc_rec(cx: test_ctxt, test: test) -> @ast::expr {
          span: span};
 
     let fail_field: ast::field =
-        nospan({mut: ast::imm, ident: "should_fail", expr: @fail_expr});
+        nospan({mutbl: ast::imm, ident: "should_fail", expr: @fail_expr});
 
     let desc_rec_: ast::expr_ =
         ast::expr_rec([name_field, fn_field, ignore_field, fail_field],
@@ -354,7 +354,7 @@ fn mk_test_wrapper(cx: test_ctxt,
 
 fn mk_main(cx: test_ctxt) -> @ast::item {
 
-    let args_mt: ast::mt = {ty: @nospan(ast::ty_str), mut: ast::imm};
+    let args_mt: ast::mt = {ty: @nospan(ast::ty_str), mutbl: ast::imm};
     let args_ty: ast::ty = nospan(ast::ty_vec(args_mt));
 
     let args_arg: ast::arg =

@@ -103,7 +103,7 @@ fn shared_opaque_closure_box_ty(tcx: ty::ctxt) -> ty::t {
 fn send_opaque_closure_box_ty(tcx: ty::ctxt) -> ty::t {
     let opaque_closure_ty = ty::mk_opaque_closure(tcx);
     let tup_ty = ty::mk_tup(tcx, [ty::mk_int(tcx), opaque_closure_ty]);
-    ret ty::mk_uniq(tcx, {ty: tup_ty, mut: ast::imm});
+    ret ty::mk_uniq(tcx, {ty: tup_ty, mutbl: ast::imm});
 }
 
 type closure_result = {
@@ -184,7 +184,7 @@ fn store_environment(
       ty::closure_send. {
         // Dummy up a box in the exchange heap.
         let tup_ty = ty::mk_tup(tcx, [ty::mk_int(tcx), closure_ty]);
-        let box_ty = ty::mk_uniq(tcx, {ty: tup_ty, mut: ast::imm});
+        let box_ty = ty::mk_uniq(tcx, {ty: tup_ty, mutbl: ast::imm});
         check trans_uniq::type_is_unique_box(bcx, box_ty);
         let r = trans_uniq::alloc_uniq(bcx, box_ty);
         add_clean_free(bcx, r.val, true);

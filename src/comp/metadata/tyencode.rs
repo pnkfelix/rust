@@ -79,9 +79,9 @@ fn enc_ty(w: io::writer, cx: @ctxt, t: ty::t) {
     }
 }
 fn enc_mt(w: io::writer, cx: @ctxt, mt: ty::mt) {
-    alt mt.mut {
+    alt mt.mutbl {
       imm. { }
-      mut. { w.write_char('m'); }
+      mutbl. { w.write_char('m'); }
       maybe_mut. { w.write_char('?'); }
     }
     enc_ty(w, cx, mt.ty);

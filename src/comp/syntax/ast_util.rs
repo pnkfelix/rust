@@ -107,8 +107,8 @@ pure fn lazy_binop(b: binop) -> bool {
 
 fn unop_to_str(op: unop) -> str {
     alt op {
-      box(mt) { if mt == mut { ret "@mutable "; } ret "@"; }
-      uniq(mt) { if mt == mut { ret "~mutable "; } ret "~"; }
+      box(mt) { if mt == mutbl { ret "@mutable "; } ret "@"; }
+      uniq(mt) { if mt == mutbl { ret "~mutable "; } ret "~"; }
       deref. { ret "*"; }
       not. { ret "!"; }
       neg. { ret "-"; }
@@ -227,7 +227,7 @@ fn default_block(stmts1: [@stmt], expr1: option::t<@expr>, id1: node_id) ->
 }
 
 fn obj_field_from_anon_obj_field(f: anon_obj_field) -> obj_field {
-    ret {mut: f.mut, ty: f.ty, ident: f.ident, id: f.id};
+    ret {mutbl: f.mutbl, ty: f.ty, ident: f.ident, id: f.id};
 }
 
 // This is a convenience function to transfor ternary expressions to if

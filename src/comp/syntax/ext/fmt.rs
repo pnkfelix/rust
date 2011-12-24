@@ -90,7 +90,7 @@ fn pieces_to_expr(cx: ext_ctxt, sp: span, pieces: [piece], args: [@ast::expr])
             let ident = field.ident;
             let val = field.ex;
             let astfield =
-                {node: {mut: ast::imm, ident: ident, expr: val}, span: sp};
+                {node: {mutbl: ast::imm, ident: ident, expr: val}, span: sp};
             astfields += [astfield];
         }
         let recexpr = ast::expr_rec(astfields, option::none::<@ast::expr>);

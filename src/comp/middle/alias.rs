@@ -19,7 +19,7 @@ type invalid = {reason: invalid_reason,
                 node_id: node_id,
                 sp: span, path: @ast::path};
 
-tag unsafe_ty { contains(ty::t); mut_contains(ty::t); }
+tag unsafe_ty { contains(ty::t); mutbl_contains(ty::t); }
 
 type binding = @{node_id: node_id,
                  span: span,
@@ -175,9 +175,9 @@ fn add_bindings_for_let(cx: ctx, &bs: [binding], loc: @ast::local) {
             err(cx, loc.span, "a reference binding can't be \
                                rooted in a temporary");
         }
-        for proot in pattern_roots(cx.tcx, root.mut, loc.node.pat) {
+        for proot in pattern_roots(cx.tcx, root.mutbl, loc.node.pat) {
             let bnd = mk_binding(cx, proot.id, proot.span, root_var,
-                                 unsafe_set(proot.mut));
+                                 unsafe_set(proot.mutbl));
             // Don't implicitly copy explicit references
             bnd.copied = not_allowed;
             bs += [bnd];
@@ -213,7 +213,7 @@ fn check_call(cx: ctx, sc: scope, f: @ast::expr, args: [@ast::expr])
     -> [binding] {
     let fty = ty::expr_ty(cx.tcx, f);
     let arg_ts = ty::ty_fn_args(cx.tcx, fty);
-    let mut_roots: [{arg: uint, node: node_id}] = [];
+    let mutbl_roots: [{arg: uint, node: node_id}] = [];
     let bindings = [];
     let i = 0u;
     for arg_t: ty::arg in arg_ts {
@@ -223,7 +223,7 @@ fn check_call(cx: ctx, sc: scope, f: @ast::expr, args: [@ast::expr])
             alt path_def(cx, arg) {
               some(def) {
                 let dnum = ast_util::def_id_of_def(def).node;
-                mut_roots += [{arg: i, node: dnum}];
+                mutbl_roots += [{arg: i, node: dnum}];
               }
               _ { }
             }
@@ -233,7 +233,7 @@ fn check_call(cx: ctx, sc: scope, f: @ast::expr, args: [@ast::expr])
                        span: arg.span,
                        root_var: root_var,
                        local_id: 0u,
-                       unsafe_tys: unsafe_set(root.mut),
+                       unsafe_tys: unsafe_set(root.mutbl),
                        mutable copied: alt arg_t.mode {
                          ast::by_move. | ast::by_copy. { copied }
                          ast::by_mut_ref. { not_allowed }
@@ -288,7 +288,7 @@ fn check_call(cx: ctx, sc: scope, f: @ast::expr, args: [@ast::expr])
     }
     // Ensure we're not passing a root by mutable alias.
 
-    for {node: node, arg: arg} in mut_roots {
+    for {node: node, arg: arg} in mutbl_roots {
         let i = 0u;
         for b in bindings {
             if i != arg {
@@ -326,14 +326,14 @@ fn check_alt(cx: ctx, input: @ast::expr, arms: [ast::arm], sc: scope,
             span: span};
         let binding_info: [info] = [];
         for pat in a.pats {
-            for proot in pattern_roots(cx.tcx, root.mut, pat) {
+            for proot in pattern_roots(cx.tcx, root.mutbl, pat) {
                 let canon_id = pat_id_map.get(proot.name);
                 alt vec::find(binding_info, {|x| x.id == canon_id}) {
-                  some(s) { s.unsafe_tys += unsafe_set(proot.mut); }
+                  some(s) { s.unsafe_tys += unsafe_set(proot.mutbl); }
                   none. {
                       binding_info += [
                           {id: canon_id,
-                           mutable unsafe_tys: unsafe_set(proot.mut),
+                           mutable unsafe_tys: unsafe_set(proot.mutbl),
                            span: proot.span}];
                   }
                 }
@@ -356,20 +356,20 @@ fn check_for(cx: ctx, local: @ast::local, seq: @ast::expr, blk: ast::blk,
 
     // If this is a mutable vector, don't allow it to be touched.
     let seq_t = ty::expr_ty(cx.tcx, seq);
-    let cur_mut = root.mut;
+    let cur_mutbl = root.mutbl;
     alt ty::struct(cx.tcx, seq_t) {
       ty::ty_vec(mt) {
-        if mt.mut != ast::imm {
-            cur_mut = some(contains(seq_t));
+        if mt.mutbl != ast::imm {
+            cur_mutbl = some(contains(seq_t));
         }
       }
       _ {}
     }
     let root_var = path_def_id(cx, root.ex);
     let new_bs = sc.bs;
-    for proot in pattern_roots(cx.tcx, cur_mut, local.node.pat) {
+    for proot in pattern_roots(cx.tcx, cur_mutbl, local.node.pat) {
         new_bs += [mk_binding(cx, proot.id, proot.span, root_var,
-                              unsafe_set(proot.mut))];
+                              unsafe_set(proot.mutbl))];
     }
     visit::visit_block(blk, {bs: new_bs with sc}, v);
 }
@@ -486,36 +486,36 @@ fn path_def_id(cx: ctx, ex: @ast::expr) -> option::t<ast::node_id> {
 }
 
 fn ty_can_unsafely_include(cx: ctx, needle: unsafe_ty, haystack: ty::t,
-                           mut: bool) -> bool {
-    fn get_mut(cur: bool, mt: ty::mt) -> bool {
-        ret cur || mt.mut != ast::imm;
+                           mutbl: bool) -> bool {
+    fn get_mutbl(cur: bool, mt: ty::mt) -> bool {
+        ret cur || mt.mutbl != ast::imm;
     }
-    fn helper(tcx: ty::ctxt, needle: unsafe_ty, haystack: ty::t, mut: bool)
+    fn helper(tcx: ty::ctxt, needle: unsafe_ty, haystack: ty::t, mutbl: bool)
         -> bool {
         if alt needle {
           contains(ty) { ty == haystack }
-          mut_contains(ty) { mut && ty == haystack }
+          mutbl_contains(ty) { mutbl && ty == haystack }
         } { ret true; }
         alt ty::struct(tcx, haystack) {
           ty::ty_tag(_, ts) {
             for t: ty::t in ts {
-                if helper(tcx, needle, t, mut) { ret true; }
+                if helper(tcx, needle, t, mutbl) { ret true; }
             }
             ret false;
           }
           ty::ty_box(mt) | ty::ty_ptr(mt) | ty::ty_uniq(mt) {
-            ret helper(tcx, needle, mt.ty, get_mut(mut, mt));
+            ret helper(tcx, needle, mt.ty, get_mutbl(mutbl, mt));
           }
           ty::ty_rec(fields) {
             for f: ty::field in fields {
-                if helper(tcx, needle, f.mt.ty, get_mut(mut, f.mt)) {
+                if helper(tcx, needle, f.mt.ty, get_mutbl(mutbl, f.mt)) {
                     ret true;
                 }
             }
             ret false;
           }
           ty::ty_tup(ts) {
-            for t in ts { if helper(tcx, needle, t, mut) { ret true; } }
+            for t in ts { if helper(tcx, needle, t, mutbl) { ret true; } }
             ret false;
           }
           ty::ty_fn({proto: ast::proto_bare., _}) { ret false; }
@@ -525,11 +525,11 @@ fn ty_can_unsafely_include(cx: ctx, needle: unsafe_ty, haystack: ty::t,
           // treated as opaque downstream, and is thus safe unless we
           // saw mutable fields, in which case the whole thing can be
           // overwritten.
-          ty::ty_param(_, _) { ret mut; }
+          ty::ty_param(_, _) { ret mutbl; }
           _ { ret false; }
         }
     }
-    ret helper(cx.tcx, needle, haystack, mut);
+    ret helper(cx.tcx, needle, haystack, mutbl);
 }
 
 fn def_is_local(d: ast::def) -> bool {
@@ -579,71 +579,72 @@ fn copy_is_expensive(tcx: ty::ctxt, ty: ty::t) -> bool {
 
 type pattern_root = {id: node_id,
                      name: ident,
-                     mut: option::t<unsafe_ty>,
+                     mutbl: option::t<unsafe_ty>,
                      span: span};
 
-fn pattern_roots(tcx: ty::ctxt, mut: option::t<unsafe_ty>, pat: @ast::pat)
+fn pattern_roots(tcx: ty::ctxt, mutbl: option::t<unsafe_ty>, pat: @ast::pat)
     -> [pattern_root] {
-    fn walk(tcx: ty::ctxt, mut: option::t<unsafe_ty>, pat: @ast::pat,
+    fn walk(tcx: ty::ctxt, mutbl: option::t<unsafe_ty>, pat: @ast::pat,
             &set: [pattern_root]) {
         alt pat.node {
           ast::pat_wild. | ast::pat_lit(_) | ast::pat_range(_, _) {}
           ast::pat_bind(nm, sub) {
-            set += [{id: pat.id, name: nm, mut: mut, span: pat.span}];
-            alt sub { some(p) { walk(tcx, mut, p, set); } _ {} }
+            set += [{id: pat.id, name: nm, mutbl: mutbl, span: pat.span}];
+            alt sub { some(p) { walk(tcx, mutbl, p, set); } _ {} }
           }
           ast::pat_tag(_, ps) | ast::pat_tup(ps) {
-            for p in ps { walk(tcx, mut, p, set); }
+            for p in ps { walk(tcx, mutbl, p, set); }
           }
           ast::pat_rec(fs, _) {
             let ty = ty::node_id_to_type(tcx, pat.id);
             for f in fs {
-                let m = ty::get_field(tcx, ty, f.ident).mt.mut != ast::imm;
-                walk(tcx, m ? some(contains(ty)) : mut, f.pat, set);
+                let m = ty::get_field(tcx, ty, f.ident).mt.mutbl != ast::imm;
+                walk(tcx, m ? some(contains(ty)) : mutbl, f.pat, set);
             }
           }
           ast::pat_box(p) {
             let ty = ty::node_id_to_type(tcx, pat.id);
             let m = alt ty::struct(tcx, ty) {
-              ty::ty_box(mt) { mt.mut != ast::imm }
+              ty::ty_box(mt) { mt.mutbl != ast::imm }
             };
-            walk(tcx, m ? some(contains(ty)) : mut, p, set);
+            walk(tcx, m ? some(contains(ty)) : mutbl, p, set);
           }
           ast::pat_uniq(p) {
             let ty = ty::node_id_to_type(tcx, pat.id);
             let m = alt ty::struct(tcx, ty) {
-              ty::ty_uniq(mt) { mt.mut != ast::imm }
+              ty::ty_uniq(mt) { mt.mutbl != ast::imm }
             };
-            walk(tcx, m ? some(contains(ty)) : mut, p, set);
+            walk(tcx, m ? some(contains(ty)) : mutbl, p, set);
           }
         }
     }
     let set = [];
-    walk(tcx, mut, pat, set);
+    walk(tcx, mutbl, pat, set);
     ret set;
 }
 
-// Wraps the expr_root in mut.rs to also handle roots that exist through
+// Wraps the expr_root in mutbl.rs to also handle roots that exist through
 // return-by-reference
 fn expr_root(cx: ctx, ex: @ast::expr, autoderef: bool)
-    -> {ex: @ast::expr, mut: option::t<unsafe_ty>} {
-    let base_root = mut::expr_root(cx.tcx, ex, autoderef);
+    -> {ex: @ast::expr, mutbl: option::t<unsafe_ty>} {
+    let base_root = mutbl::expr_root(cx.tcx, ex, autoderef);
     let unsafe_ty = none;
     for d in *base_root.ds {
-        if d.mut { unsafe_ty = some(contains(d.outer_t)); break; }
+        if d.mutbl { unsafe_ty = some(contains(d.outer_t)); break; }
     }
     alt base_root.ex.node {
       ast::expr_path(_) {
         alt cx.tcx.def_map.get(base_root.ex.id) {
-          ast::def_obj_field(_, ast::mut.) {
-            unsafe_ty = some(mut_contains(ty::expr_ty(cx.tcx, base_root.ex)));
+          ast::def_obj_field(_, ast::mutbl.) {
+            let m_c = mutbl_contains(ty::expr_ty(cx.tcx, base_root.ex));
+            unsafe_ty = some(m_c);
           }
           _ {}
         }
       }
       _ {}
     }
-    ret {ex: base_root.ex, mut: unsafe_ty};
+    ret {ex: base_root.ex, mutbl: unsafe_ty};
 }
 
 fn unsafe_set(from: option::t<unsafe_ty>) -> [unsafe_ty] {

@@ -29,7 +29,7 @@ mod middle {
     mod fn_usage;
     mod check_alt;
     mod check_const;
-    mod mut;
+    mod mutbl;
     mod alias;
     mod last_use;
     mod block_use;

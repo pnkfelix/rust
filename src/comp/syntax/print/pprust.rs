@@ -266,8 +266,8 @@ fn print_type(s: ps, &&ty: @ast::ty) {
       ast::ty_uniq(mt) { word(s.s, "~"); print_mt(s, mt); }
       ast::ty_vec(mt) {
         word(s.s, "[");
-        alt mt.mut {
-          ast::mut. { word_space(s, "mutable"); }
+        alt mt.mutbl {
+          ast::mutbl. { word_space(s, "mutable"); }
           ast::maybe_mut. { word_space(s, "const"); }
           ast::imm. { }
         }
@@ -290,7 +290,7 @@ fn print_type(s: ps, &&ty: @ast::ty) {
         word(s.s, "{");
         fn print_field(s: ps, f: ast::ty_field) {
             cbox(s, indent_unit);
-            print_mutability(s, f.node.mt.mut);
+            print_mutability(s, f.node.mt.mutbl);
             word(s.s, f.node.ident);
             word_space(s, ":");
             print_type(s, f.node.mt.ty);
@@ -447,7 +447,7 @@ fn print_item(s: ps, &&item: @ast::item) {
         popen(s);
         fn print_field(s: ps, field: ast::obj_field) {
             ibox(s, indent_unit);
-            print_mutability(s, field.mut);
+            print_mutability(s, field.mutbl);
             word_space(s, field.ident + ":");
             print_type(s, field.ty);
             end(s);
@@ -692,10 +692,10 @@ fn print_expr(s: ps, &&expr: @ast::expr) {
     let ann_node = node_expr(s, expr);
     s.ann.pre(ann_node);
     alt expr.node {
-      ast::expr_vec(exprs, mut) {
+      ast::expr_vec(exprs, mutbl) {
         ibox(s, indent_unit);
         word(s.s, "[");
-        if mut == ast::mut {
+        if mutbl == ast::mutbl {
             word(s.s, "mutable");
             if vec::len(exprs) > 0u { nbsp(s); }
         }
@@ -706,7 +706,7 @@ fn print_expr(s: ps, &&expr: @ast::expr) {
       ast::expr_rec(fields, wth) {
         fn print_field(s: ps, field: ast::field) {
             ibox(s, indent_unit);
-            if field.node.mut == ast::mut { word_nbsp(s, "mutable"); }
+            if field.node.mutbl == ast::mutbl { word_nbsp(s, "mutable"); }
             word(s.s, field.node.ident);
             word_space(s, ":");
             print_expr(s, field.node.expr);
@@ -965,7 +965,7 @@ fn print_expr(s: ps, &&expr: @ast::expr) {
         popen(s);
         fn print_field(s: ps, field: ast::anon_obj_field) {
             ibox(s, indent_unit);
-            print_mutability(s, field.mut);
+            print_mutability(s, field.mutbl);
             word_space(s, field.ident + ":");
             print_type(s, field.ty);
             space(s.s);
@@ -1341,16 +1341,16 @@ fn print_op_maybe_parens(s: ps, expr: @ast::expr, outer_prec: int) {
     if add_them { pclose(s); }
 }
 
-fn print_mutability(s: ps, mut: ast::mutability) {
-    alt mut {
-      ast::mut. { word_nbsp(s, "mutable"); }
+fn print_mutability(s: ps, mutbl: ast::mutability) {
+    alt mutbl {
+      ast::mutbl. { word_nbsp(s, "mutable"); }
       ast::maybe_mut. { word_nbsp(s, "const"); }
       ast::imm. {/* nothing */ }
     }
 }
 
 fn print_mt(s: ps, mt: ast::mt) {
-    print_mutability(s, mt.mut);
+    print_mutability(s, mt.mutbl);
     print_type(s, mt.ty);
 }
 

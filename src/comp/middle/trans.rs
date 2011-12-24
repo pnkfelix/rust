@@ -4236,7 +4236,7 @@ fn alloc_local(cx: @block_ctxt, local: @ast::local) -> @block_ctxt {
     };
     // Do not allocate space for locals that can be kept immediate.
     let ccx = bcx_ccx(cx);
-    if is_simple && !ccx.mut_map.contains_key(local.node.pat.id) &&
+    if is_simple && !ccx.mutbl_map.contains_key(local.node.pat.id) &&
        !ccx.last_uses.contains_key(local.node.pat.id) &&
        ty::type_is_immediate(ccx.tcx, t) {
         alt local.node.init {
@@ -5119,7 +5119,7 @@ fn create_main_wrapper(ccx: @crate_ctxt, sp: span, main_llfn: ValueRef,
         let unit_ty = ty::mk_str(ccx.tcx);
         let vecarg_ty: ty::arg =
             {mode: ast::by_val,
-             ty: ty::mk_vec(ccx.tcx, {ty: unit_ty, mut: ast::imm})};
+             ty: ty::mk_vec(ccx.tcx, {ty: unit_ty, mutbl: ast::imm})};
         // FIXME: mk_nil should have a postcondition
         let nt = ty::mk_nil(ccx.tcx);
         check non_ty_var(ccx, nt);
@@ -5600,7 +5600,7 @@ fn write_abi_version(ccx: @crate_ctxt) {
 
 fn trans_crate(sess: session::session, crate: @ast::crate, tcx: ty::ctxt,
                output: str, emap: resolve::exp_map, amap: ast_map::map,
-               mut_map: mut::mut_map, copy_map: alias::copy_map,
+               mutbl_map: mutbl::mutbl_map, copy_map: alias::copy_map,
                last_uses: last_use::last_uses, method_map: typeck::method_map)
     -> (ModuleRef, link::link_meta) {
     let sha = std::sha1::mk_sha1();
@@ -5675,7 +5675,7 @@ fn trans_crate(sess: session::session, crate: @ast::crate, tcx: ty::ctxt,
           type_sha1s: ty::new_ty_hash(),
           type_short_names: ty::new_ty_hash(),
           tcx: tcx,
-          mut_map: mut_map,
+          mutbl_map: mutbl_map,
           copy_map: copy_map,
           last_uses: last_uses,
           method_map: method_map,

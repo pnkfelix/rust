@@ -102,7 +102,7 @@ tag pat_ {
     pat_range(@expr, @expr);
 }
 
-tag mutability { mut; imm; maybe_mut; }
+tag mutability { mutbl; imm; maybe_mut; }
 
 tag kind { kind_sendable; kind_copyable; kind_noncopyable; }
 
@@ -200,7 +200,7 @@ tag decl_ { decl_local([(let_style, @local)]); decl_item(@item); }
 
 type arm = {pats: [@pat], guard: option::t<@expr>, body: blk};
 
-type field_ = {mut: mutability, ident: ident, expr: @expr};
+type field_ = {mutbl: mutability, ident: ident, expr: @expr};
 
 type field = spanned<field_>;
 
@@ -303,7 +303,7 @@ tag lit_ {
 
 // NB: If you change this, you'll probably want to change the corresponding
 // type structure in middle/ty.rs as well.
-type mt = {ty: @ty, mut: mutability};
+type mt = {ty: @ty, mutbl: mutability};
 
 type ty_field_ = {ident: ident, mt: mt};
 
@@ -414,9 +414,9 @@ tag ret_style {
 type method = {ident: ident, tps: [ty_param], decl: fn_decl, body: blk,
                id: node_id, span: span};
 
-type obj_field = {mut: mutability, ty: @ty, ident: ident, id: node_id};
+type obj_field = {mutbl: mutability, ty: @ty, ident: ident, id: node_id};
 type anon_obj_field =
-    {mut: mutability, ty: @ty, expr: @expr, ident: ident, id: node_id};
+    {mutbl: mutability, ty: @ty, expr: @expr, ident: ident, id: node_id};
 
 type _obj = {fields: [obj_field], methods: [@method]};
 

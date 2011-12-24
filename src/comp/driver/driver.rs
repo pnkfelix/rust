@@ -184,7 +184,7 @@ fn compile_input(sess: session::session, cfg: ast::crate_cfg, input: str,
          bind middle::tstate::ck::check_crate(ty_cx, crate));
     let mut_map =
         time(time_passes, "mutability checking",
-             bind middle::mut::check_crate(ty_cx, crate));
+             bind middle::mutbl::check_crate(ty_cx, crate));
     let (copy_map, ref_map) =
         time(time_passes, "alias checking",
              bind middle::alias::check_crate(ty_cx, crate));

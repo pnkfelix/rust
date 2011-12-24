@@ -219,7 +219,7 @@ fn noop_fold_item(&&i: @item, fld: ast_fold) -> @item {
 
 fn noop_fold_item_underscore(i: item_, fld: ast_fold) -> item_ {
     fn fold_obj_field_(of: obj_field, fld: ast_fold) -> obj_field {
-        ret {mut: of.mut,
+        ret {mutbl: of.mutbl,
              ty: fld.fold_ty(of.ty),
              ident: fld.fold_ident(of.ident),
              id: of.id};
@@ -322,7 +322,7 @@ fn noop_fold_decl(d: decl_, fld: ast_fold) -> decl_ {
 fn noop_fold_expr(e: expr_, fld: ast_fold) -> expr_ {
     fn fold_field_(field: field, fld: ast_fold) -> field {
         ret {node:
-                 {mut: field.node.mut,
+                 {mutbl: field.node.mutbl,
                   ident: fld.fold_ident(field.node.ident),
                   expr: fld.fold_expr(field.node.expr)},
              span: field.span};
@@ -331,7 +331,7 @@ fn noop_fold_expr(e: expr_, fld: ast_fold) -> expr_ {
     fn fold_anon_obj_(ao: anon_obj, fld: ast_fold) -> anon_obj {
         fn fold_anon_obj_field_(aof: anon_obj_field, fld: ast_fold) ->
            anon_obj_field {
-            ret {mut: aof.mut,
+            ret {mutbl: aof.mutbl,
                  ty: fld.fold_ty(aof.ty),
                  expr: fld.fold_expr(aof.expr),
                  ident: fld.fold_ident(aof.ident),
@@ -355,8 +355,8 @@ fn noop_fold_expr(e: expr_, fld: ast_fold) -> expr_ {
     let fold_mac = bind fold_mac_(_, fld);
 
     ret alt e {
-          expr_vec(exprs, mut) {
-            expr_vec(fld.map_exprs(fld.fold_expr, exprs), mut)
+          expr_vec(exprs, mutbl) {
+            expr_vec(fld.map_exprs(fld.fold_expr, exprs), mutbl)
           }
           expr_rec(fields, maybe_expr) {
             expr_rec(vec::map(fields, fold_field),

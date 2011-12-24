@@ -943,7 +943,7 @@ fn lookup_in_obj(name: ident, ob: ast::_obj, ty_params: [ast::ty_param],
         if name == "self" { ret some(ast::def_self(local_def(id))); }
         for f: ast::obj_field in ob.fields {
             if str::eq(f.ident, name) {
-                ret some(ast::def_obj_field(local_def(f.id), f.mut));
+                ret some(ast::def_obj_field(local_def(f.id), f.mutbl));
             }
         }
         ret none::<def>;
