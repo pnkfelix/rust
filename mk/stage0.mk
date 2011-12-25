@@ -12,10 +12,11 @@ $(HBIN0_H_$(CFG_HOST_TRIPLE))/rustc$(X):			\
 
 else 
 
+# Otherwise, extract file from disk
 $(HBIN0_H_$(CFG_HOST_TRIPLE))/rustc$(X):
-	@$(call E, fetch: $@)
-	$(Q)$(S)src/etc/get-snapshot.py $(CFG_HOST_TRIPLE)
-	$(Q)touch $@
+	@$(call E, untar: $@)
+	$(Q)tar jxf $(CFG_SNAPSHOT) -C $(HROOT0_H_$(CFG_HOST_TRIPLE)) \
+                    --strip-components 1
 
 endif
 
