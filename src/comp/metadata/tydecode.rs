@@ -214,10 +214,10 @@ fn parse_ty(st: @pstate, sd: str_def) -> ty::t {
             };
         ret ty::mk_param(st.tcx, parse_int(st) as uint, k);
       }
-      '@' { ret ty::mk_box(st.tcx, parse_mt(st, sd)); }
-      '~' { ret ty::mk_uniq(st.tcx, parse_mt(st, sd)); }
-      '*' { ret ty::mk_ptr(st.tcx, parse_mt(st, sd)); }
-      'I' { ret ty::mk_vec(st.tcx, parse_mt(st, sd)); }
+      '@' { ret ty::mk_box(st.tcx, parse_mt_as_t(st, sd)); }
+      '~' { ret ty::mk_uniq(st.tcx, parse_mt_as_t(st, sd)); }
+      '*' { ret ty::mk_ptr(st.tcx, parse_mt_as_t(st, sd)); }
+      'I' { ret ty::mk_vec(st.tcx, parse_mt_as_t(st, sd)); }
       'R' {
         assert (next(st) as char == '[');
         let fields: [ty::field] = [];
@@ -322,6 +322,12 @@ fn parse_mt(st: @pstate, sd: str_def) -> ty::mt {
     }
     ret {ty: parse_ty(st, sd), mutbl: mutbl};
 }
+
+// Cases where we have a deprecated encoding
+fn parse_mt_as_t(st: @pstate, sd: str_def) -> ty::t {
+    parse_mt(st, sd).ty
+}
+
 
 fn parse_def(st: @pstate, sd: str_def) -> ast::def_id {
     let def = "";

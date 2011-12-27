@@ -236,6 +236,14 @@ fn default_arg_mode_for_ty(tcx: ty::ctxt, m: ast::mode,
 
 tag mode { m_collect; m_check; m_check_tyvar(@fn_ctxt); }
 
+fn apply_mutbl_to_ty(tcx: ty::ctxt, mutbl: ast::mutability,
+                     ty: ty::t) -> ty::t {
+    ret alt mutbl {
+      ast::mutbl. { ty }
+      ast::maybe_mut. | ast::imm. { ty::mk_const(tcx, ty) }
+    };
+}
+
 fn ast_ty_to_ty(tcx: ty::ctxt, mode: mode, &&ast_ty: @ast::ty) -> ty::t {
     fn getter(tcx: ty::ctxt, mode: mode, id: ast::def_id)
         -> ty::ty_param_kinds_and_ty {
@@ -276,6 +284,10 @@ fn ast_ty_to_ty(tcx: ty::ctxt, mode: mode, &&ast_ty: @ast::ty) -> ty::t {
     fn ast_mt_to_mt(tcx: ty::ctxt, mode: mode, mt: ast::mt) -> ty::mt {
         ret {ty: ast_ty_to_ty(tcx, mode, mt.ty), mutbl: mt.mutbl};
     }
+    fn ast_mt_to_ty(tcx: ty::ctxt, mode: mode, mt: ast::mt) -> ty::t {
+        let subty = ast_ty_to_ty(tcx, mode, mt.ty);
+        ret apply_mutbl_to_ty(tcx, mt.mutbl, subty);
+    }
     fn instantiate(tcx: ty::ctxt, sp: span, mode: mode,
                    id: ast::def_id, args: [@ast::ty]) -> ty::t {
         // TODO: maybe record cname chains so we can do
@@ -309,17 +321,17 @@ fn ast_ty_to_ty(tcx: ty::ctxt, mode: mode, &&ast_ty: @ast::ty) -> ty::t {
       ast::ty_uint(uit) { typ = ty::mk_mach_uint(tcx, uit); }
       ast::ty_float(ft) { typ = ty::mk_mach_float(tcx, ft); }
       ast::ty_str. { typ = ty::mk_str(tcx); }
-      ast::ty_box(mt) {
-        typ = ty::mk_box(tcx, ast_mt_to_mt(tcx, mode, mt));
+      ast::ty_box(subty) {
+        typ = ty::mk_box(tcx, ast_mt_to_ty(tcx, mode, subty));
       }
-      ast::ty_uniq(mt) {
-        typ = ty::mk_uniq(tcx, ast_mt_to_mt(tcx, mode, mt));
+      ast::ty_uniq(subty) {
+        typ = ty::mk_uniq(tcx, ast_mt_to_ty(tcx, mode, subty));
       }
-      ast::ty_vec(mt) {
-        typ = ty::mk_vec(tcx, ast_mt_to_mt(tcx, mode, mt));
+      ast::ty_vec(subty) {
+        typ = ty::mk_vec(tcx, ast_mt_to_ty(tcx, mode, subty));
       }
-      ast::ty_ptr(mt) {
-        typ = ty::mk_ptr(tcx, ast_mt_to_mt(tcx, mode, mt));
+      ast::ty_ptr(subty) {
+        typ = ty::mk_ptr(tcx, ast_mt_to_ty(tcx, mode, subty));
       }
       ast::ty_tup(fields) {
         let flds = vec::map(fields, bind ast_ty_to_ty(tcx, mode, _));
@@ -771,6 +783,45 @@ mod unify {
     }
 }
 
+fn do_deref(fcx: @fn_ctxt, sp: span, ty: ty::t,
+            blk: block(ty::t) -> ty_param_substs_opt_and_ty)
+    -> ty_param_substs_opt_and_ty {
+    let tcx = fcx.ccx.tcx;
+    alt structure_of(fcx, sp, ty) {
+      ty::ty_const(subty) {
+        let {substs, ty} = do_deref(fcx, sp, ty, blk);
+        ret {substs: substs, ty: ty::mk_const(tcx, ty)};
+      }
+      ty::ty_box(inner) | ty::ty_uniq(inner) {
+        alt ty::struct(tcx, ty) {
+          ty::ty_var(v1) {
+            if ty::occurs_check_fails(tcx, some(sp), v1,
+                                      ty::mk_box(tcx, inner)) {
+                ret blk(ty);
+            }
+          }
+          _ { }
+        }
+        be do_deref(fcx, sp, inner, blk);
+      }
+      ty::ty_res(_, inner, tps) {
+        let t1 = ty::substitute_type_params(tcx, tps, inner);
+        be do_deref(fcx, sp, t1, blk);
+      }
+      ty::ty_tag(did, tps) {
+        let variants = ty::tag_variants(tcx, did);
+        if vec::len(*variants) != 1u || vec::len(variants[0].args) != 1u {
+            ret blk(ty);
+        }
+        let t1 = ty::substitute_type_params(tcx, tps,
+                                            variants[0].args[0]);
+        be do_deref(fcx, sp, t1, blk);
+      }
+      _ {
+        ret blk(ty);
+      }
+    }
+}
 
 // FIXME This is almost a duplicate of ty::type_autoderef, with structure_of
 // instead of ty::struct.
@@ -788,7 +839,7 @@ fn do_autoderef(fcx: @fn_ctxt, sp: span, t: ty::t) -> ty::t {
               }
               _ { }
             }
-            t1 = inner.ty;
+            t1 = inner;
           }
           ty::ty_res(_, inner, tps) {
             t1 = ty::substitute_type_params(fcx.ccx.tcx, tps, inner);
@@ -1338,7 +1389,7 @@ fn check_pat(fcx: @fn_ctxt, map: ast_util::pat_id_map, pat: @ast::pat,
       ast::pat_box(inner) {
         alt structure_of(fcx, pat.span, expected) {
           ty::ty_box(e_inner) {
-            check_pat(fcx, map, inner, e_inner.ty);
+            check_pat(fcx, map, inner, e_inner);
             write::ty_only_fixup(fcx, pat.id, expected);
           }
           _ {
@@ -1352,7 +1403,7 @@ fn check_pat(fcx: @fn_ctxt, map: ast_util::pat_id_map, pat: @ast::pat,
       ast::pat_uniq(inner) {
         alt structure_of(fcx, pat.span, expected) {
           ty::ty_uniq(e_inner) {
-            check_pat(fcx, map, inner, e_inner.ty);
+            check_pat(fcx, map, inner, e_inner);
             write::ty_only_fixup(fcx, pat.id, expected);
           }
           _ {
@@ -1691,6 +1742,102 @@ fn check_expr_with_unifier(fcx: @fn_ctxt, expr: @ast::expr, unify: unifier,
         }
     }
 
+    fn handle_field_deref(fcx: @fn_ctxt,
+                          expr: @ast::expr,
+                          base: @ast::expr,
+                          field: ast::ident,
+                          tys: [@ast::ty],
+                          base_t: ty::t) -> ty_param_substs_opt_and_ty {
+        let tcx = fcx.ccx.tcx;
+        let id = expr.id;
+        let n_tys = vec::len(tys);
+        alt structure_of(fcx, expr.span, base_t) {
+          ty::ty_rec(fields) {
+            alt ty::field_idx(field, fields) {
+              some(ix) {
+                if n_tys > 0u {
+                    tcx.sess.span_err(expr.span,
+                                      "can't provide type parameters \
+                                       to a field access");
+                }
+                ret {substs: none, ty: fields[ix].mt.ty};
+              }
+              _ {}
+            }
+          }
+          ty::ty_obj(methods) {
+            alt ty::method_idx(field, methods) {
+              some(ix) {
+                if n_tys > 0u {
+                    tcx.sess.span_err(expr.span,
+                                      "can't provide type parameters \
+                                       to an obj method");
+                }
+                ret {substs: none, ty: ty::mk_fn(tcx, methods[ix].fty)};
+              }
+              _ {}
+            }
+          }
+          _ {}
+        }
+
+        let iscope = fcx.ccx.impl_map.get(expr.id);
+        alt lookup_method(fcx, iscope, field, base_t, expr.span) {
+          some({method, ids}) {
+            let fty = if method.did.crate == ast::local_crate {
+                alt tcx.items.get(method.did.node) {
+                  ast_map::node_method(m) {
+                    let mt = ty_of_method(tcx, m_check, m);
+                    ty::mk_fn(tcx, mt.fty)
+                  }
+                }
+            } else { csearch::get_type(tcx, method.did).ty };
+            let tvars = vec::map(ids, {|id| ty::mk_var(tcx, id)});
+            let n_tps = vec::len(ids);
+            if method.n_tps + n_tps > 0u {
+                let b = bind_params_in_type(expr.span, tcx,
+                                            bind next_ty_var_id(fcx), fty,
+                                            n_tps + method.n_tps);
+                let _tvars = vec::map(b.ids, {|id| ty::mk_var(tcx, id)});
+                let i = 0;
+                for v in tvars {
+                    demand::simple(fcx, expr.span, v, _tvars[i]);
+                    i += 1;
+                }
+                tvars = _tvars;
+                fty = b.ty;
+                if n_tys > 0u {
+                    if n_tys != method.n_tps {
+                        tcx.sess.span_fatal
+                            (expr.span, "incorrect number of type \
+parameters given for this method");
+                    }
+                    let i = 0u;
+                    for ty in tys {
+                        let tvar = tvars[i + n_tps];
+                        let t_subst = ast_ty_to_ty_crate(fcx.ccx, ty);
+                        demand::simple(fcx, expr.span, tvar, t_subst);
+                        i += 1u;
+                    }
+                }
+            } else if n_tys > 0u {
+                tcx.sess.span_fatal(expr.span,
+                                    "this method does not take type \
+parameters");
+            }
+            fcx.ccx.method_map.insert(id, method.did);
+            ret {substs: some(tvars), ty: fty};
+          }
+          none. {
+            let t_err = resolve_type_vars_if_possible(fcx, base_t);
+            let msg = #fmt["attempted access of field %s on type %s, but \
+no method implementation was found",
+                           field, ty_to_str(tcx, t_err)];
+            tcx.sess.span_fatal(expr.span, msg);
+          }
+        }
+    }
+
     let tcx = fcx.ccx.tcx;
     let id = expr.id;
     let bot = false;
@@ -1725,15 +1872,17 @@ fn check_expr_with_unifier(fcx: @fn_ctxt, expr: @ast::expr, unify: unifier,
         let oper_t = expr_ty(tcx, oper);
         alt unop {
           ast::box(mutbl) {
-            oper_t = ty::mk_box(tcx, {ty: oper_t, mutbl: mutbl});
+            oper_t = ty::mk_box(tcx, oper_t);
+            oper_t = apply_mutbl_to_ty(tcx, mutbl, oper_t);
           }
           ast::uniq(mutbl) {
-            oper_t = ty::mk_uniq(tcx, {ty: oper_t, mutbl: mutbl});
+            oper_t = ty::mk_uniq(tcx, oper_t);
+            oper_t = apply_mutbl_to_ty(tcx, mutbl, oper_t);
           }
           ast::deref. {
             alt structure_of(fcx, expr.span, oper_t) {
-              ty::ty_box(inner) { oper_t = inner.ty; }
-              ty::ty_uniq(inner) { oper_t = inner.ty; }
+              ty::ty_box(inner) { oper_t = inner; }
+              ty::ty_uniq(inner) { oper_t = inner; }
               ty::ty_res(_, inner, _) { oper_t = inner; }
               ty::ty_tag(id, tps) {
                 let variants = ty::tag_variants(tcx, id);
@@ -1748,7 +1897,7 @@ fn check_expr_with_unifier(fcx: @fn_ctxt, expr: @ast::expr, unify: unifier,
                     ty::substitute_type_params(tcx, tps, variants[0].args[0]);
               }
               ty::ty_ptr(inner) {
-                oper_t = inner.ty;
+                oper_t = inner;
                 require_unsafe(fcx.ccx.tcx.sess, fcx.purity, expr.span);
               }
               _ {
@@ -1886,7 +2035,7 @@ fn check_expr_with_unifier(fcx: @fn_ctxt, expr: @ast::expr, unify: unifier,
         let elt_ty;
         let ety = expr_ty(tcx, seq);
         alt structure_of(fcx, expr.span, ety) {
-          ty::ty_vec(vec_elt_ty) { elt_ty = vec_elt_ty.ty; }
+          ty::ty_vec(vec_elt_ty) { elt_ty = vec_elt_ty; }
           ty::ty_str. { elt_ty = ty::mk_mach_uint(tcx, ast::ty_u8); }
           _ {
             tcx.sess.span_fatal(expr.span,
@@ -2055,7 +2204,7 @@ fn check_expr_with_unifier(fcx: @fn_ctxt, expr: @ast::expr, unify: unifier,
       ast::expr_vec(args, mutbl) {
         let t: ty::t = next_ty_var(fcx);
         for e: @ast::expr in args { bot |= check_expr_with(fcx, e, t); }
-        let typ = ty::mk_vec(tcx, {ty: t, mutbl: mutbl});
+        let typ = apply_mutbl_to_ty(tcx, mutbl, ty::mk_vec(tcx, t));
         write::ty_only_fixup(fcx, id, typ);
       }
       ast::expr_tup(elts) {
@@ -2120,98 +2269,10 @@ fn check_expr_with_unifier(fcx: @fn_ctxt, expr: @ast::expr, unify: unifier,
       ast::expr_field(base, field, tys) {
         bot |= check_expr(fcx, base);
         let expr_t = expr_ty(tcx, base);
-        let base_t = do_autoderef(fcx, expr.span, expr_t);
-        let handled = false, n_tys = vec::len(tys);
-        alt structure_of(fcx, expr.span, base_t) {
-          ty::ty_rec(fields) {
-            alt ty::field_idx(field, fields) {
-              some(ix) {
-                if n_tys > 0u {
-                    tcx.sess.span_err(expr.span,
-                                      "can't provide type parameters \
-                                       to a field access");
-                }
-                write::ty_only_fixup(fcx, id, fields[ix].mt.ty);
-                handled = true;
-              }
-              _ {}
-            }
-          }
-          ty::ty_obj(methods) {
-            alt ty::method_idx(field, methods) {
-              some(ix) {
-                if n_tys > 0u {
-                    tcx.sess.span_err(expr.span,
-                                      "can't provide type parameters \
-                                       to an obj method");
-                }
-                write::ty_only_fixup(fcx, id,
-                                     ty::mk_fn(tcx, methods[ix].fty));
-                handled = true;
-              }
-              _ {}
-            }
-          }
-          _ {}
-        }
-        if !handled {
-            let iscope = fcx.ccx.impl_map.get(expr.id);
-            alt lookup_method(fcx, iscope, field, expr_t, expr.span) {
-              some({method, ids}) {
-                let fty = if method.did.crate == ast::local_crate {
-                    alt tcx.items.get(method.did.node) {
-                      ast_map::node_method(m) {
-                        let mt = ty_of_method(tcx, m_check, m);
-                        ty::mk_fn(tcx, mt.fty)
-                      }
-                    }
-                } else { csearch::get_type(tcx, method.did).ty };
-                let tvars = vec::map(ids, {|id| ty::mk_var(tcx, id)});
-                let n_tps = vec::len(ids);
-                if method.n_tps + n_tps  > 0u {
-                    let b = bind_params_in_type(expr.span, tcx,
-                                                bind next_ty_var_id(fcx), fty,
-                                                n_tps + method.n_tps);
-                    let _tvars = vec::map(b.ids, {|id| ty::mk_var(tcx, id)});
-                    let i = 0;
-                    for v in tvars {
-                        demand::simple(fcx, expr.span, v, _tvars[i]);
-                        i += 1;
-                    }
-                    tvars = _tvars;
-                    fty = b.ty;
-                    if n_tys > 0u {
-                        if n_tys != method.n_tps {
-                            tcx.sess.span_fatal
-                                (expr.span, "incorrect number of type \
-                                           parameters given for this method");
-
-                        }
-                        let i = 0u;
-                        for ty in tys {
-                            let tvar = tvars[i + n_tps];
-                            let t_subst = ast_ty_to_ty_crate(fcx.ccx, ty);
-                            demand::simple(fcx, expr.span, tvar, t_subst);
-                            i += 1u;
-                        }
-                    }
-                } else if n_tys > 0u {
-                    tcx.sess.span_fatal(expr.span,
-                                        "this method does not take type \
-                                         parameters");
-                }
-                write::ty_fixup(fcx, id, {substs: some(tvars), ty: fty});
-                fcx.ccx.method_map.insert(id, method.did);
-              }
-              none. {
-                let t_err = resolve_type_vars_if_possible(fcx, expr_t);
-                let msg = #fmt["attempted access of field %s on type %s, but \
-                                no method implementation was found",
-                               field, ty_to_str(tcx, t_err)];
-                tcx.sess.span_fatal(expr.span, msg);
-              }
-            }
-        }
+        let fldpot = do_deref(fcx, expr.span, expr_t, { |base_t|
+            handle_field_deref(fcx, expr, base, field, tys, base_t)
+        });
+        write::ty_fixup(fcx, id, fldpot);
       }
       ast::expr_index(base, idx) {
         bot |= check_expr(fcx, base);
@@ -2226,7 +2287,7 @@ fn check_expr_with_unifier(fcx: @fn_ctxt, expr: @ast::expr, unify: unifier,
                                   + ty_to_str(tcx, idx_t));
         }
         alt structure_of(fcx, expr.span, base_t) {
-          ty::ty_vec(mt) { write::ty_only_fixup(fcx, id, mt.ty); }
+          ty::ty_vec(subty) { write::ty_only_fixup(fcx, id, subty); }
           ty::ty_str. {
             let typ = ty::mk_mach_uint(tcx, ast::ty_u8);
             write::ty_only_fixup(fcx, id, typ);
@@ -2686,9 +2747,8 @@ fn check_item(ccx: @crate_ctxt, it: @ast::item) {
 
 fn arg_is_argv_ty(tcx: ty::ctxt, a: ty::arg) -> bool {
     alt ty::struct(tcx, a.ty) {
-      ty::ty_vec(mt) {
-        if mt.mutbl != ast::imm { ret false; }
-        alt ty::struct(tcx, mt.ty) {
+      ty::ty_vec(subty) {
+        alt ty::struct(tcx, subty) {
           ty::ty_str. { ret true; }
           _ { ret false; }
         }

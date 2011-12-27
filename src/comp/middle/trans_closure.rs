@@ -97,13 +97,13 @@ fn mk_closure_ty(tcx: ty::ctxt,
 
 fn shared_opaque_closure_box_ty(tcx: ty::ctxt) -> ty::t {
     let opaque_closure_ty = ty::mk_opaque_closure(tcx);
-    ret ty::mk_imm_box(tcx, opaque_closure_ty);
+    ret ty::mk_box(tcx, opaque_closure_ty);
 }
 
 fn send_opaque_closure_box_ty(tcx: ty::ctxt) -> ty::t {
     let opaque_closure_ty = ty::mk_opaque_closure(tcx);
     let tup_ty = ty::mk_tup(tcx, [ty::mk_int(tcx), opaque_closure_ty]);
-    ret ty::mk_uniq(tcx, {ty: tup_ty, mutbl: ast::imm});
+    ret ty::mk_uniq(tcx, tup_ty);
 }
 
 type closure_result = {
@@ -184,7 +184,7 @@ fn store_environment(
       ty::closure_send. {
         // Dummy up a box in the exchange heap.
         let tup_ty = ty::mk_tup(tcx, [ty::mk_int(tcx), closure_ty]);
-        let box_ty = ty::mk_uniq(tcx, {ty: tup_ty, mutbl: ast::imm});
+        let box_ty = ty::mk_uniq(tcx, tup_ty);
         check trans_uniq::type_is_unique_box(bcx, box_ty);
         let r = trans_uniq::alloc_uniq(bcx, box_ty);
         add_clean_free(bcx, r.val, true);
@@ -225,7 +225,7 @@ fn store_environment(
     }
 
     check type_is_tup_like(bcx, closure_ty);
-    let box_ty = ty::mk_imm_box(bcx_tcx(bcx), closure_ty);
+    let box_ty = ty::mk_box(bcx_tcx(bcx), closure_ty);
 
     // If necessary, copy tydescs describing type parameters into the
     // appropriate slot in the closure.
@@ -302,7 +302,7 @@ fn build_closure(bcx0: @block_ctxt,
         alt cap_var.mode {
           capture::cap_ref. {
             assert ck == ty::closure_block;
-            ty = ty::mk_mut_ptr(tcx, ty);
+            ty = ty::mk_ptr(tcx, ty);
             env_vals += [env_ref(lv.val, ty, lv.kind)];
           }
           capture::cap_copy. {

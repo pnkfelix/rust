@@ -56,16 +56,15 @@ export mk_bool;
 export mk_bot;
 export mk_box;
 export mk_char;
+export mk_const;
 export mk_constr;
 export mk_ctxt;
 export mk_float;
 export mk_fn;
-export mk_imm_box;
-export mk_imm_uniq;
-export mk_mut_ptr;
 export mk_int;
 export mk_str;
 export mk_vec;
+export mk_const;
 export mk_mach_int;
 export mk_mach_uint;
 export mk_mach_float;
@@ -111,6 +110,7 @@ export ty_native_fn;
 export ty_bool;
 export ty_bot;
 export ty_box;
+export ty_const;
 export ty_constr;
 export ty_opaque_closure;
 export ty_constr_arg;
@@ -252,10 +252,10 @@ tag sty {
     ty_float(ast::float_ty);
     ty_str;
     ty_tag(def_id, [t]);
-    ty_box(mt);
-    ty_uniq(mt);
-    ty_vec(mt);
-    ty_ptr(mt);
+    ty_box(t);
+    ty_uniq(t);
+    ty_vec(t);
+    ty_ptr(t);
     ty_rec([field]);
     ty_fn(fn_ty);
     ty_native_fn([arg], t);
@@ -266,6 +266,8 @@ tag sty {
     ty_var(int); // type variable
 
     ty_param(uint, ast::kind); // fn/tag type param
+
+    ty_const(t);
 
     ty_type; // type_desc*
     ty_send_type; // type_desc* that has been cloned into exchange heap
@@ -297,6 +299,7 @@ tag type_err {
     terr_mode_mismatch(mode, mode);
     terr_constr_len(uint, uint);
     terr_constr_mismatch(@type_constr, @type_constr);
+    terr_const;
 }
 
 type ty_param_kinds_and_ty = {kinds: [ast::kind], ty: t};
@@ -453,10 +456,10 @@ fn mk_raw_ty(cx: ctxt, st: sty) -> @raw_t {
       ty_tag(_, tys) | ty_iface(_, tys) {
         for tt: t in tys { derive_flags_t(cx, has_params, has_vars, tt); }
       }
-      ty_box(m) { derive_flags_mt(cx, has_params, has_vars, m); }
-      ty_uniq(m) { derive_flags_mt(cx, has_params, has_vars, m); }
-      ty_vec(m) { derive_flags_mt(cx, has_params, has_vars, m); }
-      ty_ptr(m) { derive_flags_mt(cx, has_params, has_vars, m); }
+      ty_box(subty) { derive_flags_t(cx, has_params, has_vars, subty); }
+      ty_uniq(subty) { derive_flags_t(cx, has_params, has_vars, subty); }
+      ty_vec(subty) { derive_flags_t(cx, has_params, has_vars, subty); }
+      ty_ptr(subty) { derive_flags_t(cx, has_params, has_vars, subty); }
       ty_rec(flds) {
         for f: field in flds {
             derive_flags_mt(cx, has_params, has_vars, f.mt);
@@ -552,25 +555,13 @@ fn mk_tag(cx: ctxt, did: ast::def_id, tys: [t]) -> t {
     ret gen_ty(cx, ty_tag(did, tys));
 }
 
-fn mk_box(cx: ctxt, tm: mt) -> t { ret gen_ty(cx, ty_box(tm)); }
+fn mk_box(cx: ctxt, subty: t) -> t { ret gen_ty(cx, ty_box(subty)); }
 
-fn mk_uniq(cx: ctxt, tm: mt) -> t { ret gen_ty(cx, ty_uniq(tm)); }
+fn mk_uniq(cx: ctxt, subty: t) -> t { ret gen_ty(cx, ty_uniq(subty)); }
 
-fn mk_imm_uniq(cx: ctxt, ty: t) -> t {
-    ret mk_uniq(cx, {ty: ty, mutbl: ast::imm});
-}
+fn mk_ptr(cx: ctxt, subty: t) -> t { ret gen_ty(cx, ty_ptr(subty)); }
 
-fn mk_ptr(cx: ctxt, tm: mt) -> t { ret gen_ty(cx, ty_ptr(tm)); }
-
-fn mk_imm_box(cx: ctxt, ty: t) -> t {
-    ret mk_box(cx, {ty: ty, mutbl: ast::imm});
-}
-
-fn mk_mut_ptr(cx: ctxt, ty: t) -> t {
-    ret mk_ptr(cx, {ty: ty, mutbl: ast::mutbl});
-}
-
-fn mk_vec(cx: ctxt, tm: mt) -> t { ret gen_ty(cx, ty_vec(tm)); }
+fn mk_vec(cx: ctxt, subty: t) -> t { ret gen_ty(cx, ty_vec(subty)); }
 
 fn mk_rec(cx: ctxt, fs: [field]) -> t { ret gen_ty(cx, ty_rec(fs)); }
 
@@ -614,6 +605,28 @@ fn mk_opaque_closure(_cx: ctxt) -> t {
     ret idx_opaque_closure;
 }
 
+fn mk_const(cx: ctxt, subty: t) -> t {
+    // Because the const qualifier is deep, a type like
+    //
+    //     const(const T)
+    //
+    // is equivalent to `const T`.  Similarly,
+    //
+    //     const(@const T)
+    //
+    // is equivalent to `const @T`.  The function `defang` removes these
+    // redundant qualifiers as a pre-processing step.
+    fn defang(cx: ctxt, ty: t) -> t {
+        alt struct(cx, ty) {
+          ty_const(subty) { subty }
+          _ { ty }
+        }
+    }
+    let fold_f = fm_general(bind defang(cx, _));
+    let subty_defanged = fold_ty(cx, fold_f, subty);
+    ret gen_ty(cx, ty_const(subty_defanged));
+}
+
 fn mk_named(cx: ctxt, base: t, name: @str) -> t {
     gen_ty(cx, ty_named(base, name))
 }
@@ -643,7 +656,9 @@ fn walk_ty(cx: ctxt, walker: ty_walk, ty: t) {
       ty_str. | ty_send_type. | ty_type. | ty_native(_) | ty_opaque_closure. {
         /* no-op */
       }
-      ty_box(tm) | ty_vec(tm) | ty_ptr(tm) { walk_ty(cx, walker, tm.ty); }
+      ty_box(subty) | ty_vec(subty) | ty_ptr(subty) {
+        walk_ty(cx, walker, subty);
+      }
       ty_tag(_, subtys) | ty_iface(_, subtys) {
         for subty: t in subtys { walk_ty(cx, walker, subty); }
       }
@@ -672,7 +687,7 @@ fn walk_ty(cx: ctxt, walker: ty_walk, ty: t) {
       ty_constr(sub, _) { walk_ty(cx, walker, sub); }
       ty_var(_) {/* no-op */ }
       ty_param(_, _) {/* no-op */ }
-      ty_uniq(tm) { walk_ty(cx, walker, tm.ty); }
+      ty_uniq(subty) { walk_ty(cx, walker, subty); }
     }
     walker(ty);
 }
@@ -697,20 +712,20 @@ fn fold_ty(cx: ctxt, fld: fold_mode, ty_0: t) -> t {
       ty_str. | ty_send_type. | ty_type. | ty_native(_) | ty_opaque_closure. {
         /* no-op */
       }
-      ty_box(tm) {
-        ty = mk_box(cx, {ty: fold_ty(cx, fld, tm.ty), mutbl: tm.mutbl});
+      ty_box(subty) {
+        ty = mk_box(cx, fold_ty(cx, fld, subty));
       }
-      ty_uniq(tm) {
-        ty = mk_uniq(cx, {ty: fold_ty(cx, fld, tm.ty), mutbl: tm.mutbl});
+      ty_uniq(subty) {
+        ty = mk_uniq(cx, fold_ty(cx, fld, subty));
       }
       ty_named(t, nm) {
         ty = mk_named(cx, fold_ty(cx, fld, t), nm);
       }
-      ty_ptr(tm) {
-        ty = mk_ptr(cx, {ty: fold_ty(cx, fld, tm.ty), mutbl: tm.mutbl});
+      ty_ptr(subty) {
+        ty = mk_ptr(cx, fold_ty(cx, fld, subty));
       }
-      ty_vec(tm) {
-        ty = mk_vec(cx, {ty: fold_ty(cx, fld, tm.ty), mutbl: tm.mutbl});
+      ty_vec(subty) {
+        ty = mk_vec(cx, fold_ty(cx, fld, subty));
       }
       ty_tag(tid, subtys) {
         ty = mk_tag(cx, tid, vec::map(subtys, {|t| fold_ty(cx, fld, t) }));
@@ -822,7 +837,7 @@ fn type_is_str(cx: ctxt, ty: t) -> bool {
 fn sequence_element_type(cx: ctxt, ty: t) -> t {
     alt struct(cx, ty) {
       ty_str. { ret mk_mach_uint(cx, ast::ty_u8); }
-      ty_vec(mt) { ret mt.ty; }
+      ty_vec(subty) { ret subty; }
       _ { cx.sess.bug("sequence_element_type called on non-sequence value"); }
     }
 }
@@ -982,7 +997,7 @@ fn type_kind(cx: ctxt, ty: t) -> ast::kind {
       // lower unique to shared. Therefore just set result to shared.
       ty_box(_) | ty_iface(_, _) { ast::kind_copyable }
       // Boxes and unique pointers raise pinned to shared.
-      ty_vec(tm) | ty_uniq(tm) { type_kind(cx, tm.ty) }
+      ty_vec(subty) | ty_uniq(subty) { type_kind(cx, subty) }
       // Records lower to the lowest of their members.
       ty_rec(flds) {
         let lowest = ast::kind_sendable;
@@ -1086,9 +1101,7 @@ fn type_allows_implicit_copy(cx: ctxt, ty: t) -> bool {
     ret !type_structurally_contains(cx, ty, fn (sty: sty) -> bool {
         ret alt sty {
           ty_param(_, _) { true }
-          ty_vec(mt) {
-            mt.mutbl != ast::imm
-          }
+          ty_vec(_) { false }
           ty_rec(fields) {
             for field in fields {
                 if field.mt.mutbl !=
@@ -1207,7 +1220,7 @@ fn type_autoderef(cx: ctxt, t: ty::t) -> ty::t {
     let t1 = t;
     while true {
         alt struct(cx, t1) {
-          ty_box(mt) | ty_uniq(mt) { t1 = mt.ty; }
+          ty_box(subty) | ty_uniq(subty) { t1 = subty; }
           ty_res(_, inner, tps) {
             t1 = substitute_type_params(cx, tps, inner);
           }
@@ -1301,8 +1314,8 @@ fn hash_type_structure(st: sty) -> uint {
         for typ: t in tys { h += (h << 5u) + typ; }
         ret h;
       }
-      ty_box(mt) { ret hash_subty(19u, mt.ty); }
-      ty_vec(mt) { ret hash_subty(21u, mt.ty); }
+      ty_box(subty) { ret hash_subty(19u, subty); }
+      ty_vec(subty) { ret hash_subty(21u, subty); }
       ty_rec(fields) {
         let h = 26u;
         for f: field in fields { h += (h << 5u) + f.mt.ty; }
@@ -1323,7 +1336,7 @@ fn hash_type_structure(st: sty) -> uint {
       ty_type. { ret 32u; }
       ty_native(did) { ret hash_def(33u, did); }
       ty_bot. { ret 34u; }
-      ty_ptr(mt) { ret hash_subty(35u, mt.ty); }
+      ty_ptr(subty) { ret hash_subty(35u, subty); }
       ty_res(did, sub, tps) {
         let h = hash_subty(hash_def(18u, did), sub);
         ret hash_subtys(h, tps);
@@ -1333,7 +1346,7 @@ fn hash_type_structure(st: sty) -> uint {
         for c: @type_constr in cs { h += (h << 5u) + hash_type_constr(h, c); }
         ret h;
       }
-      ty_uniq(mt) { ret hash_subty(37u, mt.ty); }
+      ty_uniq(subty) { ret hash_subty(37u, subty); }
       ty_send_type. { ret 38u; }
       ty_opaque_closure. { ret 39u; }
       ty_named(t, name) { (str::hash(*name) << 5u) + hash_subty(40u, t) }
@@ -2049,6 +2062,20 @@ mod unify {
         }
         finish(result_tps)
     }
+    fn unify_const(cx: @ctxt, expected: t, ex_subty: t, actual: t,
+                   variance: variance) -> result {
+        ret alt struct(cx.tcx, actual) {
+          ty_const(ac_subty) {
+            unify_step(cx, ex_subty, ac_subty, variance)
+          }
+          _ when variance == covariant {
+            unify_step(cx, ex_subty, actual, variance)
+          }
+          _ {
+            ures_err(terr_const)
+          }
+        };
+    }
     fn unify_step(cx: @ctxt, expected: t, actual: t,
                   variance: variance) -> result {
         // FIXME: rewrite this using tuple pattern matching when available, to
@@ -2062,7 +2089,6 @@ mod unify {
 
         // Stage 1: Handle the cases in which one side or another is a type
         // variable.
-
         alt struct(cx.tcx, actual) {
           // If the RHS is a variable type, then just do the
           // appropriate binding.
@@ -2102,10 +2128,10 @@ mod unify {
             }
             ret ures_ok(mk_var(cx.tcx, expected_id));
           }
-          _ {/* fall through */ }
+          _ { /* fall through */ }
         }
-        // Stage 2: Handle all other cases.
 
+        // Stage 3: Handle all other cases.
         alt struct(cx.tcx, actual) {
           ty::ty_bot. { ret ures_ok(expected); }
           _ {/* fall through */ }
@@ -2113,12 +2139,13 @@ mod unify {
         alt struct(cx.tcx, expected) {
           ty::ty_nil. { ret struct_cmp(cx, expected, actual); }
           // _|_ unifies with anything
-          ty::ty_bot. {
-            ret ures_ok(actual);
-          }
+          ty::ty_bot. { ret ures_ok(actual); }
           ty::ty_bool. | ty::ty_int(_) | ty_uint(_) | ty_float(_) |
           ty::ty_str. | ty::ty_type. | ty::ty_send_type. {
             ret struct_cmp(cx, expected, actual);
+          }
+          ty::ty_const(ex_subty) {
+            ret unify_const(cx, expected, ex_subty, actual, variance);
           }
           ty::ty_native(ex_id) {
             alt struct(cx.tcx, actual) {
@@ -2159,20 +2186,14 @@ mod unify {
             }
             ret ures_err(terr_mismatch);
           }
-          ty::ty_box(expected_mt) {
+          ty::ty_box(expected_subty) {
             alt struct(cx.tcx, actual) {
-              ty::ty_box(actual_mt) {
-                let (mutbl, var) = alt unify_mutbl(
-                    expected_mt.mutbl, actual_mt.mutbl, variance) {
-                  none. { ret ures_err(terr_box_mutability); }
-                  some(mv) { mv }
-                };
+              ty::ty_box(actual_subty) {
                 let result = unify_step(
-                    cx, expected_mt.ty, actual_mt.ty, var);
+                    cx, expected_subty, actual_subty, variance);
                 alt result {
-                  ures_ok(result_sub) {
-                    let mt = {ty: result_sub, mutbl: mutbl};
-                    ret ures_ok(mk_box(cx.tcx, mt));
+                  ures_ok(result_subty) {
+                    ret ures_ok(mk_box(cx.tcx, result_subty));
                   }
                   _ { ret result; }
                 }
@@ -2180,20 +2201,14 @@ mod unify {
               _ { ret ures_err(terr_mismatch); }
             }
           }
-          ty::ty_uniq(expected_mt) {
+          ty::ty_uniq(expected_subty) {
             alt struct(cx.tcx, actual) {
-              ty::ty_uniq(actual_mt) {
-                let (mutbl, var) = alt unify_mutbl(
-                    expected_mt.mutbl, actual_mt.mutbl, variance) {
-                  none. { ret ures_err(terr_box_mutability); }
-                  some(mv) { mv }
-                };
+              ty::ty_uniq(actual_subty) {
                 let result = unify_step(
-                    cx, expected_mt.ty, actual_mt.ty, var);
+                    cx, expected_subty, actual_subty, variance);
                 alt result {
-                  ures_ok(result_mt) {
-                    let mt = {ty: result_mt, mutbl: mutbl};
-                    ret ures_ok(mk_uniq(cx.tcx, mt));
+                  ures_ok(result_subty) {
+                    ret ures_ok(mk_uniq(cx.tcx, result_subty));
                   }
                   _ { ret result; }
                 }
@@ -2201,20 +2216,14 @@ mod unify {
               _ { ret ures_err(terr_mismatch); }
             }
           }
-          ty::ty_vec(expected_mt) {
+          ty::ty_vec(expected_subty) {
             alt struct(cx.tcx, actual) {
-              ty::ty_vec(actual_mt) {
-                let (mutbl, var) = alt unify_mutbl(
-                    expected_mt.mutbl, actual_mt.mutbl, variance) {
-                  none. { ret ures_err(terr_vec_mutability); }
-                  some(mv) { mv }
-                };
+              ty::ty_vec(actual_subty) {
                 let result = unify_step(
-                    cx, expected_mt.ty, actual_mt.ty, var);
+                    cx, expected_subty, actual_subty, variance);
                 alt result {
-                  ures_ok(result_sub) {
-                    let mt = {ty: result_sub, mutbl: mutbl};
-                    ret ures_ok(mk_vec(cx.tcx, mt));
+                  ures_ok(result_subty) {
+                    ret ures_ok(mk_vec(cx.tcx, result_subty));
                   }
                   _ { ret result; }
                 }
@@ -2222,20 +2231,14 @@ mod unify {
               _ { ret ures_err(terr_mismatch); }
             }
           }
-          ty::ty_ptr(expected_mt) {
+          ty::ty_ptr(expected_subty) {
             alt struct(cx.tcx, actual) {
-              ty::ty_ptr(actual_mt) {
-                let (mutbl, var) = alt unify_mutbl(
-                    expected_mt.mutbl, actual_mt.mutbl, variance) {
-                  none. { ret ures_err(terr_vec_mutability); }
-                  some(mv) { mv }
-                };
+              ty::ty_ptr(actual_subty) {
                 let result = unify_step(
-                    cx, expected_mt.ty, actual_mt.ty, var);
+                    cx, expected_subty, actual_subty, variance);
                 alt result {
-                  ures_ok(result_sub) {
-                    let mt = {ty: result_sub, mutbl: mutbl};
-                    ret ures_ok(mk_ptr(cx.tcx, mt));
+                  ures_ok(result_subty) {
+                    ret ures_ok(mk_ptr(cx.tcx, result_subty));
                   }
                   _ { ret result; }
                 }
@@ -2375,7 +2378,6 @@ mod unify {
             }
           }
           ty::ty_constr(expected_t, expected_constrs) {
-
             // unify the base types...
             alt struct(cx.tcx, actual) {
               ty::ty_constr(actual_t, actual_constrs) {
@@ -2504,6 +2506,7 @@ fn type_err_to_str(err: ty::type_err) -> str {
         ret to_str(actual) + " function found where " + to_str(expect) +
             " function was expected";
       }
+      terr_const. { ret "types differ in const-ness"; }
       terr_box_mutability. { ret "boxed values differ in mutability"; }
       terr_vec_mutability. { ret "vectors differ in mutability"; }
       terr_tuple_size(e_sz, a_sz) {

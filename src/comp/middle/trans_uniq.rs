@@ -73,7 +73,7 @@ fn content_ty(bcx: @block_ctxt, t: ty::t)
     : type_is_unique_box(bcx, t) -> ty::t {
 
     alt ty::struct(bcx_tcx(bcx), t) {
-      ty::ty_uniq({ty: ct, _}) { ct }
+      ty::ty_uniq(ct) { ct }
     }
 }
 

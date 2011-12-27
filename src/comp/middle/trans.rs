@@ -138,27 +138,24 @@ fn type_of_inner(cx: @crate_ctxt, sp: span, t: ty::t)
       ty::ty_float(t) { T_float_ty(cx, t) }
       ty::ty_str. { T_ptr(T_vec(cx, T_i8())) }
       ty::ty_tag(did, _) { type_of_tag(cx, sp, did, t) }
-      ty::ty_box(mt) {
-        let mt_ty = mt.ty;
-        check non_ty_var(cx, mt_ty);
-        T_ptr(T_box(cx, type_of_inner(cx, sp, mt_ty))) }
-      ty::ty_uniq(mt) {
-        let mt_ty = mt.ty;
-        check non_ty_var(cx, mt_ty);
-        T_ptr(type_of_inner(cx, sp, mt_ty)) }
-      ty::ty_vec(mt) {
-        let mt_ty = mt.ty;
-        if ty::type_has_dynamic_size(cx.tcx, mt_ty) {
+      ty::ty_box(subty) {
+        check non_ty_var(cx, subty);
+        T_ptr(T_box(cx, type_of_inner(cx, sp, subty))) }
+      ty::ty_uniq(subty) {
+        check non_ty_var(cx, subty);
+        T_ptr(type_of_inner(cx, sp, subty)) }
+      ty::ty_vec(subty) {
+        if ty::type_has_dynamic_size(cx.tcx, subty) {
             T_ptr(cx.opaque_vec_type)
         } else {
             // should be unnecessary
-            check non_ty_var(cx, mt_ty);
-            T_ptr(T_vec(cx, type_of_inner(cx, sp, mt_ty))) }
+            check non_ty_var(cx, subty);
+            T_ptr(T_vec(cx, type_of_inner(cx, sp, subty))) }
       }
-      ty::ty_ptr(mt) {
-        let mt_ty = mt.ty;
-        check non_ty_var(cx, mt_ty);
-        T_ptr(type_of_inner(cx, sp, mt_ty)) }
+      ty::ty_ptr(subty) {
+        check non_ty_var(cx, subty);
+        T_ptr(type_of_inner(cx, sp, subty))
+      }
       ty::ty_rec(fields) {
         let tys: [TypeRef] = [];
         for f: ty::field in fields {
@@ -478,19 +475,19 @@ fn mk_obstack_token(ccx: @crate_ctxt, fcx: @fn_ctxt) ->
 fn simplify_type(ccx: @crate_ctxt, typ: ty::t) -> ty::t {
     fn simplifier(ccx: @crate_ctxt, typ: ty::t) -> ty::t {
         alt ty::struct(ccx.tcx, typ) {
-          ty::ty_box(_) { ret ty::mk_imm_box(ccx.tcx, ty::mk_nil(ccx.tcx)); }
+          ty::ty_box(_) { ret ty::mk_box(ccx.tcx, ty::mk_nil(ccx.tcx)); }
           ty::ty_uniq(_) {
-            ret ty::mk_imm_uniq(ccx.tcx, ty::mk_nil(ccx.tcx));
+            ret ty::mk_uniq(ccx.tcx, ty::mk_nil(ccx.tcx));
           }
           ty::ty_fn(_) {
             ret ty::mk_tup(ccx.tcx,
-                           [ty::mk_imm_box(ccx.tcx, ty::mk_nil(ccx.tcx)),
-                            ty::mk_imm_box(ccx.tcx, ty::mk_nil(ccx.tcx))]);
+                           [ty::mk_box(ccx.tcx, ty::mk_nil(ccx.tcx)),
+                            ty::mk_box(ccx.tcx, ty::mk_nil(ccx.tcx))]);
           }
           ty::ty_obj(_) {
             ret ty::mk_tup(ccx.tcx,
-                           [ty::mk_imm_box(ccx.tcx, ty::mk_nil(ccx.tcx)),
-                            ty::mk_imm_box(ccx.tcx, ty::mk_nil(ccx.tcx))]);
+                           [ty::mk_box(ccx.tcx, ty::mk_nil(ccx.tcx)),
+                            ty::mk_box(ccx.tcx, ty::mk_nil(ccx.tcx))]);
           }
           ty::ty_res(_, sub, tps) {
             let sub1 = ty::substitute_type_params(ccx.tcx, tps, sub);
@@ -842,13 +839,13 @@ fn trans_malloc_boxed_raw(cx: @block_ctxt, t: ty::t) -> result {
     // The mk_int here is the space being
     // reserved for the refcount.
     let boxed_body = ty::mk_tup(bcx_tcx(bcx), [ty::mk_int(bcx_tcx(cx)), t]);
-    let box_ptr = ty::mk_imm_box(bcx_tcx(bcx), t);
+    let box_ptr = ty::mk_box(bcx_tcx(bcx), t);
     let r = size_of(cx, boxed_body);
     let llsz = r.val; bcx = r.bcx;
 
     // Grab the TypeRef type of box_ptr, because that's what trans_raw_malloc
     // wants.
-    // FIXME: Could avoid this check with a postcondition on mk_imm_box?
+    // FIXME: Could avoid this check with a postcondition on mk_box?
     // (requires Issue #586)
     let ccx = bcx_ccx(bcx);
     let sp = bcx.sp;
@@ -1349,10 +1346,10 @@ fn incr_refcnt_of_boxed(cx: @block_ctxt, box_ptr: ValueRef) -> @block_ctxt {
 
 fn free_box(bcx: @block_ctxt, v: ValueRef, t: ty::t) -> @block_ctxt {
     ret alt ty::struct(bcx_tcx(bcx), t) {
-      ty::ty_box(body_mt) {
+      ty::ty_box(body_ty) {
         let v = PointerCast(bcx, v, type_of_1(bcx, t));
         let body = GEPi(bcx, v, [0, abi::box_rc_field_body]);
-        let bcx = drop_ty(bcx, body, body_mt.ty);
+        let bcx = drop_ty(bcx, body, body_ty);
         trans_free_if_not_gc(bcx, v)
       }
 
@@ -1617,7 +1614,7 @@ fn iter_structural_ty(cx: @block_ctxt, av: ValueRef, t: ty::t,
        @block_ctxt {
         let box_ptr = Load(cx, box_cell);
         let tnil = ty::mk_nil(bcx_tcx(cx));
-        let tbox = ty::mk_imm_box(bcx_tcx(cx), tnil);
+        let tbox = ty::mk_box(bcx_tcx(cx), tnil);
         let inner_cx = new_sub_block_ctxt(cx, "iter box");
         let next_cx = new_sub_block_ctxt(cx, "next");
         let null_test = IsNull(cx, box_ptr);
@@ -2311,9 +2308,9 @@ fn autoderef(cx: @block_ctxt, v: ValueRef, t: ty::t) -> result_t {
     let sp = cx.sp;
     while true {
         alt ty::struct(ccx.tcx, t1) {
-          ty::ty_box(mt) {
+          ty::ty_box(subty) {
             let body = GEPi(cx, v1, [0, abi::box_rc_field_body]);
-            t1 = mt.ty;
+            t1 = subty;
 
             // Since we're changing levels of box indirection, we may have
             // to cast this pointer, since statically-sized tag types have
@@ -5116,10 +5113,9 @@ fn create_main_wrapper(ccx: @crate_ctxt, sp: span, main_llfn: ValueRef,
 
     fn create_main(ccx: @crate_ctxt, sp: span, main_llfn: ValueRef,
                    takes_argv: bool) -> ValueRef {
-        let unit_ty = ty::mk_str(ccx.tcx);
+        let unit_ty = ty::mk_const(ccx.tcx, ty::mk_str(ccx.tcx));
         let vecarg_ty: ty::arg =
-            {mode: ast::by_val,
-             ty: ty::mk_vec(ccx.tcx, {ty: unit_ty, mutbl: ast::imm})};
+            {mode: ast::by_val, ty: ty::mk_vec(ccx.tcx, unit_ty)};
         // FIXME: mk_nil should have a postcondition
         let nt = ty::mk_nil(ccx.tcx);
         check non_ty_var(ccx, nt);
