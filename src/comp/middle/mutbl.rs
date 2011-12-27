@@ -8,102 +8,57 @@ tag deref_t { unbox; field; index; }
 
 type deref = @{mutbl: bool, kind: deref_t, outer_t: ty::t};
 
-// Finds the root (the thing that is dereferenced) for the given expr, and a
-// vec of dereferences that were used on this root. Note that, in this vec,
-// the inner derefs come in front, so foo.bar[1] becomes rec(ex=foo,
-// ds=[index,field])
-fn expr_root(tcx: ty::ctxt, ex: @expr, autoderef: bool) ->
-   {ex: @expr, ds: @[deref]} {
-    fn maybe_auto_unbox(tcx: ty::ctxt, t: ty::t) -> {t: ty::t, ds: [deref]} {
-        let ds = [], t = t;
-        while true {
-            alt ty::struct(tcx, t) {
-              ty::ty_box(mt) {
-                ds += [@{mutbl: mt.mutbl == mutbl, kind: unbox, outer_t: t}];
-                t = mt.ty;
-              }
-              ty::ty_uniq(mt) {
-                ds += [@{mutbl: mt.mutbl == mutbl, kind: unbox, outer_t: t}];
-                t = mt.ty;
-              }
-              ty::ty_res(_, inner, tps) {
-                ds += [@{mutbl: false, kind: unbox, outer_t: t}];
-                t = ty::substitute_type_params(tcx, tps, inner);
-              }
-              ty::ty_tag(did, tps) {
-                let variants = ty::tag_variants(tcx, did);
-                if vec::len(*variants) != 1u ||
-                       vec::len(variants[0].args) != 1u {
-                    break;
-                }
-                ds += [@{mutbl: false, kind: unbox, outer_t: t}];
-                t = ty::substitute_type_params(tcx, tps, variants[0].args[0]);
-              }
-              _ { break; }
-            }
-        }
-        ret {t: t, ds: ds};
-    }
-    let ds: [deref] = [], ex = ex;
-    while true {
-        alt copy ex.node {
-          expr_field(base, ident, _) {
-            let auto_unbox = maybe_auto_unbox(tcx, ty::expr_ty(tcx, base));
-            let is_mut = false;
-            alt ty::struct(tcx, auto_unbox.t) {
-              ty::ty_rec(fields) {
-                for fld: ty::field in fields {
-                    if str::eq(ident, fld.ident) {
-                        is_mut = fld.mt.mutbl == mutbl;
-                        break;
-                    }
-                }
-              }
-              ty::ty_obj(_) { }
-            }
-            ds += [@{mutbl: is_mut, kind: field, outer_t: auto_unbox.t}];
-            ds += auto_unbox.ds;
-            ex = base;
+// The "root expression" is the expression that is being dereferenced in an
+// assignment or a move.  For example, in the expression `a.b`, the root
+// expression is `a` (or possibly `*a` if auto-derefencing is occurring).  The
+// `classify_lval()` function determines whether this root is const
+// (read-only) or mutable and whether or not it is movable.  A movable root is
+// one that is not in the middle of a datastructure.
+
+tag lval_classification {
+    lv_deref(/*readonly:*/bool, /*kind:*/deref_t); // a.b, a[b], *a
+    lv_path(def); // a::b::c
+    lv_not_lvalue; // everything else
+}
+
+fn classify_lval(tcx: ty::ctxt, ex: @expr) -> lval_classification {
+    fn base_ty_readonly(tcx: ty::ctxt, ty: ty::t) -> bool {
+        alt ty::struct(tcx, ty) {
+          ty::ty_const(_) { ret true; }
+          ty::ty_box(subty) | ty::ty_ptr(subty) {
+            // auto-dereference
+            be base_ty_readonly(tcx, subty);
           }
-          expr_index(base, _) {
-            let auto_unbox = maybe_auto_unbox(tcx, ty::expr_ty(tcx, base));
-            alt ty::struct(tcx, auto_unbox.t) {
-              ty::ty_vec(mt) {
-                ds +=
-                    [@{mutbl: mt.mutbl == mutbl,
-                       kind: index,
-                       outer_t: auto_unbox.t}];
-              }
-              ty::ty_str. {
-                ds += [@{mutbl: false, kind: index, outer_t: auto_unbox.t}];
-              }
-            }
-            ds += auto_unbox.ds;
-            ex = base;
-          }
-          expr_unary(op, base) {
-            if op == deref {
-                let base_t = ty::expr_ty(tcx, base);
-                let is_mut = false;
-                alt ty::struct(tcx, base_t) {
-                  ty::ty_box(mt) { is_mut = mt.mutbl == mutbl; }
-                  ty::ty_uniq(mt) { is_mut = mt.mutbl == mutbl; }
-                  ty::ty_res(_, _, _) { }
-                  ty::ty_tag(_, _) { }
-                  ty::ty_ptr(mt) { is_mut = mt.mutbl == mutbl; }
-                }
-                ds += [@{mutbl: is_mut, kind: unbox, outer_t: base_t}];
-                ex = base;
-            } else { break; }
-          }
-          _ { break; }
+          ty::ty_vec(subty) { ret false; }
+          ty::ty_str. { ret true; }
+          ty::ty_named(subty, _) { be base_ty_readonly(tcx, subty); }
+          ty::ty_rec(_) { ret false; }
+          _ { fail "Not a dereferencable type!"; }
         }
     }
-    if autoderef {
-        let auto_unbox = maybe_auto_unbox(tcx, ty::expr_ty(tcx, ex));
-        ds += auto_unbox.ds;
+
+    ret alt ex.node {
+      expr_field(base_expr, _, _) |
+      expr_index(base_expr, _) |
+      expr_unary(deref., base_expr) {
+        let base_ty = ty::expr_ty(tcx, base_expr);
+        let kind = alt ex.node {
+          expr_field(_, _, _) { field }
+          expr_index(_, _) { index }
+          expr_unary(_,_) { unbox }
+        };
+        lv_deref(base_ty_readonly(tcx, base_ty), kind)
+      }
+
+      expr_path(_) {
+        let def = tcx.def_map.get(ex.id);
+        lv_path(def)
+      }
+
+      _ {
+        lv_not_lvalue
+      }
     }
-    ret {ex: ex, ds: @ds};
 }
 
 // Actual mutbl-checking pass
@@ -168,55 +123,46 @@ fn visit_expr(cx: @ctx, ex: @expr, &&e: (), v: visit::vt<()>) {
 }
 
 fn check_lval(cx: @ctx, dest: @expr, msg: msg) {
-    alt dest.node {
-      expr_path(p) {
-        let def = cx.tcx.def_map.get(dest.id);
+    alt classify_lval(cx.tcx, dest) {
+      lv_deref(false, _) { /* fallthrough */ }
+      lv_deref(true, kind) {
+        let name = alt kind {
+          unbox. { "immutable box" }
+          field. { "immutable field" }
+          index. { "immutable vec content" }
+        };
+        mk_err(cx, dest.span, msg, name);
+      }
+      lv_path(def) {
         alt is_immutable_def(cx, def) {
           some(name) { mk_err(cx, dest.span, msg, name); }
           _ { }
         }
         cx.mutbl_map.insert(ast_util::def_id_of_def(def).node, ());
       }
-      _ {
-        let root = expr_root(cx.tcx, dest, false);
-        if vec::len(*root.ds) == 0u {
-            if msg != msg_move_out {
-                mk_err(cx, dest.span, msg, "non-lvalue");
-            }
-        } else if !root.ds[0].mutbl {
-            let name =
-                alt root.ds[0].kind {
-                  unbox. { "immutable box" }
-                  field. { "immutable field" }
-                  index. { "immutable vec content" }
-                };
-            mk_err(cx, dest.span, msg, name);
-        }
+      lv_not_lvalue. when msg != msg_move_out {
+        mk_err(cx, dest.span, msg, "non-lvalue");
       }
+      lv_not_lvalue. { /* fallthrough */ }
     }
 }
 
 fn check_move_rhs(cx: @ctx, src: @expr) {
-    alt src.node {
-      expr_path(p) {
-        alt cx.tcx.def_map.get(src.id) {
-          def_obj_field(_, _) {
-            mk_err(cx, src.span, msg_move_out, "object field");
-          }
-          def_self(_) {
-            mk_err(cx, src.span, msg_move_out, "method self");
-          }
-          _ { }
-        }
+    alt classify_lval(cx.tcx, src) {
+      lv_path(def_obj_field(_, _)) {
+        mk_err(cx, src.span, msg_move_out, "object field");
+      }
+      lv_path(def_self(_)) {
+        mk_err(cx, src.span, msg_move_out, "method self");
+      }
+      lv_path(_) {
         check_lval(cx, src, msg_move_out);
       }
-      _ {
-        let root = expr_root(cx.tcx, src, false);
-
-        // Not a path and no-derefs means this is a temporary.
-        if vec::len(*root.ds) != 0u {
-            cx.tcx.sess.span_err(src.span, "moving out of a data structure");
-        }
+      lv_deref(_, _) {
+        cx.tcx.sess.span_err(src.span, "moving out of a data structure");
+      }
+      lv_not_lvalue. {
+        /* fallthrough */
       }
     }
 }

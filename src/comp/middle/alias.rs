@@ -358,10 +358,8 @@ fn check_for(cx: ctx, local: @ast::local, seq: @ast::expr, blk: ast::blk,
     let seq_t = ty::expr_ty(cx.tcx, seq);
     let cur_mutbl = root.mutbl;
     alt ty::struct(cx.tcx, seq_t) {
-      ty::ty_vec(mt) {
-        if mt.mutbl != ast::imm {
-            cur_mutbl = some(contains(seq_t));
-        }
+      ty::ty_vec(mt) { // note: not a const(vec(t))
+        cur_mutbl = some(contains(seq_t));
       }
       _ {}
     }
@@ -503,8 +501,11 @@ fn ty_can_unsafely_include(cx: ctx, needle: unsafe_ty, haystack: ty::t,
             }
             ret false;
           }
-          ty::ty_box(mt) | ty::ty_ptr(mt) | ty::ty_uniq(mt) {
-            ret helper(tcx, needle, mt.ty, get_mutbl(mutbl, mt));
+          ty::ty_const(ty) {
+            be helper(tcx, needle, ty, false);
+          }
+          ty::ty_box(ty) | ty::ty_ptr(ty) | ty::ty_uniq(ty) {
+            be helper(tcx, needle, ty, mutbl);
           }
           ty::ty_rec(fields) {
             for f: ty::field in fields {
@@ -561,7 +562,7 @@ fn copy_is_expensive(tcx: ty::ctxt, ty: ty::t) -> bool {
           ty::ty_fn(_) | ty::ty_native_fn(_, _) |
           ty::ty_obj(_) { 4u }
           ty::ty_str. | ty::ty_vec(_) | ty::ty_param(_, _) { 50u }
-          ty::ty_uniq(mt) { 1u + score_ty(tcx, mt.ty) }
+          ty::ty_uniq(ty) { 1u + score_ty(tcx, ty) }
           ty::ty_tag(_, ts) | ty::ty_tup(ts) {
             let sum = 0u;
             for t in ts { sum += score_ty(tcx, t); }
@@ -623,11 +624,112 @@ fn pattern_roots(tcx: ty::ctxt, mutbl: option::t<unsafe_ty>, pat: @ast::pat)
     ret set;
 }
 
-// Wraps the expr_root in mutbl.rs to also handle roots that exist through
+type deref = @{mutbl: bool, outer_t: ty::t};
+
+// Finds the root (the thing that is dereferenced) for the given expr, and a
+// vec of dereferences that were used on this root. Note that, in this vec,
+// the inner derefs come in front, so foo.bar[1] becomes rec(ex=foo,
+// ds=[index,field])
+fn base_expr_root(tcx: ty::ctxt, ex: @ast::expr, autoderef: bool) ->
+   {ex: @ast::expr, ds: @[deref]} {
+    fn maybe_auto_unbox(tcx: ty::ctxt, t: ty::t) -> {t: ty::t, ds: [deref]} {
+        let ds = [], t = t, is_const = false;
+        while true {
+            alt ty::struct(tcx, t) {
+              ty::ty_const(subty) {
+                t = subty;
+                is_const = true;
+              }
+              ty::ty_box(mt) {
+                ds += [@{mutbl: !is_const, outer_t: t}];
+                t = mt.ty;
+              }
+              ty::ty_uniq(mt) {
+                ds += [@{mutbl: !is_const, outer_t: t}];
+                t = mt.ty;
+              }
+              ty::ty_res(_, inner, tps) {
+                ds += [@{mutbl: false, outer_t: t}];
+                t = ty::substitute_type_params(tcx, tps, inner);
+              }
+              ty::ty_tag(did, tps) {
+                let variants = ty::tag_variants(tcx, did);
+                if vec::len(*variants) != 1u ||
+                       vec::len(variants[0].args) != 1u {
+                    break;
+                }
+                ds += [@{mutbl: false, outer_t: t}];
+                t = ty::substitute_type_params(tcx, tps, variants[0].args[0]);
+              }
+              _ { break; }
+            }
+        }
+        ret {t: t, ds: ds};
+    }
+    let ds: [deref] = [], ex = ex;
+    while true {
+        alt copy ex.node {
+          ast::expr_field(base, ident, _) {
+            let auto_unbox = maybe_auto_unbox(tcx, ty::expr_ty(tcx, base));
+            let is_mut = false;
+            alt ty::struct(tcx, auto_unbox.t) {
+              ty::ty_rec(fields) {
+                for fld: ty::field in fields {
+                    if str::eq(ident, fld.ident) {
+                        is_mut = fld.mt.mutbl == ast::mutbl;
+                        break;
+                    }
+                }
+              }
+              ty::ty_obj(_) { }
+            }
+            ds += [@{mutbl: is_mut, outer_t: auto_unbox.t}];
+            ds += auto_unbox.ds;
+            ex = base;
+          }
+          ast::expr_index(base, _) {
+            let auto_unbox = maybe_auto_unbox(tcx, ty::expr_ty(tcx, base));
+            alt ty::struct(tcx, auto_unbox.t) {
+              ty::ty_vec(mt) {
+                ds +=
+                    [@{mutbl: mt.mutbl == ast::mutbl,
+                       outer_t: auto_unbox.t}];
+              }
+              ty::ty_str. {
+                ds += [@{mutbl: false, outer_t: auto_unbox.t}];
+              }
+            }
+            ds += auto_unbox.ds;
+            ex = base;
+          }
+          ast::expr_unary(ast::deref., base) {
+            let base_t = ty::expr_ty(tcx, base);
+            let is_mut = false;
+            alt ty::struct(tcx, base_t) {
+              ty::ty_box(mt) { is_mut = mt.mutbl == ast::mutbl; }
+              ty::ty_uniq(mt) { is_mut = mt.mutbl == ast::mutbl; }
+              ty::ty_res(_, _, _) { }
+              ty::ty_tag(_, _) { }
+              ty::ty_ptr(mt) { is_mut = mt.mutbl == ast::mutbl; }
+            }
+            ds += [@{mutbl: is_mut, outer_t: base_t}];
+            ex = base;
+          }
+          _ { break; }
+        }
+    }
+    if autoderef {
+        let auto_unbox = maybe_auto_unbox(tcx, ty::expr_ty(tcx, ex));
+        ds += auto_unbox.ds;
+    }
+    ret {ex: ex, ds: @ds};
+}
+
+// Wraps base_expr_root to also handle roots that exist through
 // return-by-reference
 fn expr_root(cx: ctx, ex: @ast::expr, autoderef: bool)
     -> {ex: @ast::expr, mutbl: option::t<unsafe_ty>} {
-    let base_root = mutbl::expr_root(cx.tcx, ex, autoderef);
+    let base_root = base_expr_root(cx.tcx, ex, autoderef);
     let unsafe_ty = none;
     for d in *base_root.ds {
         if d.mutbl { unsafe_ty = some(contains(d.outer_t)); break; }
