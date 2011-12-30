@@ -464,10 +464,8 @@ fn compile_submatch(bcx: @block_ctxt, m: match, vals: [ValueRef], f: mk_fail,
             if vec::len(*ty::tag_variants(ccx.tcx, vdef.tg)) == 1u {
                 kind = single;
             } else {
-                let tagptr =
-                    PointerCast(bcx, val,
-                                trans_common::T_opaque_tag_ptr(ccx));
-                let discrimptr = GEPi(bcx, tagptr, [0, 0]);
+                let discrimptrty = trans_common::T_tag_variant_ptr(ccx);
+                let discrimptr = PointerCast(bcx, val, discrimptrty);
                 test_val = Load(bcx, discrimptr);
                 kind = switch;
             }

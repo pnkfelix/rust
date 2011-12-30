@@ -1079,9 +1079,7 @@ fn iter_structural_ty(cx: @block_ctxt, av: ValueRef, t: ty::t,
         }
 
         let ccx = bcx_ccx(cx);
-        let lltagty = T_opaque_tag_ptr(ccx);
-        let av_tag = PointerCast(cx, av, lltagty);
-        let lldiscrim_a_ptr = GEPi(cx, av_tag, [0, 0]);
+        let lldiscrim_a_ptr = PointerCast(cx, av, T_tag_variant_ptr(ccx));
         let lldiscrim_a = Load(cx, lldiscrim_a_ptr);
 
         // NB: we must hit the discriminant first so that structural
@@ -4047,9 +4045,8 @@ fn trans_tag_variant(cx: @local_ctxt, tag_id: ast::node_id,
 
     // Cast the tag to a type we can GEP into.
     if !is_degen {
-        let lltagptr =
-            PointerCast(bcx, fcx.llretptr, T_opaque_tag_ptr(ccx));
-        let lldiscrimptr = GEPi(bcx, lltagptr, [0, 0]);
+        let llvariantty = T_tag_variant_ptr(ccx);
+        let lldiscrimptr = PointerCast(bcx, fcx.llretptr, llvariantty);
         Store(bcx, C_int(ccx, index), lldiscrimptr);
     }
     let t_id = ast_util::local_def(tag_id);

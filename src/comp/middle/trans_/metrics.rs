@@ -230,8 +230,6 @@ fn type_of_tag(ccx: @crate_ctxt, sp: span,
     -> TypeRef {
     let tcx = ccx_tcx(ccx);
 
-    assert type_has_static_size(ccx, t);
-
     // Creates a simpler, size-equivalent type. The resulting type is
     // guaranteed to have (a) the same size as the type that was
     // passed in; (b) to be non-recursive. This is done by replacing
@@ -267,6 +265,17 @@ fn type_of_tag(ccx: @crate_ctxt, sp: span,
         ret ty::fold_ty(ccx.tcx,
                         ty::fm_general(bind simplifier(ccx, _)),
                         typ);
+    }
+
+    // If we do not know the contents of the tag, then we don't
+    // know much at all!  All we can say is that it begins with a
+    // tag variant followed by "some data".
+    if !type_has_static_size(ccx, t) {
+        ret alt shape::tag_kind(ccx, did) {
+          shape::tk_enum. { T_tag_variant(ccx) }
+          shape::tk_unit. { T_struct([T_i8()]) }
+          shape::tk_complex. { T_struct([T_tag_variant(ccx), T_i8()]) }
+        };
     }
 
     let variants = ty::tag_variants(ccx.tcx, did);

@@ -729,6 +729,10 @@ fn T_tag_variant(cx: @crate_ctxt) -> TypeRef {
     ret cx.int_type;
 }
 
+fn T_tag_variant_ptr(cx: @crate_ctxt) -> TypeRef {
+    ret T_ptr(cx.int_type);
+}
+
 fn T_tag(cx: @crate_ctxt, size: uint) -> TypeRef {
     let s = "tag_" + uint::to_str(size, 10u);
     if cx.tn.name_has_type(s) { ret cx.tn.get_type(s); }
@@ -738,18 +742,6 @@ fn T_tag(cx: @crate_ctxt, size: uint) -> TypeRef {
         } else { T_struct([T_tag_variant(cx), T_array(T_i8(), size)]) };
     cx.tn.associate(s, t);
     ret t;
-}
-
-fn T_opaque_tag(cx: @crate_ctxt) -> TypeRef {
-    let s = "opaque_tag";
-    if cx.tn.name_has_type(s) { ret cx.tn.get_type(s); }
-    let t = T_struct([T_tag_variant(cx), T_i8()]);
-    cx.tn.associate(s, t);
-    ret t;
-}
-
-fn T_opaque_tag_ptr(cx: @crate_ctxt) -> TypeRef {
-    ret T_ptr(T_opaque_tag(cx));
 }
 
 fn T_captured_tydescs(cx: @crate_ctxt, n: uint) -> TypeRef {
