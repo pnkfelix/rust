@@ -272,8 +272,8 @@ fn type_of_tag(ccx: @crate_ctxt, sp: span,
     // tag variant followed by "some data".
     if !type_has_static_size(ccx, t) {
         ret alt shape::tag_kind(ccx, did) {
-          shape::tk_enum. { T_tag_variant(ccx) }
-          shape::tk_unit. { T_struct([T_i8()]) }
+          shape::tk_unit. | shape::tk_enum. { T_tag_variant(ccx) }
+          shape::tk_degen. { T_struct([T_i8()]) }
           shape::tk_complex. { T_struct([T_tag_variant(ccx), T_i8()]) }
         };
     }
@@ -296,12 +296,12 @@ fn type_of_tag(ccx: @crate_ctxt, sp: span,
     });
 
     ret alt shape::tag_kind(ccx, did) {
-      shape::tk_unit. {
-        llvariant_types[0]
+      shape::tk_unit. | shape::tk_enum. {
+        T_tag_variant(ccx)
       }
 
-      shape::tk_enum. {
-        T_tag_variant(ccx)
+      shape::tk_degen. {
+        llvariant_types[0]
       }
 
       shape::tk_complex. {
@@ -409,7 +409,13 @@ fn blob_offset_of(bcx: @block_ctxt,
     let tagt = ty::mk_tag(tcx, tag_id, tps);
 
     ret alt shape::tag_kind(ccx, tag_id) {
+      // No data, so offset is meaningless:
       shape::tk_unit. | shape::tk_enum. { {bcx: bcx, val: C_int(ccx, 0)} }
+
+      // No variant id, offset is always 0:
+      shape::tk_degen. { {bcx: bcx, val: C_int(ccx, 0)} }
+
+      // Offset depends on alignment of the data in variants:
       shape::tk_complex. when type_has_static_size(ccx, tagt) {
         let lltagt = type_of_tag(ccx, bcx.sp, tag_id, tps, tagt);
         let llptrt = T_ptr(lltagt);
@@ -501,7 +507,7 @@ fn compute_tag_metrics(bcx0: @block_ctxt,
 
     // Compute total size, alignment, and offset of data within the structure:
     ret alt shape::tag_kind(ccx, tag_id) {
-      shape::tk_unit. {
+      shape::tk_unit. | shape::tk_degen. {
         // No variant id.
         {bcx: bcx,
          data_offset: C_int(ccx, 0),

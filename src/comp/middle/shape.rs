@@ -225,13 +225,20 @@ fn compute_static_tag_size(ccx: @crate_ctxt, largest_variants: [uint],
     ret {size: max_size, align: max_align};
 }
 
-tag tag_kind { tk_unit; tk_enum; tk_complex; }
+tag tag_kind {
+    tk_unit;     //< Exactly one variant, no args.
+    tk_enum;     //< Two or more variants, all no arg.
+    tk_degen;    //< Exactly one variant, with args.
+    tk_complex;  //< Everything else.
+}
 
 fn tag_kind(ccx: @crate_ctxt, did: ast::def_id) -> tag_kind {
     let variants = ty::tag_variants(ccx.tcx, did);
     if vec::len(*variants) == 0u { ret tk_complex; }
     for v: ty::variant_info in *variants {
-        if vec::len(v.args) > 0u { ret tk_complex; }
+        if vec::len(v.args) > 0u {
+            ret if vec::len(*variants) == 1u { tk_degen } else { tk_complex };
+        }
     }
     if vec::len(*variants) == 1u { ret tk_unit; }
     ret tk_enum;
@@ -324,12 +331,8 @@ fn shape_of(ccx: @crate_ctxt, t: ty::t, ty_param_map: [uint],
       }
       ty::ty_tag(did, tps) {
         alt tag_kind(ccx, did) {
-          tk_unit. {
-            // FIXME: For now we do this.
-            s += [s_variant_tag_t(ccx.tcx)];
-          }
-          tk_enum. { s += [s_variant_tag_t(ccx.tcx)]; }
-          tk_complex. {
+          tk_unit. | tk_enum. { s += [s_variant_tag_t(ccx.tcx)]; }
+          tk_degen. | tk_complex. {
             s += [shape_tag];
 
             let sub = [];

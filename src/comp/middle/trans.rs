@@ -2075,50 +2075,45 @@ fn trans_path(cx: @block_ctxt, p: @ast::path, id: ast::node_id)
     ret trans_var(cx, p.span, bcx_tcx(cx).def_map.get(id), id);
 }
 
-fn trans_var(cx: @block_ctxt, sp: span, def: ast::def, id: ast::node_id)
+fn trans_var(bcx: @block_ctxt, _sp: span, def: ast::def, id: ast::node_id)
     -> lval_maybe_callee {
-    let ccx = bcx_ccx(cx);
+    let ccx = bcx_ccx(bcx);
     alt def {
       ast::def_fn(did, _) | ast::def_native_fn(did, _) {
-        ret lval_static_fn(cx, did, id);
+        ret lval_static_fn(bcx, did, id);
       }
       ast::def_variant(tid, vid) {
         if vec::len(ty::tag_variant_with_id(ccx.tcx, tid, vid).args) > 0u {
             // N-ary variant.
-            ret lval_static_fn(cx, vid, id);
+            ret lval_static_fn(bcx, vid, id);
         } else {
             // Nullary variant.
             let tag_ty = node_id_type(ccx, id);
-            let alloc_result = alloc_ty(cx, tag_ty);
-            let lltagblob = alloc_result.val;
-            let tag_tps = ty::ty_tag_tps(ccx.tcx, tag_ty);
-            let lltagty = type_of_tag(ccx, sp, tid, tag_tps, tag_ty);
-            let bcx = alloc_result.bcx;
-            let lltagptr = PointerCast(bcx, lltagblob, T_ptr(lltagty));
-            let lldiscrimptr = GEPi(bcx, lltagptr, [0, 0]);
+            let alloc_result = alloc_ty(bcx, tag_ty);
+            let lltag = alloc_result.val;
+            let lldiscrim = PointerCast(bcx, lltag, T_tag_variant_ptr(ccx));
             let d = if vec::len(*ty::tag_variants(ccx.tcx, tid)) != 1u {
                 let lldiscrim_gv = lookup_discriminant(bcx.fcx.lcx, vid);
-                let lldiscrim = Load(bcx, lldiscrim_gv);
-                lldiscrim
+                Load(bcx, lldiscrim_gv)
             } else { C_int(ccx, 0) };
-            Store(bcx, d, lldiscrimptr);
-            ret lval_no_env(bcx, lltagptr, temporary);
+            Store(bcx, d, lldiscrim);
+            ret lval_no_env(bcx, lltag, temporary);
         }
       }
       ast::def_const(did) {
         if did.crate == ast::local_crate {
             assert (ccx.consts.contains_key(did.node));
-            ret lval_no_env(cx, ccx.consts.get(did.node), owned);
+            ret lval_no_env(bcx, ccx.consts.get(did.node), owned);
         } else {
             let tp = ty::node_id_to_monotype(ccx.tcx, id);
             let k: [ast::kind] = [];
-            let val = trans_external_path(cx, did, {kinds: k, ty: tp});
-            ret lval_no_env(cx, load_if_immediate(cx, val, tp), owned_imm);
+            let val = trans_external_path(bcx, did, {kinds: k, ty: tp});
+            ret lval_no_env(bcx, load_if_immediate(bcx, val, tp), owned_imm);
         }
       }
       _ {
-        let loc = trans_local_var(cx, def);
-        ret lval_no_env(cx, loc.val, loc.kind);
+        let loc = trans_local_var(bcx, def);
+        ret lval_no_env(bcx, loc.val, loc.kind);
       }
     }
 }
