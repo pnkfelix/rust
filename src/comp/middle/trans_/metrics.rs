@@ -401,10 +401,28 @@ fn align_of(bcx: @block_ctxt, t: ty::t) -> result {
     } else { dynamic_align_of(bcx, t) }
 }
 
-fn blob_offset_of(_bcx: @block_ctxt,
-                  _tag_id: ast::def_id,
-                  _tps: [ty::t]) -> result {
-    fail "TODO";
+fn blob_offset_of(bcx: @block_ctxt,
+                  tag_id: ast::def_id,
+                  tps: [ty::t]) -> result {
+    let tcx = bcx_tcx(bcx);
+    let ccx = bcx_ccx(bcx);
+    let tagt = ty::mk_tag(tcx, tag_id, tps);
+
+    ret alt shape::tag_kind(ccx, tag_id) {
+      shape::tk_unit. | shape::tk_enum. { {bcx: bcx, val: C_int(ccx, 0)} }
+      shape::tk_complex. when type_has_static_size(ccx, tagt) {
+        let lltagt = type_of_tag(ccx, bcx.sp, tag_id, tps, tagt);
+        let llptrt = T_ptr(lltagt);
+        let llnull = C_null(llptrt);
+        let llofsptr = GEPi(bcx, llnull, [0, 1]);
+        let llofs = llvm::LLVMConstPtrToInt(llofsptr, ccx.int_type);
+        ret {bcx: bcx, val: llofs};
+      }
+      shape::tk_complex. {
+        let tag_metrics = compute_tag_metrics(bcx, tag_id, tps);
+        ret {bcx: tag_metrics.bcx, val: tag_metrics.data_offset};
+      }
+    };
 }
 
 fn align_to(cx: @block_ctxt, off: ValueRef, align: ValueRef) -> ValueRef {
@@ -725,7 +743,6 @@ fn GEP_tag(bcx: @block_ctxt, lltagptr: ValueRef, tag_id: ast::def_id,
            variant_id: ast::def_id, ty_substs: [ty::t],
            ix: uint) : valid_variant_index(ix, bcx, tag_id, variant_id) ->
    result {
-    let ccx = bcx_ccx(bcx);
     let tcx = bcx_tcx(bcx);
 
     // Compute offset and type of the blob and then create a ptr to it.
