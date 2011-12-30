@@ -15,6 +15,7 @@ import syntax::codemap::span;
 import back::link::{
     mangle_internal_name_by_path,
     mangle_internal_name_by_path_and_seq};
+import util::ppaux::ty_to_str;
 
 export llsize_of;
 export llalign_of;
@@ -225,9 +226,11 @@ fn type_of_inner(cx: @crate_ctxt, sp: span, t: ty::t)
 }
 
 fn type_of_tag(ccx: @crate_ctxt, sp: span,
-               did: ast::def_id, tps: [ty::t], _t: ty::t)
+               did: ast::def_id, tps: [ty::t], t: ty::t)
     -> TypeRef {
     let tcx = ccx_tcx(ccx);
+
+    assert type_has_static_size(ccx, t);
 
     // Creates a simpler, size-equivalent type. The resulting type is
     // guaranteed to have (a) the same size as the type that was
@@ -258,9 +261,6 @@ fn type_of_tag(ccx: @crate_ctxt, sp: span,
                                [ty::mk_int(ccx.tcx),
                                 simplify_type(ccx, sub1)]);
               }
-              ty::ty_named(t, @str) {
-                ret simplifier(ccx, t);
-              }
               _ { ret typ; }
             }
         }
@@ -273,10 +273,17 @@ fn type_of_tag(ccx: @crate_ctxt, sp: span,
     let llvariant_types = vec::map(*variants, { |variant|
         // Compute a non-recursive form of the type data.
         let tup_ty = ty::mk_tup(tcx, variant.args);
-        tup_ty = simplify_type(ccx, tup_ty);
-        tup_ty = ty::substitute_type_params(tcx, tps, tup_ty);
-        check type_has_static_size(ccx, tup_ty);
-        type_of(ccx, sp, tup_ty)
+        let simp_ty = simplify_type(ccx, tup_ty);
+        let subst_ty = ty::substitute_type_params(tcx, tps, simp_ty);
+        if check type_has_static_size(ccx, subst_ty) {
+            type_of(ccx, sp, subst_ty)
+        } else {
+            log_err(("t=", ty_to_str(ccx.tcx, t),
+                     "tup_ty=", ty_to_str(ccx.tcx, tup_ty),
+                     "simp_ty=", ty_to_str(ccx.tcx, simp_ty),
+                     "subst_ty=", ty_to_str(ccx.tcx, subst_ty)));
+            fail "type does not have static size";
+        }
     });
 
     ret alt shape::tag_kind(ccx, did) {
