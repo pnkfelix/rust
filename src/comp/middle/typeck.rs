@@ -369,6 +369,9 @@ fn ast_ty_to_ty(tcx: ty::ctxt, mode: mode, &&ast_ty: @ast::ty) -> ty::t {
         }
         typ = ty::mk_constr(tcx, ast_ty_to_ty(tcx, mode, t), out_cs);
       }
+      ast::ty_rd(t) {
+        typ = ty::mk_rd(tcx, ast_ty_to_ty(tcx, mode, t));
+      }
       ast::ty_infer. {
         alt mode {
           m_check_tyvar(fcx) { ret next_ty_var(fcx); }

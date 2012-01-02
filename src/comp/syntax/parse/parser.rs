@@ -518,6 +518,8 @@ fn parse_ty(p: parser, colons_before_params: bool) -> @ast::ty {
         t = parse_ty_fn(ast::proto_send, p);
     } else if eat_word(p, "obj") {
         t = ast::ty_obj(parse_ty_methods(p, false));
+    } else if eat_word(p, "rd") {
+        t = ast::ty_rd(parse_ty(p, false));
     } else if p.peek() == token::MOD_SEP || is_ident(p.peek()) {
         let path = parse_path(p);
         t = ast::ty_path(path, p.get_id());

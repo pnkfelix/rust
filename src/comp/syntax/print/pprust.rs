@@ -275,17 +275,6 @@ fn print_type(s: ps, &&ty: @ast::ty) {
         word(s.s, "]");
       }
       ast::ty_ptr(mt) { word(s.s, "*"); print_mt(s, mt); }
-      ast::ty_task. { word(s.s, "task"); }
-      ast::ty_port(t) {
-        word(s.s, "port<");
-        print_type(s, t);
-        word(s.s, ">");
-      }
-      ast::ty_chan(t) {
-        word(s.s, "chan<");
-        print_type(s, t);
-        word(s.s, ">");
-      }
       ast::ty_rec(fields) {
         word(s.s, "{");
         fn print_field(s: ps, f: ast::ty_field) {
@@ -320,6 +309,10 @@ fn print_type(s: ps, &&ty: @ast::ty) {
         print_type(s, t);
         space(s.s);
         word(s.s, ast_ty_constrs_str(cs));
+      }
+      ast::ty_rd(t) {
+        word_nbsp(s, "rd");
+        print_type(s, t);
       }
     }
     end(s);

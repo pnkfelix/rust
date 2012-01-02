@@ -309,6 +309,12 @@ fn parse_ty(st: @pstate, sd: str_def) -> ty::t {
         assert (next(st) as char == ']');
         ret ty::mk_constr(st.tcx, tt, tcs);
       }
+      'd' {
+        assert (next(st) as char == '[');
+        let tt = parse_ty(st, sd);
+        assert (next(st) as char == ']');
+        ret ty::mk_rd(st.tcx, tt);
+      }
       c { #error("unexpected char in type string: %c", c); fail;}
     }
 }

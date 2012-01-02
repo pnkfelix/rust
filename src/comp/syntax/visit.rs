@@ -162,7 +162,6 @@ fn visit_ty<E>(t: @ty, e: E, v: vt<E>) {
       ty_rec(flds) {
         for f: ty_field in flds { v.visit_ty(f.node.mt.ty, e, v); }
       }
-      ty_tup(ts) { for tt in ts { v.visit_ty(tt, e, v); } }
       ty_fn(_, decl) {
         for a in decl.inputs { v.visit_ty(a.ty, e, v); }
         for c: @constr in decl.constraints {
@@ -176,15 +175,22 @@ fn visit_ty<E>(t: @ty, e: E, v: vt<E>) {
             v.visit_ty(m.decl.output, e, v);
         }
       }
+      ty_tup(ts) { for tt in ts { v.visit_ty(tt, e, v); } }
       ty_path(p, _) { visit_path(p, e, v); }
-      ty_type. {/* no-op */ }
       ty_constr(t, cs) {
         v.visit_ty(t, e, v);
         for tc: @spanned<constr_general_<@path, node_id>> in cs {
             v.visit_constr(tc.node.path, tc.span, tc.node.id, e, v);
         }
       }
-      _ {}
+      ty_rd(t) {
+        v.visit_ty(t, e, v);
+      }
+
+      ty_nil. | ty_bot. | ty_bool. | ty_int(_) | ty_uint(_) | ty_float(_) |
+      ty_str. | ty_type. | ty_mac(_) | ty_infer. { /* ignore leaf types */ }
+
+      // _ { fail "Type not handled: " + print::pprust::ty_to_str(t); }
     }
 }
 

@@ -125,6 +125,7 @@ fn ty_to_str(cx: ctxt, typ: t) -> str {
       ty_param(id, _) {
         "'" + str::unsafe_from_bytes([('a' as u8) + (id as u8)])
       }
+      ty_rd(t) { "rd " + ty_to_str(cx, t) }
       _ { ty_to_short_str(cx, typ) }
     }
 }

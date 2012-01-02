@@ -87,6 +87,7 @@ export mk_uniq;
 export mk_var;
 export mk_opaque_closure;
 export mk_named;
+export mk_rd;
 export gen_ty;
 export mode;
 export mt;
@@ -138,6 +139,7 @@ export ty_uint;
 export ty_uniq;
 export ty_var;
 export ty_named;
+export ty_rd;
 export same_type, same_method;
 export ty_var_id;
 export ty_param_substs_opt_and_ty_to_monotype;
@@ -268,6 +270,7 @@ tag sty {
     ty_iface(def_id, [t]);
     ty_res(def_id, t, [t]);
     ty_tup([t]);
+    ty_rd(t);
     ty_var(int); // type variable
 
     ty_param(uint, def_id); // fn/tag type param
@@ -510,6 +513,9 @@ fn mk_raw_ty(cx: ctxt, st: sty) -> @raw_t {
       ty_constr(tt, _) | ty_named(tt, _) {
         derive_flags_t(cx, has_params, has_vars, tt);
       }
+      ty_rd(tt) {
+        derive_flags_t(cx, has_params, has_vars, tt);
+      }
     }
     ret @{struct: st,
           hash: h,
@@ -540,6 +546,33 @@ fn mk_float(_cx: ctxt) -> t { ret idx_float; }
 
 fn mk_uint(_cx: ctxt) -> t { ret idx_uint; }
 
+fn mk_rd(cx: ctxt, ty: t) -> t {
+    // Because rd() is a deep modifier, rd(rd(@rd(T))) is equivalent to
+    // rd(@T), so strip out redundant reads.  Similarly, rd(@mut T) and
+    // rd(@imm T) are basically the same thing, so convert them to
+    // rd(@const T).
+    fn unread(cx: ctxt, ty0: t) -> t {
+        alt struct(cx, ty0) {
+          ty_rd(ty) { ty }
+          ty_box({ty, _}) { mk_box(cx, {ty: ty, mut: ast::maybe_mut}) }
+          ty_uniq({ty, _}) { mk_uniq(cx, {ty: ty, mut: ast::maybe_mut}) }
+          ty_ptr({ty, _}) { mk_ptr(cx, {ty: ty, mut: ast::maybe_mut}) }
+          _ { ty0 }
+        }
+    }
+
+    let wo_read = fold_ty(cx, fm_general(bind unread(cx, _)), ty);
+    ret alt struct(cx, wo_read) {
+      ty_nil. | ty_bool. | ty_int(_) | ty_float(_) | ty_uint(_) {
+        // rd(uint) has no meaning:
+        wo_read
+      }
+      _ {
+        gen_ty(cx, ty_rd(wo_read))
+      }
+    };
+}
+
 fn mk_mach_int(_cx: ctxt, tm: ast::int_ty) -> t {
     alt tm {
       ast::ty_i. { ret idx_int; }
@@ -568,7 +601,6 @@ fn mk_mach_float(_cx: ctxt, tm: ast::float_ty) -> t {
       ast::ty_f64. { ret idx_f64; }
     }
 }
-
 
 fn mk_char(_cx: ctxt) -> t { ret idx_char; }
 
@@ -718,6 +750,7 @@ fn walk_ty(cx: ctxt, walker: ty_walk, ty: t) {
       ty_var(_) {/* no-op */ }
       ty_param(_, _) {/* no-op */ }
       ty_uniq(tm) { walk_ty(cx, walker, tm.ty); }
+      ty_rd(sub) { walk_ty(cx, walker, sub); }
     }
     walker(ty);
 }
@@ -818,6 +851,9 @@ fn fold_ty(cx: ctxt, fld: fold_mode, ty_0: t) -> t {
       ty_param(id, did) {
         alt fld { fm_param(folder) { ty = folder(id, did); } _ {} }
       }
+      ty_rd(subty) {
+        ty = mk_rd(cx, fold_ty(cx, fld, subty));
+      }
     }
 
     // If this is a general type fold, then we need to run it now.
@@ -876,6 +912,7 @@ pure fn type_is_tup_like(cx: ctxt, ty: t) -> bool {
     let sty = struct(cx, ty);
     alt sty {
       ty_box(_) | ty_rec(_) | ty_tup(_) | ty_tag(_,_) { true }
+      ty_rd(subty) { type_is_tup_like(cx, subty) }
       _ { false }
     }
 }
@@ -1089,6 +1126,7 @@ fn type_kind(cx: ctxt, ty: t) -> kind {
           param_bounds_to_kind(cx.ty_param_bounds.get(did.node))
       }
       ty_constr(t, _) { type_kind(cx, t) }
+      ty_rd(t) { type_kind(cx, t) }
     };
 
     cx.kind_cache.insert(ty, result);
@@ -1248,6 +1286,7 @@ fn type_is_pod(cx: ctxt, ty: t) -> bool {
         fail "ty_var in type_is_pod";
       }
       ty_param(_, _) { result = false; }
+      ty_rd(subt) { result = type_is_pod(cx, subt); }
     }
 
     ret result;
@@ -1289,7 +1328,13 @@ fn type_autoderef(cx: ctxt, t: ty::t) -> ty::t {
             }
             t1 = substitute_type_params(cx, tps, variants[0].args[0]);
           }
-          _ { break; }
+          ty_rd(subt) {
+            t1 = mk_rd(cx, type_autoderef(cx, subt));
+            break;
+          }
+          _ {
+            break;
+          }
         }
     }
     ret t1;
@@ -1413,6 +1458,7 @@ fn hash_type_structure(st: sty) -> uint {
         for typ: t in tys { h += (h << 5u) + typ; }
         ret h;
       }
+      ty_rd(subty) { hash_subty(42u, subty) }
     }
 }
 

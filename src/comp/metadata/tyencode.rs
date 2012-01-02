@@ -198,6 +198,11 @@ fn enc_sty(w: io::writer, cx: @ctxt, st: ty::sty) {
         for tc: @ty::type_constr in cs { enc_ty_constr(w, cx, tc); }
         w.write_char(']');
       }
+      ty::ty_rd(ty) {
+        w.write_str("d[");
+        enc_ty(w, cx, ty);
+        w.write_char(']');
+      }
     }
 }
 fn enc_proto(w: io::writer, proto: proto) {

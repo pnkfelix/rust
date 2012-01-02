@@ -313,9 +313,6 @@ tag ty_ {
     ty_uniq(mt);
     ty_vec(mt);
     ty_ptr(mt);
-    ty_task;
-    ty_port(@ty);
-    ty_chan(@ty);
     ty_rec([ty_field]);
     ty_fn(proto, fn_decl);
     ty_obj([ty_method]);
@@ -324,6 +321,7 @@ tag ty_ {
     ty_type;
     ty_constr(@ty, [@ty_constr]);
     ty_mac(mac);
+    ty_rd(@ty);
     // ty_infer means the type should be inferred instead of it having been
     // specified. This should only appear at the "top level" of a type and not
     // nested in one.
