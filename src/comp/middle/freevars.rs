@@ -43,7 +43,7 @@ fn collect_freevars(def_map: resolve::def_map, blk: ast::blk)
                     visit::visit_expr(expr, depth + 1, v);
                 }
               }
-              ast::expr_fn_block(_, _) {
+              ast::expr_fn_sugared(_, _, _) {
                 visit::visit_expr(expr, depth + 1, v);
               }
               ast::expr_path(path) {

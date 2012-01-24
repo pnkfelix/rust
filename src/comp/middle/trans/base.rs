@@ -3524,7 +3524,7 @@ fn trans_expr(bcx: @block_ctxt, e: @ast::expr, dest: dest) -> @block_ctxt {
         ret closure::trans_expr_fn(
             bcx, proto, decl, body, e.span, e.id, *cap_clause, dest);
       }
-      ast::expr_fn_block(decl, body) {
+      ast::expr_fn_sugared(_, decl, body) {
         alt ty::struct(tcx, expr_ty(bcx, e)) {
           ty::ty_fn({proto, _}) {
             #debug("translating fn_block %s with type %s",
@@ -3537,10 +3537,6 @@ fn trans_expr(bcx: @block_ctxt, e: @ast::expr, dest: dest) -> @block_ctxt {
             fail "Type of fn block is not a function!";
           }
         }
-      }
-      ast::expr_bind(f, args) {
-        ret closure::trans_bind(
-            bcx, f, args, e.id, dest);
       }
       ast::expr_copy(a) {
         if !expr_is_lval(bcx, a) {

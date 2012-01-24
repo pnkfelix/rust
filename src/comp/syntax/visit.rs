@@ -19,21 +19,21 @@ enum fn_kind {
     fk_item_fn(ident, [ty_param]), //< an item declared with fn()
     fk_method(ident, [ty_param]),
     fk_res(ident, [ty_param]),
-    fk_anon(proto),  //< an anonymous function like fn@(...)
-    fk_fn_block,     //< a block {||...}
+    fk_anon(proto),                //< an anonymous function like fn@(...)
+    fk_fn_sugared(sugared_kind),   //< a block {||...} or bind
 }
 
 fn name_of_fn(fk: fn_kind) -> ident {
     alt fk {
       fk_item_fn(name, _) | fk_method(name, _) | fk_res(name, _) { name }
-      fk_anon(_) | fk_fn_block { "anon" }
+      fk_anon(_) | fk_fn_sugared(_) { "anon" }
     }
 }
 
 fn tps_of_fn(fk: fn_kind) -> [ty_param] {
     alt fk {
       fk_item_fn(_, tps) | fk_method(_, tps) | fk_res(_, tps) { tps }
-      fk_anon(_) | fk_fn_block { [] }
+      fk_anon(_) | fk_fn_sugared(_) { [] }
     }
 }
 
@@ -318,10 +318,6 @@ fn visit_expr<E>(ex: @expr, e: E, v: vt<E>) {
         visit_exprs(args, e, v);
         v.visit_expr(callee, e, v);
       }
-      expr_bind(callee, args) {
-        v.visit_expr(callee, e, v);
-        for eo: option<@expr> in args { visit_expr_opt(eo, e, v); }
-      }
       expr_binary(_, a, b) { v.visit_expr(a, e, v); v.visit_expr(b, e, v); }
       expr_unary(_, a) { v.visit_expr(a, e, v); }
       expr_lit(_) { }
@@ -350,8 +346,8 @@ fn visit_expr<E>(ex: @expr, e: E, v: vt<E>) {
       expr_fn(proto, decl, body, _) {
         v.visit_fn(fk_anon(proto), decl, body, ex.span, ex.id, e, v);
       }
-      expr_fn_block(decl, body) {
-        v.visit_fn(fk_fn_block, decl, body, ex.span, ex.id, e, v);
+      expr_fn_sugared(sk, decl, body) {
+        v.visit_fn(fk_fn_sugared(sk), decl, body, ex.span, ex.id, e, v);
       }
       expr_block(b) { v.visit_block(b, e, v); }
       expr_assign(a, b) { v.visit_expr(b, e, v); v.visit_expr(a, e, v); }
@@ -368,6 +364,7 @@ fn visit_expr<E>(ex: @expr, e: E, v: vt<E>) {
       }
       expr_index(a, b) { v.visit_expr(a, e, v); v.visit_expr(b, e, v); }
       expr_path(p) { visit_path(p, e, v); }
+      expr_hole(_) { }
       expr_fail(eo) { visit_expr_opt(eo, e, v); }
       expr_break { }
       expr_cont { }

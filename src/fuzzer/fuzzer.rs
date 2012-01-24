@@ -157,7 +157,7 @@ fn safe_to_replace_expr(e: ast::expr_, _tm: test_mode) -> bool {
       ast::expr_block(_) { false }
 
       // expr_call is also missing a constraint
-      ast::expr_fn_block(_, _) { false }
+      ast::expr_fn_sugared(_, _, _) { false }
 
       _ { true }
     }

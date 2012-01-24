@@ -52,18 +52,6 @@ fn fn_usage_expr(expr: @ast::expr,
         visit::visit_exprs(args, args_ctx, v);
       }
 
-      ast::expr_bind(f, args) {
-        let f_ctx = {unsafe_fn_legal: false,
-                     generic_bare_fn_legal: true with ctx};
-        v.visit_expr(f, f_ctx, v);
-
-        let args_ctx = {unsafe_fn_legal: false,
-                        generic_bare_fn_legal: false with ctx};
-        for arg in args {
-            visit::visit_expr_opt(arg, args_ctx, v);
-        }
-      }
-
       _ {
         let subctx = {unsafe_fn_legal: false,
                       generic_bare_fn_legal: false with ctx};

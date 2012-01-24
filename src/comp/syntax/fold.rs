@@ -366,10 +366,6 @@ fn noop_fold_expr(e: expr_, fld: ast_fold) -> expr_ {
             expr_call(fld.fold_expr(f), fld.map_exprs(fld.fold_expr, args),
                       blk)
           }
-          expr_bind(f, args) {
-            let opt_map_se = bind option::map(_, fld.fold_expr);
-            expr_bind(fld.fold_expr(f), vec::map(args, opt_map_se))
-          }
           expr_binary(binop, lhs, rhs) {
             expr_binary(binop, fld.fold_expr(lhs), fld.fold_expr(rhs))
           }
@@ -397,8 +393,25 @@ fn noop_fold_expr(e: expr_, fld: ast_fold) -> expr_ {
               expr_fn(proto, fold_fn_decl(decl, fld),
                       fld.fold_block(body), captures)
           }
-          expr_fn_block(decl, body) {
-            expr_fn_block(fold_fn_decl(decl, fld), fld.fold_block(body))
+          expr_fn_sugared(sk, decl, body) {
+            alt sk {
+              sk_closure {
+                expr_fn_sugared(sk_closure,
+                                fold_fn_decl(decl, fld),
+                                fld.fold_block(body))
+              }
+              sk_bind {
+                // the kinds of blocks that can appear in sk_bind are
+                // highly restricted, so we fold them a bit carefully
+                // to prevent them from being messed up:
+                assert ast::blk_is_appr_for_bind(body);
+                let (b, s) = wrap(noop_fold_block)(body.node, body.span, fld);
+                let s = fld.new_span(s);
+                let newblk = { node: b, span: s };
+                assert ast::blk_is_appr_for_bind(newblk);
+                expr_fn_sugared(sk_bind, fold_fn_decl(decl, fld), newblk)
+              }
+            }
           }
           expr_block(blk) { expr_block(fld.fold_block(blk)) }
           expr_move(el, er) {
@@ -422,6 +435,7 @@ fn noop_fold_expr(e: expr_, fld: ast_fold) -> expr_ {
             expr_index(fld.fold_expr(el), fld.fold_expr(er))
           }
           expr_path(pth) { expr_path(fld.fold_path(pth)) }
+          expr_hole(n) { expr_hole(n) }
           expr_fail(e) { expr_fail(option::map(e, fld.fold_expr)) }
           expr_break | expr_cont { e }
           expr_ret(e) { expr_ret(option::map(e, fld.fold_expr)) }

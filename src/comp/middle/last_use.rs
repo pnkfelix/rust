@@ -153,7 +153,7 @@ fn visit_expr(ex: @expr, cx: ctx, v: visit::vt<ctx>) {
               expr_fn(p, _, _, _) if is_blockish(p) {
                 fns += [arg];
               }
-              expr_fn_block(_, _) if ex_is_blockish(cx, arg.id) {
+              expr_fn_sugared(_, _, _) if ex_is_blockish(cx, arg.id) {
                 fns += [arg];
               }
               _ {

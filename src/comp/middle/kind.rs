@@ -159,9 +159,6 @@ fn check_expr(e: @expr, cx: ctx, v: visit::vt<ctx>) {
       expr_tup(exprs) | expr_vec(exprs, _) {
         for expr in exprs { maybe_copy(cx, expr); }
       }
-      expr_bind(_, args) {
-        for a in args { alt a { some(ex) { maybe_copy(cx, ex); } _ {} } }
-      }
       expr_call(f, args, _) {
         let i = 0u;
         for arg_t in ty::ty_fn_args(cx.tcx, ty::expr_ty(cx.tcx, f)) {

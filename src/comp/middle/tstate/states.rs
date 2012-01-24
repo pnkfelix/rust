@@ -371,21 +371,6 @@ fn find_pre_post_state_expr(fcx: fn_ctxt, pres: prestate, e: @expr) -> bool {
                                      operands,
                                      controlflow_expr(fcx.ccx, operator));
       }
-      expr_bind(operator, maybe_args) {
-        let args = [];
-        let callee_ops = callee_arg_init_ops(fcx, operator.id);
-        let ops = [];
-        let i = 0;
-        for a_opt: option<@expr> in maybe_args {
-            alt a_opt {
-              none {/* no-op */ }
-              some(a) { ops += [callee_ops[i]]; args += [a]; }
-            }
-            i += 1;
-        }
-        ret find_pre_post_state_call(fcx, pres, operator, e.id, ops, args,
-                                     return_val);
-      }
       expr_path(_) { ret pure_exp(fcx.ccx, e.id, pres); }
       expr_log(_, lvl, ex) {
         ret find_pre_post_state_two(fcx, pres, lvl, ex, e.id, oper_pure);
@@ -395,7 +380,7 @@ fn find_pre_post_state_expr(fcx: fn_ctxt, pres: prestate, e: @expr) -> bool {
       expr_fn(_, _, _, cap_clause) {
         ret find_pre_post_state_cap_clause(fcx, e.id, pres, *cap_clause);
       }
-      expr_fn_block(_, _) { ret pure_exp(fcx.ccx, e.id, pres); }
+      expr_fn_sugared(_, _, _) { ret pure_exp(fcx.ccx, e.id, pres); }
       expr_block(b) {
         ret find_pre_post_state_block(fcx, pres, b) |
                 set_prestate_ann(fcx.ccx, e.id, pres) |

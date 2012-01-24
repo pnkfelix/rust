@@ -852,19 +852,6 @@ fn print_expr(s: ps, &&expr: @ast::expr) {
             print_expr(s, option::get(blk));
         }
       }
-      ast::expr_bind(func, args) {
-        fn print_opt(s: ps, expr: option<@ast::expr>) {
-            alt expr {
-              some(expr) { print_expr(s, expr); }
-              _ { word(s.s, "_"); }
-            }
-        }
-        word_nbsp(s, "bind");
-        print_expr(s, func);
-        popen(s);
-        commasep(s, inconsistent, args, print_opt);
-        pclose(s);
-      }
       ast::expr_binary(op, lhs, rhs) {
         let prec = operator_prec(op);
         print_op_maybe_parens(s, lhs, prec);
@@ -948,7 +935,7 @@ fn print_expr(s: ps, &&expr: @ast::expr) {
         space(s.s);
         print_block(s, body);
       }
-      ast::expr_fn_block(decl, body) {
+      ast::expr_fn_sugared(ast::sk_closure, decl, body) {
         // containing cbox, will be closed by print-block at }
         cbox(s, indent_unit);
         // head-box, will be closed by print-block at start
@@ -956,6 +943,12 @@ fn print_expr(s: ps, &&expr: @ast::expr) {
         word(s.s, "{");
         print_fn_block_args(s, decl);
         print_possibly_embedded_block(s, body, block_block_fn, indent_unit);
+      }
+      ast::expr_fn_sugared(ast::sk_bind, decl, body) {
+        assert ast::blk_is_appr_for_bind(body);
+        word_nbsp(s, "bind");
+        let expr = option::get(body.node.expr);
+        print_expr(s, expr);
       }
       ast::expr_block(blk) {
         // containing cbox, will be closed by print-block at }
@@ -1012,6 +1005,7 @@ fn print_expr(s: ps, &&expr: @ast::expr) {
         word(s.s, "]");
       }
       ast::expr_path(path) { print_path(s, path, true); }
+      ast::expr_hole(_) { word(s.s, "_"); }
       ast::expr_fail(maybe_fail_val) {
         word(s.s, "fail");
         alt maybe_fail_val {

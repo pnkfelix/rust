@@ -45,7 +45,7 @@ enum def {
     def_ty_param(def_id, uint),
     def_binding(def_id),
     def_use(def_id),
-    def_upvar(def_id, @def, node_id), // node_id == expr_fn or expr_fn_block
+    def_upvar(def_id, @def, node_id), // node_id == expr_fn or expr_fn_sugared
 }
 
 // The set of meta_items that define the compilation environment of the crate,
@@ -211,12 +211,31 @@ enum expr_check_mode { claimed_expr, checked_expr, }
 
 type expr = {id: node_id, node: expr_, span: span};
 
+// Sugared functions come in various varieties:
+//
+// - Closures (`sk_closure`) look like `{|x, y| ...}`.  They take an arbitrary
+//   block as the body of the closure.
+//
+// - Binds (`sk_bind`) look like `_.foo(y)`.  They take a specialized block
+//   which only contains a tail expression as the body of the closure.  The
+//   function blk_is_appr_for_bind() can be used to test to see if the block
+//   has this form.
+enum sugared_kind { sk_closure, sk_bind }
+
+// Tests to see if `b` is appropriate for use as a block in a
+// sugared closure of type `sk_bind`.
+fn blk_is_appr_for_bind(b: blk) -> bool {
+    vec::is_empty(b.node.view_items) &&
+        vec::is_empty(b.node.stmts) &&
+        option::is_some(b.node.expr) &&
+        b.node.rules == default_blk
+}
+
 enum expr_ {
     expr_vec([@expr], mutability),
     expr_rec([field], option<@expr>),
     expr_call(@expr, [@expr], bool),
     expr_tup([@expr]),
-    expr_bind(@expr, [option<@expr>]),
     expr_binary(binop, @expr, @expr),
     expr_unary(unop, @expr),
     expr_lit(@lit),
@@ -227,7 +246,7 @@ enum expr_ {
     expr_do_while(blk, @expr),
     expr_alt(@expr, [arm]),
     expr_fn(proto, fn_decl, blk, @capture_clause),
-    expr_fn_block(fn_decl, blk),
+    expr_fn_sugared(sugared_kind, fn_decl, blk),
     expr_block(blk),
 
     /*
@@ -242,6 +261,7 @@ enum expr_ {
     expr_field(@expr, ident, [@ty]),
     expr_index(@expr, @expr),
     expr_path(@path),
+    expr_hole(node_id),  // an "_" in a bind expression like "foo(_, _)"
     expr_fail(option<@expr>),
     expr_break,
     expr_cont,

@@ -787,7 +787,7 @@ fn create_function(fcx: @fn_ctxt) -> @metadata<subprogram_md> {
           ast::expr_fn(_, decl, _, _) {
             (dbg_cx.names("fn"), decl.output, expr.id)
           }
-          ast::expr_fn_block(decl, _) {
+          ast::expr_fn_sugared(_, decl, _) {
             (dbg_cx.names("fn"), decl.output, expr.id)
           }
           _ { fcx_tcx(fcx).sess.span_bug(expr.span, "create_function: \

@@ -348,7 +348,7 @@ fn find_pre_post_expr(fcx: fn_ctxt, e: @expr) {
             forget_in_postcond(fcx, e.id, cap_item.id);
         }
       }
-      expr_fn_block(_, _) {
+      expr_fn_sugared(_, _, _) {
         find_pre_post_expr_fn_upvars(fcx, e);
       }
       expr_block(b) {
@@ -511,28 +511,6 @@ fn find_pre_post_expr(fcx: fn_ctxt, e: @expr) {
       }
       expr_if_check(p, conseq, maybe_alt) {
         join_then_else(fcx, p, conseq, maybe_alt, e.id, if_check);
-      }
-
-
-
-
-
-
-      expr_bind(operator, maybe_args) {
-        let args = [];
-        let cmodes = callee_modes(fcx, operator.id);
-        let modes = [];
-        let i = 0;
-        for expr_opt: option<@expr> in maybe_args {
-            alt expr_opt {
-              none {/* no-op */ }
-              some(expr) { modes += [cmodes[i]]; args += [expr]; }
-            }
-            i += 1;
-        }
-        args += [operator]; /* ??? order of eval? */
-        forget_args_moved_in(fcx, e, modes, args);
-        find_pre_post_exprs(fcx, args, e.id);
       }
       expr_break { clear_pp(expr_pp(fcx.ccx, e)); }
       expr_cont { clear_pp(expr_pp(fcx.ccx, e)); }
