@@ -351,6 +351,7 @@ fn find_pre_post_expr(fcx: fn_ctxt, e: @expr) {
       expr_fn_sugared(_, _, _) {
         find_pre_post_expr_fn_upvars(fcx, e);
       }
+      expr_hole(_) {}
       expr_block(b) {
         find_pre_post_block(fcx, b);
         let p = block_pp(fcx.ccx, b);

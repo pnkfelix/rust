@@ -1895,6 +1895,12 @@ fn check_expr_with_unifier(fcx: @fn_ctxt, expr: @ast::expr, unify: unifier,
         }
         write_ty(tcx, id, oper_t);
       }
+      ast::expr_hole(_) {
+        let defn = lookup_def(fcx, expr.span, id);
+        let tpt = ty_param_bounds_and_ty_for_def(fcx, expr.span, defn);
+        assert vec::is_empty(*tpt.bounds);
+        write_ty(tcx, id, tpt.ty);
+      }
       ast::expr_path(pth) {
         let defn = lookup_def(fcx, pth.span, id);
 
@@ -2270,8 +2276,6 @@ fn check_expr_with_unifier(fcx: @fn_ctxt, expr: @ast::expr, unify: unifier,
           }
         }
       }
-      _ { tcx.sess.unimpl(#fmt("expr type in typeck::check_expr: %s",
-                               expr_to_str(expr))); }
     }
     if bot { write_ty(tcx, expr.id, ty::mk_bot(tcx)); }
 

@@ -16,12 +16,11 @@ impl opt_ for option {
         }
     }
     fn run(tcx: ty::ctxt, crate: @ast::crate, time_pass: bool) {
-        let checker = alt self {
-          ctypes {
-            bind check_ctypes(tcx, crate)
-          }
+        time(time_pass, self.desc()) {||
+            alt self {
+              ctypes { check_ctypes(tcx, crate); }
+            }
         };
-        time(time_pass, self.desc(), checker);
     }
 }
 

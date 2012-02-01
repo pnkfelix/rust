@@ -261,7 +261,7 @@ enum expr_ {
     expr_field(@expr, ident, [@ty]),
     expr_index(@expr, @expr),
     expr_path(@path),
-    expr_hole(node_id),  // an "_" in a bind expression like "foo(_, _)"
+    expr_hole(/*n:*/ uint), // the `n`th "_" in an expression like "foo(_, _)"
     expr_fail(option<@expr>),
     expr_break,
     expr_cont,

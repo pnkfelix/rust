@@ -946,9 +946,11 @@ fn print_expr(s: ps, &&expr: @ast::expr) {
       }
       ast::expr_fn_sugared(ast::sk_bind, decl, body) {
         assert ast::blk_is_appr_for_bind(body);
-        word_nbsp(s, "bind");
+        word(s.s, "bind");
+        popen(s);
         let expr = option::get(body.node.expr);
         print_expr(s, expr);
+        pclose(s);
       }
       ast::expr_block(blk) {
         // containing cbox, will be closed by print-block at }
@@ -1005,7 +1007,10 @@ fn print_expr(s: ps, &&expr: @ast::expr) {
         word(s.s, "]");
       }
       ast::expr_path(path) { print_path(s, path, true); }
-      ast::expr_hole(_) { word(s.s, "_"); }
+      ast::expr_hole(id) {
+        word(s.s, "_");
+        synth_comment(s, #fmt["#%u", id]);
+      }
       ast::expr_fail(maybe_fail_val) {
         word(s.s, "fail");
         alt maybe_fail_val {

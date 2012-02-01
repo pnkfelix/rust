@@ -35,6 +35,7 @@ enum scope {
     scope_item(@ast::item),
     scope_bare_fn(ast::fn_decl, node_id, [ast::ty_param]),
     scope_fn_expr(ast::fn_decl, node_id, [ast::ty_param]),
+    scope_fn_bind(ast::fn_decl, node_id),
     scope_native_item(@ast::native_item),
     scope_loop(@ast::local), // there's only 1 decl per loop.
     scope_block(ast::blk, @mutable uint, @mutable uint),
@@ -140,11 +141,15 @@ type env =
 // since export restrictions should only be applied for the former.
 enum dir { inside, outside, }
 
-// There are two types of ns_value enum: "definitely a enum";
-// and "any value". This is so that lookup can behave differently
-// when looking up a variable name that's not yet in scope to check
-// if it's already bound to a enum.
-enum namespace { ns_val(ns_value_type), ns_type, ns_module, }
+enum namespace {
+    // There are two types of ns_value enum: "definitely a enum";
+    // and "any value". This is so that lookup can behave differently
+    // when looking up a variable name that's not yet in scope to check
+    // if it's already bound to a enum.
+    ns_val(ns_value_type), // identifier in a value position
+    ns_type,               // identifier in a type position
+    ns_module              // a in a::b
+}
 enum ns_value_type { ns_a_enum, ns_any_value, }
 
 fn resolve_crate(sess: session, amap: ast_map::map, crate: @ast::crate) ->
@@ -361,6 +366,9 @@ fn resolve_names(e: @env, c: @ast::crate) {
             vec::iter(cap_clause.copies, rci);
             vec::iter(cap_clause.moves, rci);
           }
+          ast::expr_hole(idx) {
+            e.def_map.insert(exp.id, lookup_hole(*e, sc, exp.span, idx));
+          }
           _ { }
         }
     }
@@ -496,20 +504,20 @@ fn visit_fn_with_scope(e: @env, fk: visit::fn_kind, decl: ast::fn_decl,
     let scope = alt fk {
       visit::fk_item_fn(_, tps) | visit::fk_res(_, tps) |
       visit::fk_method(_, tps) {
-        cons(scope_bare_fn(decl, id, tps), @sc)
+        scope_bare_fn(decl, id, tps)
       }
       visit::fk_anon(ast::proto_bare) {
-        cons(scope_bare_fn(decl, id, []), @sc)
+        scope_bare_fn(decl, id, [])
       }
       visit::fk_anon(_) | visit::fk_fn_sugared(sk_closure) {
-        cons(scope_fn_expr(decl, id, []), @sc)
+        scope_fn_expr(decl, id, [])
       }
       visit::fk_fn_sugared(sk_bind) {
-        sc
+        scope_fn_bind(decl, id)
       }
     };
 
-    visit::visit_fn(fk, decl, body, sp, id, scope, v);
+    visit::visit_fn(fk, decl, body, sp, id, cons(scope, @sc), v);
 }
 
 fn visit_block_with_scope(b: ast::blk, sc: scopes, v: vt<scopes>) {
@@ -860,6 +868,7 @@ fn scope_is_fn(sc: scope) -> bool {
 fn scope_closes(sc: scope) -> option<node_id> {
     alt sc {
       scope_fn_expr(_, node_id, _) { some(node_id) }
+      scope_fn_bind(_, node_id) { some(node_id) }
       _ { none }
     }
 }
@@ -931,6 +940,9 @@ fn lookup_in_scope(e: env, sc: scopes, sp: span, name: ident, ns: namespace)
           scope_bare_fn(decl, _, ty_params) |
           scope_fn_expr(decl, _, ty_params) {
             ret lookup_in_fn(e, name, decl, ty_params, ns);
+          }
+          scope_fn_bind(decl, _) {
+            ret none;
           }
           scope_loop(local) {
             if ns == ns_val(ns_any_value) {
@@ -1465,6 +1477,27 @@ fn index_nmod(md: ast::native_mod) -> mod_index {
     ret index;
 }
 
+fn lookup_hole(e: env, sc: scopes, sp: span, index: uint) -> def {
+    alt sc {
+      cons(scope_fn_bind(decl, bind_node_id), _) {
+        ret if index < vec::len(decl.inputs) {
+            let a = decl.inputs[index];
+            ast::def_arg(local_def(a.id), a.mode)
+        } else {
+            lookup_hole(e, nil, sp, index)
+        };
+      }
+      cons(_, tl) {
+        be lookup_hole(e, *tl, sp, index);
+      }
+      nil {
+        e.sess.span_bug(
+            sp,
+            #fmt["Unresolvable hole with index %u in bind expr in scope %?",
+                 index, sc]);
+      }
+    }
+}
 
 // External lookups
 fn ns_for_def(d: def) -> namespace {

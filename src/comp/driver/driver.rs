@@ -85,7 +85,7 @@ fn parse_input(sess: session, cfg: ast::crate_cfg, input: str)
     }
 }
 
-fn time<T>(do_it: bool, what: str, thunk: fn@() -> T) -> T {
+fn time<T>(do_it: bool, what: str, thunk: fn() -> T) -> T {
     if !do_it { ret thunk(); }
     let start = std::time::precise_time_s();
     let rv = thunk();
@@ -108,81 +108,92 @@ fn compile_upto(sess: session, cfg: ast::crate_cfg,
                 outputs: option<output_filenames>)
     -> {crate: @ast::crate, tcx: option<ty::ctxt>} {
     let time_passes = sess.opts.time_passes;
-    let crate = time(time_passes, "parsing",
-                     bind parse_input(sess, cfg, input));
+    let crate = time(time_passes, "parsing") {||
+        parse_input(sess, cfg, input)
+    };
     if upto == cu_parse { ret {crate: crate, tcx: none}; }
 
     sess.building_library = session::building_library(
         sess.opts.crate_type, crate, sess.opts.test);
 
-    crate =
-        time(time_passes, "configuration",
-             bind front::config::strip_unconfigured_items(crate));
-    crate =
-        time(time_passes, "maybe building test harness",
-             bind front::test::modify_for_testing(sess, crate));
-    crate =
-        time(time_passes, "expansion",
-             bind syntax::ext::expand::expand_crate(sess, crate));
+    crate = time(time_passes, "configuration") {||
+        front::config::strip_unconfigured_items(crate)
+    };
+    crate = time(time_passes, "maybe building test harness") {||
+        front::test::modify_for_testing(sess, crate)
+    };
+    crate = time(time_passes, "expansion") {||
+        syntax::ext::expand::expand_crate(sess, crate)
+    };
 
     if upto == cu_expand { ret {crate: crate, tcx: none}; }
 
-    crate =
-        time(time_passes, "core injection",
-             bind front::core_inject::maybe_inject_libcore_ref(sess, crate));
+    crate = time(time_passes, "core injection") {||
+        front::core_inject::maybe_inject_libcore_ref(sess, crate)
+    };
 
-    let ast_map =
-        time(time_passes, "ast indexing",
-             bind middle::ast_map::map_crate(*crate));
-    time(time_passes, "external crate/lib resolution",
-         bind creader::read_crates(sess, *crate));
-    let {def_map, exp_map, impl_map} =
-        time(time_passes, "resolution",
-             bind resolve::resolve_crate(sess, ast_map, crate));
-    let freevars =
-        time(time_passes, "freevar finding",
-             bind freevars::annotate_freevars(def_map, crate));
+    let ast_map = time(time_passes, "ast indexing") {||
+        middle::ast_map::map_crate(*crate)
+    };
+    time(time_passes, "external crate/lib resolution") {||
+        creader::read_crates(sess, *crate)
+    };
+    let {def_map, exp_map, impl_map} = time(time_passes, "resolution") {||
+        resolve::resolve_crate(sess, ast_map, crate)
+    };
+    let freevars = time(time_passes, "freevar finding") {||
+        freevars::annotate_freevars(def_map, crate)
+    };
     let ty_cx = ty::mk_ctxt(sess, def_map, ast_map, freevars);
-    let (method_map, dict_map) =
-        time(time_passes, "typechecking",
-             bind typeck::check_crate(ty_cx, impl_map, crate));
-    time(time_passes, "const checking",
-         bind middle::check_const::check_crate(sess, crate, method_map));
+    let (method_map, dict_map) = time(time_passes, "typechecking") {||
+        typeck::check_crate(ty_cx, impl_map, crate)
+    };
+    time(time_passes, "const checking") {||
+        middle::check_const::check_crate(sess, crate, method_map)
+    };
 
     if upto == cu_typeck { ret {crate: crate, tcx: some(ty_cx)}; }
 
-    time(time_passes, "block-use checking",
-         bind middle::block_use::check_crate(ty_cx, crate));
-    time(time_passes, "function usage",
-         bind fn_usage::check_crate_fn_usage(ty_cx, crate));
-    time(time_passes, "alt checking",
-         bind middle::check_alt::check_crate(ty_cx, crate));
-    time(time_passes, "typestate checking",
-         bind middle::tstate::ck::check_crate(ty_cx, crate));
-    let mut_map =
-        time(time_passes, "mutability checking",
-             bind middle::mut::check_crate(ty_cx, crate));
-    let (copy_map, ref_map) =
-        time(time_passes, "alias checking",
-             bind middle::alias::check_crate(ty_cx, crate));
-    let last_uses = time(time_passes, "last use finding",
-        bind last_use::find_last_uses(crate, def_map, ref_map, ty_cx));
-    time(time_passes, "kind checking",
-         bind kind::check_crate(ty_cx, method_map, last_uses, crate));
+    time(time_passes, "block-use checking") {||
+        middle::block_use::check_crate(ty_cx, crate)
+    };
+    time(time_passes, "function usage") {||
+        fn_usage::check_crate_fn_usage(ty_cx, crate)
+    };
+    time(time_passes, "alt checking") {||
+        middle::check_alt::check_crate(ty_cx, crate)
+    };
+    time(time_passes, "typestate checking") {||
+        middle::tstate::ck::check_crate(ty_cx, crate)
+    };
+    let mut_map = time(time_passes, "mutability checking") {||
+        middle::mut::check_crate(ty_cx, crate)
+    };
+    let (copy_map, ref_map) = time(time_passes, "alias checking") {||
+        middle::alias::check_crate(ty_cx, crate)
+    };
+    let last_uses = time(time_passes, "last use finding") {||
+        last_use::find_last_uses(crate, def_map, ref_map, ty_cx)
+    };
+    time(time_passes, "kind checking") {||
+        kind::check_crate(ty_cx, method_map, last_uses, crate)
+    };
 
     lint::check_crate(ty_cx, crate, sess.opts.lint_opts, time_passes);
 
     if upto == cu_no_trans { ret {crate: crate, tcx: some(ty_cx)}; }
     let outputs = option::get(outputs);
 
-    let (llmod, link_meta) =
-        time(time_passes, "translation",
-             bind trans::base::trans_crate(
-                 sess, crate, ty_cx, outputs.obj_filename, exp_map, ast_map,
-                 mut_map, copy_map, last_uses, impl_map, method_map,
-                 dict_map));
-    time(time_passes, "LLVM passes",
-         bind link::write::run_passes(sess, llmod, outputs.obj_filename));
+    let (llmod, link_meta) = time(time_passes, "translation") {||
+        trans::base::trans_crate(
+            sess, crate, ty_cx, outputs.obj_filename, exp_map, ast_map,
+            mut_map, copy_map, last_uses, impl_map, method_map,
+            dict_map)
+    };
+
+    time(time_passes, "LLVM passes") {||
+        link::write::run_passes(sess, llmod, outputs.obj_filename)
+    };
 
     let stop_after_codegen =
         sess.opts.output_type != link::output_type_exe ||
@@ -190,9 +201,10 @@ fn compile_upto(sess: session, cfg: ast::crate_cfg,
 
     if stop_after_codegen { ret {crate: crate, tcx: some(ty_cx)}; }
 
-    time(time_passes, "Linking",
-         bind link::link_binary(sess, outputs.obj_filename,
-                                outputs.out_filename, link_meta));
+    time(time_passes, "Linking") {||
+        link::link_binary(sess, outputs.obj_filename,
+                          outputs.out_filename, link_meta)
+    };
     ret {crate: crate, tcx: some(ty_cx)};
 }
 

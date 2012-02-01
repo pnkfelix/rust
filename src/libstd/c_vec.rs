@@ -165,7 +165,7 @@ mod tests {
 
         assert mem as int != 0;
 
-        ret unsafe { create_with_dtor(mem, n, bind libc::free(mem)) };
+        ret unsafe { create_with_dtor(mem, n, {|| libc::free(mem)}) };
     }
 
     #[test]

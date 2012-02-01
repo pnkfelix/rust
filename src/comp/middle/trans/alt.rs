@@ -695,7 +695,7 @@ fn trans_alt(cx: @block_ctxt, expr: @ast::expr, arms_: [ast::arm],
     let t = node_id_type(cx, expr.id);
     let vr = base::spill_if_immediate(er.bcx, er.val, t);
     compile_submatch(vr.bcx, match, [vr.val],
-                     bind mk_fail(alt_cx, expr.span, fail_cx), exit_map);
+                     {|| mk_fail(alt_cx, expr.span, fail_cx)}, exit_map);
 
     let arm_cxs = [], arm_dests = [], i = 0u;
     for a: ast::arm in arms {

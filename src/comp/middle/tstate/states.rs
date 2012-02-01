@@ -381,6 +381,7 @@ fn find_pre_post_state_expr(fcx: fn_ctxt, pres: prestate, e: @expr) -> bool {
         ret find_pre_post_state_cap_clause(fcx, e.id, pres, *cap_clause);
       }
       expr_fn_sugared(_, _, _) { ret pure_exp(fcx.ccx, e.id, pres); }
+      expr_hole(_) { ret pure_exp(fcx.ccx, e.id, pres); }
       expr_block(b) {
         ret find_pre_post_state_block(fcx, pres, b) |
                 set_prestate_ann(fcx.ccx, e.id, pres) |

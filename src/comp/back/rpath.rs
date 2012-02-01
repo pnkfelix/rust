@@ -100,7 +100,10 @@ fn get_rpaths_relative_to_output(os: session::os,
                                  cwd: fs::path,
                                  output: fs::path,
                                  libs: [fs::path]) -> [str] {
-    vec::map(libs, bind get_rpath_relative_to_output(os, cwd, output, _))
+    vec::map(libs) {|lib|
+        check not_win32(os);
+        get_rpath_relative_to_output(os, cwd, output, lib)
+    }
 }
 
 fn get_rpath_relative_to_output(os: session::os,

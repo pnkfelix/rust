@@ -842,13 +842,12 @@ fn parse_hole_expr(hp: hole_parser) -> @ast::expr {
     let hi = p.span.hi;
     eat(p, token::UNDERSCORE);
 
-    let h_id = p.get_id();
-    let h = vec::len(hp.holes);
+    let h_idx = vec::len(hp.holes);
     let t = @spanned(p.span.lo, p.span.hi, ast::ty_infer);
     let arg = {mode: ast::mode_infer, ty: t,
-               ident: #fmt["$%u", h], id: h_id};
+               ident: #fmt["$%u", h_idx], id: p.get_id()};
     hp.holes += [arg];
-    ret mk_expr(p, lo, hi, ast::expr_hole(h_id));
+    ret mk_expr(p, lo, hi, ast::expr_hole(h_idx));
 }
 
 fn parse_bottom_expr(hp: hole_parser) -> pexpr {
@@ -963,6 +962,14 @@ fn parse_bottom_expr(hp: hole_parser) -> pexpr {
     } else if eat_word(p, "bind") {
         let ep = { parser: hp.parser, restriction: hp.restriction };
         let rslt = parse_dot_or_call_expr(ep);
+
+        // check to make sure that they didn't write bind foo(bar),
+        // which used to work but no longer does.
+        alt to_expr(rslt).node {
+          ast::expr_fn_sugared(sk_bind, _, _) { /* ok */ }
+          _ { p.fatal("bind without _ not allowed, use {||...}"); }
+        }
+
         #debug["bind rslt=%s", expr_to_str(*rslt)];
         ret rslt;
     } else if p.token == token::POUND {
@@ -1512,16 +1519,13 @@ fn parse_expr_or_hole(hp: hole_parser) -> @ast::expr {
         parse_hole_expr(hp)
       }
       _ {
-        parse_expr_res(p, hp.restriction)
+        parse_expr(p)
       }
     };
 }
 
 fn parse_expr_res(p: parser, r: restriction) -> @ast::expr {
-    let ep = {
-        parser: p,
-        restriction: r
-    };
+    let ep = { parser: p, restriction: r };
     ret parse_assign_expr(ep);
 }
 
@@ -2337,8 +2341,8 @@ fn parse_item_enum(p: parser, attrs: [ast::attribute]) -> @ast::item {
         if p.token == token::LPAREN {
             all_nullary = false;
             let arg_tys = parse_seq(token::LPAREN, token::RPAREN,
-                                    seq_sep(token::COMMA),
-                                    {|p| parse_ty(p, false)}, p);
+                                    seq_sep(token::COMMA), p,
+                                    {|| parse_ty(p, false)});
             for ty in arg_tys.node {
                 args += [{ty: ty, id: p.get_id()}];
             }

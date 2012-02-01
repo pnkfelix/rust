@@ -1431,11 +1431,10 @@ fn compare_scalar_types(cx: @block_ctxt, lhs: ValueRef, rhs: ValueRef,
 // A helper function to do the actual comparison of scalar values.
 fn compare_scalar_values(cx: @block_ctxt, lhs: ValueRef, rhs: ValueRef,
                          nt: scalar_type, op: ast::binop) -> ValueRef {
-    fn die_(cx: @block_ctxt) -> ! {
+    let die = fn@() -> ! {
         bcx_tcx(cx).sess.bug("compare_scalar_values: must be a\
           comparison operator");
-    }
-    let die = bind die_(cx);
+    };
     alt nt {
       nil_type {
         // We don't need to do actual comparisons for nil.
@@ -2649,7 +2648,7 @@ fn trans_local_var(cx: @block_ctxt, def: ast::def) -> local_var_result {
     }
 }
 
-fn trans_path(cx: @block_ctxt, id: ast::node_id)
+fn trans_pathish(cx: @block_ctxt, id: ast::node_id)
     -> lval_maybe_callee {
     ret trans_var(cx, bcx_tcx(cx).def_map.get(id), id);
 }
@@ -2770,7 +2769,9 @@ fn expr_is_lval(bcx: @block_ctxt, e: @ast::expr) -> bool {
 
 fn trans_callee(bcx: @block_ctxt, e: @ast::expr) -> lval_maybe_callee {
     alt e.node {
-      ast::expr_path(_) { ret trans_path(bcx, e.id); }
+      ast::expr_hole(_) | ast::expr_path(_) {
+        ret trans_pathish(bcx, e.id);
+      }
       ast::expr_field(base, ident, _) {
         // Lval means this is a record field, so not a method
         if !expr_is_lval(bcx, e) {
@@ -2796,8 +2797,8 @@ fn trans_callee(bcx: @block_ctxt, e: @ast::expr) -> lval_maybe_callee {
 // immediate).
 fn trans_lval(cx: @block_ctxt, e: @ast::expr) -> lval_result {
     alt e.node {
-      ast::expr_path(_) {
-        let v = trans_path(cx, e.id);
+      ast::expr_hole(_) | ast::expr_path(_) {
+        let v = trans_pathish(cx, e.id);
         ret lval_maybe_callee_to_lval(v, expr_ty(cx, e));
       }
       ast::expr_field(base, ident, _) {
@@ -3664,9 +3665,10 @@ fn trans_expr(bcx: @block_ctxt, e: @ast::expr, dest: dest) -> @block_ctxt {
         assert dest == ignore;
         ret trans_assign_op(bcx, e, op, dst, src);
       }
-      _ { bcx_tcx(bcx).sess.span_bug(e.span, "trans_expr reached\
-             fall-through case"); }
-
+      _ { bcx_tcx(bcx).sess.span_bug(
+          e.span,
+          #fmt["trans_expr reached fall-through case for expr %s",
+               expr_to_str(e)]); }
     }
 }
 
@@ -4417,7 +4419,7 @@ fn copy_args_to_allocas(fcx: @fn_ctxt, bcx: @block_ctxt, args: [ast::arg],
     let arg_n: uint = 0u, bcx = bcx;
     let epic_fail = fn@() -> ! {
         tcx.sess.bug("Someone forgot\
-                to document an invariant in copy_args_to_allocas!");
+                      to document an invariant in copy_args_to_allocas!");
     };
     for arg in arg_tys {
         let id = args[arg_n].id;
@@ -5106,11 +5108,20 @@ fn create_real_fn_pair(cx: @block_ctxt, llfnty: TypeRef, llfn: ValueRef,
 
 fn fill_fn_pair(bcx: @block_ctxt, pair: ValueRef, llfn: ValueRef,
                 llenvptr: ValueRef) {
+
     let ccx = bcx_ccx(bcx);
+
+    #debug["fill_fn_pair[pair=%s]",val_str(ccx.tn, pair)];
+
     let code_cell = GEPi(bcx, pair, [0, abi::fn_field_code]);
+    #debug["fill_fn_pair: storing llfn=%s in code_cell=%s",
+           val_str(ccx.tn, llfn), val_str(ccx.tn, code_cell)];
     Store(bcx, llfn, code_cell);
+
     let env_cell = GEPi(bcx, pair, [0, abi::fn_field_box]);
     let llenvblobptr = PointerCast(bcx, llenvptr, T_opaque_box_ptr(ccx));
+    #debug["fill_fn_pair: storing llenvblobptr=%s in env_cell=%s",
+           val_str(ccx.tn, llenvblobptr), val_str(ccx.tn, env_cell)];
     Store(bcx, llenvblobptr, env_cell);
 }
 

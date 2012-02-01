@@ -19,12 +19,16 @@ import driver::session::session;
 
 fn check_unused_vars(fcx: fn_ctxt) {
 
+    fn suppress(nm: str) -> bool {
+        let c0 = nm[0];
+        ret c0 == ('_' as u8) || c0 == ('$' as u8);
+    }
+
     // FIXME: could be more efficient
     for c: norm_constraint in constraints(fcx) {
         alt c.c.node {
           ninit(id, v) {
-            if !vec_contains(fcx.enclosing.used_vars, id) && v[0] != '_' as u8
-               {
+            if !vec_contains(fcx.enclosing.used_vars, id) && !suppress(v) {
                 fcx.ccx.tcx.sess.span_warn(c.c.span, "unused variable " + v);
             }
           }
