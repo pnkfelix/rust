@@ -5,6 +5,6 @@ fn f(a: @int) {
 }
 
 fn main() {
-    let g = bind f(@0);
+    let g = fn@() { f(@0) };
     g();
 }

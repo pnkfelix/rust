@@ -1,10 +1,13 @@
-// error-pattern:may alias with argument
+fn foo(x: {mutable x: int}, _f: fn@(int)) {
+    log(debug, x);
+}
 
-fn foo(x: {mutable x: int}, f: fn@()) { log(debug, x); }
-
-fn whoknows(x: @mutable {mutable x: int}) { *x = {mutable x: 10}; }
+fn whoknows(x: @mutable {mutable x: int}, y: int) {
+    *x = {mutable x: y};
+}
 
 fn main() {
     let box = @mutable {mutable x: 1};
-    foo(*box, bind whoknows(box));
+    foo(*box, whoknows(box, _));
+    //!^ ERROR may alias with argument
 }

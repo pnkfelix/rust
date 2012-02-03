@@ -4,6 +4,6 @@ fn f(i: int) {
 
 fn main() {
     // Binding a bare function turns it into a shared closure
-    let g: fn@() = bind f(10);
-    g();
+    let g: fn@(int) = bind f(_);
+    g(10);
 }

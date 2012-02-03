@@ -946,11 +946,8 @@ fn print_expr(s: ps, &&expr: @ast::expr) {
       }
       ast::expr_fn_sugared(ast::sk_bind, decl, body) {
         assert ast::blk_is_appr_for_bind(body);
-        word(s.s, "bind");
-        popen(s);
         let expr = option::get(body.node.expr);
         print_expr(s, expr);
-        pclose(s);
       }
       ast::expr_block(blk) {
         // containing cbox, will be closed by print-block at }

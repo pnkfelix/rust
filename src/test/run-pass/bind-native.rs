@@ -4,7 +4,13 @@ Can we bind native things?
 
 #[abi = "cdecl"]
 native mod rustrt {
-    fn rand_new() -> *ctypes::void;
+    fn strlen(c: *u8) -> ctypes::c_int;
 }
 
-fn main() { bind rustrt::rand_new(); }
+fn main() {
+    let strlen = rustrt::strlen(_);
+    str::as_buf("foo") {|b|
+        assert strlen(b) == 3i32;
+    }
+}
+

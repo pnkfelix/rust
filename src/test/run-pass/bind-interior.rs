@@ -2,10 +2,10 @@
 
 
 // -*- rust -*-
-fn f(n: int) -> int { ret n; }
+fn add(n: int, m: int) -> int { ret n+m; }
 
 fn main() {
-    let g: fn@() -> int = bind f(10);
-    let i: int = g();
-    assert (i == 10);
+    let g: fn@(int) -> int = add(10, _);
+    let i: int = g(1);
+    assert (i == 11);
 }

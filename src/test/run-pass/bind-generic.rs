@@ -7,8 +7,8 @@ fn wrapper3<T: copy>(i: T, j: int) {
 }
 
 fn spawn3<T: copy>(i: T, j: int) {
-    let wrapped = bind wrapper3(i, j);
-    wrapped();
+    wrapper3(_, j)(i);
+    wrapper3(i, _)(j);
 }
 
 fn main() {

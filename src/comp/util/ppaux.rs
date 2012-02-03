@@ -10,8 +10,7 @@ import syntax::{ast, ast_util};
 import middle::ast_map;
 
 fn ty_to_str(cx: ctxt, typ: t) -> str {
-    fn fn_input_to_str(cx: ctxt, input: {mode: ast::mode, ty: t}) ->
-       str {
+    fn fn_input_to_str(cx: ctxt, input: {mode: ast::mode, ty: t}) -> str {
         let {mode, ty} = input;
         let modestr = alt canon_mode(cx, mode) {
           ast::infer(_) { "" }

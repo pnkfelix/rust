@@ -2,6 +2,8 @@
 
 fn id(x: bool) -> bool { x }
 
+fn id2(x: bool, y: bool) -> bool { x || y }
+
 fn call_id() {
     let c <- fail;
     id(c);
@@ -13,9 +15,9 @@ fn call_id_3() { id(ret) && id(ret); }
 
 fn call_id_4() { while id(break) { } }
 
-fn bind_id_1() { bind id(fail); }
+fn bind_id_1() { id2(fail, _); }
 
-fn bind_id_2() { bind id(ret); }
+fn bind_id_2() { id2(_, ret); }
 
 fn fail_fail() { fail fail; }
 

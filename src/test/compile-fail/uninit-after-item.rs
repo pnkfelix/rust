@@ -2,6 +2,6 @@
 fn main() {
     let bar;
     fn baz(x: int) { }
-    bind baz(bar);
+    let _ = fn@() { baz(bar); };
 }
 
