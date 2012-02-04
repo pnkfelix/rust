@@ -29,7 +29,7 @@ fn f(c: comm::_chan<int>) {
 
 fn main() {
     let p = comm::mk_port();
-    task::_spawn(bind f(p.mk_chan()));
+    task::_spawn(fn@() { f(p.mk_chan()) });
     let i: int;
 
     // synchronize on event from child.

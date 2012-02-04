@@ -16,6 +16,6 @@ fn main() {
     let l = str::byte_len(s);
     let b8 = unsafe { vec::unsafe::to_ptr(b) };
     libc::write(0i32, b8, l);
-    let a = bind libc::write(0i32, _, _);
+    let a = libc::write(0i32, _, _);
     a(b8, l);
 }

@@ -10,6 +10,6 @@ fn f(x : @{a:int, b:int}) {
 
 fn main() {
     let z : @{a:int, b:int} = @{ a : 10, b : 12};
-    let p = task::_spawn(bind f(z));
+    let p = task::_spawn {|| f(z) };
     task::join_id(p);
 }

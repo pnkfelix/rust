@@ -123,7 +123,7 @@ mod map_reduce {
             ret none;
         }
 
-        reduce(key, bind get(p, state));
+        reduce(key) {|| get(p, state) };
     }
 
     fn map_reduce(-inputs: [str]) {
