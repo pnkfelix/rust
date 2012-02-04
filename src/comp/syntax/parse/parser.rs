@@ -1176,7 +1176,6 @@ fn parse_dot_or_call_expr_with(hp: hole_parser, e0: pexpr) -> pexpr {
                              ast::expr_field(to_expr(e),
                                              p.get_str(i),
                                              tys));
-                e = hp.cover_holes_in_pexpr(e);
               }
               t { unexpected(p, t); }
             }
