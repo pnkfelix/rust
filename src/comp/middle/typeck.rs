@@ -1572,9 +1572,10 @@ fn check_expr_fn_with_unifier(fcx: @fn_ctxt,
     let fty = ty::mk_fn(tcx,
                         ty_of_fn_decl(tcx, m_check_tyvar(fcx), proto, decl));
 
-    #debug("check_expr_fn_with_unifier %s fty=%s",
+    #debug("check_expr_fn_with_unifier %s fty=%s expected=%s",
            expr_to_str(expr),
-           ty_to_str(tcx, fty));
+           ty_to_str(tcx, fty),
+           ty_to_str(tcx, expected));
 
     write_ty(tcx, expr.id, fty);
 
@@ -2278,6 +2279,10 @@ fn check_expr_with_unifier(fcx: @fn_ctxt, expr: @ast::expr, unify: unifier,
       }
     }
     if bot { write_ty(tcx, expr.id, ty::mk_bot(tcx)); }
+
+    #debug["expr with id %d has type %s expected %s (expr pp'd == %s)",
+           expr.id, ty_to_str(tcx, expr_ty(tcx, expr)),
+           ty_to_str(tcx, expected), expr_to_str(expr)];
 
     unify(fcx, expr.span, expected, expr_ty(tcx, expr));
     ret bot;
