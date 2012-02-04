@@ -1006,7 +1006,6 @@ fn print_expr(s: ps, &&expr: @ast::expr) {
       ast::expr_path(path) { print_path(s, path, true); }
       ast::expr_hole(id) {
         word(s.s, "_");
-        synth_comment(s, #fmt["#%u", id]);
       }
       ast::expr_fail(maybe_fail_val) {
         word(s.s, "fail");
