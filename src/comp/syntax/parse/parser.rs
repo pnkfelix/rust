@@ -792,6 +792,15 @@ impl hole_parser for hole_parser {
     }
 
     fn mk_sugared_bind(e: @ast::expr) -> @ast::expr {
+        alt e.node {
+          ast::expr_hole(_) {
+            self.parser.fatal("`_` can only appear as part of a \
+                               call, field, method, or indexing expression");
+          }
+
+          _ {}
+        }
+
         let inputs = [];
         inputs <-> self.holes;
         let output = @spanned(e.span.lo, e.span.hi, ast::ty_infer);
@@ -1152,12 +1161,12 @@ fn parse_dot_or_call_expr_with(hp: hole_parser, e0: pexpr) -> pexpr {
           // expr[...]
           token::LBRACKET {
             p.bump();
-            let ix = parse_expr_or_hole(hp);
+            e = hp.cover_holes_in_pexpr(e);
+            let ix = parse_expr(hp.parser);
             hi = ix.span.hi;
             expect(p, token::RBRACKET);
             p.get_id(); // see ast_util::op_expr_callee_id
             e = mk_pexpr(p, lo, hi, ast::expr_index(to_expr(e), ix));
-            e = hp.cover_holes_in_pexpr(e);
           }
 
           // expr.f
