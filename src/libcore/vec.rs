@@ -980,7 +980,8 @@ Function: iter2
 Iterates over two vectors in parallel
 
 */
-fn iter2<U, T>(v: [ U], v2: [const T], f: fn(U, T)) {
+#[inline]
+fn iter2<U, T>(v: [const U], v2: [const T], f: fn(U, T)) {
     let i = 0;
     for elt in v { f(elt, v2[i]); i += 1; }
 }
@@ -993,6 +994,7 @@ Iterates over a vector's elements and indexes
 Iterates over vector `v` and, for each element, calls function `f` with the
 element's value and index.
 */
+#[inline]
 fn iteri<T>(v: [const T], f: fn(uint, T)) {
     let i = 0u, l = len(v);
     while i < l { f(i, v[i]); i += 1u; }
