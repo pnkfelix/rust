@@ -101,14 +101,6 @@ impl extensions<T:copy> for option<T> {
     #[doc = "Performs an operation on the contained value or does nothing"]
     fn iter(f: fn(T)) { iter(self, f) }
 
-    #[doc = "Performs an operation on the contained value or does nothing"]
-    fn each(f: fn(T) -> bool) {
-        alt self {
-          none { /* ok */ }
-          some(e) { f(e); }
-        }
-    }
-
     #[doc = "
     Gets the value out of an option
 
@@ -123,6 +115,36 @@ impl extensions<T:copy> for option<T> {
     fn is_some() -> bool { is_some(self) }
     #[doc = "Maps a `some` value from one type to another"]
     fn map<U:copy>(f: fn(T) -> U) -> option<U> { map(self, f) }
+}
+
+impl extensions<A:copy> of iter::base_iter<A> for option<A> {
+    #[doc = "Performs an operation on the contained value or does nothing"]
+    fn each(f: fn(A) -> bool) {
+        alt self {
+          none { /* ok */ }
+          some(e) { f(e); }
+        }
+    }
+    fn size_hint() -> option<uint> {
+        alt self {
+          none { some(0u) }
+          some(_) { some(1u) }
+        }
+    }
+    fn eachi(blk: fn(uint, A) -> bool) { iter::eachi(self, blk) }
+    fn all(blk: fn(A) -> bool) -> bool { iter::all(self, blk) }
+    fn any(blk: fn(A) -> bool) -> bool { iter::any(self, blk) }
+    fn filter(pred: fn(A) -> bool) -> [A] { iter::filter(self, pred) }
+    fn map<B>(op: fn(A) -> B) -> [B] { iter::map(self, op) }
+    //fn flat_map<B,IB:iter::base_iter<B>>(op: fn(A) -> IB) -> [B] {
+    //    iter::flat_map(self, op)
+    //}
+    fn foldl<B>(+b0: B, blk: fn(B, A) -> B) -> B { iter::foldl(self, b0, blk) }
+    fn to_vec() -> [A] { iter::to_vec(self) }
+    fn contains(x: A) -> bool { iter::contains(self, x) }
+    fn count(x: A) -> uint { iter::count(self, x) }
+    fn min() -> A { iter::min(self) }
+    fn max() -> A { iter::max(self) }
 }
 
 #[test]
