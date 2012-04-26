@@ -151,10 +151,12 @@ type binding = {node_id: ast::node_id,
                 br: ty::bound_region};
 
 type region_map = {
-    /* Mapping from a block/function expression to its parent. */
+    // Mapping from a block/function expression to its parent.
     parents: hashmap<ast::node_id,ast::node_id>,
 
-    /* Mapping from a local variable to its containing block. */
+    // Mapping from arguments and local variables to the block in
+    // which they are declared. Arguments are considered to be declared
+    // within the body of the function.
     local_blocks: hashmap<ast::node_id,ast::node_id>
 };
 
@@ -314,6 +316,17 @@ fn resolve_item(item: @ast::item, cx: ctxt, visitor: visit::vt<ctxt>) {
     // Items create a new outer block scope as far as we're concerned.
     let new_cx: ctxt = {parent: some(item.id) with cx};
     visit::visit_item(item, new_cx, visitor);
+}
+
+fn resolve_fn(fk: visit::fn_kind, decl: ast::fn_decl, body: ast::blk,
+              sp: span, id: ast::node_id, cx: ctxt,
+              visitor: visit::vt<ctxt>) {
+    for decl.inputs.each { |input|
+        cx.region_map.local_blocks.insert(
+            input.id, body.node.id);
+    }
+
+    visit::visit_fn(fk, decl, body, sp, id, cx, visitor);
 }
 
 fn resolve_crate(sess: session, def_map: resolve::def_map, crate: @ast::crate)

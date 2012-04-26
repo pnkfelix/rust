@@ -1804,13 +1804,14 @@ mod collect {
 }
 
 
-// FIXME This is almost a duplicate of ty::type_autoderef, with structure_of
-// instead of ty::struct.
 fn do_autoderef(fcx: @fn_ctxt, sp: span, t: ty::t) -> ty::t {
     let mut t1 = t;
     let mut enum_dids = [];
     loop {
-        alt structure_of(fcx, sp, t1) {
+        let sty = structure_of(fcx, sp, t1);
+
+        // Some extra checks to detect weird cycles and so forth:
+        alt sty {
           ty::ty_box(inner) | ty::ty_uniq(inner) | ty::ty_rptr(_, inner) {
             alt ty::get(t1).struct {
               ty::ty_var(v1) {
@@ -1819,10 +1820,6 @@ fn do_autoderef(fcx: @fn_ctxt, sp: span, t: ty::t) -> ty::t {
               }
               _ { }
             }
-            t1 = inner.ty;
-          }
-          ty::ty_res(_, inner, substs) {
-            t1 = ty::subst(fcx.ccx.tcx, substs, inner);
           }
           ty::ty_enum(did, substs) {
             // Watch out for a type like `enum t = @t`.  Such a type would
@@ -1834,14 +1831,14 @@ fn do_autoderef(fcx: @fn_ctxt, sp: span, t: ty::t) -> ty::t {
                 ret t1;
             }
             vec::push(enum_dids, did);
-
-            let variants = ty::enum_variants(fcx.ccx.tcx, did);
-            if vec::len(*variants) != 1u || vec::len(variants[0].args) != 1u {
-                ret t1;
-            }
-            t1 = ty::subst(fcx.ccx.tcx, substs, variants[0].args[0]);
           }
-          _ { ret t1; }
+          _ { /*ok*/ }
+        }
+
+        // Otherwise, deref if type is derefable:
+        alt ty::deref_sty(fcx.ccx.tcx, sty) {
+          none { ret t1; }
+          some(mt) { t1 = mt.ty; }
         }
     };
 }
