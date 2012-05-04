@@ -1898,9 +1898,11 @@ mod demand {
     }
 
     // Checks that the type `actual` can be assigned to `expected`.
-    fn assign(fcx: @fn_ctxt, sp: span, expected: ty::t, expr: @ast::expr) {
+    fn assign(fcx: @fn_ctxt, sp: span, borrow_scope: ast::node_id,
+              expected: ty::t, expr: @ast::expr) {
         let expr_ty = fcx.expr_ty(expr);
-        alt infer::mk_assignty(fcx.infcx, expr.id, expr_ty, expected) {
+        let anmnt = {expr_id: expr.id, borrow_scope: borrow_scope};
+        alt infer::mk_assignty(fcx.infcx, anmnt, expr_ty, expected) {
           result::ok(()) { /* ok */ }
           result::err(err) {
             fcx.report_mismatched_types(sp, expected, expr_ty, err);
@@ -2954,8 +2956,10 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
     // A generic function to factor out common logic from call and bind
     // expressions.
     fn check_call_or_bind(
-        fcx: @fn_ctxt, sp: span, fty: ty::t,
+        fcx: @fn_ctxt, sp: span, call_expr_id: ast::node_id, fty: ty::t,
         args: [option<@ast::expr>]) -> {fty: ty::t, bot: bool} {
+
+        let mut bot = false;
 
         let fty = universally_quantify_before_call(fcx, sp, fty);
         #debug["check_call_or_bind: after universal quant., fty=%s",
@@ -3004,10 +3008,8 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
         // functions. This is so that we have more information about the types
         // of arguments when we typecheck the functions. This isn't really the
         // right way to do this.
-        let check_args = fn@(check_blocks: bool) -> bool {
-            let mut i = 0u;
-            let mut bot = false;
-            for args.each {|a_opt|
+        for [false, true].each { |check_blocks|
+            for args.eachi {|i, a_opt|
                 alt a_opt {
                   some(a) {
                     let is_block = alt a.node {
@@ -3018,18 +3020,15 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
                         let arg_ty = arg_tys[i];
                         bot |= check_expr_with_unifier(
                             fcx, a, some(arg_ty)) {||
-                            demand::assign(fcx, a.span, arg_ty, a);
+                            demand::assign(fcx, a.span, call_expr_id,
+                                           arg_ty, a);
                         };
                     }
                   }
                   none { }
                 }
-                i += 1u;
             }
-            ret bot;
-        };
-
-        let bot = check_args(false) | check_args(true);
+        }
 
         {fty: fty, bot: bot}
     }
@@ -3053,7 +3052,8 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
         // Call the generic checker.
         let fty = {
             let args_opt = args.map { |arg| some(arg) };
-            let r = check_call_or_bind(fcx, sp, fn_ty, args_opt);
+            let r = check_call_or_bind(fcx, sp, call_expr_id,
+                                       fn_ty, args_opt);
             bot |= r.bot;
             r.fty
         };
@@ -3134,7 +3134,8 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
           some(origin) {
             let {fty: method_ty, bot: bot} = {
                 let method_ty = fcx.node_ty(callee_id);
-                check_call_or_bind(fcx, op_ex.span, method_ty, args)
+                check_call_or_bind(fcx, op_ex.span, op_ex.id,
+                                   method_ty, args)
             };
             fcx.ccx.method_map.insert(op_ex.id, origin);
             some((ty::ty_fn_ret(method_ty), bot))
@@ -3628,7 +3629,7 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
 
         let {fty, bot: ccob_bot} = {
             let fn_ty = fcx.expr_ty(f);
-            check_call_or_bind(fcx, expr.span, fn_ty, args)
+            check_call_or_bind(fcx, expr.span, expr.id, fn_ty, args)
         };
         bot |= ccob_bot;
 

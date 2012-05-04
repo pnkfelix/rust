@@ -747,12 +747,45 @@ impl categorize_methods for borrowck_ctxt {
         }
     }
 
+    fn cat_to_repr(cat: categorization) -> str {
+        alt cat {
+          cat_rvalue(rv_method) { "method" }
+          cat_rvalue(rv_static_item) { "static_item" }
+          cat_rvalue(rv_upvar) { "upvar" }
+          cat_rvalue(rv_misc) { "rvalue" }
+          cat_rvalue(rv_self) { "self" }
+          cat_deref(cmt) { self.cat_to_repr(cmt.cat) + ".*" }
+          cat_field(cmt, f) { self.cat_to_repr(cmt.cat) + "." + f }
+          cat_index(cmt) { self.cat_to_repr(cmt.cat) + ".[]" }
+          cat_local(node_id) { #fmt["local(%d)", node_id] }
+          cat_arg(node_id) { #fmt["arg(%d)", node_id] }
+        }
+    }
+
     fn mut_to_str(mutbl: ast::mutability) -> str {
         alt mutbl {
           m_mutbl { "mutable" }
           m_const { "const" }
           m_imm { "immutable" }
         }
+    }
+
+    fn lp_to_str(lp: @loan_path) -> str {
+        alt *lp {
+          lp_local(node_id) { #fmt["local(%d)", node_id] }
+          lp_arg(node_id) { #fmt["arg(%d)", node_id] }
+          lp_deref(lp) { #fmt["%s.*", self.lp_to_str(lp)] }
+          lp_field(lp, fld) { #fmt["%s.%s", self.lp_to_str(lp), fld] }
+          lp_index(lp) { #fmt["%s.[]", self.lp_to_str(lp)] }
+        }
+    }
+
+    fn cmt_to_repr(cmt: cmt) -> str {
+        #fmt["{%s m:%s lp:%s ty:%s}",
+             self.cat_to_repr(cmt.cat),
+             self.mut_to_str(cmt.mutbl),
+             cmt.lp.map_default("none", { |p| self.lp_to_str(p) }),
+             ty_to_str(self.tcx, cmt.ty)]
     }
 
     fn cmt_to_str(cmt: cmt) -> str {
@@ -840,7 +873,7 @@ impl preserve_methods for preserve_ctxt {
     fn preserve(cmt: cmt) -> bckres<()> {
         let tcx = self.bccx.tcx;
 
-        #debug["preserve(%s)", self.bccx.cmt_to_str(cmt)];
+        #debug["preserve(%s)", self.bccx.cmt_to_repr(cmt)];
         let _i = indenter();
 
         alt cmt.cat {
@@ -863,7 +896,7 @@ impl preserve_methods for preserve_ctxt {
               uniqish {
                 // Unique pointers: must be immutably rooted to a preserved
                 // address.
-                alt cmt.mutbl {
+                alt cmt1.mutbl {
                   m_mutbl | m_const { err({cmt:cmt, code:err_mut_uniq}) }
                   m_imm { self.preserve(cmt1) }
                 }
@@ -942,7 +975,7 @@ impl loan_methods for loan_ctxt {
     fn loan(cmt: cmt, req_mutbl: ast::mutability) -> bckres<()> {
 
         #debug["loan(%s, %s)",
-               self.bccx.cmt_to_str(cmt),
+               self.bccx.cmt_to_repr(cmt),
                self.bccx.mut_to_str(req_mutbl)];
         let _i = indenter();
 
