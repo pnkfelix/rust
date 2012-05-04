@@ -29,6 +29,8 @@ export constr;
 export constr_general;
 export constr_table;
 export ctxt;
+export deref, deref_sty;
+export index, index_sty;
 export def_has_ty_params;
 export expr_has_ty_params;
 export expr_ty;
@@ -227,7 +229,8 @@ type ctxt =
       iface_method_cache: hashmap<def_id, @[method]>,
       ty_param_bounds: hashmap<ast::node_id, param_bounds>,
       inferred_modes: hashmap<ast::node_id, ast::mode>,
-      borrowings: hashmap<ast::node_id, ()>, // ids of exprs that are borrowed
+      // maps the id of borrowed expr to scope of borrowed ptr
+      borrowings: hashmap<ast::node_id, ast::node_id>,
       normalized_cache: hashmap<t, t>};
 
 type t_box = @{struct: sty,
@@ -585,6 +588,8 @@ fn mk_int(cx: ctxt) -> t { mk_t(cx, ty_int(ast::ty_i)) }
 fn mk_float(cx: ctxt) -> t { mk_t(cx, ty_float(ast::ty_f)) }
 
 fn mk_uint(cx: ctxt) -> t { mk_t(cx, ty_uint(ast::ty_u)) }
+
+fn mk_u8(cx: ctxt) -> t { mk_t(cx, ty_uint(ast::ty_u8)) }
 
 fn mk_mach_int(cx: ctxt, tm: ast::int_ty) -> t { mk_t(cx, ty_int(tm)) }
 
@@ -1774,6 +1779,19 @@ fn type_autoderef(cx: ctxt, t: t) -> t {
           none { ret t; }
           some(mt) { t = mt.ty; }
         }
+    }
+}
+
+// Returns the type and mutability of t[i]
+fn index(cx: ctxt, t: t) -> option<mt> {
+    index_sty(cx, get(t).struct)
+}
+
+fn index_sty(cx: ctxt, sty: sty) -> option<mt> {
+    alt sty {
+      ty_vec(mt) | ty_evec(mt, _) { some(mt) }
+      ty_str | ty_estr(_) { some({ty: mk_u8(cx), mutbl: ast::m_imm}) }
+      _ { none }
     }
 }
 

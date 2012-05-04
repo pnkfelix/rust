@@ -5,7 +5,7 @@ import syntax::parse;
 import syntax::{ast, codemap};
 import syntax::attr;
 import middle::{trans, resolve, freevars, kind, ty, typeck, fn_usage,
-                last_use, lint};
+                last_use, lint, unsafeck};
 import syntax::print::{pp, pprust};
 import util::{ppaux, filesearch};
 import back::link;
@@ -160,12 +160,14 @@ fn compile_upto(sess: session, cfg: ast::crate_cfg,
          bind middle::check_loop::check_crate(ty_cx, crate));
     time(time_passes, "function usage",
          bind fn_usage::check_crate_fn_usage(ty_cx, crate));
+    time(time_passes, "unsafe ck",
+         bind unsafeck::check_crate(ty_cx, method_map, crate));
     time(time_passes, "alt checking",
          bind middle::check_alt::check_crate(ty_cx, crate));
     time(time_passes, "typestate checking",
          bind middle::tstate::ck::check_crate(ty_cx, crate));
-    let _move_set = time(time_passes, "borrow checking",
-         bind middle::borrowck::check_crate(ty_cx, crate, method_map));
+    let _root_map = time(time_passes, "borrow checking",
+         bind middle::borrowck::check_crate(ty_cx, method_map, crate));
     let mutbl_map =
         time(time_passes, "mutability checking",
              bind middle::mutbl::check_crate(ty_cx, crate));

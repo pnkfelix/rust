@@ -892,7 +892,7 @@ impl assignment for infer_ctxt {
                     // if successful, add an entry indicating that
                     // borrowing occurred
                     #debug["borrowing expression #%?", a_node_id];
-                    self.tcx.borrowings.insert(a_node_id, ());
+                    self.tcx.borrowings.insert(a_node_id, a_scope_id);
                     uok()
                 }
             }

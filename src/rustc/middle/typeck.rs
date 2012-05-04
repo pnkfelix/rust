@@ -3379,30 +3379,25 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
             oper_t = ty::mk_uniq(tcx, {ty: oper_t, mutbl: mutbl});
           }
           ast::deref {
-            alt structure_of(fcx, expr.span, oper_t) {
-              ty::ty_box(inner) { oper_t = inner.ty; }
-              ty::ty_uniq(inner) { oper_t = inner.ty; }
-              ty::ty_res(_, inner, _) { oper_t = inner; }
-              ty::ty_enum(id, substs) {
-                let variants = ty::enum_variants(tcx, id);
-                if vec::len(*variants) != 1u ||
-                       vec::len(variants[0].args) != 1u {
-                    tcx.sess.span_fatal(expr.span,
-                                        "can only dereference enums " +
-                                        "with a single variant which has a "
-                                            + "single argument");
+            let sty = structure_of(fcx, expr.span, oper_t);
+            alt ty::deref_sty(tcx, sty) {
+              some(mt) { oper_t = mt.ty }
+              none {
+                alt sty {
+                  ty::ty_enum(*) {
+                    tcx.sess.span_fatal(
+                        expr.span,
+                        "can only dereference enums \
+                         with a single variant which has a \
+                         single argument");
+                  }
+                  _ {
+                    tcx.sess.span_fatal(
+                        expr.span,
+                        #fmt["type %s cannot be dereferenced",
+                             fcx.ty_to_str(oper_t)]);
+                  }
                 }
-                oper_t = ty::subst(tcx, substs, variants[0].args[0]);
-              }
-              ty::ty_ptr(inner) {
-                oper_t = inner.ty;
-                require_unsafe(tcx.sess, fcx.purity, expr.span);
-              }
-              ty::ty_rptr(_, inner) { oper_t = inner.ty; }
-              _ {
-                  tcx.sess.span_err(expr.span,
-                      #fmt("Type %s cannot be dereferenced",
-                           ty_to_str(tcx, oper_t)));
               }
             }
           }
@@ -3880,19 +3875,12 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
         let base_t = do_autoderef(fcx, expr.span, raw_base_t);
         bot |= check_expr(fcx, idx, none);
         let idx_t = fcx.expr_ty(idx);
-        alt structure_of(fcx, expr.span, base_t) {
-          ty::ty_evec(mt, _) |
-          ty::ty_vec(mt) {
+        alt ty::index_sty(tcx, structure_of(fcx, expr.span, base_t)) {
+          some(mt) {
             require_integral(fcx, idx.span, idx_t);
             fcx.write_ty(id, mt.ty);
           }
-          ty::ty_estr(_) |
-          ty::ty_str {
-            require_integral(fcx, idx.span, idx_t);
-            let typ = ty::mk_mach_uint(tcx, ast::ty_u8);
-            fcx.write_ty(id, typ);
-          }
-          _ {
+          none {
             let resolved = structurally_resolved_type(fcx, expr.span,
                                                       raw_base_t);
             alt lookup_op_method(fcx, expr, resolved, "[]",
