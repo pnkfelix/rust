@@ -579,28 +579,37 @@ type mem_buffer = @{mut buf: [mut u8],
 
 impl of writer for mem_buffer {
     fn write(v: [const u8]/&) {
+        let mut buf = [mut];
+        buf <-> self.buf;
+
         // Fast path.
-        if self.pos == vec::len(self.buf) {
-            for vec::each(v) {|b| self.buf += [mut b]; }
+        if self.pos == vec::len(buf) {
+            for vec::each(v) {|b| buf += [mut b]; }
             self.pos += vec::len(v);
+            self.buf <- buf;
             ret;
         }
+
         // FIXME: Optimize: These should be unique pointers. // #2004
         let vlen = vec::len(v);
         let mut vpos = 0u;
         while vpos < vlen {
             let b = v[vpos];
-            if self.pos == vec::len(self.buf) {
-                self.buf += [mut b];
-            } else { self.buf[self.pos] = b; }
+            if self.pos == vec::len(buf) {
+                buf += [mut b];
+            } else { buf[self.pos] = b; }
             self.pos += 1u;
             vpos += 1u;
         }
+        self.buf <- buf;
     }
     fn seek(offset: int, whence: seek_style) {
         let pos = self.pos;
-        let len = vec::len(self.buf);
+        let mut buf = [mut];
+        buf <-> self.buf;
+        let len = vec::len(buf);
         self.pos = seek_in_buf(offset, pos, len, whence);
+        self.buf <- buf;
     }
     fn tell() -> uint { self.pos }
     fn flush() -> int { 0 }
