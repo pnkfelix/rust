@@ -173,7 +173,7 @@ fn req_loans_in_expr(ex: @ast::expr,
               }
               ast::by_ref {
                 let arg_cmt = self.bccx.cat_expr(arg);
-                self.guarantee_valid(arg_cmt, m_imm, ty::re_scope(ex.id));
+                self.guarantee_valid(arg_cmt, m_const, ty::re_scope(ex.id));
               }
               ast::by_move | ast::by_copy | ast::by_val {}
             }
@@ -195,6 +195,14 @@ impl methods for gather_loan_ctxt {
     fn guarantee_valid(cmt: cmt,
                        mutbl: ast::mutability,
                        scope_r: ty::region) {
+
+        #debug["guarantee_valid(expr=%s, cmt=%s, mutbl=%s, scope_r=%s)",
+               pprust::expr_to_str(cmt.expr),
+               self.bccx.cmt_to_repr(cmt),
+               self.bccx.mut_to_str(mutbl),
+               region_to_str(self.tcx(), scope_r)];
+        let _i = indenter();
+
         alt cmt.lp {
           // If this expression is a loanable path, we MUST take out a loan.
           // This is somewhat non-obvious.  You might think, for example, that
@@ -214,7 +222,7 @@ impl methods for gather_loan_ctxt {
                 }
               }
               _ {
-                self.tcx().sess.span_err(
+                self.tcx().sess.span_warn(
                     cmt.expr.span,
                     #fmt["Cannot guarantee the stability \
                           of this expression for the entirety of \
@@ -330,7 +338,7 @@ impl methods for check_loan_ctxt {
                       }
 
                       (m_mutbl, m_imm) | (m_imm, m_mutbl) {
-                        self.tcx().sess.span_err(
+                        self.tcx().sess.span_warn(
                             new_loan.cmt.expr.span,
                             #fmt["Loan of %s as %s \
                                   conflicts with prior loan",
@@ -353,7 +361,7 @@ impl methods for check_loan_ctxt {
         alt cmt.mutbl {
           m_mutbl { /*ok*/ }
           m_const | m_imm {
-            self.tcx().sess.span_err(
+            self.tcx().sess.span_warn(
                 ex.span,
                 #fmt["Cannot assign to %s", self.bccx.cmt_to_str(cmt)]);
             ret;
@@ -369,7 +377,7 @@ impl methods for check_loan_ctxt {
             alt loan.mutbl {
               m_mutbl | m_const { /*ok*/ }
               m_imm {
-                self.tcx().sess.span_err(
+                self.tcx().sess.span_warn(
                     ex.span,
                     #fmt["Cannot assign to %s due to outstanding loan",
                          self.bccx.cmt_to_str(cmt)]);
@@ -395,7 +403,7 @@ impl methods for check_loan_ctxt {
 
           // Nothing else.
           _ {
-            self.tcx().sess.span_err(
+            self.tcx().sess.span_warn(
                 ex.span,
                 #fmt["Cannot move from %s", self.bccx.cmt_to_str(cmt)]);
             ret;
@@ -408,7 +416,7 @@ impl methods for check_loan_ctxt {
           some(lp) { lp }
         };
         for self.walk_loans_of(ex.id, lp) { |loan|
-            self.tcx().sess.span_err(
+            self.tcx().sess.span_warn(
                 ex.span,
                 #fmt["Cannot move from %s due to outstanding loan",
                      self.bccx.cmt_to_str(cmt)]);
@@ -691,7 +699,8 @@ impl categorize_methods for borrowck_ctxt {
           ast::def_arg(vid, mode) {
             let m = alt ty::resolved_mode(self.tcx, mode) {
               ast::by_mutbl_ref | ast::by_move | ast::by_copy { m_mutbl }
-              ast::by_ref | ast::by_val { m_imm }
+              ast::by_ref { m_const }
+              ast::by_val { m_imm }
             };
             @{expr:expr, cat:cat_arg(vid), lp:some(@lp_arg(vid)),
               mutbl:m, ty:expr_ty}
@@ -817,10 +826,9 @@ impl categorize_methods for borrowck_ctxt {
     }
 
     fn report(err: bckerr) {
-        self.tcx.sess.span_err(
+        self.tcx.sess.span_warn(
             err.cmt.expr.span,
-            #fmt["Borrowing %s prohibited: %s",
-                 self.cmt_to_str(err.cmt),
+            #fmt["Illegal borrow: %s",
                  self.bckerr_code_to_str(err.code)]);
     }
 }
