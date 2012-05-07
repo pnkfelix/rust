@@ -216,9 +216,17 @@ fn ty_param_bounds_and_ty_for_def(fcx: @fn_ctxt, sp: span, defn: ast::def) ->
                 })
         };
       }
+
+      ast::def_fn(id, ast::unsafe_fn) {
+        // Unsafe functions can only be touched in an unsafe context
+        fcx.require_unsafe(sp, "access to unsafe function");
+        ret ty::lookup_item_type(fcx.ccx.tcx, id);
+      }
+
       ast::def_fn(id, _) | ast::def_const(id) |
-      ast::def_variant(_, id) | ast::def_class(id)
-         { ret ty::lookup_item_type(fcx.ccx.tcx, id); }
+      ast::def_variant(_, id) | ast::def_class(id) {
+        ret ty::lookup_item_type(fcx.ccx.tcx, id);
+      }
       ast::def_binding(nid) {
         assert (fcx.locals.contains_key(nid));
         let typ = ty::mk_var(fcx.ccx.tcx, lookup_local(fcx, sp, nid));
@@ -1330,6 +1338,29 @@ impl methods for @fn_ctxt {
 
     fn mk_eqty(sub: ty::t, sup: ty::t) -> result<(), ty::type_err> {
         infer::mk_eqty(self.infcx, sub, sup)
+    }
+
+    fn require_impure(sp: span) {
+        alt self.purity {
+          ast::unsafe_fn { ret; }
+          ast::impure_fn | ast::crust_fn { ret; }
+          ast::pure_fn {
+            self.ccx.tcx.sess.span_err(
+                sp,
+                "found impure expression in pure function decl");
+          }
+        }
+    }
+
+    fn require_unsafe(sp: span, op: str) {
+        alt self.purity {
+          ast::unsafe_fn {/*ok*/}
+          _ {
+            self.ccx.tcx.sess.span_err(
+                sp,
+                #fmt["%s requires unsafe function or block", op]);
+          }
+        }
     }
 }
 
@@ -2471,27 +2502,6 @@ fn check_pat(pcx: pat_ctxt, pat: @ast::pat, expected: ty::t) {
     }
 }
 
-fn require_unsafe(sess: session, f_purity: ast::purity, sp: span) {
-    alt f_purity {
-      ast::unsafe_fn { ret; }
-      _ {
-        sess.span_err(
-            sp,
-            "unsafe operation requires unsafe function or block");
-      }
-    }
-}
-
-fn require_impure(sess: session, f_purity: ast::purity, sp: span) {
-    alt f_purity {
-      ast::unsafe_fn { ret; }
-      ast::impure_fn | ast::crust_fn { ret; }
-      ast::pure_fn {
-        sess.span_err(sp, "found impure expression in pure function decl");
-      }
-    }
-}
-
 fn require_pure_call(ccx: @crate_ctxt, caller_purity: ast::purity,
                      callee: @ast::expr, sp: span) {
     if caller_purity == ast::unsafe_fn { ret; }
@@ -3346,7 +3356,7 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
         bot |= check_binop(fcx, expr, op, lhs, rhs);
       }
       ast::expr_assign_op(op, lhs, rhs) {
-        require_impure(tcx.sess, fcx.purity, expr.span);
+        fcx.require_impure(expr.span);
         bot |= check_binop(fcx, expr, op, lhs, rhs);
         let lhs_t = fcx.expr_ty(lhs);
         let result_t = fcx.expr_ty(expr);
@@ -3381,6 +3391,18 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
           }
           ast::deref {
             let sty = structure_of(fcx, expr.span, oper_t);
+
+            // deref'ing an unsafe pointer requires that we be in an unsafe
+            // context
+            alt sty {
+              ty::ty_ptr(*) {
+                fcx.require_unsafe(
+                    expr.span,
+                    "dereference of unsafe pointer");
+              }
+              _ { /*ok*/ }
+            }
+
             alt ty::deref_sty(tcx, sty, true) {
               some(mt) { oper_t = mt.ty }
               none {
@@ -3494,21 +3516,20 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
         fcx.write_ty(id, fcx.expr_ty(a));
       }
       ast::expr_move(lhs, rhs) {
-        require_impure(tcx.sess, fcx.purity, expr.span);
+        fcx.require_impure(expr.span);
         bot = check_assignment(fcx, expr.span, lhs, rhs, id);
       }
       ast::expr_assign(lhs, rhs) {
-        require_impure(tcx.sess, fcx.purity, expr.span);
+        fcx.require_impure(expr.span);
         bot = check_assignment(fcx, expr.span, lhs, rhs, id);
       }
       ast::expr_swap(lhs, rhs) {
-        require_impure(tcx.sess, fcx.purity, expr.span);
+        fcx.require_impure(expr.span);
         bot = check_assignment(fcx, expr.span, lhs, rhs, id);
       }
       ast::expr_if(cond, thn, elsopt) {
-        bot =
-            check_expr_with(fcx, cond, ty::mk_bool(tcx)) |
-                check_then_else(fcx, thn, elsopt, id, expr.span);
+        bot = check_expr_with(fcx, cond, ty::mk_bool(tcx)) |
+            check_then_else(fcx, thn, elsopt, id, expr.span);
       }
       ast::expr_while(cond, body) {
         bot = check_expr_with(fcx, cond, ty::mk_bool(tcx));

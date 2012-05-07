@@ -4,8 +4,8 @@ import session::session;
 import syntax::parse;
 import syntax::{ast, codemap};
 import syntax::attr;
-import middle::{trans, resolve, freevars, kind, ty, typeck, fn_usage,
-                last_use, lint, unsafeck};
+import middle::{trans, resolve, freevars, kind, ty, typeck,
+                last_use, lint};
 import syntax::print::{pp, pprust};
 import util::{ppaux, filesearch};
 import back::link;
@@ -158,10 +158,6 @@ fn compile_upto(sess: session, cfg: ast::crate_cfg,
          bind middle::block_use::check_crate(ty_cx, crate));
     time(time_passes, "loop checking",
          bind middle::check_loop::check_crate(ty_cx, crate));
-    time(time_passes, "function usage",
-         bind fn_usage::check_crate_fn_usage(ty_cx, crate));
-    time(time_passes, "unsafe ck",
-         bind unsafeck::check_crate(ty_cx, method_map, crate));
     time(time_passes, "alt checking",
          bind middle::check_alt::check_crate(ty_cx, crate));
     time(time_passes, "typestate checking",

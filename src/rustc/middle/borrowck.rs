@@ -471,7 +471,7 @@ fn check_loans_in_block(blk: ast::blk,
                         &&self: check_loan_ctxt,
                         vt: visit::vt<check_loan_ctxt>) {
     self.check_for_conflicting_loans(blk.node.id);
-    visit::visit_block(blk, self, vt)
+    visit::visit_block(blk, self, vt);
 }
 
 // ----------------------------------------------------------------------
