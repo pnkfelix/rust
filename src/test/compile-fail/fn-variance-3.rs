@@ -21,5 +21,5 @@ fn main() {
     // type of r has been inferred to be
     // fn(@const int) -> @const int
     *r(@mut 3) = 4; //! ERROR assigning to immutable box
-    //!^ ERROR assigning to const deref'd value
+    //!^ WARNING Cannot assign to const dereference
 }

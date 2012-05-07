@@ -548,7 +548,7 @@ impl categorize_methods for borrowck_ctxt {
 
           ty::ty_uniq(*) | ty::ty_box(*) | ty::ty_rptr(*) {
             let cmt = self.cat_expr(expr);
-            self.cat_deref(expr, cmt).get()
+            self.cat_deref(expr, cmt, true).get()
           }
 
           _ {
@@ -572,7 +572,7 @@ impl categorize_methods for borrowck_ctxt {
         alt expr.node {
           ast::expr_unary(ast::deref, e_base) {
             let base_cmt = self.cat_expr(e_base);
-            alt self.cat_deref(expr, base_cmt) {
+            alt self.cat_deref(expr, base_cmt, true) {
               some(cmt) { ret cmt; }
               none {
                 tcx.sess.span_bug(
@@ -630,8 +630,9 @@ impl categorize_methods for borrowck_ctxt {
         }
     }
 
-    fn cat_deref(expr: @ast::expr, base_cmt: cmt) -> option<cmt> {
-        ty::deref(self.tcx, base_cmt.ty).map { |mt|
+    fn cat_deref(expr: @ast::expr, base_cmt: cmt,
+                 expl: bool) -> option<cmt> {
+        ty::deref(self.tcx, base_cmt.ty, expl).map { |mt|
             let lp = base_cmt.lp.chain { |lp|
                 alt deref_kind(self.tcx, base_cmt.ty) {
                   uniqish | abstractionish {some(@lp_deref(lp))}
@@ -653,7 +654,7 @@ impl categorize_methods for borrowck_ctxt {
         // to yield the equivalent categories to (**base).f.
         let mut cmt = self.cat_expr(base);
         loop {
-            alt self.cat_deref(expr, cmt) {
+            alt self.cat_deref(expr, cmt, false) {
               none { ret cmt; }
               some(cmt1) { cmt = cmt1; }
             }

@@ -43,13 +43,13 @@ fn check_deref(cx: unsafeck_ctx, expr: @ast::expr, auto: bool) {
           ty::ty_ptr(*) {
             cx.tcx.sess.span_err(
                 expr.span,
-                "deref of unsafe pointer outside of unsafe block");
+                "unsafe operation requires unsafe function or block");
           }
           _ { /*pass*/ }
         }
 
         if !auto { ret; }
-        alt ty::deref(cx.tcx, ty) {
+        alt ty::deref(cx.tcx, ty, !auto) {
           some(mt) { ty = mt.ty; }
           none { ret; }
         }

@@ -1836,7 +1836,7 @@ fn do_autoderef(fcx: @fn_ctxt, sp: span, t: ty::t) -> ty::t {
         }
 
         // Otherwise, deref if type is derefable:
-        alt ty::deref_sty(fcx.ccx.tcx, sty) {
+        alt ty::deref_sty(fcx.ccx.tcx, sty, false) {
           none { ret t1; }
           some(mt) { t1 = mt.ty; }
         }
@@ -3381,7 +3381,7 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
           }
           ast::deref {
             let sty = structure_of(fcx, expr.span, oper_t);
-            alt ty::deref_sty(tcx, sty) {
+            alt ty::deref_sty(tcx, sty, true) {
               some(mt) { oper_t = mt.ty }
               none {
                 alt sty {

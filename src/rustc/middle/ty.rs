@@ -1743,13 +1743,19 @@ fn vars_in_type(ty: t) -> [ty_vid] {
 }
 
 // Returns the type and mutability of *t.
-fn deref(cx: ctxt, t: t) -> option<mt> {
-    deref_sty(cx, get(t).struct)
+//
+// The parameter `expl` indicates if this is an *explicit* dereference.  Some
+// types---notably unsafe ptrs---can only be dereferenced explicitly.
+fn deref(cx: ctxt, t: t, expl: bool) -> option<mt> {
+    deref_sty(cx, get(t).struct, expl)
 }
-
-fn deref_sty(cx: ctxt, sty: sty) -> option<mt> {
+fn deref_sty(cx: ctxt, sty: sty, expl: bool) -> option<mt> {
     alt sty {
-      ty_ptr(mt) | ty_rptr(_, mt) | ty_box(mt) | ty_uniq(mt) {
+      ty_rptr(_, mt) | ty_box(mt) | ty_uniq(mt) {
+        some(mt)
+      }
+
+      ty_ptr(mt) if expl {
         some(mt)
       }
 
@@ -1775,7 +1781,7 @@ fn deref_sty(cx: ctxt, sty: sty) -> option<mt> {
 fn type_autoderef(cx: ctxt, t: t) -> t {
     let mut t = t;
     loop {
-        alt deref(cx, t) {
+        alt deref(cx, t, false) {
           none { ret t; }
           some(mt) { t = mt.ty; }
         }
