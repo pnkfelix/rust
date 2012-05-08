@@ -23,7 +23,7 @@ $$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_STDLIB): \
 	        $$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_CORELIB) \
 		$$(TSREQ$(1)_T_$(2)_H_$(3))
 	@$$(call E, compile_and_link: $$@)
-	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< && touch $$@
+	$$(STAGE$(1)_T_$(2)_H_$(3)) $(BORROWCK) -o $$@ $$< && touch $$@
 
 $$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_RUSTLLVM): \
 		rustllvm/$(2)/$$(CFG_RUSTLLVM)
@@ -34,13 +34,13 @@ $$(TBIN$(1)_T_$(2)_H_$(3))/rustc$$(X):				\
 		$$(RUSTC_INPUTS)                                \
 		$$(TLIBRUSTC_DEFAULT$(1)_T_$(2)_H_$(3))
 	@$$(call E, compile_and_link: $$@)
-	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$<
+	$$(STAGE$(1)_T_$(2)_H_$(3)) $(BORROWCK) -o $$@ $$<
 
 $$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBRUSTC):		\
 		$$(COMPILER_CRATE) $$(COMPILER_INPUTS)		\
                 $$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBRUSTSYNTAX)
 	@$$(call E, compile_and_link: $$@)
-	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< && touch $$@
+	$$(STAGE$(1)_T_$(2)_H_$(3)) $(BORROWCK) -o $$@ $$< && touch $$@
 
 $$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBRUSTSYNTAX): \
                 $$(LIBRUSTSYNTAX_CRATE) $$(LIBRUSTSYNTAX_INPUTS) \
@@ -49,7 +49,7 @@ $$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBRUSTSYNTAX): \
 		$$(TCORELIB_DEFAULT$(1)_T_$(2)_H_$(3))      \
 		$$(TSTDLIB_DEFAULT$(1)_T_$(2)_H_$(3))
 	@$$(call E, compile_and_link: $$@)
-	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< && touch $$@
+	$$(STAGE$(1)_T_$(2)_H_$(3)) $(BORROWCK) -o $$@ $$< && touch $$@
 
 endef
 

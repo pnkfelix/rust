@@ -1,3 +1,5 @@
+// compile-flags:--borrowck=err
+
 // Note: the borrowck analysis is currently flow-insensitive.
 // Therefore, some of these errors are marked as spurious and could be
 // corrected by a simple change to the analysis.  The others are
@@ -19,14 +21,14 @@ fn post_aliased_const() {
 fn post_aliased_mut() {
     // SPURIOUS--flow
     let mut v = ~3;
-    borrow(v); //! WARNING Loan of mutable local variable as immutable conflicts with prior loan
+    borrow(v); //! ERROR Loan of mutable local variable as immutable conflicts with prior loan
     let _w = &mut v; //! NOTE Prior loan as mutable granted here
 }
 
 fn post_aliased_scope(cond: bool) {
     // NDM--scope of &
     let mut v = ~3;
-    borrow(v);  //! WARNING Loan of mutable local variable as immutable conflicts with prior loan
+    borrow(v);  //! ERROR Loan of mutable local variable as immutable conflicts with prior loan
     if cond { inc(&mut v); } //! NOTE Prior loan as mutable granted here
 }
 
@@ -34,7 +36,7 @@ fn loop_aliased_mut() {
     let mut v = ~3, w = ~4;
     let mut _x = &mut w;
     loop {
-        borrow(v); //! WARNING Loan of mutable local variable as immutable conflicts with prior loan
+        borrow(v); //! ERROR Loan of mutable local variable as immutable conflicts with prior loan
         _x = &mut v; //! NOTE Prior loan as mutable granted here
     }
 }
@@ -43,7 +45,7 @@ fn while_aliased_mut(cond: bool) {
     let mut v = ~3, w = ~4;
     let mut _x = &mut w;
     while cond {
-        borrow(v); //! WARNING Loan of mutable local variable as immutable conflicts with prior loan
+        borrow(v); //! ERROR Loan of mutable local variable as immutable conflicts with prior loan
         _x = &mut v; //! NOTE Prior loan as mutable granted here
     }
 }
@@ -52,7 +54,7 @@ fn while_aliased_mut_cond(cond: bool, cond2: bool) {
     let mut v = ~3, w = ~4;
     let mut _x = &mut w;
     while cond {
-        borrow(v); //! WARNING Loan of mutable local variable as immutable conflicts with prior loan
+        borrow(v); //! ERROR Loan of mutable local variable as immutable conflicts with prior loan
         if cond2 {
             _x = &mut v; //! NOTE Prior loan as mutable granted here
         }
@@ -63,7 +65,7 @@ fn do_while_aliased_mut(cond: bool) {
     let mut v = ~3, w = ~4;
     let mut _x = &mut w;
     do {
-        borrow(v); //! WARNING Loan of mutable local variable as immutable conflicts with prior loan
+        borrow(v); //! ERROR Loan of mutable local variable as immutable conflicts with prior loan
         _x = &mut v; //! NOTE Prior loan as mutable granted here
     } while cond;
 }
@@ -72,7 +74,7 @@ fn loop_in_block() {
     let mut v = ~3, w = ~4;
     let mut _x = &mut w;
     uint::range(0u, 10u) {|_i|
-        borrow(v); //! WARNING Loan of mutable local variable as immutable conflicts with prior loan
+        borrow(v); //! ERROR Loan of mutable local variable as immutable conflicts with prior loan
         _x = &mut v; //! NOTE Prior loan as mutable granted here
     }
 }
@@ -86,7 +88,7 @@ fn at_most_once_block() {
     let mut v = ~3, w = ~4;
     let mut _x = &mut w;
     at_most_once {||
-        borrow(v); //! WARNING Loan of mutable local variable as immutable conflicts with prior loan
+        borrow(v); //! ERROR Loan of mutable local variable as immutable conflicts with prior loan
         _x = &mut v; //! NOTE Prior loan as mutable granted here
     }
 }

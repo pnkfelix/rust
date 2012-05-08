@@ -19,10 +19,14 @@ fn check_crate(tcx: ty::ctxt,
                crate: @ast::crate) -> root_map {
     let bccx = @{tcx: tcx, method_map: method_map,
                  root_map: int_hash(), in_ctor: none};
-    let req_loan_map = gather_loans(bccx, crate);
-    check_loans(bccx, req_loan_map, crate);
+    if tcx.sess.opts.borrowck > 0u {
+        let req_loan_map = gather_loans(bccx, crate);
+        check_loans(bccx, req_loan_map, crate);
+    }
     ret bccx.root_map;
 }
+
+const TREAT_CONST_AS_IMM: bool = false;
 
 // ----------------------------------------------------------------------
 // Type definitions
@@ -193,7 +197,13 @@ fn req_loans_in_expr(ex: @ast::expr,
               }
               ast::by_ref {
                 let arg_cmt = self.bccx.cat_expr(arg);
-                self.guarantee_valid(arg_cmt, m_const, ty::re_scope(ex.id));
+                if TREAT_CONST_AS_IMM {
+                    self.guarantee_valid(arg_cmt, m_imm,
+                                         ty::re_scope(ex.id));
+                } else {
+                    self.guarantee_valid(arg_cmt, m_const,
+                                         ty::re_scope(ex.id));
+                }
               }
               ast::by_move | ast::by_copy | ast::by_val {}
             }
@@ -204,7 +214,7 @@ fn req_loans_in_expr(ex: @ast::expr,
         let cmt = self.bccx.cat_expr(ex_v);
         for arms.each { |arm|
             for arm.pats.each { |pat|
-                self.gather_pat(cmt, pat, ex.id);
+                self.gather_pat(cmt, pat, arm.body.node.id);
             }
         }
       }
@@ -251,7 +261,7 @@ impl methods for gather_loan_ctxt {
                 }
               }
               _ {
-                self.tcx().sess.span_warn(
+                self.bccx.span_err(
                     cmt.span,
                     #fmt["Cannot guarantee the stability \
                           of this expression for the entirety of \
@@ -440,13 +450,13 @@ impl methods for check_loan_ctxt {
                       }
 
                       (m_mutbl, m_imm) | (m_imm, m_mutbl) {
-                        self.tcx().sess.span_warn(
+                        self.bccx.span_err(
                             new_loan.cmt.span,
                             #fmt["Loan of %s as %s \
                                   conflicts with prior loan",
                                  self.bccx.cmt_to_str(new_loan.cmt),
                                  self.bccx.mut_to_str(new_loan.mutbl)]);
-                        self.tcx().sess.span_note(
+                        self.bccx.span_note(
                             old_loan.cmt.span,
                             #fmt["Prior loan as %s granted here",
                                  self.bccx.mut_to_str(old_loan.mutbl)]);
@@ -463,7 +473,7 @@ impl methods for check_loan_ctxt {
         alt cmt.mutbl {
           m_mutbl { /*ok*/ }
           m_const | m_imm {
-            self.tcx().sess.span_warn(
+            self.bccx.span_err(
                 ex.span,
                 #fmt["Cannot assign to %s", self.bccx.cmt_to_str(cmt)]);
             ret;
@@ -479,11 +489,11 @@ impl methods for check_loan_ctxt {
             alt loan.mutbl {
               m_mutbl | m_const { /*ok*/ }
               m_imm {
-                self.tcx().sess.span_warn(
+                self.bccx.span_err(
                     ex.span,
                     #fmt["Cannot assign to %s due to outstanding loan",
                          self.bccx.cmt_to_str(cmt)]);
-                self.tcx().sess.span_note(
+                self.bccx.span_note(
                     loan.cmt.span,
                     #fmt["Loan of %s granted here",
                          self.bccx.cmt_to_str(loan.cmt)]);
@@ -505,7 +515,7 @@ impl methods for check_loan_ctxt {
 
           // Nothing else.
           _ {
-            self.tcx().sess.span_warn(
+            self.bccx.span_err(
                 ex.span,
                 #fmt["Cannot move from %s", self.bccx.cmt_to_str(cmt)]);
             ret;
@@ -518,11 +528,11 @@ impl methods for check_loan_ctxt {
           some(lp) { lp }
         };
         for self.walk_loans_of(ex.id, lp) { |loan|
-            self.tcx().sess.span_warn(
+            self.bccx.span_err(
                 ex.span,
                 #fmt["Cannot move from %s due to outstanding loan",
                      self.bccx.cmt_to_str(cmt)]);
-            self.tcx().sess.span_note(
+            self.bccx.span_note(
                 loan.cmt.span,
                 #fmt["Loan of %s granted here",
                      self.bccx.cmt_to_str(loan.cmt)]);
@@ -883,6 +893,9 @@ impl categorize_methods for borrowck_ctxt {
           }
 
           ast::def_arg(vid, mode) {
+            // Idea: make this could be rewritten to model by-ref
+            // stuff as `&const` and `&mut`?
+
             // m: mutability of the argument
             // lp: loan path, must be none for aliasable things
             let {m,lp} = alt ty::resolved_mode(self.tcx, mode) {
@@ -893,7 +906,11 @@ impl categorize_methods for borrowck_ctxt {
                 {m:m_mutbl, lp:some(@lp_arg(vid))}
               }
               ast::by_ref {
-                {m:m_const, lp:none}
+                if TREAT_CONST_AS_IMM {
+                    {m:m_imm, lp:some(@lp_arg(vid))}
+                } else {
+                    {m:m_const, lp:none}
+                }
               }
               ast::by_val {
                 {m:m_imm, lp:some(@lp_arg(vid))}
@@ -1066,10 +1083,22 @@ impl categorize_methods for borrowck_ctxt {
     }
 
     fn report(err: bckerr) {
-        self.tcx.sess.span_warn(
+        self.span_err(
             err.cmt.span,
             #fmt["Illegal borrow: %s",
                  self.bckerr_code_to_str(err.code)]);
+    }
+
+    fn span_err(s: span, m: str) {
+        if self.tcx.sess.opts.borrowck == 1u {
+            self.tcx.sess.span_warn(s, m);
+        } else {
+            self.tcx.sess.span_err(s, m);
+        }
+    }
+
+    fn span_note(s: span, m: str) {
+        self.tcx.sess.span_note(s, m);
     }
 }
 

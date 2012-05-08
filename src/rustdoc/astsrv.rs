@@ -149,6 +149,7 @@ fn build_session() -> (session::session, @mut bool) {
         no_trans: false,
         no_asm_comments: false,
         debug_rustc: false,
+        borrowck: 0u,
     };
 
     let codemap = codemap::new_codemap();

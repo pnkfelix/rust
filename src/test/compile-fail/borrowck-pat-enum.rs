@@ -1,7 +1,9 @@
+// compile-flags:--borrowck=err
+
 fn match_ref(&&v: option<int>) -> int {
     alt v {
       some(i) {
-        //!^ ERROR unique value in aliasable, mutable location
+        //!^ ERROR enum variant in aliasable, mutable location
         i
       }
       none {0}
@@ -18,7 +20,7 @@ fn match_ref_unused(&&v: option<int>) {
 fn match_const_reg(v: &const option<int>) -> int {
     alt *v {
       some(i) {
-        //!^ ERROR unique value in aliasable, mutable location
+        //!^ ERROR enum variant in aliasable, mutable location
         i
       }
       none {0}
