@@ -44,6 +44,7 @@ type root_map = hashmap<ast::node_id, ast::node_id>;
 enum bckerr_code {
     err_mutbl(ast::mutability, ast::mutability),
     err_mut_uniq,
+    err_mut_variant,
     err_preserve_gc
 }
 
@@ -51,14 +52,27 @@ type bckerr = {cmt: cmt, code: bckerr_code};
 
 type bckres<T> = result<T, bckerr>;
 
-enum loan_path {
-    lp_local(ast::node_id),
-    lp_arg(ast::node_id),
-    lp_deref(@loan_path),
-    lp_field(@loan_path, str),
-    lp_index(@loan_path)
+enum categorization {
+    cat_rvalue(rvalue_kind),    // result of eval'ing some rvalue
+    cat_local(ast::node_id),    // local variable
+    cat_arg(ast::node_id),      // formal argument
+    cat_deref(cmt, ptr_kind),   // deref of a ptr
+    cat_comp(cmt, comp_kind),   // adjust to locate an internal component
 }
 
+// different kinds of pointers:
+enum ptr_kind {uniq_ptr, gc_ptr, region_ptr, unsafe_ptr}
+
+// I am coining the term "components" to mean "pieces of a data
+// structure accessible without a dereference":
+enum comp_kind {comp_tuple, comp_res, comp_variant,
+                comp_field(str), comp_index}
+
+// We pun on *T to mean both actual deref of a ptr as well
+// as accessing of components:
+enum deref_kind {deref_ptr(ptr_kind), deref_comp(comp_kind)}
+
+// different kinds of expressions we might evaluate
 enum rvalue_kind {
     rv_method,
     rv_static_item,
@@ -67,21 +81,27 @@ enum rvalue_kind {
     rv_self
 }
 
-enum categorization {
-    cat_rvalue(rvalue_kind),
-    cat_deref(cmt),
-    cat_field(cmt, str),
-    cat_index(cmt),
-    cat_local(ast::node_id),
-    cat_arg(ast::node_id),
-}
-
-type cmt = @{expr: @ast::expr,        // the expr being categorized
+// a complete categorization of a value indicating where it originated
+// and how it is located, as well as the mutability of the memory in
+// which the value is stored.
+type cmt = @{id: ast::node_id,        // id of expr/pat producing this value
+             span: span,              // span of same expr/pat
              cat: categorization,     // categorization of expr
              lp: option<@loan_path>,  // loan path for expr, if any
              mutbl: ast::mutability,  // mutability of expr as lvalue
              ty: ty::t};              // type of the expr
 
+// a loan path is like a category, but it exists only when the data is
+// interior to the stack frame.  loan paths are used as the key to a
+// map indicating what is borrowed at any point in time.
+enum loan_path {
+    lp_local(ast::node_id),
+    lp_arg(ast::node_id),
+    lp_deref(@loan_path, ptr_kind),
+    lp_comp(@loan_path, comp_kind)
+}
+
+// a complete record of a loan that was granted
 type loan = {lp: @loan_path, cmt: cmt, mutbl: ast::mutability};
 
 fn sup_mutbl(req_m: ast::mutability,
@@ -155,7 +175,7 @@ fn req_loans_in_expr(ex: @ast::expr,
                 // make sure that the thing we are pointing out stays valid
                 // for the lifetime `scope_r`:
                 let scope_r =
-                    alt check ty::get(ty::expr_ty(tcx, ex)).struct {
+                    alt check ty::get(tcx.ty(ex)).struct {
                       ty::ty_rptr(r, _) { r }
                     };
                 self.guarantee_valid(base_cmt, mutbl, scope_r);
@@ -179,6 +199,16 @@ fn req_loans_in_expr(ex: @ast::expr,
             }
         }
       }
+
+      ast::expr_alt(ex_v, arms, _) {
+        let cmt = self.bccx.cat_expr(ex_v);
+        for arms.each { |arm|
+            for arm.pats.each { |pat|
+                self.gather_pat(cmt, pat, ex.id);
+            }
+        }
+      }
+
       _ { /*ok*/ }
     }
 
@@ -196,8 +226,7 @@ impl methods for gather_loan_ctxt {
                        mutbl: ast::mutability,
                        scope_r: ty::region) {
 
-        #debug["guarantee_valid(expr=%s, cmt=%s, mutbl=%s, scope_r=%s)",
-               pprust::expr_to_str(cmt.expr),
+        #debug["guarantee_valid(cmt=%s, mutbl=%s, scope_r=%s)",
                self.bccx.cmt_to_repr(cmt),
                self.bccx.mut_to_str(mutbl),
                region_to_str(self.tcx(), scope_r)];
@@ -223,7 +252,7 @@ impl methods for gather_loan_ctxt {
               }
               _ {
                 self.tcx().sess.span_warn(
-                    cmt.expr.span,
+                    cmt.span,
                     #fmt["Cannot guarantee the stability \
                           of this expression for the entirety of \
                           its lifetime, %s",
@@ -258,6 +287,79 @@ impl methods for gather_loan_ctxt {
             self.req_loan_map.insert(scope_id, @mut [loans]);
           }
         }
+    }
+
+    fn gather_pat(cmt: cmt, pat: @ast::pat, alt_id: ast::node_id) {
+
+        // Here, `cmt` is the categorization for the value being
+        // matched and pat is the pattern it is being matched against.
+        //
+        // In general, the way that this works is that we
+
+        #debug["gather_pat: id=%d pat=%s cmt=%s alt_id=%d",
+               pat.id, pprust::pat_to_str(pat),
+               self.bccx.cmt_to_repr(cmt), alt_id];
+        let _i = indenter();
+
+        let tcx = self.tcx();
+        alt pat.node {
+          ast::pat_wild {
+            // _
+          }
+
+          ast::pat_enum(_, none) {
+            // variant(*)
+          }
+          ast::pat_enum(_, some(subpats)) {
+            // variant(x, y, z)
+            for subpats.each { |subpat|
+                let subcmt = self.bccx.cat_variant(pat, cmt, subpat);
+                self.gather_pat(subcmt, subpat, alt_id);
+            }
+          }
+
+          ast::pat_ident(_, none) if self.pat_is_variant(pat) {
+            // nullary variant
+            #debug["nullary variant"];
+          }
+          ast::pat_ident(id, o_pat) {
+            // x or x @ p --- `x` must remain valid for the scope of the alt
+            #debug["defines identifier %s", pprust::path_to_str(id)];
+            self.guarantee_valid(cmt, m_const, ty::re_scope(alt_id));
+            for o_pat.each { |p| self.gather_pat(cmt, p, alt_id); }
+          }
+
+          ast::pat_rec(field_pats, _) {
+            // {f1: p1, ..., fN: pN}
+            for field_pats.each { |fp|
+                let cmt_field = self.bccx.cat_field(pat, cmt, fp.ident,
+                                                    tcx.ty(fp.pat));
+                self.gather_pat(cmt_field, fp.pat, alt_id);
+            }
+          }
+
+          ast::pat_tup(subpats) {
+            // (p1, ..., pN)
+            for subpats.each { |subpat|
+                let subcmt = self.bccx.cat_tuple_elt(pat, cmt, subpat);
+                self.gather_pat(subcmt, subpat, alt_id);
+            }
+          }
+
+          ast::pat_box(subpat) | ast::pat_uniq(subpat) {
+            // @p1, ~p1
+            alt self.bccx.cat_deref(pat, cmt, true) {
+              some(subcmt) { self.gather_pat(subcmt, subpat, alt_id); }
+              none { tcx.sess.span_bug(pat.span, "Non derefable type"); }
+            }
+          }
+
+          ast::pat_lit(_) | ast::pat_range(_, _) { /*always ok*/ }
+        }
+    }
+
+    fn pat_is_variant(pat: @ast::pat) -> bool {
+        pat_util::pat_is_variant(self.bccx.tcx.def_map, pat)
     }
 }
 
@@ -339,13 +441,13 @@ impl methods for check_loan_ctxt {
 
                       (m_mutbl, m_imm) | (m_imm, m_mutbl) {
                         self.tcx().sess.span_warn(
-                            new_loan.cmt.expr.span,
+                            new_loan.cmt.span,
                             #fmt["Loan of %s as %s \
                                   conflicts with prior loan",
                                  self.bccx.cmt_to_str(new_loan.cmt),
                                  self.bccx.mut_to_str(new_loan.mutbl)]);
                         self.tcx().sess.span_note(
-                            old_loan.cmt.expr.span,
+                            old_loan.cmt.span,
                             #fmt["Prior loan as %s granted here",
                                  self.bccx.mut_to_str(old_loan.mutbl)]);
                       }
@@ -382,7 +484,7 @@ impl methods for check_loan_ctxt {
                     #fmt["Cannot assign to %s due to outstanding loan",
                          self.bccx.cmt_to_str(cmt)]);
                 self.tcx().sess.span_note(
-                    loan.cmt.expr.span,
+                    loan.cmt.span,
                     #fmt["Loan of %s granted here",
                          self.bccx.cmt_to_str(loan.cmt)]);
                 ret;
@@ -421,7 +523,7 @@ impl methods for check_loan_ctxt {
                 #fmt["Cannot move from %s due to outstanding loan",
                      self.bccx.cmt_to_str(cmt)]);
             self.tcx().sess.span_note(
-                loan.cmt.expr.span,
+                loan.cmt.span,
                 #fmt["Loan of %s granted here",
                      self.bccx.cmt_to_str(loan.cmt)]);
             ret;
@@ -499,33 +601,36 @@ fn check_loans_in_block(blk: ast::blk,
 // Categorizes a derefable type.  Note that we include vectors and strings as
 // derefable (we model an index as the combination of a deref and then a
 // pointer adjustment).
-enum deref_kind { uniqish, gcish, regionish, unsafeish, abstractionish }
 fn deref_kind(tcx: ty::ctxt, t: ty::t) -> deref_kind {
     alt ty::get(t).struct {
       ty::ty_uniq(*) | ty::ty_vec(*) | ty::ty_str |
       ty::ty_evec(_, ty::vstore_uniq) |
       ty::ty_estr(ty::vstore_uniq) {
-        uniqish
+        deref_ptr(uniq_ptr)
       }
 
       ty::ty_rptr(*) |
       ty::ty_evec(_, ty::vstore_slice(_)) |
       ty::ty_estr(ty::vstore_slice(_)) {
-        regionish
+        deref_ptr(region_ptr)
       }
 
       ty::ty_box(*) |
       ty::ty_evec(_, ty::vstore_box) |
       ty::ty_estr(ty::vstore_box) {
-        gcish
+        deref_ptr(gc_ptr)
       }
 
       ty::ty_ptr(*) {
-        unsafeish
+        deref_ptr(unsafe_ptr)
       }
 
-      ty::ty_enum(*) | ty::ty_res(*) {
-        abstractionish
+      ty::ty_enum(*) {
+        deref_comp(comp_variant)
+      }
+
+      ty::ty_res(*) {
+        deref_comp(comp_res)
       }
 
       _ {
@@ -533,6 +638,27 @@ fn deref_kind(tcx: ty::ctxt, t: ty::t) -> deref_kind {
             #fmt["deref_cat() invoked on non-derefable type %s",
                  ty_to_str(tcx, t)]);
       }
+    }
+}
+
+iface ast_node {
+    fn id() -> ast::node_id;
+    fn span() -> span;
+}
+
+impl of ast_node for @ast::expr {
+    fn id() -> ast::node_id { self.id }
+    fn span() -> span { self.span }
+}
+
+impl of ast_node for @ast::pat {
+    fn id() -> ast::node_id { self.id }
+    fn span() -> span { self.span }
+}
+
+impl methods for ty::ctxt {
+    fn ty<N: ast_node>(node: N) -> ty::t {
+        ty::node_id_to_type(self, node.id())
     }
 }
 
@@ -562,10 +688,14 @@ impl categorize_methods for borrowck_ctxt {
 
     fn cat_expr(expr: @ast::expr) -> cmt {
         let tcx = self.tcx;
-        let expr_ty = ty::expr_ty(tcx, expr);
+        let expr_ty = tcx.ty(expr);
+
+        #debug["cat_expr: id=%d expr=%s",
+               expr.id, pprust::expr_to_str(expr)];
 
         if self.method_map.contains_key(expr.id) {
-            ret @{expr:expr, cat:cat_rvalue(rv_method), lp:none,
+            ret @{id:expr.id, span:expr.span,
+                  cat:cat_rvalue(rv_method), lp:none,
                   mutbl:m_imm, ty:expr_ty};
         }
 
@@ -578,29 +708,14 @@ impl categorize_methods for borrowck_ctxt {
                 tcx.sess.span_bug(
                     e_base.span,
                     #fmt["Explicit deref of non-derefable type `%s`",
-                         ty_to_str(tcx, ty::expr_ty(tcx, e_base))]);
+                         ty_to_str(tcx, tcx.ty(e_base))]);
               }
             }
           }
 
           ast::expr_field(base, f_name, _) {
             let base_cmt = self.cat_autoderef(expr, base);
-            let f_mutbl = alt field_mutbl(tcx, base_cmt.ty, f_name) {
-              some(f_mutbl) { f_mutbl }
-              none {
-                tcx.sess.span_bug(
-                    expr.span,
-                    #fmt["Cannot find field `%s` in type `%s`",
-                         f_name, ty_to_str(tcx, base_cmt.ty)]);
-              }
-            };
-            let m = alt f_mutbl {
-              m_imm { base_cmt.mutbl } // imm: as mutable as the container
-              m_mutbl | m_const { f_mutbl }
-            };
-            let lp = base_cmt.lp.map { |lp| @lp_field(lp, f_name) };
-            @{expr: expr, cat: cat_field(base_cmt, f_name), lp:lp,
-              mutbl: m, ty: expr_ty}
+            self.cat_field(expr, base_cmt, f_name, expr_ty)
           }
 
           ast::expr_index(base, _) {
@@ -624,23 +739,64 @@ impl categorize_methods for borrowck_ctxt {
           ast::expr_do_while(*) | ast::expr_block(*) | ast::expr_loop(*) |
           ast::expr_alt(*) | ast::expr_lit(*) | ast::expr_break |
           ast::expr_mac(*) | ast::expr_cont | ast::expr_rec(*) {
-            @{expr:expr, cat:cat_rvalue(rv_misc), lp:none,
+            @{id:expr.id, span:expr.span,
+              cat:cat_rvalue(rv_misc), lp:none,
               mutbl:m_imm, ty:expr_ty}
           }
         }
     }
 
-    fn cat_deref(expr: @ast::expr, base_cmt: cmt,
-                 expl: bool) -> option<cmt> {
+    fn cat_field<N:ast_node>(node: N, base_cmt: cmt,
+                             f_name: str, f_ty: ty::t) -> cmt {
+        let f_mutbl = alt field_mutbl(self.tcx, base_cmt.ty, f_name) {
+          some(f_mutbl) { f_mutbl }
+          none {
+            self.tcx.sess.span_bug(
+                node.span(),
+                #fmt["Cannot find field `%s` in type `%s`",
+                     f_name, ty_to_str(self.tcx, base_cmt.ty)]);
+          }
+        };
+        let m = alt f_mutbl {
+          m_imm { base_cmt.mutbl } // imm: as mutable as the container
+          m_mutbl | m_const { f_mutbl }
+        };
+        let lp = base_cmt.lp.map { |lp|
+            @lp_comp(lp, comp_field(f_name))
+        };
+        @{id: node.id(), span: node.span(),
+          cat: cat_comp(base_cmt, comp_field(f_name)), lp:lp,
+          mutbl: m, ty: f_ty}
+    }
+
+    fn cat_deref<N:ast_node>(node: N, base_cmt: cmt,
+                             expl: bool) -> option<cmt> {
         ty::deref(self.tcx, base_cmt.ty, expl).map { |mt|
-            let lp = base_cmt.lp.chain { |lp|
-                alt deref_kind(self.tcx, base_cmt.ty) {
-                  uniqish | abstractionish {some(@lp_deref(lp))}
-                  unsafeish | gcish | regionish {none}
-                }
-            };
-            @{expr:expr, cat:cat_deref(base_cmt), lp:lp,
-              mutbl:mt.mutbl, ty:mt.ty}
+            alt deref_kind(self.tcx, base_cmt.ty) {
+              deref_ptr(ptr) {
+                let lp = base_cmt.lp.chain { |l|
+                    // Given that the ptr itself is loanable, we can
+                    // loan out deref'd uniq ptrs as the data they are
+                    // the only way to reach the data they point at.
+                    // Other ptr types admit aliases and are therefore
+                    // not loanable.
+                    alt ptr {
+                      uniq_ptr {some(@lp_deref(l, ptr))}
+                      gc_ptr | region_ptr | unsafe_ptr {none}
+                    }
+                };
+                @{id:node.id(), span:node.span(),
+                  cat:cat_deref(base_cmt, ptr), lp:lp,
+                  mutbl:mt.mutbl, ty:mt.ty}
+              }
+
+              deref_comp(comp) {
+                let lp = base_cmt.lp.map { |l| @lp_comp(l, comp) };
+                @{id:node.id(), span:node.span(),
+                  cat:cat_comp(base_cmt, comp), lp:lp,
+                  mutbl:mt.mutbl, ty:mt.ty}
+              }
+            }
         }
     }
 
@@ -663,24 +819,52 @@ impl categorize_methods for borrowck_ctxt {
 
     fn cat_index(expr: @ast::expr, base: @ast::expr) -> cmt {
         let base_cmt = self.cat_autoderef(expr, base);
-        alt ty::index(self.tcx, base_cmt.ty) {
-          some(mt) {
-            // make deref of vectors explicit, as explained in the comment at
-            // the head of this section
-            let deref_lp = base_cmt.lp.map { |lp| @lp_deref(lp) };
-            let deref_cmt = @{expr:expr, cat:cat_deref(base_cmt), lp:deref_lp,
-                              mutbl:mt.mutbl, ty:mt.ty};
-            let index_lp = deref_lp.map { |lp| @lp_index(lp) };
-            @{expr:expr, cat:cat_index(deref_cmt), lp:index_lp,
-              mutbl:mt.mutbl, ty:mt.ty}
-          }
+
+        let mt = alt ty::index(self.tcx, base_cmt.ty) {
+          some(mt) { mt }
           none {
             self.tcx.sess.span_bug(
                 expr.span,
                 #fmt["Explicit index of non-index type `%s`",
                      ty_to_str(self.tcx, base_cmt.ty)]);
           }
-        }
+        };
+
+        let ptr = alt deref_kind(self.tcx, base_cmt.ty) {
+          deref_ptr(ptr) { ptr }
+          deref_comp(_) {
+            self.tcx.sess.span_bug(
+                expr.span,
+                "Deref of indexable type yielded comp kind");
+          }
+        };
+
+        // make deref of vectors explicit, as explained in the comment at
+        // the head of this section
+        let deref_lp = base_cmt.lp.map { |lp| @lp_deref(lp, ptr) };
+        let deref_cmt = @{id:expr.id, span:expr.span,
+                          cat:cat_deref(base_cmt, ptr), lp:deref_lp,
+                          mutbl:mt.mutbl, ty:mt.ty};
+        let index_lp = deref_lp.map { |lp| @lp_comp(lp, comp_index) };
+        @{id:expr.id, span:expr.span,
+          cat:cat_comp(deref_cmt, comp_index), lp:index_lp,
+          mutbl:mt.mutbl, ty:mt.ty}
+    }
+
+    fn cat_variant<N: ast_node>(variant: N, cmt: cmt, arg: N) -> cmt {
+        @{id: variant.id(), span: variant.span(),
+          cat: cat_comp(cmt, comp_variant),
+          lp: cmt.lp.map { |l| @lp_comp(l, comp_variant) },
+          mutbl: cmt.mutbl, // imm iff in an immutable context
+          ty: self.tcx.ty(arg)}
+    }
+
+    fn cat_tuple_elt<N: ast_node>(pat: N, cmt: cmt, elt: N) -> cmt {
+        @{id: pat.id(), span: pat.span(),
+          cat: cat_comp(cmt, comp_tuple),
+          lp: cmt.lp.map { |l| @lp_comp(l, comp_tuple) },
+          mutbl: cmt.mutbl, // imm iff in an immutable context
+          ty: self.tcx.ty(elt)}
     }
 
     fn cat_def(expr: @ast::expr,
@@ -693,22 +877,36 @@ impl categorize_methods for borrowck_ctxt {
           ast::def_ty(_) | ast::def_prim_ty(_) |
           ast::def_ty_param(_, _) | ast::def_class(_) |
           ast::def_region(_) {
-            @{expr:expr, cat:cat_rvalue(rv_static_item), lp:none,
+            @{id:expr.id, span:expr.span,
+              cat:cat_rvalue(rv_static_item), lp:none,
               mutbl:m_imm, ty:expr_ty}
           }
 
           ast::def_arg(vid, mode) {
-            let m = alt ty::resolved_mode(self.tcx, mode) {
-              ast::by_mutbl_ref | ast::by_move | ast::by_copy { m_mutbl }
-              ast::by_ref { m_const }
-              ast::by_val { m_imm }
+            // m: mutability of the argument
+            // lp: loan path, must be none for aliasable things
+            let {m,lp} = alt ty::resolved_mode(self.tcx, mode) {
+              ast::by_mutbl_ref {
+                {m:m_mutbl, lp:none}
+              }
+              ast::by_move | ast::by_copy {
+                {m:m_mutbl, lp:some(@lp_arg(vid))}
+              }
+              ast::by_ref {
+                {m:m_const, lp:none}
+              }
+              ast::by_val {
+                {m:m_imm, lp:some(@lp_arg(vid))}
+              }
             };
-            @{expr:expr, cat:cat_arg(vid), lp:some(@lp_arg(vid)),
+            @{id:expr.id, span:expr.span,
+              cat:cat_arg(vid), lp:lp,
               mutbl:m, ty:expr_ty}
           }
 
           ast::def_self(_) {
-            @{expr:expr, cat:cat_rvalue(rv_self), lp:none,
+            @{id:expr.id, span:expr.span,
+              cat:cat_rvalue(rv_self), lp:none,
               mutbl:m_imm, ty:expr_ty}
           }
 
@@ -721,7 +919,8 @@ impl categorize_methods for borrowck_ctxt {
               }
               ast::proto_bare | ast::proto_uniq | ast::proto_box {
                 // FIXME #2152 allow mutation of moved upvars
-                @{expr:expr, cat:cat_rvalue(rv_upvar), lp:none,
+                @{id:expr.id, span:expr.span,
+                  cat:cat_rvalue(rv_upvar), lp:none,
                   mutbl:m_imm, ty:expr_ty}
               }
             }
@@ -729,14 +928,16 @@ impl categorize_methods for borrowck_ctxt {
 
           ast::def_local(vid, mutbl) {
             let m = if mutbl {m_mutbl} else {m_imm};
-            @{expr:expr, cat:cat_local(vid), lp:some(@lp_local(vid)),
+            @{id:expr.id, span:expr.span,
+              cat:cat_local(vid), lp:some(@lp_local(vid)),
               mutbl:m, ty:expr_ty}
           }
 
           ast::def_binding(vid) {
             // no difference between a binding and any other local variable
             // from out point of view, except that they are always immutable
-            @{expr:expr, cat:cat_local(vid), lp:some(@lp_local(vid)),
+            @{id:expr.id, span:expr.span,
+              cat:cat_local(vid), lp:some(@lp_local(vid)),
               mutbl:m_imm, ty:expr_ty}
           }
         }
@@ -749,11 +950,14 @@ impl categorize_methods for borrowck_ctxt {
           cat_rvalue(rv_upvar) { "upvar" }
           cat_rvalue(rv_misc) { "non-lvalue" }
           cat_rvalue(rv_self) { "self reference" }
-          cat_deref(_) { mutbl + " dereference" }
-          cat_field(_, _) { mutbl + " field" }
-          cat_index(_) { mutbl + " vector/string contents" }
           cat_local(_) { mutbl + " local variable" }
           cat_arg(_) { mutbl + " argument" }
+          cat_deref(_, _) { mutbl + " dereference" }
+          cat_comp(_, comp_field(_)) { mutbl + " field" }
+          cat_comp(_, comp_index) { mutbl + " vector/string contents" }
+          cat_comp(_, comp_tuple) { mutbl + " tuple contents" }
+          cat_comp(_, comp_res) { mutbl + " resource contents" }
+          cat_comp(_, comp_variant) { mutbl + " enum contents" }
         }
     }
 
@@ -764,11 +968,14 @@ impl categorize_methods for borrowck_ctxt {
           cat_rvalue(rv_upvar) { "upvar" }
           cat_rvalue(rv_misc) { "rvalue" }
           cat_rvalue(rv_self) { "self" }
-          cat_deref(cmt) { self.cat_to_repr(cmt.cat) + ".*" }
-          cat_field(cmt, f) { self.cat_to_repr(cmt.cat) + "." + f }
-          cat_index(cmt) { self.cat_to_repr(cmt.cat) + ".[]" }
           cat_local(node_id) { #fmt["local(%d)", node_id] }
           cat_arg(node_id) { #fmt["arg(%d)", node_id] }
+          cat_deref(cmt, ptr) {
+            #fmt["%s->(%s)", self.cat_to_repr(cmt.cat), self.ptr_sigil(ptr)]
+          }
+          cat_comp(cmt, comp) {
+            #fmt["%s.%s", self.cat_to_repr(cmt.cat), self.comp_to_repr(comp)]
+          }
         }
     }
 
@@ -780,19 +987,48 @@ impl categorize_methods for borrowck_ctxt {
         }
     }
 
+    fn ptr_sigil(ptr: ptr_kind) -> str {
+        alt ptr {
+          uniq_ptr { "~" }
+          gc_ptr { "@" }
+          region_ptr { "&" }
+          unsafe_ptr { "*" }
+        }
+    }
+
+    fn comp_to_repr(comp: comp_kind) -> str {
+        alt comp {
+          comp_field(fld) { fld }
+          comp_index { "[]" }
+          comp_tuple { "()" }
+          comp_res { "<res>" }
+          comp_variant { "<enum>" }
+        }
+    }
+
     fn lp_to_str(lp: @loan_path) -> str {
         alt *lp {
-          lp_local(node_id) { #fmt["local(%d)", node_id] }
-          lp_arg(node_id) { #fmt["arg(%d)", node_id] }
-          lp_deref(lp) { #fmt["%s.*", self.lp_to_str(lp)] }
-          lp_field(lp, fld) { #fmt["%s.%s", self.lp_to_str(lp), fld] }
-          lp_index(lp) { #fmt["%s.[]", self.lp_to_str(lp)] }
+          lp_local(node_id) {
+            #fmt["local(%d)", node_id]
+          }
+          lp_arg(node_id) {
+            #fmt["arg(%d)", node_id]
+          }
+          lp_deref(lp, ptr) {
+            #fmt["%s->(%s)", self.lp_to_str(lp),
+                 self.ptr_sigil(ptr)]
+          }
+          lp_comp(lp, comp) {
+            #fmt["%s.%s", self.lp_to_str(lp),
+                 self.comp_to_repr(comp)]
+          }
         }
     }
 
     fn cmt_to_repr(cmt: cmt) -> str {
-        #fmt["{%s m:%s lp:%s ty:%s}",
+        #fmt["{%s id:%d m:%s lp:%s ty:%s}",
              self.cat_to_repr(cmt.cat),
+             cmt.id,
              self.mut_to_str(cmt.mutbl),
              cmt.lp.map_default("none", { |p| self.lp_to_str(p) }),
              ty_to_str(self.tcx, cmt.ty)]
@@ -812,6 +1048,9 @@ impl categorize_methods for borrowck_ctxt {
           err_mut_uniq {
             "unique value in aliasable, mutable location"
           }
+          err_mut_variant {
+            "enum variant in aliasable, mutable location"
+          }
           err_preserve_gc {
             "GC'd value would have to be preserved for longer \
                  than the scope of the function"
@@ -828,7 +1067,7 @@ impl categorize_methods for borrowck_ctxt {
 
     fn report(err: bckerr) {
         self.tcx.sess.span_warn(
-            err.cmt.expr.span,
+            err.cmt.span,
             #fmt["Illegal borrow: %s",
                  self.bckerr_code_to_str(err.code)]);
     }
@@ -880,8 +1119,6 @@ impl preserve_methods for borrowck_ctxt {
 
 impl preserve_methods for preserve_ctxt {
     fn preserve(cmt: cmt) -> bckres<()> {
-        let tcx = self.bccx.tcx;
-
         #debug["preserve(%s)", self.bccx.cmt_to_repr(cmt)];
         let _i = indenter();
 
@@ -889,62 +1126,67 @@ impl preserve_methods for preserve_ctxt {
           cat_rvalue(_) {
             ok(())
           }
-          cat_field(cmt_base, _) | cat_index(cmt_base) {
-            self.preserve(cmt_base)
-          }
-          cat_local(vid) | cat_arg(vid) {
+          cat_local(_) {
             // This should never happen.  Local variables are always lendable,
             // so either `loan()` should be called or there must be some
             // intermediate @ or &---they are not lendable but do not recurse.
             self.bccx.tcx.sess.span_bug(
-                cmt.expr.span,
-                "preserve() called with local or argument");
+                cmt.span,
+                "preserve() called with local");
           }
-          cat_deref(cmt1) {
-            alt deref_kind(tcx, cmt1.ty) {
-              uniqish {
-                // Unique pointers: must be immutably rooted to a preserved
-                // address.
-                alt cmt1.mutbl {
-                  m_mutbl | m_const { err({cmt:cmt, code:err_mut_uniq}) }
-                  m_imm { self.preserve(cmt1) }
-                }
-              }
-
-              abstractionish {
-                // Abstraction-style pointers: they are stable if the value
-                // being deref'd is stable
-                self.preserve(cmt1)
-              }
-
-              regionish {
-                // References are always "stable" by induction (when the
-                // reference of type &MT was created, the memory must have
-                // been stable)
+          cat_arg(_) {
+            // This can happen as not all args are lendable (e.g., &&
+            // modes).  In that case, the caller guarantees stability.
+            // This is basically a deref of a region ptr.
+            ok(())
+          }
+          cat_comp(cmt_base, comp_field(_)) |
+          cat_comp(cmt_base, comp_index) |
+          cat_comp(cmt_base, comp_tuple) |
+          cat_comp(cmt_base, comp_res) {
+            // Most embedded components: if the base is stable, the
+            // type never changes.
+            self.preserve(cmt_base)
+          }
+          cat_comp(cmt1, comp_variant) {
+            self.require_imm(cmt, cmt1, err_mut_variant)
+          }
+          cat_deref(cmt1, uniq_ptr) {
+            self.require_imm(cmt, cmt1, err_mut_uniq)
+          }
+          cat_deref(_, region_ptr) {
+            // References are always "stable" by induction (when the
+            // reference of type &MT was created, the memory must have
+            // been stable)
+            ok(())
+          }
+          cat_deref(_, unsafe_ptr) {
+            // Unsafe pointers are the user's problem
+            ok(())
+          }
+          cat_deref(_, gc_ptr) {
+            // GC'd pointers of type @MT: always stable because we can inc
+            // the ref count or keep a GC root as necessary.  We need to
+            // insert this id into the root_map, however.
+            alt self.opt_scope_id {
+              some(scope_id) {
+                self.bccx.root_map.insert(cmt.id, scope_id);
                 ok(())
               }
-
-              unsafeish {
-                // Unsafe pointers are the user's problem
-                ok(())
-              }
-
-              gcish {
-                // GC'd pointers of type @MT: always stable because we can inc
-                // the ref count or keep a GC root as necessary.  We need to
-                // insert this id into the root_map, however.
-                alt self.opt_scope_id {
-                  some(scope_id) {
-                    self.bccx.root_map.insert(cmt.expr.id, scope_id);
-                    ok(())
-                  }
-                  none {
-                    err({cmt:cmt, code:err_preserve_gc})
-                  }
-                }
+              none {
+                err({cmt:cmt, code:err_preserve_gc})
               }
             }
           }
+        }
+    }
+
+    fn require_imm(cmt: cmt, cmt1: cmt, code: bckerr_code) -> bckres<()> {
+        // Variant contents and unique pointers: must be immutably
+        // rooted to a preserved address.
+        alt cmt1.mutbl {
+          m_mutbl | m_const { err({cmt:cmt, code:code}) }
+          m_imm { self.preserve(cmt1) }
         }
     }
 }
@@ -991,20 +1233,29 @@ impl loan_methods for loan_ctxt {
         // see stable() above; should only be called when `cmt` is lendable
         if cmt.lp.is_none() {
             self.bccx.tcx.sess.span_bug(
-                cmt.expr.span,
+                cmt.span,
                 "loan() called with non-lendable value");
         }
 
         alt cmt.cat {
           cat_rvalue(_) {
             self.bccx.tcx.sess.span_bug(
-                cmt.expr.span,
+                cmt.span,
                 "rvalue with a non-none lp");
           }
-          cat_field(cmt_base, _) | cat_index(cmt_base) {
-            // if the field/array contents must be immutable, then the base
-            // must also be immutable, or else the record/array as a whole
-            // could be overwritten.  otherwise, though, const will suffice.
+          cat_local(_) | cat_arg(_) {
+            self.ok_with_loan_of(cmt, req_mutbl)
+          }
+          cat_comp(cmt_base, comp_field(_)) |
+          cat_comp(cmt_base, comp_index) |
+          cat_comp(cmt_base, comp_tuple) |
+          cat_comp(cmt_base, comp_res) {
+            // For most components, the type of the embedded data is
+            // stable.  Therefore, the base structure need only be
+            // const---unless the component must be immutable.  In
+            // that case, it must also be embedded in an immutable
+            // location, or else the whole structure could be
+            // overwritten and the component along with it.
             let base_mutbl = alt req_mutbl {
               m_imm { m_imm }
               m_const | m_mutbl { m_const }
@@ -1014,34 +1265,25 @@ impl loan_methods for loan_ctxt {
                 self.ok_with_loan_of(cmt, req_mutbl)
             }
           }
-          cat_local(_) | cat_arg(_) {
-            self.ok_with_loan_of(cmt, req_mutbl)
-          }
-          cat_deref(cmt1) {
-            alt deref_kind(self.bccx.tcx, cmt1.ty) {
-              uniqish {
-                // Unique pointers: presuming that the base can be made
-                // immutable, they are also uniquely tied to the stack frame.
-                self.loan(cmt1, m_imm).chain { |_ok|
-                    self.ok_with_loan_of(cmt, req_mutbl)
-                }
-              }
-
-              abstractionish {
-                // Abstraction "dereferences": these don't actually *do*
-                // anything.
-                self.loan(cmt1, req_mutbl).chain { |_ok|
-                    self.ok_with_loan_of(cmt, req_mutbl)
-                }
-              }
-
-              unsafeish | regionish | gcish {
-                // Aliased data is not lendable.
-                self.bccx.tcx.sess.span_bug(
-                    cmt.expr.span,
-                    "aliased ptr with a non-none lp");
-              }
+          cat_comp(cmt1, comp_variant) |
+          cat_deref(cmt1, uniq_ptr) {
+            // Variant components: the base must be immutable, because
+            // if it is overwritten, the types of the embedded data
+            // could change.
+            //
+            // Unique pointers: the base must be immutable, because if
+            // it is overwritten, the unique content will be freed.
+            self.loan(cmt1, m_imm).chain { |_ok|
+                self.ok_with_loan_of(cmt, req_mutbl)
             }
+          }
+          cat_deref(cmt1, unsafe_ptr) |
+          cat_deref(cmt1, gc_ptr) |
+          cat_deref(cmt1, region_ptr) {
+            // Aliased data is simply not lendable.
+            self.bccx.tcx.sess.span_bug(
+                cmt.span,
+                "aliased ptr with a non-none lp");
           }
         }
     }

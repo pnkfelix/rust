@@ -8,7 +8,7 @@ import metadata::csearch;
 import driver::session::session;
 import util::common::*;
 import syntax::codemap::span;
-import pat_util::*;
+import pat_util::{pat_is_variant, pat_id_map};
 import middle::ty;
 import middle::ty::{arg, field, node_type_table, mk_nil,
                     ty_param_bounds_and_ty, lookup_public_fields};
@@ -2212,7 +2212,7 @@ fn valid_range_bounds(ccx: @crate_ctxt, from: @ast::expr, to: @ast::expr)
 
 type pat_ctxt = {
     fcx: @fn_ctxt,
-    map: pat_util::pat_id_map,
+    map: pat_id_map,
     alt_region: ty::region,
     block_region: ty::region,
     /* Equal to either alt_region or block_region. */
@@ -2384,12 +2384,11 @@ fn check_pat(pcx: pat_ctxt, pat: @ast::pat, expected: ty::t) {
         }
         fcx.write_ty(pat.id, b_ty);
       }
-      ast::pat_ident(name, sub)
-      if !pat_util::pat_is_variant(tcx.def_map, pat) {
+      ast::pat_ident(name, sub) if !pat_is_variant(tcx.def_map, pat) {
         let vid = lookup_local(pcx.fcx, pat.span, pat.id);
         let mut typ = ty::mk_var(tcx, vid);
         demand::suptype(pcx.fcx, pat.span, expected, typ);
-        let canon_id = pcx.map.get(path_to_ident(name));
+        let canon_id = pcx.map.get(pat_util::path_to_ident(name));
         if canon_id != pat.id {
             let tv_id = lookup_local(pcx.fcx, pat.span, canon_id);
             let ct = ty::mk_var(tcx, tv_id);
@@ -3556,7 +3555,7 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
         for arms.each {|arm|
             let pcx = {
                 fcx: fcx,
-                map: pat_util::pat_id_map(tcx.def_map, arm.pats[0]),
+                map: pat_id_map(tcx.def_map, arm.pats[0]),
                 alt_region: ty::re_scope(expr.id),
                 block_region: ty::re_scope(arm.body.node.id),
                 pat_region: ty::re_scope(expr.id)
@@ -4017,7 +4016,7 @@ fn check_decl_local(fcx: @fn_ctxt, local: @ast::local) -> bool {
             fcx.ccx.tcx.region_map.local_blocks.get(local.node.id));
     let pcx = {
         fcx: fcx,
-        map: pat_util::pat_id_map(fcx.ccx.tcx.def_map, local.node.pat),
+        map: pat_id_map(fcx.ccx.tcx.def_map, local.node.pat),
         alt_region: region,
         block_region: region,
         pat_region: region
