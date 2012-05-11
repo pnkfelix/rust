@@ -2808,7 +2808,8 @@ fn region_of(fcx: @fn_ctxt, expr: @ast::expr) -> ty::region {
         let defn = lookup_def(fcx, path.span, expr.id);
         alt defn {
           ast::def_local(local_id, _) |
-          ast::def_upvar(local_id, _, _) {
+          ast::def_upvar(local_id, _, _) |
+          ast::def_arg(local_id, _) {
             let local_blocks = fcx.ccx.tcx.region_map.local_blocks;
             let local_block_id = local_blocks.get(local_id);
             ty::re_scope(local_block_id)
