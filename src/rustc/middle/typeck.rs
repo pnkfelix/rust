@@ -20,7 +20,6 @@ import std::smallintmap::map;
 import std::map;
 import std::map::{hashmap, int_hash};
 import std::serialization::{serialize_uint, deserialize_uint};
-import std::ufind;
 import vec::each;
 import syntax::print::pprust::*;
 import util::common::{indent, indenter};
