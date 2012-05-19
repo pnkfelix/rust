@@ -190,6 +190,9 @@ fn compile_upto(sess: session, cfg: ast::crate_cfg,
          bind middle::check_alt::check_crate(ty_cx, crate));
     time(time_passes, "self checking",
          bind middle::check_self::check_crate(ty_cx, crate));
+    let last_use_map =
+        time(time_passes, "liveness checking",
+             bind middle::liveness::check_crate(ty_cx, method_map, crate));
     time(time_passes, "typestate checking",
          bind middle::tstate::ck::check_crate(ty_cx, crate));
     let (root_map, mutbl_map) = time(

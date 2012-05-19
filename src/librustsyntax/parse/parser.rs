@@ -407,7 +407,7 @@ fn parse_capture_item_or(
         let id = p.get_id();
         let sp = mk_sp(p.span.lo, p.span.hi);
         let ident = parse_ident(p);
-        {id: id, is_move: is_move, name: ident, span: sp}
+        @{id: id, is_move: is_move, name: ident, span: sp}
     }
 
     if eat_keyword(p, "move") {
@@ -1683,7 +1683,7 @@ fn parse_old_skool_capture_clause(p: parser) -> [capture_item] {
                 let id = p.get_id();
                 let sp = mk_sp(p.span.lo, p.span.hi);
                 let ident = parse_ident(p);
-                res += [{id:id, is_move: is_move, name:ident, span:sp}];
+                res += [@{id:id, is_move: is_move, name:ident, span:sp}];
                 if !eat(p, token::COMMA) {
                     ret res;
                 }
