@@ -2037,11 +2037,16 @@ fn check_decl_local(fcx: @fn_ctxt, local: @ast::local) -> bool {
 
     let t = ty::mk_var(fcx.ccx.tcx, fcx.locals.get(local.node.id));
     fcx.write_ty(local.node.id, t);
+
+    let is_lvalue;
     match local.node.init {
-      Some(init) => {
-        bot = check_decl_initializer(fcx, local.node.id, init);
-      }
-      _ => {/* fall through */ }
+        Some(init) => {
+            is_lvalue = ty::expr_is_lval(fcx.ccx.method_map, init.expr);
+            bot = check_decl_initializer(fcx, local.node.id, init);
+        }
+        _ => {
+            is_lvalue = true;
+        }
     }
 
     let region =
@@ -2051,12 +2056,13 @@ fn check_decl_local(fcx: @fn_ctxt, local: @ast::local) -> bool {
         map: pat_id_map(fcx.ccx.tcx.def_map, local.node.pat),
         alt_region: region,
         block_region: region,
-        pat_region: region,
-        matching_lvalue: true, // FIXME(#3235) Make this more flexible
-        has_guard: false,
-        mut ever_bound_by_ref: false,
     };
     alt::check_pat(pcx, local.node.pat, t);
+    let has_guard = false;
+    alt::check_legality_of_move_bindings(fcx,
+                                         is_lvalue,
+                                         has_guard,
+                                         [local.node.pat]);
     return bot;
 }
 
