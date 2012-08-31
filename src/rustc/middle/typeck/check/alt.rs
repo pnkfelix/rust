@@ -11,7 +11,7 @@ fn check_alt(fcx: @fn_ctxt,
 
     let pattern_ty = fcx.infcx.next_ty_var();
     bot = check_expr_with(fcx, discrim, pattern_ty);
-    let is_lvalue = ty::expr_is_lval(fcx.ccx.method_map, discrim);
+    let is_lvalue = ty::expr_is_lval(tcx, fcx.ccx.method_map, discrim);
 
     // Typecheck the patterns first, so that we get types for all the
     // bindings.

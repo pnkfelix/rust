@@ -653,6 +653,7 @@ impl @fn_ctxt {
                  self.infcx.ty_to_str(e),
                  self.infcx.ty_to_str(a),
                  ty::type_err_to_str(self.ccx.tcx, err)));
+        ty::note_and_explain_type_err(self.ccx.tcx, err);
     }
 
     fn mk_subty(a_is_expected: bool, span: span,
@@ -2034,15 +2035,16 @@ fn check_decl_initializer(fcx: @fn_ctxt, nid: ast::node_id,
 
 fn check_decl_local(fcx: @fn_ctxt, local: @ast::local) -> bool {
     let mut bot = false;
+    let tcx = fcx.ccx.tcx;
 
-    let t = ty::mk_var(fcx.ccx.tcx, fcx.locals.get(local.node.id));
+    let t = ty::mk_var(tcx, fcx.locals.get(local.node.id));
     fcx.write_ty(local.node.id, t);
 
     let is_lvalue;
     match local.node.init {
         Some(init) => {
-            is_lvalue = ty::expr_is_lval(fcx.ccx.method_map, init.expr);
             bot = check_decl_initializer(fcx, local.node.id, init);
+            is_lvalue = ty::expr_is_lval(tcx, fcx.ccx.method_map, init.expr);
         }
         _ => {
             is_lvalue = true;
@@ -2050,10 +2052,10 @@ fn check_decl_local(fcx: @fn_ctxt, local: @ast::local) -> bool {
     }
 
     let region =
-        ty::re_scope(fcx.ccx.tcx.region_map.get(local.node.id));
+        ty::re_scope(tcx.region_map.get(local.node.id));
     let pcx = {
         fcx: fcx,
-        map: pat_id_map(fcx.ccx.tcx.def_map, local.node.pat),
+        map: pat_id_map(tcx.def_map, local.node.pat),
         alt_region: region,
         block_region: region,
     };

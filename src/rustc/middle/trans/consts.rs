@@ -59,9 +59,10 @@ fn const_deref(cx: @crate_ctxt, v: ValueRef) -> ValueRef {
     v
 }
 
-fn const_get_elt(v: ValueRef, u: uint) -> ValueRef {
-    let u = u;
-    llvm::LLVMConstExtractValue(v, ptr::addr_of(u), 1 as c_uint)
+fn const_get_elt(v: ValueRef, us: &[uint]) -> ValueRef {
+    do vec::as_buf(us) |p, len| {
+        llvm::LLVMConstExtractValue(v, p, len as c_uint)
+    }
 }
 
 fn const_autoderef(cx: @crate_ctxt, ty: ty::t, v: ValueRef)
@@ -156,15 +157,10 @@ fn const_expr(cx: @crate_ctxt, e: @ast::expr) -> ValueRef {
           let bt = ty::expr_ty(cx.tcx, base);
           let bv = const_expr(cx, base);
           let (bt, bv) = const_autoderef(cx, bt, bv);
-          let fields = match ty::get(bt).struct {
-              ty::ty_rec(fs) => fs,
-              ty::ty_class(did, ref substs) =>
-                  ty::class_items_as_mutable_fields(cx.tcx, did, substs),
-              _ => cx.sess.span_bug(e.span,
-                                    ~"field access on unknown type in const"),
-          };
-          let ix = field_idx_strict(cx.tcx, e.span, field, fields);
-          const_get_elt(bv, ix)
+          do expr::with_field_tys(cx.tcx, bt) |_has_dtor, field_tys| {
+              let ix = ty::field_idx_strict(cx.tcx, field, field_tys);
+              const_get_elt(bv, struct_field(ix))
+          }
       }
 
       ast::expr_index(base, index) => {
@@ -189,8 +185,8 @@ fn const_expr(cx: @crate_ctxt, e: @ast::expr) -> ValueRef {
                       let llunitty = type_of::type_of(cx, unit_ty);
                       let unit_sz = shape::llsize_of(cx, llunitty);
 
-                      (const_deref(cx, const_get_elt(bv, 0)),
-                       llvm::LLVMConstUDiv(const_get_elt(bv, 1),
+                      (const_deref(cx, const_get_elt(bv, [0])),
+                       llvm::LLVMConstUDiv(const_get_elt(bv, [1]),
                                            unit_sz))
                   },
                   _ => cx.sess.span_bug(base.span,
@@ -240,27 +236,27 @@ fn const_expr(cx: @crate_ctxt, e: @ast::expr) -> ValueRef {
               cx.sess.span_err(e.span,
                                ~"const index-expr is out of bounds");
           }
-          const_get_elt(arr, iv as uint)
+          const_get_elt(arr, [iv as uint])
       }
       ast::expr_cast(base, _) => {
         let ety = ty::expr_ty(cx.tcx, e), llty = type_of::type_of(cx, ety);
         let basety = ty::expr_ty(cx.tcx, base);
         let v = const_expr(cx, base);
-        match (base::cast_type_kind(basety),
-                     base::cast_type_kind(ety)) {
+        match (expr::cast_type_kind(basety),
+               expr::cast_type_kind(ety)) {
 
-          (base::cast_integral, base::cast_integral) => {
+          (expr::cast_integral, expr::cast_integral) => {
             let s = if ty::type_is_signed(basety) { True } else { False };
             llvm::LLVMConstIntCast(v, llty, s)
           }
-          (base::cast_integral, base::cast_float) => {
+          (expr::cast_integral, expr::cast_float) => {
             if ty::type_is_signed(basety) { llvm::LLVMConstSIToFP(v, llty) }
             else { llvm::LLVMConstUIToFP(v, llty) }
           }
-          (base::cast_float, base::cast_float) => {
+          (expr::cast_float, expr::cast_float) => {
             llvm::LLVMConstFPCast(v, llty)
           }
-          (base::cast_float, base::cast_integral) => {
+          (expr::cast_float, expr::cast_integral) => {
             if ty::type_is_signed(ety) { llvm::LLVMConstFPToSI(v, llty) }
             else { llvm::LLVMConstFPToUI(v, llty) }
           }
@@ -282,34 +278,23 @@ fn const_expr(cx: @crate_ctxt, e: @ast::expr) -> ValueRef {
       ast::expr_tup(es) => {
         C_struct(es.map(|e| const_expr(cx, e)))
       }
+      ast::expr_rec(fs, None) |
       ast::expr_struct(_, fs, _) => {
           let ety = ty::expr_ty(cx.tcx, e);
           let llty = type_of::type_of(cx, ety);
-          let class_fields =
-              match ty::get(ety).struct {
-              ty::ty_class(clsid, _) =>
-                  ty::lookup_class_fields(cx.tcx, clsid),
-              _ =>
-                  cx.tcx.sess.span_bug(e.span,
-                                       ~"didn't resolve to a struct")
-          };
-          let mut cs = ~[];
-          for class_fields.each |class_field| {
-              let mut found = false;
-              for fs.each |field| {
-                  if class_field.ident == field.node.ident  {
-                      found = true;
-                      vec::push(cs, const_expr(cx, field.node.expr));
+
+          do expr::with_field_tys(cx.tcx, ety) |_fn_data, field_tys| {
+              let cs = field_tys.map(|field_ty| {
+                  match fs.find(|f| field_ty.ident == f.node.ident) {
+                      Some(f) => const_expr(cx, f.node.expr),
+                      None => {
+                          cx.tcx.sess.span_bug(
+                              e.span, ~"missing struct field");
+                      }
                   }
-              }
-              if !found {
-                  cx.tcx.sess.span_bug(e.span, ~"missing struct field");
-              }
+              });
+              C_named_struct(llty, ~[C_struct(cs)])
           }
-          C_named_struct(llty, cs)
-      }
-      ast::expr_rec(fs, None) => {
-        C_struct(fs.map(|f| const_expr(cx, f.node.expr)))
       }
       ast::expr_vec(es, ast::m_imm) => {
         let (v, _, _) = const_vec(cx, e, es);

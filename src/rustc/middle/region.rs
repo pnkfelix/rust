@@ -254,7 +254,9 @@ fn resolve_expr(expr: @ast::expr, cx: ctxt, visitor: visit::vt<ctxt>) {
 
     let mut new_cx = cx;
     match expr.node {
-      ast::expr_call(*) => {
+      // Calls or overloadable operators
+      ast::expr_index(*) | ast::expr_binary(*) |
+      ast::expr_unary(*) | ast::expr_call(*) => {
         debug!("node %d: %s", expr.id, pprust::expr_to_str(expr,
                                                            cx.sess.intr()));
         new_cx.parent = Some(expr.id);

@@ -20,6 +20,7 @@ import metadata::{csearch};
 import metadata::common::link_meta;
 import syntax::ast_map::path;
 import util::ppaux::ty_to_str;
+import syntax::print::pprust::expr_to_str;
 import syntax::parse::token::ident_interner;
 import syntax::ast::ident;
 
@@ -165,7 +166,11 @@ type crate_ctxt = {
      mut do_not_commit_warning_issued: bool};
 
 // Types used for llself.
-type val_self_data = {v: ValueRef, t: ty::t, is_owned: bool};
+struct ValSelfData {
+    v: ValueRef;
+    t: ty::t;
+    is_owned: bool;
+}
 
 enum local_val { local_mem(ValueRef), local_imm(ValueRef), }
 
@@ -201,7 +206,7 @@ type fn_ctxt = @{
     mut llreturn: BasicBlockRef,
     // The 'self' value currently in use in this function, if there
     // is one.
-    mut llself: Option<val_self_data>,
+    mut llself: Option<ValSelfData>,
     // The a value alloca'd for calls to upcalls.rust_personality. Used when
     // outputting the resume instruction.
     mut personality: Option<ValueRef>,
@@ -275,12 +280,12 @@ fn cleanup_type(cx: ty::ctxt, ty: ty::t) -> cleantype {
     }
 }
 
-// This is not the same as base::root_value, which appears to be the vestigial
-// remains of the previous GC regime. In the new GC, we can identify
-// immediates on the stack without difficulty, but have trouble knowing where
-// non-immediates are on the stack. For non-immediates, we must add an
-// additional level of indirection, which allows us to alloca a pointer with
-// the right addrspace.
+// This is not the same as datum::Datum::root(), which is used to keep copies
+// of @ values live for as long as a borrowed pointer to the interior exists.
+// In the new GC, we can identify immediates on the stack without difficulty,
+// but have trouble knowing where non-immediates are on the stack. For
+// non-immediates, we must add an additional level of indirection, which
+// allows us to alloca a pointer with the right addrspace.
 fn root_for_cleanup(bcx: block, v: ValueRef, t: ty::t)
     -> {root: ValueRef, rooted: bool} {
     let ccx = bcx.ccx();
@@ -305,11 +310,12 @@ fn add_clean(bcx: block, val: ValueRef, t: ty::t) {
     let cleanup_type = cleanup_type(bcx.tcx(), t);
     do in_scope_cx(bcx) |info| {
         vec::push(info.cleanups,
-                  clean(|a| base::drop_ty_root(a, root, rooted, t),
+                  clean(|a| glue::drop_ty_root(a, root, rooted, t),
                         cleanup_type));
         scope_clean_changed(info);
     }
 }
+
 fn add_clean_temp_immediate(cx: block, val: ValueRef, ty: ty::t) {
     if !ty::type_needs_drop(cx.tcx(), ty) { return; }
     debug!("add_clean_temp_immediate(%s, %s, %s)",
@@ -318,7 +324,7 @@ fn add_clean_temp_immediate(cx: block, val: ValueRef, ty: ty::t) {
     let cleanup_type = cleanup_type(cx.tcx(), ty);
     do in_scope_cx(cx) |info| {
         vec::push(info.cleanups,
-                  clean_temp(val, |a| base::drop_ty_immediate(a, val, ty),
+                  clean_temp(val, |a| glue::drop_ty_immediate(a, val, ty),
                              cleanup_type));
         scope_clean_changed(info);
     }
@@ -332,15 +338,15 @@ fn add_clean_temp_mem(bcx: block, val: ValueRef, t: ty::t) {
     let cleanup_type = cleanup_type(bcx.tcx(), t);
     do in_scope_cx(bcx) |info| {
         vec::push(info.cleanups,
-                  clean_temp(val, |a| base::drop_ty_root(a, root, rooted, t),
+                  clean_temp(val, |a| glue::drop_ty_root(a, root, rooted, t),
                              cleanup_type));
         scope_clean_changed(info);
     }
 }
 fn add_clean_free(cx: block, ptr: ValueRef, heap: heap) {
     let free_fn = match heap {
-      heap_shared => |a| base::trans_free(a, ptr),
-      heap_exchange => |a| base::trans_unique_free(a, ptr)
+      heap_shared => |a| glue::trans_free(a, ptr),
+      heap_exchange => |a| glue::trans_unique_free(a, ptr)
     };
     do in_scope_cx(cx) |info| {
         vec::push(info.cleanups, clean_temp(ptr, free_fn,
@@ -355,12 +361,13 @@ fn add_clean_free(cx: block, ptr: ValueRef, heap: heap) {
 // drop glue checks whether it is zero.
 fn revoke_clean(cx: block, val: ValueRef) {
     do in_scope_cx(cx) |info| {
-        do option::iter(vec::position(info.cleanups, |cu| {
-            match cu {
-              clean_temp(v, _, _) if v == val => true,
-              _ => false
-            }
-        })) |i| {
+        let cleanup_pos = vec::position(
+            info.cleanups,
+            |cu| match cu {
+                clean_temp(v, _, _) if v == val => true,
+                _ => false
+            });
+        for cleanup_pos.each |i| {
             info.cleanups =
                 vec::append(vec::slice(info.cleanups, 0u, i),
                             vec::view(info.cleanups,
@@ -480,11 +487,20 @@ fn mk_block(llbb: BasicBlockRef, parent: Option<block>, -kind: block_kind,
 // First two args are retptr, env
 const first_real_arg: uint = 2u;
 
-type result = {bcx: block, val: ValueRef};
-type result_t = {bcx: block, val: ValueRef, ty: ty::t};
+struct Result {
+    bcx: block;
+    val: ValueRef;
+}
 
-fn rslt(bcx: block, val: ValueRef) -> result {
-    {bcx: bcx, val: val}
+fn rslt(bcx: block, val: ValueRef) -> Result {
+    Result {bcx: bcx, val: val}
+}
+
+impl Result {
+    fn unpack(bcx: &mut block) -> ValueRef {
+        *bcx = self.bcx;
+        return self.val;
+    }
 }
 
 fn ty_str(tn: type_names, t: TypeRef) -> ~str {
@@ -510,7 +526,12 @@ fn in_scope_cx(cx: block, f: fn(scope_info)) {
     let mut cur = cx;
     loop {
         match cur.kind {
-          block_scope(inf) => { f(inf); return; }
+          block_scope(inf) => {
+              debug!("in_scope_cx: selected cur=%s (cx=%s)",
+                     cur.to_str(), cx.to_str());
+              f(inf);
+              return;
+          }
           _ => ()
         }
         cur = block_parent(cur);
@@ -532,9 +553,40 @@ impl block {
     pure fn tcx() -> ty::ctxt { self.fcx.ccx.tcx }
     pure fn sess() -> session { self.fcx.ccx.sess }
 
+    fn node_id_to_str(id: ast::node_id) -> ~str {
+        ast_map::node_id_to_str(self.tcx().items, id, self.sess().intr())
+    }
+
+    fn expr_to_str(e: @ast::expr) -> ~str {
+        fmt!("expr(%d: %s)", e.id, expr_to_str(e, self.sess().intr()))
+    }
+
+    fn expr_is_lval(e: @ast::expr) -> bool {
+        ty::expr_is_lval(self.tcx(), self.ccx().maps.method_map, e)
+    }
+
+    fn expr_kind(e: @ast::expr) -> ty::ExprKind {
+        ty::expr_kind(self.tcx(), self.ccx().maps.method_map, e)
+    }
+
+    fn def(nid: ast::node_id) -> ast::def {
+        match self.tcx().def_map.find(nid) {
+            Some(v) => v,
+            None => {
+                self.tcx().sess.bug(fmt!(
+                    "No def associated with node id %?", nid));
+            }
+        }
+    }
+
     fn val_str(val: ValueRef) -> ~str {
         val_str(self.ccx().tn, val)
     }
+
+    fn llty_str(llty: TypeRef) -> ~str {
+        ty_str(self.ccx().tn, llty)
+    }
+
     fn ty_to_str(t: ty::t) -> ~str {
         ty_to_str(self.tcx(), t)
     }
@@ -1067,21 +1119,22 @@ fn node_id_type_params(bcx: block, id: ast::node_id) -> ~[ty::t] {
     }
 }
 
-fn field_idx_strict(cx: ty::ctxt, sp: span, ident: ast::ident,
-                    fields: ~[ty::field])
-    -> uint {
-    match ty::field_idx(ident, fields) {
-       None => cx.sess.span_bug(
-           sp, fmt!("base expr doesn't appear to \
-                         have a field named %s", cx.sess.str_of(ident))),
-       Some(i) => i
-    }
-}
-
 fn dummy_substs(tps: ~[ty::t]) -> ty::substs {
     {self_r: Some(ty::re_bound(ty::br_self)),
      self_ty: None,
      tps: tps}
+}
+
+fn struct_field(index: uint) -> [uint]/3 {
+    //! The GEPi sequence to access a field of a record/struct.
+
+    [0, 0, index]
+}
+
+fn struct_dtor() -> [uint]/2 {
+    //! The GEPi sequence to access the dtor of a struct.
+
+    [0, 1]
 }
 
 //

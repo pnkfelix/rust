@@ -22,7 +22,7 @@
 //
 // NB: please do not commit code with level 2. It's
 // hugely expensive and should only be used as a last resort.
-#define RUSTRT_TRACK_ALLOCATIONS 0
+#define RUSTRT_TRACK_ALLOCATIONS 2
 
 struct rust_env;
 

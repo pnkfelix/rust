@@ -12,6 +12,7 @@ import libc::size_t;
 import task::TaskBuilder;
 import comm = core::comm;
 
+/*
 export test_name;
 export test_fn;
 export test_desc;
@@ -22,6 +23,7 @@ export tr_ok;
 export tr_failed;
 export tr_ignored;
 export run_tests_console;
+*/
 
 #[abi = "cdecl"]
 extern mod rustrt {
