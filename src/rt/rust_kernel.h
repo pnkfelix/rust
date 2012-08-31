@@ -107,6 +107,8 @@ class rust_kernel {
     uintptr_t global_loop_chan;
     // Used to serialize access to getenv/setenv
     uintptr_t global_env_chan;
+    // Used to communicate with the controller task of the memory watcher task
+    uintptr_t global_memory_watcher_chan;
 
 public:
     struct rust_env *env;
@@ -156,6 +158,7 @@ public:
 
     uintptr_t* get_global_loop() { return &global_loop_chan; }
     uintptr_t* get_global_env_chan() { return &global_env_chan; }
+    uintptr_t* get_global_memory_watcher_chan() { return &global_memory_watcher_chan; }
 };
 
 template <typename T> struct kernel_owned {
