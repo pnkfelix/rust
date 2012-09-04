@@ -1,6 +1,6 @@
 import task::spawn;
 import io::println;
-import pipes::{stream,Port,Chan};
+import pipes::{stream,port,chan};
 import priv::{chan_from_global_ptr, weaken_task};
 import comm = core::comm;
 import comm::{Port, Chan, select2, listen};
@@ -8,11 +8,12 @@ import task::TaskBuilder;
 import either::{Left, Right};
 use std;
 
+#[abi = "cdecl"]
 extern mod rustrt {
-    fn get_global_memory_watcher_chan() -> *libc::uintptr_t;
+    fn rust_global_memory_watcher_chan_ptr() -> *libc::uintptr_t;
 }
 
-fn main()
+fn global_memory_watcher_spawner()
 {
 	const some_value:int = 22;
 	let (chan,port) = stream();
@@ -22,7 +23,7 @@ fn main()
 		println("Hello");
 	}
 	
-	let monitor_loop_chan_ptr = rustrt::get_global_memory_watcher_chan();
+	let monitor_loop_chan_ptr = rustrt::rust_global_memory_watcher_chan_ptr();
 	let test_result = port.recv();
 	println(#fmt("%d", test_result));
 }
