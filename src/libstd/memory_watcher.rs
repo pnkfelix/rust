@@ -13,7 +13,7 @@ extern mod rustrt {
     fn rust_global_memory_watcher_chan_ptr() -> *libc::uintptr_t;
 }
 
-fn global_memory_watcher_spawner()
+fn global_memory_watcher_spawner(msg_po: comm::Port<Msg>)
 {
 	const some_value:int = 22;
 	let (chan,port) = stream();
