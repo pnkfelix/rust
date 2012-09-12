@@ -13,17 +13,41 @@ extern mod rustrt {
     fn rust_global_memory_watcher_chan_ptr() -> *libc::uintptr_t;
 }
 
-fn global_memory_watcher_spawner(msg_po: comm::Port<Msg>)
-{
-	const some_value:int = 22;
-	let (chan,port) = stream();
+enum Msg {
+        MsgGetEnv(~str, comm::Chan<Option<~str>>),
+        MsgSetEnv(~str, ~str, comm::Chan<()>),
+        MsgEnv(comm::Chan<~[(~str,~str)]>)
+}
 
-	do spawn {
-		chan.send(some_value);
-		println("Hello");
-	}
+mod memory_watcher {
+
+	fn global_memory_watcher_spawner(msg_po: comm::Port<Msg>)
+	{
+		const some_value:int = 22;
+		let (chan,port) = stream();
+
+		do spawn {
+			chan.send(some_value);
+			println("Hello");
+		}
 	
-	let monitor_loop_chan_ptr = rustrt::rust_global_memory_watcher_chan_ptr();
-	let test_result = port.recv();
-	println(#fmt("%d", test_result));
+		let monitor_loop_chan_ptr = rustrt::rust_global_memory_watcher_chan_ptr();
+		let test_result = port.recv();
+		println(#fmt("%d", test_result));
+	}
+
+	fn get_memory_watcher_chan() -> comm::Chan<Msg> {
+
+		let global_memory_watcher_ptr = rustrt::rust_global_memory_watcher_chan_ptr();
+
+		unsafe {
+			priv::chan_from_global_ptr(global_memory_watcher_ptr, || {
+                		task::task().sched_mode(task::SingleThreaded).unlinked()
+            		}, global_memory_watcher_spawner)
+		}
+	}
+}
+
+#[test]
+fn test_simple() {
 }
