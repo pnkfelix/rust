@@ -62,6 +62,7 @@ export managed;
 export flate;
 export unit;
 export uniq;
+export memory_watcher;
 
 // NDM seems to be necessary for resolve to work
 export option_iter;
@@ -229,6 +230,10 @@ mod unsafe;
 mod managed;
 
 mod flate;
+
+// Memory watcher
+
+mod memory_watcher;
 
 // Modules supporting compiler-generated code
 // Exported but not part of the public interface
