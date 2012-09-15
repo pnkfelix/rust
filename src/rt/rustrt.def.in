@@ -194,6 +194,7 @@ rust_task_local_data_atexit
 rust_task_ref
 rust_task_deref
 rust_call_tydesc_glue
+rust_global_memory_watcher_chan_ptr
 tdefl_compress_mem_to_heap
 tinfl_decompress_mem_to_heap
 rust_annihilate_box
