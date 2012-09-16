@@ -54,7 +54,11 @@ rust_env_pairs
 rust_task_yield
 rust_task_is_unwinding
 rust_get_task
+<<<<<<< HEAD
 rust_get_stack_segment
+=======
+rust_global_memory_watcher_chan_ptr
+>>>>>>> e1fda3d8d0673745032f7343d985743c3880f83e
 rust_task_weaken
 rust_task_unweaken
 sched_threads
