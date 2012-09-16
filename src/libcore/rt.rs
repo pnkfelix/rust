@@ -58,6 +58,7 @@ fn rt_exchange_free(ptr: *c_char) {
 fn rt_malloc(td: *c_char, size: uintptr_t) -> *c_char {
     let comm_memory_watcher_chan = memory_watcher::get_memory_watcher_Chan();
     comm_memory_watcher_chan.send(memory_watcher::ReportAllocation(task::get_task()));
+    println("rt_malloc");
     return rustrt::rust_upcall_malloc(td, size);
 }
 
