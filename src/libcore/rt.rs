@@ -8,6 +8,7 @@ use libc::c_void;
 use libc::size_t;
 use libc::uintptr_t;
 
+import io::println;
 import gc::{cleanup_stack_for_failure, gc, Word};
 import task::{spawn,Task};
 import memory_watcher;
@@ -30,6 +31,8 @@ extern mod rustrt {
 
     #[rust_stack]
     fn rust_upcall_free(ptr: *c_char);
+
+    fn rust_global_memory_watcher_chan_ptr() -> *uintptr_t;
 }
 
 // FIXME (#2861): This needs both the attribute, and the name prefixed with
@@ -56,8 +59,18 @@ fn rt_exchange_free(ptr: *c_char) {
 
 #[rt(malloc)]
 fn rt_malloc(td: *c_char, size: uintptr_t) -> *c_char {
-    let comm_memory_watcher_chan = memory_watcher::get_memory_watcher_Chan();
-    comm_memory_watcher_chan.send(memory_watcher::ReportAllocation(task::get_task()));
+    
+    let memory_watcher_initialized = rustrt::rust_global_memory_watcher_chan_ptr();
+    if(memory_watcher_initialized.is_null()) {
+    	println("Memory watcher not initialized yet");
+	memory_watcher::memory_watcher_start();
+    }
+    else {
+	let comm_memory_watcher_chan = memory_watcher::get_memory_watcher_Chan();
+    	comm_memory_watcher_chan.send(memory_watcher::ReportAllocation(task::get_task()));
+    	println("Metrics sent");
+    }
+    
     println("rt_malloc");
     return rustrt::rust_upcall_malloc(td, size);
 }
