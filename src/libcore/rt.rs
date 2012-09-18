@@ -61,7 +61,7 @@ fn rt_exchange_free(ptr: *c_char) {
 fn rt_malloc(td: *c_char, size: uintptr_t) -> *c_char {
     
     let memory_watcher_initialized = rustrt::rust_global_memory_watcher_chan_ptr();
-    if(memory_watcher_initialized.is_null()) {
+    if(*memory_watcher_initialized == 0) {
     	println("Memory watcher not initialized yet");
 	memory_watcher::memory_watcher_start();
     }
