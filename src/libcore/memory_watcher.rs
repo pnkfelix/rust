@@ -5,7 +5,6 @@ import priv::{chan_from_global_ptr, weaken_task};
 import comm::{Port, Chan, select2, listen};
 import task::TaskBuilder;
 import either::{Left, Right};
-import str::unsafe;
 
 #[abi = "cdecl"]
 extern mod rustrt {
@@ -31,10 +30,6 @@ fn global_memory_watcher_spawner(msg_po: comm::Port<Msg>)
   	let current_task_id = *(current_task_enum); 	
   	println(#fmt("Remote task id %d", remote_task_id));
   	println(#fmt("Size value is %d", size_allocated as int));
-	unsafe {
-		let td_value_str = unsafe::from_c_str(td_value);
-		println(#fmt("td_value is %s",td_value_str));
-	}
 	
 	do spawn {
 		println("Hello");
