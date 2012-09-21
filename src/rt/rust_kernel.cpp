@@ -25,6 +25,7 @@ rust_kernel::rust_kernel(rust_env *env) :
     non_weak_tasks(0),
     global_loop_chan(0),
     global_env_chan(0),
+    global_memory_watcher_chan(0),
     env(env)
 
 {
