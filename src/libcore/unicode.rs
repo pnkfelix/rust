@@ -1,8 +1,10 @@
+#[doc(hidden)]; // FIXME #3538
 // NB: transitionary, de-mode-ing.
 #[forbid(deprecated_mode)];
 #[forbid(deprecated_pattern)];
 
 mod general_category {
+    #[legacy_exports];
     pure fn Cc(c: char) -> bool {
         return match c {
               '\x00' .. '\x1f'
@@ -2563,6 +2565,7 @@ mod general_category {
 
 }
 mod derived_property {
+    #[legacy_exports];
     /// Check if a character has the alphabetic unicode property
     pure fn Alphabetic(c: char) -> bool {
         return match c {

@@ -3,12 +3,12 @@
 
 use std::{map, smallintmap};
 use result::Result;
-use std::map::hashmap;
+use std::map::HashMap;
 use driver::session;
 use session::session;
 use syntax::{ast, ast_map};
 use syntax::ast_util;
-use syntax::ast_util::{is_local, local_def, new_def_hash};
+use syntax::ast_util::{is_local, local_def};
 use syntax::codemap::span;
 use metadata::csearch;
 use util::ppaux::{region_to_str, explain_region, vstore_to_str,
@@ -19,7 +19,9 @@ use syntax::ast::*;
 use syntax::print::pprust::*;
 use util::ppaux::{ty_to_str, proto_ty_to_str, tys_to_str};
 use std::serialization::{serialize_Option,
-                            deserialize_Option};
+                         deserialize_Option,
+                         serialize_uint,
+                         deserialize_uint};
 
 export TyVid, IntVid, FnVid, RegionVid, vid;
 export br_hashmap;
@@ -131,6 +133,7 @@ export type_is_numeric;
 export type_is_pod;
 export type_is_scalar;
 export type_is_immediate;
+export type_is_borrowed;
 export type_is_sequence;
 export type_is_signed;
 export type_is_structural;
@@ -155,7 +158,9 @@ export closure_kind;
 export ck_block;
 export ck_box;
 export ck_uniq;
+export param_ty;
 export param_bound, param_bounds, bound_copy, bound_owned;
+export param_bounds_to_str, param_bound_to_str;
 export bound_send, bound_trait;
 export param_bounds_to_kind;
 export default_arg_mode_for_ty;
@@ -191,6 +196,8 @@ export opt_region_variance;
 export serialize_opt_region_variance, deserialize_opt_region_variance;
 export determine_inherited_purity;
 export provided_trait_methods;
+export AutoAdjustment, serialize_AutoAdjustment, deserialize_AutoAdjustment;
+export AutoRef, AutoRefKind, AutoSlice, AutoPtr;
 
 // Data types
 
@@ -227,37 +234,37 @@ type field_ty = {
 // Contains information needed to resolve types and (in the future) look up
 // the types of AST nodes.
 type creader_cache_key = {cnum: int, pos: uint, len: uint};
-type creader_cache = hashmap<creader_cache_key, t>;
+type creader_cache = HashMap<creader_cache_key, t>;
 
 impl creader_cache_key : cmp::Eq {
-    pure fn eq(&&other: creader_cache_key) -> bool {
-        self.cnum == other.cnum &&
-            self.pos == other.pos &&
-            self.len == other.len
+    pure fn eq(other: &creader_cache_key) -> bool {
+        self.cnum == (*other).cnum &&
+            self.pos == (*other).pos &&
+            self.len == (*other).len
     }
-    pure fn ne(&&other: creader_cache_key) -> bool {
-        !(self == other)
+    pure fn ne(other: &creader_cache_key) -> bool {
+        !(self == (*other))
     }
 }
 
 impl creader_cache_key : to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
         to_bytes::iter_bytes_3(&self.cnum, &self.pos, &self.len, lsb0, f);
     }
 }
 
-type intern_key = {struct: sty, o_def_id: Option<ast::def_id>};
+type intern_key = {sty: sty, o_def_id: Option<ast::def_id>};
 
-impl intern_key: cmp::Eq {
-    pure fn eq(&&other: intern_key) -> bool {
-        self.struct == other.struct && self.o_def_id == other.o_def_id
+impl intern_key : cmp::Eq {
+    pure fn eq(other: &intern_key) -> bool {
+        self.sty == (*other).sty && self.o_def_id == (*other).o_def_id
     }
-    pure fn ne(&&other: intern_key) -> bool { !self.eq(other) }
+    pure fn ne(other: &intern_key) -> bool { !self.eq(other) }
 }
 
 impl intern_key : to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
-        to_bytes::iter_bytes_2(&self.struct, &self.o_def_id, lsb0, f);
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+        to_bytes::iter_bytes_2(&self.sty, &self.o_def_id, lsb0, f);
     }
 }
 
@@ -272,9 +279,9 @@ type opt_region_variance = Option<region_variance>;
 #[auto_serialize]
 enum region_variance { rv_covariant, rv_invariant, rv_contravariant }
 
-impl region_variance: cmp::Eq {
-    pure fn eq(&&other: region_variance) -> bool {
-        match (self, other) {
+impl region_variance : cmp::Eq {
+    pure fn eq(other: &region_variance) -> bool {
+        match (self, (*other)) {
             (rv_covariant, rv_covariant) => true,
             (rv_invariant, rv_invariant) => true,
             (rv_contravariant, rv_contravariant) => true,
@@ -283,29 +290,37 @@ impl region_variance: cmp::Eq {
             (rv_contravariant, _) => false
         }
     }
-    pure fn ne(&&other: region_variance) -> bool { !self.eq(other) }
+    pure fn ne(other: &region_variance) -> bool { !self.eq(other) }
 }
 
-// N.B.: Borrows from inlined content are not accurately deserialized.  This
-// is because we don't need the details in trans, we only care if there is an
-// entry in the table or not.
-type borrow = {
-    region: ty::region,
+#[auto_serialize]
+type AutoAdjustment = {
+    autoderefs: uint,
+    autoref: Option<AutoRef>
+};
+
+#[auto_serialize]
+type AutoRef = {
+    kind: AutoRefKind,
+    region: region,
     mutbl: ast::mutability
 };
 
-impl borrow : cmp::Eq {
-    pure fn eq(&&other: borrow) -> bool {
-        self.region == other.region && self.mutbl == other.mutbl
-    }
-    pure fn ne(&&other: borrow) -> bool { !self.eq(other) }
+#[auto_serialize]
+enum AutoRefKind {
+    /// Convert from @[]/~[] to &[] (or str)
+    AutoSlice,
+
+    /// Convert from T to &T
+    AutoPtr
 }
 
 type ctxt =
     @{diag: syntax::diagnostic::span_handler,
-      interner: hashmap<intern_key, t_box>,
+      interner: HashMap<intern_key, t_box>,
       mut next_id: uint,
       vecs_implicitly_copyable: bool,
+      legacy_modes: bool,
       cstore: metadata::cstore::cstore,
       sess: session::session,
       def_map: resolve::DefMap,
@@ -322,26 +337,26 @@ type ctxt =
       // of this node.  This only applies to nodes that refer to entities
       // parameterized by type parameters, such as generic fns, types, or
       // other items.
-      node_type_substs: hashmap<node_id, ~[t]>,
+      node_type_substs: HashMap<node_id, ~[t]>,
 
       items: ast_map::map,
-      intrinsic_defs: hashmap<ast::ident, (ast::def_id, t)>,
+      intrinsic_defs: HashMap<ast::ident, (ast::def_id, t)>,
       freevars: freevars::freevar_map,
       tcache: type_cache,
       rcache: creader_cache,
       ccache: constness_cache,
-      short_names_cache: hashmap<t, @~str>,
-      needs_drop_cache: hashmap<t, bool>,
-      needs_unwind_cleanup_cache: hashmap<t, bool>,
-      kind_cache: hashmap<t, kind>,
-      ast_ty_to_ty_cache: hashmap<@ast::ty, ast_ty_to_ty_cache_entry>,
-      enum_var_cache: hashmap<def_id, @~[variant_info]>,
-      trait_method_cache: hashmap<def_id, @~[method]>,
-      ty_param_bounds: hashmap<ast::node_id, param_bounds>,
-      inferred_modes: hashmap<ast::node_id, ast::mode>,
-      // maps the id of borrowed expr to scope of borrowed ptr
-      borrowings: hashmap<ast::node_id, borrow>,
-      normalized_cache: hashmap<t, t>};
+      short_names_cache: HashMap<t, @~str>,
+      needs_drop_cache: HashMap<t, bool>,
+      needs_unwind_cleanup_cache: HashMap<t, bool>,
+      kind_cache: HashMap<t, kind>,
+      ast_ty_to_ty_cache: HashMap<@ast::ty, ast_ty_to_ty_cache_entry>,
+      enum_var_cache: HashMap<def_id, @~[variant_info]>,
+      trait_method_cache: HashMap<def_id, @~[method]>,
+      ty_param_bounds: HashMap<ast::node_id, param_bounds>,
+      inferred_modes: HashMap<ast::node_id, ast::mode>,
+      adjustments: HashMap<ast::node_id, @AutoAdjustment>,
+      normalized_cache: HashMap<t, t>,
+      lang_items: middle::lang_items::LanguageItems};
 
 enum tbox_flag {
     has_params = 1,
@@ -354,7 +369,7 @@ enum tbox_flag {
     needs_subst = 1 | 2 | 8
 }
 
-type t_box = @{struct: sty,
+type t_box = @{sty: sty,
                id: uint,
                flags: uint,
                o_def_id: Option<ast::def_id>};
@@ -368,9 +383,9 @@ enum t_opaque {}
 type t = *t_opaque;
 
 pure fn get(t: t) -> t_box unsafe {
-    let t2 = unsafe::reinterpret_cast::<t, t_box>(&t);
+    let t2 = cast::reinterpret_cast::<t, t_box>(&t);
     let t3 = t2;
-    unsafe::forget(t2);
+    cast::forget(move t2);
     t3
 }
 
@@ -391,16 +406,16 @@ enum closure_kind {
 }
 
 impl closure_kind : to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
         (self as u8).iter_bytes(lsb0, f)
     }
 }
 
 impl closure_kind : cmp::Eq {
-    pure fn eq(&&other: closure_kind) -> bool {
-        (self as uint) == (other as uint)
+    pure fn eq(other: &closure_kind) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: closure_kind) -> bool { !self.eq(other) }
+    pure fn ne(other: &closure_kind) -> bool { !self.eq(other) }
 }
 
 enum fn_proto {
@@ -409,7 +424,7 @@ enum fn_proto {
 }
 
 impl fn_proto : to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
         match self {
           proto_bare =>
           0u8.iter_bytes(lsb0, f),
@@ -421,23 +436,23 @@ impl fn_proto : to_bytes::IterBytes {
 }
 
 impl fn_proto : cmp::Eq {
-    pure fn eq(&&other: fn_proto) -> bool {
+    pure fn eq(other: &fn_proto) -> bool {
         match self {
             proto_bare => {
-                match other {
+                match (*other) {
                     proto_bare => true,
                     _ => false
                 }
             }
             proto_vstore(e0a) => {
-                match other {
+                match (*other) {
                     proto_vstore(e0b) => e0a == e0b,
                     _ => false
                 }
             }
         }
     }
-    pure fn ne(&&other: fn_proto) -> bool { !self.eq(other) }
+    pure fn ne(other: &fn_proto) -> bool { !self.eq(other) }
 }
 
 /**
@@ -479,21 +494,22 @@ type FnTy = FnTyBase<FnMeta>;
 
 type param_ty = {idx: uint, def_id: def_id};
 
-impl param_ty: cmp::Eq {
-    pure fn eq(&&other: param_ty) -> bool {
-        self.idx == other.idx && self.def_id == other.def_id
+impl param_ty : cmp::Eq {
+    pure fn eq(other: &param_ty) -> bool {
+        self.idx == (*other).idx && self.def_id == (*other).def_id
     }
-    pure fn ne(&&other: param_ty) -> bool { !self.eq(other) }
+    pure fn ne(other: &param_ty) -> bool { !self.eq(other) }
 }
 
 impl param_ty : to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
         to_bytes::iter_bytes_2(&self.idx, &self.def_id, lsb0, f)
     }
 }
 
 
 /// Representation of regions:
+#[auto_serialize]
 enum region {
     /// Bound regions are found (primarily) in function types.  They indicate
     /// region parameters that have yet to be replaced with actual regions
@@ -521,6 +537,7 @@ enum region {
     re_var(RegionVid)
 }
 
+#[auto_serialize]
 enum bound_region {
     /// The self region for classes, impls (&T in a type defn or &self/T)
     br_self,
@@ -531,35 +548,37 @@ enum bound_region {
     /// Named region parameters for functions (a in &a/T)
     br_named(ast::ident),
 
-    /// Handles capture-avoiding substitution in a rather subtle case.  If you
-    /// have a closure whose argument types are being inferred based on the
-    /// expected type, and the expected type includes bound regions, then we
-    /// will wrap those bound regions in a br_cap_avoid() with the id of the
-    /// fn expression.  This ensures that the names are not "captured" by the
-    /// enclosing scope, which may define the same names.  For an example of
-    /// where this comes up, see src/test/compile-fail/regions-ret-borrowed.rs
-    /// and regions-ret-borrowed-1.rs.
+    /**
+     * Handles capture-avoiding substitution in a rather subtle case.  If you
+     * have a closure whose argument types are being inferred based on the
+     * expected type, and the expected type includes bound regions, then we
+     * will wrap those bound regions in a br_cap_avoid() with the id of the
+     * fn expression.  This ensures that the names are not "captured" by the
+     * enclosing scope, which may define the same names.  For an example of
+     * where this comes up, see src/test/compile-fail/regions-ret-borrowed.rs
+     * and regions-ret-borrowed-1.rs. */
     br_cap_avoid(ast::node_id, @bound_region),
 }
 
 type opt_region = Option<region>;
 
-/// The type substs represents the kinds of things that can be substituted to
-/// convert a polytype into a monotype.  Note however that substituting bound
-/// regions other than `self` is done through a different mechanism.
-///
-/// `tps` represents the type parameters in scope.  They are indexed according
-/// to the order in which they were declared.
-///
-/// `self_r` indicates the region parameter `self` that is present on nominal
-/// types (enums, classes) declared as having a region parameter.  `self_r`
-/// should always be none for types that are not region-parameterized and
-/// Some(_) for types that are.  The only bound region parameter that should
-/// appear within a region-parameterized type is `self`.
-///
-/// `self_ty` is the type to which `self` should be remapped, if any.  The
-/// `self` type is rather funny in that it can only appear on traits and
-/// is always substituted away to the implementing type for a trait.
+/**
+ * The type substs represents the kinds of things that can be substituted to
+ * convert a polytype into a monotype.  Note however that substituting bound
+ * regions other than `self` is done through a different mechanism:
+ *
+ * - `tps` represents the type parameters in scope.  They are indexed
+ *   according to the order in which they were declared.
+ *
+ * - `self_r` indicates the region parameter `self` that is present on nominal
+ *   types (enums, classes) declared as having a region parameter.  `self_r`
+ *   should always be none for types that are not region-parameterized and
+ *   Some(_) for types that are.  The only bound region parameter that should
+ *   appear within a region-parameterized type is `self`.
+ *
+ * - `self_ty` is the type to which `self` should be remapped, if any.  The
+ *   `self` type is rather funny in that it can only appear on traits and is
+ *   always substituted away to the implementing type for a trait. */
 type substs = {
     self_r: opt_region,
     self_ty: Option<ty::t>,
@@ -648,6 +667,7 @@ enum param_bound {
 enum TyVid = uint;
 enum IntVid = uint;
 enum FnVid = uint;
+#[auto_serialize]
 enum RegionVid = uint;
 
 enum InferTy {
@@ -656,7 +676,7 @@ enum InferTy {
 }
 
 impl InferTy : to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
         match self {
           TyVar(ref tv) => to_bytes::iter_bytes_2(&0u8, tv, lsb0, f),
           IntVar(ref iv) => to_bytes::iter_bytes_2(&1u8, iv, lsb0, f)
@@ -665,7 +685,7 @@ impl InferTy : to_bytes::IterBytes {
 }
 
 impl param_bound : to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
         match self {
           bound_copy => 0u8.iter_bytes(lsb0, f),
           bound_owned => 1u8.iter_bytes(lsb0, f),
@@ -729,25 +749,25 @@ impl purity: purity_to_str {
 }
 
 impl RegionVid : to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
         (*self).iter_bytes(lsb0, f)
     }
 }
 
 impl TyVid : to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
         (*self).iter_bytes(lsb0, f)
     }
 }
 
 impl IntVid : to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
         (*self).iter_bytes(lsb0, f)
     }
 }
 
 impl FnVid : to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
         (*self).iter_bytes(lsb0, f)
     }
 }
@@ -755,7 +775,7 @@ impl FnVid : to_bytes::IterBytes {
 fn param_bounds_to_kind(bounds: param_bounds) -> kind {
     let mut kind = kind_noncopyable();
     for vec::each(*bounds) |bound| {
-        match bound {
+        match *bound {
           bound_copy => {
             kind = raise_kind(kind, kind_implicitly_copyable());
           }
@@ -788,19 +808,19 @@ type ty_param_bounds_and_ty = {bounds: @~[param_bounds],
                                region_param: Option<region_variance>,
                                ty: t};
 
-type type_cache = hashmap<ast::def_id, ty_param_bounds_and_ty>;
+type type_cache = HashMap<ast::def_id, ty_param_bounds_and_ty>;
 
-type constness_cache = hashmap<ast::def_id, const_eval::constness>;
+type constness_cache = HashMap<ast::def_id, const_eval::constness>;
 
 type node_type_table = @smallintmap::SmallIntMap<t>;
 
 fn mk_rcache() -> creader_cache {
     type val = {cnum: int, pos: uint, len: uint};
-    return map::hashmap();
+    return map::HashMap();
 }
 
-fn new_ty_hash<V: Copy>() -> map::hashmap<t, V> {
-    map::hashmap()
+fn new_ty_hash<V: Copy>() -> map::HashMap<t, V> {
+    map::HashMap()
 }
 
 fn mk_ctxt(s: session::session,
@@ -808,8 +828,21 @@ fn mk_ctxt(s: session::session,
            amap: ast_map::map,
            freevars: freevars::freevar_map,
            region_map: middle::region::region_map,
-           region_paramd_items: middle::region::region_paramd_items) -> ctxt {
-    let interner = map::hashmap();
+           region_paramd_items: middle::region::region_paramd_items,
+           +lang_items: middle::lang_items::LanguageItems,
+           crate: @ast::crate) -> ctxt {
+    let mut legacy_modes = false;
+    for crate.node.attrs.each |attribute| {
+        match attribute.node.value.node {
+            ast::meta_word(w) if w == ~"legacy_modes" => {
+                legacy_modes = true;
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    let interner = map::HashMap();
     let vecs_implicitly_copyable =
         get_lint_level(s.lint_settings.default_settings,
                        lint::vecs_implicitly_copyable) == allow;
@@ -817,30 +850,32 @@ fn mk_ctxt(s: session::session,
       interner: interner,
       mut next_id: 0u,
       vecs_implicitly_copyable: vecs_implicitly_copyable,
+      legacy_modes: legacy_modes,
       cstore: s.cstore,
       sess: s,
       def_map: dm,
       region_map: region_map,
       region_paramd_items: region_paramd_items,
       node_types: @smallintmap::mk(),
-      node_type_substs: map::int_hash(),
+      node_type_substs: map::HashMap(),
       items: amap,
-      intrinsic_defs: map::uint_hash(),
+      intrinsic_defs: map::HashMap(),
       freevars: freevars,
-      tcache: ast_util::new_def_hash(),
+      tcache: HashMap(),
       rcache: mk_rcache(),
-      ccache: ast_util::new_def_hash(),
+      ccache: HashMap(),
       short_names_cache: new_ty_hash(),
       needs_drop_cache: new_ty_hash(),
       needs_unwind_cleanup_cache: new_ty_hash(),
       kind_cache: new_ty_hash(),
-      ast_ty_to_ty_cache: map::hashmap(),
-      enum_var_cache: new_def_hash(),
-      trait_method_cache: new_def_hash(),
-      ty_param_bounds: map::int_hash(),
-      inferred_modes: map::int_hash(),
-      borrowings: map::int_hash(),
-      normalized_cache: new_ty_hash()}
+      ast_ty_to_ty_cache: HashMap(),
+      enum_var_cache: HashMap(),
+      trait_method_cache: HashMap(),
+      ty_param_bounds: HashMap(),
+      inferred_modes: HashMap(),
+      adjustments: HashMap(),
+      normalized_cache: new_ty_hash(),
+      lang_items: move lang_items}
 }
 
 
@@ -850,9 +885,9 @@ fn mk_t(cx: ctxt, +st: sty) -> t { mk_t_with_id(cx, st, None) }
 // Interns a type/name combination, stores the resulting box in cx.interner,
 // and returns the box as cast to an unsafe ptr (see comments for t above).
 fn mk_t_with_id(cx: ctxt, +st: sty, o_def_id: Option<ast::def_id>) -> t {
-    let key = {struct: st, o_def_id: o_def_id};
+    let key = {sty: st, o_def_id: o_def_id};
     match cx.interner.find(key) {
-      Some(t) => unsafe { return unsafe::reinterpret_cast(&t); },
+      Some(t) => unsafe { return cast::reinterpret_cast(&t); },
       _ => ()
     }
     let mut flags = 0u;
@@ -866,7 +901,7 @@ fn mk_t_with_id(cx: ctxt, +st: sty, o_def_id: Option<ast::def_id>) -> t {
     }
     fn sflags(substs: &substs) -> uint {
         let mut f = 0u;
-        for substs.tps.each |tt| { f |= get(tt).flags; }
+        for substs.tps.each |tt| { f |= get(*tt).flags; }
         substs.self_r.iter(|r| f |= rflags(r));
         return f;
     }
@@ -897,7 +932,7 @@ fn mk_t_with_id(cx: ctxt, +st: sty, o_def_id: Option<ast::def_id>) -> t {
         flags |= get(m.ty).flags;
       }
       ty_rec(flds) => for flds.each |f| { flags |= get(f.mt.ty).flags; },
-      ty_tup(ts) => for ts.each |tt| { flags |= get(tt).flags; },
+      ty_tup(ts) => for ts.each |tt| { flags |= get(*tt).flags; },
       ty_fn(ref f) => {
         match f.meta.proto {
             ty::proto_vstore(vstore_slice(r)) => flags |= rflags(r),
@@ -907,10 +942,10 @@ fn mk_t_with_id(cx: ctxt, +st: sty, o_def_id: Option<ast::def_id>) -> t {
         flags |= get(f.sig.output).flags;
       }
     }
-    let t = @{struct: st, id: cx.next_id, flags: flags, o_def_id: o_def_id};
+    let t = @{sty: st, id: cx.next_id, flags: flags, o_def_id: o_def_id};
     cx.interner.insert(key, t);
     cx.next_id += 1u;
-    unsafe { unsafe::reinterpret_cast(&t) }
+    unsafe { cast::reinterpret_cast(&t) }
 }
 
 fn mk_nil(cx: ctxt) -> t { mk_t(cx, ty_nil) }
@@ -1042,12 +1077,12 @@ fn mk_opaque_closure_ptr(cx: ctxt, ck: closure_kind) -> t {
 fn mk_opaque_box(cx: ctxt) -> t { mk_t(cx, ty_opaque_box) }
 
 fn mk_with_id(cx: ctxt, base: t, def_id: ast::def_id) -> t {
-    mk_t_with_id(cx, get(base).struct, Some(def_id))
+    mk_t_with_id(cx, get(base).sty, Some(def_id))
 }
 
 // Converts s to its machine type equivalent
 pure fn mach_sty(cfg: @session::config, t: t) -> sty {
-    match get(t).struct {
+    match get(t).sty {
       ty_int(ast::ty_i) => ty_int(cfg.int_type),
       ty_uint(ast::ty_u) => ty_uint(cfg.uint_type),
       ty_float(ast::ty_f) => ty_float(cfg.float_type),
@@ -1055,9 +1090,44 @@ pure fn mach_sty(cfg: @session::config, t: t) -> sty {
     }
 }
 
-fn default_arg_mode_for_ty(ty: ty::t) -> ast::rmode {
-    if ty::type_is_immediate(ty) { ast::by_val }
-    else { ast::by_ref }
+fn default_arg_mode_for_ty(tcx: ctxt, ty: ty::t) -> ast::rmode {
+    return if type_is_fn(ty) {
+        //    ^^^^^^^^^^^^^^
+        // FIXME(#2202) --- We retain by-ref by default to workaround a memory
+        // leak that otherwise results when @fn is upcast to &fn.
+        ast::by_ref
+    } else if tcx.legacy_modes {
+        if type_is_borrowed(ty) {
+            // the old mode default was ++ for things like &ptr, but to be
+            // forward-compatible with non-legacy, we should use +
+            ast::by_copy
+        } else if ty::type_is_immediate(ty) {
+            ast::by_val
+        } else {
+            ast::by_ref
+        }
+    } else {
+        ast::by_copy
+    };
+
+    fn type_is_fn(ty: t) -> bool {
+        match get(ty).sty {
+            ty_fn(*) => true,
+            _ => false
+        }
+    }
+
+    fn type_is_borrowed(ty: t) -> bool {
+        match ty::get(ty).sty {
+            ty::ty_rptr(*) => true,
+            ty_evec(_, vstore_slice(_)) => true,
+            ty_estr(vstore_slice(_)) => true,
+
+            // technically, we prob ought to include
+            // &fn(), but that is treated specially due to #2202
+            _ => false
+        }
+    }
 }
 
 // Returns the narrowest lifetime enclosing the evaluation of the expression
@@ -1075,7 +1145,7 @@ fn walk_ty(ty: t, f: fn(t)) {
 
 fn maybe_walk_ty(ty: t, f: fn(t) -> bool) {
     if !f(ty) { return; }
-    match get(ty).struct {
+    match get(ty).sty {
       ty_nil | ty_bot | ty_bool | ty_int(_) | ty_uint(_) | ty_float(_) |
       ty_estr(_) | ty_type | ty_opaque_box | ty_self |
       ty_opaque_closure_ptr(_) | ty_infer(_) | ty_param(_) => {
@@ -1086,12 +1156,12 @@ fn maybe_walk_ty(ty: t, f: fn(t) -> bool) {
       }
       ty_enum(_, substs) | ty_class(_, substs) |
       ty_trait(_, substs, _) => {
-        for substs.tps.each |subty| { maybe_walk_ty(subty, f); }
+        for substs.tps.each |subty| { maybe_walk_ty(*subty, f); }
       }
       ty_rec(fields) => {
         for fields.each |fl| { maybe_walk_ty(fl.mt.ty, f); }
       }
-      ty_tup(ts) => { for ts.each |tt| { maybe_walk_ty(tt, f); } }
+      ty_tup(ts) => { for ts.each |tt| { maybe_walk_ty(*tt, f); } }
       ty_fn(ref ft) => {
         for ft.sig.inputs.each |a| { maybe_walk_ty(a.ty, f); }
         maybe_walk_ty(ft.sig.output, f);
@@ -1108,7 +1178,7 @@ fn fold_sty(sty: &sty, fldop: fn(t) -> t) -> sty {
     fn fold_substs(substs: &substs, fldop: fn(t) -> t) -> substs {
         {self_r: substs.self_r,
          self_ty: substs.self_ty.map(|t| fldop(t)),
-         tps: substs.tps.map(|t| fldop(t))}
+         tps: substs.tps.map(|t| fldop(*t))}
     }
 
     match *sty {
@@ -1142,7 +1212,7 @@ fn fold_sty(sty: &sty, fldop: fn(t) -> t) -> sty {
             ty_rec(new_fields)
         }
         ty_tup(ts) => {
-            let new_ts = vec::map(ts, |tt| fldop(tt));
+            let new_ts = vec::map(ts, |tt| fldop(*tt));
             ty_tup(new_ts)
         }
         ty_fn(ref f) => {
@@ -1172,7 +1242,7 @@ fn fold_sty(sty: &sty, fldop: fn(t) -> t) -> sty {
 
 // Folds types from the bottom up.
 fn fold_ty(cx: ctxt, t0: t, fldop: fn(t) -> t) -> t {
-    let sty = fold_sty(&get(t0).struct, |t| fold_ty(cx, fldop(t), fldop));
+    let sty = fold_sty(&get(t0).sty, |t| fold_ty(cx, fldop(t), fldop));
     fldop(mk_t(cx, sty))
 }
 
@@ -1205,11 +1275,11 @@ fn fold_regions_and_ty(
 
         {self_r: substs.self_r.map(|r| fldr(r)),
          self_ty: substs.self_ty.map(|t| fldt(t)),
-         tps: substs.tps.map(|t| fldt(t))}
+         tps: substs.tps.map(|t| fldt(*t))}
     }
 
     let tb = ty::get(ty);
-    match tb.struct {
+    match tb.sty {
       ty::ty_rptr(r, mt) => {
         let m_r = fldr(r);
         let m_t = fldt(mt.ty);
@@ -1284,7 +1354,7 @@ fn fold_region(cx: ctxt, t0: t, fldop: fn(region, bool) -> region) -> t {
                fldop: fn(region, bool) -> region) -> t {
         let tb = get(t0);
         if !tbox_has_flag(tb, has_regions) { return t0; }
-        match tb.struct {
+        match tb.sty {
           ty_rptr(r, {ty: t1, mutbl: m}) => {
             let m_r = fldop(r, under_r);
             let m_t1 = do_fold(cx, t1, true, fldop);
@@ -1319,7 +1389,7 @@ fn subst_tps(cx: ctxt, tps: &[t], typ: t) -> t {
     if tps.len() == 0u { return typ; }
     let tb = ty::get(typ);
     if !tbox_has_flag(tb, has_params) { return typ; }
-    match tb.struct {
+    match tb.sty {
       ty_param(p) => tps[p.idx],
       ref sty => fold_sty_to_ty(cx, sty, |t| subst_tps(cx, tps, t))
     }
@@ -1335,7 +1405,21 @@ fn substs_to_str(cx: ctxt, substs: &substs) -> ~str {
     fmt!("substs(self_r=%s, self_ty=%s, tps=%?)",
          substs.self_r.map_default(~"none", |r| region_to_str(cx, r)),
          substs.self_ty.map_default(~"none", |t| ty_to_str(cx, t)),
-         substs.tps.map(|t| ty_to_str(cx, t)))
+         tys_to_str(cx, substs.tps))
+}
+
+fn param_bound_to_str(cx: ctxt, pb: &param_bound) -> ~str {
+    match *pb {
+        bound_copy => ~"copy",
+        bound_owned => ~"owned",
+        bound_send => ~"send",
+        bound_const => ~"const",
+        bound_trait(t) => ty_to_str(cx, t)
+    }
+}
+
+fn param_bounds_to_str(cx: ctxt, pbs: param_bounds) -> ~str {
+    fmt!("%?", pbs.map(|pb| param_bound_to_str(cx, pb)))
 }
 
 fn subst(cx: ctxt,
@@ -1356,7 +1440,7 @@ fn subst(cx: ctxt,
                 typ: t) -> t {
         let tb = get(typ);
         if !tbox_has_flag(tb, needs_subst) { return typ; }
-        match tb.struct {
+        match tb.sty {
           ty_param(p) => substs.tps[p.idx],
           ty_self => substs.self_ty.get(),
           _ => {
@@ -1375,21 +1459,21 @@ fn subst(cx: ctxt,
 
 // Type utilities
 
-fn type_is_nil(ty: t) -> bool { get(ty).struct == ty_nil }
+fn type_is_nil(ty: t) -> bool { get(ty).sty == ty_nil }
 
-fn type_is_bot(ty: t) -> bool { get(ty).struct == ty_bot }
+fn type_is_bot(ty: t) -> bool { get(ty).sty == ty_bot }
 
 fn type_is_ty_var(ty: t) -> bool {
-    match get(ty).struct {
+    match get(ty).sty {
       ty_infer(TyVar(_)) => true,
       _ => false
     }
 }
 
-fn type_is_bool(ty: t) -> bool { get(ty).struct == ty_bool }
+fn type_is_bool(ty: t) -> bool { get(ty).sty == ty_bool }
 
 fn type_is_structural(ty: t) -> bool {
-    match get(ty).struct {
+    match get(ty).sty {
       ty_rec(_) | ty_class(*) | ty_tup(_) | ty_enum(*) | ty_fn(_) |
       ty_trait(*) |
       ty_evec(_, vstore_fixed(_)) | ty_estr(vstore_fixed(_)) |
@@ -1404,21 +1488,21 @@ fn type_is_copyable(cx: ctxt, ty: t) -> bool {
 }
 
 fn type_is_sequence(ty: t) -> bool {
-    match get(ty).struct {
+    match get(ty).sty {
       ty_estr(_) | ty_evec(_, _) => true,
       _ => false
     }
 }
 
 fn type_is_str(ty: t) -> bool {
-    match get(ty).struct {
+    match get(ty).sty {
       ty_estr(_) => true,
       _ => false
     }
 }
 
 fn sequence_element_type(cx: ctxt, ty: t) -> t {
-    match get(ty).struct {
+    match get(ty).sty {
       ty_estr(_) => return mk_mach_uint(cx, ast::ty_u8),
       ty_evec(mt, _) | ty_unboxed_vec(mt) => return mt.ty,
       _ => cx.sess.bug(
@@ -1427,7 +1511,7 @@ fn sequence_element_type(cx: ctxt, ty: t) -> t {
 }
 
 fn get_element_type(ty: t, i: uint) -> t {
-    match get(ty).struct {
+    match get(ty).sty {
       ty_rec(flds) => return flds[i].mt.ty,
       ty_tup(ts) => return ts[i],
       _ => fail ~"get_element_type called on invalid type"
@@ -1435,14 +1519,14 @@ fn get_element_type(ty: t, i: uint) -> t {
 }
 
 pure fn type_is_box(ty: t) -> bool {
-    match get(ty).struct {
+    match get(ty).sty {
       ty_box(_) => return true,
       _ => return false
     }
 }
 
 pure fn type_is_boxed(ty: t) -> bool {
-    match get(ty).struct {
+    match get(ty).sty {
       ty_box(_) | ty_opaque_box |
       ty_evec(_, vstore_box) | ty_estr(vstore_box) => true,
       _ => false
@@ -1450,35 +1534,35 @@ pure fn type_is_boxed(ty: t) -> bool {
 }
 
 pure fn type_is_region_ptr(ty: t) -> bool {
-    match get(ty).struct {
+    match get(ty).sty {
       ty_rptr(_, _) => true,
       _ => false
     }
 }
 
 pure fn type_is_slice(ty: t) -> bool {
-    match get(ty).struct {
+    match get(ty).sty {
       ty_evec(_, vstore_slice(_)) | ty_estr(vstore_slice(_)) => true,
       _ => return false
     }
 }
 
 pure fn type_is_unique_box(ty: t) -> bool {
-    match get(ty).struct {
+    match get(ty).sty {
       ty_uniq(_) => return true,
       _ => return false
     }
 }
 
 pure fn type_is_unsafe_ptr(ty: t) -> bool {
-    match get(ty).struct {
+    match get(ty).sty {
       ty_ptr(_) => return true,
       _ => return false
     }
 }
 
 pure fn type_is_vec(ty: t) -> bool {
-    return match get(ty).struct {
+    return match get(ty).sty {
           ty_evec(_, _) | ty_unboxed_vec(_) => true,
           ty_estr(_) => true,
           _ => false
@@ -1486,7 +1570,7 @@ pure fn type_is_vec(ty: t) -> bool {
 }
 
 pure fn type_is_unique(ty: t) -> bool {
-    match get(ty).struct {
+    match get(ty).sty {
       ty_uniq(_) => return true,
       ty_evec(_, vstore_uniq) => true,
       ty_estr(vstore_uniq) => true,
@@ -1500,7 +1584,7 @@ pure fn type_is_unique(ty: t) -> bool {
  contents are abstract to rustc.)
 */
 pure fn type_is_scalar(ty: t) -> bool {
-    match get(ty).struct {
+    match get(ty).sty {
       ty_nil | ty_bool | ty_int(_) | ty_float(_) | ty_uint(_) |
       ty_infer(IntVar(_)) | ty_type | ty_ptr(_) => true,
       _ => false
@@ -1519,12 +1603,26 @@ fn type_needs_drop(cx: ctxt, ty: t) -> bool {
     }
 
     let mut accum = false;
-    let result = match get(ty).struct {
+    let result = match get(ty).sty {
       // scalar types
       ty_nil | ty_bot | ty_bool | ty_int(_) | ty_float(_) | ty_uint(_) |
       ty_type | ty_ptr(_) | ty_rptr(_, _) |
-      ty_estr(vstore_fixed(_)) | ty_estr(vstore_slice(_)) |
-      ty_evec(_, vstore_slice(_)) => false,
+      ty_estr(vstore_fixed(_)) |
+      ty_estr(vstore_slice(_)) |
+      ty_evec(_, vstore_slice(_)) |
+      ty_self => false,
+
+      ty_box(_) | ty_uniq(_) |
+      ty_opaque_box | ty_opaque_closure_ptr(*) |
+      ty_estr(vstore_uniq) |
+      ty_estr(vstore_box) |
+      ty_evec(_, vstore_uniq) |
+      ty_evec(_, vstore_box) => true,
+
+      ty_trait(*) => true,
+
+      ty_param(*) | ty_infer(*) => true,
+
       ty_evec(mt, vstore_fixed(_)) => type_needs_drop(cx, mt.ty),
       ty_unboxed_vec(mt) => type_needs_drop(cx, mt.ty),
       ty_rec(flds) => {
@@ -1535,15 +1633,15 @@ fn type_needs_drop(cx: ctxt, ty: t) -> bool {
       }
       ty_class(did, ref substs) => {
          // Any class with a dtor needs a drop
-         option::is_some(ty_dtor(cx, did)) || {
+         ty_dtor(cx, did).is_some() || {
              for vec::each(ty::class_items_as_fields(cx, did, substs)) |f| {
-             if type_needs_drop(cx, f.mt.ty) { accum = true; }
-           }
-           accum
+                 if type_needs_drop(cx, f.mt.ty) { accum = true; }
+             }
+             accum
          }
       }
       ty_tup(elts) => {
-          for elts.each |m| { if type_needs_drop(cx, m) { accum = true; } }
+          for elts.each |m| { if type_needs_drop(cx, *m) { accum = true; } }
         accum
       }
       ty_enum(did, ref substs) => {
@@ -1551,7 +1649,7 @@ fn type_needs_drop(cx: ctxt, ty: t) -> bool {
           for vec::each(*variants) |variant| {
               for variant.args.each |aty| {
                 // Perform any type parameter substitutions.
-                let arg_ty = subst(cx, substs, aty);
+                let arg_ty = subst(cx, substs, *aty);
                 if type_needs_drop(cx, arg_ty) { accum = true; }
             }
             if accum { break; }
@@ -1564,7 +1662,6 @@ fn type_needs_drop(cx: ctxt, ty: t) -> bool {
           _ => true
         }
       }
-      _ => true
     };
 
     cx.needs_drop_cache.insert(ty, result);
@@ -1589,7 +1686,7 @@ fn type_needs_unwind_cleanup(cx: ctxt, ty: t) -> bool {
 }
 
 fn type_needs_unwind_cleanup_(cx: ctxt, ty: t,
-                              tycache: map::hashmap<t, ()>,
+                              tycache: map::HashMap<t, ()>,
                               encountered_box: bool) -> bool {
 
     // Prevent infinite recursion
@@ -1602,7 +1699,7 @@ fn type_needs_unwind_cleanup_(cx: ctxt, ty: t,
     let mut needs_unwind_cleanup = false;
     do maybe_walk_ty(ty) |ty| {
         let old_encountered_box = encountered_box;
-        let result = match get(ty).struct {
+        let result = match get(ty).sty {
           ty_box(_) | ty_opaque_box => {
             encountered_box = true;
             true
@@ -1615,7 +1712,7 @@ fn type_needs_unwind_cleanup_(cx: ctxt, ty: t,
           ty_enum(did, ref substs) => {
             for vec::each(*enum_variants(cx, did)) |v| {
                 for v.args.each |aty| {
-                    let t = subst(cx, substs, aty);
+                    let t = subst(cx, substs, *aty);
                     needs_unwind_cleanup |=
                         type_needs_unwind_cleanup_(cx, t, tycache,
                                                    encountered_box);
@@ -1739,26 +1836,26 @@ fn remove_copyable(k: kind) -> kind {
     k - kind_(KIND_MASK_COPY | KIND_MASK_DEFAULT_MODE)
 }
 
-impl kind: ops::BitAnd<kind,kind> {
-    pure fn bitand(other: kind) -> kind {
-        unchecked {
-            lower_kind(self, other)
+impl kind : ops::BitAnd<kind,kind> {
+    pure fn bitand(other: &kind) -> kind {
+        unsafe {
+            lower_kind(self, (*other))
         }
     }
 }
 
-impl kind: ops::BitOr<kind,kind> {
-    pure fn bitor(other: kind) -> kind {
-        unchecked {
-            raise_kind(self, other)
+impl kind : ops::BitOr<kind,kind> {
+    pure fn bitor(other: &kind) -> kind {
+        unsafe {
+            raise_kind(self, (*other))
         }
     }
 }
 
-impl kind: ops::Sub<kind,kind> {
-    pure fn sub(other: kind) -> kind {
-        unchecked {
-            kind_(*self & !*other)
+impl kind : ops::Sub<kind,kind> {
+    pure fn sub(other: &kind) -> kind {
+        unsafe {
+            kind_(*self & !*(*other))
         }
     }
 }
@@ -1855,7 +1952,7 @@ fn type_kind(cx: ctxt, ty: t) -> kind {
     // Insert a default in case we loop back on self recursively.
     cx.kind_cache.insert(ty, kind_top());
 
-    let mut result = match get(ty).struct {
+    let mut result = match get(ty).sty {
       // Scalar and unique types are sendable, constant, and owned
       ty_nil | ty_bot | ty_bool | ty_int(_) | ty_uint(_) | ty_float(_) |
       ty_ptr(_) => {
@@ -1883,7 +1980,11 @@ fn type_kind(cx: ctxt, ty: t) -> kind {
       // Trait instances are (for now) like shared boxes, basically
       ty_trait(_, _, _) => kind_safe_for_default_mode() | kind_owned(),
 
-      // Region pointers are copyable but NOT owned nor sendable
+      // Static region pointers are copyable and sendable, but not owned
+      ty_rptr(re_static, mt) =>
+      kind_safe_for_default_mode() | mutable_type_kind(cx, mt),
+
+      // General region pointers are copyable but NOT owned nor sendable
       ty_rptr(_, _) => kind_safe_for_default_mode(),
 
       // Unique boxes and vecs have the kind of their contained type,
@@ -1905,6 +2006,9 @@ fn type_kind(cx: ctxt, ty: t) -> kind {
       ty_evec(tm, vstore_box) => {
         remove_send(kind_safe_for_default_mode() | mutable_type_kind(cx, tm))
       }
+      ty_evec(tm, vstore_slice(re_static)) => {
+        kind_safe_for_default_mode() | mutable_type_kind(cx, tm)
+      }
       ty_evec(tm, vstore_slice(_)) => {
         remove_owned_send(kind_safe_for_default_mode() |
                           mutable_type_kind(cx, tm))
@@ -1916,6 +2020,9 @@ fn type_kind(cx: ctxt, ty: t) -> kind {
       // All estrs are copyable; uniques and interiors are sendable.
       ty_estr(vstore_box) => {
         kind_safe_for_default_mode() | kind_const() | kind_owned()
+      }
+      ty_estr(vstore_slice(re_static)) => {
+        kind_safe_for_default_mode() | kind_send_copy() | kind_const()
       }
       ty_estr(vstore_slice(_)) => {
         kind_safe_for_default_mode() | kind_const()
@@ -1953,7 +2060,7 @@ fn type_kind(cx: ctxt, ty: t) -> kind {
       // Tuples lower to the lowest of their members.
       ty_tup(tys) => {
         let mut lowest = kind_top();
-        for tys.each |ty| { lowest = lower_kind(lowest, type_kind(cx, ty)); }
+        for tys.each |ty| { lowest = lower_kind(lowest, type_kind(cx, *ty)); }
         lowest
       }
 
@@ -1967,7 +2074,7 @@ fn type_kind(cx: ctxt, ty: t) -> kind {
             for vec::each(*variants) |variant| {
                 for variant.args.each |aty| {
                     // Perform any type parameter substitutions.
-                    let arg_ty = subst(cx, substs, aty);
+                    let arg_ty = subst(cx, substs, *aty);
                     lowest = lower_kind(lowest, type_kind(cx, arg_ty));
                     if lowest == kind_noncopyable() { break; }
                 }
@@ -2007,7 +2114,7 @@ fn type_kind(cx: ctxt, ty: t) -> kind {
 /// gives a rough estimate of how much space it takes to represent
 /// an instance of `ty`.  Used for the mode transition.
 fn type_size(cx: ctxt, ty: t) -> uint {
-    match get(ty).struct {
+    match get(ty).sty {
       ty_nil | ty_bot | ty_bool | ty_int(_) | ty_uint(_) | ty_float(_) |
       ty_ptr(_) | ty_box(_) | ty_uniq(_) | ty_estr(vstore_uniq) |
       ty_trait(*) | ty_rptr(*) | ty_evec(_, vstore_uniq) |
@@ -2075,7 +2182,7 @@ fn is_instantiable(cx: ctxt, r_ty: t) -> bool {
                ty_to_str(cx, ty));
 
         let r = {
-            get(r_ty).struct == get(ty).struct ||
+            get(r_ty).sty == get(ty).sty ||
                 subtypes_require(cx, seen, r_ty, ty)
         };
 
@@ -2092,7 +2199,7 @@ fn is_instantiable(cx: ctxt, r_ty: t) -> bool {
                ty_to_str(cx, r_ty),
                ty_to_str(cx, ty));
 
-        let r = match get(ty).struct {
+        let r = match get(ty).sty {
           ty_nil |
           ty_bot |
           ty_bool |
@@ -2179,14 +2286,14 @@ fn is_instantiable(cx: ctxt, r_ty: t) -> bool {
 
 fn type_structurally_contains(cx: ctxt, ty: t, test: fn(x: &sty) -> bool) ->
    bool {
-    let sty = &get(ty).struct;
+    let sty = &get(ty).sty;
     debug!("type_structurally_contains: %s", ty_to_str(cx, ty));
     if test(sty) { return true; }
     match *sty {
       ty_enum(did, ref substs) => {
         for vec::each(*enum_variants(cx, did)) |variant| {
             for variant.args.each |aty| {
-                let sty = subst(cx, substs, aty);
+                let sty = subst(cx, substs, *aty);
                 if type_structurally_contains(cx, sty, test) { return true; }
             }
         }
@@ -2210,7 +2317,7 @@ fn type_structurally_contains(cx: ctxt, ty: t, test: fn(x: &sty) -> bool) ->
 
       ty_tup(ts) => {
         for ts.each |tt| {
-            if type_structurally_contains(cx, tt, test) { return true; }
+            if type_structurally_contains(cx, *tt, test) { return true; }
         }
         return false;
       }
@@ -2233,14 +2340,14 @@ fn type_structurally_contains_uniques(cx: ctxt, ty: t) -> bool {
 }
 
 fn type_is_integral(ty: t) -> bool {
-    match get(ty).struct {
+    match get(ty).sty {
       ty_infer(IntVar(_)) | ty_int(_) | ty_uint(_) | ty_bool => true,
       _ => false
     }
 }
 
 fn type_is_fp(ty: t) -> bool {
-    match get(ty).struct {
+    match get(ty).sty {
       ty_float(_) => true,
       _ => false
     }
@@ -2251,7 +2358,7 @@ fn type_is_numeric(ty: t) -> bool {
 }
 
 fn type_is_signed(ty: t) -> bool {
-    match get(ty).struct {
+    match get(ty).sty {
       ty_int(_) => true,
       _ => false
     }
@@ -2261,7 +2368,7 @@ fn type_is_signed(ty: t) -> bool {
 // that the cycle collector might care about.
 fn type_is_pod(cx: ctxt, ty: t) -> bool {
     let mut result = true;
-    match get(ty).struct {
+    match get(ty).sty {
       // Scalar types
       ty_nil | ty_bot | ty_bool | ty_int(_) | ty_float(_) | ty_uint(_) |
       ty_type | ty_ptr(_) => result = true,
@@ -2287,7 +2394,7 @@ fn type_is_pod(cx: ctxt, ty: t) -> bool {
         }
       }
       ty_tup(elts) => {
-        for elts.each |elt| { if !type_is_pod(cx, elt) { result = false; } }
+        for elts.each |elt| { if !type_is_pod(cx, *elt) { result = false; } }
       }
       ty_estr(vstore_fixed(_)) => result = true,
       ty_evec(mt, vstore_fixed(_)) | ty_unboxed_vec(mt) => {
@@ -2316,7 +2423,7 @@ fn type_is_pod(cx: ctxt, ty: t) -> bool {
 }
 
 fn type_is_enum(ty: t) -> bool {
-    match get(ty).struct {
+    match get(ty).sty {
       ty_enum(_, _) => return true,
       _ => return false
     }
@@ -2325,7 +2432,7 @@ fn type_is_enum(ty: t) -> bool {
 // Whether a type is enum like, that is a enum type with only nullary
 // constructors
 fn type_is_c_like_enum(cx: ctxt, ty: t) -> bool {
-    match get(ty).struct {
+    match get(ty).sty {
       ty_enum(did, _) => {
         let variants = enum_variants(cx, did);
         let some_n_ary = vec::any(*variants, |v| vec::len(v.args) > 0u);
@@ -2336,7 +2443,7 @@ fn type_is_c_like_enum(cx: ctxt, ty: t) -> bool {
 }
 
 fn type_param(ty: t) -> Option<uint> {
-    match get(ty).struct {
+    match get(ty).sty {
       ty_param(p) => return Some(p.idx),
       _ => {/* fall through */ }
     }
@@ -2348,7 +2455,7 @@ fn type_param(ty: t) -> Option<uint> {
 // The parameter `expl` indicates if this is an *explicit* dereference.  Some
 // types---notably unsafe ptrs---can only be dereferenced explicitly.
 fn deref(cx: ctxt, t: t, expl: bool) -> Option<mt> {
-    deref_sty(cx, &get(t).struct, expl)
+    deref_sty(cx, &get(t).sty, expl)
 }
 fn deref_sty(cx: ctxt, sty: &sty, expl: bool) -> Option<mt> {
     match *sty {
@@ -2386,7 +2493,7 @@ fn type_autoderef(cx: ctxt, t: t) -> t {
 
 // Returns the type and mutability of t[i]
 fn index(cx: ctxt, t: t) -> Option<mt> {
-    index_sty(cx, &get(t).struct)
+    index_sty(cx, &get(t).sty)
 }
 
 fn index_sty(cx: ctxt, sty: &sty) -> Option<mt> {
@@ -2398,7 +2505,7 @@ fn index_sty(cx: ctxt, sty: &sty) -> Option<mt> {
 }
 
 impl bound_region : to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
         match self {
           ty::br_self => 0u8.iter_bytes(lsb0, f),
 
@@ -2415,7 +2522,7 @@ impl bound_region : to_bytes::IterBytes {
 }
 
 impl region : to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
         match self {
           re_bound(ref br) =>
           to_bytes::iter_bytes_2(&0u8, br, lsb0, f),
@@ -2435,7 +2542,7 @@ impl region : to_bytes::IterBytes {
 }
 
 impl vstore : to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
         match self {
           vstore_fixed(ref u) =>
           to_bytes::iter_bytes_2(&0u8, u, lsb0, f),
@@ -2450,7 +2557,7 @@ impl vstore : to_bytes::IterBytes {
 }
 
 impl substs : to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
           to_bytes::iter_bytes_3(&self.self_r,
                                  &self.self_ty,
                                  &self.tps, lsb0, f)
@@ -2458,28 +2565,28 @@ impl substs : to_bytes::IterBytes {
 }
 
 impl mt : to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
           to_bytes::iter_bytes_2(&self.ty,
                                  &self.mutbl, lsb0, f)
     }
 }
 
 impl field : to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
           to_bytes::iter_bytes_2(&self.ident,
                                  &self.mt, lsb0, f)
     }
 }
 
 impl arg : to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
           to_bytes::iter_bytes_2(&self.mode,
                                  &self.ty, lsb0, f)
     }
 }
 
 impl sty : to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
         match self {
           ty_nil => 0u8.iter_bytes(lsb0, f),
           ty_bool => 1u8.iter_bytes(lsb0, f),
@@ -2558,118 +2665,8 @@ impl sty : to_bytes::IterBytes {
     }
 }
 
-pure fn hash_bound_region(br: &bound_region) -> uint {
-    match *br { // no idea if this is any good
-      ty::br_self => 0u,
-      ty::br_anon(idx) => 1u | (idx << 2),
-      ty::br_named(ident) => 2u | (ident << 2),
-      ty::br_cap_avoid(id, br) =>
-        3u | (id as uint << 2) | hash_bound_region(br)
-    }
-}
-
-fn br_hashmap<V:Copy>() -> hashmap<bound_region, V> {
-    map::hashmap()
-}
-
-pure fn hash_region(r: &region) -> uint {
-    match *r { // no idea if this is any good
-      re_bound(br) => (hash_bound_region(&br)) << 2u | 0u,
-      re_free(id, br) => ((id as uint) << 4u) |
-      (hash_bound_region(&br)) << 2u | 1u,
-      re_scope(id)  => ((id as uint) << 2u) | 2u,
-      re_var(id)    => (id.to_uint() << 2u) | 3u,
-      re_static     => 4u
-    }
-}
-
-// Type hashing.
-pure fn hash_type_structure(st: &sty) -> uint {
-    pure fn hash_uint(id: uint, n: uint) -> uint { (id << 2u) + n }
-    pure fn hash_def(id: uint, did: ast::def_id) -> uint {
-        let h = (id << 2u) + (did.crate as uint);
-        (h << 2u) + (did.node as uint)
-    }
-    pure fn hash_subty(id: uint, subty: t) -> uint {
-        (id << 2u) + type_id(subty)
-    }
-    pure fn hash_subtys(id: uint, subtys: ~[t]) -> uint {
-        let mut h = id;
-        for vec::each(subtys) |s| { h = (h << 2u) + type_id(s) }
-        h
-    }
-    pure fn hash_substs(h: uint, substs: &substs) -> uint {
-        let h = hash_subtys(h, substs.tps);
-        h + substs.self_r.map_default(0u, |r| hash_region(&r))
-    }
-    match *st {
-      ty_nil => 0u,
-      ty_bool => 1u,
-      ty_int(t) => match t {
-        ast::ty_i => 2u,
-        ast::ty_char => 3u,
-        ast::ty_i8 => 4u,
-        ast::ty_i16 => 5u,
-        ast::ty_i32 => 6u,
-        ast::ty_i64 => 7u
-      },
-      ty_uint(t) => match t {
-        ast::ty_u => 8u,
-        ast::ty_u8 => 9u,
-        ast::ty_u16 => 10u,
-        ast::ty_u32 => 11u,
-        ast::ty_u64 => 12u
-      },
-      ty_float(t) => match t {
-        ast::ty_f => 13u,
-        ast::ty_f32 => 14u,
-        ast::ty_f64 => 15u
-      },
-      ty_estr(_) => 16u,
-      ty_enum(did, ref substs) => {
-        let mut h = hash_def(18u, did);
-        hash_substs(h, substs)
-      }
-      ty_box(mt) => hash_subty(19u, mt.ty),
-      ty_evec(mt, _) => hash_subty(20u, mt.ty),
-      ty_unboxed_vec(mt) => hash_subty(22u, mt.ty),
-      ty_tup(ts) => hash_subtys(25u, ts),
-      ty_rec(fields) => {
-        let mut h = 26u;
-        for vec::each(fields) |f| { h = hash_subty(h, f.mt.ty); }
-        h
-      }
-      ty_fn(ref f) => {
-        let mut h = 27u;
-        for vec::each(f.sig.inputs) |a| {
-            h = hash_subty(h, a.ty);
-        }
-        hash_subty(h, f.sig.output)
-      }
-      ty_self => 28u,
-      ty_infer(v) => hash_uint(29u, v.to_hash()),
-      ty_param(p) => hash_def(hash_uint(31u, p.idx), p.def_id),
-      ty_type => 32u,
-      ty_bot => 34u,
-      ty_ptr(mt) => hash_subty(35u, mt.ty),
-      ty_uniq(mt) => hash_subty(37u, mt.ty),
-      ty_trait(did, ref substs, _) => {
-        let mut h = hash_def(40u, did);
-        hash_substs(h, substs)
-      }
-      ty_opaque_closure_ptr(ck_block) => 41u,
-      ty_opaque_closure_ptr(ck_box) => 42u,
-      ty_opaque_closure_ptr(ck_uniq) => 43u,
-      ty_opaque_box => 44u,
-      ty_class(did, ref substs) => {
-        let mut h = hash_def(45u, did);
-        hash_substs(h, substs)
-      }
-      ty_rptr(region, mt) => {
-        let mut h = (46u << 2u) + hash_region(&region);
-        hash_subty(h, mt.ty)
-      }
-    }
+fn br_hashmap<V:Copy>() -> HashMap<bound_region, V> {
+    map::HashMap()
 }
 
 fn node_id_to_type(cx: ctxt, id: ast::node_id) -> t {
@@ -2696,49 +2693,49 @@ fn node_id_has_type_params(cx: ctxt, id: ast::node_id) -> bool {
 
 // Type accessors for substructures of types
 fn ty_fn_args(fty: t) -> ~[arg] {
-    match get(fty).struct {
+    match get(fty).sty {
       ty_fn(ref f) => f.sig.inputs,
       _ => fail ~"ty_fn_args() called on non-fn type"
     }
 }
 
 fn ty_fn_proto(fty: t) -> fn_proto {
-    match get(fty).struct {
+    match get(fty).sty {
       ty_fn(ref f) => f.meta.proto,
       _ => fail ~"ty_fn_proto() called on non-fn type"
     }
 }
 
 fn ty_fn_purity(fty: t) -> ast::purity {
-    match get(fty).struct {
+    match get(fty).sty {
       ty_fn(ref f) => f.meta.purity,
       _ => fail ~"ty_fn_purity() called on non-fn type"
     }
 }
 
 pure fn ty_fn_ret(fty: t) -> t {
-    match get(fty).struct {
+    match get(fty).sty {
       ty_fn(ref f) => f.sig.output,
       _ => fail ~"ty_fn_ret() called on non-fn type"
     }
 }
 
 fn ty_fn_ret_style(fty: t) -> ast::ret_style {
-    match get(fty).struct {
+    match get(fty).sty {
       ty_fn(ref f) => f.meta.ret_style,
       _ => fail ~"ty_fn_ret_style() called on non-fn type"
     }
 }
 
 fn is_fn_ty(fty: t) -> bool {
-    match get(fty).struct {
+    match get(fty).sty {
       ty_fn(_) => true,
       _ => false
     }
 }
 
 fn ty_region(ty: t) -> region {
-    match get(ty).struct {
+    match get(ty).sty {
       ty_rptr(r, _) => r,
       s => fail fmt!("ty_region() invoked on non-rptr: %?", s)
     }
@@ -2757,14 +2754,14 @@ fn is_pred_ty(fty: t) -> bool {
 
 /*
 fn ty_var_id(typ: t) -> TyVid {
-    match get(typ).struct {
+    match get(typ).sty {
       ty_infer(TyVar(vid)) => return vid,
       _ => { error!("ty_var_id called on non-var ty"); fail; }
     }
 }
 
 fn int_var_id(typ: t) -> IntVid {
-    match get(typ).struct {
+    match get(typ).sty {
       ty_infer(IntVar(vid)) => return vid,
       _ => { error!("ty_var_integral_id called on ty other than \
                   ty_var_integral");
@@ -2921,8 +2918,8 @@ fn expr_kind(tcx: ctxt,
         ast::expr_unary_move(*) |
         ast::expr_repeat(*) |
         ast::expr_lit(@{node: lit_str(_), _}) |
-        ast::expr_vstore(_, ast::vstore_slice(_)) |
-        ast::expr_vstore(_, ast::vstore_fixed(_)) |
+        ast::expr_vstore(_, ast::expr_vstore_slice) |
+        ast::expr_vstore(_, ast::expr_vstore_fixed(_)) |
         ast::expr_vec(*) => {
             RvalueDpsExpr
         }
@@ -2972,8 +2969,8 @@ fn expr_kind(tcx: ctxt,
         ast::expr_unary(*) |
         ast::expr_addr_of(*) |
         ast::expr_binary(*) |
-        ast::expr_vstore(_, ast::vstore_box) |
-        ast::expr_vstore(_, ast::vstore_uniq) => {
+        ast::expr_vstore(_, ast::expr_vstore_box) |
+        ast::expr_vstore(_, ast::expr_vstore_uniq) => {
             RvalueDatumExpr
         }
 
@@ -3018,7 +3015,7 @@ fn get_field(tcx: ctxt, rec_ty: t, id: ast::ident) -> field {
 }
 
 fn get_fields(rec_ty:t) -> ~[field] {
-    match get(rec_ty).struct {
+    match get(rec_ty).sty {
       ty_rec(fields) => fields,
       // Can we check at the caller?
       _ => fail ~"get_fields: not a record type"
@@ -3037,7 +3034,7 @@ fn method_idx(id: ast::ident, meths: &[method]) -> Option<uint> {
 fn param_tys_in_type(ty: t) -> ~[param_ty] {
     let mut rslt = ~[];
     do walk_ty(ty) |ty| {
-        match get(ty).struct {
+        match get(ty).sty {
           ty_param(p) => {
             vec::push(rslt, p);
           }
@@ -3054,7 +3051,7 @@ fn occurs_check(tcx: ctxt, sp: span, vid: TyVid, rt: t) {
     fn vars_in_type(ty: t) -> ~[TyVid] {
         let mut rslt = ~[];
         do walk_ty(ty) |ty| {
-            match get(ty).struct {
+            match get(ty).sty {
               ty_infer(TyVar(v)) => vec::push(rslt, v),
               _ => ()
             }
@@ -3081,8 +3078,8 @@ fn occurs_check(tcx: ctxt, sp: span, vid: TyVid, rt: t) {
 
 // Maintains a little union-set tree for inferred modes.  `canon()` returns
 // the current head value for `m0`.
-fn canon<T:Copy>(tbl: hashmap<ast::node_id, ast::inferable<T>>,
-                 +m0: ast::inferable<T>) -> ast::inferable<T> {
+fn canon<T:Copy cmp::Eq>(tbl: HashMap<ast::node_id, ast::inferable<T>>,
+                         +m0: ast::inferable<T>) -> ast::inferable<T> {
     match m0 {
       ast::infer(id) => match tbl.find(id) {
         None => m0,
@@ -3152,7 +3149,7 @@ fn set_default_mode(cx: ctxt, m: ast::mode, m_def: ast::rmode) {
 }
 
 fn ty_sort_str(cx: ctxt, t: t) -> ~str {
-    match get(t).struct {
+    match get(t).sty {
       ty_nil | ty_bot | ty_bool | ty_int(_) |
       ty_uint(_) | ty_float(_) | ty_estr(_) |
       ty_type | ty_opaque_box | ty_opaque_closure_ptr(_) => {
@@ -3369,7 +3366,7 @@ fn impl_traits(cx: ctxt, id: ast::def_id) -> ~[t] {
                         _},
                     _)) => {
 
-               do option::map_default(opt_trait, ~[]) |trait_ref| {
+               do option::map_default(&opt_trait, ~[]) |trait_ref| {
                        ~[node_id_to_type(cx, trait_ref.ref_id)]
                    }
            }
@@ -3387,7 +3384,7 @@ fn impl_traits(cx: ctxt, id: ast::def_id) -> ~[t] {
 }
 
 fn ty_to_def_id(ty: t) -> Option<ast::def_id> {
-    match get(ty).struct {
+    match get(ty).sty {
       ty_trait(id, _, _) | ty_class(id, _) | ty_enum(id, _) => Some(id),
       _ => None
     }
@@ -3402,11 +3399,11 @@ fn substd_enum_variants(cx: ctxt,
                         substs: &substs) -> ~[variant_info] {
     do vec::map(*enum_variants(cx, id)) |variant_info| {
         let substd_args = vec::map(variant_info.args,
-                                   |aty| subst(cx, substs, aty));
+                                   |aty| subst(cx, substs, *aty));
 
         let substd_ctor_ty = subst(cx, substs, variant_info.ctor_ty);
 
-        @{args: substd_args, ctor_ty: substd_ctor_ty,.. *variant_info}
+        @{args: substd_args, ctor_ty: substd_ctor_ty, ..**variant_info}
     }
 }
 
@@ -3434,7 +3431,7 @@ fn ty_dtor(cx: ctxt, class_id: def_id) -> Option<def_id> {
 }
 
 fn has_dtor(cx: ctxt, class_id: def_id) -> bool {
-    option::is_some(ty_dtor(cx, class_id))
+    ty_dtor(cx, class_id).is_some()
 }
 
 fn item_path(cx: ctxt, id: ast::def_id) -> ast_map::path {
@@ -3494,7 +3491,7 @@ fn enum_is_univariant(cx: ctxt, id: ast::def_id) -> bool {
 }
 
 fn type_is_empty(cx: ctxt, t: t) -> bool {
-    match ty::get(t).struct {
+    match ty::get(t).sty {
        ty_enum(did, _) => (*enum_variants(cx, did)).is_empty(),
        _ => false
      }
@@ -3690,9 +3687,9 @@ fn lookup_class_method_by_name(cx:ctxt, did: ast::def_id, name: ident,
     if is_local(did) {
        let ms = lookup_class_method_ids(cx, did);
         for ms.each |m| {
-         if m.name == name {
-             return ast_util::local_def(m.id);
-         }
+            if m.name == name {
+                return ast_util::local_def(m.id);
+            }
        }
        cx.sess.span_fatal(sp, fmt!("Class doesn't have a method \
            named %s", cx.sess.str_of(name)));
@@ -3798,7 +3795,7 @@ fn is_binopable(_cx: ctxt, ty: t, op: ast::binop) -> bool {
     }
 
     fn tycat(ty: t) -> int {
-        match get(ty).struct {
+        match get(ty).sty {
           ty_bool => tycat_bool,
           ty_int(_) | ty_uint(_) | ty_infer(IntVar(_)) => tycat_int,
           ty_float(_) => tycat_float,
@@ -3848,7 +3845,7 @@ fn normalize_ty(cx: ctxt, t: t) -> t {
       None => ()
     }
 
-    let t = match get(t).struct {
+    let t = match get(t).sty {
         ty_evec(mt, vstore) =>
             // This type has a vstore. Get rid of it
             mk_evec(cx, normalize_mt(cx, mt), normalize_vstore(vstore)),
@@ -3899,7 +3896,7 @@ fn normalize_ty(cx: ctxt, t: t) -> t {
     // types, which isn't necessary after #2187
     let t = mk_t(cx, mach_sty(cx.sess.targ_cfg, t));
 
-    let sty = fold_sty(&get(t).struct, |t| { normalize_ty(cx, t) });
+    let sty = fold_sty(&get(t).sty, |t| { normalize_ty(cx, t) });
     let t_norm = mk_t(cx, sty);
     cx.normalized_cache.insert(t, t_norm);
     return t_norm;
@@ -3956,389 +3953,389 @@ pure fn determine_inherited_purity(parent_purity: ast::purity,
 }
 
 impl mt : cmp::Eq {
-    pure fn eq(&&other: mt) -> bool {
-        self.ty == other.ty && self.mutbl == other.mutbl
+    pure fn eq(other: &mt) -> bool {
+        self.ty == (*other).ty && self.mutbl == (*other).mutbl
     }
-    pure fn ne(&&other: mt) -> bool { !self.eq(other) }
+    pure fn ne(other: &mt) -> bool { !self.eq(other) }
 }
 
 impl arg : cmp::Eq {
-    pure fn eq(&&other: arg) -> bool {
-        self.mode == other.mode && self.ty == other.ty
+    pure fn eq(other: &arg) -> bool {
+        self.mode == (*other).mode && self.ty == (*other).ty
     }
-    pure fn ne(&&other: arg) -> bool { !self.eq(other) }
+    pure fn ne(other: &arg) -> bool { !self.eq(other) }
 }
 
 impl field : cmp::Eq {
-    pure fn eq(&&other: field) -> bool {
-        self.ident == other.ident && self.mt == other.mt
+    pure fn eq(other: &field) -> bool {
+        self.ident == (*other).ident && self.mt == (*other).mt
     }
-    pure fn ne(&&other: field) -> bool { !self.eq(other) }
+    pure fn ne(other: &field) -> bool { !self.eq(other) }
 }
 
 impl vstore : cmp::Eq {
-    pure fn eq(&&other: vstore) -> bool {
+    pure fn eq(other: &vstore) -> bool {
         match self {
             vstore_fixed(e0a) => {
-                match other {
+                match (*other) {
                     vstore_fixed(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             vstore_uniq => {
-                match other {
+                match (*other) {
                     vstore_uniq => true,
                     _ => false
                 }
             }
             vstore_box => {
-                match other {
+                match (*other) {
                     vstore_box => true,
                     _ => false
                 }
             }
             vstore_slice(e0a) => {
-                match other {
+                match (*other) {
                     vstore_slice(e0b) => e0a == e0b,
                     _ => false
                 }
             }
         }
     }
-    pure fn ne(&&other: vstore) -> bool { !self.eq(other) }
+    pure fn ne(other: &vstore) -> bool { !self.eq(other) }
 }
 
 impl FnMeta : cmp::Eq {
-    pure fn eq(&&other: FnMeta) -> bool {
-        self.purity == other.purity &&
-        self.proto == other.proto &&
-        self.bounds == other.bounds &&
-        self.ret_style == other.ret_style
+    pure fn eq(other: &FnMeta) -> bool {
+        self.purity == (*other).purity &&
+        self.proto == (*other).proto &&
+        self.bounds == (*other).bounds &&
+        self.ret_style == (*other).ret_style
     }
-    pure fn ne(&&other: FnMeta) -> bool { !self.eq(other) }
+    pure fn ne(other: &FnMeta) -> bool { !self.eq(other) }
 }
 
 impl FnSig : cmp::Eq {
-    pure fn eq(&&other: FnSig) -> bool {
-        self.inputs == other.inputs &&
-        self.output == other.output
+    pure fn eq(other: &FnSig) -> bool {
+        self.inputs == (*other).inputs &&
+        self.output == (*other).output
     }
-    pure fn ne(&&other: FnSig) -> bool { !self.eq(other) }
+    pure fn ne(other: &FnSig) -> bool { !self.eq(other) }
 }
 
 impl<M: cmp::Eq> FnTyBase<M> : cmp::Eq {
-    pure fn eq(&&other: FnTyBase<M>) -> bool {
-        self.meta == other.meta && self.sig == other.sig
+    pure fn eq(other: &FnTyBase<M>) -> bool {
+        self.meta == (*other).meta && self.sig == (*other).sig
     }
-    pure fn ne(&&other: FnTyBase<M>) -> bool { !self.eq(other) }
+    pure fn ne(other: &FnTyBase<M>) -> bool { !self.eq(other) }
 }
 
-impl TyVid: cmp::Eq {
-    pure fn eq(&&other: TyVid) -> bool { *self == *other }
-    pure fn ne(&&other: TyVid) -> bool { *self != *other }
+impl TyVid : cmp::Eq {
+    pure fn eq(other: &TyVid) -> bool { *self == *(*other) }
+    pure fn ne(other: &TyVid) -> bool { *self != *(*other) }
 }
 
-impl IntVid: cmp::Eq {
-    pure fn eq(&&other: IntVid) -> bool { *self == *other }
-    pure fn ne(&&other: IntVid) -> bool { *self != *other }
+impl IntVid : cmp::Eq {
+    pure fn eq(other: &IntVid) -> bool { *self == *(*other) }
+    pure fn ne(other: &IntVid) -> bool { *self != *(*other) }
 }
 
-impl FnVid: cmp::Eq {
-    pure fn eq(&&other: FnVid) -> bool { *self == *other }
-    pure fn ne(&&other: FnVid) -> bool { *self != *other }
+impl FnVid : cmp::Eq {
+    pure fn eq(other: &FnVid) -> bool { *self == *(*other) }
+    pure fn ne(other: &FnVid) -> bool { *self != *(*other) }
 }
 
-impl RegionVid: cmp::Eq {
-    pure fn eq(&&other: RegionVid) -> bool { *self == *other }
-    pure fn ne(&&other: RegionVid) -> bool { *self != *other }
+impl RegionVid : cmp::Eq {
+    pure fn eq(other: &RegionVid) -> bool { *self == *(*other) }
+    pure fn ne(other: &RegionVid) -> bool { *self != *(*other) }
 }
 
 impl region : cmp::Eq {
-    pure fn eq(&&other: region) -> bool {
+    pure fn eq(other: &region) -> bool {
         match self {
             re_bound(e0a) => {
-                match other {
+                match (*other) {
                     re_bound(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             re_free(e0a, e1a) => {
-                match other {
+                match (*other) {
                     re_free(e0b, e1b) => e0a == e0b && e1a == e1b,
                     _ => false
                 }
             }
             re_scope(e0a) => {
-                match other {
+                match (*other) {
                     re_scope(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             re_static => {
-                match other {
+                match (*other) {
                     re_static => true,
                     _ => false
                 }
             }
             re_var(e0a) => {
-                match other {
+                match (*other) {
                     re_var(e0b) => e0a == e0b,
                     _ => false
                 }
             }
         }
     }
-    pure fn ne(&&other: region) -> bool { !self.eq(other) }
+    pure fn ne(other: &region) -> bool { !self.eq(other) }
 }
 
 impl bound_region : cmp::Eq {
-    pure fn eq(&&other: bound_region) -> bool {
+    pure fn eq(other: &bound_region) -> bool {
         match self {
             br_self => {
-                match other {
+                match (*other) {
                     br_self => true,
                     _ => false
                 }
             }
             br_anon(e0a) => {
-                match other {
+                match (*other) {
                     br_anon(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             br_named(e0a) => {
-                match other {
+                match (*other) {
                     br_named(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             br_cap_avoid(e0a, e1a) => {
-                match other {
+                match (*other) {
                     br_cap_avoid(e0b, e1b) => e0a == e0b && e1a == e1b,
                     _ => false
                 }
             }
         }
     }
-    pure fn ne(&&other: bound_region) -> bool { !self.eq(other) }
+    pure fn ne(other: &bound_region) -> bool { !self.eq(other) }
 }
 
 impl substs : cmp::Eq {
-    pure fn eq(&&other: substs) -> bool {
-        self.self_r == other.self_r &&
-        self.self_ty == other.self_ty &&
-        self.tps == other.tps
+    pure fn eq(other: &substs) -> bool {
+        self.self_r == (*other).self_r &&
+        self.self_ty == (*other).self_ty &&
+        self.tps == (*other).tps
     }
-    pure fn ne(&&other: substs) -> bool { !self.eq(other) }
+    pure fn ne(other: &substs) -> bool { !self.eq(other) }
 }
 
 impl InferTy : cmp::Eq {
-    pure fn eq(&&other: InferTy) -> bool {
-        self.to_hash() == other.to_hash()
+    pure fn eq(other: &InferTy) -> bool {
+        self.to_hash() == (*other).to_hash()
     }
-    pure fn ne(&&other: InferTy) -> bool { !self.eq(other) }
+    pure fn ne(other: &InferTy) -> bool { !self.eq(other) }
 }
 
 impl sty : cmp::Eq {
-    pure fn eq(&&other: sty) -> bool {
+    pure fn eq(other: &sty) -> bool {
         match self {
             ty_nil => {
-                match other {
+                match (*other) {
                     ty_nil => true,
                     _ => false
                 }
             }
             ty_bot => {
-                match other {
+                match (*other) {
                     ty_bot => true,
                     _ => false
                 }
             }
             ty_bool => {
-                match other {
+                match (*other) {
                     ty_bool => true,
                     _ => false
                 }
             }
             ty_int(e0a) => {
-                match other {
+                match (*other) {
                     ty_int(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             ty_uint(e0a) => {
-                match other {
+                match (*other) {
                     ty_uint(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             ty_float(e0a) => {
-                match other {
+                match (*other) {
                     ty_float(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             ty_estr(e0a) => {
-                match other {
+                match (*other) {
                     ty_estr(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             ty_enum(e0a, e1a) => {
-                match other {
+                match (*other) {
                     ty_enum(e0b, e1b) => e0a == e0b && e1a == e1b,
                     _ => false
                 }
             }
             ty_box(e0a) => {
-                match other {
+                match (*other) {
                     ty_box(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             ty_uniq(e0a) => {
-                match other {
+                match (*other) {
                     ty_uniq(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             ty_evec(e0a, e1a) => {
-                match other {
+                match (*other) {
                     ty_evec(e0b, e1b) => e0a == e0b && e1a == e1b,
                     _ => false
                 }
             }
             ty_ptr(e0a) => {
-                match other {
+                match (*other) {
                     ty_ptr(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             ty_rptr(e0a, e1a) => {
-                match other {
+                match (*other) {
                     ty_rptr(e0b, e1b) => e0a == e0b && e1a == e1b,
                     _ => false
                 }
             }
             ty_rec(e0a) => {
-                match other {
+                match (*other) {
                     ty_rec(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             ty_fn(e0a) => {
-                match other {
+                match (*other) {
                     ty_fn(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             ty_trait(e0a, e1a, e2a) => {
-                match other {
+                match (*other) {
                     ty_trait(e0b, e1b, e2b) =>
                         e0a == e0b && e1a == e1b && e2a == e2b,
                     _ => false
                 }
             }
             ty_class(e0a, e1a) => {
-                match other {
+                match (*other) {
                     ty_class(e0b, e1b) => e0a == e0b && e1a == e1b,
                     _ => false
                 }
             }
             ty_tup(e0a) => {
-                match other {
+                match (*other) {
                     ty_tup(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             ty_infer(e0a) => {
-                match other {
+                match (*other) {
                     ty_infer(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             ty_param(e0a) => {
-                match other {
+                match (*other) {
                     ty_param(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             ty_self => {
-                match other {
+                match (*other) {
                     ty_self => true,
                     _ => false
                 }
             }
             ty_type => {
-                match other {
+                match (*other) {
                     ty_type => true,
                     _ => false
                 }
             }
             ty_opaque_box => {
-                match other {
+                match (*other) {
                     ty_opaque_box => true,
                     _ => false
                 }
             }
             ty_opaque_closure_ptr(e0a) => {
-                match other {
+                match (*other) {
                     ty_opaque_closure_ptr(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             ty_unboxed_vec(e0a) => {
-                match other {
+                match (*other) {
                     ty_unboxed_vec(e0b) => e0a == e0b,
                     _ => false
                 }
             }
         }
     }
-    pure fn ne(&&other: sty) -> bool { !self.eq(other) }
+    pure fn ne(other: &sty) -> bool { !self.eq(other) }
 }
 
 impl param_bound : cmp::Eq {
-    pure fn eq(&&other: param_bound) -> bool {
+    pure fn eq(other: &param_bound) -> bool {
         match self {
             bound_copy => {
-                match other {
+                match (*other) {
                     bound_copy => true,
                     _ => false
                 }
             }
             bound_owned => {
-                match other {
+                match (*other) {
                     bound_owned => true,
                     _ => false
                 }
             }
             bound_send => {
-                match other {
+                match (*other) {
                     bound_send => true,
                     _ => false
                 }
             }
             bound_const => {
-                match other {
+                match (*other) {
                     bound_const => true,
                     _ => false
                 }
             }
             bound_trait(e0a) => {
-                match other {
+                match (*other) {
                     bound_trait(e0b) => e0a == e0b,
                     _ => false
                 }
             }
         }
     }
-    pure fn ne(&&other: param_bound) -> bool { !self.eq(other) }
+    pure fn ne(other: &param_bound) -> bool { !self.eq(other) }
 }
 
 impl kind : cmp::Eq {
-    pure fn eq(&&other: kind) -> bool { *self == *other }
-    pure fn ne(&&other: kind) -> bool { *self != *other }
+    pure fn eq(other: &kind) -> bool { *self == *(*other) }
+    pure fn ne(other: &kind) -> bool { *self != *(*other) }
 }
 
 

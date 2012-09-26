@@ -66,7 +66,7 @@ fn sha1() -> Sha1 {
     fn add_input(st: &Sha1State, msg: &[u8]) {
         assert (!st.computed);
         for vec::each(msg) |element| {
-            st.msg_block[st.msg_block_idx] = element;
+            st.msg_block[st.msg_block_idx] = *element;
             st.msg_block_idx += 1u;
             st.len_low += 8u32;
             if st.len_low == 0u32 {
@@ -240,7 +240,9 @@ fn sha1() -> Sha1 {
         fn result_str() -> ~str {
             let rr = mk_result(&self);
             let mut s = ~"";
-            for vec::each(rr) |b| { s += uint::to_str(b as uint, 16u); }
+            for vec::each(rr) |b| {
+                s += uint::to_str(*b as uint, 16u);
+            }
             return s;
         }
     }
@@ -253,13 +255,14 @@ fn sha1() -> Sha1 {
         mut computed: false,
         work_buf: @vec::to_mut(vec::from_elem(work_buf_len, 0u32))
     };
-    let sh = st as Sha1;
+    let sh = (move st) as Sha1;
     sh.reset();
     return sh;
 }
 
 #[cfg(test)]
 mod tests {
+    #[legacy_exports];
 
     #[test]
     fn test() unsafe {
@@ -268,7 +271,10 @@ mod tests {
         fn a_million_letter_a() -> ~str {
             let mut i = 0;
             let mut rs = ~"";
-            while i < 100000 { str::push_str(rs, ~"aaaaaaaaaa"); i += 1; }
+            while i < 100000 {
+                str::push_str(&mut rs, ~"aaaaaaaaaa");
+                i += 1;
+            }
             return rs;
         }
         // Test messages from FIPS 180-1

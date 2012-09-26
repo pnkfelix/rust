@@ -7,7 +7,7 @@ use parse::token::{FAT_ARROW, SEMI, LBRACE, RBRACE, nt_matchers, nt_tt};
 use parse::parser::{parser, SOURCE_FILE};
 use macro_parser::{parse, parse_or_else, success, failure, named_match,
                       matched_seq, matched_nonterminal, error};
-use std::map::hashmap;
+use std::map::HashMap;
 use parse::token::special_idents;
 
 fn add_new_extension(cx: ext_ctxt, sp: span, name: ident,
@@ -72,7 +72,7 @@ fn add_new_extension(cx: ext_ctxt, sp: span, name: ident,
         let itr = cx.parse_sess().interner;
 
         for lhses.eachi() |i, lhs| { // try each arm's matchers
-            match lhs {
+            match *lhs {
               @matched_nonterminal(nt_matchers(mtcs)) => {
                 // `none` is because we're not interpolating
                 let arg_rdr = new_tt_reader(s_d, itr, None, arg) as reader;

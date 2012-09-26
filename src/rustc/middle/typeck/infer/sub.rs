@@ -101,7 +101,7 @@ impl Sub: combine {
                a.to_str(self.infcx), b.to_str(self.infcx));
         if a == b { return Ok(a); }
         do indent {
-            match (ty::get(a).struct, ty::get(b).struct) {
+            match (ty::get(a).sty, ty::get(b).sty) {
               (ty::ty_bot, _) => {
                 Ok(a)
               }
@@ -139,10 +139,7 @@ impl Sub: combine {
                 // anything to do with the region variable that's created
                 // for it.  The only thing we're doing with `br` here is
                 // using it in the debug message.
-                //
-                // NDM--we should not be used dummy_sp() here, but
-                // rather passing in the span or something like that.
-                let rvar = self.infcx.next_region_var_nb(dummy_sp());
+                let rvar = self.infcx.next_region_var_nb(self.span);
                 debug!("Bound region %s maps to %s",
                        bound_region_to_str(self.infcx.tcx, br),
                        region_to_str(self.infcx.tcx, rvar));
@@ -193,13 +190,13 @@ impl Sub: combine {
     }
 
     fn substs(did: ast::def_id,
-              as: &ty::substs,
+              as_: &ty::substs,
               bs: &ty::substs) -> cres<ty::substs> {
-        super_substs(&self, did, as, bs)
+        super_substs(&self, did, as_, bs)
     }
 
-    fn tps(as: &[ty::t], bs: &[ty::t]) -> cres<~[ty::t]> {
-        super_tps(&self, as, bs)
+    fn tps(as_: &[ty::t], bs: &[ty::t]) -> cres<~[ty::t]> {
+        super_tps(&self, as_, bs)
     }
 
     fn self_tys(a: Option<ty::t>, b: Option<ty::t>) -> cres<Option<ty::t>> {

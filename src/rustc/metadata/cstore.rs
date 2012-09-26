@@ -2,9 +2,8 @@
 // crates and libraries
 
 use std::map;
-use std::map::hashmap;
+use std::map::HashMap;
 use syntax::{ast, attr};
-use syntax::ast_util::new_def_hash;
 use syntax::parse::token::ident_interner;
 
 export cstore;
@@ -33,12 +32,12 @@ export get_path;
 // local crate numbers (as generated during this session). Each external
 // crate may refer to types in other external crates, and each has their
 // own crate numbers.
-type cnum_map = map::hashmap<ast::crate_num, ast::crate_num>;
+type cnum_map = map::HashMap<ast::crate_num, ast::crate_num>;
 
 // Multiple items may have the same def_id in crate metadata. They may be
 // renamed imports or reexports. This map keeps the "real" module path
 // and def_id.
-type mod_path_map = map::hashmap<ast::def_id, @~str>;
+type mod_path_map = map::HashMap<ast::def_id, @~str>;
 
 type crate_metadata = @{name: ~str,
                         data: @~[u8],
@@ -53,7 +52,7 @@ type crate_metadata = @{name: ~str,
 enum cstore { private(cstore_private), }
 
 type cstore_private =
-    @{metas: map::hashmap<ast::crate_num, crate_metadata>,
+    @{metas: map::HashMap<ast::crate_num, crate_metadata>,
       use_crate_map: use_crate_map,
       mod_path_map: mod_path_map,
       mut used_crate_files: ~[Path],
@@ -62,7 +61,7 @@ type cstore_private =
       intr: ident_interner};
 
 // Map from node_id's of local use statements to crate numbers
-type use_crate_map = map::hashmap<ast::node_id, ast::crate_num>;
+type use_crate_map = map::HashMap<ast::node_id, ast::crate_num>;
 
 // Internal method to retrieve the data from the cstore
 pure fn p(cstore: cstore) -> cstore_private {
@@ -70,9 +69,9 @@ pure fn p(cstore: cstore) -> cstore_private {
 }
 
 fn mk_cstore(intr: ident_interner) -> cstore {
-    let meta_cache = map::int_hash::<crate_metadata>();
-    let crate_map = map::int_hash::<ast::crate_num>();
-    let mod_path_map = new_def_hash();
+    let meta_cache = map::HashMap::<int,crate_metadata>();
+    let crate_map = map::HashMap::<int,ast::crate_num>();
+    let mod_path_map = HashMap();
     return private(@{metas: meta_cache,
                      use_crate_map: crate_map,
                      mod_path_map: mod_path_map,
@@ -99,8 +98,8 @@ fn get_crate_vers(cstore: cstore, cnum: ast::crate_num) -> ~str {
 fn set_crate_data(cstore: cstore, cnum: ast::crate_num,
                   data: crate_metadata) {
     p(cstore).metas.insert(cnum, data);
-    do vec::iter(decoder::get_crate_module_paths(cstore.intr, data)) |dp| {
-        let (did, path) = dp;
+    for vec::each(decoder::get_crate_module_paths(cstore.intr, data)) |dp| {
+        let (did, path) = *dp;
         let d = {crate: cnum, node: did.node};
         p(cstore).mod_path_map.insert(d, @path);
     }
@@ -172,12 +171,12 @@ fn get_dep_hashes(cstore: cstore) -> ~[~str] {
     for sorted.each |x| {
         debug!("  hash[%s]: %s", x.name, x.hash);
     }
-    fn mapper(ch: crate_hash) -> ~str { return ch.hash; }
+    fn mapper(ch: &crate_hash) -> ~str { return ch.hash; }
     return vec::map(sorted, mapper);
 }
 
 fn get_path(cstore: cstore, d: ast::def_id) -> ~[~str] {
-    option::map_default(p(cstore).mod_path_map.find(d), ~[],
+    option::map_default(&p(cstore).mod_path_map.find(d), ~[],
                         |ds| str::split_str(*ds, ~"::"))
 }
 // Local Variables:

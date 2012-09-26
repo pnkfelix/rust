@@ -12,9 +12,11 @@
 //
 //  writes pbm image to output path
 
-use std;
+#[legacy_modes];
+
+extern mod std;
 use io::WriterUtil;
-use std::map::hashmap;
+use std::map::HashMap;
 
 struct cmplx {
     re: f64,
@@ -22,19 +24,19 @@ struct cmplx {
 }
 
 impl cmplx : ops::Mul<cmplx,cmplx> {
-    pure fn mul(x: cmplx) -> cmplx {
+    pure fn mul(x: &cmplx) -> cmplx {
         cmplx {
-            re: self.re*x.re - self.im*x.im,
-            im: self.re*x.im + self.im*x.re
+            re: self.re*(*x).re - self.im*(*x).im,
+            im: self.re*(*x).im + self.im*(*x).re
         }
     }
 }
 
 impl cmplx : ops::Add<cmplx,cmplx> {
-    pure fn add(x: cmplx) -> cmplx {
+    pure fn add(x: &cmplx) -> cmplx {
         cmplx {
-            re: self.re + x.re,
-            im: self.im + x.im
+            re: self.re + (*x).re,
+            im: self.im + (*x).im
         }
     }
 }
@@ -112,13 +114,13 @@ fn writer(path: ~str, writech: comm::Chan<comm::Chan<line>>, size: uint)
         }
         _ => {
             result::get(
-                io::file_writer(&Path(path),
+                &io::file_writer(&Path(path),
                 ~[io::Create, io::Truncate]))
         }
     };
     cout.write_line(~"P4");
     cout.write_line(fmt!("%u %u", size, size));
-    let lines = std::map::uint_hash();
+    let lines: HashMap<uint, ~[u8]> = HashMap();
     let mut done = 0_u;
     let mut i = 0_u;
     while i < size {
@@ -131,10 +133,7 @@ fn writer(path: ~str, writech: comm::Chan<comm::Chan<line>>, size: uint)
             while prev <= i {
                 if lines.contains_key(prev) {
                     debug!("WS %u", prev);
-                    // FIXME (#2280): this temporary shouldn't be
-                    // necessary, but seems to be, for borrowing.
-                    let v : ~[u8] = lines.get(prev);
-                    cout.write(v);
+                    cout.write(lines.get(prev));
                     done += 1_u;
                     lines.remove(prev);
                     prev += 1_u;
@@ -152,7 +151,7 @@ fn writer(path: ~str, writech: comm::Chan<comm::Chan<line>>, size: uint)
     }
 }
 
-fn main(args: ~[~str]) {
+fn main(++args: ~[~str]) {
     let args = if os::getenv(~"RUST_BENCH").is_some() {
         ~[~"", ~"4000", ~"10"]
     } else {

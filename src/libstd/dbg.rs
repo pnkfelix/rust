@@ -2,7 +2,7 @@
 #[forbid(deprecated_pattern)];
 //! Unsafe debugging functions for inspecting values.
 
-use unsafe::reinterpret_cast;
+use cast::reinterpret_cast;
 
 export debug_tydesc;
 export debug_opaque;
@@ -14,6 +14,7 @@ export breakpoint;
 
 #[abi = "cdecl"]
 extern mod rustrt {
+    #[legacy_exports];
     fn debug_tydesc(td: *sys::TypeDesc);
     fn debug_opaque(td: *sys::TypeDesc, x: *());
     fn debug_box(td: *sys::TypeDesc, x: *());

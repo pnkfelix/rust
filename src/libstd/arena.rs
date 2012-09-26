@@ -22,19 +22,24 @@
 // overhead when initializing plain-old-data and means we don't need
 // to waste time running the destructors of POD.
 
+#[forbid(deprecated_mode)];
+#[forbid(deprecated_pattern)];
+
 export Arena, arena_with_size;
 
 use list::{List, Cons, Nil};
-use unsafe::reinterpret_cast;
+use cast::reinterpret_cast;
 use sys::TypeDesc;
 use libc::size_t;
 
 #[abi = "rust-intrinsic"]
 extern mod rusti {
+    #[legacy_exports];
     fn move_val_init<T>(&dst: T, -src: T);
     fn needs_drop<T>() -> bool;
 }
 extern mod rustrt {
+    #[legacy_exports];
     #[rust_stack]
     fn rust_call_tydesc_glue(root: *u8, tydesc: *TypeDesc, field: size_t);
 }
@@ -56,18 +61,18 @@ struct Arena {
     priv mut chunks: @List<Chunk>,
     drop {
         unsafe {
-            destroy_chunk(self.head);
+            destroy_chunk(&self.head);
             for list::each(self.chunks) |chunk| {
-                if !chunk.is_pod { destroy_chunk(chunk); }
+                if !chunk.is_pod { destroy_chunk(&chunk); }
             }
         }
     }
 }
 
 fn chunk(size: uint, is_pod: bool) -> Chunk {
-    let mut v = @[];
-    unsafe { at_vec::unsafe::reserve(v, size); }
-    { data: v, mut fill: 0u, is_pod: is_pod }
+    let mut v: @[const u8] = @[];
+    unsafe { at_vec::raw::reserve(&mut v, size); }
+    { data: unsafe { cast::transmute(v) }, mut fill: 0u, is_pod: is_pod }
 }
 
 fn arena_with_size(initial_size: uint) -> Arena {
@@ -87,9 +92,9 @@ fn round_up_to(base: uint, align: uint) -> uint {
 
 // Walk down a chunk, running the destructors for any objects stored
 // in it.
-unsafe fn destroy_chunk(chunk: Chunk) {
+unsafe fn destroy_chunk(chunk: &Chunk) {
     let mut idx = 0;
-    let buf = vec::unsafe::to_ptr_slice(chunk.data);
+    let buf = vec::raw::to_ptr(chunk.data);
     let fill = chunk.fill;
 
     while idx < fill {
@@ -156,7 +161,7 @@ impl &Arena {
         //       start, n_bytes, align, head.fill);
 
         unsafe {
-            ptr::offset(vec::unsafe::to_ptr_slice(head.data), start)
+            ptr::offset(vec::raw::to_ptr(head.data), start)
         }
     }
 
@@ -200,7 +205,7 @@ impl &Arena {
         //       start, n_bytes, align, head.fill);
 
         unsafe {
-            let buf = vec::unsafe::to_ptr_slice(head.data);
+            let buf = vec::raw::to_ptr(head.data);
             return (ptr::offset(buf, tydesc_start), ptr::offset(buf, start));
         }
     }

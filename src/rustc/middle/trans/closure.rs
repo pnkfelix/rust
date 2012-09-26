@@ -16,7 +16,7 @@ use back::link::{
 use util::ppaux::ty_to_str;
 use syntax::ast_map::{path, path_mod, path_name};
 use driver::session::session;
-use std::map::hashmap;
+use std::map::HashMap;
 use datum::{Datum, INIT, ByRef, ByValue, FromLvalue};
 
 // ___Good to know (tm)__________________________________________________
@@ -209,7 +209,7 @@ fn store_environment(bcx: block,
 
     // Copy expr values into boxed bindings.
     let mut bcx = bcx;
-    do vec::iteri(bound_values) |i, bv| {
+    for vec::eachi(bound_values) |i, bv| {
         debug!("Copy %s into closure", bv.to_str(ccx));
 
         if !ccx.sess.no_asm_comments() {
@@ -232,7 +232,9 @@ fn store_environment(bcx: block,
         }
 
     }
-    for vec::each(temp_cleanups) |cleanup| { revoke_clean(bcx, cleanup); }
+    for vec::each(temp_cleanups) |cleanup| {
+        revoke_clean(bcx, *cleanup);
+    }
 
     return {llbox: llbox, cdata_ty: cdata_ty, bcx: bcx};
 }
@@ -251,8 +253,8 @@ fn build_closure(bcx0: block,
 
     // Package up the captured upvars
     let mut env_vals = ~[];
-    do vec::iter(cap_vars) |cap_var| {
-        debug!("Building closure: captured variable %?", cap_var);
+    for vec::each(cap_vars) |cap_var| {
+        debug!("Building closure: captured variable %?", *cap_var);
         let datum = expr::trans_local_var(bcx, id, cap_var.def);
         match cap_var.mode {
             capture::cap_ref => {
@@ -277,7 +279,7 @@ fn build_closure(bcx0: block,
 
     // If this is a `for` loop body, add two special environment
     // variables:
-    do option::iter(include_ret_handle) |flagptr| {
+    do option::iter(&include_ret_handle) |flagptr| {
         // Flag indicating we have returned (a by-ref bool):
         let flag_datum = Datum {val: flagptr, ty: ty::mk_bool(tcx),
                                 mode: ByRef, source: FromLvalue};
@@ -316,7 +318,7 @@ fn load_environment(fcx: fn_ctxt,
 
     // Populate the upvars from the environment.
     let mut i = 0u;
-    do vec::iter(cap_vars) |cap_var| {
+    for vec::each(cap_vars) |cap_var| {
         match cap_var.mode {
           capture::cap_drop => { /* ignore */ }
           _ => {
@@ -373,9 +375,9 @@ fn trans_expr_fn(bcx: block,
         trans_closure(ccx, sub_path, decl, body, llfn, no_self,
                       bcx.fcx.param_substs, id, |fcx| {
             load_environment(fcx, cdata_ty, cap_vars,
-                             option::is_some(ret_handle), ck);
+                             ret_handle.is_some(), ck);
                       }, |bcx| {
-            if option::is_some(is_loop_body) {
+            if is_loop_body.is_some() {
                 Store(bcx, C_bool(true), bcx.fcx.llretptr);
             }
         });

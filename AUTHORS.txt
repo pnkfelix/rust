@@ -19,6 +19,7 @@ Benjamin Jackman <ben@jackman.biz>
 Benjamin Kircher <benjamin.kircher@gmail.com>
 Brendan Eich <brendan@mozilla.org>
 Brian Anderson <banderson@mozilla.com>
+Brian J. Burg <burg@cs.washington.edu>
 Chris Double <chris.double@double.co.nz>
 Chris Peterson <cpeterson@mozilla.com>
 Damian Gryski <damian@gryski.com>
@@ -29,6 +30,8 @@ Daniel Patterson <dbp@riseup.net>
 Dave Herman <dherman@mozilla.com>
 David Rajchenbach-Teller <dteller@mozilla.com>
 Donovan Preston <donovanpreston@gmail.com>
+Drew Willcoxon <adw@mozilla.com>
+Elliott Slaughter <elliottslaughter@gmail.com>
 Elly Fong-Jones <elly@leptoquark.net>
 Eric Holk <eric.holk@gmail.com>
 Erick Tryzelaar <erick.tryzelaar@gmail.com>
@@ -77,6 +80,7 @@ Patrick Walton <pwalton@mozilla.com>
 Patrik Kårlin <patrik.karlin@gmail.com>
 Paul Stansifer <paul.stansifer@gmail.com>
 Peter Hull <peterhull90@gmail.com>
+Philipp Brüschweiler <blei42@gmail.com>
 Rafael Ávila de Espíndola <respindola@mozilla.com>
 Ralph Giles <giles@thaumas.net>
 Reuben Morais <reuben.morais@gmail.com>

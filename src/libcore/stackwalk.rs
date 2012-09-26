@@ -1,22 +1,26 @@
-// NB: Don't rely on other core mods here as this has to move into the rt
+#[doc(hidden)]; // FIXME #3538
 
-use unsafe::reinterpret_cast;
+// NB: transitionary, de-mode-ing.
+#[forbid(deprecated_mode)];
+#[forbid(deprecated_pattern)];
+
+use cast::reinterpret_cast;
 use ptr::offset;
 use sys::size_of;
 
-type Word = uint;
+pub type Word = uint;
 
-struct Frame {
+pub struct Frame {
     fp: *Word
 }
 
-fn Frame(fp: *Word) -> Frame {
+pub fn Frame(fp: *Word) -> Frame {
     Frame {
         fp: fp
     }
 }
 
-fn walk_stack(visit: fn(Frame) -> bool) {
+pub fn walk_stack(visit: fn(Frame) -> bool) {
 
     debug!("beginning stack walk");
 
@@ -75,10 +79,12 @@ fn frame_address(f: fn(*u8)) {
 }
 
 extern mod rustrt {
+    #[legacy_exports];
     fn rust_dbg_breakpoint();
 }
 
 #[abi = "rust-intrinsic"]
 extern mod rusti {
+    #[legacy_exports];
     fn frame_address(f: fn(*u8));
 }

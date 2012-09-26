@@ -1,4 +1,5 @@
-
+// xfail-fast
+#[legacy_modes];
 
 fn mk() -> int { return 1; }
 
@@ -11,6 +12,6 @@ fn apply<T>(produce: extern fn() -> T,
 
 fn main() {
     let produce: extern fn() -> int = mk;
-    let consume: extern fn(&&int) = chk;
+    let consume: extern fn(&&v: int) = chk;
     apply::<int>(produce, consume);
 }

@@ -147,10 +147,10 @@ enum level {
 }
 
 impl level : cmp::Eq {
-    pure fn eq(&&other: level) -> bool {
-        (self as uint) == (other as uint)
+    pure fn eq(other: &level) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: level) -> bool { !self.eq(other) }
+    pure fn ne(other: &level) -> bool { !self.eq(other) }
 }
 
 fn diagnosticstr(lvl: level) -> ~str {
@@ -219,8 +219,8 @@ fn highlight_lines(cm: codemap::codemap, sp: span,
     }
     // Print the offending lines
     for display_lines.each |line| {
-        io::stderr().write_str(fmt!("%s:%u ", fm.name, line + 1u));
-        let s = codemap::get_line(fm, line as int) + ~"\n";
+        io::stderr().write_str(fmt!("%s:%u ", fm.name, *line + 1u));
+        let s = codemap::get_line(fm, *line as int) + ~"\n";
         io::stderr().write_str(s);
     }
     if elided {
@@ -246,22 +246,22 @@ fn highlight_lines(cm: codemap::codemap, sp: span,
         // indent past |name:## | and the 0-offset column location
         let mut left = str::len(fm.name) + digits + lo.col + 3u;
         let mut s = ~"";
-        while left > 0u { str::push_char(s, ' '); left -= 1u; }
+        while left > 0u { str::push_char(&mut s, ' '); left -= 1u; }
 
         s += ~"^";
         let hi = codemap::lookup_char_pos(cm, sp.hi);
         if hi.col != lo.col {
             // the ^ already takes up one space
             let mut width = hi.col - lo.col - 1u;
-            while width > 0u { str::push_char(s, '~'); width -= 1u; }
+            while width > 0u { str::push_char(&mut s, '~'); width -= 1u; }
         }
         io::stderr().write_str(s + ~"\n");
     }
 }
 
 fn print_macro_backtrace(cm: codemap::codemap, sp: span) {
-    do option::iter (sp.expn_info) |ei| {
-        let ss = option::map_default(ei.callie.span, @~"",
+    do option::iter(&sp.expn_info) |ei| {
+        let ss = option::map_default(&ei.callie.span, @~"",
                                      |span| @codemap::span_to_str(span, cm));
         print_diagnostic(*ss, note,
                          fmt!("in expansion of #%s", ei.callie.name));

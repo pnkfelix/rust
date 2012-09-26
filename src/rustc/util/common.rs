@@ -1,4 +1,4 @@
-use std::map::hashmap;
+use std::map::HashMap;
 use syntax::ast;
 use ast::{ty, pat};
 use syntax::codemap::{span};
@@ -11,7 +11,7 @@ fn indent<R>(op: fn() -> R) -> R {
     debug!(">>");
     let r <- op();
     debug!("<< (Result = %?)", r);
-    return r;
+    move r
 }
 
 struct _indenter {
@@ -30,7 +30,7 @@ fn indenter() -> _indenter {
     _indenter(())
 }
 
-type flag = hashmap<~str, ()>;
+type flag = HashMap<~str, ()>;
 
 fn field_expr(f: ast::field) -> @ast::expr { return f.node.expr; }
 

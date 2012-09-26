@@ -15,7 +15,7 @@ enum check_loan_ctxt = @{
     bccx: borrowck_ctxt,
     req_maps: req_maps,
 
-    reported: hashmap<ast::node_id, ()>,
+    reported: HashMap<ast::node_id, ()>,
 
     // Keep track of whether we're inside a ctor, so as to
     // allow mutating immutable fields in the same class if
@@ -37,23 +37,23 @@ enum purity_cause {
 }
 
 impl purity_cause : cmp::Eq {
-    pure fn eq(&&other: purity_cause) -> bool {
+    pure fn eq(other: &purity_cause) -> bool {
         match self {
             pc_pure_fn => {
-                match other {
+                match (*other) {
                     pc_pure_fn => true,
                     _ => false
                 }
             }
             pc_cmt(e0a) => {
-                match other {
+                match (*other) {
                     pc_cmt(e0b) => e0a == e0b,
                     _ => false
                 }
             }
         }
     }
-    pure fn ne(&&other: purity_cause) -> bool { !self.eq(other) }
+    pure fn ne(other: &purity_cause) -> bool { !self.eq(other) }
 }
 
 fn check_loans(bccx: borrowck_ctxt,
@@ -61,7 +61,7 @@ fn check_loans(bccx: borrowck_ctxt,
                crate: @ast::crate) {
     let clcx = check_loan_ctxt(@{bccx: bccx,
                                  req_maps: req_maps,
-                                 reported: int_hash(),
+                                 reported: HashMap(),
                                  mut in_ctor: false,
                                  mut declared_purity: ast::impure_fn,
                                  mut fn_args: @~[]});
@@ -75,8 +75,14 @@ fn check_loans(bccx: borrowck_ctxt,
 
 enum assignment_type {
     at_straight_up,
-    at_swap,
-    at_mutbl_ref,
+    at_swap
+}
+
+impl assignment_type : cmp::Eq {
+    pure fn eq(other: &assignment_type) -> bool {
+        (self as uint) == ((*other) as uint)
+    }
+    pure fn ne(other: &assignment_type) -> bool { !self.eq(other) }
 }
 
 impl assignment_type {
@@ -85,15 +91,13 @@ impl assignment_type {
         // are only assigned once; but it doesn't consider &mut
         match self {
           at_straight_up => true,
-          at_swap => true,
-          at_mutbl_ref => false
+          at_swap => true
         }
     }
     fn ing_form(desc: ~str) -> ~str {
         match self {
           at_straight_up => ~"assigning to " + desc,
-          at_swap => ~"swapping to and from " + desc,
-          at_mutbl_ref => ~"taking mut reference to " + desc
+          at_swap => ~"swapping to and from " + desc
         }
     }
 }
@@ -133,15 +137,15 @@ impl check_loan_ctxt {
     }
 
     fn walk_loans(scope_id: ast::node_id,
-                  f: fn(loan) -> bool) {
+                  f: fn(v: &loan) -> bool) {
         let mut scope_id = scope_id;
         let region_map = self.tcx().region_map;
         let req_loan_map = self.req_maps.req_loan_map;
 
         loop {
             for req_loan_map.find(scope_id).each |loanss| {
-                for (*loanss).each |loans| {
-                    for (*loans).each |loan| {
+                for loanss.each |loans| {
+                    for loans.each |loan| {
                         if !f(loan) { return; }
                     }
                 }
@@ -156,7 +160,7 @@ impl check_loan_ctxt {
 
     fn walk_loans_of(scope_id: ast::node_id,
                      lp: @loan_path,
-                     f: fn(loan) -> bool) {
+                     f: fn(v: &loan) -> bool) {
         for self.walk_loans(scope_id) |loan| {
             if loan.lp == lp {
                 if !f(loan) { return; }
@@ -200,7 +204,7 @@ impl check_loan_ctxt {
                 let did = ast_util::def_id_of_def(def);
                 let is_fn_arg =
                     did.crate == ast::local_crate &&
-                    (*self.fn_args).contains(did.node);
+                    (*self.fn_args).contains(&(did.node));
                 if is_fn_arg { return; } // case (a) above
               }
               ast::expr_fn_block(*) | ast::expr_fn(*) |
@@ -217,7 +221,7 @@ impl check_loan_ctxt {
         }
 
         let callee_ty = ty::node_id_to_type(tcx, callee_id);
-        match ty::get(callee_ty).struct {
+        match ty::get(callee_ty).sty {
           ty::ty_fn(fn_ty) => {
             match fn_ty.meta.purity {
               ast::pure_fn => return, // case (c) above
@@ -247,7 +251,7 @@ impl check_loan_ctxt {
             let def = self.tcx().def_map.get(expr.id);
             let did = ast_util::def_id_of_def(def);
             did.crate == ast::local_crate &&
-                (*self.fn_args).contains(did.node)
+                (*self.fn_args).contains(&(did.node))
           }
           ast::expr_fn_block(*) | ast::expr_fn(*) => {
             self.is_stack_closure(expr.id)
@@ -264,8 +268,8 @@ impl check_loan_ctxt {
 
         let par_scope_id = self.tcx().region_map.get(scope_id);
         for self.walk_loans(par_scope_id) |old_loan| {
-            for (*new_loanss).each |new_loans| {
-                for (*new_loans).each |new_loan| {
+            for new_loanss.each |new_loans| {
+                for new_loans.each |new_loan| {
                     if old_loan.lp != new_loan.lp { loop; }
                     match (old_loan.mutbl, new_loan.mutbl) {
                       (m_const, _) | (_, m_const) |
@@ -362,11 +366,9 @@ impl check_loan_ctxt {
         // taking a mutable ref.  that will create a loan of its own
         // which will be checked for compat separately in
         // check_for_conflicting_loans()
-        if at != at_mutbl_ref {
-            for cmt.lp.each |lp| {
-                self.check_for_loan_conflicting_with_assignment(
-                    at, ex, cmt, lp);
-            }
+        for cmt.lp.each |lp| {
+            self.check_for_loan_conflicting_with_assignment(
+                at, ex, cmt, *lp);
         }
 
         self.bccx.add_to_mutbl_map(cmt);
@@ -423,8 +425,8 @@ impl check_loan_ctxt {
                 self.tcx().sess.span_err(
                     e.cmt.span,
                     fmt!("illegal borrow unless pure: %s",
-                         self.bccx.bckerr_code_to_str(e.code)));
-                self.bccx.note_and_explain_bckerr(e.code);
+                         self.bccx.bckerr_to_str(e)));
+                self.bccx.note_and_explain_bckerr(e);
                 self.tcx().sess.span_note(
                     sp,
                     fmt!("impure due to %s", msg));
@@ -515,7 +517,7 @@ impl check_loan_ctxt {
                 pc, callee, callee_id, callee_span);
             for args.each |arg| {
                 self.check_pure_callee_or_arg(
-                    pc, Some(arg), arg.id, arg.span);
+                    pc, Some(*arg), arg.id, arg.span);
             }
           }
         }
@@ -524,14 +526,12 @@ impl check_loan_ctxt {
                 ty::node_id_to_type(self.tcx(), callee_id));
         do vec::iter2(args, arg_tys) |arg, arg_ty| {
             match ty::resolved_mode(self.tcx(), arg_ty.mode) {
-              ast::by_move => {
-                self.check_move_out(arg);
-              }
-              ast::by_mutbl_ref => {
-                self.check_assignment(at_mutbl_ref, arg);
-              }
-              ast::by_ref | ast::by_copy | ast::by_val => {
-              }
+                ast::by_move => {
+                    self.check_move_out(arg);
+                }
+                ast::by_mutbl_ref | ast::by_ref |
+                ast::by_copy | ast::by_val => {
+                }
             }
         }
     }
@@ -638,19 +638,6 @@ fn check_loans_in_expr(expr: @ast::expr,
             }
         }
       }
-      ast::expr_addr_of(mutbl, base) => {
-        match mutbl {
-          m_const => { /*all memory is const*/ }
-          m_mutbl => {
-            // If we are taking an &mut ptr, make sure the memory
-            // being pointed at is assignable in the first place:
-            self.check_assignment(at_mutbl_ref, base);
-          }
-          m_imm => {
-            // XXX explain why no check is req'd here
-          }
-        }
-      }
       ast::expr_call(f, args, _) => {
         self.check_call(expr, Some(f), f.id, f.span, args);
       }
@@ -685,9 +672,6 @@ fn check_loans_in_block(blk: ast::blk,
 
         match blk.node.rules {
           ast::default_blk => {
-          }
-          ast::unchecked_blk => {
-            self.declared_purity = ast::impure_fn;
           }
           ast::unsafe_blk => {
             self.declared_purity = ast::unsafe_fn;

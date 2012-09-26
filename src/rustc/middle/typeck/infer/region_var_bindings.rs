@@ -308,11 +308,11 @@ because `&x` was created alone, but is relatable to `&A`.
 use dvec::DVec;
 use result::Result;
 use result::{Ok, Err};
-use std::map::{hashmap, uint_hash};
+use std::map::HashMap;
 use std::cell::{Cell, empty_cell};
 use std::list::{List, Nil, Cons};
 
-use ty::{region, RegionVid, hash_region};
+use ty::{region, RegionVid};
 use region::is_subregion_of;
 use syntax::codemap;
 use to_str::to_str;
@@ -329,9 +329,9 @@ enum Constraint {
     ConstrainVarSubReg(RegionVid, region)
 }
 
-impl Constraint: cmp::Eq {
-    pure fn eq(&&other: Constraint) -> bool {
-        match (self, other) {
+impl Constraint : cmp::Eq {
+    pure fn eq(other: &Constraint) -> bool {
+        match (self, (*other)) {
             (ConstrainVarSubVar(v0a, v1a), ConstrainVarSubVar(v0b, v1b)) => {
                 v0a == v0b && v1a == v1b
             }
@@ -346,11 +346,11 @@ impl Constraint: cmp::Eq {
             (ConstrainVarSubReg(*), _) => false
         }
     }
-    pure fn ne(&&other: Constraint) -> bool { !self.eq(other) }
+    pure fn ne(other: &Constraint) -> bool { !self.eq(other) }
 }
 
 impl Constraint : to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+   pure  fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
         match self {
           ConstrainVarSubVar(ref v0, ref v1) =>
           to_bytes::iter_bytes_3(&0u8, v0, v1, lsb0, f),
@@ -369,15 +369,15 @@ struct TwoRegions {
     b: region,
 }
 
-impl TwoRegions: cmp::Eq {
-    pure fn eq(&&other: TwoRegions) -> bool {
-        self.a == other.a && self.b == other.b
+impl TwoRegions : cmp::Eq {
+    pure fn eq(other: &TwoRegions) -> bool {
+        self.a == (*other).a && self.b == (*other).b
     }
-    pure fn ne(&&other: TwoRegions) -> bool { !self.eq(other) }
+    pure fn ne(other: &TwoRegions) -> bool { !self.eq(other) }
 }
 
 impl TwoRegions : to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
         to_bytes::iter_bytes_2(&self.a, &self.b, lsb0, f)
     }
 }
@@ -389,13 +389,13 @@ enum UndoLogEntry {
     AddCombination(CombineMap, TwoRegions)
 }
 
-type CombineMap = hashmap<TwoRegions, RegionVid>;
+type CombineMap = HashMap<TwoRegions, RegionVid>;
 
 struct RegionVarBindings {
     tcx: ty::ctxt,
     var_spans: DVec<span>,
     values: Cell<~[ty::region]>,
-    constraints: hashmap<Constraint, span>,
+    constraints: HashMap<Constraint, span>,
     lubs: CombineMap,
     glbs: CombineMap,
 
@@ -415,7 +415,7 @@ fn RegionVarBindings(tcx: ty::ctxt) -> RegionVarBindings {
         tcx: tcx,
         var_spans: DVec(),
         values: empty_cell(),
-        constraints: hashmap(),
+        constraints: HashMap(),
         lubs: CombineMap(),
         glbs: CombineMap(),
         undo_log: DVec()
@@ -426,15 +426,7 @@ fn RegionVarBindings(tcx: ty::ctxt) -> RegionVarBindings {
 // `b`!  Not obvious that this is the most efficient way to go about
 // it.
 fn CombineMap() -> CombineMap {
-    return hashmap();
-}
-
-pure fn hash_constraint(rc: &Constraint) -> uint {
-    match *rc {
-      ConstrainVarSubVar(a, b) => *a ^ *b,
-      ConstrainRegSubVar(ref r, b) => ty::hash_region(r) ^ *b,
-      ConstrainVarSubReg(a, ref r) => *a ^ ty::hash_region(r)
-    }
+    return HashMap();
 }
 
 impl RegionVarBindings {
@@ -583,7 +575,7 @@ impl RegionVarBindings {
     }
 
     fn resolve_var(rid: RegionVid) -> ty::region {
-        debug!("RegionVarBindings: resolve_var(%?)", rid);
+        debug!("RegionVarBindings: resolve_var(%?=%u)", rid, *rid);
         if self.values.is_empty() {
             self.tcx.sess.span_bug(
                 self.var_spans[*rid],
@@ -764,19 +756,19 @@ priv impl RegionVarBindings {
 enum Direction { Incoming = 0, Outgoing = 1 }
 
 impl Direction : cmp::Eq {
-    pure fn eq(&&other: Direction) -> bool {
-        (self as uint) == (other as uint)
+    pure fn eq(other: &Direction) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: Direction) -> bool { !self.eq(other) }
+    pure fn ne(other: &Direction) -> bool { !self.eq(other) }
 }
 
 enum Classification { Expanding, Contracting }
 
 impl Classification : cmp::Eq {
-    pure fn eq(&&other: Classification) -> bool {
-        (self as uint) == (other as uint)
+    pure fn eq(other: &Classification) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: Classification) -> bool { !self.eq(other) }
+    pure fn ne(other: &Classification) -> bool { !self.eq(other) }
 }
 
 enum GraphNodeValue { NoValue, Value(region), ErrorValue }
@@ -804,10 +796,10 @@ struct SpannedRegion {
     span: span,
 }
 
-type TwoRegionsMap = hashmap<TwoRegions, ()>;
+type TwoRegionsMap = HashMap<TwoRegions, ()>;
 
 fn TwoRegionsMap() -> TwoRegionsMap {
-    return hashmap();
+    return HashMap();
 }
 
 impl RegionVarBindings {
@@ -836,8 +828,7 @@ impl RegionVarBindings {
         });
 
         // It would be nice to write this using map():
-        let mut edges = ~[];
-        vec::reserve(edges, num_edges);
+        let mut edges = vec::with_capacity(num_edges);
         for self.constraints.each_ref |constraint, span| {
             vec::push(edges, GraphEdge {
                 next_edge: [mut uint::max_value, uint::max_value],
@@ -866,7 +857,7 @@ impl RegionVarBindings {
             }
         }
 
-        return graph;
+        return (move graph);
 
         fn insert_edge(graph: &mut Graph,
                        node_id: RegionVid,
@@ -1196,7 +1187,7 @@ impl RegionVarBindings {
     fn collect_concrete_regions(graph: &Graph,
                                 orig_node_idx: RegionVid,
                                 dir: Direction) -> ~[SpannedRegion] {
-        let set = uint_hash();
+        let set = HashMap();
         let mut stack = ~[orig_node_idx];
         set.insert(*orig_node_idx, ());
         let mut result = ~[];

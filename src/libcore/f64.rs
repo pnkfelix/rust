@@ -132,6 +132,7 @@ pure fn is_finite(x: f64) -> bool {
 
 /* Module: consts */
 mod consts {
+    #[legacy_exports];
 
     // FIXME (requires Issue #1433 to fix): replace with mathematical
     // constants from cmath.
@@ -184,11 +185,11 @@ pure fn logarithm(n: f64, b: f64) -> f64 {
 }
 
 impl f64: num::Num {
-    pure fn add(&&other: f64)    -> f64 { return self + other; }
-    pure fn sub(&&other: f64)    -> f64 { return self - other; }
-    pure fn mul(&&other: f64)    -> f64 { return self * other; }
-    pure fn div(&&other: f64)    -> f64 { return self / other; }
-    pure fn modulo(&&other: f64) -> f64 { return self % other; }
+    pure fn add(other: &f64)    -> f64 { return self + *other; }
+    pure fn sub(other: &f64)    -> f64 { return self - *other; }
+    pure fn mul(other: &f64)    -> f64 { return self * *other; }
+    pure fn div(other: &f64)    -> f64 { return self / *other; }
+    pure fn modulo(other: &f64) -> f64 { return self % *other; }
     pure fn neg()                -> f64 { return -self;        }
 
     pure fn to_int()         -> int { return self as int; }

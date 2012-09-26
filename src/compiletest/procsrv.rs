@@ -1,7 +1,6 @@
-import run::spawn_process;
-import io::{ReaderUtil, WriterUtil};
-import libc::{c_int, pid_t};
-import pipes::chan;
+use run::spawn_process;
+use io::{ReaderUtil, WriterUtil};
+use libc::{c_int, pid_t};
 
 export run;
 
@@ -90,9 +89,9 @@ fn run(lib_path: ~str,
 }
 
 fn writeclose(fd: c_int, s: Option<~str>) {
-    if option::is_some(s) {
+    if s.is_some() {
         let writer = io::fd_writer(fd, false);
-        writer.write_str(option::get(s));
+        writer.write_str(s.get());
     }
 
     os::close(fd);
@@ -105,7 +104,7 @@ fn readclose(fd: c_int) -> ~str {
     let mut buf = ~"";
     while !reader.eof() {
         let bytes = reader.read_bytes(4096u);
-        str::push_str(buf, str::from_bytes(bytes));
+        str::push_str(&mut buf, str::from_bytes(bytes));
     }
     os::fclose(file);
     return buf;

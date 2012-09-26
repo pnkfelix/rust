@@ -1,16 +1,11 @@
+#[doc(hidden)]; // FIXME #3538
 // NB: transitionary, de-mode-ing.
 #[forbid(deprecated_mode)];
 #[forbid(deprecated_pattern)];
 
-export c_float;
-export c_double;
-
 // uncomment once #1433 is fixed
 // FIXME (#1433): export c_float_math_consts;
 // FIXME (#1433): export c_double_math_consts;
-
-export c_float_targ_consts;
-export c_double_targ_consts;
 
 use libc::c_int;
 use libc::c_float;
@@ -21,7 +16,7 @@ use libc::c_double;
 
 #[link_name = "m"]
 #[abi = "cdecl"]
-extern mod c_double {
+pub extern mod c_double {
 
     // Alpabetically sorted by link_name
 
@@ -96,7 +91,7 @@ extern mod c_double {
 
 #[link_name = "m"]
 #[abi = "cdecl"]
-extern mod c_float {
+pub extern mod c_float {
 
     // Alpabetically sorted by link_name
 
@@ -164,34 +159,34 @@ extern mod c_float {
 
 // FIXME obtain machine float/math constants automatically (Issue #1986)
 
-mod c_float_targ_consts {
-    const radix: uint = 2u;
-    const mantissa_digits: uint = 24u;
-    const digits: uint = 6u;
-    const min_exp: uint = -125u;
-    const max_exp: uint = 128u;
-    const min_10_exp: int = -37;
-    const max_10_exp: int = 38;
+pub mod c_float_targ_consts {
+    pub const radix: uint = 2u;
+    pub const mantissa_digits: uint = 24u;
+    pub const digits: uint = 6u;
+    pub const min_exp: uint = -125u;
+    pub const max_exp: uint = 128u;
+    pub const min_10_exp: int = -37;
+    pub const max_10_exp: int = 38;
     // FIXME (#1433): this is wrong, replace with hexadecimal (%a) constants
     // below.
-    const min_value: f32 = 1.175494e-38_f32;
-    const max_value: f32 = 3.402823e+38_f32;
-    const epsilon: f32 = 0.000000_f32;
+    pub const min_value: f32 = 1.175494e-38_f32;
+    pub const max_value: f32 = 3.402823e+38_f32;
+    pub const epsilon: f32 = 0.000000_f32;
 }
 
-mod c_double_targ_consts {
-    const radix: uint = 2u;
-    const mantissa_digits: uint = 53u;
-    const digits: uint = 15u;
-    const min_exp: uint = -1021u;
-    const max_exp: uint = 1024u;
-    const min_10_exp: int = -307;
-    const max_10_exp: int = 308;
+pub mod c_double_targ_consts {
+    pub const radix: uint = 2u;
+    pub const mantissa_digits: uint = 53u;
+    pub const digits: uint = 15u;
+    pub const min_exp: uint = -1021u;
+    pub const max_exp: uint = 1024u;
+    pub const min_10_exp: int = -307;
+    pub const max_10_exp: int = 308;
     // FIXME (#1433): this is wrong, replace with hexadecimal (%a) constants
     // below.
-    const min_value: f64 = 2.225074e-308_f64;
-    const max_value: f64 = 1.797693e+308_f64;
-    const epsilon: f64 = 2.220446e-16_f64;
+    pub const min_value: f64 = 2.225074e-308_f64;
+    pub const max_value: f64 = 1.797693e+308_f64;
+    pub const epsilon: f64 = 2.220446e-16_f64;
 }
 
 /*
@@ -199,6 +194,7 @@ mod c_double_targ_consts {
 FIXME use these once they can be parsed (see Issue #1433)
 
 mod c_float_math_consts {
+    #[legacy_exports];
     const pi: c_float = 0x1.921fb6p+1_f32;
     const div_1_pi: c_float = 0x1.45f306p-2_f32;
     const div_2_pi: c_float = 0x1.45f306p-1_f32;
@@ -215,6 +211,7 @@ mod c_float_math_consts {
 }
 
 mod c_double_math_consts {
+    #[legacy_exports];
     const pi: c_double = 0x1.921fb54442d18p+1_f64;
     const div_1_pi: c_double = 0x1.45f306dc9c883p-2_f64;
     const div_2_pi: c_double = 0x1.45f306dc9c883p-1_f64;
@@ -231,6 +228,7 @@ mod c_double_math_consts {
 }
 
 mod c_float_targ_consts {
+    #[legacy_exports];
     const radix: uint = 2u;
     const mantissa_digits: uint = 24u;
     const digits: uint = 6u;
@@ -244,6 +242,7 @@ mod c_float_targ_consts {
 }
 
 mod c_double_targ_consts {
+    #[legacy_exports];
     const radix: uint = 2u;
     const mantissa_digits: uint = 53u;
     const digits: uint = 15u;

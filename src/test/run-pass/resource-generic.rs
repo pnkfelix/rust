@@ -1,3 +1,6 @@
+// xfail-fast
+#[legacy_modes];
+
 struct finish<T: Copy> {
   arg: {val: T, fin: extern fn(T)},
   drop { self.arg.fin(self.arg.val); }

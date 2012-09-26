@@ -4,10 +4,11 @@
   Testing spawning foreign functions
 */
 
-use std;
+extern mod std;
 
 #[abi = "cdecl"]
 extern mod rustrt {
+    #[legacy_exports];
     fn rust_dbg_do_nothing();
 }
 

@@ -1,7 +1,9 @@
 #[link(name="socketlib", vers="0.0")];
 #[crate_type = "lib"];
+#[legacy_exports];
 
 mod socket {
+    #[legacy_exports];
 
 export socket_handle;
 

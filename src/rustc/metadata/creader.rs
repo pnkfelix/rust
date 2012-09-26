@@ -5,7 +5,7 @@ use syntax::{ast, ast_util};
 use syntax::attr;
 use syntax::visit;
 use syntax::codemap::span;
-use std::map::{hashmap, int_hash};
+use std::map::HashMap;
 use syntax::print::pprust;
 use filesearch::filesearch;
 use common::*;
@@ -55,7 +55,7 @@ fn dump_crates(crate_cache: DVec<cache_entry>) {
 
 fn warn_if_multiple_versions(e: env, diag: span_handler,
                              crate_cache: ~[cache_entry]) {
-    import either::*;
+    use either::*;
 
     if crate_cache.len() != 0u {
         let name = loader::crate_name_from_metas(*crate_cache.last().metas);
@@ -63,9 +63,9 @@ fn warn_if_multiple_versions(e: env, diag: span_handler,
             partition(crate_cache.map_to_vec(|entry| {
                 let othername = loader::crate_name_from_metas(*entry.metas);
                 if name == othername {
-                    Left(entry)
+                    Left(*entry)
                 } else {
-                    Right(entry)
+                    Right(*entry)
                 }
             }));
 
@@ -150,7 +150,7 @@ fn visit_item(e: env, i: @ast::item) {
         }
 
         for link_args.each |a| {
-            match attr::get_meta_item_value_str(attr::attr_meta(a)) {
+            match attr::get_meta_item_value_str(attr::attr_meta(*a)) {
               Some(linkarg) => {
                 cstore::add_used_link_args(cstore, linkarg);
               }
@@ -248,7 +248,7 @@ fn resolve_crate_deps(e: env, cdata: @~[u8]) -> cstore::cnum_map {
     debug!("resolving deps of external crate");
     // The map from crate numbers in the crate we're resolving to local crate
     // numbers
-    let cnum_map = int_hash::<ast::crate_num>();
+    let cnum_map = HashMap::<int,ast::crate_num>();
     for decoder::get_crate_deps(e.intr, cdata).each |dep| {
         let extrn_cnum = dep.cnum;
         let cname = dep.name;

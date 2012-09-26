@@ -22,14 +22,14 @@ fn monomorphic_fn(ccx: @crate_ctxt,
     let _icx = ccx.insn_ctxt("monomorphic_fn");
     let mut must_cast = false;
     let substs = vec::map(real_substs, |t| {
-        match normalize_for_monomorphization(ccx.tcx, t) {
+        match normalize_for_monomorphization(ccx.tcx, *t) {
           Some(t) => { must_cast = true; t }
-          None => t
+          None => *t
         }
     });
 
-    for real_substs.each() |s| { assert !ty::type_has_params(s); }
-    for substs.each() |s| { assert !ty::type_has_params(s); }
+    for real_substs.each() |s| { assert !ty::type_has_params(*s); }
+    for substs.each() |s| { assert !ty::type_has_params(*s); }
     let param_uses = type_use::type_uses_for(ccx, fn_id, substs.len());
     let hash_id = make_mono_id(ccx, fn_id, substs, vtables, Some(param_uses));
     if vec::any(hash_id.params,
@@ -40,8 +40,8 @@ fn monomorphic_fn(ccx: @crate_ctxt,
     #debug["monomorphic_fn(fn_id=%? (%s), real_substs=%?, substs=%?, \
            hash_id = %?",
            fn_id, ty::item_path_str(ccx.tcx, fn_id),
-           real_substs.map(|s| ty_to_str(ccx.tcx, s)),
-           substs.map(|s| ty_to_str(ccx.tcx, s)), hash_id];
+           real_substs.map(|s| ty_to_str(ccx.tcx, *s)),
+           substs.map(|s| ty_to_str(ccx.tcx, *s)), hash_id];
 
     match ccx.monomorphized.find(hash_id) {
       Some(val) => {
@@ -97,7 +97,9 @@ fn monomorphic_fn(ccx: @crate_ctxt,
     let mono_ty = ty::subst_tps(ccx.tcx, substs, llitem_ty);
     let llfty = type_of_fn_from_ty(ccx, mono_ty);
 
-    let depth = option::get_default(ccx.monomorphizing.find(fn_id), 0u);
+    ccx.stats.n_monos += 1;
+
+    let depth = option::get_default(&ccx.monomorphizing.find(fn_id), 0u);
     // Random cut-off -- code that needs to instantiate the same function
     // recursively more than ten times can probably safely be assumed to be
     // causing an infinite expansion.
@@ -130,13 +132,13 @@ fn monomorphic_fn(ccx: @crate_ctxt,
       }
       ast_map::node_foreign_item(i, _, _) => {
           let d = mk_lldecl();
-          foreign::trans_intrinsic(ccx, d, i, pt, option::get(psubsts),
+          foreign::trans_intrinsic(ccx, d, i, pt, psubsts.get(),
                                 ref_id);
           d
       }
       ast_map::node_variant(v, enum_item, _) => {
         let tvs = ty::enum_variants(ccx.tcx, local_def(enum_item.id));
-        let this_tv = option::get(vec::find(*tvs, |tv| {
+        let this_tv = option::get(&vec::find(*tvs, |tv| {
             tv.id.node == fn_id.node}));
         let d = mk_lldecl();
         set_inline_hint(d);
@@ -156,7 +158,7 @@ fn monomorphic_fn(ccx: @crate_ctxt,
       ast_map::node_method(mth, _, _) => {
         let d = mk_lldecl();
         set_inline_hint_if_appr(mth.attrs, d);
-        impl::trans_method(ccx, pt, mth, psubsts, d);
+        meth::trans_method(ccx, pt, mth, psubsts, d);
         d
       }
       ast_map::node_ctor(_, tps, ctor, parent_id, _) => {
@@ -164,7 +166,7 @@ fn monomorphic_fn(ccx: @crate_ctxt,
         let d = mk_lldecl();
         let tp_tys = ty::ty_params_to_tys(ccx.tcx, tps);
         trans_class_ctor(ccx, pt, ctor.node.dec, ctor.node.body, d,
-               option::get_default(psubsts,
+               option::get_default(&psubsts,
                         {tys:tp_tys, vtables: None, bounds: @~[]}),
                          fn_id.node, parent_id, ctor.span);
         d
@@ -198,7 +200,7 @@ fn monomorphic_fn(ccx: @crate_ctxt,
 
 fn normalize_for_monomorphization(tcx: ty::ctxt, ty: ty::t) -> Option<ty::t> {
     // FIXME[mono] could do this recursively. is that worthwhile? (#2529)
-    match ty::get(ty).struct {
+    match ty::get(ty).sty {
         ty::ty_box(*) => {
             Some(ty::mk_opaque_box(tcx))
         }
@@ -242,9 +244,9 @@ fn make_mono_id(ccx: @crate_ctxt, item: ast::def_id, substs: ~[ty::t],
         vec::map2(*bounds, substs, |bounds, subst| {
             let mut v = ~[];
             for vec::each(*bounds) |bound| {
-                match bound {
+                match *bound {
                   ty::bound_trait(_) => {
-                    vec::push(v, impl::vtable_id(ccx, vts[i]));
+                    vec::push(v, meth::vtable_id(ccx, vts[i]));
                     i += 1u;
                   }
                   _ => ()
@@ -254,7 +256,7 @@ fn make_mono_id(ccx: @crate_ctxt, item: ast::def_id, substs: ~[ty::t],
         })
       }
       None => {
-        vec::map(substs, |subst| (subst, None))
+        vec::map(substs, |subst| (*subst, None))
       }
     };
     let param_ids = match param_uses {
@@ -262,25 +264,46 @@ fn make_mono_id(ccx: @crate_ctxt, item: ast::def_id, substs: ~[ty::t],
         vec::map2(precise_param_ids, uses, |id, uses| {
             match id {
                 (a, b@Some(_)) => mono_precise(a, b),
-              (subst, None) => {
-                if uses == 0u { mono_any }
-                else if uses == type_use::use_repr &&
-                        !ty::type_needs_drop(ccx.tcx, subst) {
-                    let llty = type_of::type_of(ccx, subst);
-                    let size = shape::llsize_of_real(ccx, llty);
-                    let align = shape::llalign_of_pref(ccx, llty);
-                    // Special value for nil to prevent problems with undef
-                    // return pointers.
-                    if size == 1u && ty::type_is_nil(subst) {
-                        mono_repr(0u, 0u)
-                    } else { mono_repr(size, align) }
-                } else { mono_precise(subst, None) }
-              }
+                (subst, None) => {
+                    if uses == 0u {
+                        mono_any
+                    } else if uses == type_use::use_repr &&
+                        !ty::type_needs_drop(ccx.tcx, subst)
+                    {
+                        let llty = type_of::type_of(ccx, subst);
+                        let size = shape::llsize_of_real(ccx, llty);
+                        let align = shape::llalign_of_pref(ccx, llty);
+                        let mode = datum::appropriate_mode(subst);
+
+                        // FIXME(#3547)---scalars and floats are
+                        // treated differently in most ABIs.  But we
+                        // should be doing something more detailed
+                        // here.
+                        let is_float = match ty::get(subst).sty {
+                            ty::ty_float(_) => true,
+                            _ => false
+                        };
+
+                        // Special value for nil to prevent problems
+                        // with undef return pointers.
+                        if size == 1u && ty::type_is_nil(subst) {
+                            mono_repr(0u, 0u, is_float, mode)
+                        } else {
+                            mono_repr(size, align, is_float, mode)
+                        }
+                    } else {
+                        mono_precise(subst, None)
+                    }
+                }
             }
         })
       }
-      None => precise_param_ids.map(|x| { let (a, b) = x;
-                mono_precise(a, b) })
+      None => {
+          precise_param_ids.map(|x| {
+              let (a, b) = *x;
+              mono_precise(a, b)
+          })
+      }
     };
     @{def: item, params: param_ids}
 }

@@ -4,8 +4,8 @@ use middle::ty;
 use syntax::{ast, ast_util, visit};
 use syntax::attr;
 use syntax::codemap::span;
-use std::map::{map,hashmap,int_hash,hash_from_strs};
-use std::smallintmap::{map,SmallIntMap};
+use std::map::{Map,HashMap};
+use std::smallintmap::{Map,SmallIntMap};
 use io::WriterUtil;
 use util::ppaux::{ty_to_str};
 use middle::pat_util::{pat_bindings};
@@ -13,7 +13,7 @@ use syntax::ast_util::{path_to_ident};
 use syntax::print::pprust::{expr_to_str, mode_to_str, pat_to_str};
 export lint, ctypes, unused_imports, while_true, path_statement, old_vecs;
 export unrecognized_lint, non_implicitly_copyable_typarams;
-export vecs_implicitly_copyable, implicit_copies;
+export vecs_implicitly_copyable, implicit_copies, legacy_modes;
 export level, allow, warn, deny, forbid;
 export lint_dict, get_lint_dict, level_to_str;
 export get_lint_level, get_lint_settings_level;
@@ -59,16 +59,18 @@ enum lint {
     owned_heap_memory,
     heap_memory,
 
+    legacy_modes,
+
     // FIXME(#3266)--make liveness warnings lintable
     // unused_variable,
     // dead_assignment
 }
 
 impl lint : cmp::Eq {
-    pure fn eq(&&other: lint) -> bool {
-        (self as uint) == (other as uint)
+    pure fn eq(other: &lint) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: lint) -> bool { !self.eq(other) }
+    pure fn ne(other: &lint) -> bool { !self.eq(other) }
 }
 
 fn level_to_str(lv: level) -> ~str {
@@ -85,17 +87,17 @@ enum level {
 }
 
 impl level : cmp::Eq {
-    pure fn eq(&&other: level) -> bool {
-        (self as uint) == (other as uint)
+    pure fn eq(other: &level) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: level) -> bool { !self.eq(other) }
+    pure fn ne(other: &level) -> bool { !self.eq(other) }
 }
 
 type lint_spec = @{lint: lint,
                    desc: ~str,
                    default: level};
 
-type lint_dict = hashmap<~str,lint_spec>;
+type lint_dict = HashMap<~str,lint_spec>;
 
 /*
   Pass names should not contain a '-', as the compiler normalizes
@@ -156,8 +158,8 @@ fn get_lint_dict() -> lint_dict {
 
         (~"non_camel_case_types",
          @{lint: non_camel_case_types,
-           desc: ~"types, variants and traits must have camel case names",
-           default: allow}),
+           desc: ~"types, variants and traits should have camel case names",
+           default: warn}),
 
         (~"managed_heap_memory",
          @{lint: managed_heap_memory,
@@ -179,6 +181,11 @@ fn get_lint_dict() -> lint_dict {
            desc: ~"use of any structural records",
            default: allow}),
 
+        (~"legacy modes",
+         @{lint: legacy_modes,
+           desc: ~"allow legacy modes",
+           default: forbid}),
+
         /* FIXME(#3266)--make liveness warnings lintable
         (~"unused_variable",
          @{lint: unused_variable,
@@ -191,12 +198,12 @@ fn get_lint_dict() -> lint_dict {
            default: warn}),
         */
     ];
-    hash_from_strs(v)
+    std::map::hash_from_vec(v)
 }
 
 // This is a highly not-optimal set of data structure decisions.
 type lint_modes = SmallIntMap<level>;
-type lint_mode_map = hashmap<ast::node_id, lint_modes>;
+type lint_mode_map = HashMap<ast::node_id, lint_modes>;
 
 // settings_map maps node ids of items with non-default lint settings
 // to their settings; default_settings contains the settings for everything
@@ -208,7 +215,7 @@ type lint_settings = {
 
 fn mk_lint_settings() -> lint_settings {
     {default_settings: std::smallintmap::mk(),
-     settings_map: int_hash()}
+     settings_map: HashMap()}
 }
 
 fn get_lint_level(modes: lint_modes, lint: lint) -> level {
@@ -271,7 +278,7 @@ impl ctxt {
         let mut triples = ~[];
 
         for [allow, warn, deny, forbid].each |level| {
-            let level_name = level_to_str(level);
+            let level_name = level_to_str(*level);
             let metas =
                 attr::attr_metas(attr::find_attrs_by_name(attrs,
                                                           level_name));
@@ -281,7 +288,7 @@ impl ctxt {
                     for metas.each |meta| {
                         match meta.node {
                           ast::meta_word(lintname) => {
-                            vec::push(triples, (meta, level, lintname));
+                            vec::push(triples, (*meta, *level, lintname));
                           }
                           _ => {
                             self.sess.span_err(
@@ -300,7 +307,7 @@ impl ctxt {
         }
 
         for triples.each |pair| {
-            let (meta, level, lintname) = pair;
+            let (meta, level, lintname) = *pair;
             match self.dict.find(lintname) {
               None => {
                 self.span_lint(
@@ -360,7 +367,7 @@ fn build_settings_crate(sess: session::session, crate: @ast::crate) {
 
     // Install command-line options, overriding defaults.
     for sess.opts.lint_opts.each |pair| {
-        let (lint,level) = pair;
+        let (lint,level) = *pair;
         cx.set_level(lint, level);
     }
 
@@ -389,6 +396,7 @@ fn check_item(i: @ast::item, cx: ty::ctxt) {
     check_item_non_camel_case_types(cx, i);
     check_item_heap(cx, i);
     check_item_structural_records(cx, i);
+    check_item_deprecated_modes(cx, i);
 }
 
 // Take a visitor, and modify it so that it will not proceed past subitems.
@@ -498,7 +506,7 @@ fn check_item_heap(cx: ty::ctxt, it: @ast::item) {
             let mut n_box = 0;
             let mut n_uniq = 0;
             ty::fold_ty(cx, ty, |t| {
-                match ty::get(t).struct {
+                match ty::get(t).sty {
                   ty::ty_box(_) => n_box += 1,
                   ty::ty_uniq(_) => n_uniq += 1,
                   _ => ()
@@ -527,7 +535,7 @@ fn check_item_heap(cx: ty::ctxt, it: @ast::item) {
             for [managed_heap_memory,
                  owned_heap_memory,
                  heap_memory].each |lint| {
-                check_type_for_lint(cx, lint, node, item, span, ty);
+                check_type_for_lint(cx, *lint, node, item, span, ty);
             }
     }
 
@@ -605,7 +613,8 @@ fn check_item_non_camel_case_types(cx: ty::ctxt, it: @ast::item) {
         if !is_camel_case(cx, ident) {
             cx.sess.span_lint(
                 non_camel_case_types, expr_id, item_id, span,
-                ~"type, variant, or trait must be camel case");
+                ~"type, variant, or trait should have \
+                  a camel case identifier");
         }
     }
 
@@ -658,43 +667,107 @@ fn check_fn(tcx: ty::ctxt, fk: visit::fn_kind, decl: ast::fn_decl,
     }
 
     let fn_ty = ty::node_id_to_type(tcx, id);
-    match ty::get(fn_ty).struct {
-      ty::ty_fn(fn_ty) => {
-        let mut counter = 0;
-        do vec::iter2(fn_ty.sig.inputs, decl.inputs) |arg_ty, arg_ast| {
-            counter += 1;
-            debug!("arg %d, ty=%s, mode=%s",
-                   counter,
-                   ty_to_str(tcx, arg_ty.ty),
-                   mode_to_str(arg_ast.mode));
-            match arg_ast.mode {
-              ast::expl(ast::by_copy) => {
-                /* always allow by-copy */
-              }
+    check_fn_deprecated_modes(tcx, fn_ty, decl, span, id);
+}
 
-              ast::expl(_) => {
-                tcx.sess.span_lint(
-                    deprecated_mode, id, id,
-                    span,
-                    fmt!("argument %d uses an explicit mode", counter));
-              }
+fn check_fn_deprecated_modes(tcx: ty::ctxt, fn_ty: ty::t, decl: ast::fn_decl,
+                             span: span, id: ast::node_id) {
+    match ty::get(fn_ty).sty {
+        ty::ty_fn(fn_ty) => {
+            let mut counter = 0;
+            do vec::iter2(fn_ty.sig.inputs, decl.inputs) |arg_ty, arg_ast| {
+                counter += 1;
+                debug!("arg %d, ty=%s, mode=%s",
+                       counter,
+                       ty_to_str(tcx, arg_ty.ty),
+                       mode_to_str(arg_ast.mode));
+                match arg_ast.mode {
+                    ast::expl(ast::by_copy) => {
+                        /* always allow by-copy */
+                    }
 
-              ast::infer(_) => {
-                let kind = ty::type_kind(tcx, arg_ty.ty);
-                if !ty::kind_is_safe_for_default_mode(kind) {
-                    tcx.sess.span_lint(
-                        deprecated_mode, id, id,
-                        span,
-                        fmt!("argument %d uses the default mode \
-                              but shouldn't",
-                             counter));
+                    ast::expl(_) => {
+                        tcx.sess.span_lint(
+                            deprecated_mode, id, id,
+                            span,
+                         fmt!("argument %d uses an explicit mode", counter));
+                    }
+
+                    ast::infer(_) => {
+                        let kind = ty::type_kind(tcx, arg_ty.ty);
+                        if !ty::kind_is_safe_for_default_mode(kind) {
+                            tcx.sess.span_lint(
+                                deprecated_mode, id, id,
+                                span,
+                                fmt!("argument %d uses the default mode \
+                                      but shouldn't",
+                                     counter));
+                        }
+                    }
                 }
-              }
+
+                match ty::get(arg_ty.ty).sty {
+                    ty::ty_fn(*) => {
+                        let span = arg_ast.ty.span;
+                        // Recurse to check fn-type argument
+                        match arg_ast.ty.node {
+                            ast::ty_fn(_, _, _, decl) => {
+                                check_fn_deprecated_modes(tcx, arg_ty.ty,
+                                                          decl, span, id);
+                            }
+                            ast::ty_path(*) => {
+                                // This is probably a typedef, so we can't
+                                // see the actual fn decl
+                                // e.g. fn foo(f: InitOp<T>)
+                            }
+                            ast::ty_rptr(_, mt)
+                            | ast::ty_box(mt)
+                            | ast::ty_uniq(mt) => {
+                                // Functions with preceding sigil are parsed
+                                // as pointers of functions
+                                match mt.ty.node {
+                                    ast::ty_fn(_, _, _, decl) => {
+                                        check_fn_deprecated_modes(
+                                            tcx, arg_ty.ty,
+                                            decl, span, id);
+                                    }
+                                    _ => fail
+                                }
+                            }
+                            _ => {
+                                tcx.sess.span_warn(span, ~"what");
+                                error!("arg %d, ty=%s, mode=%s",
+                                       counter,
+                                       ty_to_str(tcx, arg_ty.ty),
+                                       mode_to_str(arg_ast.mode));
+                                error!("%?",arg_ast.ty.node);
+                                fail
+                            }
+                        };
+                    }
+                    _ => ()
+                }
             }
         }
-      }
-      _ => tcx.sess.impossible_case(span, ~"check_fn: function has \
-             non-fn type")
+
+        _ => tcx.sess.impossible_case(span, ~"check_fn: function has \
+                                              non-fn type")
+    }
+}
+
+fn check_item_deprecated_modes(tcx: ty::ctxt, it: @ast::item) {
+    match it.node {
+        ast::item_ty(ty, _) => {
+            match ty.node {
+                ast::ty_fn(_, _, _, decl) => {
+                    let fn_ty = ty::node_id_to_type(tcx, it.id);
+                    check_fn_deprecated_modes(
+                        tcx, fn_ty, decl, ty.span, it.id)
+                }
+                _ => ()
+            }
+        }
+        _ => ()
     }
 }
 

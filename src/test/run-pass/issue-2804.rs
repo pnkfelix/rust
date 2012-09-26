@@ -1,6 +1,6 @@
-use std;
+extern mod std;
 use io::WriterUtil;
-use std::map::hashmap;
+use std::map::HashMap;
 
 enum object
 {
@@ -8,7 +8,7 @@ enum object
     int_value(i64),
 }
 
-fn lookup(table: std::map::hashmap<~str, std::json::Json>, key: ~str, default: ~str) -> ~str
+fn lookup(table: std::map::HashMap<~str, std::json::Json>, key: ~str, default: ~str) -> ~str
 {
     match table.find(key)
     {
@@ -47,14 +47,14 @@ fn add_interface(store: int, managed_ip: ~str, data: std::json::Json) -> (~str, 
     }
 }
 
-fn add_interfaces(store: int, managed_ip: ~str, device: std::map::hashmap<~str, std::json::Json>) -> ~[(~str, object)]
+fn add_interfaces(store: int, managed_ip: ~str, device: std::map::HashMap<~str, std::json::Json>) -> ~[(~str, object)]
 {
     match device[~"interfaces"]
     {
         std::json::List(interfaces) =>
         {
           do vec::map(*interfaces) |interface| {
-                add_interface(store, managed_ip, interface)
+                add_interface(store, managed_ip, *interface)
           }
         }
         _ =>

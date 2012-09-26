@@ -2,12 +2,14 @@
 
 export addr_of;
 export to_unsafe_ptr;
+export to_const_unsafe_ptr;
 export to_mut_unsafe_ptr;
 export mut_addr_of;
 export offset;
 export const_offset;
 export mut_offset;
 export null;
+export mut_null;
 export is_null;
 export is_not_null;
 export memcpy;
@@ -25,28 +27,35 @@ use libc::{c_void, size_t};
 #[nolink]
 #[abi = "cdecl"]
 extern mod libc_ {
+    #[legacy_exports];
     #[rust_stack]
-    fn memcpy(dest: *c_void, src: *c_void, n: libc::size_t) -> *c_void;
+    fn memcpy(dest: *mut c_void, src: *const c_void,
+              n: libc::size_t) -> *c_void;
+
     #[rust_stack]
-    fn memmove(dest: *c_void, src: *c_void, n: libc::size_t) -> *c_void;
+    fn memmove(dest: *mut c_void, src: *const c_void,
+               n: libc::size_t) -> *c_void;
+
     #[rust_stack]
-    fn memset(dest: *c_void, c: libc::c_int, len: libc::size_t) -> *c_void;
+    fn memset(dest: *mut c_void, c: libc::c_int,
+              len: libc::size_t) -> *c_void;
 }
 
 #[abi = "rust-intrinsic"]
 extern mod rusti {
+    #[legacy_exports];
     fn addr_of<T>(val: T) -> *T;
 }
 
 /// Get an unsafe pointer to a value
 #[inline(always)]
-pure fn addr_of<T>(val: T) -> *T { unchecked { rusti::addr_of(val) } }
+pure fn addr_of<T>(val: T) -> *T { unsafe { rusti::addr_of(val) } }
 
 /// Get an unsafe mut pointer to a value
 #[inline(always)]
 pure fn mut_addr_of<T>(val: T) -> *mut T {
     unsafe {
-        unsafe::reinterpret_cast(&rusti::addr_of(val))
+        cast::reinterpret_cast(&rusti::addr_of(val))
     }
 }
 
@@ -90,7 +99,11 @@ unsafe fn position<T>(buf: *T, f: fn(T) -> bool) -> uint {
 
 /// Create an unsafe null pointer
 #[inline(always)]
-pure fn null<T>() -> *T { unsafe { unsafe::reinterpret_cast(&0u) } }
+pure fn null<T>() -> *T { unsafe { cast::reinterpret_cast(&0u) } }
+
+/// Create an unsafe mutable null pointer
+#[inline(always)]
+pure fn mut_null<T>() -> *mut T { unsafe { cast::reinterpret_cast(&0u) } }
 
 /// Returns true if the pointer is equal to the null pointer.
 pure fn is_null<T>(ptr: *const T) -> bool { ptr == null() }
@@ -105,9 +118,9 @@ pure fn is_not_null<T>(ptr: *const T) -> bool { !is_null(ptr) }
  * and destination may not overlap.
  */
 #[inline(always)]
-unsafe fn memcpy<T>(dst: *T, src: *T, count: uint) {
+unsafe fn memcpy<T>(dst: *mut T, src: *const T, count: uint) {
     let n = count * sys::size_of::<T>();
-    libc_::memcpy(dst as *c_void, src as *c_void, n as size_t);
+    libc_::memcpy(dst as *mut c_void, src as *c_void, n as size_t);
 }
 
 /**
@@ -117,15 +130,15 @@ unsafe fn memcpy<T>(dst: *T, src: *T, count: uint) {
  * and destination may overlap.
  */
 #[inline(always)]
-unsafe fn memmove<T>(dst: *T, src: *T, count: uint)  {
+unsafe fn memmove<T>(dst: *mut T, src: *const T, count: uint)  {
     let n = count * sys::size_of::<T>();
-    libc_::memmove(dst as *c_void, src as *c_void, n as size_t);
+    libc_::memmove(dst as *mut c_void, src as *c_void, n as size_t);
 }
 
 #[inline(always)]
 unsafe fn memset<T>(dst: *mut T, c: int, count: uint)  {
     let n = count * sys::size_of::<T>();
-    libc_::memset(dst as *c_void, c as libc::c_int, n as size_t);
+    libc_::memset(dst as *mut c_void, c as libc::c_int, n as size_t);
 }
 
 
@@ -135,8 +148,18 @@ unsafe fn memset<T>(dst: *mut T, c: int, count: uint)  {
   reinterpret_cast.
 */
 #[inline(always)]
-fn to_unsafe_ptr<T>(thing: &T) -> *T unsafe {
-    unsafe::reinterpret_cast(&thing)
+fn to_unsafe_ptr<T>(thing: &T) -> *T {
+    unsafe { cast::reinterpret_cast(&thing) }
+}
+
+/**
+  Transform a const region pointer - &const T - to a const unsafe pointer -
+  *const T. This is safe, but is implemented with an unsafe block due to
+  reinterpret_cast.
+*/
+#[inline(always)]
+fn to_const_unsafe_ptr<T>(thing: &const T) -> *const T {
+    unsafe { cast::reinterpret_cast(&thing) }
 }
 
 /**
@@ -145,8 +168,8 @@ fn to_unsafe_ptr<T>(thing: &T) -> *T unsafe {
   reinterpret_cast.
 */
 #[inline(always)]
-fn to_mut_unsafe_ptr<T>(thing: &mut T) -> *mut T unsafe {
-    unsafe::reinterpret_cast(&thing)
+fn to_mut_unsafe_ptr<T>(thing: &mut T) -> *mut T {
+    unsafe { cast::reinterpret_cast(&thing) }
 }
 
 /**
@@ -158,7 +181,7 @@ fn to_mut_unsafe_ptr<T>(thing: &mut T) -> *mut T unsafe {
 */
 #[inline(always)]
 fn to_uint<T>(thing: &T) -> uint unsafe {
-    unsafe::reinterpret_cast(&thing)
+    cast::reinterpret_cast(&thing)
 }
 
 /// Determine if two borrowed pointers point to the same thing.
@@ -183,50 +206,50 @@ impl<T> *T: Ptr {
 
 // Equality for pointers
 impl<T> *const T : Eq {
-    pure fn eq(&&other: *const T) -> bool unsafe {
-        let a: uint = unsafe::reinterpret_cast(&self);
-        let b: uint = unsafe::reinterpret_cast(&other);
+    pure fn eq(other: &*const T) -> bool unsafe {
+        let a: uint = cast::reinterpret_cast(&self);
+        let b: uint = cast::reinterpret_cast(&(*other));
         return a == b;
     }
-    pure fn ne(&&other: *const T) -> bool { !self.eq(other) }
+    pure fn ne(other: &*const T) -> bool { !self.eq(other) }
 }
 
 // Comparison for pointers
 impl<T> *const T : Ord {
-    pure fn lt(&&other: *const T) -> bool unsafe {
-        let a: uint = unsafe::reinterpret_cast(&self);
-        let b: uint = unsafe::reinterpret_cast(&other);
+    pure fn lt(other: &*const T) -> bool unsafe {
+        let a: uint = cast::reinterpret_cast(&self);
+        let b: uint = cast::reinterpret_cast(&(*other));
         return a < b;
     }
-    pure fn le(&&other: *const T) -> bool unsafe {
-        let a: uint = unsafe::reinterpret_cast(&self);
-        let b: uint = unsafe::reinterpret_cast(&other);
+    pure fn le(other: &*const T) -> bool unsafe {
+        let a: uint = cast::reinterpret_cast(&self);
+        let b: uint = cast::reinterpret_cast(&(*other));
         return a <= b;
     }
-    pure fn ge(&&other: *const T) -> bool unsafe {
-        let a: uint = unsafe::reinterpret_cast(&self);
-        let b: uint = unsafe::reinterpret_cast(&other);
+    pure fn ge(other: &*const T) -> bool unsafe {
+        let a: uint = cast::reinterpret_cast(&self);
+        let b: uint = cast::reinterpret_cast(&(*other));
         return a >= b;
     }
-    pure fn gt(&&other: *const T) -> bool unsafe {
-        let a: uint = unsafe::reinterpret_cast(&self);
-        let b: uint = unsafe::reinterpret_cast(&other);
+    pure fn gt(other: &*const T) -> bool unsafe {
+        let a: uint = cast::reinterpret_cast(&self);
+        let b: uint = cast::reinterpret_cast(&(*other));
         return a > b;
     }
 }
 
 // Equality for region pointers
 impl<T:Eq> &const T : Eq {
-    pure fn eq(&&other: &const T) -> bool { return *self == *other; }
-    pure fn ne(&&other: &const T) -> bool { return *self != *other; }
+    pure fn eq(other: & &const T) -> bool { return *self == *(*other); }
+    pure fn ne(other: & &const T) -> bool { return *self != *(*other); }
 }
 
 // Comparison for region pointers
 impl<T:Ord> &const T : Ord {
-    pure fn lt(&&other: &const T) -> bool { *self < *other }
-    pure fn le(&&other: &const T) -> bool { *self <= *other }
-    pure fn ge(&&other: &const T) -> bool { *self >= *other }
-    pure fn gt(&&other: &const T) -> bool { *self > *other }
+    pure fn lt(other: & &const T) -> bool { *self < *(*other) }
+    pure fn le(other: & &const T) -> bool { *self <= *(*other) }
+    pure fn ge(other: & &const T) -> bool { *self >= *(*other) }
+    pure fn gt(other: & &const T) -> bool { *self > *(*other) }
 }
 
 #[test]
@@ -235,7 +258,7 @@ fn test() {
         type Pair = {mut fst: int, mut snd: int};
         let p = {mut fst: 10, mut snd: 20};
         let pptr: *mut Pair = mut_addr_of(p);
-        let iptr: *mut int = unsafe::reinterpret_cast(&pptr);
+        let iptr: *mut int = cast::reinterpret_cast(&pptr);
         assert (*iptr == 10);;
         *iptr = 30;
         assert (*iptr == 30);
@@ -246,25 +269,25 @@ fn test() {
         assert (p.fst == 50);
         assert (p.snd == 60);
 
-        let v0 = ~[32000u16, 32001u16, 32002u16];
-        let v1 = ~[0u16, 0u16, 0u16];
+        let mut v0 = ~[32000u16, 32001u16, 32002u16];
+        let mut v1 = ~[0u16, 0u16, 0u16];
 
-        ptr::memcpy(ptr::offset(vec::unsafe::to_ptr(v1), 1u),
-                    ptr::offset(vec::unsafe::to_ptr(v0), 1u), 1u);
+        ptr::memcpy(ptr::mut_offset(vec::raw::to_mut_ptr(v1), 1u),
+                    ptr::offset(vec::raw::to_ptr(v0), 1u), 1u);
         assert (v1[0] == 0u16 && v1[1] == 32001u16 && v1[2] == 0u16);
-        ptr::memcpy(vec::unsafe::to_ptr(v1),
-                    ptr::offset(vec::unsafe::to_ptr(v0), 2u), 1u);
+        ptr::memcpy(vec::raw::to_mut_ptr(v1),
+                    ptr::offset(vec::raw::to_ptr(v0), 2u), 1u);
         assert (v1[0] == 32002u16 && v1[1] == 32001u16 && v1[2] == 0u16);
-        ptr::memcpy(ptr::offset(vec::unsafe::to_ptr(v1), 2u),
-                    vec::unsafe::to_ptr(v0), 1u);
+        ptr::memcpy(ptr::mut_offset(vec::raw::to_mut_ptr(v1), 2u),
+                    vec::raw::to_ptr(v0), 1u);
         assert (v1[0] == 32002u16 && v1[1] == 32001u16 && v1[2] == 32000u16);
     }
 }
 
 #[test]
 fn test_position() {
-    import str::as_c_str;
-    import libc::c_char;
+    use str::as_c_str;
+    use libc::c_char;
 
     let s = ~"hello";
     unsafe {
@@ -283,7 +306,7 @@ fn test_buf_len() {
         do str::as_c_str(s1) |p1| {
             do str::as_c_str(s2) |p2| {
                 let v = ~[p0, p1, p2, null()];
-                do vec::as_buf(v) |vp, len| {
+                do vec::as_imm_buf(v) |vp, len| {
                     assert unsafe { buf_len(vp) } == 3u;
                     assert len == 4u;
                 }

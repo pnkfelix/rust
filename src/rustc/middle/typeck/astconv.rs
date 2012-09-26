@@ -73,8 +73,10 @@ fn ast_region_to_region<AC: ast_conv, RS: region_scope Copy Owned>(
     self: AC, rscope: RS, span: span, a_r: @ast::region) -> ty::region {
 
     let res = match a_r.node {
-      ast::re_anon => rscope.anon_region(span),
-      ast::re_named(id) => rscope.named_region(span, id)
+        ast::re_static => Ok(ty::re_static),
+        ast::re_anon => rscope.anon_region(span),
+        ast::re_self => rscope.self_region(span),
+        ast::re_named(id) => rscope.named_region(span, id)
     };
 
     get_region_reporting_err(self.tcx(), span, res)
@@ -123,7 +125,7 @@ fn ast_path_to_substs_and_ty<AC: ast_conv, RS: region_scope Copy Owned>(
             fmt!("wrong number of type arguments: expected %u but found %u",
                  (*decl_bounds).len(), path.types.len()));
     }
-    let tps = path.types.map(|a_t| ast_ty_to_ty(self, rscope, a_t));
+    let tps = path.types.map(|a_t| ast_ty_to_ty(self, rscope, *a_t));
 
     let substs = {self_r:self_r, self_ty:None, tps:tps};
     {substs: substs, ty: ty::subst(tcx, &substs, decl_ty)}
@@ -185,7 +187,7 @@ fn ast_ty_to_ty<AC: ast_conv, RS: region_scope Copy Owned>(
               Some(ast::def_ty(type_def_id)) => {
                 let result = ast_path_to_substs_and_ty(self, rscope,
                                                        type_def_id, path);
-                match ty::get(result.ty).struct {
+                match ty::get(result.ty).sty {
                     ty::ty_trait(trait_def_id, substs, _) => {
                         if vst != ty::vstore_box {
                             tcx.sess.span_unimpl(path.span,
@@ -293,7 +295,7 @@ fn ast_ty_to_ty<AC: ast_conv, RS: region_scope Copy Owned>(
                         |tmt| ty::mk_rptr(tcx, r, tmt))
       }
       ast::ty_tup(fields) => {
-        let flds = vec::map(fields, |t| ast_ty_to_ty(self, rscope, t));
+        let flds = vec::map(fields, |t| ast_ty_to_ty(self, rscope, *t));
         ty::mk_tup(tcx, flds)
       }
       ast::ty_rec(fields) => {
@@ -413,13 +415,13 @@ fn ty_of_arg<AC: ast_conv, RS: region_scope Copy Owned>(
     let mode = {
         match a.mode {
           ast::infer(_) if expected_ty.is_some() => {
-            result::get(ty::unify_mode(
+            result::get(&ty::unify_mode(
                 self.tcx(),
                 ty::expected_found {expected: expected_ty.get().mode,
                                     found: a.mode}))
           }
           ast::infer(_) => {
-            match ty::get(ty).struct {
+            match ty::get(ty).sty {
               // If the type is not specified, then this must be a fn expr.
               // Leave the mode as infer(_), it will get inferred based
               // on constraints elsewhere.
@@ -430,8 +432,9 @@ fn ty_of_arg<AC: ast_conv, RS: region_scope Copy Owned>(
               // tables in tcx but should never fail, because nothing else
               // will have been unified with m yet:
               _ => {
-                let m1 = ast::expl(ty::default_arg_mode_for_ty(ty));
-                result::get(ty::unify_mode(
+                let m1 = ast::expl(ty::default_arg_mode_for_ty(self.tcx(),
+                                                               ty));
+                result::get(&ty::unify_mode(
                     self.tcx(),
                     ty::expected_found {expected: m1,
                                         found: a.mode}))
@@ -486,7 +489,7 @@ fn ty_of_fn_decl<AC: ast_conv, RS: region_scope Copy Owned>(
                 // were supplied
                 if i < e.inputs.len() {Some(e.inputs[i])} else {None}
             };
-            ty_of_arg(self, rb, a, expected_arg_ty)
+            ty_of_arg(self, rb, *a, expected_arg_ty)
         };
 
         let expected_ret_ty = expected_tys.map(|e| e.output);

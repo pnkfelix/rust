@@ -1,10 +1,10 @@
 // Based on threadring.erlang by Jira Isa
-use std;
+extern mod std;
 
 const n_threads: int = 503;
 
 fn start(+token: int) {
-    import iter::*;
+    use iter::*;
 
     let p = comm::Port();
     let mut ch = comm::Chan(p);
@@ -37,7 +37,7 @@ fn roundtrip(id: int, p: comm::Port<int>, ch: comm::Chan<int>) {
     }
 }
 
-fn main(args: ~[~str]) {
+fn main(++args: ~[~str]) {
     let args = if os::getenv(~"RUST_BENCH").is_some() {
         ~[~"", ~"2000000"]
     } else if args.len() <= 1u {

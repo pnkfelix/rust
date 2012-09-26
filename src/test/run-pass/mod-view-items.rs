@@ -5,8 +5,8 @@
 // begin failing.
 
 mod m {
-    use std;
-    import vec;
+    #[legacy_exports];
+    use core::vec;
     fn f() -> ~[int] { vec::from_elem(1u, 0) }
 }
 

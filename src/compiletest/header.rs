@@ -1,8 +1,5 @@
-import option;
-import str;
-
-import common::config;
-import io::ReaderUtil;
+use common::config;
+use io::ReaderUtil;
 
 export test_props;
 export load_props;
@@ -35,19 +32,19 @@ fn load_props(testfile: &Path) -> test_props {
           option::None => ()
         };
 
-        if option::is_none(compile_flags) {
+        if compile_flags.is_none() {
             compile_flags = parse_compile_flags(ln);
         }
 
-        if option::is_none(pp_exact) {
+        if pp_exact.is_none() {
             pp_exact = parse_pp_exact(ln, testfile);
         }
 
-        do option::iter(parse_aux_build(ln)) |ab| {
+        do parse_aux_build(ln).iter |ab| {
             vec::push(aux_builds, ab);
         }
 
-        do option::iter(parse_exec_env(ln)) |ee| {
+        do parse_exec_env(ln).iter |ee| {
             vec::push(exec_env, ee);
         }
     };
@@ -76,7 +73,7 @@ fn is_test_ignored(config: config, testfile: &Path) -> bool {
 }
 
 fn iter_header(testfile: &Path, it: fn(~str) -> bool) -> bool {
-    let rdr = result::get(io::file_reader(testfile));
+    let rdr = io::file_reader(testfile).get();
     while !rdr.eof() {
         let ln = rdr.read_line();
 

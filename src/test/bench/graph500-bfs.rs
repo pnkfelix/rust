@@ -1,15 +1,17 @@
-/**
+#[legacy_modes];
+
+/*!
 
 An implementation of the Graph500 Breadth First Search problem in Rust.
 
 */
 
-use std;
+extern mod std;
 use std::arc;
 use std::time;
 use std::map;
-use std::map::map;
-use std::map::hashmap;
+use std::map::Map;
+use std::map::HashMap;
 use std::deque;
 use std::deque::Deque;
 use std::par;
@@ -69,23 +71,26 @@ fn make_edges(scale: uint, edgefactor: uint) -> ~[(node_id, node_id)] {
 
 fn make_graph(N: uint, edges: ~[(node_id, node_id)]) -> graph {
     let graph = do vec::from_fn(N) |_i| {
-        map::hashmap::<node_id, ()>()
+        map::HashMap::<node_id, ()>()
     };
 
     do vec::each(edges) |e| {
-        let (i, j) = e;
-        map::set_add(graph[i], j);
-        map::set_add(graph[j], i);
+        match *e {
+            (i, j) => {
+                map::set_add(graph[i], j);
+                map::set_add(graph[j], i);
+            }
+        }
         true
     }
 
     do graph.map() |v| {
-        map::vec_from_set(v)
+        map::vec_from_set(*v)
     }
 }
 
 fn gen_search_keys(graph: graph, n: uint) -> ~[node_id] {
-    let keys = map::hashmap::<node_id, ()>();
+    let keys = map::HashMap::<node_id, ()>();
     let r = rand::Rng();
 
     while keys.size() < n {
@@ -118,9 +123,9 @@ fn bfs(graph: graph, key: node_id) -> bfs_result {
         let t = Q.pop_front();
 
         do graph[t].each() |k| {
-            if marks[k] == -1i64 {
-                marks[k] = t;
-                Q.add_back(k);
+            if marks[*k] == -1i64 {
+                marks[*k] = t;
+                Q.add_back(*k);
             }
             true
         };
@@ -168,7 +173,7 @@ fn bfs2(graph: graph, key: node_id) -> bfs_result {
         log(info, fmt!("PBFS iteration %?", i));
         i += 1u;
         colors = do colors.mapi() |i, c| {
-            let c : color = c;
+            let c : color = *c;
             match c {
               white => {
                 let i = i as node_id;
@@ -178,8 +183,8 @@ fn bfs2(graph: graph, key: node_id) -> bfs_result {
                 let mut color = white;
 
                 do neighbors.each() |k| {
-                    if is_gray(colors[k]) {
-                        color = gray(k);
+                    if is_gray(colors[*k]) {
+                        color = gray(*k);
                         false
                     }
                     else { true }
@@ -195,7 +200,7 @@ fn bfs2(graph: graph, key: node_id) -> bfs_result {
 
     // Convert the results.
     do vec::map(colors) |c| {
-        match c {
+        match *c {
           white => { -1i64 }
           black(parent) => { parent }
           _ => { fail ~"Found remaining gray nodes in BFS" }
@@ -259,8 +264,8 @@ fn pbfs(&&graph: arc::ARC<graph>, key: node_id) -> bfs_result {
                     let mut color = white;
 
                     do neighbors.each() |k| {
-                        if is_gray(colors[k]) {
-                            color = gray(k);
+                        if is_gray(colors[*k]) {
+                            color = gray(*k);
                             false
                         }
                         else { true }
@@ -300,7 +305,7 @@ fn validate(edges: ~[(node_id, node_id)],
 
     let mut status = true;
     let level = do tree.map() |parent| {
-        let mut parent = parent;
+        let mut parent = *parent;
         let mut path = ~[];
 
         if parent == -1i64 {
@@ -369,7 +374,7 @@ fn validate(edges: ~[(node_id, node_id)],
             true
         }
         else {
-            edges.contains((u, v)) || edges.contains((v, u))
+            edges.contains(&(u, v)) || edges.contains(&(v, u))
         }
     };
 
@@ -379,7 +384,7 @@ fn validate(edges: ~[(node_id, node_id)],
     true
 }
 
-fn main(args: ~[~str]) {
+fn main(++args: ~[~str]) {
     let args = if os::getenv(~"RUST_BENCH").is_some() {
         ~[~"", ~"15", ~"48"]
     } else if args.len() <= 1u {
@@ -422,7 +427,7 @@ fn main(args: ~[~str]) {
 
         if do_sequential {
             let start = time::precise_time_s();
-            let bfs_tree = bfs(graph, root);
+            let bfs_tree = bfs(graph, *root);
             let stop = time::precise_time_s();
             
             //total_seq += stop - start;
@@ -433,7 +438,7 @@ fn main(args: ~[~str]) {
             
             if do_validate {
                 let start = time::precise_time_s();
-                assert(validate(edges, root, bfs_tree));
+                assert(validate(edges, *root, bfs_tree));
                 let stop = time::precise_time_s();
                 
                 io::stdout().write_line(
@@ -442,7 +447,7 @@ fn main(args: ~[~str]) {
             }
             
             let start = time::precise_time_s();
-            let bfs_tree = bfs2(graph, root);
+            let bfs_tree = bfs2(graph, *root);
             let stop = time::precise_time_s();
             
             total_seq += stop - start;
@@ -453,7 +458,7 @@ fn main(args: ~[~str]) {
             
             if do_validate {
                 let start = time::precise_time_s();
-                assert(validate(edges, root, bfs_tree));
+                assert(validate(edges, *root, bfs_tree));
                 let stop = time::precise_time_s();
                 
                 io::stdout().write_line(
@@ -463,7 +468,7 @@ fn main(args: ~[~str]) {
         }
         
         let start = time::precise_time_s();
-        let bfs_tree = pbfs(graph_arc, root);
+        let bfs_tree = pbfs(graph_arc, *root);
         let stop = time::precise_time_s();
 
         total_par += stop - start;
@@ -473,7 +478,7 @@ fn main(args: ~[~str]) {
 
         if do_validate {
             let start = time::precise_time_s();
-            assert(validate(edges, root, bfs_tree));
+            assert(validate(edges, *root, bfs_tree));
             let stop = time::precise_time_s();
             
             io::stdout().write_line(fmt!("Validation completed in %? seconds.",

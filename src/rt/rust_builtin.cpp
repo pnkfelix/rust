@@ -572,6 +572,12 @@ rust_get_sched_id() {
     return task->sched->get_id();
 }
 
+extern "C" CDECL uintptr_t
+rust_num_threads() {
+    rust_task *task = rust_get_current_task();
+    return task->kernel->env->num_sched_threads;
+}
+
 extern "C" CDECL rust_sched_id
 rust_new_sched(uintptr_t threads) {
     rust_task *task = rust_get_current_task();
@@ -620,10 +626,16 @@ start_task(rust_task *target, fn_env_pair *f) {
     target->start(f->f, f->env, NULL);
 }
 
-extern "C" CDECL int
-sched_threads() {
+extern "C" CDECL size_t
+rust_sched_current_nonlazy_threads() {
     rust_task *task = rust_get_current_task();
     return task->sched->number_of_threads();
+}
+
+extern "C" CDECL size_t
+rust_sched_threads() {
+    rust_task *task = rust_get_current_task();
+    return task->sched->max_number_of_threads();
 }
 
 extern "C" CDECL rust_port*
@@ -942,6 +954,13 @@ rust_call_tydesc_glue(void *root, size_t *tydesc, size_t glue_index) {
         (void (*)(void *, void *, void *, void *))tydesc[glue_index];
     if (glue_fn)
         glue_fn(0, 0, 0, root);
+}
+
+// Don't run on the Rust stack!
+extern "C" void
+rust_log_str(uint32_t level, const char *str, size_t size) {
+    rust_task *task = rust_get_current_task();
+    task->sched_loop->get_log().log(task, level, "%.*s", (int)size, str);
 }
 
 //

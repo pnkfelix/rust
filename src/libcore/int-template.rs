@@ -16,7 +16,7 @@ export is_nonpositive, is_nonnegative;
 export range;
 export compl;
 export abs;
-export parse_buf, from_str, to_str, to_str_bytes, str;
+export parse_bytes, from_str, to_str, to_str_bytes, str;
 export num, ord, eq, times, timesi;
 export bits, bytes;
 
@@ -68,24 +68,24 @@ pure fn abs(i: T) -> T {
     if is_negative(i) { -i } else { i }
 }
 
-impl T: Ord {
-    pure fn lt(&&other: T) -> bool { return self < other; }
-    pure fn le(&&other: T) -> bool { return self <= other; }
-    pure fn ge(&&other: T) -> bool { return self >= other; }
-    pure fn gt(&&other: T) -> bool { return self > other; }
+impl T : Ord {
+    pure fn lt(other: &T) -> bool { return self < (*other); }
+    pure fn le(other: &T) -> bool { return self <= (*other); }
+    pure fn ge(other: &T) -> bool { return self >= (*other); }
+    pure fn gt(other: &T) -> bool { return self > (*other); }
 }
 
-impl T: Eq {
-    pure fn eq(&&other: T) -> bool { return self == other; }
-    pure fn ne(&&other: T) -> bool { return self != other; }
+impl T : Eq {
+    pure fn eq(other: &T) -> bool { return self == (*other); }
+    pure fn ne(other: &T) -> bool { return self != (*other); }
 }
 
 impl T: num::Num {
-    pure fn add(&&other: T)    -> T { return self + other; }
-    pure fn sub(&&other: T)    -> T { return self - other; }
-    pure fn mul(&&other: T)    -> T { return self * other; }
-    pure fn div(&&other: T)    -> T { return self / other; }
-    pure fn modulo(&&other: T) -> T { return self % other; }
+    pure fn add(other: &T)    -> T { return self + *other; }
+    pure fn sub(other: &T)    -> T { return self - *other; }
+    pure fn mul(other: &T)    -> T { return self * *other; }
+    pure fn div(other: &T)    -> T { return self / *other; }
+    pure fn modulo(other: &T) -> T { return self % *other; }
     pure fn neg()              -> T { return -self;        }
 
     pure fn to_int()         -> int { return self as int; }
@@ -137,7 +137,7 @@ impl T: iter::TimesIx {
  * * buf - A byte buffer
  * * radix - The base of the number
  */
-fn parse_buf(buf: &[u8], radix: uint) -> Option<T> {
+fn parse_bytes(buf: &[u8], radix: uint) -> Option<T> {
     if vec::len(buf) == 0u { return None; }
     let mut i = vec::len(buf) - 1u;
     let mut start = 0u;
@@ -160,7 +160,7 @@ fn parse_buf(buf: &[u8], radix: uint) -> Option<T> {
 }
 
 /// Parse a string to an int
-fn from_str(s: &str) -> Option<T> { parse_buf(str::to_bytes(s), 10u) }
+fn from_str(s: &str) -> Option<T> { parse_bytes(str::to_bytes(s), 10u) }
 
 impl T : FromStr {
     static fn from_str(s: &str) -> Option<T> { from_str(s) }
@@ -169,8 +169,8 @@ impl T : FromStr {
 /// Convert to a string in a given base
 fn to_str(n: T, radix: uint) -> ~str {
     do to_str_bytes(n, radix) |slice| {
-        do vec::as_buf(slice) |p, len| {
-            unsafe { str::unsafe::from_buf_len(p, len) }
+        do vec::as_imm_buf(slice) |p, len| {
+            unsafe { str::raw::from_buf_len(p, len) }
         }
     }
 }
@@ -209,28 +209,28 @@ fn test_from_str() {
 // FIXME: Has alignment issues on windows and 32-bit linux (#2609)
 #[test]
 #[ignore]
-fn test_parse_buf() {
-    import str::to_bytes;
-    assert parse_buf(to_bytes(~"123"), 10u) == Some(123 as T);
-    assert parse_buf(to_bytes(~"1001"), 2u) == Some(9 as T);
-    assert parse_buf(to_bytes(~"123"), 8u) == Some(83 as T);
-    assert parse_buf(to_bytes(~"123"), 16u) == Some(291 as T);
-    assert parse_buf(to_bytes(~"ffff"), 16u) == Some(65535 as T);
-    assert parse_buf(to_bytes(~"FFFF"), 16u) == Some(65535 as T);
-    assert parse_buf(to_bytes(~"z"), 36u) == Some(35 as T);
-    assert parse_buf(to_bytes(~"Z"), 36u) == Some(35 as T);
+fn test_parse_bytes() {
+    use str::to_bytes;
+    assert parse_bytes(to_bytes(~"123"), 10u) == Some(123 as T);
+    assert parse_bytes(to_bytes(~"1001"), 2u) == Some(9 as T);
+    assert parse_bytes(to_bytes(~"123"), 8u) == Some(83 as T);
+    assert parse_bytes(to_bytes(~"123"), 16u) == Some(291 as T);
+    assert parse_bytes(to_bytes(~"ffff"), 16u) == Some(65535 as T);
+    assert parse_bytes(to_bytes(~"FFFF"), 16u) == Some(65535 as T);
+    assert parse_bytes(to_bytes(~"z"), 36u) == Some(35 as T);
+    assert parse_bytes(to_bytes(~"Z"), 36u) == Some(35 as T);
 
-    assert parse_buf(to_bytes(~"-123"), 10u) == Some(-123 as T);
-    assert parse_buf(to_bytes(~"-1001"), 2u) == Some(-9 as T);
-    assert parse_buf(to_bytes(~"-123"), 8u) == Some(-83 as T);
-    assert parse_buf(to_bytes(~"-123"), 16u) == Some(-291 as T);
-    assert parse_buf(to_bytes(~"-ffff"), 16u) == Some(-65535 as T);
-    assert parse_buf(to_bytes(~"-FFFF"), 16u) == Some(-65535 as T);
-    assert parse_buf(to_bytes(~"-z"), 36u) == Some(-35 as T);
-    assert parse_buf(to_bytes(~"-Z"), 36u) == Some(-35 as T);
+    assert parse_bytes(to_bytes(~"-123"), 10u) == Some(-123 as T);
+    assert parse_bytes(to_bytes(~"-1001"), 2u) == Some(-9 as T);
+    assert parse_bytes(to_bytes(~"-123"), 8u) == Some(-83 as T);
+    assert parse_bytes(to_bytes(~"-123"), 16u) == Some(-291 as T);
+    assert parse_bytes(to_bytes(~"-ffff"), 16u) == Some(-65535 as T);
+    assert parse_bytes(to_bytes(~"-FFFF"), 16u) == Some(-65535 as T);
+    assert parse_bytes(to_bytes(~"-z"), 36u) == Some(-35 as T);
+    assert parse_bytes(to_bytes(~"-Z"), 36u) == Some(-35 as T);
 
-    assert parse_buf(to_bytes(~"Z"), 35u).is_none();
-    assert parse_buf(to_bytes(~"-9"), 2u).is_none();
+    assert parse_bytes(to_bytes(~"Z"), 35u).is_none();
+    assert parse_bytes(to_bytes(~"-9"), 2u).is_none();
 }
 
 #[test]
@@ -250,11 +250,11 @@ fn test_interfaces() {
         let two: U = from_int(2);
         assert (two.to_int() == 2);
 
-        assert (ten.add(two) == from_int(12));
-        assert (ten.sub(two) == from_int(8));
-        assert (ten.mul(two) == from_int(20));
-        assert (ten.div(two) == from_int(5));
-        assert (ten.modulo(two) == from_int(0));
+        assert (ten.add(&two) == from_int(12));
+        assert (ten.sub(&two) == from_int(8));
+        assert (ten.mul(&two) == from_int(20));
+        assert (ten.div(&two) == from_int(5));
+        assert (ten.modulo(&two) == from_int(0));
         assert (ten.neg() == from_int(-10));
     }
 
@@ -263,7 +263,7 @@ fn test_interfaces() {
 
 #[test]
 fn test_times() {
-    import iter::Times;
+    use iter::Times;
     let ten = 10 as T;
     let mut accum = 0;
     for ten.times { accum += 1; }
@@ -274,6 +274,6 @@ fn test_times() {
 #[should_fail]
 #[ignore(cfg(windows))]
 fn test_times_negative() {
-    import iter::Times;
+    use iter::Times;
     for (-10).times { log(error, ~"nope!"); }
 }

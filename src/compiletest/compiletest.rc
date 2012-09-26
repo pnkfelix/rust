@@ -1,19 +1,27 @@
 #[crate_type = "bin"];
 
 #[no_core];
+#[legacy_exports];
 
 #[allow(vecs_implicitly_copyable)];
+#[allow(non_camel_case_types)];
 
-use core(vers = "0.4");
-use std(vers = "0.4");
+extern mod core(vers = "0.4");
+extern mod std(vers = "0.4");
 
-import core::*;
+use core::*;
 
+#[legacy_exports]
 mod procsrv;
+#[legacy_exports]
 mod util;
+#[legacy_exports]
 mod header;
+#[legacy_exports]
 mod runtest;
+#[legacy_exports]
 mod common;
+#[legacy_exports]
 mod errors;
 
 // Local Variables:

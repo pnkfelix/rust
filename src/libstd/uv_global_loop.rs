@@ -1,18 +1,22 @@
 //! A process-wide libuv event loop for library use.
 
+#[forbid(deprecated_mode)];
+#[forbid(deprecated_pattern)];
+
 export get;
 
 use ll = uv_ll;
 use iotask = uv_iotask;
 use get_gl = get;
 use iotask::{IoTask, spawn_iotask};
-use priv::{chan_from_global_ptr, weaken_task};
+use private::{chan_from_global_ptr, weaken_task};
 use comm = core::comm;
 use comm::{Port, Chan, select2, listen};
 use task::TaskBuilder;
 use either::{Left, Right};
 
 extern mod rustrt {
+    #[legacy_exports];
     fn rust_uv_get_kernel_global_chan_ptr() -> *libc::uintptr_t;
 }
 
@@ -104,11 +108,12 @@ fn spawn_loop() -> IoTask {
             }
         }
     };
-    spawn_iotask(builder)
+    spawn_iotask(move builder)
 }
 
 #[cfg(test)]
 mod test {
+    #[legacy_exports];
     extern fn simple_timer_close_cb(timer_ptr: *ll::uv_timer_t) unsafe {
         let exit_ch_ptr = ll::get_data_for_uv_handle(
             timer_ptr as *libc::c_void) as *comm::Chan<bool>;

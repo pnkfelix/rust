@@ -1,12 +1,15 @@
 use foo::zed;
 use bar::baz;
 mod foo {
+    #[legacy_exports];
     mod zed {
+        #[legacy_exports];
         fn baz() { debug!("baz"); }
     }
 }
 mod bar {
-    import zed::baz;
+    #[legacy_exports];
+    use zed::baz;
     export baz;
 }
 fn main() { baz(); }

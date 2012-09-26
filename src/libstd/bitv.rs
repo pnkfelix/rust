@@ -1,3 +1,6 @@
+#[forbid(deprecated_mode)];
+#[forbid(deprecated_pattern)];
+
 use vec::{to_mut, from_elem};
 
 export Bitv, from_bytes, from_bools, from_fn;
@@ -95,7 +98,7 @@ struct BigBitv {
     mut storage: ~[mut uint]
 }
 
-fn BigBitv(-storage: ~[mut uint]) -> BigBitv {
+fn BigBitv(+storage: ~[mut uint]) -> BigBitv {
     BigBitv {storage: storage}
 }
 
@@ -127,7 +130,7 @@ impl BigBitv {
             let w0 = self.storage[i] & mask;
             let w1 = b.storage[i] & mask;
             let w = op(w0, w1) & mask;
-            if w0 != w unchecked {
+            if w0 != w unsafe {
                 changed = true;
                 self.storage[i] = w;
             }
@@ -137,7 +140,7 @@ impl BigBitv {
     }
 
     #[inline(always)]
-     fn each_storage(op: fn(&uint) -> bool) {
+     fn each_storage(op: fn(&v: uint) -> bool) {
         for uint::range(0, self.storage.len()) |i| {
             let mut w = self.storage[i];
             let b = !op(w);
@@ -221,7 +224,7 @@ fn Bitv (nbits: uint, init: bool) -> Bitv {
                      if nbits % uint_bits == 0 {0} else {1};
         let elem = if init {!0} else {0};
         let s = to_mut(from_elem(nelems, elem));
-        Big(~BigBitv(s))
+        Big(~BigBitv(move s))
     };
     Bitv {rep: rep, nbits: nbits}
 }
@@ -541,7 +544,7 @@ fn from_fn(len: uint, f: fn(index: uint) -> bool) -> Bitv {
     for uint::range(0, len) |i| {
         bitv.set(i, f(i));
     }
-    return bitv;
+    move bitv
 }
 
 const uint_bits: uint = 32u + (1u << 32u >> 27u);
@@ -553,13 +556,14 @@ pure fn land(w0: uint, w1: uint) -> uint { return w0 & w1; }
 pure fn right(_w0: uint, w1: uint) -> uint { return w1; }
 
 impl Bitv: ops::Index<uint,bool> {
-    pure fn index(&&i: uint) -> bool {
+    pure fn index(+i: uint) -> bool {
         self.get(i)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #[legacy_exports];
     #[test]
     fn test_to_str() {
         let zerolen = Bitv(0u, false);

@@ -49,18 +49,17 @@ use metadata::csearch;
 use driver::session::session;
 use util::common::may_break;
 use syntax::codemap::span;
-use pat_util::{pat_is_variant, pat_id_map};
+use pat_util::{pat_is_variant, pat_id_map, PatIdMap};
 use middle::ty;
 use middle::ty::{arg, field, node_type_table, mk_nil, ty_param_bounds_and_ty};
 use middle::ty::{vstore_uniq};
 use std::smallintmap;
 use std::map;
-use std::map::{hashmap, int_hash};
+use std::map::HashMap;
 use std::serialization::{serialize_uint, deserialize_uint};
-use vec::each;
 use syntax::print::pprust::*;
 use util::ppaux::{ty_to_str, tys_to_str, region_to_str,
-                     bound_region_to_str, vstore_to_str};
+                  bound_region_to_str, vstore_to_str, expr_repr};
 use util::common::{indent, indenter};
 use std::list;
 use list::{List, Nil, Cons};
@@ -86,7 +85,7 @@ enum method_origin {
     // method invoked on a type parameter with a bounded trait
     method_param(method_param),
 
-    // method invoked on a boxed trait
+    // method invoked on a trait instance
     method_trait(ast::def_id, uint),
 }
 
@@ -108,13 +107,10 @@ type method_param = {
     bound_num: uint
 };
 
-#[auto_serialize]
 type method_map_entry = {
-    // number of derefs that are required on the receiver
-    derefs: uint,
-
-    // the mode by which the self parameter needs to be passed
-    self_mode: ast::rmode,
+    // the type and mode of the self parameter, which is not reflected
+    // in the fn type (FIXME #3446)
+    self_arg: ty::arg,
 
     // method details being invoked
     origin: method_origin
@@ -122,7 +118,7 @@ type method_map_entry = {
 
 // maps from an expression id that corresponds to a method call to the details
 // of the method to be invoked
-type method_map = hashmap<ast::node_id, method_map_entry>;
+type method_map = HashMap<ast::node_id, method_map_entry>;
 
 // Resolutions for bounds of all parameters, left to right, for a given path.
 type vtable_res = @~[vtable_origin];
@@ -150,12 +146,35 @@ enum vtable_origin {
     vtable_trait(ast::def_id, ~[ty::t]),
 }
 
-type vtable_map = hashmap<ast::node_id, vtable_res>;
+impl vtable_origin {
+    fn to_str(tcx: ty::ctxt) -> ~str {
+        match self {
+            vtable_static(def_id, ref tys, ref vtable_res) => {
+                fmt!("vtable_static(%?:%s, %?, %?)",
+                     def_id, ty::item_path_str(tcx, def_id),
+                     tys,
+                     vtable_res.map(|o| o.to_str(tcx)))
+            }
+
+            vtable_param(x, y) => {
+                fmt!("vtable_param(%?, %?)", x, y)
+            }
+
+            vtable_trait(def_id, ref tys) => {
+                fmt!("vtable_trait(%?:%s, %?)",
+                     def_id, ty::item_path_str(tcx, def_id),
+                     tys.map(|t| ty_to_str(tcx, *t)))
+            }
+        }
+    }
+}
+
+type vtable_map = HashMap<ast::node_id, vtable_res>;
 
 // Stores information about provided methods, aka "default methods" in traits.
 // Maps from a trait's def_id to a MethodInfo about
 // that method in that trait.
-type provided_methods_map = hashmap<ast::node_id,
+type provided_methods_map = HashMap<ast::node_id,
                                     ~[@resolve::MethodInfo]>;
 
 type ty_param_substs_and_ty = {substs: ty::substs, ty: ty::t};
@@ -182,6 +201,8 @@ fn write_substs_to_tcx(tcx: ty::ctxt,
                        node_id: ast::node_id,
                        +substs: ~[ty::t]) {
     if substs.len() > 0u {
+        debug!("write_substs_to_tcx(%d, %?)", node_id,
+               substs.map(|t| ty_to_str(tcx, *t)));
         tcx.node_type_substs.insert(node_id, substs);
     }
 }
@@ -235,11 +256,18 @@ fn require_same_types(
     }
 }
 
-fn arg_is_argv_ty(_tcx: ty::ctxt, a: ty::arg) -> bool {
-    match ty::get(a.ty).struct {
+fn arg_is_argv_ty(tcx: ty::ctxt, a: ty::arg) -> bool {
+    match ty::resolved_mode(tcx, a.mode) {
+        ast::by_val => { /*ok*/ }
+        _ => {
+            return false;
+        }
+    }
+
+    match ty::get(a.ty).sty {
       ty::ty_evec(mt, vstore_uniq) => {
         if mt.mutbl != ast::m_imm { return false; }
-        match ty::get(mt.ty).struct {
+        match ty::get(mt.ty).sty {
           ty::ty_estr(vstore_uniq) => return true,
           _ => return false
         }
@@ -254,7 +282,7 @@ fn check_main_fn_ty(ccx: @crate_ctxt,
 
     let tcx = ccx.tcx;
     let main_t = ty::node_id_to_type(tcx, main_id);
-    match ty::get(main_t).struct {
+    match ty::get(main_t).sty {
         ty::ty_fn(fn_ty) => {
             match tcx.items.find(main_id) {
                 Some(ast_map::node_item(it,_)) => {
@@ -279,7 +307,7 @@ fn check_main_fn_ty(ccx: @crate_ctxt,
                 tcx.sess.span_err(
                     main_span,
                     fmt!("Wrong type in main function: found `%s`, \
-                          expected `extern fn(~[str]) -> ()` \
+                          expected `extern fn(++v: ~[~str]) -> ()` \
                           or `extern fn() -> ()`",
                          ty_to_str(tcx, main_t)));
             }
@@ -308,10 +336,10 @@ fn check_crate(tcx: ty::ctxt,
             -> (method_map, vtable_map) {
 
     let ccx = @crate_ctxt_({trait_map: trait_map,
-                            method_map: std::map::int_hash(),
-                            vtable_map: std::map::int_hash(),
+                            method_map: std::map::HashMap(),
+                            vtable_map: std::map::HashMap(),
                             coherence_info: @coherence::CoherenceInfo(),
-                            provided_methods_map: std::map::int_hash(),
+                            provided_methods_map: std::map::HashMap(),
                             tcx: tcx});
     collect::collect_item_types(ccx, crate);
     coherence::check_coherence(ccx, crate);

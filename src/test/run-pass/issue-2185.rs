@@ -1,6 +1,9 @@
+// xfail-fast
 // This test had to do with an outdated version of the iterable trait.
 // However, the condition it was testing seemed complex enough to
 // warrant still having a test, so I inlined the old definitions.
+
+#[legacy_modes];
 
 trait iterable<A> {
     fn iter(blk: fn(A));
@@ -11,7 +14,7 @@ impl<A> fn@(fn(A)): iterable<A> {
 }
 
 impl fn@(fn(uint)): iterable<uint> {
-    fn iter(blk: fn(&&uint)) { self( |i| blk(i) ) }
+    fn iter(blk: fn(&&v: uint)) { self( |i| blk(i) ) }
 }
 
 fn filter<A,IA:iterable<A>>(self: IA, prd: fn@(A) -> bool, blk: fn(A)) {
@@ -38,7 +41,7 @@ fn range(lo: uint, hi: uint, it: fn(uint)) {
 
 fn main() {
     let range: fn@(fn&(uint)) = |a| range(0u, 1000u, a);
-    let filt: fn@(fn&(&&uint)) = |a| filter(
+    let filt: fn@(fn&(&&v: uint)) = |a| filter(
         range,
         |&&n: uint| n % 3u != 0u && n % 5u != 0u,
         a);

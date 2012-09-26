@@ -2,77 +2,52 @@
 
 # Introduction
 
-## Scope
-
-This is a tutorial for the Rust programming language. It assumes the
-reader is familiar with the basic concepts of programming, and has
-programmed in one or more other languages before. It will often make
-comparisons to other languages in the C family. The tutorial covers
-the whole language, though not with the depth and precision of the
-[language reference](rust.html).
-
-## Language overview
-
-Rust is a systems programming language with a focus on type safety,
-memory safety, concurrency and performance. It is intended for writing
-large, high-performance applications while preventing several classes
-of errors commonly found in languages like C++. Rust has a
-sophisticated memory model that makes possible many of the efficient
-data structures used in C++, while disallowing invalid memory accesses
-that would otherwise cause segmentation faults. Like other systems
-languages, it is statically typed and compiled ahead of time.
+Rust is a programming language with a focus on type safety, memory
+safety, concurrency and performance. It is intended for writing
+large-scale, high-performance software while preventing several
+classes of common errors. Rust has a sophisticated memory model that
+encourages efficient data structures and safe concurrency patterns,
+forbidding invalid memory accesses that would otherwise cause
+segmentation faults. It is statically typed and compiled ahead of
+time.
 
 As a multi-paradigm language, Rust supports writing code in
-procedural, functional and object-oriented styles. Some of its nice
-high-level features include:
+procedural, functional and object-oriented styles. Some of its
+pleasant high-level features include:
 
-* ***Pattern matching and algebraic data types (enums).*** Common in
-  functional languages, pattern matching on ADTs provides a compact
-  and expressive way to encode program logic.
-* ***Task-based concurrency.*** Rust uses lightweight tasks that do
+* **Pattern matching and algebraic data types (enums).** As
+  popularized by functional languages, pattern matching on ADTs
+  provides a compact and expressive way to encode program logic.
+* **Type inference.** Type annotations on local variable
+  declarations are optional.
+* **Task-based concurrency.** Rust uses lightweight tasks that do
   not share memory.
-* ***Higher-order functions.*** Rust functions may take closures as
-  arguments or return closures as return values.  Closures in Rust are
-  very powerful and used pervasively.
-* ***Trait polymorphism.*** Rust's type system features a unique
-  combination of Java-style interfaces and Haskell-style typeclasses
-  called _traits_.
-* ***Parametric polymorphism (generics).*** Functions and types can be
-  parameterized over type variables with optional type constraints.
-* ***Type inference.*** Type annotations on local variable
-  declarations can be omitted.
+* **Higher-order functions.** Rust's efficient and flexible closures
+  are heavily relied on to provide iteration and other control
+  structures
+* **Parametric polymorphism (generics).** Functions and types can be
+  parameterized over type variables with optional trait-based type
+  constraints.
+* **Trait polymorphism.** Rust's type system features a unique
+  combination of type classes and object-oriented interfaces.
 
-## First impressions
+## Scope
 
-As a curly-brace language in the tradition of C, C++, and JavaScript,
-Rust looks a lot like other languages you may be familiar with.
+This is an introductory tutorial for the Rust programming language. It
+covers the fundamentals of the language, including the syntax, the
+type system and memory model, and generics.  [Additional
+tutorials](#what-next) cover specific language features in greater
+depth.
 
-~~~~
-fn boring_old_factorial(n: int) -> int {
-    let mut result = 1, i = 1;
-    while i <= n {
-        result *= i;
-        i += 1;
-    }
-    return result;
-}
-~~~~
-
-Several differences from C stand out. Types do not come before, but
-after variable names (preceded by a colon). For local variables
-(introduced with `let`), types are optional, and will be inferred when
-left off. Constructs like `while` and `if` do not require parentheses
-around the condition (though they allow them).
-
-You should, however, not conclude that Rust is simply an evolution of
-C. As will become clear in the rest of this tutorial, it goes in quite
-a different direction, with efficient, strongly-typed and memory-safe
-support for many high-level idioms.
+It assumes the reader is familiar with the basic concepts of
+programming, and has programmed in one or more other languages
+before. It will often make comparisons to other languages,
+particularly those in the C family.
 
 ## Conventions
 
 Throughout the tutorial, words that indicate language keywords or
-identifiers defined in the example code are displayed in `code font`.
+identifiers defined in example code are displayed in `code font`.
 
 Code snippets are indented, and also shown in a monospaced font. Not
 all snippets constitute whole programs. For brevity, we'll often show
@@ -86,46 +61,46 @@ they don't contain references to things that aren't actually defined.
 
 # Getting started
 
-## Installation
+The Rust compiler currently must be built from a [tarball], unless you
+are on Windows, in which case using the [installer][win-exe] is
+recommended.
 
-The Rust compiler currently must be built from a [tarball][]. We hope
-to be distributing binary packages for various operating systems in
-the future.
+Since the Rust compiler is written in Rust, it must be built by
+a precompiled "snapshot" version of itself (made in an earlier state
+of development). As such, source builds require a connection to
+the Internet, to fetch snapshots, and an OS that can execute the
+available snapshot binaries.
 
-The Rust compiler is slightly unusual in that it is written in Rust
-and therefore must be built by a precompiled "snapshot" version of
-itself (made in an earlier state of development). As such, source
-builds require that:
+Snapshot binaries are currently built and tested on several platforms:
 
-  * You are connected to the internet, to fetch snapshots.
-  * You can at least execute snapshot binaries of one of the forms we
-    offer them in. Currently we build and test snapshots on:
-    * Windows (7, server 2008 r2) x86 only
-    * Linux (various distributions) x86 and x86-64
-    * OSX 10.6 ("Snow Leopard") or 10.7 ("Lion") x86 and x86-64
+* Windows (7, Server 2008 R2), x86 only
+* Linux (various distributions), x86 and x86-64
+* OSX 10.6 ("Snow Leopard") or 10.7 ("Lion"), x86 and x86-64
 
-You may find other platforms work, but these are our "tier 1" supported
-build environments that are most likely to work. Further platforms will
-be added to the list in the future via cross-compilation.
+You may find that other platforms work, but these are our "tier 1"
+supported build environments that are most likely to work.
+
+> ***Note:*** Windows users should read the detailed
+> [getting started][wiki-start] notes on the wiki. Even when using
+> the binary installer the windows build requires a MinGW installation,
+> the precise details of which are not discussed in this tutorial.
 
 To build from source you will also need the following prerequisite
 packages:
 
-  * g++ 4.4 or clang++ 3.x
-  * python 2.6 or later
-  * perl 5.0 or later
-  * gnu make 3.81 or later
-  * curl
+* g++ 4.4 or clang++ 3.x
+* python 2.6 or later (but not 3.x)
+* perl 5.0 or later
+* gnu make 3.81 or later
+* curl
 
 Assuming you're on a relatively modern *nix system and have met the
-prerequisites, something along these lines should work. Building from
-source on Windows requires some extra steps: please see the [getting
-started][wiki-get-started] page on the Rust wiki.
+prerequisites, something along these lines should work.
 
 ~~~~ {.notrust}
-$ wget http://dl.rust-lang.org/dist/rust-0.3.tar.gz
-$ tar -xzf rust-0.3.tar.gz
-$ cd rust-0.3
+$ wget http://dl.rust-lang.org/dist/rust-0.4.tar.gz
+$ tar -xzf rust-0.4.tar.gz
+$ cd rust-0.4
 $ ./configure
 $ make && make install
 ~~~~
@@ -143,8 +118,9 @@ When complete, `make install` will place the following programs into
   * `rustdoc`, the API-documentation tool
   * `cargo`, the Rust package manager
 
-[wiki-get-started]: https://github.com/mozilla/rust/wiki/Note-getting-started-developing-Rust
-[tarball]: http://dl.rust-lang.org/dist/rust-0.3.tar.gz
+[wiki-start]: https://github.com/mozilla/rust/wiki/Note-getting-started-developing-Rust
+[tarball]: http://dl.rust-lang.org/dist/rust-0.4.tar.gz
+[win-exe]: http://dl.rust-lang.org/dist/rust-0.4-install.exe
 
 ## Compiling your first program
 
@@ -153,91 +129,134 @@ we have a file `hello.rs` containing this program:
 
 ~~~~
 fn main() {
-    io::println("hello world!");
+    io::println("hello? yes, this is rust");
 }
 ~~~~
 
 If the Rust compiler was installed successfully, running `rustc
-hello.rs` will produce a binary called `hello` (or `hello.exe`).
+hello.rs` will produce an executable called `hello` (or `hello.exe` on
+Windows) which, upon running, will likely do exactly what you expect
+(unless you are on Windows, in which case what it does is subject
+to local weather conditions).
 
-If you modify the program to make it invalid (for example, by changing
- `io::println` to some nonexistent function), and then compile it,
- you'll see an error message like this:
+> ***Note:*** That may or may not be hyperbole, but there are some
+> 'gotchas' to be aware of on Windows. First, the MinGW environment
+> must be set up perfectly. Please read [the
+> wiki][wiki-started]. Second, `rustc` may need to be [referred to as
+> `rustc.exe`][bug-3319]. It's a bummer, I know, and I am so very
+> sorry.
+
+[bug-3319]: https://github.com/mozilla/rust/issues/3319
+[wiki-started]:	https://github.com/mozilla/rust/wiki/Note-getting-started-developing-Rust
+
+The Rust compiler tries to provide useful information when it runs
+into an error. If you modify the program to make it invalid (for
+example, by changing `io::println` to some nonexistent function), and
+then compile it, you'll see an error message like this:
 
 ~~~~ {.notrust}
 hello.rs:2:4: 2:16 error: unresolved name: io::print_it
-hello.rs:2     io::print_it("hello world!");
+hello.rs:2     io::print_it("hello? yes, this is rust");
                ^~~~~~~~~~~~
 ~~~~
 
-The Rust compiler tries to provide useful information when it runs
-into an error.
-
-## Anatomy of a Rust program
-
-In its simplest form, a Rust program is a `.rs` file with some
-types and functions defined in it. If it has a `main` function, it can
-be compiled to an executable. Rust does not allow code that's not a
+In its simplest form, a Rust program is a `.rs` file with some types
+and functions defined in it. If it has a `main` function, it can be
+compiled to an executable. Rust does not allow code that's not a
 declaration to appear at the top level of the file—all statements must
-live inside a function.
-
-Rust programs can also be compiled as libraries, and included in other
-programs. The `extern mod std` directive that appears at the top of a lot of
-examples imports the [standard library][std]. This is described in more
-detail [later on](#modules-and-crates).
+live inside a function.  Rust programs can also be compiled as
+libraries, and included in other programs. The `extern mod std`
+directive that appears at the top of many examples imports the
+[standard library][std], described in more detail [later
+on](#modules-and-crates).
 
 [std]: http://doc.rust-lang.org/doc/std
 
 ## Editing Rust code
 
-There are Vim highlighting and indentation scripts in the Rust source
-distribution under `src/etc/vim/`, and an emacs mode under
-`src/etc/emacs/`. There is a package for Sublime Text 2 at
-[github.com/dbp/sublime-rust](http://github.com/dbp/sublime-rust), also
-available through [package control](http://wbond.net/sublime_packages/package_control).
+There are vim highlighting and indentation scripts in the Rust source
+distribution under `src/etc/vim/`. There is an emacs mode under
+`src/etc/emacs/` called `rust-mode`, but do read the instructions
+included in that directory. In particular, if you are running emacs
+24, then using emacs's internal package manager to install `rust-mode`
+is the easiest way to keep it up to date. There is also a package for
+Sublime Text 2, available both [standalone][sublime] and through
+[Sublime Package Control][sublime-pkg].
 
 Other editors are not provided for yet. If you end up writing a Rust
 mode for your favorite editor, let us know so that we can link to it.
 
+[sublime]: http://github.com/dbp/sublime-rust
+[sublime-pkg]: http://wbond.net/sublime_packages/package_control
+
 # Syntax Basics
 
-## Braces
-
 Assuming you've programmed in any C-family language (C++, Java,
-JavaScript, C#, or PHP), Rust will feel familiar. The main surface
-difference to be aware of is that the bodies of `if` statements and of
-`while` loops *have* to be wrapped in brackets. Single-statement,
-bracket-less bodies are not allowed.
+JavaScript, C#, or PHP), Rust will feel familiar. Code is arranged
+in blocks delineated by curly braces; there are control structures
+for branching and looping, like the familiar `if` and `when`; function
+calls are written `myfunc(arg1, arg2)`; operators are written the same
+and mostly have the same precedence as in C; comments are again like C.
 
-Accounting for these differences, the surface syntax of Rust
-statements and expressions is C-like. Function calls are written
-`myfunc(arg1, arg2)`, operators have mostly the same name and
-precedence that they have in C, comments look the same, and constructs
-like `if` and `while` are available:
+The main surface difference to be aware of is that the condition at
+the head of control structures like `if` and `while` do not require
+paretheses, while their bodies *must* be wrapped in
+brackets. Single-statement, bracket-less bodies are not allowed.
 
 ~~~~
-# fn it_works() {}
-# fn abort() {}
+# fn recalibrate_universe() -> bool { true }
 fn main() {
-    while true {
-        /* Ensure that basic math works. */
-        if 2*20 > 30 {
-            // Everything is OK.
-            it_works();
-        } else {
-            abort();
+    /* A simple loop */
+    loop {
+        // A tricky calculation
+        if recalibrate_universe() {
+            return;
         }
-        break;
     }
 }
 ~~~~
+
+The `let` keyword, introduces a local variable. By default, variables
+are immutable. `let mut` can be used to introduce a local variable
+that can be reassigned.
+
+~~~~
+let hi = "hi";
+let mut count = 0;
+
+while count < 10 {
+    io::println(hi);
+    count += 1;
+}
+~~~~
+
+Although Rust can almost always infer the types of local variables, it
+can help readability to specify a variable's type by following it with
+a colon, then the type name. Local variables may shadow earlier
+declarations, making the earlier variables inaccessible.
+
+~~~~
+let my_favorite_value: float = 57.8;
+let my_favorite_value: int = my_favorite_value as int;
+~~~~
+
+Rust identifiers follow the same rules as C; they start with an alphabetic
+character or an underscore, and after that may contain any sequence of
+alphabetic characters, numbers, or underscores. The preferred style is to
+begin function, variable, and module names with a lowercase letter, using
+underscores where they help readability, while writing types in camel case.
+
+~~~
+let my_variable = 100;
+type MyType = int; // built-in types though are _not_ camel case
+~~~
 
 ## Expression syntax
 
 Though it isn't apparent in all code, there is a fundamental
 difference between Rust's syntax and its predecessors in this family
 of languages. Many constructs that are statements in C are expressions
-in Rust. This allows Rust to be more expressive. For example, you might
+in Rust, allowing code to be more concise. For example, you might
 write a piece of code like this:
 
 ~~~~
@@ -256,16 +275,20 @@ But, in Rust, you don't have to repeat the name `price`:
 
 ~~~~
 # let item = "salad";
-let price = if item == "salad" { 3.50 }
-            else if item == "muffin" { 2.25 }
-            else { 2.00 };
+let price = if item == "salad" {
+    3.50
+} else if item == "muffin" {
+    2.25
+} else {
+    2.00
+};
 ~~~~
 
-Both pieces of code are exactly equivalent—they assign a value to `price`
-depending on the condition that holds. Note that the semicolons are omitted
-from the second snippet. This is important; the lack of a semicolon after the
-last statement in a braced block gives the whole block the value of that last
-expression.
+Both pieces of code are exactly equivalent—they assign a value to
+`price` depending on the condition that holds. Note that the
+semicolons are omitted from the blocks in the second snippet. This is
+important; the lack of a semicolon after the last statement in a
+braced block gives the whole block the value of that last expression.
 
 Put another way, the semicolon in Rust *ignores the value of an expression*.
 Thus, if the branches of the `if` had looked like `{ 4; }`, the above example
@@ -273,14 +296,16 @@ would simply assign nil (void) to `price`. But without the semicolon, each
 branch has a different value, and `price` gets the value of the branch that
 was taken.
 
-This feature also works for function bodies. This function returns a boolean:
-
-~~~~
-fn is_four(x: int) -> bool { x == 4 }
-~~~~
-
 In short, everything that's not a declaration (`let` for variables,
-`fn` for functions, et cetera) is an expression.
+`fn` for functions, et cetera) is an expression, including function bodies.
+
+~~~~
+fn is_four(x: int) -> bool {
+   // No need for a return statement. The result of the expression
+   // is used as the return value.
+   x == 4
+}
+~~~~
 
 If all those things are expressions, you might conclude that you have
 to add a terminating semicolon after *every* statement, even ones that
@@ -289,112 +314,83 @@ That is not the case, though. Expressions that end in a block only
 need a semicolon if that block contains a trailing expression. `while`
 loops do not allow trailing expressions, and `if` statements tend to
 only have a trailing expression when you want to use their value for
-something—in which case you'll have embedded it in a bigger statement,
-like the `let x = ...` example above.
+something—in which case you'll have embedded it in a bigger statement.
 
-## Identifiers
+~~~
+# fn foo() -> bool { true }
+# fn bar() -> bool { true }
+# fn baz() -> bool { true }
 
-Rust identifiers follow the same rules as C; they start with an alphabetic
-character or an underscore, and after that may contain any sequence of
-alphabetic characters, numbers, or underscores. The preferred style is to
-begin function, variable, and module names with a lowercase letter, using
-underscores where they help readability, while beginning types with a capital
-letter.
+// `let` is not an expression, so it is semi-colon terminated;
+let x = foo();
 
-The double-colon (`::`) is used as a module separator, so
-`io::println` means 'the thing named `println` in the module
-named `io`.
+// When used in statement position, bracy expressions do not
+// usually need to be semicolon terminated
+if x {
+    bar();
+} else {
+    baz();
+} // No semi-colon
 
-## Variable declaration
+// Although, if `bar` and `baz` have non-nil return types, and
+// we try to use them as the tail expressions, rustc will
+// make us terminate the expression.
+if x {
+    bar()
+} else {
+    baz()
+}; // Semi-colon to ignore non-nil block type
 
-The `let` keyword, as we've seen, introduces a local variable. Local
-variables are immutable by default: `let mut` can be used to introduce
-a local variable that can be reassigned.  Global constants can be
-defined with `const`:
+// An `if` embedded in `let` again requires a semicolon to terminate
+// the `let` statement
+let y = if x { foo() } else { bar() };
+~~~
 
-~~~~
-const REPEAT: int = 5;
-fn main() {
-    let hi = "Hi!";
-    let mut count = 0;
-    while count < REPEAT {
-        io::println(hi);
-        count += 1;
-    }
-}
-~~~~
-
-Local variables may shadow earlier declarations, making the earlier variables
-inaccessible.
-
-~~~~
-let my_favorite_value: float = 57.8;
-let my_favorite_value: int = my_favorite_value as int;
-~~~~
+This may sound a bit intricate, but it is super-useful, and it will
+grow on you (hopefully).
 
 ## Types
 
-The basic types are written like this:
+The basic types include the usual boolean, integral, and floating point types.
 
-`()`
-  : Nil, the type that has only a single value.
-
-`bool`
-  : Boolean type, with values `true` and `false`.
-
-`int`
-  : A machine-pointer-sized integer.
-
-`uint`
-  : A machine-pointer-sized unsigned integer.
-
-`i8`, `i16`, `i32`, `i64`
-  : Signed integers with a specific size (in bits).
-
-`u8`, `u16`, `u32`, `u64`
-  : Unsigned integers with a specific size.
-
-`float`
-  : The largest floating-point type efficiently supported on the target
-    machine.
-
-`f32`, `f64`
-  : Floating-point types with a specific size.
-
-`char`
-  : A Unicode character (32 bits).
+------------------------- -----------------------------------------------
+`()`                      Nil, the type that has only a single value
+`bool`                    Boolean type, with values `true` and `false`
+`int`, `uint`             Machine-pointer-sized signed and unsigned integers
+`i8`, `i16`, `i32`, `i64` Signed integers with a specific size (in bits)
+`u8`, `u16`, `u32`, `u64` Unsigned integers with a specific size
+`float`                   The largest floating-point type efficiently supported on the target machine
+`f32`, `f64`              Floating-point types with a specific size.
+`char`                    A Unicode character (32 bits).
+------------------------- -----------------------------------------------
 
 These can be combined in composite types, which will be described in
 more detail later on (the `T`s here stand for any other type):
 
-`[T * N]`
-  : Vector (like an array in other languages) with N elements.
-
-`[mut T * N]`
-  : Mutable vector with N elements.
-
-`(T1, T2)`
-  : Tuple type. Any arity above 1 is supported.
-
-`@T`, `~T`, `&T`
-  : Pointer types. See [Boxes and pointers](#boxes-and-pointers) for an explanation of what `@`, `~`, and `&` mean.
+------------------------- -----------------------------------------------
+`[T * N]`                 Vector (like an array in other languages) with N elements
+`[mut T * N]`             Mutable vector with N elements
+`(T1, T2)`                Tuple type. Any arity above 1 is supported
+`@T`, `~T`, `&T`          [Pointer types](#boxes-and-pointers)
+------------------------- -----------------------------------------------
 
 Some types can only be manipulated by pointer, never directly. For instance,
 you cannot refer to a string (`str`); instead you refer to a pointer to a
 string (`@str`, `~str`, or `&str`). These *dynamically-sized* types consist
 of:
 
-`fn(arg1: T1, arg2: T2) -> T3`
-  : Function types.
+------------------------- -----------------------------------------------
+`fn(a: T1, b: T2) -> T3`  Function types
+`str`                     String type (in UTF-8)
+`[T]`                     Vector with unknown size (also called a slice)
+`[mut T]`                 Mutable vector with unknown size
+------------------------- -----------------------------------------------
 
-`str`
-  : String type (in UTF-8).
-
-`[T]`
-  : Vector with unknown size (also called a slice).
-
-`[mut T]`
-  : Mutable vector with unknown size.
+In function types, the return type is specified with an arrow, as in
+the type `fn() -> bool` or the function declaration `fn foo() -> bool
+{ }`.  For functions that do not return a meaningful value, you can
+optionally write `-> ()`, but usually the return annotation is simply
+left off, as in `fn main() { ... }`.
 
 Types can be given names with `type` declarations:
 
@@ -409,66 +405,39 @@ error. Read about [single-variant enums](#single_variant_enum)
 further on if you need to create a type name that's not just a
 synonym.
 
-## Using types
-
-The `-> bool` in the `is_four` example is the way a function's return
-type is written. For functions that do not return a meaningful value,
-you can optionally say `-> ()`, but usually the return annotation is simply
-left off, as in the `fn main() { ... }` examples we've seen earlier.
-
-Every argument to a function must have its type declared (for example,
-`x: int`). Inside the function, type inference will be able to
-automatically deduce the type of most locals (generic functions, which
-we'll come back to later, will occasionally need additional
-annotation). Locals can be written either with or without a type
-annotation:
-
-~~~~
-// The type of this vector will be inferred based on its use.
-let x = [];
-# vec::map(x, fn&(&&_y:int) -> int { _y });
-// Explicitly say this is a vector of zero integers.
-let y: [int * 0] = [];
-~~~~
-
-## Numeric literals
+## Literals
 
 Integers can be written in decimal (`144`), hexadecimal (`0x90`), and
-binary (`0b10010000`) base.
+binary (`0b10010000`) base. Each integral type has a corresponding literal
+suffix that can be used to indicate the type of a literal: `i` for `int`,
+`u` for `uint`, and `i8` for the `i8` type, etc.
 
-If you write an integer literal without a suffix (`3`, `-500`, etc.),
-the Rust compiler will try to infer its type based on type annotations
-and function signatures in the surrounding program. In the absence of any type
-annotations at all, Rust will assume that an unsuffixed integer literal has
-type `int`. It's also possible to avoid any type ambiguity by writing integer
-literals with a suffix. For example:
+In the absense of an integer literal suffix, Rust will infer the
+integer type based on type annotations and function signatures in the
+surrounding program. In the absence of any type information at all,
+Rust will assume that an unsuffixed integer literal has type
+`int`.
 
 ~~~~
-let x = 50;
-log(error, x); // x is an int
-let y = 100u;
-log(error, y); // y is an uint
+let a = 1;       // a is an int
+let b = 10i;     // b is an int, due to the 'i' suffix
+let c = 100u;    // c as a uint
+let d = 1000i32; // d is an i32
 ~~~~
-
-Note that, in Rust, no implicit conversion between integer types
-happens. If you are adding one to a variable of type `uint`, saying
-`+= 1u8` will give you a type error.
 
 Floating point numbers are written `0.0`, `1e6`, or `2.1e-4`. Without
-a suffix, the literal is assumed to be of type `float`. Suffixes `f` (32-bit)
-and `l` (64-bit) can be used to create literals of a specific type.
-
-## Other literals
+a suffix, the literal is assumed to be of type `float`. Suffixes `f32`
+(32-bit) and `f64` (64-bit) can be used to create literals of a
+specific type.
 
 The nil literal is written just like the type: `()`. The keywords
 `true` and `false` produce the boolean literals.
 
 Character literals are written between single quotes, as in `'x'`. Just as in
 C, Rust understands a number of character escapes, using the backslash
-character, `\n`, `\r`, and `\t` being the most common.
-
-String literals allow the same escape sequences. They are written
-between double quotes (`"hello"`). Rust strings may contain newlines.
+character, `\n`, `\r`, and `\t` being the most common. String literals,
+written between double quotes, allow the same escape sequences. Rust strings
+may contain newlines.
 
 ## Operators
 
@@ -509,13 +478,18 @@ a syntax extension is being used, the names of all syntax extensions end with
 which is `fmt!`, a `sprintf`-style text formatter that is expanded at compile
 time.
 
-~~~~
-io::println(fmt!("%s is %d", ~"the answer", 42));
-~~~~
-
 `fmt!` supports most of the directives that [printf][pf] supports, but
 will give you a compile-time error when the types of the directives
 don't match the types of the arguments.
+
+~~~~
+# let mystery_object = ();
+
+io::println(fmt!("%s is %d", "the answer", 43));
+
+// %? will conveniently print any type
+io::println(fmt!("what is this thing: %?", mystery_object));
+~~~~
 
 [pf]: http://en.cppreference.com/w/cpp/io/c/fprintf
 
@@ -532,11 +506,11 @@ compulsory, an optional `else` clause can be appended, and multiple
 
 ~~~~
 if false {
-    io::println(~"that's odd");
+    io::println("that's odd");
 } else if true {
-    io::println(~"right");
+    io::println("right");
 } else {
-    io::println(~"neither true nor false");
+    io::println("neither true nor false");
 }
 ~~~~
 
@@ -606,8 +580,8 @@ you use the matching to get at the contents of data types. Remember
 that `(float, float)` is a tuple of two floats:
 
 ~~~~
-use float::consts::pi;
 fn angle(vector: (float, float)) -> float {
+    let pi = float::consts::pi;
     match vector {
       (0f, y) if y < 0f => 1.5 * pi,
       (0f, y) => 0.5 * pi,
@@ -627,23 +601,19 @@ an expression of type `bool` that determines, after the pattern is
 found to match, whether the arm is taken or not. The variables bound
 by the pattern are available in this guard expression.
 
-## Let
-
-You've already seen simple `let` bindings. `let` is also a little fancier: it
-is possible to use destructuring patterns in it. For example, you can say this
-to extract the fields from a tuple:
+You've already seen simple `let` bindings, but `let` is a little
+fancier than you've been led to believe. It too supports destructuring
+patterns. For example, you can say this to extract the fields from a
+tuple, introducing two variables, `a` and `b`.
 
 ~~~~
 # fn get_tuple_of_two_ints() -> (int, int) { (1, 1) }
 let (a, b) = get_tuple_of_two_ints();
 ~~~~
 
-This will introduce two new variables, `a` and `b`, bound to the
-content of the tuple.
-
-You may only use *irrefutable* patterns—patterns that can never fail to
-match—in let bindings. Other types of patterns, such as literals, are
-not allowed.
+Let bindings only work with _irrefutable_ patterns, that is, patterns
+that can never fail to match. This excludes `let` from matching
+literals and most enum variants.
 
 ## Loops
 
@@ -676,60 +646,6 @@ it finds one that can be divided by five.
 For more involved iteration, such as going over the elements of a
 collection, Rust uses higher-order functions. We'll come back to those
 in a moment.
-
-# Functions
-
-Like all other static declarations, such as `type`, functions can be
-declared both at the top level and inside other functions (or modules,
-which we'll come back to [later](#modules-and-crates)).
-
-We've already seen several function definitions. They are introduced
-with the `fn` keyword, the type of arguments are specified following
-colons and the return type follows the arrow.
-
-~~~~
-fn repeat(string: &str, count: int) -> ~str {
-    let mut result = ~"";
-    for count.times {
-        result += string;
-    }
-    return result;
-}
-~~~~
-
-The `return` keyword immediately returns from the body of a function. It
-is optionally followed by an expression to return. A function can
-also return a value by having its top level block produce an
-expression.
-
-~~~~
-# const copernicus: int = 0;
-fn int_to_str(i: int) -> ~str {
-    if i == copernicus {
-        return ~"tube sock";
-    } else {
-        return ~"violin";
-    }
-}
-~~~~
-
-~~~~
-# const copernicus: int = 0;
-fn int_to_str(i: int) -> ~str {
-    if i == copernicus { ~"tube sock" }
-    else { ~"violin" }
-}
-~~~~
-
-Functions that do not return a value are said to return nil, `()`,
-and both the return type and the return value may be omitted from
-the definition. The following two functions are equivalent.
-
-~~~~
-fn do_nothing_the_hard_way() -> () { return (); }
-
-fn do_nothing_the_easy_way() { }
-~~~~
 
 # Basic datatypes
 
@@ -767,8 +683,6 @@ struct Stack {
 
 With a value of such a type, you can do `mystack.head += 1`. If `mut` were
 omitted from the type, such an assignment would result in a type error.
-
-## Struct patterns
 
 Structs can be destructured in `match` patterns. The basic syntax is
 `Name {fieldname: pattern, ...}`:
@@ -815,33 +729,33 @@ Enum variants need not have type parameters. This, for example, is
 equivalent to a C enum:
 
 ~~~~
-enum direction {
-    north,
-    east,
-    south,
-    west
+enum Direction {
+    North,
+    East,
+    South,
+    West
 }
 ~~~~
 
-This will define `north`, `east`, `south`, and `west` as constants,
-all of which have type `direction`.
+This will define `North`, `East`, `South`, and `West` as constants,
+all of which have type `Direction`.
 
 When an enum is C-like, that is, when none of the variants have
 parameters, it is possible to explicitly set the discriminator values
 to an integer value:
 
 ~~~~
-enum color {
-  red = 0xff0000,
-  green = 0x00ff00,
-  blue = 0x0000ff
+enum Color {
+  Red = 0xff0000,
+  Green = 0x00ff00,
+  Blue = 0x0000ff
 }
 ~~~~
 
 If an explicit discriminator is not specified for a variant, the value
 defaults to the value of the previous variant plus one. If the first
 variant does not have a discriminator, it defaults to 0. For example,
-the value of `north` is 0, `east` is 1, etc.
+the value of `North` is 0, `East` is 1, etc.
 
 When an enum is C-like the `as` cast operator can be used to get the
 discriminator's value.
@@ -853,52 +767,53 @@ used to define new types in such a way that the new name is not just a
 synonym for an existing type, but its own distinct type. If you say:
 
 ~~~~
-enum gizmo_id = int;
+enum GizmoId = int;
 ~~~~
 
 That is a shorthand for this:
 
 ~~~~
-enum gizmo_id { gizmo_id(int) }
+enum GizmoId { GizmoId(int) }
 ~~~~
 
 Enum types like this can have their content extracted with the
 dereference (`*`) unary operator:
 
 ~~~~
-# enum gizmo_id = int;
-let my_gizmo_id = gizmo_id(10);
+# enum GizmoId = int;
+let my_gizmo_id = GizmoId(10);
 let id_int: int = *my_gizmo_id;
 ~~~~
-
-## Enum patterns
 
 For enum types with multiple variants, destructuring is the only way to
 get at their contents. All variant constructors can be used as
 patterns, as in this definition of `area`:
 
 ~~~~
-# type point = {x: float, y: float};
-# enum shape { circle(point, float), rectangle(point, point) }
-fn area(sh: shape) -> float {
+# type Point = {x: float, y: float};
+# enum Shape { Circle(Point, float), Rectangle(Point, Point) }
+fn area(sh: Shape) -> float {
     match sh {
-        circle(_, size) => float::consts::pi * size * size,
-        rectangle({x, y}, {x: x2, y: y2}) => (x2 - x) * (y2 - y)
+        Circle(_, size) => float::consts::pi * size * size,
+        Rectangle({x, y}, {x: x2, y: y2}) => (x2 - x) * (y2 - y)
     }
 }
 ~~~~
 
-Another example, matching nullary enum variants:
+Like other patterns, a lone underscore ignores individual fields.
+Ignoring all fields of a variant can be written `Circle(*)`. As in
+their introductory form, nullary enum patterns are written without
+parentheses.
 
 ~~~~
-# type point = {x: float, y: float};
-# enum direction { north, east, south, west }
-fn point_from_direction(dir: direction) -> point {
+# type Point = {x: float, y: float};
+# enum Direction { North, East, South, West }
+fn point_from_direction(dir: Direction) -> Point {
     match dir {
-        north => {x:  0f, y:  1f},
-        east  => {x:  1f, y:  0f},
-        south => {x:  0f, y: -1f},
-        west  => {x: -1f, y:  0f}
+        North => {x:  0f, y:  1f},
+        East  => {x:  1f, y:  0f},
+        South => {x:  0f, y: -1f},
+        West  => {x: -1f, y:  0f}
     }
 }
 ~~~~
@@ -917,13 +832,112 @@ match mytup {
 }
 ~~~~
 
+# Functions and methods
+
+We've already seen several function definitions. Like all other static
+declarations, such as `type`, functions can be declared both at the
+top level and inside other functions (or modules, which we'll come
+back to [later](#modules-and-crates)). They are introduced with the
+`fn` keyword, the type of arguments are specified following colons and
+the return type follows the arrow.
+
+~~~~
+fn repeat(string: &str, count: int) -> ~str {
+    let mut result = ~"";
+    for count.times {
+        result += string;
+    }
+    return result;
+}
+~~~~
+
+The `return` keyword immediately returns from the body of a function. It
+is optionally followed by an expression to return. A function can
+also return a value by having its top level block produce an
+expression.
+
+~~~~
+# const copernicus: int = 0;
+fn int_to_str(i: int) -> ~str {
+    if i == copernicus {
+        return ~"tube sock";
+    } else {
+        return ~"violin";
+    }
+}
+~~~~
+
+~~~~
+# const copernicus: int = 0;
+fn int_to_str(i: int) -> ~str {
+    if i == copernicus { ~"tube sock" }
+    else { ~"violin" }
+}
+~~~~
+
+Functions that do not return a value are said to return nil, `()`,
+and both the return type and the return value may be omitted from
+the definition. The following two functions are equivalent.
+
+~~~~
+fn do_nothing_the_hard_way() -> () { return (); }
+
+fn do_nothing_the_easy_way() { }
+~~~~
+
+Methods are like functions, except that they are defined for a specific
+'self' type (like 'this' in C++). Calling a method is done with
+dot notation, as in `my_vec.len()`. Methods may be defined on most
+Rust types with the `impl` keyword. As an example, lets define a draw
+method on our `Shape` enum.
+
+~~~
+# fn draw_circle(p: Point, f: float) { }
+# fn draw_rectangle(p: Point, p: Point) { }
+struct Point {
+    x: float,
+    y: float
+}
+
+enum Shape {
+    Circle(Point, float),
+    Rectangle(Point, Point)
+}
+
+impl Shape {
+    fn draw() {
+        match self {
+            Circle(p, f) => draw_circle(p, f),
+            Rectangle(p1, p2) => draw_rectangle(p1, p2)
+        }
+    }
+}
+
+let s = Circle(Point { x: 1f, y: 2f }, 3f);
+s.draw();
+~~~
+
+This defines an _implementation_ for `Shape` containing a single
+method, `draw`. In most most respects the `draw` method is defined
+like any other function, with the exception of the name `self`. `self`
+is a special value that is automatically defined in each method,
+referring to the value being operated on. If we wanted we could add
+additional methods to the same impl, or multiple impls for the same
+type. We'll discuss methods more in the context of [traits and
+generics](#generics).
+
+> ***Note:*** The method definition syntax will change to require
+> declaring the self type explicitly, as the first argument.
+
 # The Rust memory model
 
 At this junction let's take a detour to explain the concepts involved
-in Rust's memory model. Rust has a very particular approach to
-memory management that plays a significant role in shaping the "feel"
-of the language. Understanding the memory landscape will illuminate
-several of Rust's unique features as we encounter them.
+in Rust's memory model. We've seen some of Rust's pointer sigils (`@`,
+`~`, and `&`) float by in a few examples, and we aren't going to get
+much further without explaining them. Rust has a very particular
+approach to memory management that plays a significant role in shaping
+the "feel" of the language. Understanding the memory landscape will
+illuminate several of Rust's unique features as we encounter them.
 
 Rust has three competing goals that inform its view of memory:
 
@@ -945,9 +959,9 @@ garbage-collected heap to manage all of the objects. This approach is
 straightforward both in concept and in implementation, but has
 significant costs. Languages that take this approach tend to
 aggressively pursue ways to ameliorate allocation costs (think the
-Java Virtual Machine). Rust supports this strategy with _shared
-boxes_: memory allocated on the heap that may be referred to (shared)
-by multiple variables.
+Java Virtual Machine). Rust supports this strategy with _managed
+boxes_: memory allocated on the heap whose lifetime is managed
+by the garbage collector.
 
 By comparison, languages like C++ offer very precise control over
 where objects are allocated. In particular, it is common to put them
@@ -977,7 +991,7 @@ inefficient for large data structures.  Because of this, Rust also
 employs a global _exchange heap_. Objects allocated in the exchange
 heap have _ownership semantics_, meaning that there is only a single
 variable that refers to them. For this reason, they are referred to as
-_unique boxes_. All tasks may allocate objects on the exchange heap,
+_owned boxes_. All tasks may allocate objects on the exchange heap,
 then transfer ownership of those objects to other tasks, avoiding
 expensive copies.
 
@@ -985,8 +999,8 @@ expensive copies.
 
 Rust has three "realms" in which objects can be allocated: the stack,
 the local heap, and the exchange heap. These realms have corresponding
-pointer types: the borrowed pointer (`&T`), the shared box (`@T`),
-and the unique box (`~T`). These three sigils will appear
+pointer types: the borrowed pointer (`&T`), the managed box (`@T`),
+and the owned box (`~T`). These three sigils will appear
 repeatedly as we explore the language. Learning the appropriate role
 of each is key to using Rust effectively.
 
@@ -1005,48 +1019,81 @@ records with mutable fields, it can be useful to have a single copy on
 the heap, and refer to that through a pointer.
 
 Rust supports several types of pointers. The safe pointer types are
-`@T` for shared boxes allocated on the local heap, `~T`, for
+`@T` for managed boxes allocated on the local heap, `~T`, for
 uniquely-owned boxes allocated on the exchange heap, and `&T`, for
 borrowed pointers, which may point to any memory, and whose lifetimes
 are governed by the call stack.
 
-Rust also has an unsafe pointer, written `*T`, which is a completely
-unchecked pointer type only used in unsafe code (and thus, in typical
-Rust code, very rarely).
-
 All pointer types can be dereferenced with the `*` unary operator.
 
-## Shared boxes
+> ***Note***: You may also hear managed boxes referred to as 'shared
+> boxes' or 'shared pointers', and owned boxes as 'unique boxes/pointers'.
+> Borrowed pointers are sometimes called 'region pointers'. The preferred
+> terminology is as presented here.
 
-Shared boxes are pointers to heap-allocated, garbage collected memory.
-Creating a shared box is done by simply applying the unary `@`
+## Managed boxes
+
+Managed boxes are pointers to heap-allocated, garbage collected memory.
+Creating a managed box is done by simply applying the unary `@`
 operator to an expression. The result of the expression will be boxed,
 resulting in a box of the right type. Copying a shared box, as happens
 during assignment, only copies a pointer, never the contents of the
 box.
 
 ~~~~
-let x: @int = @10; // New box, refcount of 1
-let y = x; // Copy the pointer, increase refcount
-// When x and y go out of scope, refcount goes to 0, box is freed
+let x: @int = @10; // New box
+let y = x; // Copy of a pointer to the same box
+
+// x and y both refer to the same allocation. When both go out of scope
+// then the allocation will be freed.
 ~~~~
 
-Shared boxes never cross task boundaries.
+Any type that contains managed boxes or other managed types is
+considered _managed_. Managed types are the only types that can
+construct cyclic data structures in Rust, such as doubly-linked lists.
 
-> ***Note:*** shared boxes are currently reclaimed through reference
+~~~
+// A linked list node
+struct Node {
+    mut next: MaybeNode,
+    mut prev: MaybeNode,
+    payload: int
+}
+
+enum MaybeNode {
+    SomeNode(@Node),
+    NoNode
+}
+
+let node1 = @Node { next: NoNode, prev: NoNode, payload: 1 };
+let node2 = @Node { next: NoNode, prev: NoNode, payload: 2 };
+let node3 = @Node { next: NoNode, prev: NoNode, payload: 3 };
+
+// Link the three list nodes together
+node1.next = SomeNode(node2);
+node2.prev = SomeNode(node1);
+node2.next = SomeNode(node3);
+node3.prev = SomeNode(node2);
+~~~
+
+Managed boxes never cross task boundaries.
+
+> ***Note:*** managed boxes are currently reclaimed through reference
 > counting and cycle collection, but we will switch to a tracing
-> garbage collector.
+> garbage collector eventually.
 
-## Unique boxes
+## Owned boxes
 
-In contrast to shared boxes, unique boxes have a single owner and thus
-two unique boxes may not refer to the same memory. All unique boxes
-across all tasks are allocated on a single _exchange heap_, where
-their uniquely owned nature allows them to be passed between tasks.
+In contrast to managed boxes, owned boxes have a single owning memory
+slot and thus two owned boxes may not refer to the same memory. All
+owned boxes across all tasks are allocated on a single _exchange
+heap_, where their uniquely owned nature allows them to be passed
+between tasks efficiently.
 
-Because unique boxes are uniquely owned, copying them involves allocating
-a new unique box and duplicating the contents. Copying unique boxes
-is expensive so the compiler will complain if you do.
+Because owned boxes are uniquely owned, copying them involves allocating
+a new owned box and duplicating the contents. Copying owned boxes
+is expensive so the compiler will complain if you do so without writing
+the word `copy`.
 
 ~~~~
 let x = ~10;
@@ -1060,142 +1107,182 @@ let x = ~10;
 let y = copy x;
 ~~~~
 
-This is where the 'move' (`<-`) operator comes in. It is similar to
-`=`, but it de-initializes its source. Thus, the unique box can move
+This is where the 'move' operator comes in. It is similar to
+`copy`, but it de-initializes its source. Thus, the owned box can move
 from `x` to `y`, without violating the constraint that it only has a
 single owner (if you used assignment instead of the move operator, the
 box would, in principle, be copied).
 
 ~~~~
 let x = ~10;
-let y <- x;
+let y = move x;
 ~~~~
 
-> ***Note:*** this discussion of copying vs moving does not account
-> for the "last use" rules that automatically promote copy operations
-> to moves. This is an evolving area of the language that will
-> continue to change.
-
-Unique boxes, when they do not contain any shared boxes, can be sent
+Owned boxes, when they do not contain any managed boxes, can be sent
 to other tasks. The sending task will give up ownership of the box,
 and won't be able to access it afterwards. The receiving task will
 become the sole owner of the box.
+
+> ***Note:*** this discussion of copying vs moving does not account
+> for the "last use" rules that automatically promote copy operations
+> to moves. Last use is expected to be removed from the language in
+> favor of explicit moves.
 
 ## Borrowed pointers
 
 Rust borrowed pointers are a general purpose reference/pointer type,
 similar to the C++ reference type, but guaranteed to point to valid
-memory. In contrast to unique pointers, where the holder of a unique
+memory. In contrast to owned pointers, where the holder of a unique
 pointer is the owner of the pointed-to memory, borrowed pointers never
 imply ownership. Pointers may be borrowed from any type, in which case
 the pointer is guaranteed not to outlive the value it points to.
 
-~~~~
-# fn work_with_foo_by_pointer(f: &~str) { }
-let foo = ~"foo";
-work_with_foo_by_pointer(&foo);
-~~~~
+As an example, consider a simple struct type, `Point`:
 
-The following shows an example of what is _not_ possible with borrowed
-pointers. If you were able to write this then the pointer to `foo`
-would outlive `foo` itself.
-
-~~~~ {.ignore}
-let foo_ptr;
-{
-    let foo = ~"foo";
-    foo_ptr = &foo;
+~~~
+struct Point {
+    x: float, y: float
 }
 ~~~~
 
-> ***Note:*** borrowed pointers are a new addition to the language.
-> They are not used extensively yet but are expected to become the
-> pointer type used in many common situations, in particular for
-> by-reference argument passing. Rust's current solution for passing
-> arguments by reference is [argument modes](#argument-passing).
+We can use this simple definition to allocate points in many ways. For
+example, in this code, each of these three local variables contains a
+point, but allocated in a different place:
 
-## Mutability
+~~~
+# struct Point { x: float, y: float }
+let on_the_stack : Point  =  Point {x: 3.0, y: 4.0};
+let shared_box   : @Point = @Point {x: 5.0, y: 1.0};
+let unique_box   : ~Point = ~Point {x: 7.0, y: 9.0};
+~~~
 
-All pointer types have a mutable variant, written `@mut T` or `~mut
-T`. Given such a pointer, you can write to its contents by combining
-the dereference operator with a mutating action.
+Suppose we wanted to write a procedure that computed the distance
+between any two points, no matter where they were stored. For example,
+we might like to compute the distance between `on_the_stack` and
+`shared_box`, or between `shared_box` and `unique_box`. One option is
+to define a function that takes two arguments of type point—that is,
+it takes the points by value. But this will cause the points to be
+copied when we call the function. For points, this is probably not so
+bad, but often copies are expensive or, worse, if there are mutable
+fields, they can change the semantics of your program. So we’d like to
+define a function that takes the points by pointer. We can use
+borrowed pointers to do this:
 
-~~~~
-fn increase_contents(pt: @mut int) {
-    *pt += 1;
+~~~
+# struct Point { x: float, y: float }
+# fn sqrt(f: float) -> float { 0f }
+fn compute_distance(p1: &Point, p2: &Point) -> float {
+    let x_d = p1.x - p2.x;
+    let y_d = p1.y - p2.y;
+    sqrt(x_d * x_d + y_d * y_d)
 }
-~~~~
+~~~
 
-# Vectors
+Now we can call `compute_distance()` in various ways:
+
+~~~
+# struct Point{ x: float, y: float };
+# let on_the_stack : Point  =  Point {x: 3.0, y: 4.0};
+# let shared_box   : @Point = @Point {x: 5.0, y: 1.0};
+# let unique_box   : ~Point = ~Point {x: 7.0, y: 9.0};
+# fn compute_distance(p1: &Point, p2: &Point) -> float { 0f }
+compute_distance(&on_the_stack, shared_box);
+compute_distance(shared_box, unique_box);
+~~~
+
+Here the `&` operator is used to take the address of the variable
+`on_the_stack`; this is because `on_the_stack` has the type `point`
+(that is, a record value) and we have to take its address to get a
+value. We also call this _borrowing_ the local variable
+`on_the_stack`, because we are created an alias: that is, another
+route to the same data.
+
+In the case of the boxes `shared_box` and `unique_box`, however, no
+explicit action is necessary. The compiler will automatically convert
+a box like `@point` or `~point` to a borrowed pointer like
+`&point`. This is another form of borrowing; in this case, the
+contents of the shared/unique box is being lent out.
+
+Whenever a value is borrowed, there are some limitations on what you
+can do with the original. For example, if the contents of a variable
+have been lent out, you cannot send that variable to another task, nor
+will you be permitted to take actions that might cause the borrowed
+value to be freed or to change its type. This rule should make
+intuitive sense: you must wait for a borrowed value to be returned
+(that is, for the borrowed pointer to go out of scope) before you can
+make full use of it again.
+
+For a more in-depth explanation of borrowed pointers, read the
+[borrowed pointer tutorial][borrowtut].
+
+[borrowtut]: tutorial-borrowed-ptr.html
+
+# Vectors and strings
 
 Vectors are a contiguous section of memory containing zero or more
 values of the same type. Like other types in Rust, vectors can be
-stored on the stack, the local heap, or the exchange heap.
+stored on the stack, the local heap, or the exchange heap. Borrowed
+pointers to vectors are also called 'slices'.
 
 ~~~
-enum crayon {
-    almond, antique_brass, apricot,
-    aquamarine, asparagus, atomic_tangerine,
-    banana_mania, beaver, bittersweet
+enum Crayon {
+    Almond, AntiqueBrass, Apricot,
+    Aquamarine, Asparagus, AtomicTangerine,
+    BananaMania, Beaver, Bittersweet
 }
 
-// A stack vector of crayons
-let stack_crayons: &[crayon] = &[almond, antique_brass, apricot];
-// A local heap (shared) vector of crayons
-let local_crayons: @[crayon] = @[aquamarine, asparagus, atomic_tangerine];
-// An exchange heap (unique) vector of crayons
-let exchange_crayons: ~[crayon] = ~[banana_mania, beaver, bittersweet];
-~~~
+// A fixed-size stack vector
+let stack_crayons: [Crayon * 3] = [Almond, AntiqueBrass, Apricot];
 
-> ***Note:*** Until recently Rust only had unique vectors, using the
-> unadorned `[]` syntax for literals. This syntax is still supported
-> but is deprecated. In the future it will probably represent some
-> "reasonable default" vector type.
->
-> Unique vectors are the currently-recommended vector type for general
-> use as they are the most tested and well-supported by existing
-> libraries. There will be a gradual shift toward using more
-> stack and local vectors in the coming releases.
+// A borrowed pointer to stack allocated vector
+let stack_crayons: &[Crayon] = &[Almond, AntiqueBrass, Apricot];
+
+// A local heap (managed) vector of crayons
+let local_crayons: @[Crayon] = @[Aquamarine, Asparagus, AtomicTangerine];
+
+// An exchange heap (owned) vector of crayons
+let exchange_crayons: ~[Crayon] = ~[BananaMania, Beaver, Bittersweet];
+~~~
 
 Vector literals are enclosed in square brackets and dereferencing is
 also done with square brackets (zero-based):
 
 ~~~~
-# enum crayon { almond, antique_brass, apricot,
-#               aquamarine, asparagus, atomic_tangerine,
-#               banana_mania, beaver, bittersweet };
-# fn draw_scene(c: crayon) { }
+# enum Crayon { Almond, AntiqueBrass, Apricot,
+#               Aquamarine, Asparagus, AtomicTangerine,
+#               BananaMania, Beaver, Bittersweet };
+# fn draw_scene(c: Crayon) { }
 
-let crayons = ~[banana_mania, beaver, bittersweet];
+let crayons = [BananaMania, Beaver, Bittersweet];
 match crayons[0] {
-	   bittersweet => draw_scene(crayons[0]),
-       _ => ()
+    Bittersweet => draw_scene(crayons[0]),
+    _ => ()
 }
 ~~~~
 
 By default, vectors are immutable—you can not replace their elements.
-The type written as `~[mut T]` is a vector with mutable
-elements. Mutable vector literals are written `~[mut]` (empty) or `~[mut
+The type written as `[mut T]` is a vector with mutable
+elements. Mutable vector literals are written `[mut]` (empty) or `[mut
 1, 2, 3]` (with elements).
 
 ~~~~
-# enum crayon { almond, antique_brass, apricot,
-#               aquamarine, asparagus, atomic_tangerine,
-#               banana_mania, beaver, bittersweet };
+# enum Crayon { Almond, AntiqueBrass, Apricot,
+#               Aquamarine, Asparagus, AtomicTangerine,
+#               BananaMania, Beaver, Bittersweet };
 
-let crayons = ~[mut banana_mania, beaver, bittersweet];
-crayons[0] = atomic_tangerine;
+let crayons = [mut BananaMania, Beaver, Bittersweet];
+crayons[0] = AtomicTangerine;
 ~~~~
 
 The `+` operator means concatenation when applied to vector types.
 
 ~~~~
-# enum crayon { almond, antique_brass, apricot,
-#               aquamarine, asparagus, atomic_tangerine,
-#               banana_mania, beaver, bittersweet };
+# enum Crayon { Almond, AntiqueBrass, Apricot,
+#               Aquamarine, Asparagus, AtomicTangerine,
+#               BananaMania, Beaver, Bittersweet };
 
-let my_crayons = ~[almond, antique_brass, apricot];
-let your_crayons = ~[banana_mania, beaver, bittersweet];
+let my_crayons = ~[Almond, AntiqueBrass, Apricot];
+let your_crayons = ~[BananaMania, Beaver, Bittersweet];
 
 let our_crayons = my_crayons + your_crayons;
 ~~~~
@@ -1204,17 +1291,40 @@ The `+=` operator also works as expected, provided the assignee
 lives in a mutable slot.
 
 ~~~~
-# enum crayon { almond, antique_brass, apricot,
-#               aquamarine, asparagus, atomic_tangerine,
-#               banana_mania, beaver, bittersweet };
+# enum Crayon { Almond, AntiqueBrass, Apricot,
+#               Aquamarine, Asparagus, AtomicTangerine,
+#               BananaMania, Beaver, Bittersweet };
 
-let mut my_crayons = ~[almond, antique_brass, apricot];
-let your_crayons = ~[banana_mania, beaver, bittersweet];
+let mut my_crayons = ~[Almond, AntiqueBrass, Apricot];
+let your_crayons = ~[BananaMania, Beaver, Bittersweet];
 
 my_crayons += your_crayons;
 ~~~~
 
-## Vector and string methods
+> ***Note:*** The above examples of vector addition use owned
+> vectors. Some operations on slices and stack vectors are
+> not well supported yet, owned vectors are often the most
+> usable.
+
+Strings are simply vectors of `[u8]`, though they have a distinct
+type. They support most of the same allocation aptions as
+vectors, though the string literal without a storage sigil, e.g.
+`"foo"` is treated differently than a comparable vector (`[foo]`).
+Where
+
+~~~
+// A plain string is a slice to read-only (static) memory
+let stack_crayons: &str = "Almond, AntiqueBrass, Apricot";
+
+// The same thing, but without
+let stack_crayons: &str = &"Almond, AntiqueBrass, Apricot";
+
+// A local heap (managed) string
+let local_crayons: @str = @"Aquamarine, Asparagus, AtomicTangerine";
+
+// An exchange heap (owned) string
+let exchange_crayons: ~str = ~"BananaMania, Beaver, Bittersweet";
+~~~
 
 Both vectors and strings support a number of useful
 [methods](#implementation).  While we haven't covered methods yet,
@@ -1223,30 +1333,30 @@ brief look at a few common ones.
 
 ~~~
 # use io::println;
-# enum crayon {
-#     almond, antique_brass, apricot,
-#     aquamarine, asparagus, atomic_tangerine,
-#     banana_mania, beaver, bittersweet
+# enum Crayon {
+#     Almond, AntiqueBrass, Apricot,
+#     Aquamarine, Asparagus, AtomicTangerine,
+#     BananaMania, Beaver, Bittersweet
 # }
-# fn unwrap_crayon(c: crayon) -> int { 0 }
+# fn unwrap_crayon(c: Crayon) -> int { 0 }
 # fn eat_crayon_wax(i: int) { }
-# fn store_crayon_in_nasal_cavity(i: uint, c: crayon) { }
-# fn crayon_to_str(c: crayon) -> ~str { ~"" }
+# fn store_crayon_in_nasal_cavity(i: uint, c: Crayon) { }
+# fn crayon_to_str(c: Crayon) -> ~str { ~"" }
 
-let crayons = ~[almond, antique_brass, apricot];
+let crayons = &[Almond, AntiqueBrass, Apricot];
 
 // Check the length of the vector
 assert crayons.len() == 3;
 assert !crayons.is_empty();
 
-// Iterate over a vector
+// Iterate over a vector, obtaining a pointer to each element
 for crayons.each |crayon| {
-    let delicious_crayon_wax = unwrap_crayon(crayon);
+    let delicious_crayon_wax = unwrap_crayon(*crayon);
     eat_crayon_wax(delicious_crayon_wax);
 }
 
 // Map vector elements
-let crayon_names = crayons.map(crayon_to_str);
+let crayon_names = crayons.map(|v| crayon_to_str(*v));
 let favorite_crayon_name = crayon_names[0];
 
 // Remove whitespace from before and after the string
@@ -1302,7 +1412,7 @@ access local variables in the enclosing scope.
 
 ~~~~
 let mut max = 0;
-(~[1, 2, 3]).map(|x| if x > max { max = x });
+(~[1, 2, 3]).map(|x| if *x > max { max = *x });
 ~~~~
 
 Stack closures are very efficient because their environment is
@@ -1313,7 +1423,7 @@ position and cannot be stored in structures nor returned from
 functions. Despite the limitations stack closures are used
 pervasively in Rust code.
 
-## Shared closures
+## Managed closures
 
 When you need to store a closure in a data structure, a stack closure
 will not do, since the compiler will refuse to let you store it. For
@@ -1321,7 +1431,7 @@ this purpose, Rust provides a type of closure that has an arbitrary
 lifetime, written `fn@` (boxed closure, analogous to the `@` pointer
 type described earlier).
 
-A boxed closure does not directly access its environment, but merely
+A managed closure does not directly access its environment, but merely
 copies out the values that it closes over into a private data
 structure. This means that it can not assign to these variables, and
 will not 'see' updates to them.
@@ -1346,7 +1456,7 @@ This example uses the long closure syntax, `fn@(s: ~str) ...`,
 making the fact that we are declaring a box closure explicit. In
 practice boxed closures are usually defined with the short closure
 syntax introduced earlier, in which case the compiler will infer
-the type of closure. Thus our boxed closure example could also
+the type of closure. Thus our managed closure example could also
 be written:
 
 ~~~~
@@ -1355,13 +1465,13 @@ fn mk_appender(suffix: ~str) -> fn@(~str) -> ~str {
 }
 ~~~~
 
-## Unique closures
+## Owned closures
 
-Unique closures, written `fn~` in analogy to the `~` pointer type,
+Owned closures, written `fn~` in analogy to the `~` pointer type,
 hold on to things that can safely be sent between
-processes. They copy the values they close over, much like boxed
+processes. They copy the values they close over, much like managed
 closures, but they also 'own' them—meaning no other code can access
-them. Unique closures are used in concurrent code, particularly
+them. Owned closures are used in concurrent code, particularly
 for spawning [tasks](#tasks).
 
 ## Closure compatibility
@@ -1377,39 +1487,47 @@ that callers have the flexibility to pass whatever they want.
 fn call_twice(f: fn()) { f(); f(); }
 call_twice(|| { ~"I am an inferred stack closure"; } );
 call_twice(fn&() { ~"I am also a stack closure"; } );
-call_twice(fn@() { ~"I am a boxed closure"; });
-call_twice(fn~() { ~"I am a unique closure"; });
+call_twice(fn@() { ~"I am a managed closure"; });
+call_twice(fn~() { ~"I am a owned closure"; });
 fn bare_function() { ~"I am a plain function"; }
 call_twice(bare_function);
 ~~~~
+
+> ***Note:*** Both the syntax and the semantics will be changing
+> in small ways. At the moment they can be unsound in multiple
+> scenarios, particularly with non-copyable types.
 
 ## Do syntax
 
 Closures in Rust are frequently used in combination with higher-order
 functions to simulate control structures like `if` and
 `loop`. Consider this function that iterates over a vector of
-integers, applying an operator to each:
+integers, passing in a pointer to each integer in the vector:
 
 ~~~~
-fn each(v: ~[int], op: fn(int)) {
+fn each(v: &[int], op: fn(v: &int)) {
    let mut n = 0;
    while n < v.len() {
-       op(v[n]);
+       op(&v[n]);
        n += 1;
    }
 }
 ~~~~
 
-As a caller, if we use a closure to provide the final operator
-argument, we can write it in a way that has a pleasant, block-like
-structure.
+The reason we pass in a *pointer* to an integer rather than the
+integer itself is that this is how the actual `each()` function for
+vectors works.  Using a pointer means that the function can be used
+for vectors of any type, even large records that would be impractical
+to copy out of the vector on each iteration.  As a caller, if we use a
+closure to provide the final operator argument, we can write it in a
+way that has a pleasant, block-like structure.
 
 ~~~~
-# fn each(v: ~[int], op: fn(int)) {}
+# fn each(v: &[int], op: fn(v: &int)) { }
 # fn do_some_work(i: int) { }
-each(~[1, 2, 3], |n| {
-    debug!("%i", n);
-    do_some_work(n);
+each(&[1, 2, 3], |n| {
+    debug!("%i", *n);
+    do_some_work(*n);
 });
 ~~~~
 
@@ -1417,11 +1535,11 @@ This is such a useful pattern that Rust has a special form of function
 call that can be written more like a built-in control structure:
 
 ~~~~
-# fn each(v: ~[int], op: fn(int)) {}
+# fn each(v: &[int], op: fn(v: &int)) { }
 # fn do_some_work(i: int) { }
-do each(~[1, 2, 3]) |n| {
-    debug!("%i", n);
-    do_some_work(n);
+do each(&[1, 2, 3]) |n| {
+    debug!("%i", *n);
+    do_some_work(*n);
 }
 ~~~~
 
@@ -1465,10 +1583,10 @@ Consider again our `each` function, this time improved to
 break early when the iteratee returns `false`:
 
 ~~~~
-fn each(v: ~[int], op: fn(int) -> bool) {
+fn each(v: &[int], op: fn(v: &int) -> bool) {
    let mut n = 0;
    while n < v.len() {
-       if !op(v[n]) {
+       if !op(&v[n]) {
            break;
        }
        n += 1;
@@ -1481,8 +1599,8 @@ And using this function to iterate over a vector:
 ~~~~
 # use each = vec::each;
 # use println = io::println;
-each(~[2, 4, 8, 5, 16], |n| {
-    if n % 2 != 0 {
+each(&[2, 4, 8, 5, 16], |n| {
+    if *n % 2 != 0 {
         println(~"found odd number!");
         false
     } else { true }
@@ -1498,8 +1616,8 @@ to the next iteration, write `again`.
 ~~~~
 # use each = vec::each;
 # use println = io::println;
-for each(~[2, 4, 8, 5, 16]) |n| {
-    if n % 2 != 0 {
+for each(&[2, 4, 8, 5, 16]) |n| {
+    if *n % 2 != 0 {
         println(~"found odd number!");
         break;
     }
@@ -1513,9 +1631,9 @@ function, not just the loop body.
 
 ~~~~
 # use each = vec::each;
-fn contains(v: ~[int], elt: int) -> bool {
+fn contains(v: &[int], elt: int) -> bool {
     for each(v) |x| {
-        if (x == elt) { return true; }
+        if (*x == elt) { return true; }
     }
     false
 }
@@ -1525,36 +1643,40 @@ fn contains(v: ~[int], elt: int) -> bool {
 
 # Generics
 
-## Generic functions
-
 Throughout this tutorial, we've been defining functions that act only on
-single data types. It's a burden to define such functions again and again for
-every type they apply to. Thus, Rust allows functions and datatypes to have
-type parameters.
+single data types. With type parameters we can also define functions that
+may be invoked on multiple types.
 
 ~~~~
-fn map<T, U>(vector: &[T], function: fn(T) -> U) -> ~[U] {
+fn map<T, U>(vector: &[T], function: fn(v: &T) -> U) -> ~[U] {
     let mut accumulator = ~[];
-    for vector.each |element| {
+    for vec::each(vector) |element| {
         vec::push(accumulator, function(element));
     }
     return accumulator;
 }
 ~~~~
 
-When defined with type parameters, this function can be applied to any
-type of vector, as long as the type of `function`'s argument and the
-type of the vector's content agree with each other.
+When defined with type parameters, as denoted by `<T, U>`, this
+function can be applied to any type of vector, as long as the type of
+`function`'s argument and the type of the vector's content agree with
+each other.
 
 Inside a generic function, the names of the type parameters
 (capitalized by convention) stand for opaque types. You can't look
-inside them, but you can pass them around.
-
-## Generic datatypes
+inside them, but you can pass them around.  Note that instances of
+generic types are almost always passed by pointer.  For example, the
+parameter `function()` is supplied with a pointer to a value of type
+`T` and not a value of type `T` itself.  This ensures that the
+function works with the broadest set of types possible, since some
+types are expensive or illegal to copy and pass by value.
 
 Generic `type`, `struct`, and `enum` declarations follow the same pattern:
 
 ~~~~
+# use std::map::HashMap;
+type Set<T> = HashMap<T, ()>;
+
 struct Stack<T> {
     elements: ~[mut T]
 }
@@ -1565,242 +1687,292 @@ enum Maybe<T> {
 }
 ~~~~
 
-These declarations produce valid types like `Stack<u8>` and `Maybe<int>`.
+These declarations produce valid types like `Set<int>`, `Stack<int>`
+and `Maybe<int>`.
 
-## Kinds
+Generic functions in Rust are compiled to very efficient runtime code
+through a process called _monomorphisation_. This big word just means
+that, for each generic function you call, the compiler generates a
+specialized version that is optimized specifically for the argument
+types. In this respect Rust's generics have similar performance
+characteristics to C++ templates.
 
-Perhaps surprisingly, the 'copy' (duplicate) operation is not defined
-for all Rust types. Resource types (classes with destructors) cannot be
-copied, and neither can any type whose copying would require copying a
-resource (such as records or unique boxes containing a resource).
+## Traits
+
+Within a generic function the operations available on generic types
+are very limited. After all, since the function doesn't know what
+types it is operating on, it can't safely modify or query their
+values. This is where _traits_ come into play. Traits are Rust's most
+powerful tool for writing polymorphic code. Java developers will see
+in them aspects of Java interfaces, and Haskellers will notice their
+similarities to type classes.
+
+As motivation, let us consider copying in Rust. Perhaps surprisingly,
+the copy operation is not defined for all Rust types. In
+particular, types with user-defined destructors cannot be copied,
+either implicitly or explicitly, and neither can types that own other
+types containing destructors (the actual mechanism for defining
+destructors will be discussed elsewhere).
 
 This complicates handling of generic functions. If you have a type
 parameter `T`, can you copy values of that type? In Rust, you can't,
-unless you explicitly declare that type parameter to have copyable
-'kind'. A kind is a type of type.
+and if you try to run the following code the compiler will complain.
 
-~~~~ {.ignore}
+~~~~ {.xfail-test}
 // This does not compile
-fn head_bad<T>(v: ~[T]) -> T { v[0] }
-// This does
-fn head<T: Copy>(v: ~[T]) -> T { v[0] }
+fn head_bad<T>(v: &[T]) -> T {
+    v[0] // error: copying a non-copyable value
+}
 ~~~~
 
-When instantiating a generic function, you can only instantiate it
-with types that fit its kinds. So you could not apply `head` to a
-resource type. Rust has several kinds that can be used as type bounds:
+We can tell the compiler though that the `head` function is only for
+copyable types with the `Copy` trait.
 
-* `Copy` - Copyable types. All types are copyable unless they
-  are classes with destructors or otherwise contain
-  classes with destructors.
-* `Send` - Sendable types. All types are sendable unless they
-  contain shared boxes, closures, or other local-heap-allocated
-  types.
-* `Const` - Constant types. These are types that do not contain
-  mutable fields nor shared boxes.
+~~~~
+// This does
+fn head<T: Copy>(v: &[T]) -> T {
+    v[0]
+}
+~~~~
 
-> ***Note:*** Rust type kinds are syntactically very similar to
-> [traits](#traits) when used as type bounds, and can be
-> conveniently thought of as built-in traits. In the future type
-> kinds will actually be traits that the compiler has special
-> knowledge about.
+This says that we can call `head` on any type `T` as long as that type
+implements the `Copy` trait. When instantiating a generic function,
+you can only instantiate it with types that implement the correct
+trait, so you could not apply `head` to a type with a destructor.
 
-# Traits
+While most traits can be defined and implemented by user code, three
+traits are automatically derived and implemented for all applicable
+types by the compiler, and may not be overridden:
 
-Traits are Rust's take on value polymorphism—the thing that
-object-oriented languages tend to solve with methods and inheritance.
-For example, writing a function that can operate on multiple types of
-collections.
+* `Copy` - Types that can be copied, either implicitly, or using the
+  `copy` expression. All types are copyable unless they are classes
+  with destructors or otherwise contain classes with destructors.
 
-> ***Note:*** This feature is very new, and will need a few extensions to be
-> applicable to more advanced use cases.
+* `Send` - Sendable (owned) types. All types are sendable unless they
+  contain managed boxes, managed closures, or otherwise managed
+  types. Sendable types may or may not be copyable.
 
-## Declaration
+* `Const` - Constant (immutable) types. These are types that do not contain
+  mutable fields.
 
-A trait consists of a set of methods. A method is a function that
+> ***Note:*** These three traits were referred to as 'kinds' in earlier
+> iterations of the language, and often still are.
+
+## Declaring and implementing traits
+
+A trait consists of a set of methods, or may be empty, as is the case
+with `Copy`, `Send`, and `Const`. A method is a function that
 can be applied to a `self` value and a number of arguments, using the
 dot notation: `self.foo(arg1, arg2)`.
 
-For example, we could declare the trait `to_str` for things that
-can be converted to a string, with a single method of the same name:
+For example, we could declare the trait `Printable` for things that
+can be printed to the console, with a single method:
 
 ~~~~
-trait to_str {
-    fn to_str() -> ~str;
+trait Printable {
+    fn print();
 }
 ~~~~
 
-## Implementation
-
-To actually implement a trait for a given type, the `impl` form
-is used. This defines implementations of `to_str` for the `int` and
+To actually implement a trait for a given type, the `impl` form is
+used. This defines implementations of `Printable` for the `int` and
 `~str` types.
 
 ~~~~
-# trait to_str { fn to_str() -> ~str; }
-impl int: to_str {
-    fn to_str() -> ~str { int::to_str(self, 10u) }
+# trait Printable { fn print(); }
+impl int: Printable {
+    fn print() { io::println(fmt!("%d", self)) }
 }
-impl ~str: to_str {
-    fn to_str() -> ~str { self }
+
+impl ~str: Printable {
+    fn print() { io::println(self) }
 }
+
+# 1.print();
+# (~"foo").print();
 ~~~~
 
-Given these, we may call `1.to_str()` to get `~"1"`, or
-`(~"foo").to_str()` to get `~"foo"` again. This is basically a form of
-static overloading—when the Rust compiler sees the `to_str` method
+Given these, we may call `1.print()` to print `"1"`, or
+`(~"foo").print()` to print `"foo"` again, as with . This is basically a form of
+static overloading—when the Rust compiler sees the `print` method
 call, it looks for an implementation that matches the type with a
 method that matches the name, and simply calls that.
 
-## Bounded type parameters
-
-The useful thing about value polymorphism is that it does not have to
-be static. If object-oriented languages only let you call a method on
-an object when they knew exactly which sub-type it had, that would not
-get you very far. To be able to call methods on types that aren't
-known at compile time, it is possible to specify 'bounds' for type
-parameters.
+Traits may themselves contain type parameters. A trait for
+generalized sequence types might look like the following:
 
 ~~~~
-# trait to_str { fn to_str() -> ~str; }
-fn comma_sep<T: to_str>(elts: ~[T]) -> ~str {
-    let mut result = ~"", first = true;
-    for elts.each |elt| {
-        if first { first = false; }
-        else { result += ~", "; }
-        result += elt.to_str();
-    }
-    return result;
-}
-~~~~
-
-The syntax for this is similar to the syntax for specifying that a
-parameter type has to be copyable (which is, in principle, another
-kind of bound). By declaring `T` as conforming to the `to_str`
-trait, it becomes possible to call methods from that trait on
-values of that type inside the function. It will also cause a
-compile-time error when anyone tries to call `comma_sep` on an array
-whose element type does not have a `to_str` implementation in scope.
-
-## Polymorphic traits
-
-Traits may contain type parameters. A trait for
-generalized sequence types is:
-
-~~~~
-trait seq<T> {
+trait Seq<T> {
     fn len() -> uint;
-    fn iter(fn(T));
+    fn iter(b: fn(v: &T));
 }
-impl<T> ~[T]: seq<T> {
+
+impl<T> ~[T]: Seq<T> {
     fn len() -> uint { vec::len(self) }
-    fn iter(b: fn(T)) {
-        for self.each |elt| { b(elt); }
+    fn iter(b: fn(v: &T)) {
+        for vec::each(self) |elt| { b(elt); }
     }
 }
 ~~~~
 
-The implementation has to explicitly declare the type
-parameter that it binds, `T`, before using it to specify its trait type. Rust requires this declaration because the `impl` could also, for example, specify an implementation of `seq<int>`. The trait type -- appearing after the colon in the `impl` -- *refers* to a type, rather than defining one.
+The implementation has to explicitly declare the type parameter that
+it binds, `T`, before using it to specify its trait type. Rust
+requires this declaration because the `impl` could also, for example,
+specify an implementation of `Seq<int>`. The trait type -- appearing
+after the colon in the `impl` -- *refers* to a type, rather than
+defining one.
 
 The type parameters bound by a trait are in scope in each of the
 method declarations. So, re-declaring the type parameter
 `T` as an explicit type parameter for `len` -- in either the trait or
 the impl -- would be a compile-time error.
 
-## The `self` type in traits
-
-In a trait, `self` is a special type that you can think of as a
-type parameter. An implementation of the trait for any given type
-`T` replaces the `self` type parameter with `T`. The following
-trait describes types that support an equality operation:
+Within a trait definition, `self` is a special type that you can think
+of as a type parameter. An implementation of the trait for any given
+type `T` replaces the `self` type parameter with `T`. Simply, in a
+trait, `self` is a type, and in an impl, `self` is a value. The
+following trait describes types that support an equality operation:
 
 ~~~~
-trait eq {
-  fn equals(&&other: self) -> bool;
+// In a trait, `self` refers to the type implementing the trait
+trait Eq {
+  fn equals(other: &self) -> bool;
 }
 
-impl int: eq {
-  fn equals(&&other: int) -> bool { other == self }
+// In an impl, self refers to the value of the receiver
+impl int: Eq {
+  fn equals(other: &int) -> bool { *other == self }
 }
 ~~~~
 
-Notice that `equals` takes an `int` argument, rather than a `self` argument, in
-an implementation for type `int`.
+Notice that in the trait definition, `equals` takes a `self` type
+argument, whereas, in the impl, `equals` takes an `int` type argument,
+and uses `self` as the name of the receiver (analogous to the `this` pointer
+in C++).
 
-## Casting to a trait type
+## Bounded type parameters and static method dispatch
+
+Traits give us a language for talking about the abstract capabilities
+of types, and we can use this to place _bounds_ on type parameters,
+so that we can then operate on generic types.
+
+~~~~
+# trait Printable { fn print(); }
+fn print_all<T: Printable>(printable_things: ~[T]) {
+    for printable_things.each |thing| {
+        thing.print();
+    }
+}
+~~~~
+
+By declaring `T` as conforming to the `Printable` trait (as we earlier
+did with `Copy`), it becomes possible to call methods from that trait
+on values of that type inside the function. It will also cause a
+compile-time error when anyone tries to call `print_all` on an array
+whose element type does not have a `Printable` implementation.
+
+Type parameters can have multiple bounds by separating them with spaces,
+as in this version of `print_all` that makes copies of elements.
+
+~~~
+# trait Printable { fn print(); }
+fn print_all<T: Printable Copy>(printable_things: ~[T]) {
+    let mut i = 0;
+    while i < printable_things.len() {
+        let copy_of_thing = printable_things[0];
+        copy_of_thing.print();
+    }
+}
+~~~
+
+Method calls to bounded type parameters are _statically dispatched_,
+imposing no more overhead than normal function invocation, so are
+the preferred way to use traits polymorphically.
+
+This usage of traits is similar to Haskell type classes.
+
+## Casting to a trait type and dynamic method dispatch
 
 The above allows us to define functions that polymorphically act on
-values of *an* unknown type that conforms to a given trait.
+values of a single unknown type that conforms to a given trait.
 However, consider this function:
 
 ~~~~
-# type circle = int; type rectangle = int;
-# trait drawable { fn draw(); }
-# impl int: drawable { fn draw() {} }
+# type Circle = int; type Rectangle = int;
+# impl int: Drawable { fn draw() {} }
 # fn new_circle() -> int { 1 }
-fn draw_all<T: drawable>(shapes: ~[T]) {
+
+trait Drawable { fn draw(); }
+
+fn draw_all<T: Drawable>(shapes: ~[T]) {
     for shapes.each |shape| { shape.draw(); }
 }
-# let c: circle = new_circle();
+
+# let c: Circle = new_circle();
 # draw_all(~[c]);
 ~~~~
 
 You can call that on an array of circles, or an array of squares
-(assuming those have suitable `drawable` traits defined), but not
-on an array containing both circles and squares.
-
-When this is needed, a trait name can be used as a type, causing
-the function to be written simply like this:
+(assuming those have suitable `Drawable` traits defined), but not on
+an array containing both circles and squares. When such behavior is
+needed, a trait name can alternately be used as a type.
 
 ~~~~
-# trait drawable { fn draw(); }
-fn draw_all(shapes: ~[drawable]) {
+# trait Drawable { fn draw(); }
+fn draw_all(shapes: ~[@Drawable]) {
     for shapes.each |shape| { shape.draw(); }
 }
 ~~~~
 
-There is no type parameter anymore (since there isn't a single type
-that we're calling the function on). Instead, the `drawable` type is
-used to refer to a type that is a reference-counted box containing a
-value for which a `drawable` implementation exists, combined with
-information on where to find the methods for this implementation. This
-is very similar to the 'vtables' used in most object-oriented
-languages.
-
-To construct such a value, you use the `as` operator to cast a value
-to a trait type:
+In this example there is no type parameter. Instead, the `@Drawable`
+type is used to refer to any managed box value that implements the
+`Drawable` trait. To construct such a value, you use the `as` operator
+to cast a value to a trait type:
 
 ~~~~
-# type circle = int; type rectangle = int;
-# trait drawable { fn draw(); }
-# impl int: drawable { fn draw() {} }
+# type Circle = int; type Rectangle = bool;
+# trait Drawable { fn draw(); }
+# fn new_circle() -> Circle { 1 }
+# fn new_rectangle() -> Rectangle { true }
+# fn draw_all(shapes: ~[Drawable]) {}
+
+impl @Circle: Drawable { fn draw() { ... } }
+
+impl @Rectangle: Drawable { fn draw() { ... } }
+
+let c: @Circle = @new_circle();
+let r: @Rectangle = @new_rectangle();
+draw_all(~[c as @Drawable, r as @Drawable]);
+~~~~
+
+Note that, like strings and vectors, trait types have dynamic size
+and may only be used via one of the pointer types. In turn, the
+`impl` is defined for `@Circle` and `@Rectangle` instead of for
+just `Circle` and `Rectangle`. Other pointer types work as well.
+
+~~~{.xfail-test}
+# type Circle = int; type Rectangle = int;
+# trait Drawable { fn draw(); }
+# impl int: Drawable { fn draw() {} }
 # fn new_circle() -> int { 1 }
 # fn new_rectangle() -> int { 2 }
-# fn draw_all(shapes: ~[drawable]) {}
-let c: circle = new_circle();
-let r: rectangle = new_rectangle();
-draw_all(~[c as drawable, r as drawable]);
-~~~~
+// A managed trait instance
+let boxy: @Drawable = @new_circle() as @Drawable;
+// An owned trait instance
+let owny: ~Drawable = ~new_circle() as ~Drawable;
+// A borrowed trait instance
+let stacky: &Drawable = &new_circle() as &Drawable;
+~~~
 
-This will store the value into a box, along with information about the
-implementation (which is looked up in the scope of the cast). The
-`drawable` type simply refers to such boxes, and calling methods on it
-always works, no matter what implementations are in scope.
+> ***Note:*** Other pointer types actually _do not_ work here. This is
+> an evolving corner of the language.
 
-Note that the allocation of a box is somewhat more expensive than
-simply using a type parameter and passing in the value as-is, and much
-more expensive than statically resolved method calls.
+Method calls to trait types are _dynamically dispatched_. Since the
+compiler doesn't know specifically which functions to call at compile
+time it uses a lookup table (vtable) to decide at runtime which
+method to call.
 
-## Trait-less implementations
-
-If you only intend to use an implementation for static overloading,
-and there is no trait available that it conforms to, you are free
-to leave off the type after the colon.  However, this is only possible when you
-are defining an implementation in the same module as the receiver
-type, and the receiver type is a named type (i.e., an enum or a
-class); [single-variant enums](#single_variant_enum) are a common
-choice.
+This usage of traits is similar to Java interfaces.
 
 # Modules and crates
 
@@ -1815,6 +1987,7 @@ explicitly import it, you must refer to it by its long name,
 `farm::chicken`.
 
 ~~~~
+#[legacy_exports]
 mod farm {
     fn chicken() -> ~str { ~"cluck cluck" }
     fn cow() -> ~str { ~"mooo" }
@@ -1893,7 +2066,7 @@ It is possible to provide more specific information when using an
 external crate.
 
 ~~~~ {.ignore}
-use myfarm (name = "farm", vers = "2.7");
+extern mod myfarm (name = "farm", vers = "2.7");
 ~~~~
 
 When a comma-separated list of name/value pairs is given after `use`,
@@ -1936,8 +2109,7 @@ fn world() -> ~str { ~"world" }
 
 ~~~~ {.ignore}
 // main.rs
-extern mod std;
-use mylib;
+extern mod mylib;
 fn main() { io::println(~"hello " + mylib::world()); }
 ~~~~
 
@@ -1984,9 +2156,9 @@ restricted with `export` directives at the top of the module or file.
 ~~~~
 mod enc {
     export encrypt, decrypt;
-    const super_secret_number: int = 10;
-    fn encrypt(n: int) -> int { n + super_secret_number }
-    fn decrypt(n: int) -> int { n - super_secret_number }
+    const SUPER_SECRET_NUMBER: int = 10;
+    fn encrypt(n: int) -> int { n + SUPER_SECRET_NUMBER }
+    fn decrypt(n: int) -> int { n - SUPER_SECRET_NUMBER }
 }
 ~~~~
 
@@ -2000,6 +2172,7 @@ Rust uses three different namespaces: one for modules, one for types,
 and one for values. This means that this code is valid:
 
 ~~~~
+#[legacy_exports]
 mod buffalo {
     type buffalo = int;
     fn buffalo<buffalo>(+buffalo: buffalo) -> buffalo { buffalo }
@@ -2012,8 +2185,7 @@ fn main() {
 
 You don't want to write things like that, but it *is* very practical
 to not have to worry about name clashes between types, values, and
-modules. This allows us to have a module `core::str`, for example, even
-though `str` is a built-in type name.
+modules.
 
 ## Resolution
 
@@ -2027,10 +2199,10 @@ Identifiers can shadow each other. In this program, `x` is of type
 `int`:
 
 ~~~~
-type t = ~str;
+type MyType = ~str;
 fn main() {
-    type t = int;
-    let x: t;
+    type MyType = int;
+    let x: MyType;
 }
 ~~~~
 
@@ -2038,18 +2210,22 @@ An `use` directive will only import into the namespaces for which
 identifiers are actually found. Consider this example:
 
 ~~~~
-type bar = uint;
 mod foo { fn bar() {} }
-mod baz {
-    use foo::bar;
-    const x: bar = 20u;
+fn baz() {
+    let bar = 10u;
+
+    {
+        use foo::bar;
+        let quux = bar;
+    }
 }
 ~~~~
 
-When resolving the type name `bar` in the `const` definition, the
-resolver will first look at the module context for `baz`. This has an
-import named `bar`, but that's a function, not a type, So it continues
-to the top level and finds a type named `bar` defined there.
+When resolving the type name `bar` in the `quux` definition, the
+resolver will first look at local block context for `baz`. This has an
+import named `bar`, but that's function, not a value, So it continues
+to the `baz` function context and finds a value named `bar` defined
+there.
 
 Normally, multiple definitions of the same identifier in a scope are
 disallowed. Local variables defined with `let` are an exception to
@@ -2069,257 +2245,30 @@ This makes it possible to rebind a variable without actually mutating
 it, which is mostly useful for destructuring (which can rebind, but
 not assign).
 
-# Tasks
+# What next?
 
-Rust supports a system of lightweight tasks, similar to what is found
-in Erlang or other actor systems. Rust tasks communicate via messages
-and do not share data. However, it is possible to send data without
-copying it by making use of [the exchange heap](#unique-boxes), which
-allow the sending task to release ownership of a value, so that the
-receiving task can keep on using it.
+Now that you know the essentials, check out any of the additional
+tutorials on individual topics.
 
-> ***Note:*** As Rust evolves, we expect the task API to grow and
-> change somewhat.  The tutorial documents the API as it exists today.
+* [Borrowed pointers][borrow]
+* [Tasks and communication][tasks]
+* [Macros][macros]
+* [The foreign function interface][ffi]
 
-## Spawning a task
+There is further documentation on the [wiki], including articles about
+[unit testing] in Rust, [documenting][rustdoc] and [packaging][cargo]
+Rust code, and a discussion of the [attributes] used to apply metada
+to code.
 
-Spawning a task is done using the various spawn functions in the
-module `task`.  Let's begin with the simplest one, `task::spawn()`:
+[borrow]: tutorial-borrowed-ptr.html
+[tasks]: tutorial-tasks.html
+[macros]: tutorial-macros.html
+[ffi]: tutorial-ffi.html
 
-~~~~
-use task::spawn;
-use io::println;
+[wiki]: https://github.com/mozilla/rust/wiki/Docs
+[unit testing]: https://github.com/mozilla/rust/wiki/Doc-unit-testing
+[rustdoc]: https://github.com/mozilla/rust/wiki/Doc-using-rustdoc
+[cargo]: https://github.com/mozilla/rust/wiki/Doc-using-cargo-to-manage-packages
+[attributes]: https://github.com/mozilla/rust/wiki/Doc-attributes
 
-let some_value = 22;
-
-do spawn {
-    println(~"This executes in the child task.");
-    println(fmt!("%d", some_value));
-}
-~~~~
-
-The argument to `task::spawn()` is a [unique
-closure](#unique-closures) of type `fn~()`, meaning that it takes no
-arguments and generates no return value. The effect of `task::spawn()`
-is to fire up a child task that will execute the closure in parallel
-with the creator.
-
-## Communication
-
-Now that we have spawned a child task, it would be nice if we could
-communicate with it. This is done using *pipes*. Pipes are simply a
-pair of endpoints, with one for sending messages and another for
-receiving messages. The easiest way to create a pipe is to use
-`pipes::stream`.  Imagine we wish to perform two expensive
-computations in parallel.  We might write something like:
-
-~~~~
-use task::spawn;
-use pipes::{stream, Port, Chan};
-
-let (chan, port) = stream();
-
-do spawn {
-    let result = some_expensive_computation();
-    chan.send(result);
-}
-
-some_other_expensive_computation();
-let result = port.recv();
-
-# fn some_expensive_computation() -> int { 42 }
-# fn some_other_expensive_computation() {}
-~~~~
-
-Let's walk through this code line-by-line.  The first line creates a
-stream for sending and receiving integers:
-
-~~~~ {.ignore}
-# use pipes::stream;
-let (chan, port) = stream();
-~~~~
-
-This port is where we will receive the message from the child task
-once it is complete.  The channel will be used by the child to send a
-message to the port.  The next statement actually spawns the child:
-
-~~~~
-# use task::{spawn};
-# use comm::{Port, Chan};
-# fn some_expensive_computation() -> int { 42 }
-# let port = Port();
-# let chan = port.chan();
-do spawn {
-    let result = some_expensive_computation();
-    chan.send(result);
-}
-~~~~
-
-This child will perform the expensive computation send the result
-over the channel.  (Under the hood, `chan` was captured by the
-closure that forms the body of the child task.  This capture is
-allowed because channels are sendable.)
-
-Finally, the parent continues by performing
-some other expensive computation and then waiting for the child's result
-to arrive on the port:
-
-~~~~
-# use pipes::{stream, Port, Chan};
-# fn some_other_expensive_computation() {}
-# let (chan, port) = stream::<int>();
-# chan.send(0);
-some_other_expensive_computation();
-let result = port.recv();
-~~~~
-
-## Creating a task with a bi-directional communication path
-
-A very common thing to do is to spawn a child task where the parent
-and child both need to exchange messages with each other. The
-function `std::comm::DuplexStream()` supports this pattern.  We'll
-look briefly at how it is used.
-
-To see how `spawn_conversation()` works, we will create a child task
-that receives `uint` messages, converts them to a string, and sends
-the string in response.  The child terminates when `0` is received.
-Here is the function that implements the child task:
-
-~~~~
-# use std::comm::DuplexStream;
-# use pipes::{Port, Chan};
-fn stringifier(channel: DuplexStream<~str, uint>) {
-    let mut value: uint;
-    loop {
-        value = channel.recv();
-        channel.send(uint::to_str(value, 10u));
-        if value == 0u { break; }
-    }
-}
-~~~~
-
-The implementation of `DuplexStream` supports both sending and
-receiving. The `stringifier` function takes a `DuplexStream` that can
-send strings (the first type parameter) and receive `uint` messages
-(the second type parameter). The body itself simply loops, reading
-from the channel and then sending its response back.  The actual
-response itself is simply the strified version of the received value,
-`uint::to_str(value)`.
-
-Here is the code for the parent task:
-
-~~~~
-# use std::comm::DuplexStream;
-# use pipes::{Port, Chan};
-# use task::spawn;
-# fn stringifier(channel: DuplexStream<~str, uint>) {
-#     let mut value: uint;
-#     loop {
-#         value = channel.recv();
-#         channel.send(uint::to_str(value, 10u));
-#         if value == 0u { break; }
-#     }
-# }
-# fn main() {
-
-let (from_child, to_child) = DuplexStream();
-
-do spawn || {
-    stringifier(to_child);
-};
-
-from_child.send(22u);
-assert from_child.recv() == ~"22";
-
-from_child.send(23u);
-from_child.send(0u);
-
-assert from_child.recv() == ~"23";
-assert from_child.recv() == ~"0";
-
-# }
-~~~~
-
-The parent task first calls `DuplexStream` to create a pair of bidirectional endpoints. It then uses `task::spawn` to create the child task, which captures one end of the communication channel.  As a result, both parent
-and child can send and receive data to and from the other.
-
-# Testing
-
-The Rust language has a facility for testing built into the language.
-Tests can be interspersed with other code, and annotated with the
-`#[test]` attribute.
-
-~~~~{.xfail-test}
-# // FIXME: xfailed because test_twice is a #[test] function it's not
-# // getting compiled
-extern mod std;
-
-fn twice(x: int) -> int { x + x }
-
-#[test]
-fn test_twice() {
-    let mut i = -100;
-    while i < 100 {
-        assert twice(i) == 2 * i;
-        i += 1;
-    }
-}
-~~~~
-
-When you compile the program normally, the `test_twice` function will
-not be included. To compile and run such tests, compile with the
-`--test` flag, and then run the result:
-
-~~~~ {.notrust}
-> rustc --test twice.rs
-> ./twice
-running 1 tests
-test test_twice ... ok
-result: ok. 1 passed; 0 failed; 0 ignored
-~~~~
-
-Or, if we change the file to fail, for example by replacing `x + x`
-with `x + 1`:
-
-~~~~ {.notrust}
-running 1 tests
-test test_twice ... FAILED
-failures:
-    test_twice
-result: FAILED. 0 passed; 1 failed; 0 ignored
-~~~~
-
-You can pass a command-line argument to a program compiled with
-`--test` to run only the tests whose name matches the given string. If
-we had, for example, test functions `test_twice`, `test_once_1`, and
-`test_once_2`, running our program with `./twice test_once` would run
-the latter two, and running it with `./twice test_once_2` would run
-only the last.
-
-To indicate that a test is supposed to fail instead of pass, you can
-give it a `#[should_fail]` attribute.
-
-~~~~
-extern mod std;
-
-fn divide(a: float, b: float) -> float {
-    if b == 0f { fail; }
-    a / b
-}
-
-#[test]
-#[should_fail]
-fn divide_by_zero() { divide(1f, 0f); }
-
-# fn main() { }
-~~~~
-
-To disable a test completely, add an `#[ignore]` attribute. Running a
-test runner (the program compiled with `--test`) with an `--ignored`
-command-line flag will cause it to also run the tests labelled as
-ignored.
-
-A program compiled as a test runner will have the configuration flag
-`test` defined, so that you can add code that won't be included in a
-normal compile with the `#[cfg(test)]` attribute (see [conditional
-compilation](#attributes)).
+[pound-rust]: http://chat.mibbit.com/?server=irc.mozilla.org&channel=%23rust

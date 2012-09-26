@@ -9,7 +9,7 @@
 
 use future::future;
 
-use std;
+extern mod std;
 use std::time;
 use std::arc;
 
@@ -56,7 +56,7 @@ fn thread_ring(i: uint,
     };
 }
 
-fn main(args: ~[~str]) {
+fn main(++args: ~[~str]) {
     let args = if os::getenv(~"RUST_BENCH").is_some() {
         ~[~"", ~"100", ~"10000"]
     } else if args.len() <= 1u {
@@ -65,8 +65,8 @@ fn main(args: ~[~str]) {
         copy args
     }; 
 
-    let num_tasks = option::get(uint::from_str(args[1]));
-    let msg_per_task = option::get(uint::from_str(args[2]));
+    let num_tasks = uint::from_str(args[1]).get();
+    let msg_per_task = uint::from_str(args[2]).get();
 
     let (num_chan, num_port) = init();
     let mut num_chan = Some(num_chan);
@@ -99,7 +99,7 @@ fn main(args: ~[~str]) {
     thread_ring(0u, msg_per_task, option::unwrap(num_chan), num_port);
 
     // synchronize
-    for futures.each |f| { future::get(&f) };
+    for futures.each |f| { future::get(f) };
 
     let stop = time::precise_time_s();
 

@@ -1,25 +1,16 @@
 // xfail-fast
 // aux-build:cci_class_trait.rs
-use cci_class_trait;
+extern mod cci_class_trait;
 use cci_class_trait::animals::*;
 
-struct cat : noisy {
-  priv {
-    mut meows : uint,
-    fn meow() {
-      error!("Meow");
-      self.meows += 1u;
-      if self.meows % 5u == 0u {
-          self.how_hungry += 1;
-      }
-    }
-  }
+struct cat {
+  priv mut meows : uint,
 
   mut how_hungry : int,
   name : ~str,
+}
 
-  fn speak() { self.meow(); }
-
+impl cat {
   fn eat() -> bool {
     if self.how_hungry > 0 {
         error!("OM NOM NOM");
@@ -31,6 +22,22 @@ struct cat : noisy {
         return false;
     }
   }
+}
+
+impl cat : noisy {
+
+  fn speak() { self.meow(); }
+
+}
+
+priv impl cat {
+    fn meow() {
+      error!("Meow");
+      self.meows += 1u;
+      if self.meows % 5u == 0u {
+          self.how_hungry += 1;
+      }
+    }
 }
 
 fn cat(in_x : uint, in_y : int, in_name: ~str) -> cat {

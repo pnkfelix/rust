@@ -105,6 +105,7 @@ pure fn is_finite(x: f32) -> bool {
 
 /* Module: consts */
 mod consts {
+    #[legacy_exports];
 
     // FIXME (requires Issue #1433 to fix): replace with mathematical
     // constants from cmath.
@@ -157,11 +158,11 @@ pure fn logarithm(n: f32, b: f32) -> f32 {
 }
 
 impl f32: num::Num {
-    pure fn add(&&other: f32)    -> f32 { return self + other; }
-    pure fn sub(&&other: f32)    -> f32 { return self - other; }
-    pure fn mul(&&other: f32)    -> f32 { return self * other; }
-    pure fn div(&&other: f32)    -> f32 { return self / other; }
-    pure fn modulo(&&other: f32) -> f32 { return self % other; }
+    pure fn add(other: &f32)    -> f32 { return self + *other; }
+    pure fn sub(other: &f32)    -> f32 { return self - *other; }
+    pure fn mul(other: &f32)    -> f32 { return self * *other; }
+    pure fn div(other: &f32)    -> f32 { return self / *other; }
+    pure fn modulo(other: &f32) -> f32 { return self % *other; }
     pure fn neg()                -> f32 { return -self;        }
 
     pure fn to_int()         -> int { return self as int; }

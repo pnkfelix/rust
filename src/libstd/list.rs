@@ -1,5 +1,5 @@
 //! A standard linked list
-#[forbid(deprecated_mode)];
+#[warn(deprecated_mode)];
 #[forbid(deprecated_pattern)];
 
 use core::cmp::Eq;
@@ -32,7 +32,7 @@ fn from_vec<T: Copy>(v: &[T]) -> @List<T> {
  */
 fn foldl<T: Copy, U>(+z: T, ls: @List<U>, f: fn((&T), (&U)) -> T) -> T {
     let mut accum: T = z;
-    do iter(ls) |elt| { accum = f(&accum, &elt);}
+    do iter(ls) |elt| { accum = f(&accum, elt);}
     accum
 }
 
@@ -121,11 +121,11 @@ pure fn push<T: Copy>(ll: &mut @list<T>, +vv: T) {
 */
 
 /// Iterate over a list
-fn iter<T>(l: @List<T>, f: fn(T)) {
+fn iter<T>(l: @List<T>, f: fn((&T))) {
     let mut cur = l;
     loop {
         cur = match *cur {
-          Cons(hd, tl) => {
+          Cons(ref hd, tl) => {
             f(hd);
             tl
           }
@@ -149,27 +149,28 @@ fn each<T>(l: @List<T>, f: fn(T) -> bool) {
 }
 
 impl<T:Eq> List<T> : Eq {
-    pure fn eq(&&other: List<T>) -> bool {
+    pure fn eq(other: &List<T>) -> bool {
         match self {
             Cons(e0a, e1a) => {
-                match other {
+                match (*other) {
                     Cons(e0b, e1b) => e0a == e0b && e1a == e1b,
                     _ => false
                 }
             }
             Nil => {
-                match other {
+                match (*other) {
                     Nil => true,
                     _ => false
                 }
             }
         }
     }
-    pure fn ne(&&other: List<T>) -> bool { !self.eq(other) }
+    pure fn ne(other: &List<T>) -> bool { !self.eq(other) }
 }
 
 #[cfg(test)]
 mod tests {
+    #[legacy_exports];
 
     #[test]
     fn test_is_empty() {

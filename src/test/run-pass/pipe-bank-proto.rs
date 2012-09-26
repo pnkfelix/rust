@@ -37,7 +37,7 @@ macro_rules! move_it (
 )
 
 fn switch<T: Send, U>(+endp: pipes::RecvPacket<T>,
-                      f: fn(+Option<T>) -> U) -> U {
+                      f: fn(+v: Option<T>) -> U) -> U {
     f(pipes::try_recv(endp))
 }
 
@@ -57,7 +57,7 @@ macro_rules! follow (
 )
 
 fn client_follow(+bank: bank::client::login) {
-    import bank::*;
+    use bank::*;
 
     let bank = client::login(bank, ~"theincredibleholk", ~"1234");
     let bank = switch(bank, follow! (
@@ -78,7 +78,7 @@ fn client_follow(+bank: bank::client::login) {
 }
 
 fn bank_client(+bank: bank::client::login) {
-    import bank::*;
+    use bank::*;
 
     let bank = client::login(bank, ~"theincredibleholk", ~"1234");
     let bank = match try_recv(bank) {

@@ -1,9 +1,9 @@
 use check::{fn_ctxt, impl_self_ty};
 use infer::{resolve_type, resolve_and_force_all_but_regions,
                fixup_err_to_str};
-use ast_util::new_def_hash;
 use syntax::print::pprust;
 use result::{Result, Ok, Err};
+use util::common::indenter;
 
 // vtable resolution looks for places where trait bounds are
 // subsituted in and figures out which vtable is used. There is some
@@ -34,15 +34,24 @@ fn lookup_vtables(fcx: @fn_ctxt,
                   bounds: @~[ty::param_bounds],
                   substs: &ty::substs,
                   allow_unsafe: bool,
-                  is_early: bool) -> vtable_res {
+                  is_early: bool) -> vtable_res
+{
+    debug!("lookup_vtables(expr=%?/%s, \
+            # bounds=%?, \
+            substs=%s",
+           expr.id, fcx.expr_to_str(expr),
+           bounds.len(),
+           ty::substs_to_str(fcx.tcx(), substs));
+    let _i = indenter();
+
     let tcx = fcx.ccx.tcx;
     let mut result = ~[], i = 0u;
     for substs.tps.each |ty| {
         for vec::each(*bounds[i]) |bound| {
-            match bound {
+            match *bound {
               ty::bound_trait(i_ty) => {
                 let i_ty = ty::subst(tcx, substs, i_ty);
-                vec::push(result, lookup_vtable(fcx, expr, ty, i_ty,
+                vec::push(result, lookup_vtable(fcx, expr, *ty, i_ty,
                                                 allow_unsafe, is_early));
               }
               _ => ()
@@ -60,7 +69,7 @@ fn fixup_substs(fcx: @fn_ctxt, expr: @ast::expr,
     // use a dummy type just to package up the substs that need fixing up
     let t = ty::mk_trait(tcx, id, substs, ty::vstore_slice(ty::re_static));
     do fixup_ty(fcx, expr, t, is_early).map |t_f| {
-        match ty::get(t_f).struct {
+        match ty::get(t_f).sty {
           ty::ty_trait(_, substs_f, _) => substs_f,
           _ => fail ~"t_f should be a trait"
         }
@@ -90,7 +99,7 @@ fn lookup_vtable(fcx: @fn_ctxt,
     let _i = indenter();
 
     let tcx = fcx.ccx.tcx;
-    let (trait_id, trait_substs) = match ty::get(trait_ty).struct {
+    let (trait_id, trait_substs) = match ty::get(trait_ty).sty {
         ty::ty_trait(did, substs, _) => (did, substs),
         _ => tcx.sess.impossible_case(expr.span,
                                       "lookup_vtable: \
@@ -108,17 +117,17 @@ fn lookup_vtable(fcx: @fn_ctxt,
         }
     };
 
-    match ty::get(ty).struct {
+    match ty::get(ty).sty {
         ty::ty_param({idx: n, def_id: did}) => {
             let mut n_bound = 0;
             for vec::each(*tcx.ty_param_bounds.get(did.node)) |bound| {
-                match bound {
+                match *bound {
                     ty::bound_send | ty::bound_copy | ty::bound_const |
                     ty::bound_owned => {
                         /* ignore */
                     }
                     ty::bound_trait(ity) => {
-                        match ty::get(ity).struct {
+                        match ty::get(ity).sty {
                             ty::ty_trait(idid, _, _) => {
                                 if trait_id == idid {
                                     debug!("(checking vtable) @0 relating \
@@ -167,7 +176,7 @@ fn lookup_vtable(fcx: @fn_ctxt,
         _ => {
             let mut found = ~[];
 
-            let mut impls_seen = new_def_hash();
+            let mut impls_seen = HashMap();
 
             match fcx.ccx.coherence_info.extension_methods.find(trait_id) {
                 None => {
@@ -205,7 +214,7 @@ fn lookup_vtable(fcx: @fn_ctxt,
                         // unify it with trait_ty in order to get all
                         // the ty vars sorted out.
                         for vec::each(ty::impl_traits(tcx, im.did)) |of_ty| {
-                            match ty::get(of_ty).struct {
+                            match ty::get(*of_ty).sty {
                                 ty::ty_trait(id, _, _) => {
                                     // Not the trait we're looking for
                                     if id != trait_id { loop; }
@@ -229,7 +238,7 @@ fn lookup_vtable(fcx: @fn_ctxt,
                             // to some_trait.  If not, then we try the next
                             // impl.
                             let {substs: substs, ty: for_ty} =
-                                impl_self_ty(fcx, expr, im.did, false);
+                                impl_self_ty(fcx, expr, im.did);
                             let im_bs = ty::lookup_item_type(tcx,
                                                              im.did).bounds;
                             match fcx.mk_subty(false, expr.span, ty, for_ty) {
@@ -261,8 +270,8 @@ fn lookup_vtable(fcx: @fn_ctxt,
                             debug!("(checking vtable) @2 relating trait \
                                     ty %s to of_ty %s",
                                    fcx.infcx().ty_to_str(trait_ty),
-                                   fcx.infcx().ty_to_str(of_ty));
-                            let of_ty = ty::subst(tcx, &substs, of_ty);
+                                   fcx.infcx().ty_to_str(*of_ty));
+                            let of_ty = ty::subst(tcx, &substs, *of_ty);
                             relate_trait_tys(fcx, expr, trait_ty, of_ty);
 
                             // Recall that trait_ty -- the trait type
@@ -380,8 +389,8 @@ fn connect_trait_tps(fcx: @fn_ctxt, expr: @ast::expr, impl_tys: ~[ty::t],
     let ity = ty::impl_traits(tcx, impl_did)[0];
     let trait_ty = ty::subst_tps(tcx, impl_tys, ity);
     debug!("(connect trait tps) trait type is %?, impl did is %?",
-           ty::get(trait_ty).struct, impl_did);
-    match ty::get(trait_ty).struct {
+           ty::get(trait_ty).sty, impl_did);
+    match ty::get(trait_ty).sty {
      ty::ty_trait(_, substs, _) => {
         vec::iter2(substs.tps, trait_tys,
                    |a, b| demand::suptype(fcx, expr.span, a, b));
@@ -391,9 +400,18 @@ fn connect_trait_tps(fcx: @fn_ctxt, expr: @ast::expr, impl_tys: ~[ty::t],
     }
 }
 
+fn insert_vtables(ccx: @crate_ctxt, callee_id: ast::node_id,
+                  vtables: vtable_res) {
+    debug!("insert_vtables(callee_id=%d, vtables=%?)",
+           callee_id, vtables.map(|v| v.to_str(ccx.tcx)));
+    ccx.vtable_map.insert(callee_id, vtables);
+}
+
 fn early_resolve_expr(ex: @ast::expr, &&fcx: @fn_ctxt, is_early: bool) {
     debug!("vtable: early_resolve_expr() ex with id %? (early: %b): %s",
            ex.id, is_early, expr_to_str(ex, fcx.tcx().sess.intr()));
+    let _indent = indenter();
+
     let cx = fcx.ccx;
     match ex.node {
       ast::expr_path(*) => {
@@ -424,7 +442,9 @@ fn early_resolve_expr(ex: @ast::expr, &&fcx: @fn_ctxt, is_early: bool) {
                 let substs = fcx.node_ty_substs(callee_id);
                 let vtbls = lookup_vtables(fcx, ex, bounds,
                                            &substs, false, is_early);
-                if !is_early { cx.vtable_map.insert(callee_id, vtbls); }
+                if !is_early {
+                    insert_vtables(cx, callee_id, vtbls);
+                }
             }
           }
           None => ()
@@ -432,7 +452,7 @@ fn early_resolve_expr(ex: @ast::expr, &&fcx: @fn_ctxt, is_early: bool) {
       }
       ast::expr_cast(src, _) => {
         let target_ty = fcx.expr_ty(ex);
-        match ty::get(target_ty).struct {
+        match ty::get(target_ty).sty {
           ty::ty_trait(*) => {
             /*
             Look up vtables for the type we're casting to,

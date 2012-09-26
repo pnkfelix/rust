@@ -23,7 +23,7 @@ fn check_alt(fcx: @fn_ctxt,
             block_region: ty::re_scope(arm.body.node.id)
         };
 
-        for arm.pats.each |p| { check_pat(pcx, p, pattern_ty);}
+        for arm.pats.each |p| { check_pat(pcx, *p, pattern_ty);}
         check_legality_of_move_bindings(fcx,
                                         is_lvalue,
                                         arm.guard.is_some(),
@@ -58,7 +58,7 @@ fn check_legality_of_move_bindings(fcx: @fn_ctxt,
     let mut by_ref = None;
     let mut any_by_move = false;
     for pats.each |pat| {
-        do pat_util::pat_bindings(def_map, pat) |bm, _id, span, _path| {
+        do pat_util::pat_bindings(def_map, *pat) |bm, _id, span, _path| {
             match bm {
                 ast::bind_by_ref(_) | ast::bind_by_implicit_ref => {
                     by_ref = Some(span);
@@ -73,7 +73,7 @@ fn check_legality_of_move_bindings(fcx: @fn_ctxt,
 
     if !any_by_move { return; } // pointless micro-optimization
     for pats.each |pat| {
-        do walk_pat(pat) |p| {
+        do walk_pat(*pat) |p| {
             if !pat_is_variant(def_map, p) {
                 match p.node {
                     ast::pat_ident(ast::bind_by_move, _, sub) => {
@@ -111,7 +111,7 @@ fn check_legality_of_move_bindings(fcx: @fn_ctxt,
 
 type pat_ctxt = {
     fcx: @fn_ctxt,
-    map: pat_id_map,
+    map: PatIdMap,
     alt_region: ty::region,   // Region for the alt as a whole
     block_region: ty::region, // Region for the block of the arm
 };
@@ -145,7 +145,7 @@ fn check_pat_variant(pcx: pat_ctxt, pat: @ast::pat, path: @ast::path,
             let vinfo =
                 ty::enum_variant_with_id(
                     tcx, v_def_ids.enm, v_def_ids.var);
-            vinfo.args.map(|t| { ty::subst(tcx, expected_substs, t) })
+            vinfo.args.map(|t| { ty::subst(tcx, expected_substs, *t) })
         };
         let arg_len = arg_types.len(), subpats_len = match subpats {
             None => arg_len,
@@ -163,7 +163,7 @@ fn check_pat_variant(pcx: pat_ctxt, pat: @ast::pat, path: @ast::path,
                 tcx.sess.span_fatal(pat.span, s);
             }
 
-            do option::iter(subpats) |pats| {
+            do subpats.iter() |pats| {
                 do vec::iter2(pats, arg_types) |subpat, arg_ty| {
                   check_pat(pcx, subpat, arg_ty);
                 }
@@ -349,13 +349,13 @@ fn check_pat(pcx: pat_ctxt, pat: @ast::pat, expected: ty::t) {
         }
 
         // Index the class fields.
-        let field_map = std::map::uint_hash();
+        let field_map = std::map::HashMap();
         for class_fields.eachi |i, class_field| {
             field_map.insert(class_field.ident, i);
         }
 
         // Typecheck each field.
-        let found_fields = std::map::uint_hash();
+        let found_fields = std::map::HashMap();
         for fields.each |field| {
             match field_map.find(field.ident) {
                 Some(index) => {
@@ -411,7 +411,7 @@ fn check_pat(pcx: pat_ctxt, pat: @ast::pat, expected: ty::t) {
         }
         let mut i = 0u;
         for elts.each |elt| {
-            check_pat(pcx, elt, ex_elts[i]);
+            check_pat(pcx, *elt, ex_elts[i]);
             i += 1u;
         }
 

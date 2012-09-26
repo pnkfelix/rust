@@ -1,3 +1,6 @@
+// xfail-fast
+#[legacy_modes];
+
 fn foo(i: int) -> int { i + 1 }
 
 fn apply<A>(f: fn(A) -> A, v: A) -> A { f(v) }

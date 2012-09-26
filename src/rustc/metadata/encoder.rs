@@ -3,7 +3,7 @@
 use util::ppaux::ty_to_str;
 
 use std::{ebml, map};
-use std::map::hashmap;
+use std::map::HashMap;
 use io::WriterUtil;
 use ebml::Writer;
 use syntax::ast::*;
@@ -16,11 +16,12 @@ use middle::ty::node_id_to_type;
 use middle::resolve;
 use syntax::ast_map;
 use syntax::attr;
-use std::serialization::serializer;
-use std::ebml::serializer;
 use str::to_bytes;
 use syntax::ast;
 use syntax::diagnostic::span_handler;
+
+use hash::{Hash, HashUtil};
+use to_bytes::IterBytes;
 
 export encode_parms;
 export encode_metadata;
@@ -35,7 +36,7 @@ export encode_ctxt;
 export write_type;
 export encode_def_id;
 
-type abbrev_map = map::hashmap<ty::t, tyencode::ty_abbrev>;
+type abbrev_map = map::HashMap<ty::t, tyencode::ty_abbrev>;
 
 type encode_inlined_item = fn@(ecx: @encode_ctxt,
                                ebml_w: ebml::Writer,
@@ -45,11 +46,10 @@ type encode_inlined_item = fn@(ecx: @encode_ctxt,
 type encode_parms = {
     diag: span_handler,
     tcx: ty::ctxt,
-    reachable: hashmap<ast::node_id, ()>,
-    reexports: ~[(~str, def_id)],
+    reachable: HashMap<ast::node_id, ()>,
     reexports2: middle::resolve::ExportMap2,
-    item_symbols: hashmap<ast::node_id, ~str>,
-    discrim_symbols: hashmap<ast::node_id, ~str>,
+    item_symbols: HashMap<ast::node_id, ~str>,
+    discrim_symbols: HashMap<ast::node_id, ~str>,
     link_meta: link_meta,
     cstore: cstore::cstore,
     encode_inlined_item: encode_inlined_item
@@ -70,13 +70,11 @@ type stats = {
 enum encode_ctxt = {
     diag: span_handler,
     tcx: ty::ctxt,
-    buf: io::MemBuffer,
     stats: stats,
-    reachable: hashmap<ast::node_id, ()>,
-    reexports: ~[(~str, def_id)],
+    reachable: HashMap<ast::node_id, ()>,
     reexports2: middle::resolve::ExportMap2,
-    item_symbols: hashmap<ast::node_id, ~str>,
-    discrim_symbols: hashmap<ast::node_id, ~str>,
+    item_symbols: HashMap<ast::node_id, ~str>,
+    discrim_symbols: HashMap<ast::node_id, ~str>,
     link_meta: link_meta,
     cstore: cstore::cstore,
     encode_inlined_item: encode_inlined_item,
@@ -100,7 +98,7 @@ fn encode_region_param(ecx: @encode_ctxt, ebml_w: ebml::Writer,
     let opt_rp = ecx.tcx.region_paramd_items.find(it.id);
     for opt_rp.each |rp| {
         do ebml_w.wr_tag(tag_region_param) {
-            ty::serialize_region_variance(ebml_w, rp);
+            ty::serialize_region_variance(ebml_w, *rp);
         }
     }
 }
@@ -153,7 +151,7 @@ fn encode_ty_type_param_bounds(ebml_w: ebml::Writer, ecx: @encode_ctxt,
                         abbrevs: tyencode::ac_use_abbrevs(ecx.type_abbrevs)};
     for params.each |param| {
         ebml_w.start_tag(tag_items_data_item_ty_param_bounds);
-        tyencode::enc_bounds(ebml_w.writer, ty_str_ctxt, param);
+        tyencode::enc_bounds(ebml_w.writer, ty_str_ctxt, *param);
         ebml_w.end_tag();
     }
 }
@@ -270,7 +268,9 @@ fn encode_path(ecx: @encode_ctxt, ebml_w: ebml::Writer, path: ast_map::path,
 
     do ebml_w.wr_tag(tag_path) {
         ebml_w.wr_tagged_u32(tag_path_len, (vec::len(path) + 1u) as u32);
-        do vec::iter(path) |pe| { encode_path_elt(ecx, ebml_w, pe); }
+        for vec::each(path) |pe| {
+            encode_path_elt(ecx, ebml_w, *pe);
+        }
         encode_path_elt(ecx, ebml_w, name);
     }
 }
@@ -419,7 +419,7 @@ fn encode_info_for_class(ecx: @encode_ctxt, ebml_w: ebml::Writer,
                 debug!("encode_info_for_class: doing %s %d",
                        ecx.tcx.sess.str_of(m.ident), m.id);
                 encode_info_for_method(ecx, ebml_w, impl_path,
-                                       should_inline(m.attrs), id, m,
+                                       should_inline(m.attrs), id, *m,
                                        vec::append(class_tps, m.tps));
             }
             _ => { /* don't encode private methods */ }
@@ -602,7 +602,7 @@ fn encode_info_for_item(ecx: @encode_ctxt, ebml_w: ebml::Writer, item: @item,
                                         struct_def.fields, struct_def.methods,
                                         index);
         /* Encode the dtor */
-        do option::iter(struct_def.dtor) |dtor| {
+        do struct_def.dtor.iter |dtor| {
             vec::push(*index, {val: dtor.node.id, pos: ebml_w.writer.tell()});
           encode_info_for_ctor(ecx, ebml_w, dtor.node.id,
                                ecx.tcx.sess.ident_of(
@@ -631,11 +631,11 @@ fn encode_info_for_item(ecx: @encode_ctxt, ebml_w: ebml::Writer, item: @item,
         encode_path(ecx, ebml_w, path, ast_map::path_name(item.ident));
         encode_region_param(ecx, ebml_w, item);
         for struct_def.traits.each |t| {
-           encode_trait_ref(ebml_w, ecx, t);
+           encode_trait_ref(ebml_w, ecx, *t);
         }
         /* Encode the dtor */
         /* Encode id for dtor */
-        do option::iter(struct_def.dtor) |dtor| {
+        do struct_def.dtor.iter |dtor| {
             do ebml_w.wr_tag(tag_item_dtor) {
                 encode_def_id(ebml_w, local_def(dtor.node.id));
             }
@@ -680,7 +680,7 @@ fn encode_info_for_item(ecx: @encode_ctxt, ebml_w: ebml::Writer, item: @item,
            }
         }
         /* Each class has its own index -- encode it */
-        let bkts = create_index(idx, hash_node_id);
+        let bkts = create_index(idx);
         encode_index(ebml_w, bkts, write_int);
         ebml_w.end_tag();
 
@@ -694,7 +694,7 @@ fn encode_info_for_item(ecx: @encode_ctxt, ebml_w: ebml::Writer, item: @item,
             });
             encode_info_for_ctor(ecx, ebml_w, ctor.node.id, item.ident,
                                  path, if tps.len() > 0u {
-                                     Some(ii_ctor(ctor, item.ident, tps,
+                                     Some(ii_ctor(*ctor, item.ident, tps,
                                                   local_def(item.id))) }
                                  else { None }, tps);
         }
@@ -725,7 +725,7 @@ fn encode_info_for_item(ecx: @encode_ctxt, ebml_w: ebml::Writer, item: @item,
         for methods.each |m| {
             vec::push(*index, {val: m.id, pos: ebml_w.writer.tell()});
             encode_info_for_method(ecx, ebml_w, impl_path,
-                                   should_inline(m.attrs), item.id, m,
+                                   should_inline(m.attrs), item.id, *m,
                                    vec::append(tps, m.tps));
         }
       }
@@ -762,7 +762,7 @@ fn encode_info_for_item(ecx: @encode_ctxt, ebml_w: ebml::Writer, item: @item,
         }
         encode_path(ecx, ebml_w, path, ast_map::path_name(item.ident));
         for traits.each |associated_trait| {
-           encode_trait_ref(ebml_w, ecx, associated_trait)
+           encode_trait_ref(ebml_w, ecx, *associated_trait)
         }
         ebml_w.end_tag();
 
@@ -771,7 +771,7 @@ fn encode_info_for_item(ecx: @encode_ctxt, ebml_w: ebml::Writer, item: @item,
         // written. Here, we output the *real* type signatures. I feel like
         // maybe we should only ever handle the real type signatures.
         for vec::each(ms) |m| {
-            let ty_m = ast_util::trait_method_to_ty_method(m);
+            let ty_m = ast_util::trait_method_to_ty_method(*m);
             if ty_m.self_ty.node != ast::sty_static { loop; }
 
             vec::push(*index, {val: ty_m.id, pos: ebml_w.writer.tell()});
@@ -866,18 +866,18 @@ fn encode_info_for_items(ecx: @encode_ctxt, ebml_w: ebml::Writer,
 
 // Path and definition ID indexing
 
-fn create_index<T: Copy>(index: ~[entry<T>], hash_fn: fn@(T) -> uint) ->
+fn create_index<T: Copy Hash IterBytes>(index: ~[entry<T>]) ->
    ~[@~[entry<T>]] {
     let mut buckets: ~[@mut ~[entry<T>]] = ~[];
     for uint::range(0u, 256u) |_i| { vec::push(buckets, @mut ~[]); };
     for index.each |elt| {
-        let h = hash_fn(elt.val);
-        vec::push(*buckets[h % 256u], elt);
+        let h = elt.val.hash() as uint;
+        vec::push(*buckets[h % 256], *elt);
     }
 
     let mut buckets_frozen = ~[];
     for buckets.each |bucket| {
-        vec::push(buckets_frozen, @*bucket);
+        vec::push(buckets_frozen, @**bucket);
     }
     return buckets_frozen;
 }
@@ -891,7 +891,7 @@ fn encode_index<T>(ebml_w: ebml::Writer, buckets: ~[@~[entry<T>]],
     for buckets.each |bucket| {
         vec::push(bucket_locs, ebml_w.writer.tell());
         ebml_w.start_tag(tag_index_buckets_bucket);
-        for vec::each(*bucket) |elt| {
+        for vec::each(**bucket) |elt| {
             ebml_w.start_tag(tag_index_buckets_bucket_elt);
             assert elt.pos < 0xffff_ffff;
             writer.write_be_u32(elt.pos as u32);
@@ -903,8 +903,8 @@ fn encode_index<T>(ebml_w: ebml::Writer, buckets: ~[@~[entry<T>]],
     ebml_w.end_tag();
     ebml_w.start_tag(tag_index_table);
     for bucket_locs.each |pos| {
-        assert pos < 0xffff_ffff;
-        writer.write_be_u32(pos as u32);
+        assert *pos < 0xffff_ffff;
+        writer.write_be_u32(*pos as u32);
     }
     ebml_w.end_tag();
     ebml_w.end_tag();
@@ -947,7 +947,7 @@ fn encode_meta_item(ebml_w: ebml::Writer, mi: meta_item) {
         ebml_w.writer.write(str::to_bytes(name));
         ebml_w.end_tag();
         for items.each |inner_item| {
-            encode_meta_item(ebml_w, *inner_item);
+            encode_meta_item(ebml_w, **inner_item);
         }
         ebml_w.end_tag();
       }
@@ -998,15 +998,15 @@ fn synthesize_crate_attrs(ecx: @encode_ctxt, crate: @crate) -> ~[attribute] {
     for crate.node.attrs.each |attr| {
         vec::push(
             attrs,
-            if attr::get_attr_name(attr) != ~"link" {
-                attr
+            if attr::get_attr_name(*attr) != ~"link" {
+                *attr
             } else {
                 match attr.node.value.node {
                   meta_list(_, l) => {
                     found_link_attr = true;;
                     synthesize_link_attr(ecx, l)
                   }
-                  _ => attr
+                  _ => *attr
                 }
             });
     }
@@ -1026,7 +1026,7 @@ fn encode_crate_deps(ecx: @encode_ctxt, ebml_w: ebml::Writer,
         type numdep = decoder::crate_dep;
 
         // Pull the cnums and name,vers,hash out of cstore
-        let mut deps: ~[mut numdep] = ~[mut];
+        let mut deps: ~[numdep] = ~[];
         do cstore::iter_crate_data(cstore) |key, val| {
             let dep = {cnum: key, name: ecx.tcx.sess.ident_of(val.name),
                        vers: decoder::get_crate_vers(val.data),
@@ -1057,7 +1057,7 @@ fn encode_crate_deps(ecx: @encode_ctxt, ebml_w: ebml::Writer,
     // but is enough to get transitive crate dependencies working.
     ebml_w.start_tag(tag_crate_deps);
     for get_ordered_deps(ecx, cstore).each |dep| {
-        encode_crate_dep(ecx, ebml_w, dep);
+        encode_crate_dep(ecx, ebml_w, *dep);
     }
     ebml_w.end_tag();
 }
@@ -1091,7 +1091,7 @@ const metadata_encoding_version : &[u8] = &[0x72, //'r' as u8,
                                             0, 0, 0, 1 ];
 
 fn encode_metadata(parms: encode_parms, crate: @crate) -> ~[u8] {
-    let buf = io::mem_buffer();
+    let wr = @io::BytesWriter();
     let stats =
         {mut inline_bytes: 0,
          mut attr_bytes: 0,
@@ -1104,10 +1104,8 @@ fn encode_metadata(parms: encode_parms, crate: @crate) -> ~[u8] {
     let ecx: @encode_ctxt = @encode_ctxt({
         diag: parms.diag,
         tcx: parms.tcx,
-        buf: buf,
-        stats: stats,
+        stats: move stats,
         reachable: parms.reachable,
-        reexports: parms.reexports,
         reexports2: parms.reexports2,
         item_symbols: parms.item_symbols,
         discrim_symbols: parms.discrim_symbols,
@@ -1117,39 +1115,38 @@ fn encode_metadata(parms: encode_parms, crate: @crate) -> ~[u8] {
         type_abbrevs: ty::new_ty_hash()
      });
 
-    let buf_w = io::mem_buffer_writer(buf);
-    let ebml_w = ebml::Writer(buf_w);
+    let ebml_w = ebml::Writer(wr as io::Writer);
 
     encode_hash(ebml_w, ecx.link_meta.extras_hash);
 
-    let mut i = buf.pos;
+    let mut i = wr.pos;
     let crate_attrs = synthesize_crate_attrs(ecx, crate);
     encode_attributes(ebml_w, crate_attrs);
-    ecx.stats.attr_bytes = buf.pos - i;
+    ecx.stats.attr_bytes = wr.pos - i;
 
-    i = buf.pos;
+    i = wr.pos;
     encode_crate_deps(ecx, ebml_w, ecx.cstore);
-    ecx.stats.dep_bytes = buf.pos - i;
+    ecx.stats.dep_bytes = wr.pos - i;
 
     // Encode and index the items.
     ebml_w.start_tag(tag_items);
-    i = buf.pos;
+    i = wr.pos;
     let items_index = encode_info_for_items(ecx, ebml_w, crate);
-    ecx.stats.item_bytes = buf.pos - i;
+    ecx.stats.item_bytes = wr.pos - i;
 
-    i = buf.pos;
-    let items_buckets = create_index(items_index, hash_node_id);
+    i = wr.pos;
+    let items_buckets = create_index(items_index);
     encode_index(ebml_w, items_buckets, write_int);
-    ecx.stats.index_bytes = buf.pos - i;
+    ecx.stats.index_bytes = wr.pos - i;
     ebml_w.end_tag();
 
-    ecx.stats.total_bytes = buf.pos;
+    ecx.stats.total_bytes = wr.pos;
 
     if (parms.tcx.sess.meta_stats()) {
 
-        do buf.buf.borrow |v| {
+        do wr.buf.borrow |v| {
             do v.each |e| {
-                if e == 0 {
+                if *e == 0 {
                     ecx.stats.zero_bytes += 1;
                 }
                 true
@@ -1168,7 +1165,7 @@ fn encode_metadata(parms: encode_parms, crate: @crate) -> ~[u8] {
 
     // Pad this, since something (LLVM, presumably) is cutting off the
     // remaining % 4 bytes.
-    buf_w.write(&[0u8, 0u8, 0u8, 0u8]);
+    wr.write(&[0u8, 0u8, 0u8, 0u8]);
 
     // FIXME #3396: weird bug here, for reasons unclear this emits random
     // looking bytes (mostly 0x1) if we use the version byte-array constant
@@ -1178,9 +1175,9 @@ fn encode_metadata(parms: encode_parms, crate: @crate) -> ~[u8] {
     //
     //   vec::from_slice(metadata_encoding_version) +
 
-    (do str::as_bytes(~"rust\x00\x00\x00\x01") |bytes| {
+    (do str::as_bytes(&~"rust\x00\x00\x00\x01") |bytes| {
         vec::slice(bytes, 0, 8)
-    }) + flate::deflate_buf(io::mem_buffer_buf(buf))
+    }) + flate::deflate_bytes(wr.buf.check_out(|buf| buf))
 }
 
 // Get the encoded string for a type
@@ -1190,9 +1187,9 @@ fn encoded_ty(tcx: ty::ctxt, t: ty::t) -> ~str {
                tcx: tcx,
                reachable: |_id| false,
                abbrevs: tyencode::ac_no_abbrevs};
-    let buf = io::mem_buffer();
-    tyencode::enc_ty(io::mem_buffer_writer(buf), cx, t);
-    return io::mem_buffer_str(buf);
+    do io::with_str_writer |wr| {
+        tyencode::enc_ty(wr, cx, t);
+    }
 }
 
 

@@ -5,7 +5,7 @@
  * Computer Language Benchmarks Game
  * http://shootout.alioth.debian.org/
  */
-use std;
+extern mod std;
 use io::WriterUtil;
 
 fn LINE_LENGTH() -> uint { return 60u; }
@@ -44,8 +44,8 @@ fn make_random_fasta(wr: io::Writer, id: ~str, desc: ~str, genelist: ~[aminoacid
     let rng = @{mut last: rand::Rng().next()};
     let mut op: ~str = ~"";
     for uint::range(0u, n as uint) |_i| {
-        str::push_char(op, select_random(myrandom_next(rng, 100u32),
-                                         genelist));
+        str::push_char(&mut op, select_random(myrandom_next(rng, 100u32),
+                                              genelist));
         if str::len(op) >= LINE_LENGTH() {
             wr.write_line(op);
             op = ~"";
@@ -59,7 +59,7 @@ fn make_repeat_fasta(wr: io::Writer, id: ~str, desc: ~str, s: ~str, n: int) unsa
     let mut op: ~str = ~"";
     let sl: uint = str::len(s);
     for uint::range(0u, n as uint) |i| {
-        str::unsafe::push_byte(op, s[i % sl]);
+        str::raw::push_byte(&mut op, s[i % sl]);
         if str::len(op) >= LINE_LENGTH() {
             wr.write_line(op);
             op = ~"";
@@ -70,7 +70,7 @@ fn make_repeat_fasta(wr: io::Writer, id: ~str, desc: ~str, s: ~str, n: int) unsa
 
 fn acid(ch: char, prob: u32) -> aminoacids { return {ch: ch, prob: prob}; }
 
-fn main(args: ~[~str]) {
+fn main(++args: ~[~str]) {
     let args = if os::getenv(~"RUST_BENCH").is_some() {
         // alioth tests k-nucleotide with this data at 25,000,000
         ~[~"", ~"5000000"]
@@ -81,7 +81,7 @@ fn main(args: ~[~str]) {
     };
 
     let writer = if os::getenv(~"RUST_BENCH").is_some() {
-        result::get(io::file_writer(&Path("./shootout-fasta.data"),
+        result::get(&io::file_writer(&Path("./shootout-fasta.data"),
                                     ~[io::Truncate, io::Create]))
     } else {
         io::stdout()

@@ -7,15 +7,9 @@ use option::{Some, None};
 use libc::{pid_t, c_void, c_int};
 use io::ReaderUtil;
 
-export Program;
-export run_program;
-export start_program;
-export program_output;
-export spawn_process;
-export waitpid;
-
 #[abi = "cdecl"]
 extern mod rustrt {
+    #[legacy_exports];
     fn rust_run_program(argv: **libc::c_char, envp: *c_void,
                         dir: *libc::c_char,
                         in_fd: c_int, out_fd: c_int, err_fd: c_int)
@@ -23,7 +17,7 @@ extern mod rustrt {
 }
 
 /// A value representing a child process
-trait Program {
+pub trait Program {
     /// Returns the process id of the program
     fn get_id() -> pid_t;
 
@@ -67,7 +61,7 @@ trait Program {
  *
  * The process id of the spawned process
  */
-fn spawn_process(prog: &str, args: &[~str],
+pub fn spawn_process(prog: &str, args: &[~str],
                  env: &Option<~[(~str,~str)]>,
                  dir: &Option<~str>,
                  in_fd: c_int, out_fd: c_int, err_fd: c_int)
@@ -87,12 +81,12 @@ fn with_argv<T>(prog: &str, args: &[~str],
     let mut argptrs = str::as_c_str(prog, |b| ~[b]);
     let mut tmps = ~[];
     for vec::each(args) |arg| {
-        let t = @copy arg;
+        let t = @copy *arg;
         vec::push(tmps, t);
         vec::push_all(argptrs, str::as_c_str(*t, |b| ~[b]));
     }
     vec::push(argptrs, ptr::null());
-    vec::as_buf(argptrs, |buf, _len| cb(buf))
+    vec::as_imm_buf(argptrs, |buf, _len| cb(buf))
 }
 
 #[cfg(unix)]
@@ -106,14 +100,14 @@ fn with_envp<T>(env: &Option<~[(~str,~str)]>,
         let mut ptrs = ~[];
 
         for vec::each(es) |e| {
-            let (k,v) = copy e;
+            let (k,v) = copy *e;
             let t = @(fmt!("%s=%s", k, v));
             vec::push(tmps, t);
             vec::push_all(ptrs, str::as_c_str(*t, |b| ~[b]));
         }
         vec::push(ptrs, ptr::null());
-        vec::as_buf(ptrs, |p, _len|
-            unsafe { cb(::unsafe::reinterpret_cast(&p)) }
+        vec::as_imm_buf(ptrs, |p, _len|
+            unsafe { cb(::cast::reinterpret_cast(&p)) }
         )
       }
       _ => cb(ptr::null())
@@ -131,14 +125,14 @@ fn with_envp<T>(env: &Option<~[(~str,~str)]>,
           Some(es) if !vec::is_empty(es) => {
             let mut blk : ~[u8] = ~[];
             for vec::each(es) |e| {
-                let (k,v) = e;
+                let (k,v) = *e;
                 let t = fmt!("%s=%s", k, v);
-                let mut v : ~[u8] = ::unsafe::reinterpret_cast(&t);
+                let mut v : ~[u8] = ::cast::reinterpret_cast(&t);
                 blk += v;
-                ::unsafe::forget(v);
+                ::cast::forget(v);
             }
             blk += ~[0_u8];
-            vec::as_buf(blk, |p, _len| cb(::unsafe::reinterpret_cast(&p)))
+            vec::as_imm_buf(blk, |p, _len| cb(::cast::reinterpret_cast(&p)))
           }
           _ => cb(ptr::null())
         }
@@ -165,7 +159,7 @@ fn with_dirp<T>(d: &Option<~str>,
  *
  * The process id
  */
-fn run_program(prog: &str, args: &[~str]) -> int {
+pub fn run_program(prog: &str, args: &[~str]) -> int {
     let pid = spawn_process(prog, args, &None, &None,
                             0i32, 0i32, 0i32);
     if pid == -1 as pid_t { fail; }
@@ -188,7 +182,7 @@ fn run_program(prog: &str, args: &[~str]) -> int {
  *
  * A class with a <program> field
  */
-fn start_program(prog: &str, args: &[~str]) -> Program {
+pub fn start_program(prog: &str, args: &[~str]) -> Program {
     let pipe_input = os::pipe();
     let pipe_output = os::pipe();
     let pipe_err = os::pipe();
@@ -260,7 +254,7 @@ fn read_all(rd: io::Reader) -> ~str {
         let bytes = rd.read_bytes(4096u);
         buf += str::from_bytes(bytes);
     }
-    return buf;
+    move buf
 }
 
 /**
@@ -277,7 +271,7 @@ fn read_all(rd: io::Reader) -> ~str {
  * A record, {status: int, out: str, err: str} containing the exit code,
  * the contents of stdout and the contents of stderr.
  */
-fn program_output(prog: &str, args: &[~str]) ->
+pub fn program_output(prog: &str, args: &[~str]) ->
    {status: int, out: ~str, err: ~str} {
 
     let pipe_in = os::pipe();
@@ -306,11 +300,11 @@ fn program_output(prog: &str, args: &[~str]) ->
     let ch = comm::Chan(p);
     do task::spawn_sched(task::SingleThreaded) {
         let errput = readclose(pipe_err.in);
-        comm::send(ch, (2, errput));
+        comm::send(ch, (2, move errput));
     };
     do task::spawn_sched(task::SingleThreaded) {
         let output = readclose(pipe_out.in);
-        comm::send(ch, (1, output));
+        comm::send(ch, (1, move output));
     };
     let status = run::waitpid(pid);
     let mut errs = ~"";
@@ -332,11 +326,11 @@ fn program_output(prog: &str, args: &[~str]) ->
         };
         count -= 1;
     };
-    return {status: status, out: outs, err: errs};
+    return {status: status, out: move outs, err: move errs};
 }
 
 fn writeclose(fd: c_int, s: &str) {
-    import io::WriterUtil;
+    use io::WriterUtil;
 
     error!("writeclose %d, %s", fd as int, s);
     let writer = io::fd_writer(fd, false);
@@ -354,11 +348,11 @@ fn readclose(fd: c_int) -> ~str {
         buf += str::from_bytes(bytes);
     }
     os::fclose(file);
-    return buf;
+    move buf
 }
 
 /// Waits for a process to exit and returns the exit code
-fn waitpid(pid: pid_t) -> int {
+pub fn waitpid(pid: pid_t) -> int {
     return waitpid_os(pid);
 
     #[cfg(windows)]
@@ -401,19 +395,18 @@ fn waitpid(pid: pid_t) -> int {
 
 #[cfg(test)]
 mod tests {
-
-    import io::WriterUtil;
+    use io::WriterUtil;
 
     // Regression test for memory leaks
     #[ignore(cfg(windows))] // FIXME (#2626)
-    fn test_leaks() {
+    pub fn test_leaks() {
         run::run_program("echo", []);
         run::start_program("echo", []);
         run::program_output("echo", []);
     }
 
     #[test]
-    fn test_pipes() {
+    pub fn test_pipes() {
         let pipe_in = os::pipe();
         let pipe_out = os::pipe();
         let pipe_err = os::pipe();
@@ -439,7 +432,7 @@ mod tests {
     }
 
     #[test]
-    fn waitpid() {
+    pub fn waitpid() {
         let pid = run::spawn_process("false", [],
                                      &None, &None,
                                      0i32, 0i32, 0i32);

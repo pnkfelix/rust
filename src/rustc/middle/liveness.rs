@@ -101,7 +101,7 @@
  */
 
 use dvec::DVec;
-use std::map::{hashmap, int_hash, str_hash, uint_hash};
+use std::map::HashMap;
 use syntax::{visit, ast_util};
 use syntax::print::pprust::{expr_to_str};
 use visit::vt;
@@ -122,19 +122,19 @@ export last_use_map;
 //
 // Very subtle (#2633): borrowck will remove entries from this table
 // if it detects an outstanding loan (that is, the addr is taken).
-type last_use_map = hashmap<node_id, @DVec<node_id>>;
+type last_use_map = HashMap<node_id, @DVec<node_id>>;
 
 enum Variable = uint;
 enum LiveNode = uint;
 
 impl Variable : cmp::Eq {
-    pure fn eq(&&other: Variable) -> bool { *self == *other }
-    pure fn ne(&&other: Variable) -> bool { *self != *other }
+    pure fn eq(other: &Variable) -> bool { *self == *(*other) }
+    pure fn ne(other: &Variable) -> bool { *self != *(*other) }
 }
 
 impl LiveNode : cmp::Eq {
-    pure fn eq(&&other: LiveNode) -> bool { *self == *other }
-    pure fn ne(&&other: LiveNode) -> bool { *self != *other }
+    pure fn eq(other: &LiveNode) -> bool { *self == *(*other) }
+    pure fn ne(other: &LiveNode) -> bool { *self != *(*other) }
 }
 
 enum LiveNodeKind {
@@ -145,35 +145,35 @@ enum LiveNodeKind {
 }
 
 impl LiveNodeKind : cmp::Eq {
-    pure fn eq(&&other: LiveNodeKind) -> bool {
+    pure fn eq(other: &LiveNodeKind) -> bool {
         match self {
             FreeVarNode(e0a) => {
-                match other {
+                match (*other) {
                     FreeVarNode(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             ExprNode(e0a) => {
-                match other {
+                match (*other) {
                     ExprNode(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             VarDefNode(e0a) => {
-                match other {
+                match (*other) {
                     VarDefNode(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             ExitNode => {
-                match other {
+                match (*other) {
                     ExitNode => true,
                     _ => false
                 }
             }
         }
     }
-    pure fn ne(&&other: LiveNodeKind) -> bool { !self.eq(other) }
+    pure fn ne(other: &LiveNodeKind) -> bool { !self.eq(other) }
 }
 
 fn check_crate(tcx: ty::ctxt,
@@ -187,7 +187,7 @@ fn check_crate(tcx: ty::ctxt,
         .. *visit::default_visitor()
     });
 
-    let last_use_map = int_hash();
+    let last_use_map = HashMap();
     let initial_maps = @IrMaps(tcx, method_map, last_use_map);
     visit::visit_crate(*crate, initial_maps, visitor);
     tcx.sess.abort_if_errors();
@@ -274,10 +274,10 @@ struct IrMaps {
 
     mut num_live_nodes: uint,
     mut num_vars: uint,
-    live_node_map: hashmap<node_id, LiveNode>,
-    variable_map: hashmap<node_id, Variable>,
-    field_map: hashmap<ident, Variable>,
-    capture_map: hashmap<node_id, @~[CaptureInfo]>,
+    live_node_map: HashMap<node_id, LiveNode>,
+    variable_map: HashMap<node_id, Variable>,
+    field_map: HashMap<ident, Variable>,
+    capture_map: HashMap<node_id, @~[CaptureInfo]>,
     mut var_kinds: ~[VarKind],
     mut lnks: ~[LiveNodeKind],
 }
@@ -290,10 +290,10 @@ fn IrMaps(tcx: ty::ctxt, method_map: typeck::method_map,
         last_use_map: last_use_map,
         num_live_nodes: 0u,
         num_vars: 0u,
-        live_node_map: int_hash(),
-        variable_map: int_hash(),
-        capture_map: int_hash(),
-        field_map: uint_hash(),
+        live_node_map: HashMap(),
+        variable_map: HashMap(),
+        capture_map: HashMap(),
+        field_map: HashMap(),
         var_kinds: ~[],
         lnks: ~[]
     }
@@ -495,7 +495,7 @@ fn visit_local(local: @local, &&self: @IrMaps, vt: vt<@IrMaps>) {
 fn visit_arm(arm: arm, &&self: @IrMaps, vt: vt<@IrMaps>) {
     let def_map = self.tcx.def_map;
     for arm.pats.each |pat| {
-        do pat_util::pat_bindings(def_map, pat) |bm, p_id, sp, path| {
+        do pat_util::pat_bindings(def_map, *pat) |bm, p_id, sp, path| {
             debug!("adding local variable %d from match with bm %?",
                    p_id, bm);
             let name = ast_util::path_to_ident(path);
@@ -1466,7 +1466,7 @@ impl Liveness {
         let r <- f();
         self.break_ln = bl;
         self.cont_ln = cl;
-        return r;
+        move r
     }
 }
 
@@ -1524,7 +1524,7 @@ fn check_expr(expr: @expr, &&self: @Liveness, vt: vt<@Liveness>) {
       expr_path(_) => {
         for self.variable_from_def_map(expr.id, expr.span).each |var| {
             let ln = self.live_node(expr.id, expr.span);
-            self.consider_last_use(expr, ln, var);
+            self.consider_last_use(expr, ln, *var);
         }
 
         visit::visit_expr(expr, self, vt);
@@ -1911,11 +1911,11 @@ impl @Liveness {
                     // FIXME(#3266)--make liveness warnings lintable
                     self.tcx.sess.span_warn(
                         sp, fmt!("variable `%s` is assigned to, \
-                                  but never used", name));
+                                  but never used", *name));
                 } else {
                     // FIXME(#3266)--make liveness warnings lintable
                     self.tcx.sess.span_warn(
-                        sp, fmt!("unused variable: `%s`", name));
+                        sp, fmt!("unused variable: `%s`", *name));
                 }
             }
             return true;
@@ -1929,7 +1929,7 @@ impl @Liveness {
                 // FIXME(#3266)--make liveness warnings lintable
                 self.tcx.sess.span_warn(
                     sp,
-                    fmt!("value assigned to `%s` is never read", name));
+                    fmt!("value assigned to `%s` is never read", *name));
             }
         }
     }

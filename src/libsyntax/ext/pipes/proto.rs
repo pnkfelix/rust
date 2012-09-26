@@ -6,15 +6,15 @@ use ast_builder::{path, append_types};
 enum direction { send, recv }
 
 impl direction : cmp::Eq {
-    pure fn eq(&&other: direction) -> bool {
-        match (self, other) {
+    pure fn eq(other: &direction) -> bool {
+        match (self, (*other)) {
             (send, send) => true,
             (recv, recv) => true,
             (send, _) => false,
             (recv, _) => false,
         }
     }
-    pure fn ne(&&other: direction) -> bool { !self.eq(other) }
+    pure fn ne(other: &direction) -> bool { !self.eq(other) }
 }
 
 impl direction: ToStr {
@@ -102,7 +102,7 @@ impl state {
     /// from this state.
     fn reachable(f: fn(state) -> bool) {
         for self.messages.each |m| {
-            match m {
+            match *m {
               message(_, _, _, _, Some({state: id, _})) => {
                 let state = self.proto.get_state(id);
                 if !f(state) { break }
@@ -134,6 +134,9 @@ struct protocol_ {
     states: DVec<state>,
 
     mut bounded: Option<bool>,
+}
+
+impl protocol_ {
 
     /// Get a state.
     fn get_state(name: ~str) -> state {
@@ -143,7 +146,7 @@ struct protocol_ {
     fn get_state_by_id(id: uint) -> state { self.states[id] }
 
     fn has_state(name: ~str) -> bool {
-        self.states.find(|i| i.name == name) != None
+        self.states.find(|i| i.name == name).is_some()
     }
 
     fn filename() -> ~str {
@@ -185,7 +188,7 @@ impl protocol {
             span: self.span,
             dir: dir,
             ty_params: ty_params,
-            messages: messages,
+            messages: move messages,
             proto: self
         });
 
@@ -207,10 +210,10 @@ fn visit<Tproto, Tstate, Tmessage, V: visitor<Tproto, Tstate, Tmessage>>(
     // the copy keywords prevent recursive use of dvec
     let states = do (copy proto.states).map_to_vec |s| {
         let messages = do (copy s.messages).map_to_vec |m| {
-            let message(name, span, tys, this, next) = m;
+            let message(name, span, tys, this, next) = *m;
             visitor.visit_message(name, span, tys, this, next)
         };
-        visitor.visit_state(s, messages)
+        visitor.visit_state(*s, messages)
     };
     visitor.visit_proto(proto, states)
 }

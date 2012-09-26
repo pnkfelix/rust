@@ -1,3 +1,6 @@
+// xfail-fast
+#[legacy_modes];
+
 use iter::BaseIter;
 
 trait FlatMapToVec<A> {

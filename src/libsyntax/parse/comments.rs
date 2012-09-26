@@ -1,4 +1,5 @@
 use io::println;//XXXXXXXXxxx
+use io::ReaderUtil;
 use util::interner;
 use lexer::{string_reader, bump, is_eof, nextch,
                is_whitespace, get_str_from, reader};
@@ -15,6 +16,15 @@ enum cmnt_style {
     trailing, // Code exists to the left of the comment
     mixed, // Code before /* foo */ and after the comment
     blank_line, // Just a manual blank line "\n\n", for layout
+}
+
+impl cmnt_style : cmp::Eq {
+    pure fn eq(other: &cmnt_style) -> bool {
+        (self as uint) == ((*other) as uint)
+    }
+    pure fn ne(other: &cmnt_style) -> bool {
+        (self as uint) != ((*other) as uint)
+    }
 }
 
 type cmnt = {style: cmnt_style, lines: ~[~str], pos: uint};
@@ -69,7 +79,7 @@ fn strip_doc_comment_decoration(comment: ~str) -> ~str {
         }
 
         return do lines.map |line| {
-            let chars = str::chars(line);
+            let chars = str::chars(*line);
             if i > chars.len() {
                 ~""
             } else {
@@ -97,7 +107,7 @@ fn strip_doc_comment_decoration(comment: ~str) -> ~str {
 fn read_to_eol(rdr: string_reader) -> ~str {
     let mut val = ~"";
     while rdr.curr != '\n' && !is_eof(rdr) {
-        str::push_char(val, rdr.curr);
+        str::push_char(&mut val, rdr.curr);
         bump(rdr);
     }
     if rdr.curr == '\n' { bump(rdr); }
@@ -222,7 +232,7 @@ fn read_block_comment(rdr: string_reader, code_to_the_left: bool,
             curr_line = ~"";
             bump(rdr);
         } else {
-            str::push_char(curr_line, rdr.curr);
+            str::push_char(&mut curr_line, rdr.curr);
             if rdr.curr == '/' && nextch(rdr) == '*' {
                 bump(rdr);
                 bump(rdr);

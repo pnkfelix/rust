@@ -4,9 +4,9 @@
 
 */
 
-use std;
+extern mod std;
 use std::map;
-use managed::Managed;
+use mutable::Mut;
 use send_map::linear::*;
 use io::WriterUtil;
 
@@ -28,7 +28,7 @@ fn timed(result: &mut float,
     *result = (end - start);
 }
 
-fn int_benchmarks<M: map::map<uint, uint>>(make_map: fn() -> M,
+fn int_benchmarks<M: map::Map<uint, uint>>(make_map: fn() -> M,
                                            rng: @rand::Rng,
                                            num_keys: uint,
                                            results: &mut Results) {
@@ -69,7 +69,7 @@ fn int_benchmarks<M: map::map<uint, uint>>(make_map: fn() -> M,
     }
 }
 
-fn str_benchmarks<M: map::map<~str, uint>>(make_map: fn() -> M,
+fn str_benchmarks<M: map::Map<~str, uint>>(make_map: fn() -> M,
                                            rng: @rand::Rng,
                                            num_keys: uint,
                                            results: &mut Results) {
@@ -142,7 +142,7 @@ fn empty_results() -> Results {
     }
 }
 
-fn main(args: ~[~str]) {
+fn main(++args: ~[~str]) {
     let num_keys = {
         if args.len() == 2 {
             uint::from_str(args[1]).get()
@@ -156,21 +156,21 @@ fn main(args: ~[~str]) {
     {
         let rng = rand::seeded_rng(copy seed);
         let mut results = empty_results();
-        int_benchmarks::<map::hashmap<uint, uint>>(
-            map::uint_hash, rng, num_keys, &mut results);
-        str_benchmarks::<map::hashmap<~str, uint>>(
-            map::str_hash, rng, num_keys, &mut results);
+        int_benchmarks::<map::HashMap<uint, uint>>(
+            map::HashMap, rng, num_keys, &mut results);
+        str_benchmarks::<map::HashMap<~str, uint>>(
+            map::HashMap, rng, num_keys, &mut results);
         write_results("libstd::map::hashmap", &results);
     }
 
     {
         let rng = rand::seeded_rng(copy seed);
         let mut results = empty_results();
-        int_benchmarks::<Managed<LinearMap<uint, uint>>>(
-            || Managed(LinearMap()),
+        int_benchmarks::<@Mut<LinearMap<uint, uint>>>(
+            || @Mut(LinearMap()),
             rng, num_keys, &mut results);
-        str_benchmarks::<Managed<LinearMap<~str, uint>>>(
-            || Managed(LinearMap()),
+        str_benchmarks::<@Mut<LinearMap<~str, uint>>>(
+            || @Mut(LinearMap()),
             rng, num_keys, &mut results);
         write_results("libstd::map::hashmap", &results);
     }

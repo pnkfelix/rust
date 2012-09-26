@@ -1,4 +1,7 @@
-use std;
+// xfail-fast
+#[legacy_modes];
+
+extern mod std;
 
 use pipes::Chan;
 use pipes::Port;

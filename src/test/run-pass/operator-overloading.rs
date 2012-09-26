@@ -1,17 +1,20 @@
+// xfail-fast
+#[legacy_modes];
+
 struct Point {
     x: int,
     y: int
 }
 
 impl Point : ops::Add<Point,Point> {
-    pure fn add(other: Point) -> Point {
-        Point {x: self.x + other.x, y: self.y + other.y}
+    pure fn add(other: &Point) -> Point {
+        Point {x: self.x + (*other).x, y: self.y + (*other).y}
     }
 }
 
 impl Point : ops::Sub<Point,Point> {
-    pure fn sub(other: Point) -> Point {
-        Point {x: self.x - other.x, y: self.y - other.y}
+    pure fn sub(other: &Point) -> Point {
+        Point {x: self.x - (*other).x, y: self.y - (*other).y}
     }
 }
 
@@ -22,16 +25,16 @@ impl Point : ops::Neg<Point> {
 }
 
 impl Point : ops::Index<bool,int> {
-    pure fn index(&&x: bool) -> int {
+    pure fn index(+x: bool) -> int {
         if x { self.x } else { self.y }
     }
 }
 
 impl Point : cmp::Eq {
-    pure fn eq(&&other: Point) -> bool {
-        self.x == other.x && self.y == other.y
+    pure fn eq(other: &Point) -> bool {
+        self.x == (*other).x && self.y == (*other).y
     }
-    pure fn ne(&&other: Point) -> bool { !self.eq(other) }
+    pure fn ne(other: &Point) -> bool { !self.eq(other) }
 }
 
 fn main() {

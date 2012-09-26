@@ -1,22 +1,18 @@
-import option;
-import std::getopts;
-import std::test;
-import str;
-import vec;
-import task;
+use std::getopts;
+use std::test;
 
-import core::result;
-import result::{Ok, Err};
+use core::result;
+use result::{Ok, Err};
 
-import common::config;
-import common::mode_run_pass;
-import common::mode_run_fail;
-import common::mode_compile_fail;
-import common::mode_pretty;
-import common::mode;
-import util::logv;
+use common::config;
+use common::mode_run_pass;
+use common::mode_run_fail;
+use common::mode_compile_fail;
+use common::mode_pretty;
+use common::mode;
+use util::logv;
 
-fn main(args: ~[~str]) {
+fn main(++args: ~[~str]) {
     let config = parse_config(args);
     log_config(config);
     run_tests(config);
@@ -60,7 +56,7 @@ fn parse_config(args: ~[~str]) -> config {
              if vec::len(matches.free) > 0u {
                  option::Some(matches.free[0])
              } else { option::None },
-         logfile: option::map(getopts::opt_maybe_str(matches,
+         logfile: option::map(&getopts::opt_maybe_str(matches,
                                                      ~"logfile"),
                               |s| Path(s)),
          runtool: getopts::opt_maybe_str(matches, ~"runtool"),
@@ -118,7 +114,7 @@ fn mode_str(mode: mode) -> ~str {
 fn run_tests(config: config) {
     let opts = test_opts(config);
     let tests = make_tests(config);
-    let res = test::run_tests_console(opts, tests);
+    let res = test::run_tests_console(&opts, tests);
     if !res { fail ~"Some tests failed"; }
 }
 
@@ -142,7 +138,7 @@ fn make_tests(config: config) -> ~[test::TestDesc] {
            config.src_base.to_str());
     let mut tests = ~[];
     for os::list_dir_path(&config.src_base).each |file| {
-        let file = copy file;
+        let file = copy *file;
         debug!("inspecting file %s", file.to_str());
         if is_test(config, file) {
             vec::push(tests, make_test(config, file))
@@ -159,16 +155,16 @@ fn is_test(config: config, testfile: &Path) -> bool {
           _ => ~[~".rc", ~".rs"]
         };
     let invalid_prefixes = ~[~".", ~"#", ~"~"];
-    let name = option::get(testfile.filename());
+    let name = testfile.filename().get();
 
     let mut valid = false;
 
     for valid_extensions.each |ext| {
-        if str::ends_with(name, ext) { valid = true; }
+        if str::ends_with(name, *ext) { valid = true; }
     }
 
     for invalid_prefixes.each |pre| {
-        if str::starts_with(name, pre) { valid = false; }
+        if str::starts_with(name, *pre) { valid = false; }
     }
 
     return valid;
@@ -178,7 +174,7 @@ fn make_test(config: config, testfile: &Path) ->
    test::TestDesc {
     {
         name: make_test_name(config, testfile),
-        fn: make_test_closure(config, testfile),
+        testfn: make_test_closure(config, testfile),
         ignore: header::is_test_ignored(config, testfile),
         should_fail: false
     }

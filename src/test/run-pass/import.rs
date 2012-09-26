@@ -1,10 +1,12 @@
 mod foo {
+    #[legacy_exports];
     fn x(y: int) { log(debug, y); }
 }
 
 mod bar {
-    import foo::x;
-    import z = foo::x;
+    #[legacy_exports];
+    use foo::x;
+    use z = foo::x;
     fn thing() { x(10); z(10); }
 }
 

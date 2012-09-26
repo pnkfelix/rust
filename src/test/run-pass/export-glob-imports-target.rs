@@ -4,8 +4,10 @@
 // Modified to not use export since it's going away. --pcw
 
 mod foo {
-    import bar::*;
+    #[legacy_exports];
+    use bar::*;
     mod bar {
+        #[legacy_exports];
         const a : int = 10;
     }
     fn zum() {

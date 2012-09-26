@@ -51,9 +51,9 @@ fn new_parse_sess_special_handler(sh: span_handler, cm: codemap::codemap)
 
 fn parse_crate_from_file(input: &Path, cfg: ast::crate_cfg,
                          sess: parse_sess) -> @ast::crate {
-    if input.filetype() == Some(~"rc") {
+    if input.filetype() == Some(~".rc") {
         parse_crate_from_crate_file(input, cfg, sess)
-    } else if input.filetype() == Some(~"rs") {
+    } else if input.filetype() == Some(~".rs") {
         parse_crate_from_source_file(input, cfg, sess)
     } else {
         sess.span_diagnostic.handler().fatal(~"unknown input file type: " +
@@ -73,7 +73,7 @@ fn parse_crate_from_crate_file(input: &Path, cfg: ast::crate_cfg,
     sess.chpos = rdr.chpos;
     sess.byte_pos = sess.byte_pos + rdr.pos;
     let cx = @{sess: sess, cfg: /* FIXME (#2543) */ copy p.cfg};
-    let companionmod = option::map(input.filestem(), |s| Path(s));
+    let companionmod = input.filestem().map(|s| Path(s));
     let (m, attrs) = eval::eval_crate_directives_to_mod(
         cx, cdirs, &prefix, &companionmod);
     let mut hi = p.span.hi;
@@ -157,7 +157,7 @@ fn parse_from_source_str<T>(f: fn (p: parser) -> T,
     p.abort_if_errors();
     sess.chpos = rdr.chpos;
     sess.byte_pos = sess.byte_pos + rdr.pos;
-    return r;
+    move r
 }
 
 fn next_node_id(sess: parse_sess) -> node_id {
@@ -184,7 +184,7 @@ fn new_parser_from_source_str(sess: parse_sess, cfg: ast::crate_cfg,
                               +name: ~str, +ss: codemap::file_substr,
                               source: @~str) -> parser {
     let (p, _) = new_parser_etc_from_source_str(sess, cfg, name, ss, source);
-    return p;
+    move p
 }
 
 
@@ -208,7 +208,7 @@ fn new_parser_etc_from_file(sess: parse_sess, cfg: ast::crate_cfg,
 fn new_parser_from_file(sess: parse_sess, cfg: ast::crate_cfg, path: &Path,
                         ftype: parser::file_type) -> parser {
     let (p, _) = new_parser_etc_from_file(sess, cfg, path, ftype);
-    return p;
+    move p
 }
 
 fn new_parser_from_tt(sess: parse_sess, cfg: ast::crate_cfg,

@@ -1,6 +1,6 @@
 // A raw test of vector appending performance.
 
-use std;
+extern mod std;
 use dvec::DVec;
 use io::WriterUtil;
 
@@ -12,7 +12,7 @@ fn collect_raw(num: uint) -> ~[uint] {
     return result;
 }
 
-fn collect_dvec(num: uint) -> ~[mut uint] {
+fn collect_dvec(num: uint) -> ~[uint] {
     let result = DVec();
     for uint::range(0u, num) |i| {
         result.push(i);
@@ -20,7 +20,7 @@ fn collect_dvec(num: uint) -> ~[mut uint] {
     return dvec::unwrap(move result);
 }
 
-fn main(args: ~[~str]) {
+fn main(++args: ~[~str]) {
     let args = if os::getenv(~"RUST_BENCH").is_some() {
         ~[~"", ~"50000000"]
     } else if args.len() <= 1u {
@@ -37,13 +37,13 @@ fn main(args: ~[~str]) {
 
     // check each vector
     assert raw_v.len() == max;
-    for raw_v.eachi |i, v| { assert i == v; }
+    for raw_v.eachi |i, v| { assert i == *v; }
     assert dvec_v.len() == max;
-    for dvec_v.eachi |i, v| { assert i == v; }
+    for dvec_v.eachi |i, v| { assert i == *v; }
 
     let raw = mid - start;
     let dvec = end - mid;
-    
+
     let maxf = max as float;
     let rawf = raw as float;
     let dvecf = dvec as float;

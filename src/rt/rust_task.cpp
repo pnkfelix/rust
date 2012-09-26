@@ -6,9 +6,10 @@
 #include <algorithm>
 
 #include "rust_task.h"
-#include "rust_cc.h"
 #include "rust_env.h"
 #include "rust_port.h"
+#include "rust_globals.h"
+#include "rust_crate_map.h"
 
 // Tasks
 rust_task::rust_task(rust_sched_loop *sched_loop, rust_task_state state,
@@ -26,7 +27,6 @@ rust_task::rust_task(rust_sched_loop *sched_loop, rust_task_state state,
     boxed(sched_loop->kernel->env, &local_region),
     local_region(&sched_loop->local_region),
     unwinding(false),
-    cc_counter(0),
     total_stack_sz(0),
     task_local_data(NULL),
     task_local_data_cleanup(NULL),
@@ -125,18 +125,9 @@ cleanup_task(cleanup_args *args) {
         main_task_failed_without_spawning = true;
     }
 
-    // FIXME (#2676): For performance we should do the annihilator
-    // instead of the cycle collector even under normal termination, but
-    // since that would hide memory management errors (like not derefing
-    // boxes), it needs to be disableable in debug builds.
-    if (threw_exception) {
-        // FIXME (#2676): When the annihilator is more powerful and
-        // successfully runs resource destructors, etc. we can get rid
-        // of this cc
-        cc::do_cc(task);
-        annihilate_boxes(task);
-    }
-    cc::do_final_cc(task);
+    // Call the box annihilator.
+    cratemap* map = reinterpret_cast<cratemap*>(global_crate_map);
+    task->call_on_rust_stack(NULL, const_cast<void*>(map->annihilate_fn()));
 
     task->die();
 

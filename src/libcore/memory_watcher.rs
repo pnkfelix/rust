@@ -1,24 +1,24 @@
-import task::{spawn,Task};
-import io::println;
-import pipes::{stream,Port,Chan};
-import priv::{chan_from_global_ptr, weaken_task};
-import comm::{Port, Chan, select2, listen};
-import task::TaskBuilder;
-import either::{Left, Right};
-import send_map::linear;
+use task::{spawn,Task};
+use io::println;
+use pipes::{stream,Port,Chan};
+use private::{chan_from_global_ptr, weaken_task};
+use comm::{Port, Chan, select2, listen};
+use task::TaskBuilder;
+use either::{Left, Right};
+use send_map::linear;
 
 #[abi = "cdecl"]
 extern mod rustrt {
     fn rust_global_memory_watcher_chan_ptr() -> *libc::uintptr_t;
 }
 
-enum Msg {
-        ReportAllocation(Task, libc::uintptr_t, *libc::c_char, *libc::c_char)
+pub enum Msg {
+        pub ReportAllocation(Task, libc::uintptr_t, *libc::c_char, *libc::c_char)
 }
 
 type MemoryWatcherKey = (int, libc::uintptr_t, libc::uintptr_t);
 
-fn global_memory_watcher_spawner(msg_po: comm::Port<Msg>)
+pub fn global_memory_watcher_spawner(msg_po: comm::Port<Msg>)
 {
 	let msg_received = msg_po.recv();
 	let (task_enum_received,size_allocated,td_value,address_allocation) = match msg_received {
@@ -62,12 +62,12 @@ fn global_memory_watcher_spawner(msg_po: comm::Port<Msg>)
 	}
 }
 
-fn get_memory_watcher_Chan() -> comm::Chan<Msg> {
+pub fn get_memory_watcher_Chan() -> comm::Chan<Msg> {
 
 	let global_memory_watcher_ptr = rustrt::rust_global_memory_watcher_chan_ptr();
 
 	unsafe {
-		priv::chan_from_global_ptr(global_memory_watcher_ptr, || {
+		chan_from_global_ptr(global_memory_watcher_ptr, || {
                 	task::task().sched_mode(task::SingleThreaded).unlinked()
             	}, global_memory_watcher_spawner)
 	}
@@ -78,7 +78,7 @@ fn memory_watcher_start() {
 	let global_memory_watcher_ptr = rustrt::rust_global_memory_watcher_chan_ptr();
 
 	unsafe {
-		let global_channel = priv::chan_from_global_ptr(global_memory_watcher_ptr, || {
+		let global_channel = chan_from_global_ptr(global_memory_watcher_ptr, || {
                 			task::task().sched_mode(task::SingleThreaded).unlinked()
             				}, global_memory_watcher_spawner);
 	}

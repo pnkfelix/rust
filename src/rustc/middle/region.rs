@@ -12,7 +12,6 @@ use middle::ty;
 use syntax::{ast, visit};
 use syntax::codemap::span;
 use syntax::print::pprust;
-use syntax::ast_util::new_def_hash;
 use syntax::ast_map;
 use dvec::DVec;
 use metadata::csearch;
@@ -20,7 +19,7 @@ use ty::{region_variance, rv_covariant, rv_invariant, rv_contravariant};
 
 use std::list;
 use std::list::list;
-use std::map::{hashmap, int_hash};
+use std::map::HashMap;
 
 type parent = Option<ast::node_id>;
 
@@ -39,7 +38,7 @@ Encodes the bounding lifetime for a given AST node:
 - Variables and bindings are mapped to the block in which they are declared.
 
 */
-type region_map = hashmap<ast::node_id, ast::node_id>;
+type region_map = HashMap<ast::node_id, ast::node_id>;
 
 struct ctxt {
     sess: session,
@@ -55,7 +54,7 @@ struct ctxt {
     // the condition in a while loop is always a parent.  In those
     // cases, we add the node id of such an expression to this set so
     // that when we visit it we can view it as a parent.
-    root_exprs: hashmap<ast::node_id, ()>,
+    root_exprs: HashMap<ast::node_id, ()>,
 
     // The parent scope is the innermost block, statement, call, or alt
     // expression during the execution of which the current expression
@@ -196,8 +195,8 @@ fn parent_id(cx: ctxt, span: span) -> ast::node_id {
 /// Records the current parent (if any) as the parent of `child_id`.
 fn record_parent(cx: ctxt, child_id: ast::node_id) {
     for cx.parent.each |parent_id| {
-        debug!("parent of node %d is node %d", child_id, parent_id);
-        cx.region_map.insert(child_id, parent_id);
+        debug!("parent of node %d is node %d", child_id, *parent_id);
+        cx.region_map.insert(child_id, *parent_id);
     }
 }
 
@@ -333,8 +332,8 @@ fn resolve_crate(sess: session, def_map: resolve::DefMap,
                  crate: @ast::crate) -> region_map {
     let cx: ctxt = ctxt {sess: sess,
                          def_map: def_map,
-                         region_map: int_hash(),
-                         root_exprs: int_hash(),
+                         region_map: HashMap(),
+                         root_exprs: HashMap(),
                          parent: None};
     let visitor = visit::mk_vt(@{
         visit_block: resolve_block,
@@ -370,15 +369,16 @@ fn resolve_crate(sess: session, def_map: resolve::DefMap,
 // a worklist.  We can then process the worklist, propagating indirect
 // dependencies until a fixed point is reached.
 
-type region_paramd_items = hashmap<ast::node_id, region_variance>;
+type region_paramd_items = HashMap<ast::node_id, region_variance>;
 type region_dep = {ambient_variance: region_variance, id: ast::node_id};
-type dep_map = hashmap<ast::node_id, @DVec<region_dep>>;
+type dep_map = HashMap<ast::node_id, @DVec<region_dep>>;
 
-impl region_dep: cmp::Eq {
-    pure fn eq(&&other: region_dep) -> bool {
-        self.ambient_variance == other.ambient_variance && self.id == other.id
+impl region_dep : cmp::Eq {
+    pure fn eq(other: &region_dep) -> bool {
+        self.ambient_variance == (*other).ambient_variance &&
+        self.id == (*other).id
     }
-    pure fn ne(&&other: region_dep) -> bool { !self.eq(other) }
+    pure fn ne(other: &region_dep) -> bool { !self.eq(other) }
 }
 
 type determine_rp_ctxt_ = {
@@ -485,7 +485,7 @@ impl determine_rp_ctxt {
             }
         };
         let dep = {ambient_variance: self.ambient_variance, id: self.item_id};
-        if !vec.contains(dep) { vec.push(dep); }
+        if !vec.contains(&dep) { vec.push(dep); }
     }
 
     // Determines whether a reference to a region that appears in the
@@ -522,10 +522,10 @@ impl determine_rp_ctxt {
     // that flag to false when we enter a method.
     fn region_is_relevant(r: @ast::region) -> bool {
         match r.node {
+            ast::re_static => false,
             ast::re_anon => self.anon_implies_rp,
-            ast::re_named(id) => {
-                id == syntax::parse::token::special_idents::self_
-            }
+            ast::re_self => true,
+            ast::re_named(_) => false
         }
     }
 
@@ -701,7 +701,7 @@ fn determine_rp_in_ty(ty: @ast::ty,
         // type parameters are---for now, anyway---always invariant
         do cx.with_ambient_variance(rv_invariant) {
             for path.types.each |tp| {
-                visitor.visit_ty(tp, cx, visitor);
+                visitor.visit_ty(*tp, cx, visitor);
             }
         }
       }
@@ -762,8 +762,8 @@ fn determine_rp_in_crate(sess: session,
     let cx = determine_rp_ctxt_(@{sess: sess,
                                   ast_map: ast_map,
                                   def_map: def_map,
-                                  region_paramd_items: int_hash(),
-                                  dep_map: int_hash(),
+                                  region_paramd_items: HashMap(),
+                                  dep_map: HashMap(),
                                   worklist: DVec(),
                                   mut item_id: 0,
                                   mut anon_implies_rp: false,

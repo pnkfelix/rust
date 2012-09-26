@@ -1,5 +1,5 @@
 use codemap::span;
-use std::map::{hashmap, str_hash, uint_hash};
+use std::map::HashMap;
 use dvec::DVec;
 
 use base::*;
@@ -68,7 +68,7 @@ fn elts_to_ell(cx: ext_ctxt, elts: ~[@expr]) ->
         match elt.node {
           expr_mac(m) => match m.node {
             ast::mac_ellipsis => {
-                if res != None {
+                if res.is_some() {
                     cx.span_fatal(m.span, ~"only one ellipsis allowed");
                 }
                 res =
@@ -92,7 +92,7 @@ fn option_flatten_map<T: Copy, U: Copy>(f: fn@(T) -> Option<U>, v: ~[T]) ->
    Option<~[U]> {
     let mut res = ~[];
     for v.each |elem| {
-        match f(elem) {
+        match f(*elem) {
           None => return None,
           Some(fv) => vec::push(res, fv)
         }
@@ -123,9 +123,9 @@ fn compose_sels(s1: selector, s2: selector) -> selector {
 
 
 type binders =
-    {real_binders: hashmap<ident, selector>,
+    {real_binders: HashMap<ident, selector>,
      literal_ast_matchers: DVec<selector>};
-type bindings = hashmap<ident, arb_depth<matchable>>;
+type bindings = HashMap<ident, arb_depth<matchable>>;
 
 fn acumm_bindings(_cx: ext_ctxt, _b_dest: bindings, _b_src: bindings) { }
 
@@ -135,7 +135,7 @@ fn acumm_bindings(_cx: ext_ctxt, _b_dest: bindings, _b_src: bindings) { }
 
 fn pattern_to_selectors(cx: ext_ctxt, e: @expr) -> binders {
     let res: binders =
-        {real_binders: uint_hash::<selector>(),
+        {real_binders: HashMap(),
          literal_ast_matchers: DVec()};
     //this oughta return binders instead, but macro args are a sequence of
     //expressions, rather than a single expression
@@ -143,7 +143,7 @@ fn pattern_to_selectors(cx: ext_ctxt, e: @expr) -> binders {
         return Some(leaf(m));
     }
     p_t_s_rec(cx, match_expr(e), trivial_selector, res);
-    return res;
+    move res
 }
 
 
@@ -153,10 +153,10 @@ bindings. Most of the work is done in p_t_s, which generates the
 selectors. */
 
 fn use_selectors_to_bind(b: binders, e: @expr) -> Option<bindings> {
-    let res = uint_hash::<arb_depth<matchable>>();
+    let res = HashMap();
     //need to do this first, to check vec lengths.
     for b.literal_ast_matchers.each |sel| {
-        match sel(match_expr(e)) { None => return None, _ => () }
+        match (*sel)(match_expr(e)) { None => return None, _ => () }
     }
     let mut never_mind: bool = false;
     for b.real_binders.each |key, val| {
@@ -211,7 +211,7 @@ pure fn follow(m: arb_depth<matchable>, idx_path: &[uint]) ->
     for vec::each(idx_path) |idx| {
         res = match res {
           leaf(_) => return res,/* end of the line */
-          seq(new_ms, _) => new_ms[idx]
+          seq(new_ms, _) => new_ms[*idx]
         }
     }
     return res;
@@ -237,9 +237,9 @@ fn follow_for_trans(cx: ext_ctxt, mmaybe: Option<arb_depth<matchable>>,
 
 /* helper for transcribe_exprs: what vars from `b` occur in `e`? */
 fn free_vars(b: bindings, e: @expr, it: fn(ident)) {
-    let idents: hashmap<ident, ()> = uint_hash::<()>();
+    let idents: HashMap<ident, ()> = HashMap();
     fn mark_ident(&&i: ident, _fld: ast_fold, b: bindings,
-                  idents: hashmap<ident, ()>) -> ident {
+                  idents: HashMap<ident, ()>) -> ident {
         if b.contains_key(i) { idents.insert(i, ()); }
         return i;
     }
@@ -262,11 +262,11 @@ fn wrong_occurs(cx: ext_ctxt, l: ident, l_c: uint, r: ident, r_c: uint)
 
 /* handle sequences (anywhere in the AST) of exprs, either real or ...ed */
 fn transcribe_exprs(cx: ext_ctxt, b: bindings, idx_path: @mut ~[uint],
-                    recur: fn@(&&@expr) -> @expr,
+                    recur: fn@(&&v: @expr) -> @expr,
                     exprs: ~[@expr]) -> ~[@expr] {
     match elts_to_ell(cx, exprs) {
       {pre: pre, rep: repeat_me_maybe, post: post} => {
-        let mut res = vec::map(pre, recur);
+        let mut res = vec::map(pre, |x| recur(*x));
         match repeat_me_maybe {
           None => (),
           Some(repeat_me) => {
@@ -314,7 +314,7 @@ fn transcribe_exprs(cx: ext_ctxt, b: bindings, idx_path: @mut ~[uint],
             }
           }
         }
-        res = vec::append(res, vec::map(post, recur));
+        res = vec::append(res, vec::map(post, |x| recur(*x)));
         return res;
       }
     }
@@ -449,7 +449,7 @@ fn p_t_s_rec(cx: ext_ctxt, m: matchable, s: selector, b: binders) {
                 }
               }
               {pre: pre, rep: None, post: post} => {
-                if post != ~[] {
+                if post.len() > 0 {
                     cx.bug(~"elts_to_ell provided an invalid result");
                 }
                 p_t_s_r_length(cx, vec::len(pre), false, s, b);
@@ -707,7 +707,7 @@ fn add_new_extension(cx: ext_ctxt, sp: span, arg: ast::mac_arg,
                None => cx.span_fatal(sp, ~"macro definition must have " +
                                      ~"at least one clause")
              },
-         ext: normal({expander: ext, span: Some(option::get(arg).span)})};
+         ext: normal({expander: ext, span: Some(arg.get().span)})};
 
     fn generic_extension(cx: ext_ctxt, sp: span, arg: ast::mac_arg,
                          _body: ast::mac_body,

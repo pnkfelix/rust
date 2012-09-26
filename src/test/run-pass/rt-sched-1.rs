@@ -9,6 +9,7 @@ type task = *libc::c_void;
 type closure = *libc::c_void;
 
 extern mod rustrt {
+    #[legacy_exports];
     fn rust_new_sched(num_threads: libc::uintptr_t) -> sched_id;
     fn rust_get_sched_id() -> sched_id;
     fn rust_new_task_in_sched(id: sched_id) -> task_id;
@@ -32,8 +33,8 @@ fn main() unsafe {
         assert child_sched_id == new_sched_id;
         comm::send(ch, ());
     };
-    let fptr = unsafe::reinterpret_cast(&ptr::addr_of(f));
+    let fptr = cast::reinterpret_cast(&ptr::addr_of(f));
     rustrt::start_task(new_task_id, fptr);
-    unsafe::forget(f);
+    cast::forget(f);
     comm::recv(po);
 }

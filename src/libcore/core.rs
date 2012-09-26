@@ -2,12 +2,10 @@
 
 // Export various ubiquitous types, constructors, methods.
 
+#[legacy_exports];
+
 use option::{Some, None};
 use Option = option::Option;
-// XXX: snapshot rustc is generating code that wants lower-case option
-#[cfg(stage0)]
-use option = option::Option;
-
 use result::{Result, Ok, Err};
 
 use Path = path::Path;
@@ -26,7 +24,7 @@ use ptr::Ptr;
 use to_str::ToStr;
 
 export Path, WindowsPath, PosixPath, GenericPath;
-export Option, Some, None, unreachable;
+export Option, Some, None;
 export Result, Ok, Err;
 export extensions;
 // The following exports are the extension impls for numeric types
@@ -58,7 +56,7 @@ export Add, Sub, Mul, Div, Modulo, Neg, BitAnd, BitOr, BitXor;
 export Shl, Shr, Index;
 
 #[cfg(test)]
-use coreops(name = "core", vers = "0.4");
+extern mod coreops(name = "core", vers = "0.4");
 
 #[cfg(test)]
 use coreops::ops::{Const, Copy, Send, Owned};
@@ -86,7 +84,9 @@ const debug : u32 = 3_u32;
 // A curious inner-module that's not exported that contains the binding
 // 'core' so that macro-expanded references to core::error and such
 // can be resolved within libcore.
+#[doc(hidden)] // FIXME #3538
 mod core {
+    #[legacy_exports];
     const error : u32 = 0_u32;
     const warn : u32 = 1_u32;
     const info : u32 = 2_u32;
@@ -96,16 +96,7 @@ mod core {
 // Similar to above. Some magic to make core testable.
 #[cfg(test)]
 mod std {
-    use std(vers = "0.4");
-    import std::test;
+    #[legacy_exports];
+    extern mod std(vers = "0.4");
+    use std::test;
 }
-
-/**
- * A standard function to use to indicate unreachable code. Because the
- * function is guaranteed to fail typestate will correctly identify
- * any code paths following the appearance of this function as unreachable.
- */
-fn unreachable() -> ! {
-    fail ~"Internal error: entered unreachable code";
-}
-

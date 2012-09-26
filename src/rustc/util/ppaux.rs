@@ -1,4 +1,4 @@
-use std::map::hashmap;
+use std::map::HashMap;
 use middle::ty;
 use middle::ty::{arg, canon_mode};
 use middle::ty::{bound_copy, bound_const, bound_owned, bound_send,
@@ -18,7 +18,7 @@ use syntax::codemap;
 use syntax::codemap::span;
 use syntax::print::pprust;
 use syntax::print::pprust::{path_to_str, proto_to_str,
-                               mode_to_str, purity_to_str};
+                            mode_to_str, purity_to_str};
 use syntax::{ast, ast_util};
 use syntax::ast_map;
 use driver::session::session;
@@ -112,17 +112,17 @@ fn explain_region_and_span(cx: ctxt, region: ty::region)
 fn bound_region_to_str(cx: ctxt, br: bound_region) -> ~str {
     match br {
       br_named(id)                   => fmt!("&%s", cx.sess.str_of(id)),
-      br_self if cx.sess.ppregions() => ~"&<self>",
+      br_self if cx.sess.verbose() => ~"&<self>",
       br_self                        => ~"&self",
 
       br_anon(idx) => {
-        if cx.sess.ppregions() {fmt!("&%u", idx)} else {~"&"}
+        if cx.sess.verbose() {fmt!("&%u", idx)} else {~"&"}
       }
 
       // FIXME(#3011) -- even if this arm is removed, exhaustiveness checking
       // does not fail
       br_cap_avoid(id, br) => {
-        if cx.sess.ppregions() {
+        if cx.sess.verbose() {
             fmt!("br_cap_avoid(%?, %s)", id, bound_region_to_str(cx, *br))
         } else {
             bound_region_to_str(cx, *br)
@@ -175,7 +175,7 @@ fn re_scope_id_to_str(cx: ctxt, node_id: ast::node_id) -> ~str {
 // you should use `explain_region()` or, better yet,
 // `note_and_explain_region()`
 fn region_to_str(cx: ctxt, region: region) -> ~str {
-    if cx.sess.ppregions() {
+    if cx.sess.verbose() {
         return fmt!("&%?", region);
     }
 
@@ -229,10 +229,15 @@ fn proto_ty_to_str(cx: ctxt, proto: ty::fn_proto) -> ~str {
     }
 }
 
+fn expr_repr(cx: ctxt, expr: @ast::expr) -> ~str {
+    fmt!("expr(%d: %s)",
+         expr.id,
+         pprust::expr_to_str(expr, cx.sess.intr()))
+}
+
 fn tys_to_str(cx: ctxt, ts: ~[t]) -> ~str {
-    let mut rs = ~"";
-    for ts.each |t| { rs += ty_to_str(cx, t); }
-    rs
+    let tstrs = ts.map(|t| ty_to_str(cx, *t));
+    fmt!("[%s]", str::connect(tstrs, ", "))
 }
 
 fn bound_to_str(cx: ctxt, b: param_bound) -> ~str {
@@ -253,10 +258,10 @@ fn ty_to_str(cx: ctxt, typ: t) -> ~str {
           ast::infer(_) => ~"",
           ast::expl(m) => {
             if !ty::type_needs_infer(ty) &&
-                m == ty::default_arg_mode_for_ty(ty) {
+                m == ty::default_arg_mode_for_ty(cx, ty) {
                 ~""
             } else {
-                mode_to_str(ast::expl(m))
+                mode_to_str(ast::expl(m)) + ":"
             }
           }
         };
@@ -281,10 +286,10 @@ fn ty_to_str(cx: ctxt, typ: t) -> ~str {
         }
         s += ~"(";
         let mut strs = ~[];
-        for inputs.each |a| { vec::push(strs, fn_input_to_str(cx, a)); }
+        for inputs.each |a| { vec::push(strs, fn_input_to_str(cx, *a)); }
         s += str::connect(strs, ~", ");
         s += ~")";
-        if ty::get(output).struct != ty_nil {
+        if ty::get(output).sty != ty_nil {
             s += ~" -> ";
             match cf {
               ast::noreturn => { s += ~"!"; }
@@ -306,11 +311,12 @@ fn ty_to_str(cx: ctxt, typ: t) -> ~str {
     // if there is an id, print that instead of the structural type:
     for ty::type_def_id(typ).each |def_id| {
         // note that this typedef cannot have type parameters
-        return ast_map::path_to_str(ty::item_path(cx, def_id),cx.sess.intr());
+        return ast_map::path_to_str(ty::item_path(cx, *def_id),
+                                    cx.sess.intr());
     }
 
     // pretty print the structural type representation:
-    return match ty::get(typ).struct {
+    return match ty::get(typ).sty {
       ty_nil => ~"()",
       ty_bot => ~"_|_",
       ty_bool => ~"bool",
@@ -336,12 +342,12 @@ fn ty_to_str(cx: ctxt, typ: t) -> ~str {
       ty_type => ~"type",
       ty_rec(elems) => {
         let mut strs: ~[~str] = ~[];
-        for elems.each |fld| { vec::push(strs, field_to_str(cx, fld)); }
+        for elems.each |fld| { vec::push(strs, field_to_str(cx, *fld)); }
         ~"{" + str::connect(strs, ~",") + ~"}"
       }
       ty_tup(elems) => {
         let mut strs = ~[];
-        for elems.each |elem| { vec::push(strs, ty_to_str(cx, elem)); }
+        for elems.each |elem| { vec::push(strs, ty_to_str(cx, *elem)); }
         ~"(" + str::connect(strs, ~",") + ~")"
       }
       ty_fn(ref f) => {
@@ -388,7 +394,7 @@ fn parameterized(cx: ctxt,
     };
 
     if vec::len(tps) > 0u {
-        let strs = vec::map(tps, |t| ty_to_str(cx, t) );
+        let strs = vec::map(tps, |t| ty_to_str(cx, *t));
         fmt!("%s%s<%s>", base, r_str, str::connect(strs, ~","))
     } else {
         fmt!("%s%s", base, r_str)

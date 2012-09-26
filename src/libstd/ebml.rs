@@ -42,8 +42,8 @@ type Doc = {data: @~[u8], start: uint, end: uint};
 type TaggedDoc = {tag: uint, doc: Doc};
 
 impl Doc: ops::Index<uint,Doc> {
-    pure fn index(&&tag: uint) -> Doc {
-        unchecked {
+    pure fn index(+tag: uint) -> Doc {
+        unsafe {
             get_doc(self, tag)
         }
     }
@@ -314,6 +314,8 @@ enum EbmlSerializerTag {
     EsEnum, EsEnumVid, EsEnumBody,
     EsVec, EsVecLen, EsVecElt,
 
+    EsOpaque,
+
     EsLabel // Used only when debugging
 }
 
@@ -340,7 +342,15 @@ impl ebml::Writer: SerializerPriv {
     }
 }
 
-impl ebml::Writer: serialization::serializer {
+impl ebml::Writer {
+    fn emit_opaque(f: fn()) {
+        do self.wr_tag(EsOpaque as uint) {
+            f()
+        }
+    }
+}
+
+impl ebml::Writer: serialization::Serializer {
     fn emit_nil() {}
 
     fn emit_uint(v: uint) { self.wr_tagged_u64(EsUint as uint, v as u64); }
@@ -397,7 +407,7 @@ impl ebml::Writer: serialization::serializer {
 }
 
 type EbmlDeserializer_ = {mut parent: ebml::Doc,
-                           mut pos: uint};
+                          mut pos: uint};
 
 enum EbmlDeserializer {
     EbmlDeserializer_(EbmlDeserializer_)
@@ -452,7 +462,7 @@ priv impl EbmlDeserializer {
         let r = f();
         self.parent = old_parent;
         self.pos = old_pos;
-        return r;
+        move r
     }
 
     fn _next_uint(exp_tag: EbmlSerializerTag) -> uint {
@@ -462,7 +472,15 @@ priv impl EbmlDeserializer {
     }
 }
 
-impl EbmlDeserializer: serialization::deserializer {
+impl EbmlDeserializer {
+    fn read_opaque<R>(op: fn(ebml::Doc) -> R) -> R {
+        do self.push_doc(self.next_doc(EsOpaque)) {
+            op(copy self.parent)
+        }
+    }
+}
+
+impl EbmlDeserializer: serialization::Deserializer {
     fn read_nil() -> () { () }
 
     fn read_u64() -> u64 { ebml::doc_as_u64(self.next_doc(EsU64)) }
@@ -570,11 +588,11 @@ impl EbmlDeserializer: serialization::deserializer {
 
 #[test]
 fn test_option_int() {
-    fn serialize_1<S: serialization::serializer>(s: S, v: int) {
+    fn serialize_1<S: serialization::Serializer>(s: S, v: int) {
         s.emit_i64(v as i64);
     }
 
-    fn serialize_0<S: serialization::serializer>(s: S, v: Option<int>) {
+    fn serialize_0<S: serialization::Serializer>(s: S, v: Option<int>) {
         do s.emit_enum(~"core::option::t") {
             match v {
               None => s.emit_enum_variant(
@@ -588,11 +606,11 @@ fn test_option_int() {
         }
     }
 
-    fn deserialize_1<S: serialization::deserializer>(s: S) -> int {
+    fn deserialize_1<S: serialization::Deserializer>(s: S) -> int {
         s.read_i64() as int
     }
 
-    fn deserialize_0<S: serialization::deserializer>(s: S) -> Option<int> {
+    fn deserialize_0<S: serialization::Deserializer>(s: S) -> Option<int> {
         do s.read_enum(~"core::option::t") {
             do s.read_enum_variant |i| {
                 match i {
@@ -613,10 +631,11 @@ fn test_option_int() {
 
     fn test_v(v: Option<int>) {
         debug!("v == %?", v);
-        let mbuf = io::mem_buffer();
-        let ebml_w = ebml::Writer(io::mem_buffer_writer(mbuf));
-        serialize_0(ebml_w, v);
-        let ebml_doc = ebml::Doc(@io::mem_buffer_buf(mbuf));
+        let bytes = do io::with_bytes_writer |wr| {
+            let ebml_w = ebml::Writer(wr);
+            serialize_0(ebml_w, v);
+        };
+        let ebml_doc = ebml::Doc(@bytes);
         let deser = ebml_deserializer(ebml_doc);
         let v1 = deserialize_0(deser);
         debug!("v1 == %?", v1);

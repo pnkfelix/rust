@@ -75,7 +75,7 @@ fn find_library_crate_aux(cx: ctxt,
     let mut matches = ~[];
     filesearch::search(filesearch, |path| {
         debug!("inspecting file %s", path.to_str());
-        let f: ~str = option::get(path.filename());
+        let f: ~str = path.filename().get();
         if !(str::starts_with(f, prefix) && str::ends_with(f, suffix)) {
             debug!("skipping %s, doesn't look like %s*%s", path.to_str(),
                    prefix, suffix);
@@ -139,7 +139,7 @@ fn note_linkage_attrs(intr: ident_interner, diag: span_handler,
                       attrs: ~[ast::attribute]) {
     for attr::find_linkage_metas(attrs).each |mi| {
         diag.handler().note(fmt!("meta: %s",
-              pprust::meta_item_to_str(mi,intr)));
+              pprust::meta_item_to_str(*mi,intr)));
     }
 }
 
@@ -161,7 +161,7 @@ fn metadata_matches(extern_metas: ~[@ast::meta_item],
            vec::len(local_metas), vec::len(extern_metas));
 
     for local_metas.each |needed| {
-        if !attr::contains(extern_metas, needed) {
+        if !attr::contains(extern_metas, *needed) {
             return false;
         }
     }
@@ -181,19 +181,19 @@ fn get_metadata_section(os: os,
     let si = mk_section_iter(of.llof);
     while llvm::LLVMIsSectionIteratorAtEnd(of.llof, si.llsi) == False {
         let name_buf = llvm::LLVMGetSectionName(si.llsi);
-        let name = unsafe { str::unsafe::from_c_str(name_buf) };
+        let name = unsafe { str::raw::from_c_str(name_buf) };
         if name == meta_section_name(os) {
             let cbuf = llvm::LLVMGetSectionContents(si.llsi);
             let csz = llvm::LLVMGetSectionSize(si.llsi) as uint;
             let mut found = None;
             unsafe {
-                let cvbuf: *u8 = unsafe::reinterpret_cast(&cbuf);
+                let cvbuf: *u8 = cast::reinterpret_cast(&cbuf);
                 let vlen = vec::len(encoder::metadata_encoding_version);
                 debug!("checking %u bytes of metadata-version stamp",
                        vlen);
                 let minsz = uint::min(vlen, csz);
                 let mut version_ok = false;
-                do vec::unsafe::form_slice(cvbuf, minsz) |buf0| {
+                do vec::raw::form_slice(cvbuf, minsz) |buf0| {
                     version_ok = (buf0 ==
                                   encoder::metadata_encoding_version);
                 }
@@ -202,8 +202,8 @@ fn get_metadata_section(os: os,
                 let cvbuf1 = ptr::offset(cvbuf, vlen);
                 debug!("inflating %u bytes of compressed metadata",
                        csz - vlen);
-                do vec::unsafe::form_slice(cvbuf1, csz-vlen) |buf| {
-                    let inflated = flate::inflate_buf(buf);
+                do vec::raw::form_slice(cvbuf1, csz-vlen) |bytes| {
+                    let inflated = flate::inflate_bytes(bytes);
                     found = move Some(@(move inflated));
                 }
                 if found != None {

@@ -1,3 +1,6 @@
+// xfail-fast
+#[legacy_modes];
+
 trait vec_monad<A> {
     fn bind<B: Copy>(f: fn(A) -> ~[B]) -> ~[B];
 }
@@ -5,7 +8,7 @@ trait vec_monad<A> {
 impl<A> ~[A]: vec_monad<A> {
     fn bind<B: Copy>(f: fn(A) -> ~[B]) -> ~[B] {
         let mut r = ~[];
-        for self.each |elt| { r += f(elt); }
+        for self.each |elt| { r += f(*elt); }
         r
     }
 }

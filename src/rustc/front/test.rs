@@ -174,6 +174,7 @@ fn add_test_module(cx: test_ctxt, m: ast::_mod) -> ast::_mod {
 We're going to be building a module that looks more or less like:
 
 mod __test {
+    #[legacy_exports];
 
   fn main(args: ~[str]) -> int {
     std::test::test_main(args, tests())
@@ -285,7 +286,7 @@ fn mk_test_desc_vec(cx: test_ctxt) -> @ast::expr {
     debug!("building test vector from %u tests", cx.testfns.len());
     let mut descs = ~[];
     for cx.testfns.each |test| {
-        vec::push(descs, mk_test_desc_rec(cx, test));
+        vec::push(descs, mk_test_desc_rec(cx, *test));
     }
 
     let inner_expr = @{id: cx.sess.next_node_id(),
@@ -294,7 +295,7 @@ fn mk_test_desc_vec(cx: test_ctxt) -> @ast::expr {
                        span: dummy_sp()};
     return @{id: cx.sess.next_node_id(),
           callee_id: cx.sess.next_node_id(),
-          node: ast::expr_vstore(inner_expr, ast::vstore_uniq),
+          node: ast::expr_vstore(inner_expr, ast::expr_vstore_uniq),
           span: dummy_sp()};
 }
 
@@ -316,7 +317,7 @@ fn mk_test_desc_rec(cx: test_ctxt, test: test) -> @ast::expr {
     let name_expr = {id: cx.sess.next_node_id(),
                      callee_id: cx.sess.next_node_id(),
                      node: ast::expr_vstore(name_expr_inner,
-                                            ast::vstore_uniq),
+                                            ast::expr_vstore_uniq),
                      span: dummy_sp()};
 
 
@@ -335,7 +336,7 @@ fn mk_test_desc_rec(cx: test_ctxt, test: test) -> @ast::expr {
     let fn_wrapper_expr = mk_test_wrapper(cx, fn_expr, span);
 
     let fn_field: ast::field =
-        nospan({mutbl: ast::m_imm, ident: cx.sess.ident_of(~"fn"),
+        nospan({mutbl: ast::m_imm, ident: cx.sess.ident_of(~"testfn"),
                 expr: fn_wrapper_expr});
 
     let ignore_lit: ast::lit = nospan(ast::lit_bool(test.ignore));

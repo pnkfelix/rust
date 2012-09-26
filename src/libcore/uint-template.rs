@@ -15,7 +15,7 @@ export is_nonpositive, is_nonnegative;
 export range;
 export compl;
 export to_str, to_str_bytes;
-export from_str, from_str_radix, str, parse_buf;
+export from_str, from_str_radix, str, parse_bytes;
 export num, ord, eq, times, timesi;
 export bits, bytes;
 
@@ -61,24 +61,24 @@ pure fn compl(i: T) -> T {
     max_value ^ i
 }
 
-impl T: Ord {
-    pure fn lt(&&other: T) -> bool { self < other }
-    pure fn le(&&other: T) -> bool { self <= other }
-    pure fn ge(&&other: T) -> bool { self >= other }
-    pure fn gt(&&other: T) -> bool { self > other }
+impl T : Ord {
+    pure fn lt(other: &T) -> bool { self < (*other) }
+    pure fn le(other: &T) -> bool { self <= (*other) }
+    pure fn ge(other: &T) -> bool { self >= (*other) }
+    pure fn gt(other: &T) -> bool { self > (*other) }
 }
 
-impl T: Eq {
-    pure fn eq(&&other: T) -> bool { return self == other; }
-    pure fn ne(&&other: T) -> bool { return self != other; }
+impl T : Eq {
+    pure fn eq(other: &T) -> bool { return self == (*other); }
+    pure fn ne(other: &T) -> bool { return self != (*other); }
 }
 
 impl T: num::Num {
-    pure fn add(&&other: T)    -> T { return self + other; }
-    pure fn sub(&&other: T)    -> T { return self - other; }
-    pure fn mul(&&other: T)    -> T { return self * other; }
-    pure fn div(&&other: T)    -> T { return self / other; }
-    pure fn modulo(&&other: T) -> T { return self % other; }
+    pure fn add(other: &T)    -> T { return self + *other; }
+    pure fn sub(other: &T)    -> T { return self - *other; }
+    pure fn mul(other: &T)    -> T { return self * *other; }
+    pure fn div(other: &T)    -> T { return self / *other; }
+    pure fn modulo(other: &T) -> T { return self % *other; }
     pure fn neg()              -> T { return -self;        }
 
     pure fn to_int()         -> int { return self as int; }
@@ -126,7 +126,7 @@ impl T: iter::TimesIx {
  *
  * `buf` must not be empty
  */
-fn parse_buf(buf: &[const u8], radix: uint) -> Option<T> {
+fn parse_bytes(buf: &[const u8], radix: uint) -> Option<T> {
     if vec::len(buf) == 0u { return None; }
     let mut i = vec::len(buf) - 1u;
     let mut power = 1u as T;
@@ -143,7 +143,7 @@ fn parse_buf(buf: &[const u8], radix: uint) -> Option<T> {
 }
 
 /// Parse a string to an int
-fn from_str(s: &str) -> Option<T> { parse_buf(str::to_bytes(s), 10u) }
+fn from_str(s: &str) -> Option<T> { parse_bytes(str::to_bytes(s), 10u) }
 
 impl T : FromStr {
     static fn from_str(s: &str) -> Option<T> { from_str(s) }
@@ -174,8 +174,8 @@ fn from_str_radix(buf: &str, radix: u64) -> Option<u64> {
  */
 pure fn to_str(num: T, radix: uint) -> ~str {
     do to_str_bytes(false, num, radix) |slice| {
-        do vec::as_buf(slice) |p, len| {
-            unsafe { str::unsafe::from_buf_len(p, len) }
+        do vec::as_imm_buf(slice) |p, len| {
+            unsafe { str::raw::from_buf_len(p, len) }
         }
     }
 }
@@ -219,7 +219,7 @@ pure fn to_str_bytes<U>(neg: bool, num: T, radix: uint,
     // in-bounds, no extra cost.
 
     unsafe {
-        do vec::as_buf(buf) |p, len| {
+        do vec::as_imm_buf(buf) |p, len| {
             let mp = p as *mut u8;
             let mut i = len;
             let mut n = num;
@@ -239,8 +239,8 @@ pure fn to_str_bytes<U>(neg: bool, num: T, radix: uint,
                 *ptr::mut_offset(mp, i) = '-' as u8;
             }
 
-            vec::unsafe::form_slice(ptr::offset(p, i),
-                                    len - i, f)
+            vec::raw::form_slice(ptr::offset(p, i),
+                                 len - i, f)
         }
     }
 }
@@ -275,17 +275,17 @@ fn test_from_str() {
 
 #[test]
 #[ignore]
-fn test_parse_buf() {
-    import str::to_bytes;
-    assert parse_buf(to_bytes(~"123"), 10u) == Some(123u as T);
-    assert parse_buf(to_bytes(~"1001"), 2u) == Some(9u as T);
-    assert parse_buf(to_bytes(~"123"), 8u) == Some(83u as T);
-    assert parse_buf(to_bytes(~"123"), 16u) == Some(291u as T);
-    assert parse_buf(to_bytes(~"ffff"), 16u) == Some(65535u as T);
-    assert parse_buf(to_bytes(~"z"), 36u) == Some(35u as T);
+fn test_parse_bytes() {
+    use str::to_bytes;
+    assert parse_bytes(to_bytes(~"123"), 10u) == Some(123u as T);
+    assert parse_bytes(to_bytes(~"1001"), 2u) == Some(9u as T);
+    assert parse_bytes(to_bytes(~"123"), 8u) == Some(83u as T);
+    assert parse_bytes(to_bytes(~"123"), 16u) == Some(291u as T);
+    assert parse_bytes(to_bytes(~"ffff"), 16u) == Some(65535u as T);
+    assert parse_bytes(to_bytes(~"z"), 36u) == Some(35u as T);
 
-    assert parse_buf(to_bytes(~"Z"), 10u).is_none();
-    assert parse_buf(to_bytes(~"_"), 2u).is_none();
+    assert parse_bytes(to_bytes(~"Z"), 10u).is_none();
+    assert parse_bytes(to_bytes(~"_"), 2u).is_none();
 }
 
 #[test]
@@ -304,7 +304,7 @@ fn to_str_radix17() {
 
 #[test]
 fn test_times() {
-    import iter::Times;
+    use iter::Times;
     let ten = 10 as T;
     let mut accum = 0;
     for ten.times { accum += 1; }

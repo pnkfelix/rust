@@ -1,3 +1,6 @@
+// xfail-fast
+#[legacy_modes];
+
 fn test(f: fn(uint) -> uint) -> uint {
     return f(22u);
 }

@@ -1,8 +1,7 @@
-use std::map::hashmap;
+use std::map::HashMap;
 use parse::parser;
 use diagnostic::span_handler;
 use codemap::{codemap, span, expn_info, expanded_from};
-use std::map::str_hash;
 
 // obsolete old-style #macro code:
 //
@@ -65,7 +64,7 @@ enum syntax_extension {
 
 // A temporary hard-coded map of methods for expanding syntax extension
 // AST nodes into full ASTs
-fn syntax_expander_table() -> hashmap<~str, syntax_extension> {
+fn syntax_expander_table() -> HashMap<~str, syntax_extension> {
     fn builtin(f: syntax_expander_) -> syntax_extension
         {normal({expander: f, span: None})}
     fn builtin_expr_tt(f: syntax_expander_tt_) -> syntax_extension {
@@ -74,7 +73,7 @@ fn syntax_expander_table() -> hashmap<~str, syntax_extension> {
     fn builtin_item_tt(f: syntax_expander_tt_item_) -> syntax_extension {
         item_tt({expander: f, span: None})
     }
-    let syntax_expanders = str_hash::<syntax_extension>();
+    let syntax_expanders = HashMap::<~str,syntax_extension>();
     syntax_expanders.insert(~"macro",
                             macro_defining(ext::simplext::add_new_extension));
     syntax_expanders.insert(~"macro_rules",
@@ -222,14 +221,14 @@ fn mk_ctxt(parse_sess: parse::parse_sess,
             self.parse_sess.interner.intern(@st)
         }
     }
-    let imp : ctxt_repr = {
+    let imp: ctxt_repr = {
         parse_sess: parse_sess,
         cfg: cfg,
         mut backtrace: None,
         mut mod_path: ~[],
         mut trace_mac: false
     };
-    return imp as ext_ctxt
+    move (imp as ext_ctxt)
 }
 
 fn expr_to_str(cx: ext_ctxt, expr: @ast::expr, error: ~str) -> ~str {
@@ -299,9 +298,9 @@ fn get_mac_body(cx: ext_ctxt, sp: span, args: ast::mac_body)
 // using new syntax. This will be obsolete when #old_macros go away.
 fn tt_args_to_original_flavor(cx: ext_ctxt, sp: span, arg: ~[ast::token_tree])
     -> ast::mac_arg {
-    import ast::{matcher, matcher_, match_tok, match_seq, match_nonterminal};
-    import parse::lexer::{new_tt_reader, reader};
-    import tt::macro_parser::{parse_or_else, matched_seq,
+    use ast::{matcher, matcher_, match_tok, match_seq, match_nonterminal};
+    use parse::lexer::{new_tt_reader, reader};
+    use tt::macro_parser::{parse_or_else, matched_seq,
                               matched_nonterminal};
 
     // these spans won't matter, anyways
@@ -321,7 +320,7 @@ fn tt_args_to_original_flavor(cx: ext_ctxt, sp: span, arg: ~[ast::token_tree])
                           argument_gram).get(arg_nm) {
           @matched_seq(s, _) => {
             do s.map() |lf| {
-                match lf {
+                match *lf {
                   @matched_nonterminal(parse::token::nt_expr(arg)) =>
                     arg, /* whew! list of exprs, here we come! */
                   _ => fail ~"badly-structured parse result"

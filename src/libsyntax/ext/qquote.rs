@@ -28,7 +28,7 @@ enum fragment {
 }
 
 fn ids_ext(cx: ext_ctxt, strs: ~[~str]) -> ~[ast::ident] {
-    strs.map(|str| cx.parse_sess().interner.intern(@str))
+    strs.map(|str| cx.parse_sess().interner.intern(@*str))
 }
 fn id_ext(cx: ext_ctxt, str: ~str) -> ast::ident {
     cx.parse_sess().interner.intern(@str)
@@ -127,7 +127,7 @@ fn gather_anti_quotes<N: qq_helper>(lo: uint, node: N) -> aq_ctxt
         pure fn by_lo(a: &gather_item, b: &gather_item) -> bool {
             a.lo < b.lo
         }
-        vec::to_mut(std::sort::merge_sort(by_lo, v))
+        std::sort::merge_sort(by_lo, v)
     };
     return cx;
 }
@@ -155,7 +155,7 @@ fn expand_ast(ecx: ext_ctxt, _sp: span,
     -> @ast::expr
 {
     let mut what = ~"expr";
-    do option::iter(arg) |arg| {
+    do arg.iter |arg| {
         let args: ~[@ast::expr] =
             match arg.node {
               ast::expr_vec(elts, _) => elts,
@@ -228,7 +228,7 @@ fn finish<T: qq_helper>
     let mut state = active;
     let mut i = 0u, j = 0u;
     let g_len = cx.gather.len();
-    do str::chars_iter(*str) |ch| {
+    for str::chars_each(*str) |ch| {
         if (j < g_len && i == cx.gather[j].lo) {
             assert ch == '$';
             let repl = fmt!("$%u ", j);
@@ -236,11 +236,11 @@ fn finish<T: qq_helper>
             str2 += repl;
         }
         match copy state {
-          active => str::push_char(str2, ch),
+          active => str::push_char(&mut str2, ch),
           skip(1u) => state = blank,
           skip(sk) => state = skip (sk-1u),
-          blank if is_space(ch) => str::push_char(str2, ch),
-          blank => str::push_char(str2, ' ')
+          blank if is_space(ch) => str::push_char(&mut str2, ch),
+          blank => str::push_char(&mut str2, ' ')
         }
         i += 1u;
         if (j < g_len && i == cx.gather[j].hi) {
@@ -311,7 +311,7 @@ fn fold_crate(f: ast_fold, &&n: @ast::crate) -> @ast::crate {
 fn fold_expr(f: ast_fold, &&n: @ast::expr) -> @ast::expr {f.fold_expr(n)}
 fn fold_ty(f: ast_fold, &&n: @ast::ty) -> @ast::ty {f.fold_ty(n)}
 fn fold_item(f: ast_fold, &&n: @ast::item) -> @ast::item {
-    option::get(f.fold_item(n)) //HACK: we know we don't drop items
+    f.fold_item(n).get() //HACK: we know we don't drop items
 }
 fn fold_stmt(f: ast_fold, &&n: @ast::stmt) -> @ast::stmt {f.fold_stmt(n)}
 fn fold_pat(f: ast_fold, &&n: @ast::pat) -> @ast::pat {f.fold_pat(n)}

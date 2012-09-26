@@ -247,6 +247,7 @@ type sockaddr_in6 = {
 type addr_in = addr_in_impl::addr_in;
 #[cfg(unix)]
 mod addr_in_impl {
+    #[legacy_exports];
     #[cfg(target_arch="x86_64")]
     type addr_in = {
         a0: *u8, a1: *u8,
@@ -262,6 +263,7 @@ mod addr_in_impl {
 }
 #[cfg(windows)]
 mod addr_in_impl {
+    #[legacy_exports];
     type addr_in = {
         a0: *u8, a1: *u8,
         a2: *u8, a3: *u8
@@ -272,6 +274,7 @@ mod addr_in_impl {
 type addrinfo = addrinfo_impl::addrinfo;
 #[cfg(target_os="linux")]
 mod addrinfo_impl {
+    #[legacy_exports];
     #[cfg(target_arch="x86_64")]
     type addrinfo = {
         a00: *u8, a01: *u8, a02: *u8, a03: *u8,
@@ -286,6 +289,7 @@ mod addrinfo_impl {
 #[cfg(target_os="macos")]
 #[cfg(target_os="freebsd")]
 mod addrinfo_impl {
+    #[legacy_exports];
     type addrinfo = {
         a00: *u8, a01: *u8, a02: *u8, a03: *u8,
         a04: *u8, a05: *u8
@@ -293,6 +297,7 @@ mod addrinfo_impl {
 }
 #[cfg(windows)]
 mod addrinfo_impl {
+    #[legacy_exports];
     type addrinfo = {
         a00: *u8, a01: *u8, a02: *u8, a03: *u8,
         a04: *u8, a05: *u8
@@ -306,6 +311,7 @@ type uv_getaddrinfo_t = {
 };
 
 mod uv_ll_struct_stubgen {
+    #[legacy_exports];
     fn gen_stub_uv_tcp_t() -> uv_tcp_t {
         return gen_stub_os();
         #[cfg(target_os = "linux")]
@@ -561,6 +567,7 @@ mod uv_ll_struct_stubgen {
 
 #[nolink]
 extern mod rustrt {
+    #[legacy_exports];
     // libuv public API
     fn rust_uv_loop_new() -> *libc::c_void;
     fn rust_uv_loop_delete(lp: *libc::c_void);
@@ -707,7 +714,7 @@ unsafe fn tcp_init(loop_handle: *libc::c_void, handle: *uv_tcp_t)
 unsafe fn tcp_connect(connect_ptr: *uv_connect_t,
                       tcp_handle_ptr: *uv_tcp_t,
                       addr_ptr: *sockaddr_in,
-                      ++after_connect_cb: *u8)
+                      after_connect_cb: *u8)
 -> libc::c_int {
     log(debug, fmt!("b4 foreign tcp_connect--addr port: %u cb: %u",
                     (*addr_ptr).sin_port as uint, after_connect_cb as uint));
@@ -718,7 +725,7 @@ unsafe fn tcp_connect(connect_ptr: *uv_connect_t,
 unsafe fn tcp_connect6(connect_ptr: *uv_connect_t,
                       tcp_handle_ptr: *uv_tcp_t,
                       addr_ptr: *sockaddr_in6,
-                      ++after_connect_cb: *u8)
+                      after_connect_cb: *u8)
 -> libc::c_int {
     return rustrt::rust_uv_tcp_connect6(connect_ptr, tcp_handle_ptr,
                                     after_connect_cb, addr_ptr);
@@ -749,7 +756,7 @@ unsafe fn accept(server: *libc::c_void, client: *libc::c_void)
 
 unsafe fn write<T>(req: *uv_write_t, stream: *T,
          buf_in: *~[uv_buf_t], cb: *u8) -> libc::c_int {
-    let buf_ptr = vec::unsafe::to_ptr(*buf_in);
+    let buf_ptr = vec::raw::to_ptr(*buf_in);
     let buf_cnt = vec::len(*buf_in) as i32;
     return rustrt::rust_uv_write(req as *libc::c_void,
                               stream as *libc::c_void,
@@ -787,7 +794,7 @@ unsafe fn async_init(loop_handle: *libc::c_void,
 unsafe fn async_send(async_handle: *uv_async_t) {
     return rustrt::rust_uv_async_send(async_handle);
 }
-unsafe fn buf_init(++input: *u8, len: uint) -> uv_buf_t {
+unsafe fn buf_init(input: *u8, len: uint) -> uv_buf_t {
     let out_buf = { base: ptr::null(), len: 0 as libc::size_t };
     let out_buf_ptr = ptr::addr_of(out_buf);
     log(debug, fmt!("buf_init - input %u len %u out_buf: %u",
@@ -807,14 +814,14 @@ unsafe fn buf_init(++input: *u8, len: uint) -> uv_buf_t {
     return out_buf;
     //return result;
 }
-unsafe fn ip4_addr(ip: ~str, port: int)
+unsafe fn ip4_addr(ip: &str, port: int)
 -> sockaddr_in {
     do str::as_c_str(ip) |ip_buf| {
         rustrt::rust_uv_ip4_addr(ip_buf as *u8,
                                  port as libc::c_int)
     }
 }
-unsafe fn ip6_addr(ip: ~str, port: int)
+unsafe fn ip6_addr(ip: &str, port: int)
 -> sockaddr_in6 {
     do str::as_c_str(ip) |ip_buf| {
         rustrt::rust_uv_ip6_addr(ip_buf as *u8,
@@ -825,7 +832,7 @@ unsafe fn ip4_name(src: &sockaddr_in) -> ~str {
     // ipv4 addr max size: 15 + 1 trailing null byte
     let dst: ~[u8] = ~[0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,
                      0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8];
-    do vec::as_buf(dst) |dst_buf, size| {
+    do vec::as_imm_buf(dst) |dst_buf, size| {
         rustrt::rust_uv_ip4_name(to_unsafe_ptr(src),
                                  dst_buf, size as libc::size_t);
         // seems that checking the result of uv_ip4_name
@@ -834,7 +841,7 @@ unsafe fn ip4_name(src: &sockaddr_in) -> ~str {
         // to see if it is the string representation of
         // INADDR_NONE (0xffffffff or 255.255.255.255 on
         // many platforms)
-        str::unsafe::from_buf(dst_buf)
+        str::raw::from_buf(dst_buf)
     }
 }
 unsafe fn ip6_name(src: &sockaddr_in6) -> ~str {
@@ -845,14 +852,14 @@ unsafe fn ip6_name(src: &sockaddr_in6) -> ~str {
                        0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,
                        0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,
                        0u8,0u8,0u8,0u8,0u8,0u8];
-    do vec::as_buf(dst) |dst_buf, size| {
+    do vec::as_imm_buf(dst) |dst_buf, size| {
         let src_unsafe_ptr = to_unsafe_ptr(src);
         log(debug, fmt!("val of src *sockaddr_in6: %? sockaddr_in6: %?",
                         src_unsafe_ptr, src));
         let result = rustrt::rust_uv_ip6_name(src_unsafe_ptr,
                                               dst_buf, size as libc::size_t);
         match result {
-          0i32 => str::unsafe::from_buf(dst_buf),
+          0i32 => str::raw::from_buf(dst_buf),
           _ => ~""
         }
     }
@@ -962,8 +969,8 @@ unsafe fn free_base_of_buf(buf: uv_buf_t) {
 unsafe fn get_last_err_info(uv_loop: *libc::c_void) -> ~str {
     let err = last_error(uv_loop);
     let err_ptr = ptr::addr_of(err);
-    let err_name = str::unsafe::from_c_str(err_name(err_ptr));
-    let err_msg = str::unsafe::from_c_str(strerror(err_ptr));
+    let err_name = str::raw::from_c_str(err_name(err_ptr));
+    let err_msg = str::raw::from_c_str(strerror(err_ptr));
     return fmt!("LIBUV ERROR: name: %s msg: %s",
                     err_name, err_msg);
 }
@@ -971,8 +978,8 @@ unsafe fn get_last_err_info(uv_loop: *libc::c_void) -> ~str {
 unsafe fn get_last_err_data(uv_loop: *libc::c_void) -> uv_err_data {
     let err = last_error(uv_loop);
     let err_ptr = ptr::addr_of(err);
-    let err_name = str::unsafe::from_c_str(err_name(err_ptr));
-    let err_msg = str::unsafe::from_c_str(strerror(err_ptr));
+    let err_name = str::raw::from_c_str(err_name(err_ptr));
+    let err_msg = str::raw::from_c_str(strerror(err_ptr));
     { err_name: err_name, err_msg: err_msg }
 }
 
@@ -1002,6 +1009,7 @@ unsafe fn addrinfo_as_sockaddr_in6(input: *addrinfo) -> *sockaddr_in6 {
 
 #[cfg(test)]
 mod test {
+    #[legacy_exports];
     enum tcp_read_data {
         tcp_read_eof,
         tcp_read_more(~[u8]),
@@ -1020,7 +1028,7 @@ mod test {
     }
 
     extern fn on_alloc_cb(handle: *libc::c_void,
-                         ++suggested_size: libc::size_t)
+                         suggested_size: libc::size_t)
         -> uv_buf_t unsafe {
         log(debug, ~"on_alloc_cb!");
         let char_ptr = malloc_buf_base_of(suggested_size);
@@ -1046,7 +1054,7 @@ mod test {
                   as *request_wrapper;
             let buf_base = get_base_from_buf(buf);
             let buf_len = get_len_from_buf(buf);
-            let bytes = vec::unsafe::from_buf(buf_base, buf_len as uint);
+            let bytes = vec::raw::from_buf(buf_base, buf_len as uint);
             let read_chan = *((*client_data).read_chan);
             let msg_from_server = str::from_bytes(bytes);
             core::comm::send(read_chan, msg_from_server);
@@ -1108,7 +1116,7 @@ mod test {
         log(debug, ~"finishing on_connect_cb");
     }
 
-    fn impl_uv_tcp_request(ip: ~str, port: int, req_str: ~str,
+    fn impl_uv_tcp_request(ip: &str, port: int, req_str: &str,
                           client_chan: *comm::Chan<~str>) unsafe {
         let test_loop = loop_new();
         let tcp_handle = tcp_t();
@@ -1122,7 +1130,7 @@ mod test {
         // struct that we'd cast to a void* and store as the
         // data field in our uv_connect_t struct
         let req_str_bytes = str::to_bytes(req_str);
-        let req_msg_ptr: *u8 = vec::unsafe::to_ptr(req_str_bytes);
+        let req_msg_ptr: *u8 = vec::raw::to_ptr(req_str_bytes);
         log(debug, fmt!("req_msg ptr: %u", req_msg_ptr as uint));
         let req_msg = ~[
             buf_init(req_msg_ptr, vec::len(req_str_bytes))
@@ -1221,7 +1229,7 @@ mod test {
                             buf_base as uint,
                             buf_len as uint,
                             nread));
-            let bytes = vec::unsafe::from_buf(buf_base, buf_len);
+            let bytes = vec::raw::from_buf(buf_base, buf_len);
             let request_str = str::from_bytes(bytes);
 
             let client_data = get_data_for_uv_handle(
@@ -1353,10 +1361,10 @@ mod test {
         close(async_handle as *libc::c_void, async_close_cb);
     }
 
-    fn impl_uv_tcp_server(server_ip: ~str,
+    fn impl_uv_tcp_server(server_ip: &str,
                           server_port: int,
-                          kill_server_msg: ~str,
-                          server_resp_msg: ~str,
+                          +kill_server_msg: ~str,
+                          +server_resp_msg: ~str,
                           server_chan: *comm::Chan<~str>,
                           continue_chan: *comm::Chan<bool>) unsafe {
         let test_loop = loop_new();
@@ -1370,7 +1378,7 @@ mod test {
         let server_write_req_ptr = ptr::addr_of(server_write_req);
 
         let resp_str_bytes = str::to_bytes(server_resp_msg);
-        let resp_msg_ptr: *u8 = vec::unsafe::to_ptr(resp_str_bytes);
+        let resp_msg_ptr: *u8 = vec::raw::to_ptr(resp_str_bytes);
         log(debug, fmt!("resp_msg ptr: %u", resp_msg_ptr as uint));
         let resp_msg = ~[
             buf_init(resp_msg_ptr, vec::len(resp_str_bytes))
@@ -1503,8 +1511,10 @@ mod test {
     #[cfg(target_os="darwin")]
     #[cfg(target_os="linux")]
     mod tcp_and_server_client_test {
+        #[legacy_exports];
         #[cfg(target_arch="x86_64")]
         mod impl64 {
+            #[legacy_exports];
             #[test]
             fn test_uv_ll_tcp_server_and_request() unsafe {
                 impl_uv_tcp_server_and_request();
@@ -1512,6 +1522,7 @@ mod test {
         }
         #[cfg(target_arch="x86")]
         mod impl32 {
+            #[legacy_exports];
             #[test]
             #[ignore(cfg(target_os = "linux"))]
             fn test_uv_ll_tcp_server_and_request() unsafe {

@@ -8,15 +8,14 @@ use libc::c_void;
 use libc::size_t;
 use libc::uintptr_t;
 
-import io::println;
-import gc::{cleanup_stack_for_failure, gc, Word};
-import task::{spawn,Task};
-import memory_watcher;
+use gc::{cleanup_stack_for_failure, gc, Word};
+use memory_watcher;
 
 #[allow(non_camel_case_types)]
 type rust_task = c_void;
 
 extern mod rustrt {
+    #[legacy_exports];
     #[rust_stack]
     fn rust_upcall_fail(expr: *c_char, file: *c_char, line: size_t);
 
@@ -38,8 +37,8 @@ extern mod rustrt {
 // FIXME (#2861): This needs both the attribute, and the name prefixed with
 // 'rt_', otherwise the compiler won't find it. To fix this, see
 // gather_rust_rtcalls.
-#[rt(fail)]
-fn rt_fail(expr: *c_char, file: *c_char, line: size_t) {
+#[rt(fail_)]
+fn rt_fail_(expr: *c_char, file: *c_char, line: size_t) {
     cleanup_stack_for_failure();
     rustrt::rust_upcall_fail(expr, file, line);
 }

@@ -1,28 +1,42 @@
-//! Operations on shared box types
+//! Operations on managed box types
 
 // NB: transitionary, de-mode-ing.
 #[forbid(deprecated_mode)];
 #[forbid(deprecated_pattern)];
 
 use cmp::{Eq, Ord};
+use intrinsic::TyDesc;
 
-export ptr_eq;
+pub mod raw {
+    pub struct BoxHeaderRepr {
+        ref_count: uint,
+        type_desc: *TyDesc,
+        prev: *BoxRepr,
+        next: *BoxRepr,
+    }
 
-pure fn ptr_eq<T>(a: @T, b: @T) -> bool {
+    pub struct BoxRepr {
+        header: BoxHeaderRepr,
+        data: u8
+    }
+
+}
+
+pub pure fn ptr_eq<T>(a: @T, b: @T) -> bool {
     //! Determine if two shared boxes point to the same object
     unsafe { ptr::addr_of(*a) == ptr::addr_of(*b) }
 }
 
 impl<T:Eq> @const T : Eq {
-    pure fn eq(&&other: @const T) -> bool { *self == *other }
-    pure fn ne(&&other: @const T) -> bool { *self != *other }
+    pure fn eq(other: &@const T) -> bool { *self == *(*other) }
+    pure fn ne(other: &@const T) -> bool { *self != *(*other) }
 }
 
 impl<T:Ord> @const T : Ord {
-    pure fn lt(&&other: @const T) -> bool { *self < *other }
-    pure fn le(&&other: @const T) -> bool { *self <= *other }
-    pure fn ge(&&other: @const T) -> bool { *self >= *other }
-    pure fn gt(&&other: @const T) -> bool { *self > *other }
+    pure fn lt(other: &@const T) -> bool { *self < *(*other) }
+    pure fn le(other: &@const T) -> bool { *self <= *(*other) }
+    pure fn ge(other: &@const T) -> bool { *self >= *(*other) }
+    pure fn gt(other: &@const T) -> bool { *self > *(*other) }
 }
 
 #[test]

@@ -1,4 +1,4 @@
-use std::map::{hashmap, str_hash};
+use std::map::HashMap;
 use libc::{c_uint, c_int};
 use lib::llvm::llvm;
 use syntax::codemap;
@@ -24,7 +24,7 @@ fn count_insn(cx: block, category: &str) {
         // Build version of path with cycles removed.
 
         // Pass 1: scan table mapping str -> rightmost pos.
-        let mm = str_hash();
+        let mm = HashMap();
         let len = vec::len(*v);
         let mut i = 0u;
         while i < len {
@@ -87,7 +87,7 @@ fn AggregateRet(cx: block, RetVals: ~[ValueRef]) {
     assert (!cx.terminated);
     cx.terminated = true;
     unsafe {
-        llvm::LLVMBuildAggregateRet(B(cx), vec::unsafe::to_ptr(RetVals),
+        llvm::LLVMBuildAggregateRet(B(cx), vec::raw::to_ptr(RetVals),
                                     RetVals.len() as c_uint);
     }
 }
@@ -134,7 +134,7 @@ fn IndirectBr(cx: block, Addr: ValueRef, NumDests: uint) {
 // lot more efficient) than doing str::as_c_str("", ...) every time.
 fn noname() -> *libc::c_char unsafe {
     const cnull: uint = 0u;
-    return unsafe::reinterpret_cast(&ptr::addr_of(cnull));
+    return cast::reinterpret_cast(&ptr::addr_of(cnull));
 }
 
 fn Invoke(cx: block, Fn: ValueRef, Args: ~[ValueRef],
@@ -144,11 +144,11 @@ fn Invoke(cx: block, Fn: ValueRef, Args: ~[ValueRef],
     cx.terminated = true;
     debug!("Invoke(%s with arguments (%s))",
            val_str(cx.ccx().tn, Fn),
-           str::connect(vec::map(Args, |a| val_str(cx.ccx().tn, a)),
+           str::connect(vec::map(Args, |a| val_str(cx.ccx().tn, *a)),
                         ~", "));
     unsafe {
         count_insn(cx, "invoke");
-        llvm::LLVMBuildInvoke(B(cx), Fn, vec::unsafe::to_ptr(Args),
+        llvm::LLVMBuildInvoke(B(cx), Fn, vec::raw::to_ptr(Args),
                               Args.len() as c_uint, Then, Catch,
                               noname());
     }
@@ -161,7 +161,7 @@ fn FastInvoke(cx: block, Fn: ValueRef, Args: ~[ValueRef],
     cx.terminated = true;
     unsafe {
         count_insn(cx, "fastinvoke");
-        let v = llvm::LLVMBuildInvoke(B(cx), Fn, vec::unsafe::to_ptr(Args),
+        let v = llvm::LLVMBuildInvoke(B(cx), Fn, vec::raw::to_ptr(Args),
                                       Args.len() as c_uint,
                                       Then, Catch, noname());
         lib::llvm::SetInstructionCallConv(v, lib::llvm::FastCallConv);
@@ -424,7 +424,7 @@ fn GEP(cx: block, Pointer: ValueRef, Indices: ~[ValueRef]) -> ValueRef {
     if cx.unreachable { return llvm::LLVMGetUndef(T_ptr(T_nil())); }
     unsafe {
     count_insn(cx, "gep");
-    return llvm::LLVMBuildGEP(B(cx), Pointer, vec::unsafe::to_ptr(Indices),
+    return llvm::LLVMBuildGEP(B(cx), Pointer, vec::raw::to_ptr(Indices),
                                Indices.len() as c_uint, noname());
     }
 }
@@ -435,7 +435,7 @@ fn GEP(cx: block, Pointer: ValueRef, Indices: ~[ValueRef]) -> ValueRef {
 // XXX: Use a small-vector optimization to avoid allocations here.
 fn GEPi(cx: block, base: ValueRef, ixs: &[uint]) -> ValueRef {
     let mut v: ~[ValueRef] = ~[];
-    for vec::each(ixs) |i| { vec::push(v, C_i32(i as i32)); }
+    for vec::each(ixs) |i| { vec::push(v, C_i32(*i as i32)); }
     count_insn(cx, "gepi");
     return InBoundsGEP(cx, base, v);
 }
@@ -446,7 +446,7 @@ fn InBoundsGEP(cx: block, Pointer: ValueRef, Indices: &[ValueRef]) ->
     unsafe {
         count_insn(cx, "inboundsgep");
     return llvm::LLVMBuildInBoundsGEP(B(cx), Pointer,
-                                       vec::unsafe::to_ptr_slice(Indices),
+                                       vec::raw::to_ptr(Indices),
                                        Indices.len() as c_uint,
                                        noname());
     }
@@ -619,8 +619,8 @@ fn Phi(cx: block, Ty: TypeRef, vals: ~[ValueRef], bbs: ~[BasicBlockRef])
     let phi = EmptyPhi(cx, Ty);
     unsafe {
         count_insn(cx, "addincoming");
-        llvm::LLVMAddIncoming(phi, vec::unsafe::to_ptr(vals),
-                              vec::unsafe::to_ptr(bbs),
+        llvm::LLVMAddIncoming(phi, vec::raw::to_ptr(vals),
+                              vec::raw::to_ptr(bbs),
                               vals.len() as c_uint);
         return phi;
     }
@@ -629,8 +629,8 @@ fn Phi(cx: block, Ty: TypeRef, vals: ~[ValueRef], bbs: ~[BasicBlockRef])
 fn AddIncomingToPhi(phi: ValueRef, val: ValueRef, bb: BasicBlockRef) {
     if llvm::LLVMIsUndef(phi) == lib::llvm::True { return; }
     unsafe {
-        let valptr = unsafe::reinterpret_cast(&ptr::addr_of(val));
-        let bbptr = unsafe::reinterpret_cast(&ptr::addr_of(bb));
+        let valptr = cast::reinterpret_cast(&ptr::addr_of(val));
+        let bbptr = cast::reinterpret_cast(&ptr::addr_of(bb));
         llvm::LLVMAddIncoming(phi, valptr, bbptr, 1 as c_uint);
     }
 }
@@ -677,9 +677,9 @@ fn Call(cx: block, Fn: ValueRef, Args: &[ValueRef]) -> ValueRef {
 
         debug!("Call(Fn=%s, Args=%?)",
                val_str(cx.ccx().tn, Fn),
-               Args.map(|arg| val_str(cx.ccx().tn, arg)));
+               Args.map(|arg| val_str(cx.ccx().tn, *arg)));
 
-        do vec::as_buf(Args) |ptr, len| {
+        do vec::as_imm_buf(Args) |ptr, len| {
             llvm::LLVMBuildCall(B(cx), Fn, ptr, len as c_uint, noname())
         }
     }
@@ -689,7 +689,7 @@ fn FastCall(cx: block, Fn: ValueRef, Args: ~[ValueRef]) -> ValueRef {
     if cx.unreachable { return _UndefReturn(cx, Fn); }
     unsafe {
         count_insn(cx, "fastcall");
-        let v = llvm::LLVMBuildCall(B(cx), Fn, vec::unsafe::to_ptr(Args),
+        let v = llvm::LLVMBuildCall(B(cx), Fn, vec::raw::to_ptr(Args),
                                     Args.len() as c_uint, noname());
         lib::llvm::SetInstructionCallConv(v, lib::llvm::FastCallConv);
         return v;
@@ -701,7 +701,7 @@ fn CallWithConv(cx: block, Fn: ValueRef, Args: ~[ValueRef],
     if cx.unreachable { return _UndefReturn(cx, Fn); }
     unsafe {
         count_insn(cx, "callwithconv");
-        let v = llvm::LLVMBuildCall(B(cx), Fn, vec::unsafe::to_ptr(Args),
+        let v = llvm::LLVMBuildCall(B(cx), Fn, vec::raw::to_ptr(Args),
                                     Args.len() as c_uint, noname());
         lib::llvm::SetInstructionCallConv(v, Conv);
         return v;
@@ -789,7 +789,7 @@ fn Trap(cx: block) {
     let Args: ~[ValueRef] = ~[];
     unsafe {
         count_insn(cx, "trap");
-        llvm::LLVMBuildCall(b, T, vec::unsafe::to_ptr(Args),
+        llvm::LLVMBuildCall(b, T, vec::raw::to_ptr(Args),
                             Args.len() as c_uint, noname());
     }
 }

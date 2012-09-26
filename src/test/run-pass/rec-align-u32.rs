@@ -3,6 +3,7 @@
 
 #[abi = "rust-intrinsic"]
 extern mod rusti {
+    #[legacy_exports];
     fn pref_align_of<T>() -> uint;
     fn min_align_of<T>() -> uint;
 }
@@ -22,12 +23,14 @@ type outer = {
 
 #[cfg(target_arch = "x86")]
 mod m {
+    #[legacy_exports];
     fn align() -> uint { 4u }
     fn size() -> uint { 8u }
 }
 
 #[cfg(target_arch = "x86_64")]
 mod m {
+    #[legacy_exports];
     fn align() -> uint { 4u }
     fn size() -> uint { 8u }
 }
@@ -50,5 +53,5 @@ fn main() {
     // because `inner`s alignment was 4.
     assert sys::size_of::<outer>() == m::size();
 
-    assert y == ~"(22, (44))";
+    assert y == ~"{ c8: 22, t: { c64: 44 } }";
 }

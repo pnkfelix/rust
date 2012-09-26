@@ -1,5 +1,5 @@
 use std::map;
-use std::map::hashmap;
+use std::map::HashMap;
 use metadata::cstore;
 use driver::session;
 use metadata::filesearch;
@@ -93,7 +93,7 @@ fn get_rpaths_relative_to_output(os: session::os,
                                  output: &Path,
                                  libs: &[Path]) -> ~[Path] {
     vec::map(libs, |a| {
-        get_rpath_relative_to_output(os, output, &a)
+        get_rpath_relative_to_output(os, output, a)
     })
 }
 
@@ -106,7 +106,7 @@ fn get_rpath_relative_to_output(os: session::os,
     let prefix = match os {
         session::os_linux | session::os_freebsd => "$ORIGIN",
         session::os_macos => "@executable_path",
-        session::os_win32 => core::unreachable()
+        session::os_win32 => core::util::unreachable()
     };
 
     Path(prefix).push_rel(&get_relative_to(&os::make_absolute(output),
@@ -148,7 +148,7 @@ fn get_relative_to(abs1: &Path, abs2: &Path) -> Path {
 }
 
 fn get_absolute_rpaths(libs: &[Path]) -> ~[Path] {
-    vec::map(libs, |a| get_absolute_rpath(&a) )
+    vec::map(libs, |a| get_absolute_rpath(a) )
 }
 
 fn get_absolute_rpath(lib: &Path) -> Path {
@@ -167,12 +167,12 @@ fn get_install_prefix_rpath(target_triple: &str) -> Path {
 }
 
 fn minimize_rpaths(rpaths: &[Path]) -> ~[Path] {
-    let set = map::str_hash::<()>();
+    let set = map::HashMap();
     let mut minimized = ~[];
     for rpaths.each |rpath| {
         let s = rpath.to_str();
         if !set.contains_key(s) {
-            vec::push(minimized, rpath);
+            vec::push(minimized, *rpath);
             set.insert(s, ());
         }
     }
@@ -181,6 +181,7 @@ fn minimize_rpaths(rpaths: &[Path]) -> ~[Path] {
 
 #[cfg(unix)]
 mod test {
+    #[legacy_exports];
     #[test]
     fn test_rpaths_to_flags() {
         let flags = rpaths_to_flags(~[Path("path1"),

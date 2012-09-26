@@ -6,9 +6,9 @@
 // their associated scopes.  In phase two, checking loans, we will then make
 // sure that all of these loans are honored.
 
-use mem_categorization::{opt_deref_kind};
+use mem_categorization::{mem_categorization_ctxt, opt_deref_kind};
 use preserve::{preserve_condition, pc_ok, pc_if_pure};
-use ty::ty_region;
+use ty::{ty_region};
 
 export gather_loans;
 
@@ -47,8 +47,8 @@ enum gather_loan_ctxt = @{bccx: borrowck_ctxt,
 
 fn gather_loans(bccx: borrowck_ctxt, crate: @ast::crate) -> req_maps {
     let glcx = gather_loan_ctxt(@{bccx: bccx,
-                                  req_maps: {req_loan_map: int_hash(),
-                                             pure_map: int_hash()},
+                                  req_maps: {req_loan_map: HashMap(),
+                                             pure_map: HashMap()},
                                   mut item_ub: 0,
                                   mut root_ub: 0});
     let v = visit::mk_vt(@{visit_expr: req_loans_in_expr,
@@ -94,9 +94,8 @@ fn req_loans_in_expr(ex: @ast::expr,
            ex.id, pprust::expr_to_str(ex, tcx.sess.intr()));
 
     // If this expression is borrowed, have to ensure it remains valid:
-    for tcx.borrowings.find(ex.id).each |borrow| {
-        let cmt = self.bccx.cat_borrow_of_expr(ex);
-        self.guarantee_valid(cmt, borrow.mutbl, borrow.region);
+    for tcx.adjustments.find(ex.id).each |adjustments| {
+        self.guarantee_adjustments(ex, *adjustments);
     }
 
     // Special checks for various kinds of expressions:
@@ -125,45 +124,9 @@ fn req_loans_in_expr(ex: @ast::expr,
                 self.guarantee_valid(arg_cmt, m_imm,  scope_r);
               }
               ast::by_val => {
-                // Rust's by-val does not actually give ownership to
-                // the callee.  This means that if a pointer type is
-                // passed, it is effectively a borrow, and so the
-                // caller must guarantee that the data remains valid.
-                //
-                // Subtle: we only guarantee that the pointer is valid
-                // and const.  Technically, we ought to pass in the
-                // mutability that the caller expects (e.g., if the
-                // formal argument has type @mut, we should guarantee
-                // validity and mutability, not validity and const).
-                // However, the type system already guarantees that
-                // the caller's mutability is compatible with the
-                // callee, so this is not necessary.  (Note that with
-                // actual borrows, typeck is more liberal and allows
-                // the pointer to be borrowed as immutable even if it
-                // is mutable in the caller's frame, thus effectively
-                // passing the buck onto us to enforce this)
-                //
-                // FIXME (#2493): this handling is not really adequate.
-                // For example, if there is a type like, {f: ~[int]}, we
-                // will ignore it, but we ought to be requiring it to be
-                // immutable (whereas something like {f:int} would be
-                // fine).
-                //
-                match opt_deref_kind(arg_ty.ty) {
-                  Some(deref_ptr(region_ptr(_))) |
-                  Some(deref_ptr(unsafe_ptr)) => {
-                    /* region pointers are (by induction) guaranteed */
-                    /* unsafe pointers are the user's problem */
-                  }
-                  Some(deref_comp(_)) |
-                  None => {
-                    /* not a pointer, no worries */
-                  }
-                  Some(deref_ptr(_)) => {
-                    let arg_cmt = self.bccx.cat_borrow_of_expr(arg);
-                    self.guarantee_valid(arg_cmt, m_const, scope_r);
-                  }
-                }
+                // FIXME (#2493): safety checks would be required here,
+                // but the correct set is really hard to get right,
+                // and modes are going away anyhow.
               }
               ast::by_move | ast::by_copy => {}
             }
@@ -175,7 +138,7 @@ fn req_loans_in_expr(ex: @ast::expr,
         let cmt = self.bccx.cat_expr(ex_v);
         for arms.each |arm| {
             for arm.pats.each |pat| {
-                self.gather_pat(cmt, pat, arm.body.node.id, ex.id);
+                self.gather_pat(cmt, *pat, arm.body.node.id, ex.id);
             }
         }
         visit::visit_expr(ex, self, vt);
@@ -261,6 +224,42 @@ fn req_loans_in_expr(ex: @ast::expr,
 impl gather_loan_ctxt {
     fn tcx() -> ty::ctxt { self.bccx.tcx }
 
+    fn guarantee_adjustments(expr: @ast::expr,
+                             adjustment: &ty::AutoAdjustment) {
+        debug!("guarantee_adjustments(expr=%s, adjustment=%?)",
+               expr_repr(self.tcx(), expr), adjustment);
+        let _i = indenter();
+
+        match adjustment.autoref {
+            None => {
+                debug!("no autoref");
+                return;
+            }
+
+            Some(ref autoref) => {
+                let mcx = &mem_categorization_ctxt {
+                    tcx: self.tcx(),
+                    method_map: self.bccx.method_map};
+                let mut cmt = mcx.cat_expr_autoderefd(expr, adjustment);
+                debug!("after autoderef, cmt=%s", self.bccx.cmt_to_repr(cmt));
+
+                match autoref.kind {
+                    ty::AutoPtr => {
+                        self.guarantee_valid(cmt,
+                                             autoref.mutbl,
+                                             autoref.region)
+                    }
+                    ty::AutoSlice => {
+                        let cmt_index = mcx.cat_index(expr, cmt);
+                        self.guarantee_valid(cmt_index,
+                                             autoref.mutbl,
+                                             autoref.region)
+                    }
+                }
+            }
+        }
+    }
+
     // guarantees that addr_of(cmt) will be valid for the duration of
     // `static_scope_r`, or reports an error.  This may entail taking
     // out loans, which will be added to the `req_loan_map`.  This can
@@ -339,39 +338,49 @@ impl gather_loan_ctxt {
             };
 
             match result {
-              Ok(pc_ok) => {
-                // we were able guarantee the validity of the ptr,
-                // perhaps by rooting or because it is immutably
-                // rooted.  good.
-                self.bccx.stable_paths += 1;
-              }
-              Ok(pc_if_pure(e)) => {
-                // we are only able to guarantee the validity if
-                // the scope is pure
-                match scope_r {
-                  ty::re_scope(pure_id) => {
-                    // if the scope is some block/expr in the fn,
-                    // then just require that this scope be pure
-                    self.req_maps.pure_map.insert(pure_id, e);
-                    self.bccx.req_pure_paths += 1;
+                Ok(pc_ok) => {
+                    debug!("result of preserve: pc_ok");
 
-                    if self.tcx().sess.borrowck_note_pure() {
-                        self.bccx.span_note(
-                            cmt.span,
-                            fmt!("purity required"));
-                    }
-                  }
-                  _ => {
-                    // otherwise, we can't enforce purity for that
-                    // scope, so give up and report an error
-                    self.bccx.report(e);
-                  }
+                    // we were able guarantee the validity of the ptr,
+                    // perhaps by rooting or because it is immutably
+                    // rooted.  good.
+                    self.bccx.stable_paths += 1;
                 }
-              }
-              Err(e) => {
-                // we cannot guarantee the validity of this pointer
-                self.bccx.report(e);
-              }
+                Ok(pc_if_pure(e)) => {
+                    debug!("result of preserve: %?", pc_if_pure(e));
+
+                    // we are only able to guarantee the validity if
+                    // the scope is pure
+                    match scope_r {
+                        ty::re_scope(pure_id) => {
+                            // if the scope is some block/expr in the
+                            // fn, then just require that this scope
+                            // be pure
+                            self.req_maps.pure_map.insert(pure_id, e);
+                            self.bccx.req_pure_paths += 1;
+
+                            debug!("requiring purity for scope %?",
+                                   scope_r);
+
+                            if self.tcx().sess.borrowck_note_pure() {
+                                self.bccx.span_note(
+                                    cmt.span,
+                                    fmt!("purity required"));
+                            }
+                        }
+                        _ => {
+                            // otherwise, we can't enforce purity for
+                            // that scope, so give up and report an
+                            // error
+                            self.bccx.report(e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    // we cannot guarantee the validity of this pointer
+                    debug!("result of preserve: error");
+                    self.bccx.report(e);
+                }
             }
           }
         }
@@ -387,25 +396,23 @@ impl gather_loan_ctxt {
     // mutable memory.
     fn check_mutbl(req_mutbl: ast::mutability,
                    cmt: cmt) -> bckres<preserve_condition> {
-        match (req_mutbl, cmt.mutbl) {
-          (m_const, _) |
-          (m_imm, m_imm) |
-          (m_mutbl, m_mutbl) => {
-            Ok(pc_ok)
-          }
+        debug!("check_mutbl(req_mutbl=%?, cmt.mutbl=%?)",
+               req_mutbl, cmt.mutbl);
 
-          (_, m_const) |
-          (m_imm, m_mutbl) |
-          (m_mutbl, m_imm) => {
+        if req_mutbl == m_const || req_mutbl == cmt.mutbl {
+            debug!("required is const or they are the same");
+            Ok(pc_ok)
+        } else {
             let e = {cmt: cmt,
-                     code: err_mutbl(req_mutbl, cmt.mutbl)};
+                     code: err_mutbl(req_mutbl)};
             if req_mutbl == m_imm {
                 // you can treat mutable things as imm if you are pure
+                debug!("imm required, must be pure");
+
                 Ok(pc_if_pure(e))
             } else {
                 Err(e)
             }
-          }
         }
     }
 
@@ -417,7 +424,7 @@ impl gather_loan_ctxt {
             }
             None => {
                 self.req_maps.req_loan_map.insert(
-                    scope_id, @dvec::from_vec(~[mut loans]));
+                    scope_id, @dvec::from_vec(~[loans]));
             }
         }
     }

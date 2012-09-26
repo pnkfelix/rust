@@ -1,15 +1,16 @@
+/*!
+
+A doubly-linked list. Supports O(1) head, tail, count, push, pop, etc.
+
+# Safety note
+
+Do not use ==, !=, <, etc on doubly-linked lists -- it may not terminate.
+
+*/
+
 // NB: transitionary, de-mode-ing.
 #[forbid(deprecated_mode)];
 #[forbid(deprecated_pattern)];
-
-/**
- * A doubly-linked list. Supports O(1) head, tail, count, push, pop, etc.
- *
- * Do not use ==, !=, <, etc on doubly-linked lists -- it may not terminate.
- */
-
-export DList;
-export new_dlist, from_elem, from_vec, extensions;
 
 type DListLink<T> = Option<DListNode<T>>;
 
@@ -20,7 +21,7 @@ enum DListNode<T> = @{
     mut next: DListLink<T>
 };
 
-enum DList<T> {
+pub enum DList<T> {
     DList_(@{
         mut size: uint,
         mut hd:   DListLink<T>,
@@ -80,7 +81,7 @@ impl<T> DListNode<T> {
 
 /// Creates a new dlist node with the given data.
 pure fn new_dlist_node<T>(+data: T) -> DListNode<T> {
-    DListNode(@{data: data, mut linked: false,
+    DListNode(@{data: move data, mut linked: false,
                  mut prev: None, mut next: None})
 }
 
@@ -90,13 +91,13 @@ pure fn DList<T>() -> DList<T> {
 }
 
 /// Creates a new dlist with a single element
-pure fn from_elem<T>(+data: T) -> DList<T> {
+pub pure fn from_elem<T>(+data: T) -> DList<T> {
     let list = DList();
-    unchecked { list.push(data); }
+    unsafe { list.push(move data); }
     list
 }
 
-fn from_vec<T: Copy>(+vec: &[T]) -> DList<T> {
+pub fn from_vec<T: Copy>(+vec: &[T]) -> DList<T> {
     do vec::foldl(DList(), vec) |list,data| {
         list.push(data); // Iterating left-to-right -- add newly to the tail.
         list
@@ -114,8 +115,8 @@ fn concat<T>(lists: DList<DList<T>>) -> DList<T> {
 }
 
 priv impl<T> DList<T> {
-    pure fn new_link(-data: T) -> DListLink<T> {
-        Some(DListNode(@{data: data, mut linked: true,
+    pure fn new_link(+data: T) -> DListLink<T> {
+        Some(DListNode(@{data: move data, mut linked: true,
                           mut prev: None, mut next: None}))
     }
     pure fn assert_mine(nobe: DListNode<T>) {
@@ -198,36 +199,36 @@ impl<T> DList<T> {
 
     /// Add data to the head of the list. O(1).
     fn push_head(+data: T) {
-        self.add_head(self.new_link(data));
+        self.add_head(self.new_link(move data));
     }
     /**
      * Add data to the head of the list, and get the new containing
      * node. O(1).
      */
     fn push_head_n(+data: T) -> DListNode<T> {
-        let mut nobe = self.new_link(data);
+        let mut nobe = self.new_link(move data);
         self.add_head(nobe);
-        option::get(nobe)
+        option::get(&nobe)
     }
     /// Add data to the tail of the list. O(1).
     fn push(+data: T) {
-        self.add_tail(self.new_link(data));
+        self.add_tail(self.new_link(move data));
     }
     /**
      * Add data to the tail of the list, and get the new containing
      * node. O(1).
      */
     fn push_n(+data: T) -> DListNode<T> {
-        let mut nobe = self.new_link(data);
+        let mut nobe = self.new_link(move data);
         self.add_tail(nobe);
-        option::get(nobe)
+        option::get(&nobe)
     }
     /**
      * Insert data into the middle of the list, left of the given node.
      * O(1).
      */
     fn insert_before(+data: T, neighbour: DListNode<T>) {
-        self.insert_left(self.new_link(data), neighbour);
+        self.insert_left(self.new_link(move data), neighbour);
     }
     /**
      * Insert an existing node in the middle of the list, left of the
@@ -242,16 +243,16 @@ impl<T> DList<T> {
      * and get its containing node. O(1).
      */
     fn insert_before_n(+data: T, neighbour: DListNode<T>) -> DListNode<T> {
-        let mut nobe = self.new_link(data);
+        let mut nobe = self.new_link(move data);
         self.insert_left(nobe, neighbour);
-        option::get(nobe)
+        option::get(&nobe)
     }
     /**
      * Insert data into the middle of the list, right of the given node.
      * O(1).
      */
     fn insert_after(+data: T, neighbour: DListNode<T>) {
-        self.insert_right(neighbour, self.new_link(data));
+        self.insert_right(neighbour, self.new_link(move data));
     }
     /**
      * Insert an existing node in the middle of the list, right of the
@@ -266,9 +267,9 @@ impl<T> DList<T> {
      * and get its containing node. O(1).
      */
     fn insert_after_n(+data: T, neighbour: DListNode<T>) -> DListNode<T> {
-        let mut nobe = self.new_link(data);
+        let mut nobe = self.new_link(move data);
         self.insert_right(neighbour, nobe);
-        option::get(nobe)
+        option::get(&nobe)
     }
 
     /// Remove a node from the head of the list. O(1).
@@ -376,21 +377,25 @@ impl<T> DList<T> {
 
     /// Check data structure integrity. O(n).
     fn assert_consistent() {
-        if option::is_none(self.hd) || option::is_none(self.tl) {
-            assert option::is_none(self.hd) && option::is_none(self.tl);
+        if option::is_none(&self.hd) || option::is_none(&self.tl) {
+            assert option::is_none(&self.hd) && option::is_none(&self.tl);
         }
         // iterate forwards
         let mut count = 0;
         let mut link = self.peek_n();
         let mut rabbit = link;
-        while option::is_some(link) {
-            let nobe = option::get(link);
+        while option::is_some(&link) {
+            let nobe = option::get(&link);
             assert nobe.linked;
             // check cycle
-            if option::is_some(rabbit) { rabbit = option::get(rabbit).next; }
-            if option::is_some(rabbit) { rabbit = option::get(rabbit).next; }
-            if option::is_some(rabbit) {
-                assert !box::ptr_eq(*option::get(rabbit), *nobe);
+            if option::is_some(&rabbit) {
+                rabbit = option::get(&rabbit).next;
+            }
+            if option::is_some(&rabbit) {
+                rabbit = option::get(&rabbit).next;
+            }
+            if option::is_some(&rabbit) {
+                assert !box::ptr_eq(*option::get(&rabbit), *nobe);
             }
             // advance
             link = nobe.next_link();
@@ -400,14 +405,18 @@ impl<T> DList<T> {
         // iterate backwards - some of this is probably redundant.
         link = self.peek_tail_n();
         rabbit = link;
-        while option::is_some(link) {
-            let nobe = option::get(link);
+        while option::is_some(&link) {
+            let nobe = option::get(&link);
             assert nobe.linked;
             // check cycle
-            if option::is_some(rabbit) { rabbit = option::get(rabbit).prev; }
-            if option::is_some(rabbit) { rabbit = option::get(rabbit).prev; }
-            if option::is_some(rabbit) {
-                assert !box::ptr_eq(*option::get(rabbit), *nobe);
+            if option::is_some(&rabbit) {
+                rabbit = option::get(&rabbit).prev;
+            }
+            if option::is_some(&rabbit) {
+                rabbit = option::get(&rabbit).prev;
+            }
+            if option::is_some(&rabbit) {
+                assert !box::ptr_eq(*option::get(&rabbit), *nobe);
             }
             // advance
             link = nobe.prev_link();
@@ -433,21 +442,21 @@ impl<T: Copy> DList<T> {
     /// Get data at the list's tail, failing if empty. O(1).
     pure fn tail() -> T { self.tail_n().data }
     /// Get the elements of the list as a vector. O(n).
-    pure fn to_vec() -> ~[mut T] {
-        let mut v = ~[mut];
-        unchecked {
-            vec::reserve(v, self.size);
+    pure fn to_vec() -> ~[T] {
+        let mut v = vec::with_capacity(self.size);
+        unsafe {
             // Take this out of the unchecked when iter's functions are pure
             for self.eachi |index,data| {
-                v[index] = data;
+                v[index] = *data;
             }
         }
-        v
+        move v
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #[legacy_exports];
     #[test]
     fn test_dlist_concat() {
         let a = from_vec(~[1,2]);
@@ -674,7 +683,7 @@ mod tests {
         let mut x = 0;
         for l.each |i| {
             x += 1;
-            if (i == 3) { break; }
+            if (*i == 3) { break; }
         }
         assert x == 3;
     }

@@ -42,7 +42,7 @@ use syntax::ast::{ty_u16, ty_u32, ty_u64, ty_u8, ty_uint, type_value_ns};
 use syntax::ast::{variant, view_item, view_item_export, view_item_import};
 use syntax::ast::{view_item_use, view_path_glob, view_path_list};
 use syntax::ast::{view_path_simple, visibility, anonymous, named};
-use syntax::ast_util::{def_id_of_def, dummy_sp, local_def, new_def_hash};
+use syntax::ast_util::{def_id_of_def, dummy_sp, local_def};
 use syntax::ast_util::{path_to_ident, walk_pat, trait_method_to_ty_method};
 use syntax::attr::{attr_metas, contains_name};
 use syntax::print::pprust::{pat_to_str, path_to_str};
@@ -60,11 +60,11 @@ use vec::pop;
 use syntax::parse::token::ident_interner;
 
 use std::list::{Cons, List, Nil};
-use std::map::{hashmap, int_hash, uint_hash};
+use std::map::HashMap;
 use str_eq = str::eq;
 
 // Definition mapping
-type DefMap = hashmap<node_id,def>;
+type DefMap = HashMap<node_id,def>;
 
 struct binding_info {
     span: span,
@@ -72,7 +72,7 @@ struct binding_info {
 }
 
 // Map from the name in a pattern to its binding mode.
-type BindingMap = hashmap<ident,binding_info>;
+type BindingMap = HashMap<ident,binding_info>;
 
 // Implementation resolution
 //
@@ -89,15 +89,11 @@ type MethodInfo = {
 type Impl = { did: def_id, ident: ident, methods: ~[@MethodInfo] };
 
 // Trait method resolution
-type TraitMap = @hashmap<node_id,@DVec<def_id>>;
-
-// Export mapping
-type Export = { reexp: bool, id: def_id };
-type ExportMap = hashmap<node_id, ~[Export]>;
+type TraitMap = @HashMap<node_id,@DVec<def_id>>;
 
 // This is the replacement export map. It maps a module to all of the exports
 // within.
-type ExportMap2 = hashmap<node_id, ~[Export2]>;
+type ExportMap2 = HashMap<node_id, ~[Export2]>;
 
 struct Export2 {
     name: ~str,         // The name of the target.
@@ -111,10 +107,10 @@ enum PatternBindingMode {
 }
 
 impl PatternBindingMode : cmp::Eq {
-    pure fn eq(&&other: PatternBindingMode) -> bool {
-        (self as uint) == (other as uint)
+    pure fn eq(other: &PatternBindingMode) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: PatternBindingMode) -> bool { !self.eq(other) }
+    pure fn ne(other: &PatternBindingMode) -> bool { !self.eq(other) }
 }
 
 
@@ -152,10 +148,10 @@ enum Mutability {
 }
 
 impl Mutability : cmp::Eq {
-    pure fn eq(&&other: Mutability) -> bool {
-        (self as uint) == (other as uint)
+    pure fn eq(other: &Mutability) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: Mutability) -> bool { !self.eq(other) }
+    pure fn ne(other: &Mutability) -> bool { !self.eq(other) }
 }
 
 enum SelfBinding {
@@ -171,8 +167,8 @@ enum CaptureClause {
 type ResolveVisitor = vt<()>;
 
 enum ModuleDef {
-    NoModuleDef,            // Does not define a module.
-    ModuleDef(@Module),     // Defines a module.
+    NoModuleDef,                     // Does not define a module.
+    ModuleDef(Privacy, @Module),     // Defines a module.
 }
 
 impl ModuleDef {
@@ -187,10 +183,10 @@ enum ImportDirectiveNS {
 }
 
 impl ImportDirectiveNS : cmp::Eq {
-    pure fn eq(&&other: ImportDirectiveNS) -> bool {
-        (self as uint) == (other as uint)
+    pure fn eq(other: &ImportDirectiveNS) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: ImportDirectiveNS) -> bool { !self.eq(other) }
+    pure fn ne(other: &ImportDirectiveNS) -> bool { !self.eq(other) }
 }
 
 /// Contains data for specific types of import directives.
@@ -208,6 +204,15 @@ enum ResolveResult<T> {
     Failed,         // Failed to resolve the name.
     Indeterminate,  // Couldn't determine due to unresolved globs.
     Success(T)      // Successfully resolved the import.
+}
+
+impl<T> ResolveResult<T> {
+    fn failed() -> bool {
+        match self { Failed => true, _ => false }
+    }
+    fn indeterminate() -> bool {
+        match self { Indeterminate => true, _ => false }
+    }
 }
 
 enum TypeParameters/& {
@@ -274,10 +279,10 @@ enum XrayFlag {
 }
 
 impl XrayFlag : cmp::Eq {
-    pure fn eq(&&other: XrayFlag) -> bool {
-        (self as uint) == (other as uint)
+    pure fn eq(other: &XrayFlag) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: XrayFlag) -> bool { !self.eq(other) }
+    pure fn ne(other: &XrayFlag) -> bool { !self.eq(other) }
 }
 
 enum AllowCapturingSelfFlag {
@@ -286,10 +291,10 @@ enum AllowCapturingSelfFlag {
 }
 
 impl AllowCapturingSelfFlag : cmp::Eq {
-    pure fn eq(&&other: AllowCapturingSelfFlag) -> bool {
-        (self as uint) == (other as uint)
+    pure fn eq(other: &AllowCapturingSelfFlag) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: AllowCapturingSelfFlag) -> bool { !self.eq(other) }
+    pure fn ne(other: &AllowCapturingSelfFlag) -> bool { !self.eq(other) }
 }
 
 enum EnumVariantOrConstResolution {
@@ -308,13 +313,13 @@ fn Atom(n: uint) -> Atom {
 }
 
 /// Creates a hash table of atoms.
-fn atom_hashmap<V:Copy>() -> hashmap<Atom,V> {
-  hashmap::<Atom,V>()
+fn atom_hashmap<V:Copy>() -> HashMap<Atom,V> {
+  HashMap::<Atom,V>()
 }
 
 /// One local scope.
 struct Rib {
-    bindings: hashmap<Atom,def_like>,
+    bindings: HashMap<Atom,def_like>,
     kind: RibKind,
 }
 
@@ -328,15 +333,18 @@ fn Rib(kind: RibKind) -> Rib {
 
 /// One import directive.
 struct ImportDirective {
+    privacy: Privacy,
     module_path: @DVec<Atom>,
     subclass: @ImportDirectiveSubclass,
     span: span,
 }
 
-fn ImportDirective(module_path: @DVec<Atom>,
+fn ImportDirective(privacy: Privacy,
+                   module_path: @DVec<Atom>,
                    subclass: @ImportDirectiveSubclass,
                    span: span) -> ImportDirective {
     ImportDirective {
+        privacy: privacy,
         module_path: module_path,
         subclass: subclass,
         span: span
@@ -357,6 +365,7 @@ fn Target(target_module: @Module, bindings: @NameBindings) -> Target {
 }
 
 struct ImportResolution {
+    privacy: Privacy,
     span: span,
 
     // The number of outstanding references to this name. When this reaches
@@ -370,24 +379,28 @@ struct ImportResolution {
     mut type_target: Option<Target>,
 
     mut used: bool,
-
-    fn target_for_namespace(namespace: Namespace) -> Option<Target> {
-        match namespace {
-            ModuleNS    => return copy self.module_target,
-            TypeNS      => return copy self.type_target,
-            ValueNS     => return copy self.value_target
-        }
-    }
 }
 
-fn ImportResolution(span: span) -> ImportResolution {
+fn ImportResolution(privacy: Privacy,
+                    span: span) -> ImportResolution {
     ImportResolution {
+        privacy: privacy,
         span: span,
         outstanding_references: 0u,
         module_target: None,
         value_target: None,
         type_target: None,
         used: false
+    }
+}
+
+impl ImportResolution {
+    fn target_for_namespace(namespace: Namespace) -> Option<Target> {
+        match namespace {
+            ModuleNS    => return copy self.module_target,
+            TypeNS      => return copy self.type_target,
+            ValueNS     => return copy self.value_target
+        }
     }
 }
 
@@ -403,7 +416,7 @@ struct Module {
     parent_link: ParentLink,
     mut def_id: Option<def_id>,
 
-    children: hashmap<Atom,@NameBindings>,
+    children: HashMap<Atom,@NameBindings>,
     imports: DVec<@ImportDirective>,
 
     // The anonymous children of this node. Anonymous children are pseudo-
@@ -421,7 +434,7 @@ struct Module {
     // There will be an anonymous module created around `g` with the ID of the
     // entry block for `f`.
 
-    anonymous_children: hashmap<node_id,@Module>,
+    anonymous_children: HashMap<node_id,@Module>,
 
     // XXX: This is about to be reworked so that exports are on individual
     // items, not names.
@@ -429,33 +442,45 @@ struct Module {
     // The atom is the name of the exported item, while the node ID is the
     // ID of the export path.
 
-    exported_names: hashmap<Atom,node_id>,
+    exported_names: HashMap<Atom,node_id>,
+
+    // XXX: This is a transition measure to let us switch export-evaluation
+    // logic when compiling modules that have transitioned to listing their
+    // pub/priv qualifications on items, explicitly, rather than using the
+    // old export rule.
+
+    legacy_exports: bool,
 
     // The status of resolving each import in this module.
-    import_resolutions: hashmap<Atom,@ImportResolution>,
+    import_resolutions: HashMap<Atom,@ImportResolution>,
 
     // The number of unresolved globs that this module exports.
     mut glob_count: uint,
 
     // The index of the import we're resolving.
     mut resolved_import_count: uint,
-
-    fn all_imports_resolved() -> bool {
-        return self.imports.len() == self.resolved_import_count;
-    }
 }
 
-fn Module(parent_link: ParentLink, def_id: Option<def_id>) -> Module {
+fn Module(parent_link: ParentLink,
+          def_id: Option<def_id>,
+          legacy_exports: bool) -> Module {
     Module {
         parent_link: parent_link,
         def_id: def_id,
         children: atom_hashmap(),
         imports: DVec(),
-        anonymous_children: int_hash(),
+        anonymous_children: HashMap(),
         exported_names: atom_hashmap(),
+        legacy_exports: legacy_exports,
         import_resolutions: atom_hashmap(),
         glob_count: 0u,
         resolved_import_count: 0u
+    }
+}
+
+impl Module {
+    fn all_imports_resolved() -> bool {
+        return self.imports.len() == self.resolved_import_count;
     }
 }
 
@@ -471,7 +496,7 @@ pure fn is_none<T>(x: Option<T>) -> bool {
 
 fn unused_import_lint_level(session: session) -> level {
     for session.opts.lint_opts.each |lint_option_pair| {
-        let (lint_type, lint_level) = lint_option_pair;
+        let (lint_type, lint_level) = *lint_option_pair;
         if lint_type == unused_imports {
             return lint_level;
         }
@@ -485,10 +510,10 @@ enum Privacy {
 }
 
 impl Privacy : cmp::Eq {
-    pure fn eq(&&other: Privacy) -> bool {
-        (self as uint) == (other as uint)
+    pure fn eq(other: &Privacy) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: Privacy) -> bool { !self.eq(other) }
+    pure fn ne(other: &Privacy) -> bool { !self.eq(other) }
 }
 
 // Records a possibly-private definition.
@@ -509,13 +534,19 @@ struct NameBindings {
     mut module_span: Option<span>,
     mut type_span: Option<span>,
     mut value_span: Option<span>,
+}
+
+impl NameBindings {
 
     /// Creates a new module in this set of name bindings.
-    fn define_module(parent_link: ParentLink, def_id: Option<def_id>,
+    fn define_module(privacy: Privacy,
+                     parent_link: ParentLink,
+                     def_id: Option<def_id>,
+                     legacy_exports: bool,
                      sp: span) {
         if self.module_def.is_none() {
-            let module_ = @Module(parent_link, def_id);
-            self.module_def = ModuleDef(module_);
+            let module_ = @Module(parent_link, def_id, legacy_exports);
+            self.module_def = ModuleDef(privacy, module_);
             self.module_span = Some(sp);
         }
     }
@@ -536,7 +567,7 @@ struct NameBindings {
     fn get_module_if_available() -> Option<@Module> {
         match self.module_def {
             NoModuleDef         => return None,
-            ModuleDef(module_)  => return Some(module_)
+            ModuleDef(_privacy, module_)  => return Some(module_)
         }
     }
 
@@ -550,7 +581,7 @@ struct NameBindings {
                 fail
                     ~"get_module called on a node with no module definition!";
             }
-            ModuleDef(module_) => {
+            ModuleDef(_, module_) => {
                 return module_;
             }
         }
@@ -558,9 +589,14 @@ struct NameBindings {
 
     fn defined_in_namespace(namespace: Namespace) -> bool {
         match namespace {
-            ModuleNS    => return self.module_def != NoModuleDef,
-            TypeNS      => return self.type_def != None,
-            ValueNS     => return self.value_def != None
+            ModuleNS => {
+                match self.module_def {
+                    NoModuleDef => false,
+                    _ => true
+                }
+            }
+            TypeNS   => return self.type_def.is_some(),
+            ValueNS  => return self.value_def.is_some()
         }
     }
 
@@ -570,12 +606,12 @@ struct NameBindings {
           ValueNS => return self.value_def,
           ModuleNS => match self.module_def {
             NoModuleDef => return None,
-            ModuleDef(module_) =>
+            ModuleDef(privacy, module_) =>
                 match module_.def_id {
                     None => return None,
                     Some(def_id) => {
                         return Some(Definition {
-                            privacy: Public,
+                            privacy: privacy,
                             def: def_mod(def_id)
                         });
                     }
@@ -612,8 +648,10 @@ fn NameBindings() -> NameBindings {
 
 /// Interns the names of the primitive types.
 struct PrimitiveTypeTable {
-    primitive_types: hashmap<Atom,prim_ty>,
+    primitive_types: HashMap<Atom,prim_ty>,
+}
 
+impl PrimitiveTypeTable {
     fn intern(intr: ident_interner, string: @~str,
               primitive_type: prim_ty) {
         let atom = intr.intern(string);
@@ -655,13 +693,27 @@ fn namespace_to_str(ns: Namespace) -> ~str {
     }
 }
 
+fn has_legacy_export_attr(attrs: &[syntax::ast::attribute]) -> bool {
+    for attrs.each |attribute| {
+        match attribute.node.value.node {
+          syntax::ast::meta_word(w) if w == ~"legacy_exports" => {
+            return true;
+          }
+          _ => {}
+        }
+    }
+    return false;
+}
+
 fn Resolver(session: session, lang_items: LanguageItems,
             crate: @crate) -> Resolver {
 
     let graph_root = @NameBindings();
 
-    (*graph_root).define_module(NoParentLink,
+    (*graph_root).define_module(Public,
+                                NoParentLink,
                                 Some({ crate: 0, node: 0 }),
+                                has_legacy_export_attr(crate.node.attrs),
                                 crate.span);
 
     let current_module = (*graph_root).get_module();
@@ -678,8 +730,8 @@ fn Resolver(session: session, lang_items: LanguageItems,
 
         unused_import_lint_level: unused_import_lint_level(session),
 
-        trait_info: new_def_hash(),
-        structs: new_def_hash(),
+        trait_info: HashMap(),
+        structs: HashMap(),
 
         unresolved_imports: 0u,
 
@@ -697,15 +749,14 @@ fn Resolver(session: session, lang_items: LanguageItems,
 
         namespaces: ~[ ModuleNS, TypeNS, ValueNS ],
 
-        def_map: int_hash(),
-        export_map: int_hash(),
-        export_map2: int_hash(),
-        trait_map: @int_hash(),
+        def_map: HashMap(),
+        export_map2: HashMap(),
+        trait_map: @HashMap(),
 
         intr: session.intr()
     };
 
-    return self;
+    move self
 }
 
 /// The main resolver class.
@@ -720,8 +771,8 @@ struct Resolver {
 
     unused_import_lint_level: level,
 
-    trait_info: hashmap<def_id,@hashmap<Atom,()>>,
-    structs: hashmap<def_id,bool>,
+    trait_info: HashMap<def_id,@HashMap<Atom,()>>,
+    structs: HashMap<def_id,bool>,
 
     // The number of imports that are currently unresolved.
     mut unresolved_imports: uint,
@@ -756,9 +807,11 @@ struct Resolver {
     namespaces: ~[Namespace],
 
     def_map: DefMap,
-    export_map: ExportMap,
     export_map2: ExportMap2,
     trait_map: TraitMap,
+}
+
+impl Resolver {
 
     /// The main name resolution procedure.
     fn resolve(@self, this: @Resolver) {
@@ -811,10 +864,18 @@ struct Resolver {
         }));
     }
 
-    fn visibility_to_privacy(visibility: visibility) -> Privacy {
-        match visibility {
-            inherited | public => Public,
-            private => Private
+    fn visibility_to_privacy(visibility: visibility,
+                             legacy_exports: bool) -> Privacy {
+        if legacy_exports {
+            match visibility {
+              inherited | public => Public,
+              private => Private
+            }
+        } else {
+            match visibility {
+              public => Public,
+              inherited | private => Private
+            }
         }
     }
 
@@ -935,16 +996,21 @@ struct Resolver {
 
         let atom = item.ident;
         let sp = item.span;
+        let legacy = match parent {
+          ModuleReducedGraphParent(m) => m.legacy_exports
+        };
+        let privacy = self.visibility_to_privacy(item.vis, legacy);
 
         match item.node {
             item_mod(module_) => {
+              let legacy = has_legacy_export_attr(item.attrs);
               let (name_bindings, new_parent) = self.add_child(atom, parent,
                                                        ~[ModuleNS], sp);
 
                 let parent_link = self.get_parent_link(new_parent, atom);
                 let def_id = { crate: 0, node: item.id };
-              (*name_bindings).define_module(parent_link, Some(def_id),
-                                             sp);
+              (*name_bindings).define_module(privacy, parent_link,
+                                             Some(def_id), legacy, sp);
 
                 let new_parent =
                     ModuleReducedGraphParent((*name_bindings).get_module());
@@ -952,6 +1018,7 @@ struct Resolver {
                 visit_mod(module_, sp, item.id, new_parent, visitor);
             }
             item_foreign_mod(fm) => {
+              let legacy = has_legacy_export_attr(item.attrs);
               let new_parent = match fm.sort {
                 named => {
                   let (name_bindings, new_parent) = self.add_child(atom,
@@ -959,8 +1026,8 @@ struct Resolver {
 
                   let parent_link = self.get_parent_link(new_parent, atom);
                   let def_id = { crate: 0, node: item.id };
-                  (*name_bindings).define_module(parent_link, Some(def_id),
-                                                 sp);
+                  (*name_bindings).define_module(privacy, parent_link,
+                                                 Some(def_id), legacy, sp);
 
                   ModuleReducedGraphParent((*name_bindings).get_module())
                 }
@@ -978,17 +1045,14 @@ struct Resolver {
                                                       ~[ValueNS], sp);
 
                 (*name_bindings).define_value
-                    (self.visibility_to_privacy(item.vis),
-                     def_const(local_def(item.id)),
-                     sp);
+                    (privacy, def_const(local_def(item.id)), sp);
             }
             item_fn(_, purity, _, _) => {
               let (name_bindings, new_parent) = self.add_child(atom, parent,
                                                         ~[ValueNS], sp);
 
                 let def = def_fn(local_def(item.id), purity);
-                (*name_bindings).define_value
-                    (self.visibility_to_privacy(item.vis), def, sp);
+                (*name_bindings).define_value(privacy, def, sp);
                 visit_item(item, new_parent, visitor);
             }
 
@@ -998,9 +1062,7 @@ struct Resolver {
                                                       ~[TypeNS], sp);
 
                 (*name_bindings).define_type
-                    (self.visibility_to_privacy(item.vis),
-                     def_ty(local_def(item.id)),
-                     sp);
+                    (privacy, def_ty(local_def(item.id)), sp);
             }
 
             item_enum(enum_definition, _) => {
@@ -1009,12 +1071,10 @@ struct Resolver {
                                                                ~[TypeNS], sp);
 
                 (*name_bindings).define_type
-                    (self.visibility_to_privacy(item.vis),
-                     def_ty(local_def(item.id)),
-                     sp);
+                    (privacy, def_ty(local_def(item.id)), sp);
 
                 for enum_definition.variants.each |variant| {
-                    self.build_reduced_graph_for_variant(variant,
+                    self.build_reduced_graph_for_variant(*variant,
                                                          local_def(item.id),
                                                          new_parent,
                                                          visitor);
@@ -1030,17 +1090,13 @@ struct Resolver {
                             self.add_child(atom, parent, ~[TypeNS], sp);
 
                         (*name_bindings).define_type
-                            (self.visibility_to_privacy(item.vis),
-                             def_ty(local_def(item.id)),
-                             sp);
+                            (privacy, def_ty(local_def(item.id)), sp);
                         new_parent
                     }
                     Some(ctor) => {
                         let (name_bindings, new_parent) =
                             self.add_child(atom, parent, ~[ValueNS, TypeNS],
                                            sp);
-
-                        let privacy = self.visibility_to_privacy(item.vis);
 
                         (*name_bindings).define_type
                             (privacy, def_ty(local_def(item.id)), sp);
@@ -1055,7 +1111,7 @@ struct Resolver {
 
                 // Record the def ID of this struct.
                 self.structs.insert(local_def(item.id),
-                                    is_some(struct_definition.ctor));
+                                    struct_definition.ctor.is_some());
 
                 visit_item(item, new_parent, visitor);
             }
@@ -1071,7 +1127,7 @@ struct Resolver {
                 // Add the names of all the methods to the trait info.
                 let method_names = @atom_hashmap();
                 for methods.each |method| {
-                    let ty_m = trait_method_to_ty_method(method);
+                    let ty_m = trait_method_to_ty_method(*method);
 
                     let atom = ty_m.ident;
                     // Add it to the trait info if not static,
@@ -1097,7 +1153,7 @@ struct Resolver {
                 self.trait_info.insert(def_id, method_names);
 
                 (*name_bindings).define_type
-                    (self.visibility_to_privacy(item.vis),
+                    (privacy,
                      def_ty(def_id),
                      sp);
                 visit_item(item, new_parent, visitor);
@@ -1116,10 +1172,14 @@ struct Resolver {
                                        parent: ReducedGraphParent,
                                        &&visitor: vt<ReducedGraphParent>) {
 
+        let legacy = match parent {
+          ModuleReducedGraphParent(m) => m.legacy_exports
+        };
+
         let atom = variant.node.name;
         let (child, _) = self.add_child(atom, parent, ~[ValueNS],
                                         variant.span);
-        let privacy = self.visibility_to_privacy(variant.node.vis);
+        let privacy = self.visibility_to_privacy(variant.node.vis, legacy);
 
         match variant.node.kind {
             tuple_variant_kind(_) => {
@@ -1140,7 +1200,7 @@ struct Resolver {
                                      def_ty(local_def(variant.node.id)),
                                      variant.span);
                 for enum_definition.variants.each |variant| {
-                    self.build_reduced_graph_for_variant(variant, item_id,
+                    self.build_reduced_graph_for_variant(*variant, item_id,
                                                          parent, visitor);
                 }
             }
@@ -1154,6 +1214,11 @@ struct Resolver {
     fn build_reduced_graph_for_view_item(view_item: @view_item,
                                          parent: ReducedGraphParent,
                                          &&_visitor: vt<ReducedGraphParent>) {
+
+        let legacy = match parent {
+          ModuleReducedGraphParent(m) => m.legacy_exports
+        };
+        let privacy = self.visibility_to_privacy(view_item.vis, legacy);
         match view_item.node {
             view_item_import(view_paths) => {
                 for view_paths.each |view_path| {
@@ -1169,7 +1234,7 @@ struct Resolver {
 
                             for full_path.idents.eachi |i, ident| {
                                 if i != path_len - 1u {
-                                    (*module_path).push(ident);
+                                    (*module_path).push(*ident);
                                 }
                             }
                         }
@@ -1177,7 +1242,7 @@ struct Resolver {
                         view_path_glob(module_ident_path, _) |
                         view_path_list(module_ident_path, _, _) => {
                             for module_ident_path.idents.each |ident| {
-                                (*module_path).push(ident);
+                                (*module_path).push(*ident);
                             }
                         }
                     }
@@ -1195,7 +1260,8 @@ struct Resolver {
                             let subclass = @SingleImport(binding,
                                                          source_ident,
                                                          ns);
-                            self.build_import_directive(module_,
+                            self.build_import_directive(privacy,
+                                                        module_,
                                                         module_path,
                                                         subclass,
                                                         view_path.span);
@@ -1206,14 +1272,16 @@ struct Resolver {
                                 let subclass = @SingleImport(name,
                                                              name,
                                                              AnyNS);
-                                self.build_import_directive(module_,
+                                self.build_import_directive(privacy,
+                                                            module_,
                                                             module_path,
                                                             subclass,
                                                             view_path.span);
                             }
                         }
                         view_path_glob(_, _) => {
-                            self.build_import_directive(module_,
+                            self.build_import_directive(privacy,
+                                                        module_,
                                                         module_path,
                                                         @GlobImport,
                                                         view_path.span);
@@ -1292,8 +1360,10 @@ struct Resolver {
                         let parent_link = ModuleParentLink
                             (self.get_module_from_parent(new_parent), name);
 
-                        (*child_name_bindings).define_module(parent_link,
+                        (*child_name_bindings).define_module(privacy,
+                                                             parent_link,
                                                              Some(def_id),
+                                                             false,
                                                              view_item.span);
                         self.build_reduced_graph_for_external_crate
                             ((*child_name_bindings).get_module());
@@ -1350,7 +1420,7 @@ struct Resolver {
 
             let parent_module = self.get_module_from_parent(parent);
             let new_module = @Module(BlockParentLink(parent_module, block_id),
-                                     None);
+                                     None, false);
             parent_module.anonymous_children.insert(block_id, new_module);
             new_parent = ModuleReducedGraphParent(new_module);
         } else {
@@ -1360,7 +1430,7 @@ struct Resolver {
         visit_block(block, new_parent, visitor);
     }
 
-    fn handle_external_def(def: def, modules: hashmap<def_id, @Module>,
+    fn handle_external_def(def: def, modules: HashMap<def_id, @Module>,
                            child_name_bindings: @NameBindings,
                            final_ident: ~str,
                            atom: Atom, new_parent: ReducedGraphParent) {
@@ -1375,8 +1445,10 @@ struct Resolver {
 
                 match modules.find(def_id) {
                   None => {
-                    child_name_bindings.define_module(parent_link,
+                    child_name_bindings.define_module(Public,
+                                                      parent_link,
                                                       Some(def_id),
+                                                      false,
                                                       dummy_sp());
                     modules.insert(def_id,
                                    child_name_bindings.get_module());
@@ -1386,7 +1458,7 @@ struct Resolver {
                     // avoid creating cycles in the
                     // module graph.
 
-                    let resolution = @ImportResolution(dummy_sp());
+                    let resolution = @ImportResolution(Public, dummy_sp());
                     resolution.outstanding_references = 0;
 
                     match existing_module.parent_link {
@@ -1410,7 +1482,7 @@ struct Resolver {
                   }
                 }
               }
-              ModuleDef(module_) => {
+              ModuleDef(_priv, module_) => {
                 debug!("(building reduced graph for \
                         external crate) already created \
                         module");
@@ -1440,7 +1512,7 @@ struct Resolver {
               Some(method_names) => {
                 let interned_method_names = @atom_hashmap();
                 for method_names.each |method_data| {
-                    let (method_name, self_ty) = method_data;
+                    let (method_name, self_ty) = *method_data;
                     debug!("(building reduced graph for \
                             external crate) ... adding \
                             trait method '%s'",
@@ -1484,10 +1556,10 @@ struct Resolver {
      * crate.
      */
     fn build_reduced_graph_for_external_crate(root: @Module) {
-        let modules = new_def_hash();
+        let modules = HashMap();
 
         // Create all the items reachable by paths.
-        for each_path(self.session.cstore, get(root.def_id).crate)
+        for each_path(self.session.cstore, root.def_id.get().crate)
                 |path_entry| {
 
             debug!("(building reduced graph for external crate) found path \
@@ -1504,7 +1576,7 @@ struct Resolver {
 
             let mut current_module = root;
             for pieces.each |ident_str| {
-                let ident = self.session.ident_of(ident_str);
+                let ident = self.session.ident_of(*ident_str);
                 // Create or reuse a graph node for the child.
                 let (child_name_bindings, new_parent) =
                     self.add_child(ident,
@@ -1516,13 +1588,15 @@ struct Resolver {
                 match child_name_bindings.module_def {
                     NoModuleDef => {
                         debug!("(building reduced graph for external crate) \
-                                autovivifying %s", ident_str);
+                                autovivifying %s", *ident_str);
                         let parent_link = self.get_parent_link(new_parent,
                                                                ident);
-                        (*child_name_bindings).define_module(parent_link,
-                                                       None, dummy_sp());
+                        (*child_name_bindings).define_module(Public,
+                                                             parent_link,
+                                                             None, false,
+                                                             dummy_sp());
                     }
-                    ModuleDef(_) => { /* Fall through. */ }
+                    ModuleDef(*) => { /* Fall through. */ }
                 }
 
                 current_module = (*child_name_bindings).get_module();
@@ -1558,12 +1632,14 @@ struct Resolver {
     }
 
     /// Creates and adds an import directive to the given module.
-    fn build_import_directive(module_: @Module,
+    fn build_import_directive(privacy: Privacy,
+                              module_: @Module,
                               module_path: @DVec<Atom>,
                               subclass: @ImportDirectiveSubclass,
                               span: span) {
 
-        let directive = @ImportDirective(module_path, subclass, span);
+        let directive = @ImportDirective(privacy, module_path,
+                                         subclass, span);
         module_.imports.push(directive);
 
         // Bump the reference count on the name. Or, if this is a glob, set
@@ -1576,7 +1652,7 @@ struct Resolver {
                         resolution.outstanding_references += 1u;
                     }
                     None => {
-                        let resolution = @ImportResolution(span);
+                        let resolution = @ImportResolution(privacy, span);
                         resolution.outstanding_references = 1u;
                         module_.import_resolutions.insert(target, resolution);
                     }
@@ -1641,7 +1717,7 @@ struct Resolver {
         self.resolve_imports_for_module(module_);
 
         for module_.children.each |_name, child_node| {
-            match (*child_node).get_module_if_available() {
+            match child_node.get_module_if_available() {
                 None => {
                     // Nothing to do.
                 }
@@ -1698,7 +1774,7 @@ struct Resolver {
             } else {
                 result += ~"::";
             }
-            result += self.session.str_of(atom);
+            result += self.session.str_of(*atom);
         }
         // XXX: Shouldn't copy here. We need string builder functionality.
         return result;
@@ -1762,8 +1838,9 @@ struct Resolver {
                         }
                         GlobImport => {
                             let span = import_directive.span;
+                            let p = import_directive.privacy;
                             resolution_result =
-                                self.resolve_glob_import(module_,
+                                self.resolve_glob_import(p, module_,
                                                          containing_module,
                                                          span);
                         }
@@ -1788,7 +1865,7 @@ struct Resolver {
         // processing imports here. (See the loop in
         // resolve_imports_for_module.)
 
-        if resolution_result != Indeterminate {
+        if !resolution_result.indeterminate() {
             match *import_directive.subclass {
                 GlobImport => {
                     assert module_.glob_count >= 1u;
@@ -2129,7 +2206,8 @@ struct Resolver {
      * succeeds or bails out (as importing * from an empty module or a module
      * that exports nothing is valid).
      */
-    fn resolve_glob_import(module_: @Module,
+    fn resolve_glob_import(privacy: Privacy,
+                           module_: @Module,
                            containing_module: @Module,
                            span: span)
                         -> ResolveResult<()> {
@@ -2169,7 +2247,8 @@ struct Resolver {
                 None => {
                     // Simple: just copy the old import resolution.
                     let new_import_resolution =
-                        @ImportResolution(target_import_resolution.span);
+                        @ImportResolution(privacy,
+                                          target_import_resolution.span);
                     new_import_resolution.module_target =
                         copy target_import_resolution.module_target;
                     new_import_resolution.value_target =
@@ -2227,7 +2306,8 @@ struct Resolver {
             match module_.import_resolutions.find(atom) {
                 None => {
                     // Create a new import resolution from this child.
-                    dest_import_resolution = @ImportResolution(span);
+                    dest_import_resolution = @ImportResolution(privacy,
+                                                               span);
                     module_.import_resolutions.insert
                         (atom, dest_import_resolution);
                 }
@@ -2305,7 +2385,7 @@ struct Resolver {
                                                            str_of(name)));
                             return Failed;
                         }
-                        ModuleDef(copy module_) => {
+                        ModuleDef(_, copy module_) => {
                             search_module = module_;
                         }
                     }
@@ -2461,7 +2541,7 @@ struct Resolver {
                                 wasn't actually a module!");
                         return Failed;
                     }
-                    ModuleDef(module_) => {
+                    ModuleDef(_, module_) => {
                         return Success(module_);
                     }
                 }
@@ -2480,8 +2560,9 @@ struct Resolver {
     }
 
     fn name_is_exported(module_: @Module, name: Atom) -> bool {
-        return module_.exported_names.size() == 0u ||
-                module_.exported_names.contains_key(name);
+        return !module_.legacy_exports ||
+            module_.exported_names.size() == 0u ||
+            module_.exported_names.contains_key(name);
     }
 
     /**
@@ -2731,7 +2812,7 @@ struct Resolver {
 
         // Descend into children and anonymous children.
         for module_.children.each |_name, child_node| {
-            match (*child_node).get_module_if_available() {
+            match child_node.get_module_if_available() {
                 None => {
                     // Continue.
                 }
@@ -2783,7 +2864,7 @@ struct Resolver {
         self.record_exports_for_module(module_);
 
         for module_.children.each |_atom, child_name_bindings| {
-            match (*child_name_bindings).get_module_if_available() {
+            match child_name_bindings.get_module_if_available() {
                 None => {
                     // Nothing to do.
                 }
@@ -2800,52 +2881,12 @@ struct Resolver {
 
     fn record_exports_for_module(module_: @Module) {
         let mut exports2 = ~[];
-        for module_.exported_names.each |name, node_id| {
-            let mut exports = ~[];
-            for self.namespaces.each |namespace| {
-                match self.resolve_definition_of_name_in_module(module_,
-                                                              name,
-                                                              namespace,
-                                                              Xray) {
-                    NoNameDefinition => {
-                        // Nothing to do.
-                    }
-                    ChildNameDefinition(target_def) => {
-                        debug!("(computing exports) found child export '%s' \
-                                for %?",
-                               self.session.str_of(name),
-                               module_.def_id);
-                        vec::push(exports, {
-                            reexp: false,
-                            id: def_id_of_def(target_def)
-                        });
-                        vec::push(exports2, Export2 {
-                            reexport: false,
-                            name: self.session.str_of(name),
-                            def_id: def_id_of_def(target_def)
-                        });
-                    }
-                    ImportNameDefinition(target_def) => {
-                        debug!("(computing exports) found reexport '%s' for \
-                                %?",
-                               self.session.str_of(name),
-                               module_.def_id);
-                        vec::push(exports, {
-                            reexp: true,
-                            id: def_id_of_def(target_def)
-                        });
-                        vec::push(exports2, Export2 {
-                            reexport: true,
-                            name: self.session.str_of(name),
-                            def_id: def_id_of_def(target_def)
-                        });
-                    }
-                }
-            }
 
-            self.export_map.insert(node_id, exports);
+        if module_.legacy_exports {
+            self.add_exports_for_legacy_module(&mut exports2, module_);
+        } else {
+            self.add_exports_for_module(&mut exports2, module_);
         }
-
         match copy module_.def_id {
             Some(def_id) => {
                 self.export_map2.insert(def_id.node, move exports2);
@@ -2853,6 +2894,93 @@ struct Resolver {
                        def_id.node);
             }
             None => {}
+        }
+    }
+
+
+    fn add_exports_of_namebindings(exports2: &mut ~[Export2],
+                                   atom: Atom,
+                                   namebindings: @NameBindings,
+                                   reexport: bool) {
+        for [ModuleNS, TypeNS, ValueNS].each |ns| {
+            match namebindings.def_for_namespace(*ns) {
+                Some(d) if d.privacy == Public => {
+                    debug!("(computing exports) YES: %s '%s' \
+                            => %?",
+                           if reexport { ~"reexport" } else { ~"export"},
+                           self.session.str_of(atom),
+                           def_id_of_def(d.def));
+                    vec::push(*exports2,  Export2 {
+                        reexport: reexport,
+                        name: self.session.str_of(atom),
+                        def_id: def_id_of_def(d.def)
+                    });
+                }
+                _ => ()
+            }
+        }
+    }
+
+    fn add_exports_for_module(exports2: &mut ~[Export2], module_: @Module) {
+
+        for module_.children.each_ref |atom, namebindings| {
+            debug!("(computing exports) maybe export '%s'",
+                   self.session.str_of(*atom));
+            self.add_exports_of_namebindings(exports2, *atom,
+                                             *namebindings, false)
+        }
+
+        for module_.import_resolutions.each_ref |atom, importresolution| {
+            for [ModuleNS, TypeNS, ValueNS].each |ns| {
+                match importresolution.target_for_namespace(*ns) {
+                    Some(target) => {
+                        debug!("(computing exports) maybe reexport '%s'",
+                               self.session.str_of(*atom));
+                        self.add_exports_of_namebindings(exports2, *atom,
+                                                         target.bindings,
+                                                         true)
+                    }
+                    _ => ()
+                }
+            }
+        }
+    }
+
+    fn add_exports_for_legacy_module(exports2: &mut ~[Export2],
+                                     module_: @Module) {
+        for module_.exported_names.each |name, _exp_node_id| {
+            for self.namespaces.each |namespace| {
+                match self.resolve_definition_of_name_in_module(module_,
+                                                                name,
+                                                                *namespace,
+                                                                Xray) {
+                    NoNameDefinition => {
+                        // Nothing to do.
+                    }
+                    ChildNameDefinition(target_def) => {
+                        debug!("(computing exports) legacy export '%s' \
+                                for %?",
+                               self.session.str_of(name),
+                               module_.def_id);
+                        vec::push(*exports2, Export2 {
+                            reexport: false,
+                            name: self.session.str_of(name),
+                            def_id: def_id_of_def(target_def)
+                        });
+                    }
+                    ImportNameDefinition(target_def) => {
+                        debug!("(computing exports) legacy reexport '%s' for \
+                                %?",
+                               self.session.str_of(name),
+                               module_.def_id);
+                        vec::push(*exports2, Export2 {
+                            reexport: true,
+                            name: self.session.str_of(name),
+                            def_id: def_id_of_def(target_def)
+                        });
+                    }
+                }
+            }
         }
     }
 
@@ -3132,7 +3260,7 @@ struct Resolver {
                         //
                         // XXX: Do we need a node ID here?
 
-                        match method {
+                        match *method {
                           required(ty_m) => {
                             do self.with_type_parameter_rib
                                 (HasTypeParameters(&ty_m.tps,
@@ -3196,12 +3324,12 @@ struct Resolver {
                                                        OpaqueFunctionRibKind))
                                         || {
 
-                                    visit_foreign_item(foreign_item, (),
+                                    visit_foreign_item(*foreign_item, (),
                                                        visitor);
                                 }
                             }
                             foreign_item_const(_) => {
-                                visit_foreign_item(foreign_item, (),
+                                visit_foreign_item(*foreign_item, (),
                                                    visitor);
                             }
                         }
@@ -3312,9 +3440,9 @@ struct Resolver {
                 // Resolve each captured item.
                 for (*capture_clause).each |capture_item| {
                     match self.resolve_identifier(capture_item.name,
-                                                ValueNS,
-                                                true,
-                                                capture_item.span) {
+                                                  ValueNS,
+                                                  true,
+                                                  capture_item.span) {
                         None => {
                             self.session.span_err(capture_item.span,
                                                   ~"unresolved name in \
@@ -3396,8 +3524,8 @@ struct Resolver {
                                visitor: ResolveVisitor) {
 
         for type_parameters.each |type_parameter| {
-            for (*type_parameter.bounds).each |bound| {
-                match bound {
+            for type_parameter.bounds.each |bound| {
+                match *bound {
                     bound_copy | bound_send | bound_const | bound_owned => {
                         // Nothing to do.
                     }
@@ -3456,7 +3584,7 @@ struct Resolver {
             // Resolve methods.
             for methods.each |method| {
                 self.resolve_method(MethodRibKind(id, Provided(method.id)),
-                                    method,
+                                    *method,
                                     outer_type_parameter_count,
                                     visitor);
             }
@@ -3579,7 +3707,7 @@ struct Resolver {
                 // We also need a new scope for the method-specific
                 // type parameters.
                 self.resolve_method(MethodRibKind(id, Provided(method.id)),
-                                    method,
+                                    *method,
                                     outer_type_parameter_count,
                                     visitor);
 /*
@@ -3638,7 +3766,7 @@ struct Resolver {
     }
 
     fn binding_mode_map(pat: @pat) -> BindingMap {
-        let result = uint_hash();
+        let result = HashMap();
         do pat_bindings(self.def_map, pat) |binding_mode, _id, sp, path| {
             let ident = path_to_ident(path);
             result.insert(ident,
@@ -3651,8 +3779,8 @@ struct Resolver {
     fn check_consistent_bindings(arm: arm) {
         if arm.pats.len() == 0 { return; }
         let map_0 = self.binding_mode_map(arm.pats[0]);
-        for arm.pats.eachi() |i, p: @pat| {
-            let map_i = self.binding_mode_map(p);
+        for arm.pats.eachi() |i, p| {
+            let map_i = self.binding_mode_map(*p);
 
             for map_0.each |key, binding_0| {
                 match map_i.find(key) {
@@ -3692,7 +3820,7 @@ struct Resolver {
 
         let bindings_list = atom_hashmap();
         for arm.pats.each |pattern| {
-            self.resolve_pattern(pattern, RefutableMode, Immutable,
+            self.resolve_pattern(*pattern, RefutableMode, Immutable,
                                  Some(bindings_list), visitor);
         }
 
@@ -3783,7 +3911,7 @@ struct Resolver {
                         debug!("(resolving type) writing resolution for `%s` \
                                 (id %d)",
                                connect(path.idents.map(
-                                   |x| self.session.str_of(x)), ~"::"),
+                                   |x| self.session.str_of(*x)), ~"::"),
                                path_id);
                         self.record_def(path_id, def);
                     }
@@ -3791,7 +3919,7 @@ struct Resolver {
                         self.session.span_err
                             (ty.span, fmt!("use of undeclared type name `%s`",
                                            connect(path.idents.map(
-                                               |x| self.session.str_of(x)),
+                                               |x| self.session.str_of(*x)),
                                                    ~"::")));
                     }
                 }
@@ -3809,7 +3937,7 @@ struct Resolver {
                        mutability: Mutability,
                        // Maps idents to the node ID for the (outermost)
                        // pattern that binds them
-                       bindings_list: Option<hashmap<Atom,node_id>>,
+                       bindings_list: Option<HashMap<Atom,node_id>>,
                        visitor: ResolveVisitor) {
 
         let pat_id = pattern.id;
@@ -3913,7 +4041,7 @@ struct Resolver {
 
                     // Check the types in the path pattern.
                     for path.types.each |ty| {
-                        self.resolve_type(ty, visitor);
+                        self.resolve_type(*ty, visitor);
                     }
                 }
 
@@ -3938,7 +4066,7 @@ struct Resolver {
 
                     // Check the types in the path pattern.
                     for path.types.each |ty| {
-                        self.resolve_type(ty, visitor);
+                        self.resolve_type(*ty, visitor);
                     }
                 }
 
@@ -3969,7 +4097,7 @@ struct Resolver {
                                 path.span,
                                 fmt!("`%s` does not name a structure",
                                      connect(path.idents.map(
-                                         |x| self.session.str_of(x)),
+                                         |x| self.session.str_of(*x)),
                                              ~"::")));
                         }
                     }
@@ -4031,7 +4159,7 @@ struct Resolver {
 
         // First, resolve the types.
         for path.types.each |ty| {
-            self.resolve_type(ty, visitor);
+            self.resolve_type(*ty, visitor);
         }
 
         if path.global {
@@ -4093,7 +4221,7 @@ struct Resolver {
         match containing_module.children.find(name) {
             Some(child_name_bindings) => {
                 match (*child_name_bindings).def_for_namespace(namespace) {
-                    Some(def) if def.privacy == Public => {
+                    Some(def) if def.privacy == Public || xray == Xray => {
                         // Found it. Stop the search here.
                         return ChildNameDefinition(def.def);
                     }
@@ -4145,7 +4273,7 @@ struct Resolver {
                 break;
             }
 
-            (*module_path_atoms).push(ident);
+            (*module_path_atoms).push(*ident);
         }
 
         return module_path_atoms;
@@ -4371,13 +4499,13 @@ struct Resolver {
                         // Write the result into the def map.
                         debug!("(resolving expr) resolved `%s`",
                                connect(path.idents.map(
-                                   |x| self.session.str_of(x)), ~"::"));
+                                   |x| self.session.str_of(*x)), ~"::"));
                         self.record_def(expr.id, def);
                     }
                     None => {
                         let wrong_name =
                             connect(path.idents.map(
-                                |x| self.session.str_of(x)), ~"::") ;
+                                |x| self.session.str_of(*x)), ~"::") ;
                         if self.name_exists_in_scope_class(wrong_name) {
                             self.session.span_err(expr.span,
                                         fmt!("unresolved name: `%s`. \
@@ -4439,7 +4567,7 @@ struct Resolver {
                             path.span,
                             fmt!("`%s` does not name a structure",
                                  connect(path.idents.map(
-                                     |x| self.session.str_of(x)),
+                                     |x| self.session.str_of(*x)),
                                          ~"::")));
                     }
                 }
@@ -4557,7 +4685,7 @@ struct Resolver {
                 Some(trait_def_ids) => {
                     for trait_def_ids.each |trait_def_id| {
                         self.add_trait_info_if_containing_method
-                            (found_traits, trait_def_id, name);
+                            (found_traits, *trait_def_id, name);
                     }
                 }
                 None => {
@@ -4834,7 +4962,6 @@ struct Resolver {
 /// Entry point to crate resolution.
 fn resolve_crate(session: session, lang_items: LanguageItems, crate: @crate)
               -> { def_map: DefMap,
-                   exp_map: ExportMap,
                    exp_map2: ExportMap2,
                    trait_map: TraitMap } {
 
@@ -4842,7 +4969,6 @@ fn resolve_crate(session: session, lang_items: LanguageItems, crate: @crate)
     resolver.resolve(resolver);
     return {
         def_map: resolver.def_map,
-        exp_map: resolver.export_map,
         exp_map2: resolver.export_map2,
         trait_map: resolver.trait_map
     };

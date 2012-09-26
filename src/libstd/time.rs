@@ -3,7 +3,7 @@
 
 use core::cmp::Eq;
 use libc::{c_char, c_int, c_long, size_t, time_t};
-use io::Reader;
+use io::{Reader, ReaderUtil};
 use result::{Result, Ok, Err};
 
 export
@@ -22,6 +22,7 @@ export
 
 #[abi = "cdecl"]
 extern mod rustrt {
+    #[legacy_exports];
     fn get_time(&sec: i64, &nsec: i32);
     fn precise_time_ns(&ns: u64);
 
@@ -37,10 +38,10 @@ extern mod rustrt {
 type Timespec = {sec: i64, nsec: i32};
 
 impl Timespec : Eq {
-    pure fn eq(&&other: Timespec) -> bool {
-        self.sec == other.sec && self.nsec == other.nsec
+    pure fn eq(other: &Timespec) -> bool {
+        self.sec == (*other).sec && self.nsec == (*other).nsec
     }
-    pure fn ne(&&other: Timespec) -> bool { !self.eq(other) }
+    pure fn ne(other: &Timespec) -> bool { !self.eq(other) }
 }
 
 /**
@@ -92,21 +93,21 @@ type Tm_ = {
 };
 
 impl Tm_ : Eq {
-    pure fn eq(&&other: Tm_) -> bool {
-        self.tm_sec == other.tm_sec &&
-        self.tm_min == other.tm_min &&
-        self.tm_hour == other.tm_hour &&
-        self.tm_mday == other.tm_mday &&
-        self.tm_mon == other.tm_mon &&
-        self.tm_year == other.tm_year &&
-        self.tm_wday == other.tm_wday &&
-        self.tm_yday == other.tm_yday &&
-        self.tm_isdst == other.tm_isdst &&
-        self.tm_gmtoff == other.tm_gmtoff &&
-        self.tm_zone == other.tm_zone &&
-        self.tm_nsec == other.tm_nsec
+    pure fn eq(other: &Tm_) -> bool {
+        self.tm_sec == (*other).tm_sec &&
+        self.tm_min == (*other).tm_min &&
+        self.tm_hour == (*other).tm_hour &&
+        self.tm_mday == (*other).tm_mday &&
+        self.tm_mon == (*other).tm_mon &&
+        self.tm_year == (*other).tm_year &&
+        self.tm_wday == (*other).tm_wday &&
+        self.tm_yday == (*other).tm_yday &&
+        self.tm_isdst == (*other).tm_isdst &&
+        self.tm_gmtoff == (*other).tm_gmtoff &&
+        self.tm_zone == (*other).tm_zone &&
+        self.tm_nsec == (*other).tm_nsec
     }
-    pure fn ne(&&other: Tm_) -> bool { !self.eq(other) }
+    pure fn ne(other: &Tm_) -> bool { !self.eq(other) }
 }
 
 enum Tm {
@@ -114,8 +115,8 @@ enum Tm {
 }
 
 impl Tm : Eq {
-    pure fn eq(&&other: Tm) -> bool { *self == *other }
-    pure fn ne(&&other: Tm) -> bool { *self != *other }
+    pure fn eq(other: &Tm) -> bool { *self == *(*other) }
+    pure fn ne(other: &Tm) -> bool { *self != *(*other) }
 }
 
 fn empty_tm() -> Tm {
@@ -763,7 +764,7 @@ fn strftime(format: &str, +tm: Tm) -> ~str {
         while !rdr.eof() {
             match rdr.read_char() {
                 '%' => buf += parse_type(rdr.read_char(), &tm),
-                ch => str::push_char(buf, ch)
+                ch => str::push_char(&mut buf, ch)
             }
         }
     }
@@ -848,7 +849,7 @@ impl Tm {
 
 #[cfg(test)]
 mod tests {
-    import task;
+    #[legacy_exports];
 
     #[test]
     fn test_get_time() {
@@ -1024,7 +1025,7 @@ mod tests {
             }
         }
 
-        [
+        for vec::each([
             ~"Sunday",
             ~"Monday",
             ~"Tuesday",
@@ -1032,9 +1033,11 @@ mod tests {
             ~"Thursday",
             ~"Friday",
             ~"Saturday"
-        ]/_.iter(|day| assert test(day, ~"%A"));
+        ]) |day| {
+            assert test(*day, ~"%A");
+        }
 
-        [
+        for vec::each([
             ~"Sun",
             ~"Mon",
             ~"Tue",
@@ -1042,9 +1045,11 @@ mod tests {
             ~"Thu",
             ~"Fri",
             ~"Sat"
-        ]/_.iter(|day| assert test(day, ~"%a"));
+        ]) |day| {
+            assert test(*day, ~"%a");
+        }
 
-        [
+        for vec::each([
             ~"January",
             ~"February",
             ~"March",
@@ -1057,9 +1062,11 @@ mod tests {
             ~"October",
             ~"November",
             ~"December"
-        ]/_.iter(|day| assert test(day, ~"%B"));
+        ]) |day| {
+            assert test(*day, ~"%B");
+        }
 
-        [
+        for vec::each([
             ~"Jan",
             ~"Feb",
             ~"Mar",
@@ -1072,7 +1079,9 @@ mod tests {
             ~"Oct",
             ~"Nov",
             ~"Dec"
-        ]/_.iter(|day| assert test(day, ~"%b"));
+        ]) |day| {
+            assert test(*day, ~"%b");
+        }
 
         assert test(~"19", ~"%C");
         assert test(~"Fri Feb 13 23:31:30 2009", ~"%c");

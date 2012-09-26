@@ -1,44 +1,44 @@
+/*!
+
+Deprecated communication between tasks
+
+Communication between tasks is facilitated by ports (in the receiving
+task), and channels (in the sending task). Any number of channels may
+feed into a single port.  Ports and channels may only transmit values
+of unique types; that is, values that are statically guaranteed to be
+accessed by a single 'owner' at a time.  Unique types include scalars,
+vectors, strings, and records, tags, tuples and unique boxes (`~T`)
+thereof. Most notably, shared boxes (`@T`) may not be transmitted
+across channels.
+
+# Example
+
+~~~
+let po = comm::Port();
+let ch = comm::Chan(po);
+
+do task::spawn {
+    comm::send(ch, "Hello, World");
+}
+
+io::println(comm::recv(p));
+~~~
+
+# Note
+
+Use of this module is deprecated in favor of `core::pipes`. In the
+`core::comm` will likely be rewritten with pipes, at which point it
+will once again be the preferred module for intertask communication.
+
+*/
+
 // NB: transitionary, de-mode-ing.
 #[forbid(deprecated_mode)];
 #[forbid(deprecated_pattern)];
-/*!
- * Communication between tasks
- *
- * Communication between tasks is facilitated by ports (in the receiving
- * task), and channels (in the sending task). Any number of channels may
- * feed into a single port.  Ports and channels may only transmit values
- * of unique types; that is, values that are statically guaranteed to be
- * accessed by a single 'owner' at a time.  Unique types include scalars,
- * vectors, strings, and records, tags, tuples and unique boxes (`~T`)
- * thereof. Most notably, shared boxes (`@T`) may not be transmitted
- * across channels.
- *
- * # Example
- *
- * ~~~
- * let po = comm::port();
- * let ch = comm::chan(po);
- *
- * do task::spawn {
- *     comm::send(ch, "Hello, World");
- * }
- *
- * io::println(comm::recv(p));
- * ~~~
- */
 
 use either::Either;
 use libc::size_t;
 
-export Port;
-export Chan;
-export send;
-export recv;
-export peek;
-export recv_chan;
-export select2;
-export methods;
-export listen;
 
 
 /**
@@ -48,7 +48,7 @@ export listen;
  * transmitted. If a port value is copied, both copies refer to the same
  * port.  Ports may be associated with multiple `chan`s.
  */
-enum Port<T: Send> {
+pub enum Port<T: Send> {
     Port_(@PortPtr<T>)
 }
 
@@ -64,19 +64,19 @@ enum Port<T: Send> {
  * data will be silently dropped.  Channels may be duplicated and
  * themselves transmitted over other channels.
  */
-enum Chan<T: Send> {
+pub enum Chan<T: Send> {
     Chan_(port_id)
 }
 
 /// Constructs a port
-fn Port<T: Send>() -> Port<T> {
+pub fn Port<T: Send>() -> Port<T> {
     Port_(@PortPtr(rustrt::new_port(sys::size_of::<T>() as size_t)))
 }
 
 impl<T: Send> Port<T> {
 
     fn chan() -> Chan<T> { Chan(self) }
-    fn send(+v: T) { self.chan().send(v) }
+    fn send(+v: T) { self.chan().send(move v) }
     fn recv() -> T { recv(self) }
     fn peek() -> bool { peek(self) }
 
@@ -85,14 +85,14 @@ impl<T: Send> Port<T> {
 impl<T: Send> Chan<T> {
 
     fn chan() -> Chan<T> { self }
-    fn send(+v: T) { send(self, v) }
+    fn send(+v: T) { send(self, move v) }
     fn recv() -> T { recv_chan(self) }
     fn peek() -> bool { peek_chan(self) }
 
 }
 
 /// Open a new receiving channel for the duration of a function
-fn listen<T: Send, U>(f: fn(Chan<T>) -> U) -> U {
+pub fn listen<T: Send, U>(f: fn(Chan<T>) -> U) -> U {
     let po = Port();
     f(po.chan())
 }
@@ -103,17 +103,17 @@ struct PortPtr<T:Send> {
       do task::unkillable {
         // Once the port is detached it's guaranteed not to receive further
         // messages
-        let yield = 0u;
+        let yield = 0;
         let yieldp = ptr::addr_of(yield);
         rustrt::rust_port_begin_detach(self.po, yieldp);
-        if yield != 0u {
+        if yield != 0 {
             // Need to wait for the port to be detached
             task::yield();
         }
         rustrt::rust_port_end_detach(self.po);
 
         // Drain the port so that all the still-enqueued items get dropped
-        while rustrt::rust_port_size(self.po) > 0u as size_t {
+        while rustrt::rust_port_size(self.po) > 0 as size_t {
             recv_::<T>(self.po);
         }
         rustrt::del_port(self.po);
@@ -167,7 +167,7 @@ fn as_raw_port<T: Send, U>(ch: comm::Chan<T>, f: fn(*rust_port) -> U) -> U {
  * Constructs a channel. The channel is bound to the port used to
  * construct it.
  */
-fn Chan<T: Send>(p: Port<T>) -> Chan<T> {
+pub fn Chan<T: Send>(p: Port<T>) -> Chan<T> {
     Chan_(rustrt::get_port_id((**p).po))
 }
 
@@ -175,13 +175,13 @@ fn Chan<T: Send>(p: Port<T>) -> Chan<T> {
  * Sends data over a channel. The sent data is moved into the channel,
  * whereupon the caller loses access to it.
  */
-fn send<T: Send>(ch: Chan<T>, +data: T) {
+pub fn send<T: Send>(ch: Chan<T>, +data: T) {
     let Chan_(p) = ch;
     let data_ptr = ptr::addr_of(data) as *();
     let res = rustrt::rust_port_id_send(p, data_ptr);
-    if res != 0u unsafe {
+    if res != 0 unsafe {
         // Data sent successfully
-        unsafe::forget(data);
+        cast::forget(move data);
     }
     task::yield();
 }
@@ -190,13 +190,13 @@ fn send<T: Send>(ch: Chan<T>, +data: T) {
  * Receive from a port.  If no data is available on the port then the
  * task will block until data becomes available.
  */
-fn recv<T: Send>(p: Port<T>) -> T { recv_((**p).po) }
+pub fn recv<T: Send>(p: Port<T>) -> T { recv_((**p).po) }
 
 /// Returns true if there are messages available
-fn peek<T: Send>(p: Port<T>) -> bool { peek_((**p).po) }
+pub fn peek<T: Send>(p: Port<T>) -> bool { peek_((**p).po) }
 
 #[doc(hidden)]
-fn recv_chan<T: Send>(ch: comm::Chan<T>) -> T {
+pub fn recv_chan<T: Send>(ch: comm::Chan<T>) -> T {
     as_raw_port(ch, |x|recv_(x))
 }
 
@@ -206,13 +206,13 @@ fn peek_chan<T: Send>(ch: comm::Chan<T>) -> bool {
 
 /// Receive on a raw port pointer
 fn recv_<T: Send>(p: *rust_port) -> T {
-    let yield = 0u;
+    let yield = 0;
     let yieldp = ptr::addr_of(yield);
     let mut res;
     res = rusti::init::<T>();
     rustrt::port_recv(ptr::addr_of(res) as *uint, p, yieldp);
 
-    if yield != 0u {
+    if yield != 0 {
         // Data isn't available yet, so res has not been initialized.
         task::yield();
     } else {
@@ -220,30 +220,30 @@ fn recv_<T: Send>(p: *rust_port) -> T {
         // this is a good place to yield
         task::yield();
     }
-    return res;
+    move res
 }
 
 fn peek_(p: *rust_port) -> bool {
     // Yield here before we check to see if someone sent us a message
-    // FIXME #524, if the compilergenerates yields, we don't need this
+    // FIXME #524, if the compiler generates yields, we don't need this
     task::yield();
-    rustrt::rust_port_size(p) != 0u as libc::size_t
+    rustrt::rust_port_size(p) != 0 as libc::size_t
 }
 
 /// Receive on one of two ports
-fn select2<A: Send, B: Send>(p_a: Port<A>, p_b: Port<B>)
+pub fn select2<A: Send, B: Send>(p_a: Port<A>, p_b: Port<B>)
     -> Either<A, B> {
     let ports = ~[(**p_a).po, (**p_b).po];
-    let yield = 0u, yieldp = ptr::addr_of(yield);
+    let yield = 0, yieldp = ptr::addr_of(yield);
 
     let mut resport: *rust_port;
     resport = rusti::init::<*rust_port>();
-    do vec::as_buf(ports) |ports, n_ports| {
+    do vec::as_imm_buf(ports) |ports, n_ports| {
         rustrt::rust_port_select(ptr::addr_of(resport), ports,
                                  n_ports as size_t, yieldp);
     }
 
-    if yield != 0u {
+    if yield != 0 {
         // Wait for data
         task::yield();
     } else {
@@ -275,6 +275,7 @@ type port_id = int;
 
 #[abi = "cdecl"]
 extern mod rustrt {
+    #[legacy_exports];
     fn rust_port_id_send(target_port: port_id, data: *()) -> libc::uintptr_t;
 
     fn new_port(unit_sz: libc::size_t) -> *rust_port;
@@ -297,6 +298,7 @@ extern mod rustrt {
 
 #[abi = "rust-intrinsic"]
 extern mod rusti {
+    #[legacy_exports];
     fn init<T>() -> T;
 }
 
@@ -380,16 +382,16 @@ fn test_select2_rendezvous() {
     let ch_a = Chan(po_a);
     let ch_b = Chan(po_b);
 
-    for iter::repeat(10u) {
+    for iter::repeat(10) {
         do task::spawn {
-            for iter::repeat(10u) { task::yield() }
+            for iter::repeat(10) { task::yield() }
             send(ch_a, ~"a");
         };
 
         assert select2(po_a, po_b) == either::Left(~"a");
 
         do task::spawn {
-            for iter::repeat(10u) { task::yield() }
+            for iter::repeat(10) { task::yield() }
             send(ch_b, ~"b");
         };
 
@@ -404,7 +406,7 @@ fn test_select2_stress() {
     let ch_a = Chan(po_a);
     let ch_b = Chan(po_b);
 
-    let msgs = 100u;
+    let msgs = 100;
     let times = 4u;
 
     for iter::repeat(times) {
@@ -420,17 +422,17 @@ fn test_select2_stress() {
         };
     }
 
-    let mut as = 0;
+    let mut as_ = 0;
     let mut bs = 0;
     for iter::repeat(msgs * times * 2u) {
         match select2(po_a, po_b) {
-          either::Left(~"a") => as += 1,
+          either::Left(~"a") => as_ += 1,
           either::Right(~"b") => bs += 1,
           _ => fail ~"test_select_2_stress failed"
         }
     }
 
-    assert as == 400;
+    assert as_ == 400;
     assert bs == 400;
 }
 
@@ -457,7 +459,7 @@ fn test_recv_chan_wrong_task() {
     let po = Port();
     let ch = Chan(po);
     send(ch, ~"flower");
-    assert result::is_err(task::try(||
+    assert result::is_err(&task::try(||
         recv_chan(ch)
     ))
 }
@@ -490,7 +492,7 @@ fn test_listen() {
 #[test]
 #[ignore(cfg(windows))]
 fn test_port_detach_fail() {
-    for iter::repeat(100u) {
+    for iter::repeat(100) {
         do task::spawn_unlinked {
             let po = Port();
             let ch = po.chan();

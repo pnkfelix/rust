@@ -2,7 +2,7 @@ use libc::{c_double, c_int};
 use f64::*;
 
 fn to_c_int(v: &mut int) -> &mut c_int unsafe {
-    unsafe::reinterpret_cast(&v)
+    cast::reinterpret_cast(&v)
 }
 
 fn lgamma(n: c_double, value: &mut int) -> c_double {
@@ -12,6 +12,7 @@ fn lgamma(n: c_double, value: &mut int) -> c_double {
 #[link_name = "m"]
 #[abi = "cdecl"]
 extern mod m {
+    #[legacy_exports];
     #[cfg(unix)]
     #[link_name="lgamma_r"] fn lgamma(n: c_double, sign: &mut c_int)
       -> c_double;

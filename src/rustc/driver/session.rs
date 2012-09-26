@@ -13,19 +13,19 @@ use middle::lint;
 enum os { os_win32, os_macos, os_linux, os_freebsd, }
 
 impl os : cmp::Eq {
-    pure fn eq(&&other: os) -> bool {
-        (self as uint) == (other as uint)
+    pure fn eq(other: &os) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: os) -> bool { !self.eq(other) }
+    pure fn ne(other: &os) -> bool { !self.eq(other) }
 }
 
 enum arch { arch_x86, arch_x86_64, arch_arm, }
 
-impl arch: cmp::Eq {
-    pure fn eq(&&other: arch) -> bool {
-        (self as uint) == (other as uint)
+impl arch : cmp::Eq {
+    pure fn eq(other: &arch) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: arch) -> bool { !self.eq(other) }
+    pure fn ne(other: &arch) -> bool { !self.eq(other) }
 }
 
 enum crate_type { bin_crate, lib_crate, unknown_crate, }
@@ -38,7 +38,7 @@ type config =
      uint_type: uint_ty,
      float_type: float_ty};
 
-const ppregions: uint = 1 << 0;
+const verbose: uint = 1 << 0;
 const time_passes: uint = 1 << 1;
 const count_llvm_insns: uint = 1 << 2;
 const time_llvm_passes: uint = 1 << 3;
@@ -60,8 +60,7 @@ const meta_stats: uint = 1 << 16;
 const no_opt: uint = 1 << 17;
 
 fn debugging_opts_map() -> ~[(~str, ~str, uint)] {
-    ~[(~"ppregions", ~"prettyprint regions with \
-                    internal repr details", ppregions),
+    ~[(~"verbose", ~"in general, enable more debug printouts", verbose),
      (~"time-passes", ~"measure time of each rustc pass", time_passes),
      (~"count-llvm-insns", ~"count where LLVM \
                            instrs originate", count_llvm_insns),
@@ -96,10 +95,10 @@ enum OptLevel {
 }
 
 impl OptLevel : cmp::Eq {
-    pure fn eq(&&other: OptLevel) -> bool {
-        (self as uint) == (other as uint)
+    pure fn eq(other: &OptLevel) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: OptLevel) -> bool { !self.eq(other) }
+    pure fn ne(other: &OptLevel) -> bool { !self.eq(other) }
 }
 
 type options =
@@ -118,6 +117,10 @@ type options =
      addl_lib_search_paths: ~[Path],
      maybe_sysroot: Option<Path>,
      target_triple: ~str,
+     // User-specified cfg meta items. The compiler itself will add additional
+     // items to the crate config, and during parsing the entire crate config
+     // will be added to the crate AST node.  This should not be used for
+     // anything except building the full crate config prior to parsing.
      cfg: ast::crate_cfg,
      binary: ~str,
      test: bool,
@@ -219,7 +222,7 @@ impl session {
     fn impossible_case(sp: span, msg: &str) -> ! {
         self.span_bug(sp, #fmt("Impossible case reached: %s", msg));
     }
-    fn ppregions() -> bool { self.debugging_opt(ppregions) }
+    fn verbose() -> bool { self.debugging_opt(verbose) }
     fn time_passes() -> bool { self.debugging_opt(time_passes) }
     fn count_llvm_insns() -> bool { self.debugging_opt(count_llvm_insns) }
     fn count_type_sizes() -> bool { self.debugging_opt(count_type_sizes) }
@@ -296,7 +299,7 @@ fn building_library(req_crate_type: crate_type, crate: @ast::crate,
 }
 
 fn sess_os_to_meta_os(os: os) -> metadata::loader::os {
-    import metadata::loader;
+    use metadata::loader;
 
     match os {
       os_win32 => loader::os_win32,
@@ -308,7 +311,8 @@ fn sess_os_to_meta_os(os: os) -> metadata::loader::os {
 
 #[cfg(test)]
 mod test {
-    import syntax::ast_util;
+    #[legacy_exports];
+    use syntax::ast_util;
 
     fn make_crate_type_attr(t: ~str) -> ast::attribute {
         ast_util::respan(ast_util::dummy_sp(), {

@@ -2,27 +2,30 @@
 
 // multi tasking k-nucleotide
 
-use std;
+#[legacy_modes];
+
+extern mod std;
 use std::map;
-use std::map::hashmap;
+use std::map::HashMap;
 use std::sort;
 use io::ReaderUtil;
 use pipes::{stream, Port, Chan};
+use cmp::Ord;
 
 // given a map, print a sorted version of it
-fn sort_and_fmt(mm: hashmap<~[u8], uint>, total: uint) -> ~str { 
+fn sort_and_fmt(mm: HashMap<~[u8], uint>, total: uint) -> ~str { 
    fn pct(xx: uint, yy: uint) -> float {
       return (xx as float) * 100f / (yy as float);
    }
 
-   pure fn le_by_val<TT: Copy, UU: Copy>(kv0: &(TT,UU),
+   pure fn le_by_val<TT: Copy, UU: Copy Ord>(kv0: &(TT,UU),
                                          kv1: &(TT,UU)) -> bool {
       let (_, v0) = *kv0;
       let (_, v1) = *kv1;
       return v0 >= v1;
    }
 
-   pure fn le_by_key<TT: Copy, UU: Copy>(kv0: &(TT,UU),
+   pure fn le_by_key<TT: Copy Ord, UU: Copy>(kv0: &(TT,UU),
                                          kv1: &(TT,UU)) -> bool {
       let (k0, _) = *kv0;
       let (k1, _) = *kv1;
@@ -30,7 +33,7 @@ fn sort_and_fmt(mm: hashmap<~[u8], uint>, total: uint) -> ~str {
    }
 
    // sort by key, then by value
-   fn sortKV<TT: Copy, UU: Copy>(orig: ~[(TT,UU)]) -> ~[(TT,UU)] {
+   fn sortKV<TT: Copy Ord, UU: Copy Ord>(orig: ~[(TT,UU)]) -> ~[(TT,UU)] {
       return sort::merge_sort(le_by_val, sort::merge_sort(le_by_key, orig));
    }
 
@@ -43,20 +46,21 @@ fn sort_and_fmt(mm: hashmap<~[u8], uint>, total: uint) -> ~str {
    });
 
    let pairs_sorted = sortKV(pairs);
-   
+
    let mut buffer = ~"";
 
-   pairs_sorted.each(fn&(kv: (~[u8], float)) -> bool unsafe {
-      let (k,v) = kv;
-      buffer += (fmt!("%s %0.3f\n", str::to_upper(str::unsafe::from_bytes(k)), v));
-      return true;
-   });
+   for pairs_sorted.each |kv| {
+       let (k,v) = *kv;
+       unsafe {
+           buffer += (fmt!("%s %0.3f\n", str::to_upper(str::raw::from_bytes(k)), v));
+       }
+   }
 
    return buffer;
 }
 
 // given a map, search for the frequency of a pattern
-fn find(mm: hashmap<~[u8], uint>, key: ~str) -> uint {
+fn find(mm: HashMap<~[u8], uint>, key: ~str) -> uint {
    match mm.find(str::to_bytes(str::to_lower(key))) {
       option::None      => { return 0u; }
       option::Some(num) => { return num; }
@@ -64,7 +68,7 @@ fn find(mm: hashmap<~[u8], uint>, key: ~str) -> uint {
 }
 
 // given a map, increment the counter for a key
-fn update_freq(mm: hashmap<~[u8], uint>, key: &[u8]) {
+fn update_freq(mm: HashMap<~[u8], uint>, key: &[u8]) {
     let key = vec::slice(key, 0, key.len());
     match mm.find(key) {
       option::None      => { mm.insert(key, 1u      ); }
@@ -91,7 +95,7 @@ fn windows_with_carry(bb: &[u8], nn: uint,
 fn make_sequence_processor(sz: uint, from_parent: pipes::Port<~[u8]>,
                            to_parent: pipes::Chan<~str>) {
    
-   let freqs: hashmap<~[u8], uint> = map::bytes_hash();
+   let freqs: HashMap<~[u8], uint> = map::HashMap();
    let mut carry: ~[u8] = ~[];
    let mut total: uint = 0u;
 
@@ -124,13 +128,13 @@ fn make_sequence_processor(sz: uint, from_parent: pipes::Port<~[u8]>,
 }
 
 // given a FASTA file on stdin, process sequence THREE
-fn main(args: ~[~str]) {
+fn main(++args: ~[~str]) {
    let rdr = if os::getenv(~"RUST_BENCH").is_some() {
        // FIXME: Using this compile-time env variable is a crummy way to
        // get to this massive data set, but #include_bin chokes on it (#2598)
        let path = Path(env!("CFG_SRC_DIR"))
            .push_rel(&Path("src/test/bench/shootout-k-nucleotide.data"));
-       result::get(io::file_reader(&path))
+       result::get(&io::file_reader(&path))
    } else {
       io::stdin()
    };
@@ -143,6 +147,7 @@ fn main(args: ~[~str]) {
     let streams = vec::to_mut(streams);
     let mut from_child = ~[];
     let to_child   = vec::mapi(sizes, |ii, sz| {
+        let sz = *sz;
         let mut stream = None;
         stream <-> streams[ii];
         let (to_parent_, from_child_) = option::unwrap(stream);

@@ -1,9 +1,10 @@
-use std;
+extern mod std;
 
 
 #[nolink]
 #[abi = "cdecl"]
 extern mod libc {
+    #[legacy_exports];
     #[link_name = "strlen"]
     fn my_strlen(str: *u8) -> uint;
 }
@@ -11,7 +12,7 @@ extern mod libc {
 fn strlen(str: ~str) -> uint unsafe {
     // C string is terminated with a zero
     let bytes = str::to_bytes(str) + ~[0u8];
-    return libc::my_strlen(vec::unsafe::to_ptr(bytes));
+    return libc::my_strlen(vec::raw::to_ptr(bytes));
 }
 
 fn main() {

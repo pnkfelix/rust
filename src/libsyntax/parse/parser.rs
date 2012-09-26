@@ -2,9 +2,9 @@ use print::pprust::expr_to_str;
 
 use result::Result;
 use either::{Either, Left, Right};
-use std::map::{hashmap, str_hash};
+use std::map::HashMap;
 use token::{can_begin_expr, is_ident, is_ident_or_path, is_plain_ident,
-               INTERPOLATED};
+            INTERPOLATED, special_idents};
 use codemap::{span,fss_none};
 use util::interner::interner;
 use ast_util::{spanned, respan, mk_sp, ident_to_path, operator_prec};
@@ -19,7 +19,8 @@ use obsolete::{
     ObsoleteReporter, ObsoleteSyntax,
     ObsoleteLowerCaseKindBounds, ObsoleteLet,
     ObsoleteFieldTerminator, ObsoleteStructCtor,
-    ObsoleteWith
+    ObsoleteWith, ObsoleteClassMethod, ObsoleteClassTraits,
+    ObsoleteModeInFnType
 };
 use ast::{_mod, add, alt_check, alt_exhaustive, arg, arm, attribute,
              bind_by_ref, bind_by_implicit_ref, bind_by_value, bind_by_move,
@@ -51,7 +52,8 @@ use ast::{_mod, add, alt_check, alt_exhaustive, arg, arm, attribute,
              pat_ident, pat_lit, pat_range, pat_rec, pat_region, pat_struct,
              pat_tup, pat_uniq, pat_wild, path, private, proto, proto_bare,
              proto_block, proto_box, proto_uniq, provided, public, pure_fn,
-             purity, re_anon, re_named, region, rem, required, ret_style,
+             purity, re_static, re_self, re_anon, re_named, region,
+             rem, required, ret_style,
              return_val, self_ty, shl, shr, stmt, stmt_decl, stmt_expr,
              stmt_semi, struct_def, struct_field, struct_variant_kind,
              subtract, sty_box, sty_by_ref, sty_region, sty_static, sty_uniq,
@@ -60,11 +62,13 @@ use ast::{_mod, add, alt_check, alt_exhaustive, arg, arm, attribute,
              ty_box, ty_field, ty_fn, ty_infer, ty_mac, ty_method, ty_nil,
              ty_param, ty_param_bound, ty_path, ty_ptr, ty_rec, ty_rptr,
              ty_tup, ty_u32, ty_uniq, ty_vec, ty_fixed_length, type_value_ns,
-             unchecked_blk, uniq, unnamed_field, unsafe_blk, unsafe_fn,
+             uniq, unnamed_field, unsafe_blk, unsafe_fn,
              variant, view_item, view_item_, view_item_export,
              view_item_import, view_item_use, view_path, view_path_glob,
              view_path_list, view_path_simple, visibility, vstore, vstore_box,
-             vstore_fixed, vstore_slice, vstore_uniq};
+             vstore_fixed, vstore_slice, vstore_uniq,
+             expr_vstore_fixed, expr_vstore_slice, expr_vstore_box,
+             expr_vstore_uniq};
 
 export file_type;
 export parser;
@@ -214,8 +218,9 @@ fn parser(sess: parse_sess, cfg: ast::crate_cfg,
         restriction: UNRESTRICTED,
         quote_depth: 0u,
         keywords: token::keyword_table(),
-        restricted_keywords: token::restricted_keyword_table(),
-        obsolete_set: std::map::hashmap(),
+        strict_keywords: token::strict_keyword_table(),
+        reserved_keywords: token::reserved_keyword_table(),
+        obsolete_set: std::map::HashMap(),
     }
 }
 
@@ -233,14 +238,17 @@ struct parser {
     mut quote_depth: uint, // not (yet) related to the quasiquoter
     reader: reader,
     interner: interner<@~str>,
-    keywords: hashmap<~str, ()>,
-    restricted_keywords: hashmap<~str, ()>,
+    keywords: HashMap<~str, ()>,
+    strict_keywords: HashMap<~str, ()>,
+    reserved_keywords: HashMap<~str, ()>,
     /// The set of seen errors about obsolete syntax. Used to suppress
     /// extra detail when the same error is seen twice
-    obsolete_set: hashmap<ObsoleteSyntax, ()>,
+    obsolete_set: HashMap<ObsoleteSyntax, ()>,
 
     drop {} /* do not copy the parser; its state is tied to outside state */
+}
 
+impl parser {
     fn bump() {
         self.last_span = self.span;
         let next = if self.buffer_start == self.buffer_end {
@@ -424,8 +432,10 @@ struct parser {
 
     fn region_from_name(s: Option<ident>) -> @region {
         let r = match s {
-          Some (id) => re_named(id),
-          None => re_anon
+            Some(id) if id == special_idents::static => ast::re_static,
+            Some(id) if id == special_idents::self_ => re_self,
+            Some(id) => re_named(id),
+            None => re_anon
         };
 
         @{id: self.get_id(), node: r}
@@ -574,6 +584,29 @@ struct parser {
         } else { infer(self.get_id()) }
     }
 
+    fn is_named_argument() -> bool {
+        let offset = if self.token == token::BINOP(token::AND) {
+            1
+        } else if self.token == token::BINOP(token::MINUS) {
+            1
+        } else if self.token == token::ANDAND {
+            1
+        } else if self.token == token::BINOP(token::PLUS) {
+            if self.look_ahead(1) == token::BINOP(token::PLUS) {
+                2
+            } else {
+                1
+            }
+        } else { 0 };
+        if offset == 0 {
+            is_plain_ident(self.token)
+                && self.look_ahead(1) == token::COLON
+        } else {
+            is_plain_ident(self.look_ahead(offset))
+                && self.look_ahead(offset + 1) == token::COLON
+        }
+    }
+
     fn parse_capture_item_or(parse_arg_fn: fn(parser) -> arg_or_capture_item)
         -> arg_or_capture_item {
 
@@ -595,18 +628,15 @@ struct parser {
     // This version of parse arg doesn't necessarily require
     // identifier names.
     fn parse_arg_general(require_name: bool) -> arg {
-        let m = self.parse_arg_mode();
-        let i = if require_name {
+        let mut m;
+        let i = if require_name || self.is_named_argument() {
+            m = self.parse_arg_mode();
             let name = self.parse_value_ident();
             self.expect(token::COLON);
             name
         } else {
-            if is_plain_ident(self.token)
-                && self.look_ahead(1u) == token::COLON {
-                let name = self.parse_value_ident();
-                self.bump();
-                name
-            } else { token::special_idents::invalid }
+            m = infer(self.get_id());
+            special_idents::invalid
         };
 
         let t = self.parse_ty(false);
@@ -915,8 +945,6 @@ struct parser {
               _ => { /* fallthrough */ }
             }
             return pexpr(self.parse_fn_expr(proto));
-        } else if self.eat_keyword(~"unchecked") {
-            return pexpr(self.parse_block_expr(lo, unchecked_blk));
         } else if self.eat_keyword(~"unsafe") {
             return pexpr(self.parse_block_expr(lo, unsafe_blk));
         } else if self.token == token::LBRACKET {
@@ -1065,7 +1093,8 @@ struct parser {
             None => (),
             Some(v) => {
                 hi = self.span.hi;
-                ex = expr_vstore(self.mk_expr(lo, hi, ex), vstore_fixed(v));
+                ex = expr_vstore(self.mk_expr(lo, hi, ex),
+                                 expr_vstore_fixed(v));
             }
           },
           _ => ()
@@ -1364,7 +1393,7 @@ struct parser {
                 ex = match e.node {
                   expr_vec(*) | expr_lit(@{node: lit_str(_), span: _})
                   if m == m_imm => {
-                    expr_vstore(e, vstore_slice(self.region_from_name(None)))
+                    expr_vstore(e, expr_vstore_slice)
                   }
                   _ => expr_addr_of(m, e)
                 };
@@ -1380,7 +1409,7 @@ struct parser {
             // HACK: turn @[...] into a @-evec
             ex = match e.node {
               expr_vec(*) | expr_lit(@{node: lit_str(_), span: _})
-              if m == m_imm => expr_vstore(e, vstore_box),
+              if m == m_imm => expr_vstore(e, expr_vstore_box),
               _ => expr_unary(box(m), e)
             };
           }
@@ -1392,7 +1421,7 @@ struct parser {
             // HACK: turn ~[...] into a ~-evec
             ex = match e.node {
               expr_vec(*) | expr_lit(@{node: lit_str(_), span: _})
-              if m == m_imm => expr_vstore(e, vstore_uniq),
+              if m == m_imm => expr_vstore(e, expr_vstore_uniq),
               _ => expr_unary(uniq(m), e)
             };
           }
@@ -1577,7 +1606,7 @@ struct parser {
     }
 
     fn parse_sugary_call_expr(keyword: ~str,
-                              ctor: fn(+@expr) -> expr_) -> @expr {
+                              ctor: fn(+v: @expr) -> expr_) -> @expr {
         let lo = self.last_span;
         // Parse the callee `foo` in
         //    for foo || {
@@ -1843,7 +1872,7 @@ struct parser {
                 node: expr_lit(@{node: lit_str(_), span: _}), _
               }) => {
                 let vst = @{id: self.get_id(), callee_id: self.get_id(),
-                            node: expr_vstore(e, vstore_box),
+                            node: expr_vstore(e, expr_vstore_box),
                             span: mk_sp(lo, hi)};
                 pat_lit(vst)
               }
@@ -1860,7 +1889,7 @@ struct parser {
                 node: expr_lit(@{node: lit_str(_), span: _}), _
               }) => {
                 let vst = @{id: self.get_id(), callee_id: self.get_id(),
-                            node: expr_vstore(e, vstore_uniq),
+                            node: expr_vstore(e, expr_vstore_uniq),
                             span: mk_sp(lo, hi)};
                 pat_lit(vst)
               }
@@ -1878,10 +1907,12 @@ struct parser {
                   pat_lit(e@@{
                       node: expr_lit(@{node: lit_str(_), span: _}), _
                   }) => {
-                      let vst = @{id: self.get_id(), callee_id: self.get_id(),
-                                  node: expr_vstore(e,
-                                  vstore_slice(self.region_from_name(None))),
-                                  span: mk_sp(lo, hi)};
+                      let vst = @{
+                          id: self.get_id(),
+                          callee_id: self.get_id(),
+                          node: expr_vstore(e, expr_vstore_slice),
+                          span: mk_sp(lo, hi)
+                      };
                       pat_lit(vst)
                   }
               _ => pat_region(sub)
@@ -2196,12 +2227,7 @@ struct parser {
         }
 
         let lo = self.span.lo;
-        if self.eat_keyword(~"unchecked") {
-            self.expect(token::LBRACE);
-            let {inner, next} = maybe_parse_inner_attrs_and_next(self,
-                                                                 parse_attrs);
-            return (inner, self.parse_block_tail_(lo, unchecked_blk, next));
-        } else if self.eat_keyword(~"unsafe") {
+        if self.eat_keyword(~"unsafe") {
             self.expect(token::LBRACE);
             let {inner, next} = maybe_parse_inner_attrs_and_next(self,
                                                                  parse_attrs);
@@ -2239,7 +2265,7 @@ struct parser {
                                             IMPORTS_AND_ITEMS_ALLOWED);
 
         for items.each |item| {
-            let decl = @spanned(item.span.lo, item.span.hi, decl_item(item));
+            let decl = @spanned(item.span.lo, item.span.hi, decl_item(*item));
             push(stmts, @spanned(item.span.lo, item.span.hi,
                                  stmt_decl(decl, self.get_id())));
         }
@@ -2318,7 +2344,9 @@ struct parser {
                           | ~"owned" => {
                             self.obsolete(copy self.span,
                                           ObsoleteLowerCaseKindBounds);
-                            None
+                            // Bogus value, but doesn't matter, since
+                            // is an error
+                            Some(bound_send)
                           }
 
                           _ => None
@@ -2375,7 +2403,7 @@ struct parser {
 
     fn is_self_ident() -> bool {
         match self.token {
-          token::IDENT(id, false) if id == token::special_idents::self_
+          token::IDENT(id, false) if id == special_idents::self_
             => true,
           _ => false
         }
@@ -2393,7 +2421,7 @@ struct parser {
                                     fn(parser) -> arg_or_capture_item)
                             -> (self_ty, fn_decl, capture_clause) {
 
-        fn maybe_parse_self_ty(cnstr: fn(+mutability) -> ast::self_ty_,
+        fn maybe_parse_self_ty(cnstr: fn(+v: mutability) -> ast::self_ty_,
                                p: parser) -> ast::self_ty_ {
             // We need to make sure it isn't a mode or a type
             if p.token_is_keyword(~"self", p.look_ahead(1)) ||
@@ -2590,7 +2618,7 @@ struct parser {
 
         // This is a new-style impl declaration.
         // XXX: clownshoes
-        let ident = token::special_idents::clownshoes_extensions;
+        let ident = special_idents::clownshoes_extensions;
 
         // Parse the type.
         let ty = self.parse_ty(false);
@@ -2644,8 +2672,10 @@ struct parser {
         let class_name = self.parse_value_ident();
         self.parse_region_param();
         let ty_params = self.parse_ty_params();
-        let traits : ~[@trait_ref] = if self.eat(token::COLON)
-            { self.parse_trait_ref_list(token::LBRACE) }
+        let traits : ~[@trait_ref] = if self.eat(token::COLON) {
+            self.obsolete(copy self.span, ObsoleteClassTraits);
+            self.parse_trait_ref_list(token::LBRACE)
+        }
         else { ~[] };
 
         let mut fields: ~[@struct_field];
@@ -2690,7 +2720,7 @@ struct parser {
                   }
                   members(mms) => {
                     for mms.each |mm| {
-                        match mm {
+                        match *mm {
                             @field_member(struct_field) =>
                                 vec::push(fields, struct_field),
                             @method_member(the_method_member) =>
@@ -2724,7 +2754,7 @@ struct parser {
                             token_to_str(self.reader, self.token)));
         }
 
-        let actual_dtor = do option::map(the_dtor) |dtor| {
+        let actual_dtor = do the_dtor.map |dtor| {
             let (d_body, d_attrs, d_s) = dtor;
             {node: {id: self.get_id(),
                     attrs: d_attrs,
@@ -2774,31 +2804,34 @@ struct parser {
         let obsolete_let = self.eat_obsolete_ident("let");
         if obsolete_let { self.obsolete(copy self.last_span, ObsoleteLet) }
 
-        if (obsolete_let || self.token_is_keyword(~"mut", copy self.token) ||
-            !self.is_any_keyword(copy self.token)) &&
-            !self.token_is_pound_or_doc_comment(self.token) {
+        let parse_obsolete_method =
+            !((obsolete_let || self.is_keyword(~"mut") ||
+               !self.is_any_keyword(copy self.token))
+              && !self.token_is_pound_or_doc_comment(copy self.token));
+
+        if !parse_obsolete_method {
             let a_var = self.parse_instance_var(vis);
             match self.token {
-                token::SEMI => {
-                    self.obsolete(copy self.span, ObsoleteFieldTerminator);
-                    self.bump();
-                }
-                token::COMMA => {
-                    self.bump();
-                }
-                token::RBRACE => {}
-                _ => {
-                    self.span_fatal(copy self.span,
-                                    fmt!("expected `;`, `,`, or '}' but \
-                                          found `%s`",
-                                         token_to_str(self.reader,
-                                                      self.token)));
-                }
+              token::SEMI => {
+                self.obsolete(copy self.span, ObsoleteFieldTerminator);
+                self.bump();
+              }
+              token::COMMA => {
+                self.bump();
+              }
+              token::RBRACE => {}
+              _ => {
+                self.span_fatal(copy self.span,
+                                fmt!("expected `;`, `,`, or '}' but \
+                                      found `%s`",
+                                     token_to_str(self.reader,
+                                                  self.token)));
+              }
             }
             return a_var;
         } else {
-            let m = self.parse_method(vis);
-            return @method_member(m);
+            self.obsolete(copy self.span, ObsoleteClassMethod);
+            return @method_member(self.parse_method(vis));
         }
     }
 
@@ -2809,22 +2842,13 @@ struct parser {
     }
 
     fn parse_class_item() -> class_contents {
+
+        if self.try_parse_obsolete_priv_section() {
+            return members(~[]);
+        }
+
         if self.eat_keyword(~"priv") {
-            // XXX: Remove after snapshot.
-            match self.token {
-                token::LBRACE => {
-                    self.bump();
-                    let mut results = ~[];
-                    while self.token != token::RBRACE {
-                        vec::push(results,
-                                  self.parse_single_class_item(private));
-                    }
-                    self.bump();
-                    return members(results);
-                }
-                _ =>
-                   return members(~[self.parse_single_class_item(private)])
-            }
+            return members(~[self.parse_single_class_item(private)])
         }
 
         if self.eat_keyword(~"pub") {
@@ -3010,7 +3034,7 @@ struct parser {
                 }
 
                 (ast::anonymous,
-                 token::special_idents::clownshoes_foreign_mod)
+                 special_idents::clownshoes_foreign_mod)
             }
         };
 
@@ -3087,7 +3111,7 @@ struct parser {
                 }
                 members(mms) => {
                     for mms.each |mm| {
-                        match mm {
+                        match *mm {
                             @field_member(struct_field) =>
                                 vec::push(fields, struct_field),
                             @method_member(the_method_member) =>
@@ -3098,7 +3122,7 @@ struct parser {
             }
         }
         self.bump();
-        let mut actual_dtor = do option::map(the_dtor) |dtor| {
+        let mut actual_dtor = do the_dtor.map |dtor| {
             let (d_body, d_attrs, d_s) = dtor;
             {node: {id: self.get_id(),
                     attrs: d_attrs,
@@ -3160,7 +3184,7 @@ struct parser {
                         seq_sep_trailing_disallowed(token::COMMA),
                         |p| p.parse_ty(false));
                     for arg_tys.each |ty| {
-                        vec::push(args, {ty: ty, id: self.get_id()});
+                        vec::push(args, {ty: *ty, id: self.get_id()});
                     }
                     kind = tuple_variant_kind(args);
                 } else if self.eat(token::EQ) {
@@ -3195,7 +3219,6 @@ struct parser {
         let ty_params = self.parse_ty_params();
         // Newtype syntax
         if self.token == token::EQ {
-            self.check_restricted_keywords_(*self.id_to_str(id));
             self.bump();
             let ty = self.parse_ty(false);
             self.expect(token::SEMI);
@@ -3328,19 +3351,10 @@ struct parser {
                                           visibility,
                                           maybe_append(attrs, extra_attrs)));
         } else if self.eat_keyword(~"use") {
-            let view_item = self.parse_use(visibility);
+            let view_item = self.parse_use();
             self.expect(token::SEMI);
             return iovi_view_item(@{
                 node: view_item,
-                attrs: attrs,
-                vis: visibility,
-                span: mk_sp(lo, self.last_span.hi)
-            });
-        } else if self.eat_keyword(~"import") {
-            let view_paths = self.parse_view_paths();
-            self.expect(token::SEMI);
-            return iovi_view_item(@{
-                node: view_item_import(view_paths),
                 attrs: attrs,
                 vis: visibility,
                 span: mk_sp(lo, self.last_span.hi)
@@ -3388,15 +3402,7 @@ struct parser {
         }
     }
 
-    fn parse_use(vis: visibility) -> view_item_ {
-        if vis != public && (self.look_ahead(1) == token::SEMI ||
-                             self.look_ahead(1) == token::LPAREN) {
-            // Old-style "use"; i.e. what we now call "extern mod".
-            let ident = self.parse_ident();
-            let metadata = self.parse_optional_meta();
-            return view_item_use(ident, metadata, self.get_id());
-        }
-
+    fn parse_use() -> view_item_ {
         return view_item_import(self.parse_view_paths());
     }
 
@@ -3497,7 +3503,6 @@ struct parser {
             next_tok = self.look_ahead(2);
         };
         self.token_is_keyword(~"use", tok)
-            || self.token_is_keyword(~"import", tok)
             || self.token_is_keyword(~"export", tok)
             || (self.token_is_keyword(~"extern", tok) &&
                 self.token_is_keyword(~"mod", next_tok))
@@ -3506,9 +3511,7 @@ struct parser {
     fn parse_view_item(+attrs: ~[attribute]) -> @view_item {
         let lo = self.span.lo, vis = self.parse_visibility();
         let node = if self.eat_keyword(~"use") {
-            self.parse_use(vis)
-        } else if self.eat_keyword(~"import") {
-            view_item_import(self.parse_view_paths())
+            self.parse_use()
         } else if self.eat_keyword(~"export") {
             view_item_export(self.parse_view_paths())
         } else if self.eat_keyword(~"extern") {
@@ -3569,8 +3572,8 @@ struct parser {
         }
 
         {attrs_remaining: attrs,
-         view_items: vec::from_mut(dvec::unwrap(view_items)),
-         items: vec::from_mut(dvec::unwrap(items))}
+         view_items: dvec::unwrap(move view_items),
+         items: dvec::unwrap(move items)}
     }
 
     // Parses a source module as a crate
@@ -3609,6 +3612,7 @@ struct parser {
         let expect_mod = vec::len(outer_attrs) > 0u;
 
         let lo = self.span.lo;
+        let vis = self.parse_visibility();
         if expect_mod || self.is_keyword(~"mod") {
 
             self.expect_keyword(~"mod");
@@ -3619,7 +3623,7 @@ struct parser {
               token::SEMI => {
                 let mut hi = self.span.hi;
                 self.bump();
-                return spanned(lo, hi, cdir_src_mod(id, outer_attrs));
+                return spanned(lo, hi, cdir_src_mod(vis, id, outer_attrs));
               }
               // mod x = "foo_dir" { ...directives... }
               token::LBRACE => {
@@ -3632,7 +3636,7 @@ struct parser {
                 let mut hi = self.span.hi;
                 self.expect(token::RBRACE);
                 return spanned(lo, hi,
-                            cdir_dir_mod(id, cdirs, mod_attrs));
+                            cdir_dir_mod(vis, id, cdirs, mod_attrs));
               }
               _ => self.unexpected()
             }
@@ -3666,10 +3670,10 @@ struct parser {
 }
 
 impl restriction : cmp::Eq {
-    pure fn eq(&&other: restriction) -> bool {
-        (self as uint) == (other as uint)
+    pure fn eq(other: &restriction) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: restriction) -> bool { !self.eq(other) }
+    pure fn ne(other: &restriction) -> bool { !self.eq(other) }
 }
 
 //

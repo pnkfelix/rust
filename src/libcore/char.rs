@@ -69,7 +69,7 @@ pure fn is_uppercase(c: char) -> bool {
 }
 
 /**
- * Indicates whether a character is whitespace, defined in
+ * Indicates whether a character is whitespace. Whitespace is defined in
  * terms of the Unicode General Categories 'Zs', 'Zl', 'Zp'
  * additional 'Cc'-category control codes in the range [0x09, 0x0d]
  */
@@ -81,9 +81,9 @@ pure fn is_whitespace(c: char) -> bool {
 }
 
 /**
- * Indicates whether a character is alphanumeric, defined
- * in terms of the Unicode General Categories 'Nd',
- * 'Nl', 'No' and the Derived Core Property 'Alphabetic'.
+ * Indicates whether a character is alphanumeric. Alphanumericness is
+ * defined in terms of the Unicode General Categories 'Nd', 'Nl', 'No'
+ * and the Derived Core Property 'Alphabetic'.
  */
 pure fn is_alphanumeric(c: char) -> bool {
     return unicode::derived_property::Alphabetic(c) ||
@@ -106,10 +106,6 @@ pure fn is_digit(c: char) -> bool {
 
 /**
  * Convert a char to the corresponding digit.
- *
- * # Safety note
- *
- * This function returns none if `c` is not a valid char
  *
  * # Return value
  *
@@ -145,9 +141,9 @@ fn escape_unicode(c: char) -> ~str {
                     else { ('U', 8u) });
     assert str::len(s) <= pad;
     let mut out = ~"\\";
-    str::push_str(out, str::from_char(c));
-    for uint::range(str::len(s), pad) |_i| { str::push_str(out, ~"0"); }
-    str::push_str(out, s);
+    str::push_str(&mut out, str::from_char(c));
+    for uint::range(str::len(s), pad) |_i| { str::push_str(&mut out, ~"0"); }
+    str::push_str(&mut out, s);
     move out
 }
 
@@ -189,9 +185,9 @@ pure fn cmp(a: char, b: char) -> int {
     else { 0 }
 }
 
-impl char: Eq {
-    pure fn eq(&&other: char) -> bool { self == other }
-    pure fn ne(&&other: char) -> bool { self != other }
+impl char : Eq {
+    pure fn eq(other: &char) -> bool { self == (*other) }
+    pure fn ne(other: &char) -> bool { self != (*other) }
 }
 
 #[test]

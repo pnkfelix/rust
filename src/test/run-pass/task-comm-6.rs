@@ -1,6 +1,6 @@
-use std;
+extern mod std;
 use pipes::send;
-use pipes::chan;
+use pipes::Chan;
 use pipes::recv;
 
 fn main() { test00(); }

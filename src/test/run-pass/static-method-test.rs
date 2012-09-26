@@ -1,3 +1,5 @@
+// xfail-fast
+#[legacy_modes];
 
 // A trait for objects that can be used to do an if-then-else
 // (No actual need for this to be static, but it is a simple test.)
@@ -24,27 +26,27 @@ impl int: bool_like {
 // A trait for sequences that can be constructed imperatively.
 trait buildable<A> {
      static pure fn build_sized(size: uint,
-                                builder: fn(push: pure fn(+A))) -> self;
+                                builder: fn(push: pure fn(+v: A))) -> self;
 }
 
 
 impl<A> @[A]: buildable<A> {
     #[inline(always)]
      static pure fn build_sized(size: uint,
-                                builder: fn(push: pure fn(+A))) -> @[A] {
+                                builder: fn(push: pure fn(+v: A))) -> @[A] {
          at_vec::build_sized(size, builder)
      }
 }
 impl<A> ~[A]: buildable<A> {
     #[inline(always)]
      static pure fn build_sized(size: uint,
-                                builder: fn(push: pure fn(+A))) -> ~[A] {
+                                builder: fn(push: pure fn(+v: A))) -> ~[A] {
          vec::build_sized(size, builder)
      }
 }
 
 #[inline(always)]
-pure fn build<A, B: buildable<A>>(builder: fn(push: pure fn(+A))) -> B {
+pure fn build<A, B: buildable<A>>(builder: fn(push: pure fn(+v: A))) -> B {
     build_sized(4, builder)
 }
 
@@ -53,7 +55,7 @@ fn map<T, IT: BaseIter<T>, U, BU: buildable<U>>
     (v: IT, f: fn(T) -> U) -> BU {
     do build |push| {
         for v.each() |elem| {
-            push(f(elem));
+            push(f(*elem));
         }
     }
 }

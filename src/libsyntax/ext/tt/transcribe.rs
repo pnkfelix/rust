@@ -4,7 +4,7 @@ use macro_parser::{named_match, matched_seq, matched_nonterminal};
 use codemap::span;
 use parse::token::{EOF, INTERPOLATED, IDENT, token, nt_ident,
                       ident_interner};
-use std::map::{hashmap, box_str_hash};
+use std::map::HashMap;
 
 export tt_reader,  new_tt_reader, dup_tt_reader, tt_next_token;
 
@@ -28,8 +28,8 @@ type tt_reader = @{
     interner: ident_interner,
     mut cur: tt_frame,
     /* for MBE-style macro transcription */
-    interpolations: std::map::hashmap<ident, @named_match>,
-    mut repeat_idx: ~[mut uint],
+    interpolations: std::map::HashMap<ident, @named_match>,
+    mut repeat_idx: ~[uint],
     mut repeat_len: ~[uint],
     /* cached: */
     mut cur_tok: token,
@@ -40,17 +40,18 @@ type tt_reader = @{
  *  `src` contains no `tt_seq`s and `tt_nonterminal`s, `interp` can (and
  *  should) be none. */
 fn new_tt_reader(sp_diag: span_handler, itr: ident_interner,
-                 interp: Option<std::map::hashmap<ident,@named_match>>,
+                 interp: Option<std::map::HashMap<ident,@named_match>>,
                  src: ~[ast::token_tree])
     -> tt_reader {
     let r = @{sp_diag: sp_diag, interner: itr,
               mut cur: @{readme: src, mut idx: 0u, dotdotdoted: false,
                          sep: None, up: tt_frame_up(option::None)},
               interpolations: match interp { /* just a convienience */
-                None => std::map::uint_hash::<@named_match>(),
+                None => std::map::HashMap::<uint,@named_match>(),
                 Some(x) => x
               },
-              mut repeat_idx: ~[mut], mut repeat_len: ~[],
+              mut repeat_idx: ~[],
+              mut repeat_len: ~[],
               /* dummy values, never read: */
               mut cur_tok: EOF,
               mut cur_span: ast_util::mk_sp(0u,0u)

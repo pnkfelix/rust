@@ -2,9 +2,9 @@
 
 enum foo = ~uint;
 
-impl foo: Add<foo, foo> {
-    pure fn add(f: foo) -> foo {
-        foo(~(**self + **f))
+impl foo : Add<foo, foo> {
+    pure fn add(f: &foo) -> foo {
+        foo(~(**self + **(*f)))
     }
 }
 

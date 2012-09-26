@@ -1,3 +1,6 @@
+#[legacy_modes];
+#[legacy_exports];
+
 use dvec::DVec;
 
 type entry<A,B> = {key: A, value: B};

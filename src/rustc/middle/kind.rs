@@ -3,7 +3,7 @@ use syntax::ast::*;
 use syntax::codemap::span;
 use ty::{kind, kind_copyable, kind_noncopyable, kind_const};
 use driver::session::session;
-use std::map::hashmap;
+use std::map::HashMap;
 use util::ppaux::{ty_to_str, tys_to_str};
 use syntax::print::pprust::expr_to_str;
 use freevars::freevar_entry;
@@ -58,7 +58,7 @@ fn kind_to_str(k: kind) -> ~str {
     str::connect(kinds, ~" ")
 }
 
-type rval_map = std::map::hashmap<node_id, ()>;
+type rval_map = std::map::HashMap<node_id, ()>;
 
 type ctx = {tcx: ty::ctxt,
             method_map: typeck::method_map,
@@ -199,19 +199,19 @@ fn check_fn(fk: visit::fn_kind, decl: fn_decl, body: blk, sp: span,
             let id = ast_util::def_id_of_def(fv.def).node;
 
             // skip over free variables that appear in the cap clause
-            if captured_vars.contains(id) { loop; }
+            if captured_vars.contains(&id) { loop; }
 
             // if this is the last use of the variable, then it will be
             // a move and not a copy
             let is_move = {
                 match cx.last_use_map.find(fn_id) {
-                  Some(vars) => (*vars).contains(id),
+                  Some(vars) => (*vars).contains(&id),
                   None => false
                 }
             };
 
             let ty = ty::node_id_to_type(cx.tcx, id);
-            chk(cx, fn_id, Some(fv), is_move, ty, fv.span);
+            chk(cx, fn_id, Some(*fv), is_move, ty, fv.span);
         }
     }
 
@@ -228,7 +228,7 @@ fn check_block(b: blk, cx: ctx, v: visit::vt<ctx>) {
 
 fn check_arm(a: arm, cx: ctx, v: visit::vt<ctx>) {
     for vec::each(a.pats) |p| {
-        do pat_util::pat_bindings(cx.tcx.def_map, p) |mode, id, span, _path| {
+        do pat_util::pat_bindings(cx.tcx.def_map, *p) |mode, id, span, _pth| {
             if mode == bind_by_value {
                 let t = ty::node_id_to_type(cx.tcx, id);
                 let reason = "consider binding with `ref` or `move` instead";
@@ -248,7 +248,7 @@ fn check_expr(e: @expr, cx: ctx, v: visit::vt<ctx>) {
     };
 
     // Handle any kind bounds on type parameters
-    do option::iter(cx.tcx.node_type_substs.find(id_to_use)) |ts| {
+    do option::iter(&cx.tcx.node_type_substs.find(id_to_use)) |ts| {
         let bounds = match e.node {
           expr_path(_) => {
             let did = ast_util::def_id_of_def(cx.tcx.def_map.get(e.id));
@@ -300,7 +300,7 @@ fn check_expr(e: @expr, cx: ctx, v: visit::vt<ctx>) {
           Some(ex) => {
             // All noncopyable fields must be overridden
             let t = ty::expr_ty(cx.tcx, ex);
-            let ty_fields = match ty::get(t).struct {
+            let ty_fields = match ty::get(t).sty {
               ty::ty_rec(f) => f,
               _ => cx.tcx.sess.span_bug(ex.span, ~"bad expr type in record")
             };
@@ -316,12 +316,12 @@ fn check_expr(e: @expr, cx: ctx, v: visit::vt<ctx>) {
         }
       }
       expr_tup(exprs) | expr_vec(exprs, _) => {
-        for exprs.each |expr| { maybe_copy(cx, expr, None); }
+        for exprs.each |expr| { maybe_copy(cx, *expr, None); }
       }
       expr_call(f, args, _) => {
         let mut i = 0u;
         for ty::ty_fn_args(ty::expr_ty(cx.tcx, f)).each |arg_t| {
-            match ty::arg_mode(cx.tcx, arg_t) {
+            match ty::arg_mode(cx.tcx, *arg_t) {
               by_copy => maybe_copy(cx, args[i], None),
               by_ref | by_val | by_mutbl_ref | by_move => ()
             }
@@ -332,8 +332,13 @@ fn check_expr(e: @expr, cx: ctx, v: visit::vt<ctx>) {
         // If this is a method call with a by-val argument, we need
         // to check the copy
         match cx.method_map.find(e.id) {
-          Some({self_mode: by_copy, _}) => maybe_copy(cx, lhs, None),
-          _ => ()
+            Some(ref mme) => {
+                match ty::arg_mode(cx.tcx, mme.self_arg) {
+                    by_copy => maybe_copy(cx, lhs, None),
+                    by_ref | by_val | by_mutbl_ref | by_move => ()
+                }
+            }
+            _ => ()
         }
       }
       expr_repeat(element, count_expr, _) => {
@@ -368,7 +373,7 @@ fn check_stmt(stmt: @stmt, cx: ctx, v: visit::vt<ctx>) {
 fn check_ty(aty: @ty, cx: ctx, v: visit::vt<ctx>) {
     match aty.node {
       ty_path(_, id) => {
-        do option::iter(cx.tcx.node_type_substs.find(id)) |ts| {
+        do option::iter(&cx.tcx.node_type_substs.find(id)) |ts| {
             let did = ast_util::def_id_of_def(cx.tcx.def_map.get(id));
             let bounds = ty::lookup_item_type(cx.tcx, did).bounds;
             do vec::iter2(ts, *bounds) |ty, bound| {
@@ -437,10 +442,17 @@ fn check_copy_ex(cx: ctx, ex: @expr, implicit_copy: bool,
         !is_nullary_variant(cx, ex) &&
 
         // borrowed unique value isn't really a copy
-        !cx.tcx.borrowings.contains_key(ex.id)
+        !is_autorefd(cx, ex)
     {
         let ty = ty::expr_ty(cx.tcx, ex);
         check_copy(cx, ex.id, ty, ex.span, implicit_copy, why);
+    }
+
+    fn is_autorefd(cx: ctx, ex: @expr) -> bool {
+        match cx.tcx.adjustments.find(ex.id) {
+            None => false,
+            Some(ref adj) => adj.autoref.is_some()
+        }
     }
 }
 
@@ -504,7 +516,7 @@ fn check_send(cx: ctx, ty: ty::t, sp: span) -> bool {
 // note: also used from middle::typeck::regionck!
 fn check_owned(tcx: ty::ctxt, ty: ty::t, sp: span) -> bool {
     if !ty::kind_is_owned(ty::type_kind(tcx, ty)) {
-        match ty::get(ty).struct {
+        match ty::get(ty).sty {
           ty::ty_param(*) => {
             tcx.sess.span_err(sp, ~"value may contain borrowed \
                                     pointers; use `owned` bound");
@@ -551,7 +563,7 @@ fn check_cast_for_escaping_regions(
     // Determine what type we are casting to; if it is not an trait, then no
     // worries.
     let target_ty = ty::expr_ty(cx.tcx, target);
-    let target_substs = match ty::get(target_ty).struct {
+    let target_substs = match ty::get(target_ty).sty {
       ty::ty_trait(_, substs, _) => {substs}
       _ => { return; /* not a cast to a trait */ }
     };
@@ -574,9 +586,9 @@ fn check_cast_for_escaping_regions(
     let target_params = ty::param_tys_in_type(target_ty);
     let source_ty = ty::expr_ty(cx.tcx, source);
     do ty::walk_ty(source_ty) |ty| {
-        match ty::get(ty).struct {
+        match ty::get(ty).sty {
           ty::ty_param(source_param) => {
-            if target_params.contains(source_param) {
+            if target_params.contains(&source_param) {
                 /* case (2) */
             } else {
                 check_owned(cx.tcx, ty, source.span); /* case (3) */

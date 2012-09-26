@@ -1,17 +1,20 @@
 #[no_core];
 #[allow(vecs_implicitly_copyable)];
+#[allow(non_camel_case_types)];
+#[legacy_modes];
 
-use core(vers = "0.4");
-use std(vers = "0.4");
-use rustc(vers = "0.4");
-use syntax(vers = "0.4");
+extern mod core(vers = "0.4");
+extern mod std(vers = "0.4");
+extern mod rustc(vers = "0.4");
+extern mod syntax(vers = "0.4");
 
 use core::*;
 
 // -*- rust -*-
 use result::{Ok, Err};
+use io::ReaderUtil;
 use std::getopts;
-use std::map::hashmap;
+use std::map::HashMap;
 use getopts::{opt_present};
 use rustc::driver::driver::*;
 use syntax::codemap;
@@ -109,7 +112,7 @@ fn describe_warnings() {
 fn describe_debug_flags() {
     io::println(fmt!("\nAvailable debug options:\n"));
     for session::debugging_opts_map().each |pair| {
-        let (name, desc, _) = pair;
+        let (name, desc, _) = *pair;
         io::println(fmt!("    -Z%-20s -- %s", name, desc));
     }
 }
@@ -138,12 +141,12 @@ fn run_compiler(args: ~[~str], demitter: diagnostic::emitter) {
 
     let lint_flags = vec::append(getopts::opt_strs(matches, ~"W"),
                                  getopts::opt_strs(matches, ~"warn"));
-    if lint_flags.contains(~"help") {
+    if lint_flags.contains(&~"help") {
         describe_warnings();
         return;
     }
 
-    if getopts::opt_strs(matches, ~"Z").contains(~"help") {
+    if getopts::opt_strs(matches, ~"Z").contains(&~"help") {
         describe_debug_flags();
         return;
     }
@@ -169,12 +172,12 @@ fn run_compiler(args: ~[~str], demitter: diagnostic::emitter) {
     let sopts = build_session_options(binary, matches, demitter);
     let sess = build_session(sopts, demitter);
     let odir = getopts::opt_maybe_str(matches, ~"out-dir");
-    let odir = option::map(odir, |o| Path(o));
+    let odir = odir.map(|o| Path(o));
     let ofile = getopts::opt_maybe_str(matches, ~"o");
-    let ofile = option::map(ofile, |o| Path(o));
+    let ofile = ofile.map(|o| Path(o));
     let cfg = build_configuration(sess, binary, input);
     let pretty =
-        option::map(getopts::opt_default(matches, ~"pretty",
+        option::map(&getopts::opt_default(matches, ~"pretty",
                                          ~"normal"),
                     |a| parse_pretty(sess, a) );
     match pretty {
@@ -206,10 +209,10 @@ enum monitor_msg {
 }
 
 impl monitor_msg : cmp::Eq {
-    pure fn eq(&&other: monitor_msg) -> bool {
-        (self as uint) == (other as uint)
+    pure fn eq(other: &monitor_msg) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: monitor_msg) -> bool { !self.eq(other) }
+    pure fn ne(other: &monitor_msg) -> bool { !self.eq(other) }
 }
 
 /*
@@ -228,7 +231,7 @@ fn monitor(+f: fn~(diagnostic::emitter)) {
     let p = comm::Port();
     let ch = comm::Chan(p);
 
-    match do task::try  {
+    match do task::try |move f| {
 
         // The 'diagnostics emitter'. Every error, warning, etc. should
         // go through this function.
@@ -265,7 +268,7 @@ fn monitor(+f: fn~(diagnostic::emitter)) {
                      to get further details and report the results \
                      to github.com/mozilla/rust/issues"
                 ]/_.each |note| {
-                    diagnostic::emit(None, note, diagnostic::note)
+                    diagnostic::emit(None, *note, diagnostic::note)
                 }
             }
             // Fail so the process returns a failure code

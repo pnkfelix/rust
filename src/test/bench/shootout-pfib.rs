@@ -10,7 +10,9 @@
 
 */
 
-use std;
+#[legacy_modes];
+
+extern mod std;
 
 use std::{time, getopts};
 use io::WriterUtil;
@@ -76,10 +78,10 @@ fn stress(num_tasks: int) {
             stress_task(i);
         }
     }
-    for results.each |r| { future::get(&r); }
+    for results.each |r| { future::get(r); }
 }
 
-fn main(args: ~[~str]) {
+fn main(++args: ~[~str]) {
     let args = if os::getenv(~"RUST_BENCH").is_some() {
         ~[~"", ~"20"]
     } else if args.len() <= 1u {
@@ -93,8 +95,8 @@ fn main(args: ~[~str]) {
     if opts.stress {
         stress(2);
     } else {
-        let max = option::get(uint::parse_buf(str::to_bytes(args[1]),
-                                              10u)) as int;
+        let max = uint::parse_bytes(str::to_bytes(args[1]),
+                                                10u).get() as int;
 
         let num_trials = 10;
 

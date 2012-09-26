@@ -1,4 +1,4 @@
-use std::map::{hashmap,str_hash};
+use std::map::HashMap;
 use driver::session::session;
 use lib::llvm::{TypeRef, ValueRef};
 use syntax::ast;
@@ -10,7 +10,7 @@ use type_of::*;
 use ast::def_id;
 use util::ppaux::ty_to_str;
 use datum::*;
-use callee::ArgVals;
+use callee::{ArgVals, DontAutorefArg};
 use expr::SaveIn;
 
 enum reflector = {
@@ -58,7 +58,7 @@ impl reflector {
 
     fn visit(ty_name: ~str, args: ~[ValueRef]) {
         let tcx = self.bcx.tcx();
-        let mth_idx = option::get(ty::method_idx(
+        let mth_idx = option::get(&ty::method_idx(
             tcx.sess.ident_of(~"visit_" + ty_name),
             *self.visitor_methods));
         let mth_ty = ty::mk_fn(tcx, self.visitor_methods[mth_idx].fty);
@@ -66,15 +66,15 @@ impl reflector {
         debug!("passing %u args:", vec::len(args));
         let bcx = self.bcx;
         for args.eachi |i, a| {
-            debug!("arg %u: %s", i, val_str(bcx.ccx().tn, a));
+            debug!("arg %u: %s", i, val_str(bcx.ccx().tn, *a));
         }
         let bool_ty = ty::mk_bool(tcx);
         let scratch = scratch_datum(bcx, bool_ty, false);
         let bcx = callee::trans_call_inner(
             self.bcx, None, mth_ty, bool_ty,
-            |bcx| impl::trans_trait_callee_from_llval(bcx, mth_ty,
+            |bcx| meth::trans_trait_callee_from_llval(bcx, mth_ty,
                                                       mth_idx, v),
-            ArgVals(args), SaveIn(scratch.val));
+            ArgVals(args), SaveIn(scratch.val), DontAutorefArg);
         let result = scratch.to_value_llval(bcx);
         let next_bcx = sub_block(bcx, ~"next");
         CondBr(bcx, result, next_bcx.llbb, self.final_bcx.llbb);
@@ -114,7 +114,7 @@ impl reflector {
         debug!("reflect::visit_ty %s",
                ty_to_str(bcx.ccx().tcx, t));
 
-        match ty::get(t).struct {
+        match ty::get(t).sty {
           ty::ty_bot => self.leaf(~"bot"),
           ty::ty_nil => self.leaf(~"nil"),
           ty::ty_bool => self.leaf(~"bool"),
@@ -171,7 +171,7 @@ impl reflector {
                 for tys.eachi |i, t| {
                     self.visit(~"tup_field",
                                ~[self.c_uint(i),
-                                 self.c_tydesc(t)]);
+                                 self.c_tydesc(*t)]);
                 }
             }
           }
@@ -263,7 +263,7 @@ impl reflector {
                         for v.args.eachi |j, a| {
                             self.visit(~"enum_variant_field",
                                        ~[self.c_uint(j),
-                                         self.c_tydesc(a)]);
+                                         self.c_tydesc(*a)]);
                         }
                     }
                 }
@@ -293,7 +293,7 @@ impl reflector {
 fn emit_calls_to_trait_visit_ty(bcx: block, t: ty::t,
                                 visitor_val: ValueRef,
                                 visitor_trait_id: def_id) -> block {
-    import syntax::parse::token::special_idents::tydesc;
+    use syntax::parse::token::special_idents::tydesc;
     let final = sub_block(bcx, ~"final");
     assert bcx.ccx().tcx.intrinsic_defs.contains_key(tydesc);
     let (_, tydesc_ty) = bcx.ccx().tcx.intrinsic_defs.get(tydesc);

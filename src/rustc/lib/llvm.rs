@@ -1,4 +1,4 @@
-use std::map::hashmap;
+use std::map::HashMap;
 
 use libc::{c_char, c_int, c_uint, c_longlong, c_ulonglong};
 
@@ -129,8 +129,8 @@ enum TypeKind {
 }
 
 impl TypeKind : cmp::Eq {
-    pure fn eq(&&other: TypeKind) -> bool {
-        match (self, other) {
+    pure fn eq(other: &TypeKind) -> bool {
+        match (self, (*other)) {
             (Void, Void) => true,
             (Half, Half) => true,
             (Float, Float) => true,
@@ -165,7 +165,7 @@ impl TypeKind : cmp::Eq {
             (X86_MMX, _) => false,
         }
     }
-    pure fn ne(&&other: TypeKind) -> bool { !self.eq(other) }
+    pure fn ne(other: &TypeKind) -> bool { !self.eq(other) }
 }
 
 enum AtomicBinOp {
@@ -232,6 +232,7 @@ type SectionIteratorRef = *SectionIterator_opaque;
 #[link_name = "rustllvm"]
 #[abi = "cdecl"]
 extern mod llvm {
+    #[legacy_exports];
     /* Create and destroy contexts. */
     fn LLVMContextCreate() -> ContextRef;
     fn LLVMGetGlobalContext() -> ContextRef;
@@ -1038,8 +1039,8 @@ fn SetLinkage(Global: ValueRef, Link: Linkage) {
 
 /* Memory-managed object interface to type handles. */
 
-type type_names = @{type_names: std::map::hashmap<TypeRef, ~str>,
-                    named_types: std::map::hashmap<~str, TypeRef>};
+type type_names = @{type_names: std::map::HashMap<TypeRef, ~str>,
+                    named_types: std::map::HashMap<~str, TypeRef>};
 
 fn associate_type(tn: type_names, s: ~str, t: TypeRef) {
     assert tn.type_names.insert(t, s);
@@ -1055,10 +1056,8 @@ fn name_has_type(tn: type_names, s: ~str) -> Option<TypeRef> {
 }
 
 fn mk_type_names() -> type_names {
-    pure fn hash(t: &TypeRef) -> uint { *t as uint }
-    pure fn eq(a: &TypeRef, b: &TypeRef) -> bool { *a == *b }
-    @{type_names: std::map::hashmap(),
-      named_types: std::map::str_hash()}
+    @{type_names: std::map::HashMap(),
+      named_types: std::map::HashMap()}
 }
 
 fn type_to_str(names: type_names, ty: TypeRef) -> ~str {
@@ -1082,7 +1081,7 @@ fn type_to_str_inner(names: type_names, outer0: ~[TypeRef], ty: TypeRef) ->
         let mut first: bool = true;
         for tys.each |t| {
             if first { first = false; } else { s += ~", "; }
-            s += type_to_str_inner(names, outer, t);
+            s += type_to_str_inner(names, outer, *t);
         }
         return s;
     }
@@ -1105,7 +1104,7 @@ fn type_to_str_inner(names: type_names, outer0: ~[TypeRef], ty: TypeRef) ->
         let n_args = llvm::LLVMCountParamTypes(ty) as uint;
         let args = vec::from_elem(n_args, 0 as TypeRef);
         unsafe {
-            llvm::LLVMGetParamTypes(ty, vec::unsafe::to_ptr(args));
+            llvm::LLVMGetParamTypes(ty, vec::raw::to_ptr(args));
         }
         s += tys_str(names, outer, args);
         s += ~") -> ";
@@ -1117,7 +1116,7 @@ fn type_to_str_inner(names: type_names, outer0: ~[TypeRef], ty: TypeRef) ->
         let n_elts = llvm::LLVMCountStructElementTypes(ty) as uint;
         let elts = vec::from_elem(n_elts, 0 as TypeRef);
         unsafe {
-            llvm::LLVMGetStructElementTypes(ty, vec::unsafe::to_ptr(elts));
+            llvm::LLVMGetStructElementTypes(ty, vec::raw::to_ptr(elts));
         }
         s += tys_str(names, outer, elts);
         s += ~"}";
@@ -1132,7 +1131,7 @@ fn type_to_str_inner(names: type_names, outer0: ~[TypeRef], ty: TypeRef) ->
         let mut i: uint = 0u;
         for outer0.each |tout| {
             i += 1u;
-            if tout as int == ty as int {
+            if *tout as int == ty as int {
                 let n: uint = vec::len::<TypeRef>(outer0) - i;
                 return ~"*\\" + int::str(n as int);
             }
@@ -1167,7 +1166,7 @@ fn float_width(llt: TypeRef) -> uint {
 fn fn_ty_param_tys(fn_ty: TypeRef) -> ~[TypeRef] unsafe {
     let args = vec::from_elem(llvm::LLVMCountParamTypes(fn_ty) as uint,
                              0 as TypeRef);
-    llvm::LLVMGetParamTypes(fn_ty, vec::unsafe::to_ptr(args));
+    llvm::LLVMGetParamTypes(fn_ty, vec::raw::to_ptr(args));
     return args;
 }
 

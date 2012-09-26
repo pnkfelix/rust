@@ -1,17 +1,21 @@
+/*!
+
+Miscellaneous helpers for common patterns.
+
+*/
+
 // NB: transitionary, de-mode-ing.
 #[forbid(deprecated_mode)];
 #[forbid(deprecated_pattern)];
 
 use cmp::Eq;
 
-/**
- * Miscellaneous helpers for common patterns.
- */
-
 /// The identity function.
-pure fn id<T>(+x: T) -> T { x }
+#[inline(always)]
+pure fn id<T>(+x: T) -> T { move x }
 
 /// Ignores a value.
+#[inline(always)]
 pure fn ignore<T>(+_x: T) { }
 
 /// Sets `*ptr` to `new_value`, invokes `op()`, and then restores the
@@ -47,9 +51,9 @@ fn swap<T>(x: &mut T, y: &mut T) {
  */
 #[inline(always)]
 fn replace<T>(dest: &mut T, +src: T) -> T {
-    let mut tmp = src;
+    let mut tmp <- src;
     swap(dest, &mut tmp);
-    tmp
+    move tmp
 }
 
 /// A non-copyable dummy type.
@@ -60,14 +64,43 @@ struct NonCopyable {
 
 fn NonCopyable() -> NonCopyable { NonCopyable { i: () } }
 
+/**
+A utility function for indicating unreachable code. It will fail if
+executed. This is occasionally useful to put after loops that never
+terminate normally, but instead directly return from a function.
+
+# Example
+
+~~~
+fn choose_weighted_item(v: &[Item]) -> Item {
+    assert v.is_not_empty();
+    let mut so_far = 0u;
+    for v.each |item| {
+        so_far += item.weight;
+        if so_far > 100 {
+            return item;
+        }
+    }
+    // The above loop always returns, so we must hint to the
+    // type checker that it isn't possible to get down here
+    util::unreachable();
+}
+~~~
+
+*/
+fn unreachable() -> ! {
+    fail ~"internal error: entered unreachable code";
+}
+
 mod tests {
+    #[legacy_exports];
     #[test]
     fn identity_crisis() {
         // Writing a test for the identity function. How did it come to this?
         let x = ~[(5, false)];
         //FIXME #3387 assert x.eq(id(copy x));
         let y = copy x;
-        assert x.eq(id(y));
+        assert x.eq(&id(y));
     }
     #[test]
     fn test_swap() {

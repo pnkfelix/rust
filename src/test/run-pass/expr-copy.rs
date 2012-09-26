@@ -1,3 +1,6 @@
+// xfail-fast
+#[legacy_modes];
+
 fn f(arg: {mut a: int}) {
     arg.a = 100;
 }

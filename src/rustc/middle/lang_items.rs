@@ -19,7 +19,7 @@ use syntax::ast_util::{local_def};
 use syntax::visit::{default_simple_visitor, mk_simple_visitor};
 use syntax::visit::{visit_crate, visit_item};
 
-use std::map::{hashmap, str_hash};
+use std::map::HashMap;
 use str_eq = str::eq;
 
 struct LanguageItems {
@@ -44,10 +44,14 @@ struct LanguageItems {
     mut eq_trait: Option<def_id>,
     mut ord_trait: Option<def_id>,
 
-    mut str_eq_fn: Option<def_id>
+    mut str_eq_fn: Option<def_id>,
+    mut uniq_str_eq_fn: Option<def_id>,
+    mut annihilate_fn: Option<def_id>,
+    mut log_type_fn: Option<def_id>
 }
 
 mod LanguageItems {
+    #[legacy_exports];
     fn make() -> LanguageItems {
         LanguageItems {
             const_trait: None,
@@ -71,7 +75,10 @@ mod LanguageItems {
             eq_trait: None,
             ord_trait: None,
 
-            str_eq_fn: None
+            str_eq_fn: None,
+            uniq_str_eq_fn: None,
+            annihilate_fn: None,
+            log_type_fn: None
         }
     }
 }
@@ -80,7 +87,7 @@ fn LanguageItemCollector(crate: @crate, session: session,
                          items: &r/LanguageItems)
     -> LanguageItemCollector/&r {
 
-    let item_refs = str_hash();
+    let item_refs = HashMap();
 
     item_refs.insert(~"const", &mut items.const_trait);
     item_refs.insert(~"copy", &mut items.copy_trait);
@@ -104,6 +111,9 @@ fn LanguageItemCollector(crate: @crate, session: session,
     item_refs.insert(~"ord", &mut items.ord_trait);
 
     item_refs.insert(~"str_eq", &mut items.str_eq_fn);
+    item_refs.insert(~"uniq_str_eq", &mut items.uniq_str_eq_fn);
+    item_refs.insert(~"annihilate", &mut items.annihilate_fn);
+    item_refs.insert(~"log_type", &mut items.log_type_fn);
 
     LanguageItemCollector {
         crate: crate,
@@ -119,7 +129,10 @@ struct LanguageItemCollector {
     crate: @crate,
     session: session,
 
-    item_refs: hashmap<~str,&mut Option<def_id>>,
+    item_refs: HashMap<~str,&mut Option<def_id>>,
+}
+
+impl LanguageItemCollector {
 
     fn match_and_collect_meta_item(item_def_id: def_id,
                                    meta_item: meta_item) {
@@ -199,7 +212,7 @@ struct LanguageItemCollector {
 
                 do get_item_attrs(crate_store, def_id) |meta_items| {
                     for meta_items.each |meta_item| {
-                        self.match_and_collect_meta_item(def_id, *meta_item);
+                        self.match_and_collect_meta_item(def_id, **meta_item);
                     }
                 }
             }
@@ -208,7 +221,7 @@ struct LanguageItemCollector {
 
     fn check_completeness() {
         for self.item_refs.each |key, item_ref| {
-            match copy *item_ref {
+            match *item_ref {
                 None => {
                     self.session.err(fmt!("no item found for `%s`", key));
                 }

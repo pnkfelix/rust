@@ -17,15 +17,20 @@
 #[crate_type = "bin"];
 
 #[no_core];
+#[legacy_exports];
+
+#[legacy_modes];
 
 #[allow(vecs_implicitly_copyable,
         non_implicitly_copyable_typarams)];
+#[allow(non_camel_case_types)];
 
-use core(vers = "0.4");
-use std(vers = "0.4");
-use rustc(vers = "0.4");
-use syntax(vers = "0.4");
+extern mod core(vers = "0.4");
+extern mod std(vers = "0.4");
+extern mod rustc(vers = "0.4");
+extern mod syntax(vers = "0.4");
 
 use core::*;
 
+#[legacy_exports]
 mod pgp;

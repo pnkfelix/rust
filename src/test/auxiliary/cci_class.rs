@@ -1,9 +1,9 @@
+#[legacy_exports];
 mod kitties {
+    #[legacy_exports];
 
 struct cat {
-  priv {
-    mut meows : uint,
-  }
+  priv mut meows : uint,
 
   how_hungry : int,
 

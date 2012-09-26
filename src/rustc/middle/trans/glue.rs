@@ -51,7 +51,7 @@ fn drop_ty_root(bcx: block, v: ValueRef, rooted: bool, t: ty::t) -> block {
 
 fn drop_ty_immediate(bcx: block, v: ValueRef, t: ty::t) -> block {
     let _icx = bcx.insn_ctxt("drop_ty_immediate");
-    match ty::get(t).struct {
+    match ty::get(t).sty {
       ty::ty_uniq(_) |
       ty::ty_evec(_, ty::vstore_uniq) |
       ty::ty_estr(ty::vstore_uniq) => {
@@ -68,7 +68,7 @@ fn drop_ty_immediate(bcx: block, v: ValueRef, t: ty::t) -> block {
 
 fn take_ty_immediate(bcx: block, v: ValueRef, t: ty::t) -> Result {
     let _icx = bcx.insn_ctxt("take_ty_immediate");
-    match ty::get(t).struct {
+    match ty::get(t).sty {
       ty::ty_box(_) | ty::ty_opaque_box |
       ty::ty_evec(_, ty::vstore_box) |
       ty::ty_estr(ty::vstore_box) => {
@@ -97,7 +97,7 @@ fn free_ty(cx: block, v: ValueRef, t: ty::t) -> block {
 
 fn free_ty_immediate(bcx: block, v: ValueRef, t: ty::t) -> block {
     let _icx = bcx.insn_ctxt("free_ty_immediate");
-    match ty::get(t).struct {
+    match ty::get(t).sty {
       ty::ty_uniq(_) |
       ty::ty_evec(_, ty::vstore_uniq) |
       ty::ty_estr(ty::vstore_uniq) |
@@ -121,10 +121,103 @@ fn lazily_emit_all_tydesc_glue(ccx: @crate_ctxt,
     lazily_emit_tydesc_glue(ccx, abi::tydesc_field_visit_glue, static_ti);
 }
 
+fn simplified_glue_type(tcx: ty::ctxt, field: uint, t: ty::t) -> ty::t {
+
+    if (field == abi::tydesc_field_take_glue ||
+        field == abi::tydesc_field_drop_glue ||
+        field == abi::tydesc_field_free_glue) &&
+        ! ty::type_needs_drop(tcx, t) {
+          return ty::mk_u32(tcx);
+    }
+
+    if field == abi::tydesc_field_take_glue {
+        match ty::get(t).sty {
+          ty::ty_unboxed_vec(*) => { return ty::mk_u32(tcx); }
+          _ => ()
+        }
+    }
+
+    if field == abi::tydesc_field_take_glue &&
+        ty::type_is_boxed(t) {
+          return ty::mk_imm_box(tcx, ty::mk_u32(tcx));
+    }
+
+    if field == abi::tydesc_field_free_glue {
+        match ty::get(t).sty {
+          ty::ty_fn(*) |
+          ty::ty_box(*) |
+          ty::ty_opaque_box |
+          ty::ty_uniq(*) |
+          ty::ty_evec(_, ty::vstore_uniq) | ty::ty_estr(ty::vstore_uniq) |
+          ty::ty_evec(_, ty::vstore_box) | ty::ty_estr(ty::vstore_box) |
+          ty::ty_opaque_closure_ptr(*) => (),
+          _ => { return ty::mk_u32(tcx); }
+        }
+    }
+
+    if (field == abi::tydesc_field_free_glue ||
+        field == abi::tydesc_field_drop_glue) {
+        match ty::get(t).sty {
+          ty::ty_box(mt) |
+          ty::ty_evec(mt, ty::vstore_box)
+          if ! ty::type_needs_drop(tcx, mt.ty) =>
+          return ty::mk_imm_box(tcx, ty::mk_u32(tcx)),
+
+          ty::ty_uniq(mt) |
+          ty::ty_evec(mt, ty::vstore_uniq)
+          if ! ty::type_needs_drop(tcx, mt.ty) =>
+          return ty::mk_imm_uniq(tcx, ty::mk_u32(tcx)),
+
+          _ => ()
+        }
+    }
+
+    return t;
+}
+
+pure fn cast_glue(ccx: @crate_ctxt, ti: @tydesc_info, v: ValueRef)
+    -> ValueRef {
+    unsafe {
+        let llfnty = type_of_glue_fn(ccx, ti.ty);
+        llvm::LLVMConstPointerCast(v, T_ptr(llfnty))
+    }
+}
+
+fn lazily_emit_simplified_tydesc_glue(ccx: @crate_ctxt, field: uint,
+                                      ti: @tydesc_info) -> bool {
+    let _icx = ccx.insn_ctxt("lazily_emit_simplified_tydesc_glue");
+    let simpl = simplified_glue_type(ccx.tcx, field, ti.ty);
+    if simpl != ti.ty {
+        let simpl_ti = base::get_tydesc(ccx, simpl);
+        lazily_emit_tydesc_glue(ccx, field, simpl_ti);
+        if field == abi::tydesc_field_take_glue {
+            ti.take_glue =
+                simpl_ti.take_glue.map(|v| cast_glue(ccx, ti, v));
+        } else if field == abi::tydesc_field_drop_glue {
+            ti.drop_glue =
+                simpl_ti.drop_glue.map(|v| cast_glue(ccx, ti, v));
+        } else if field == abi::tydesc_field_free_glue {
+            ti.free_glue =
+                simpl_ti.free_glue.map(|v| cast_glue(ccx, ti, v));
+        } else if field == abi::tydesc_field_visit_glue {
+            ti.visit_glue =
+                simpl_ti.visit_glue.map(|v| cast_glue(ccx, ti, v));
+        }
+        return true;
+    }
+    return false;
+}
+
+
 fn lazily_emit_tydesc_glue(ccx: @crate_ctxt, field: uint,
                            ti: @tydesc_info) {
     let _icx = ccx.insn_ctxt("lazily_emit_tydesc_glue");
     let llfnty = type_of_glue_fn(ccx, ti.ty);
+
+    if lazily_emit_simplified_tydesc_glue(ccx, field, ti) {
+        return;
+    }
+
     if field == abi::tydesc_field_take_glue {
         match ti.take_glue {
           Some(_) => (),
@@ -223,7 +316,7 @@ fn call_tydesc_glue_full(++bcx: block, v: ValueRef, tydesc: ValueRef,
 
     // When static type info is available, avoid casting parameter because the
     // function already has the right type. Otherwise cast to generic pointer.
-    let llrawptr = if is_none(static_ti) || is_none(static_glue_fn) {
+    let llrawptr = if static_ti.is_none() || static_glue_fn.is_none() {
         PointerCast(bcx, v, T_ptr(T_i8()))
     } else {
         v
@@ -253,27 +346,6 @@ fn call_tydesc_glue(++cx: block, v: ValueRef, t: ty::t, field: uint)
     return cx;
 }
 
-fn call_cmp_glue(bcx: block, lhs: ValueRef, rhs: ValueRef, t: ty::t,
-                 llop: ValueRef) -> ValueRef {
-    // We can't use call_tydesc_glue_full() and friends here because compare
-    // glue has a special signature.
-    let _icx = bcx.insn_ctxt("call_cmp_glue");
-
-    let lllhs = spill_if_immediate(bcx, lhs, t);
-    let llrhs = spill_if_immediate(bcx, rhs, t);
-
-    let llrawlhsptr = BitCast(bcx, lllhs, T_ptr(T_i8()));
-    let llrawrhsptr = BitCast(bcx, llrhs, T_ptr(T_i8()));
-    let lltydesc = get_tydesc_simple(bcx.ccx(), t);
-
-    let llfn = bcx.ccx().upcalls.cmp_type;
-
-    let llcmpresultptr = alloca(bcx, T_i1());
-    Call(bcx, llfn, ~[llcmpresultptr, lltydesc,
-                      llrawlhsptr, llrawrhsptr, llop]);
-    return Load(bcx, llcmpresultptr);
-}
-
 fn make_visit_glue(bcx: block, v: ValueRef, t: ty::t) {
     let _icx = bcx.insn_ctxt("make_visit_glue");
     let mut bcx = bcx;
@@ -289,7 +361,7 @@ fn make_free_glue(bcx: block, v: ValueRef, t: ty::t) {
     // NB: v0 is an *alias* of type t here, not a direct value.
     let _icx = bcx.insn_ctxt("make_free_glue");
     let ccx = bcx.ccx();
-    let bcx = match ty::get(t).struct {
+    let bcx = match ty::get(t).sty {
       ty::ty_box(body_mt) => {
         let v = Load(bcx, v);
         let body = GEPi(bcx, v, [0u, abi::box_field_body]);
@@ -325,7 +397,7 @@ fn make_free_glue(bcx: block, v: ValueRef, t: ty::t) {
       }
       ty::ty_class(did, ref substs) => {
         // Call the dtor if there is one
-        do option::map_default(ty::ty_dtor(bcx.tcx(), did), bcx) |dt_id| {
+        do option::map_default(&ty::ty_dtor(bcx.tcx(), did), bcx) |dt_id| {
             trans_class_drop(bcx, v, dt_id, did, substs)
         }
       }
@@ -378,7 +450,7 @@ fn make_drop_glue(bcx: block, v0: ValueRef, t: ty::t) {
     // NB: v0 is an *alias* of type t here, not a direct value.
     let _icx = bcx.insn_ctxt("make_drop_glue");
     let ccx = bcx.ccx();
-    let bcx = match ty::get(t).struct {
+    let bcx = match ty::get(t).sty {
       ty::ty_box(_) | ty::ty_opaque_box |
       ty::ty_estr(ty::vstore_box) | ty::ty_evec(_, ty::vstore_box) => {
         decr_refcnt_maybe_free(bcx, Load(bcx, v0), t)
@@ -439,7 +511,7 @@ fn decr_refcnt_maybe_free(bcx: block, box_ptr: ValueRef, t: ty::t) -> block {
 fn make_take_glue(bcx: block, v: ValueRef, t: ty::t) {
     let _icx = bcx.insn_ctxt("make_take_glue");
     // NB: v is a *pointer* to type t here, not a direct value.
-    let bcx = match ty::get(t).struct {
+    let bcx = match ty::get(t).sty {
       ty::ty_box(_) | ty::ty_opaque_box |
       ty::ty_evec(_, ty::vstore_box) | ty::ty_estr(ty::vstore_box) => {
         incr_refcnt_of_boxed(bcx, Load(bcx, v)); bcx
@@ -523,7 +595,9 @@ fn declare_tydesc(ccx: @crate_ctxt, t: ty::t) -> @tydesc_info {
     //XXX this triggers duplicate LLVM symbols
     let name = if false /*ccx.sess.opts.debuginfo*/ {
         mangle_internal_name_by_type_only(ccx, t, ~"tydesc")
-    } else { mangle_internal_name_by_seq(ccx, ~"tydesc") };
+    } else {
+        mangle_internal_name_by_seq(ccx, ~"tydesc")
+    };
     note_unique_llvm_symbol(ccx, name);
     log(debug, fmt!("+++ declare_tydesc %s %s", ty_to_str(ccx.tcx, t), name));
     let gvar = str::as_c_str(name, |buf| {
@@ -556,6 +630,7 @@ fn declare_generic_glue(ccx: @crate_ctxt, t: ty::t, llfnty: TypeRef,
     } else {
         fn_nm = mangle_internal_name_by_seq(ccx, (~"glue_" + name));
     }
+    debug!("%s is for type %s", fn_nm, ty_to_str(ccx.tcx, t));
     note_unique_llvm_symbol(ccx, fn_nm);
     let llfn = decl_cdecl_fn(ccx.llmod, fn_nm, llfnty);
     set_glue_inlining(llfn, t);
@@ -604,7 +679,7 @@ fn emit_tydescs(ccx: @crate_ctxt) {
     let _icx = ccx.insn_ctxt("emit_tydescs");
     // As of this point, allow no more tydescs to be created.
     ccx.finished_tydescs = true;
-    for ccx.tydescs.each |key, val| {
+    for ccx.tydescs.each |_key, val| {
         let glue_fn_ty = T_ptr(T_generic_glue_fn(ccx));
         let ti = val;
 
@@ -645,10 +720,8 @@ fn emit_tydescs(ccx: @crate_ctxt) {
               }
             };
 
-        let shape = shape_of(ccx, key);
-        let shape_tables =
-            llvm::LLVMConstPointerCast(ccx.shape_cx.llshapetables,
-                                       T_ptr(T_i8()));
+        let shape = C_null(T_ptr(T_i8()));
+        let shape_tables = C_null(T_ptr(T_i8()));
 
         let tydesc =
             C_named_struct(ccx.tydesc_type,
@@ -658,7 +731,7 @@ fn emit_tydescs(ccx: @crate_ctxt) {
                              drop_glue, // drop_glue
                              free_glue, // free_glue
                              visit_glue, // visit_glue
-                             C_shape(ccx, shape), // shape
+                             shape, // shape
                              shape_tables]); // shape_tables
 
         let gvar = ti.tydesc;

@@ -1,5 +1,5 @@
 use std::map;
-use std::map::hashmap;
+use std::map::HashMap;
 use ast::*;
 use print::pprust;
 use ast_util::{path_to_ident, stmt_id};
@@ -12,23 +12,23 @@ enum path_elt {
 }
 
 impl path_elt : cmp::Eq {
-    pure fn eq(&&other: path_elt) -> bool {
+    pure fn eq(other: &path_elt) -> bool {
         match self {
             path_mod(e0a) => {
-                match other {
+                match (*other) {
                     path_mod(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             path_name(e0a) => {
-                match other {
+                match (*other) {
                     path_name(e0b) => e0a == e0b,
                     _ => false
                 }
             }
         }
     }
-    pure fn ne(&&other: path_elt) -> bool { !self.eq(other) }
+    pure fn ne(other: &path_elt) -> bool { !self.eq(other) }
 }
 
 type path = ~[path_elt];
@@ -36,7 +36,7 @@ type path = ~[path_elt];
 /* FIXMEs that say "bad" are as per #2543 */
 fn path_to_str_with_sep(p: path, sep: ~str, itr: ident_interner) -> ~str {
     let strs = do vec::map(p) |e| {
-        match e {
+        match *e {
           path_mod(s) => *itr.get(s),
           path_name(s) => *itr.get(s)
         }
@@ -79,7 +79,7 @@ enum ast_node {
     node_block(blk),
 }
 
-type map = std::map::hashmap<node_id, ast_node>;
+type map = std::map::HashMap<node_id, ast_node>;
 type ctx = {map: map, mut path: path,
             mut local_id: uint, diag: span_handler};
 type vt = visit::vt<ctx>;
@@ -103,7 +103,7 @@ fn mk_ast_map_visitor() -> vt {
 }
 
 fn map_crate(diag: span_handler, c: crate) -> map {
-    let cx = {map: std::map::int_hash(),
+    let cx = {map: std::map::HashMap(),
               mut path: ~[],
               mut local_id: 0u,
               diag: diag};
@@ -151,7 +151,7 @@ fn map_fn(fk: visit::fn_kind, decl: fn_decl, body: blk,
     for decl.inputs.each |a| {
         cx.map.insert(a.id,
                       node_arg(/* FIXME (#2543) */
-                          copy a, cx.local_id));
+                          copy *a, cx.local_id));
         cx.local_id += 1u;
     }
     match fk {
@@ -220,14 +220,14 @@ fn map_item(i: @item, cx: ctx, v: vt) {
       item_impl(_, _, _, ms) => {
         let impl_did = ast_util::local_def(i.id);
         for ms.each |m| {
-            map_method(impl_did, extend(cx, i.ident), m,
+            map_method(impl_did, extend(cx, i.ident), *m,
                        cx);
         }
       }
       item_enum(enum_definition, _) => {
         for enum_definition.variants.each |v| {
             cx.map.insert(v.node.id, node_variant(
-                /* FIXME (#2543) */ copy v, i,
+                /* FIXME (#2543) */ copy *v, i,
                 extend(cx, i.ident)));
         }
       }
@@ -238,7 +238,7 @@ fn map_item(i: @item, cx: ctx, v: vt) {
         };
         for nm.items.each |nitem| {
             cx.map.insert(nitem.id,
-                          node_foreign_item(nitem, abi,
+                          node_foreign_item(*nitem, abi,
                                            /* FIXME (#2543) */
                                             if nm.sort == ast::named {
                                                 extend(cx, i.ident)
@@ -264,9 +264,9 @@ fn map_item(i: @item, cx: ctx, v: vt) {
             cx.map.insert(p.impl_id, node_item(i, item_path));
         }
         for methods.each |tm| {
-            let id = ast_util::trait_method_to_ty_method(tm).id;
+            let id = ast_util::trait_method_to_ty_method(*tm).id;
             let d_id = ast_util::local_def(i.id);
-            cx.map.insert(id, node_trait_method(@tm, d_id, item_path));
+            cx.map.insert(id, node_trait_method(@*tm, d_id, item_path));
         }
       }
       _ => ()
@@ -293,8 +293,10 @@ fn map_struct_def(struct_def: @ast::struct_def, parent_node: ast_node,
     }
     let d_id = ast_util::local_def(id);
     let p = extend(cx, ident);
-     // only need to handle methods
-    do vec::iter(struct_def.methods) |m| { map_method(d_id, p, m, cx); }
+    // only need to handle methods
+    for vec::each(struct_def.methods) |m| {
+        map_method(d_id, p, *m, cx);
+    }
 }
 
 fn map_view_item(vi: @view_item, cx: ctx, _v: vt) {
@@ -308,7 +310,7 @@ fn map_view_item(vi: @view_item, cx: ctx, _v: vt) {
             (id, path_to_ident(pth))
           }
         };
-        cx.map.insert(id, node_export(vp, extend(cx, name)));
+        cx.map.insert(id, node_export(*vp, extend(cx, name)));
       },
       _ => ()
     }

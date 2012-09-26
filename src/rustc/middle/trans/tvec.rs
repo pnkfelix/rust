@@ -19,7 +19,7 @@ use util::common::indenter;
 fn expand_boxed_vec_ty(tcx: ty::ctxt, t: ty::t) -> ty::t {
     let unit_ty = ty::sequence_element_type(tcx, t);
     let unboxed_vec_ty = ty::mk_mut_unboxed_vec(tcx, unit_ty);
-    match ty::get(t).struct {
+    match ty::get(t).sty {
       ty::ty_estr(ty::vstore_uniq) | ty::ty_evec(_, ty::vstore_uniq) => {
         ty::mk_imm_uniq(tcx, unboxed_vec_ty)
       }
@@ -319,7 +319,7 @@ fn write_content(bcx: block,
             match dest {
                 Ignore => {
                     for elements.each |element| {
-                        bcx = expr::trans_into(bcx, element, Ignore);
+                        bcx = expr::trans_into(bcx, *element, Ignore);
                     }
                 }
 
@@ -329,13 +329,13 @@ fn write_content(bcx: block,
                         let lleltptr = GEPi(bcx, lldest, [i]);
                         debug!("writing index %? with lleltptr=%?",
                                i, bcx.val_str(lleltptr));
-                        bcx = expr::trans_into(bcx, element,
+                        bcx = expr::trans_into(bcx, *element,
                                                SaveIn(lleltptr));
                         add_clean_temp_mem(bcx, lleltptr, vt.unit_ty);
                         vec::push(temp_cleanups, lleltptr);
                     }
                     for vec::each(temp_cleanups) |cleanup| {
-                        revoke_clean(bcx, cleanup);
+                        revoke_clean(bcx, *cleanup);
                     }
                 }
             }
@@ -373,7 +373,7 @@ fn write_content(bcx: block,
                     }
 
                     for vec::each(temp_cleanups) |cleanup| {
-                        revoke_clean(bcx, cleanup);
+                        revoke_clean(bcx, *cleanup);
                     }
 
                     return bcx;
@@ -431,7 +431,7 @@ fn get_base_and_len(bcx: block,
     let ccx = bcx.ccx();
     let vt = vec_types(bcx, vec_ty);
 
-    let vstore = match ty::get(vt.vec_ty).struct {
+    let vstore = match ty::get(vt.vec_ty).sty {
       ty::ty_estr(vst) | ty::ty_evec(_, vst) => vst,
       _ => ty::vstore_uniq
     };

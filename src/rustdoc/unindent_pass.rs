@@ -1,17 +1,17 @@
 /*!
- * Removes the common level of indention from description strings. For
- * instance, if an entire doc comment is indented 8 spaces we want to
- * remove those 8 spaces from every line.
- *
- * The first line of a string is allowed to be intend less than
- * subsequent lines in the same paragraph in order to account for
- * instances where the string containing the doc comment is opened in the
- * middle of a line, and each of the following lines is indented.
- */
+Removes the common level of indention from description strings. For
+instance, if an entire doc comment is indented 8 spaces we want to
+remove those 8 spaces from every line.
+
+The first line of a string is allowed to be intend less than
+subsequent lines in the same paragraph in order to account for
+instances where the string containing the doc comment is opened in the
+middle of a line, and each of the following lines is indented.
+*/
 
 export mk_pass;
 
-fn mk_pass() -> pass {
+fn mk_pass() -> Pass {
     text_pass::mk_pass(~"unindent", unindent)
 }
 

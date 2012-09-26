@@ -3,12 +3,13 @@
 #[forbid(deprecated_pattern)];
 
 use core::cmp::Eq;
-use map::{hashmap, str_hash};
+use map::HashMap;
 use io::{Reader, ReaderUtil};
 use dvec::DVec;
 use from_str::FromStr;
 use result::{Err, Ok};
 use to_str::ToStr;
+use to_bytes::IterBytes;
 
 export Url, Query;
 export from_str, to_str;
@@ -60,7 +61,7 @@ fn encode_inner(s: &str, full_url: bool) -> ~str {
               'a' .. 'z' |
               '0' .. '9' |
               '-' | '.' | '_' | '~' => {
-                str::push_char(out, ch);
+                str::push_char(&mut out, ch);
               }
               _ => {
                   if full_url {
@@ -71,7 +72,7 @@ fn encode_inner(s: &str, full_url: bool) -> ~str {
                       // sub-delims:
                       '!' | '$' | '&' | '"' | '(' | ')' | '*' |
                       '+' | ',' | ';' | '=' => {
-                        str::push_char(out, ch);
+                        str::push_char(&mut out, ch);
                       }
 
                       _ => out += #fmt("%%%X", ch as uint)
@@ -115,7 +116,7 @@ fn decode_inner(s: &str, full_url: bool) -> ~str {
             match rdr.read_char() {
               '%' => {
                 let bytes = rdr.read_bytes(2u);
-                let ch = uint::parse_buf(bytes, 16u).get() as char;
+                let ch = uint::parse_bytes(bytes, 16u).get() as char;
 
                 if full_url {
                     // Only decode some characters:
@@ -126,18 +127,18 @@ fn decode_inner(s: &str, full_url: bool) -> ~str {
                       // sub-delims:
                       '!' | '$' | '&' | '"' | '(' | ')' | '*' |
                       '+' | ',' | ';' | '=' => {
-                        str::push_char(out, '%');
-                        str::push_char(out, bytes[0u] as char);
-                        str::push_char(out, bytes[1u] as char);
+                        str::push_char(&mut out, '%');
+                        str::push_char(&mut out, bytes[0u] as char);
+                        str::push_char(&mut out, bytes[1u] as char);
                       }
 
-                      ch => str::push_char(out, ch)
+                      ch => str::push_char(&mut out, ch)
                     }
                 } else {
-                      str::push_char(out, ch);
+                      str::push_char(&mut out, ch);
                 }
               }
-              ch => str::push_char(out, ch)
+              ch => str::push_char(&mut out, ch)
             }
         }
 
@@ -169,9 +170,9 @@ fn encode_plus(s: &str) -> ~str {
             let ch = rdr.read_byte() as char;
             match ch {
               'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_' | '.' | '-' => {
-                str::push_char(out, ch);
+                str::push_char(&mut out, ch);
               }
-              ' ' => str::push_char(out, '+'),
+              ' ' => str::push_char(&mut out, '+'),
               _ => out += #fmt("%%%X", ch as uint)
             }
         }
@@ -183,7 +184,7 @@ fn encode_plus(s: &str) -> ~str {
 /**
  * Encode a hashmap to the 'application/x-www-form-urlencoded' media type.
  */
-fn encode_form_urlencoded(m: hashmap<~str, @DVec<@~str>>) -> ~str {
+fn encode_form_urlencoded(m: HashMap<~str, @DVec<@~str>>) -> ~str {
     let mut out = ~"";
     let mut first = true;
 
@@ -194,11 +195,11 @@ fn encode_form_urlencoded(m: hashmap<~str, @DVec<@~str>>) -> ~str {
             if first {
                 first = false;
             } else {
-                str::push_char(out, '&');
+                str::push_char(&mut out, '&');
                 first = false;
             }
 
-            out += #fmt("%s=%s", key, encode_plus(*value));
+            out += #fmt("%s=%s", key, encode_plus(**value));
         }
     }
 
@@ -210,9 +211,9 @@ fn encode_form_urlencoded(m: hashmap<~str, @DVec<@~str>>) -> ~str {
  * type into a hashmap.
  */
 fn decode_form_urlencoded(s: ~[u8]) ->
-    map::hashmap<~str, @dvec::DVec<@~str>> {
+    map::HashMap<~str, @dvec::DVec<@~str>> {
     do io::with_bytes_reader(s) |rdr| {
-        let m = str_hash();
+        let m = HashMap();
         let mut key = ~"";
         let mut value = ~"";
         let mut parsing_key = true;
@@ -240,16 +241,16 @@ fn decode_form_urlencoded(s: ~[u8]) ->
               ch => {
                 let ch = match ch {
                   '%' => {
-                    uint::parse_buf(rdr.read_bytes(2u), 16u).get() as char
+                    uint::parse_bytes(rdr.read_bytes(2u), 16u).get() as char
                   }
                   '+' => ' ',
                   ch => ch
                 };
 
                 if parsing_key {
-                    str::push_char(key, ch)
+                    str::push_char(&mut key, ch)
                 } else {
-                    str::push_char(value, ch)
+                    str::push_char(&mut value, ch)
                 }
               }
             }
@@ -307,7 +308,7 @@ fn userinfo_from_str(uinfo: &str) -> UserInfo {
 }
 
 fn userinfo_to_str(+userinfo: UserInfo) -> ~str {
-    if option::is_some(userinfo.pass) {
+    if option::is_some(&userinfo.pass) {
         return str::concat(~[copy userinfo.user, ~":",
                           option::unwrap(copy userinfo.pass),
                           ~"@"]);
@@ -317,17 +318,17 @@ fn userinfo_to_str(+userinfo: UserInfo) -> ~str {
 }
 
 impl UserInfo : Eq {
-    pure fn eq(&&other: UserInfo) -> bool {
-        self.user == other.user && self.pass == other.pass
+    pure fn eq(other: &UserInfo) -> bool {
+        self.user == (*other).user && self.pass == (*other).pass
     }
-    pure fn ne(&&other: UserInfo) -> bool { !self.eq(other) }
+    pure fn ne(other: &UserInfo) -> bool { !self.eq(other) }
 }
 
 fn query_from_str(rawquery: &str) -> Query {
     let mut query: Query = ~[];
     if str::len(rawquery) != 0 {
         for str::split_char(rawquery, '&').each |p| {
-            let (k, v) = split_char_first(p, '=');
+            let (k, v) = split_char_first(*p, '=');
             vec::push(query, (decode_component(k), decode_component(v)));
         };
     }
@@ -337,7 +338,7 @@ fn query_from_str(rawquery: &str) -> Query {
 fn query_to_str(+query: Query) -> ~str {
     let mut strvec = ~[];
     for query.each |kv| {
-        let (k, v) = copy kv;
+        let (k, v) = copy *kv;
         strvec += ~[#fmt("%s=%s", encode_component(k), encode_component(v))];
     };
     return str::connect(strvec, ~"&");
@@ -376,9 +377,9 @@ enum Input {
     Unreserved // all other legal characters
 }
 
-impl Input: Eq {
-    pure fn eq(&&other: Input) -> bool {
-        match (self, other) {
+impl Input : Eq {
+    pure fn eq(other: &Input) -> bool {
+        match (self, (*other)) {
             (Digit, Digit) => true,
             (Hex, Hex) => true,
             (Unreserved, Unreserved) => true,
@@ -387,7 +388,7 @@ impl Input: Eq {
             (Unreserved, _) => false
         }
     }
-    pure fn ne(&&other: Input) -> bool { !self.eq(other) }
+    pure fn ne(other: &Input) -> bool { !self.eq(other) }
 }
 
 // returns userinfo, host, port, and unparsed part, or an error
@@ -523,7 +524,7 @@ fn get_authority(rawurl: &str) ->
 
     let host_is_end_plus_one: &fn() -> bool = || {
         end+1 == len
-            && !['?', '#', '/'].contains(rawurl[end] as char)
+            && !['?', '#', '/'].contains(&(rawurl[end] as char))
     };
 
     // finish up
@@ -626,30 +627,30 @@ fn get_query_fragment(rawurl: &str) ->
 fn from_str(rawurl: &str) -> result::Result<Url, ~str> {
     // scheme
     let mut schm = get_scheme(rawurl);
-    if result::is_err(schm) {
-        return result::Err(copy *result::get_err(schm));
+    if result::is_err(&schm) {
+        return result::Err(copy *result::get_err(&schm));
     }
     let (scheme, rest) = result::unwrap(schm);
 
     // authority
     let mut auth = get_authority(rest);
-    if result::is_err(auth) {
-        return result::Err(copy *result::get_err(auth));
+    if result::is_err(&auth) {
+        return result::Err(copy *result::get_err(&auth));
     }
     let (userinfo, host, port, rest) = result::unwrap(auth);
 
     // path
     let has_authority = if host == ~"" { false } else { true };
     let mut pth = get_path(rest, has_authority);
-    if result::is_err(pth) {
-        return result::Err(copy *result::get_err(pth));
+    if result::is_err(&pth) {
+        return result::Err(copy *result::get_err(&pth));
     }
     let (path, rest) = result::unwrap(pth);
 
     // query and fragment
     let mut qry = get_query_fragment(rest);
-    if result::is_err(qry) {
-        return result::Err(copy *result::get_err(qry));
+    if result::is_err(&qry) {
+        return result::Err(copy *result::get_err(&qry));
     }
     let (query, fragment) = result::unwrap(qry);
 
@@ -682,7 +683,7 @@ impl Url : FromStr {
  *
  */
 fn to_str(+url: Url) -> ~str {
-    let user = if option::is_some(url.user) {
+    let user = if url.user.is_some() {
       userinfo_to_str(option::unwrap(copy url.user))
     } else {
        ~""
@@ -697,7 +698,7 @@ fn to_str(+url: Url) -> ~str {
     } else {
         str::concat(~[~"?", query_to_str(url.query)])
     };
-    let fragment = if option::is_some(url.fragment) {
+    let fragment = if url.fragment.is_some() {
         str::concat(~[~"#", encode_component(
             option::unwrap(copy url.fragment))])
     } else {
@@ -718,8 +719,31 @@ impl Url: to_str::ToStr {
     }
 }
 
+impl Url : Eq {
+    pure fn eq(other: &Url) -> bool {
+        self.scheme == (*other).scheme
+            && self.user == (*other).user
+            && self.host == (*other).host
+            && self.port == (*other).port
+            && self.path == (*other).path
+            && self.query == (*other).query
+            && self.fragment == (*other).fragment
+    }
+
+    pure fn ne(other: &Url) -> bool {
+        !self.eq(other)
+    }
+}
+
+impl Url: IterBytes {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+        unsafe { self.to_str() }.iter_bytes(lsb0, f)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[legacy_exports];
     #[test]
     fn test_split_char_first() {
         let (u,v) = split_char_first(~"hello, sweet world", ',');
@@ -738,21 +762,21 @@ mod tests {
         assert u == option::Some({user: ~"user",
                                   pass: option::Some(~"pass")});
         assert h == ~"rust-lang.org";
-        assert option::is_none(p);
+        assert p.is_none();
         assert r == ~"/something";
 
         let (u, h, p, r) = result::unwrap(get_authority(
             ~"//rust-lang.org:8000?something"));
-        assert option::is_none(u);
+        assert u.is_none();
         assert h == ~"rust-lang.org";
         assert p == option::Some(~"8000");
         assert r == ~"?something";
 
         let (u, h, p, r) = result::unwrap(get_authority(
             ~"//rust-lang.org#blah"));
-        assert option::is_none(u);
+        assert u.is_none();
         assert h == ~"rust-lang.org";
-        assert option::is_none(p);
+        assert p.is_none();
         assert r == ~"#blah";
 
         // ipv6 tests
@@ -772,13 +796,13 @@ mod tests {
         assert p == option::Some(~"8000");
 
         // invalid authorities;
-        assert result::is_err(get_authority(
+        assert result::is_err(&get_authority(
             ~"//user:pass@rust-lang:something"));
-        assert result::is_err(get_authority(
+        assert result::is_err(&get_authority(
             ~"//user@rust-lang:something:/path"));
-        assert result::is_err(get_authority(
+        assert result::is_err(&get_authority(
             ~"//2001:0db8:85a3:0042:0000:8a2e:0370:7334:800a"));
-        assert result::is_err(get_authority(
+        assert result::is_err(&get_authority(
             ~"//2001:0db8:85a3:0042:0000:8a2e:0370:7334:8000:00"));
 
         // these parse as empty, because they don't start with '//'
@@ -806,7 +830,7 @@ mod tests {
         assert r == ~"?q=v";
 
         //failure cases
-        assert result::is_err(get_path(~"something?q", true));
+        assert result::is_err(&get_path(~"something?q", true));
 
     }
 
@@ -853,13 +877,13 @@ mod tests {
 
     #[test]
     fn test_no_scheme() {
-        assert result::is_err(get_scheme(~"noschemehere.html"));
+        assert result::is_err(&get_scheme(~"noschemehere.html"));
     }
 
     #[test]
     fn test_invalid_scheme_errors() {
-        assert result::is_err(from_str(~"99://something"));
-        assert result::is_err(from_str(~"://something"));
+        assert result::is_err(&from_str(~"99://something"));
+        assert result::is_err(&from_str(~"://something"));
     }
 
     #[test]
@@ -1046,26 +1070,24 @@ mod tests {
 
     #[test]
     fn test_encode_form_urlencoded() {
-        let m = str_hash();
+        let m = HashMap();
         assert encode_form_urlencoded(m) == ~"";
 
         m.insert(~"", @DVec());
         m.insert(~"foo", @DVec());
         assert encode_form_urlencoded(m) == ~"";
 
-        let m = str_hash();
-        m.insert(~"foo", @dvec::from_vec(~[mut @~"bar", @~"123"]));
+        let m = HashMap();
+        m.insert(~"foo", @dvec::from_vec(~[@~"bar", @~"123"]));
         assert encode_form_urlencoded(m) == ~"foo=bar&foo=123";
 
-        let m = str_hash();
-        m.insert(~"foo bar", @dvec::from_vec(~[mut @~"abc", @~"12 = 34"]));
+        let m = HashMap();
+        m.insert(~"foo bar", @dvec::from_vec(~[@~"abc", @~"12 = 34"]));
         assert encode_form_urlencoded(m) == ~"foo+bar=abc&foo+bar=12+%3D+34";
     }
 
     #[test]
     fn test_decode_form_urlencoded() {
-        import map::hash_from_strs;
-
         assert decode_form_urlencoded(~[]).size() == 0;
 
         let s = str::to_bytes(~"a=1&foo+bar=abc&foo+bar=12+%3D+34");

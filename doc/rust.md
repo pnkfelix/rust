@@ -222,7 +222,7 @@ pure
 return
 struct
 true trait type
-unchecked unsafe
+unsafe
 while
 ~~~~~~~~
 
@@ -450,7 +450,7 @@ Two examples of paths with type arguments:
 # use std::map;
 # fn f() {
 # fn id<T:Copy>(t: T) -> T { t }
-type t = map::hashmap<int,~str>;  // Type arguments used in a type expression
+type t = map::HashMap<int,~str>;  // Type arguments used in a type expression
 let x = id::<int>(10);           // Type arguments used in a call expression
 # }
 ~~~~
@@ -749,15 +749,15 @@ An example of a module:
 mod math {
     type complex = (f64, f64);
     fn sin(f: f64) -> f64 {
-        // ...
+        ...
 # fail;
     }
     fn cos(f: f64) -> f64 {
-        // ...
+        ...
 # fail;
     }
     fn tan(f: f64) -> f64 {
-        // ...
+        ...
 # fail;
     }
 }
@@ -875,7 +875,8 @@ declaration replaces the default export with the export specified.
 An example of an export:
 
 ~~~~~~~~
-mod foo {
+pub mod foo {
+	#[legacy_exports];
     export primary;
 
     fn primary() {
@@ -884,7 +885,7 @@ mod foo {
     }
 
     fn helper(x: int, y: int) {
-        // ...
+        ...
     }
 }
 
@@ -912,11 +913,11 @@ mod foo {
     }
 
     fn secondary() {
-        // ...
+        ...
     }
 
     fn helper(x: int, y: int) {
-        // ...
+        ...
     }
 }
 ~~~~~~~~
@@ -1028,32 +1029,33 @@ pure fn lt_42(x: int) -> bool {
 Pure functions may call other pure functions:
 
 ~~~~{.xfail-test}
-pure fn pure_length<T>(ls: List<T>) -> uint { /* ... */ }
+pure fn pure_length<T>(ls: List<T>) -> uint { ... }
 
 pure fn nonempty_list<T>(ls: List<T>) -> bool { pure_length(ls) > 0u }
 ~~~~
 
 *TODO:* should actually define referential transparency.
 
-The effect checking rules previously enumerated are a restricted set of
-typechecking rules meant to approximate the universe of observably
-referentially transparent Rust procedures conservatively. Sometimes, these
-rules are *too* restrictive. Rust allows programmers to violate these rules by
-writing pure functions that the compiler cannot prove to be referentially
-transparent, using an escape-hatch feature called "unchecked blocks". When
-writing code that uses unchecked blocks, programmers should always be aware
-that they have an obligation to show that the code *behaves* referentially
-transparently at all times, even if the compiler cannot *prove* automatically
-that the code is referentially transparent. In the presence of unchecked
-blocks, the compiler provides no static guarantee that the code will behave as
-expected at runtime. Rather, the programmer has an independent obligation to
-verify the semantics of the pure functions they write.
+The effect checking rules previously enumerated are a restricted set
+of typechecking rules meant to approximate the universe of observably
+referentially transparent Rust procedures conservatively. Sometimes,
+these rules are *too* restrictive. Rust allows programmers to violate
+these rules by writing pure functions that the compiler cannot prove
+to be referentially transparent, using "unsafe blocks". When writing
+code that uses unsafe blocks, programmers should always be aware that
+they have an obligation to show that the code *behaves* referentially
+transparently at all times, even if the compiler cannot *prove*
+automatically that the code is referentially transparent. In the
+presence of unsafe blocks, the compiler provides no static guarantee
+that the code will behave as expected at runtime. Rather, the
+programmer has an independent obligation to verify the semantics of
+the pure functions they write.
 
 *TODO:* last two sentences are vague.
 
-An example of a pure function that uses an unchecked block:
+An example of a pure function that uses an unsafe block:
 
-~~~~
+~~~~ {.xfail-test}
 # use std::list::*;
 
 fn pure_foldl<T, U: Copy>(ls: List<T>, u: U, f: fn(&&T, &&U) -> U) -> U {
@@ -1065,7 +1067,7 @@ fn pure_foldl<T, U: Copy>(ls: List<T>, u: U, f: fn(&&T, &&U) -> U) -> U {
 
 pure fn pure_length<T>(ls: List<T>) -> uint {
     fn count<T>(_t: T, &&u: uint) -> uint { u + 1u }
-    unchecked {
+    unsafe {
         pure_foldl(ls, 0u, count)
     }
 }
@@ -1084,7 +1086,7 @@ appear in its signature. Each type parameter must be explicitly
 declared, in an angle-bracket-enclosed, comma-separated list following
 the function name.
 
-~~~~
+~~~~ {.xfail-test}
 fn iter<T>(seq: ~[T], f: fn(T)) {
     for seq.each |elt| { f(elt); }
 }
@@ -1327,7 +1329,7 @@ specified, after the `impl` keyword.
 # trait seq<T> { }
 
 impl<T> ~[T]: seq<T> {
-    /* ... */
+   ...
 }
 impl u32: seq<bool> {
    /* Treat the integer as a sequence of bits */
@@ -1426,13 +1428,13 @@ An example of attributes:
 // A function marked as a unit test
 #[test]
 fn test_foo() {
-  // ...
+  ...
 }
 
 // A conditionally-compiled module
 #[cfg(target_os="linux")]
 mod bar {
-  // ...
+  ...
 }
 
 // A documentation attribute
@@ -2041,19 +2043,19 @@ break_expr : "break" ;
 Executing a `break` expression immediately terminates the innermost loop
 enclosing it. It is only permitted in the body of a loop.
 
-### Again expressions
+### Loop expressions
 
 ~~~~~~~~{.ebnf .gram}
-again_expr : "again" ;
+loop_expr : "loop" ;
 ~~~~~~~~
 
-Evaluating an `again` expression immediately terminates the current iteration of
+Evaluating a `loop` expression immediately terminates the current iteration of
 the innermost loop enclosing it, returning control to the loop *head*. In the
 case of a `while` loop, the head is the conditional expression controlling the
 loop. In the case of a `for` loop, the head is the call-expression controlling
 the loop.
 
-An `again` expression is only permitted in the body of a loop.
+A `loop` expression is only permitted in the body of a loop.
 
 
 ### For expressions
@@ -2077,7 +2079,7 @@ An example a for loop:
 let v: ~[foo] = ~[a, b, c];
 
 for v.each |e| {
-    bar(e);
+    bar(*e);
 }
 ~~~~
 
@@ -3036,7 +3038,7 @@ let ch = comm::Chan(po);
 
 do task::spawn {
     // let task run, do other things
-    // ...
+    ...
     comm::send(ch, true);
 };
 

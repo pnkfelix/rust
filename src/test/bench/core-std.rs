@@ -1,14 +1,14 @@
 // Microbenchmarks for various functions in core and std
 
-use std;
+extern mod std;
 
 use std::time::precise_time_s;
 use std::map;
-use std::map::{map, hashmap};
+use std::map::{Map, HashMap};
 
 use io::{Reader, ReaderUtil};
 
-fn main(argv: ~[~str]) {
+fn main(++argv: ~[~str]) {
     #macro[
         [#bench[id],
          maybe_run_test(argv, #stringify(id), id)
@@ -30,7 +30,7 @@ fn maybe_run_test(argv: &[~str], name: ~str, test: fn()) {
 
     if os::getenv(~"RUST_BENCH").is_some() { run_test = true }
     else if argv.len() > 0 {
-        run_test = argv.contains(~"all") || argv.contains(name)
+        run_test = argv.contains(&~"all") || argv.contains(&name)
     }
 
     if !run_test { return }
@@ -56,7 +56,7 @@ fn read_line() {
         .push_rel(&Path("src/test/bench/shootout-k-nucleotide.data"));
 
     for int::range(0, 3) |_i| {
-        let reader = result::get(io::file_reader(&path));
+        let reader = result::get(&io::file_reader(&path));
         while !reader.eof() {
             reader.read_line();
         }
@@ -66,7 +66,7 @@ fn read_line() {
 fn str_set() {
     let r = rand::Rng();
 
-    let s = map::hashmap();
+    let s = map::HashMap();
 
     for int::range(0, 1000) |_i| {
         map::set_add(s, r.gen_str(10));

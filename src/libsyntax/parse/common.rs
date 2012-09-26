@@ -1,4 +1,4 @@
-use std::map::{hashmap};
+use std::map::{HashMap};
 use ast_util::spanned;
 use parser::parser;
 use lexer::reader;
@@ -37,9 +37,6 @@ trait parser_common {
     fn is_any_keyword(tok: token::token) -> bool;
     fn eat_keyword(word: ~str) -> bool;
     fn expect_keyword(word: ~str);
-    fn is_restricted_keyword(word: ~str) -> bool;
-    fn check_restricted_keywords();
-    fn check_restricted_keywords_(w: ~str);
     fn expect_gt();
     fn parse_seq_to_before_gt<T: Copy>(sep: Option<token::token>,
                                        f: fn(parser) -> T) -> ~[T];
@@ -84,6 +81,8 @@ impl parser: parser_common {
     }
 
     fn parse_ident() -> ast::ident {
+        self.check_strict_keywords();
+        self.check_reserved_keywords();
         match copy self.token {
           token::IDENT(i, _) => { self.bump(); return i; }
           token::INTERPOLATED(token::nt_ident(*)) => { self.bug(
@@ -102,7 +101,6 @@ impl parser: parser_common {
     }
 
     fn parse_value_ident() -> ast::ident {
-        self.check_restricted_keywords();
         return self.parse_ident();
     }
 
@@ -163,23 +161,43 @@ impl parser: parser_common {
         }
     }
 
-    fn is_restricted_keyword(word: ~str) -> bool {
-        self.restricted_keywords.contains_key_ref(&word)
+    fn is_strict_keyword(word: ~str) -> bool {
+        self.strict_keywords.contains_key_ref(&word)
     }
 
-    fn check_restricted_keywords() {
+    fn check_strict_keywords() {
         match self.token {
           token::IDENT(_, false) => {
             let w = token_to_str(self.reader, self.token);
-            self.check_restricted_keywords_(w);
+            self.check_strict_keywords_(w);
           }
           _ => ()
         }
     }
 
-    fn check_restricted_keywords_(w: ~str) {
-        if self.is_restricted_keyword(w) {
-            self.fatal(~"found `" + w + ~"` in restricted position");
+    fn check_strict_keywords_(w: ~str) {
+        if self.is_strict_keyword(w) {
+            self.fatal(~"found `" + w + ~"` in ident position");
+        }
+    }
+
+    fn is_reserved_keyword(word: ~str) -> bool {
+        self.reserved_keywords.contains_key_ref(&word)
+    }
+
+    fn check_reserved_keywords() {
+        match self.token {
+          token::IDENT(_, false) => {
+            let w = token_to_str(self.reader, self.token);
+            self.check_reserved_keywords_(w);
+          }
+          _ => ()
+        }
+    }
+
+    fn check_reserved_keywords_(w: ~str) {
+        if self.is_reserved_keyword(w) {
+            self.fatal(~"`" + w + ~"` is a reserved keyword");
         }
     }
 

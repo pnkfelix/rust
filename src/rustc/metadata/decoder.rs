@@ -1,7 +1,7 @@
 // Decoding metadata from a single crate's metadata
 
 use std::{ebml, map};
-use std::map::{hashmap, str_hash};
+use std::map::HashMap;
 use io::WriterUtil;
 use dvec::DVec;
 use syntax::{ast, ast_util};
@@ -16,7 +16,7 @@ use util::ppaux::ty_to_str;
 use syntax::diagnostic::span_handler;
 use common::*;
 use syntax::parse::token::ident_interner;
-
+use hash::{Hash, HashUtil};
 
 export class_dtor;
 export get_class_fields;
@@ -88,11 +88,11 @@ fn maybe_find_item(item_id: int, items: ebml::Doc) -> Option<ebml::Doc> {
     }
     lookup_hash(items,
                 |a| eq_item(a, item_id),
-                hash_node_id(item_id))
+                item_id.hash() as uint)
 }
 
 fn find_item(item_id: int, items: ebml::Doc) -> ebml::Doc {
-    return option::get(maybe_find_item(item_id, items));
+    return maybe_find_item(item_id, items).get();
 }
 
 // Looks up an item in the given metadata and returns an ebml doc pointing
@@ -130,10 +130,10 @@ enum Family {
 }
 
 impl Family : cmp::Eq {
-    pure fn eq(&&other: Family) -> bool {
-        (self as uint) == (other as uint)
+    pure fn eq(other: &Family) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: Family) -> bool { !self.eq(other) }
+    pure fn ne(other: &Family) -> bool { !self.eq(other) }
 }
 
 fn item_family(item: ebml::Doc) -> Family {
@@ -193,7 +193,7 @@ fn each_reexport(d: ebml::Doc, f: fn(ebml::Doc) -> bool) {
 fn field_mutability(d: ebml::Doc) -> ast::class_mutability {
     // Use maybe_get_doc in case it's a method
     option::map_default(
-        ebml::maybe_get_doc(d, tag_class_mut),
+        &ebml::maybe_get_doc(d, tag_class_mut),
         ast::class_immutable,
         |d| {
             match ebml::doc_as_u8(d) as char {
@@ -204,8 +204,8 @@ fn field_mutability(d: ebml::Doc) -> ast::class_mutability {
 }
 
 fn variant_disr_val(d: ebml::Doc) -> Option<int> {
-    do option::chain(ebml::maybe_get_doc(d, tag_disr_val)) |val_doc| {
-        int::parse_buf(ebml::doc_data(val_doc), 10u)
+    do option::chain(&ebml::maybe_get_doc(d, tag_disr_val)) |val_doc| {
+        int::parse_bytes(ebml::doc_data(val_doc), 10u)
     }
 }
 
@@ -274,9 +274,7 @@ fn item_path(intr: ident_interner, item_doc: ebml::Doc) -> ast_map::path {
     let len_doc = ebml::get_doc(path_doc, tag_path_len);
     let len = ebml::doc_as_u32(len_doc) as uint;
 
-    let mut result = ~[];
-    vec::reserve(result, len);
-
+    let mut result = vec::with_capacity(len);
     for ebml::docs(path_doc) |tag, elt_doc| {
         if tag == tag_path_elt_mod {
             let str = ebml::doc_as_str(elt_doc);
@@ -377,7 +375,7 @@ fn get_impl_method(intr: ident_interner, cdata: cmd, id: ast::node_id,
             found = Some(translate_def_id(cdata, m_did));
         }
     }
-    option::get(found)
+    found.get()
 }
 
 fn get_class_method(intr: ident_interner, cdata: cmd, id: ast::node_id,
@@ -584,7 +582,7 @@ fn get_enum_variants(intr: ident_interner, cdata: cmd, id: ast::node_id,
                                 tcx, cdata);
         let name = item_name(intr, item);
         let mut arg_tys: ~[ty::t] = ~[];
-        match ty::get(ctor_ty).struct {
+        match ty::get(ctor_ty).sty {
           ty::ty_fn(f) => {
             for f.sig.inputs.each |a| { vec::push(arg_tys, a.ty); }
           }
@@ -595,7 +593,7 @@ fn get_enum_variants(intr: ident_interner, cdata: cmd, id: ast::node_id,
           _         => { /* empty */ }
         }
         vec::push(infos, @{args: arg_tys, ctor_ty: ctor_ty, name: name,
-                           id: did, disr_val: disr_val});
+                           id: *did, disr_val: disr_val});
         disr_val += 1;
     }
     return infos;
@@ -696,7 +694,7 @@ fn get_trait_methods(intr: ident_interner, cdata: cmd, id: ast::node_id,
         let bounds = item_ty_param_bounds(mth, tcx, cdata);
         let name = item_name(intr, mth);
         let ty = doc_type(mth, tcx, cdata);
-        let fty = match ty::get(ty).struct {
+        let fty = match ty::get(ty).sty {
           ty::ty_fn(f) => f,
           _ => {
             tcx.diag.handler().bug(
@@ -881,7 +879,7 @@ fn get_attributes(md: ebml::Doc) -> ~[ast::attribute] {
 fn list_meta_items(intr: ident_interner,
                    meta_items: ebml::Doc, out: io::Writer) {
     for get_meta_items(meta_items).each |mi| {
-        out.write_str(fmt!("%s\n", pprust::meta_item_to_str(mi, intr)));
+        out.write_str(fmt!("%s\n", pprust::meta_item_to_str(*mi, intr)));
     }
 }
 
@@ -890,7 +888,7 @@ fn list_crate_attributes(intr: ident_interner, md: ebml::Doc, hash: ~str,
     out.write_str(fmt!("=Crate Attributes (%s)=\n", hash));
 
     for get_attributes(md).each |attr| {
-        out.write_str(fmt!("%s\n", pprust::attribute_to_str(attr, intr)));
+        out.write_str(fmt!("%s\n", pprust::attribute_to_str(*attr, intr)));
     }
 
     out.write_str(~"\n\n");
@@ -969,7 +967,7 @@ fn get_crate_module_paths(intr: ident_interner, cdata: cmd)
     // find all module (path, def_ids), which are not
     // fowarded path due to renamed import or reexport
     let mut res = ~[];
-    let mods = map::str_hash();
+    let mods = map::HashMap::<~str,bool>();
     do iter_crate_items(intr, cdata) |path, did| {
         let m = mod_of_path(path);
         if str::is_not_empty(m) {

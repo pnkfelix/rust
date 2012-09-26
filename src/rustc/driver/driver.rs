@@ -13,7 +13,7 @@ use std::getopts;
 use io::WriterUtil;
 use getopts::{optopt, optmulti, optflag, optflagopt, opt_present};
 use back::{x86, x86_64};
-use std::map::hashmap;
+use std::map::HashMap;
 use lib::llvm::llvm;
 
 enum pp_mode {ppm_normal, ppm_expanded, ppm_typed, ppm_identified,
@@ -93,7 +93,9 @@ fn parse_cfgspecs(cfgspecs: ~[~str]) -> ast::crate_cfg {
     // varieties of meta_item here. At the moment we just support the
     // meta_word variant.
     let mut words = ~[];
-    for cfgspecs.each |s| { vec::push(words, attr::mk_word_item(s)); }
+    for cfgspecs.each |s| {
+        vec::push(words, attr::mk_word_item(*s));
+    }
     return words;
 }
 
@@ -125,7 +127,7 @@ fn time<T>(do_it: bool, what: ~str, thunk: fn() -> T) -> T {
     let end = std::time::precise_time_s();
     io::stdout().write_str(fmt!("time: %3.3f s\t%s\n",
                                 end - start, what));
-    return rv;
+    move rv
 }
 
 enum compile_upto {
@@ -137,10 +139,10 @@ enum compile_upto {
 }
 
 impl compile_upto : cmp::Eq {
-    pure fn eq(&&other: compile_upto) -> bool {
-        (self as uint) == (other as uint)
+    pure fn eq(other: &compile_upto) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: compile_upto) -> bool { !self.eq(other) }
+    pure fn ne(other: &compile_upto) -> bool { !self.eq(other) }
 }
 
 fn compile_upto(sess: session, cfg: ast::crate_cfg,
@@ -162,7 +164,7 @@ fn compile_upto(sess: session, cfg: ast::crate_cfg,
         front::test::modify_for_testing(sess, crate));
 
     crate = time(time_passes, ~"expansion", ||
-        syntax::ext::expand::expand_crate(sess.parse_sess, sess.opts.cfg,
+        syntax::ext::expand::expand_crate(sess.parse_sess, cfg,
                                           crate));
 
     if upto == cu_expand { return {crate: crate, tcx: None}; }
@@ -190,7 +192,6 @@ fn compile_upto(sess: session, cfg: ast::crate_cfg,
          middle::lang_items::collect_language_items(crate, sess));
 
     let { def_map: def_map,
-          exp_map: exp_map,
           exp_map2: exp_map2,
           trait_map: trait_map } =
         time(time_passes, ~"resolution", ||
@@ -206,7 +207,7 @@ fn compile_upto(sess: session, cfg: ast::crate_cfg,
         middle::region::determine_rp_in_crate(sess, ast_map, def_map, crate));
 
     let ty_cx = ty::mk_ctxt(sess, def_map, ast_map, freevars,
-                            region_map, rp_set);
+                            region_map, rp_set, move lang_items, crate);
 
     let (method_map, vtable_map) = time(time_passes, ~"typechecking", ||
                                         typeck::check_crate(ty_cx,
@@ -244,7 +245,7 @@ fn compile_upto(sess: session, cfg: ast::crate_cfg,
     time(time_passes, ~"lint checking", || lint::check_crate(ty_cx, crate));
 
     if upto == cu_no_trans { return {crate: crate, tcx: Some(ty_cx)}; }
-    let outputs = option::get(outputs);
+    let outputs = outputs.get();
 
     let maps = {mutbl_map: mutbl_map,
                 root_map: root_map,
@@ -255,7 +256,7 @@ fn compile_upto(sess: session, cfg: ast::crate_cfg,
     let (llmod, link_meta) = time(time_passes, ~"translation", ||
         trans::base::trans_crate(sess, crate, ty_cx,
                                  &outputs.obj_filename,
-                                 exp_map, exp_map2, maps));
+                                 exp_map2, maps));
 
     time(time_passes, ~"LLVM passes", ||
         link::write::run_passes(sess, llmod,
@@ -343,7 +344,7 @@ fn pretty_print_input(sess: session, cfg: ast::crate_cfg, input: input,
     let ann = match ppm {
       ppm_typed => {
         {pre: ann_paren_for_expr,
-         post: |a| ann_typed_post(option::get(tcx), a) }
+         post: |a| ann_typed_post(tcx.get(), a) }
       }
       ppm_identified | ppm_expanded_identified => {
         {pre: ann_paren_for_expr, post: ann_identified_post}
@@ -453,19 +454,19 @@ fn build_session_options(binary: ~str,
     let mut lint_opts = ~[];
     let lint_dict = lint::get_lint_dict();
     for lint_levels.each |level| {
-        let level_name = lint::level_to_str(level);
+        let level_name = lint::level_to_str(*level);
         let level_short = level_name.substr(0,1).to_upper();
         let flags = vec::append(getopts::opt_strs(matches, level_short),
                                 getopts::opt_strs(matches, level_name));
         for flags.each |lint_name| {
-            let lint_name = str::replace(lint_name, ~"-", ~"_");
+            let lint_name = str::replace(*lint_name, ~"-", ~"_");
             match lint_dict.find(lint_name) {
               None => {
                 early_error(demitter, fmt!("unknown %s flag: %s",
                                            level_name, lint_name));
               }
               Some(lint) => {
-                vec::push(lint_opts, (lint.lint, level));
+                vec::push(lint_opts, (lint.lint, *level));
               }
             }
         }
@@ -477,11 +478,11 @@ fn build_session_options(binary: ~str,
     for debug_flags.each |debug_flag| {
         let mut this_bit = 0u;
         for debug_map.each |pair| {
-            let (name, _, bit) = pair;
-            if name == debug_flag { this_bit = bit; break; }
+            let (name, _, bit) = *pair;
+            if name == *debug_flag { this_bit = bit; break; }
         }
         if this_bit == 0u {
-            early_error(demitter, fmt!("unknown debug flag: %s", debug_flag))
+            early_error(demitter, fmt!("unknown debug flag: %s", *debug_flag))
         }
         debugging_opts |= this_bit;
     }
@@ -506,7 +507,7 @@ fn build_session_options(binary: ~str,
     let extra_debuginfo = opt_present(matches, ~"xg");
     let debuginfo = opt_present(matches, ~"g") || extra_debuginfo;
     let sysroot_opt = getopts::opt_maybe_str(matches, ~"sysroot");
-    let sysroot_opt = option::map(sysroot_opt, |m| Path(m));
+    let sysroot_opt = sysroot_opt.map(|m| Path(m));
     let target_opt = getopts::opt_maybe_str(matches, ~"target");
     let save_temps = getopts::opt_present(matches, ~"save-temps");
     match output_type {
@@ -543,7 +544,7 @@ fn build_session_options(binary: ~str,
 
     let addl_lib_search_paths =
         getopts::opt_strs(matches, ~"L")
-        .map(|s| Path(s));
+        .map(|s| Path(*s));
     let cfg = parse_cfgspecs(getopts::opt_strs(matches, ~"cfg"));
     let test = opt_present(matches, ~"test");
     let sopts: @session::options =
@@ -685,7 +686,7 @@ fn build_output_filenames(input: input,
         };
 
         let stem = match input {
-          file_input(ifile) => option::get(ifile.filestem()),
+          file_input(ifile) => ifile.filestem().get(),
           str_input(_) => ~"rust_out"
         };
 
@@ -735,6 +736,7 @@ fn list_metadata(sess: session, path: &Path, out: io::Writer) {
 
 #[cfg(test)]
 mod test {
+    #[legacy_exports];
 
     // When the user supplies --test we should implicitly supply --cfg test
     #[test]

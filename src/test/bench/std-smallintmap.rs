@@ -1,6 +1,6 @@
 // Microbenchmark for the smallintmap library
 
-use std;
+extern mod std;
 use std::smallintmap;
 use std::smallintmap::SmallIntMap;
 use io::WriterUtil;
@@ -17,7 +17,7 @@ fn check_sequential(min: uint, max: uint, map: SmallIntMap<uint>) {
     }
 }
 
-fn main(args: ~[~str]) {
+fn main(++args: ~[~str]) {
     let args = if os::getenv(~"RUST_BENCH").is_some() {
         ~[~"", ~"100000", ~"100"]
     } else if args.len() <= 1u {

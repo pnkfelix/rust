@@ -1,8 +1,8 @@
 use util::interner;
 use util::interner::interner;
-use std::map::{hashmap, str_hash};
-use std::serialization::{serializer,
-                            deserializer,
+use std::map::HashMap;
+use std::serialization::{Serializer,
+                            Deserializer,
                             serialize_uint,
                             deserialize_uint,
                             serialize_i64,
@@ -279,7 +279,8 @@ pure fn is_bar(t: token) -> bool {
 
 
 mod special_idents {
-    import ast::ident;
+    #[legacy_exports];
+    use ast::ident;
     const underscore : ident = 0u;
     const anon : ident = 1u;
     const dtor : ident = 2u; // 'drop', but that's reserved
@@ -330,7 +331,7 @@ type ident_interner = util::interner::interner<@~str>;
  * so we have to use a unique number. See taskgroup_key! in task.rs
  * for another case of this. */
 macro_rules! interner_key (
-    () => (unsafe::transmute::<(uint, uint), &fn(+@@token::ident_interner)>(
+    () => (cast::transmute::<(uint, uint), &fn(+v: @@token::ident_interner)>(
         (-3 as uint, 0u)))
 )
 
@@ -348,8 +349,12 @@ fn mk_ident_interner() -> ident_interner {
     let rv = interner::mk_prefill::<@~str>(init_vec);
 
     /* having multiple interners will just confuse the serializer */
-    unsafe{ assert task::local_data_get(interner_key!()).is_none() };
-    unsafe{ task::local_data_set(interner_key!(), @rv) };
+    unsafe {
+        assert task::local_data::local_data_get(interner_key!()).is_none()
+    };
+    unsafe {
+        task::local_data::local_data_set(interner_key!(), @rv)
+    };
     rv
 }
 
@@ -362,349 +367,346 @@ fn mk_fake_ident_interner() -> ident_interner {
 /**
  * All the valid words that have meaning in the Rust language.
  *
- * Rust keywords are either 'contextual' or 'restricted'. Contextual
- * keywords may be used as identifiers because their appearance in
- * the grammar is unambiguous. Restricted keywords may not appear
- * in positions that might otherwise contain _value identifiers_.
+ * Rust keywords are either 'temporary', 'strict' or 'reserved'.  Temporary
+ * keywords are contextual and may be used as identifiers anywhere.  They are
+ * expected to disappear from the grammar soon.  Strict keywords may not
+ * appear as identifiers at all. Reserved keywords are not used anywhere in
+ * the language and may not appear as identifiers.
  */
-fn keyword_table() -> hashmap<~str, ()> {
-    let keywords = str_hash();
-    for contextual_keyword_table().each_key |word| {
+fn keyword_table() -> HashMap<~str, ()> {
+    let keywords = HashMap();
+    for temporary_keyword_table().each_key |word| {
         keywords.insert(word, ());
     }
-    for restricted_keyword_table().each_key |word| {
+    for strict_keyword_table().each_key |word| {
+        keywords.insert(word, ());
+    }
+    for reserved_keyword_table().each_key |word| {
         keywords.insert(word, ());
     }
     keywords
 }
 
 /// Keywords that may be used as identifiers
-fn contextual_keyword_table() -> hashmap<~str, ()> {
-    let words = str_hash();
+fn temporary_keyword_table() -> HashMap<~str, ()> {
+    let words = HashMap();
     let keys = ~[
-        ~"as",
-        ~"else",
-        ~"move",
-        ~"priv", ~"pub",
         ~"self", ~"static",
-        ~"use"
     ];
     for keys.each |word| {
-        words.insert(word, ());
+        words.insert(*word, ());
     }
     words
 }
 
-/**
- * Keywords that may not appear in any position that might otherwise contain a
- * _value identifier_. Restricted keywords may still be used as other types of
- * identifiers.
- *
- * Reasons:
- *
- * * For some (most?), if used at the start of a line, they will cause the
- *   line to be interpreted as a specific kind of statement, which would be
- *   confusing.
- *
- * * `true` or `false` as identifiers would always be shadowed by
- *   the boolean constants
- */
-fn restricted_keyword_table() -> hashmap<~str, ()> {
-    let words = str_hash();
+/// Full keywords. May not appear anywhere else.
+fn strict_keyword_table() -> HashMap<~str, ()> {
+    let words = HashMap();
     let keys = ~[
-        ~"assert",
+        ~"as", ~"assert",
         ~"break",
         ~"const", ~"copy",
         ~"do", ~"drop",
         ~"else", ~"enum", ~"export", ~"extern",
         ~"fail", ~"false", ~"fn", ~"for",
-        ~"if", ~"impl", ~"import",
+        ~"if", ~"impl",
         ~"let", ~"log", ~"loop",
         ~"match", ~"mod", ~"move", ~"mut",
-        ~"pure",
+        ~"priv", ~"pub", ~"pure",
         ~"ref", ~"return",
         ~"struct",
         ~"true", ~"trait", ~"type",
-        ~"unchecked", ~"unsafe",
+        ~"unsafe", ~"use",
         ~"while"
     ];
     for keys.each |word| {
-        words.insert(word, ());
+        words.insert(*word, ());
+    }
+    words
+}
+
+fn reserved_keyword_table() -> HashMap<~str, ()> {
+    let words = HashMap();
+    let keys = ~[
+        ~"be"
+    ];
+    for keys.each |word| {
+        words.insert(*word, ());
     }
     words
 }
 
 impl binop : cmp::Eq {
-    pure fn eq(&&other: binop) -> bool {
-        (self as uint) == (other as uint)
+    pure fn eq(other: &binop) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: binop) -> bool { !self.eq(other) }
+    pure fn ne(other: &binop) -> bool { !self.eq(other) }
 }
 
 impl token : cmp::Eq {
-    pure fn eq(&&other: token) -> bool {
+    pure fn eq(other: &token) -> bool {
         match self {
             EQ => {
-                match other {
+                match (*other) {
                     EQ => true,
                     _ => false
                 }
             }
             LT => {
-                match other {
+                match (*other) {
                     LT => true,
                     _ => false
                 }
             }
             LE => {
-                match other {
+                match (*other) {
                     LE => true,
                     _ => false
                 }
             }
             EQEQ => {
-                match other {
+                match (*other) {
                     EQEQ => true,
                     _ => false
                 }
             }
             NE => {
-                match other {
+                match (*other) {
                     NE => true,
                     _ => false
                 }
             }
             GE => {
-                match other {
+                match (*other) {
                     GE => true,
                     _ => false
                 }
             }
             GT => {
-                match other {
+                match (*other) {
                     GT => true,
                     _ => false
                 }
             }
             ANDAND => {
-                match other {
+                match (*other) {
                     ANDAND => true,
                     _ => false
                 }
             }
             OROR => {
-                match other {
+                match (*other) {
                     OROR => true,
                     _ => false
                 }
             }
             NOT => {
-                match other {
+                match (*other) {
                     NOT => true,
                     _ => false
                 }
             }
             TILDE => {
-                match other {
+                match (*other) {
                     TILDE => true,
                     _ => false
                 }
             }
             BINOP(e0a) => {
-                match other {
+                match (*other) {
                     BINOP(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             BINOPEQ(e0a) => {
-                match other {
+                match (*other) {
                     BINOPEQ(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             AT => {
-                match other {
+                match (*other) {
                     AT => true,
                     _ => false
                 }
             }
             DOT => {
-                match other {
+                match (*other) {
                     DOT => true,
                     _ => false
                 }
             }
             DOTDOT => {
-                match other {
+                match (*other) {
                     DOTDOT => true,
                     _ => false
                 }
             }
             ELLIPSIS => {
-                match other {
+                match (*other) {
                     ELLIPSIS => true,
                     _ => false
                 }
             }
             COMMA => {
-                match other {
+                match (*other) {
                     COMMA => true,
                     _ => false
                 }
             }
             SEMI => {
-                match other {
+                match (*other) {
                     SEMI => true,
                     _ => false
                 }
             }
             COLON => {
-                match other {
+                match (*other) {
                     COLON => true,
                     _ => false
                 }
             }
             MOD_SEP => {
-                match other {
+                match (*other) {
                     MOD_SEP => true,
                     _ => false
                 }
             }
             RARROW => {
-                match other {
+                match (*other) {
                     RARROW => true,
                     _ => false
                 }
             }
             LARROW => {
-                match other {
+                match (*other) {
                     LARROW => true,
                     _ => false
                 }
             }
             DARROW => {
-                match other {
+                match (*other) {
                     DARROW => true,
                     _ => false
                 }
             }
             FAT_ARROW => {
-                match other {
+                match (*other) {
                     FAT_ARROW => true,
                     _ => false
                 }
             }
             LPAREN => {
-                match other {
+                match (*other) {
                     LPAREN => true,
                     _ => false
                 }
             }
             RPAREN => {
-                match other {
+                match (*other) {
                     RPAREN => true,
                     _ => false
                 }
             }
             LBRACKET => {
-                match other {
+                match (*other) {
                     LBRACKET => true,
                     _ => false
                 }
             }
             RBRACKET => {
-                match other {
+                match (*other) {
                     RBRACKET => true,
                     _ => false
                 }
             }
             LBRACE => {
-                match other {
+                match (*other) {
                     LBRACE => true,
                     _ => false
                 }
             }
             RBRACE => {
-                match other {
+                match (*other) {
                     RBRACE => true,
                     _ => false
                 }
             }
             POUND => {
-                match other {
+                match (*other) {
                     POUND => true,
                     _ => false
                 }
             }
             DOLLAR => {
-                match other {
+                match (*other) {
                     DOLLAR => true,
                     _ => false
                 }
             }
             LIT_INT(e0a, e1a) => {
-                match other {
+                match (*other) {
                     LIT_INT(e0b, e1b) => e0a == e0b && e1a == e1b,
                     _ => false
                 }
             }
             LIT_UINT(e0a, e1a) => {
-                match other {
+                match (*other) {
                     LIT_UINT(e0b, e1b) => e0a == e0b && e1a == e1b,
                     _ => false
                 }
             }
             LIT_INT_UNSUFFIXED(e0a) => {
-                match other {
+                match (*other) {
                     LIT_INT_UNSUFFIXED(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             LIT_FLOAT(e0a, e1a) => {
-                match other {
+                match (*other) {
                     LIT_FLOAT(e0b, e1b) => e0a == e0b && e1a == e1b,
                     _ => false
                 }
             }
             LIT_STR(e0a) => {
-                match other {
+                match (*other) {
                     LIT_STR(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             IDENT(e0a, e1a) => {
-                match other {
+                match (*other) {
                     IDENT(e0b, e1b) => e0a == e0b && e1a == e1b,
                     _ => false
                 }
             }
             UNDERSCORE => {
-                match other {
+                match (*other) {
                     UNDERSCORE => true,
                     _ => false
                 }
             }
             INTERPOLATED(_) => {
-                match other {
+                match (*other) {
                     INTERPOLATED(_) => true,
                     _ => false
                 }
             }
             DOC_COMMENT(e0a) => {
-                match other {
+                match (*other) {
                     DOC_COMMENT(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             EOF => {
-                match other {
+                match (*other) {
                     EOF => true,
                     _ => false
                 }
             }
         }
     }
-    pure fn ne(&&other: token) -> bool { !self.eq(other) }
+    pure fn ne(other: &token) -> bool { !self.eq(other) }
 }
 
 // Local Variables:

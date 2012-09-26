@@ -221,8 +221,8 @@ use syntax::ast_util;
 use syntax::ast_map;
 use syntax::codemap::span;
 use util::ppaux::{ty_to_str, region_to_str, explain_region,
-                  note_and_explain_region};
-use std::map::{int_hash, hashmap, set};
+                  expr_repr, note_and_explain_region};
+use std::map::{HashMap, Set};
 use std::list;
 use std::list::{List, Cons, Nil};
 use result::{Result, Ok, Err};
@@ -244,7 +244,7 @@ fn check_crate(tcx: ty::ctxt,
                                 method_map: method_map,
                                 last_use_map: last_use_map,
                                 root_map: root_map(),
-                                mutbl_map: int_hash(),
+                                mutbl_map: HashMap(),
                                 mut loaned_paths_same: 0,
                                 mut loaned_paths_imm: 0,
                                 mut stable_paths: 0,
@@ -300,7 +300,7 @@ enum borrowck_ctxt {
 // a map mapping id's of expressions of gc'd type (@T, @[], etc) where
 // the box needs to be kept live to the id of the scope for which they
 // must stay live.
-type root_map = hashmap<root_map_key, ast::node_id>;
+type root_map = HashMap<root_map_key, ast::node_id>;
 
 // the keys to the root map combine the `id` of the expression with
 // the number of types that it is autodereferenced.  So, for example,
@@ -311,61 +311,61 @@ type root_map_key = {id: ast::node_id, derefs: uint};
 
 // set of ids of local vars / formal arguments that are modified / moved.
 // this is used in trans for optimization purposes.
-type mutbl_map = std::map::hashmap<ast::node_id, ()>;
+type mutbl_map = std::map::HashMap<ast::node_id, ()>;
 
 // Errors that can occur"]
 enum bckerr_code {
     err_mut_uniq,
     err_mut_variant,
     err_root_not_permitted,
-    err_mutbl(ast::mutability, ast::mutability),
+    err_mutbl(ast::mutability),
     err_out_of_root_scope(ty::region, ty::region), // superscope, subscope
     err_out_of_scope(ty::region, ty::region) // superscope, subscope
 }
 
 impl bckerr_code : cmp::Eq {
-    pure fn eq(&&other: bckerr_code) -> bool {
+    pure fn eq(other: &bckerr_code) -> bool {
         match self {
             err_mut_uniq => {
-                match other {
+                match (*other) {
                     err_mut_uniq => true,
                     _ => false
                 }
             }
             err_mut_variant => {
-                match other {
+                match (*other) {
                     err_mut_variant => true,
                     _ => false
                 }
             }
             err_root_not_permitted => {
-                match other {
+                match (*other) {
                     err_root_not_permitted => true,
                     _ => false
                 }
             }
-            err_mutbl(e0a, e1a) => {
-                match other {
-                    err_mutbl(e0b, e1b) => e0a == e0b && e1a == e1b,
+            err_mutbl(e0a) => {
+                match (*other) {
+                    err_mutbl(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             err_out_of_root_scope(e0a, e1a) => {
-                match other {
+                match (*other) {
                     err_out_of_root_scope(e0b, e1b) =>
                         e0a == e0b && e1a == e1b,
                     _ => false
                 }
             }
             err_out_of_scope(e0a, e1a) => {
-                match other {
+                match (*other) {
                     err_out_of_scope(e0b, e1b) => e0a == e0b && e1a == e1b,
                     _ => false
                 }
             }
         }
     }
-    pure fn ne(&&other: bckerr_code) -> bool { !self.eq(other) }
+    pure fn ne(other: &bckerr_code) -> bool { !self.eq(other) }
 }
 
 // Combination of an error code and the categorization of the expression
@@ -373,10 +373,10 @@ impl bckerr_code : cmp::Eq {
 type bckerr = {cmt: cmt, code: bckerr_code};
 
 impl bckerr : cmp::Eq {
-    pure fn eq(&&other: bckerr) -> bool {
-        self.cmt == other.cmt && self.code == other.code
+    pure fn eq(other: &bckerr) -> bool {
+        self.cmt == (*other).cmt && self.code == (*other).code
     }
-    pure fn ne(&&other: bckerr) -> bool { !self.eq(other) }
+    pure fn ne(other: &bckerr) -> bool { !self.eq(other) }
 }
 
 // shorthand for something that fails with `bckerr` or succeeds with `T`
@@ -392,36 +392,36 @@ type loan = {lp: @loan_path, cmt: cmt, mutbl: ast::mutability};
 /// - `pure_map`: map from block/expr that must be pure to the error message
 ///   that should be reported if they are not pure
 type req_maps = {
-    req_loan_map: hashmap<ast::node_id, @DVec<@DVec<loan>>>,
-    pure_map: hashmap<ast::node_id, bckerr>
+    req_loan_map: HashMap<ast::node_id, @DVec<@DVec<loan>>>,
+    pure_map: HashMap<ast::node_id, bckerr>
 };
 
 fn save_and_restore<T:Copy,U>(&save_and_restore_t: T, f: fn() -> U) -> U {
     let old_save_and_restore_t = save_and_restore_t;
     let u <- f();
     save_and_restore_t = old_save_and_restore_t;
-    return u;
+    move u
 }
 
 /// Creates and returns a new root_map
 
 impl root_map_key : cmp::Eq {
-    pure fn eq(&&other: root_map_key) -> bool {
-        self.id == other.id && self.derefs == other.derefs
+    pure fn eq(other: &root_map_key) -> bool {
+        self.id == (*other).id && self.derefs == (*other).derefs
     }
-    pure fn ne(&&other: root_map_key) -> bool {
-        ! (self == other)
+    pure fn ne(other: &root_map_key) -> bool {
+        ! (self == (*other))
     }
 }
 
 impl root_map_key : to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
         to_bytes::iter_bytes_2(&self.id, &self.derefs, lsb0, f);
     }
 }
 
 fn root_map() -> root_map {
-    return hashmap();
+    return HashMap();
 
     pure fn root_map_key_eq(k1: &root_map_key, k2: &root_map_key) -> bool {
         k1.id == k2.id && k1.derefs == k2.derefs
@@ -442,10 +442,6 @@ impl borrowck_ctxt {
 
     fn cat_expr(expr: @ast::expr) -> cmt {
         cat_expr(self.tcx, self.method_map, expr)
-    }
-
-    fn cat_borrow_of_expr(expr: @ast::expr) -> cmt {
-        cat_borrow_of_expr(self.tcx, self.method_map, expr)
     }
 
     fn cat_def(id: ast::node_id,
@@ -482,8 +478,8 @@ impl borrowck_ctxt {
         self.span_err(
             err.cmt.span,
             fmt!("illegal borrow: %s",
-                 self.bckerr_code_to_str(err.code)));
-        self.note_and_explain_bckerr(err.code);
+                 self.bckerr_to_str(err)));
+        self.note_and_explain_bckerr(err);
     }
 
     fn span_err(s: span, m: ~str) {
@@ -506,11 +502,12 @@ impl borrowck_ctxt {
         }
     }
 
-    fn bckerr_code_to_str(code: bckerr_code) -> ~str {
-        match code {
-            err_mutbl(req, act) => {
-                fmt!("creating %s alias to aliasable, %s memory",
-                     self.mut_to_str(req), self.mut_to_str(act))
+    fn bckerr_to_str(err: bckerr) -> ~str {
+        match err.code {
+            err_mutbl(req) => {
+                fmt!("creating %s alias to %s",
+                     self.mut_to_str(req),
+                     self.cmt_to_str(err.cmt))
             }
             err_mut_uniq => {
                 ~"unique value in aliasable, mutable location"
@@ -533,7 +530,8 @@ impl borrowck_ctxt {
         }
     }
 
-    fn note_and_explain_bckerr(code: bckerr_code) {
+    fn note_and_explain_bckerr(err: bckerr) {
+        let code = err.code;
         match code {
             err_mutbl(*) | err_mut_uniq | err_mut_variant |
             err_root_not_permitted => {}

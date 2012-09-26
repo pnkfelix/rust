@@ -10,7 +10,7 @@ fn const_lit(cx: @crate_ctxt, e: @ast::expr, lit: ast::lit)
       ast::lit_uint(u, t) => C_integral(T_uint_ty(cx, t), u, False),
       ast::lit_int_unsuffixed(i) => {
         let lit_int_ty = ty::node_id_to_type(cx.tcx, e.id);
-        match ty::get(lit_int_ty).struct {
+        match ty::get(lit_int_ty).sty {
           ty::ty_int(t) => {
             C_integral(T_int_ty(cx, t), i as u64, True)
           }
@@ -43,7 +43,7 @@ fn const_vec(cx: @crate_ctxt, e: @ast::expr, es: &[@ast::expr])
     let vec_ty = ty::expr_ty(cx.tcx, e);
     let unit_ty = ty::sequence_element_type(cx.tcx, vec_ty);
     let llunitty = type_of::type_of(cx, unit_ty);
-    let v = C_array(llunitty, es.map(|e| const_expr(cx, e)));
+    let v = C_array(llunitty, es.map(|e| const_expr(cx, *e)));
     let unit_sz = shape::llsize_of(cx, llunitty);
     let sz = llvm::LLVMConstMul(C_uint(cx, es.len()), unit_sz);
     return (v, sz, llunitty);
@@ -60,7 +60,7 @@ fn const_deref(cx: @crate_ctxt, v: ValueRef) -> ValueRef {
 }
 
 fn const_get_elt(cx: @crate_ctxt, v: ValueRef, us: &[c_uint]) -> ValueRef {
-    let r = do vec::as_buf(us) |p, len| {
+    let r = do vec::as_imm_buf(us) |p, len| {
         llvm::LLVMConstExtractValue(v, p, len as c_uint)
     };
 
@@ -76,7 +76,7 @@ fn const_autoderef(cx: @crate_ctxt, ty: ty::t, v: ValueRef)
     let mut v1 = v;
     loop {
         // Only rptrs can be autoderef'ed in a const context.
-        match ty::get(ty).struct {
+        match ty::get(ty).sty {
             ty::ty_rptr(_, mt) => {
                 t1 = mt.ty;
                 v1 = const_deref(cx, v1);
@@ -184,7 +184,7 @@ fn const_expr(cx: @crate_ctxt, e: @ast::expr) -> ValueRef {
                                     ~"index is not an integer-constant \
                                       expression")
           };
-          let (arr, _len) = match ty::get(bt).struct {
+          let (arr, _len) = match ty::get(bt).sty {
               ty::ty_evec(_, vstore) | ty::ty_estr(vstore) =>
                   match vstore {
                   ty::vstore_fixed(u) =>
@@ -236,7 +236,7 @@ fn const_expr(cx: @crate_ctxt, e: @ast::expr) -> ValueRef {
           // we can get the value (as a number) out of.
 
           let len = llvm::LLVMGetArrayLength(val_ty(arr)) as u64;
-          let len = match ty::get(bt).struct {
+          let len = match ty::get(bt).sty {
               ty::ty_estr(*) => {assert len > 0; len - 1},
               _ => len
           };
@@ -286,7 +286,7 @@ fn const_expr(cx: @crate_ctxt, e: @ast::expr) -> ValueRef {
         gv
       }
       ast::expr_tup(es) => {
-        C_struct(es.map(|e| const_expr(cx, e)))
+        C_struct(es.map(|e| const_expr(cx, *e)))
       }
       ast::expr_rec(fs, None) => {
           C_struct([C_struct(
@@ -312,10 +312,10 @@ fn const_expr(cx: @crate_ctxt, e: @ast::expr) -> ValueRef {
         let (v, _, _) = const_vec(cx, e, es);
         v
       }
-      ast::expr_vstore(e, ast::vstore_fixed(_)) => {
+      ast::expr_vstore(e, ast::expr_vstore_fixed(_)) => {
         const_expr(cx, e)
       }
-      ast::expr_vstore(sub, ast::vstore_slice(_)) => {
+      ast::expr_vstore(sub, ast::expr_vstore_slice) => {
         match sub.node {
           ast::expr_lit(lit) => {
             match lit.node {

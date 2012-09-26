@@ -1,36 +1,36 @@
-//! Shared Vectors
+//! Managed vectors
 
+// NB: transitionary, de-mode-ing.
+#[forbid(deprecated_mode)];
+#[forbid(deprecated_pattern)];
+
+use cast::transmute;
 use ptr::addr_of;
-
-export init_op;
-export capacity;
-export build_sized, build, build_sized_opt;
-export map;
-export from_fn, from_elem;
-export unsafe;
 
 /// Code for dealing with @-vectors. This is pretty incomplete, and
 /// contains a bunch of duplication from the code for ~-vectors.
 
 #[abi = "cdecl"]
 extern mod rustrt {
+    #[legacy_exports];
     fn vec_reserve_shared_actual(++t: *sys::TypeDesc,
-                                 ++v: **vec::unsafe::VecRepr,
+                                 ++v: **vec::raw::VecRepr,
                                  ++n: libc::size_t);
 }
 
 #[abi = "rust-intrinsic"]
 extern mod rusti {
+    #[legacy_exports];
     fn move_val_init<T>(&dst: T, -src: T);
 }
 
 /// Returns the number of elements the vector can hold without reallocating
 #[inline(always)]
-pure fn capacity<T>(&&v: @[const T]) -> uint {
+pub pure fn capacity<T>(v: @[const T]) -> uint {
     unsafe {
-        let repr: **unsafe::VecRepr =
-            ::unsafe::reinterpret_cast(&addr_of(v));
-        (**repr).alloc / sys::size_of::<T>()
+        let repr: **raw::VecRepr =
+            ::cast::reinterpret_cast(&addr_of(v));
+        (**repr).unboxed.alloc / sys::size_of::<T>()
     }
 }
 
@@ -47,11 +47,12 @@ pure fn capacity<T>(&&v: @[const T]) -> uint {
  *             onto the vector being constructed.
  */
 #[inline(always)]
-pure fn build_sized<A>(size: uint, builder: fn(push: pure fn(+A))) -> @[A] {
-    let mut vec = @[];
-    unsafe { unsafe::reserve(vec, size); }
-    builder(|+x| unsafe { unsafe::push(vec, x) });
-    return vec;
+pub pure fn build_sized<A>(size: uint,
+                           builder: &fn(push: pure fn(+v: A))) -> @[A] {
+    let mut vec: @[const A] = @[];
+    unsafe { raw::reserve(&mut vec, size); }
+    builder(|+x| unsafe { raw::push(&mut vec, move x) });
+    return unsafe { transmute(vec) };
 }
 
 /**
@@ -65,7 +66,7 @@ pure fn build_sized<A>(size: uint, builder: fn(push: pure fn(+A))) -> @[A] {
  *             onto the vector being constructed.
  */
 #[inline(always)]
-pure fn build<A>(builder: fn(push: pure fn(+A))) -> @[A] {
+pub pure fn build<A>(builder: &fn(push: pure fn(+v: A))) -> @[A] {
     build_sized(4, builder)
 }
 
@@ -82,23 +83,23 @@ pure fn build<A>(builder: fn(push: pure fn(+A))) -> @[A] {
  *             onto the vector being constructed.
  */
 #[inline(always)]
-pure fn build_sized_opt<A>(size: Option<uint>,
-                           builder: fn(push: pure fn(+A))) -> @[A] {
+pub pure fn build_sized_opt<A>(+size: Option<uint>,
+                               builder: &fn(push: pure fn(+v: A))) -> @[A] {
     build_sized(size.get_default(4), builder)
 }
 
 // Appending
 #[inline(always)]
-pure fn append<T: Copy>(lhs: @[T], rhs: &[const T]) -> @[T] {
+pub pure fn append<T: Copy>(lhs: @[T], rhs: &[const T]) -> @[T] {
     do build_sized(lhs.len() + rhs.len()) |push| {
-        for vec::each(lhs) |x| { push(x); }
+        for vec::each(lhs) |x| { push(*x); }
         for uint::range(0, rhs.len()) |i| { push(rhs[i]); }
     }
 }
 
 
 /// Apply a function to each element of a vector and return the results
-pure fn map<T, U>(v: &[T], f: fn(T) -> U) -> @[U] {
+pub pure fn map<T, U>(v: &[T], f: &fn(x: &T) -> U) -> @[U] {
     do build_sized(v.len()) |push| {
         for vec::each(v) |elem| {
             push(f(elem));
@@ -112,7 +113,7 @@ pure fn map<T, U>(v: &[T], f: fn(T) -> U) -> @[U] {
  * Creates an immutable vector of size `n_elts` and initializes the elements
  * to the value returned by the function `op`.
  */
-pure fn from_fn<T>(n_elts: uint, op: iter::InitOp<T>) -> @[T] {
+pub pure fn from_fn<T>(n_elts: uint, op: iter::InitOp<T>) -> @[T] {
     do build_sized(n_elts) |push| {
         let mut i: uint = 0u;
         while i < n_elts { push(op(i)); i += 1u; }
@@ -125,25 +126,31 @@ pure fn from_fn<T>(n_elts: uint, op: iter::InitOp<T>) -> @[T] {
  * Creates an immutable vector of size `n_elts` and initializes the elements
  * to the value `t`.
  */
-pure fn from_elem<T: Copy>(n_elts: uint, t: T) -> @[T] {
+pub pure fn from_elem<T: Copy>(n_elts: uint, +t: T) -> @[T] {
     do build_sized(n_elts) |push| {
         let mut i: uint = 0u;
-        while i < n_elts { push(t); i += 1u; }
+        while i < n_elts { push(copy t); i += 1u; }
     }
 }
 
 #[cfg(notest)]
-impl<T: Copy> @[T]: Add<&[const T],@[T]> {
-    #[inline(always)]
-    pure fn add(rhs: &[const T]) -> @[T] {
-        append(self, rhs)
+pub mod traits {
+    #[legacy_exports];
+    pub impl<T: Copy> @[T] : Add<&[const T],@[T]> {
+        #[inline(always)]
+        pure fn add(rhs: & &[const T]) -> @[T] {
+            append(self, (*rhs))
+        }
     }
 }
 
+#[cfg(test)]
+pub mod traits {
+    #[legacy_exports];}
 
-mod unsafe {
-    type VecRepr = vec::unsafe::VecRepr;
-    type SliceRepr = vec::unsafe::SliceRepr;
+pub mod raw {
+    pub type VecRepr = vec::raw::VecRepr;
+    pub type SliceRepr = vec::raw::SliceRepr;
 
     /**
      * Sets the length of a vector
@@ -153,36 +160,36 @@ mod unsafe {
      * the vector is actually the specified size.
      */
     #[inline(always)]
-    unsafe fn set_len<T>(&&v: @[const T], new_len: uint) {
-        let repr: **VecRepr = ::unsafe::reinterpret_cast(&addr_of(v));
-        (**repr).fill = new_len * sys::size_of::<T>();
+    pub unsafe fn set_len<T>(v: @[const T], new_len: uint) {
+        let repr: **VecRepr = ::cast::reinterpret_cast(&addr_of(v));
+        (**repr).unboxed.fill = new_len * sys::size_of::<T>();
     }
 
     #[inline(always)]
-    unsafe fn push<T>(&v: @[const T], +initval: T) {
-        let repr: **VecRepr = ::unsafe::reinterpret_cast(&addr_of(v));
-        let fill = (**repr).fill;
-        if (**repr).alloc > fill {
-            push_fast(v, initval);
+    pub unsafe fn push<T>(v: &mut @[const T], +initval: T) {
+        let repr: **VecRepr = ::cast::reinterpret_cast(&v);
+        let fill = (**repr).unboxed.fill;
+        if (**repr).unboxed.alloc > fill {
+            push_fast(v, move initval);
         }
         else {
-            push_slow(v, initval);
+            push_slow(v, move initval);
         }
     }
     // This doesn't bother to make sure we have space.
     #[inline(always)] // really pretty please
-    unsafe fn push_fast<T>(&v: @[const T], +initval: T) {
-        let repr: **VecRepr = ::unsafe::reinterpret_cast(&addr_of(v));
-        let fill = (**repr).fill;
-        (**repr).fill += sys::size_of::<T>();
-        let p = ptr::addr_of((**repr).data);
+    pub unsafe fn push_fast<T>(v: &mut @[const T], +initval: T) {
+        let repr: **VecRepr = ::cast::reinterpret_cast(&v);
+        let fill = (**repr).unboxed.fill;
+        (**repr).unboxed.fill += sys::size_of::<T>();
+        let p = ptr::addr_of((**repr).unboxed.data);
         let p = ptr::offset(p, fill) as *mut T;
-        rusti::move_val_init(*p, initval);
+        rusti::move_val_init(*p, move initval);
     }
 
-    unsafe fn push_slow<T>(&v: @[const T], +initval: T) {
+    pub unsafe fn push_slow<T>(v: &mut @[const T], +initval: T) {
         reserve_at_least(v, v.len() + 1u);
-        push_fast(v, initval);
+        push_fast(v, move initval);
     }
 
     /**
@@ -196,10 +203,10 @@ mod unsafe {
      * * v - A vector
      * * n - The number of elements to reserve space for
      */
-    unsafe fn reserve<T>(&v: @[const T], n: uint) {
+    pub unsafe fn reserve<T>(v: &mut @[const T], n: uint) {
         // Only make the (slow) call into the runtime if we have to
-        if capacity(v) < n {
-            let ptr = addr_of(v) as **VecRepr;
+        if capacity(*v) < n {
+            let ptr: **VecRepr = transmute(copy v);
             rustrt::vec_reserve_shared_actual(sys::get_type_desc::<T>(),
                                               ptr, n as libc::size_t);
         }
@@ -220,14 +227,14 @@ mod unsafe {
      * * v - A vector
      * * n - The number of elements to reserve space for
      */
-    unsafe fn reserve_at_least<T>(&v: @[const T], n: uint) {
+    pub unsafe fn reserve_at_least<T>(v: &mut @[const T], n: uint) {
         reserve(v, uint::next_power_of_two(n));
     }
 
 }
 
 #[test]
-fn test() {
+pub fn test() {
     // Some code that could use that, then:
     fn seq_range(lo: uint, hi: uint) -> @[uint] {
         do build |push| {
@@ -243,7 +250,6 @@ fn test() {
 }
 
 #[test]
-fn append_test() {
+pub fn append_test() {
     assert @[1,2,3] + @[4,5,6] == @[1,2,3,4,5,6];
 }
-

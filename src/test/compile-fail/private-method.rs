@@ -1,12 +1,16 @@
-// error-pattern:call to private method not allowed
+// error-pattern:method `nap` is private
+
+mod kitties {
+    #[legacy_exports];
 struct cat {
-  priv {
-    mut meows : uint,
-      fn nap() { uint::range(1u, 10000u, |_i|{})}
-  }
+  priv mut meows : uint,
 
   how_hungry : int,
 
+}
+
+impl cat {
+    priv fn nap() { uint::range(1u, 10000u, |_i| false)}
 }
 
 fn cat(in_x : uint, in_y : int) -> cat {
@@ -15,8 +19,9 @@ fn cat(in_x : uint, in_y : int) -> cat {
         how_hungry: in_y
     }
 }
+}
 
 fn main() {
-  let nyan : cat = cat(52u, 99);
+  let nyan : kitties::cat = kitties::cat(52u, 99);
   nyan.nap();
 }

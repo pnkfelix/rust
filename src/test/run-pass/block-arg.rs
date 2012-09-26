@@ -3,8 +3,8 @@ fn main() {
     let v = ~[-1f, 0f, 1f, 2f, 3f];
 
     // Statement form does not require parentheses:
-    do vec::iter(v) |i| {
-        log(info, i);
+    for vec::each(v) |i| {
+        log(info, *i);
     }
 
     // Usable at all:
@@ -16,7 +16,7 @@ fn main() {
     assert any_negative;
 
     // Higher precedence than unary operations:
-    let abs_v = do vec::map(v) |e| { float::abs(e) };
+    let abs_v = do vec::map(v) |e| { float::abs(*e) };
     assert do vec::all(abs_v) |e| { float::is_nonnegative(e) };
     assert !do vec::any(abs_v) |e| { float::is_negative(e) };
 

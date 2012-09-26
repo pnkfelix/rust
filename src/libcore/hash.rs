@@ -19,23 +19,32 @@ use to_bytes::IterBytes;
 
 export Streaming, State, Hash, HashUtil;
 export default_state;
-export hash_bytes_keyed;
-export hash_str_keyed;
-export hash_u64_keyed;
-export hash_u32_keyed;
-export hash_u16_keyed;
-export hash_u8_keyed;
-export hash_uint_keyed;
-export hash_bytes;
-export hash_str;
-export hash_u64;
-export hash_u32;
-export hash_u16;
-export hash_u8;
-export hash_uint;
 
-/// Types that can meaningfully be hashed should implement this.
+/**
+ * Types that can meaningfully be hashed should implement this.
+ *
+ * Note that this trait is likely to change somewhat as it is
+ * closely related to `to_bytes::IterBytes` and in almost all
+ * cases presently the two are (and must be) used together.
+ *
+ * In general, most types only need to implement `IterBytes`,
+ * and the implementation of `Hash` below will take care of
+ * the rest. This is the recommended approach, since constructing
+ * good keyed hash functions is quite difficult.
+ */
 trait Hash {
+    /**
+     * Compute a "keyed" hash of the value implementing the trait,
+     * taking `k0` and `k1` as "keying" parameters that randomize or
+     * otherwise perturb the hash function in such a way that a
+     * hash table built using such "keyed hash functions" cannot
+     * be made to perform linearly by an attacker controlling the
+     * hashtable's contents.
+     *
+     * In practical terms, we implement this using the SipHash 2-4
+     * function and require most types to only implement the
+     * IterBytes trait, that feeds SipHash.
+     */
     pure fn hash_keyed(k0: u64, k1: u64) -> u64;
 }
 
@@ -62,7 +71,7 @@ trait Streaming {
 impl <A: IterBytes> A: Hash {
     #[inline(always)]
     pure fn hash_keyed(k0: u64, k1: u64) -> u64 {
-        unchecked {
+        unsafe {
             let s = &State(k0, k1);
             for self.iter_bytes(true) |bytes| {
                 s.input(bytes);
@@ -72,12 +81,10 @@ impl <A: IterBytes> A: Hash {
     }
 }
 
-// implementations
-
 pure fn hash_keyed_2<A: IterBytes,
                      B: IterBytes>(a: &A, b: &B,
                                    k0: u64, k1: u64) -> u64 {
-    unchecked {
+    unsafe {
         let s = &State(k0, k1);
         for a.iter_bytes(true) |bytes| { s.input(bytes); }
         for b.iter_bytes(true) |bytes| { s.input(bytes); }
@@ -89,7 +96,7 @@ pure fn hash_keyed_3<A: IterBytes,
                      B: IterBytes,
                      C: IterBytes>(a: &A, b: &B, c: &C,
                                    k0: u64, k1: u64) -> u64 {
-    unchecked {
+    unsafe {
         let s = &State(k0, k1);
         for a.iter_bytes(true) |bytes| { s.input(bytes); }
         for b.iter_bytes(true) |bytes| { s.input(bytes); }
@@ -103,7 +110,7 @@ pure fn hash_keyed_4<A: IterBytes,
                      C: IterBytes,
                      D: IterBytes>(a: &A, b: &B, c: &C, d: &D,
                                    k0: u64, k1: u64) -> u64 {
-    unchecked {
+    unsafe {
         let s = &State(k0, k1);
         for a.iter_bytes(true) |bytes| { s.input(bytes); }
         for b.iter_bytes(true) |bytes| { s.input(bytes); }
@@ -119,7 +126,7 @@ pure fn hash_keyed_5<A: IterBytes,
                      D: IterBytes,
                      E: IterBytes>(a: &A, b: &B, c: &C, d: &D, e: &E,
                                    k0: u64, k1: u64) -> u64 {
-    unchecked {
+    unsafe {
         let s = &State(k0, k1);
         for a.iter_bytes(true) |bytes| { s.input(bytes); }
         for b.iter_bytes(true) |bytes| { s.input(bytes); }
@@ -129,37 +136,6 @@ pure fn hash_keyed_5<A: IterBytes,
         s.result_u64()
     }
 }
-
-pure fn hash_bytes_keyed(val: &[const u8], k0: u64, k1: u64) -> u64 {
-    val.hash_keyed(k0, k1)
-}
-pure fn hash_str_keyed(val: &str, k0: u64, k1: u64) -> u64 {
-    val.hash_keyed(k0, k1)
-}
-pure fn hash_u64_keyed(val: u64, k0: u64, k1: u64) -> u64 {
-    val.hash_keyed(k0, k1)
-}
-pure fn hash_u32_keyed(val: u32, k0: u64, k1: u64) -> u64 {
-    val.hash_keyed(k0, k1)
-}
-pure fn hash_u16_keyed(val: u16, k0: u64, k1: u64) -> u64 {
-    val.hash_keyed(k0, k1)
-}
-pure fn hash_u8_keyed(val: u8, k0: u64, k1: u64) -> u64 {
-    val.hash_keyed(k0, k1)
-}
-pure fn hash_uint_keyed(val: uint, k0: u64, k1: u64) -> u64 {
-    val.hash_keyed(k0, k1)
-}
-
-pure fn hash_bytes(val: &[const u8]) -> u64 { hash_bytes_keyed(val, 0, 0) }
-pure fn hash_str(val: &str) -> u64 { hash_str_keyed(val, 0, 0) }
-pure fn hash_u64(val: u64) -> u64 { hash_u64_keyed(val, 0, 0) }
-pure fn hash_u32(val: u32) -> u64 { hash_u32_keyed(val, 0, 0) }
-pure fn hash_u16(val: u16) -> u64 { hash_u16_keyed(val, 0, 0) }
-pure fn hash_u8(val: u8) -> u64 { hash_u8_keyed(val, 0, 0) }
-pure fn hash_uint(val: uint) -> u64 { hash_uint_keyed(val, 0, 0) }
-
 
 // Implement State as SipState
 
@@ -201,7 +177,7 @@ fn SipState(key0: u64, key1: u64) -> SipState {
         mut ntail : 0u,
     };
     (&state).reset();
-    return state;
+    move state
 }
 
 
@@ -367,8 +343,10 @@ impl &SipState : Streaming {
     fn result_str() -> ~str {
         let r = self.result_bytes();
         let mut s = ~"";
-        for vec::each(r) |b| { s += uint::to_str(b as uint, 16u); }
-        return s;
+        for vec::each(r) |b| {
+            s += uint::to_str(*b as uint, 16u);
+        }
+        move s
     }
 
     #[inline(always)]
@@ -460,7 +438,9 @@ fn test_siphash() {
 
     fn to_hex_str(r:  &[u8]/8) -> ~str {
         let mut s = ~"";
-        for vec::each(*r) |b| { s += uint::to_str(b as uint, 16u); }
+        for vec::each(*r) |b| {
+            s += uint::to_str(*b as uint, 16u);
+        }
         return s;
     }
 
@@ -490,42 +470,42 @@ fn test_siphash() {
 #[test] #[cfg(target_arch = "arm")]
 fn test_hash_uint() {
     let val = 0xdeadbeef_deadbeef_u64;
-    assert hash_u64(val as u64) == hash_uint(val as uint);
-    assert hash_u32(val as u32) != hash_uint(val as uint);
+    assert (val as u64).hash() != (val as uint).hash();
+    assert (val as u32).hash() == (val as uint).hash();
 }
 #[test] #[cfg(target_arch = "x86_64")]
 fn test_hash_uint() {
     let val = 0xdeadbeef_deadbeef_u64;
-    assert hash_u64(val as u64) == hash_uint(val as uint);
-    assert hash_u32(val as u32) != hash_uint(val as uint);
+    assert (val as u64).hash() == (val as uint).hash();
+    assert (val as u32).hash() != (val as uint).hash();
 }
 #[test] #[cfg(target_arch = "x86")]
 fn test_hash_uint() {
     let val = 0xdeadbeef_deadbeef_u64;
-    assert hash_u64(val as u64) != hash_uint(val as uint);
-    assert hash_u32(val as u32) == hash_uint(val as uint);
+    assert (val as u64).hash() != (val as uint).hash();
+    assert (val as u32).hash() == (val as uint).hash();
 }
 
 #[test]
 fn test_hash_idempotent() {
     let val64 = 0xdeadbeef_deadbeef_u64;
-    assert hash_u64(val64) == hash_u64(val64);
+    val64.hash() == val64.hash();
     let val32 = 0xdeadbeef_u32;
-    assert hash_u32(val32) == hash_u32(val32);
+    val32.hash() == val32.hash();
 }
 
 #[test]
 fn test_hash_no_bytes_dropped_64() {
     let val = 0xdeadbeef_deadbeef_u64;
 
-    assert hash_u64(val) != hash_u64(zero_byte(val, 0));
-    assert hash_u64(val) != hash_u64(zero_byte(val, 1));
-    assert hash_u64(val) != hash_u64(zero_byte(val, 2));
-    assert hash_u64(val) != hash_u64(zero_byte(val, 3));
-    assert hash_u64(val) != hash_u64(zero_byte(val, 4));
-    assert hash_u64(val) != hash_u64(zero_byte(val, 5));
-    assert hash_u64(val) != hash_u64(zero_byte(val, 6));
-    assert hash_u64(val) != hash_u64(zero_byte(val, 7));
+    assert val.hash() != zero_byte(val, 0).hash();
+    assert val.hash() != zero_byte(val, 1).hash();
+    assert val.hash() != zero_byte(val, 2).hash();
+    assert val.hash() != zero_byte(val, 3).hash();
+    assert val.hash() != zero_byte(val, 4).hash();
+    assert val.hash() != zero_byte(val, 5).hash();
+    assert val.hash() != zero_byte(val, 6).hash();
+    assert val.hash() != zero_byte(val, 7).hash();
 
     fn zero_byte(val: u64, byte: uint) -> u64 {
         assert 0 <= byte; assert byte < 8;
@@ -537,10 +517,10 @@ fn test_hash_no_bytes_dropped_64() {
 fn test_hash_no_bytes_dropped_32() {
     let val = 0xdeadbeef_u32;
 
-    assert hash_u32(val) != hash_u32(zero_byte(val, 0));
-    assert hash_u32(val) != hash_u32(zero_byte(val, 1));
-    assert hash_u32(val) != hash_u32(zero_byte(val, 2));
-    assert hash_u32(val) != hash_u32(zero_byte(val, 3));
+    assert val.hash() != zero_byte(val, 0).hash();
+    assert val.hash() != zero_byte(val, 1).hash();
+    assert val.hash() != zero_byte(val, 2).hash();
+    assert val.hash() != zero_byte(val, 3).hash();
 
     fn zero_byte(val: u32, byte: uint) -> u32 {
         assert 0 <= byte; assert byte < 4;

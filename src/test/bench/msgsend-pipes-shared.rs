@@ -10,7 +10,9 @@
 
 // xfail-pretty
 
-use std;
+#[legacy_modes];
+
+extern mod std;
 use io::Writer;
 use io::WriterUtil;
 
@@ -50,8 +52,8 @@ fn run(args: &[~str]) {
 
     let to_child = SharedChan(to_child);
 
-    let size = option::get(uint::from_str(args[1]));
-    let workers = option::get(uint::from_str(args[2]));
+    let size = uint::from_str(args[1]).get();
+    let workers = uint::from_str(args[2]).get();
     let num_bytes = 100;
     let start = std::time::precise_time_s();
     let mut worker_results = ~[];
@@ -71,7 +73,10 @@ fn run(args: &[~str]) {
         server(from_parent, to_parent);
     }
 
-    vec::iter(worker_results, |r| { future::get(&r); } );
+    for vec::each(worker_results) |r| {
+        future::get(r);
+    }
+
     //error!("sending stop message");
     to_child.send(stop);
     move_out!(to_child);
@@ -85,7 +90,7 @@ fn run(args: &[~str]) {
     assert result == num_bytes * size;
 }
 
-fn main(args: ~[~str]) {
+fn main(++args: ~[~str]) {
     let args = if os::getenv(~"RUST_BENCH").is_some() {
         ~[~"", ~"1000000", ~"10000"]
     } else if args.len() <= 1u {

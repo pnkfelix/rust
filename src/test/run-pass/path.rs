@@ -1,7 +1,8 @@
 
 
 mod foo {
+    #[legacy_exports];
     fn bar(offset: uint) { }
 }
 
-fn main(args: ~[~str]) { foo::bar(0u); }
+fn main() { foo::bar(0u); }

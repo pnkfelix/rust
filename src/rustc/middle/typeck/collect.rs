@@ -164,7 +164,7 @@ fn get_enum_variant_types(ccx: @crate_ctxt,
 
 fn ensure_trait_methods(ccx: @crate_ctxt, id: ast::node_id, trait_ty: ty::t) {
     fn store_methods<T>(ccx: @crate_ctxt, id: ast::node_id,
-                        stuff: ~[T], f: fn@(T) -> ty::method) {
+                        stuff: ~[T], f: fn@(v: &T) -> ty::method) {
         ty::store_trait_methods(ccx.tcx, id, @vec::map(stuff, f));
     }
 
@@ -213,7 +213,7 @@ fn ensure_trait_methods(ccx: @crate_ctxt, id: ast::node_id, trait_ty: ty::t) {
       ast_map::node_item(@{node: ast::item_trait(params, _, ms), _}, _) => {
         store_methods::<ast::trait_method>(ccx, id, ms, |m| {
             let trait_bounds = ty_param_bounds(ccx, params);
-            let ty_m = trait_method_to_ty_method(m);
+            let ty_m = trait_method_to_ty_method(*m);
             let method_ty = ty_of_ty_method(ccx, ty_m, region_paramd);
             if ty_m.self_ty.node == ast::sty_static {
                 make_static_method_ty(ccx, ty_m, region_paramd,
@@ -226,7 +226,7 @@ fn ensure_trait_methods(ccx: @crate_ctxt, id: ast::node_id, trait_ty: ty::t) {
         // All methods need to be stored, since lookup_method
         // relies on the same method cache for self-calls
         store_methods::<@ast::method>(ccx, id, struct_def.methods, |m| {
-            ty_of_method(ccx, m, region_paramd)
+            ty_of_method(ccx, *m, region_paramd)
         });
       }
       _ => { /* Ignore things that aren't traits or classes */ }
@@ -363,7 +363,7 @@ fn check_methods_against_trait(ccx: @crate_ctxt,
           Some({mty: impl_m, span, _}) => {
             compare_impl_method(
                 ccx.tcx, span, impl_m, vec::len(tps),
-                trait_m, tpt.substs, selfty);
+                *trait_m, tpt.substs, selfty);
           }
           None => {
               // If we couldn't find an implementation for trait_m in
@@ -413,7 +413,7 @@ fn convert_methods(ccx: @crate_ctxt,
     let tcx = ccx.tcx;
     do vec::map(ms) |m| {
         let bounds = ty_param_bounds(ccx, m.tps);
-        let mty = ty_of_method(ccx, m, rp);
+        let mty = ty_of_method(ccx, *m, rp);
         let fty = ty::mk_fn(tcx, mty.fty);
         tcx.tcache.insert(
             local_def(m.id),
@@ -453,7 +453,7 @@ fn convert(ccx: @crate_ctxt, it: @ast::item) {
 
         let cms = convert_methods(ccx, ms, rp, i_bounds);
         for trait_ref.each |t| {
-            check_methods_against_trait(ccx, tps, rp, selfty, t, cms);
+            check_methods_against_trait(ccx, tps, rp, selfty, *t, cms);
         }
       }
       ast::item_trait(tps, _, trait_methods) => {
@@ -469,7 +469,7 @@ fn convert(ccx: @crate_ctxt, it: @ast::item) {
         // FIXME (#2616): something like this, when we start having
         // trait inheritance?
         // for trait_ref.each |t| {
-        // check_methods_against_trait(ccx, tps, rp, selfty, t, cms);
+        // check_methods_against_trait(ccx, tps, rp, selfty, *t, cms);
         // }
       }
       ast::item_class(struct_def, tps) => {
@@ -497,10 +497,10 @@ fn convert_struct(ccx: @crate_ctxt,
                   tpt: ty::ty_param_bounds_and_ty,
                   id: ast::node_id) {
     let tcx = ccx.tcx;
-    do option::iter(struct_def.ctor) |ctor| {
+    do option::iter(&struct_def.ctor) |ctor| {
         // Write the ctor type
         let t_args = ctor.node.dec.inputs.map(
-            |a| ty_of_arg(ccx, type_rscope(rp), a, None) );
+            |a| ty_of_arg(ccx, type_rscope(rp), *a, None) );
         let t_res = ty::mk_class(
             tcx, local_def(id),
             {self_r: rscope::bound_self_region(rp),
@@ -522,7 +522,7 @@ fn convert_struct(ccx: @crate_ctxt,
                            ty: t_ctor});
     }
 
-    do option::iter(struct_def.dtor) |dtor| {
+    do option::iter(&struct_def.dtor) |dtor| {
         // Write the dtor type
         let t_dtor = ty::mk_fn(
             tcx,
@@ -539,13 +539,13 @@ fn convert_struct(ccx: @crate_ctxt,
 
     // Write the type of each of the members
     for struct_def.fields.each |f| {
-       convert_field(ccx, rp, tpt.bounds, f);
+       convert_field(ccx, rp, tpt.bounds, *f);
     }
     let {bounds, substs} = mk_substs(ccx, tps, rp);
     let selfty = ty::mk_class(tcx, local_def(id), substs);
     let cms = convert_methods(ccx, struct_def.methods, rp, bounds);
     for struct_def.traits.each |trait_ref| {
-        check_methods_against_trait(ccx, tps, rp, selfty, trait_ref, cms);
+        check_methods_against_trait(ccx, tps, rp, selfty, *trait_ref, cms);
         // trait_ref.impl_id represents (class, trait) pair
         write_ty_to_tcx(tcx, trait_ref.impl_id, tpt.ty);
         tcx.tcache.insert(local_def(trait_ref.impl_id), tpt);
@@ -603,7 +603,7 @@ fn instantiate_trait_ref(ccx: @crate_ctxt, t: @ast::trait_ref,
       ast::def_ty(t_id) => {
         let tpt = astconv::ast_path_to_ty(ccx, rscope, t_id, t.path,
                                           t.ref_id);
-        match ty::get(tpt.ty).struct {
+        match ty::get(tpt.ty).sty {
            ty::ty_trait(*) => {
               (t_id, tpt)
            }
@@ -732,7 +732,7 @@ fn compute_bounds(ccx: @crate_ctxt,
           ast::bound_owned => ~[ty::bound_owned],
           ast::bound_trait(t) => {
             let ity = ast_ty_to_ty(ccx, empty_rscope, t);
-            match ty::get(ity).struct {
+            match ty::get(ity).sty {
               ty::ty_trait(*) => {
                 ~[ty::bound_trait(ity)]
               }
@@ -772,7 +772,7 @@ fn ty_of_foreign_fn_decl(ccx: @crate_ctxt,
 
     let bounds = ty_param_bounds(ccx, ty_params);
     let rb = in_binding_rscope(empty_rscope);
-    let input_tys = decl.inputs.map(|a| ty_of_arg(ccx, rb, a, None) );
+    let input_tys = decl.inputs.map(|a| ty_of_arg(ccx, rb, *a, None) );
     let output_ty = ast_ty_to_ty(ccx, rb, decl.output);
 
     let t_fn = ty::mk_fn(ccx.tcx, FnTyBase {

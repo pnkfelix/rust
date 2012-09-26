@@ -1,3 +1,5 @@
+#[legacy_exports];
+
 use io::WriterUtil;
 
 use syntax::{ast, ast_util, fold, visit, codemap};
@@ -9,15 +11,15 @@ enum test_mode { tm_converge, tm_run, }
 type context = { mode: test_mode }; // + rng
 
 impl test_mode : cmp::Eq {
-    pure fn eq(&&other: test_mode) -> bool {
-        (self as uint) == (other as uint)
+    pure fn eq(other: &test_mode) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: test_mode) -> bool { !self.eq(other) }
+    pure fn ne(other: &test_mode) -> bool { !self.eq(other) }
 }
 
 fn write_file(filename: &Path, content: ~str) {
     result::get(
-        io::file_writer(filename, ~[io::Create, io::Truncate]))
+        &io::file_writer(filename, ~[io::Create, io::Truncate]))
         .write_str(content);
 }
 
@@ -26,14 +28,14 @@ fn contains(haystack: ~str, needle: ~str) -> bool {
 }
 
 fn find_rust_files(files: &mut ~[Path], path: &Path) {
-    if path.filetype() == Some(~"rs") && !contains(path.to_str(), ~"utf8") {
+    if path.filetype() == Some(~".rs") && !contains(path.to_str(), ~"utf8") {
         // ignoring "utf8" tests because something is broken
         vec::push(*files, *path);
     } else if os::path_is_dir(path)
         && !contains(path.to_str(), ~"compile-fail")
         && !contains(path.to_str(), ~"build") {
         for os::list_dir_path(path).each |p| {
-            find_rust_files(files, p);
+            find_rust_files(files, *p);
         }
     }
 }
@@ -219,12 +221,8 @@ fn under(n: uint, it: fn(uint)) {
     while i < n { it(i); i += 1u; }
 }
 
-fn devnull() -> io::Writer { io::mem_buffer_writer(io::mem_buffer()) }
-
 fn as_str(f: fn@(io::Writer)) -> ~str {
-    let buf = io::mem_buffer();
-    f(io::mem_buffer_writer(buf));
-    io::mem_buffer_str(buf)
+    io::with_str_writer(f)
 }
 
 fn check_variants_of_ast(crate: ast::crate, codemap: codemap::codemap,
@@ -298,7 +296,7 @@ fn check_variants_T<T: Copy>(
 }
 
 fn last_part(filename: ~str) -> ~str {
-  let ix = option::get(str::rfind_char(filename, '/'));
+  let ix = option::get(&str::rfind_char(filename, '/'));
   str::slice(filename, ix + 1u, str::len(filename) - 3u)
 }
 
@@ -467,7 +465,7 @@ fn content_is_dangerous_to_run(code: ~str) -> bool {
          ~"unsafe",
          ~"log"];    // python --> rust pipe deadlock?
 
-    for dangerous_patterns.each |p| { if contains(code, p) { return true; } }
+    for dangerous_patterns.each |p| { if contains(code, *p) { return true; } }
     return false;
 }
 
@@ -475,7 +473,7 @@ fn content_is_dangerous_to_compile(code: ~str) -> bool {
     let dangerous_patterns =
         ~[~"xfail-test"];
 
-    for dangerous_patterns.each |p| { if contains(code, p) { return true; } }
+    for dangerous_patterns.each |p| { if contains(code, *p) { return true; } }
     return false;
 }
 
@@ -491,7 +489,7 @@ fn content_might_not_converge(code: ~str) -> bool {
          ~"\n\n\n\n\n"  // https://github.com/mozilla/rust/issues/850
         ];
 
-    for confusing_patterns.each |p| { if contains(code, p) { return true; } }
+    for confusing_patterns.each |p| { if contains(code, *p) { return true; } }
     return false;
 }
 
@@ -506,7 +504,7 @@ fn file_might_not_converge(filename: &Path) -> bool {
 
 
     for confusing_files.each |f| {
-        if contains(filename.to_str(), f) {
+        if contains(filename.to_str(), *f) {
             return true;
         }
     }
@@ -544,8 +542,8 @@ fn check_roundtrip_convergence(code: @~str, maxIters: uint) {
 fn check_convergence(files: &[Path]) {
     error!("pp convergence tests: %u files", vec::len(files));
     for files.each |file| {
-        if !file_might_not_converge(&file) {
-            let s = @result::get(io::read_whole_file_str(&file));
+        if !file_might_not_converge(file) {
+            let s = @result::get(&io::read_whole_file_str(file));
             if !content_might_not_converge(*s) {
                 error!("pp converge: %s", file.to_str());
                 // Change from 7u to 2u once
@@ -559,13 +557,13 @@ fn check_convergence(files: &[Path]) {
 fn check_variants(files: &[Path], cx: context) {
     for files.each |file| {
         if cx.mode == tm_converge &&
-            file_might_not_converge(&file) {
+            file_might_not_converge(file) {
             error!("Skipping convergence test based on\
                     file_might_not_converge");
             loop;
         }
 
-        let s = @result::get(io::read_whole_file_str(&file));
+        let s = @result::get(&io::read_whole_file_str(file));
         if contains(*s, ~"#") {
             loop; // Macros are confusing
         }
@@ -576,11 +574,13 @@ fn check_variants(files: &[Path], cx: context) {
             loop;
         }
 
-        log(error, ~"check_variants: " + file.to_str());
+        let file_str = file.to_str();
+
+        log(error, ~"check_variants: " + file_str);
         let sess = parse::new_parse_sess(option::None);
         let crate =
             parse::parse_crate_from_source_str(
-                file.to_str(),
+                file_str,
                 s, ~[], sess);
         io::with_str_reader(*s, |rdr| {
             error!("%s",
@@ -590,12 +590,12 @@ fn check_variants(files: &[Path], cx: context) {
                        syntax::parse::token::mk_fake_ident_interner(),
                        sess.span_diagnostic,
                        crate,
-                       file.to_str(),
+                       file_str,
                        rdr, a,
                        pprust::no_ann(),
-                       false) ))
+                       false)))
         });
-        check_variants_of_ast(*crate, sess.cm, &file, cx);
+        check_variants_of_ast(*crate, sess.cm, file, cx);
     }
 }
 

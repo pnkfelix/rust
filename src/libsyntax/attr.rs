@@ -1,7 +1,7 @@
 // Functions dealing with attributes and meta_items
 
 use std::map;
-use std::map::hashmap;
+use std::map::HashMap;
 use either::Either;
 use diagnostic::span_handler;
 use ast_util::{spanned, dummy_spanned};
@@ -91,18 +91,18 @@ fn attr_meta(attr: ast::attribute) -> @ast::meta_item { @attr.node.value }
 // Get the meta_items from inside a vector of attributes
 fn attr_metas(attrs: ~[ast::attribute]) -> ~[@ast::meta_item] {
     let mut mitems = ~[];
-    for attrs.each |a| { vec::push(mitems, attr_meta(a)); }
+    for attrs.each |a| { vec::push(mitems, attr_meta(*a)); }
     return mitems;
 }
 
-fn desugar_doc_attr(attr: ast::attribute) -> ast::attribute {
+fn desugar_doc_attr(attr: &ast::attribute) -> ast::attribute {
     if attr.node.is_sugared_doc {
         let comment = get_meta_item_value_str(@attr.node.value).get();
         let meta = mk_name_value_item_str(~"doc",
                                      strip_doc_comment_decoration(comment));
         return mk_attr(meta);
     } else {
-        attr
+        *attr
     }
 }
 
@@ -189,7 +189,7 @@ fn find_meta_items_by_name(metas: ~[@ast::meta_item], name: ~str) ->
  */
 fn contains(haystack: ~[@ast::meta_item], needle: @ast::meta_item) -> bool {
     for haystack.each |item| {
-        if eq(item, needle) { return true; }
+        if eq(*item, needle) { return true; }
     }
     return false;
 }
@@ -282,7 +282,7 @@ fn sort_meta_items(+items: ~[@ast::meta_item]) -> ~[@ast::meta_item] {
     // This is sort of stupid here, converting to a vec of mutables and back
     let v: ~[mut @ast::meta_item] = vec::to_mut(items);
     std::sort::quick_sort(lteq, v);
-    return vec::from_mut(v);
+    vec::from_mut(move v)
 }
 
 fn remove_meta_items_by_name(items: ~[@ast::meta_item], name: ~str) ->
@@ -337,6 +337,13 @@ enum inline_attr {
     ia_never,
 }
 
+impl inline_attr : cmp::Eq {
+    pure fn eq(other: &inline_attr) -> bool {
+        (self as uint) == ((*other) as uint)
+    }
+    pure fn ne(other: &inline_attr) -> bool { !self.eq(other) }
+}
+
 /// True if something like #[inline] is found in the list of attrs.
 fn find_inline_attr(attrs: ~[ast::attribute]) -> inline_attr {
     // FIXME (#2809)---validate the usage of #[inline] and #[inline(always)]
@@ -361,9 +368,9 @@ fn find_inline_attr(attrs: ~[ast::attribute]) -> inline_attr {
 
 fn require_unique_names(diagnostic: span_handler,
                         metas: ~[@ast::meta_item]) {
-    let map = map::str_hash();
+    let map = map::HashMap();
     for metas.each |meta| {
-        let name = get_meta_item_name(meta);
+        let name = get_meta_item_name(*meta);
 
         // FIXME: How do I silence the warnings? --pcw (#2619)
         if map.contains_key(name) {

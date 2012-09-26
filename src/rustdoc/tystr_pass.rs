@@ -1,15 +1,15 @@
 //! Pulls type information out of the AST and attaches it to the document
 
-use doc::item_utils;
+use doc::ItemUtils;
 use syntax::ast;
 use syntax::print::pprust;
 use syntax::ast_map;
-use std::map::hashmap;
+use std::map::HashMap;
 use extract::to_str;
 
 export mk_pass;
 
-fn mk_pass() -> pass {
+fn mk_pass() -> Pass {
     {
         name: ~"tystr",
         f: run
@@ -17,25 +17,26 @@ fn mk_pass() -> pass {
 }
 
 fn run(
-    srv: astsrv::srv,
-    doc: doc::doc
-) -> doc::doc {
-    let fold = fold::fold({
+    srv: astsrv::Srv,
+    doc: doc::Doc
+) -> doc::Doc {
+    let fold = fold::Fold({
         fold_fn: fold_fn,
         fold_const: fold_const,
         fold_enum: fold_enum,
         fold_trait: fold_trait,
         fold_impl: fold_impl,
         fold_type: fold_type,
+        fold_struct: fold_struct,
         .. *fold::default_any_fold(srv)
     });
     fold.fold_doc(fold, doc)
 }
 
 fn fold_fn(
-    fold: fold::fold<astsrv::srv>,
-    doc: doc::fndoc
-) -> doc::fndoc {
+    fold: fold::Fold<astsrv::Srv>,
+    doc: doc::FnDoc
+) -> doc::FnDoc {
 
     let srv = fold.ctxt;
 
@@ -45,7 +46,7 @@ fn fold_fn(
     }
 }
 
-fn get_fn_sig(srv: astsrv::srv, fn_id: doc::ast_id) -> Option<~str> {
+fn get_fn_sig(srv: astsrv::Srv, fn_id: doc::AstId) -> Option<~str> {
     do astsrv::exec(srv) |ctxt| {
         match ctxt.ast_map.get(fn_id) {
           ast_map::node_item(@{
@@ -76,9 +77,9 @@ fn should_add_foreign_fn_sig() {
 }
 
 fn fold_const(
-    fold: fold::fold<astsrv::srv>,
-    doc: doc::constdoc
-) -> doc::constdoc {
+    fold: fold::Fold<astsrv::Srv>,
+    doc: doc::ConstDoc
+) -> doc::ConstDoc {
     let srv = fold.ctxt;
 
     {
@@ -103,9 +104,9 @@ fn should_add_const_types() {
 }
 
 fn fold_enum(
-    fold: fold::fold<astsrv::srv>,
-    doc: doc::enumdoc
-) -> doc::enumdoc {
+    fold: fold::Fold<astsrv::Srv>,
+    doc: doc::EnumDoc
+) -> doc::EnumDoc {
     let doc_id = doc.id();
     let srv = fold.ctxt;
 
@@ -116,10 +117,10 @@ fn fold_enum(
                   ast_map::node_item(@{
                     node: ast::item_enum(enum_definition, _), _
                   }, _) => {
-                    let ast_variant = option::get(
+                    let ast_variant =
                         do vec::find(enum_definition.variants) |v| {
                             to_str(v.node.name) == variant.name
-                        });
+                        }.get();
 
                     pprust::variant_to_str(ast_variant, extract::interner())
                   }
@@ -143,9 +144,9 @@ fn should_add_variant_sigs() {
 }
 
 fn fold_trait(
-    fold: fold::fold<astsrv::srv>,
-    doc: doc::traitdoc
-) -> doc::traitdoc {
+    fold: fold::Fold<astsrv::Srv>,
+    doc: doc::TraitDoc
+) -> doc::TraitDoc {
     {
         methods: merge_methods(fold.ctxt, doc.id(), doc.methods),
         .. doc
@@ -153,10 +154,10 @@ fn fold_trait(
 }
 
 fn merge_methods(
-    srv: astsrv::srv,
-    item_id: doc::ast_id,
-    docs: ~[doc::methoddoc]
-) -> ~[doc::methoddoc] {
+    srv: astsrv::Srv,
+    item_id: doc::AstId,
+    docs: ~[doc::MethodDoc]
+) -> ~[doc::MethodDoc] {
     do par::map(docs) |doc| {
         {
             sig: get_method_sig(srv, item_id, doc.name),
@@ -166,8 +167,8 @@ fn merge_methods(
 }
 
 fn get_method_sig(
-    srv: astsrv::srv,
-    item_id: doc::ast_id,
+    srv: astsrv::Srv,
+    item_id: doc::AstId,
     method_name: ~str
 ) -> Option<~str> {
     do astsrv::exec(srv) |ctxt| {
@@ -234,9 +235,9 @@ fn should_add_trait_method_sigs() {
 }
 
 fn fold_impl(
-    fold: fold::fold<astsrv::srv>,
-    doc: doc::impldoc
-) -> doc::impldoc {
+    fold: fold::Fold<astsrv::Srv>,
+    doc: doc::ImplDoc
+) -> doc::ImplDoc {
 
     let srv = fold.ctxt;
 
@@ -289,9 +290,9 @@ fn should_add_impl_method_sigs() {
 }
 
 fn fold_type(
-    fold: fold::fold<astsrv::srv>,
-    doc: doc::tydoc
-) -> doc::tydoc {
+    fold: fold::Fold<astsrv::Srv>,
+    doc: doc::TyDoc
+) -> doc::TyDoc {
 
     let srv = fold.ctxt;
 
@@ -322,9 +323,74 @@ fn should_add_type_signatures() {
     assert doc.cratemod().types()[0].sig == Some(~"type t<T> = int");
 }
 
+fn fold_struct(
+    fold: fold::Fold<astsrv::Srv>,
+    doc: doc::StructDoc
+) -> doc::StructDoc {
+    let srv = fold.ctxt;
+
+    {
+        sig: do astsrv::exec(srv) |ctxt| {
+            match ctxt.ast_map.get(doc.id()) {
+                ast_map::node_item(item, _) => {
+                    let item = strip_struct_extra_stuff(item);
+                    Some(pprust::item_to_str(item,
+                                             extract::interner()))
+                }
+                _ => fail ~"not an item"
+            }
+        },
+        .. doc
+    }
+}
+
+/// Removes various things from the struct item definition that
+/// shouldn't be displayed in the struct signature. Probably there
+/// should be a simple pprust::struct_to_str function that does
+/// what I actually want
+fn strip_struct_extra_stuff(item: @ast::item) -> @ast::item {
+    let node = match item.node {
+        ast::item_class(def, tys) => {
+            let def = @{
+                dtor: None, // Remove the drop { } block
+                .. *def
+            };
+            ast::item_class(def, tys)
+        }
+        _ => fail ~"not a struct"
+    };
+
+    @{
+        attrs: ~[], // Remove the attributes
+        node: node,
+        .. *item
+    }
+}
+
+#[test]
+fn should_add_struct_defs() {
+    let doc = test::mk_doc(~"struct S { field: () }");
+    assert doc.cratemod().structs()[0].sig.get().contains("struct S {");
+}
+
+#[test]
+fn should_not_serialize_struct_drop_blocks() {
+    // All we care about are the fields
+    let doc = test::mk_doc(~"struct S { field: (), drop { } }");
+    assert !doc.cratemod().structs()[0].sig.get().contains("drop");
+}
+
+#[test]
+fn should_not_serialize_struct_attrs() {
+    // All we care about are the fields
+    let doc = test::mk_doc(~"#[wut] struct S { field: () }");
+    assert !doc.cratemod().structs()[0].sig.get().contains("wut");
+}
+
 #[cfg(test)]
 mod test {
-    fn mk_doc(source: ~str) -> doc::doc {
+    #[legacy_exports];
+    fn mk_doc(source: ~str) -> doc::Doc {
         do astsrv::from_str(source) |srv| {
             let doc = extract::from_srv(srv, ~"");
             run(srv, doc)

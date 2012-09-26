@@ -23,7 +23,7 @@ use syntax::ast::{item_foreign_mod, item_impl, item_mac, item_mod};
 use syntax::ast::{item_trait, item_ty, local_crate, method, node_id};
 use syntax::ast::{trait_ref};
 use syntax::ast_map::node_item;
-use syntax::ast_util::{def_id_of_def, dummy_sp, new_def_hash};
+use syntax::ast_util::{def_id_of_def, dummy_sp};
 use syntax::codemap::span;
 use syntax::visit::{default_simple_visitor, default_visitor};
 use syntax::visit::{mk_simple_visitor, mk_vt, visit_crate, visit_item};
@@ -32,7 +32,7 @@ use util::ppaux::ty_to_str;
 
 use dvec::DVec;
 use result::Ok;
-use std::map::{hashmap, int_hash};
+use std::map::HashMap;
 use uint::range;
 use vec::{len, push};
 
@@ -55,7 +55,7 @@ fn get_base_type(inference_context: infer_ctxt, span: span, original_type: t)
         }
     }
 
-    match get(resolved_type).struct {
+    match get(resolved_type).sty {
         ty_box(base_mutability_and_type) |
         ty_uniq(base_mutability_and_type) |
         ty_ptr(base_mutability_and_type) |
@@ -76,7 +76,7 @@ fn get_base_type(inference_context: infer_ctxt, span: span, original_type: t)
         ty_param(*) | ty_self | ty_type | ty_opaque_box |
         ty_opaque_closure_ptr(*) | ty_unboxed_vec(*) => {
             debug!("(getting base type) no base type; found %?",
-                   get(original_type).struct);
+                   get(original_type).sty);
             None
         }
     }
@@ -93,7 +93,7 @@ fn get_base_type_def_id(inference_context: infer_ctxt,
             return None;
         }
         Some(base_type) => {
-            match get(base_type).struct {
+            match get(base_type).sty {
                 ty_enum(def_id, _) |
                 ty_class(def_id, _) |
                 ty_trait(def_id, _, _) => {
@@ -121,17 +121,17 @@ fn method_to_MethodInfo(ast_method: @method) -> @MethodInfo {
 struct CoherenceInfo {
     // Contains implementations of methods that are inherent to a type.
     // Methods in these implementations don't need to be exported.
-    inherent_methods: hashmap<def_id,@DVec<@Impl>>,
+    inherent_methods: HashMap<def_id,@DVec<@Impl>>,
 
     // Contains implementations of methods associated with a trait. For these,
     // the associated trait must be imported at the call site.
-    extension_methods: hashmap<def_id,@DVec<@Impl>>,
+    extension_methods: HashMap<def_id,@DVec<@Impl>>,
 }
 
 fn CoherenceInfo() -> CoherenceInfo {
     CoherenceInfo {
-        inherent_methods: new_def_hash(),
-        extension_methods: new_def_hash()
+        inherent_methods: HashMap(),
+        extension_methods: HashMap()
     }
 }
 
@@ -140,8 +140,8 @@ fn CoherenceChecker(crate_context: @crate_ctxt) -> CoherenceChecker {
         crate_context: crate_context,
         inference_context: new_infer_ctxt(crate_context.tcx),
 
-        base_type_def_ids: new_def_hash(),
-        privileged_implementations: int_hash()
+        base_type_def_ids: HashMap(),
+        privileged_implementations: HashMap()
     }
 }
 
@@ -152,12 +152,15 @@ struct CoherenceChecker {
     // A mapping from implementations to the corresponding base type
     // definition ID.
 
-    base_type_def_ids: hashmap<def_id,def_id>,
+    base_type_def_ids: HashMap<def_id,def_id>,
 
     // A set of implementations in privileged scopes; i.e. those
     // implementations that are defined in the same scope as their base types.
 
-    privileged_implementations: hashmap<node_id,()>,
+    privileged_implementations: HashMap<node_id,()>,
+}
+
+impl CoherenceChecker {
 
     // Create a mapping containing a MethodInfo for every provided
     // method in every trait.
@@ -175,7 +178,7 @@ struct CoherenceChecker {
                                 trait `%s` with id %d",
                                 sess.str_of(item.ident), item.id);
 
-                        match trait_method {
+                        match *trait_method {
                             required(_) => { /* fall through */}
                             provided(m) => {
                                 // For every provided method in the
@@ -290,7 +293,7 @@ struct CoherenceChecker {
 
         for associated_traits.each |associated_trait| {
             let trait_did =
-                self.trait_ref_to_trait_def_id(associated_trait);
+                self.trait_ref_to_trait_def_id(*associated_trait);
             debug!("(checking implementation) adding impl for trait \
                     '%s', item '%s'",
                     ast_map::node_id_to_str(
@@ -544,7 +547,7 @@ struct CoherenceChecker {
                     debug!(
                         "(creating impl) adding provided method `%s` to impl",
                         sess.str_of(provided_method.ident));
-                    push(methods, provided_method);
+                    push(methods, *provided_method);
                 }
             }
 
@@ -557,7 +560,7 @@ struct CoherenceChecker {
 
                 for ast_methods.each |ast_method| {
                     push(methods,
-                         method_to_MethodInfo(ast_method));
+                         method_to_MethodInfo(*ast_method));
                 }
 
                 // For each trait that the impl implements, see what
@@ -566,7 +569,8 @@ struct CoherenceChecker {
                 // impl, use the provided definition in the trait.
                 for trait_refs.each |trait_ref| {
 
-                    let trait_did = self.trait_ref_to_trait_def_id(trait_ref);
+                    let trait_did =
+                        self.trait_ref_to_trait_def_id(*trait_ref);
 
                     match self.crate_context.provided_methods_map
                         .find(trait_did.node) {
@@ -642,7 +646,7 @@ struct CoherenceChecker {
 
     // External crate handling
 
-    fn add_impls_for_module(impls_seen: hashmap<def_id,()>,
+    fn add_impls_for_module(impls_seen: HashMap<def_id,()>,
                             crate_store: cstore,
                             module_def_id: def_id) {
 
@@ -650,6 +654,10 @@ struct CoherenceChecker {
                                                 module_def_id,
                                                 None);
         for (*implementations).each |implementation| {
+            debug!("coherence: adding impl from external crate: %s",
+                   ty::item_path_str(self.crate_context.tcx,
+                                     implementation.did));
+
             // Make sure we don't visit the same implementation
             // multiple times.
             match impls_seen.find(implementation.did) {
@@ -691,9 +699,9 @@ struct CoherenceChecker {
 
             // Record all the trait methods.
             for associated_traits.each |trait_type| {
-                match get(trait_type).struct {
+                match get(*trait_type).sty {
                     ty_trait(trait_id, _, _) => {
-                        self.add_trait_method(trait_id, implementation);
+                        self.add_trait_method(trait_id, *implementation);
                     }
                     _ => {
                         self.crate_context.tcx.sess.bug(~"trait type \
@@ -715,7 +723,7 @@ struct CoherenceChecker {
                 }
                 Some(base_type_def_id) => {
                     self.add_inherent_method(base_type_def_id,
-                                             implementation);
+                                             *implementation);
 
                     self.base_type_def_ids.insert(implementation.did,
                                                   base_type_def_id);
@@ -725,7 +733,7 @@ struct CoherenceChecker {
     }
 
     fn add_external_crates() {
-        let impls_seen = new_def_hash();
+        let impls_seen = HashMap();
 
         let crate_store = self.crate_context.tcx.sess.cstore;
         do iter_crate_data(crate_store) |crate_number, _crate_metadata| {

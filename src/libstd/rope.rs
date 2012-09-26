@@ -431,7 +431,9 @@ fn loop_leaves(rope: Rope, it: fn(node::Leaf) -> bool) -> bool{
 }
 
 mod iterator {
+    #[legacy_exports];
     mod leaf {
+        #[legacy_exports];
         fn start(rope: Rope) -> node::leaf_iterator::T {
             match (rope) {
               node::Empty      => return node::leaf_iterator::empty(),
@@ -443,6 +445,7 @@ mod iterator {
         }
     }
     mod char {
+        #[legacy_exports];
         fn start(rope: Rope) -> node::char_iterator::T {
             match (rope) {
               node::Empty      => return node::char_iterator::empty(),
@@ -535,6 +538,7 @@ fn char_at(rope: Rope, pos: uint) -> char {
  Section: Implementation
 */
 mod node {
+    #[legacy_exports];
 
     /// Implementation of type `rope`
     enum Root {
@@ -807,18 +811,18 @@ mod node {
               option::Some(x) => {
                 //FIXME (#2744): Replace with memcpy or something similar
                 let mut local_buf: ~[u8] =
-                    unsafe::reinterpret_cast(&*x.content);
+                    cast::reinterpret_cast(&*x.content);
                 let mut i = x.byte_offset;
                 while i < x.byte_len {
                     buf[offset] = local_buf[i];
                     offset += 1u;
                     i      += 1u;
                 }
-                unsafe::forget(local_buf);
+                cast::forget(move local_buf);
               }
             }
         }
-        return unsafe::transmute(buf);
+        return cast::transmute(move buf);
     }
 
     /**
@@ -860,7 +864,7 @@ mod node {
     fn bal(node: @Node) -> Option<@Node> {
         if height(node) < hint_max_node_height { return option::None; }
         //1. Gather all leaves as a forest
-        let mut forest = ~[mut];
+        let mut forest = ~[];
         let it = leaf_iterator::start(node);
         loop {
             match (leaf_iterator::next(&it)) {
@@ -1105,6 +1109,7 @@ mod node {
     }
 
     mod leaf_iterator {
+        #[legacy_exports];
         type T = {
             stack:            ~[mut @Node],
             mut stackpos: int
@@ -1112,13 +1117,13 @@ mod node {
 
         fn empty() -> T {
             let stack : ~[mut @Node] = ~[mut];
-            return {stack: stack, mut stackpos: -1}
+            return {stack: move stack, mut stackpos: -1}
         }
 
         fn start(node: @Node) -> T {
             let stack = vec::to_mut(vec::from_elem(height(node)+1u, node));
             return {
-                stack:             stack,
+                stack:         move stack,
                 mut stackpos:  0
             }
         }
@@ -1142,6 +1147,7 @@ mod node {
     }
 
     mod char_iterator {
+        #[legacy_exports];
         type T = {
             leaf_iterator: leaf_iterator::T,
             mut leaf:  Option<Leaf>,
@@ -1219,6 +1225,7 @@ mod node {
 
 #[cfg(test)]
 mod tests {
+    #[legacy_exports];
 
     //Utility function, used for sanity check
     fn rope_to_string(r: Rope) -> ~str {

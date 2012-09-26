@@ -1,4 +1,4 @@
-/**
+/*!
    A parallel word-frequency counting program.
 
    This is meant primarily to demonstrate Rust's MapReduce framework.
@@ -10,13 +10,15 @@
 
 // xfail-pretty
 
-use std;
+#[legacy_modes];
+
+extern mod std;
 
 use option = option;
 use option::Some;
 use option::None;
 use std::map;
-use std::map::hashmap;
+use std::map::HashMap;
 use hash::Hash;
 use io::WriterUtil;
 
@@ -35,16 +37,6 @@ macro_rules! move_out (
 
 trait word_reader {
     fn read_word() -> Option<~str>;
-}
-
-trait hash_key {
-    pure fn hash() -> uint;
-    pure fn eq(&&k: self) -> bool;
-}
-
-impl ~str: hash_key {
-    pure fn hash() -> uint { str::hash(&self) }
-    pure fn eq(&&x: ~str) -> bool { self == x }
 }
 
 // These used to be in task, but they disappeard.
@@ -88,14 +80,16 @@ fn reduce(&&word: ~str, get: map_reduce::getter<int>) {
     let mut count = 0;
 
     loop { match get() { Some(_) => { count += 1; } None => { break; } } }
-    
+
     io::println(fmt!("%s\t%?", word, count));
 }
 
 struct box<T> {
     mut contents: Option<T>,
+}
 
-    fn swap(f: fn(+T) -> T) {
+impl<T> box<T> {
+    fn swap(f: fn(+v: T) -> T) {
         let mut tmp = None;
         self.contents <-> tmp;
         self.contents = Some(f(option::unwrap(tmp)));
@@ -115,6 +109,7 @@ fn box<T>(+x: T) -> box<T> {
 }
 
 mod map_reduce {
+    #[legacy_exports];
     export putter;
     export getter;
     export mapper;
@@ -148,7 +143,7 @@ mod map_reduce {
 
     enum reduce_proto<V: Copy Send> { emit_val(V), done, addref, release }
 
-    fn start_mappers<K1: Copy Send, K2: Hash IterBytes Eq Const Copy Send hash_key,
+    fn start_mappers<K1: Copy Send, K2: Hash IterBytes Eq Const Copy Send,
                      V: Copy Send>(
         map: mapper<K1, K2, V>,
         &ctrls: ~[ctrl_proto::server::open<K2, V>],
@@ -159,19 +154,20 @@ mod map_reduce {
         for inputs.each |i| {
             let (ctrl, ctrl_server) = ctrl_proto::init();
             let ctrl = box(ctrl);
-            vec::push(tasks, spawn_joinable(|| map_task(map, ctrl, i) ));
+            let i = copy *i;
+            vec::push(tasks, spawn_joinable(|move i| map_task(map, ctrl, i)));
             vec::push(ctrls, ctrl_server);
         }
         return tasks;
     }
 
-    fn map_task<K1: Copy Send, K2: Hash IterBytes Eq Const Copy Send hash_key, V: Copy Send>(
+    fn map_task<K1: Copy Send, K2: Hash IterBytes Eq Const Copy Send, V: Copy Send>(
         map: mapper<K1, K2, V>,
         ctrl: box<ctrl_proto::client::open<K2, V>>,
         input: K1)
     {
         // log(error, "map_task " + input);
-        let intermediates = map::hashmap();
+        let intermediates = map::HashMap();
 
         do map(input) |key, val| {
             let mut c = None;
@@ -238,7 +234,7 @@ mod map_reduce {
         reduce(key, || get(p, ref_count, is_done) );
     }
 
-    fn map_reduce<K1: Copy Send, K2: Hash IterBytes Eq Const Copy Send hash_key, V: Copy Send>(
+    fn map_reduce<K1: Copy Send, K2: Hash IterBytes Eq Const Copy Send, V: Copy Send>(
         map: mapper<K1, K2, V>,
         reduce: reducer<K2, V>,
         inputs: ~[K1])
@@ -248,7 +244,7 @@ mod map_reduce {
         // This task becomes the master control task. It task::_spawns
         // to do the rest.
 
-        let reducers = map::hashmap();
+        let reducers = map::HashMap();
         let mut tasks = start_mappers(map, ctrl, inputs);
         let mut num_mappers = vec::len(inputs) as int;
 
@@ -289,11 +285,11 @@ mod map_reduce {
 
         for reducers.each_value |v| { send(v, done) }
 
-        for tasks.each |t| { join(t); }
+        for tasks.each |t| { join(*t); }
     }
 }
 
-fn main(argv: ~[~str]) {
+fn main(++argv: ~[~str]) {
     if vec::len(argv) < 2u && !os::getenv(~"RUST_BENCH").is_some() {
         let out = io::stdout();
 
@@ -303,8 +299,10 @@ fn main(argv: ~[~str]) {
     }
 
     let readers: ~[fn~() -> word_reader]  = if argv.len() >= 2 {
-        vec::view(argv, 1u, argv.len()).map(
-            |f| fn~() -> word_reader { file_word_reader(f) } )
+        vec::view(argv, 1u, argv.len()).map(|f| {
+            let f = *f;
+            fn~() -> word_reader { file_word_reader(f) }
+        })
     }
     else {
         let num_readers = 50;
@@ -344,10 +342,12 @@ fn is_word_char(c: char) -> bool {
     char::is_alphabetic(c) || char::is_digit(c) || c == '_'
 }
 
-struct random_word_reader: word_reader {
+struct random_word_reader {
     mut remaining: uint,
     rng: rand::Rng,
+}
 
+impl random_word_reader: word_reader {
     fn read_word() -> Option<~str> {
         if self.remaining > 0 {
             self.remaining -= 1;

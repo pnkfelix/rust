@@ -1,9 +1,10 @@
 // error-pattern:runned an unexported test
 // compile-flags:--test
 
-use std;
+extern mod std;
 
 mod m {
+    #[legacy_exports];
     export exported;
 
     fn exported() { }

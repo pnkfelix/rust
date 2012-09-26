@@ -1,13 +1,17 @@
 // Rust JSON serialization library
 // Copyright (c) 2011 Google Inc.
+#[forbid(deprecated_mode)];
+#[forbid(deprecated_pattern)];
+#[forbid(non_camel_case_types)];
 
 //! json serialization
 
-use core::cmp::Eq;
+use core::cmp::{Eq, Ord};
 use result::{Result, Ok, Err};
-use io::WriterUtil;
-use map::hashmap;
-use map::map;
+use io::{WriterUtil, ReaderUtil};
+use map::HashMap;
+use map::Map;
+use sort::Sort;
 
 export Json;
 export Error;
@@ -33,7 +37,7 @@ enum Json {
     String(@~str),
     Boolean(bool),
     List(@~[Json]),
-    Dict(map::hashmap<~str, Json>),
+    Dict(map::HashMap<~str, Json>),
     Null,
 }
 
@@ -57,7 +61,7 @@ fn to_writer(wr: io::Writer, j: Json) {
                 wr.write_str(~", ");
             }
             first = false;
-            to_writer(wr, item);
+            to_writer(wr, *item);
         };
         wr.write_char(']');
       }
@@ -88,7 +92,7 @@ fn to_writer(wr: io::Writer, j: Json) {
 fn to_writer_pretty(wr: io::Writer, j: Json, indent: uint) {
     fn spaces(n: uint) -> ~str {
         let mut ss = ~"";
-        for n.times { str::push_str(ss, " "); }
+        for n.times { str::push_str(&mut ss, " "); }
         return ss;
     }
 
@@ -118,7 +122,7 @@ fn to_writer_pretty(wr: io::Writer, j: Json, indent: uint) {
                 wr.write_str(spaces(inner_indent));
             }
             first = false;
-            to_writer_pretty(wr, item, inner_indent);
+            to_writer_pretty(wr, *item, inner_indent);
         };
 
         // ]
@@ -152,7 +156,7 @@ fn to_writer_pretty(wr: io::Writer, j: Json, indent: uint) {
         //   k: v }
         let mut first = true;
         for sorted_pairs.each |kv| {
-            let (key, value) = kv;
+            let (key, value) = *kv;
             if !first {
                 wr.write_str(~",\n");
                 wr.write_str(spaces(inner_indent));
@@ -173,9 +177,9 @@ fn to_writer_pretty(wr: io::Writer, j: Json, indent: uint) {
     }
 }
 
-fn escape_str(s: ~str) -> ~str {
+fn escape_str(s: &str) -> ~str {
     let mut escaped = ~"\"";
-    do str::chars_iter(s) |c| {
+    for str::chars_each(s) |c| {
         match c {
           '"' => escaped += ~"\\\"",
           '\\' => escaped += ~"\\\\",
@@ -424,14 +428,14 @@ impl Parser {
 
             if (escape) {
                 match self.ch {
-                  '"' => str::push_char(res, '"'),
-                  '\\' => str::push_char(res, '\\'),
-                  '/' => str::push_char(res, '/'),
-                  'b' => str::push_char(res, '\x08'),
-                  'f' => str::push_char(res, '\x0c'),
-                  'n' => str::push_char(res, '\n'),
-                  'r' => str::push_char(res, '\r'),
-                  't' => str::push_char(res, '\t'),
+                  '"' => str::push_char(&mut res, '"'),
+                  '\\' => str::push_char(&mut res, '\\'),
+                  '/' => str::push_char(&mut res, '/'),
+                  'b' => str::push_char(&mut res, '\x08'),
+                  'f' => str::push_char(&mut res, '\x0c'),
+                  'n' => str::push_char(&mut res, '\n'),
+                  'r' => str::push_char(&mut res, '\r'),
+                  't' => str::push_char(&mut res, '\t'),
                   'u' => {
                       // Parse \u1234.
                       let mut i = 0u;
@@ -460,7 +464,7 @@ impl Parser {
                             ~"invalid \\u escape (not four digits)");
                       }
 
-                      str::push_char(res, n as char);
+                      str::push_char(&mut res, n as char);
                   }
                   _ => return self.error(~"invalid escape")
                 }
@@ -472,7 +476,7 @@ impl Parser {
                     self.bump();
                     return Ok(@res);
                 }
-                str::push_char(res, self.ch);
+                str::push_char(&mut res, self.ch);
             }
         }
 
@@ -513,7 +517,7 @@ impl Parser {
         self.bump();
         self.parse_whitespace();
 
-        let values = map::str_hash();
+        let values = map::HashMap();
 
         if self.ch == '}' {
           self.bump();
@@ -573,7 +577,7 @@ fn from_reader(rdr: io::Reader) -> Result<Json, Error> {
 }
 
 /// Deserializes a json value from a string
-fn from_str(s: ~str) -> Result<Json, Error> {
+fn from_str(s: &str) -> Result<Json, Error> {
     io::with_str_reader(s, from_reader)
 }
 
@@ -603,18 +607,94 @@ pure fn eq(value0: Json, value1: Json) -> bool {
     }
 }
 
-impl Error : Eq {
-    pure fn eq(&&other: Error) -> bool {
-        self.line == other.line &&
-        self.col == other.col &&
-        self.msg == other.msg
+/// Test if two json values are less than one another
+pure fn lt(value0: Json, value1: Json) -> bool {
+    match value0 {
+        Num(f0) => {
+            match value1 {
+                Num(f1) => f0 < f1,
+                String(_) | Boolean(_) | List(_) | Dict(_) | Null => true
+            }
+        }
+
+        String(s0) => {
+            match value1 {
+                Num(_) => false,
+                String(s1) => s0 < s1,
+                Boolean(_) | List(_) | Dict(_) | Null => true
+            }
+        }
+
+        Boolean(b0) => {
+            match value1 {
+                Num(_) | String(_) => false,
+                Boolean(b1) => b0 < b1,
+                List(_) | Dict(_) | Null => true
+            }
+        }
+
+        List(l0) => {
+            match value1 {
+                Num(_) | String(_) | Boolean(_) => false,
+                List(l1) => l0 < l1,
+                Dict(_) | Null => true
+            }
+        }
+
+        Dict(d0) => {
+            match value1 {
+                Num(_) | String(_) | Boolean(_) | List(_) => false,
+                Dict(d1) => {
+                    unsafe {
+                        let (d0_flat, d1_flat) = {
+                            let d0_flat = dvec::DVec();
+                            for d0.each |k, v| { d0_flat.push((k, v)); }
+                            let mut d0_flat = dvec::unwrap(move d0_flat);
+                            d0_flat.qsort();
+
+                            let mut d1_flat = dvec::DVec();
+                            for d1.each |k, v| { d1_flat.push((k, v)); }
+                            let mut d1_flat = dvec::unwrap(move d1_flat);
+                            d1_flat.qsort();
+
+                            (move d0_flat, move d1_flat)
+                        };
+
+                        d0_flat < d1_flat
+                    }
+                }
+                Null => true
+            }
+        }
+
+        Null => {
+            match value1 {
+                Num(_) | String(_) | Boolean(_) | List(_) | Dict(_) => false,
+                Null => true
+            }
+        }
     }
-    pure fn ne(&&other: Error) -> bool { !self.eq(other) }
+}
+
+impl Error : Eq {
+    pure fn eq(other: &Error) -> bool {
+        self.line == (*other).line &&
+        self.col == (*other).col &&
+        self.msg == (*other).msg
+    }
+    pure fn ne(other: &Error) -> bool { !self.eq(other) }
 }
 
 impl Json : Eq {
-    pure fn eq(&&other: Json) -> bool { eq(self, other) }
-    pure fn ne(&&other: Json) -> bool { !self.eq(other) }
+    pure fn eq(other: &Json) -> bool { eq(self, (*other)) }
+    pure fn ne(other: &Json) -> bool { !self.eq(other) }
+}
+
+impl Json : Ord {
+    pure fn lt(other: &Json) -> bool { lt(self, (*other))  }
+    pure fn le(other: &Json) -> bool { !(*other).lt(&self) }
+    pure fn ge(other: &Json) -> bool { !self.lt(other)     }
+    pure fn gt(other: &Json) -> bool { (*other).lt(&self)  }
 }
 
 trait ToJson { fn to_json() -> Json; }
@@ -720,9 +800,9 @@ impl <A: ToJson> ~[A]: ToJson {
     fn to_json() -> Json { List(@self.map(|elt| elt.to_json())) }
 }
 
-impl <A: ToJson Copy> hashmap<~str, A>: ToJson {
+impl <A: ToJson Copy> HashMap<~str, A>: ToJson {
     fn to_json() -> Json {
-        let d = map::str_hash();
+        let d = map::HashMap();
         for self.each() |key, value| {
             d.insert(copy key, value.to_json());
         }
@@ -751,11 +831,12 @@ impl Error: to_str::ToStr {
 
 #[cfg(test)]
 mod tests {
-    fn mk_dict(items: ~[(~str, Json)]) -> Json {
-        let d = map::str_hash();
+    #[legacy_exports];
+    fn mk_dict(items: &[(~str, Json)]) -> Json {
+        let d = map::HashMap();
 
-        do vec::iter(items) |item| {
-            let (key, value) = copy item;
+        for vec::each(items) |item| {
+            let (key, value) = copy *item;
             d.insert(key, value);
         };
 
@@ -811,7 +892,7 @@ mod tests {
             ]))
         ]);
         let astr = to_str(a);
-        let b = result::get(from_str(astr));
+        let b = result::get(&from_str(astr));
         let bstr = to_str(b);
         assert astr == bstr;
         assert a == b;
@@ -959,24 +1040,25 @@ mod tests {
         assert from_str(~"{\"a\":1,") ==
             Err({line: 1u, col: 8u, msg: @~"EOF while parsing object"});
 
-        assert eq(result::get(from_str(~"{}")), mk_dict(~[]));
-        assert eq(result::get(from_str(~"{\"a\": 3}")),
+        assert eq(result::get(&from_str(~"{}")), mk_dict(~[]));
+        assert eq(result::get(&from_str(~"{\"a\": 3}")),
                   mk_dict(~[(~"a", Num(3.0f))]));
 
-        assert eq(result::get(from_str(~"{ \"a\": null, \"b\" : true }")),
+        assert eq(result::get(&from_str(~"{ \"a\": null, \"b\" : true }")),
                   mk_dict(~[
                       (~"a", Null),
                       (~"b", Boolean(true))]));
-        assert eq(result::get(from_str(~"\n{ \"a\": null, \"b\" : true }\n")),
+        assert eq(result::get(&from_str(
+                  ~"\n{ \"a\": null, \"b\" : true }\n")),
                   mk_dict(~[
                       (~"a", Null),
                       (~"b", Boolean(true))]));
-        assert eq(result::get(from_str(~"{\"a\" : 1.0 ,\"b\": [ true ]}")),
+        assert eq(result::get(&from_str(~"{\"a\" : 1.0 ,\"b\": [ true ]}")),
                   mk_dict(~[
                       (~"a", Num(1.0)),
                       (~"b", List(@~[Boolean(true)]))
                   ]));
-        assert eq(result::get(from_str(
+        assert eq(result::get(&from_str(
                       ~"{" +
                           ~"\"a\": 1.0, " +
                           ~"\"b\": [" +

@@ -39,23 +39,23 @@ fn map_slices<A: Copy Send, B: Copy Send>(
         log(info, ~"spawning tasks");
         while base < len {
             let end = uint::min(len, base + items_per_task);
-            do vec::as_buf(xs) |p, _len| {
+            do vec::as_imm_buf(xs) |p, _len| {
                 let f = f();
-                let f = do future_spawn() |copy base| {
+                let f = do future_spawn() |move f, copy base| {
                     unsafe {
                         let len = end - base;
                         let slice = (ptr::offset(p, base),
                                      len * sys::size_of::<A>());
                         log(info, fmt!("pre-slice: %?", (base, slice)));
                         let slice : &[A] =
-                            unsafe::reinterpret_cast(&slice);
+                            cast::reinterpret_cast(&slice);
                         log(info, fmt!("slice: %?",
                                        (base, vec::len(slice), end - base)));
                         assert(vec::len(slice) == end - base);
                         f(base, slice)
                     }
                 };
-                vec::push(futures, f);
+                vec::push(futures, move f);
             };
             base += items_per_task;
         }
@@ -76,7 +76,7 @@ fn map_slices<A: Copy Send, B: Copy Send>(
 fn map<A: Copy Send, B: Copy Send>(xs: ~[A], f: fn~(A) -> B) -> ~[B] {
     vec::concat(map_slices(xs, || {
         fn~(_base: uint, slice : &[A], copy f) -> ~[B] {
-            vec::map(slice, |x| f(x))
+            vec::map(slice, |x| f(*x))
         }
     }))
 }
@@ -87,7 +87,7 @@ fn mapi<A: Copy Send, B: Copy Send>(xs: ~[A],
     let slices = map_slices(xs, || {
         fn~(base: uint, slice : &[A], copy f) -> ~[B] {
             vec::mapi(slice, |i, x| {
-                f(i + base, x)
+                f(i + base, *x)
             })
         }
     });
@@ -109,7 +109,7 @@ fn mapi_factory<A: Copy Send, B: Copy Send>(
         let f = f();
         fn~(base: uint, slice : &[A], move f) -> ~[B] {
             vec::mapi(slice, |i, x| {
-                f(i + base, x)
+                f(i + base, *x)
             })
         }
     });

@@ -1,4 +1,7 @@
-use std;
+// xfail-fast
+#[legacy_modes];
+
+extern mod std;
 use pipes::send;
 
 fn start(c: pipes::Chan<int>, start: int, number_of_messages: int) {

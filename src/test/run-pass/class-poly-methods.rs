@@ -1,11 +1,11 @@
 struct cat<U> {
-  priv {
-    mut info : ~[U],
-    mut meows : uint,
-  }
+  priv mut info : ~[U],
+  priv mut meows : uint,
 
   how_hungry : int,
+}
 
+impl<U> cat<U> {
   fn speak<T>(stuff: ~[T]) {
     self.meows += stuff.len();
   }

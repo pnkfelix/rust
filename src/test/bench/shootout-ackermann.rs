@@ -1,4 +1,4 @@
-use std;
+extern mod std;
 
 fn ack(m: int, n: int) -> int {
     if m == 0 {
@@ -12,7 +12,7 @@ fn ack(m: int, n: int) -> int {
     }
 }
 
-fn main(args: ~[~str]) {
+fn main(++args: ~[~str]) {
     let args = if os::getenv(~"RUST_BENCH").is_some() {
         ~[~"", ~"12"]
     } else if args.len() <= 1u {

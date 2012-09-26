@@ -17,7 +17,7 @@
 // much information, but have the disadvantage of being very
 // invasive.)
 
-use std::map::hashmap;
+use std::map::HashMap;
 use std::list;
 use std::list::{List, Cons, Nil};
 use driver::session::session;
@@ -27,8 +27,9 @@ use syntax::ast_map;
 use common::*;
 
 type type_uses = uint; // Bitmask
-const use_repr: uint = 1u; // Dependency on size/alignment and take/drop glue
-const use_tydesc: uint = 2u; // Takes the tydesc, or compares
+const use_repr: uint = 1u;   /* Dependency on size/alignment/mode and
+                                take/drop glue */
+const use_tydesc: uint = 2u; /* Takes the tydesc, or compares */
 
 type ctx = {ccx: @crate_ctxt,
             uses: ~[mut type_uses]};
@@ -45,13 +46,18 @@ fn type_uses_for(ccx: @crate_ctxt, fn_id: def_id, n_tps: uint)
     ccx.type_use_cache.insert(fn_id, vec::from_elem(n_tps, 3u));
 
     let cx = {ccx: ccx, uses: vec::to_mut(vec::from_elem(n_tps, 0u))};
-    match ty::get(ty::lookup_item_type(cx.ccx.tcx, fn_id).ty).struct {
-      ty::ty_fn(ref fn_ty) => {
-        for vec::each(fn_ty.sig.inputs) |arg| {
-            if arg.mode == expl(by_val) { type_needs(cx, use_repr, arg.ty); }
+    match ty::get(ty::lookup_item_type(cx.ccx.tcx, fn_id).ty).sty {
+        ty::ty_fn(ref fn_ty) => {
+            for vec::each(fn_ty.sig.inputs) |arg| {
+                match ty::resolved_mode(ccx.tcx, arg.mode) {
+                    by_val | by_move | by_copy => {
+                        type_needs(cx, use_repr, arg.ty);
+                    }
+                    by_ref | by_mutbl_ref => {}
+                }
+            }
         }
-      }
-      _ => ()
+        _ => ()
     }
 
     if fn_id_loc.crate != local_crate {
@@ -116,21 +122,21 @@ fn type_uses_for(ccx: @crate_ctxt, fn_id: def_id, n_tps: uint)
     uses
 }
 
-fn type_needs(cx: ctx, use: uint, ty: ty::t) {
+fn type_needs(cx: ctx, use_: uint, ty: ty::t) {
     // Optimization -- don't descend type if all params already have this use
     for vec::each_mut(cx.uses) |u| {
-        if *u & use != use {
-            type_needs_inner(cx, use, ty, @Nil);
+        if *u & use_ != use_ {
+            type_needs_inner(cx, use_, ty, @Nil);
             return;
         }
     }
 }
 
-fn type_needs_inner(cx: ctx, use: uint, ty: ty::t,
+fn type_needs_inner(cx: ctx, use_: uint, ty: ty::t,
                     enums_seen: @List<def_id>) {
     do ty::maybe_walk_ty(ty) |ty| {
         if ty::type_has_params(ty) {
-            match ty::get(ty).struct {
+            match ty::get(ty).sty {
                 /*
                  This previously included ty_box -- that was wrong
                  because if we cast an @T to an trait (for example) and return
@@ -140,19 +146,19 @@ fn type_needs_inner(cx: ctx, use: uint, ty: ty::t,
               ty::ty_fn(_) | ty::ty_ptr(_) | ty::ty_rptr(_, _)
                | ty::ty_trait(_, _, _) => false,
               ty::ty_enum(did, substs) => {
-                if option::is_none(list::find(enums_seen, |id| *id == did)) {
+                if option::is_none(&list::find(enums_seen, |id| *id == did)) {
                     let seen = @Cons(did, enums_seen);
                     for vec::each(*ty::enum_variants(cx.ccx.tcx, did)) |v| {
                         for vec::each(v.args) |aty| {
-                            let t = ty::subst(cx.ccx.tcx, &substs, aty);
-                            type_needs_inner(cx, use, t, seen);
+                            let t = ty::subst(cx.ccx.tcx, &substs, *aty);
+                            type_needs_inner(cx, use_, t, seen);
                         }
                     }
                 }
                 false
               }
               ty::ty_param(p) => {
-                cx.uses[p.idx] |= use;
+                cx.uses[p.idx] |= use_;
                 false
               }
               _ => true
@@ -161,8 +167,8 @@ fn type_needs_inner(cx: ctx, use: uint, ty: ty::t,
     }
 }
 
-fn node_type_needs(cx: ctx, use: uint, id: node_id) {
-    type_needs(cx, use, ty::node_id_to_type(cx.ccx.tcx, id));
+fn node_type_needs(cx: ctx, use_: uint, id: node_id) {
+    type_needs(cx, use_, ty::node_id_to_type(cx.ccx.tcx, id));
 }
 
 fn mark_for_expr(cx: ctx, e: @expr) {
@@ -178,7 +184,7 @@ fn mark_for_expr(cx: ctx, e: @expr) {
       }
       expr_cast(base, _) => {
         let result_t = ty::node_id_to_type(cx.ccx.tcx, e.id);
-        match ty::get(result_t).struct {
+        match ty::get(result_t).sty {
             ty::ty_trait(*) => {
               // When we're casting to an trait, we need the
               // tydesc for the expr that's being cast.
@@ -228,10 +234,10 @@ fn mark_for_expr(cx: ctx, e: @expr) {
         let base_ty = ty::node_id_to_type(cx.ccx.tcx, base.id);
         type_needs(cx, use_repr, ty::type_autoderef(cx.ccx.tcx, base_ty));
 
-        do option::iter(cx.ccx.maps.method_map.find(e.id)) |mth| {
+        do option::iter(&cx.ccx.maps.method_map.find(e.id)) |mth| {
             match mth.origin {
               typeck::method_static(did) => {
-                do option::iter(cx.ccx.tcx.node_type_substs.find(e.id)) |ts| {
+                do cx.ccx.tcx.node_type_substs.find(e.id).iter |ts| {
                     do vec::iter2(type_uses_for(cx.ccx, did, ts.len()), ts)
                         |uses, subst| { type_needs(cx, uses, subst)}
                 }
@@ -247,14 +253,16 @@ fn mark_for_expr(cx: ctx, e: @expr) {
         node_type_needs(cx, use_tydesc, val.id);
       }
       expr_call(f, _, _) => {
-        vec::iter(ty::ty_fn_args(ty::node_id_to_type(cx.ccx.tcx, f.id)), |a| {
-            match a.mode {
-              expl(by_move) | expl(by_copy) | expl(by_val) => {
-                type_needs(cx, use_repr, a.ty);
+          for vec::each(
+              ty::ty_fn_args(ty::node_id_to_type(cx.ccx.tcx, f.id))
+          ) |a| {
+              match a.mode {
+                  expl(by_move) | expl(by_copy) | expl(by_val) => {
+                      type_needs(cx, use_repr, a.ty);
+                  }
+                  _ => ()
               }
-              _ => ()
-            }
-        })
+          }
       }
       expr_match(*) | expr_block(_) | expr_if(*) |
       expr_while(*) | expr_fail(_) | expr_break(_) | expr_again(_) |
@@ -281,7 +289,7 @@ fn handle_body(cx: ctx, body: blk) {
         },
         visit_block: |b, cx, v| {
             visit::visit_block(b, cx, v);
-            do option::iter(b.node.expr) |e| {
+            do option::iter(&b.node.expr) |e| {
                 node_type_needs(cx, use_repr, e.id);
             }
         },

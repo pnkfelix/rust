@@ -1,5 +1,5 @@
 use std::map;
-use std::map::hashmap;
+use std::map::HashMap;
 use lib::llvm::llvm;
 use lib::llvm::ValueRef;
 use trans::common::*;
@@ -66,14 +66,14 @@ fn lli1(bval: bool) -> ValueRef {
     C_bool(bval)
 }
 fn llmdnode(elems: ~[ValueRef]) -> ValueRef unsafe {
-    llvm::LLVMMDNode(vec::unsafe::to_ptr(elems),
+    llvm::LLVMMDNode(vec::raw::to_ptr(elems),
                      vec::len(elems) as libc::c_uint)
 }
 fn llunused() -> ValueRef {
     lli32(0x0)
 }
 fn llnull() -> ValueRef unsafe {
-    unsafe::reinterpret_cast(&ptr::null::<ValueRef>())
+    cast::reinterpret_cast(&ptr::null::<ValueRef>())
 }
 
 fn add_named_metadata(cx: @crate_ctxt, name: ~str, val: ValueRef) {
@@ -91,7 +91,7 @@ type debug_ctxt = {
 };
 
 fn mk_ctxt(crate: ~str, intr: ident_interner) -> debug_ctxt {
-    {llmetadata: map::int_hash(),
+    {llmetadata: map::HashMap(),
      names: new_namegen(intr),
      crate_file: crate}
 }
@@ -116,7 +116,7 @@ type block_md = {start: codemap::loc, end: codemap::loc};
 type argument_md = {id: ast::node_id};
 type retval_md = {id: ast::node_id};
 
-type metadata_cache = hashmap<int, ~[debug_metadata]>;
+type metadata_cache = HashMap<int, ~[debug_metadata]>;
 
 enum debug_metadata {
     file_metadata(@metadata<file_md>),
@@ -131,7 +131,7 @@ enum debug_metadata {
 
 fn cast_safely<T: Copy, U>(val: T) -> U unsafe {
     let val2 = val;
-    return unsafe::transmute(val2);
+    return cast::transmute(move val2);
 }
 
 fn md_from_metadata<T>(val: debug_metadata) -> T unsafe {
@@ -152,7 +152,7 @@ fn cached_metadata<T: Copy>(cache: metadata_cache, mdtag: int,
     if cache.contains_key(mdtag) {
         let items = cache.get(mdtag);
         for items.each |item| {
-            let md: T = md_from_metadata::<T>(item);
+            let md: T = md_from_metadata::<T>(*item);
             if eq(md) {
                 return option::Some(md);
             }
@@ -164,7 +164,7 @@ fn cached_metadata<T: Copy>(cache: metadata_cache, mdtag: int,
 fn create_compile_unit(cx: @crate_ctxt)
     -> @metadata<compile_unit_md> unsafe {
     let cache = get_cache(cx);
-    let crate_name = option::get(cx.dbg_cx).crate_file;
+    let crate_name = cx.dbg_cx.get().crate_file;
     let tg = CompileUnitTag;
     match cached_metadata::<@metadata<compile_unit_md>>(cache, tg,
                         |md| md.data.name == crate_name) {
@@ -194,7 +194,7 @@ fn create_compile_unit(cx: @crate_ctxt)
 }
 
 fn get_cache(cx: @crate_ctxt) -> metadata_cache {
-    option::get(cx.dbg_cx).llmetadata
+    cx.dbg_cx.get().llmetadata
 }
 
 fn get_file_path_and_dir(work_dir: &str, full_path: &str) -> (~str, ~str) {
@@ -236,13 +236,13 @@ fn line_from_span(cm: codemap::codemap, sp: span) -> uint {
 fn create_block(cx: block) -> @metadata<block_md> {
     let cache = get_cache(cx.ccx());
     let mut cx = cx;
-    while option::is_none(cx.node_info) {
+    while cx.node_info.is_none() {
         match cx.parent {
           Some(b) => cx = b,
           None => fail
         }
     }
-    let sp = option::get(cx.node_info).span;
+    let sp = cx.node_info.get().span;
 
     let start = codemap::lookup_char_pos(cx.sess().codemap, sp.lo);
     let fname = start.file.name;
@@ -395,7 +395,7 @@ fn create_record(cx: @crate_ctxt, t: ty::t, fields: ~[ast::ty_field],
     let file_node = create_file(cx, fname);
     let scx = create_structure(file_node,
                                cx.sess.str_of(
-                                   option::get(cx.dbg_cx).names(~"rec")),
+                                   cx.dbg_cx.get().names(~"rec")),
                                line_from_span(cx.sess.codemap,
                                               span) as int);
     for fields.each |field| {
@@ -452,15 +452,15 @@ fn create_composite_type(type_tag: int, name: ~str, file: ValueRef, line: int,
                   lli64(align), // align
                   lli32/*64*/(offset), // offset
                   lli32(0), // flags
-                  if option::is_none(derived) {
+                  if derived.is_none() {
                       llnull()
                   } else { // derived from
-                      option::get(derived)
+                      derived.get()
                   },
-                  if option::is_none(members) {
+                  if members.is_none() {
                       llnull()
                   } else { //members
-                      llmdnode(option::get(members))
+                      llmdnode(members.get())
                   },
                   lli32(0),  // runtime language
                   llnull()
@@ -711,12 +711,12 @@ fn update_source_pos(cx: block, s: span) {
 
 fn create_function(fcx: fn_ctxt) -> @metadata<subprogram_md> {
     let cx = fcx.ccx;
-    let dbg_cx = option::get(cx.dbg_cx);
+    let dbg_cx = cx.dbg_cx.get();
 
     debug!("~~");
     log(debug, fcx.id);
 
-    let sp = option::get(fcx.span);
+    let sp = fcx.span.get();
     log(debug, codemap::span_to_str(sp, cx.sess.codemap));
 
     let (ident, ret_ty, id) = match cx.tcx.items.get(fcx.id) {

@@ -1,4 +1,4 @@
-/*! Precise Garbage Collector
+/*! Precise garbage collector
 
 The precise GC exposes two functions, gc and
 cleanup_stack_for_failure. The gc function is the entry point to the
@@ -25,10 +25,14 @@ with destructors.
 
 */
 
-import stackwalk::Word;
-import libc::size_t;
-import libc::uintptr_t;
-import send_map::linear::LinearMap;
+// NB: transitionary, de-mode-ing.
+#[forbid(deprecated_mode)];
+#[forbid(deprecated_pattern)];
+
+use stackwalk::Word;
+use libc::size_t;
+use libc::uintptr_t;
+use send_map::linear::LinearMap;
 
 export Word;
 export gc;
@@ -43,6 +47,7 @@ struct StackSegment {
 }
 
 extern mod rustrt {
+    #[legacy_exports];
     fn rust_annihilate_box(ptr: *Word);
 
     #[rust_stack]
@@ -55,14 +60,14 @@ extern mod rustrt {
 }
 
 unsafe fn bump<T, U>(ptr: *T, count: uint) -> *U {
-    return unsafe::reinterpret_cast(&ptr::offset(ptr, count));
+    return cast::reinterpret_cast(&ptr::offset(ptr, count));
 }
 
 unsafe fn align_to_pointer<T>(ptr: *T) -> *T {
     let align = sys::min_align_of::<*T>();
-    let ptr: uint = unsafe::reinterpret_cast(&ptr);
+    let ptr: uint = cast::reinterpret_cast(&ptr);
     let ptr = (ptr + (align - 1)) & -align;
-    return unsafe::reinterpret_cast(&ptr);
+    return cast::reinterpret_cast(&ptr);
 }
 
 unsafe fn get_safe_point_count() -> uint {
@@ -101,8 +106,8 @@ type Visitor = fn(root: **Word, tydesc: *Word) -> bool;
 // Walks the list of roots for the given safe point, and calls visitor
 // on each root.
 unsafe fn walk_safe_point(fp: *Word, sp: SafePoint, visitor: Visitor) {
-    let fp_bytes: *u8 = unsafe::reinterpret_cast(&fp);
-    let sp_meta: *u32 = unsafe::reinterpret_cast(&sp.sp_meta);
+    let fp_bytes: *u8 = cast::reinterpret_cast(&fp);
+    let sp_meta: *u32 = cast::reinterpret_cast(&sp.sp_meta);
 
     let num_stack_roots = *sp_meta as uint;
     let num_reg_roots = *ptr::offset(sp_meta, 1) as uint;
@@ -143,9 +148,9 @@ unsafe fn walk_safe_point(fp: *Word, sp: SafePoint, visitor: Visitor) {
 
 // Is fp contained in segment?
 unsafe fn is_frame_in_segment(fp: *Word, segment: *StackSegment) -> bool {
-    let begin: Word = unsafe::reinterpret_cast(&segment);
-    let end: Word = unsafe::reinterpret_cast(&(*segment).end);
-    let frame: Word = unsafe::reinterpret_cast(&fp);
+    let begin: Word = cast::reinterpret_cast(&segment);
+    let end: Word = cast::reinterpret_cast(&(*segment).end);
+    let frame: Word = cast::reinterpret_cast(&fp);
 
     return begin <= frame && frame <= end;
 }
@@ -315,7 +320,7 @@ fn cleanup_stack_for_failure() {
         // own stack roots on the stack anyway.
         let sentinel_box = ~0;
         let sentinel: **Word = if expect_sentinel() {
-            unsafe::reinterpret_cast(&ptr::addr_of(sentinel_box))
+            cast::reinterpret_cast(&ptr::addr_of(sentinel_box))
         } else {
             ptr::null()
         };
@@ -323,7 +328,7 @@ fn cleanup_stack_for_failure() {
         let mut roots = ~RootSet();
         for walk_gc_roots(need_cleanup, sentinel) |root, tydesc| {
             // Track roots to avoid double frees.
-            if option::is_some(roots.find(&*root)) {
+            if roots.find(&*root).is_some() {
                 loop;
             }
             roots.insert(*root, ());

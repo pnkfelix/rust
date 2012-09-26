@@ -108,30 +108,30 @@ fn mkname(nm: &str) -> Name {
 }
 
 impl Name : Eq {
-    pure fn eq(&&other: Name) -> bool {
+    pure fn eq(other: &Name) -> bool {
         match self {
             Long(e0a) => {
-                match other {
+                match (*other) {
                     Long(e0b) => e0a == e0b,
                     _ => false
                 }
             }
             Short(e0a) => {
-                match other {
+                match (*other) {
                     Short(e0b) => e0a == e0b,
                     _ => false
                 }
             }
         }
     }
-    pure fn ne(&&other: Name) -> bool { !self.eq(other) }
+    pure fn ne(other: &Name) -> bool { !self.eq(other) }
 }
 
 impl Occur : Eq {
-    pure fn eq(&&other: Occur) -> bool {
-        (self as uint) == (other as uint)
+    pure fn eq(other: &Occur) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: Occur) -> bool { !self.eq(other) }
+    pure fn ne(other: &Occur) -> bool { !self.eq(other) }
 }
 
 /// Create an option that is required and takes an argument
@@ -272,8 +272,8 @@ fn getopts(args: &[~str], opts: &[Opt]) -> Result unsafe {
                       Some(id) => last_valid_opt_id = option::Some(id),
                       None => {
                         let arg_follows =
-                            option::is_some(last_valid_opt_id) &&
-                            match opts[option::get(last_valid_opt_id)]
+                            last_valid_opt_id.is_some() &&
+                            match opts[last_valid_opt_id.get()]
                               .hasarg {
 
                               Yes | Maybe => true,
@@ -294,31 +294,31 @@ fn getopts(args: &[~str], opts: &[Opt]) -> Result unsafe {
             let mut name_pos = 0u;
             for vec::each(names) |nm| {
                 name_pos += 1u;
-                let optid = match find_opt(opts, nm) {
+                let optid = match find_opt(opts, *nm) {
                   Some(id) => id,
-                  None => return Err(UnrecognizedOption(name_str(&nm)))
+                  None => return Err(UnrecognizedOption(name_str(nm)))
                 };
                 match opts[optid].hasarg {
                   No => {
-                    if !option::is_none::<~str>(i_arg) {
-                        return Err(UnexpectedArgument(name_str(&nm)));
+                    if !i_arg.is_none() {
+                        return Err(UnexpectedArgument(name_str(nm)));
                     }
                     vec::push(vals[optid], Given);
                   }
                   Maybe => {
-                    if !option::is_none::<~str>(i_arg) {
-                        vec::push(vals[optid], Val(option::get(i_arg)));
+                    if !i_arg.is_none() {
+                        vec::push(vals[optid], Val(i_arg.get()));
                     } else if name_pos < vec::len::<Name>(names) ||
                                   i + 1u == l || is_arg(args[i + 1u]) {
                         vec::push(vals[optid], Given);
                     } else { i += 1u; vec::push(vals[optid], Val(args[i])); }
                   }
                   Yes => {
-                    if !option::is_none::<~str>(i_arg) {
+                    if !i_arg.is_none() {
                         vec::push(vals[optid],
-                                  Val(option::get::<~str>(i_arg)));
+                                  Val(i_arg.get()));
                     } else if i + 1u == l {
-                        return Err(ArgumentMissing(name_str(&nm)));
+                        return Err(ArgumentMissing(name_str(nm)));
                     } else { i += 1u; vec::push(vals[optid], Val(args[i])); }
                   }
                 }
@@ -343,7 +343,7 @@ fn getopts(args: &[~str], opts: &[Opt]) -> Result unsafe {
         i += 1u;
     }
     return Ok({opts: vec::from_slice(opts),
-               vals: vec::from_mut(vals),
+               vals: vec::from_mut(move vals),
                free: free});
 }
 
@@ -367,7 +367,7 @@ fn opt_present(+mm: Matches, nm: &str) -> bool {
 /// Returns true if any of several options were matched
 fn opts_present(+mm: Matches, names: &[~str]) -> bool {
     for vec::each(names) |nm| {
-        match find_opt(mm.opts, mkname(nm)) {
+        match find_opt(mm.opts, mkname(*nm)) {
           Some(_) => return true,
           None    => ()
         }
@@ -394,7 +394,7 @@ fn opt_str(+mm: Matches, nm: &str) -> ~str {
  */
 fn opts_str(+mm: Matches, names: &[~str]) -> ~str {
     for vec::each(names) |nm| {
-        match opt_val(mm, nm) {
+        match opt_val(mm, *nm) {
           Val(s) => return s,
           _ => ()
         }
@@ -412,7 +412,7 @@ fn opts_str(+mm: Matches, names: &[~str]) -> ~str {
 fn opt_strs(+mm: Matches, nm: &str) -> ~[~str] {
     let mut acc: ~[~str] = ~[];
     for vec::each(opt_vals(mm, nm)) |v| {
-        match v { Val(s) => vec::push(acc, s), _ => () }
+        match *v { Val(s) => vec::push(acc, s), _ => () }
     }
     return acc;
 }
@@ -448,16 +448,17 @@ enum FailType {
 }
 
 impl FailType : Eq {
-    pure fn eq(&&other: FailType) -> bool {
-        (self as uint) == (other as uint)
+    pure fn eq(other: &FailType) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: FailType) -> bool { !self.eq(other) }
+    pure fn ne(other: &FailType) -> bool { !self.eq(other) }
 }
 
 #[cfg(test)]
 mod tests {
-    import opt = getopts;
-    import result::{Err, Ok};
+    #[legacy_exports];
+    use opt = getopts;
+    use result::{Err, Ok};
 
     fn check_fail_type(+f: Fail_, ft: FailType) {
         match f {

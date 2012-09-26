@@ -1,6 +1,6 @@
 // Based on spectalnorm.gcc by Sebastien Loisel
 
-use std;
+extern mod std;
 
 fn eval_A(i: uint, j: uint) -> float {
     1.0/(((i+j)*(i+j+1u)/2u+i+1u) as float)
@@ -40,7 +40,7 @@ fn eval_AtA_times_u(u: ~[const float], AtAu: ~[mut float]) {
     eval_At_times_u(v, AtAu);
 }
 
-fn main(args: ~[~str]) {
+fn main(++args: ~[~str]) {
     let args = if os::getenv(~"RUST_BENCH").is_some() {
         ~[~"", ~"2000"]
     } else if args.len() <= 1u {

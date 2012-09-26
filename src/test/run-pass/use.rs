@@ -1,14 +1,15 @@
 #[no_core];
-use core;
-use zed(name = "core");
-use bar(name = "core", vers = "0.4");
+extern mod core;
+extern mod zed(name = "core");
+extern mod bar(name = "core", vers = "0.4");
 
 
 use core::str;
 use x = zed::str;
 mod baz {
-    import bar::str;
-    import x = core::str;
+    #[legacy_exports];
+    use bar::str;
+    use x = core::str;
 }
 
 fn main() { }

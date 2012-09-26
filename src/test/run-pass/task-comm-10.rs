@@ -1,4 +1,7 @@
-use std;
+// xfail-fast
+#[legacy_modes];
+
+extern mod std;
 
 fn start(c: pipes::Chan<pipes::Chan<~str>>) {
     let (ch, p) = pipes::stream();

@@ -1,9 +1,8 @@
 // Test case for issue #2843.
 //
-// xfail-test
 
 proto! streamp (
-    open:send<T: send> {
+    open:send<T: Send> {
         data(T) -> open<T>
     }
 )
@@ -15,7 +14,7 @@ fn rendezvous() {
     error!("%?", streams[0]);
 }
 
-fn main(args: ~[str]) {
+fn main() {
     //os::getenv("FOO");
     rendezvous();
 }

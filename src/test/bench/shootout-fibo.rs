@@ -1,4 +1,4 @@
-use std;
+extern mod std;
 
 fn fib(n: int) -> int {
     if n < 2 {
@@ -8,7 +8,7 @@ fn fib(n: int) -> int {
     }
 }
 
-fn main(args: ~[~str]) {
+fn main(++args: ~[~str]) {
     let args = if os::getenv(~"RUST_BENCH").is_some() {
         ~[~"", ~"40"]
     } else if args.len() <= 1u {

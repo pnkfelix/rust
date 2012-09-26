@@ -1,7 +1,8 @@
 mod argparse {
-    use std;
+    #[legacy_exports];
+    extern mod std;
 
-    import either::{Either, Left, Right};
+    use either::{Either, Left, Right};
 
     struct Flag {
         name: &str,

@@ -11,7 +11,7 @@
 export Condvar, Semaphore, Mutex, mutex_with_condvars;
 export RWlock, rwlock_with_condvars, RWlockReadMode, RWlockWriteMode;
 
-use unsafe::{Exclusive, exclusive};
+use private::{Exclusive, exclusive};
 
 /****************************************************************************
  * Internals
@@ -80,11 +80,11 @@ fn new_sem<Q: Send>(count: int, +q: Q) -> Sem<Q> {
 #[doc(hidden)]
 fn new_sem_and_signal(count: int, num_condvars: uint)
         -> Sem<~[mut Waitqueue]> {
-    let mut queues = ~[mut];
+    let mut queues = ~[];
     for num_condvars.times {
         vec::push(queues, new_waitqueue());
     }
-    new_sem(count, queues)
+    new_sem(count, vec::to_mut(move queues))
 }
 
 #[doc(hidden)]
@@ -98,9 +98,9 @@ impl<Q: Send> &Sem<Q> {
                     // Create waiter nobe.
                     let (SignalEnd, WaitEnd) = pipes::oneshot();
                     // Tell outer scope we need to block.
-                    waiter_nobe = Some(WaitEnd);
+                    waiter_nobe = Some(move WaitEnd);
                     // Enqueue ourself.
-                    state.waiters.tail.send(SignalEnd);
+                    state.waiters.tail.send(move SignalEnd);
                 }
             }
         }
@@ -108,7 +108,7 @@ impl<Q: Send> &Sem<Q> {
         /* for 1000.times { task::yield(); } */
         // Need to wait outside the exclusive.
         if waiter_nobe.is_some() {
-            let _ = pipes::recv_one(option::unwrap(waiter_nobe));
+            let _ = pipes::recv_one(option::unwrap(move waiter_nobe));
         }
     }
     fn release() {
@@ -203,8 +203,8 @@ impl &Condvar {
     fn wait_on(condvar_id: uint) {
         // Create waiter nobe.
         let (SignalEnd, WaitEnd) = pipes::oneshot();
-        let mut WaitEnd   = Some(WaitEnd);
-        let mut SignalEnd = Some(SignalEnd);
+        let mut WaitEnd   = Some(move WaitEnd);
+        let mut SignalEnd = Some(move SignalEnd);
         let mut reacquire = None;
         let mut out_of_bounds = None;
         unsafe {
@@ -219,7 +219,7 @@ impl &Condvar {
                         }
                         // Enqueue ourself to be woken up by a signaller.
                         let SignalEnd = option::swap_unwrap(&mut SignalEnd);
-                        state.blocked[condvar_id].tail.send(SignalEnd);
+                        state.blocked[condvar_id].tail.send(move SignalEnd);
                     } else {
                         out_of_bounds = Some(vec::len(state.blocked));
                     }
@@ -539,7 +539,7 @@ impl &RWlock {
      * }
      * ~~~
      */
-    fn write_downgrade<U>(blk: fn(+RWlockWriteMode) -> U) -> U {
+    fn write_downgrade<U>(blk: fn(+v: RWlockWriteMode) -> U) -> U {
         // Implementation slightly different from the slicker 'write's above.
         // The exit path is conditional on whether the caller downgrades.
         let mut _release = None;
@@ -670,6 +670,7 @@ impl &RWlockReadMode {
 
 #[cfg(test)]
 mod tests {
+    #[legacy_exports];
     /************************************************************************
      * Semaphore tests
      ************************************************************************/
@@ -775,11 +776,11 @@ mod tests {
         let (c,p) = pipes::stream();
         let m = ~Mutex();
         let m2 = ~m.clone();
-        let sharedstate = ~0;
+        let mut sharedstate = ~0;
         let ptr = ptr::addr_of(*sharedstate);
         do task::spawn {
             let sharedstate: &mut int =
-                unsafe { unsafe::reinterpret_cast(&ptr) };
+                unsafe { cast::reinterpret_cast(&ptr) };
             access_shared(sharedstate, m2, 10);
             c.send(());
 
@@ -1047,11 +1048,11 @@ mod tests {
         // mutex mutual exclusion test, a ways above.
         let (c,p) = pipes::stream();
         let x2 = ~x.clone();
-        let sharedstate = ~0;
+        let mut sharedstate = ~0;
         let ptr = ptr::addr_of(*sharedstate);
         do task::spawn {
             let sharedstate: &mut int =
-                unsafe { unsafe::reinterpret_cast(&ptr) };
+                unsafe { cast::reinterpret_cast(&ptr) };
             access_shared(sharedstate, x2, mode1, 10);
             c.send(());
         }

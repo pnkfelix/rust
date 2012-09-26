@@ -1,13 +1,13 @@
-import io::WriterUtil;
+use io::WriterUtil;
 
-import common::mode_run_pass;
-import common::mode_run_fail;
-import common::mode_compile_fail;
-import common::mode_pretty;
-import common::config;
-import header::load_props;
-import header::test_props;
-import util::logv;
+use common::mode_run_pass;
+use common::mode_run_fail;
+use common::mode_compile_fail;
+use common::mode_pretty;
+use common::config;
+use header::load_props;
+use header::test_props;
+use util::logv;
 
 export run;
 
@@ -102,14 +102,14 @@ fn run_rpass_test(config: config, props: test_props, testfile: &Path) {
 }
 
 fn run_pretty_test(config: config, props: test_props, testfile: &Path) {
-    if option::is_some(props.pp_exact) {
+    if props.pp_exact.is_some() {
         logv(config, ~"testing for exact pretty-printing");
     } else { logv(config, ~"testing for converging pretty-printing"); }
 
     let rounds =
         match props.pp_exact { option::Some(_) => 1, option::None => 2 };
 
-    let mut srcs = ~[result::get(io::read_whole_file_str(testfile))];
+    let mut srcs = ~[io::read_whole_file_str(testfile).get()];
 
     let mut round = 0;
     while round < rounds {
@@ -129,13 +129,13 @@ fn run_pretty_test(config: config, props: test_props, testfile: &Path) {
         match props.pp_exact {
           option::Some(file) => {
             let filepath = testfile.dir_path().push_rel(&file);
-            result::get(io::read_whole_file_str(&filepath))
+            io::read_whole_file_str(&filepath).get()
           }
           option::None => { srcs[vec::len(srcs) - 2u] }
         };
     let mut actual = srcs[vec::len(srcs) - 1u];
 
-    if option::is_some(props.pp_exact) {
+    if props.pp_exact.is_some() {
         // Now we have to care about line endings
         let cr = ~"\r";
         actual = str::replace(actual, cr, ~"");
@@ -219,7 +219,7 @@ fn check_error_patterns(props: test_props,
     let mut next_err_pat = props.error_patterns[next_err_idx];
     let mut done = false;
     for str::split_char(procres.stderr, '\n').each |line| {
-        if str::contains(line, next_err_pat) {
+        if str::contains(*line, next_err_pat) {
             debug!("found error pattern %s", next_err_pat);
             next_err_idx += 1u;
             if next_err_idx == vec::len(props.error_patterns) {
@@ -240,7 +240,7 @@ fn check_error_patterns(props: test_props,
                            missing_patterns[0]), procres);
     } else {
         for missing_patterns.each |pattern| {
-            error(fmt!("error pattern '%s' not found!", pattern));
+            error(fmt!("error pattern '%s' not found!", *pattern));
         }
         fatal_procres(~"multiple error patterns not found", procres);
     }
@@ -273,10 +273,10 @@ fn check_expected_errors(expected_errors: ~[errors::expected_error],
         for vec::eachi(expected_errors) |i, ee| {
             if !found_flags[i] {
                 debug!("prefix=%s ee.kind=%s ee.msg=%s line=%s",
-                       prefixes[i], ee.kind, ee.msg, line);
-                if (str::starts_with(line, prefixes[i]) &&
-                    str::contains(line, ee.kind) &&
-                    str::contains(line, ee.msg)) {
+                       prefixes[i], ee.kind, ee.msg, *line);
+                if (str::starts_with(*line, prefixes[i]) &&
+                    str::contains(*line, ee.kind) &&
+                    str::contains(*line, ee.msg)) {
                     found_flags[i] = true;
                     was_expected = true;
                     break;
@@ -285,13 +285,13 @@ fn check_expected_errors(expected_errors: ~[errors::expected_error],
         }
 
         // ignore this msg which gets printed at the end
-        if str::contains(line, ~"aborting due to") {
+        if str::contains(*line, ~"aborting due to") {
             was_expected = true;
         }
 
-        if !was_expected && (str::contains(line, ~"error") ||
-                             str::contains(line, ~"warning")) {
-            fatal_procres(fmt!("unexpected error pattern '%s'!", line),
+        if !was_expected && is_compiler_error_or_warning(*line) {
+            fatal_procres(fmt!("unexpected compiler error or warning: '%s'",
+                               *line),
                           procres);
         }
     }
@@ -303,6 +303,81 @@ fn check_expected_errors(expected_errors: ~[errors::expected_error],
                                ee.kind, ee.line, ee.msg), procres);
         }
     }
+}
+
+fn is_compiler_error_or_warning(line: ~str) -> bool {
+    let mut i = 0u;
+    return
+        scan_until_char(line, ':', &mut i) &&
+        scan_char(line, ':', &mut i) &&
+        scan_integer(line, &mut i) &&
+        scan_char(line, ':', &mut i) &&
+        scan_integer(line, &mut i) &&
+        scan_char(line, ':', &mut i) &&
+        scan_char(line, ' ', &mut i) &&
+        scan_integer(line, &mut i) &&
+        scan_char(line, ':', &mut i) &&
+        scan_integer(line, &mut i) &&
+        scan_char(line, ' ', &mut i) &&
+        (scan_string(line, ~"error", &mut i) ||
+         scan_string(line, ~"warning", &mut i));
+}
+
+fn scan_until_char(haystack: ~str, needle: char, idx: &mut uint) -> bool {
+    if *idx >= haystack.len() {
+        return false;
+    }
+    let opt = str::find_char_from(haystack, needle, *idx);
+    if opt.is_none() {
+        return false;
+    }
+    *idx = opt.get();
+    return true;
+}
+
+fn scan_char(haystack: ~str, needle: char, idx: &mut uint) -> bool {
+    if *idx >= haystack.len() {
+        return false;
+    }
+    let {ch, next} = str::char_range_at(haystack, *idx);
+    if ch != needle {
+        return false;
+    }
+    *idx = next;
+    return true;
+}
+
+fn scan_integer(haystack: ~str, idx: &mut uint) -> bool {
+    let mut i = *idx;
+    while i < haystack.len() {
+        let {ch, next} = str::char_range_at(haystack, i);
+        if ch < '0' || '9' < ch {
+            break;
+        }
+        i = next;
+    }
+    if i == *idx {
+        return false;
+    }
+    *idx = i;
+    return true;
+}
+
+fn scan_string(haystack: ~str, needle: ~str, idx: &mut uint) -> bool {
+    let mut haystack_i = *idx;
+    let mut needle_i = 0u;
+    while needle_i < needle.len() {
+        if haystack_i >= haystack.len() {
+            return false;
+        }
+        let {ch, next} = str::char_range_at(haystack, haystack_i);
+        haystack_i = next;
+        if !scan_char(needle, ch, &mut needle_i) {
+            return false;
+        }
+    }
+    *idx = haystack_i;
+    return true;
 }
 
 type procargs = {prog: ~str, args: ~[~str]};
@@ -350,8 +425,8 @@ fn compose_and_run_compiler(
     let extra_link_args = ~[~"-L",
                             aux_output_dir_name(config, testfile).to_str()];
 
-    do vec::iter(props.aux_builds) |rel_ab| {
-        let abs_ab = config.aux_base.push_rel(&Path(rel_ab));
+    for vec::each(props.aux_builds) |rel_ab| {
+        let abs_ab = config.aux_base.push_rel(&Path(*rel_ab));
         let aux_args =
             make_compile_args(config, props, ~[~"--lib"] + extra_link_args,
                               |a,b| make_lib_name(a, b, testfile), &abs_ab);
@@ -486,8 +561,8 @@ fn dump_output(config: config, testfile: &Path, out: ~str, err: ~str) {
 fn dump_output_file(config: config, testfile: &Path,
                     out: ~str, extension: ~str) {
     let outfile = make_out_name(config, testfile, extension);
-    let writer = result::get(
-        io::file_writer(&outfile, ~[io::Create, io::Truncate]));
+    let writer =
+        io::file_writer(&outfile, ~[io::Create, io::Truncate]).get();
     writer.write_str(out);
 }
 
@@ -500,7 +575,7 @@ fn aux_output_dir_name(config: config, testfile: &Path) -> Path {
 }
 
 fn output_testname(testfile: &Path) -> Path {
-    Path(option::get(testfile.filestem()))
+    Path(testfile.filestem().get())
 }
 
 fn output_base_name(config: config, testfile: &Path) -> Path {

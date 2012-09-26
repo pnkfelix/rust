@@ -1,7 +1,7 @@
 // Type encoding
 
 use io::WriterUtil;
-use std::map::hashmap;
+use std::map::HashMap;
 use syntax::ast::*;
 use syntax::diagnostic::span_handler;
 use middle::ty;
@@ -15,6 +15,7 @@ export ac_use_abbrevs;
 export enc_ty;
 export enc_bounds;
 export enc_mode;
+export enc_arg;
 
 type ctxt = {
     diag: span_handler,
@@ -31,7 +32,7 @@ type ctxt = {
 // Whatever format you choose should not contain pipe characters.
 type ty_abbrev = {pos: uint, len: uint, s: @~str};
 
-enum abbrev_ctxt { ac_no_abbrevs, ac_use_abbrevs(hashmap<ty::t, ty_abbrev>), }
+enum abbrev_ctxt { ac_no_abbrevs, ac_use_abbrevs(HashMap<ty::t, ty_abbrev>), }
 
 fn cx_uses_abbrevs(cx: @ctxt) -> bool {
     match cx.abbrevs {
@@ -44,12 +45,13 @@ fn enc_ty(w: io::Writer, cx: @ctxt, t: ty::t) {
     match cx.abbrevs {
       ac_no_abbrevs => {
         let result_str = match cx.tcx.short_names_cache.find(t) {
-          Some(s) => *s,
-          None => {
-            let buf = io::mem_buffer();
-            enc_sty(io::mem_buffer_writer(buf), cx, ty::get(t).struct);
-            cx.tcx.short_names_cache.insert(t, @io::mem_buffer_str(buf));
-            io::mem_buffer_str(buf)
+            Some(s) => *s,
+            None => {
+                let s = do io::with_str_writer |wr| {
+                    enc_sty(wr, cx, ty::get(t).sty);
+                };
+                cx.tcx.short_names_cache.insert(t, @s);
+                s
           }
         };
         w.write_str(result_str);
@@ -72,7 +74,7 @@ fn enc_ty(w: io::Writer, cx: @ctxt, t: ty::t) {
               }
               _ => {}
             }
-            enc_sty(w, cx, ty::get(t).struct);
+            enc_sty(w, cx, ty::get(t).sty);
             let end = w.tell();
             let len = end - pos;
             fn estimate_sz(u: uint) -> uint {
@@ -118,7 +120,7 @@ fn enc_substs(w: io::Writer, cx: @ctxt, substs: ty::substs) {
     do enc_opt(w, substs.self_r) |r| { enc_region(w, cx, r) }
     do enc_opt(w, substs.self_ty) |t| { enc_ty(w, cx, t) }
     w.write_char('[');
-    for substs.tps.each |t| { enc_ty(w, cx, t); }
+    for substs.tps.each |t| { enc_ty(w, cx, *t); }
     w.write_char(']');
 }
 
@@ -241,7 +243,7 @@ fn enc_sty(w: io::Writer, cx: @ctxt, st: ty::sty) {
       }
       ty::ty_tup(ts) => {
         w.write_str(&"T[");
-        for ts.each |t| { enc_ty(w, cx, t); }
+        for ts.each |t| { enc_ty(w, cx, *t); }
         w.write_char(']');
       }
       ty::ty_box(mt) => { w.write_char('@'); enc_mt(w, cx, mt); }
@@ -323,6 +325,11 @@ fn enc_proto(w: io::Writer, cx: @ctxt, proto: ty::fn_proto) {
     }
 }
 
+fn enc_arg(w: io::Writer, cx: @ctxt, arg: ty::arg) {
+    enc_mode(w, cx, arg.mode);
+    enc_ty(w, cx, arg.ty);
+}
+
 fn enc_mode(w: io::Writer, cx: @ctxt, m: mode) {
     match ty::resolved_mode(cx.tcx, m) {
       by_mutbl_ref => w.write_char('&'),
@@ -348,8 +355,7 @@ fn enc_ty_fn(w: io::Writer, cx: @ctxt, ft: ty::FnTy) {
     enc_bounds(w, cx, ft.meta.bounds);
     w.write_char('[');
     for ft.sig.inputs.each |arg| {
-        enc_mode(w, cx, arg.mode);
-        enc_ty(w, cx, arg.ty);
+        enc_arg(w, cx, *arg);
     }
     w.write_char(']');
     match ft.meta.ret_style {
@@ -360,7 +366,7 @@ fn enc_ty_fn(w: io::Writer, cx: @ctxt, ft: ty::FnTy) {
 
 fn enc_bounds(w: io::Writer, cx: @ctxt, bs: @~[ty::param_bound]) {
     for vec::each(*bs) |bound| {
-        match bound {
+        match *bound {
           ty::bound_send => w.write_char('S'),
           ty::bound_copy => w.write_char('C'),
           ty::bound_const => w.write_char('K'),

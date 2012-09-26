@@ -1,3 +1,9 @@
+/*!
+
+Cross-platform file path handling
+
+*/
+
 // NB: transitionary, de-mode-ing.
 #[forbid(deprecated_mode)];
 #[forbid(deprecated_pattern)];
@@ -65,21 +71,21 @@ impl PosixPath : ToStr {
 }
 
 impl PosixPath : Eq {
-    pure fn eq(&&other: PosixPath) -> bool {
-        return self.is_absolute == other.is_absolute &&
-            self.components == other.components;
+    pure fn eq(other: &PosixPath) -> bool {
+        return self.is_absolute == (*other).is_absolute &&
+            self.components == (*other).components;
     }
-    pure fn ne(&&other: PosixPath) -> bool { !self.eq(other) }
+    pure fn ne(other: &PosixPath) -> bool { !self.eq(other) }
 }
 
 impl WindowsPath : Eq {
-    pure fn eq(&&other: WindowsPath) -> bool {
-        return self.host == other.host &&
-            self.device == other.device &&
-            self.is_absolute == other.is_absolute &&
-            self.components == other.components;
+    pure fn eq(other: &WindowsPath) -> bool {
+        return self.host == (*other).host &&
+            self.device == (*other).device &&
+            self.is_absolute == (*other).is_absolute &&
+            self.components == (*other).components;
     }
-    pure fn ne(&&other: WindowsPath) -> bool { !self.eq(other) }
+    pure fn ne(other: &WindowsPath) -> bool { !self.eq(other) }
 }
 
 // FIXME (#3227): when default methods in traits are working, de-duplicate
@@ -94,12 +100,12 @@ impl PosixPath : GenericPath {
     }
 
     pure fn dirname() -> ~str {
-        unchecked {
+        unsafe {
             let s = self.dir_path().to_str();
             if s.len() == 0 {
                 ~"."
             } else {
-                s
+                move s
             }
         }
     }
@@ -128,7 +134,7 @@ impl PosixPath : GenericPath {
           None => None,
           Some(ref f) => {
             match str::rfind_char(*f, '.') {
-              Some(p) if p+1 < f.len() => Some(f.slice(p+1, f.len())),
+              Some(p) if p < f.len() => Some(f.slice(p, f.len())),
               _ => None
             }
           }
@@ -139,12 +145,12 @@ impl PosixPath : GenericPath {
         let dpath = from_str::<PosixPath>(d);
         match self.filename() {
           Some(ref f) => dpath.push(*f),
-          None => dpath
+          None => move dpath
         }
     }
 
     pure fn with_filename(f: &str) -> PosixPath {
-        unchecked {
+        unsafe {
             assert ! str::any(f, |c| windows::is_sep(c as u8));
             self.dir_path().push(f)
         }
@@ -153,8 +159,7 @@ impl PosixPath : GenericPath {
     pure fn with_filestem(s: &str) -> PosixPath {
         match self.filetype() {
           None => self.with_filename(s),
-          Some(ref t) =>
-          self.with_filename(str::from_slice(s) + "." + *t)
+          Some(ref t) => self.with_filename(str::from_slice(s) + *t)
         }
     }
 
@@ -168,8 +173,7 @@ impl PosixPath : GenericPath {
             let t = ~"." + str::from_slice(t);
             match self.filestem() {
               None => self.with_filename(t),
-              Some(ref s) =>
-              self.with_filename(*s + t)
+              Some(ref s) => self.with_filename(*s + t)
             }
         }
     }
@@ -197,21 +201,27 @@ impl PosixPath : GenericPath {
     }
 
     pure fn push_many(cs: &[~str]) -> PosixPath {
-        return PosixPath { components: self.components + cs,
-                           ..self }
+        let mut v = copy self.components;
+        for cs.each |e| {
+            let mut ss = str::split_nonempty(
+                *e,
+                |c| windows::is_sep(c as u8));
+            unsafe { vec::push_all_move(v, move ss); }
+        }
+        PosixPath { components: move v, ..self }
     }
 
     pure fn push(s: &str) -> PosixPath {
-        let mut cs = copy self.components;
-        unchecked { vec::push(cs, move str::from_slice(s)); }
-        return PosixPath { components: move cs,
-                           ..self }
+        let mut v = copy self.components;
+        let mut ss = str::split_nonempty(s, |c| windows::is_sep(c as u8));
+        unsafe { vec::push_all_move(v, move ss); }
+        PosixPath { components: move v, ..self }
     }
 
     pure fn pop() -> PosixPath {
         let mut cs = copy self.components;
         if cs.len() != 0 {
-            unchecked { vec::pop(cs); }
+            unsafe { vec::pop(cs); }
         }
         return PosixPath { components: move cs, ..self }
     }
@@ -283,12 +293,12 @@ impl WindowsPath : GenericPath {
     }
 
     pure fn dirname() -> ~str {
-        unchecked {
+        unsafe {
             let s = self.dir_path().to_str();
             if s.len() == 0 {
                 ~"."
             } else {
-                s
+                move s
             }
         }
     }
@@ -317,7 +327,7 @@ impl WindowsPath : GenericPath {
           None => None,
           Some(ref f) => {
             match str::rfind_char(*f, '.') {
-              Some(p) if p+1 < f.len() => Some(f.slice(p+1, f.len())),
+              Some(p) if p < f.len() => Some(f.slice(p, f.len())),
               _ => None
             }
           }
@@ -328,7 +338,7 @@ impl WindowsPath : GenericPath {
         let dpath = from_str::<WindowsPath>(d);
         match self.filename() {
           Some(ref f) => dpath.push(*f),
-          None => dpath
+          None => move dpath
         }
     }
 
@@ -340,8 +350,7 @@ impl WindowsPath : GenericPath {
     pure fn with_filestem(s: &str) -> WindowsPath {
         match self.filetype() {
           None => self.with_filename(s),
-          Some(ref t) =>
-          self.with_filename(str::from_slice(s) + "." + *t)
+          Some(ref t) => self.with_filename(str::from_slice(s) + *t)
         }
     }
 
@@ -386,21 +395,27 @@ impl WindowsPath : GenericPath {
     }
 
     pure fn push_many(cs: &[~str]) -> WindowsPath {
-        return WindowsPath { components: self.components + cs,
-                            ..self }
+        let mut v = copy self.components;
+        for cs.each |e| {
+            let mut ss = str::split_nonempty(
+                *e,
+                |c| windows::is_sep(c as u8));
+            unsafe { vec::push_all_move(v, move ss); }
+        }
+        return WindowsPath { components: move v, ..self }
     }
 
     pure fn push(s: &str) -> WindowsPath {
-        let mut cs = copy self.components;
-        unchecked { vec::push(cs, move str::from_slice(s)); }
-        return WindowsPath { components: move cs,
-                             ..self }
+        let mut v = copy self.components;
+        let mut ss = str::split_nonempty(s, |c| windows::is_sep(c as u8));
+        unsafe { vec::push_all_move(v, move ss); }
+        return WindowsPath { components: move v, ..self }
     }
 
     pure fn pop() -> WindowsPath {
         let mut cs = copy self.components;
         if cs.len() != 0 {
-            unchecked { vec::pop(cs); }
+            unsafe { vec::pop(cs); }
         }
         return WindowsPath { components: move cs, ..self }
     }
@@ -416,22 +431,38 @@ impl WindowsPath : GenericPath {
 
 pure fn normalize(components: &[~str]) -> ~[~str] {
     let mut cs = ~[];
-    unchecked {
+    unsafe {
         for components.each |c| {
-            unchecked {
-                if c == ~"." && components.len() > 1 { loop; }
-                if c == ~".." && cs.len() != 0 {
+            unsafe {
+                if *c == ~"." && components.len() > 1 { loop; }
+                if *c == ~"" { loop; }
+                if *c == ~".." && cs.len() != 0 {
                     vec::pop(cs);
                     loop;
                 }
-                vec::push(cs, copy c);
+                vec::push(cs, copy *c);
             }
         }
     }
-    cs
+    move cs
+}
+
+#[test]
+fn test_double_slash_collapsing()
+{
+    let path = from_str::<PosixPath>("tmp/");
+    let path = path.push("/hmm");
+    let path = path.normalize();
+    assert ~"tmp/hmm" == path.to_str();
+
+    let path = from_str::<WindowsPath>("tmp/");
+    let path = path.push("/hmm");
+    let path = path.normalize();
+    assert ~"tmp\\hmm" == path.to_str();
 }
 
 mod posix {
+    #[legacy_exports];
 
     #[cfg(test)]
     fn mk(s: &str) -> PosixPath { from_str::<PosixPath>(s) }
@@ -445,6 +476,18 @@ mod posix {
             debug!("expected %s", sss);
             assert ss == sss;
         }
+    }
+
+    #[test]
+    fn test_filetype_foo_bar() {
+        let wp = mk("foo.bar");
+        assert wp.filetype() == Some(~".bar");
+    }
+
+    #[test]
+    fn test_filetype_foo() {
+        let wp = mk("foo");
+        assert wp.filetype() == None;
     }
 
     #[test]
@@ -510,6 +553,7 @@ mod posix {
 
 // Various windows helpers, and tests for the impl.
 mod windows {
+    #[legacy_exports];
 
     #[inline(always)]
     pure fn is_sep(u: u8) -> bool {
@@ -525,7 +569,7 @@ mod windows {
                 if s[i] == '\\' as u8 {
                     let pre = s.slice(2, i);
                     let rest = s.slice(i, s.len());
-                    return Some((pre, rest));
+                    return Some((move pre, move rest));
                 }
                 i += 1;
             }
@@ -534,7 +578,7 @@ mod windows {
     }
 
     pure fn extract_drive_prefix(s: &str) -> Option<(~str,~str)> {
-        unchecked {
+        unsafe {
             if (s.len() > 1 &&
                 libc::isalpha(s[0] as libc::c_int) != 0 &&
                 s[1] == ':' as u8) {
@@ -543,7 +587,7 @@ mod windows {
                 } else {
                     s.slice(2, s.len())
                 };
-                return Some((s.slice(0,1), rest));
+                return Some((s.slice(0,1), move rest));
             }
             None
         }
@@ -617,6 +661,21 @@ mod windows {
             .with_filename("librustc.dll")),
           "c:\\program files (x86)\\rust\\lib\\librustc.dll");
 
+    }
+
+    #[cfg(test)]
+    fn mk(s: &str) -> PosixPath { from_str::<PosixPath>(s) }
+
+    #[test]
+    fn test_filetype_foo_bar() {
+        let wp = mk("foo.bar");
+        assert wp.filetype() == Some(~".bar");
+    }
+
+    #[test]
+    fn test_filetype_foo() {
+        let wp = mk("foo");
+        assert wp.filetype() == None;
     }
 
 }

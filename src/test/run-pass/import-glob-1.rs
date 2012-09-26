@@ -1,17 +1,20 @@
 use a1::b1::word_traveler;
 
 mod a1 {
+    #[legacy_exports];
     //
     mod b1 {
+        #[legacy_exports];
         //
-        import a2::b1::*;
+        use a2::b1::*;
         //         <-\
         export word_traveler; //           |
     }
     //           |
     mod b2 {
+        #[legacy_exports];
         //           |
-        import a2::b2::*;
+        use a2::b2::*;
         // <-\  -\   |
         export word_traveler; //   |   |   |
     } //   |   |   |
@@ -19,17 +22,20 @@ mod a1 {
 //   |   |   |
 //   |   |   |
 mod a2 {
+    #[legacy_exports];
     //   |   |   |
     #[abi = "cdecl"]
     #[nolink]
     extern mod b1 {
+        #[legacy_exports];
         //   |   |   |
-        import a1::b2::*;
+        use a1::b2::*;
         //   | <-/  -/
         export word_traveler; //   |
     }
     //   |
     mod b2 {
+        #[legacy_exports];
         //   |
         fn word_traveler() { //   |
             debug!("ahoy!"); //  -/

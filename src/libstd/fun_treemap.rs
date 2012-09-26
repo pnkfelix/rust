@@ -1,4 +1,4 @@
-#[forbid(deprecated_mode)];
+#[warn(deprecated_mode)];
 #[forbid(deprecated_pattern)];
 
 /*!
@@ -54,13 +54,13 @@ fn find<K: Eq Ord, V: Copy>(m: Treemap<K, V>, +k: K) -> Option<V> {
       Node(@kk, @v, left, right) => {
         if k == kk {
             Some(v)
-        } else if k < kk { find(left, k) } else { find(right, k) }
+        } else if k < kk { find(left, move k) } else { find(right, move k) }
       }
     }
 }
 
 /// Visit all pairs in the map in order.
-fn traverse<K, V: Copy>(m: Treemap<K, V>, f: fn(K, V)) {
+fn traverse<K, V: Copy>(m: Treemap<K, V>, f: fn((&K), (&V))) {
     match *m {
       Empty => (),
       /*
@@ -72,7 +72,7 @@ fn traverse<K, V: Copy>(m: Treemap<K, V>, f: fn(K, V)) {
         // copy v to make aliases work out
         let v1 = v;
         traverse(left, f);
-        f(k, v1);
+        f(&k, &v1);
         traverse(right, f);
       }
     }

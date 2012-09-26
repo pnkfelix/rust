@@ -1,5 +1,8 @@
+// xfail-fast
 // xfail-win32
-use std;
+#[legacy_modes];
+
+extern mod std;
 
 fn start(c: pipes::Chan<int>, i0: int) {
     let mut i = i0;

@@ -2,15 +2,15 @@ use codemap::span;
 use ast::*;
 
 pure fn spanned<T>(lo: uint, hi: uint, +t: T) -> spanned<T> {
-    respan(mk_sp(lo, hi), t)
+    respan(mk_sp(lo, hi), move t)
 }
 
 pure fn respan<T>(sp: span, +t: T) -> spanned<T> {
-    {node: t, span: sp}
+    {node: move t, span: sp}
 }
 
 pure fn dummy_spanned<T>(+t: T) -> spanned<T> {
-    respan(dummy_sp(), t)
+    respan(dummy_sp(), move t)
 }
 
 /* assuming that we're not in macro expansion */
@@ -25,7 +25,7 @@ pure fn dummy_sp() -> span { return mk_sp(0u, 0u); }
 
 pure fn path_name_i(idents: ~[ident], intr: token::ident_interner) -> ~str {
     // FIXME: Bad copies (#2543 -- same for everything else that says "bad")
-    str::connect(idents.map(|i| *intr.get(i)), ~"::")
+    str::connect(idents.map(|i| *intr.get(*i)), ~"::")
 }
 
 
@@ -254,13 +254,9 @@ pure fn is_call_expr(e: @expr) -> bool {
 // This makes def_id hashable
 impl def_id : core::to_bytes::IterBytes {
     #[inline(always)]
-    fn iter_bytes(lsb0: bool, f: core::to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: core::to_bytes::Cb) {
         core::to_bytes::iter_bytes_2(&self.crate, &self.node, lsb0, f);
     }
-}
-
-fn new_def_hash<V: Copy>() -> std::map::hashmap<ast::def_id, V> {
-    return std::map::hashmap::<ast::def_id, V>();
 }
 
 fn block_from_expr(e: @expr) -> blk {
@@ -316,7 +312,7 @@ fn split_trait_methods(trait_methods: ~[trait_method])
     -> (~[ty_method], ~[@method]) {
     let mut reqd = ~[], provd = ~[];
     for trait_methods.each |trt_method| {
-        match trt_method {
+        match *trt_method {
           required(tm) => vec::push(reqd, tm),
           provided(m) => vec::push(provd, m)
         }
@@ -429,13 +425,13 @@ fn id_visitor(vfn: fn@(node_id)) -> visit::vt<()> {
             match vi.node {
               view_item_use(_, _, id) => vfn(id),
               view_item_import(vps) | view_item_export(vps) => {
-                do vec::iter(vps) |vp| {
-                    match vp.node {
-                      view_path_simple(_, _, _, id) => vfn(id),
-                      view_path_glob(_, id) => vfn(id),
-                      view_path_list(_, _, id) => vfn(id)
-                    }
-                }
+                  for vec::each(vps) |vp| {
+                      match vp.node {
+                          view_path_simple(_, _, _, id) => vfn(id),
+                          view_path_glob(_, id) => vfn(id),
+                          view_path_list(_, _, id) => vfn(id)
+                      }
+                  }
               }
             }
         },
@@ -490,7 +486,9 @@ fn id_visitor(vfn: fn@(node_id)) -> visit::vt<()> {
         },
 
         visit_ty_params: fn@(ps: ~[ty_param]) {
-            vec::iter(ps, |p| vfn(p.id))
+            for vec::each(ps) |p| {
+                vfn(p.id);
+            }
         },
 
         visit_fn: fn@(fk: visit::fn_kind, d: ast::fn_decl,
@@ -498,34 +496,34 @@ fn id_visitor(vfn: fn@(node_id)) -> visit::vt<()> {
             vfn(id);
 
             match fk {
-              visit::fk_ctor(_, _, tps, self_id, parent_id) => {
-                vec::iter(tps, |tp| vfn(tp.id));
-                vfn(id);
-                vfn(self_id);
-                vfn(parent_id.node);
-              }
-              visit::fk_dtor(tps, _, self_id, parent_id) => {
-                vec::iter(tps, |tp| vfn(tp.id));
-                vfn(id);
-                vfn(self_id);
-                vfn(parent_id.node);
-              }
-              visit::fk_item_fn(_, tps, _) => {
-                vec::iter(tps, |tp| vfn(tp.id));
-              }
-              visit::fk_method(_, tps, m) => {
-                vfn(m.self_id);
-                vec::iter(tps, |tp| vfn(tp.id));
-              }
-              visit::fk_anon(_, capture_clause)
-              | visit::fk_fn_block(capture_clause) => {
-                for vec::each(*capture_clause) |clause| {
-                    vfn(clause.id);
+                visit::fk_ctor(_, _, tps, self_id, parent_id) => {
+                    for vec::each(tps) |tp| { vfn(tp.id); }
+                    vfn(id);
+                    vfn(self_id);
+                    vfn(parent_id.node);
                 }
-              }
+                visit::fk_dtor(tps, _, self_id, parent_id) => {
+                    for vec::each(tps) |tp| { vfn(tp.id); }
+                    vfn(id);
+                    vfn(self_id);
+                    vfn(parent_id.node);
+                }
+                visit::fk_item_fn(_, tps, _) => {
+                    for vec::each(tps) |tp| { vfn(tp.id); }
+                }
+                visit::fk_method(_, tps, m) => {
+                    vfn(m.self_id);
+                    for vec::each(tps) |tp| { vfn(tp.id); }
+                }
+                visit::fk_anon(_, capture_clause) |
+                visit::fk_fn_block(capture_clause) => {
+                    for vec::each(*capture_clause) |clause| {
+                        vfn(clause.id);
+                    }
+                }
             }
 
-            do vec::iter(d.inputs) |arg| {
+            for vec::each(d.inputs) |arg| {
                 vfn(arg.id)
             }
         },
@@ -577,15 +575,23 @@ pure fn is_item_impl(item: @ast::item) -> bool {
 fn walk_pat(pat: @pat, it: fn(@pat)) {
     it(pat);
     match pat.node {
-      pat_ident(_, _, Some(p)) => walk_pat(p, it),
-      pat_rec(fields, _) | pat_struct(_, fields, _) =>
-        for fields.each |f| { walk_pat(f.pat, it) },
-      pat_enum(_, Some(s)) | pat_tup(s) => for s.each |p| {
-        walk_pat(p, it)
-      },
-      pat_box(s) | pat_uniq(s) | pat_region(s) => walk_pat(s, it),
-      pat_wild | pat_lit(_) | pat_range(_, _) | pat_ident(_, _, _)
-        | pat_enum(_, _) => ()
+        pat_ident(_, _, Some(p)) => walk_pat(p, it),
+        pat_rec(fields, _) | pat_struct(_, fields, _) => {
+            for fields.each |f| {
+                walk_pat(f.pat, it)
+            }
+        }
+        pat_enum(_, Some(s)) | pat_tup(s) => {
+            for s.each |p| {
+                walk_pat(*p, it)
+            }
+        }
+        pat_box(s) | pat_uniq(s) | pat_region(s) => {
+            walk_pat(s, it)
+        }
+        pat_wild | pat_lit(_) | pat_range(_, _) | pat_ident(_, _, _) |
+        pat_enum(_, _) => {
+        }
     }
 }
 

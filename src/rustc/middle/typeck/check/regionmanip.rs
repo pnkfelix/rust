@@ -33,13 +33,13 @@ fn replace_bound_regions_in_fn_ty(
     }
 
 
-    for self_ty.each |t| { vec::push(all_tys, t) }
+    for self_ty.each |t| { vec::push(all_tys, *t) }
 
     debug!("replace_bound_regions_in_fn_ty(self_info.self_ty=%?, fn_ty=%s, \
                 all_tys=%?)",
            self_ty.map(|t| ty_to_str(tcx, t)),
            ty_to_str(tcx, ty::mk_fn(tcx, *fn_ty)),
-           all_tys.map(|t| ty_to_str(tcx, t)));
+           all_tys.map(|t| ty_to_str(tcx, *t)));
     let _i = indenter();
 
     let isr = do create_bound_region_mapping(tcx, isr, all_tys) |br| {
@@ -66,7 +66,7 @@ fn replace_bound_regions_in_fn_ty(
 
     return {isr: isr,
          self_info: new_self_info,
-         fn_ty: match ty::get(t_fn).struct { ty::ty_fn(o) => o,
+         fn_ty: match ty::get(t_fn).sty { ty::ty_fn(o) => o,
           _ => tcx.sess.bug(~"replace_bound_regions_in_fn_ty: impossible")}};
 
 

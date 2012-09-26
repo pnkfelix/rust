@@ -8,17 +8,12 @@ use middle::trans::common::{T_fn, T_i1, T_i8, T_i32,
 use lib::llvm::{type_names, ModuleRef, ValueRef, TypeRef};
 
 type upcalls =
-    {_fail: ValueRef,
-     trace: ValueRef,
+    {trace: ValueRef,
      malloc: ValueRef,
      free: ValueRef,
      exchange_malloc: ValueRef,
      exchange_free: ValueRef,
      validate_box: ValueRef,
-     mark: ValueRef,
-     str_new_uniq: ValueRef,
-     str_new_shared: ValueRef,
-     cmp_type: ValueRef,
      log_type: ValueRef,
      call_shim_on_c_stack: ValueRef,
      call_shim_on_rust_stack: ValueRef,
@@ -33,7 +28,7 @@ fn declare_upcalls(targ_cfg: @session::config,
             tys: ~[TypeRef], rv: TypeRef) ->
        ValueRef {
         let mut arg_tys: ~[TypeRef] = ~[];
-        for tys.each |t| { vec::push(arg_tys, t); }
+        for tys.each |t| { vec::push(arg_tys, *t); }
         let fn_ty = T_fn(arg_tys, rv);
         return base::decl_cdecl_fn(llmod, prefix + name, fn_ty);
     }
@@ -44,12 +39,8 @@ fn declare_upcalls(targ_cfg: @session::config,
     let dv = |a,b| decl(llmod, ~"upcall_", a, b, T_void());
 
     let int_t = T_int(targ_cfg);
-    let size_t = T_size_t(targ_cfg);
 
-    return @{_fail: dv(~"fail", ~[T_ptr(T_i8()),
-                             T_ptr(T_i8()),
-                             size_t]),
-          trace: dv(~"trace", ~[T_ptr(T_i8()),
+    return @{trace: dv(~"trace", ~[T_ptr(T_i8()),
                               T_ptr(T_i8()),
                               int_t]),
           malloc:
@@ -66,20 +57,6 @@ fn declare_upcalls(targ_cfg: @session::config,
               nothrow(dv(~"exchange_free", ~[T_ptr(T_i8())])),
           validate_box:
               nothrow(dv(~"validate_box", ~[T_ptr(T_i8())])),
-          mark:
-              d(~"mark", ~[T_ptr(T_i8())], int_t),
-          str_new_uniq:
-              nothrow(d(~"str_new_uniq", ~[T_ptr(T_i8()), int_t],
-                        T_ptr(T_i8()))),
-          str_new_shared:
-              nothrow(d(~"str_new_shared", ~[T_ptr(T_i8()), int_t],
-                        T_ptr(T_i8()))),
-          cmp_type:
-              dv(~"cmp_type",
-                 ~[T_ptr(T_i1()), T_ptr(tydesc_type),
-                  T_ptr(T_i8()),
-                  T_ptr(T_i8()),
-                  T_i8()]),
           log_type:
               dv(~"log_type", ~[T_ptr(tydesc_type),
                               T_ptr(T_i8()), T_i32()]),

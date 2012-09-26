@@ -1,7 +1,7 @@
 // xfail-pretty
 // xfail-win32
 
-use std;
+extern mod std;
 use std::timer::sleep;
 use std::uv;
 
@@ -20,8 +20,8 @@ proto! stream (
 )
 
 fn main() {
-    import oneshot::client::*;
-    import stream::client::*;
+    use oneshot::client::*;
+    use stream::client::*;
 
     let iotask = uv::global_loop::get();
     
@@ -46,7 +46,7 @@ fn main() {
         error!("selecting");
         let (i, m, _) = select(~[left, right]);
         error!("selected %?", i);
-        if m != None {
+        if m.is_some() {
             assert i == 1;
         }
     });

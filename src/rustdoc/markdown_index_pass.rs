@@ -1,24 +1,24 @@
 //! Build indexes as appropriate for the markdown pass
 
-use doc::item_utils;
+use doc::ItemUtils;
 
 export mk_pass;
 
-fn mk_pass(config: config::config) -> pass {
+fn mk_pass(config: config::Config) -> Pass {
     {
         name: ~"markdown_index",
-        f: fn~(srv: astsrv::srv, doc: doc::doc) -> doc::doc {
+        f: fn~(srv: astsrv::Srv, doc: doc::Doc) -> doc::Doc {
             run(srv, doc, config)
         }
     }
 }
 
 fn run(
-    _srv: astsrv::srv,
-    doc: doc::doc,
-    config: config::config
-) -> doc::doc {
-    let fold = fold::fold({
+    _srv: astsrv::Srv,
+    doc: doc::Doc,
+    config: config::Config
+) -> doc::Doc {
+    let fold = fold::Fold({
         fold_mod: fold_mod,
         fold_nmod: fold_nmod,
         .. *fold::default_any_fold(config)
@@ -27,22 +27,22 @@ fn run(
 }
 
 fn fold_mod(
-    fold: fold::fold<config::config>,
-    doc: doc::moddoc
-) -> doc::moddoc {
+    fold: fold::Fold<config::Config>,
+    doc: doc::ModDoc
+) -> doc::ModDoc {
 
     let doc = fold::default_any_fold_mod(fold, doc);
 
-    doc::moddoc_({
+    doc::ModDoc_({
         index: Some(build_mod_index(doc, fold.ctxt)),
         .. *doc
     })
 }
 
 fn fold_nmod(
-    fold: fold::fold<config::config>,
-    doc: doc::nmoddoc
-) -> doc::nmoddoc {
+    fold: fold::Fold<config::Config>,
+    doc: doc::NmodDoc
+) -> doc::NmodDoc {
 
     let doc = fold::default_any_fold_nmod(fold, doc);
 
@@ -53,9 +53,9 @@ fn fold_nmod(
 }
 
 fn build_mod_index(
-    doc: doc::moddoc,
-    config: config::config
-) -> doc::index {
+    doc: doc::ModDoc,
+    config: config::Config
+) -> doc::Index {
     {
         entries: par::map(doc.items, |doc| {
             item_to_entry(doc, config)
@@ -64,24 +64,24 @@ fn build_mod_index(
 }
 
 fn build_nmod_index(
-    doc: doc::nmoddoc,
-    config: config::config
-) -> doc::index {
+    doc: doc::NmodDoc,
+    config: config::Config
+) -> doc::Index {
     {
         entries: par::map(doc.fns, |doc| {
-            item_to_entry(doc::fntag(doc), config)
+            item_to_entry(doc::FnTag(doc), config)
         })
     }
 }
 
 fn item_to_entry(
-    doc: doc::itemtag,
-    config: config::config
-) -> doc::index_entry {
+    doc: doc::ItemTag,
+    config: config::Config
+) -> doc::IndexEntry {
     let link = match doc {
-      doc::modtag(_) | doc::nmodtag(_)
-      if config.output_style == config::doc_per_mod => {
-        markdown_writer::make_filename(config, doc::itempage(doc)).to_str()
+      doc::ModTag(_) | doc::NmodTag(_)
+      if config.output_style == config::DocPerMod => {
+        markdown_writer::make_filename(config, doc::ItemPage(doc)).to_str()
       }
       _ => {
         ~"#" + pandoc_header_id(markdown_pass::header_text(doc))
@@ -127,7 +127,12 @@ fn pandoc_header_id(header: ~str) -> ~str {
         return s;
     }
     fn replace_with_hyphens(s: ~str) -> ~str {
-        str::replace(s, ~" ", ~"-")
+        // Collapse sequences of whitespace to a single dash
+        // XXX: Hacky implementation here that only covers
+        // one or two spaces.
+        let s = str::replace(s, ~"  ", ~"-");
+        let s = str::replace(s, ~" ", ~"-");
+        return s;
     }
     fn convert_to_lowercase(s: ~str) -> ~str { str::to_lower(s) }
     fn remove_up_to_first_letter(s: ~str) -> ~str { s }
@@ -144,21 +149,23 @@ fn should_remove_punctuation_from_headers() {
         == ~"impl-of-numnum-for-int";
     assert pandoc_header_id(~"impl of num::num for ^int")
         == ~"impl-of-numnum-for-int";
+    assert pandoc_header_id(~"impl for & condvar")
+        == ~"impl-for-condvar";
 }
 
 #[test]
 fn should_index_mod_contents() {
     let doc = test::mk_doc(
-        config::doc_per_crate,
+        config::DocPerCrate,
         ~"mod a { } fn b() { }"
     );
-    assert option::get(doc.cratemod().index).entries[0] == {
+    assert doc.cratemod().index.get().entries[0] == {
         kind: ~"Module",
         name: ~"a",
         brief: None,
         link: ~"#module-a"
     };
-    assert option::get(doc.cratemod().index).entries[1] == {
+    assert doc.cratemod().index.get().entries[1] == {
         kind: ~"Function",
         name: ~"b",
         brief: None,
@@ -169,16 +176,16 @@ fn should_index_mod_contents() {
 #[test]
 fn should_index_mod_contents_multi_page() {
     let doc = test::mk_doc(
-        config::doc_per_mod,
+        config::DocPerMod,
         ~"mod a { } fn b() { }"
     );
-    assert option::get(doc.cratemod().index).entries[0] == {
+    assert doc.cratemod().index.get().entries[0] == {
         kind: ~"Module",
         name: ~"a",
         brief: None,
         link: ~"a.html"
     };
-    assert option::get(doc.cratemod().index).entries[1] == {
+    assert doc.cratemod().index.get().entries[1] == {
         kind: ~"Function",
         name: ~"b",
         brief: None,
@@ -189,10 +196,10 @@ fn should_index_mod_contents_multi_page() {
 #[test]
 fn should_index_foreign_mod_pages() {
     let doc = test::mk_doc(
-        config::doc_per_mod,
+        config::DocPerMod,
         ~"extern mod a { }"
     );
-    assert option::get(doc.cratemod().index).entries[0] == {
+    assert doc.cratemod().index.get().entries[0] == {
         kind: ~"Foreign module",
         name: ~"a",
         brief: None,
@@ -203,20 +210,20 @@ fn should_index_foreign_mod_pages() {
 #[test]
 fn should_add_brief_desc_to_index() {
     let doc = test::mk_doc(
-        config::doc_per_mod,
+        config::DocPerMod,
         ~"#[doc = \"test\"] mod a { }"
     );
-    assert option::get(doc.cratemod().index).entries[0].brief
+    assert doc.cratemod().index.get().entries[0].brief
         == Some(~"test");
 }
 
 #[test]
 fn should_index_foreign_mod_contents() {
     let doc = test::mk_doc(
-        config::doc_per_crate,
+        config::DocPerCrate,
         ~"extern mod a { fn b(); }"
     );
-    assert option::get(doc.cratemod().nmods()[0].index).entries[0] == {
+    assert doc.cratemod().nmods()[0].index.get().entries[0] == {
         kind: ~"Function",
         name: ~"b",
         brief: None,
@@ -226,7 +233,8 @@ fn should_index_foreign_mod_contents() {
 
 #[cfg(test)]
 mod test {
-    fn mk_doc(output_style: config::output_style, source: ~str) -> doc::doc {
+    #[legacy_exports];
+    fn mk_doc(output_style: config::OutputStyle, source: ~str) -> doc::Doc {
         do astsrv::from_str(source) |srv| {
             let config = {
                 output_style: output_style,

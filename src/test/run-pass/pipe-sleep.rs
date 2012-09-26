@@ -1,6 +1,6 @@
 // xfail-pretty
 
-use std;
+extern mod std;
 use std::timer::sleep;
 use std::uv;
 use pipes::recv;
@@ -12,7 +12,7 @@ proto! oneshot (
 )
 
 fn main() {
-    import oneshot::client::*;
+    use oneshot::client::*;
 
     let c = pipes::spawn_service(oneshot::init, |p| { recv(p); });
 

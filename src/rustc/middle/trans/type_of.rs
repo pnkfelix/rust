@@ -3,7 +3,7 @@ use lib::llvm::{TypeRef};
 use syntax::ast;
 use lib::llvm::llvm;
 use driver::session::session;
-use std::map::hashmap;
+use std::map::HashMap;
 
 export type_of;
 export type_of_dtor;
@@ -16,16 +16,22 @@ export type_of_non_gc_box;
 export type_of_rooted;
 
 fn type_of_explicit_arg(ccx: @crate_ctxt, arg: ty::arg) -> TypeRef {
-    let arg_ty = arg.ty;
-    let llty = type_of(ccx, arg_ty);
+    let llty = type_of(ccx, arg.ty);
     match ty::resolved_mode(ccx.tcx, arg.mode) {
         ast::by_val => llty,
+        ast::by_copy | ast::by_move => {
+            if ty::type_is_immediate(arg.ty) {
+                llty
+            } else {
+                T_ptr(llty)
+            }
+        }
         _ => T_ptr(llty)
     }
 }
 
 fn type_of_explicit_args(ccx: @crate_ctxt, inputs: ~[ty::arg]) -> ~[TypeRef] {
-    inputs.map(|arg| type_of_explicit_arg(ccx, arg))
+    inputs.map(|arg| type_of_explicit_arg(ccx, *arg))
 }
 
 fn type_of_fn(cx: @crate_ctxt, inputs: ~[ty::arg],
@@ -55,7 +61,7 @@ fn type_of_non_gc_box(cx: @crate_ctxt, t: ty::t) -> TypeRef {
     if t != t_norm {
         type_of_non_gc_box(cx, t_norm)
     } else {
-        match ty::get(t).struct {
+        match ty::get(t).sty {
           ty::ty_box(mt) => {
             T_ptr(T_box(cx, type_of(cx, mt.ty)))
           }
@@ -88,7 +94,7 @@ fn type_of(cx: @crate_ctxt, t: ty::t) -> TypeRef {
         return llty;
     }
 
-    let llty = match ty::get(t).struct {
+    let llty = match ty::get(t).sty {
       ty::ty_nil | ty::ty_bot => T_nil(),
       ty::ty_bool => T_bool(),
       ty::ty_int(t) => T_int_ty(cx, t),
@@ -158,7 +164,7 @@ fn type_of(cx: @crate_ctxt, t: ty::t) -> TypeRef {
       ty::ty_tup(elts) => {
         let mut tys = ~[];
         for vec::each(elts) |elt| {
-            vec::push(tys, type_of(cx, elt));
+            vec::push(tys, type_of(cx, *elt));
         }
         T_struct(tys)
       }
@@ -178,7 +184,7 @@ fn type_of(cx: @crate_ctxt, t: ty::t) -> TypeRef {
     cx.lltypes.insert(t, llty);
 
     // If this was an enum or class, fill in the type now.
-    match ty::get(t).struct {
+    match ty::get(t).sty {
       ty::ty_enum(did, _) => {
         fill_type_of_enum(cx, did, t, llty);
       }

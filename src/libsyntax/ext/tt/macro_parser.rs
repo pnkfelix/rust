@@ -10,7 +10,7 @@ use parse::parse_sess;
 use dvec::DVec;
 use ast::{matcher, match_tok, match_seq, match_nonterminal, ident};
 use ast_util::mk_sp;
-use std::map::{hashmap, uint_hash};
+use std::map::HashMap;
 
 /* This is an Earley-like parser, without support for in-grammar nonterminals,
 only by calling out to the main rust parser for named nonterminals (which it
@@ -168,13 +168,13 @@ enum named_match {
 type earley_item = matcher_pos;
 
 fn nameize(p_s: parse_sess, ms: ~[matcher], res: ~[@named_match])
-    -> hashmap<ident,@named_match> {
+    -> HashMap<ident,@named_match> {
     fn n_rec(p_s: parse_sess, m: matcher, res: ~[@named_match],
-             ret_val: hashmap<ident, @named_match>) {
+             ret_val: HashMap<ident, @named_match>) {
         match m {
           {node: match_tok(_), span: _} => (),
           {node: match_seq(more_ms, _, _, _, _), span: _} => {
-            for more_ms.each() |next_m| { n_rec(p_s, next_m, res, ret_val) };
+            for more_ms.each() |next_m| { n_rec(p_s, *next_m, res, ret_val) };
           }
           {node: match_nonterminal(bind_name, _, idx), span: sp} => {
             if ret_val.contains_key(bind_name) {
@@ -185,19 +185,19 @@ fn nameize(p_s: parse_sess, ms: ~[matcher], res: ~[@named_match])
           }
         }
     }
-    let ret_val = uint_hash::<@named_match>();
-    for ms.each() |m| { n_rec(p_s, m, res, ret_val) }
+    let ret_val = HashMap::<uint,@named_match>();
+    for ms.each() |m| { n_rec(p_s, *m, res, ret_val) }
     return ret_val;
 }
 
 enum parse_result {
-    success(hashmap<ident, @named_match>),
+    success(HashMap<ident, @named_match>),
     failure(codemap::span, ~str),
     error(codemap::span, ~str)
 }
 
 fn parse_or_else(sess: parse_sess, cfg: ast::crate_cfg, rdr: reader,
-                 ms: ~[matcher]) -> hashmap<ident, @named_match> {
+                 ms: ~[matcher]) -> HashMap<ident, @named_match> {
     match parse(sess, cfg, rdr, ms) {
       success(m) => m,
       failure(sp, str) => sess.span_diagnostic.span_fatal(sp, str),
@@ -255,8 +255,8 @@ fn parse(sess: parse_sess, cfg: ast::crate_cfg, rdr: reader, ms: ~[matcher])
                                                          sp.hi)));
                         }
 
-                        new_pos.idx += 1u;
-                        vec::push(cur_eis, new_pos);
+                        new_pos.idx += 1;
+                        vec::push(cur_eis, move new_pos);
                     }
 
                     // can we go around again?
@@ -266,18 +266,18 @@ fn parse(sess: parse_sess, cfg: ast::crate_cfg, rdr: reader, ms: ~[matcher])
                       Some(t) if idx == len => { // we need a separator
                         if tok == t { //pass the separator
                             let ei_t <- ei;
-                            ei_t.idx += 1u;
-                            vec::push(next_eis, ei_t);
+                            ei_t.idx += 1;
+                            vec::push(next_eis, move ei_t);
                         }
                       }
                       _ => { // we don't need a separator
                         let ei_t <- ei;
-                        ei_t.idx = 0u;
-                        vec::push(cur_eis, ei_t);
+                        ei_t.idx = 0;
+                        vec::push(cur_eis, move ei_t);
                       }
                     }
                 } else {
-                    vec::push(eof_eis, ei);
+                    vec::push(eof_eis, move ei);
                 }
             } else {
                 match copy ei.elts[idx].node {
@@ -292,7 +292,7 @@ fn parse(sess: parse_sess, cfg: ast::crate_cfg, rdr: reader, ms: ~[matcher])
                             new_ei.matches[idx].push(@matched_seq(~[], sp));
                         }
 
-                        vec::push(cur_eis, new_ei);
+                        vec::push(cur_eis, move new_ei);
                     }
 
                     let matches = vec::map(ei.matches, // fresh, same size:
@@ -300,16 +300,19 @@ fn parse(sess: parse_sess, cfg: ast::crate_cfg, rdr: reader, ms: ~[matcher])
                     let ei_t <- ei;
                     vec::push(cur_eis, ~{
                         elts: matchers, sep: sep, mut idx: 0u,
-                        mut up: matcher_pos_up(Some(ei_t)),
-                        matches: matches,
+                        mut up: matcher_pos_up(Some(move ei_t)),
+                        matches: move matches,
                         match_lo: match_idx_lo, match_hi: match_idx_hi,
                         sp_lo: sp.lo
                     });
                   }
-                  match_nonterminal(_,_,_) => { vec::push(bb_eis, ei) }
+                  match_nonterminal(_,_,_) => { vec::push(bb_eis, move ei) }
                   match_tok(t) => {
                     let ei_t <- ei;
-                    if t == tok { ei_t.idx += 1u; vec::push(next_eis, ei_t)}
+                    if t == tok {
+                        ei_t.idx += 1;
+                        vec::push(next_eis, move ei_t);
+                    }
                   }
                 }
             }
@@ -362,7 +365,7 @@ fn parse(sess: parse_sess, cfg: ast::crate_cfg, rdr: reader, ms: ~[matcher])
                   }
                   _ => fail
                 }
-                vec::push(cur_eis,ei);
+                vec::push(cur_eis, move ei);
 
                 /* this would fail if zero-length tokens existed */
                 while rdr.peek().sp.lo < rust_parser.span.lo {

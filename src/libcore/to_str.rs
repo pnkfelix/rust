@@ -1,3 +1,9 @@
+/*!
+
+The `ToStr` trait for converting to strings
+
+*/
+
 // NB: transitionary, de-mode-ing.
 #[forbid(deprecated_mode)];
 #[forbid(deprecated_pattern)];
@@ -37,6 +43,12 @@ impl u64: ToStr {
 impl float: ToStr {
     fn to_str() -> ~str { float::to_str(self, 4u) }
 }
+impl f32: ToStr {
+    fn to_str() -> ~str { float::to_str(self as float, 4u) }
+}
+impl f64: ToStr {
+    fn to_str() -> ~str { float::to_str(self as float, 4u) }
+}
 impl bool: ToStr {
     fn to_str() -> ~str { bool::to_str(self) }
 }
@@ -47,6 +59,9 @@ impl ~str: ToStr {
     fn to_str() -> ~str { copy self }
 }
 impl &str: ToStr {
+    fn to_str() -> ~str { str::from_slice(self) }
+}
+impl @str: ToStr {
     fn to_str() -> ~str { str::from_slice(self) }
 }
 
@@ -68,11 +83,11 @@ impl<A: ToStr> ~[A]: ToStr {
         let mut acc = ~"[", first = true;
         for vec::each(self) |elt| {
             if first { first = false; }
-            else { str::push_str(acc, ~", "); }
-            str::push_str(acc, elt.to_str());
+            else { str::push_str(&mut acc, ~", "); }
+            str::push_str(&mut acc, elt.to_str());
         }
-        str::push_char(acc, ']');
-        acc
+        str::push_char(&mut acc, ']');
+        move acc
     }
 }
 
@@ -86,6 +101,7 @@ impl<A: ToStr> ~A: ToStr {
 #[cfg(test)]
 #[allow(non_implicitly_copyable_typarams)]
 mod tests {
+    #[legacy_exports];
     #[test]
     fn test_simple_types() {
         assert 1.to_str() == ~"1";
@@ -96,6 +112,7 @@ mod tests {
         assert false.to_str() == ~"false";
         assert ().to_str() == ~"()";
         assert (~"hi").to_str() == ~"hi";
+        assert (@"hi").to_str() == ~"hi";
     }
 
     #[test]

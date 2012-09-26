@@ -16,10 +16,9 @@ use ast_builder::{append_types, path, empty_span};
 
 // Transitional reexports so qquote can find the paths it is looking for
 mod syntax {
-    import ext;
-    export ext;
-    import parse;
-    export parse;
+    #[legacy_exports];
+    pub use ext;
+    pub use parse;
 }
 
 trait gen_send {
@@ -64,10 +63,10 @@ impl message: gen_send {
 
             if this.proto.is_bounded() {
                 let (sp, rp) = match (this.dir, next.dir) {
-                  (send, send) => (~"c", ~"s"),
+                  (send, send) => (~"move c", ~"move s"),
                   (send, recv) => (~"s", ~"c"),
                   (recv, send) => (~"s", ~"c"),
-                  (recv, recv) => (~"c", ~"s")
+                  (recv, recv) => (~"move c", ~"move s")
                 };
 
                 body += ~"let b = pipe.reuse_buffer();\n";
@@ -80,10 +79,10 @@ impl message: gen_send {
             }
             else {
                 let pat = match (this.dir, next.dir) {
-                  (send, send) => "(c, s)",
+                  (send, send) => "(move c, move s)",
                   (send, recv) => "(s, c)",
                   (recv, send) => "(s, c)",
-                  (recv, recv) => "(c, s)"
+                  (recv, recv) => "(move c, move s)"
                 };
 
                 body += fmt!("let %s = pipes::entangle();\n", pat);
@@ -92,17 +91,17 @@ impl message: gen_send {
                          this.proto.name,
                          self.name(),
                          str::connect(vec::append_one(
-                             arg_names.map(|x| cx.str_of(x)), ~"s"),
-                                      ~", "));
+                           arg_names.map(|x| ~"move " + cx.str_of(*x)),
+                             ~"move s"), ~", "));
 
             if !try {
-                body += fmt!("pipes::send(pipe, message);\n");
+                body += fmt!("pipes::send(move pipe, move message);\n");
                 // return the new channel
-                body += ~"c }";
+                body += ~"move c }";
             }
             else {
-                body += fmt!("if pipes::send(pipe, message) {\n \
-                                  pipes::rt::make_some(c) \
+                body += fmt!("if pipes::send(move pipe, move message) {\n \
+                                  pipes::rt::make_some(move c) \
                               } else { pipes::rt::make_none() } }");
             }
 
@@ -145,7 +144,8 @@ impl message: gen_send {
                     ~""
                 }
                 else {
-                    ~"(" + str::connect(arg_names, ~", ") + ~")"
+                    ~"(" + str::connect(arg_names.map(|x| ~"move " + *x),
+                                        ~", ") + ~")"
                 };
 
                 let mut body = ~"{ ";
@@ -155,10 +155,10 @@ impl message: gen_send {
                              message_args);
 
                 if !try {
-                    body += fmt!("pipes::send(pipe, message);\n");
+                    body += fmt!("pipes::send(move pipe, move message);\n");
                     body += ~" }";
                 } else {
-                    body += fmt!("if pipes::send(pipe, message) { \
+                    body += fmt!("if pipes::send(move pipe, move message) { \
                                       pipes::rt::make_some(()) \
                                   } else { pipes::rt::make_none() } }");
                 }
@@ -203,7 +203,7 @@ impl state: to_type_decls {
         let mut items_msg = ~[];
 
         for self.messages.each |m| {
-            let message(name, span, tys, this, next) = m;
+            let message(name, span, tys, this, next) = *m;
 
             let tys = match next {
               Some({state: next, tys: next_tys}) => {
@@ -301,7 +301,7 @@ impl protocol: gen_init {
               recv => {
                 #ast {{
                     let (s, c) = pipes::entangle();
-                    (c, s)
+                    (move c, move s)
                 }}
               }
             }
@@ -313,14 +313,14 @@ impl protocol: gen_init {
               recv => {
                 #ast {{
                     let (s, c) = $(body);
-                    (c, s)
+                    (move c, move s)
                 }}
               }
             }
         };
 
-        cx.parse_item(fmt!("fn init%s() -> (client::%s, server::%s)\
-                            { import pipes::HasBuffer; %s }",
+        cx.parse_item(fmt!("pub fn init%s() -> (client::%s, server::%s)\
+                            { use pipes::HasBuffer; %s }",
                            start_state.ty_params.to_source(cx),
                            start_state.to_ty(cx).to_source(cx),
                            start_state.to_ty(cx).to_source(cx),
@@ -356,7 +356,7 @@ impl protocol: gen_init {
 
         #ast {{
             let buffer = $(buffer);
-            do pipes::entangle_buffer(buffer) |buffer, data| {
+            do pipes::entangle_buffer(move buffer) |buffer, data| {
                 $(entangle_body)
             }
         }}
@@ -367,7 +367,7 @@ impl protocol: gen_init {
         for (copy self.states).each |s| {
             for s.ty_params.each |tp| {
                 match params.find(|tpp| tp.ident == tpp.ident) {
-                  None => vec::push(params, tp),
+                  None => vec::push(params, *tp),
                   _ => ()
                 }
             }
@@ -383,7 +383,7 @@ impl protocol: gen_init {
         let fields = do (copy self.states).map_to_vec |s| {
             for s.ty_params.each |tp| {
                 match params.find(|tpp| tp.ident == tpp.ident) {
-                  None => vec::push(params, tp),
+                  None => vec::push(params, *tp),
                   _ => ()
                 }
             }

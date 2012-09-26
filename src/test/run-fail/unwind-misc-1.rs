@@ -1,12 +1,12 @@
 // error-pattern:fail
 
-use std;
+extern mod std;
 use std::map;
-use std::map::hashmap;
+use std::map::HashMap;
 
 fn main() {
     let count = @mut 0u;
-    let map = map::hashmap();
+    let map = map::HashMap();
     let mut arr = ~[];
     for uint::range(0u, 10u) |i| {
         arr += ~[@~"key stuff"];

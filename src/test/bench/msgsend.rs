@@ -4,7 +4,7 @@
 //
 // I *think* it's the same, more or less.
 
-use std;
+extern mod std;
 use io::Writer;
 use io::WriterUtil;
 
@@ -31,8 +31,8 @@ fn run(args: ~[~str]) {
     let (from_child, to_child) = do task::spawn_conversation |po, ch| {
         server(po, ch);
     };
-    let size = option::get(uint::from_str(args[1]));
-    let workers = option::get(uint::from_str(args[2]));
+    let size = uint::from_str(args[1]).get();
+    let workers = uint::from_str(args[2]).get();
     let start = std::time::precise_time_s();
     let mut worker_results = ~[];
     for uint::range(0u, workers) |_i| {
@@ -44,7 +44,9 @@ fn run(args: ~[~str]) {
             }
         };
     }
-    vec::iter(worker_results, |r| { future::get(&r); } );
+    for vec::each(worker_results) |r| {
+        future::get(r);
+    }
     comm::send(to_child, stop);
     let result = comm::recv(from_child);
     let end = std::time::precise_time_s();
@@ -55,7 +57,7 @@ fn run(args: ~[~str]) {
     io::stdout().write_str(fmt!("Throughput=%f per sec\n", thruput));
 }
 
-fn main(args: ~[~str]) {
+fn main(++args: ~[~str]) {
     let args = if os::getenv(~"RUST_BENCH").is_some() {
         ~[~"", ~"1000000", ~"10000"]
     } else if args.len() <= 1u {

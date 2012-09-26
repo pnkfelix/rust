@@ -4,8 +4,8 @@
 */
 
 use libc::c_uint;
-use vec::unsafe::to_ptr;
-use std::map::{hashmap,set};
+use vec::raw::to_ptr;
+use std::map::{HashMap,Set};
 use syntax::{ast, ast_map};
 use driver::session;
 use session::session;
@@ -89,8 +89,12 @@ type stats =
      mut n_glues_created: uint,
      mut n_null_glues: uint,
      mut n_real_glues: uint,
+     mut n_fns: uint,
+     mut n_monos: uint,
+     mut n_inlines: uint,
+     mut n_closures: uint,
      llvm_insn_ctxt: @mut ~[~str],
-     llvm_insns: hashmap<~str, uint>,
+     llvm_insns: HashMap<~str, uint>,
      fn_times: @mut ~[{ident: ~str, time: int}]};
 
 struct BuilderRef_res {
@@ -110,50 +114,49 @@ type crate_ctxt = {
      llmod: ModuleRef,
      td: target_data,
      tn: type_names,
-     externs: hashmap<~str, ValueRef>,
-     intrinsics: hashmap<~str, ValueRef>,
-     item_vals: hashmap<ast::node_id, ValueRef>,
-     exp_map: resolve::ExportMap,
+     externs: HashMap<~str, ValueRef>,
+     intrinsics: HashMap<~str, ValueRef>,
+     item_vals: HashMap<ast::node_id, ValueRef>,
      exp_map2: resolve::ExportMap2,
      reachable: reachable::map,
-     item_symbols: hashmap<ast::node_id, ~str>,
+     item_symbols: HashMap<ast::node_id, ~str>,
      mut main_fn: Option<ValueRef>,
      link_meta: link_meta,
-     enum_sizes: hashmap<ty::t, uint>,
-     discrims: hashmap<ast::def_id, ValueRef>,
-     discrim_symbols: hashmap<ast::node_id, ~str>,
-     tydescs: hashmap<ty::t, @tydesc_info>,
+     enum_sizes: HashMap<ty::t, uint>,
+     discrims: HashMap<ast::def_id, ValueRef>,
+     discrim_symbols: HashMap<ast::node_id, ~str>,
+     tydescs: HashMap<ty::t, @tydesc_info>,
      // Set when running emit_tydescs to enforce that no more tydescs are
      // created.
      mut finished_tydescs: bool,
      // Track mapping of external ids to local items imported for inlining
-     external: hashmap<ast::def_id, Option<ast::node_id>>,
+     external: HashMap<ast::def_id, Option<ast::node_id>>,
      // Cache instances of monomorphized functions
-     monomorphized: hashmap<mono_id, ValueRef>,
-     monomorphizing: hashmap<ast::def_id, uint>,
+     monomorphized: HashMap<mono_id, ValueRef>,
+     monomorphizing: HashMap<ast::def_id, uint>,
      // Cache computed type parameter uses (see type_use.rs)
-     type_use_cache: hashmap<ast::def_id, ~[type_use::type_uses]>,
+     type_use_cache: HashMap<ast::def_id, ~[type_use::type_uses]>,
      // Cache generated vtables
-     vtables: hashmap<mono_id, ValueRef>,
+     vtables: HashMap<mono_id, ValueRef>,
      // Cache of constant strings,
-     const_cstr_cache: hashmap<~str, ValueRef>,
+     const_cstr_cache: HashMap<~str, ValueRef>,
      // Reverse-direction for const ptrs cast from globals,
      // since the ptr -> init association is lost any
      // time a GlobalValue is cast.
-     const_globals: hashmap<int, ValueRef>,
-     module_data: hashmap<~str, ValueRef>,
-     lltypes: hashmap<ty::t, TypeRef>,
+     const_globals: HashMap<int, ValueRef>,
+     module_data: HashMap<~str, ValueRef>,
+     lltypes: HashMap<ty::t, TypeRef>,
      names: namegen,
      next_addrspace: addrspace_gen,
      symbol_hasher: @hash::State,
-     type_hashcodes: hashmap<ty::t, ~str>,
-     type_short_names: hashmap<ty::t, ~str>,
-     all_llvm_symbols: set<~str>,
+     type_hashcodes: HashMap<ty::t, ~str>,
+     type_short_names: HashMap<ty::t, ~str>,
+     all_llvm_symbols: Set<~str>,
      tcx: ty::ctxt,
      maps: astencode::maps,
      stats: stats,
      upcalls: @upcall::upcalls,
-     rtcalls: hashmap<~str, ast::def_id>,
+     rtcalls: HashMap<~str, ast::def_id>,
      tydesc_type: TypeRef,
      int_type: TypeRef,
      float_type: TypeRef,
@@ -171,7 +174,7 @@ type crate_ctxt = {
      // used in base::trans_closure
      // parent_class must be a def_id because ctors can be
      // inlined, so the parent may be in a different crate
-     class_ctors: hashmap<ast::node_id, ast::def_id>,
+     class_ctors: HashMap<ast::node_id, ast::def_id>,
      mut do_not_commit_warning_issued: bool};
 
 // Types used for llself.
@@ -186,6 +189,13 @@ enum local_val { local_mem(ValueRef), local_imm(ValueRef), }
 type param_substs = {tys: ~[ty::t],
                      vtables: Option<typeck::vtable_res>,
                      bounds: @~[ty::param_bounds]};
+
+fn param_substs_to_str(tcx: ty::ctxt, substs: &param_substs) -> ~str {
+    fmt!("param_substs {tys:%?, vtables:%?, bounds:%?}",
+         substs.tys.map(|t| ty_to_str(tcx, *t)),
+         substs.vtables.map(|vs| vs.map(|v| v.to_str(tcx))),
+         substs.bounds.map(|b| ty::param_bounds_to_str(tcx, *b)))
+}
 
 // Function context.  Every LLVM function we create will have one of
 // these.
@@ -224,12 +234,12 @@ type fn_ctxt = @{
     mut loop_ret: Option<{flagptr: ValueRef, retptr: ValueRef}>,
 
     // Maps arguments to allocas created for them in llallocas.
-    llargs: hashmap<ast::node_id, local_val>,
+    llargs: HashMap<ast::node_id, local_val>,
     // Maps the def_ids for local variables to the allocas created for
     // them in llallocas.
-    lllocals: hashmap<ast::node_id, local_val>,
+    lllocals: HashMap<ast::node_id, local_val>,
     // Same as above, but for closure upvars
-    llupvars: hashmap<ast::node_id, ValueRef>,
+    llupvars: HashMap<ast::node_id, ValueRef>,
 
     // The node_id of the function, or -1 if it doesn't correspond to
     // a user-defined function.
@@ -272,23 +282,23 @@ enum cleanup {
 }
 
 impl cleantype : cmp::Eq {
-    pure fn eq(&&other: cleantype) -> bool {
+    pure fn eq(other: &cleantype) -> bool {
         match self {
             normal_exit_only => {
-                match other {
+                match (*other) {
                     normal_exit_only => true,
                     _ => false
                 }
             }
             normal_exit_and_unwind => {
-                match other {
+                match (*other) {
                     normal_exit_and_unwind => true,
                     _ => false
                 }
             }
         }
     }
-    pure fn ne(&&other: cleantype) -> bool { !self.eq(other) }
+    pure fn ne(other: &cleantype) -> bool { !self.eq(other) }
 }
 
 // Used to remember and reuse existing cleanup paths
@@ -398,9 +408,9 @@ fn revoke_clean(cx: block, val: ValueRef) {
             });
         for cleanup_pos.each |i| {
             info.cleanups =
-                vec::append(vec::slice(info.cleanups, 0u, i),
+                vec::append(vec::slice(info.cleanups, 0u, *i),
                             vec::view(info.cleanups,
-                                      i + 1u,
+                                      *i + 1u,
                                       info.cleanups.len()));
             scope_clean_changed(info);
         }
@@ -520,7 +530,7 @@ enum block = @block_;
 fn mk_block(llbb: BasicBlockRef, parent: Option<block>, -kind: block_kind,
             is_lpad: bool, node_info: Option<node_info>, fcx: fn_ctxt)
     -> block {
-    block(@block_(llbb, parent, kind, is_lpad, node_info, fcx))
+    block(@block_(llbb, parent, move kind, is_lpad, node_info, fcx))
 }
 
 // First two args are retptr, env
@@ -597,7 +607,7 @@ impl block {
     }
 
     fn expr_to_str(e: @ast::expr) -> ~str {
-        fmt!("expr(%d: %s)", e.id, expr_to_str(e, self.sess().intr()))
+        util::ppaux::expr_repr(self.tcx(), e)
     }
 
     fn expr_is_lval(e: @ast::expr) -> bool {
@@ -1041,36 +1051,36 @@ fn C_zero_byte_arr(size: uint) -> ValueRef unsafe {
     let mut i = 0u;
     let mut elts: ~[ValueRef] = ~[];
     while i < size { vec::push(elts, C_u8(0u)); i += 1u; }
-    return llvm::LLVMConstArray(T_i8(), vec::unsafe::to_ptr(elts),
+    return llvm::LLVMConstArray(T_i8(), vec::raw::to_ptr(elts),
                              elts.len() as c_uint);
 }
 
 fn C_struct(elts: &[ValueRef]) -> ValueRef {
-    do vec::as_buf(elts) |ptr, len| {
+    do vec::as_imm_buf(elts) |ptr, len| {
         llvm::LLVMConstStruct(ptr, len as c_uint, False)
     }
 }
 
 fn C_named_struct(T: TypeRef, elts: &[ValueRef]) -> ValueRef {
-    do vec::as_buf(elts) |ptr, len| {
+    do vec::as_imm_buf(elts) |ptr, len| {
         llvm::LLVMConstNamedStruct(T, ptr, len as c_uint)
     }
 }
 
 fn C_array(ty: TypeRef, elts: ~[ValueRef]) -> ValueRef unsafe {
-    return llvm::LLVMConstArray(ty, vec::unsafe::to_ptr(elts),
+    return llvm::LLVMConstArray(ty, vec::raw::to_ptr(elts),
                              elts.len() as c_uint);
 }
 
 fn C_bytes(bytes: ~[u8]) -> ValueRef unsafe {
     return llvm::LLVMConstString(
-        unsafe::reinterpret_cast(&vec::unsafe::to_ptr(bytes)),
+        cast::reinterpret_cast(&vec::raw::to_ptr(bytes)),
         bytes.len() as c_uint, True);
 }
 
 fn C_bytes_plus_null(bytes: ~[u8]) -> ValueRef unsafe {
     return llvm::LLVMConstString(
-        unsafe::reinterpret_cast(&vec::unsafe::to_ptr(bytes)),
+        cast::reinterpret_cast(&vec::raw::to_ptr(bytes)),
         bytes.len() as c_uint, False);
 }
 
@@ -1093,54 +1103,59 @@ fn get_param(fndecl: ValueRef, param: uint) -> ValueRef {
 enum mono_param_id {
     mono_precise(ty::t, Option<~[mono_id]>),
     mono_any,
-    mono_repr(uint /* size */, uint /* align */),
+    mono_repr(uint /* size */,
+              uint /* align */,
+              bool /* is_float */,
+              datum::DatumMode),
 }
 
 type mono_id_ = {def: ast::def_id, params: ~[mono_param_id]};
 
 type mono_id = @mono_id_;
 
-impl mono_param_id: cmp::Eq {
-    pure fn eq(&&other: mono_param_id) -> bool {
-        match (self, other) {
+impl mono_param_id : cmp::Eq {
+    pure fn eq(other: &mono_param_id) -> bool {
+        match (self, (*other)) {
             (mono_precise(ty_a, ids_a), mono_precise(ty_b, ids_b)) => {
                 ty_a == ty_b && ids_a == ids_b
             }
             (mono_any, mono_any) => true,
-            (mono_repr(size_a, align_a), mono_repr(size_b, align_b)) => {
-                size_a == size_b && align_a == align_b
+            (mono_repr(size_a, align_a, is_float_a, mode_a),
+             mono_repr(size_b, align_b, is_float_b, mode_b)) => {
+                size_a == size_b && align_a == align_b &&
+                    is_float_a == is_float_b && mode_a == mode_b
             }
             (mono_precise(*), _) => false,
             (mono_any, _) => false,
             (mono_repr(*), _) => false
         }
     }
-    pure fn ne(&&other: mono_param_id) -> bool { !self.eq(other) }
+    pure fn ne(other: &mono_param_id) -> bool { !self.eq(other) }
 }
 
-impl mono_id_: cmp::Eq {
-    pure fn eq(&&other: mono_id_) -> bool {
-        return self.def == other.def && self.params == other.params;
+impl mono_id_ : cmp::Eq {
+    pure fn eq(other: &mono_id_) -> bool {
+        return self.def == (*other).def && self.params == (*other).params;
     }
-    pure fn ne(&&other: mono_id_) -> bool { !self.eq(other) }
+    pure fn ne(other: &mono_id_) -> bool { !self.eq(other) }
 }
 
 impl mono_param_id : to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
         match self {
           mono_precise(t, mids) =>
           to_bytes::iter_bytes_3(&0u8, &ty::type_id(t), &mids, lsb0, f),
 
           mono_any => 1u8.iter_bytes(lsb0, f),
 
-          mono_repr(a,b) =>
-          to_bytes::iter_bytes_3(&2u8, &a, &b, lsb0, f)
+          mono_repr(ref a, ref b, ref c, ref d) =>
+          to_bytes::iter_bytes_5(&2u8, a, b, c, d, lsb0, f)
         }
     }
 }
 
 impl mono_id_ : core::to_bytes::IterBytes {
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
         to_bytes::iter_bytes_2(&self.def, &self.params, lsb0, f);
     }
 }
@@ -1164,35 +1179,108 @@ fn align_to(cx: block, off: ValueRef, align: ValueRef) -> ValueRef {
 fn path_str(sess: session::session, p: path) -> ~str {
     let mut r = ~"", first = true;
     for vec::each(p) |e| {
-        match e { ast_map::path_name(s) | ast_map::path_mod(s) => {
-          if first { first = false; }
-          else { r += ~"::"; }
-          r += sess.str_of(s);
-        } }
+        match *e {
+            ast_map::path_name(s) | ast_map::path_mod(s) => {
+                if first { first = false; }
+                else { r += ~"::"; }
+                r += sess.str_of(s);
+            }
+        }
     }
     r
+}
+
+fn monomorphize_type(bcx: block, t: ty::t) -> ty::t {
+    match bcx.fcx.param_substs {
+        Some(substs) => ty::subst_tps(bcx.tcx(), substs.tys, t),
+        _ => { assert !ty::type_has_params(t); t }
+    }
 }
 
 fn node_id_type(bcx: block, id: ast::node_id) -> ty::t {
     let tcx = bcx.tcx();
     let t = ty::node_id_to_type(tcx, id);
-    match bcx.fcx.param_substs {
-      Some(substs) => ty::subst_tps(tcx, substs.tys, t),
-      _ => { assert !ty::type_has_params(t); t }
-    }
+    monomorphize_type(bcx, t)
 }
+
 fn expr_ty(bcx: block, ex: @ast::expr) -> ty::t {
     node_id_type(bcx, ex.id)
 }
+
 fn node_id_type_params(bcx: block, id: ast::node_id) -> ~[ty::t] {
     let tcx = bcx.tcx();
     let params = ty::node_id_to_type_params(tcx, id);
     match bcx.fcx.param_substs {
       Some(substs) => {
-        vec::map(params, |t| ty::subst_tps(tcx, substs.tys, t))
+        vec::map(params, |t| ty::subst_tps(tcx, substs.tys, *t))
       }
       _ => params
     }
+}
+
+fn node_vtables(bcx: block, id: ast::node_id) -> Option<typeck::vtable_res> {
+    let raw_vtables = bcx.ccx().maps.vtable_map.find(id);
+    raw_vtables.map(
+        |vts| meth::resolve_vtables_in_fn_ctxt(bcx.fcx, vts))
+}
+
+fn resolve_vtables_in_fn_ctxt(fcx: fn_ctxt, vts: typeck::vtable_res)
+    -> typeck::vtable_res
+{
+    @vec::map(*vts, |d| resolve_vtable_in_fn_ctxt(fcx, *d))
+}
+
+// Apply the typaram substitutions in the fn_ctxt to a vtable. This should
+// eliminate any vtable_params.
+fn resolve_vtable_in_fn_ctxt(fcx: fn_ctxt, vt: typeck::vtable_origin)
+    -> typeck::vtable_origin
+{
+    let tcx = fcx.ccx.tcx;
+    match vt {
+        typeck::vtable_static(trait_id, tys, sub) => {
+            let tys = match fcx.param_substs {
+                Some(substs) => {
+                    vec::map(tys, |t| ty::subst_tps(tcx, substs.tys, *t))
+                }
+                _ => tys
+            };
+            typeck::vtable_static(trait_id, tys,
+                                  resolve_vtables_in_fn_ctxt(fcx, sub))
+        }
+        typeck::vtable_param(n_param, n_bound) => {
+            match fcx.param_substs {
+                Some(ref substs) => {
+                    find_vtable(tcx, substs, n_param, n_bound)
+                }
+                _ => {
+                    tcx.sess.bug(fmt!(
+                        "resolve_vtable_in_fn_ctxt: asked to lookup %? but \
+                         no vtables in the fn_ctxt!", vt))
+                }
+            }
+        }
+        _ => vt
+    }
+}
+
+fn find_vtable(tcx: ty::ctxt, ps: &param_substs,
+               n_param: uint, n_bound: uint)
+    -> typeck::vtable_origin
+{
+    debug!("find_vtable_in_fn_ctxt(n_param=%u, n_bound=%u, ps=%?)",
+           n_param, n_bound, param_substs_to_str(tcx, ps));
+
+    let mut vtable_off = n_bound, i = 0u;
+    // Vtables are stored in a flat array, finding the right one is
+    // somewhat awkward
+    for vec::each(*ps.bounds) |bounds| {
+        if i >= n_param { break; }
+        for vec::each(**bounds) |bound| {
+            match *bound { ty::bound_trait(_) => vtable_off += 1u, _ => () }
+        }
+        i += 1u;
+    }
+    ps.vtables.get()[vtable_off]
 }
 
 fn dummy_substs(tps: ~[ty::t]) -> ty::substs {

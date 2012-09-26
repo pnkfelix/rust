@@ -1,5 +1,4 @@
 #[doc(hidden)];
-#[allow(non_camel_case_types)];
 
 /*
 Syntax Extension: fmt
@@ -43,80 +42,81 @@ use option::{Some, None};
 
 // Functions used by the fmt extension at compile time
 mod ct {
-    enum signedness { signed, unsigned, }
-    enum caseness { case_upper, case_lower, }
-    enum ty {
-        ty_bool,
-        ty_str,
-        ty_char,
-        ty_int(signedness),
-        ty_bits,
-        ty_hex(caseness),
-        ty_octal,
-        ty_float,
-        ty_poly,
+    #[legacy_exports];
+    enum Signedness { Signed, Unsigned, }
+    enum Caseness { CaseUpper, CaseLower, }
+    enum Ty {
+        TyBool,
+        TyStr,
+        TyChar,
+        TyInt(Signedness),
+        TyBits,
+        TyHex(Caseness),
+        TyOctal,
+        TyFloat,
+        TyPoly,
     }
-    enum flag {
-        flag_left_justify,
-        flag_left_zero_pad,
-        flag_space_for_sign,
-        flag_sign_always,
-        flag_alternate,
+    enum Flag {
+        FlagLeftJustify,
+        FlagLeftZeroPad,
+        FlagSpaceForSign,
+        FlagSignAlways,
+        FlagAlternate,
     }
-    enum count {
-        count_is(int),
-        count_is_param(int),
-        count_is_next_param,
-        count_implied,
+    enum Count {
+        CountIs(int),
+        CountIsParam(int),
+        CountIsNextParam,
+        CountImplied,
     }
 
     // A formatted conversion from an expression to a string
-    type conv =
+    type Conv =
         {param: Option<int>,
-         flags: ~[flag],
-         width: count,
-         precision: count,
-         ty: ty};
+         flags: ~[Flag],
+         width: Count,
+         precision: Count,
+         ty: Ty};
 
 
     // A fragment of the output sequence
-    enum piece { piece_string(~str), piece_conv(conv), }
-    type error_fn = fn@(~str) -> ! ;
+    enum Piece { PieceString(~str), PieceConv(Conv), }
+    type ErrorFn = fn@(~str) -> ! ;
 
-    fn parse_fmt_string(s: ~str, error: error_fn) -> ~[piece] {
-        let mut pieces: ~[piece] = ~[];
+    fn parse_fmt_string(s: ~str, error: ErrorFn) -> ~[Piece] {
+        let mut pieces: ~[Piece] = ~[];
         let lim = str::len(s);
         let mut buf = ~"";
-        fn flush_buf(+buf: ~str, &pieces: ~[piece]) -> ~str {
-            if str::len(buf) > 0u {
-                let piece = piece_string(buf);
-                vec::push(pieces, piece);
+        fn flush_buf(+buf: ~str, &pieces: ~[Piece]) -> ~str {
+            if str::len(buf) > 0 {
+                let piece = PieceString(move buf);
+                vec::push(pieces, move piece);
             }
             return ~"";
         }
-        let mut i = 0u;
+        let mut i = 0;
         while i < lim {
             let size = str::utf8_char_width(s[i]);
             let curr = str::slice(s, i, i+size);
             if curr == ~"%" {
-                i += 1u;
+                i += 1;
                 if i >= lim {
                     error(~"unterminated conversion at end of string");
                 }
-                let curr2 = str::slice(s, i, i+1u);
+                let curr2 = str::slice(s, i, i+1);
                 if curr2 == ~"%" {
                     buf += curr2;
-                    i += 1u;
+                    i += 1;
                 } else {
-                    buf = flush_buf(buf, pieces);
+                    buf = flush_buf(move buf, pieces);
                     let rs = parse_conversion(s, i, lim, error);
                     vec::push(pieces, copy rs.piece);
                     i = rs.next;
                 }
             } else { buf += curr; i += size; }
         }
-        flush_buf(buf, pieces);
-        return pieces;
+        flush_buf(move buf, pieces);
+        move pieces
     }
     fn peek_num(s: ~str, i: uint, lim: uint) ->
        Option<{num: uint, next: uint}> {
@@ -140,15 +140,15 @@ mod ct {
             None
         }
     }
-    fn parse_conversion(s: ~str, i: uint, lim: uint, error: error_fn) ->
-       {piece: piece, next: uint} {
+    fn parse_conversion(s: ~str, i: uint, lim: uint, error: ErrorFn) ->
+       {piece: Piece, next: uint} {
         let parm = parse_parameter(s, i, lim);
         let flags = parse_flags(s, parm.next, lim);
         let width = parse_count(s, flags.next, lim);
         let prec = parse_precision(s, width.next, lim);
         let ty = parse_type(s, prec.next, lim, error);
         return {piece:
-                 piece_conv({param: parm.param,
+                 PieceConv({param: parm.param,
                              flags: copy flags.flags,
                              width: width.count,
                              precision: prec.count,
@@ -171,58 +171,58 @@ mod ct {
             };
     }
     fn parse_flags(s: ~str, i: uint, lim: uint) ->
-       {flags: ~[flag], next: uint} {
-        let noflags: ~[flag] = ~[];
-        if i >= lim { return {flags: noflags, next: i}; }
+       {flags: ~[Flag], next: uint} {
+        let noflags: ~[Flag] = ~[];
+        if i >= lim { return {flags: move noflags, next: i}; }
 
-        fn more_(f: flag, s: ~str, i: uint, lim: uint) ->
-           {flags: ~[flag], next: uint} {
+        fn more_(f: Flag, s: ~str, i: uint, lim: uint) ->
+           {flags: ~[Flag], next: uint} {
             let next = parse_flags(s, i + 1u, lim);
             let rest = copy next.flags;
             let j = next.next;
-            let curr: ~[flag] = ~[f];
-            return {flags: vec::append(curr, rest), next: j};
+            let curr: ~[Flag] = ~[f];
+            return {flags: vec::append(move curr, rest), next: j};
         }
         let more = |x, copy s| more_(x, copy s, i, lim);
         let f = s[i];
         return if f == '-' as u8 {
-                more(flag_left_justify)
+                more(FlagLeftJustify)
             } else if f == '0' as u8 {
-                more(flag_left_zero_pad)
+                more(FlagLeftZeroPad)
             } else if f == ' ' as u8 {
-                more(flag_space_for_sign)
+                more(FlagSpaceForSign)
             } else if f == '+' as u8 {
-                more(flag_sign_always)
+                more(FlagSignAlways)
             } else if f == '#' as u8 {
-                more(flag_alternate)
-            } else { {flags: noflags, next: i} };
+                more(FlagAlternate)
+            } else { {flags: move noflags, next: i} };
     }
     fn parse_count(s: ~str, i: uint, lim: uint)
-        -> {count: count, next: uint} {
+        -> {count: Count, next: uint} {
         return if i >= lim {
-                {count: count_implied, next: i}
+                {count: CountImplied, next: i}
             } else if s[i] == '*' as u8 {
                 let param = parse_parameter(s, i + 1u, lim);
                 let j = param.next;
                 match param.param {
-                  None => {count: count_is_next_param, next: j},
-                  Some(n) => {count: count_is_param(n), next: j}
+                  None => {count: CountIsNextParam, next: j},
+                  Some(n) => {count: CountIsParam(n), next: j}
                 }
             } else {
                 let num = peek_num(s, i, lim);
                 match num {
-                  None => {count: count_implied, next: i},
+                  None => {count: CountImplied, next: i},
                   Some(num) => {
-                    count: count_is(num.num as int),
+                    count: CountIs(num.num as int),
                     next: num.next
                   }
                 }
             };
     }
     fn parse_precision(s: ~str, i: uint, lim: uint) ->
-       {count: count, next: uint} {
+       {count: Count, next: uint} {
         return if i >= lim {
-                {count: count_implied, next: i}
+                {count: CountImplied, next: i}
             } else if s[i] == '.' as u8 {
                 let count = parse_count(s, i + 1u, lim);
 
@@ -230,51 +230,51 @@ mod ct {
                 // If there were no digits specified, i.e. the precision
                 // was ".", then the precision is 0
                 match count.count {
-                  count_implied => {count: count_is(0), next: count.next},
+                  CountImplied => {count: CountIs(0), next: count.next},
                   _ => count
                 }
-            } else { {count: count_implied, next: i} };
+            } else { {count: CountImplied, next: i} };
     }
-    fn parse_type(s: ~str, i: uint, lim: uint, error: error_fn) ->
-       {ty: ty, next: uint} {
+    fn parse_type(s: ~str, i: uint, lim: uint, error: ErrorFn) ->
+       {ty: Ty, next: uint} {
         if i >= lim { error(~"missing type in conversion"); }
         let tstr = str::slice(s, i, i+1u);
         // FIXME (#2249): Do we really want two signed types here?
         // How important is it to be printf compatible?
         let t =
             if tstr == ~"b" {
-                ty_bool
+                TyBool
             } else if tstr == ~"s" {
-                ty_str
+                TyStr
             } else if tstr == ~"c" {
-                ty_char
+                TyChar
             } else if tstr == ~"d" || tstr == ~"i" {
-                ty_int(signed)
+                TyInt(Signed)
             } else if tstr == ~"u" {
-                ty_int(unsigned)
+                TyInt(Unsigned)
             } else if tstr == ~"x" {
-                ty_hex(case_lower)
+                TyHex(CaseLower)
             } else if tstr == ~"X" {
-                ty_hex(case_upper)
+                TyHex(CaseUpper)
             } else if tstr == ~"t" {
-                ty_bits
+                TyBits
             } else if tstr == ~"o" {
-                ty_octal
+                TyOctal
             } else if tstr == ~"f" {
-                ty_float
+                TyFloat
             } else if tstr == ~"?" {
-                ty_poly
+                TyPoly
             } else { error(~"unknown type in conversion: " + tstr) };
         return {ty: t, next: i + 1u};
     }
 }
-
 
 // Functions used by the fmt extension at runtime. For now there are a lot of
 // decisions made a runtime. If it proves worthwhile then some of these
 // conditions can be evaluated at compile-time. For now though it's cleaner to
 // implement it 0this way, I think.
 mod rt {
+    #[legacy_exports];
     const flag_none : u32 = 0u32;
     const flag_left_justify   : u32 = 0b00000000000000000000000000000001u32;
     const flag_left_zero_pad  : u32 = 0b00000000000000000000000000000010u32;
@@ -282,65 +282,65 @@ mod rt {
     const flag_sign_always    : u32 = 0b00000000000000000000000000001000u32;
     const flag_alternate      : u32 = 0b00000000000000000000000000010000u32;
 
-    enum count { count_is(int), count_implied, }
-    enum ty { ty_default, ty_bits, ty_hex_upper, ty_hex_lower, ty_octal, }
+    enum Count { CountIs(int), CountImplied, }
+    enum Ty { TyDefault, TyBits, TyHexUpper, TyHexLower, TyOctal, }
 
-    type conv = {flags: u32, width: count, precision: count, ty: ty};
+    type Conv = {flags: u32, width: Count, precision: Count, ty: Ty};
 
-    pure fn conv_int(cv: conv, i: int) -> ~str {
+    pure fn conv_int(cv: Conv, i: int) -> ~str {
         let radix = 10u;
         let prec = get_int_precision(cv);
         let mut s : ~str = int_to_str_prec(i, radix, prec);
         if 0 <= i {
             if have_flag(cv.flags, flag_sign_always) {
-                unchecked { str::unshift_char(s, '+') };
+                unsafe { str::unshift_char(&mut s, '+') };
             } else if have_flag(cv.flags, flag_space_for_sign) {
-                unchecked { str::unshift_char(s, ' ') };
+                unsafe { str::unshift_char(&mut s, ' ') };
             }
         }
-        return unchecked { pad(cv, s, pad_signed) };
+        return unsafe { pad(cv, s, PadSigned) };
     }
-    pure fn conv_uint(cv: conv, u: uint) -> ~str {
+    pure fn conv_uint(cv: Conv, u: uint) -> ~str {
         let prec = get_int_precision(cv);
         let mut rs =
             match cv.ty {
-              ty_default => uint_to_str_prec(u, 10u, prec),
-              ty_hex_lower => uint_to_str_prec(u, 16u, prec),
-              ty_hex_upper => str::to_upper(uint_to_str_prec(u, 16u, prec)),
-              ty_bits => uint_to_str_prec(u, 2u, prec),
-              ty_octal => uint_to_str_prec(u, 8u, prec)
+              TyDefault => uint_to_str_prec(u, 10u, prec),
+              TyHexLower => uint_to_str_prec(u, 16u, prec),
+              TyHexUpper => str::to_upper(uint_to_str_prec(u, 16u, prec)),
+              TyBits => uint_to_str_prec(u, 2u, prec),
+              TyOctal => uint_to_str_prec(u, 8u, prec)
             };
-        return unchecked { pad(cv, rs, pad_unsigned) };
+        return unsafe { pad(cv, rs, PadUnsigned) };
     }
-    pure fn conv_bool(cv: conv, b: bool) -> ~str {
+    pure fn conv_bool(cv: Conv, b: bool) -> ~str {
         let s = if b { ~"true" } else { ~"false" };
         // run the boolean conversion through the string conversion logic,
         // giving it the same rules for precision, etc.
         return conv_str(cv, s);
     }
-    pure fn conv_char(cv: conv, c: char) -> ~str {
+    pure fn conv_char(cv: Conv, c: char) -> ~str {
         let mut s = str::from_char(c);
-        return unchecked { pad(cv, s, pad_nozero) };
+        return unsafe { pad(cv, s, PadNozero) };
     }
-    pure fn conv_str(cv: conv, s: &str) -> ~str {
+    pure fn conv_str(cv: Conv, s: &str) -> ~str {
         // For strings, precision is the maximum characters
         // displayed
         let mut unpadded = match cv.precision {
-          count_implied => s.to_unique(),
-          count_is(max) => if max as uint < str::char_len(s) {
+          CountImplied => s.to_unique(),
+          CountIs(max) => if max as uint < str::char_len(s) {
             str::substr(s, 0u, max as uint)
           } else {
             s.to_unique()
           }
         };
-        return unchecked { pad(cv, unpadded, pad_nozero) };
+        return unsafe { pad(cv, unpadded, PadNozero) };
     }
-    pure fn conv_float(cv: conv, f: float) -> ~str {
+    pure fn conv_float(cv: Conv, f: float) -> ~str {
         let (to_str, digits) = match cv.precision {
-              count_is(c) => (float::to_str_exact, c as uint),
-              count_implied => (float::to_str, 6u)
+              CountIs(c) => (float::to_str_exact, c as uint),
+              CountImplied => (float::to_str, 6u)
         };
-        let mut s = unchecked { to_str(f, digits) };
+        let mut s = unsafe { to_str(f, digits) };
         if 0.0 <= f {
             if have_flag(cv.flags, flag_sign_always) {
                 s = ~"+" + s;
@@ -348,10 +348,10 @@ mod rt {
                 s = ~" " + s;
             }
         }
-        return unchecked { pad(cv, s, pad_float) };
+        return unsafe { pad(cv, s, PadFloat) };
     }
-    pure fn conv_poly<T>(cv: conv, v: T) -> ~str {
-        let s = sys::log_str(v);
+    pure fn conv_poly<T>(cv: Conv, v: T) -> ~str {
+        let s = sys::log_str(&v);
         return conv_str(cv, s);
     }
 
@@ -376,38 +376,38 @@ mod rt {
                     let diff = prec - len;
                     let pad = str::from_chars(vec::from_elem(diff, '0'));
                     pad + s
-                } else { s }
+                } else { move s }
             };
     }
-    pure fn get_int_precision(cv: conv) -> uint {
+    pure fn get_int_precision(cv: Conv) -> uint {
         return match cv.precision {
-              count_is(c) => c as uint,
-              count_implied => 1u
+              CountIs(c) => c as uint,
+              CountImplied => 1u
             };
     }
 
-    enum pad_mode { pad_signed, pad_unsigned, pad_nozero, pad_float }
+    enum PadMode { PadSigned, PadUnsigned, PadNozero, PadFloat }
 
-    impl pad_mode: Eq {
-        pure fn eq(&&other: pad_mode) -> bool {
-            match (self, other) {
-                (pad_signed, pad_signed) => true,
-                (pad_unsigned, pad_unsigned) => true,
-                (pad_nozero, pad_nozero) => true,
-                (pad_float, pad_float) => true,
-                (pad_signed, _) => false,
-                (pad_unsigned, _) => false,
-                (pad_nozero, _) => false,
-                (pad_float, _) => false
+    impl PadMode : Eq {
+        pure fn eq(other: &PadMode) -> bool {
+            match (self, (*other)) {
+                (PadSigned, PadSigned) => true,
+                (PadUnsigned, PadUnsigned) => true,
+                (PadNozero, PadNozero) => true,
+                (PadFloat, PadFloat) => true,
+                (PadSigned, _) => false,
+                (PadUnsigned, _) => false,
+                (PadNozero, _) => false,
+                (PadFloat, _) => false
             }
         }
-        pure fn ne(&&other: pad_mode) -> bool { !self.eq(other) }
+        pure fn ne(other: &PadMode) -> bool { !self.eq(other) }
     }
 
-    fn pad(cv: conv, &s: ~str, mode: pad_mode) -> ~str {
+    fn pad(cv: Conv, &s: ~str, mode: PadMode) -> ~str {
         let uwidth : uint = match cv.width {
-          count_implied => return copy s,
-          count_is(width) => {
+          CountImplied => return copy s,
+          CountIs(width) => {
               // FIXME: width should probably be uint (see Issue #1996)
               width as uint
           }
@@ -421,17 +421,17 @@ mod rt {
             return s + padstr;
         }
         let {might_zero_pad, signed} = match mode {
-          pad_nozero => {might_zero_pad:false, signed:false},
-          pad_signed => {might_zero_pad:true,  signed:true },
-          pad_float => {might_zero_pad:true,  signed:true},
-          pad_unsigned => {might_zero_pad:true,  signed:false}
+          PadNozero => {might_zero_pad:false, signed:false},
+          PadSigned => {might_zero_pad:true,  signed:true },
+          PadFloat => {might_zero_pad:true,  signed:true},
+          PadUnsigned => {might_zero_pad:true,  signed:false}
         };
-        pure fn have_precision(cv: conv) -> bool {
-            return match cv.precision { count_implied => false, _ => true };
+        pure fn have_precision(cv: Conv) -> bool {
+            return match cv.precision { CountImplied => false, _ => true };
         }
         let zero_padding = {
             if might_zero_pad && have_flag(cv.flags, flag_left_zero_pad) &&
-                (!have_precision(cv) || mode == pad_float) {
+                (!have_precision(cv) || mode == PadFloat) {
                 padchar = '0';
                 true
             } else {
@@ -445,13 +445,202 @@ mod rt {
         // instead.
 
         if signed && zero_padding && str::len(s) > 0u {
-            let head = str::shift_char(s);
+            let head = str::shift_char(&mut s);
             if head == '+' || head == '-' || head == ' ' {
                 let headstr = str::from_chars(vec::from_elem(1u, head));
                 return headstr + padstr + s;
             }
             else {
-                str::unshift_char(s, head);
+                str::unshift_char(&mut s, head);
+            }
+        }
+        return padstr + s;
+    }
+    pure fn have_flag(flags: u32, f: u32) -> bool {
+        flags & f != 0
+    }
+}
+
+// XXX remove after snapshots
+mod rt2 {
+    #[legacy_exports];
+    const flag_none : u32 = 0u32;
+    const flag_left_justify   : u32 = 0b00000000000000000000000000000001u32;
+    const flag_left_zero_pad  : u32 = 0b00000000000000000000000000000010u32;
+    const flag_space_for_sign : u32 = 0b00000000000000000000000000000100u32;
+    const flag_sign_always    : u32 = 0b00000000000000000000000000001000u32;
+    const flag_alternate      : u32 = 0b00000000000000000000000000010000u32;
+
+    enum Count { CountIs(int), CountImplied, }
+    enum Ty { TyDefault, TyBits, TyHexUpper, TyHexLower, TyOctal, }
+
+    type Conv = {flags: u32, width: Count, precision: Count, ty: Ty};
+
+    pure fn conv_int(cv: Conv, i: int) -> ~str {
+        let radix = 10u;
+        let prec = get_int_precision(cv);
+        let mut s : ~str = int_to_str_prec(i, radix, prec);
+        if 0 <= i {
+            if have_flag(cv.flags, flag_sign_always) {
+                unsafe { str::unshift_char(&mut s, '+') };
+            } else if have_flag(cv.flags, flag_space_for_sign) {
+                unsafe { str::unshift_char(&mut s, ' ') };
+            }
+        }
+        return unsafe { pad(cv, s, PadSigned) };
+    }
+    pure fn conv_uint(cv: Conv, u: uint) -> ~str {
+        let prec = get_int_precision(cv);
+        let mut rs =
+            match cv.ty {
+              TyDefault => uint_to_str_prec(u, 10u, prec),
+              TyHexLower => uint_to_str_prec(u, 16u, prec),
+              TyHexUpper => str::to_upper(uint_to_str_prec(u, 16u, prec)),
+              TyBits => uint_to_str_prec(u, 2u, prec),
+              TyOctal => uint_to_str_prec(u, 8u, prec)
+            };
+        return unsafe { pad(cv, rs, PadUnsigned) };
+    }
+    pure fn conv_bool(cv: Conv, b: bool) -> ~str {
+        let s = if b { ~"true" } else { ~"false" };
+        // run the boolean conversion through the string conversion logic,
+        // giving it the same rules for precision, etc.
+        return conv_str(cv, s);
+    }
+    pure fn conv_char(cv: Conv, c: char) -> ~str {
+        let mut s = str::from_char(c);
+        return unsafe { pad(cv, s, PadNozero) };
+    }
+    pure fn conv_str(cv: Conv, s: &str) -> ~str {
+        // For strings, precision is the maximum characters
+        // displayed
+        let mut unpadded = match cv.precision {
+          CountImplied => s.to_unique(),
+          CountIs(max) => if max as uint < str::char_len(s) {
+            str::substr(s, 0u, max as uint)
+          } else {
+            s.to_unique()
+          }
+        };
+        return unsafe { pad(cv, unpadded, PadNozero) };
+    }
+    pure fn conv_float(cv: Conv, f: float) -> ~str {
+        let (to_str, digits) = match cv.precision {
+              CountIs(c) => (float::to_str_exact, c as uint),
+              CountImplied => (float::to_str, 6u)
+        };
+        let mut s = unsafe { to_str(f, digits) };
+        if 0.0 <= f {
+            if have_flag(cv.flags, flag_sign_always) {
+                s = ~"+" + s;
+            } else if have_flag(cv.flags, flag_space_for_sign) {
+                s = ~" " + s;
+            }
+        }
+        return unsafe { pad(cv, s, PadFloat) };
+    }
+    pure fn conv_poly<T>(cv: Conv, v: T) -> ~str {
+        let s = sys::log_str(&v);
+        return conv_str(cv, s);
+    }
+
+    // Convert an int to string with minimum number of digits. If precision is
+    // 0 and num is 0 then the result is the empty string.
+    pure fn int_to_str_prec(num: int, radix: uint, prec: uint) -> ~str {
+        return if num < 0 {
+                ~"-" + uint_to_str_prec(-num as uint, radix, prec)
+            } else { uint_to_str_prec(num as uint, radix, prec) };
+    }
+
+    // Convert a uint to string with a minimum number of digits.  If precision
+    // is 0 and num is 0 then the result is the empty string. Could move this
+    // to uint: but it doesn't seem all that useful.
+    pure fn uint_to_str_prec(num: uint, radix: uint, prec: uint) -> ~str {
+        return if prec == 0u && num == 0u {
+                ~""
+            } else {
+                let s = uint::to_str(num, radix);
+                let len = str::char_len(s);
+                if len < prec {
+                    let diff = prec - len;
+                    let pad = str::from_chars(vec::from_elem(diff, '0'));
+                    pad + s
+                } else { move s }
+            };
+    }
+    pure fn get_int_precision(cv: Conv) -> uint {
+        return match cv.precision {
+              CountIs(c) => c as uint,
+              CountImplied => 1u
+            };
+    }
+
+    enum PadMode { PadSigned, PadUnsigned, PadNozero, PadFloat }
+
+    impl PadMode : Eq {
+        pure fn eq(other: &PadMode) -> bool {
+            match (self, (*other)) {
+                (PadSigned, PadSigned) => true,
+                (PadUnsigned, PadUnsigned) => true,
+                (PadNozero, PadNozero) => true,
+                (PadFloat, PadFloat) => true,
+                (PadSigned, _) => false,
+                (PadUnsigned, _) => false,
+                (PadNozero, _) => false,
+                (PadFloat, _) => false
+            }
+        }
+        pure fn ne(other: &PadMode) -> bool { !self.eq(other) }
+    }
+
+    fn pad(cv: Conv, &s: ~str, mode: PadMode) -> ~str {
+        let uwidth : uint = match cv.width {
+          CountImplied => return copy s,
+          CountIs(width) => {
+              // FIXME: width should probably be uint (see Issue #1996)
+              width as uint
+          }
+        };
+        let strlen = str::char_len(s);
+        if uwidth <= strlen { return copy s; }
+        let mut padchar = ' ';
+        let diff = uwidth - strlen;
+        if have_flag(cv.flags, flag_left_justify) {
+            let padstr = str::from_chars(vec::from_elem(diff, padchar));
+            return s + padstr;
+        }
+        let {might_zero_pad, signed} = match mode {
+          PadNozero => {might_zero_pad:false, signed:false},
+          PadSigned => {might_zero_pad:true,  signed:true },
+          PadFloat => {might_zero_pad:true,  signed:true},
+          PadUnsigned => {might_zero_pad:true,  signed:false}
+        };
+        pure fn have_precision(cv: Conv) -> bool {
+            return match cv.precision { CountImplied => false, _ => true };
+        }
+        let zero_padding = {
+            if might_zero_pad && have_flag(cv.flags, flag_left_zero_pad) &&
+                (!have_precision(cv) || mode == PadFloat) {
+                padchar = '0';
+                true
+            } else {
+                false
+            }
+        };
+        let padstr = str::from_chars(vec::from_elem(diff, padchar));
+        // This is completely heinous. If we have a signed value then
+        // potentially rip apart the intermediate result and insert some
+        // zeros. It may make sense to convert zero padding to a precision
+        // instead.
+
+        if signed && zero_padding && str::len(s) > 0u {
+            let head = str::shift_char(&mut s);
+            if head == '+' || head == '-' || head == ' ' {
+                let headstr = str::from_chars(vec::from_elem(1u, head));
+                return headstr + padstr + s;
+            }
+            else {
+                str::unshift_char(&mut s, head);
             }
         }
         return padstr + s;
@@ -463,6 +652,7 @@ mod rt {
 
 #[cfg(test)]
 mod test {
+    #[legacy_exports];
     #[test]
     fn fmt_slice() {
         let s = "abc";

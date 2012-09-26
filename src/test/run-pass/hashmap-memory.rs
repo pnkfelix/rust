@@ -4,13 +4,12 @@
    This originally came from the word-count benchmark.
 */
 
-use std;
+extern mod std;
 
-use option = option;
 use option::Some;
 use option::None;
 use std::map;
-use std::map::hashmap;
+use std::map::HashMap;
 use comm::Chan;
 use comm::Port;
 use comm::send;
@@ -19,6 +18,7 @@ use comm::recv;
 fn map(filename: ~str, emit: map_reduce::putter) { emit(filename, ~"1"); }
 
 mod map_reduce {
+    #[legacy_exports];
     export putter;
     export mapper;
     export map_reduce;
@@ -31,14 +31,15 @@ mod map_reduce {
 
     fn start_mappers(ctrl: Chan<ctrl_proto>, inputs: ~[~str]) {
         for inputs.each |i| {
-            task::spawn(|| map_task(ctrl, i) );
+            let i = *i;
+            task::spawn(|move i| map_task(ctrl, i) );
         }
     }
 
     fn map_task(ctrl: Chan<ctrl_proto>, input: ~str) {
-        let intermediates = map::str_hash();
+        let intermediates = map::HashMap();
 
-        fn emit(im: map::hashmap<~str, int>, ctrl: Chan<ctrl_proto>, key: ~str,
+        fn emit(im: map::HashMap<~str, int>, ctrl: Chan<ctrl_proto>, key: ~str,
                 val: ~str) {
             let mut c;
             match im.find(key) {
@@ -65,9 +66,9 @@ mod map_reduce {
         // This task becomes the master control task. It spawns others
         // to do the rest.
 
-        let mut reducers: map::hashmap<~str, int>;
+        let mut reducers: map::HashMap<~str, int>;
 
-        reducers = map::str_hash();
+        reducers = map::HashMap();
 
         start_mappers(Chan(ctrl), inputs);
 

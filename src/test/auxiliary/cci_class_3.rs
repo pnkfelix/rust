@@ -1,16 +1,18 @@
+#[legacy_exports];
+
 mod kitties {
+    #[legacy_exports];
 
 struct cat {
-  priv {
-    mut meows : uint,
-  }
+  priv mut meows : uint,
 
   how_hungry : int,
-
-  fn speak() { self.meows += 1u; }
-  fn meow_count() -> uint { self.meows }
-
 }
+
+    impl cat {
+        fn speak() { self.meows += 1u; }
+        fn meow_count() -> uint { self.meows }
+    }
 
     fn cat(in_x : uint, in_y : int) -> cat {
         cat {

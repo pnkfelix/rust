@@ -1,7 +1,7 @@
 use syntax::ast::*;
 use syntax::{visit, ast_util, ast_map};
 use driver::session::session;
-use std::map::hashmap;
+use std::map::HashMap;
 use dvec::DVec;
 
 fn check_crate(sess: session, crate: @crate, ast_map: ast_map::map,
@@ -27,7 +27,7 @@ fn check_item(sess: session, ast_map: ast_map::map,
       }
       item_enum(enum_definition, _) => {
         for enum_definition.variants.each |var| {
-            do option::iter(var.node.disr_expr) |ex| {
+            do option::iter(&var.node.disr_expr) |ex| {
                 v.visit_expr(ex, true, v);
             }
         }
@@ -40,7 +40,7 @@ fn check_pat(p: @pat, &&_is_const: bool, v: visit::vt<bool>) {
     fn is_str(e: @expr) -> bool {
         match e.node {
           expr_vstore(@{node: expr_lit(@{node: lit_str(_), _}), _},
-                      vstore_uniq) => true,
+                      expr_vstore_uniq) => true,
           _ => false
         }
     }
@@ -98,8 +98,8 @@ fn check_expr(sess: session, def_map: resolve::DefMap,
               }
             }
           }
-          expr_vstore(_, vstore_slice(_)) |
-          expr_vstore(_, vstore_fixed(_)) |
+          expr_vstore(_, expr_vstore_slice) |
+          expr_vstore(_, expr_vstore_fixed(_)) |
           expr_vec(_, m_imm) |
           expr_addr_of(m_imm, _) |
           expr_field(*) |
@@ -169,7 +169,7 @@ fn check_item_recursion(sess: session, ast_map: ast_map::map,
     visitor.visit_item(it, env, visitor);
 
     fn visit_item(it: @item, &&env: env, v: visit::vt<env>) {
-        if (*env.idstack).contains(it.id) {
+        if (*env.idstack).contains(&(it.id)) {
             env.sess.span_fatal(env.root_it.span, ~"recursive constant");
         }
         (*env.idstack).push(it.id);

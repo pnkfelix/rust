@@ -1,3 +1,5 @@
+// xfail-fast
+#[legacy_modes];
 
 use intrinsic::{TyDesc, get_tydesc, visit_tydesc, TyVisitor};
 use libc::c_void;
@@ -622,7 +624,7 @@ fn main() {
     visit_tydesc(td, v);
 
     for (copy u.vals).each |s| {
-        io::println(fmt!("val: %s", s));
+        io::println(fmt!("val: %s", *s));
     }
     error!("%?", copy u.vals);
     assert u.vals == ~[~"1", ~"2", ~"3", ~"true", ~"false", ~"5", ~"4", ~"3"];

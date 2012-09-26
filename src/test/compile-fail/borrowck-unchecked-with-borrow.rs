@@ -1,3 +1,7 @@
+// xfail-test
+// xfail-fast
+#[legacy_modes];
+
 fn impure(_i: int) {}
 
 // check that unchecked alone does not override borrowck:
@@ -5,7 +9,7 @@ fn foo(v: &const Option<int>) {
     match *v {
       Some(ref i) => {
         //~^ ERROR illegal borrow unless pure
-        unchecked {
+        unsafe {
             impure(*i); //~ NOTE impure due to access to impure function
         }
       }

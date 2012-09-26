@@ -26,7 +26,7 @@ impl<T> Cell<T> {
 
         let mut value = None;
         value <-> self.value;
-        return option::unwrap(value);
+        return option::unwrap(move value);
     }
 
     /// Returns the value, failing if the cell is full.
@@ -46,8 +46,8 @@ impl<T> Cell<T> {
     fn with_ref<R>(op: fn(v: &T) -> R) -> R {
         let v = self.take();
         let r = op(&v);
-        self.put_back(v);
-        return move r;
+        self.put_back(move v);
+        move r
     }
 }
 

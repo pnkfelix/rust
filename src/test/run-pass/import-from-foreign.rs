@@ -1,11 +1,13 @@
 mod spam {
+    #[legacy_exports];
     fn ham() { }
     fn eggs() { }
 }
 
 #[abi = "cdecl"]
 extern mod rustrt {
-    import spam::{ham, eggs};
+    #[legacy_exports];
+    use spam::{ham, eggs};
     export ham;
     export eggs;
 }

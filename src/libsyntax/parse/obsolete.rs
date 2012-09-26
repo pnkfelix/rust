@@ -18,21 +18,25 @@ pub enum ObsoleteSyntax {
     ObsoleteLet,
     ObsoleteFieldTerminator,
     ObsoleteStructCtor,
-    ObsoleteWith
+    ObsoleteWith,
+    ObsoleteClassMethod,
+    ObsoleteClassTraits,
+    ObsoletePrivSection,
+    ObsoleteModeInFnType
 }
 
 impl ObsoleteSyntax : cmp::Eq {
-    pure fn eq(&&other: ObsoleteSyntax) -> bool {
-        self as uint == other as uint
+    pure fn eq(other: &ObsoleteSyntax) -> bool {
+        self as uint == (*other) as uint
     }
-    pure fn ne(&&other: ObsoleteSyntax) -> bool {
+    pure fn ne(other: &ObsoleteSyntax) -> bool {
         !self.eq(other)
     }
 }
 
 impl ObsoleteSyntax: to_bytes::IterBytes {
     #[inline(always)]
-    fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
         (self as uint).iter_bytes(lsb0, f);
     }
 }
@@ -70,6 +74,25 @@ impl parser : ObsoleteReporter {
                 "with",
                 "record update is done with `..`, e.g. \
                  `MyStruct { foo: bar, .. baz }`"
+            ),
+            ObsoleteClassMethod => (
+                "class method",
+                "methods should be defined inside impls"
+            ),
+            ObsoleteClassTraits => (
+                "class traits",
+                "implemented traits are specified on the impl, as in \
+                 `impl foo : bar {`"
+            ),
+            ObsoletePrivSection => (
+                "private section",
+                "the `priv` keyword is applied to individual items, methods, \
+                 and fields"
+            ),
+            ObsoleteModeInFnType => (
+                "mode without identifier in fn type",
+                "to use a (deprecated) mode in a fn type, you should \
+                 give the argument an explicit name (like `&&v: int`)"
             ),
         };
 
@@ -141,5 +164,19 @@ impl parser : ObsoleteReporter {
         }
     }
 
+    fn try_parse_obsolete_priv_section() -> bool {
+        if self.is_keyword(~"priv") && self.look_ahead(1) == token::LBRACE {
+            self.obsolete(copy self.span, ObsoletePrivSection);
+            self.eat_keyword(~"priv");
+            self.bump();
+            while self.token != token::RBRACE {
+                self.parse_single_class_item(ast::private);
+            }
+            self.bump();
+            true
+        } else {
+            false
+        }
+    }
 }
 

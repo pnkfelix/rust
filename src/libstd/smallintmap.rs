@@ -8,7 +8,7 @@
 use core::option;
 use core::option::{Some, None};
 use dvec::DVec;
-use map::map;
+use map::Map;
 
 // FIXME (#2347): Should not be @; there's a bug somewhere in rustc that
 // requires this to be.
@@ -21,7 +21,7 @@ enum SmallIntMap<T:Copy> {
 /// Create a smallintmap
 fn mk<T: Copy>() -> SmallIntMap<T> {
     let v = DVec();
-    return SmallIntMap_(@{v: v});
+    return SmallIntMap_(@{v: move v});
 }
 
 /**
@@ -62,15 +62,15 @@ pure fn get<T: Copy>(self: SmallIntMap<T>, key: uint) -> T {
 
 /// Returns true if the map contains a value for the specified key
 fn contains_key<T: Copy>(self: SmallIntMap<T>, key: uint) -> bool {
-    return !option::is_none(find(self, key));
+    return !find(self, key).is_none();
 }
 
 /// Implements the map::map interface for smallintmap
-impl<V: Copy> SmallIntMap<V>: map::map<uint, V> {
+impl<V: Copy> SmallIntMap<V>: map::Map<uint, V> {
     pure fn size() -> uint {
         let mut sz = 0u;
         for self.v.each |item| {
-            match item {
+            match *item {
               Some(_) => sz += 1u,
               _ => ()
             }
@@ -92,7 +92,7 @@ impl<V: Copy> SmallIntMap<V>: map::map<uint, V> {
         old.is_some()
     }
     fn clear() {
-        self.v.set(~[mut]);
+        self.v.set(~[]);
     }
     fn contains_key(+key: uint) -> bool {
         contains_key(self, key)
@@ -103,21 +103,15 @@ impl<V: Copy> SmallIntMap<V>: map::map<uint, V> {
     fn get(+key: uint) -> V { get(self, key) }
     pure fn find(+key: uint) -> Option<V> { find(self, key) }
     fn rehash() { fail }
+
     pure fn each(it: fn(+key: uint, +value: V) -> bool) {
-        let mut idx = 0u, l = self.v.len();
-        while idx < l {
-            match self.v.get_elt(idx) {
-              Some(elt) => if !it(idx, elt) { break },
-              None => ()
-            }
-            idx += 1u;
-        }
+        self.each_ref(|k, v| it(*k, *v))
     }
     pure fn each_key(it: fn(+key: uint) -> bool) {
-        self.each(|k, _v| it(k))
+        self.each_ref(|k, _v| it(*k))
     }
     pure fn each_value(it: fn(+value: V) -> bool) {
-        self.each(|_k, v| it(v))
+        self.each_ref(|_k, v| it(*v))
     }
     pure fn each_ref(it: fn(key: &uint, value: &V) -> bool) {
         let mut idx = 0u, l = self.v.len();
@@ -138,14 +132,14 @@ impl<V: Copy> SmallIntMap<V>: map::map<uint, V> {
 }
 
 impl<V: Copy> SmallIntMap<V>: ops::Index<uint, V> {
-    pure fn index(&&key: uint) -> V {
-        unchecked {
+    pure fn index(+key: uint) -> V {
+        unsafe {
             get(self, key)
         }
     }
 }
 
 /// Cast the given smallintmap to a map::map
-fn as_map<V: Copy>(s: SmallIntMap<V>) -> map::map<uint, V> {
-    s as map::map::<uint, V>
+fn as_map<V: Copy>(s: SmallIntMap<V>) -> map::Map<uint, V> {
+    s as map::Map::<uint, V>
 }

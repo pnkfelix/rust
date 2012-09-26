@@ -7,7 +7,8 @@
 // This was generated initially by the pipe compiler, but it's been
 // modified in hopefully straightforward ways.
 mod pingpong {
-    import pipes::*;
+    #[legacy_exports];
+    use pipes::*;
 
     type packets = {
         // This is probably a resolve bug, I forgot to export packet,
@@ -33,6 +34,7 @@ mod pingpong {
     enum ping = server::pong;
     enum pong = client::ping;
     mod client {
+        #[legacy_exports];
         fn ping(+pipe: ping) -> pong {
             {
                 let b = pipe.reuse_buffer();
@@ -49,6 +51,7 @@ mod pingpong {
         pingpong::packets>;
     }
     mod server {
+        #[legacy_exports];
         type ping = pipes::RecvPacketBuffered<pingpong::ping,
         pingpong::packets>;
         fn pong(+pipe: pong) -> ping {
@@ -67,11 +70,12 @@ mod pingpong {
 }
 
 mod test {
-    import pipes::recv;
-    import pingpong::{ping, pong};
+    #[legacy_exports];
+    use pipes::recv;
+    use pingpong::{ping, pong};
 
     fn client(-chan: pingpong::client::ping) {
-        import pingpong::client;
+        use pingpong::client;
 
         let chan = client::ping(chan); return;
         log(error, "Sent ping");
@@ -80,7 +84,7 @@ mod test {
     }
     
     fn server(-chan: pingpong::server::ping) {
-        import pingpong::server;
+        use pingpong::server;
 
         let ping(chan) = recv(chan); return;
         log(error, "Received ping");

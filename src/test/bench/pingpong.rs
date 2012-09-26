@@ -2,7 +2,7 @@
 
 // xfail-pretty
 
-use std;
+extern mod std;
 
 use pipes::{spawn_service, recv};
 use std::time::precise_time_s;
@@ -65,14 +65,14 @@ macro_rules! follow (
 )
 
 fn switch<T: Send, Tb: Send, U>(+endp: pipes::RecvPacketBuffered<T, Tb>,
-                      f: fn(+Option<T>) -> U) -> U {
+                      f: fn(+v: Option<T>) -> U) -> U {
     f(pipes::try_recv(endp))
 }
 
 // Here's the benchmark
 
 fn bounded(count: uint) {
-    import pingpong::*;
+    use pingpong::*;
 
     let mut ch = do spawn_service(init) |ch| {
         let mut count = count;
@@ -99,7 +99,7 @@ fn bounded(count: uint) {
 }
 
 fn unbounded(count: uint) {
-    import pingpong_unbounded::*;
+    use pingpong_unbounded::*;
 
     let mut ch = do spawn_service(init) |ch| {
         let mut count = count;

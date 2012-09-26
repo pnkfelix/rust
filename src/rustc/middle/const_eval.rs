@@ -83,16 +83,16 @@ fn classify(e: @expr,
 
               ast::expr_tup(es) |
               ast::expr_vec(es, ast::m_imm) => {
-                join_all(vec::map(es, |e| classify(e, def_map, tcx)))
+                join_all(vec::map(es, |e| classify(*e, def_map, tcx)))
               }
 
               ast::expr_vstore(e, vstore) => {
-                match vstore {
-                  ast::vstore_fixed(_) |
-                  ast::vstore_slice(_) => classify(e, def_map, tcx),
-                  ast::vstore_uniq |
-                  ast::vstore_box => non_const
-                }
+                  match vstore {
+                      ast::expr_vstore_fixed(_) |
+                      ast::expr_vstore_slice => classify(e, def_map, tcx),
+                      ast::expr_vstore_uniq |
+                      ast::expr_vstore_box => non_const
+                  }
               }
 
               ast::expr_struct(_, fs, None) |
@@ -189,9 +189,9 @@ enum const_val {
     const_bool(bool)
 }
 
-impl const_val: cmp::Eq {
-    pure fn eq(&&other: const_val) -> bool {
-        match (self, other) {
+impl const_val : cmp::Eq {
+    pure fn eq(other: &const_val) -> bool {
+        match (self, (*other)) {
             (const_float(a), const_float(b)) => a == b,
             (const_int(a), const_int(b)) => a == b,
             (const_uint(a), const_uint(b)) => a == b,
@@ -201,12 +201,12 @@ impl const_val: cmp::Eq {
             (const_str(_), _) | (const_bool(_), _) => false
         }
     }
-    pure fn ne(&&other: const_val) -> bool { !self.eq(other) }
+    pure fn ne(other: &const_val) -> bool { !self.eq(other) }
 }
 
 // FIXME: issue #1417
 fn eval_const_expr(tcx: middle::ty::ctxt, e: @expr) -> const_val {
-    import middle::ty;
+    use middle::ty;
     fn fromb(b: bool) -> const_val { const_int(b as i64) }
     match e.node {
       expr_unary(neg, inner) => {
@@ -317,7 +317,7 @@ fn eval_const_expr(tcx: middle::ty::ctxt, e: @expr) -> const_val {
       expr_cast(base, _) => {
         let ety = ty::expr_ty(tcx, e);
         let base = eval_const_expr(tcx, base);
-        match ty::get(ety).struct {
+        match ty::get(ety).sty {
           ty::ty_float(_) => {
             match base {
               const_uint(u) => const_float(u as f64),
@@ -358,7 +358,7 @@ fn lit_to_const(lit: @lit) -> const_val {
       lit_int(n, _) => const_int(n),
       lit_uint(n, _) => const_uint(n),
       lit_int_unsuffixed(n) => const_int(n),
-      lit_float(n, _) => const_float(option::get(float::from_str(*n)) as f64),
+      lit_float(n, _) => const_float(float::from_str(*n).get() as f64),
       lit_nil => const_int(0i64),
       lit_bool(b) => const_bool(b)
     }

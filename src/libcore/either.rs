@@ -34,12 +34,12 @@ fn lefts<T: Copy, U>(eithers: &[Either<T, U>]) -> ~[T] {
 
     let mut result: ~[T] = ~[];
     for vec::each(eithers) |elt| {
-        match elt {
+        match *elt {
           Left(l) => vec::push(result, l),
           _ => { /* fallthrough */ }
         }
     }
-    return result;
+    move result
 }
 
 fn rights<T, U: Copy>(eithers: &[Either<T, U>]) -> ~[U] {
@@ -47,12 +47,12 @@ fn rights<T, U: Copy>(eithers: &[Either<T, U>]) -> ~[U] {
 
     let mut result: ~[U] = ~[];
     for vec::each(eithers) |elt| {
-        match elt {
+        match *elt {
           Right(r) => vec::push(result, r),
           _ => { /* fallthrough */ }
         }
     }
-    return result;
+    move result
 }
 
 fn partition<T: Copy, U: Copy>(eithers: &[Either<T, U>])
@@ -67,12 +67,12 @@ fn partition<T: Copy, U: Copy>(eithers: &[Either<T, U>])
     let mut lefts: ~[T] = ~[];
     let mut rights: ~[U] = ~[];
     for vec::each(eithers) |elt| {
-        match elt {
+        match *elt {
           Left(l) => vec::push(lefts, l),
           Right(r) => vec::push(rights, r)
         }
     }
-    return {lefts: lefts, rights: rights};
+    return {lefts: move lefts, rights: move rights};
 }
 
 pure fn flip<T: Copy, U: Copy>(eith: &Either<T, U>) -> Either<U, T> {
@@ -114,7 +114,7 @@ pure fn unwrap_left<T,U>(+eith: Either<T,U>) -> T {
     //! Retrieves the value in the left branch. Fails if the either is Right.
 
     match move eith {
-        Left(move x) => x, Right(_) => fail ~"either::unwrap_left Right"
+        Left(move x) => move x, Right(_) => fail ~"either::unwrap_left Right"
     }
 }
 
@@ -122,28 +122,28 @@ pure fn unwrap_right<T,U>(+eith: Either<T,U>) -> U {
     //! Retrieves the value in the right branch. Fails if the either is Left.
 
     match move eith {
-        Right(move x) => x, Left(_) => fail ~"either::unwrap_right Left"
+        Right(move x) => move x, Left(_) => fail ~"either::unwrap_right Left"
     }
 }
 
 impl<T:Eq,U:Eq> Either<T,U> : Eq {
-    pure fn eq(&&other: Either<T,U>) -> bool {
+    pure fn eq(other: &Either<T,U>) -> bool {
         match self {
             Left(a) => {
-                match other {
-                    Left(b) => a.eq(b),
+                match (*other) {
+                    Left(ref b) => a.eq(b),
                     Right(_) => false
                 }
             }
             Right(a) => {
-                match other {
+                match (*other) {
                     Left(_) => false,
-                    Right(b) => a.eq(b)
+                    Right(ref b) => a.eq(b)
                 }
             }
         }
     }
-    pure fn ne(&&other: Either<T,U>) -> bool { !self.eq(other) }
+    pure fn ne(other: &Either<T,U>) -> bool { !self.eq(other) }
 }
 
 #[test]

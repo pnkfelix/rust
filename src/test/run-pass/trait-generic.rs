@@ -1,3 +1,6 @@
+// xfail-fast
+#[legacy_modes];
+
 trait to_str {
     fn to_str() -> ~str;
 }
@@ -17,7 +20,7 @@ trait map<T> {
 impl<T> ~[T]: map<T> {
     fn map<U: Copy>(f: fn(T) -> U) -> ~[U] {
         let mut r = ~[];
-        for self.each |x| { r += ~[f(x)]; }
+        for self.each |x| { r += ~[f(*x)]; }
         r
     }
 }

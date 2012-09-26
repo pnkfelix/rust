@@ -118,6 +118,7 @@ fn get_addr(node: &str, iotask: iotask)
 }
 
 mod v4 {
+    #[legacy_exports];
     /**
      * Convert a str to `ip_addr`
      *
@@ -155,7 +156,7 @@ mod v4 {
     }
     fn parse_to_ipv4_rep(ip: &str) -> result::Result<Ipv4Rep, ~str> {
         let parts = vec::map(str::split_char(ip, '.'), |s| {
-            match uint::from_str(s) {
+            match uint::from_str(*s) {
               Some(n) if n <= 255u => n,
               _ => 256u
             }
@@ -175,24 +176,24 @@ mod v4 {
         unsafe {
             let INADDR_NONE = ll::get_INADDR_NONE();
             let ip_rep_result = parse_to_ipv4_rep(ip);
-            if result::is_err(ip_rep_result) {
-                let err_str = result::get_err(ip_rep_result);
+            if result::is_err(&ip_rep_result) {
+                let err_str = result::get_err(&ip_rep_result);
                 return result::Err({err_msg: err_str})
             }
             // ipv4_rep.as_u32 is unsafe :/
             let input_is_inaddr_none =
-                result::get(ip_rep_result).as_u32() == INADDR_NONE;
+                result::get(&ip_rep_result).as_u32() == INADDR_NONE;
 
             let new_addr = uv_ip4_addr(str::from_slice(ip), 22);
             let reformatted_name = uv_ip4_name(&new_addr);
             log(debug, fmt!("try_parse_addr: input ip: %s reparsed ip: %s",
                             ip, reformatted_name));
             let ref_ip_rep_result = parse_to_ipv4_rep(reformatted_name);
-            if result::is_err(ref_ip_rep_result) {
-                let err_str = result::get_err(ref_ip_rep_result);
+            if result::is_err(&ref_ip_rep_result) {
+                let err_str = result::get_err(&ref_ip_rep_result);
                 return result::Err({err_msg: err_str})
             }
-            if result::get(ref_ip_rep_result).as_u32() == INADDR_NONE &&
+            if result::get(&ref_ip_rep_result).as_u32() == INADDR_NONE &&
                  !input_is_inaddr_none {
                 return result::Err(
                     {err_msg: ~"uv_ip4_name produced invalid result."})
@@ -204,6 +205,7 @@ mod v4 {
     }
 }
 mod v6 {
+    #[legacy_exports];
     /**
      * Convert a str to `ip_addr`
      *
@@ -275,7 +277,7 @@ extern fn get_addr_cb(handle: *uv_getaddrinfo_t, status: libc::c_int,
                         result::Err(GetAddrUnknownError));
                     break;
                 };
-                out_vec += ~[new_ip_addr];
+                vec::push(out_vec, move new_ip_addr);
 
                 let next_addr = ll::get_next_addrinfo(curr_addr);
                 if next_addr == ptr::null::<addrinfo>() as *addrinfo {
@@ -289,7 +291,7 @@ extern fn get_addr_cb(handle: *uv_getaddrinfo_t, status: libc::c_int,
             }
             log(debug, fmt!("successful process addrinfo result, len: %?",
                             vec::len(out_vec)));
-            (*handle_data).output_ch.send(result::Ok(out_vec));
+            (*handle_data).output_ch.send(result::Ok(move out_vec));
         }
         else {
             log(debug, ~"addrinfo pointer is NULL");
@@ -310,6 +312,7 @@ extern fn get_addr_cb(handle: *uv_getaddrinfo_t, status: libc::c_int,
 
 #[cfg(test)]
 mod test {
+    #[legacy_exports];
     #[test]
     fn test_ip_ipv4_parse_and_format_ip() {
         let localhost_str = ~"127.0.0.1";
@@ -355,7 +358,7 @@ mod test {
         let localhost_name = ~"localhost";
         let iotask = uv::global_loop::get();
         let ga_result = get_addr(localhost_name, iotask);
-        if result::is_err(ga_result) {
+        if result::is_err(&ga_result) {
             fail ~"got err result from net::ip::get_addr();"
         }
         // note really sure how to realiably test/assert
@@ -364,12 +367,12 @@ mod test {
         log(debug, fmt!("test_get_addr: Number of results for %s: %?",
                         localhost_name, vec::len(results)));
         for vec::each(results) |r| {
-            let ipv_prefix = match r {
+            let ipv_prefix = match *r {
               Ipv4(_) => ~"IPv4",
               Ipv6(_) => ~"IPv6"
             };
             log(debug, fmt!("test_get_addr: result %s: '%s'",
-                            ipv_prefix, format_addr(&r)));
+                            ipv_prefix, format_addr(r)));
         }
         // at least one result.. this is going to vary from system
         // to system, based on stuff like the contents of /etc/hosts
@@ -381,6 +384,6 @@ mod test {
         let localhost_name = ~"sjkl234m,./sdf";
         let iotask = uv::global_loop::get();
         let ga_result = get_addr(localhost_name, iotask);
-        assert result::is_err(ga_result);
+        assert result::is_err(&ga_result);
     }
 }

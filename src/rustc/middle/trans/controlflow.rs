@@ -13,7 +13,7 @@ fn trans_block(bcx: block, b: ast::blk, dest: expr::Dest) -> block {
     };
     for vec::each(b.node.stmts) |s| {
         debuginfo::update_source_pos(bcx, b.span);
-        bcx = trans_stmt(bcx, *s);
+        bcx = trans_stmt(bcx, **s);
     }
     match b.node.expr {
         Some(e) => {
@@ -41,7 +41,7 @@ fn trans_if(bcx: block,
 
     let _icx = bcx.insn_ctxt("trans_if");
     let Result {bcx, val: cond_val} =
-        expr::trans_to_appropriate_llval(bcx, cond);
+        expr::trans_to_datum(bcx, cond).to_result();
 
     let then_bcx_in = scope_block(bcx, thn.info(), ~"then");
     let else_bcx_in = scope_block(bcx, els.info(), ~"else");
@@ -85,7 +85,7 @@ fn join_blocks(parent_bcx: block, in_cxs: ~[block]) -> block {
     let mut reachable = false;
     for vec::each(in_cxs) |bcx| {
         if !bcx.unreachable {
-            Br(bcx, out.llbb);
+            Br(*bcx, out.llbb);
             reachable = true;
         }
     }
@@ -121,7 +121,7 @@ fn trans_while(bcx: block, cond: @ast::expr, body: ast::blk)
 
     // compile the condition
     let Result {bcx: cond_bcx_out, val: cond_val} =
-        expr::trans_to_appropriate_llval(cond_bcx_in, cond);
+        expr::trans_to_datum(cond_bcx_in, cond).to_result();
     let cond_bcx_out =
         trans_block_cleanups(cond_bcx_out, block_cleanups(cond_bcx_in));
     CondBr(cond_bcx_out, cond_val, body_bcx_in.llbb, next_bcx.llbb);
@@ -179,7 +179,7 @@ fn trans_log(log_ex: @ast::expr,
     let current_level = Load(bcx, global);
     let level = unpack_result!(bcx, {
         do with_scope_result(bcx, lvl.info(), ~"level") |bcx| {
-            expr::trans_to_appropriate_llval(bcx, lvl)
+            expr::trans_to_datum(bcx, lvl).to_result()
         }
     });
 
@@ -190,12 +190,12 @@ fn trans_log(log_ex: @ast::expr,
 
             // Translate the value to be logged
             let val_datum = unpack_datum!(bcx, expr::trans_to_datum(bcx, e));
-            let tydesc = get_tydesc_simple(ccx, val_datum.ty);
 
             // Call the polymorphic log function
             let val = val_datum.to_ref_llval(bcx);
-            let val = PointerCast(bcx, val, T_ptr(T_i8()));
-            Call(bcx, ccx.upcalls.log_type, [tydesc, val, level]);
+            let did = bcx.tcx().lang_items.log_type_fn.get();
+            let bcx = callee::trans_rtcall_or_lang_call_with_type_params(
+                bcx, did, ~[level, val], ~[val_datum.ty], expr::Ignore);
             bcx
         }
     }
@@ -278,7 +278,7 @@ fn trans_check_expr(bcx: block, chk_expr: @ast::expr,
         + ~" failed";
     let Result {bcx, val} = {
         do with_scope_result(bcx, chk_expr.info(), ~"check") |bcx| {
-            expr::trans_to_appropriate_llval(bcx, pred_expr)
+            expr::trans_to_datum(bcx, pred_expr).to_result()
         }
     };
     do with_cond(bcx, Not(bcx, val)) |bcx| {
@@ -340,7 +340,7 @@ fn trans_fail_value(bcx: block, sp_opt: Option<span>, V_fail_str: ValueRef)
     let V_str = PointerCast(bcx, V_fail_str, T_ptr(T_i8()));
     let V_filename = PointerCast(bcx, V_filename, T_ptr(T_i8()));
     let args = ~[V_str, V_filename, C_int(ccx, V_line)];
-    let bcx = callee::trans_rtcall(bcx, ~"fail", args, expr::Ignore);
+    let bcx = callee::trans_rtcall(bcx, ~"fail_", args, expr::Ignore);
     Unreachable(bcx);
     return bcx;
 }

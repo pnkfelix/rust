@@ -248,7 +248,7 @@ section on "Type Combining" below for details.
 
 use std::smallintmap;
 use std::smallintmap::smallintmap;
-use std::map::hashmap;
+use std::map::HashMap;
 use middle::ty;
 use middle::ty::{TyVid, IntVid, RegionVid, vid,
                  ty_int, ty_uint, get, terr_fn, TyVar, IntVar};
@@ -275,6 +275,7 @@ use unify::{vals_and_bindings, root};
 use integral::{int_ty_set, int_ty_set_all};
 use combine::{combine_fields, eq_tys};
 use assignment::Assign;
+use to_str::to_str;
 
 use sub::Sub;
 use lub::Lub;
@@ -304,7 +305,7 @@ type bounds<T:Copy> = {lb: bound<T>, ub: bound<T>};
 type cres<T> = Result<T,ty::type_err>; // "combine result"
 type ures = cres<()>; // "unify result"
 type fres<T> = Result<T, fixup_err>; // "fixup result"
-type ares = cres<Option<ty::borrow>>; // "assignment result"
+type ares = cres<Option<@ty::AutoAdjustment>>; // "assignment result"
 
 enum infer_ctxt = @{
     tcx: ty::ctxt,
@@ -469,19 +470,24 @@ impl ures: then {
     }
 }
 
-trait cres_helpers<T> {
+trait ToUres {
     fn to_ures() -> ures;
-    fn compare(t: T, f: fn() -> ty::type_err) -> cres<T>;
 }
 
-impl<T:Copy Eq> cres<T>: cres_helpers<T> {
+impl<T> cres<T>: ToUres {
     fn to_ures() -> ures {
         match self {
           Ok(_v) => Ok(()),
           Err(e) => Err(e)
         }
     }
+}
 
+trait CresCompare<T> {
+    fn compare(t: T, f: fn() -> ty::type_err) -> cres<T>;
+}
+
+impl<T:Copy Eq> cres<T>: CresCompare<T> {
     fn compare(t: T, f: fn() -> ty::type_err) -> cres<T> {
         do self.chain |s| {
             if s == t {
@@ -565,7 +571,7 @@ impl infer_ctxt {
             self.ty_var_bindings.bindings = ~[];
             self.int_var_bindings.bindings = ~[];
             self.region_vars.commit();
-            r
+            move r
         }
     }
 
@@ -579,7 +585,7 @@ impl infer_ctxt {
               Ok(_) => (),
               Err(_) => self.rollback_to(&snapshot)
             }
-            r
+            move r
         }
     }
 
@@ -590,7 +596,7 @@ impl infer_ctxt {
             let snapshot = self.start_snapshot();
             let r = self.try(f);
             self.rollback_to(&snapshot);
-            r
+            move r
         }
     }
 }

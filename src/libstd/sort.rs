@@ -40,8 +40,7 @@ fn merge_sort<T: Copy>(le: Le<T>, v: &[const T]) -> ~[T] {
     }
 
     fn merge<T: Copy>(le: Le<T>, a: &[T], b: &[T]) -> ~[T] {
-        let mut rs = ~[];
-        vec::reserve(rs, len(a) + len(b));
+        let mut rs = vec::with_capacity(len(a) + len(b));
         let a_len = len(a);
         let mut a_ix = 0u;
         let b_len = len(b);
@@ -171,6 +170,7 @@ impl<T: Copy Ord Eq> &[mut T] : Sort {
 
 #[cfg(test)]
 mod test_qsort3 {
+    #[legacy_exports];
     fn check_sort(v1: &[mut int], v2: &[mut int]) {
         let len = vec::len::<int>(v1);
         quick_sort3::<int>(v1);
@@ -210,6 +210,7 @@ mod test_qsort3 {
 
 #[cfg(test)]
 mod test_qsort {
+    #[legacy_exports];
     fn check_sort(v1: &[mut int], v2: &[mut int]) {
         let len = vec::len::<int>(v1);
         pure fn leual(a: &int, b: &int) -> bool { *a <= *b }
@@ -260,7 +261,7 @@ mod test_qsort {
 
         let pairs = vec::zip(expected, immut_names);
         for vec::each(pairs) |p| {
-            let (a, b) = p;
+            let (a, b) = *p;
             debug!("%d %d", a, b);
             assert (a == b);
         }
@@ -269,6 +270,7 @@ mod test_qsort {
 
 #[cfg(test)]
 mod tests {
+    #[legacy_exports];
 
     fn check_sort(v1: &[int], v2: &[int]) {
         let len = vec::len::<int>(v1);
@@ -314,7 +316,7 @@ mod tests {
         // tjc: funny that we have to use parens
         pure fn ile(x: &(&static/str), y: &(&static/str)) -> bool
         {
-            unchecked            // to_lower is not pure...
+            unsafe            // to_lower is not pure...
             {
                 let x = x.to_lower();
                 let y = y.to_lower();

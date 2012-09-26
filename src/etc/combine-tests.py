@@ -39,11 +39,13 @@ stage2_tests.sort()
 c = open("tmp/run_pass_stage2.rc", "w")
 i = 0
 c.write("// AUTO-GENERATED FILE: DO NOT EDIT\n")
+c.write("#[legacy_exports];\n")
 c.write("#[link(name=\"run_pass_stage2\", vers=\"0.1\")];\n")
 for t in stage2_tests:
     p = os.path.join(run_pass, t)
     p = p.replace("\\", "\\\\")
     c.write("#[path = \"%s\"]" % p);
+    c.write("#[legacy_exports]");
     c.write("mod t_%d;\n" % i)
     i += 1
 c.close()
@@ -51,10 +53,10 @@ c.close()
 
 d = open("tmp/run_pass_stage2_driver.rs", "w")
 d.write("// AUTO-GENERATED FILE: DO NOT EDIT\n")
-d.write("use std;\n")
-d.write("use run_pass_stage2;\n")
-d.write("import run_pass_stage2::*;\n")
-d.write("import io::WriterUtil;\n");
+d.write("extern mod std;\n")
+d.write("extern mod run_pass_stage2;\n")
+d.write("use run_pass_stage2::*;\n")
+d.write("use io::WriterUtil;\n");
 d.write("fn main() {\n");
 d.write("    let out = io::stdout();\n");
 i = 0

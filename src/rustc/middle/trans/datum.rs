@@ -138,6 +138,19 @@ impl DatumMode {
     }
 }
 
+impl DatumMode: cmp::Eq {
+    pure fn eq(other: &DatumMode) -> bool {
+        self as uint == (*other as uint)
+    }
+    pure fn ne(other: &DatumMode) -> bool { !self.eq(other) }
+}
+
+impl DatumMode: to_bytes::IterBytes {
+    pure fn iter_bytes(lsb0: bool, f: to_bytes::Cb) {
+        (self as uint).iter_bytes(lsb0, f)
+    }
+}
+
 /// See `Datum Sources` section at the head of this module.
 enum DatumSource {
     FromRvalue,
@@ -174,12 +187,32 @@ fn scratch_datum(bcx: block, ty: ty::t, zero: bool) -> Datum {
     /*!
      *
      * Allocates temporary space on the stack using alloca() and
-     * returns a by-ref Datum pointing to it.  You must arrange
-     * any cleanups etc yourself! */
+     * returns a by-ref Datum pointing to it.  If `zero` is true, the
+     * space will be zeroed when it is allocated; this is normally not
+     * necessary, but in the case of automatic rooting in match
+     * statements it is possible to have temporaries that may not get
+     * initialized if a certain arm is not taken, so we must zero
+     * them. You must arrange any cleanups etc yourself! */
 
     let llty = type_of::type_of(bcx.ccx(), ty);
     let scratch = alloca_maybe_zeroed(bcx, llty, zero);
     Datum { val: scratch, ty: ty, mode: ByRef, source: FromRvalue }
+}
+
+fn appropriate_mode(ty: ty::t) -> DatumMode {
+    /*!
+    *
+    * Indicates the "appropriate" mode for this value,
+    * which is either by ref or by value, depending
+    * on whether type is iimmediate or what. */
+
+    if ty::type_is_nil(ty) || ty::type_is_bot(ty) {
+        ByValue
+    } else if ty::type_is_immediate(ty) {
+        ByValue
+    } else {
+        ByRef
+    }
 }
 
 impl Datum {
@@ -442,19 +475,9 @@ impl Datum {
     }
 
     fn appropriate_mode() -> DatumMode {
-        /*!
-         *
-         * Indicates the "appropriate" mode for this value,
-         * which is either by ref or by value, depending
-         * on whether type is iimmediate or what. */
+        /*! See the `appropriate_mode()` function */
 
-        if ty::type_is_nil(self.ty) || ty::type_is_bot(self.ty) {
-            ByValue
-        } else if ty::type_is_immediate(self.ty) {
-            ByValue
-        } else {
-            ByRef
-        }
+        appropriate_mode(self.ty)
     }
 
     fn to_appropriate_llval(bcx: block) -> ValueRef {
@@ -528,7 +551,7 @@ impl Datum {
          * This datum must represent an @T or ~T box.  Returns a new
          * by-ref datum of type T, pointing at the contents. */
 
-        let content_ty = match ty::get(self.ty).struct {
+        let content_ty = match ty::get(self.ty).sty {
             ty::ty_box(mt) | ty::ty_uniq(mt) => mt.ty,
             _ => {
                 bcx.tcx().sess.bug(fmt!(
@@ -583,7 +606,7 @@ impl Datum {
             }
         }
 
-        match ty::get(self.ty).struct {
+        match ty::get(self.ty).sty {
             ty::ty_box(_) | ty::ty_uniq(_) => {
                 return Some(self.box_body(bcx));
             }
@@ -744,13 +767,13 @@ impl DatumBlock {
 }
 
 impl CopyAction : cmp::Eq {
-    pure fn eq(&&other: CopyAction) -> bool {
-        match (self, other) {
+    pure fn eq(other: &CopyAction) -> bool {
+        match (self, (*other)) {
             (INIT, INIT) => true,
             (DROP_EXISTING, DROP_EXISTING) => true,
             (INIT, _) => false,
             (DROP_EXISTING, _) => false,
         }
     }
-    pure fn ne(&&other: CopyAction) -> bool { !self.eq(other) }
+    pure fn ne(other: &CopyAction) -> bool { !self.eq(other) }
 }

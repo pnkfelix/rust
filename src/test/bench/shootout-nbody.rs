@@ -1,7 +1,7 @@
 // based on:
 // http://shootout.alioth.debian.org/u32/benchmark.php?test=nbody&lang=java
 
-use std;
+extern mod std;
 
 // Using sqrt from the standard library is way slower than using libc
 // directly even though std just calls libc, I guess it must be
@@ -10,10 +10,11 @@ use std;
 // an llvm intrinsic.
 #[nolink]
 extern mod libc {
+    #[legacy_exports];
     fn sqrt(n: float) -> float;
 }
 
-fn main(args: ~[~str]) {
+fn main(++args: ~[~str]) {
     let args = if os::getenv(~"RUST_BENCH").is_some() {
         ~[~"", ~"4000000"]
     } else if args.len() <= 1u {
@@ -30,6 +31,7 @@ fn main(args: ~[~str]) {
 }
 
 mod NBodySystem {
+    #[legacy_exports];
 
     fn make() -> ~[Body::props] {
         let bodies: ~[Body::props] =
@@ -128,6 +130,7 @@ mod NBodySystem {
 }
 
 mod Body {
+    #[legacy_exports];
 
     const PI: float = 3.141592653589793;
     const SOLAR_MASS: float = 39.478417604357432;

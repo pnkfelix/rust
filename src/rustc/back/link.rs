@@ -7,7 +7,7 @@ use middle::ty;
 use metadata::{encoder, cstore};
 use middle::trans::common::crate_ctxt;
 use metadata::common::link_meta;
-use std::map::hashmap;
+use std::map::HashMap;
 use std::sha1::sha1;
 use syntax::ast;
 use syntax::print::pprust;
@@ -27,17 +27,17 @@ enum output_type {
 }
 
 impl output_type : cmp::Eq {
-    pure fn eq(&&other: output_type) -> bool {
-        (self as uint) == (other as uint)
+    pure fn eq(other: &output_type) -> bool {
+        (self as uint) == ((*other) as uint)
     }
-    pure fn ne(&&other: output_type) -> bool { !self.eq(other) }
+    pure fn ne(other: &output_type) -> bool { !self.eq(other) }
 }
 
 fn llvm_err(sess: session, msg: ~str) -> ! unsafe {
     let cstr = llvm::LLVMRustGetLastError();
     if cstr == ptr::null() {
         sess.fatal(msg);
-    } else { sess.fatal(msg + ~": " + str::unsafe::from_c_str(cstr)); }
+    } else { sess.fatal(msg + ~": " + str::raw::from_c_str(cstr)); }
 }
 
 fn WriteOutputFile(sess:session,
@@ -55,24 +55,12 @@ fn WriteOutputFile(sess:session,
     }
 }
 
-#[cfg(stage0)]
 mod jit {
-    fn exec(_sess: session,
-            _pm: PassManagerRef,
-            _m: ModuleRef,
-            _opt: c_int,
-            _stacks: bool) {
-        fail
-    }
-}
-
-#[cfg(stage1)]
-#[cfg(stage2)]
-#[cfg(stage3)]
-mod jit {
+    #[legacy_exports];
     #[nolink]
     #[abi = "rust-intrinsic"]
     extern mod rusti {
+        #[legacy_exports];
         fn morestack_addr() -> *();
     }
 
@@ -96,7 +84,7 @@ mod jit {
                 code: ptr,
                 env: ptr::null()
             };
-            let func: fn(~[~str]) = unsafe::transmute(closure);
+            let func: fn(~[~str]) = cast::transmute(move closure);
 
             func(~[sess.opts.binary]);
         }
@@ -104,6 +92,7 @@ mod jit {
 }
 
 mod write {
+    #[legacy_exports];
     fn is_object_or_assembly_or_exe(ot: output_type) -> bool {
         if ot == output_type_assembly || ot == output_type_object ||
                ot == output_type_exe {
@@ -400,17 +389,17 @@ fn build_link_meta(sess: session, c: ast::crate, output: &Path,
         let linkage_metas = attr::find_linkage_metas(c.node.attrs);
         attr::require_unique_names(sess.diagnostic(), linkage_metas);
         for linkage_metas.each |meta| {
-            if attr::get_meta_item_name(meta) == ~"name" {
-                match attr::get_meta_item_value_str(meta) {
+            if attr::get_meta_item_name(*meta) == ~"name" {
+                match attr::get_meta_item_value_str(*meta) {
                   Some(v) => { name = Some(v); }
-                  None => vec::push(cmh_items, meta)
+                  None => vec::push(cmh_items, *meta)
                 }
-            } else if attr::get_meta_item_name(meta) == ~"vers" {
-                match attr::get_meta_item_value_str(meta) {
+            } else if attr::get_meta_item_name(*meta) == ~"vers" {
+                match attr::get_meta_item_value_str(*meta) {
                   Some(v) => { vers = Some(v); }
-                  None => vec::push(cmh_items, meta)
+                  None => vec::push(cmh_items, *meta)
                 }
-            } else { vec::push(cmh_items, meta); }
+            } else { vec::push(cmh_items, *meta); }
         }
         return {name: name, vers: vers, cmh_items: cmh_items};
     }
@@ -431,8 +420,7 @@ fn build_link_meta(sess: session, c: ast::crate, output: &Path,
         let cmh_items = attr::sort_meta_items(metas.cmh_items);
 
         symbol_hasher.reset();
-        for cmh_items.each |m_| {
-            let m = m_;
+        for cmh_items.each |m| {
             match m.node {
               ast::meta_name_value(key, value) => {
                 symbol_hasher.write_str(len_and_str(key));
@@ -449,7 +437,7 @@ fn build_link_meta(sess: session, c: ast::crate, output: &Path,
         }
 
         for dep_hashes.each |dh| {
-            symbol_hasher.write_str(len_and_str(dh));
+            symbol_hasher.write_str(len_and_str(*dh));
         }
 
         return truncated_hash_result(symbol_hasher);
@@ -539,7 +527,7 @@ fn get_symbol_hash(ccx: @crate_ctxt, t: ty::t) -> ~str {
 // gas doesn't!
 fn sanitize(s: ~str) -> ~str {
     let mut result = ~"";
-    do str::chars_iter(s) |c| {
+    for str::chars_each(s) |c| {
         match c {
           '@' => result += ~"_sbox_",
           '~' => result += ~"_ubox_",
@@ -551,10 +539,10 @@ fn sanitize(s: ~str) -> ~str {
           'a' .. 'z'
           | 'A' .. 'Z'
           | '0' .. '9'
-          | '_' => str::push_char(result,c),
+          | '_' => str::push_char(&mut result, c),
           _ => {
             if c > 'z' && char::is_XID_continue(c) {
-                str::push_char(result,c);
+                str::push_char(&mut result, c);
             }
           }
         }
@@ -576,7 +564,7 @@ fn mangle(sess: session, ss: path) -> ~str {
     let mut n = ~"_ZN"; // Begin name-sequence.
 
     for ss.each |s| {
-        match s { path_name(s) | path_mod(s) => {
+        match *s { path_name(s) | path_mod(s) => {
           let sani = sanitize(sess.str_of(s));
           n += fmt!("%u%s", str::len(sani), sani);
         } }
@@ -685,18 +673,18 @@ fn link_binary(sess: session,
 
     let cstore = sess.cstore;
     for cstore::get_used_crate_files(cstore).each |cratepath| {
-        if cratepath.filetype() == Some(~"rlib") {
+        if cratepath.filetype() == Some(~".rlib") {
             vec::push(cc_args, cratepath.to_str());
             loop;
         }
         let dir = cratepath.dirname();
         if dir != ~"" { vec::push(cc_args, ~"-L" + dir); }
-        let libarg = unlib(sess.targ_cfg, option::get(cratepath.filestem()));
+        let libarg = unlib(sess.targ_cfg, cratepath.filestem().get());
         vec::push(cc_args, ~"-l" + libarg);
     }
 
     let ula = cstore::get_used_link_args(cstore);
-    for ula.each |arg| { vec::push(cc_args, arg); }
+    for ula.each |arg| { vec::push(cc_args, *arg); }
 
     // # Extern library linking
 
@@ -711,7 +699,7 @@ fn link_binary(sess: session,
 
     // The names of the extern libraries
     let used_libs = cstore::get_used_libraries(cstore);
-    for used_libs.each |l| { vec::push(cc_args, ~"-l" + l); }
+    for used_libs.each |l| { vec::push(cc_args, ~"-l" + *l); }
 
     if sess.building_library {
         vec::push(cc_args, lib_cmd);
@@ -720,7 +708,7 @@ fn link_binary(sess: session,
         // be rpathed
         if sess.targ_cfg.os == session::os_macos {
             vec::push(cc_args, ~"-Wl,-install_name,@rpath/"
-                      + option::get(output.filename()));
+                      + output.filename().get());
         }
     }
 
