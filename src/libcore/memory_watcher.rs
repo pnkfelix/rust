@@ -5,6 +5,7 @@ import priv::{chan_from_global_ptr, weaken_task};
 import comm::{Port, Chan, select2, listen};
 import task::TaskBuilder;
 import either::{Left, Right};
+import send_map::linear;
 
 #[abi = "cdecl"]
 extern mod rustrt {
@@ -12,15 +13,40 @@ extern mod rustrt {
 }
 
 enum Msg {
-        ReportAllocation(Task,libc::uintptr_t,*libc::c_char)
+        ReportAllocation(Task, libc::uintptr_t, *libc::c_char, *libc::c_char)
 }
+
+type MemoryWatcherKey = (int, libc::uintptr_t, libc::uintptr_t);
 
 fn global_memory_watcher_spawner(msg_po: comm::Port<Msg>)
 {
 	let msg_received = msg_po.recv();
-	let (task_enum_received,size_allocated,td_value) = match msg_received {
-  		ReportAllocation(t,s,c) => (t,s,c)
+	let (task_enum_received,size_allocated,td_value,address_allocation) = match msg_received {
+  		ReportAllocation(t,s,c,a) => (t,s,c,a)
 	};
+	
+	let mut hm_index:linear::LinearMap<int, @mut linear::LinearMap<libc::uintptr_t, MemoryWatcherKey>> = linear::LinearMap();
+	
+	loop { 
+		match msg_po.recv() { 
+			ReportAllocation(t, s, c,a) => {
+				let Metrics_value:MemoryWatcherKey = (*(t), s, (c as libc::uintptr_t));
+				let test1:int = (*t);
+				let val1 = hm_index.find(&test1);
+				match val1 {
+					Some(T) => {
+					let hm_task_LinearMap:@mut linear::LinearMap<libc::uintptr_t, MemoryWatcherKey> = T;
+					hm_task_LinearMap.insert((a as libc::uintptr_t), Metrics_value);
+					}
+					None => {
+						let hm_task:@mut linear::LinearMap<libc::uintptr_t, MemoryWatcherKey> = @mut linear::LinearMap();
+					hm_task.insert((a as libc::uintptr_t), Metrics_value);
+					hm_index.insert(*(t), hm_task);
+					}
+				}					
+			}
+		}  
+	}
 
 	let remote_task_id = *(task_enum_received);
 
