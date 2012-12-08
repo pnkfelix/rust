@@ -17,8 +17,8 @@ pub mod proctask {
     use flatpipe::{FlatChan, FlatPort};
     use flatpipe::serial::{reader_port, writer_chan};
 
-    pub use ProcSerializer = ebml::Writer::Serializer;
-    pub use ProcDeserializer = ebml::Reader::Deserializer;
+    pub use ProcSerializer = ebml::writer::Serializer;
+    pub use ProcDeserializer = ebml::reader::Deserializer;
 
     pub fn child_proc_stream<CM: Send Serializable<ProcSerializer>, PM: Send Deserializable<ProcDeserializer>>(prog: Path, args: ~[~str]) -> (Chan<CM>, Port<PM>) {
 
