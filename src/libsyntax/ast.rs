@@ -683,7 +683,6 @@ enum expr_ {
        (implicit) condition is always true. */
     expr_loop(blk, Option<ident>),
     expr_match(@expr, ~[arm]),
-    expr_fn(Proto, fn_decl, blk, capture_clause),
     expr_fn_block(fn_decl, blk, capture_clause),
     // Inner expr is always an expr_fn_block. We need the wrapping node to
     // easily type this (a function returning nil on the inside but bool on
@@ -1075,6 +1074,15 @@ enum Onceness {
     Many
 }
 
+impl Onceness : ToStr {
+    pure fn to_str() -> ~str {
+        match self {
+            ast::Once => ~"once",
+            ast::Many => ~"many"
+        }
+    }
+}
+
 impl Onceness : cmp::Eq {
     pure fn eq(&self, other: &Onceness) -> bool {
         match ((*self), *other) {
@@ -1156,6 +1164,17 @@ enum purity {
     unsafe_fn, // declared with "unsafe fn"
     impure_fn, // declared with "fn"
     extern_fn, // declared with "extern fn"
+}
+
+impl purity : ToStr {
+    pure fn to_str() -> ~str {
+        match self {
+            impure_fn => ~"impure",
+            unsafe_fn => ~"unsafe",
+            pure_fn => ~"pure",
+            extern_fn => ~"extern"
+        }
+    }
 }
 
 impl purity : to_bytes::IterBytes {

@@ -25,7 +25,7 @@ use syntax::ast::{def_foreign_mod, def_id, def_label, def_local, def_mod};
 use syntax::ast::{def_prim_ty, def_region, def_self, def_ty, def_ty_param};
 use syntax::ast::{def_typaram_binder, def_static_method};
 use syntax::ast::{def_upvar, def_use, def_variant, expr, expr_assign_op};
-use syntax::ast::{expr_binary, expr_break, expr_cast, expr_field, expr_fn};
+use syntax::ast::{expr_binary, expr_break, expr_cast, expr_field};
 use syntax::ast::{expr_fn_block, expr_index, expr_method_call, expr_path};
 use syntax::ast::{def_prim_ty, def_region, def_self, def_ty, def_ty_param};
 use syntax::ast::{def_upvar, def_use, def_variant, div, eq};
@@ -4853,7 +4853,6 @@ impl Resolver {
                 visit_expr(expr, (), visitor);
             }
 
-            expr_fn(_, fn_decl, ref block, capture_clause) |
             expr_fn_block(fn_decl, ref block, capture_clause) => {
                 self.resolve_function(FunctionRibKind(expr.id, block.node.id),
                                       Some(@fn_decl),

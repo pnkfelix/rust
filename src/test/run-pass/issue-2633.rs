@@ -14,7 +14,7 @@ struct cat {
 
 fn cat() -> cat {
     cat {
-        meow: fn@() { error!("meow"); }
+        meow: || { error!("meow"); }
     }
 }
 

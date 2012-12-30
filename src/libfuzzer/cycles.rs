@@ -54,8 +54,8 @@ fn empty_pointy() -> @pointy {
         mut b : ~none,
         mut c : @none,
 
-        mut f : fn@()->(){},
-        mut g : fn~()->(){},
+        mut f : || {},
+        mut g : || {},
 
         mut m : ~[],
         mut n : ~[mut],

@@ -42,7 +42,7 @@ use ast::{_mod, add, arg, arm, attribute,
              expr_, expr_addr_of, expr_match, expr_again, expr_assert,
              expr_assign, expr_assign_op, expr_binary, expr_block, expr_break,
              expr_call, expr_cast, expr_copy, expr_do_body, expr_fail,
-             expr_field, expr_fn, expr_fn_block, expr_if, expr_index,
+             expr_field, expr_fn_block, expr_if, expr_index,
              expr_lit, expr_log, expr_loop, expr_loop_body, expr_mac,
              expr_method_call, expr_paren, expr_path, expr_rec, expr_repeat,
              expr_ret, expr_swap, expr_struct, expr_tup, expr_unary,
@@ -985,15 +985,6 @@ impl Parser {
             return self.parse_loop_expr();
         } else if self.eat_keyword(~"match") {
             return self.parse_alt_expr();
-        } else if self.eat_keyword(~"fn") {
-            let opt_proto = self.parse_fn_ty_proto();
-            let proto = match opt_proto {
-                None | Some(ast::ProtoBare) => {
-                    self.fatal(~"fn expr are deprecated, use fn@")
-                }
-                Some(p) => { p }
-            };
-            return self.parse_fn_expr(proto);
         } else if self.eat_keyword(~"unsafe") {
             return self.parse_block_expr(lo, unsafe_blk);
         } else if self.token == token::LBRACKET {
@@ -1607,19 +1598,6 @@ impl Parser {
         }
         let q = {cond: cond, then: thn, els: els, lo: lo, hi: hi};
         return self.mk_expr(q.lo, q.hi, expr_if(q.cond, q.then, q.els));
-    }
-
-    fn parse_fn_expr(proto: Proto) -> @expr {
-        let lo = self.last_span.lo;
-
-        // if we want to allow fn expression argument types to be inferred in
-        // the future, just have to change parse_arg to parse_fn_block_arg.
-        let (decl, capture_clause) =
-            self.parse_fn_decl(|p| p.parse_arg_or_capture_item());
-
-        let body = self.parse_block();
-        return self.mk_expr(lo, body.span.hi,
-                         expr_fn(proto, decl, body, capture_clause));
     }
 
     // `|args| { ... }` like in `do` expressions

@@ -545,7 +545,7 @@ pub fn spawn_raw(opts: TaskOpts, f: fn~()) {
                           notify_chan: Option<Chan<TaskResult>>,
                           f: fn~()) -> fn~() {
         let child_data = ~mut Some((move child_arc, move ancestors));
-        return fn~(move notify_chan, move child_data, move f) {
+        return |move notify_chan, move child_data, move f| {
             // Agh. Get move-mode items into the closure. FIXME (#2829)
             let mut (child_arc, ancestors) = option::swap_unwrap(child_data);
             // Child task runs this code.

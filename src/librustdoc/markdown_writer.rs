@@ -52,13 +52,13 @@ pub fn make_writer_factory(+config: config::Config) -> WriterFactory {
 }
 
 fn markdown_writer_factory(+config: config::Config) -> WriterFactory {
-    fn~(+page: doc::Page) -> Writer {
+    |page: doc::Page| -> Writer {
         markdown_writer(config, page)
     }
 }
 
 fn pandoc_writer_factory(+config: config::Config) -> WriterFactory {
-    fn~(+page: doc::Page) -> Writer {
+    |page: doc::Page| -> Writer {
         pandoc_writer(config, page)
     }
 }
@@ -167,7 +167,7 @@ fn generic_writer(+process: fn~(+markdown: ~str)) -> Writer {
     };
     let ch = setup_po.recv();
 
-    fn~(+instr: WriteInstr) {
+    |+instr: WriteInstr| {
         comm::send(ch, instr);
     }
 }
@@ -278,7 +278,7 @@ pub fn future_writer_factory(
 ) -> (WriterFactory, comm::Port<(doc::Page, ~str)>) {
     let markdown_po = comm::Port();
     let markdown_ch = comm::Chan(&markdown_po);
-    let writer_factory = fn~(+page: doc::Page) -> Writer {
+    let writer_factory = |+page: doc::Page| -> Writer {
         let (writer_ch, writer_po) = pipes::stream();
         do task::spawn |move writer_ch| {
             let (writer, future) = future_writer();
@@ -294,7 +294,7 @@ pub fn future_writer_factory(
 
 fn future_writer() -> (Writer, future::Future<~str>) {
     let (chan, port) = pipes::stream();
-    let writer = fn~(move chan, +instr: WriteInstr) {
+    let writer = |move chan, +instr: WriteInstr| {
         chan.send(copy instr);
     };
     let future = do future::from_fn |move port| {

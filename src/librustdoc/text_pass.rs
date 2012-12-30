@@ -17,7 +17,7 @@ use util::NominalOp;
 pub fn mk_pass(name: ~str, +op: fn~(~str) -> ~str) -> Pass {
     {
         name: name,
-        f: fn~(move op, srv: astsrv::Srv, +doc: doc::Doc) -> doc::Doc {
+        f: |move op, srv: astsrv::Srv, +doc: doc::Doc| -> doc::Doc {
             run(srv, doc, copy op)
         }
     }

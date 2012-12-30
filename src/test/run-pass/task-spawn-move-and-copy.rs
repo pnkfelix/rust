@@ -18,8 +18,8 @@ fn main() {
     let y = ~2;
     let y_in_parent = ptr::addr_of(&(*y)) as uint;
 
-    task::spawn(fn~(copy ch, copy y, move x) {
-        let x_in_child = ptr::addr_of(&(*x)) as uint;
+    task::spawn(|copy ch, copy y, move x| {
+        let x_in_child = ptr::addr_of(&*x) as uint;
         comm::send(ch, x_in_child);
 
         let y_in_child = ptr::addr_of(&(*y)) as uint;

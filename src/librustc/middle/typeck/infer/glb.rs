@@ -10,13 +10,13 @@
 
 use combine::*;
 use lattice::*;
-use to_str::ToStr;
+use to_str::InferStr;
 use syntax::ast::{Many, Once};
 
-enum Glb = combine_fields;  // "greatest lower bound" (common subtype)
+enum Glb = CombineFields;  // "greatest lower bound" (common subtype)
 
-impl Glb: combine {
-    fn infcx() -> infer_ctxt { self.infcx }
+impl Glb: Combine {
+    fn infcx() -> @InferCtxt { self.infcx }
     fn tag() -> ~str { ~"glb" }
     fn a_is_expected() -> bool { self.a_is_expected }
     fn span() -> span { self.span }
@@ -117,8 +117,8 @@ impl Glb: combine {
     fn regions(a: ty::Region, b: ty::Region) -> cres<ty::Region> {
         debug!("%s.regions(%?, %?)",
                self.tag(),
-               a.to_str(self.infcx),
-               b.to_str(self.infcx));
+               a.inf_str(self.infcx),
+               b.inf_str(self.infcx));
 
         do indent {
             self.infcx.region_vars.glb_regions(self.span, a, b)
@@ -130,7 +130,7 @@ impl Glb: combine {
     }
 
     fn tys(a: ty::t, b: ty::t) -> cres<ty::t> {
-        lattice_tys(&self, a, b)
+        super_lattice_tys(&self, a, b)
     }
 
     // Traits please (FIXME: #2794):
@@ -157,7 +157,7 @@ impl Glb: combine {
         // please see the large comment in `region_inference.rs`.
 
         debug!("%s.fns(%?, %?)",
-               self.tag(), a.to_str(self.infcx), b.to_str(self.infcx));
+               self.tag(), a.inf_str(self.infcx), b.inf_str(self.infcx));
         let _indenter = indenter();
 
         // Take a snapshot.  We'll never roll this back, but in later
@@ -178,7 +178,7 @@ impl Glb: combine {
 
         // Collect constraints.
         let fn_ty0 = if_ok!(super_fns(&self, &a_with_fresh, &b_with_fresh));
-        debug!("fn_ty0 = %s", fn_ty0.to_str(self.infcx));
+        debug!("fn_ty0 = %s", fn_ty0.inf_str(self.infcx));
 
         // Generalize the regions appearing in fn_ty0 if possible
         let new_vars =
@@ -189,7 +189,7 @@ impl Glb: combine {
                 |r, _in_fn| generalize_region(&self, snapshot,
                                               new_vars, a_isr, a_vars, b_vars,
                                               r));
-        debug!("fn_ty1 = %s", fn_ty1.to_str(self.infcx));
+        debug!("fn_ty1 = %s", fn_ty1.inf_str(self.infcx));
         return Ok(move fn_ty1);
 
         fn generalize_region(self: &Glb,

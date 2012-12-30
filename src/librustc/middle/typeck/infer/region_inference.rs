@@ -550,7 +550,7 @@ use region::is_subregion_of;
 use ty::{Region, RegionVid, re_static, re_infer, re_free, re_bound,
          re_scope, ReVar, ReSkolemized, br_fresh};
 use syntax::codemap;
-use to_str::ToStr;
+use to_str::InferStr;
 use util::ppaux::note_and_explain_region;
 
 export RegionVarBindings;

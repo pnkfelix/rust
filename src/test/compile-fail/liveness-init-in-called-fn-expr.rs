@@ -9,7 +9,7 @@
 // except according to those terms.
 
 fn main() {
-    let j = fn@() -> int {
+    let j: fn@() -> int = || -> int {
         let i: int;
         return i; //~ ERROR use of possibly uninitialized variable: `i`
     };

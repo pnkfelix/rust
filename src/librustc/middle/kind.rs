@@ -92,7 +92,7 @@ fn check_crate(tcx: ty::ctxt,
         visit_block: check_block,
         visit_fn: check_fn,
         visit_ty: check_ty,
-        visit_item: fn@(i: @item, cx: ctx, v: visit::vt<ctx>) {
+        visit_item: |i: @item, cx: ctx, v: visit::vt<ctx>| {
             visit::visit_item(i, {current_item: i.id,.. cx}, v);
         },
         .. *visit::default_visitor()
@@ -192,7 +192,7 @@ fn check_fn(fk: visit::fn_kind, decl: fn_decl, body: blk, sp: span,
         // variables.  This list is used below to avoid checking and reporting
         // on a given variable twice.
         let cap_clause = match fk {
-            visit::fk_anon(_, cc) | visit::fk_fn_block(cc) => cc,
+            visit::fk_fn_block(cc) => cc,
             visit::fk_item_fn(*) | visit::fk_method(*) |
             visit::fk_dtor(*) => @~[]
         };

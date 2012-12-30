@@ -58,8 +58,8 @@
 // A.  But this upper-bound might be stricter than what is truly
 // needed.
 
-use to_str::ToStr;
-use combine::combine_fields;
+use to_str::InferStr;
+use combine::CombineFields;
 
 fn to_ares(+c: cres<ty::t>) -> ares {
     match c {
@@ -71,13 +71,13 @@ fn to_ares(+c: cres<ty::t>) -> ares {
 // Note: Assign is not actually a combiner, in that it does not
 // conform to the same interface, though it performs a similar
 // function.
-enum Assign = combine_fields;
+enum Assign = CombineFields;
 
 impl Assign {
     fn tys(a: ty::t, b: ty::t) -> ares {
         debug!("Assign.tys(%s => %s)",
-               a.to_str(self.infcx),
-               b.to_str(self.infcx));
+               a.inf_str(self.infcx),
+               b.inf_str(self.infcx));
         let _r = indenter();
 
         match (ty::get(a).sty, ty::get(b).sty) {
@@ -125,8 +125,8 @@ priv impl Assign {
         +a_bnd: Option<ty::t>, +b_bnd: Option<ty::t>) -> ares {
 
         debug!("Assign.assign_tys_or_sub(%s => %s, %s => %s)",
-               a.to_str(self.infcx), b.to_str(self.infcx),
-               a_bnd.to_str(self.infcx), b_bnd.to_str(self.infcx));
+               a.inf_str(self.infcx), b.inf_str(self.infcx),
+               a_bnd.inf_str(self.infcx), b_bnd.inf_str(self.infcx));
         let _r = indenter();
 
         fn is_borrowable(v: ty::vstore) -> bool {
@@ -230,10 +230,10 @@ priv impl Assign {
                   r_b: ty::Region) -> ares {
 
         debug!("try_assign(a=%s, nr_b=%s, m=%?, r_b=%s)",
-               a.to_str(self.infcx),
-               nr_b.to_str(self.infcx),
+               a.inf_str(self.infcx),
+               nr_b.inf_str(self.infcx),
                m,
-               r_b.to_str(self.infcx));
+               r_b.inf_str(self.infcx));
 
         do indent {
             let sub = Sub(*self);

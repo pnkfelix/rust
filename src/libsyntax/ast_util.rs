@@ -427,11 +427,9 @@ fn empty(range: id_range) -> bool {
 
 fn id_visitor(vfn: fn@(node_id)) -> visit::vt<()> {
     visit::mk_simple_visitor(@{
-        visit_mod: fn@(_m: _mod, _sp: span, id: node_id) {
-            vfn(id)
-        },
+        visit_mod: |_m, _sp, id| vfn(id),
 
-        visit_view_item: fn@(vi: @view_item) {
+        visit_view_item: |vi| {
             match vi.node {
               view_item_use(_, _, id) => vfn(id),
               view_item_import(vps) | view_item_export(vps) => {
@@ -446,11 +444,11 @@ fn id_visitor(vfn: fn@(node_id)) -> visit::vt<()> {
             }
         },
 
-        visit_foreign_item: fn@(ni: @foreign_item) {
+        visit_foreign_item: |ni| {
             vfn(ni.id)
         },
 
-        visit_item: fn@(i: @item) {
+        visit_item: |i| {
             vfn(i.id);
             match i.node {
               item_enum(ref enum_definition, _) =>
@@ -459,50 +457,50 @@ fn id_visitor(vfn: fn@(node_id)) -> visit::vt<()> {
             }
         },
 
-        visit_local: fn@(l: @local) {
+        visit_local: |l| {
             vfn(l.node.id);
         },
 
-        visit_block: fn@(b: blk) {
+        visit_block: |b| {
             vfn(b.node.id);
         },
 
-        visit_stmt: fn@(s: @stmt) {
+        visit_stmt: |s| {
             vfn(ast_util::stmt_id(*s));
         },
 
-        visit_arm: fn@(_a: arm) { },
+        visit_arm: |_a| {
+        },
 
-        visit_pat: fn@(p: @pat) {
+        visit_pat: |p| {
             vfn(p.id)
         },
 
-        visit_decl: fn@(_d: @decl) {
+        visit_decl: |_d| {
         },
 
-        visit_expr: fn@(e: @expr) {
+        visit_expr: |e| {
             vfn(e.callee_id);
             vfn(e.id);
         },
 
-        visit_expr_post: fn@(_e: @expr) {
+        visit_expr_post: |_e| {
         },
 
-        visit_ty: fn@(t: @Ty) {
+        visit_ty: |t| {
             match t.node {
               ty_path(_, id) => vfn(id),
               _ => { /* fall through */ }
             }
         },
 
-        visit_ty_params: fn@(ps: ~[ty_param]) {
+        visit_ty_params: |ps| {
             for vec::each(ps) |p| {
                 vfn(p.id);
             }
         },
 
-        visit_fn: fn@(fk: visit::fn_kind, d: ast::fn_decl,
-                      _b: ast::blk, _sp: span, id: ast::node_id) {
+        visit_fn: |fk, d, _b, _sp, id| {
             vfn(id);
 
             match fk {
@@ -519,7 +517,6 @@ fn id_visitor(vfn: fn@(node_id)) -> visit::vt<()> {
                     vfn(m.self_id);
                     for vec::each(tps) |tp| { vfn(tp.id); }
                 }
-                visit::fk_anon(_, capture_clause) |
                 visit::fk_fn_block(capture_clause) => {
                     for vec::each(*capture_clause) |clause| {
                         vfn(clause.id);
@@ -532,21 +529,21 @@ fn id_visitor(vfn: fn@(node_id)) -> visit::vt<()> {
             }
         },
 
-        visit_ty_method: fn@(_ty_m: ty_method) {
+        visit_ty_method: |_ty_m: ty_method| {
         },
 
-        visit_trait_method: fn@(_ty_m: trait_method) {
+        visit_trait_method: |_ty_m: trait_method| {
         },
 
-        visit_struct_def: fn@(_sd: @struct_def, _id: ident, _tps: ~[ty_param],
-                              _id: node_id) {
+        visit_struct_def: |_sd: @struct_def, _id: ident, _tps: ~[ty_param],
+                              _id: node_id| {
         },
 
-        visit_struct_field: fn@(f: @struct_field) {
+        visit_struct_field: |f: @struct_field| {
             vfn(f.node.id);
         },
 
-        visit_struct_method: fn@(_m: @method) {
+        visit_struct_method: |_m: @method| {
         }
     })
 }

@@ -9,7 +9,7 @@
 // except according to those terms.
 
 fn closure1(+x: ~str) -> (~str, fn@() -> ~str) {
-    let f = fn@() -> ~str {
+    let f = || {
         copy x
         //~^ WARNING implicitly copying a non-implicitly-copyable value
         //~^^ NOTE to copy values into a @fn closure, use a capture clause
@@ -19,7 +19,7 @@ fn closure1(+x: ~str) -> (~str, fn@() -> ~str) {
 
 fn closure2(+x: util::NonCopyable) -> (util::NonCopyable,
                                        fn@() -> util::NonCopyable) {
-    let f = fn@() -> util::NonCopyable {
+    let f = || -> util::NonCopyable {
         copy x
         //~^ ERROR copying a noncopyable value
         //~^^ NOTE non-copyable value cannot be copied into a @fn closure

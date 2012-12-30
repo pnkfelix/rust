@@ -9,7 +9,7 @@
 // except according to those terms.
 
 fn mk_identity<T:Copy>() -> fn@(T) -> T {
-    fn@(t: T) -> T { t }
+    |t: T| -> T { t }
 }
 
 fn main() {

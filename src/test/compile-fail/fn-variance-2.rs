@@ -9,7 +9,7 @@
 // except according to those terms.
 
 fn reproduce<T:Copy>(t: T) -> fn@() -> T {
-    fn@() -> T { t }
+    || -> T { t }
 }
 
 fn main() {

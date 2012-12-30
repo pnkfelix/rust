@@ -16,5 +16,5 @@ fn f(-thing: fn@()) {
 }
 
 fn main() {
-    f(fn@() {});
+    f(|| {});
 }

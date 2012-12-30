@@ -16,6 +16,6 @@ fn test(f: fn(uint) -> uint) -> uint {
 }
 
 fn main() {
-    let y = test(fn~(x: uint) -> uint { return 4u * x; });
+    let y = test(|x: uint| -> uint { return 4u * x; });
     assert y == 88u;
 }

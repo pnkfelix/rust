@@ -278,7 +278,6 @@ fn resolve_expr(expr: @ast::expr, cx: ctxt, visitor: visit::vt<ctxt>) {
                                                            cx.sess.intr()));
         new_cx.parent = Some(expr.id);
       }
-      ast::expr_fn(_, _, _, cap_clause) |
       ast::expr_fn_block(_, _, cap_clause) => {
         // although the capture items are not expressions per se, they
         // do get "evaluated" in some sense as copies or moves of the
@@ -322,7 +321,7 @@ fn resolve_fn(fk: visit::fn_kind, decl: ast::fn_decl, body: ast::blk,
             ctxt {parent: Some(id),.. cx}
         }
 
-        visit::fk_anon(*) | visit::fk_fn_block(*) => {
+        visit::fk_fn_block(*) => {
             // Closures continue with the inherited scope.
             cx
         }

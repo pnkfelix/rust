@@ -24,14 +24,12 @@ use middle::ty::{ty_err, ty_estr, ty_evec, ty_float, ty_fn, ty_trait, ty_int};
 use middle::ty::{ty_nil, ty_opaque_box, ty_opaque_closure_ptr, ty_param};
 use middle::ty::{ty_ptr, ty_rec, ty_rptr, ty_self, ty_tup};
 use middle::ty::{ty_type, ty_uniq, ty_uint, ty_infer};
-use middle::ty::{ty_unboxed_vec, vid};
+use middle::ty::{ty_unboxed_vec};
 use metadata::encoder;
 use syntax::codemap;
 use syntax::codemap::span;
 use syntax::print::pprust;
-use syntax::print::pprust::{path_to_str, proto_to_str,
-                            mode_to_str, purity_to_str,
-                            onceness_to_str};
+use syntax::print::pprust::{path_to_str, proto_to_str, mode_to_str};
 use syntax::{ast, ast_util};
 use syntax::ast_map;
 
@@ -258,13 +256,19 @@ fn expr_repr(cx: ctxt, expr: @ast::expr) -> ~str {
          pprust::expr_to_str(expr, cx.sess.intr()))
 }
 
-fn tys_to_str(cx: ctxt, ts: ~[t]) -> ~str {
+fn tys_to_str(cx: ctxt, ts: &[t]) -> ~str {
     let tstrs = ts.map(|t| ty_to_str(cx, *t));
     fmt!("[%s]", str::connect(tstrs, ", "))
 }
 
 fn bound_to_str(cx: ctxt, b: param_bound) -> ~str {
     ty::param_bound_to_str(cx, &b)
+}
+
+fn fn_sig_to_str(cx: ctxt, typ: &ty::FnSig) -> ~str {
+    fmt!("fn(%s) -> %s",
+         tys_to_str(cx, typ.inputs.map(|a| a.ty)),
+         ty_to_str(cx, typ.output))
 }
 
 fn ty_to_str(cx: ctxt, typ: t) -> ~str {
@@ -297,12 +301,12 @@ fn ty_to_str(cx: ctxt, typ: t) -> ~str {
 
         s = match purity {
             ast::impure_fn => ~"",
-            _ => purity_to_str(purity) + ~" "
+            _ => purity.to_str() + ~" "
         };
 
         s += match onceness {
             ast::Many => ~"",
-            ast::Once => onceness_to_str(onceness) + ~" "
+            ast::Once => onceness.to_str() + ~" "
         };
 
         s += proto_ty_to_str(cx, proto);

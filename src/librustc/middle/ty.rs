@@ -34,7 +34,7 @@ export ProvidedMethodSource;
 export ProvidedMethodInfo;
 export ProvidedMethodsMap;
 export InstantiatedTraitRef;
-export TyVid, IntVid, FloatVid, FnVid, RegionVid, vid;
+export Vid, TyVid, IntVid, FloatVid, FnVid, RegionVid;
 export br_hashmap;
 export is_instantiable;
 export node_id_to_type;
@@ -97,7 +97,9 @@ export ty_opaque_closure_ptr, mk_opaque_closure_ptr;
 export ty_opaque_box, mk_opaque_box;
 export ty_float, mk_float, mk_mach_float, type_is_fp;
 export ty_fn, FnTy, FnTyBase, FnMeta, FnSig, mk_fn;
-export ty_fn_proto, ty_fn_purity, ty_fn_ret, ty_fn_ret_style, tys_in_fn_ty;
+export FnTyInfer;
+export ty_fn_proto, ty_fn_purity, ty_fn_ret, ty_fn_ret_style, tys_in_fn_sig;
+export replace_fn_return_type;
 export ty_int, mk_int, mk_mach_int, mk_char;
 export mk_i8, mk_u8, mk_i16, mk_u16, mk_i32, mk_u32, mk_i64, mk_u64;
 export mk_f32, mk_f64;
@@ -118,8 +120,9 @@ export ty_tup, mk_tup;
 export ty_type, mk_type;
 export ty_uint, mk_uint, mk_mach_uint;
 export ty_uniq, mk_uniq, mk_imm_uniq, type_is_unique_box;
-export ty_infer, mk_infer, type_is_ty_var, mk_var, mk_int_var, mk_float_var;
-export InferTy, TyVar, IntVar, FloatVar;
+export ty_infer, mk_infer, type_is_ty_var, mk_var, mk_int_var;
+export mk_float_var, mk_fn_var;
+export InferTy, TyVar, IntVar, FloatVar, FnVar;
 export ValueMode, ReadValue, CopyValue, MoveValue;
 export ty_self, mk_self, type_has_self;
 export ty_struct;
@@ -201,7 +204,6 @@ export terr_regions_overly_polymorphic;
 export terr_proto_mismatch;
 export terr_ret_style_mismatch;
 export terr_fn, terr_trait;
-export purity_to_str;
 export onceness_to_str;
 export param_tys_in_type;
 export eval_repeat_count;
@@ -719,10 +721,14 @@ enum FnVid = uint;
 #[auto_deserialize]
 enum RegionVid = uint;
 
+type FnTyInfer = FnTyBase<FnVid>;
+
+#[deriving_eq]
 enum InferTy {
     TyVar(TyVid),
     IntVar(IntVid),
-    FloatVar(FloatVid)
+    FloatVar(FloatVid),
+    FnVar(FnTyInfer)
 }
 
 impl InferTy : to_bytes::IterBytes {
@@ -730,7 +736,9 @@ impl InferTy : to_bytes::IterBytes {
         match *self {
           TyVar(ref tv) => to_bytes::iter_bytes_2(&0u8, tv, lsb0, f),
           IntVar(ref iv) => to_bytes::iter_bytes_2(&1u8, iv, lsb0, f),
-          FloatVar(ref fv) => to_bytes::iter_bytes_2(&2u8, fv, lsb0, f)
+          FloatVar(ref fv) => to_bytes::iter_bytes_2(&2u8, fv, lsb0, f),
+          FnVar(ref fv) => to_bytes::iter_bytes_3(&2u8, &fv.meta,
+                                                  &fv.sig, lsb0, f)
         }
     }
 }
@@ -781,61 +789,58 @@ impl param_bound : to_bytes::IterBytes {
     }
 }
 
-trait vid {
+trait Vid {
     pure fn to_uint() -> uint;
-    pure fn to_str() -> ~str;
 }
 
-impl TyVid: vid {
+impl TyVid: Vid {
     pure fn to_uint() -> uint { *self }
+}
+
+impl TyVid: ToStr {
     pure fn to_str() -> ~str { fmt!("<V%u>", self.to_uint()) }
 }
 
-impl IntVid: vid {
+impl IntVid: Vid {
     pure fn to_uint() -> uint { *self }
+}
+
+impl IntVid: ToStr {
     pure fn to_str() -> ~str { fmt!("<VI%u>", self.to_uint()) }
 }
 
-impl FloatVid: vid {
+impl FloatVid: Vid {
     pure fn to_uint() -> uint { *self }
+}
+
+impl FloatVid: ToStr {
     pure fn to_str() -> ~str { fmt!("<VF%u>", self.to_uint()) }
 }
 
-impl FnVid: vid {
+impl FnVid: Vid {
     pure fn to_uint() -> uint { *self }
+}
+
+impl FnVid: ToStr {
     pure fn to_str() -> ~str { fmt!("<F%u>", self.to_uint()) }
 }
 
-impl RegionVid: vid {
+impl RegionVid: Vid {
     pure fn to_uint() -> uint { *self }
+}
+
+impl RegionVid: ToStr {
     pure fn to_str() -> ~str { fmt!("%?", self) }
 }
 
-impl InferTy {
-    pure fn to_hash() -> uint {
-        match self {
-            TyVar(v) => v.to_uint() << 1,
-            IntVar(v) => (v.to_uint() << 1) + 1,
-            FloatVar(v) => (v.to_uint() << 1) + 2
-        }
-    }
-
+impl InferTy: ToStr {
     pure fn to_str() -> ~str {
         match self {
             TyVar(v) => v.to_str(),
             IntVar(v) => v.to_str(),
-            FloatVar(v) => v.to_str()
+            FloatVar(v) => v.to_str(),
+            FnVar(v) => fmt!("%s(...)", v.meta.to_str())
         }
-    }
-}
-
-trait purity_to_str {
-    pure fn to_str() -> ~str;
-}
-
-impl purity: purity_to_str {
-    pure fn to_str() -> ~str {
-        purity_to_str(self)
     }
 }
 
@@ -1169,6 +1174,10 @@ fn mk_int_var(cx: ctxt, v: IntVid) -> t { mk_infer(cx, IntVar(v)) }
 
 fn mk_float_var(cx: ctxt, v: FloatVid) -> t { mk_infer(cx, FloatVar(v)) }
 
+fn mk_fn_var(cx: ctxt, +v: FnTyInfer) -> t {
+    mk_infer(cx, FnVar(v))
+}
+
 fn mk_infer(cx: ctxt, it: InferTy) -> t { mk_t(cx, ty_infer(it)) }
 
 fn mk_self(cx: ctxt) -> t { mk_t(cx, ty_self) }
@@ -1341,15 +1350,8 @@ fn fold_sty(sty: &sty, fldop: fn(t) -> t) -> sty {
             ty_tup(new_ts)
         }
         ty_fn(ref f) => {
-            let new_args = f.sig.inputs.map(|a| {
-                let new_ty = fldop(a.ty);
-                {mode: a.mode, ty: new_ty}
-            });
-            let new_output = fldop(f.sig.output);
-            ty_fn(FnTyBase {
-                meta: f.meta,
-                sig: FnSig {inputs: new_args, output: new_output}
-            })
+            let sig = fold_sig(&f.sig, fldop);
+            ty_fn(FnTyBase {meta: f.meta, sig: sig})
         }
         ty_rptr(r, tm) => {
             ty_rptr(r, {ty: fldop(tm.ty), mutbl: tm.mutbl})
@@ -2949,9 +2951,36 @@ fn ty_region(ty: t) -> Region {
     }
 }
 
+fn replace_fn_return_type(tcx: ctxt, fn_type: t, ret_type: t) -> t {
+    /*!
+     *
+     * Returns a new function type based on `fn_type` but returning a value of
+     * type `ret_type` instead. */
+
+    match ty::get(fn_type).sty {
+        ty::ty_fn(ref fty) => {
+            ty::mk_fn(tcx, FnTyBase {
+                meta: fty.meta,
+                sig: FnSig {output: ret_type, ..fty.sig}
+            })
+        }
+        ty::ty_infer(FnVar(ref fty)) => {
+            ty::mk_fn_var(tcx, FnTyBase {
+                meta: fty.meta,
+                sig: FnSig {output: ret_type, ..fty.sig}
+            })
+        }
+        _ => {
+            tcx.sess.bug(fmt!(
+                "replace_fn_ret() invoked with non-fn-type: %s",
+                ty_to_str(tcx, fn_type)));
+        }
+    }
+}
+
 // Returns a vec of all the input and output types of fty.
-fn tys_in_fn_ty(fty: &FnTy) -> ~[t] {
-    vec::append_one(fty.sig.inputs.map(|a| a.ty), fty.sig.output)
+fn tys_in_fn_sig(sig: &FnSig) -> ~[t] {
+    vec::append_one(sig.inputs.map(|a| a.ty), sig.output)
 }
 
 // Just checks whether it's a fn that returns bool,
@@ -3101,7 +3130,6 @@ fn expr_kind(tcx: ctxt,
         ast::expr_tup(*) |
         ast::expr_if(*) |
         ast::expr_match(*) |
-        ast::expr_fn(*) |
         ast::expr_fn_block(*) |
         ast::expr_loop_body(*) |
         ast::expr_do_body(*) |
@@ -3367,6 +3395,7 @@ fn ty_sort_str(cx: ctxt, t: t) -> ~str {
       ty_infer(TyVar(_)) => ~"inferred type",
       ty_infer(IntVar(_)) => ~"integral variable",
       ty_infer(FloatVar(_)) => ~"floating-point variable",
+      ty_infer(FnVar(_)) => ~"function variable",
       ty_param(_) => ~"type parameter",
       ty_self => ~"self",
       ty_err => ~"type error"
@@ -3407,13 +3436,11 @@ fn type_err_to_str(cx: ctxt, err: &type_err) -> ~str {
         }
         terr_purity_mismatch(values) => {
             fmt!("expected %s fn but found %s fn",
-                 purity_to_str(values.expected),
-                 purity_to_str(values.found))
+                 values.expected.to_str(), values.found.to_str())
         }
         terr_onceness_mismatch(values) => {
             fmt!("expected %s fn but found %s fn",
-                 onceness_to_str(values.expected),
-                 onceness_to_str(values.found))
+                 values.expected.to_str(), values.found.to_str())
         }
         terr_proto_mismatch(values) => {
             fmt!("expected %s closure, found %s closure",
@@ -4487,13 +4514,6 @@ impl substs : cmp::Eq {
         (*self).tps == (*other).tps
     }
     pure fn ne(&self, other: &substs) -> bool { !(*self).eq(other) }
-}
-
-impl InferTy : cmp::Eq {
-    pure fn eq(&self, other: &InferTy) -> bool {
-        (*self).to_hash() == (*other).to_hash()
-    }
-    pure fn ne(&self, other: &InferTy) -> bool { !(*self).eq(other) }
 }
 
 impl sty : cmp::Eq {

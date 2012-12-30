@@ -69,7 +69,7 @@ use std::smallintmap;
 use std::map;
 use std::map::HashMap;
 use syntax::print::pprust::*;
-use util::ppaux::{ty_to_str, tys_to_str, region_to_str,
+use util::ppaux::{ty_to_str, tys_to_str, region_to_str, fn_sig_to_str,
                   bound_region_to_str, vstore_to_str, expr_repr};
 use util::common::{indent, indenter};
 use std::list;
@@ -252,7 +252,7 @@ fn no_params(t: ty::t) -> ty::ty_param_bounds_and_ty {
 
 fn require_same_types(
     tcx: ty::ctxt,
-    maybe_infcx: Option<infer::infer_ctxt>,
+    maybe_infcx: Option<@infer::InferCtxt>,
     t1_is_expected: bool,
     span: span,
     t1: ty::t,

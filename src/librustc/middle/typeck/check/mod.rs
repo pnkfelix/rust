@@ -76,10 +76,12 @@ type parameter).
 
 */
 
-use astconv::{ast_conv, ast_path_to_ty, ast_ty_to_ty};
+use astconv::{ast_conv, ast_path_to_ty, ast_ty_to_ty, ExpectedFnTys};
 use astconv::{ast_region_to_region};
-use middle::ty::{TyVid, vid, FnTyBase, FnMeta, FnSig, VariantInfo_};
-use regionmanip::{replace_bound_regions_in_fn_ty};
+use middle::ty::{TyVid, Vid, FnTyBase, FnMeta, FnSig, VariantInfo_,
+                 re_bound, br_cap_avoid};
+use regionmanip::{replace_bound_regions_in_fn_ty,
+                  replace_bound_regions_in_fn_sig};
 use rscope::{anon_rscope, binding_rscope, empty_rscope, in_anon_rscope};
 use rscope::{in_binding_rscope, region_scope, type_rscope,
                 bound_self_region};
@@ -126,7 +128,7 @@ type self_info = {
 /// `bar()` will each have their own `fn_ctxt`, but they will
 /// share the inherited fields.
 struct inherited {
-    infcx: infer::infer_ctxt,
+    infcx: @infer::InferCtxt,
     locals: HashMap<ast::node_id, TyVid>,
     node_types: HashMap<ast::node_id, ty::t>,
     node_type_substs: HashMap<ast::node_id, ty::substs>,
@@ -143,7 +145,6 @@ struct fn_ctxt {
     ret_ty: ty::t,
     // Used by loop bodies that return from the outer function
     indirect_ret_ty: Option<ty::t>,
-    purity: ast::purity,
 
     // Sometimes we generate region pointers where the precise region
     // to use is not known. For example, an expression like `&x.f`
@@ -191,7 +192,6 @@ fn blank_fn_ctxt(ccx: @crate_ctxt, rty: ty::t,
         self_impl_def_id: None,
         ret_ty: rty,
         indirect_ret_ty: None,
-        purity: ast::pure_fn,
         mut region_lb: region_bnd,
         in_scope_regions: @Nil,
         fn_kind: Vanilla,
@@ -216,7 +216,7 @@ fn check_bare_fn(ccx: @crate_ctxt,
     let fty = ty::node_id_to_type(ccx.tcx, id);
     match ty::get(fty).sty {
         ty::ty_fn(ref fn_ty) => {
-            check_fn(ccx, self_info, fn_ty, decl, body, Vanilla, None)
+            check_fn(ccx, self_info, &fn_ty.sig, decl, body, Vanilla, None)
         }
         _ => ccx.tcx.sess.impossible_case(body.span,
                                  "check_bare_fn: function type expected")
@@ -225,7 +225,7 @@ fn check_bare_fn(ccx: @crate_ctxt,
 
 fn check_fn(ccx: @crate_ctxt,
             self_info: Option<self_info>,
-            fn_ty: &ty::FnTy,
+            fn_sig: &ty::FnSig,
             decl: ast::fn_decl,
             body: ast::blk,
             fn_kind: FnKind,
@@ -241,15 +241,15 @@ fn check_fn(ccx: @crate_ctxt,
     // types with free ones.  The free region references will be bound
     // the node_id of the body block.
 
-    let {isr: isr, self_info: self_info, fn_ty: fn_ty} = {
+    let {isr, self_info, fn_sig} = {
         let old_isr = option::map_default(&old_fcx, @Nil,
-                                         |fcx| fcx.in_scope_regions);
-        replace_bound_regions_in_fn_ty(tcx, old_isr, self_info, fn_ty,
-                                       |br| ty::re_free(body.node.id, br))
+                                          |fcx| fcx.in_scope_regions);
+        replace_bound_regions_in_fn_sig(tcx, old_isr, self_info, fn_sig,
+                                        |br| ty::re_free(body.node.id, br))
     };
 
-    let arg_tys = fn_ty.sig.inputs.map(|a| a.ty);
-    let ret_ty = fn_ty.sig.output;
+    let arg_tys = fn_sig.inputs.map(|a| a.ty);
+    let ret_ty = fn_sig.output;
 
     debug!("check_fn(arg_tys=%?, ret_ty=%?, self_info.self_ty=%?)",
            arg_tys.map(|a| ty_to_str(tcx, *a)),
@@ -260,16 +260,9 @@ fn check_fn(ccx: @crate_ctxt,
     // Create the function context.  This is either derived from scratch or,
     // in the case of function expressions, based on the outer context.
     let fcx: @fn_ctxt = {
-        let (purity, inherited) = match old_fcx {
-            None => {
-                (fn_ty.meta.purity,
-                 blank_inherited(ccx))
-            }
-            Some(fcx) => {
-                (ty::determine_inherited_purity(fcx.purity, fn_ty.meta.purity,
-                                                fn_ty.meta.proto),
-                 fcx.inh)
-            }
+        let inherited = match old_fcx {
+            None => blank_inherited(ccx),
+            Some(fcx) => fcx.inh
         };
 
         let indirect_ret_ty = if indirect_ret {
@@ -284,7 +277,6 @@ fn check_fn(ccx: @crate_ctxt,
             self_impl_def_id: self_info.map(|self_info| self_info.def_id),
             ret_ty: ret_ty,
             indirect_ret_ty: indirect_ret_ty,
-            purity: purity,
             mut region_lb: body.node.id,
             in_scope_regions: isr,
             fn_kind: fn_kind,
@@ -405,7 +397,7 @@ fn check_fn(ccx: @crate_ctxt,
         };
 
         // Add pattern bindings.
-        let visit_pat = fn@(p: @ast::pat, &&e: (), v: visit::vt<()>) {
+        let visit_pat = |p: @ast::pat, &&e: (), v: visit::vt<()>| {
             match p.node {
               ast::pat_ident(_, path, _)
                   if pat_util::pat_is_binding(fcx.ccx.tcx.def_map, p) => {
@@ -585,7 +577,7 @@ impl @fn_ctxt: ast_conv {
 }
 
 impl @fn_ctxt {
-    fn infcx() -> infer::infer_ctxt { self.inh.infcx }
+    fn infcx() -> @infer::InferCtxt { self.inh.infcx }
     fn search_in_scope_regions(br: ty::bound_region)
         -> Result<ty::Region, ~str>
     {
@@ -754,16 +746,6 @@ impl @fn_ctxt {
         infer::mk_subr(self.infcx(), a_is_expected, span, sub, sup)
     }
 
-    fn require_unsafe(sp: span, op: ~str) {
-        match self.purity {
-          ast::unsafe_fn => {/*ok*/}
-          _ => {
-            self.ccx.tcx.sess.span_err(
-                sp,
-                fmt!("%s requires unsafe function or block", op));
-          }
-        }
-    }
     fn with_region_lb<R>(lb: ast::node_id, f: fn() -> R) -> R {
         let old_region_lb = self.region_lb;
         self.region_lb = lb;
@@ -1439,7 +1421,6 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
 
     fn check_expr_fn(fcx: @fn_ctxt,
                      expr: @ast::expr,
-                     ast_proto_opt: Option<ast::Proto>,
                      decl: ast::fn_decl,
                      body: ast::blk,
                      fn_kind: FnKind,
@@ -1455,52 +1436,36 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
         // block syntax lambdas; that is, lambdas without explicit
         // protos.
         let expected_sty = unpack_expected(fcx, expected, |x| Some(x));
-        let (expected_tys,
-             expected_purity,
-             expected_proto,
-             expected_onceness) = {
+        let expected_tys = {
             match expected_sty {
                 Some(ty::ty_fn(ref fn_ty)) => {
-                    let id = expr.id;
-                    let {fn_ty: fn_ty, _} =
+                    let {fn_ty, _} =
                         replace_bound_regions_in_fn_ty(
                             tcx, @Nil, None, fn_ty,
-                            |br| ty::re_bound(ty::br_cap_avoid(id, @br)));
-                    (Some({inputs: fn_ty.sig.inputs,
-                           output: fn_ty.sig.output}),
-                     fn_ty.meta.purity,
-                     fn_ty.meta.proto,
-                     fn_ty.meta.onceness)
+                            |br| re_bound(br_cap_avoid(expr.id, @br)));
+                    Some(ExpectedFnTys {
+                        inputs: fn_ty.sig.inputs,
+                        output: fn_ty.sig.output
+                    })
                 }
                 _ => {
-                    (None, ast::impure_fn, ast::ProtoBox, ast::Many)
+                    None
                 }
             }
         };
 
-        // If the proto is specified, use that, otherwise select a
-        // proto based on inference.
-        let (proto, purity) = match ast_proto_opt {
-            Some(p) => (p, ast::impure_fn),
-            None => (expected_proto, expected_purity)
-        };
-
-        // construct the function type
-        let mut fn_ty = astconv::ty_of_fn_decl(
-            fcx, fcx,
-            proto, purity, expected_onceness,
-            /*bounds:*/ @~[], /*opt_region:*/ None,
-            decl, expected_tys, expr.span);
-
-        let fty = ty::mk_fn(tcx, fn_ty);
+        let fn_vid = fcx.infcx().next_fn_var_id();
+        let sig = astconv::ty_of_fn_sig(fcx, fcx, expected_tys, decl);
+        let fn_ty = ty::mk_fn_var(tcx, FnTyBase {meta: fn_vid,
+                                                 sig: sig});
 
         debug!("check_expr_fn_with_unifier %s fty=%s",
                expr_to_str(expr, tcx.sess.intr()),
-               fcx.infcx().ty_to_str(fty));
+               fcx.infcx().ty_to_str(fn_ty));
 
-        fcx.write_ty(expr.id, fty);
+        fcx.write_ty(expr.id, fn_ty);
 
-        check_fn(fcx.ccx, None, &fn_ty, decl, body,
+        check_fn(fcx.ccx, None, &sig, decl, body,
                  fn_kind, Some(fcx));
     }
 
@@ -1897,23 +1862,8 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
           ast::deref => {
             let sty = structure_of(fcx, expr.span, oprnd_t);
 
-            match sty {
-              // deref'ing an unsafe pointer requires that we be in an unsafe
-              // context
-              ty::ty_ptr(*) => {
-                fcx.require_unsafe(
-                    expr.span,
-                    ~"dereference of unsafe pointer");
-              }
-              _ => { /*ok*/ }
-            }
-
-            let operand_ty = ty::deref_sty(tcx, &sty, true);
-
-            match operand_ty {
-              Some(mt) => {
-                  oprnd_t = mt.ty
-              }
+            match ty::deref_sty(tcx, &sty, true) {
+              Some(mt) => { oprnd_t = mt.ty }
               None => {
                 match sty {
                   ty::ty_enum(*) => {
@@ -2067,14 +2017,8 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
       ast::expr_match(discrim, ref arms) => {
         bot = alt::check_alt(fcx, expr, discrim, (*arms));
       }
-      ast::expr_fn(proto, decl, ref body, cap_clause) => {
-        check_expr_fn(fcx, expr, Some(proto),
-                      decl, (*body), Vanilla, expected);
-        capture::check_capture_clause(tcx, expr.id, cap_clause);
-      }
       ast::expr_fn_block(decl, ref body, cap_clause) => {
-        check_expr_fn(fcx, expr, None,
-                      decl, (*body), Vanilla, expected);
+        check_expr_fn(fcx, expr, decl, *body, Vanilla, expected);
         capture::check_capture_clause(tcx, expr.id, cap_clause);
       }
       ast::expr_loop_body(b) => {
@@ -2129,8 +2073,7 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
         };
         match b.node {
           ast::expr_fn_block(decl, ref body, cap_clause) => {
-            check_expr_fn(fcx, b, None,
-                          decl, (*body), ForLoop, Some(inner_ty));
+            check_expr_fn(fcx, b, decl, *body, ForLoop, Some(inner_ty));
             demand::suptype(fcx, b.span, inner_ty, fcx.expr_ty(b));
             capture::check_capture_clause(tcx, b.id, cap_clause);
           }
@@ -2139,20 +2082,12 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
         }
         let block_ty = structurally_resolved_type(
             fcx, expr.span, fcx.node_ty(b.id));
-        match ty::get(block_ty).sty {
-          ty::ty_fn(ref fty) => {
-              if !err_happened {
-                  fcx.write_ty(expr.id, ty::mk_fn(tcx, FnTyBase {
-                      meta: (*fty).meta,
-                      sig: FnSig {output: ty::mk_bool(tcx),
-                                  ..(*fty).sig}
-                  }));
-              }
-              else {
-                  fcx.write_ty(expr.id, ty::mk_err(fcx.tcx()));
-              }
-          }
-          _ => fail ~"expected fn type"
+        if err_happened {
+            fcx.write_ty(expr.id, ty::mk_err(fcx.tcx()));
+        } else {
+            let loop_body_ty = ty::replace_fn_return_type(tcx, block_ty,
+                                                          ty::mk_bool(tcx));
+            fcx.write_ty(expr.id, loop_body_ty);
         }
       }
       ast::expr_do_body(b) => {
@@ -2178,22 +2113,14 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
         };
         match b.node {
           ast::expr_fn_block(decl, ref body, cap_clause) => {
-            check_expr_fn(fcx, b, None,
-                          decl, (*body), DoBlock, Some(inner_ty));
+            check_expr_fn(fcx, b, decl, *body, DoBlock, Some(inner_ty));
             demand::suptype(fcx, b.span, inner_ty, fcx.expr_ty(b));
             capture::check_capture_clause(tcx, b.id, cap_clause);
           }
           // argh
           _ => fail ~"expected fn ty"
         }
-        let block_ty = structurally_resolved_type(
-            fcx, expr.span, fcx.node_ty(b.id));
-        match ty::get(block_ty).sty {
-          ty::ty_fn(ref fty) => {
-            fcx.write_ty(expr.id, ty::mk_fn(tcx, (*fty)));
-          }
-          _ => fail ~"expected fn ty"
-        }
+        fcx.write_ty(expr.id, fcx.node_ty(b.id));
       }
       ast::expr_block(ref b) => {
         // If this is an unchecked block, turn off purity-checking
@@ -2490,11 +2417,7 @@ fn check_block_no_value(fcx: @fn_ctxt, blk: ast::blk) -> bool {
     return bot;
 }
 
-fn check_block(fcx0: @fn_ctxt, blk: ast::blk) -> bool {
-    let fcx = match blk.node.rules {
-      ast::unsafe_blk => @fn_ctxt {purity: ast::unsafe_fn,.. copy *fcx0},
-      ast::default_blk => fcx0
-    };
+fn check_block(fcx: @fn_ctxt, blk: ast::blk) -> bool {
     do fcx.with_region_lb(blk.node.id) {
         let mut bot = false;
         let mut warned = false;
@@ -2721,7 +2644,6 @@ fn ty_param_bounds_and_ty_for_def(fcx: @fn_ctxt, sp: span, defn: ast::def) ->
       ast::def_fn(id, ast::unsafe_fn) |
       ast::def_static_method(id, _, ast::unsafe_fn) => {
         // Unsafe functions can only be touched in an unsafe context
-        fcx.require_unsafe(sp, ~"access to unsafe function");
         return ty::lookup_item_type(fcx.ccx.tcx, id);
       }
 

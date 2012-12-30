@@ -253,9 +253,7 @@ fn should_find_pandoc() {
         output_format: PandocHtml,
         .. default_config(&Path("test"))
     };
-    let mock_program_output = fn~(_prog: &str, _args: &[~str]) -> {
-        status: int, out: ~str, err: ~str
-    } {
+    let mock_program_output = |_prog, _args| {
         {
             status: 0, out: ~"pandoc 1.8.2.1", err: ~""
         }
@@ -270,9 +268,7 @@ fn should_error_with_no_pandoc() {
         output_format: PandocHtml,
         .. default_config(&Path("test"))
     };
-    let mock_program_output = fn~(_prog: &str, _args: &[~str]) -> {
-        status: int, out: ~str, err: ~str
-    } {
+    let mock_program_output = |_prog, _args| {
         {
             status: 1, out: ~"", err: ~""
         }

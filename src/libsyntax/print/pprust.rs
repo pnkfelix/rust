@@ -1312,17 +1312,6 @@ fn print_expr(s: ps, &&expr: @ast::expr) {
         }
         bclose_(s, expr.span, alt_indent_unit);
       }
-      ast::expr_fn(proto, decl, ref body, cap_clause) => {
-        // containing cbox, will be closed by print-block at }
-        cbox(s, indent_unit);
-        // head-box, will be closed by print-block at start
-        ibox(s, 0u);
-        print_fn_header_info(s, None, None, ast::Many,
-                             Some(proto), ast::inherited);
-        print_fn_args_and_ret(s, decl, *cap_clause, None);
-        space(s.s);
-        print_block(s, (*body));
-      }
       ast::expr_fn_block(decl, ref body, cap_clause) => {
         // in do/for blocks we don't want to show an empty
         // argument list, but at this point we don't know which
@@ -2162,9 +2151,9 @@ fn print_self_ty_if_static(s: ps,
 
 fn print_opt_purity(s: ps, opt_purity: Option<ast::purity>) {
     match opt_purity {
-        Some(ast::impure_fn) => { }
+        Some(ast::impure_fn) => {}
         Some(purity) => {
-            word_nbsp(s, purity_to_str(purity));
+            word_nbsp(s, purity.to_str());
         }
         None => {}
     }
@@ -2202,26 +2191,10 @@ fn opt_proto_to_str(opt_p: Option<ast::Proto>) -> ~str {
     }
 }
 
-pure fn purity_to_str(p: ast::purity) -> ~str {
-    match p {
-      ast::impure_fn => ~"impure",
-      ast::unsafe_fn => ~"unsafe",
-      ast::pure_fn => ~"pure",
-      ast::extern_fn => ~"extern"
-    }
-}
-
-pure fn onceness_to_str(o: ast::Onceness) -> ~str {
-    match o {
-        ast::Once => ~"once",
-        ast::Many => ~"many"
-    }
-}
-
 fn print_purity(s: ps, p: ast::purity) {
     match p {
       ast::impure_fn => (),
-      _ => word_nbsp(s, purity_to_str(p))
+      _ => word_nbsp(s, p.to_str())
     }
 }
 

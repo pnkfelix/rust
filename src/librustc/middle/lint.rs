@@ -426,7 +426,7 @@ fn item_stopping_visitor<E>(v: visit::vt<E>) -> visit::vt<E> {
 
 fn check_item_while_true(cx: ty::ctxt, it: @ast::item) {
     let visit = item_stopping_visitor(visit::mk_simple_visitor(@{
-        visit_expr: fn@(e: @ast::expr) {
+        visit_expr: |e: @ast::expr| {
            match e.node {
              ast::expr_while(cond, _) => {
                 match cond.node {
@@ -565,7 +565,7 @@ fn check_item_type_limits(cx: ty::ctxt, it: @ast::item) {
 
 fn check_item_structural_records(cx: ty::ctxt, it: @ast::item) {
     let visit = item_stopping_visitor(visit::mk_simple_visitor(@{
-        visit_expr: fn@(e: @ast::expr) {
+        visit_expr: |e: @ast::expr| {
            match e.node {
              ast::expr_rec(*) =>
                  cx.sess.span_lint(
@@ -683,7 +683,7 @@ fn check_item_heap(cx: ty::ctxt, it: @ast::item) {
     }
 
     let visit = item_stopping_visitor(visit::mk_simple_visitor(@{
-        visit_expr: fn@(e: @ast::expr) {
+        visit_expr: |e: @ast::expr| {
             let ty = ty::expr_ty(cx, e);
             check_type(cx, e.id, it.id, e.span, ty);
         },
@@ -694,7 +694,7 @@ fn check_item_heap(cx: ty::ctxt, it: @ast::item) {
 
 fn check_item_path_statement(cx: ty::ctxt, it: @ast::item) {
     let visit = item_stopping_visitor(visit::mk_simple_visitor(@{
-        visit_stmt: fn@(s: @ast::stmt) {
+        visit_stmt: |s: @ast::stmt| {
             match s.node {
               ast::stmt_semi(@{id: id,
                                callee_id: _,

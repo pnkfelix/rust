@@ -68,5 +68,5 @@ impl r : Drop {
 
 fn main() {
     let x = r { x: () };
-    fn@(move x) { copy x; }; //~ ERROR copying a noncopyable value
+    let _x: fn@() = |move x| { copy x; }; //~ ERROR copying a noncopyable value
 }

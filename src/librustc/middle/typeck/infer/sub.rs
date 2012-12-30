@@ -10,15 +10,16 @@
 
 use combine::*;
 use unify::*;
-use to_str::ToStr;
+use lattice::*;
+use to_str::InferStr;
 use std::list;
 
 fn macros() { include!("macros.rs"); } // FIXME(#3114): Macro import/export.
 
-enum Sub = combine_fields;  // "subtype", "subregion" etc
+enum Sub = CombineFields;  // "subtype", "subregion" etc
 
-impl Sub: combine {
-    fn infcx() -> infer_ctxt { self.infcx }
+impl Sub: Combine {
+    fn infcx() -> @InferCtxt { self.infcx }
     fn tag() -> ~str { ~"sub" }
     fn a_is_expected() -> bool { self.a_is_expected }
     fn span() -> span { self.span }
@@ -28,14 +29,14 @@ impl Sub: combine {
     fn glb() -> Glb { Glb(*self) }
 
     fn contratys(a: ty::t, b: ty::t) -> cres<ty::t> {
-        let opp = combine_fields {
+        let opp = CombineFields {
             a_is_expected: !self.a_is_expected,.. *self
         };
         Sub(opp).tys(b, a)
     }
 
     fn contraregions(a: ty::Region, b: ty::Region) -> cres<ty::Region> {
-        let opp = combine_fields {
+        let opp = CombineFields {
             a_is_expected: !self.a_is_expected,.. *self
         };
         Sub(opp).regions(b, a)
@@ -44,8 +45,8 @@ impl Sub: combine {
     fn regions(a: ty::Region, b: ty::Region) -> cres<ty::Region> {
         debug!("%s.regions(%s, %s)",
                self.tag(),
-               a.to_str(self.infcx),
-               b.to_str(self.infcx));
+               a.inf_str(self.infcx),
+               b.inf_str(self.infcx));
         do indent {
             match self.infcx.region_vars.make_subregion(self.span, a, b) {
               Ok(()) => Ok(a),
@@ -55,7 +56,7 @@ impl Sub: combine {
     }
 
     fn mts(a: ty::mt, b: ty::mt) -> cres<ty::mt> {
-        debug!("mts(%s <: %s)", a.to_str(self.infcx), b.to_str(self.infcx));
+        debug!("mts(%s <: %s)", a.inf_str(self.infcx), b.inf_str(self.infcx));
 
         if a.mutbl != b.mutbl && b.mutbl != m_const {
             return Err(ty::terr_mutability);
@@ -102,34 +103,73 @@ impl Sub: combine {
 
     fn tys(a: ty::t, b: ty::t) -> cres<ty::t> {
         debug!("%s.tys(%s, %s)", self.tag(),
-               a.to_str(self.infcx), b.to_str(self.infcx));
+               a.inf_str(self.infcx), b.inf_str(self.infcx));
         if a == b { return Ok(a); }
         do indent {
             match (ty::get(a).sty, ty::get(b).sty) {
-              (ty::ty_bot, _) => {
-                Ok(a)
-              }
-              (ty::ty_infer(TyVar(a_id)), ty::ty_infer(TyVar(b_id))) => {
-                var_sub_var(&self, a_id, b_id).then(|| Ok(a) )
-              }
-              (ty::ty_infer(TyVar(a_id)), _) => {
-                var_sub_t(&self, a_id, b).then(|| Ok(a) )
-              }
-              (_, ty::ty_infer(TyVar(b_id))) => {
-                t_sub_var(&self, a, b_id).then(|| Ok(a) )
-              }
-              (_, ty::ty_bot) => {
-                Err(ty::terr_sorts(expected_found(&self, a, b)))
-              }
-              _ => {
-                super_tys(&self, a, b)
-              }
+                (ty::ty_bot, _) => {
+                    Ok(a)
+                }
+
+                (ty::ty_infer(TyVar(a_id)), ty::ty_infer(TyVar(b_id))) => {
+                    do self.var_sub_var(&self.infcx.ty_var_bindings,
+                                        a_id, b_id).then {
+                        Ok(a)
+                    }
+                }
+                (ty::ty_infer(TyVar(a_id)), _) => {
+                    do self.var_sub_t(&self.infcx.ty_var_bindings,
+                                      a_id, b).then {
+                        Ok(a)
+                    }
+                }
+                (_, ty::ty_infer(TyVar(b_id))) => {
+                    do self.t_sub_var(&self.infcx.ty_var_bindings,
+                                      a, b_id).then {
+                        Ok(a)
+                    }
+                }
+
+                (_, ty::ty_bot) => {
+                    Err(ty::terr_sorts(expected_found(&self, a, b)))
+                }
+
+                (ty::ty_infer(FnVar(ref a_fn)),
+                 ty::ty_infer(FnVar(ref b_fn))) => {
+                    do self.var_sub_var(&self.infcx.fn_var_bindings,
+                                        a_fn.meta, b_fn.meta).then {
+                        do self.fn_sigs(&a_fn.sig, &b_fn.sig).chain |_s| {
+                            Ok(a)
+                        }
+                    }
+                }
+                (ty::ty_infer(FnVar(ref a_fn)), ty::ty_fn(ref b_fn)) => {
+                    do self.var_sub_t(&self.infcx.fn_var_bindings,
+                                      a_fn.meta, b_fn.meta).then {
+                        do self.fn_sigs(&a_fn.sig, &b_fn.sig).chain |_s| {
+                            Ok(a)
+                        }
+                    }
+                }
+                (ty::ty_fn(ref a_fn), ty::ty_infer(FnVar(ref b_fn))) => {
+                    do self.t_sub_var(&self.infcx.fn_var_bindings,
+                                      a_fn.meta, b_fn.meta).then {
+                        do self.fn_sigs(&a_fn.sig, &b_fn.sig).chain |_s| {
+                            Ok(a)
+                        }
+                    }
+                }
+
+                _ => {
+                    super_tys(&self, a, b)
+                }
             }
         }
     }
 
-    fn fns(a: &ty::FnTy, b: &ty::FnTy) -> cres<ty::FnTy> {
-        debug!("fns(a=%s, b=%s)", a.to_str(self.infcx), b.to_str(self.infcx));
+    fn fn_sigs(a: &ty::FnSig, b: &ty::FnSig) -> cres<ty::FnSig> {
+        debug!("fn_sigs(a=%s, b=%s)",
+               a.inf_str(self.infcx), b.inf_str(self.infcx));
         let _indenter = indenter();
 
         // Rather than checking the subtype relationship between `a` and `b`
@@ -147,14 +187,14 @@ impl Sub: combine {
 
         // First, we instantiate each bound region in the subtype with a fresh
         // region variable.
-        let (a_fn_ty, _) =
+        let (a_sig, _) =
             self.infcx.replace_bound_regions_with_fresh_regions(
                 self.span, a);
 
         // Second, we instantiate each bound region in the supertype with a
         // fresh concrete region.
-        let {fn_ty: b_fn_ty, isr: skol_isr, _} = {
-            do replace_bound_regions_in_fn_ty(self.infcx.tcx, @Nil,
+        let {fn_sig: b_sig, isr: skol_isr, _} = {
+            do replace_bound_regions_in_fn_sig(self.infcx.tcx, @Nil,
                                               None, b) |br| {
                 let skol = self.infcx.region_vars.new_skolemized(br);
                 debug!("Bound region %s skolemized to %?",
@@ -164,8 +204,8 @@ impl Sub: combine {
             }
         };
 
-        debug!("a_fn_ty=%s", a_fn_ty.to_str(self.infcx));
-        debug!("b_fn_ty=%s", b_fn_ty.to_str(self.infcx));
+        debug!("a_fn_ty=%s", a_fn_ty.inf_str(self.infcx));
+        debug!("b_fn_ty=%s", b_fn_ty.inf_str(self.infcx));
 
         // Compare types now that bound regions have been replaced.
         let fn_ty = if_ok!(super_fns(&self, &a_fn_ty, &b_fn_ty));
@@ -211,10 +251,6 @@ impl Sub: combine {
 
     fn fn_metas(a: &ty::FnMeta, b: &ty::FnMeta) -> cres<ty::FnMeta> {
         super_fn_metas(&self, a, b)
-    }
-
-    fn fn_sigs(a: &ty::FnSig, b: &ty::FnSig) -> cres<ty::FnSig> {
-        super_fn_sigs(&self, a, b)
     }
 
     fn vstores(vk: ty::terr_vstore_kind,

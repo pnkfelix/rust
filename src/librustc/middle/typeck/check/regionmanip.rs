@@ -21,8 +21,25 @@ fn replace_bound_regions_in_fn_ty(
     self_info: Option<self_info>,
     fn_ty: &ty::FnTy,
     mapf: fn(ty::bound_region) -> ty::Region) ->
-    {isr: isr_alist, self_info: Option<self_info>, fn_ty: ty::FnTy} {
+    {isr: isr_alist, self_info: Option<self_info>, fn_ty: ty::FnTy}
+{
+    let {isr, self_info, fn_sig} =
+        replace_bound_regions_in_fn_sig(
+            tcx, isr, self_info, &fn_ty.sig, mapf);
+    {isr: isr,
+     self_info: self_info,
+     fn_ty: FnTyBase {meta: fn_ty.meta,
+                      sig: fn_sig}}
+}
 
+fn replace_bound_regions_in_fn_sig(
+    tcx: ty::ctxt,
+    isr: isr_alist,
+    self_info: Option<self_info>,
+    fn_sig: &ty::FnSig,
+    mapf: fn(ty::bound_region) -> ty::Region) ->
+    {isr: isr_alist, self_info: Option<self_info>, fn_sig: ty::FnSig}
+{
     // Take self_info apart; the self_ty part is the only one we want
     // to update here.
     let (self_ty, rebuild_self_info) = match self_info {
@@ -30,7 +47,7 @@ fn replace_bound_regions_in_fn_ty(
       None => (None, |_t| None)
     };
 
-    let mut all_tys = ty::tys_in_fn_ty(fn_ty);
+    let mut all_tys = ty::tys_in_fn_sig(fn_sig);
 
     match self_info {
       Some({explicit_self: {node: ast::sty_region(m), _}, _}) => {
@@ -45,10 +62,10 @@ fn replace_bound_regions_in_fn_ty(
 
     for self_ty.each |t| { all_tys.push(*t) }
 
-    debug!("replace_bound_regions_in_fn_ty(self_info.self_ty=%?, fn_ty=%s, \
-                all_tys=%?)",
+    debug!("replace_bound_regions_in_fn_sig(self_info.self_ty=%?, fn_ty=%s, \
+            all_tys=%?)",
            self_ty.map(|t| ty_to_str(tcx, *t)),
-           ty_to_str(tcx, ty::mk_fn(tcx, *fn_ty)),
+           fn_sig_to_str(tcx, fn_sig),
            all_tys.map(|t| ty_to_str(tcx, *t)));
     let _i = indenter();
 
@@ -56,8 +73,7 @@ fn replace_bound_regions_in_fn_ty(
         debug!("br=%?", br);
         mapf(br)
     };
-    let ty_fn = ty::ty_fn(*fn_ty);
-    let t_fn = ty::fold_sty_to_ty(tcx, &ty_fn, |t| {
+    let new_fn_sig = ty::fold_sig(fn_sig, |t| {
         replace_bound_regions(tcx, isr, t)
     });
     let t_self = self_ty.map(|t| replace_bound_regions(tcx, isr, *t));
@@ -65,8 +81,7 @@ fn replace_bound_regions_in_fn_ty(
     debug!("result of replace_bound_regions_in_fn_ty: self_info.self_ty=%?, \
                 fn_ty=%s",
            t_self.map(|t| ty_to_str(tcx, *t)),
-           ty_to_str(tcx, t_fn));
-
+           fn_sig_to_str(tcx, &new_fn_sig));
 
     // Glue updated self_ty back together with its original def_id.
     let new_self_info: Option<self_info> = match t_self {
@@ -75,9 +90,8 @@ fn replace_bound_regions_in_fn_ty(
     };
 
     return {isr: isr,
-         self_info: new_self_info,
-         fn_ty: match ty::get(t_fn).sty { ty::ty_fn(ref o) => (*o),
-          _ => tcx.sess.bug(~"replace_bound_regions_in_fn_ty: impossible")}};
+            self_info: new_self_info,
+            fn_sig: new_fn_sig};
 
 
     // Takes `isr`, a (possibly empty) mapping from in-scope region

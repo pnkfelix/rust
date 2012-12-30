@@ -13,7 +13,7 @@ type pair<A,B> = {
 };
 
 fn f<A:Copy Owned>(a: A, b: u16) -> fn@() -> (A, u16) {
-    fn@() -> (A, u16) { (a, b) }
+    || (a, b)
 }
 
 fn main() {

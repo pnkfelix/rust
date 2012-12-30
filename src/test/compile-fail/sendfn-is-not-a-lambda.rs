@@ -13,6 +13,6 @@ fn test(f: fn@(uint) -> uint) -> uint {
 }
 
 fn main() {
-    let f = fn~(x: uint) -> uint { return 4u; };
+    let f: fn~(x: uint) -> uint = || { 4u };
     log(debug, test(f)); //~ ERROR expected @ closure, found ~ closure
 }

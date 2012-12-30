@@ -545,13 +545,6 @@ fn trans_rvalue_dps_unadjusted(bcx: block, expr: @ast::expr,
         ast::expr_vec(*) | ast::expr_repeat(*) => {
             return tvec::trans_fixed_vstore(bcx, expr, expr, dest);
         }
-        ast::expr_fn(proto, decl, ref body, cap_clause) => {
-            // Don't use this function for anything real. Use the one in
-            // astconv instead.
-            return closure::trans_expr_fn(bcx, proto,
-                                          decl, (*body), expr.id, cap_clause,
-                                          None, dest);
-        }
         ast::expr_fn_block(decl, ref body, cap_clause) => {
             let expr_ty = expr_ty(bcx, expr);
             match ty::get(expr_ty).sty {

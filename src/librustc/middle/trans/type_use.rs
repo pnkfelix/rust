@@ -249,7 +249,7 @@ fn mark_for_expr(cx: ctx, e: @expr) {
             }
         }
       }
-      expr_fn(*) | expr_fn_block(*) => {
+      expr_fn_block(*) => {
         match ty::ty_fn_proto(ty::expr_ty(cx.ccx.tcx, e)) {
           ast::ProtoBare | ast::ProtoUniq => {}
           ast::ProtoBox | ast::ProtoBorrowed => {

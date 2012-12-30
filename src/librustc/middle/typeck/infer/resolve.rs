@@ -48,7 +48,7 @@
 
 use integral::*;
 use floating::*;
-use to_str::ToStr;
+use to_str::InferStr;
 
 const resolve_nested_tvar: uint = 0b00000001;
 const resolve_rvar: uint        = 0b00000010;
@@ -67,7 +67,7 @@ const resolve_and_force_all_but_regions: uint =
     (resolve_all | force_all) & not_regions;
 
 type resolve_state_ = {
-    infcx: infer_ctxt,
+    infcx: @InferCtxt,
     modes: uint,
     mut err: Option<fixup_err>,
     mut v_seen: ~[TyVid]
@@ -77,7 +77,7 @@ enum resolve_state {
     resolve_state_(@resolve_state_)
 }
 
-fn resolver(infcx: infer_ctxt, modes: uint) -> resolve_state {
+fn resolver(infcx: @InferCtxt, modes: uint) -> resolve_state {
     resolve_state_(@{infcx: infcx,
                      modes: modes,
                      mut err: None,
@@ -123,21 +123,21 @@ impl resolve_state {
     }
 
     fn resolve_type(typ: ty::t) -> ty::t {
-        debug!("resolve_type(%s)", typ.to_str(self.infcx));
-        indent(fn&() -> ty::t {
-            if !ty::type_needs_infer(typ) { return typ; }
+        debug!("resolve_type(%s)", typ.inf_str(self.infcx));
+        let _i = indenter();
+        if !ty::type_needs_infer(typ) { return typ; }
 
-            match ty::get(typ).sty {
-              ty::ty_infer(TyVar(vid)) => {
+        match ty::get(typ).sty {
+            ty::ty_infer(TyVar(vid)) => {
                 self.resolve_ty_var(vid)
-              }
-              ty::ty_infer(IntVar(vid)) => {
+            }
+            ty::ty_infer(IntVar(vid)) => {
                 self.resolve_int_var(vid)
-              }
-              ty::ty_infer(FloatVar(vid)) => {
+            }
+            ty::ty_infer(FloatVar(vid)) => {
                 self.resolve_float_var(vid)
-              }
-              _ => {
+            }
+            _ => {
                 if !self.should(resolve_rvar) &&
                     !self.should(resolve_nested_tvar) {
                     // shortcircuit for efficiency
@@ -149,13 +149,12 @@ impl resolve_state {
                         |t| self.resolve_nested_tvar(t),
                         |t| self.resolve_nested_tvar(t))
                 }
-              }
             }
-        })
+        }
     }
 
     fn resolve_nested_tvar(typ: ty::t) -> ty::t {
-        debug!("Resolve_if_deep(%s)", typ.to_str(self.infcx));
+        debug!("Resolve_if_deep(%s)", typ.inf_str(self.infcx));
         if !self.should(resolve_nested_tvar) {
             typ
         } else {
@@ -164,7 +163,7 @@ impl resolve_state {
     }
 
     fn resolve_region(orig: ty::Region) -> ty::Region {
-        debug!("Resolve_region(%s)", orig.to_str(self.infcx));
+        debug!("Resolve_region(%s)", orig.inf_str(self.infcx));
         match orig {
           ty::re_infer(ty::ReVar(rid)) => self.resolve_region_var(rid),
           _ => orig
@@ -238,8 +237,8 @@ impl resolve_state {
                 let ty = ty::mk_int(self.infcx.tcx);
                 self.infcx.set(
                     &self.infcx.int_var_bindings, vid,
-                    root(convert_integral_ty_to_int_ty_set(self.infcx.tcx,
-                                                           ty),
+                    Root(
+                        convert_integral_ty_to_int_ty_set(self.infcx.tcx, ty),
                         nde.rank));
                 ty
             } else {
@@ -268,7 +267,7 @@ impl resolve_state {
                 self.infcx.set(
                     &self.infcx.float_var_bindings,
                     vid,
-                    root(
+                    Root(
                         convert_floating_point_ty_to_float_ty_set(
                             self.infcx.tcx, ty),
                         nde.rank));

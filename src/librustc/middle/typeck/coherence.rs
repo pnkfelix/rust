@@ -27,7 +27,7 @@ use middle::ty::{ty_float, ty_estr, ty_evec, ty_rec, ty_uniq};
 use middle::ty::{ty_err, ty_fn, ty_trait, ty_tup, ty_infer};
 use middle::ty::{ty_param, ty_self, ty_type, ty_opaque_box};
 use middle::ty::{ty_opaque_closure_ptr, ty_unboxed_vec, type_is_ty_var};
-use middle::typeck::infer::{infer_ctxt, can_mk_subty};
+use middle::typeck::infer::{InferCtxt, can_mk_subty};
 use middle::typeck::infer::{new_infer_ctxt, resolve_ivar, resolve_type};
 use syntax::ast::{crate, def_id, def_mod, def_ty};
 use syntax::ast::{item, item_struct, item_const, item_enum, item_fn};
@@ -49,7 +49,7 @@ use std::map::HashMap;
 use uint::range;
 use vec::{len, push};
 
-fn get_base_type(inference_context: infer_ctxt, span: span, original_type: t)
+fn get_base_type(inference_context: @InferCtxt, span: span, original_type: t)
               -> Option<t> {
 
     let resolved_type;
@@ -96,7 +96,7 @@ fn get_base_type(inference_context: infer_ctxt, span: span, original_type: t)
 }
 
 // Returns the def ID of the base type, if there is one.
-fn get_base_type_def_id(inference_context: infer_ctxt,
+fn get_base_type_def_id(inference_context: @InferCtxt,
                         span: span,
                         original_type: t)
                      -> Option<def_id> {
@@ -161,7 +161,7 @@ fn CoherenceChecker(crate_context: @crate_ctxt) -> CoherenceChecker {
 
 struct CoherenceChecker {
     crate_context: @crate_ctxt,
-    inference_context: infer_ctxt,
+    inference_context: @InferCtxt,
 
     // A mapping from implementations to the corresponding base type
     // definition ID.

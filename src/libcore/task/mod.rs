@@ -898,7 +898,7 @@ fn test_add_wrapper() {
     let ch = comm::Chan(&po);
     let b0 = task();
     let b1 = do b0.add_wrapper |body| {
-        fn~(move body) {
+        |move body| {
             body();
             comm::send(ch, ());
         }
@@ -1119,9 +1119,8 @@ fn test_avoid_copying_the_body_spawn() {
 #[test]
 fn test_avoid_copying_the_body_spawn_listener() {
     do avoid_copying_the_body |f| {
-        spawn_listener(fn~(move f, _po: comm::Port<int>) {
-            f();
-        });
+        let c: fn~(comm::Port<int>) = |move f| { f(); };
+        spawn_listener(move c);
     }
 }
 
@@ -1137,9 +1136,8 @@ fn test_avoid_copying_the_body_task_spawn() {
 #[test]
 fn test_avoid_copying_the_body_spawn_listener_1() {
     do avoid_copying_the_body |f| {
-        task().spawn_listener(fn~(move f, _po: comm::Port<int>) {
-            f();
-        });
+        let c: fn~(comm::Port<int>) = |move f| { f(); };
+        task().spawn_listener(move c);
     }
 }
 

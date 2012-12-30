@@ -211,8 +211,9 @@ impl check_loan_ctxt {
                     (*self.fn_args).contains(&(did.node));
                 if is_fn_arg { return; } // case (a) above
               }
-              ast::expr_fn_block(*) | ast::expr_fn(*) |
-              ast::expr_loop_body(*) | ast::expr_do_body(*) => {
+              ast::expr_fn_block(*) |
+              ast::expr_loop_body(*) |
+              ast::expr_do_body(*) => {
                 if self.is_stack_closure(expr.id) {
                     // case (b) above
                     return;
@@ -227,13 +228,13 @@ impl check_loan_ctxt {
         let callee_ty = ty::node_id_to_type(tcx, callee_id);
         match ty::get(callee_ty).sty {
           ty::ty_fn(ref fn_ty) => {
-            match (*fn_ty).meta.purity {
+            match fn_ty.meta.purity {
               ast::pure_fn => return, // case (c) above
               ast::impure_fn | ast::unsafe_fn | ast::extern_fn => {
                 self.report_purity_error(
                     pc, callee_span,
                     fmt!("access to %s function",
-                         pprust::purity_to_str((*fn_ty).meta.purity)));
+                         fn_ty.meta.purity.to_str()));
               }
             }
           }
@@ -257,7 +258,7 @@ impl check_loan_ctxt {
             did.crate == ast::local_crate &&
                 (*self.fn_args).contains(&(did.node))
           }
-          ast::expr_fn_block(*) | ast::expr_fn(*) => {
+          ast::expr_fn_block(*) => {
             self.is_stack_closure(expr.id)
           }
           _ => false
@@ -523,6 +524,29 @@ impl check_loan_ctxt {
         }
     }
 
+    fn check_deref(deref_expr: @ast::expr,
+                   derefd_expr: @ast::expr) {
+        match self.declared_purity {
+            ast::unsafe_fn => {
+                // any deref is safe inside an unsafe fn
+                return;
+            }
+
+            _ => {}
+        }
+
+        let tcx = self.tcx();
+        let callee_ty = ty::expr_ty(tcx, derefd_expr);
+        match ty::get(callee_ty).sty {
+            ty::ty_ptr(*) => {
+                tcx.sess.span_err(
+                    deref_expr.span,
+                    ~"dereference of unsafe pointer");
+            }
+            _ => {}
+        }
+    }
+
     fn check_call(expr: @ast::expr,
                   callee: Option<@ast::expr>,
                   callee_id: ast::node_id,
@@ -570,11 +594,10 @@ fn check_loans_in_fn(fk: visit::fn_kind, decl: ast::fn_decl, body: ast::blk,
                 ty::ty_fn_proto(fty));
 
             match fk {
-                visit::fk_anon(*) |
                 visit::fk_fn_block(*) if is_stack_closure => {
                     // inherits the fn_args from enclosing ctxt
                 }
-                visit::fk_anon(*) | visit::fk_fn_block(*) |
+                visit::fk_fn_block(*) |
                 visit::fk_method(*) | visit::fk_item_fn(*) |
                 visit::fk_dtor(*) => {
                     let mut fn_args = ~[];
@@ -636,7 +659,6 @@ fn check_loans_in_expr(expr: @ast::expr,
       ast::expr_assign_op(_, dest, _) => {
         self.check_assignment(at_straight_up, dest);
       }
-      ast::expr_fn(_, _, _, cap_clause) |
       ast::expr_fn_block(_, _, cap_clause) => {
         for (*cap_clause).each |cap_item| {
             if cap_item.is_move {
@@ -674,6 +696,10 @@ fn check_loans_in_expr(expr: @ast::expr,
                         expr.span,
                         ~[]);
       }
+      ast::expr_unary(ast::deref, derefd_expr) => {
+        self.check_deref(expr, derefd_expr);
+      }
+
       _ => { }
     }
 

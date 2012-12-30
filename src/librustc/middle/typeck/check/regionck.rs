@@ -255,7 +255,7 @@ fn visit_expr(expr: @ast::expr, &&rcx: @rcx, v: rvt) {
             // resulting region type.  See #3148 for more details.
         }
 
-        ast::expr_fn(*) | ast::expr_fn_block(*) => {
+        ast::expr_fn_block(*) => {
             match rcx.resolve_node_type(expr.id) {
                 result::Err(_) => return, // Typechecking will fail anyhow.
                 result::Ok(function_type) => {

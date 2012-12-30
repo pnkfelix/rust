@@ -36,8 +36,8 @@ use syntax::ast::ident;
 
 type namegen = fn@(~str) -> ident;
 fn new_namegen(intr: @ident_interner) -> namegen {
-    return fn@(prefix: ~str) -> ident {
-        return intr.gensym(@fmt!("%s_%u", prefix, intr.gensym(@prefix).repr))
+    return |prefix: ~str| -> ident {
+        intr.gensym(@fmt!("%s_%u", prefix, intr.gensym(@prefix).repr))
     };
 }
 
@@ -54,7 +54,7 @@ const gc_box_addrspace: addrspace = 1;
 type addrspace_gen = fn@() -> addrspace;
 fn new_addrspace_gen() -> addrspace_gen {
     let i = @mut 1;
-    return fn@() -> addrspace { *i += 1; *i };
+    return || -> addrspace { *i += 1; *i };
 }
 
 type tydesc_info =

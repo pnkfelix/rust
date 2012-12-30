@@ -23,7 +23,7 @@ use util::NominalOp;
 pub fn mk_pass(output_style: config::OutputStyle) -> Pass {
     {
         name: ~"page",
-        f: fn~(srv: astsrv::Srv, +doc: doc::Doc) -> doc::Doc {
+        f: |srv: astsrv::Srv, doc: doc::Doc| -> doc::Doc {
             run(srv, doc, output_style)
         }
     }

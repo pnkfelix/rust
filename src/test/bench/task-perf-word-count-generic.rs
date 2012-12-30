@@ -314,7 +314,7 @@ fn main() {
     let readers: ~[fn~() -> word_reader]  = if argv.len() >= 2 {
         vec::view(argv, 1u, argv.len()).map(|f| {
             let f = *f;
-            fn~() -> word_reader { file_word_reader(f) }
+            || { file_word_reader(f) }
         })
     }
     else {
@@ -322,7 +322,7 @@ fn main() {
         let words_per_reader = 600;
         vec::from_fn(
             num_readers,
-            |_i| fn~() -> word_reader {
+            |_i| || {
                 random_word_reader(words_per_reader) as word_reader
             })
     };

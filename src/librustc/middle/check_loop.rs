@@ -29,9 +29,6 @@ fn check_crate(tcx: ty::ctxt, crate: @crate) {
               expr_loop(ref b, _) => {
                 (v.visit_block)((*b), {in_loop: true,.. cx}, v);
               }
-              expr_fn(_, _, _, _) => {
-                visit::visit_expr(e, {in_loop: false, can_ret: true}, v);
-              }
               expr_fn_block(_, ref b, _) => {
                 (v.visit_block)((*b), {in_loop: false, can_ret: false}, v);
               }

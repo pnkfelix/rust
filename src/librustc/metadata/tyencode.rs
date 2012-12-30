@@ -15,7 +15,7 @@ use std::map::HashMap;
 use syntax::ast::*;
 use syntax::diagnostic::span_handler;
 use middle::ty;
-use middle::ty::vid;
+use middle::ty::Vid;
 use syntax::print::pprust::*;
 
 export ctxt;
@@ -303,6 +303,11 @@ fn enc_sty(w: io::Writer, cx: @ctxt, st: ty::sty) {
         w.write_char('X');
         w.write_char('F');
         w.write_uint(id.to_uint());
+      }
+      ty::ty_infer(ty::FnVar(_)) => {
+        w.write_char('X');
+        w.write_char('N');
+        fail;
       }
       ty::ty_param({idx: id, def_id: did}) => {
         w.write_char('p');

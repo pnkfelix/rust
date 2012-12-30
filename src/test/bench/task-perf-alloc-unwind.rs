@@ -76,8 +76,8 @@ fn recurse_or_fail(depth: int, st: Option<st>) {
             st_({
                 box: @Nil,
                 unique: ~Nil,
-                fn_box: fn@() -> @nillist { @Nil::<()> },
-                fn_unique: fn~() -> ~nillist { ~Nil::<()> },
+                fn_box: || { @Nil::<()> },
+                fn_unique: || { ~Nil::<()> },
                 tuple: (@Nil, ~Nil),
                 vec: ~[@Nil],
                 res: r(@Nil)
@@ -90,8 +90,8 @@ fn recurse_or_fail(depth: int, st: Option<st>) {
             st_({
                 box: @Cons((), st.box),
                 unique: ~Cons((), @*st.unique),
-                fn_box: fn@() -> @nillist { @Cons((), fn_box()) },
-                fn_unique: fn~(move fn_unique) -> ~nillist
+                fn_box: || -> @nillist { @Cons((), fn_box()) },
+                fn_unique: |move fn_unique| -> ~nillist
                     { ~Cons((), @*fn_unique()) },
                 tuple: (@Cons((), st.tuple.first()),
                         ~Cons((), @*st.tuple.second())),

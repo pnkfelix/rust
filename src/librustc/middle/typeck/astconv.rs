@@ -308,7 +308,7 @@ fn ast_ty_to_ty<AC: ast_conv, RS: region_scope Copy Owned>(
         let bounds = collect::compute_bounds(self.ccx(), f.bounds);
         let fn_decl = ty_of_fn_decl(self, rscope, f.proto,
                                     f.purity, f.onceness,
-                                    bounds, f.region, f.decl, None,
+                                    bounds, f.region, f.decl,
                                     ast_ty.span);
         ty::mk_fn(tcx, fn_decl)
       }
@@ -435,8 +435,36 @@ fn ty_of_arg<AC: ast_conv, RS: region_scope Copy Owned>(
     {mode: mode, ty: ty}
 }
 
-type expected_tys = Option<{inputs: ~[ty::arg],
-                            output: ty::t}>;
+struct ExpectedFnTys {
+    inputs: ~[ty::arg],
+    output: ty::t
+}
+
+fn ty_of_fn_sig<AC: ast_conv, RS: region_scope Copy Owned>(
+    self: AC, rscope: RS,
+    expected_tys: Option<ExpectedFnTys>,
+    decl: ast::fn_decl) -> ty::FnSig
+{
+    let rb = in_binding_rscope(rscope);
+
+    let input_tys = do decl.inputs.mapi |i, a| {
+        let expected_arg_ty = do expected_tys.chain_ref |e| {
+            // no guarantee that the correct number of expected args
+            // were supplied
+            if i < e.inputs.len() {Some(e.inputs[i])} else {None}
+        };
+        ty_of_arg(self, rb, *a, expected_arg_ty)
+    };
+
+    let expected_ret_ty = expected_tys.map(|e| e.output);
+    let output_ty = match decl.output.node {
+        ast::ty_infer if expected_ret_ty.is_some() => expected_ret_ty.get(),
+        ast::ty_infer => self.ty_infer(decl.output.span),
+        _ => ast_ty_to_ty(self, rb, decl.output)
+    };
+
+    FnSig {inputs: input_tys, output: output_ty}
+}
 
 fn ty_of_fn_decl<AC: ast_conv, RS: region_scope Copy Owned>(
     self: AC, rscope: RS,
@@ -446,7 +474,6 @@ fn ty_of_fn_decl<AC: ast_conv, RS: region_scope Copy Owned>(
     bounds: @~[ty::param_bound],
     opt_region: Option<@ast::region>,
     decl: ast::fn_decl,
-    expected_tys: expected_tys,
     span: span) -> ty::FnTy
 {
     debug!("ty_of_fn_decl");
@@ -475,24 +502,7 @@ fn ty_of_fn_decl<AC: ast_conv, RS: region_scope Copy Owned>(
 
         // new region names that appear inside of the fn decl are bound to
         // that function type
-        let rb = in_binding_rscope(rscope);
-
-        let input_tys = do decl.inputs.mapi |i, a| {
-            let expected_arg_ty = do expected_tys.chain_ref |e| {
-                // no guarantee that the correct number of expected args
-                // were supplied
-                if i < e.inputs.len() {Some(e.inputs[i])} else {None}
-            };
-            ty_of_arg(self, rb, *a, expected_arg_ty)
-        };
-
-        let expected_ret_ty = expected_tys.map(|e| e.output);
-        let output_ty = match decl.output.node {
-          ast::ty_infer if expected_ret_ty.is_some() => expected_ret_ty.get(),
-          ast::ty_infer => self.ty_infer(decl.output.span),
-          _ => ast_ty_to_ty(self, rb, decl.output)
-        };
-
+        let sig = ty_of_fn_sig(self, rscope, None, decl);
         FnTyBase {
             meta: FnMeta {purity: purity,
                           proto: ast_proto,
@@ -500,8 +510,7 @@ fn ty_of_fn_decl<AC: ast_conv, RS: region_scope Copy Owned>(
                           region: bound_region,
                           bounds: bounds,
                           ret_style: decl.cf},
-            sig: FnSig {inputs: input_tys,
-                        output: output_ty}
+            sig: sig
         }
     }
 }

@@ -14,14 +14,16 @@ fn main() {
     let cheese = ~"roquefort";
     let carrots = @~"crunchy";
 
-    fn@(tasties: @~str, macerate: fn(~str)) {
+    let f1: fn@(@~str, fn(~str)) = |tasties, macerate| {
         macerate(*tasties);
-    } (carrots, |food| {
+    };
+
+    f1(carrots, |food| {
         let mush = food + cheese;
-        let f = fn@() {
+        let f2: fn@() = || {
             let chew = mush + cheese;
             fail ~"so yummy"
         };
-        f();
+        f2();
     });
 }

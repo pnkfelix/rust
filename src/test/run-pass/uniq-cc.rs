@@ -23,7 +23,7 @@ fn empty_pointy() -> @pointy {
     return @{
         mut a : none,
         c : ~22,
-        d : fn~()->(){},
+        d : || {},
     }
 }
 

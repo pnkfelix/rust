@@ -24,7 +24,7 @@ fn make_cycle<A:Copy>(a: A) {
 }
 
 fn f<A:Send Copy, B:Send Copy>(a: A, b: B) -> fn@() -> (A, B) {
-    fn@() -> (A, B) { (a, b) }
+    || (a, b)
 }
 
 fn main() {

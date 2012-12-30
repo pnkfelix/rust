@@ -380,7 +380,7 @@ fn noop_fold_decl(d: decl_, fld: ast_fold) -> decl_ {
 fn wrap<T>(f: fn@(T, ast_fold) -> T)
     -> fn@(T, span, ast_fold) -> (T, span)
 {
-    return fn@(x: T, s: span, fld: ast_fold) -> (T, span) {
+    return |x: T, s: span, fld: ast_fold| -> (T, span) {
         (f(x, fld), s)
     }
 }
@@ -447,15 +447,8 @@ fn noop_fold_expr(e: expr_, fld: ast_fold) -> expr_ {
             expr_match(fld.fold_expr(expr),
                      vec::map((*arms), |x| fld.fold_arm(*x)))
           }
-          expr_fn(proto, decl, ref body, captures) => {
-            expr_fn(proto, fold_fn_decl(decl, fld),
-                    fld.fold_block((*body)),
-                    @((*captures).map(|cap_item| {
-                        @({id: fld.new_id(cap_item.id),
-                           ..**cap_item})})))
-          }
           expr_fn_block(decl, ref body, captures) => {
-            expr_fn_block(fold_fn_decl(decl, fld), fld.fold_block((*body)),
+            expr_fn_block(fold_fn_decl(decl, fld), fld.fold_block(*body),
                           @((*captures).map(|cap_item| {
                               @({id: fld.new_id(cap_item.id),
                                  ..**cap_item})})))

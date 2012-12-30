@@ -10,20 +10,20 @@
 
 use combine::*;
 use lattice::*;
-use to_str::ToStr;
+use to_str::InferStr;
 use syntax::ast::{Many, Once};
 
 fn macros() { include!("macros.rs"); } // FIXME(#3114): Macro import/export.
 
-enum Lub = combine_fields;  // "subtype", "subregion" etc
+enum Lub = CombineFields;  // least-upper-bound: common supertype
 
 impl Lub {
     fn bot_ty(b: ty::t) -> cres<ty::t> { Ok(b) }
     fn ty_bot(b: ty::t) -> cres<ty::t> { self.bot_ty(b) } // commutative
 }
 
-impl Lub: combine {
-    fn infcx() -> infer_ctxt { self.infcx }
+impl Lub: Combine {
+    fn infcx() -> @InferCtxt { self.infcx }
     fn tag() -> ~str { ~"lub" }
     fn a_is_expected() -> bool { self.a_is_expected }
     fn span() -> span { self.span }
@@ -109,8 +109,8 @@ impl Lub: combine {
     fn regions(a: ty::Region, b: ty::Region) -> cres<ty::Region> {
         debug!("%s.regions(%?, %?)",
                self.tag(),
-               a.to_str(self.infcx),
-               b.to_str(self.infcx));
+               a.inf_str(self.infcx),
+               b.inf_str(self.infcx));
 
         do indent {
             self.infcx.region_vars.lub_regions(self.span, a, b)
@@ -137,7 +137,7 @@ impl Lub: combine {
 
         // Collect constraints.
         let fn_ty0 = if_ok!(super_fns(&self, &a_with_fresh, &b_with_fresh));
-        debug!("fn_ty0 = %s", fn_ty0.to_str(self.infcx));
+        debug!("fn_ty0 = %s", fn_ty0.inf_str(self.infcx));
 
         // Generalize the regions appearing in fn_ty0 if possible
         let new_vars =
@@ -205,7 +205,7 @@ impl Lub: combine {
     // Traits please (FIXME: #2794):
 
     fn tys(a: ty::t, b: ty::t) -> cres<ty::t> {
-        lattice_tys(&self, a, b)
+        super_lattice_tys(&self, a, b)
     }
 
     fn flds(a: ty::field, b: ty::field) -> cres<ty::field> {

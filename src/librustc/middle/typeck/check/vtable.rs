@@ -9,8 +9,8 @@
 // except according to those terms.
 
 use check::{fn_ctxt, impl_self_ty};
-use infer::{infer_ctxt, resolve_type, resolve_and_force_all_but_regions,
-               fixup_err_to_str};
+use infer::{InferCtxt, resolve_type, resolve_and_force_all_but_regions,
+            fixup_err_to_str};
 use syntax::codemap::span;
 use syntax::print::pprust;
 use result::{Result, Ok, Err};
@@ -44,7 +44,7 @@ struct LocationInfo {
 /// callback function to call in case of type error.
 struct VtableContext {
     ccx: @crate_ctxt,
-    infcx: infer::infer_ctxt
+    infcx: @infer::InferCtxt
 }
 
 impl VtableContext {

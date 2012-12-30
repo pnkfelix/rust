@@ -16,8 +16,8 @@ use markdown_writer::WriterUtils;
 use markdown_writer::WriterFactory;
 
 pub fn mk_pass(+writer_factory: WriterFactory) -> Pass {
-    let f = fn~(move writer_factory,
-                srv: astsrv::Srv, +doc: doc::Doc) -> doc::Doc {
+    let f = |move writer_factory,
+             srv: astsrv::Srv, +doc: doc::Doc| -> doc::Doc {
         run(srv, doc, copy writer_factory)
     };
 

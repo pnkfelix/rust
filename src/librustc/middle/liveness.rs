@@ -512,7 +512,6 @@ fn visit_expr(expr: @expr, &&self: @IrMaps, vt: vt<@IrMaps>) {
         }
         visit::visit_expr(expr, self, vt);
       }
-      expr_fn(_, _, _, cap_clause) |
       expr_fn_block(_, _, cap_clause) => {
         // Interesting control flow (for loops can contain labeled
         // breaks or continues)
@@ -1056,7 +1055,7 @@ impl Liveness {
               self.propagate_through_expr(e, succ)
           }
 
-          expr_fn(_, _, ref blk, _) | expr_fn_block(_, ref blk, _) => {
+          expr_fn_block(_, ref blk, _) => {
               debug!("%s is an expr_fn or expr_fn_block",
                    expr_to_str(expr, self.tcx.sess.intr()));
 
@@ -1552,7 +1551,7 @@ fn check_expr(expr: @expr, &&self: @Liveness, vt: vt<@Liveness>) {
         visit::visit_expr(expr, self, vt);
       }
 
-      expr_fn(*) | expr_fn_block(*) => {
+      expr_fn_block(*) => {
         let caps = (*self.ir).captures(expr);
         for (*caps).each |cap| {
             let var = self.variable(cap.var_nid, expr.span);

@@ -55,6 +55,8 @@ fn main() {
     assert -p == Point {x: -11, y: -22};
     assert p[true] == 11;
     assert p[false] == 22;
+
     // Issue #1733
-    fn~(_x: int){}(p[true]);
+    let x: fn~(int) = |_x| {};
+    x(p[true]);
 }

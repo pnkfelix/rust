@@ -101,7 +101,7 @@ pub fn exec<T:Send>(
 ) -> T {
     let po = comm::Port();
     let ch = comm::Chan(&po);
-    let msg = HandleRequest(fn~(move f, ctxt: Ctxt) {
+    let msg = HandleRequest(|move f, ctxt: Ctxt| {
         comm::send(ch, f(ctxt))
     });
     comm::send(srv.ch, move msg);

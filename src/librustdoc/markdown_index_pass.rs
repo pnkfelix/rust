@@ -16,7 +16,7 @@ use fold::Fold;
 pub fn mk_pass(+config: config::Config) -> Pass {
     {
         name: ~"markdown_index",
-        f: fn~(srv: astsrv::Srv, +doc: doc::Doc) -> doc::Doc {
+        f: |srv: astsrv::Srv, doc: doc::Doc| -> doc::Doc {
             run(srv, doc, config)
         }
     }

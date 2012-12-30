@@ -14,7 +14,7 @@ Code related to floating-point type inference.
 
 */
 
-use to_str::ToStr;
+use to_str::InferStr;
 use middle::ty::ty_float;
 
 // Bitvector to represent sets of floating-point types.

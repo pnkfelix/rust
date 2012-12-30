@@ -1082,9 +1082,7 @@ pub mod fsync {
                          blk: fn(v: Res<*libc::FILE>)) {
         blk(move Res({
             val: file.f, opt_level: opt_level,
-            fsync_fn: fn@(file: *libc::FILE, l: Level) -> int {
-                return os::fsync_fd(libc::fileno(file), l) as int;
-            }
+            fsync_fn: |file, l| os::fsync_fd(libc::fileno(file), l) as int
         }));
     }
 
@@ -1093,9 +1091,7 @@ pub mod fsync {
                        blk: fn(v: Res<fd_t>)) {
         blk(move Res({
             val: fd.fd, opt_level: opt_level,
-            fsync_fn: fn@(fd: fd_t, l: Level) -> int {
-                return os::fsync_fd(fd, l) as int;
-            }
+            fsync_fn: |fd, l| os::fsync_fd(fd, l) as int
         }));
     }
 
@@ -1107,9 +1103,7 @@ pub mod fsync {
                     blk: fn(v: Res<FSyncable>)) {
         blk(Res({
             val: o, opt_level: opt_level,
-            fsync_fn: fn@(o: FSyncable, l: Level) -> int {
-                return o.fsync(l);
-            }
+            fsync_fn: |o, l| o.fsync(l)
         }));
     }
 }

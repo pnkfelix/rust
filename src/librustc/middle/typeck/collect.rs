@@ -622,7 +622,7 @@ fn convert_struct(ccx: @crate_ctxt,
                 ccx, type_rscope(rp), ast::ProtoBare,
                 ast::impure_fn, ast::Many,
                 /*bounds:*/ @~[], /*opt_region:*/ None,
-                ast_util::dtor_dec(), None, dtor.span));
+                ast_util::dtor_dec(), dtor.span));
         write_ty_to_tcx(tcx, dtor.node.id, t_dtor);
         tcx.tcache.insert(local_def(dtor.node.id),
                           {bounds: tpt.bounds,
@@ -696,7 +696,7 @@ fn ty_of_method(ccx: @crate_ctxt,
      fty: ty_of_fn_decl(ccx, type_rscope(rp), ast::ProtoBare,
                         m.purity, ast::Many,
                         /*bounds:*/ @~[], /*opt_region:*/ None,
-                        m.decl, None, m.span),
+                        m.decl, m.span),
      self_ty: m.self_ty.node,
      vis: m.vis,
      def_id: local_def(m.id)}
@@ -711,7 +711,7 @@ fn ty_of_ty_method(self: @crate_ctxt,
      fty: ty_of_fn_decl(self, type_rscope(rp), ast::ProtoBare,
                         m.purity, ast::Many,
                         /*bounds:*/ @~[], /*opt_region:*/ None,
-                        m.decl, None, m.span),
+                        m.decl, m.span),
      // assume public, because this is only invoked on trait methods
      self_ty: m.self_ty.node,
      vis: ast::public,
@@ -769,7 +769,7 @@ fn ty_of_item(ccx: @crate_ctxt, it: @ast::item)
         let tofd = ty_of_fn_decl(ccx, empty_rscope,
                                  ast::ProtoBare, purity, ast::Many,
                                  /*bounds:*/ @~[], /*opt_region:*/ None,
-                                 decl, None, it.span);
+                                 decl, it.span);
         let tpt = {bounds: bounds,
                    region_param: None,
                    ty: ty::mk_fn(ccx.tcx, tofd)};

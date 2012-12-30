@@ -37,7 +37,7 @@ fn test05_start(&&f: fn~(&&v: float, &&v: ~str) -> pair<float, ~str>) {
 }
 
 fn spawn<A: Copy, B: Copy>(f: extern fn(fn~(A,B)->pair<A,B>)) {
-    let arg = fn~(a: A, b: B) -> pair<A,B> {
+    let arg = |a: A, b: B| -> pair<A,B> {
         return make_generic_record(a, b);
     };
     task::spawn(|| f(arg) );
