@@ -833,13 +833,20 @@ impl RegionVid: ToStr {
     pure fn to_str() -> ~str { fmt!("%?", self) }
 }
 
+impl FnSig : ToStr {
+    pure fn to_str() -> ~str {
+        // grr, without tcx not much we can do.
+        return ~"(...)";
+    }
+}
+
 impl InferTy: ToStr {
     pure fn to_str() -> ~str {
         match self {
             TyVar(v) => v.to_str(),
             IntVar(v) => v.to_str(),
             FloatVar(v) => v.to_str(),
-            FnVar(v) => fmt!("%s(...)", v.meta.to_str())
+            FnVar(v) => fmt!("%s%s", v.meta.to_str(), v.sig.to_str())
         }
     }
 }
@@ -1398,11 +1405,23 @@ fn fold_regions_and_ty(
     fn fold_substs(
         substs: &substs,
         fldr: fn(r: Region) -> Region,
-        fldt: fn(t: t) -> t) -> substs {
-
+        fldt: fn(t: t) -> t) -> substs
+    {
         {self_r: substs.self_r.map(|r| fldr(*r)),
          self_ty: substs.self_ty.map(|t| fldt(*t)),
          tps: substs.tps.map(|t| fldt(*t))}
+    }
+
+    fn fold_sig(
+        sig: &FnSig,
+        fldfnt: fn(t: t) -> t) -> FnSig
+    {
+        let new_args = vec::map(sig.inputs, |a| {
+            let new_ty = fldfnt(a.ty);
+            {mode: a.mode, ty: new_ty}
+        });
+        let new_output = fldfnt(sig.output);
+        FnSig {inputs: new_args, output: new_output}
     }
 
     let tb = ty::get(ty);
@@ -1432,17 +1451,14 @@ fn fold_regions_and_ty(
       }
       ty_fn(ref f) => {
           let new_region = fldr(f.meta.region);
-          let new_args = vec::map(f.sig.inputs, |a| {
-              let new_ty = fldfnt(a.ty);
-              {mode: a.mode, ty: new_ty}
-          });
-          let new_output = fldfnt(f.sig.output);
           ty::mk_fn(cx, FnTyBase {
-              meta: FnMeta {region: new_region,
-                            ..f.meta},
-              sig: FnSig {inputs: new_args,
-                          output: new_output}
+              meta: FnMeta {region: new_region, ..f.meta},
+              sig: fold_sig(&f.sig, fldfnt)
           })
+      }
+      ty_infer(FnVar(ref f)) => {
+          ty::mk_fn_var(cx, FnTyBase {meta: f.meta,
+                                      sig: fold_sig(&f.sig, fldfnt)})
       }
       ref sty => {
         fold_sty_to_ty(cx, sty, |t| fldt(t))
