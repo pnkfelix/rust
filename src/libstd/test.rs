@@ -237,16 +237,18 @@ fn print_failures(st: ConsoleTestState) {
 #[test]
 fn should_sort_failures_before_printing_them() {
     let s = do io::with_str_writer |wr| {
+        let testfn: fn~() = || ();
+
         let test_a = {
             name: ~"a",
-            testfn: fn~() { },
+            testfn: copy testfn,
             ignore: false,
             should_fail: false
         };
 
         let test_b = {
             name: ~"b",
-            testfn: fn~() { },
+            testfn: testfn,
             ignore: false,
             should_fail: false
         };
@@ -513,10 +515,11 @@ mod tests {
 
         let opts = {filter: option::None, run_ignored: true,
             logfile: option::None};
+        let testfn: fn~() = || ();
         let tests =
-            ~[{name: ~"1", testfn: fn~() { },
+            ~[{name: ~"1", testfn: copy testfn,
                ignore: true, should_fail: false},
-             {name: ~"2", testfn: fn~() { },
+             {name: ~"2", testfn: testfn,
               ignore: false, should_fail: false}];
         let filtered = filter_tests(&opts, tests);
 
@@ -539,7 +542,7 @@ mod tests {
              ~"test::sort_tests"];
         let tests =
         {
-            let testfn = fn~() { };
+            let testfn: fn~() = || ();
             let mut tests = ~[];
             for vec::each(names) |name| {
                 let test = {name: *name, testfn: copy testfn, ignore: false,
