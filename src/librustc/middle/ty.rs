@@ -494,14 +494,12 @@ pure fn type_id(t: t) -> uint { get(t).id }
  * - `proto` is the protocol (fn@, fn~, etc).
  * - `onceness` indicates whether the function can be called one time or many
  *   times.
- * - `region` is the region bound on the function's upvars (often &static).
  * - `bounds` is the parameter bounds on the function's upvars.
  * - `ret_style` indicates whether the function returns a value or fails. */
 struct FnMeta {
     purity: ast::purity,
     proto: ast::Proto,
     onceness: ast::Onceness,
-    region: Region,
     bounds: @~[param_bound],
     ret_style: ret_style
 }
@@ -523,8 +521,15 @@ struct FnSig {
  * by the meta information because, in some cases, the
  * meta information is inferred. */
 struct FnTyBase<M: cmp::Eq> {
-    meta: M,
-    sig: FnSig
+    meta: M,        // Either FnMeta or FnVid
+    region: Region, // Region bound on the upvars in the environment
+    sig: FnSig      // Types of arguments/return type
+}
+
+impl<M: to_bytes::IterBytes> FnTyBase<M> : to_bytes::IterBytes {
+    pure fn iter_bytes(&self, +lsb0: bool, f: to_bytes::Cb) {
+        to_bytes::iter_bytes_3(&self.meta, &self.region, &self.sig, lsb0, f)
+    }
 }
 
 type FnTy = FnTyBase<FnMeta>;
@@ -1052,7 +1057,7 @@ fn mk_t_with_id(cx: ctxt, +st: sty, o_def_id: Option<ast::def_id>) -> t {
       ty_rec(flds) => for flds.each |f| { flags |= get(f.mt.ty).flags; },
       ty_tup(ts) => for ts.each |tt| { flags |= get(*tt).flags; },
       ty_fn(ref f) => {
-        flags |= rflags(f.meta.region);
+        flags |= rflags(f.region);
         for f.sig.inputs.each |a| { flags |= get(a.ty).flags; }
         flags |= get(f.sig.output).flags;
       }
@@ -1358,7 +1363,7 @@ fn fold_sty(sty: &sty, fldop: fn(t) -> t) -> sty {
         }
         ty_fn(ref f) => {
             let sig = fold_sig(&f.sig, fldop);
-            ty_fn(FnTyBase {meta: f.meta, sig: sig})
+            ty_fn(FnTyBase {meta: f.meta, region: f.region, sig: sig})
         }
         ty_rptr(r, tm) => {
             ty_rptr(r, {ty: fldop(tm.ty), mutbl: tm.mutbl})
@@ -1412,18 +1417,6 @@ fn fold_regions_and_ty(
          tps: substs.tps.map(|t| fldt(*t))}
     }
 
-    fn fold_sig(
-        sig: &FnSig,
-        fldfnt: fn(t: t) -> t) -> FnSig
-    {
-        let new_args = vec::map(sig.inputs, |a| {
-            let new_ty = fldfnt(a.ty);
-            {mode: a.mode, ty: new_ty}
-        });
-        let new_output = fldfnt(sig.output);
-        FnSig {inputs: new_args, output: new_output}
-    }
-
     let tb = ty::get(ty);
     match tb.sty {
       ty::ty_rptr(r, mt) => {
@@ -1450,14 +1443,13 @@ fn fold_regions_and_ty(
         ty::mk_trait(cx, def_id, fold_substs(substs, fldr, fldt), vst)
       }
       ty_fn(ref f) => {
-          let new_region = fldr(f.meta.region);
-          ty::mk_fn(cx, FnTyBase {
-              meta: FnMeta {region: new_region, ..f.meta},
-              sig: fold_sig(&f.sig, fldfnt)
-          })
+          ty::mk_fn(cx, FnTyBase {meta: f.meta,
+                                  region: fldr(f.region),
+                                  sig: fold_sig(&f.sig, fldfnt)})
       }
       ty_infer(FnVar(ref f)) => {
           ty::mk_fn_var(cx, FnTyBase {meta: f.meta,
+                                      region: fldr(f.region),
                                       sig: fold_sig(&f.sig, fldfnt)})
       }
       ref sty => {
@@ -1499,6 +1491,7 @@ fn fold_regions(
 {
     fn do_fold(cx: ctxt, ty: t, in_fn: bool,
                fldr: fn(Region, bool) -> Region) -> t {
+        debug!("do_fold(ty=%s, in_fn=%b)", ty_to_str(cx, ty), in_fn);
         if !type_has_regions(ty) { return ty; }
         fold_regions_and_ty(
             cx, ty,
@@ -2796,9 +2789,8 @@ impl arg : to_bytes::IterBytes {
 
 impl FnMeta : to_bytes::IterBytes {
     pure fn iter_bytes(&self, +lsb0: bool, f: to_bytes::Cb) {
-        to_bytes::iter_bytes_5(&self.purity,
+        to_bytes::iter_bytes_4(&self.purity,
                                &self.proto,
-                               &self.region,
                                &self.bounds,
                                &self.ret_style,
                                lsb0, f);
@@ -2850,10 +2842,7 @@ impl sty : to_bytes::IterBytes {
           to_bytes::iter_bytes_2(&11u8, fs, lsb0, f),
 
           ty_fn(ref ft) =>
-          to_bytes::iter_bytes_3(&12u8,
-                                 &ft.meta,
-                                 &ft.sig,
-                                 lsb0, f),
+          to_bytes::iter_bytes_2(&12u8, ft, lsb0, f),
 
           ty_self => 13u8.iter_bytes(lsb0, f),
 
@@ -2977,12 +2966,14 @@ fn replace_fn_return_type(tcx: ctxt, fn_type: t, ret_type: t) -> t {
         ty::ty_fn(ref fty) => {
             ty::mk_fn(tcx, FnTyBase {
                 meta: fty.meta,
+                region: fty.region,
                 sig: FnSig {output: ret_type, ..fty.sig}
             })
         }
         ty::ty_infer(FnVar(ref fty)) => {
             ty::mk_fn_var(tcx, FnTyBase {
                 meta: fty.meta,
+                region: fty.region,
                 sig: FnSig {output: ret_type, ..fty.sig}
             })
         }
@@ -4205,10 +4196,8 @@ fn normalize_ty(cx: ctxt, t: t) -> t {
 
         ty_fn(ref fn_ty) => {
             mk_fn(cx, FnTyBase {
-                meta: FnMeta {
-                    region: ty::re_static,
-                    ..fn_ty.meta
-                },
+                meta: fn_ty.meta,
+                region: ty::re_static,
                 sig: fn_ty.sig
             })
         }
@@ -4417,7 +4406,9 @@ impl FnSig : cmp::Eq {
 
 impl<M: cmp::Eq> FnTyBase<M> : cmp::Eq {
     pure fn eq(&self, other: &FnTyBase<M>) -> bool {
-        (*self).meta == (*other).meta && (*self).sig == (*other).sig
+        self.meta == other.meta &&
+            self.region == other.region &&
+            self.sig == other.sig
     }
     pure fn ne(&self, other: &FnTyBase<M>) -> bool { !(*self).eq(other) }
 }

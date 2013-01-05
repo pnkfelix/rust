@@ -258,7 +258,7 @@ fn expr_repr(cx: ctxt, expr: @ast::expr) -> ~str {
 
 fn tys_to_str(cx: ctxt, ts: &[t]) -> ~str {
     let tstrs = ts.map(|t| ty_to_str(cx, *t));
-    fmt!("[%s]", str::connect(tstrs, ", "))
+    fmt!("(%s)", str::connect(tstrs, ", "))
 }
 
 fn bound_to_str(cx: ctxt, b: param_bound) -> ~str {
@@ -266,7 +266,7 @@ fn bound_to_str(cx: ctxt, b: param_bound) -> ~str {
 }
 
 fn fn_sig_to_str(cx: ctxt, typ: &ty::FnSig) -> ~str {
-    fmt!("fn(%s) -> %s",
+    fmt!("fn%s -> %s",
          tys_to_str(cx, typ.inputs.map(|a| a.ty)),
          ty_to_str(cx, typ.output))
 }
@@ -345,7 +345,7 @@ fn ty_to_str(cx: ctxt, typ: t) -> ~str {
         return fn_to_str(
             cx,
             m.fty.meta.proto,
-            m.fty.meta.region,
+            m.fty.region,
             m.fty.meta.purity,
             m.fty.meta.onceness,
             Some(m.ident),
@@ -389,13 +389,12 @@ fn ty_to_str(cx: ctxt, typ: t) -> ~str {
         ~"{" + str::connect(strs, ~",") + ~"}"
       }
       ty_tup(elems) => {
-        let strs = elems.map(|elem| ty_to_str(cx, *elem));
-        ~"(" + str::connect(strs, ~",") + ~")"
+        tys_to_str(cx, elems)
       }
       ty_fn(ref f) => {
         fn_to_str(cx,
                   f.meta.proto,
-                  f.meta.region,
+                  f.region,
                   f.meta.purity,
                   f.meta.onceness,
                   None,

@@ -1455,10 +1455,11 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
             }
         };
 
-        let default_region = ty::re_scope(expr.id);
-        let fn_vid = fcx.infcx().next_fn_var_id(default_region);
+        let region = fcx.infcx().next_region_var(expr.span, expr.id);
+        let fn_vid = fcx.infcx().next_fn_var_id();
         let sig = astconv::ty_of_fn_sig(fcx, fcx, expected_tys, decl);
         let fn_ty = ty::mk_fn_var(tcx, FnTyBase {meta: fn_vid,
+                                                 region: region,
                                                  sig: sig});
 
         debug!("check_expr_fn_with_unifier %s fty=%s",
@@ -2050,7 +2051,8 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
               }
             }
             ty::mk_fn(tcx, FnTyBase {
-                meta: (*fty).meta,
+                meta: fty.meta,
+                region: fty.region,
                 sig: FnSig {output: ty::mk_nil(tcx),
                             ..(*fty).sig}
             })
@@ -2913,9 +2915,9 @@ fn check_intrinsic_type(ccx: @crate_ctxt, it: @ast::foreign_item) {
             meta: FnMeta {purity: ast::impure_fn,
                           proto: ast::ProtoBorrowed,
                           onceness: ast::Once,
-                          region: ty::re_bound(ty::br_anon(0)),
                           bounds: @~[],
                           ret_style: ast::return_val},
+            region: ty::re_bound(ty::br_anon(0)),
             sig: FnSig {inputs: ~[{mode: ast::expl(ast::by_val),
                                    ty: ty::mk_imm_ptr(
                                        ccx.tcx,
@@ -3066,9 +3068,9 @@ fn check_intrinsic_type(ccx: @crate_ctxt, it: @ast::foreign_item) {
         meta: FnMeta {purity: ast::impure_fn,
                       proto: ast::ProtoBare,
                       onceness: ast::Many,
-                      region: ty::re_static,
                       bounds: @~[],
                       ret_style: ast::return_val},
+        region: ty::re_static,
         sig: FnSig {inputs: inputs,
                     output: output}
     });

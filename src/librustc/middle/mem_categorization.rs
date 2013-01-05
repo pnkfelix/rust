@@ -326,7 +326,7 @@ fn opt_deref_kind(t: ty::t) -> Option<deref_kind> {
       }
 
       ty::ty_fn(ref f) if (*f).meta.proto == ast::ProtoBorrowed => {
-        Some(deref_ptr(region_ptr((*f).meta.region)))
+        Some(deref_ptr(region_ptr(f.region)))
       }
 
       ty::ty_box(*) |

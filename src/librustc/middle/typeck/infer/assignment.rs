@@ -188,10 +188,11 @@ priv impl Assign {
                         let nr_b = ty::mk_fn(self.infcx.tcx, ty::FnTyBase {
                             meta: ty::FnMeta {proto: a_f.meta.proto,
                                               ..b_f.meta},
+                            region: b_f.region,
                             sig: b_f.sig
                         });
                         self.try_assign(0, ty::AutoBorrowFn,
-                                        a, nr_b, m_imm, b_f.meta.region)
+                                        a, nr_b, m_imm, b_f.region)
                     }
 
                     // check for &T being assigned to *T:

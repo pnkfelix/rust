@@ -384,7 +384,7 @@ fn enc_ty_fn(w: io::Writer, cx: @ctxt, ft: ty::FnTy) {
     enc_proto(w, ft.meta.proto);
     enc_purity(w, ft.meta.purity);
     enc_onceness(w, ft.meta.onceness);
-    enc_region(w, cx, ft.meta.region);
+    enc_region(w, cx, ft.region);
     enc_bounds(w, cx, ft.meta.bounds);
     w.write_char('[');
     for ft.sig.inputs.each |arg| {

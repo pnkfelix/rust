@@ -507,9 +507,9 @@ fn ty_of_fn_decl<AC: ast_conv, RS: region_scope Copy Owned>(
             meta: FnMeta {purity: purity,
                           proto: ast_proto,
                           onceness: onceness,
-                          region: bound_region,
                           bounds: bounds,
                           ret_style: decl.cf},
+            region: bound_region,
             sig: sig
         }
     }

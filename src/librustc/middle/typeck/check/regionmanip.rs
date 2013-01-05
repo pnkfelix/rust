@@ -29,6 +29,7 @@ fn replace_bound_regions_in_fn_ty(
     {isr: isr,
      self_info: self_info,
      fn_ty: FnTyBase {meta: fn_ty.meta,
+                      region: fn_ty.region,
                       sig: fn_sig}}
 }
 
@@ -62,7 +63,7 @@ fn replace_bound_regions_in_fn_sig(
 
     for self_ty.each |t| { all_tys.push(*t) }
 
-    debug!("replace_bound_regions_in_fn_sig(self_info.self_ty=%?, fn_ty=%s, \
+    debug!("replace_bound_regions_in_fn_sig(self_info.self_ty=%?, fn_sig=%s, \
             all_tys=%?)",
            self_ty.map(|t| ty_to_str(tcx, *t)),
            fn_sig_to_str(tcx, fn_sig),
@@ -78,8 +79,8 @@ fn replace_bound_regions_in_fn_sig(
     });
     let t_self = self_ty.map(|t| replace_bound_regions(tcx, isr, *t));
 
-    debug!("result of replace_bound_regions_in_fn_ty: self_info.self_ty=%?, \
-                fn_ty=%s",
+    debug!("result of replace_bound_regions_in_fn_sig: self_info.self_ty=%?, \
+                fn_sig=%s",
            t_self.map(|t| ty_to_str(tcx, *t)),
            fn_sig_to_str(tcx, &new_fn_sig));
 
@@ -161,7 +162,7 @@ fn replace_bound_regions_in_fn_sig(
         ty: ty::t) -> ty::t {
 
         do ty::fold_regions(tcx, ty) |r, in_fn| {
-            match r {
+            let r1 = match r {
               // As long as we are not within a fn() type, `&T` is
               // mapped to the free region anon_r.  But within a fn
               // type, it remains bound.
@@ -190,7 +191,9 @@ fn replace_bound_regions_in_fn_sig(
               ty::re_scope(_) |
               ty::re_free(_, _) |
               ty::re_infer(_) => r
-            }
+            };
+            debug!("replace_bound_regions(r=%?, in_fn=%?) = %?", r, in_fn, r1);
+            r1
         }
     }
 }

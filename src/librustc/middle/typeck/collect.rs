@@ -146,8 +146,8 @@ fn get_enum_variant_types(ccx: @crate_ctxt,
                                   proto: ast::ProtoBare,
                                   onceness: ast::Many,
                                   bounds: @~[],
-                                  region: ty::re_static,
                                   ret_style: ast::return_val},
+                    region: ty::re_static,
                     sig: FnSig {inputs: args,
                                 output: enum_ty}
                 }));
@@ -654,9 +654,9 @@ fn convert_struct(ccx: @crate_ctxt,
                         proto: ast::ProtoBare,
                         onceness: ast::Many,
                         bounds: @~[],
-                        region: ty::re_static,
                         ret_style: ast::return_val,
                     },
+                    region: ty::re_static,
                     sig: FnSig {
                         inputs: do struct_def.fields.map |field| {
                             {
@@ -927,8 +927,8 @@ fn ty_of_foreign_fn_decl(ccx: @crate_ctxt,
                       onceness: ast::Many,
                       proto: ast::ProtoBare,
                       bounds: @~[],
-                      region: ty::re_static,
                       ret_style: ast::return_val},
+        region: ty::re_static,
         sig: FnSig {inputs: input_tys,
                     output: output_ty}
     });

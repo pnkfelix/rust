@@ -437,8 +437,8 @@ fn parse_ty_fn(st: @pstate, conv: conv_did) -> ty::FnTy {
                       proto: proto,
                       onceness: onceness,
                       bounds: bounds,
-                      region: region,
                       ret_style: ret_style},
+        region: region,
         sig: FnSig {inputs: inputs,
                     output: ret_ty}
     };

@@ -128,7 +128,14 @@ impl ResolveState {
     fn resolve_type(&self, typ: ty::t) -> ty::t {
         debug!("resolve_type(%s)", typ.inf_str(self.infcx));
         let _i = indenter();
-        if !ty::type_needs_infer(typ) { return typ; }
+
+        if !ty::type_needs_infer(typ) {
+            return typ;
+        }
+
+        if self.type_depth > 0 && !self.should(resolve_nested_tvar) {
+            return typ;
+        }
 
         match ty::get(typ).sty {
             ty::ty_infer(TyVar(vid)) => {
@@ -188,9 +195,7 @@ impl ResolveState {
     }
 
     fn resolve_ty_var(&self, vid: TyVid) -> ty::t {
-        if self.type_depth > 0 && !self.should(resolve_nested_tvar) {
-            return ty::mk_var(self.infcx.tcx, vid);
-        } else if vec::contains(self.v_seen, &vid) {
+        if vec::contains(self.v_seen, &vid) {
             self.err = Some(cyclic_ty(vid));
             return ty::mk_var(self.infcx.tcx, vid);
         } else {
@@ -298,12 +303,10 @@ impl ResolveState {
 
                 // If the fn is unconstrained, give it a bland and
                 // permissive meta type.
-                let fn_var_info = self.infcx.fn_var_infos[f.meta.to_uint()];
                 FnMeta {
                     purity: ast::impure_fn,
                     proto: ast::ProtoBorrowed,
                     onceness: ast::Many,
-                    region: fn_var_info.default_region,
                     bounds: @~[],
                     ret_style: ast::return_val
                 }
@@ -311,8 +314,10 @@ impl ResolveState {
         };
 
         // resolve_type will resolve the types in the signature as
-        // well as the regions etc that may appear in meta:
-        let fn1 = ty::mk_fn(self.infcx.tcx, FnTyBase {meta: meta, sig: f.sig});
+        // well as the regions etc:
+        let fn1 = ty::mk_fn(self.infcx.tcx, FnTyBase {meta: meta,
+                                                      region: f.region,
+                                                      sig: f.sig});
         return self.resolve_type(fn1);
     }
 }

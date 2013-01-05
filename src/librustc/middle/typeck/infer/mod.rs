@@ -343,18 +343,6 @@ type ures = cres<()>; // "unify result"
 type fres<T> = Result<T, fixup_err>; // "fixup result"
 type ares = cres<Option<@ty::AutoAdjustment>>; // "assignment result"
 
-/// Information about a function variable that is provided
-struct FnVarInfo {
-    /**
-     * The region that will be used for the meta information about
-     * this function variable if it is forced and there are no constraints.
-     * This only occurs if the user creates a closure but does not
-     * use it in any way.  This region is therefore generally the re_scope
-     * of the closure creation, which is the narrowest and hence most
-     * permissive region bound. */
-    default_region: ty::Region
-}
-
 struct InferCtxt {
     tcx: ty::ctxt,
 
@@ -387,8 +375,8 @@ struct InferCtxt {
     // not through the infer module).
     fn_var_bindings: ValsAndBindings<ty::FnVid, Bounds<FnMeta>>,
 
-    // Information about each fn variable that has been created.
-    mut fn_var_infos: ~[FnVarInfo],
+    // Number of fn variables created thus far.
+    mut fn_var_counter: uint,
 
     // For region variables.
     region_vars: RegionVarBindings,
@@ -436,7 +424,7 @@ fn new_infer_ctxt(tcx: ty::ctxt) -> @InferCtxt {
         float_var_counter: 0,
 
         fn_var_bindings: new_ValsAndBindings(),
-        fn_var_infos: ~[],
+        fn_var_counter: 0,
 
         region_vars: RegionVarBindings(tcx),
     }
@@ -743,17 +731,14 @@ impl @InferCtxt {
         self.next_region_var_with_lb(span, ty::re_scope(scope_id))
     }
 
-    fn next_fn_var_id(default_region: ty::Region) -> FnVid {
+    fn next_fn_var_id() -> FnVid {
         /*!
          *
          * Creates a new function variable.
-         *
-         * The meaning of the parameters is documented on the type
-         * `FnVarInfo`.
          */
 
-        let id = self.fn_var_infos.len();
-        self.fn_var_infos.push(FnVarInfo {default_region: default_region});
+        let id = self.fn_var_counter;
+        self.fn_var_counter += 1;
         self.fn_var_bindings.vals.insert(id, Root({lb: None, ub: None}, 0u));
         return FnVid(id);
     }

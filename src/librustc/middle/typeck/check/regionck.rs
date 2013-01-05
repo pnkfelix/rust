@@ -276,7 +276,7 @@ fn visit_expr(expr: @ast::expr, &&rcx: @RegionContext, v: rvt) {
                         ty::ty_fn(ref fn_ty) => {
                             if fn_ty.meta.proto == ast::ProtoBorrowed {
                                 constrain_free_variables(
-                                    rcx, fn_ty.meta.region, expr);
+                                    rcx, fn_ty.region, expr);
                             }
                         }
                         _ => ()

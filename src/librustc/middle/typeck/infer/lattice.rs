@@ -357,71 +357,79 @@ fn super_lattice_tys<L:LatticeDir TyLatticeDir Combine>(
     let tcx = self.infcx().tcx;
 
     match (ty::get(a).sty, ty::get(b).sty) {
-        (ty::ty_bot, _) => self.ty_bot(b),
-        (_, ty::ty_bot) => self.ty_bot(a),
+        (ty::ty_bot, _) => { return self.ty_bot(b); }
+        (_, ty::ty_bot) => { return self.ty_bot(a); }
 
         (ty::ty_infer(TyVar(a_id)), ty::ty_infer(TyVar(b_id))) => {
-            do lattice_vars(self, &self.infcx().ty_var_bindings,
-                            a_id, b_id,
-                            |x, y| self.tys(*x, *y)).chain |r| {
-                match r {
-                    Left(v) => Ok(ty::mk_var(tcx, v)),
-                    Right(t) => Ok(t)
-                }
-            }
+            let r = if_ok!(lattice_vars(self, &self.infcx().ty_var_bindings,
+                                        a_id, b_id,
+                                        |x, y| self.tys(*x, *y)));
+            return match r {
+                Left(v) => Ok(ty::mk_var(tcx, v)),
+                Right(t) => Ok(t)
+            };
         }
 
         (ty::ty_infer(TyVar(a_id)), _) => {
-            lattice_var_and_t(self, &self.infcx().ty_var_bindings,
-                              a_id, &b,
-                              |x, y| self.tys(*x, *y) )
+            return lattice_var_and_t(self, &self.infcx().ty_var_bindings,
+                                     a_id, &b,
+                                     |x, y| self.tys(*x, *y));
         }
 
         (_, ty::ty_infer(TyVar(b_id))) => {
-            lattice_var_and_t(self, &self.infcx().ty_var_bindings,
-                              b_id, &a,
-                              |x, y| self.tys(*x, *y) )
+            return lattice_var_and_t(self, &self.infcx().ty_var_bindings,
+                                     b_id, &a,
+                                     |x, y| self.tys(*x, *y));
         }
 
         (ty::ty_infer(FnVar(ref a_fn)), ty::ty_infer(FnVar(ref b_fn))) => {
-            do lattice_vars(self, &self.infcx().fn_var_bindings,
-                            a_fn.meta, b_fn.meta,
-                            |x, y| self.fn_metas(x, y)).chain |r| {
-                do self.fn_sigs(&a_fn.sig, &b_fn.sig).chain |s| {
-                    match r {
-                        Left(v) => {
-                            Ok(ty::mk_fn_var(tcx, FnTyBase {meta: v, sig: s}))
-                        }
-                        Right(m) => {
-                            Ok(ty::mk_fn(tcx, FnTyBase {meta: m, sig: s}))
-                        }
-                    }
+            let vm = if_ok!(lattice_vars(self, &self.infcx().fn_var_bindings,
+                                         a_fn.meta, b_fn.meta,
+                                         |x, y| self.fn_metas(x, y)));
+            let r = if_ok!(self.contraregions(a_fn.region, b_fn.region));
+            let s = if_ok!(self.fn_sigs(&a_fn.sig, &b_fn.sig));
+            return match vm {
+                Left(v) => {
+                    Ok(ty::mk_fn_var(tcx,
+                                     FnTyBase {meta: v,
+                                               region: r,
+                                               sig: s}))
                 }
-            }
+                Right(m) => {
+                    Ok(ty::mk_fn(tcx,
+                                 FnTyBase {meta: m,
+                                           region: r,
+                                           sig: s}))
+                }
+            };
         }
 
         (ty::ty_infer(FnVar(ref a_fn)), ty::ty_fn(ref b_fn)) => {
-            do lattice_var_and_t(self, &self.infcx().fn_var_bindings,
-                                 a_fn.meta, &b_fn.meta,
-                                 |x, y| self.fn_metas(x, y)).chain |m| {
-                do self.fn_sigs(&a_fn.sig, &b_fn.sig).chain |s| {
-                    Ok(ty::mk_fn(tcx, FnTyBase {meta: m, sig: s}))
-                }
-            }
+            let m = if_ok!(
+                lattice_var_and_t(self, &self.infcx().fn_var_bindings,
+                                  a_fn.meta, &b_fn.meta,
+                                  |x, y| self.fn_metas(x, y)));
+            let r = if_ok!(self.contraregions(a_fn.region, b_fn.region));
+            let s = if_ok!(self.fn_sigs(&a_fn.sig, &b_fn.sig));
+            return Ok(ty::mk_fn(tcx, FnTyBase {meta: m,
+                                               region: r,
+                                               sig: s}));
         }
 
         (ty::ty_fn(ref a_fn), ty::ty_infer(FnVar(ref b_fn))) => {
-            do lattice_var_and_t(self, &self.infcx().fn_var_bindings,
-                                 b_fn.meta, &a_fn.meta,
-                                 |x, y| self.fn_metas(x, y)).chain |m| {
-                do self.fn_sigs(&a_fn.sig, &b_fn.sig).chain |s| {
-                    Ok(ty::mk_fn(tcx, FnTyBase {meta: m, sig: s}))
-                }
-            }
+            let m = if_ok!(
+                lattice_var_and_t(self, &self.infcx().fn_var_bindings,
+                                  b_fn.meta, &a_fn.meta,
+                                  |x, y| self.fn_metas(x, y)));
+            let r = if_ok!(self.contraregions(a_fn.region, b_fn.region));
+            let s = if_ok!(self.fn_sigs(&a_fn.sig, &b_fn.sig));
+            return Ok(ty::mk_fn(tcx, FnTyBase {meta: m,
+                                               region: r,
+                                               sig: s}));
         }
 
         _ => {
-            super_tys(self, a, b)
+            return super_tys(self, a, b);
         }
     }
 }

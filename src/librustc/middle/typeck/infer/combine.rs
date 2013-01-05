@@ -326,13 +326,11 @@ fn super_fn_metas<C:Combine>(
     self: &C, a_f: &ty::FnMeta, b_f: &ty::FnMeta) -> cres<ty::FnMeta>
 {
     let p = if_ok!(self.protos(a_f.proto, b_f.proto));
-    let r = if_ok!(self.contraregions(a_f.region, b_f.region));
     let rs = if_ok!(self.ret_styles(a_f.ret_style, b_f.ret_style));
     let purity = if_ok!(self.purities(a_f.purity, b_f.purity));
     let onceness = if_ok!(self.oncenesses(a_f.onceness, b_f.onceness));
     Ok(FnMeta {purity: purity,
                proto: p,
-               region: r,
                onceness: onceness,
                bounds: a_f.bounds, // XXX: This is wrong!
                ret_style: rs})
@@ -361,11 +359,10 @@ fn super_fn_sigs<C:Combine>(
 fn super_fns<C:Combine>(
     self: &C, a_f: &ty::FnTy, b_f: &ty::FnTy) -> cres<ty::FnTy>
 {
-    do self.fn_metas(&a_f.meta, &b_f.meta).chain |m| {
-        do self.fn_sigs(&a_f.sig, &b_f.sig).chain |s| {
-            Ok(FnTyBase {meta: m, sig: s})
-        }
-    }
+    let m = if_ok!(self.fn_metas(&a_f.meta, &b_f.meta));
+    let r = if_ok!(self.contraregions(a_f.region, b_f.region));
+    let s = if_ok!(self.fn_sigs(&a_f.sig, &b_f.sig));
+    Ok(FnTyBase {meta: m, region: r, sig: s})
 }
 
 fn super_tys<C:Combine>(
