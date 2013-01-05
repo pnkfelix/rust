@@ -117,7 +117,7 @@ impl Lub: Combine {
         }
     }
 
-    fn fns(a: &ty::FnTy, b: &ty::FnTy) -> cres<ty::FnTy> {
+    fn fn_sigs(a: &ty::FnSig, b: &ty::FnSig) -> cres<ty::FnSig> {
         // Note: this is a subtle algorithm.  For a full explanation,
         // please see the large comment in `region_inference.rs`.
 
@@ -136,18 +136,18 @@ impl Lub: Combine {
                 self.span, b);
 
         // Collect constraints.
-        let fn_ty0 = if_ok!(super_fns(&self, &a_with_fresh, &b_with_fresh));
-        debug!("fn_ty0 = %s", fn_ty0.inf_str(self.infcx));
+        let sig0 = if_ok!(super_fn_sigs(&self, &a_with_fresh, &b_with_fresh));
+        debug!("sig0 = %s", sig0.inf_str(self.infcx));
 
-        // Generalize the regions appearing in fn_ty0 if possible
+        // Generalize the regions appearing in sig0 if possible
         let new_vars =
             self.infcx.region_vars.vars_created_since_snapshot(snapshot);
-        let fn_ty1 =
+        let sig1 =
             self.infcx.fold_regions_in_sig(
-                &fn_ty0,
+                &sig0,
                 |r, _in_fn| generalize_region(&self, snapshot, new_vars,
                                               a_isr, r));
-        return Ok(move fn_ty1);
+        return Ok(move sig1);
 
         fn generalize_region(self: &Lub,
                              snapshot: uint,
@@ -194,12 +194,12 @@ impl Lub: Combine {
         }
     }
 
-    fn fn_metas(a: &ty::FnMeta, b: &ty::FnMeta) -> cres<ty::FnMeta> {
-        super_fn_metas(&self, a, b)
+    fn fns(a: &ty::FnTy, b: &ty::FnTy) -> cres<ty::FnTy> {
+        super_fns(&self, a, b)
     }
 
-    fn fn_sigs(a: &ty::FnSig, b: &ty::FnSig) -> cres<ty::FnSig> {
-        super_fn_sigs(&self, a, b)
+    fn fn_metas(a: &ty::FnMeta, b: &ty::FnMeta) -> cres<ty::FnMeta> {
+        super_fn_metas(&self, a, b)
     }
 
     // Traits please (FIXME: #2794):

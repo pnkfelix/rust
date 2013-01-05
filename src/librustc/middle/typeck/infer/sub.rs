@@ -13,6 +13,7 @@ use unify::*;
 use lattice::*;
 use to_str::InferStr;
 use std::list;
+use check::regionmanip::{replace_bound_regions_in_fn_sig};
 
 fn macros() { include!("macros.rs"); } // FIXME(#3114): Macro import/export.
 
@@ -204,11 +205,11 @@ impl Sub: Combine {
             }
         };
 
-        debug!("a_fn_ty=%s", a_fn_ty.inf_str(self.infcx));
-        debug!("b_fn_ty=%s", b_fn_ty.inf_str(self.infcx));
+        debug!("a_sig=%s", a_sig.inf_str(self.infcx));
+        debug!("b_sig=%s", b_sig.inf_str(self.infcx));
 
         // Compare types now that bound regions have been replaced.
-        let fn_ty = if_ok!(super_fns(&self, &a_fn_ty, &b_fn_ty));
+        let sig = if_ok!(super_fn_sigs(&self, &a_sig, &b_sig));
 
         // Presuming type comparison succeeds, we need to check
         // that the skolemized regions do not "leak".
@@ -240,13 +241,17 @@ impl Sub: Combine {
             }
         }
 
-        return Ok(fn_ty)
+        return Ok(sig);
     }
 
     // Traits please (FIXME: #2794):
 
     fn flds(a: ty::field, b: ty::field) -> cres<ty::field> {
         super_flds(&self, a, b)
+    }
+
+    fn fns(a: &ty::FnTy, b: &ty::FnTy) -> cres<ty::FnTy> {
+        super_fns(&self, a, b)
     }
 
     fn fn_metas(a: &ty::FnMeta, b: &ty::FnMeta) -> cres<ty::FnMeta> {

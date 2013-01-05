@@ -271,7 +271,6 @@ use syntax::ast::{ret_style, purity};
 use util::ppaux::{ty_to_str, mt_to_str};
 use result::{Result, Ok, Err, map_vec, map_vec2, iter_vec2};
 use ty::{mk_fn, type_is_bot};
-use check::regionmanip::{replace_bound_regions_in_fn_ty};
 use util::common::{indent, indenter};
 use ast::{unsafe_fn, impure_fn, pure_fn, extern_fn};
 use ast::{m_const, m_imm, m_mutbl};
@@ -290,6 +289,7 @@ use floating::{float_ty_set, float_ty_set_all};
 use combine::{CombineFields, eq_tys};
 use assignment::Assign;
 use to_str::InferStr;
+use check::regionmanip::{replace_bound_regions_in_fn_sig};
 
 use sub::Sub;
 use lub::Lub;
@@ -343,6 +343,18 @@ type ures = cres<()>; // "unify result"
 type fres<T> = Result<T, fixup_err>; // "fixup result"
 type ares = cres<Option<@ty::AutoAdjustment>>; // "assignment result"
 
+/// Information about a function variable that is provided
+struct FnVarInfo {
+    /**
+     * The region that will be used for the meta information about
+     * this function variable if it is forced and there are no constraints.
+     * This only occurs if the user creates a closure but does not
+     * use it in any way.  This region is therefore generally the re_scope
+     * of the closure creation, which is the narrowest and hence most
+     * permissive region bound. */
+    default_region: ty::Region
+}
+
 struct InferCtxt {
     tcx: ty::ctxt,
 
@@ -351,9 +363,22 @@ struct InferCtxt {
     // order, represented by its upper and lower bounds.
     ty_var_bindings: ValsAndBindings<ty::TyVid, Bounds<ty::t>>,
 
+    // Number of type variables created thus far.
+    mut ty_var_counter: uint,
+
     // The types that might instantiate an integral type variable are
     // represented by an int_ty_set.
     int_var_bindings: ValsAndBindings<ty::IntVid, int_ty_set>,
+
+    // Number of integral variables created thus far.
+    mut int_var_counter: uint,
+
+    // The types that might instantiate a floating-point type variable are
+    // represented by an float_ty_set.
+    float_var_bindings: ValsAndBindings<ty::FloatVid, float_ty_set>,
+
+    // Number of floating-point variables created thus far.
+    mut float_var_counter: uint,
 
     // Function variables really just infer the "meta" part of a
     // function signature (e.g., @fn vs &fn). The types of the
@@ -362,18 +387,11 @@ struct InferCtxt {
     // not through the infer module).
     fn_var_bindings: ValsAndBindings<ty::FnVid, Bounds<FnMeta>>,
 
-    // The types that might instantiate a floating-point type variable are
-    // represented by an float_ty_set.
-    float_var_bindings: ValsAndBindings<ty::FloatVid, float_ty_set>,
+    // Information about each fn variable that has been created.
+    mut fn_var_infos: ~[FnVarInfo],
 
     // For region variables.
     region_vars: RegionVarBindings,
-
-    // For keeping track of existing type and region variables.
-    mut ty_var_counter: uint,
-    mut int_var_counter: uint,
-    mut float_var_counter: uint,
-    mut fn_var_counter: uint,
 }
 
 enum fixup_err {
@@ -407,15 +425,20 @@ fn new_ValsAndBindings<V:Copy, T:Copy>() -> ValsAndBindings<V, T> {
 fn new_infer_ctxt(tcx: ty::ctxt) -> @InferCtxt {
     @InferCtxt {
         tcx: tcx,
+
         ty_var_bindings: new_ValsAndBindings(),
-        int_var_bindings: new_ValsAndBindings(),
-        float_var_bindings: new_ValsAndBindings(),
-        fn_var_bindings: new_ValsAndBindings(),
-        region_vars: RegionVarBindings(tcx),
         ty_var_counter: 0,
+
+        int_var_bindings: new_ValsAndBindings(),
         int_var_counter: 0,
+
+        float_var_bindings: new_ValsAndBindings(),
         float_var_counter: 0,
-        fn_var_counter: 0
+
+        fn_var_bindings: new_ValsAndBindings(),
+        fn_var_infos: ~[],
+
+        region_vars: RegionVarBindings(tcx),
     }
 }
 
@@ -720,10 +743,17 @@ impl @InferCtxt {
         self.next_region_var_with_lb(span, ty::re_scope(scope_id))
     }
 
-    fn next_fn_var_id() -> FnVid {
-        let id = self.fn_var_counter;
-        self.fn_var_counter += 1;
+    fn next_fn_var_id(default_region: ty::Region) -> FnVid {
+        /*!
+         *
+         * Creates a new function variable.
+         *
+         * The meaning of the parameters is documented on the type
+         * `FnVarInfo`.
+         */
 
+        let id = self.fn_var_infos.len();
+        self.fn_var_infos.push(FnVarInfo {default_region: default_region});
         self.fn_var_bindings.vals.insert(id, Root({lb: None, ub: None}, 0u));
         return FnVid(id);
     }
@@ -786,7 +816,7 @@ impl @InferCtxt {
         fsig: &ty::FnSig) -> (ty::FnSig, isr_alist)
     {
         let {fn_sig: fn_sig, isr: isr, _} =
-            replace_bound_regions_in_fn_sig(self.tcx, @Nil, None, fty, |br| {
+            replace_bound_regions_in_fn_sig(self.tcx, @Nil, None, fsig, |br| {
                 // N.B.: The name of the bound region doesn't have anything to
                 // do with the region variable that's created for it.  The
                 // only thing we're doing with `br` here is using it in the
@@ -802,13 +832,12 @@ impl @InferCtxt {
 
     fn fold_regions_in_sig(
         &self,
-        fn_ty: &ty::FnTy,
-        fldr: &fn(r: ty::Region, in_fn: bool) -> ty::Region) -> ty::FnTy
+        fn_sig: &ty::FnSig,
+        fldr: &fn(r: ty::Region, in_fn: bool) -> ty::Region) -> ty::FnSig
     {
-        let sig = do ty::fold_sig(&fn_ty.sig) |t| {
+        do ty::fold_sig(fn_sig) |t| {
             ty::fold_regions(self.tcx, t, fldr)
-        };
-        ty::FnTyBase {meta: fn_ty.meta, sig: sig}
+        }
     }
 
 }

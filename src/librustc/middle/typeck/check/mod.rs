@@ -1405,7 +1405,8 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
     // through the `unpack` function.  It there is no expected type or
     // resolution is not possible (e.g., no constraints yet present), just
     // returns `none`.
-    fn unpack_expected<O: Copy>(fcx: @fn_ctxt, expected: Option<ty::t>,
+    fn unpack_expected<O: Copy>(fcx: @fn_ctxt,
+                                expected: Option<ty::t>,
                                 unpack: fn(ty::sty) -> Option<O>)
         -> Option<O> {
         match expected {
@@ -1454,7 +1455,8 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
             }
         };
 
-        let fn_vid = fcx.infcx().next_fn_var_id();
+        let default_region = ty::re_scope(expr.id);
+        let fn_vid = fcx.infcx().next_fn_var_id(default_region);
         let sig = astconv::ty_of_fn_sig(fcx, fcx, expected_tys, decl);
         let fn_ty = ty::mk_fn_var(tcx, FnTyBase {meta: fn_vid,
                                                  sig: sig});
@@ -1908,9 +1910,10 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
         fcx.write_ty(id, oprnd_t);
       }
       ast::expr_addr_of(mutbl, oprnd) => {
-        bot = check_expr(fcx, oprnd, unpack_expected(fcx, expected, |ty|
-            match ty { ty::ty_rptr(_, mt) => Some(mt.ty), _ => None }
-        ));
+        let expected_ty = unpack_expected(
+            fcx, expected,
+            |ty| match ty { ty::ty_rptr(_, mt) => Some(mt.ty), _ => None });
+        bot = check_expr(fcx, oprnd, expected_ty);
 
         // Note: at this point, we cannot say what the best lifetime
         // is to use for resulting pointer.  We want to use the
