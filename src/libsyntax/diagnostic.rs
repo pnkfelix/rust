@@ -136,10 +136,8 @@ fn mk_handler(emitter: Option<emitter>) -> handler {
     let emit = match emitter {
       Some(e) => e,
       None => {
-        let f = fn@(cmsp: Option<(@codemap::CodeMap, span)>,
-                    msg: &str, t: level) {
-            emit(cmsp, msg, t);
-        };
+        let f: @fn(Option<(@codemap::CodeMap, span)>, &str, level) =
+            |cmsp, msg, t| emit(cmsp, msg, t);
         f
       }
     };

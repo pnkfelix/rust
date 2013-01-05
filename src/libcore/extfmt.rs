@@ -136,7 +136,7 @@ pub mod ct {
 
     // A fragment of the output sequence
     pub enum Piece { PieceString(~str), PieceConv(Conv), }
-    pub type ErrorFn = fn@(&str) -> ! ;
+    pub type ErrorFn = @fn(&str) -> !;
 
     pub fn parse_fmt_string(s: &str, err: ErrorFn) -> ~[Piece] {
         let mut pieces: ~[Piece] = ~[];

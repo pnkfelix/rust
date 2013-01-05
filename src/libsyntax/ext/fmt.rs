@@ -30,7 +30,7 @@ fn expand_syntax_ext(cx: ext_ctxt, sp: span, arg: ast::mac_arg,
     let fmtspan = args[0].span;
     debug!("Format string:");
     log(debug, fmt);
-    let fmtfunc = fn@(s: &str) -> ! { cx.span_fatal(fmtspan, s) };
+    let fmtfunc: @fn(&str) -> ! = |s| cx.span_fatal(fmtspan, s);
     let pieces = parse_fmt_string(fmt, fmtfunc);
     return pieces_to_expr(cx, sp, pieces, args);
 }

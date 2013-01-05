@@ -657,7 +657,7 @@ enum sty {
     ty_param(param_ty), // type parameter
     ty_self, // special, implicit `self` type parameter
 
-    ty_infer(InferTy), // soething used only during inference/typeck
+    ty_infer(InferTy), // something used only during inference/typeck
     ty_err, // Also only used during inference/typeck, to represent
             // the type of an erroneous expression (helps cut down
             // on non-useful type error messages)
@@ -2930,8 +2930,9 @@ fn ty_fn_purity(fty: t) -> ast::purity {
 
 pure fn ty_fn_ret(fty: t) -> t {
     match get(fty).sty {
-      ty_fn(ref f) => f.sig.output,
-      _ => fail ~"ty_fn_ret() called on non-fn type"
+        ty_fn(ref f) => f.sig.output,
+        ty_infer(FnVar(ref f)) => f.sig.output,
+        _ => fail ~"ty_fn_ret() called on non-fn type"
     }
 }
 

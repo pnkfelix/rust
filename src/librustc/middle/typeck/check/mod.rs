@@ -975,6 +975,8 @@ pub enum DerefArgs {
     DoDerefArgs
 }
 
+struct CheckCallInnerResult { return_ty: ty::t, bot: bool }
+
 fn check_expr_with_unifier(fcx: @fn_ctxt,
                            expr: @ast::expr,
                            expected: Option<ty::t>,
@@ -991,10 +993,11 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
         in_fty: ty::t,
         callee_expr: @ast::expr,
         args: ~[@ast::expr],
-        deref_args: DerefArgs) -> {fty: ty::t, bot: bool} {
-
+        deref_args: DerefArgs) -> CheckCallInnerResult
+    {
         let tcx = fcx.ccx.tcx;
         let mut bot = false;
+        let t_err = ty::mk_err(tcx);
 
         // Replace all region parameters in the arguments and return
         // type with fresh region variables.
@@ -1002,59 +1005,53 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
         debug!("check_call_inner: before universal quant., in_fty=%s",
                fcx.infcx().ty_to_str(in_fty));
 
-        let mut formal_tys;
-
         // This is subtle: we expect `fty` to be a function type, which
         // normally introduce a level of binding.  In this case, we want to
         // process the types bound by the function but not by any nested
         // functions.  Therefore, we match one level of structure.
-        let fty =
-            match structure_of(fcx, sp, in_fty) {
-              ty::ty_fn(ref fn_ty) => {
-                  let fn_ty = replace_bound_regions_in_fn_ty(tcx, @Nil,
-                      None, fn_ty, |_br| fcx.infcx().next_region_var(sp,
-                                                      call_expr_id)).fn_ty;
+        let opt_fn_sig = match structure_of(fcx, sp, in_fty) {
+            ty::ty_fn(ref fn_ty) => {
+                Some(instantiate_sig(fcx, sp, call_expr_id, &fn_ty.sig))
+            }
+            ty::ty_infer(ty::FnVar(ref fn_ty)) => {
+                Some(instantiate_sig(fcx, sp, call_expr_id, &fn_ty.sig))
+            }
+            _ => {
+                fcx.type_error_message(sp, |actual| {
+                    fmt!("expected function or foreign function but \
+                          found `%s`", actual) }, in_fty, None);
+                None
+            }
+        };
 
-                  let supplied_arg_count = args.len();
-
-                  // Grab the argument types, supplying fresh type variables
-                  // if the wrong number of arguments were supplied
-                  let expected_arg_count = fn_ty.sig.inputs.len();
-                  formal_tys = if expected_arg_count == supplied_arg_count {
-                      fn_ty.sig.inputs.map(|a| a.ty)
-                  } else {
-                      tcx.sess.span_err(
-                          sp, fmt!("this function takes %u parameter%s but \
-                                    %u parameter%s supplied",
-                                   expected_arg_count,
-                                   if expected_arg_count == 1 {
-                                       ~""
-                                   } else {
-                                       ~"s"
-                                   },
-                                   supplied_arg_count,
-                                   if supplied_arg_count == 1 {
-                                       ~" was"
-                                   } else {
-                                       ~"s were"
-                                   }));
-                      fcx.infcx().next_ty_vars(supplied_arg_count)
-                  };
-                  ty::mk_fn(tcx, fn_ty)
-              }
-              _ => {
-                  fcx.type_error_message(sp, |actual| {
-                      fmt!("expected function or foreign function but \
-                            found `%s`", actual) }, in_fty, None);
-                  // check each arg against "error", in order to set up
-                  // all the node type bindings
-                  formal_tys = args.map(|_x| ty::mk_err(tcx));
-                  ty::mk_err(tcx)
-              }
-            };
-
-        debug!("check_call_inner: after universal quant., fty=%s",
-               fcx.infcx().ty_to_str(fty));
+        // Grab the expected argument types (or t_err)
+        let supplied_arg_count = args.len();
+        let formal_tys = match opt_fn_sig {
+            None => vec::from_fn(supplied_arg_count, |_| t_err),
+            Some(ref sig) => {
+                let expected_arg_count = sig.inputs.len();
+                if expected_arg_count == supplied_arg_count {
+                    sig.inputs.map(|a| a.ty)
+                } else {
+                    tcx.sess.span_err(
+                        sp, fmt!("this function takes %u parameter%s but \
+                                  %u parameter%s supplied",
+                                 expected_arg_count,
+                                 if expected_arg_count == 1 {
+                                     ~""
+                                 } else {
+                                     ~"s"
+                                 },
+                                 supplied_arg_count,
+                                 if supplied_arg_count == 1 {
+                                     ~" was"
+                                 } else {
+                                     ~"s were"
+                                 }));
+                    vec::from_fn(supplied_arg_count, |_| t_err)
+                }
+            }
+        };
 
         // Check the arguments.
         // We do this in a pretty awful way: first we typecheck any arguments
@@ -1063,13 +1060,12 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
         // of arguments when we typecheck the functions. This isn't really the
         // right way to do this.
         for [false, true].each |check_blocks| {
-            let check_blocks = *check_blocks;
-            debug!("check_blocks=%b", check_blocks);
+            debug!("check_blocks=%b", *check_blocks);
 
             // More awful hacks: before we check the blocks, try to do
             // an "opportunistic" vtable resolution of any trait
             // bounds on the call.
-            if check_blocks {
+            if *check_blocks {
                 vtable::early_resolve_expr(callee_expr, fcx, true);
             }
 
@@ -1080,7 +1076,7 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
                     _ => false
                 };
 
-                if is_block == check_blocks {
+                if is_block == *check_blocks {
                     debug!("checking the argument");
                     let mut formal_ty = formal_tys[i];
 
@@ -1097,15 +1093,32 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
                         DontDerefArgs => {}
                     }
 
-                    // mismatch error happens in here
-                    bot |= check_expr_with_assignability(fcx,
-                                                         *arg, formal_ty);
-
+                    bot |= check_expr_with_assignability(fcx, *arg,
+                                                         formal_ty);
                 }
             }
         }
 
-        {fty: fty, bot: bot}
+        let return_ty = match opt_fn_sig {
+            Some(ref sig) => sig.output,
+            None => t_err
+        };
+
+        return CheckCallInnerResult {
+            return_ty: return_ty,
+            bot: bot
+        };
+
+        fn instantiate_sig(fcx: @fn_ctxt,
+                           sp: span,
+                           call_expr_id: ast::node_id,
+                           fsig: &ty::FnSig) -> ty::FnSig
+        {
+            replace_bound_regions_in_fn_sig(
+                fcx.ccx.tcx, @Nil,
+                None, fsig,
+                |_br| fcx.infcx().next_region_var(sp, call_expr_id)).fn_sig
+        }
     }
 
     // A generic function for checking assignment expressions
@@ -1129,32 +1142,12 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
                             fn_ty: ty::t,
                             expr: @ast::expr,
                             args: ~[@ast::expr],
-                            bot: bool)
-                         -> bool {
-        let mut bot = bot;
-
-        // Call the generic checker.
-        let fty = {
-            let r = check_call_inner(fcx, sp, call_expr_id,
-                                     fn_ty, expr, args, DontDerefArgs);
-            bot |= r.bot;
-            r.fty
-        };
-
-        // Pull the return type out of the type of the function.
-        match structure_of(fcx, sp, fty) {
-          ty::ty_fn(ref f) => {
-              bot |= (f.meta.ret_style == ast::noreturn);
-              fcx.write_ty(call_expr_id, f.sig.output);
-              return bot;
-          }
-          _ => {
-              fcx.write_ty(call_expr_id, ty::mk_err(fcx.ccx.tcx));
-              fcx.type_error_message(sp, |_actual| {
-                  ~"expected function"}, fty, None);
-              return bot;
-          }
-        }
+                            bot: bool) -> bool
+    {
+        let cres = check_call_inner(fcx, sp, call_expr_id,
+                                    fn_ty, expr, args, DontDerefArgs);
+        fcx.write_ty(call_expr_id, cres.return_ty);
+        return bot | cres.bot;
     }
 
     // A generic function for doing all of the checking for call expressions
@@ -1278,13 +1271,11 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
                              op_ex.callee_id, opname, self_t, ~[],
                              deref_args) {
           Some(ref origin) => {
-            let {fty: method_ty, bot: bot} = {
-                let method_ty = fcx.node_ty(op_ex.callee_id);
-                check_call_inner(fcx, op_ex.span, op_ex.id,
-                                 method_ty, op_ex, args, deref_args)
-            };
-            fcx.ccx.method_map.insert(op_ex.id, (*origin));
-            Some((ty::ty_fn_ret(method_ty), bot))
+              fcx.ccx.method_map.insert(op_ex.id, (*origin));
+              let method_ty = fcx.node_ty(op_ex.callee_id);
+              let cres = check_call_inner(fcx, op_ex.span, op_ex.id,
+                                          method_ty, op_ex, args, deref_args);
+              Some((cres.return_ty, cres.bot))
           }
           _ => None
         }
