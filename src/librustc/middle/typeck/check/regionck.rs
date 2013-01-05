@@ -40,76 +40,89 @@ use middle::ty::{encl_region, re_scope};
 use middle::ty::{ty_fn_proto, vstore_box, vstore_fixed, vstore_slice};
 use middle::ty::{vstore_uniq};
 
-enum rcx { rcx_({fcx: @fn_ctxt, mut errors_reported: uint}) }
-type rvt = visit::vt<@rcx>;
-
-fn encl_region_of_def(fcx: @fn_ctxt, def: ast::def) -> ty::Region {
-    let tcx = fcx.tcx();
-    match def {
-        def_local(node_id, _) | def_arg(node_id, _) | def_self(node_id) |
-        def_binding(node_id, _) =>
-            return encl_region(tcx, node_id),
-        def_upvar(_, subdef, closure_id, body_id) => {
-            match ty_fn_proto(fcx.node_ty(closure_id)) {
-                ProtoBare => tcx.sess.bug(~"ProtoBare with upvars?!"),
-                ProtoBorrowed => encl_region_of_def(fcx, *subdef),
-                ProtoBox | ProtoUniq => re_scope(body_id)
-            }
-        }
-        _ => {
-            tcx.sess.bug(fmt!("unexpected def in encl_region_of_def: %?",
-                              def))
-        }
-    }
+struct RegionContext {
+    fcx: @fn_ctxt,
+    mut errors_reported: uint
 }
 
-impl @rcx {
-    /// Try to resolve the type for the given node.
-    ///
-    /// Note one important point: we do not attempt to resolve *region
-    /// variables* here.  This is because regionck is essentially adding
-    /// constraints to those region variables and so may yet influence
-    /// how they are resolved.
-    ///
-    /// Consider this silly example:
-    ///
-    ///     fn borrow(x: &int) -> &int {x}
-    ///     fn foo(x: @int) -> int {  /* block: B */
-    ///         let b = borrow(x);    /* region: <R0> */
-    ///         *b
-    ///     }
-    ///
-    /// Here, the region of `b` will be `<R0>`.  `<R0>` is constrainted
-    /// to be some subregion of the block B and some superregion of
-    /// the call.  If we forced it now, we'd choose the smaller region
-    /// (the call).  But that would make the *b illegal.  Since we don't
-    /// resolve, the type of b will be `&<R0>.int` and then `*b` will require
-    /// that `<R0>` be bigger than the let and the `*b` expression, so we
-    /// will effectively resolve `<R0>` to be the block B.
-    fn resolve_type(unresolved_ty: ty::t) -> fres<ty::t> {
+type rvt = visit::vt<@RegionContext>;
+
+impl RegionContext {
+    fn resolve_type(&self, unresolved_ty: ty::t) -> fres<ty::t> {
+        /*!
+         *
+         * Try to resolve the type for the given node.
+         *
+         * Note one important point: we do not attempt to resolve *region
+         * variables* here.  This is because regionck is essentially adding
+         * constraints to those region variables and so may yet influence
+         * how they are resolved.
+         *
+         * Consider this silly example:
+         *
+         *     fn borrow(x: &int) -> &int {x}
+         *     fn foo(x: @int) -> int {  // block: B
+         *         let b = borrow(x);    // region: <R0>
+         *         *b
+         *     }
+         *
+         * Here, the region of `b` will be `<R0>`.  `<R0>` is constrainted
+         * to be some subregion of the block B and some superregion of
+         * the call.  If we forced it now, we'd choose the smaller region
+         * (the call).  But that would make the *b illegal.  Since we don't
+         * resolve, the type of b will be `&<R0>.int` and then `*b` will require
+         * that `<R0>` be bigger than the let and the `*b` expression, so we
+         * will effectively resolve `<R0>` to be the block B. */
         resolve_type(self.fcx.infcx(), unresolved_ty,
                      resolve_and_force_all_but_regions)
     }
 
-    /// Try to resolve the type for the given node.
-    fn resolve_node_type(id: ast::node_id) -> fres<ty::t> {
+    fn resolve_node_type(&self, id: ast::node_id) -> fres<ty::t> {
+        //! Try to resolve the type for the given node.
+
         self.resolve_type(self.fcx.node_ty(id))
     }
+
+    fn encl_region_of_def(&self, def: ast::def) -> fres<ty::Region> {
+        let tcx = self.fcx.tcx();
+        match def {
+            def_local(node_id, _) | def_arg(node_id, _) | def_self(node_id) |
+            def_binding(node_id, _) => {
+                Ok(encl_region(tcx, node_id))
+            }
+
+            def_upvar(_, subdef, closure_id, body_id) => {
+                do self.resolve_node_type(closure_id).chain |closure_ty| {
+                    match ty_fn_proto(closure_ty) {
+                        ProtoBare => tcx.sess.bug(~"ProtoBare with upvars?!"),
+                        ProtoBorrowed => self.encl_region_of_def(*subdef),
+                        ProtoBox | ProtoUniq => Ok(re_scope(body_id))
+                    }
+                }
+            }
+
+            _ => {
+                tcx.sess.bug(fmt!("unexpected def in encl_region_of_def: %?",
+                                  def))
+            }
+        }
+    }
+
 }
 
 fn regionck_expr(fcx: @fn_ctxt, e: @ast::expr) {
-    let rcx = rcx_({fcx:fcx, mut errors_reported: 0});
+    let rcx = @RegionContext {fcx:fcx, mut errors_reported: 0};
     let v = regionck_visitor();
-    (v.visit_expr)(e, @(move rcx), v);
+    (v.visit_expr)(e, rcx, v);
     fcx.infcx().resolve_regions();
 }
 
 fn regionck_fn(fcx: @fn_ctxt,
                _decl: ast::fn_decl,
                blk: ast::blk) {
-    let rcx = rcx_({fcx:fcx, mut errors_reported: 0});
+    let rcx = @RegionContext {fcx:fcx, mut errors_reported: 0};
     let v = regionck_visitor();
-    (v.visit_block)(blk, @(move rcx), v);
+    (v.visit_block)(blk, rcx, v);
     fcx.infcx().resolve_regions();
 }
 
@@ -122,11 +135,11 @@ fn regionck_visitor() -> rvt {
                    .. *visit::default_visitor()})
 }
 
-fn visit_item(_item: @ast::item, &&_rcx: @rcx, _v: rvt) {
+fn visit_item(_item: @ast::item, &&_rcx: @RegionContext, _v: rvt) {
     // Ignore items
 }
 
-fn visit_local(l: @ast::local, &&rcx: @rcx, v: rvt) {
+fn visit_local(l: @ast::local, &&rcx: @RegionContext, v: rvt) {
     // Check to make sure that the regions in all local variables are
     // within scope.
     //
@@ -157,11 +170,11 @@ fn visit_local(l: @ast::local, &&rcx: @rcx, v: rvt) {
     }
 }
 
-fn visit_block(b: ast::blk, &&rcx: @rcx, v: rvt) {
+fn visit_block(b: ast::blk, &&rcx: @RegionContext, v: rvt) {
     visit::visit_block(b, rcx, v);
 }
 
-fn visit_expr(expr: @ast::expr, &&rcx: @rcx, v: rvt) {
+fn visit_expr(expr: @ast::expr, &&rcx: @RegionContext, v: rvt) {
     debug!("visit_expr(e=%s)",
            pprust::expr_to_str(expr, rcx.fcx.tcx().sess.intr()));
 
@@ -279,11 +292,11 @@ fn visit_expr(expr: @ast::expr, &&rcx: @rcx, v: rvt) {
     visit::visit_expr(expr, rcx, v);
 }
 
-fn visit_stmt(s: @ast::stmt, &&rcx: @rcx, v: rvt) {
+fn visit_stmt(s: @ast::stmt, &&rcx: @RegionContext, v: rvt) {
     visit::visit_stmt(s, rcx, v);
 }
 
-fn visit_node(id: ast::node_id, span: span, rcx: @rcx) -> bool {
+fn visit_node(id: ast::node_id, span: span, rcx: &RegionContext) -> bool {
     /*!
      *
      * checks the type of the node `id` and reports an error if it
@@ -303,7 +316,7 @@ fn visit_node(id: ast::node_id, span: span, rcx: @rcx) -> bool {
 }
 
 fn constrain_auto_ref(
-    rcx: @rcx,
+    rcx: &RegionContext,
     expr: @ast::expr)
 {
     /*!
@@ -348,7 +361,7 @@ fn constrain_auto_ref(
 }
 
 fn constrain_free_variables(
-    rcx: @rcx,
+    rcx: &RegionContext,
     region: ty::Region,
     expr: @ast::expr)
 {
@@ -361,31 +374,32 @@ fn constrain_free_variables(
     for get_freevars(tcx, expr.id).each |freevar| {
         debug!("freevar def is %?", freevar.def);
         let def = freevar.def;
-        let en_region = encl_region_of_def(rcx.fcx, def);
-        match rcx.fcx.mk_subr(true, freevar.span,
-                              region, en_region) {
-          result::Ok(()) => {}
-          result::Err(_) => {
-            tcx.sess.span_err(
-                freevar.span,
-                ~"captured variable does not outlive the enclosing closure");
-            note_and_explain_region(
-                tcx,
-                ~"captured variable is valid for ",
-                en_region,
-                ~"");
-            note_and_explain_region(
-                tcx,
-                ~"closure is valid for ",
-                region,
-                ~"");
-          }
+        do rcx.encl_region_of_def(def).iter |en_region| {
+            match rcx.fcx.mk_subr(true, freevar.span, region, *en_region) {
+                result::Ok(()) => {}
+                result::Err(_) => {
+                    tcx.sess.span_err(
+                        freevar.span,
+                        ~"captured variable does not \
+                          outlive the enclosing closure");
+                    note_and_explain_region(
+                        tcx,
+                        ~"captured variable is valid for ",
+                        *en_region,
+                        ~"");
+                    note_and_explain_region(
+                        tcx,
+                        ~"closure is valid for ",
+                        region,
+                        ~"");
+                }
+            }
         }
     }
 }
 
 fn constrain_regions_in_type_of_node(
-    rcx: @rcx,
+    rcx: &RegionContext,
     id: ast::node_id,
     encl_region: ty::Region,
     span: span) -> bool
@@ -408,7 +422,7 @@ fn constrain_regions_in_type_of_node(
 }
 
 fn constrain_regions_in_type(
-    rcx: @rcx,
+    rcx: &RegionContext,
     encl_region: ty::Region,
     span: span,
     ty: ty::t) -> bool
@@ -430,7 +444,7 @@ fn constrain_regions_in_type(
         |t| ty::type_has_regions(t));
     return (e == rcx.errors_reported);
 
-    fn constrain_region(rcx: @rcx,
+    fn constrain_region(rcx: &RegionContext,
                         encl_region: ty::Region,
                         span: span,
                         region: ty::Region) {
