@@ -94,11 +94,12 @@ fn annotate_freevars(def_map: resolve::DefMap, crate: @ast::crate) ->
    freevar_map {
     let freevars = HashMap();
 
-    let walk_fn = fn@(_fk: visit::fn_kind, _decl: ast::fn_decl,
-                      blk: ast::blk, _sp: span, nid: ast::node_id) {
-        let vars = collect_freevars(def_map, blk);
-        freevars.insert(nid, vars);
-    };
+    let walk_fn: fn@(_fk: visit::fn_kind, _decl: ast::fn_decl,
+                     blk: ast::blk, _sp: span, nid: ast::node_id) =
+        |_fk, _decl, blk, _sp, nid| {
+            let vars = collect_freevars(def_map, blk);
+            freevars.insert(nid, vars);
+        };
 
     let visitor =
         visit::mk_simple_visitor(@{visit_fn: walk_fn,

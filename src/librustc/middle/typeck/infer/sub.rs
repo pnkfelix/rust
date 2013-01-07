@@ -76,14 +76,6 @@ impl Sub: Combine {
         }
     }
 
-    fn protos(p1: ast::Proto, p2: ast::Proto) -> cres<ast::Proto> {
-        match (p1, p2) {
-            (ast::ProtoBare, _) => Ok(p1),
-            _ if p1 == p2 => Ok(p1),
-            _ => Err(ty::terr_proto_mismatch(expected_found(&self, p1, p2)))
-        }
-    }
-
     fn purities(a: purity, b: purity) -> cres<purity> {
         self.lub().purities(a, b).compare(b, || {
             ty::terr_purity_mismatch(expected_found(&self, a, b))
@@ -93,12 +85,6 @@ impl Sub: Combine {
     fn oncenesses(a: Onceness, b: Onceness) -> cres<Onceness> {
         self.lub().oncenesses(a, b).compare(b, || {
             ty::terr_onceness_mismatch(expected_found(&self, a, b))
-        })
-    }
-
-    fn ret_styles(a: ret_style, b: ret_style) -> cres<ret_style> {
-        self.lub().ret_styles(a, b).compare(b, || {
-            ty::terr_ret_style_mismatch(expected_found(&self, a, b))
         })
     }
 
@@ -245,6 +231,10 @@ impl Sub: Combine {
     }
 
     // Traits please (FIXME: #2794):
+
+    fn protos(p1: ast::Proto, p2: ast::Proto) -> cres<ast::Proto> {
+        super_protos(&self, p1, p2)
+    }
 
     fn flds(a: ty::field, b: ty::field) -> cres<ty::field> {
         super_flds(&self, a, b)

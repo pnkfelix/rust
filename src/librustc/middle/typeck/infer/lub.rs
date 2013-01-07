@@ -69,15 +69,6 @@ impl Lub: Combine {
         Glb(*self).tys(a, b)
     }
 
-    fn protos(p1: ast::Proto, p2: ast::Proto) -> cres<ast::Proto> {
-        match (p1, p2) {
-            (ast::ProtoBare, _) => Ok(p2),
-            (_, ast::ProtoBare) => Ok(p1),
-            _ if p1 == p2 => Ok(p1),
-            _ => Err(ty::terr_proto_mismatch(expected_found(&self, p1, p2)))
-        }
-    }
-
     fn purities(a: purity, b: purity) -> cres<purity> {
         match (a, b) {
           (unsafe_fn, _) | (_, unsafe_fn) => Ok(unsafe_fn),
@@ -91,14 +82,6 @@ impl Lub: Combine {
         match (a, b) {
             (Once, _) | (_, Once) => Ok(Once),
             (Many, Many) => Ok(Many)
-        }
-    }
-
-    fn ret_styles(r1: ret_style, r2: ret_style) -> cres<ret_style> {
-        match (r1, r2) {
-          (ast::return_val, _) |
-          (_, ast::return_val) => Ok(ast::return_val),
-          (ast::noreturn, ast::noreturn) => Ok(ast::noreturn)
         }
     }
 
@@ -203,6 +186,10 @@ impl Lub: Combine {
     }
 
     // Traits please (FIXME: #2794):
+
+    fn protos(p1: ast::Proto, p2: ast::Proto) -> cres<ast::Proto> {
+        super_protos(&self, p1, p2)
+    }
 
     fn tys(a: ty::t, b: ty::t) -> cres<ty::t> {
         super_lattice_tys(&self, a, b)

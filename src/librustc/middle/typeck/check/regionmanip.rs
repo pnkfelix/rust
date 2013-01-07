@@ -43,10 +43,8 @@ fn replace_bound_regions_in_fn_sig(
 {
     // Take self_info apart; the self_ty part is the only one we want
     // to update here.
-    let (self_ty, rebuild_self_info) = match self_info {
-      Some(copy s) => (Some(s.self_ty), |t| Some({self_ty: t,.. s})),
-      None => (None, |_t| None)
-    };
+    let self_ty = self_info.map(|s| s.self_ty);
+    let rebuild_self_info = |t| self_info.map(|s| {self_ty: t, ..*s});
 
     let mut all_tys = ty::tys_in_fn_sig(fn_sig);
 

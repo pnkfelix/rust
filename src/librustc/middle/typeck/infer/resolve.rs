@@ -307,8 +307,7 @@ impl ResolveState {
                     purity: ast::impure_fn,
                     proto: ast::ProtoBorrowed,
                     onceness: ast::Many,
-                    bounds: @~[],
-                    ret_style: ast::return_val
+                    bounds: @~[]
                 }
             }
         };

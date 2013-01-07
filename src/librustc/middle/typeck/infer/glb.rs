@@ -82,10 +82,6 @@ impl Glb: Combine {
         Lub(*self).tys(a, b)
     }
 
-    fn protos(p1: ast::Proto, p2: ast::Proto) -> cres<ast::Proto> {
-        if p1 == p2 {Ok(p1)} else {Ok(ast::ProtoBare)}
-    }
-
     fn purities(a: purity, b: purity) -> cres<purity> {
         match (a, b) {
           (pure_fn, _) | (_, pure_fn) => Ok(pure_fn),
@@ -99,18 +95,6 @@ impl Glb: Combine {
         match (a, b) {
             (Many, _) | (_, Many) => Ok(Many),
             (Once, Once) => Ok(Once)
-        }
-    }
-
-    fn ret_styles(r1: ret_style, r2: ret_style) -> cres<ret_style> {
-        match (r1, r2) {
-          (ast::return_val, ast::return_val) => {
-            Ok(ast::return_val)
-          }
-          (ast::noreturn, _) |
-          (_, ast::noreturn) => {
-            Ok(ast::noreturn)
-          }
         }
     }
 
@@ -269,6 +253,10 @@ impl Glb: Combine {
         fn fresh_bound_variable(self: &Glb) -> ty::Region {
             self.infcx.region_vars.new_bound()
         }
+    }
+
+    fn protos(p1: ast::Proto, p2: ast::Proto) -> cres<ast::Proto> {
+        super_protos(&self, p1, p2)
     }
 
     fn fns(a: &ty::FnTy, b: &ty::FnTy) -> cres<ty::FnTy> {

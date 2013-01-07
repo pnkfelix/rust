@@ -295,8 +295,7 @@ fn ty_to_str(cx: ctxt, typ: t) -> ~str {
                  onceness: ast::Onceness,
                  ident: Option<ast::ident>,
                  inputs: ~[arg],
-                 output: t,
-                 cf: ast::ret_style) -> ~str {
+                 output: t) -> ~str {
         let mut s;
 
         s = match purity {
@@ -334,9 +333,10 @@ fn ty_to_str(cx: ctxt, typ: t) -> ~str {
         s += ~")";
         if ty::get(output).sty != ty_nil {
             s += ~" -> ";
-            match cf {
-              ast::noreturn => { s += ~"!"; }
-              ast::return_val => { s += ty_to_str(cx, output); }
+            if ty::type_is_bot(output) {
+                s += ~"!";
+            } else {
+                s += ty_to_str(cx, output);
             }
         }
         return s;
@@ -350,8 +350,7 @@ fn ty_to_str(cx: ctxt, typ: t) -> ~str {
             m.fty.meta.onceness,
             Some(m.ident),
             m.fty.sig.inputs,
-            m.fty.sig.output,
-            m.fty.meta.ret_style) + ~";";
+            m.fty.sig.output) + ~";";
     }
     fn field_to_str(cx: ctxt, f: field) -> ~str {
         return cx.sess.str_of(f.ident) + ~": " + mt_to_str(cx, f.mt);
@@ -399,8 +398,7 @@ fn ty_to_str(cx: ctxt, typ: t) -> ~str {
                   f.meta.onceness,
                   None,
                   f.sig.inputs,
-                  f.sig.output,
-                  f.meta.ret_style)
+                  f.sig.output)
       }
       ty_infer(infer_ty) => infer_ty.to_str(),
       ty_err => ~"[type error]",

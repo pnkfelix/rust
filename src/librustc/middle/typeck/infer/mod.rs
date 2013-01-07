@@ -267,7 +267,7 @@ use middle::ty::{TyVid, IntVid, FloatVid, FnVid, RegionVid, Vid,
                  ty_int, ty_uint, get, terr_fn, TyVar, IntVar, FloatVar,
                  FnVar, FnMeta};
 use syntax::{ast, ast_util};
-use syntax::ast::{ret_style, purity};
+use syntax::ast::{purity};
 use util::ppaux::{ty_to_str, mt_to_str};
 use result::{Result, Ok, Err, map_vec, map_vec2, iter_vec2};
 use ty::{mk_fn, type_is_bot};

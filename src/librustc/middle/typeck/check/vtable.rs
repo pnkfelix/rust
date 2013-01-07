@@ -690,13 +690,16 @@ fn resolve_expr(ex: @ast::expr, &&fcx: @fn_ctxt, v: visit::vt<@fn_ctxt>) {
     visit::visit_expr(ex, fcx, v);
 }
 
+fn resolve_item(_i: @ast::item, &&_e: @fn_ctxt,
+                _v: visit::vt<@fn_ctxt>) {
+}
+
 // Detect points where a trait-bounded type parameter is
 // instantiated, resolve the impls for the parameters.
 fn resolve_in_block(fcx: @fn_ctxt, bl: ast::blk) {
     visit::visit_block(bl, fcx, visit::mk_vt(@{
         visit_expr: resolve_expr,
-        visit_item: fn@(_i: @ast::item, &&_e: @fn_ctxt,
-                        _v: visit::vt<@fn_ctxt>) {},
+        visit_item: resolve_item,
         .. *visit::default_visitor()
     }));
 }

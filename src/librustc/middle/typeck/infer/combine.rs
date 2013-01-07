@@ -84,7 +84,6 @@ trait Combine {
     fn modes(a: ast::mode, b: ast::mode) -> cres<ast::mode>;
     fn args(a: ty::arg, b: ty::arg) -> cres<ty::arg>;
     fn protos(p1: ast::Proto, p2: ast::Proto) -> cres<ast::Proto>;
-    fn ret_styles(r1: ret_style, r2: ret_style) -> cres<ret_style>;
     fn purities(a: purity, b: purity) -> cres<purity>;
     fn oncenesses(a: Onceness, b: Onceness) -> cres<Onceness>;
     fn contraregions(a: ty::Region, b: ty::Region) -> cres<ty::Region>;
@@ -267,6 +266,16 @@ fn super_self_tys<C:Combine>(
     }
 }
 
+fn super_protos<C: Combine>(
+    self: &C, p1: ast::Proto, p2: ast::Proto) -> cres<ast::Proto>
+{
+    if p1 == p2 {
+        Ok(p1)
+    } else {
+        Err(ty::terr_proto_mismatch(expected_found(self, p1, p2)))
+    }
+}
+
 fn super_flds<C:Combine>(
     self: &C, a: ty::field, b: ty::field) -> cres<ty::field> {
 
@@ -326,14 +335,12 @@ fn super_fn_metas<C:Combine>(
     self: &C, a_f: &ty::FnMeta, b_f: &ty::FnMeta) -> cres<ty::FnMeta>
 {
     let p = if_ok!(self.protos(a_f.proto, b_f.proto));
-    let rs = if_ok!(self.ret_styles(a_f.ret_style, b_f.ret_style));
     let purity = if_ok!(self.purities(a_f.purity, b_f.purity));
     let onceness = if_ok!(self.oncenesses(a_f.onceness, b_f.onceness));
     Ok(FnMeta {purity: purity,
                proto: p,
                onceness: onceness,
-               bounds: a_f.bounds, // XXX: This is wrong!
-               ret_style: rs})
+               bounds: a_f.bounds}) // XXX: This is wrong!
 }
 
 fn super_fn_sigs<C:Combine>(

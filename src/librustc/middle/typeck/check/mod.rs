@@ -341,18 +341,18 @@ fn check_fn(ccx: @crate_ctxt,
                      self_info: Option<self_info>) {
         let tcx = fcx.ccx.tcx;
 
-        let assign = fn@(span: span, nid: ast::node_id,
-                         ty_opt: Option<ty::t>) {
-            let var_id = fcx.infcx().next_ty_var_id();
-            fcx.inh.locals.insert(nid, var_id);
-            match ty_opt {
-                None => {/* nothing to do */ }
-                Some(typ) => {
-                    infer::mk_eqty(fcx.infcx(), false, span,
-                                   ty::mk_var(tcx, var_id), typ);
+        let assign: fn@(span, ast::node_id, Option<ty::t>) =
+            |span, nid, ty_opt| {
+                let var_id = fcx.infcx().next_ty_var_id();
+                fcx.inh.locals.insert(nid, var_id);
+                match ty_opt {
+                    None => {/* nothing to do */ }
+                    Some(typ) => {
+                        infer::mk_eqty(fcx.infcx(), false, span,
+                                       ty::mk_var(tcx, var_id), typ);
+                    }
                 }
-            }
-        };
+            };
 
         // Add the self parameter
         for self_info.each |self_info| {
@@ -383,18 +383,19 @@ fn check_fn(ccx: @crate_ctxt,
         }
 
         // Add explicitly-declared locals.
-        let visit_local = fn@(local: @ast::local,
-                              &&e: (), v: visit::vt<()>) {
-            let o_ty = match local.node.ty.node {
-              ast::ty_infer => None,
-              _ => Some(fcx.to_ty(local.node.ty))
+        let visit_local: fn@(local: @ast::local,
+                             &&e: (), v: visit::vt<()>) =
+            |local, e, v| {
+                let o_ty = match local.node.ty.node {
+                  ast::ty_infer => None,
+                  _ => Some(fcx.to_ty(local.node.ty))
+                };
+                assign(local.span, local.node.id, o_ty);
+                debug!("Local variable %s is assigned to %s",
+                       pat_to_str(local.node.pat, tcx.sess.intr()),
+                       fcx.inh.locals.get(local.node.id).to_str());
+                visit::visit_local(local, e, v);
             };
-            assign(local.span, local.node.id, o_ty);
-            debug!("Local variable %s is assigned to %s",
-                   pat_to_str(local.node.pat, tcx.sess.intr()),
-                   fcx.inh.locals.get(local.node.id).to_str());
-            visit::visit_local(local, e, v);
-        };
 
         // Add pattern bindings.
         let visit_pat = |p: @ast::pat, &&e: (), v: visit::vt<()>| {
@@ -411,14 +412,15 @@ fn check_fn(ccx: @crate_ctxt,
             visit::visit_pat(p, e, v);
         };
 
-        let visit_block = fn@(b: ast::blk, &&e: (), v: visit::vt<()>) {
-            // non-obvious: the `blk` variable maps to region lb, so
-            // we have to keep this up-to-date.  This
-            // is... unfortunate.  It'd be nice to not need this.
-            do fcx.with_region_lb(b.node.id) {
-                visit::visit_block(b, e, v);
-            }
-        };
+        let visit_block: fn@(b: ast::blk, &&e: (), v: visit::vt<()>) =
+            |b, e, v| {
+                // non-obvious: the `blk` variable maps to region lb, so
+                // we have to keep this up-to-date.  This
+                // is... unfortunate.  It'd be nice to not need this.
+                do fcx.with_region_lb(b.node.id) {
+                    visit::visit_block(b, e, v);
+                }
+            };
 
         // Don't descend into fns and items
         fn visit_fn(_fk: visit::fn_kind, _decl: ast::fn_decl,
@@ -1103,6 +1105,8 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
             Some(ref sig) => sig.output,
             None => t_err
         };
+
+        bot |= ty::type_is_bot(return_ty);
 
         return CheckCallInnerResult {
             return_ty: return_ty,
@@ -2637,12 +2641,6 @@ fn ty_param_bounds_and_ty_for_def(fcx: @fn_ctxt, sp: span, defn: ast::def) ->
         };
       }
 
-      ast::def_fn(id, ast::unsafe_fn) |
-      ast::def_static_method(id, _, ast::unsafe_fn) => {
-        // Unsafe functions can only be touched in an unsafe context
-        return ty::lookup_item_type(fcx.ccx.tcx, id);
-      }
-
       ast::def_fn(id, _) | ast::def_static_method(id, _, _) |
       ast::def_const(id) | ast::def_variant(_, id) |
       ast::def_struct(id) => {
@@ -2906,8 +2904,7 @@ fn check_intrinsic_type(ccx: @crate_ctxt, it: @ast::foreign_item) {
             meta: FnMeta {purity: ast::impure_fn,
                           proto: ast::ProtoBorrowed,
                           onceness: ast::Once,
-                          bounds: @~[],
-                          ret_style: ast::return_val},
+                          bounds: @~[]},
             region: ty::re_bound(ty::br_anon(0)),
             sig: FnSig {inputs: ~[{mode: ast::expl(ast::by_val),
                                    ty: ty::mk_imm_ptr(
@@ -3059,8 +3056,7 @@ fn check_intrinsic_type(ccx: @crate_ctxt, it: @ast::foreign_item) {
         meta: FnMeta {purity: ast::impure_fn,
                       proto: ast::ProtoBare,
                       onceness: ast::Many,
-                      bounds: @~[],
-                      ret_style: ast::return_val},
+                      bounds: @~[]},
         region: ty::re_static,
         sig: FnSig {inputs: inputs,
                     output: output}

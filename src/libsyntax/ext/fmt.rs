@@ -21,6 +21,24 @@ use codemap::span;
 use ext::build::*;
 export expand_syntax_ext;
 
+#[cfg(stage0)]
+fn expand_syntax_ext(cx: ext_ctxt, sp: span, arg: ast::mac_arg,
+                     _body: ast::mac_body) -> @ast::expr {
+    let args = get_mac_args_no_max(cx, sp, arg, 1u, ~"fmt");
+    let fmt =
+        expr_to_str(cx, args[0],
+                    ~"first argument to fmt! must be a string literal.");
+    debug!("Format string:");
+    log(debug, fmt);
+    let pieces = parse_fmt_string(fmt, fmtfunc);
+    return pieces_to_expr(cx, sp, pieces, args);
+
+    // Workaround a bug in stage0.
+    fn fmtfunc(s: &str) -> ! { fail s.to_str(); }
+}
+
+#[cfg(stage1)]
+#[cfg(stage2)]
 fn expand_syntax_ext(cx: ext_ctxt, sp: span, arg: ast::mac_arg,
                      _body: ast::mac_body) -> @ast::expr {
     let args = get_mac_args_no_max(cx, sp, arg, 1u, ~"fmt");

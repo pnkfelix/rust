@@ -84,13 +84,6 @@ fn parse_arg_data(data: @~[u8], crate_num: int, pos: uint, tcx: ty::ctxt,
     parse_arg(st, conv)
 }
 
-fn parse_ret_ty(st: @pstate, conv: conv_did) -> (ast::ret_style, ty::t) {
-    match peek(st) {
-      '!' => { next(st); (ast::noreturn, ty::mk_bot(st.tcx)) }
-      _ => (ast::return_val, parse_ty(st, conv))
-    }
-}
-
 fn parse_path(st: @pstate) -> @ast::path {
     let mut idents: ~[ast::ident] = ~[];
     fn is_last(c: char) -> bool { return c == '(' || c == ':'; }
@@ -431,13 +424,12 @@ fn parse_ty_fn(st: @pstate, conv: conv_did) -> ty::FnTy {
         inputs.push({mode: mode, ty: parse_ty(st, conv)});
     }
     st.pos += 1u; // eat the ']'
-    let (ret_style, ret_ty) = parse_ret_ty(st, conv);
+    let ret_ty = parse_ty(st, conv);
     return FnTyBase {
         meta: FnMeta {purity: purity,
                       proto: proto,
                       onceness: onceness,
-                      bounds: bounds,
-                      ret_style: ret_style},
+                      bounds: bounds},
         region: region,
         sig: FnSig {inputs: inputs,
                     output: ret_ty}
