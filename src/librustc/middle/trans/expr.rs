@@ -557,7 +557,8 @@ fn trans_rvalue_dps_unadjusted(bcx: block, expr: @ast::expr,
         ast::expr_fn(proto, decl, ref body, cap_clause) => {
             // Don't use this function for anything real. Use the one in
             // astconv instead.
-            return closure::trans_expr_fn(bcx, proto, decl, *body, expr.id,
+            return closure::trans_expr_fn(bcx, proto, decl, *body,
+                                          expr.id, expr.id,
                                           cap_clause, None, dest);
         }
         ast::expr_fn_block(decl, ref body, cap_clause) => {
@@ -568,7 +569,8 @@ fn trans_rvalue_dps_unadjusted(bcx: block, expr: @ast::expr,
                            expr_to_str(expr, tcx.sess.intr()),
                            ty_to_str(tcx, expr_ty));
                     return closure::trans_expr_fn(
-                        bcx, fn_ty.meta.proto, decl, *body, expr.id,
+                        bcx, fn_ty.meta.proto, decl, *body,
+                        expr.id, expr.id,
                         cap_clause, None, dest);
                 }
                 _ => {
@@ -583,7 +585,8 @@ fn trans_rvalue_dps_unadjusted(bcx: block, expr: @ast::expr,
                     match blk.node {
                         ast::expr_fn_block(decl, ref body, cap) => {
                             return closure::trans_expr_fn(
-                                bcx, fn_ty.meta.proto, decl, *body, blk.id,
+                                bcx, fn_ty.meta.proto, decl, *body,
+                                expr.id, blk.id,
                                 cap, Some(None), dest);
                         }
                         _ => {
