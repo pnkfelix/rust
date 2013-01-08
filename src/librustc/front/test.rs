@@ -64,10 +64,10 @@ fn generate_test_harness(sess: session::Session,
           mut path: ~[],
           testfns: DVec()};
 
-    let precursor =
-        @{fold_crate: fold::wrap(|a,b| fold_crate(cx, a, b) ),
-          fold_item: |a,b| fold_item(cx, a, b),
-          fold_mod: |a,b| fold_mod(cx, a, b),.. *fold::default_ast_fold()};
+    let precursor = @fold::AstFoldFns {
+        fold_crate: fold::wrap(|a,b| fold_crate(cx, a, b) ),
+        fold_item: |a,b| fold_item(cx, a, b),
+        fold_mod: |a,b| fold_mod(cx, a, b),.. *fold::default_ast_fold()};
 
     let fold = fold::make_fold(precursor);
     let res = @fold.fold_crate(*crate);
