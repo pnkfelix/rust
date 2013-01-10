@@ -1480,12 +1480,12 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
     // resolution is not possible (e.g., no constraints yet present), just
     // returns `none`.
     fn unpack_expected<O: Copy>(fcx: @fn_ctxt, expected: Option<ty::t>,
-                                unpack: fn(ty::sty) -> Option<O>)
+                                unpack: fn(&ty::sty) -> Option<O>)
         -> Option<O> {
         match expected {
             Some(t) => {
                 match resolve_type(fcx.infcx(), t, force_tvar) {
-                    Ok(t) => unpack(ty::get(t).sty),
+                    Ok(t) => unpack(&ty::get(t).sty),
                     _ => None
                 }
             }
@@ -1510,7 +1510,7 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
         // to impure and block. Note that we only will use those for
         // block syntax lambdas; that is, lambdas without explicit
         // protos.
-        let expected_sty = unpack_expected(fcx, expected, |x| Some(x));
+        let expected_sty = unpack_expected(fcx, expected, |x| Some(copy *x));
         let (expected_tys,
              expected_purity,
              expected_proto,
@@ -1942,8 +1942,8 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
       ast::expr_unary(unop, oprnd) => {
         let exp_inner = do unpack_expected(fcx, expected) |sty| {
             match unop {
-              ast::box(_) | ast::uniq(_) => match sty {
-                ty::ty_box(mt) | ty::ty_uniq(mt) => Some(mt.ty),
+              ast::box(_) | ast::uniq(_) => match *sty {
+                ty::ty_box(ref mt) | ty::ty_uniq(ref mt) => Some(mt.ty),
                 _ => None
               },
               ast::not | ast::neg => expected,
@@ -2023,8 +2023,8 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
         fcx.write_ty(id, oprnd_t);
       }
       ast::expr_addr_of(mutbl, oprnd) => {
-        bot = check_expr(fcx, oprnd, unpack_expected(fcx, expected, |ty|
-            match ty { ty::ty_rptr(_, mt) => Some(mt.ty), _ => None }
+        bot = check_expr(fcx, oprnd, unpack_expected(fcx, expected, |sty|
+            match *sty { ty::ty_rptr(_, ref mt) => Some(mt.ty), _ => None }
         ));
 
         // Note: at this point, we cannot say what the best lifetime
@@ -2150,7 +2150,7 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
         // 1. a closure that returns a bool is expected
         // 2. the closure that was given returns unit
         let mut err_happened = false;
-        let expected_sty = unpack_expected(fcx, expected, |x| Some(x));
+        let expected_sty = unpack_expected(fcx, expected, |x| Some(copy *x));
         let inner_ty = match expected_sty {
           Some(ty::ty_fn(ref fty)) => {
             match fcx.mk_subty(false, expr.span,
@@ -2221,7 +2221,7 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
         }
       }
       ast::expr_do_body(b) => {
-        let expected_sty = unpack_expected(fcx, expected, |x| Some(x));
+        let expected_sty = unpack_expected(fcx, expected, |x| Some(copy *x));
         let inner_ty = match expected_sty {
           Some(ty::ty_fn(ref fty)) => {
               ty::mk_fn(tcx, (/*bad*/copy *fty))
@@ -2337,11 +2337,7 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
       }
       ast::expr_tup(elts) => {
         let flds = unpack_expected(fcx, expected, |sty| {
-            // XXX: Beware! If you remove `copy` below, the borrow checker
-            // will NOT complain, but you will get a segfault at runtime! This
-            // is because the mode computation is currently unaware of
-            // argument modes.
-            match copy sty { ty::ty_tup(flds) => Some(flds), _ => None }
+            match *sty { ty::ty_tup(ref flds) => Some(copy *flds), _ => None }
         });
         let elt_ts = do elts.mapi |i, e| {
             check_expr(fcx, *e, flds.map(|fs| fs[i]));
@@ -2356,12 +2352,8 @@ fn check_expr_with_unifier(fcx: @fn_ctxt,
             Some(fcx.expr_ty(base.get()))
         } else { expected };
         let flds = unpack_expected(fcx, expected, |sty|
-            // XXX: Beware! If you remove `copy` below, the borrow checker
-            // will NOT complain, but you will get a segfault at runtime! This
-            // is because the mode computation is currently unaware of
-            // argument modes.
-            match copy sty {
-                ty::ty_rec(flds) => Some(flds),
+            match *sty {
+                ty::ty_rec(ref flds) => Some(copy *flds),
                 _ => None
             }
         );
