@@ -137,6 +137,8 @@ pub fn check_exhaustive(cx: @MatchCheckCtxt, sp: span, pats: ~[@pat]) {
       not_useful => return, // This is good, wildcard pattern isn't reachable
       useful_ => None,
       useful(ty, ref ctor) => {
+        debug!("useful(ty=%s, ctor=%?)",
+               ty_to_str(cx.tcx, ty), *ctor);
         match ty::get(ty).sty {
           ty::ty_bool => {
             match (*ctor) {
@@ -206,9 +208,16 @@ pub fn is_useful(cx: @MatchCheckCtxt, +m: matrix, +v: &[@pat]) -> useful {
     let left_ty = if real_pat.id == 0 { ty::mk_nil(cx.tcx) }
                   else { ty::node_id_to_type(cx.tcx, real_pat.id) };
 
-    match pat_ctor_id(cx, v[0]) {
+    let pat_ctor = pat_ctor_id(cx, v[0]);
+    debug!("is_useful(v=%?, real_pat=%s, pat_ctor_id=%?)",
+           v.map(|p| pat_to_str(*p, cx.tcx.sess.intr())),
+           pat_to_str(real_pat, cx.tcx.sess.intr()),
+           pat_ctor);
+    match pat_ctor {
       None => {
-        match missing_ctor(cx, m, left_ty) {
+        let mctor = missing_ctor(cx, m, left_ty);
+        debug!("mctor = %?", mctor);
+        match mctor {
           None => {
             match ty::get(left_ty).sty {
               ty::ty_bool => {
@@ -240,6 +249,9 @@ pub fn is_useful(cx: @MatchCheckCtxt, +m: matrix, +v: &[@pat]) -> useful {
                     _ => max_len
                   }
                 };
+
+                debug!("max_len=%?", max_len);
+
                 for uint::range(0, max_len + 1) |n| {
                   match is_useful_specialized(cx, m, v, vec(n), n, left_ty) {
                     not_useful => (),
@@ -342,6 +354,15 @@ pub fn missing_ctor(cx: @MatchCheckCtxt,
                     m: matrix,
                     left_ty: ty::t)
                  -> Option<ctor> {
+    /*!
+     *
+     * Computes the first constructor that is missing
+     * in the matrix `m`.  For use in printing error
+     * messages.
+     */
+
+    debug!("missing_ctor(left_ty=%s)", ty_to_str(cx.tcx, left_ty));
+
     match ty::get(left_ty).sty {
       ty::ty_box(_) | ty::ty_uniq(_) | ty::ty_rptr(*) | ty::ty_tup(_) |
       ty::ty_rec(_) | ty::ty_struct(*) => {
@@ -385,56 +406,70 @@ pub fn missing_ctor(cx: @MatchCheckCtxt,
         else { Some(val(const_bool(true))) }
       }
       ty::ty_unboxed_vec(*) | ty::ty_evec(*) => {
-
-        // Find the lengths and tails of all vector patterns.
-        let vec_pat_lens = do m.filter_map |r| {
-            match /*bad*/copy r[0].node {
-                pat_vec(elems, tail) => {
-                    Some((elems.len(), tail.is_some()))
-                }
-                _ => None
-            }
-        };
-
-        // Sort them by length such that for patterns of the same length,
-        // those with a destructured tail come first.
-        let mut sorted_vec_lens = sort::merge_sort(vec_pat_lens,
-            |&(len1, tail1), &(len2, tail2)| {
-                if len1 == len2 {
-                    tail1 > tail2
-                } else {
-                    len1 <= len2
-                }
-            }
-        );
-        vec::dedup(&mut sorted_vec_lens);
-
-        let mut found_tail = false;
-        let mut next = 0;
-        let mut missing = None;
-        for sorted_vec_lens.each |&(length, tail)| {
-            if length != next {
-                missing = Some(next);
-                break;
-            }
-            if tail {
-                found_tail = true;
-                break;
-            }
-            next += 1;
-        }
-
-        // We found patterns of all lengths within <0, next), yet there was no
-        // pattern with a tail - therefore, we report vec(next) as missing.
-        if !found_tail {
-            missing = Some(next);
-        }
-        match missing {
-          Some(k) => Some(vec(k)),
-          None => None
-        }
+        missing_ctor_vec(cx, m)
       }
       _ => Some(single)
+    }
+}
+
+fn missing_ctor_vec(cx: @MatchCheckCtxt, m: matrix) -> Option<ctor> {
+    // Find the lengths and tails of all vector patterns.
+    let vec_pat_lens = do m.filter_map |r| {
+        // debug!("m patterns = %?",
+        //       r.map(|p| pat_to_str(*p, cx.tcx.sess.intr())));
+        match /*bad*/copy r[0].node {
+            pat_vec(elems, tail) => {
+                Some((elems.len(), tail.is_some()))
+            }
+            _ => None
+        }
+    };
+
+    // debug!("vec_pat_lens=%?", vec_pat_lens);
+
+    // Sort them by length such that for patterns of the same length,
+    // those with a destructured tail come first.
+    let mut sorted_vec_lens = sort::merge_sort(
+        vec_pat_lens,
+        |&(len1, tail1), &(len2, tail2)| {
+            if len1 == len2 {
+                tail1 > tail2
+            } else {
+                len1 <= len2
+            }
+        }
+    );
+    vec::dedup(&mut sorted_vec_lens);
+
+    debug!("sorted_vec_lens=%?", sorted_vec_lens);
+
+    let mut found_tail = false;
+    let mut next = 0;
+    let mut missing = None;
+    for sorted_vec_lens.each |&(length, tail)| {
+        if length != next {
+            missing = Some(next);
+            break;
+        }
+        if tail {
+            found_tail = true;
+            break;
+        }
+        next += 1;
+    }
+
+    //debug!("missing = %?", missing);
+    //debug!("next = %?", next);
+    //debug!("found_tail = %?", found_tail);
+
+    // We found patterns of all lengths within <0, next), yet there was no
+    // pattern with a tail - therefore, we report vec(next) as missing.
+    if !found_tail {
+        missing = Some(next);
+    }
+    match missing {
+        Some(k) => Some(vec(k)),
+        None => None
     }
 }
 

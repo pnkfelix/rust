@@ -497,11 +497,13 @@ impl VisitContext {
                     self.consume_arm(arm, visitor);
                 }
 
-                let by_move_bindings_present =
-                    self.arms_have_by_move_bindings(
+                let by_move_binding =
+                    self.find_by_move_binding(
                         self.move_maps.moves_map, *arms);
 
-                if by_move_bindings_present {
+                debug!("match: by_move_binding=%?", by_move_binding);
+
+                if by_move_binding.is_some() {
                     // If one of the arms moves a value out of the
                     // discriminant, then the discriminant itself is
                     // moved.
@@ -690,7 +692,7 @@ impl VisitContext {
          * into itself or not based on its type and annotation.
          */
 
-        do pat_bindings(self.tcx.def_map, pat) |bm, id, _span, _path| {
+        do pat_bindings(self.tcx.def_map, pat) |bm, id, _span, path| {
             let mode = match bm {
                 bind_by_copy => Read,
                 bind_by_ref(_) => Read,
@@ -699,6 +701,10 @@ impl VisitContext {
                     self.consume_mode_for_ty(pat_ty)
                 }
             };
+
+            debug!("use_pat(id=%?, bm=%?, mode=%?, path=%s)",
+                   id, bm, mode,
+                   pprust::path_to_str(path, self.tcx.sess.intr()));
 
             match mode {
                 MoveInWhole => { self.move_maps.moves_map.insert(id, ()); }
@@ -763,22 +769,24 @@ impl VisitContext {
         }
     }
 
-    fn arms_have_by_move_bindings(&self,
-                                  moves_map: MovesMap,
-                                  +arms: &[arm]) -> bool
+    fn find_by_move_binding(&self,
+                            moves_map: MovesMap,
+                            +arms: &[arm]) -> Option<node_id>
     {
         for arms.each |arm| {
             for arm.pats.each |pat| {
-                let mut found = false;
+                let mut found = None;
                 do pat_bindings(self.tcx.def_map, *pat) |_, node_id, _, _| {
                     if moves_map.contains_key_ref(&node_id) {
-                        found = true;
+                        found = Some(node_id);
                     }
                 }
-                if found { return true; }
+                if found.is_some() {
+                    return found;
+                }
             }
         }
-        return false;
+        return None;
     }
 
     fn compute_captures(&self, fn_expr_id: node_id) -> @[CaptureVar] {

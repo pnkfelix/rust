@@ -44,10 +44,16 @@ fn main() {
         [_, ..tail] => (),
         [] => ()
     }
+    //match ~[0.5] { //~ ERROR non-exhaustive patterns: vectors of length 4 not covered
+        //[0.1, 0.2, 0.3] => (),
+        //[0.1, 0.2] => (),
+        //[0.1] => (),
+        //[] => ()
+    //}
     match ~[0.5] { //~ ERROR non-exhaustive patterns: vectors of length 4 not covered
-        [0.1, 0.2, 0.3] => (),
-        [0.1, 0.2] => (),
-        [0.1] => (),
+        [_, _, _] => (),
+        [_, _] => (),
+        [_] => (),
         [] => ()
     }
     match ~[Some(42), None, Some(21)] {
