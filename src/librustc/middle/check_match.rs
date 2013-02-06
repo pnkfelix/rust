@@ -406,43 +406,42 @@ pub fn missing_ctor(cx: @MatchCheckCtxt,
         else { Some(val(const_bool(true))) }
       }
       ty::ty_unboxed_vec(*) | ty::ty_evec(*) => {
-        missing_ctor_vec(cx, m)
+          // Find the lengths and tails of all vector patterns.
+          let vec_pat_lens = do m.filter_map |r| {
+              // debug!("m patterns = %?",
+              //       r.map(|p| pat_to_str(*p, cx.tcx.sess.intr())));
+              match /*bad*/copy r[0].node {
+                  pat_vec(elems, tail) => {
+                      Some((elems.len(), tail.is_some()))
+                  }
+                  _ => None
+              }
+          };
+
+          // debug!("vec_pat_lens=%?", vec_pat_lens);
+
+          // Sort them by length such that for patterns of the same length,
+          // those with a destructured tail come first.
+          let mut sorted_vec_lens = sort::merge_sort(
+              vec_pat_lens,
+              |&(len1, tail1), &(len2, tail2)| {
+                  if len1 == len2 {
+                      tail1 > tail2
+                  } else {
+                      len1 <= len2
+                  }
+              }
+          );
+          vec::dedup(&mut sorted_vec_lens);
+
+          missing_ctor_vec(cx, sorted_vec_lens)
       }
       _ => Some(single)
     }
 }
 
-fn missing_ctor_vec(cx: @MatchCheckCtxt, m: matrix) -> Option<ctor> {
-    // Find the lengths and tails of all vector patterns.
-    let vec_pat_lens = do m.filter_map |r| {
-        // debug!("m patterns = %?",
-        //       r.map(|p| pat_to_str(*p, cx.tcx.sess.intr())));
-        match /*bad*/copy r[0].node {
-            pat_vec(elems, tail) => {
-                Some((elems.len(), tail.is_some()))
-            }
-            _ => None
-        }
-    };
-
-    // debug!("vec_pat_lens=%?", vec_pat_lens);
-
-    // Sort them by length such that for patterns of the same length,
-    // those with a destructured tail come first.
-    let mut sorted_vec_lens = sort::merge_sort(
-        vec_pat_lens,
-        |&(len1, tail1), &(len2, tail2)| {
-            if len1 == len2 {
-                tail1 > tail2
-            } else {
-                len1 <= len2
-            }
-        }
-    );
-    vec::dedup(&mut sorted_vec_lens);
-
-    debug!("sorted_vec_lens=%?", sorted_vec_lens);
-
+#[inline(never)]
+fn missing_ctor_vec(cx: @MatchCheckCtxt, sorted_vec_lens: ~[(uint, bool)]) -> Option<ctor> {
     let mut found_tail = false;
     let mut next = 0;
     let mut missing = None;
