@@ -46,7 +46,6 @@ use writer = std::ebml::writer;
 
 // Auxiliary maps of things to be encoded
 pub struct Maps {
-    mutbl_map: middle::borrowck::mutbl_map,
     root_map: middle::borrowck::root_map,
     last_use_map: middle::liveness::last_use_map,
     method_map: middle::typeck::method_map,
@@ -905,13 +904,7 @@ fn encode_side_tables_for_id(ecx: @e::EncodeContext,
     //    }
     //}
 
-    if maps.mutbl_map.contains_key(&id) {
-        do ebml_w.tag(c::tag_table_mutbl) {
-            ebml_w.id(id);
-        }
-    }
-
-    for maps.last_use_map.find(&id).each |&m| {
+    do option::iter(&maps.last_use_map.find(&id)) |m| {
         do ebml_w.tag(c::tag_table_last_use) {
             ebml_w.id(id);
             do ebml_w.tag(c::tag_table_val) {
@@ -1096,9 +1089,7 @@ fn decode_side_tables(xcx: @ExtendedDecodeContext,
                 found for id %d (orig %d)",
                tag, id, id0);
 
-        if tag == (c::tag_table_mutbl as uint) {
-            dcx.maps.mutbl_map.insert(id, ());
-        } else if tag == (c::tag_table_moves_map as uint) {
+        if tag == (c::tag_table_moves_map as uint) {
             dcx.maps.moves_map.insert(id, ());
         } else {
             let val_doc = entry_doc[c::tag_table_val as uint];

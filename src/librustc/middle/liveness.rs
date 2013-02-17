@@ -284,17 +284,6 @@ enum VarKind {
     ImplicitRet
 }
 
-fn relevant_def(def: def) -> Option<node_id> {
-    match def {
-      def_binding(nid, _) |
-      def_arg(nid, _, _) |
-      def_local(nid, _) |
-      def_self(nid, _) => Some(nid),
-
-      _ => None
-    }
-}
-
 struct IrMaps {
     tcx: ty::ctxt,
     method_map: typeck::method_map,
@@ -564,7 +553,7 @@ fn visit_expr(expr: @expr, &&self: @mut IrMaps, vt: vt<@mut IrMaps>) {
       expr_path(_) => {
         let def = self.tcx.def_map.get(&expr.id);
         debug!("expr %d: path that leads to %?", expr.id, def);
-        if relevant_def(def).is_some() {
+        if moves::moved_variable_node_id_from_def(def).is_some() {
             self.add_live_node_for_node(expr.id, ExprNode(expr.span));
         }
         visit::visit_expr(expr, self, vt);
@@ -581,7 +570,7 @@ fn visit_expr(expr: @expr, &&self: @mut IrMaps, vt: vt<@mut IrMaps>) {
         let cvs = self.capture_map.get(&expr.id);
         let mut call_caps = ~[];
         for cvs.each |cv| {
-            match relevant_def(cv.def) {
+            match moves::moved_variable_node_id_from_def(cv.def) {
               Some(rv) => {
                 let cv_ln = self.add_live_node(FreeVarNode(cv.span));
                 let is_move = match cv.mode {
@@ -709,7 +698,7 @@ pub impl Liveness {
         match expr.node {
           expr_path(_) => {
             let def = self.tcx.def_map.get(&expr.id);
-            relevant_def(def).map(
+            moves::moved_variable_node_id_from_def(def).map(
                 |rdef| self.variable(*rdef, expr.span)
             )
           }
@@ -725,7 +714,7 @@ pub impl Liveness {
                              span: span) -> Option<Variable> {
         match self.tcx.def_map.find(&node_id) {
           Some(def) => {
-            relevant_def(def).map(
+            moves::moved_variable_node_id_from_def(def).map(
                 |rdef| self.variable(*rdef, span)
             )
           }
@@ -1437,7 +1426,7 @@ pub impl Liveness {
     fn access_path(&self, expr: @expr, succ: LiveNode, acc: uint)
                   -> LiveNode {
         let def = self.tcx.def_map.get(&expr.id);
-        match relevant_def(def) {
+        match moves::moved_variable_node_id_from_def(def) {
           Some(nid) => {
             let ln = self.live_node(expr.id, expr.span);
             if acc != 0u {
@@ -1708,7 +1697,7 @@ pub impl @Liveness {
                 self.warn_about_dead_assign(expr.span, ln, var);
               }
               def => {
-                match relevant_def(def) {
+                match moves::moved_variable_node_id_from_def(def) {
                   Some(nid) => {
                     let ln = self.live_node(expr.id, expr.span);
                     let var = self.variable(nid, expr.span);

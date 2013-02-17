@@ -251,10 +251,19 @@ pub type MovesMap = HashMap<node_id, ()>;
  * expression */
 pub type VariableMovesMap = HashMap<node_id, @expr>;
 
+/**
+ * Set of variable node-ids that are moved.
+ *
+ * Note: The `VariableMovesMap` stores expression ids that
+ * are moves, whereas this set stores the ids of the variables
+ * that are moved at some point */
+pub type MovedVariablesMap = HashMap<node_id, ()>;
+
 /** See the section Output on the module comment for explanation. */
 pub struct MoveMaps {
     moves_map: MovesMap,
     variable_moves_map: VariableMovesMap,
+    moved_variables_map: MovedVariablesMap,
     capture_map: CaptureMap
 }
 
@@ -284,11 +293,23 @@ pub fn compute_moves(tcx: ty::ctxt,
         move_maps: MoveMaps {
             moves_map: HashMap(),
             variable_moves_map: HashMap(),
-            capture_map: HashMap()
+            capture_map: HashMap(),
+            moved_variables_map: HashMap()
         }
     };
     visit::visit_crate(*crate, visit_cx, visitor);
     return visit_cx.move_maps;
+}
+
+pub fn moved_variable_node_id_from_def(def: def) -> Option<node_id> {
+    match def {
+      def_binding(nid, _) |
+      def_arg(nid, _, _) |
+      def_local(nid, _) |
+      def_self(nid, _) => Some(nid),
+
+      _ => None
+    }
 }
 
 // ______________________________________________________________________
@@ -424,6 +445,12 @@ pub impl VisitContext {
                     MoveInPart(entire_expr) => {
                         self.move_maps.variable_moves_map.insert(
                             expr.id, entire_expr);
+
+                        let def = self.tcx.def_map.get(&expr.id);
+                        for moved_variable_node_id_from_def(def).each |id| {
+                            self.move_maps.moved_variables_map.insert(
+                                *id, ());
+                        }
                     }
                     Read => {}
                     MoveInWhole => {

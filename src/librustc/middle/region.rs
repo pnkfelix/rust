@@ -273,6 +273,22 @@ pub fn resolve_expr(expr: @ast::expr, cx: ctxt, visitor: visit::vt<ctxt>) {
         debug!("node %d: %s", expr.id, pprust::expr_to_str(expr,
                                                            cx.sess.intr()));
         new_cx.parent = Some(expr.id);
+
+        // The lifetimes for a call or method call look as follows:
+        //
+        // call.id
+        // - arg0.id
+        // - ...
+        // - argN.id
+        // - call.callee_id
+        //
+        // The idea is that call.callee_id represents *the time when
+        // the invoked function is actually running* and call.id
+        // represents *the time to prepare the arguments and make the
+        // call*.  See the section "Borrows in Calls" borrowck/doc.rs
+        // for an extended explanantion of why this distinction is
+        // important.
+        record_parent(new_cx, expr.callee_id);
       }
       ast::expr_match(*) => {
         debug!("node %d: %s", expr.id, pprust::expr_to_str(expr,

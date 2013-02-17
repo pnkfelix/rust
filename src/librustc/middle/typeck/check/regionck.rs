@@ -192,7 +192,7 @@ pub fn visit_expr(expr: @ast::expr, &&rcx: @mut Rcx, v: rvt) {
         }
     }
 
-    match /*bad*/copy expr.node {
+    match expr.node {
         ast::expr_path(*) => {
             // Avoid checking the use of local variables, as we
             // already check their definitions.  The def'n always
@@ -207,7 +207,7 @@ pub fn visit_expr(expr: @ast::expr, &&rcx: @mut Rcx, v: rvt) {
             }
         }
 
-        ast::expr_call(callee, args, _) => {
+        ast::expr_call(callee, ref args, _) => {
             // Check for a.b() where b is a method.  Ensure that
             // any types in the callee are valid for the entire
             // method call.
@@ -216,34 +216,21 @@ pub fn visit_expr(expr: @ast::expr, &&rcx: @mut Rcx, v: rvt) {
             // `constrain_auto_ref()` on all exprs.  But that causes a
             // lot of spurious errors because of how the region
             // hierarchy is setup.
-            if rcx.fcx.ccx.method_map.contains_key(&callee.id) {
-                match callee.node {
-                    ast::expr_field(base, _, _) => {
-                        constrain_auto_ref(rcx, base);
-                    }
-                    _ => {
-                        // This can happen if you have code like
-                        // (x[0])() where `x[0]` is overloaded.  Just
-                        // ignore it.
-                    }
-                }
-            } else {
-                constrain_auto_ref(rcx, callee);
-            }
+            constrain_auto_ref(rcx, expr.callee_id, callee);
 
             for args.each |arg| {
-                constrain_auto_ref(rcx, *arg);
+                constrain_auto_ref(rcx, expr.callee_id, *arg);
             }
         }
 
-        ast::expr_method_call(rcvr, _, _, args, _) => {
+        ast::expr_method_call(rcvr, _, _, ref args, _) => {
             // Check for a.b() where b is a method.  Ensure that
             // any types in the callee are valid for the entire
             // method call.
 
-            constrain_auto_ref(rcx, rcvr);
+            constrain_auto_ref(rcx, expr.callee_id, rcvr);
             for args.each |arg| {
-                constrain_auto_ref(rcx, *arg);
+                constrain_auto_ref(rcx, expr.callee_id, *arg);
             }
         }
 
@@ -321,12 +308,16 @@ pub fn visit_node(id: ast::node_id, span: span, rcx: @mut Rcx) -> bool {
     constrain_regions_in_type_of_node(rcx, id, encl_region, span)
 }
 
-pub fn constrain_auto_ref(rcx: @mut Rcx, expr: @ast::expr) {
+pub fn constrain_auto_ref(rcx: @mut Rcx,
+                          sub_region_id: ast::node_id,
+                          expr: @ast::expr) {
     /*!
      *
      * If `expr` is auto-ref'd (e.g., as part of a borrow), then this
      * function ensures that the lifetime of the resulting borrowed
      * ptr includes at least the expression `expr`. */
+
+    let sub_region = ty::re_scope(sub_region_id);
 
     debug!("constrain_auto_ref(expr=%s)", rcx.fcx.expr_to_str(expr));
 
@@ -341,8 +332,7 @@ pub fn constrain_auto_ref(rcx: @mut Rcx, expr: @ast::expr) {
     };
 
     let tcx = rcx.fcx.tcx();
-    let encl_region = ty::encl_region(tcx, expr.id);
-    match rcx.fcx.mk_subr(true, expr.span, encl_region, region) {
+    match rcx.fcx.mk_subr(true, expr.span, sub_region, region) {
         result::Ok(()) => {}
         result::Err(_) => {
             // In practice, this cannot happen: `region` is always a
