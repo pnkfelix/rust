@@ -872,6 +872,11 @@ rust_dec_kernel_live_count() {
     task->kernel->dec_live_count();
 }
 
+extern "C" void
+rust_make_range_defined(uintptr_t base, uintptr_t sz) {
+    (void) VALGRIND_MAKE_MEM_DEFINED(base, sz);
+}
+
 //
 // Local Variables:
 // mode: C++
