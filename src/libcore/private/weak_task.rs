@@ -27,8 +27,10 @@ use option::{Some, None, swap_unwrap};
 use private::at_exit::at_exit;
 use private::finally::Finally;
 use private::global::global_data_clone_create;
+use pipes::{Port, Chan, SharedChan, GenericChan, GenericPort,
+            GenericSmartChan, stream};
+use task::{task, spawn};
 use task::rt::{task_id, get_task_id};
-use task::{Task, task, spawn};
 
 type ShutdownMsg = ();
 

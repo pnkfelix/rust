@@ -11,12 +11,10 @@
 use prelude::*;
 use task;
 use task::local_data::{local_data_pop, local_data_set};
-
-// helper for transmutation, shown below.
-type RustClosure = (int, int);
+use sys::Closure;
 
 pub struct Handler<T, U> {
-    handle: RustClosure,
+    handle: Closure,
     prev: Option<@Handler<T, U>>,
 }
 
@@ -28,7 +26,7 @@ pub struct Condition<T, U> {
 impl<T, U> Condition<T, U> {
     fn trap(&self, h: &self/fn(T) -> U) -> Trap/&self<T, U> {
         unsafe {
-            let p : *RustClosure = ::cast::transmute(&h);
+            let p : *Closure = ::cast::transmute(&h);
             let prev = task::local_data::local_data_get(self.key);
             let h = @Handler { handle: *p, prev: prev };
             Trap { cond: self, handler: h }

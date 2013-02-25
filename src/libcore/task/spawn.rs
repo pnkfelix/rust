@@ -83,8 +83,7 @@ use private;
 use ptr;
 use hashmap::linear::LinearSet;
 use task::local_data_priv::{local_get, local_set};
-use task::rt::rust_task;
-use task::rt::rust_closure;
+use sys::{Task, Closure};
 use task::rt;
 use task::{Failure, ManualThreads, PlatformThread, SchedOpts, SingleThreaded};
 use task::{Success, TaskOpts, TaskResult, ThreadPerCore, ThreadPerTask};
@@ -97,20 +96,20 @@ macro_rules! move_it (
     { $x:expr } => ( unsafe { let y = *ptr::addr_of(&($x)); y } )
 )
 
-type TaskSet = LinearSet<*rust_task>;
+type TaskSet = LinearSet<*Task>;
 
 fn new_taskset() -> TaskSet {
     LinearSet::new()
 }
-fn taskset_insert(tasks: &mut TaskSet, task: *rust_task) {
+fn taskset_insert(tasks: &mut TaskSet, task: *Task) {
     let didnt_overwrite = tasks.insert(task);
     assert didnt_overwrite;
 }
-fn taskset_remove(tasks: &mut TaskSet, task: *rust_task) {
+fn taskset_remove(tasks: &mut TaskSet, task: *Task) {
     let was_present = tasks.remove(&task);
     assert was_present;
 }
-pub fn taskset_each(tasks: &TaskSet, blk: fn(v: *rust_task) -> bool) {
+pub fn taskset_each(tasks: &TaskSet, blk: fn(v: *Task) -> bool) {
     tasks.each(|k| blk(*k))
 }
 
@@ -246,7 +245,7 @@ fn each_ancestor(list:        &mut AncestorList,
                             None => nobe_is_dead
                         };
                         // Call iterator block. (If the group is dead, it's
-                        // safe to skip it. This will leave our *rust_task
+                        // safe to skip it. This will leave our *Task
                         // hanging around in the group even after it's freed,
                         // but that's ok because, by virtue of the group being
                         // dead, nobody will ever kill-all (foreach) over it.)
@@ -301,7 +300,7 @@ fn each_ancestor(list:        &mut AncestorList,
 
 // One of these per task.
 struct TCB {
-    me:            *rust_task,
+    me:            *Task,
     // List of tasks with whose fates this one's is intertwined.
     tasks:         TaskGroupArc, // 'none' means the group has failed.
     // Lists of tasks who will kill us if they fail, but whom we won't kill.
@@ -335,7 +334,7 @@ struct TCB {
     }
 }
 
-fn TCB(me: *rust_task, tasks: TaskGroupArc, ancestors: AncestorList,
+fn TCB(me: *Task, tasks: TaskGroupArc, ancestors: AncestorList,
        is_main: bool, notifier: Option<AutoNotify>) -> TCB {
 
     let notifier = notifier;
@@ -366,7 +365,7 @@ fn AutoNotify(chan: Chan<TaskResult>) -> AutoNotify {
     }
 }
 
-fn enlist_in_taskgroup(state: TaskGroupInner, me: *rust_task,
+fn enlist_in_taskgroup(state: TaskGroupInner, me: *Task,
                            is_member: bool) -> bool {
     let newstate = util::replace(&mut *state, None);
     // If 'None', the group was failing. Can't enlist.
@@ -382,7 +381,7 @@ fn enlist_in_taskgroup(state: TaskGroupInner, me: *rust_task,
 }
 
 // NB: Runs in destructor/post-exit context. Can't 'fail'.
-fn leave_taskgroup(state: TaskGroupInner, me: *rust_task,
+fn leave_taskgroup(state: TaskGroupInner, me: *Task,
                        is_member: bool) {
     let newstate = util::replace(&mut *state, None);
     // If 'None', already failing and we've already gotten a kill signal.
@@ -395,7 +394,7 @@ fn leave_taskgroup(state: TaskGroupInner, me: *rust_task,
 }
 
 // NB: Runs in destructor/post-exit context. Can't 'fail'.
-fn kill_taskgroup(state: TaskGroupInner, me: *rust_task, is_main: bool) {
+fn kill_taskgroup(state: TaskGroupInner, me: *Task, is_main: bool) {
     unsafe {
         // NB: We could do the killing iteration outside of the group arc, by
         // having "let mut newstate" here, swapping inside, and iterating
@@ -568,7 +567,7 @@ pub fn spawn_raw(opts: TaskOpts, f: fn~()) {
     // (3a) If any of those fails, it leaves all groups, and does nothing.
     // (3b) Otherwise it builds a task control structure and puts it in TLS,
     // (4) ...and runs the provided body function.
-    fn make_child_wrapper(child: *rust_task, child_arc: TaskGroupArc,
+    fn make_child_wrapper(child: *Task, child_arc: TaskGroupArc,
                           ancestors: AncestorList, is_main: bool,
                           notify_chan: Option<Chan<TaskResult>>,
                           f: fn~()) -> fn~() {
@@ -611,7 +610,7 @@ pub fn spawn_raw(opts: TaskOpts, f: fn~()) {
         // Set up membership in taskgroup and descendantship in all ancestor
         // groups. If any enlistment fails, Some task was already failing, so
         // don't let the child task run, and undo every successful enlistment.
-        fn enlist_many(child: *rust_task, child_arc: &TaskGroupArc,
+        fn enlist_many(child: *Task, child_arc: &TaskGroupArc,
                        ancestors: &mut AncestorList) -> bool {
             // Join this taskgroup.
             let mut result =
@@ -643,7 +642,7 @@ pub fn spawn_raw(opts: TaskOpts, f: fn~()) {
         }
     }
 
-    fn new_task_in_sched(opts: SchedOpts) -> *rust_task {
+    fn new_task_in_sched(opts: SchedOpts) -> *Task {
         if opts.foreign_stack_size != None {
             fail!(~"foreign_stack_size scheduler option unimplemented");
         }

@@ -18,12 +18,7 @@ use option;
 use prelude::*;
 use task::rt;
 use task::local_data::LocalDataKey;
-
-#[cfg(notest)]
-use rt::rust_task;
-#[cfg(test)]
-#[allow(non_camel_case_types)]
-type rust_task = libc::c_void;
+use sys::Task;
 
 pub trait LocalData { }
 impl<T:Durable> LocalData for @T { }
@@ -56,7 +51,7 @@ extern fn cleanup_task_local_map(map_ptr: *libc::c_void) {
 }
 
 // Gets the map from the runtime. Lazily initialises if not done so already.
-unsafe fn get_task_local_map(task: *rust_task) -> TaskLocalMap {
+unsafe fn get_task_local_map(task: *Task) -> TaskLocalMap {
 
     // Relies on the runtime initialising the pointer to null.
     // Note: The map's box lives in TLS invisibly referenced once. Each time
@@ -81,7 +76,7 @@ unsafe fn get_task_local_map(task: *rust_task) -> TaskLocalMap {
 
 // Helper for use by conservative gc. We don't know what TLS is but
 // we consider them all roots.
-pub unsafe fn each_retained_ptr(task: *rust_task,
+pub unsafe fn each_retained_ptr(task: *Task,
                                 cb: fn(*libc::c_void)) {
     let map = get_task_local_map(task);
 
@@ -135,7 +130,7 @@ unsafe fn local_data_lookup<T:Durable>(
 }
 
 unsafe fn local_get_helper<T:Durable>(
-    task: *rust_task, key: LocalDataKey<T>,
+    task: *Task, key: LocalDataKey<T>,
     do_pop: bool) -> Option<@T> {
 
     let map = get_task_local_map(task);
@@ -157,21 +152,21 @@ unsafe fn local_get_helper<T:Durable>(
 
 
 pub unsafe fn local_pop<T:Durable>(
-    task: *rust_task,
+    task: *Task,
     key: LocalDataKey<T>) -> Option<@T> {
 
     local_get_helper(task, key, true)
 }
 
 pub unsafe fn local_get<T:Durable>(
-    task: *rust_task,
+    task: *Task,
     key: LocalDataKey<T>) -> Option<@T> {
 
     local_get_helper(task, key, false)
 }
 
 pub unsafe fn local_set<T:Durable>(
-    task: *rust_task, key: LocalDataKey<T>, data: @T) {
+    task: *Task, key: LocalDataKey<T>, data: @T) {
 
     let map = get_task_local_map(task);
     // Store key+data as *voids. Data is invisibly referenced once; key isn't.
@@ -203,7 +198,7 @@ pub unsafe fn local_set<T:Durable>(
 }
 
 pub unsafe fn local_modify<T:Durable>(
-    task: *rust_task, key: LocalDataKey<T>,
+    task: *Task, key: LocalDataKey<T>,
     modify_fn: fn(Option<@T>) -> Option<@T>) {
 
     // Could be more efficient by doing the lookup work, but this is easy.

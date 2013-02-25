@@ -98,6 +98,7 @@ use ptr;
 use private;
 use task;
 use vec;
+use sys::Task;
 
 #[doc(hidden)]
 const SPIN_COUNT: uint = 0;
@@ -145,7 +146,7 @@ pub struct Buffer<T> {
 
 pub struct PacketHeader {
     mut state: State,
-    mut blocked_task: *rust_task,
+    mut blocked_task: *Task,
 
     // This is a reinterpret_cast of a ~buffer, that can also be cast
     // to a buffer_header if need be.
@@ -162,7 +163,7 @@ pub fn PacketHeader() -> PacketHeader {
 
 pub impl PacketHeader {
     // Returns the old state.
-    unsafe fn mark_blocked(this: *rust_task) -> State {
+    unsafe fn mark_blocked(this: *Task) -> State {
         rustrt::rust_task_ref(this);
         let old_task = swap_task(&mut self.blocked_task, this);
         assert old_task.is_null();
@@ -282,7 +283,7 @@ pub fn atomic_sub_rel(dst: &mut int, src: int) -> int {
 }
 
 #[doc(hidden)]
-pub fn swap_task(dst: &mut *rust_task, src: *rust_task) -> *rust_task {
+pub fn swap_task(dst: &mut *Task, src: *Task) -> *Task {
     // It might be worth making both acquire and release versions of
     // this.
     unsafe {
@@ -297,21 +298,21 @@ type rust_task = libc::c_void;
 #[doc(hidden)]
 extern mod rustrt {
     #[rust_stack]
-    unsafe fn rust_get_task() -> *rust_task;
+    unsafe fn rust_get_task() -> *Task;
     #[rust_stack]
-    unsafe fn rust_task_ref(task: *rust_task);
-    unsafe fn rust_task_deref(task: *rust_task);
+    unsafe fn rust_task_ref(task: *Task);
+    unsafe fn rust_task_deref(task: *Task);
 
     #[rust_stack]
-    unsafe fn task_clear_event_reject(task: *rust_task);
+    unsafe fn task_clear_event_reject(task: *Task);
 
-    unsafe fn task_wait_event(this: *rust_task, killed: &mut *libc::c_void)
+    unsafe fn task_wait_event(this: *Task, killed: &mut *libc::c_void)
                         -> bool;
-    unsafe fn task_signal_event(target: *rust_task, event: *libc::c_void);
+    unsafe fn task_signal_event(target: *Task, event: *libc::c_void);
 }
 
 #[doc(hidden)]
-fn wait_event(this: *rust_task) -> *libc::c_void {
+fn wait_event(this: *Task) -> *libc::c_void {
     unsafe {
         let mut event = ptr::null();
 

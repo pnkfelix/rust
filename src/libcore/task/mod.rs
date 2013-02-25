@@ -47,7 +47,8 @@ use prelude::*;
 use ptr;
 use result;
 use task::local_data_priv::{local_get, local_set};
-use task::rt::{task_id, sched_id, rust_task};
+use task::rt::{task_id, sched_id};
+use sys::Task;
 use task;
 use util;
 use util::replace;
@@ -62,13 +63,13 @@ pub mod spawn;
 
 /// A handle to a scheduler
 #[deriving_eq]
-pub enum Scheduler {
+pub enum SchedulerHandle {
     SchedulerHandle(sched_id)
 }
 
 /// A handle to a task
 #[deriving_eq]
-pub enum Task {
+pub enum TaskHandle {
     TaskHandle(task_id)
 }
 
@@ -106,7 +107,7 @@ pub enum SchedMode {
     /// Run task on the current scheduler
     CurrentScheduler,
     /// Run task on a specific scheduler
-    ExistingScheduler(Scheduler),
+    ExistingScheduler(SchedulerHandle),
     /**
      * Tasks are scheduled on the main OS thread
      *
@@ -556,7 +557,7 @@ pub fn failing() -> bool {
     }
 }
 
-pub fn get_task() -> Task {
+pub fn get_task() -> TaskHandle {
     //! Get a handle to the running task
 
     unsafe {
@@ -564,7 +565,7 @@ pub fn get_task() -> Task {
     }
 }
 
-pub fn get_scheduler() -> Scheduler {
+pub fn get_scheduler() -> SchedulerHandle {
     SchedulerHandle(unsafe { rt::rust_get_sched_id() })
 }
 
@@ -585,7 +586,7 @@ pub fn get_scheduler() -> Scheduler {
  */
 pub unsafe fn unkillable<U>(f: fn() -> U) -> U {
     struct AllowFailure {
-        t: *rust_task,
+        t: *Task,
         drop {
             unsafe {
                 rt::rust_task_allow_kill(self.t);
@@ -593,7 +594,7 @@ pub unsafe fn unkillable<U>(f: fn() -> U) -> U {
         }
     }
 
-    fn AllowFailure(t: *rust_task) -> AllowFailure{
+    fn AllowFailure(t: *Task) -> AllowFailure{
         AllowFailure {
             t: t
         }
@@ -610,7 +611,7 @@ pub unsafe fn unkillable<U>(f: fn() -> U) -> U {
 /// The inverse of unkillable. Only ever to be used nested in unkillable().
 pub unsafe fn rekillable<U>(f: fn() -> U) -> U {
     struct DisallowFailure {
-        t: *rust_task,
+        t: *Task,
         drop {
             unsafe {
                 rt::rust_task_inhibit_kill(self.t);
@@ -618,7 +619,7 @@ pub unsafe fn rekillable<U>(f: fn() -> U) -> U {
         }
     }
 
-    fn DisallowFailure(t: *rust_task) -> DisallowFailure {
+    fn DisallowFailure(t: *Task) -> DisallowFailure {
         DisallowFailure {
             t: t
         }
@@ -638,7 +639,7 @@ pub unsafe fn rekillable<U>(f: fn() -> U) -> U {
  */
 pub unsafe fn atomically<U>(f: fn() -> U) -> U {
     struct DeferInterrupts {
-        t: *rust_task,
+        t: *Task,
         drop {
             unsafe {
                 rt::rust_task_allow_yield(self.t);
@@ -647,7 +648,7 @@ pub unsafe fn atomically<U>(f: fn() -> U) -> U {
         }
     }
 
-    fn DeferInterrupts(t: *rust_task) -> DeferInterrupts {
+    fn DeferInterrupts(t: *Task) -> DeferInterrupts {
         DeferInterrupts {
             t: t
         }
