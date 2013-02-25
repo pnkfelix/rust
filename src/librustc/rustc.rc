@@ -103,7 +103,6 @@ pub mod front {
     pub mod config;
     pub mod test;
     pub mod core_inject;
-    pub mod intrinsic_inject;
 }
 
 pub mod back {

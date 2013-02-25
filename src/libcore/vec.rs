@@ -33,10 +33,10 @@ use vec;
 pub extern mod rustrt {
     // These names are terrible. reserve_shared applies
     // to ~[] and reserve_shared_actual applies to @[].
-    unsafe fn vec_reserve_shared(++t: *sys::TypeDesc,
+    unsafe fn vec_reserve_shared(++t: *sys::TyDesc,
                                  ++v: **raw::VecRepr,
                                  ++n: libc::size_t);
-    unsafe fn vec_reserve_shared_actual(++t: *sys::TypeDesc,
+    unsafe fn vec_reserve_shared_actual(++t: *sys::TyDesc,
                                         ++v: **raw::VecRepr,
                                         ++n: libc::size_t);
 }
@@ -68,7 +68,7 @@ pub fn reserve<T>(v: &mut ~[T], n: uint) {
     if capacity(v) < n {
         unsafe {
             let ptr: **raw::VecRepr = cast::transmute(v);
-            let td = sys::get_type_desc::<T>();
+            let td = sys::get_tydesc::<T>();
             if ((**ptr).box_header.ref_count ==
                 managed::raw::RC_MANAGED_UNIQUE) {
                 rustrt::vec_reserve_shared_actual(td, ptr, n as size_t);

@@ -213,10 +213,8 @@ pub struct CrateContext {
      maps: astencode::Maps,
      stats: @mut Stats,
      upcalls: @upcall::Upcalls,
-     tydesc_type: TypeRef,
      int_type: TypeRef,
      float_type: TypeRef,
-     task_type: TypeRef,
      opaque_vec_type: TypeRef,
      builder: BuilderRef_res,
      shape_cx: shape::Ctxt,
@@ -867,69 +865,22 @@ pub fn T_empty_struct() -> TypeRef { return T_struct(~[]); }
 // they are described by this opaque type.
 pub fn T_vtable() -> TypeRef { T_array(T_ptr(T_i8()), 1u) }
 
-pub fn T_task(targ_cfg: @session::config) -> TypeRef {
-    let t = T_named_struct(~"task");
-
-    // Refcount
-    // Delegate pointer
-    // Stack segment pointer
-    // Runtime SP
-    // Rust SP
-    // GC chain
-
-
-    // Domain pointer
-    // Crate cache pointer
-
-    let t_int = T_int(targ_cfg);
-    let elems =
-        ~[t_int, t_int, t_int, t_int,
-         t_int, t_int, t_int, t_int];
-    set_struct_body(t, elems);
-    return t;
+pub fn T_generic_glue_fn(ccx: @CrateContext) -> TypeRef {
+    // NB: cannot presently use this as we have no bare functions.
+    /*
+    let did = ccx.tcx.lang_items.glue_fn_type();
+    T_ptr(type_of::type_of(ccx, ty::lookup_item_type(ccx.tcx, did).ty))
+    */
+    T_fn(~[T_ptr(T_nil()),
+           T_ptr(T_nil()),
+           T_ptr(T_ptr(T_tydesc(ccx))),
+           T_ptr(T_i8())],
+         T_void())
 }
 
-pub fn T_tydesc_field(cx: @CrateContext, field: uint) -> TypeRef {
-    // Bit of a kludge: pick the fn typeref out of the tydesc..
-
-    unsafe {
-        let mut tydesc_elts: ~[TypeRef] =
-            vec::from_elem::<TypeRef>(abi::n_tydesc_fields,
-                                     T_nil());
-        llvm::LLVMGetStructElementTypes(
-            cx.tydesc_type,
-            ptr::to_mut_unsafe_ptr(&mut tydesc_elts[0]));
-        let t = llvm::LLVMGetElementType(tydesc_elts[field]);
-        return t;
-    }
-}
-
-pub fn T_generic_glue_fn(cx: @CrateContext) -> TypeRef {
-    let s = @"glue_fn";
-    match name_has_type(cx.tn, s) {
-      Some(t) => return t,
-      _ => ()
-    }
-    let t = T_tydesc_field(cx, abi::tydesc_field_drop_glue);
-    associate_type(cx.tn, s, t);
-    return t;
-}
-
-pub fn T_tydesc(targ_cfg: @session::config) -> TypeRef {
-    let tydesc = T_named_struct(~"tydesc");
-    let tydescpp = T_ptr(T_ptr(tydesc));
-    let pvoid = T_ptr(T_i8());
-    let glue_fn_ty =
-        T_ptr(T_fn(~[T_ptr(T_nil()), T_ptr(T_nil()), tydescpp,
-                    pvoid], T_void()));
-
-    let int_type = T_int(targ_cfg);
-    let elems =
-        ~[int_type, int_type,
-          glue_fn_ty, glue_fn_ty, glue_fn_ty, glue_fn_ty,
-          T_ptr(T_i8()), T_ptr(T_i8())];
-    set_struct_body(tydesc, elems);
-    return tydesc;
+pub fn T_tydesc(ccx: @CrateContext) -> TypeRef {
+    let did = ccx.tcx.lang_items.tydesc_struct();
+    type_of::type_of(ccx, ty::lookup_item_type(ccx.tcx, did).ty)
 }
 
 pub fn T_array(t: TypeRef, n: uint) -> TypeRef {
@@ -958,18 +909,20 @@ pub fn T_opaque_vec(targ_cfg: @session::config) -> TypeRef {
 // representation of @T as a tuple (i.e., the ty::t version of what T_box()
 // returns).
 pub fn tuplify_box_ty(tcx: ty::ctxt, t: ty::t) -> ty::t {
+    let tydesc_did = tcx.lang_items.tydesc_struct();
+    let tydesc_ty = ty::lookup_item_type(tcx, tydesc_did).ty;
     let ptr = ty::mk_ptr(
         tcx,
         ty::mt {ty: ty::mk_nil(tcx), mutbl: ast::m_imm}
     );
-    return ty::mk_tup(tcx, ~[ty::mk_uint(tcx), ty::mk_type(tcx),
-                         ptr, ptr,
-                         t]);
+    return ty::mk_tup(tcx, ~[ty::mk_uint(tcx), tydesc_ty,
+                             ptr, ptr,
+                             t]);
 }
 
 pub fn T_box_header_fields(cx: @CrateContext) -> ~[TypeRef] {
     let ptr = T_ptr(T_i8());
-    return ~[cx.int_type, T_ptr(cx.tydesc_type), ptr, ptr];
+    return ~[cx.int_type, T_ptr(T_tydesc(cx)), ptr, ptr];
 }
 
 pub fn T_box_header(cx: @CrateContext) -> TypeRef {
@@ -1003,19 +956,6 @@ pub fn T_unique_ptr(t: TypeRef) -> TypeRef {
         return llvm::LLVMPointerType(t, gc_box_addrspace);
     }
 }
-
-pub fn T_port(cx: @CrateContext, _t: TypeRef) -> TypeRef {
-    return T_struct(~[cx.int_type]); // Refcount
-
-}
-
-pub fn T_chan(cx: @CrateContext, _t: TypeRef) -> TypeRef {
-    return T_struct(~[cx.int_type]); // Refcount
-
-}
-
-pub fn T_taskptr(cx: @CrateContext) -> TypeRef { return T_ptr(cx.task_type); }
-
 
 // This type must never be used directly; it must always be cast away.
 pub fn T_typaram(tn: @TypeNames) -> TypeRef {
@@ -1058,28 +998,20 @@ pub fn T_opaque_enum_ptr(cx: @CrateContext) -> TypeRef {
     return T_ptr(T_opaque_enum(cx));
 }
 
-pub fn T_captured_tydescs(cx: @CrateContext, n: uint) -> TypeRef {
-    return T_struct(vec::from_elem::<TypeRef>(n, T_ptr(cx.tydesc_type)));
-}
-
 pub fn T_opaque_trait(cx: @CrateContext, vstore: ty::vstore) -> TypeRef {
     match vstore {
         ty::vstore_box => {
-            T_struct(~[T_ptr(cx.tydesc_type), T_opaque_box_ptr(cx)])
+            T_struct(~[T_ptr(T_tydesc(cx)),
+                       T_opaque_box_ptr(cx)])
         }
         ty::vstore_uniq => {
-            T_struct(~[T_ptr(cx.tydesc_type),
+            T_struct(~[T_ptr(T_tydesc(cx)),
                        T_unique_ptr(T_unique(cx, T_i8())),
-                       T_ptr(cx.tydesc_type)])
+                       T_ptr(T_tydesc(cx))])
         }
-        _ => T_struct(~[T_ptr(cx.tydesc_type), T_ptr(T_i8())])
+        _ => T_struct(~[T_ptr(T_tydesc(cx)), T_ptr(T_i8())])
     }
 }
-
-pub fn T_opaque_port_ptr() -> TypeRef { return T_ptr(T_i8()); }
-
-pub fn T_opaque_chan_ptr() -> TypeRef { return T_ptr(T_i8()); }
-
 
 // LLVM constant constructors.
 pub fn C_null(t: TypeRef) -> ValueRef {

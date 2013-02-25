@@ -312,7 +312,6 @@ fn enc_sty(w: io::Writer, cx: @ctxt, +st: ty::sty) {
       ty::ty_self => {
         w.write_char('s');
       }
-      ty::ty_type => w.write_char('Y'),
       ty::ty_opaque_closure_ptr(p) => {
           w.write_str(&"C&");
           enc_sigil(w, p);

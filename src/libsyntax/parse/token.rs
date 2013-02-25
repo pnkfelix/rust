@@ -339,17 +339,16 @@ pub mod special_idents {
     pub const descrim : ident = ident { repr: 23u };
     pub const clownshoe_abi : ident = ident { repr: 24u };
     pub const clownshoe_stack_shim : ident = ident { repr: 25u };
-    pub const tydesc : ident = ident { repr: 26u };
-    pub const literally_dtor : ident = ident { repr: 27u };
-    pub const main : ident = ident { repr: 28u };
-    pub const opaque : ident = ident { repr: 29u };
-    pub const blk : ident = ident { repr: 30u };
-    pub const static : ident = ident { repr: 31u };
-    pub const intrinsic : ident = ident { repr: 32u };
-    pub const clownshoes_foreign_mod: ident = ident { repr: 33 };
-    pub const unnamed_field: ident = ident { repr: 34 };
-    pub const c_abi: ident = ident { repr: 35 };
-    pub const type_self: ident = ident { repr: 36 };    // `Self`
+    pub const literally_dtor : ident = ident { repr: 26u };
+    pub const main : ident = ident { repr: 27u };
+    pub const opaque : ident = ident { repr: 28u };
+    pub const blk : ident = ident { repr: 29u };
+    pub const static : ident = ident { repr: 30u };
+    pub const intrinsic : ident = ident { repr: 31u };
+    pub const clownshoes_foreign_mod: ident = ident { repr: 32 };
+    pub const unnamed_field: ident = ident { repr: 33 };
+    pub const c_abi: ident = ident { repr: 34 };
+    pub const type_self: ident = ident { repr: 35 };    // `Self`
 }
 
 pub struct ident_interner {
@@ -415,17 +414,16 @@ pub fn mk_ident_interner() -> @ident_interner {
                     @~"descrim",            // 23
                     @~"__rust_abi",         // 24
                     @~"__rust_stack_shim",  // 25
-                    @~"TyDesc",             // 26
-                    @~"dtor",               // 27
-                    @~"main",               // 28
-                    @~"<opaque>",           // 29
-                    @~"blk",                // 30
-                    @~"static",             // 31
-                    @~"intrinsic",          // 32
-                    @~"__foreign_mod__",    // 33
-                    @~"__field__",          // 34
-                    @~"C",                  // 35
-                    @~"Self",               // 36
+                    @~"dtor",               // 26
+                    @~"main",               // 27
+                    @~"<opaque>",           // 28
+                    @~"blk",                // 29
+                    @~"static",             // 30
+                    @~"intrinsic",          // 31
+                    @~"__foreign_mod__",    // 32
+                    @~"__field__",          // 33
+                    @~"C",                  // 34
+                    @~"Self",               // 35
                 ];
 
                 let rv = @ident_interner {

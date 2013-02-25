@@ -25,7 +25,7 @@ use vec;
 
 #[abi = "cdecl"]
 pub extern mod rustrt {
-    pub unsafe fn vec_reserve_shared_actual(++t: *sys::TypeDesc,
+    pub unsafe fn vec_reserve_shared_actual(++t: *sys::TyDesc,
                                             ++v: **vec::raw::VecRepr,
                                             ++n: libc::size_t);
 }
@@ -248,7 +248,7 @@ pub mod raw {
         // Only make the (slow) call into the runtime if we have to
         if capacity(*v) < n {
             let ptr: **VecRepr = transmute(v);
-            rustrt::vec_reserve_shared_actual(sys::get_type_desc::<T>(),
+            rustrt::vec_reserve_shared_actual(sys::get_tydesc::<T>(),
                                               ptr, n as libc::size_t);
         }
     }

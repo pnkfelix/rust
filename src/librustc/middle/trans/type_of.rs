@@ -122,7 +122,6 @@ pub fn sizing_type_of(cx: @CrateContext, t: ty::t) -> TypeRef {
         ty::ty_uniq(*) |
         ty::ty_ptr(*) |
         ty::ty_rptr(*) |
-        ty::ty_type |
         ty::ty_opaque_closure_ptr(*) => T_ptr(T_i8()),
 
         ty::ty_estr(ty::vstore_slice(*)) |
@@ -271,7 +270,6 @@ pub fn type_of(cx: @CrateContext, t: ty::t) -> TypeRef {
       ty::ty_bare_fn(_) => T_fn_pair(cx, type_of_fn_from_ty(cx, t)),
       ty::ty_closure(_) => T_fn_pair(cx, type_of_fn_from_ty(cx, t)),
       ty::ty_trait(_, _, vstore) => T_opaque_trait(cx, vstore),
-      ty::ty_type => T_ptr(cx.tydesc_type),
       ty::ty_tup(elts) => {
         let mut tys = ~[];
         for vec::each(elts) |elt| {
@@ -392,7 +390,7 @@ pub fn type_of_rooted(ccx: @CrateContext, t: ty::t) -> TypeRef {
 }
 
 pub fn type_of_glue_fn(ccx: @CrateContext, t: ty::t) -> TypeRef {
-    let tydescpp = T_ptr(T_ptr(ccx.tydesc_type));
+    let tydescpp = T_ptr(T_ptr(T_tydesc(ccx)));
     let llty = T_ptr(type_of(ccx, t));
     return T_fn(~[T_ptr(T_nil()), T_ptr(T_nil()), tydescpp, llty],
                 T_void());

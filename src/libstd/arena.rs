@@ -42,7 +42,7 @@ use core::cast;
 use core::libc::size_t;
 use core::prelude::*;
 use core::ptr;
-use core::sys::TypeDesc;
+use core::sys::TyDesc;
 use core::sys;
 use core::uint;
 use core::vec;
@@ -56,7 +56,7 @@ extern mod rusti {
 extern mod rustrt {
     #[rust_stack]
     unsafe fn rust_call_tydesc_glue(root: *u8,
-                                    tydesc: *TypeDesc,
+                                    tydesc: *TyDesc,
                                     field: size_t);
 }
 // This probably belongs somewhere else. Needs to be kept in sync with
@@ -131,7 +131,7 @@ unsafe fn destroy_chunk(chunk: &Chunk) {
         let (tydesc, is_done) = un_bitpack_tydesc_ptr(*tydesc_data);
         let size = (*tydesc).size, align = (*tydesc).align;
 
-        let after_tydesc = idx + sys::size_of::<*TypeDesc>();
+        let after_tydesc = idx + sys::size_of::<*TyDesc>();
 
         let start = round_up_to(after_tydesc, align);
 
@@ -143,7 +143,7 @@ unsafe fn destroy_chunk(chunk: &Chunk) {
         }
 
         // Find where the next tydesc lives
-        idx = round_up_to(start + size, sys::pref_align_of::<*TypeDesc>());
+        idx = round_up_to(start + size, sys::pref_align_of::<*TyDesc>());
     }
 }
 
@@ -152,12 +152,12 @@ unsafe fn destroy_chunk(chunk: &Chunk) {
 // is necessary in order to properly do cleanup if a failure occurs
 // during an initializer.
 #[inline(always)]
-unsafe fn bitpack_tydesc_ptr(p: *TypeDesc, is_done: bool) -> uint {
+unsafe fn bitpack_tydesc_ptr(p: *TyDesc, is_done: bool) -> uint {
     let p_bits: uint = reinterpret_cast(&p);
     p_bits | (is_done as uint)
 }
 #[inline(always)]
-unsafe fn un_bitpack_tydesc_ptr(p: uint) -> (*TypeDesc, bool) {
+unsafe fn un_bitpack_tydesc_ptr(p: uint) -> (*TyDesc, bool) {
     (reinterpret_cast(&(p & !1)), p & 1 == 1)
 }
 
@@ -196,7 +196,7 @@ impl &Arena {
     #[inline(always)]
     fn alloc_pod<T>(op: fn() -> T) -> &self/T {
         unsafe {
-            let tydesc = sys::get_type_desc::<T>();
+            let tydesc = sys::get_tydesc::<T>();
             let ptr = self.alloc_pod_inner((*tydesc).size, (*tydesc).align);
             let ptr: *mut T = reinterpret_cast(&ptr);
             rusti::move_val_init(&mut (*ptr), op());
@@ -221,13 +221,13 @@ impl &Arena {
         let head = &mut self.head;
 
         let tydesc_start = head.fill;
-        let after_tydesc = head.fill + sys::size_of::<*TypeDesc>();
+        let after_tydesc = head.fill + sys::size_of::<*TyDesc>();
         let start = round_up_to(after_tydesc, align);
         let end = start + n_bytes;
         if end > at_vec::capacity(head.data) {
             return self.alloc_nonpod_grow(n_bytes, align);
         }
-        head.fill = round_up_to(end, sys::pref_align_of::<*TypeDesc>());
+        head.fill = round_up_to(end, sys::pref_align_of::<*TyDesc>());
 
         //debug!("idx = %u, size = %u, align = %u, fill = %u",
         //       start, n_bytes, align, head.fill);
@@ -241,7 +241,7 @@ impl &Arena {
     #[inline(always)]
     fn alloc_nonpod<T>(op: fn() -> T) -> &self/T {
         unsafe {
-            let tydesc = sys::get_type_desc::<T>();
+            let tydesc = sys::get_tydesc::<T>();
             let (ty_ptr, ptr) =
                 self.alloc_nonpod_inner((*tydesc).size, (*tydesc).align);
             let ty_ptr: *mut uint = reinterpret_cast(&ty_ptr);

@@ -14,10 +14,140 @@ Runtime type reflection
 
 */
 
-use intrinsic::{TyDesc, get_tydesc, visit_tydesc, TyVisitor};
-use libc::c_void;
 use sys;
+#[cfg(stage0)]
+use intrinsic::{TyDesc, get_tydesc};
+
+#[cfg(stage1)]
+#[cfg(stage2)]
+#[cfg(stage3)]
+use sys::{TyDesc, get_tydesc};
+
+use libc::c_void;
 use vec;
+
+#[cfg(stage0)]
+use intrinsic::{TyVisitor};
+
+#[cfg(stage1)]
+#[cfg(stage2)]
+#[cfg(stage3)]
+#[abi = "rust-intrinsic"]
+extern mod rusti {
+    fn visit_tydesc(++td: *TyDesc, &&tv: TyVisitor);
+}
+
+#[cfg(stage1)]
+#[cfg(stage2)]
+#[cfg(stage3)]
+/// Invoke `tv.visit_*` for the type described by `td`
+pub fn visit_tydesc(++td: *TyDesc, &&tv: TyVisitor) {
+    unsafe { rusti::visit_tydesc(td, tv) }
+}
+
+/**
+ * Primary reflection callback interface. The compiler generates
+ * code for this; callers can use it to reflect on a type via
+ * `sys::get_tydesc` and `visit_tydesc` in this module.
+ *
+ * This interface is quite low-level and most callers will want
+ * to use a higher-level interface such as `MovePtrAdaptor`.
+ */
+#[cfg(stage1)]
+#[cfg(stage2)]
+#[cfg(stage3)]
+#[lang="tyvisitor"]
+pub trait TyVisitor {
+    fn visit_bot(&self) -> bool;
+    fn visit_nil(&self) -> bool;
+    fn visit_bool(&self) -> bool;
+
+    fn visit_int(&self) -> bool;
+    fn visit_i8(&self) -> bool;
+    fn visit_i16(&self) -> bool;
+    fn visit_i32(&self) -> bool;
+    fn visit_i64(&self) -> bool;
+
+    fn visit_uint(&self) -> bool;
+    fn visit_u8(&self) -> bool;
+    fn visit_u16(&self) -> bool;
+    fn visit_u32(&self) -> bool;
+    fn visit_u64(&self) -> bool;
+
+    fn visit_float(&self) -> bool;
+    fn visit_f32(&self) -> bool;
+    fn visit_f64(&self) -> bool;
+
+    fn visit_char(&self) -> bool;
+    fn visit_str(&self) -> bool;
+
+    fn visit_estr_box(&self) -> bool;
+    fn visit_estr_uniq(&self) -> bool;
+    fn visit_estr_slice(&self) -> bool;
+    fn visit_estr_fixed(&self, n: uint, sz: uint, align: uint) -> bool;
+
+    fn visit_box(&self, mtbl: uint, inner: *TyDesc) -> bool;
+    fn visit_uniq(&self, mtbl: uint, inner: *TyDesc) -> bool;
+    fn visit_ptr(&self, mtbl: uint, inner: *TyDesc) -> bool;
+    fn visit_rptr(&self, mtbl: uint, inner: *TyDesc) -> bool;
+
+    fn visit_vec(&self, mtbl: uint, inner: *TyDesc) -> bool;
+    fn visit_unboxed_vec(&self, mtbl: uint, inner: *TyDesc) -> bool;
+    fn visit_evec_box(&self, mtbl: uint, inner: *TyDesc) -> bool;
+    fn visit_evec_uniq(&self, mtbl: uint, inner: *TyDesc) -> bool;
+    fn visit_evec_slice(&self, mtbl: uint, inner: *TyDesc) -> bool;
+    fn visit_evec_fixed(&self, n: uint, sz: uint, align: uint,
+                        mtbl: uint, inner: *TyDesc) -> bool;
+
+    fn visit_enter_rec(&self, n_fields: uint,
+                       sz: uint, align: uint) -> bool;
+    fn visit_rec_field(&self, i: uint, name: &str,
+                       mtbl: uint, inner: *TyDesc) -> bool;
+    fn visit_leave_rec(&self, n_fields: uint,
+                       sz: uint, align: uint) -> bool;
+
+    fn visit_enter_class(&self, n_fields: uint,
+                         sz: uint, align: uint) -> bool;
+    fn visit_class_field(&self, i: uint, name: &str,
+                         mtbl: uint, inner: *TyDesc) -> bool;
+    fn visit_leave_class(&self, n_fields: uint,
+                         sz: uint, align: uint) -> bool;
+
+    fn visit_enter_tup(&self, n_fields: uint,
+                       sz: uint, align: uint) -> bool;
+    fn visit_tup_field(&self, i: uint, inner: *TyDesc) -> bool;
+    fn visit_leave_tup(&self, n_fields: uint,
+                       sz: uint, align: uint) -> bool;
+
+    fn visit_enter_enum(&self, n_variants: uint,
+                        sz: uint, align: uint) -> bool;
+    fn visit_enter_enum_variant(&self, variant: uint,
+                                disr_val: int,
+                                n_fields: uint,
+                                name: &str) -> bool;
+    fn visit_enum_variant_field(&self, i: uint, inner: *TyDesc) -> bool;
+    fn visit_leave_enum_variant(&self, variant: uint,
+                                disr_val: int,
+                                n_fields: uint,
+                                name: &str) -> bool;
+    fn visit_leave_enum(&self, n_variants: uint,
+                        sz: uint, align: uint) -> bool;
+
+    fn visit_enter_fn(&self, purity: uint, proto: uint,
+                      n_inputs: uint, retstyle: uint) -> bool;
+    fn visit_fn_input(&self, i: uint, mode: uint, inner: *TyDesc) -> bool;
+    fn visit_fn_output(&self, retstyle: uint, inner: *TyDesc) -> bool;
+    fn visit_leave_fn(&self, purity: uint, proto: uint,
+                      n_inputs: uint, retstyle: uint) -> bool;
+
+    fn visit_trait(&self) -> bool;
+    fn visit_var(&self) -> bool;
+    fn visit_var_integral(&self) -> bool;
+    fn visit_param(&self, i: uint) -> bool;
+    fn visit_self(&self) -> bool;
+    fn visit_opaque_box(&self) -> bool;
+    fn visit_closure_ptr(&self, ck: uint) -> bool;
+}
 
 /**
  * Trait for visitor that wishes to reflect on data. To use this, create a
@@ -471,6 +601,7 @@ impl<V:TyVisitor + MovePtr> TyVisitor for MovePtrAdaptor<V> {
         true
     }
 
+    #[cfg(stage0)]
     fn visit_type(&self) -> bool {
         if ! self.inner.visit_type() { return false; }
         true
@@ -483,6 +614,7 @@ impl<V:TyVisitor + MovePtr> TyVisitor for MovePtrAdaptor<V> {
         true
     }
 
+    #[cfg(stage0)]
     fn visit_constr(&self, inner: *TyDesc) -> bool {
         if ! self.inner.visit_constr(inner) { return false; }
         true

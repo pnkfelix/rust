@@ -14,6 +14,14 @@ as mentioned in #3369
 The intrinsics are defined in librustc/middle/trans/foreign.rs.
 */
 
+#[cfg(stage0)]
+type TyDesc = ();
+
+#[cfg(stage1)]
+#[cfg(stage2)]
+#[cfg(stage3)]
+use sys::TyDesc;
+
 #[abi = "rust-intrinsic"]
 pub extern {
     pub fn atomic_cxchg(dst: &mut int, old: int, src: int) -> int;
@@ -40,7 +48,7 @@ pub extern {
     pub fn min_align_of<T>() -> uint;
     pub fn pref_align_of<T>() -> uint;
 
-    pub fn get_tydesc<T>() -> *();
+    pub fn get_tydesc<T>() -> *TyDesc;
 
     pub fn init<T>() -> T;
 

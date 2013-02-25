@@ -211,9 +211,6 @@ pub fn compile_rest(sess: Session, cfg: ast::crate_cfg,
 
     if upto == cu_expand { return (crate, None); }
 
-    crate = time(time_passes, ~"intrinsic injection", ||
-        front::intrinsic_inject::inject_intrinsic(sess, crate));
-
     crate = time(time_passes, ~"core injection", ||
         front::core_inject::maybe_inject_libcore_ref(sess, crate));
 

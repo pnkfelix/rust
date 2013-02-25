@@ -921,7 +921,7 @@ pub impl LookupContext {
             ty_err => None,
 
             ty_opaque_closure_ptr(_) | ty_unboxed_vec(_) |
-            ty_opaque_box | ty_type | ty_infer(TyVar(_)) => {
+            ty_opaque_box | ty_infer(TyVar(_)) => {
                 self.bug(fmt!("Unexpected type: %s",
                               self.ty_to_str(self_ty)));
             }

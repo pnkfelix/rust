@@ -12,18 +12,9 @@
 
 use libc::{c_char, c_void, c_uint, intptr_t, uintptr_t};
 use ptr::{mut_null, null, to_unsafe_ptr};
-use repr::BoxRepr;
-use sys::TypeDesc;
+use managed::raw::BoxRepr;
+use sys::{GlueFn, TyDesc};
 use cast::transmute;
-
-/**
- * Runtime structures
- *
- * NB: These must match the representation in the C++ runtime.
- */
-
-pub type DropGlue = fn(**TypeDesc, *c_void);
-pub type FreeGlue = fn(**TypeDesc, *c_void);
 
 pub type TaskID = uintptr_t;
 
@@ -127,6 +118,7 @@ pub struct Task {
     boxed_region: BoxedRegion
 }
 
+
 /*
  * Box annihilation
  *
@@ -202,9 +194,10 @@ pub unsafe fn annihilate() {
     // Pass 2: Drop all boxes.
     for each_live_alloc |box, uniq| {
         if !uniq {
-            let tydesc: *TypeDesc = transmute(copy (*box).header.type_desc);
-            let drop_glue: DropGlue = transmute(((*tydesc).drop_glue, 0));
-            drop_glue(to_unsafe_ptr(&tydesc), transmute(&(*box).data));
+            let tydesc: *TyDesc = transmute((*box).header.type_desc);
+            let drop_glue: GlueFn = transmute(((*tydesc).drop_glue, 0));
+            drop_glue(to_unsafe_ptr(&tydesc),
+                      transmute(&(*box).data));
         }
     }
 

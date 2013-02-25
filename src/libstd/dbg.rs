@@ -16,52 +16,52 @@ use core::sys;
 
 #[abi = "cdecl"]
 extern mod rustrt {
-    pub unsafe fn debug_tydesc(td: *sys::TypeDesc);
-    pub unsafe fn debug_opaque(td: *sys::TypeDesc, x: *());
-    pub unsafe fn debug_box(td: *sys::TypeDesc, x: *());
-    pub unsafe fn debug_tag(td: *sys::TypeDesc, x: *());
-    pub unsafe fn debug_fn(td: *sys::TypeDesc, x: *());
-    pub unsafe fn debug_ptrcast(td: *sys::TypeDesc, x: *()) -> *();
+    pub unsafe fn debug_tydesc(td: *sys::TyDesc);
+    pub unsafe fn debug_opaque(td: *sys::TyDesc, x: *());
+    pub unsafe fn debug_box(td: *sys::TyDesc, x: *());
+    pub unsafe fn debug_tag(td: *sys::TyDesc, x: *());
+    pub unsafe fn debug_fn(td: *sys::TyDesc, x: *());
+    pub unsafe fn debug_ptrcast(td: *sys::TyDesc, x: *()) -> *();
     pub unsafe fn rust_dbg_breakpoint();
 }
 
 pub fn debug_tydesc<T>() {
     unsafe {
-        rustrt::debug_tydesc(sys::get_type_desc::<T>());
+        rustrt::debug_tydesc(sys::get_tydesc::<T>());
     }
 }
 
 pub fn debug_opaque<T>(x: T) {
     unsafe {
-        rustrt::debug_opaque(sys::get_type_desc::<T>(),
+        rustrt::debug_opaque(sys::get_tydesc::<T>(),
                              ptr::addr_of(&x) as *());
     }
 }
 
 pub fn debug_box<T>(x: @T) {
     unsafe {
-        rustrt::debug_box(sys::get_type_desc::<T>(),
+        rustrt::debug_box(sys::get_tydesc::<T>(),
                           ptr::addr_of(&x) as *());
     }
 }
 
 pub fn debug_tag<T>(x: T) {
     unsafe {
-        rustrt::debug_tag(sys::get_type_desc::<T>(),
+        rustrt::debug_tag(sys::get_tydesc::<T>(),
                           ptr::addr_of(&x) as *());
     }
 }
 
 pub fn debug_fn<T>(x: T) {
     unsafe {
-        rustrt::debug_fn(sys::get_type_desc::<T>(),
+        rustrt::debug_fn(sys::get_tydesc::<T>(),
                          ptr::addr_of(&x) as *());
     }
 }
 
 pub unsafe fn ptr_cast<T, U>(x: @T) -> @U {
     reinterpret_cast(
-        &rustrt::debug_ptrcast(sys::get_type_desc::<T>(),
+        &rustrt::debug_ptrcast(sys::get_tydesc::<T>(),
                               reinterpret_cast(&x)))
 }
 

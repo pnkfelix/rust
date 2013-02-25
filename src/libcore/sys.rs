@@ -8,43 +8,50 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! Misc low level stuff
+//! Definitions of various low-level structures from the runtime.
 
 use cast;
 use cmp::{Eq, Ord};
 use gc;
 use io;
 use libc;
-use libc::{c_void, c_char, size_t};
+use libc::{c_void, c_char, size_t, uintptr_t, intptr_t, c_uint};
 use ptr;
 use repr;
 use str;
 use vec;
+use managed::raw::BoxRepr;
+use private::intrinsics;
 
-pub type FreeGlue = fn(*TypeDesc, *c_void);
+// In preparation for move to sys.
+pub use cleanup::Task;
 
-// Corresponds to runtime type_desc type
-pub enum TypeDesc = {
+/// Corresponds to C++ glue_fn type
+#[lang="glue"]
+pub type GlueFn = fn(**TyDesc, *u8);
+
+
+/// Corresponds to C++ type_desc type
+#[lang="tydesc"]
+pub struct TyDesc {
     size: uint,
     align: uint,
-    take_glue: uint,
-    drop_glue: uint,
-    free_glue: uint
-    // Remaining fields not listed
-};
+    // NB: at this point we cannot use GlueFn in here.
+    // We use *u8 and require casting. This can change
+    // when we have real bare fns.
+    take_glue: *u8,
+    drop_glue: *u8,
+    free_glue: *u8,
+    visit_glue: *u8,
+    unused1: *u8,
+    unused2: *u8,
+}
 
-/// The representation of a Rust closure
+
+/// Correcponds to C++ fn_env_pair type
 pub struct Closure {
     code: *(),
     env: *(),
-}
-
-#[abi = "rust-intrinsic"]
-extern mod rusti {
-    fn get_tydesc<T>() -> *();
-    fn size_of<T>() -> uint;
-    fn pref_align_of<T>() -> uint;
-    fn min_align_of<T>() -> uint;
 }
 
 extern mod rustrt {
@@ -73,14 +80,14 @@ pub pure fn shape_le<T:Ord>(x1: &T, x2: &T) -> bool {
  * performing dark magick.
  */
 #[inline(always)]
-pub pure fn get_type_desc<T>() -> *TypeDesc {
-    unsafe { rusti::get_tydesc::<T>() as *TypeDesc }
+pub pure fn get_tydesc<T>() -> *TyDesc {
+    unsafe { intrinsics::get_tydesc::<T>() as *TyDesc }
 }
 
 /// Returns the size of a type
 #[inline(always)]
 pub pure fn size_of<T>() -> uint {
-    unsafe { rusti::size_of::<T>() }
+    unsafe { intrinsics::size_of::<T>() }
 }
 
 /**
@@ -102,13 +109,13 @@ pub pure fn nonzero_size_of<T>() -> uint {
  */
 #[inline(always)]
 pub pure fn min_align_of<T>() -> uint {
-    unsafe { rusti::min_align_of::<T>() }
+    unsafe { intrinsics::min_align_of::<T>() }
 }
 
 /// Returns the preferred alignment of a type
 #[inline(always)]
 pub pure fn pref_align_of<T>() -> uint {
-    unsafe { rusti::pref_align_of::<T>() }
+    unsafe { intrinsics::pref_align_of::<T>() }
 }
 
 /// Returns the refcount of a shared box (as just before calling this)

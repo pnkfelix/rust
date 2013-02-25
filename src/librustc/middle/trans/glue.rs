@@ -358,17 +358,21 @@ pub fn call_tydesc_glue_full(++bcx: block,
 
     let llfn = {
         match static_glue_fn {
-          None => {
-            // Select out the glue function to call from the tydesc
-            let llfnptr = GEPi(bcx, tydesc, [0u, field]);
-            Load(bcx, llfnptr)
-          }
-          Some(sgf) => sgf
+            None => {
+                // Select out the glue function to call from the tydesc
+                let llfnptr = GEPi(bcx, tydesc, struct_field(field));
+                let fty = T_ptr(T_generic_glue_fn(bcx.ccx()));
+                let llfnptr = PointerCast(bcx, llfnptr, T_ptr(fty));
+                Load(bcx, llfnptr)
+            }
+            Some(sgf) => sgf
         }
     };
 
-    Call(bcx, llfn, ~[C_null(T_ptr(T_nil())), C_null(T_ptr(T_nil())),
-                      C_null(T_ptr(T_ptr(bcx.ccx().tydesc_type))), llrawptr]);
+    Call(bcx, llfn, ~[C_null(T_ptr(T_nil())),
+                      C_null(T_ptr(T_nil())),
+                      C_null(T_ptr(T_ptr(T_tydesc(bcx.ccx())))),
+                      llrawptr]);
 }
 
 // See [Note-arg-mode]
@@ -383,9 +387,8 @@ pub fn call_tydesc_glue(++cx: block, v: ValueRef, t: ty::t, field: uint)
 pub fn make_visit_glue(bcx: block, v: ValueRef, t: ty::t) {
     let _icx = bcx.insn_ctxt("make_visit_glue");
     let mut bcx = bcx;
-    let ty_visitor_name = special_idents::ty_visitor;
-    assert bcx.ccx().tcx.intrinsic_defs.contains_key(&ty_visitor_name);
-    let (trait_id, ty) = bcx.ccx().tcx.intrinsic_defs.get(&ty_visitor_name);
+    let trait_id = bcx.ccx().tcx.lang_items.tyvisitor_trait();
+    let ty = ty::lookup_item_type(bcx.ccx().tcx, trait_id).ty;
     let v = PointerCast(bcx, v, T_ptr(type_of::type_of(bcx.ccx(), ty)));
     bcx = reflect::emit_calls_to_trait_visit_ty(bcx, t, v, trait_id);
     build_return(bcx);
@@ -678,7 +681,7 @@ pub fn declare_tydesc(ccx: @CrateContext, t: ty::t) -> @mut tydesc_info {
     log(debug, fmt!("+++ declare_tydesc %s %s", ty_to_str(ccx.tcx, t), name));
     let gvar = str::as_c_str(name, |buf| {
         unsafe {
-            llvm::LLVMAddGlobal(ccx.llmod, ccx.tydesc_type, buf)
+            llvm::LLVMAddGlobal(ccx.llmod, T_tydesc(ccx), buf)
         }
     });
     let inf = @mut tydesc_info {
@@ -763,7 +766,12 @@ pub fn emit_tydescs(ccx: @CrateContext) {
     // As of this point, allow no more tydescs to be created.
     *ccx.finished_tydescs = true;
     for ccx.tydescs.each_value |&val| {
-        let glue_fn_ty = T_ptr(T_generic_glue_fn(ccx));
+
+        // NB: we would like this to be the actual type, but it can't be yet.
+        // let glue_fn_ty = T_ptr(T_generic_glue_fn(ccx));
+
+        let glue_fn_ty = T_ptr(T_i8());
+
         let ti = val;
 
         // Each of the glue functions needs to be cast to a generic type
@@ -814,16 +822,20 @@ pub fn emit_tydescs(ccx: @CrateContext) {
         let shape = C_null(T_ptr(T_i8()));
         let shape_tables = C_null(T_ptr(T_i8()));
 
+        let tydesc_did = ccx.tcx.lang_items.tydesc_struct();
+        let tydesc_ty = ty::lookup_item_type(ccx.tcx, tydesc_did).ty;
+        let tydesc_llty = type_of::type_of(ccx, tydesc_ty);
+
         let tydesc =
-            C_named_struct(ccx.tydesc_type,
-                           ~[ti.size, // size
-                             ti.align, // align
-                             take_glue, // take_glue
-                             drop_glue, // drop_glue
-                             free_glue, // free_glue
-                             visit_glue, // visit_glue
-                             shape, // shape
-                             shape_tables]); // shape_tables
+            C_named_struct(tydesc_llty,
+                           &[C_struct(&[ti.size, // size
+                                        ti.align, // align
+                                        take_glue, // take_glue
+                                        drop_glue, // drop_glue
+                                        free_glue, // free_glue
+                                        visit_glue, // visit_glue
+                                        shape, // shape
+                                        shape_tables])]); // shape_tables
 
         unsafe {
             let gvar = ti.tydesc;
@@ -833,7 +845,7 @@ pub fn emit_tydescs(ccx: @CrateContext) {
 
             // Index tydesc by addrspace.
             if ti.addrspace > gc_box_addrspace {
-                let llty = T_ptr(ccx.tydesc_type);
+                let llty = T_ptr(T_tydesc(ccx));
                 let addrspace_name = fmt!("_gc_addrspace_metadata_%u",
                                           ti.addrspace as uint);
                 let addrspace_gvar = str::as_c_str(addrspace_name, |buf| {

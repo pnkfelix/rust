@@ -3204,20 +3204,22 @@ pub fn check_intrinsic_type(ccx: @mut CrateCtxt, it: @ast::foreign_item) {
       }
 
       ~"get_tydesc" => {
-        // FIXME (#3730): return *intrinsic::tydesc, not *()
-        (1u, ~[], ty::mk_nil_ptr(tcx))
+          let tydesc_did = tcx.lang_items.tydesc_struct();
+          let tydesc_ty = ty::lookup_item_type(tcx, tydesc_did).ty;
+          let td_ptr = ty::mk_ptr(ccx.tcx, ty::mt {ty: tydesc_ty,
+                                                   mutbl: ast::m_imm});
+          (1u, ~[], td_ptr)
       }
       ~"visit_tydesc" => {
-          let tydesc_name = special_idents::tydesc;
-          let ty_visitor_name = tcx.sess.ident_of(~"TyVisitor");
-          assert tcx.intrinsic_defs.contains_key(&tydesc_name);
-          assert ccx.tcx.intrinsic_defs.contains_key(&ty_visitor_name);
-          let (_, tydesc_ty) = tcx.intrinsic_defs.get(&tydesc_name);
-          let (_, visitor_trait) = tcx.intrinsic_defs.get(&ty_visitor_name);
+          let tydesc_did = tcx.lang_items.tydesc_struct();
+          let visitor_did = tcx.lang_items.tyvisitor_trait();
+          let tydesc_ty = ty::lookup_item_type(tcx, tydesc_did).ty;
+          let visitor_ty = ty::lookup_item_type(tcx, visitor_did).ty;
+
           let td_ptr = ty::mk_ptr(ccx.tcx, ty::mt {ty: tydesc_ty,
                                                    mutbl: ast::m_imm});
           (0u, ~[arg(ast::by_val, td_ptr),
-                 arg(ast::by_ref, visitor_trait)], ty::mk_nil(tcx))
+                 arg(ast::by_ref, visitor_ty)], ty::mk_nil(tcx))
       }
       ~"frame_address" => {
         let fty = ty::mk_closure(ccx.tcx, ty::ClosureTy {

@@ -75,16 +75,20 @@ pub enum LangItem {
     ReturnToMutFnLangItem,      // 31
     CheckNotBorrowedFnLangItem, // 32
     StrDupUniqFnLangItem,       // 33
+
+    TyVisitorTraitLangItem,     // 34
+    TyDescStructLangItem,       // 35
+    GlueFnTypeLangItem,         // 36
 }
 
 pub struct LanguageItems {
-    items: [ Option<def_id> * 34 ]
+    items: [ Option<def_id> * 37 ]
 }
 
 pub impl LanguageItems {
     static pub fn new(&self) -> LanguageItems {
         LanguageItems {
-            items: [ None, ..34 ]
+            items: [ None, ..37 ]
         }
     }
 
@@ -135,6 +139,10 @@ pub impl LanguageItems {
             31 => "return_to_mut",
             32 => "check_not_borrowed",
             33 => "strdup_uniq",
+
+            34 => "tyvisitor",
+            35 => "tydesc",
+            36 => "glue",
 
             _ => "???"
         }
@@ -248,6 +256,15 @@ pub impl LanguageItems {
     pub fn strdup_uniq_fn(&const self) -> def_id {
         self.items[StrDupUniqFnLangItem as uint].get()
     }
+    pub fn tyvisitor_trait(&const self) -> def_id {
+        self.items[TyVisitorTraitLangItem as uint].get()
+    }
+    pub fn tydesc_struct(&const self) -> def_id {
+        self.items[TyDescStructLangItem as uint].get()
+    }
+    pub fn glue_fn_type(&const self) -> def_id {
+        self.items[GlueFnTypeLangItem as uint].get()
+    }
 }
 
 fn LanguageItemCollector(crate: @crate,
@@ -296,6 +313,10 @@ fn LanguageItemCollector(crate: @crate,
     item_refs.insert(@~"check_not_borrowed",
                      CheckNotBorrowedFnLangItem as uint);
     item_refs.insert(@~"strdup_uniq", StrDupUniqFnLangItem as uint);
+
+    item_refs.insert(@~"tyvisitor", TyVisitorTraitLangItem as uint);
+    item_refs.insert(@~"tydesc", TyDescStructLangItem as uint);
+    item_refs.insert(@~"glue", GlueFnTypeLangItem as uint);
 
     LanguageItemCollector {
         crate: crate,

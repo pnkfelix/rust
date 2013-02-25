@@ -18,8 +18,10 @@ use cast::transmute;
 use cast;
 use char;
 use dvec::DVec;
-use intrinsic;
-use intrinsic::{TyDesc, TyVisitor, visit_tydesc};
+#[cfg(stage1)]
+#[cfg(stage2)]
+#[cfg(stage3)]
+use sys::TyDesc;
 use io;
 use io::{Writer, WriterUtil};
 use libc::c_void;
@@ -27,11 +29,22 @@ use managed;
 use managed::raw::BoxHeaderRepr;
 use ptr;
 use reflect;
+
+#[cfg(stage0)]
 use reflect::{MovePtr, MovePtrAdaptor, align};
+#[cfg(stage0)]
+use intrinsic;
+#[cfg(stage0)]
+use intrinsic::{TyDesc, TyVisitor, visit_tydesc};
+
+#[cfg(stage1)]
+#[cfg(stage2)]
+#[cfg(stage3)]
+use reflect::{TyVisitor, MovePtr, MovePtrAdaptor, visit_tydesc, align};
+
 use repr;
 use str;
 use sys;
-use sys::TypeDesc;
 use to_str::ToStr;
 use uint;
 use vec::UnboxedVecRepr;
@@ -548,6 +561,7 @@ impl TyVisitor for ReprVisitor {
     fn visit_var_integral(&self) -> bool { true }
     fn visit_param(&self, _i: uint) -> bool { true }
     fn visit_self(&self) -> bool { true }
+    #[cfg(stage0)]
     fn visit_type(&self) -> bool { true }
 
     fn visit_opaque_box(&self) -> bool {
@@ -558,16 +572,30 @@ impl TyVisitor for ReprVisitor {
         }
     }
 
-    // Type no longer exists, vestigial function.
+    #[cfg(stage0)]
     fn visit_constr(&self, _inner: *TyDesc) -> bool { fail!(); }
 
     fn visit_closure_ptr(&self, _ck: uint) -> bool { true }
 }
 
+#[cfg(stage0)]
 pub fn write_repr<T>(writer: @Writer, object: &T) {
     unsafe {
         let ptr = ptr::to_unsafe_ptr(object) as *c_void;
         let tydesc = intrinsic::get_tydesc::<T>();
+        let mut u = ReprVisitor(ptr, writer);
+        let v = reflect::MovePtrAdaptor(u);
+        visit_tydesc(tydesc, (v) as @TyVisitor)
+    }
+}
+
+#[cfg(stage1)]
+#[cfg(stage2)]
+#[cfg(stage3)]
+pub fn write_repr<T>(writer: @Writer, object: &T) {
+    unsafe {
+        let ptr = ptr::to_unsafe_ptr(object) as *c_void;
+        let tydesc = sys::get_tydesc::<T>();
         let mut u = ReprVisitor(ptr, writer);
         let v = reflect::MovePtrAdaptor(u);
         visit_tydesc(tydesc, (v) as @TyVisitor)

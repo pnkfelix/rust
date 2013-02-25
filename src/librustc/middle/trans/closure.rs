@@ -483,7 +483,7 @@ pub fn make_opaque_cbox_take_glue(
     }
 
     // fn~ requires a deep copy.
-    let ccx = bcx.ccx(), tcx = ccx.tcx;
+    let ccx = bcx.ccx();
     let llopaquecboxty = T_opaque_box_ptr(ccx);
     let cbox_in = Load(bcx, cboxptr);
     do with_cond(bcx, IsNotNull(bcx, cbox_in)) |bcx| {
@@ -491,8 +491,8 @@ pub fn make_opaque_cbox_take_glue(
         let cbox_in = PointerCast(bcx, cbox_in, llopaquecboxty);
         let tydescptr = GEPi(bcx, cbox_in, [0u, abi::box_field_tydesc]);
         let tydesc = Load(bcx, tydescptr);
-        let tydesc = PointerCast(bcx, tydesc, T_ptr(ccx.tydesc_type));
-        let sz = Load(bcx, GEPi(bcx, tydesc, [0u, abi::tydesc_field_size]));
+        let sz = Load(bcx, GEPi(bcx, tydesc,
+                                struct_field(abi::tydesc_field_size)));
 
         // Adjust sz to account for the rust_opaque_box header fields
         let sz = Add(bcx, sz, machine::llsize_of(ccx, T_box_header(ccx)));
@@ -511,7 +511,9 @@ pub fn make_opaque_cbox_take_glue(
 
         // Take the (deeply cloned) type descriptor
         let tydesc_out = GEPi(bcx, cbox_out, [0u, abi::box_field_tydesc]);
-        let bcx = glue::take_ty(bcx, tydesc_out, ty::mk_type(tcx));
+        let tydesc_did = ccx.tcx.lang_items.tydesc_struct();
+        let tydesc_ty = ty::lookup_item_type(ccx.tcx, tydesc_did).ty;
+        let bcx = glue::take_ty(bcx, tydesc_out, tydesc_ty);
 
         // Take the data in the tuple
         let cdata_out = GEPi(bcx, cbox_out, [0u, abi::box_field_body]);
@@ -557,14 +559,11 @@ pub fn make_opaque_cbox_free_glue(
         }
     }
 
-    let ccx = bcx.ccx();
     do with_cond(bcx, IsNotNull(bcx, cbox)) |bcx| {
         // Load the type descr found in the cbox
-        let lltydescty = T_ptr(ccx.tydesc_type);
         let cbox = Load(bcx, cbox);
         let tydescptr = GEPi(bcx, cbox, [0u, abi::box_field_tydesc]);
         let tydesc = Load(bcx, tydescptr);
-        let tydesc = PointerCast(bcx, tydesc, lltydescty);
 
         // Drop the tuple data then free the descriptor
         let cdata = GEPi(bcx, cbox, [0u, abi::box_field_body]);

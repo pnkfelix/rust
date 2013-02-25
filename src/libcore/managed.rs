@@ -23,7 +23,13 @@ pub mod raw {
     pub const RC_MANAGED_UNIQUE : uint = (-2) as uint;
     pub const RC_IMMORTAL : uint = 0x77777777;
 
+    #[cfg(stage0)]
     use intrinsic::TyDesc;
+
+    #[cfg(stage1)]
+    #[cfg(stage2)]
+    #[cfg(stage3)]
+    use sys::TyDesc;
 
     pub struct BoxHeaderRepr {
         ref_count: uint,

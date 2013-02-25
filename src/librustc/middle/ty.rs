@@ -253,7 +253,6 @@ struct ctxt_ {
     node_type_substs: HashMap<node_id, ~[t]>,
 
     items: ast_map::map,
-    intrinsic_defs: HashMap<ast::ident, (ast::def_id, t)>,
     freevars: freevars::freevar_map,
     tcache: type_cache,
     rcache: creader_cache,
@@ -518,7 +517,6 @@ pub enum sty {
             // on non-useful type error messages)
 
     // "Fake" types, used for trans purposes
-    ty_type, // type_desc*
     ty_opaque_box, // used by monomorphizer to represent any @ box
     ty_opaque_closure_ptr(Sigil), // ptr to env for fn, fn@, fn~
     ty_unboxed_vec(mt),
@@ -816,7 +814,6 @@ pub fn mk_ctxt(s: session::Session,
         node_types: @mut SmallIntMap::new(),
         node_type_substs: oldmap::HashMap(),
         items: amap,
-        intrinsic_defs: oldmap::HashMap(),
         freevars: freevars,
         tcache: HashMap(),
         rcache: mk_rcache(),
@@ -880,7 +877,7 @@ fn mk_t_with_id(cx: ctxt, +st: sty, o_def_id: Option<ast::def_id>) -> t {
         flags |= get(mt.ty).flags;
       }
       &ty_nil | &ty_bot | &ty_bool | &ty_int(_) | &ty_float(_) | &ty_uint(_) |
-      &ty_estr(_) | &ty_type | &ty_opaque_closure_ptr(_) |
+      &ty_estr(_) | &ty_opaque_closure_ptr(_) |
       &ty_opaque_box => (),
       &ty_err => flags |= has_ty_err as uint,
       &ty_param(_) => flags |= has_params as uint,
@@ -1076,8 +1073,6 @@ pub fn mk_param(cx: ctxt, n: uint, k: def_id) -> t {
     mk_t(cx, ty_param(param_ty { idx: n, def_id: k }))
 }
 
-pub fn mk_type(cx: ctxt) -> t { mk_t(cx, ty_type) }
-
 pub fn mk_opaque_closure_ptr(cx: ctxt, sigil: ast::Sigil) -> t {
     mk_t(cx, ty_opaque_closure_ptr(sigil))
 }
@@ -1151,7 +1146,7 @@ pub fn maybe_walk_ty(ty: t, f: fn(t) -> bool) {
     if !f(ty) { return; }
     match /*bad*/copy get(ty).sty {
       ty_nil | ty_bot | ty_bool | ty_int(_) | ty_uint(_) | ty_float(_) |
-      ty_estr(_) | ty_type | ty_opaque_box | ty_self |
+      ty_estr(_) | ty_opaque_box | ty_self |
       ty_opaque_closure_ptr(_) | ty_infer(_) | ty_param(_) | ty_err => {
       }
       ty_box(tm) | ty_evec(tm, _) | ty_unboxed_vec(tm) |
@@ -1249,7 +1244,7 @@ fn fold_sty(sty: &sty, fldop: fn(t) -> t) -> sty {
             ty_struct(did, fold_substs(substs, fldop))
         }
         ty_nil | ty_bot | ty_bool | ty_int(_) | ty_uint(_) | ty_float(_) |
-        ty_estr(_) | ty_type | ty_opaque_closure_ptr(_) | ty_err |
+        ty_estr(_) | ty_opaque_closure_ptr(_) | ty_err |
         ty_opaque_box | ty_infer(_) | ty_param(*) | ty_self => {
             /*bad*/copy *sty
         }
@@ -1588,7 +1583,7 @@ pub pure fn type_is_unique(ty: t) -> bool {
 pub pure fn type_is_scalar(ty: t) -> bool {
     match get(ty).sty {
       ty_nil | ty_bool | ty_int(_) | ty_float(_) | ty_uint(_) |
-      ty_infer(IntVar(_)) | ty_infer(FloatVar(_)) | ty_type |
+      ty_infer(IntVar(_)) | ty_infer(FloatVar(_)) |
       ty_ptr(_) => true,
       _ => false
     }
@@ -1609,7 +1604,7 @@ pub fn type_needs_drop(cx: ctxt, ty: t) -> bool {
     let result = match /*bad*/copy get(ty).sty {
       // scalar types
       ty_nil | ty_bot | ty_bool | ty_int(_) | ty_float(_) | ty_uint(_) |
-      ty_type | ty_ptr(_) | ty_rptr(_, _) |
+      ty_ptr(_) | ty_rptr(_, _) |
       ty_estr(vstore_fixed(_)) |
       ty_estr(vstore_slice(_)) |
       ty_evec(_, vstore_slice(_)) |
@@ -2099,7 +2094,6 @@ pub fn type_contents(cx: ctxt, ty: t) -> TypeContents {
                 }
             }
 
-            ty_type => TC_NONE,
             ty_trait(_, _, vstore_fixed(_)) => TC_NONE,
 
             ty_err => {
@@ -2243,7 +2237,6 @@ pub fn type_contents(cx: ctxt, ty: t) -> TypeContents {
           ty_infer(_) => {
             cx.sess.bug(~"Asked to compute kind of a type variable");
           }
-          ty_type => 1,
           ty_opaque_closure_ptr(_) => 1,
           ty_opaque_box => 1,
           ty_unboxed_vec(_) => 10,
@@ -2298,7 +2291,6 @@ pub fn is_instantiable(cx: ctxt, r_ty: t) -> bool {
           ty_err |
           ty_param(_) |
           ty_self |
-          ty_type |
           ty_opaque_box |
           ty_opaque_closure_ptr(_) |
           ty_evec(_, _) |
@@ -2468,7 +2460,7 @@ pub fn type_is_pod(cx: ctxt, ty: t) -> bool {
     match /*bad*/copy get(ty).sty {
       // Scalar types
       ty_nil | ty_bot | ty_bool | ty_int(_) | ty_float(_) | ty_uint(_) |
-      ty_type | ty_ptr(_) | ty_bare_fn(_) => result = true,
+      ty_ptr(_) | ty_bare_fn(_) => result = true,
       // Boxed types
       ty_box(_) | ty_uniq(_) | ty_closure(_) |
       ty_estr(vstore_uniq) | ty_estr(vstore_box) |
@@ -2751,7 +2743,7 @@ impl to_bytes::IterBytes for sty {
           ty_param(ref p) =>
           to_bytes::iter_bytes_2(&15u8, p, lsb0, f),
 
-          ty_type => 16u8.iter_bytes(lsb0, f),
+            // removed: ty_type = 16u8
           ty_bot => 17u8.iter_bytes(lsb0, f),
 
           ty_ptr(ref mt) =>
@@ -3408,7 +3400,7 @@ pub fn ty_sort_str(cx: ctxt, t: t) -> ~str {
     match get(t).sty {
       ty_nil | ty_bot | ty_bool | ty_int(_) |
       ty_uint(_) | ty_float(_) | ty_estr(_) |
-      ty_type | ty_opaque_box | ty_opaque_closure_ptr(_) => {
+      ty_opaque_box | ty_opaque_closure_ptr(_) => {
         ::util::ppaux::ty_to_str(cx, t)
       }
 

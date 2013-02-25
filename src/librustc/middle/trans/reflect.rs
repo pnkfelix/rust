@@ -32,7 +32,6 @@ pub struct Reflector {
     visitor_val: ValueRef,
     visitor_methods: @~[ty::method],
     final_bcx: block,
-    tydesc_ty: TypeRef,
     bcx: block
 }
 
@@ -71,7 +70,7 @@ pub impl Reflector {
         let bcx = self.bcx;
         let static_ti = get_tydesc(bcx.ccx(), t);
         glue::lazily_emit_all_tydesc_glue(bcx.ccx(), static_ti);
-        PointerCast(bcx, static_ti.tydesc, T_ptr(self.tydesc_ty))
+        PointerCast(bcx, static_ti.tydesc, T_ptr(T_tydesc(bcx.ccx())))
     }
 
     fn c_mt(&mut self, mt: ty::mt) -> ~[ValueRef] {
@@ -310,7 +309,6 @@ pub impl Reflector {
               self.visit(~"param", extra)
           }
           ty::ty_self => self.leaf(~"self"),
-          ty::ty_type => self.leaf(~"type"),
           ty::ty_opaque_box => self.leaf(~"opaque_box"),
           ty::ty_opaque_closure_ptr(ck) => {
               let ckval = ast_sigil_constant(ck);
@@ -347,16 +345,11 @@ pub fn emit_calls_to_trait_visit_ty(bcx: block,
                                     visitor_val: ValueRef,
                                     visitor_trait_id: def_id)
                                  -> block {
-    use syntax::parse::token::special_idents::tydesc;
     let final = sub_block(bcx, ~"final");
-    assert bcx.ccx().tcx.intrinsic_defs.contains_key(&tydesc);
-    let (_, tydesc_ty) = bcx.ccx().tcx.intrinsic_defs.get(&tydesc);
-    let tydesc_ty = type_of::type_of(bcx.ccx(), tydesc_ty);
     let mut r = Reflector {
         visitor_val: visitor_val,
         visitor_methods: ty::trait_methods(bcx.tcx(), visitor_trait_id),
         final_bcx: final,
-        tydesc_ty: tydesc_ty,
         bcx: bcx
     };
     r.visit_ty(t);

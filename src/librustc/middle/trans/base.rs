@@ -548,13 +548,6 @@ pub fn compare_scalar_types(cx: block,
         ty::ty_int(_) => rslt(cx, f(signed_int)),
         ty::ty_uint(_) => rslt(cx, f(unsigned_int)),
         ty::ty_float(_) => rslt(cx, f(floating_point)),
-        ty::ty_type => {
-            rslt(
-                controlflow::trans_fail(
-                    cx, None,
-                    @~"attempt to compare values of type type"),
-                C_nil())
-        }
         _ => {
             // Should never get here, because t is scalar.
             cx.sess().bug(~"non-scalar type passed to \
@@ -3038,11 +3031,6 @@ pub fn trans_crate(sess: session::Session,
         }
         let int_type = T_int(targ_cfg);
         let float_type = T_float(targ_cfg);
-        let task_type = T_task(targ_cfg);
-        let taskptr_type = T_ptr(task_type);
-        lib::llvm::associate_type(tn, @"taskptr", taskptr_type);
-        let tydesc_type = T_tydesc(targ_cfg);
-        lib::llvm::associate_type(tn, @"tydesc", tydesc_type);
         let crate_map = decl_crate_map(sess, link_meta, llmod);
         let dbg_cx = if sess.opts.debuginfo {
             Some(debuginfo::mk_ctxt(copy llmod_id, sess.parse_sess.interner))
@@ -3100,10 +3088,8 @@ pub fn trans_crate(sess: session::Session,
                 fn_times: @mut ~[]
               },
               upcalls: upcall::declare_upcalls(targ_cfg, llmod),
-              tydesc_type: tydesc_type,
               int_type: int_type,
               float_type: float_type,
-              task_type: task_type,
               opaque_vec_type: T_opaque_vec(targ_cfg),
               builder: BuilderRef_res(unsafe { llvm::LLVMCreateBuilder() }),
               shape_cx: mk_ctxt(llmod),

@@ -62,49 +62,6 @@ use syntax::print::pprust::path_to_str;
 use syntax::visit;
 
 pub fn collect_item_types(ccx: @mut CrateCtxt, crate: @ast::crate) {
-
-    // FIXME (#2592): hooking into the "intrinsic" root module is crude.
-    // There ought to be a better approach. Attributes?
-
-    for crate.node.module.items.each |crate_item| {
-        if crate_item.ident
-            == ::syntax::parse::token::special_idents::intrinsic {
-
-            match /*bad*/copy crate_item.node {
-              ast::item_mod(m) => {
-                for m.items.each |intrinsic_item| {
-                    let def_id = ast::def_id { crate: ast::local_crate,
-                                               node: intrinsic_item.id };
-                    let substs = substs {
-                        self_r: None,
-                        self_ty: None,
-                        tps: ~[]
-                    };
-
-                    match intrinsic_item.node {
-                      ast::item_trait(*) => {
-                        let ty = ty::mk_trait(ccx.tcx, def_id, substs,
-                                              ty::vstore_box);
-                        ccx.tcx.intrinsic_defs.insert
-                            (intrinsic_item.ident, (def_id, ty));
-                      }
-
-                      ast::item_enum(*) => {
-                        let ty = ty::mk_enum(ccx.tcx, def_id, substs);
-                        ccx.tcx.intrinsic_defs.insert
-                            (intrinsic_item.ident, (def_id, ty));
-                      }
-
-                      _ => {}
-                    }
-                }
-              }
-              _ => { }
-            }
-            break;
-        }
-    }
-
     visit::visit_crate(
         *crate, (),
         visit::mk_simple_visitor(@visit::SimpleVisitor {
