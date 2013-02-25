@@ -52,6 +52,9 @@ use task;
 use util;
 use util::replace;
 
+// Re-export one helper.
+pub use task::local_data_priv::{each_retained_ptr};
+
 mod local_data_priv;
 pub mod local_data;
 pub mod rt;
