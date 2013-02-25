@@ -10,7 +10,7 @@
 
 #[doc(hidden)];
 
-use libc::{c_char, c_void, intptr_t, uintptr_t};
+use libc::{c_char, c_void, c_uint, intptr_t, uintptr_t};
 use ptr::{mut_null, null, to_unsafe_ptr};
 use repr::BoxRepr;
 use sys::TypeDesc;
@@ -22,46 +22,68 @@ use cast::transmute;
  * NB: These must match the representation in the C++ runtime.
  */
 
-type DropGlue = fn(**TypeDesc, *c_void);
-type FreeGlue = fn(**TypeDesc, *c_void);
+pub type DropGlue = fn(**TypeDesc, *c_void);
+pub type FreeGlue = fn(**TypeDesc, *c_void);
 
-type TaskID = uintptr_t;
+pub type TaskID = uintptr_t;
 
-struct StackSegment { priv opaque: () }
-struct Scheduler { priv opaque: () }
-struct SchedulerLoop { priv opaque: () }
-struct Kernel { priv opaque: () }
-struct Env { priv opaque: () }
-struct AllocHeader { priv opaque: () }
-struct MemoryRegion { priv opaque: () }
+#[cfg(target_word_size = "64")]
+pub struct StackSegment {
+    prev: *StackSegment,
+    next: *StackSegment,
+    end: uintptr_t,
+    valgrind_id: c_uint,
+    rust_task: *Task,
+    canary: uintptr_t,
+    data: u8
+}
+
+#[cfg(target_word_size = "32")]
+pub struct StackSegment {
+    prev: *StackSegment,
+    next: *StackSegment,
+    end: uintptr_t,
+    valgrind_id: c_uint,
+    pad: u32,
+    rust_task: *Task,
+    canary: uintptr_t,
+    data: u8
+}
+
+pub struct Scheduler { priv opaque: () }
+pub struct SchedulerLoop { priv opaque: () }
+pub struct Kernel { priv opaque: () }
+pub struct Env { priv opaque: () }
+pub struct AllocHeader { priv opaque: () }
+pub struct MemoryRegion { priv opaque: () }
 
 #[cfg(target_arch="x86")]
 #[cfg(target_arch="arm")]
-struct Registers {
+pub struct Registers {
     data: [u32 * 16]
 }
 
 #[cfg(target_arch="x86")]
 #[cfg(target_arch="arm")]
-struct Context {
+pub struct Context {
     regs: Registers,
     next: *Context,
     pad: [u32 * 3]
 }
 
 #[cfg(target_arch="x86_64")]
-struct Registers {
+pub struct Registers {
     data: [u64 * 22]
 }
 
 #[cfg(target_arch="x86_64")]
-struct Context {
+pub struct Context {
     regs: Registers,
     next: *Context,
     pad: uintptr_t
 }
 
-struct BoxedRegion {
+pub struct BoxedRegion {
     env: *Env,
     backing_region: *MemoryRegion,
     live_allocs: *BoxRepr
@@ -69,7 +91,7 @@ struct BoxedRegion {
 
 #[cfg(target_arch="x86")]
 #[cfg(target_arch="arm")]
-struct Task {
+pub struct Task {
     // Public fields
     refcount: intptr_t,                 // 0
     id: TaskID,                         // 4
@@ -88,7 +110,7 @@ struct Task {
 }
 
 #[cfg(target_arch="x86_64")]
-struct Task {
+pub struct Task {
     // Public fields
     refcount: intptr_t,
     id: TaskID,
@@ -117,7 +139,7 @@ struct AnnihilateStats {
     n_bytes_freed: uint
 }
 
-unsafe fn each_live_alloc(f: fn(box: *mut BoxRepr, uniq: bool) -> bool) {
+pub unsafe fn each_live_alloc(f: fn(box: *mut BoxRepr, uniq: bool) -> bool) {
     use managed;
 
     let task: *Task = transmute(rustrt::rust_get_task());
@@ -137,7 +159,7 @@ unsafe fn each_live_alloc(f: fn(box: *mut BoxRepr, uniq: bool) -> bool) {
 }
 
 #[cfg(unix)]
-fn debug_mem() -> bool {
+pub fn debug_mem() -> bool {
     use os;
     use libc;
     do os::as_c_charp("RUST_DEBUG_MEM") |p| {
@@ -146,7 +168,7 @@ fn debug_mem() -> bool {
 }
 
 #[cfg(windows)]
-fn debug_mem() -> bool {
+pub fn debug_mem() -> bool {
     false
 }
 
