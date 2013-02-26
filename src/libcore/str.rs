@@ -42,7 +42,7 @@ Section: Creating a string
  *
  * Fails if invalid UTF-8
  */
-pub pure fn from_bytes(vv: &[const u8]) -> ~str {
+pub pure fn from_bytes(vv: &[u8]) -> ~str {
     fail_unless!(is_utf8(vv));
     return unsafe { raw::from_bytes(vv) };
 }
@@ -1531,7 +1531,7 @@ Section: Misc
 */
 
 /// Determines if a vector of bytes contains valid UTF-8
-pub pure fn is_utf8(v: &[const u8]) -> bool {
+pub pure fn is_utf8(v: &[u8]) -> bool {
     let mut i = 0u;
     let total = vec::len::<u8>(v);
     while i < total {
@@ -2083,7 +2083,7 @@ pub mod raw {
     }
 
     /// Converts a vector of bytes to a string.
-    pub unsafe fn from_bytes(v: &[const u8]) -> ~str {
+    pub unsafe fn from_bytes(v: &[u8]) -> ~str {
         do vec::as_const_buf(v) |buf, len| {
             from_buf_len(buf, len)
         }

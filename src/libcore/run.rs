@@ -302,7 +302,8 @@ fn read_all(rd: io::Reader) -> ~str {
     let buf = io::with_bytes_writer(|wr| {
         let mut bytes = [0, ..4096];
         while !rd.eof() {
-            let nread = rd.read(bytes, bytes.len());
+            let bytes_len = bytes.len();
+            let nread = rd.read(bytes, bytes_len);
             wr.write(bytes.view(0, nread));
         }
     });
@@ -403,7 +404,8 @@ pub fn readclose(fd: c_int) -> ~str {
         let buf = io::with_bytes_writer(|writer| {
             let mut bytes = [0, ..4096];
             while !reader.eof() {
-                let nread = reader.read(bytes, bytes.len());
+                let bytes_len = bytes.len();
+                let nread = reader.read(bytes, bytes_len);
                 writer.write(bytes.view(0, nread));
             }
         });

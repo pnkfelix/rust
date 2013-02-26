@@ -203,7 +203,7 @@ pub use vec::{CopyableVector, ImmutableVector};
 pub use vec::{ImmutableEqVector, ImmutableCopyableVector};
 pub use vec::{OwnedVector, OwnedCopyableVector};
 pub use iter::{BaseIter, ExtendedIter, EqIter, CopyableIter};
-pub use iter::{CopyableOrderedIter, CopyableNonstrictIter, Times};
+pub use iter::{CopyableOrderedIter, Times};
 
 pub use num::NumCast;
 pub use ptr::Ptr;

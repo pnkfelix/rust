@@ -223,7 +223,7 @@ impl io::Writer for SipState {
 
     // Methods for io::writer
     #[inline(always)]
-    fn write(&self, msg: &[const u8]) {
+    fn write(&self, msg: &[u8]) {
 
         let length = msg.len();
         self.length += length;

@@ -48,11 +48,11 @@ pub mod rustrt {
 
 /// Returns true if a vector contains no elements
 pub pure fn is_empty<T>(v: &[const T]) -> bool {
-    as_const_buf(v, |_p, len| len == 0u)
+    len(v) == 0
 }
 
 /// Returns true if two vectors have the same length
-pub pure fn same_length<T, U>(xs: &[const T], ys: &[const U]) -> bool {
+pub pure fn same_length<T, U>(xs: &[T], ys: &[U]) -> bool {
     xs.len() == ys.len()
 }
 
@@ -621,7 +621,7 @@ fn push_slow<T>(v: &mut ~[T], initval: T) {
 }
 
 #[inline(always)]
-pub fn push_all<T:Copy>(v: &mut ~[T], rhs: &[const T]) {
+pub fn push_all<T:Copy>(v: &mut ~[T], rhs: &[T]) {
     let new_len = v.len() + rhs.len();
     reserve(&mut *v, new_len);
 
@@ -705,7 +705,7 @@ pub fn dedup<T:Eq>(v: &mut ~[T]) {
 
 // Appending
 #[inline(always)]
-pub pure fn append<T:Copy>(lhs: ~[T], rhs: &[const T]) -> ~[T] {
+pub pure fn append<T:Copy>(lhs: ~[T], rhs: &[T]) -> ~[T] {
     let mut v = lhs;
     unsafe {
         v.push_all(rhs);
@@ -1233,7 +1233,7 @@ pub pure fn unzip<T,U>(v: ~[(T, U)]) -> (~[T], ~[U]) {
 /**
  * Convert two vectors to a vector of pairs, by reference. As zip().
  */
-pub pure fn zip_slice<T:Copy,U:Copy>(v: &[const T], u: &[const U])
+pub pure fn zip_slice<T:Copy,U:Copy>(v: &[T], u: &[U])
         -> ~[(T, U)] {
     let mut zipped = ~[];
     let sz = len(v);
@@ -1284,7 +1284,7 @@ pub fn reverse<T>(v: &mut [T]) {
 }
 
 /// Returns a vector with the order of elements reversed
-pub pure fn reversed<T:Copy>(v: &[const T]) -> ~[T] {
+pub pure fn reversed<T:Copy>(v: &[T]) -> ~[T] {
     let mut rs: ~[T] = ~[];
     let mut i = len::<T>(v);
     if i == 0 { return (rs); } else { i -= 1; }
@@ -1336,7 +1336,7 @@ pub pure fn reversed<T:Copy>(v: &[const T]) -> ~[T] {
 #[inline(always)]
 pub pure fn each<T>(v: &r/[T], f: &fn(&r/T) -> bool) {
     //             ^^^^
-    // NB---this CANNOT be &[const T]!  The reason
+    // NB---this CANNOT be &[T]!  The reason
     // is that you are passing it to `f()` using
     // an immutable.
 
@@ -1462,7 +1462,7 @@ pub pure fn each_permutation<T:Copy>(v: &[T], put: &fn(ts: &[T]) -> bool) {
             let elt = v[i];
             let mut rest = slice(v, 0u, i).to_vec();
             unsafe {
-                rest.push_all(const_slice(v, i+1u, ln));
+                rest.push_all(slice(v, i+1u, ln));
                 for each_permutation(rest) |permutation| {
                     if !put(append(~[elt], permutation)) {
                         return;
@@ -1499,7 +1499,7 @@ pub pure fn as_imm_buf<T,U>(s: &[T],
                             /* NB---this CANNOT be const, see below */
                             f: &fn(*T, uint) -> U) -> U {
 
-    // NB---Do not change the type of s to `&[const T]`.  This is
+    // NB---Do not change the type of s to `&[T]`.  This is
     // unsound.  The reason is that we are going to create immutable pointers
     // into `s` and pass them to `f()`, but in fact they are potentially
     // pointing at *mutable memory*.  Use `as_const_buf` or `as_mut_buf`
@@ -1680,9 +1680,9 @@ pub mod traits {
     use ops::Add;
     use vec::append;
 
-    impl<T:Copy> Add<&self/[const T],~[T]> for ~[T] {
+    impl<T:Copy> Add<&self/[T],~[T]> for ~[T] {
         #[inline(always)]
-        pure fn add(&self, rhs: & &self/[const T]) -> ~[T] {
+        pure fn add(&self, rhs: & &self/[T]) -> ~[T] {
             append(copy *self, (*rhs))
         }
     }
@@ -1703,7 +1703,7 @@ pub trait CopyableVector<T> {
 }
 
 /// Extension methods for vectors
-impl<T: Copy> CopyableVector<T> for &'self [const T] {
+impl<T: Copy> CopyableVector<T> for &'self [T] {
     /// Returns a copy of the elements from [`start`..`end`) from `v`.
     #[inline]
     pure fn slice(&self, start: uint, end: uint) -> ~[T] {
@@ -2013,14 +2013,14 @@ impl<T> Mutable for ~[T] {
 }
 
 pub trait OwnedCopyableVector<T:Copy> {
-    fn push_all(&mut self, rhs: &[const T]);
+    fn push_all(&mut self, rhs: &[T]);
     fn grow(&mut self, n: uint, initval: &T);
     fn grow_set(&mut self, index: uint, initval: &T, val: T);
 }
 
 impl<T:Copy> OwnedCopyableVector<T> for ~[T] {
     #[inline]
-    fn push_all(&mut self, rhs: &[const T]) {
+    fn push_all(&mut self, rhs: &[T]) {
         push_all(self, rhs);
     }
 
@@ -2119,7 +2119,7 @@ pub mod raw {
 
     /** see `to_ptr()` */
     #[inline(always)]
-    pub unsafe fn to_const_ptr<T>(v: &[const T]) -> *const T {
+    pub unsafe fn to_const_ptr<T>(v: &[T]) -> *const T {
         let repr: **SliceRepr = ::cast::transmute(&v);
         ::cast::reinterpret_cast(&addr_of(&((**repr).data)))
     }
@@ -2163,7 +2163,7 @@ pub mod raw {
      * Unchecked vector indexing.
      */
     #[inline(always)]
-    pub unsafe fn get<T:Copy>(v: &[const T], i: uint) -> T {
+    pub unsafe fn get<T:Copy>(v: &[T], i: uint) -> T {
         as_const_buf(v, |p, _len| *ptr::const_offset(p, i))
     }
 
@@ -2207,7 +2207,7 @@ pub mod raw {
       * may overlap.
       */
     #[inline(always)]
-    pub unsafe fn copy_memory<T>(dst: &mut [T], src: &[const T],
+    pub unsafe fn copy_memory<T>(dst: &mut [T], src: &[T],
                                  count: uint) {
         fail_unless!(dst.len() >= count);
         fail_unless!(src.len() >= count);
@@ -2273,7 +2273,7 @@ pub mod bytes {
       * may overlap.
       */
     #[inline(always)]
-    pub fn copy_memory(dst: &mut [u8], src: &[const u8], count: uint) {
+    pub fn copy_memory(dst: &mut [u8], src: &[u8], count: uint) {
         // Bound checks are done at vec::raw::copy_memory.
         unsafe { vec::raw::copy_memory(dst, src, count) }
     }
@@ -2448,38 +2448,6 @@ impl<A:Copy + Ord> iter::CopyableOrderedIter<A> for ~[A] {
 impl<A:Copy + Ord> iter::CopyableOrderedIter<A> for @[A] {
     pure fn min(&self) -> A { iter::min(self) }
     pure fn max(&self) -> A { iter::max(self) }
-}
-
-impl<A:Copy> iter::CopyableNonstrictIter<A> for &self/[A] {
-    pure fn each_val(&const self, f: &fn(A) -> bool) {
-        let mut i = 0;
-        while i < self.len() {
-            if !f(copy self[i]) { break; }
-            i += 1;
-        }
-    }
-}
-
-// FIXME(#4148): This should be redundant
-impl<A:Copy> iter::CopyableNonstrictIter<A> for ~[A] {
-    pure fn each_val(&const self, f: &fn(A) -> bool) {
-        let mut i = 0;
-        while i < self.len() {
-            if !f(copy self[i]) { break; }
-            i += 1;
-        }
-    }
-}
-
-// FIXME(#4148): This should be redundant
-impl<A:Copy> iter::CopyableNonstrictIter<A> for @[A] {
-    pure fn each_val(&const self, f: &fn(A) -> bool) {
-        let mut i = 0;
-        while i < self.len() {
-            if !f(copy self[i]) { break; }
-            i += 1;
-        }
-    }
 }
 
 // ___________________________________________________________________________
