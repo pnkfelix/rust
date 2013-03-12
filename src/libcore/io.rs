@@ -658,7 +658,7 @@ pub trait Writer {
 #[cfg(stage1)]
 #[cfg(stage2)]
 impl Writer for @Writer {
-    fn write(&self, v: &[const u8]) { self.write(v) }
+    fn write(&self, v: &[u8]) { self.write(v) }
     fn seek(&self, a: int, b: SeekStyle) { self.seek(a, b) }
     fn tell(&self) -> uint { self.tell() }
     fn flush(&self) -> int { self.flush() }

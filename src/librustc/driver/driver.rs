@@ -285,12 +285,6 @@ pub fn compile_rest(sess: Session, cfg: ast::crate_cfg,
              middle::check_match::check_crate(ty_cx, method_map,
                                               moves_map, crate));
 
-        let last_use_map =
-            time(time_passes, ~"liveness checking", ||
-                 middle::liveness::check_crate(ty_cx, method_map,
-                                               variable_moves_map,
-                                               capture_map, crate));
-
         let (root_map, write_guard_map) =
             time(time_passes, ~"borrow checking", ||
                  middle::borrowck::check_crate(ty_cx, method_map,
@@ -298,7 +292,7 @@ pub fn compile_rest(sess: Session, cfg: ast::crate_cfg,
                                                capture_map, crate));
 
         time(time_passes, ~"kind checking", ||
-             kind::check_crate(ty_cx, method_map, last_use_map, crate));
+             kind::check_crate(ty_cx, method_map, crate));
 
         time(time_passes, ~"lint checking", ||
              lint::check_crate(ty_cx, crate));
@@ -307,7 +301,6 @@ pub fn compile_rest(sess: Session, cfg: ast::crate_cfg,
 
         let maps = astencode::Maps {
             root_map: root_map,
-            last_use_map: last_use_map,
             method_map: method_map,
             vtable_map: vtable_map,
             write_guard_map: write_guard_map,

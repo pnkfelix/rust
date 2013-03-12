@@ -32,6 +32,15 @@ use syntax::ast::{mutability, m_mutbl, m_imm, m_const};
 use syntax::ast;
 use syntax::codemap::span;
 
+macro_rules! if_ok(
+    ($inp: expr) => (
+        match $inp {
+            Ok(v) => { v }
+            Err(e) => { return Err(e); }
+        }
+    )
+)
+
 pub mod check_loans;
 pub mod gather_loans;
 
@@ -143,7 +152,7 @@ pub struct root_map_key {
     derefs: uint
 }
 
-pub impl to_bytes::IterBytes for root_map_key {
+impl to_bytes::IterBytes for root_map_key {
     pure fn iter_bytes(&self, +lsb0: bool, f: to_bytes::Cb) {
         to_bytes::iter_bytes_2(&self.id, &self.derefs, lsb0, f);
     }
@@ -247,29 +256,7 @@ pub fn save_and_restore_managed<T:Copy,U>(save_and_restore_t: @mut T,
     u
 }
 
-pub impl LoanKind {
-    fn is_freeze(&self) -> bool {
-        match *self {
-            TotalFreeze | PartialFreeze => true,
-            _ => false
-        }
-    }
-
-    fn is_take(&self) -> bool {
-        match *self {
-            TotalTake | PartialTake => true,
-            _ => false
-        }
-    }
-}
-
 /// Creates and returns a new root_map
-
-impl to_bytes::IterBytes for root_map_key {
-    pure fn iter_bytes(&self, +lsb0: bool, f: to_bytes::Cb) {
-        to_bytes::iter_bytes_2(&self.id, &self.derefs, lsb0, f);
-    }
-}
 
 pub fn root_map() -> root_map {
     return HashMap();
@@ -292,7 +279,7 @@ pub impl BorrowckCtxt {
     }
 
     fn cat_expr_autoderefd(&self, expr: @ast::expr,
-                           adj: @ty::AutoAdjustment) -> cmt {
+                           adj: @ty::AutoAdjustment) -> mc::cmt {
         match *adj {
             ty::AutoAddEnv(*) => {
                 // no autoderefs

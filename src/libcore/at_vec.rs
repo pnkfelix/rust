@@ -62,10 +62,10 @@ pub pure fn capacity<T>(v: @[T]) -> uint {
 #[inline(always)]
 pub pure fn build_sized<A>(size: uint,
                            builder: &fn(push: &pure fn(v: A))) -> @[A] {
-    let mut vec: @[const A] = @[];
+    let mut vec: @[A] = @[];
     unsafe { raw::reserve(&mut vec, size); }
     builder(|+x| unsafe { raw::push(&mut vec, x) });
-    return unsafe { transmute(vec) };
+    return vec;
 }
 
 /**
@@ -175,7 +175,7 @@ pub mod traits {
     use kinds::Copy;
     use ops::Add;
 
-    impl<T:Copy> Add<&self/[const T],@[T]> for @[T] {
+    impl<T:Copy> Add<&self/[T],@[T]> for @[T] {
         #[inline(always)]
         pure fn add(&self, rhs: & &self/[T]) -> @[T] {
             append(*self, (*rhs))

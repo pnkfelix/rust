@@ -127,16 +127,6 @@ use syntax::visit::{fk_anon, fk_dtor, fk_fn_block, fk_item_fn, fk_method};
 use syntax::visit::{vt};
 use syntax::{visit, ast_util};
 
-// Maps from an expr id to a list of variable ids for which this expr
-// is the last use.  Typically, the expr is a path and the node id is
-// the local/argument/etc that the path refers to.  However, it also
-// possible for the expr to be a closure, in which case the list is a
-// list of closed over variables that can be moved into the closure.
-//
-// Very subtle (#2633): borrowck will remove entries from this table
-// if it detects an outstanding loan (that is, the addr is taken).
-pub type last_use_map = HashMap<node_id, @mut ~[node_id]>;
-
 struct Variable(uint);
 struct LiveNode(uint);
 
@@ -203,7 +193,7 @@ pub fn check_crate(tcx: ty::ctxt,
                    method_map: typeck::method_map,
                    variable_moves_map: moves::VariableMovesMap,
                    capture_map: moves::CaptureMap,
-                   crate: @crate) -> last_use_map {
+                   crate: @crate) {
     let visitor = visit::mk_vt(@visit::Visitor {
         visit_fn: visit_fn,
         visit_local: visit_local,
@@ -212,15 +202,12 @@ pub fn check_crate(tcx: ty::ctxt,
         .. *visit::default_visitor()
     });
 
-    let last_use_map = HashMap();
     let initial_maps = @mut IrMaps(tcx,
                                    method_map,
                                    variable_moves_map,
-                                   capture_map,
-                                   last_use_map);
+                                   capture_map);
     visit::visit_crate(*crate, initial_maps, visitor);
     tcx.sess.abort_if_errors();
-    return last_use_map;
 }
 
 impl to_str::ToStr for LiveNode {
@@ -289,7 +276,6 @@ struct IrMaps {
     method_map: typeck::method_map,
     variable_moves_map: moves::VariableMovesMap,
     capture_map: moves::CaptureMap,
-    last_use_map: last_use_map,
 
     num_live_nodes: uint,
     num_vars: uint,
@@ -303,15 +289,13 @@ struct IrMaps {
 fn IrMaps(tcx: ty::ctxt,
           method_map: typeck::method_map,
           variable_moves_map: moves::VariableMovesMap,
-          capture_map: moves::CaptureMap,
-          last_use_map: last_use_map)
+          capture_map: moves::CaptureMap)
        -> IrMaps {
     IrMaps {
         tcx: tcx,
         method_map: method_map,
         variable_moves_map: variable_moves_map,
         capture_map: capture_map,
-        last_use_map: last_use_map,
         num_live_nodes: 0,
         num_vars: 0,
         live_node_map: HashMap(),
@@ -395,32 +379,6 @@ pub impl IrMaps {
     fn lnk(&mut self, ln: LiveNode) -> LiveNodeKind {
         self.lnks[*ln]
     }
-
-    fn add_last_use(&mut self, expr_id: node_id, var: Variable) {
-        let vk = self.var_kinds[*var];
-        debug!("Node %d is a last use of variable %?", expr_id, vk);
-        match vk {
-          Arg(id, _, by_copy) |
-          Local(LocalInfo {id: id, kind: FromLetNoInitializer, _}) |
-          Local(LocalInfo {id: id, kind: FromLetWithInitializer, _}) |
-          Local(LocalInfo {id: id, kind: FromMatch(_), _}) => {
-            let v = match self.last_use_map.find(&expr_id) {
-              Some(v) => v,
-              None => {
-                let v = @mut ~[];
-                self.last_use_map.insert(expr_id, v);
-                v
-              }
-            };
-
-            v.push(id);
-          }
-          Arg(_, _, by_ref) |
-          Arg(_, _, by_val) | ImplicitRet => {
-            debug!("--but it is not owned");
-          }
-        }
-    }
 }
 
 fn visit_fn(fk: &visit::fn_kind,
@@ -437,8 +395,7 @@ fn visit_fn(fk: &visit::fn_kind,
     let fn_maps = @mut IrMaps(self.tcx,
                               self.method_map,
                               self.variable_moves_map,
-                              self.capture_map,
-                              self.last_use_map);
+                              self.capture_map);
 
     debug!("creating fn_maps: %x", ptr::addr_of(&(*fn_maps)) as uint);
 
@@ -1560,7 +1517,6 @@ fn check_expr(expr: @expr, &&self: @Liveness, vt: vt<@Liveness>) {
       expr_path(_) => {
         for self.variable_from_def_map(expr.id, expr.span).each |var| {
             let ln = self.live_node(expr.id, expr.span);
-            self.consider_last_use(expr, ln, *var);
 
             match self.ir.variable_moves_map.find(&expr.id) {
                 None => {}
@@ -1579,7 +1535,6 @@ fn check_expr(expr: @expr, &&self: @Liveness, vt: vt<@Liveness>) {
         let caps = self.ir.captures(expr);
         for caps.each |cap| {
             let var = self.variable(cap.var_nid, expr.span);
-            self.consider_last_use(expr, cap.ln, var);
             if cap.is_move {
                 self.check_move_from_var(cap.ln, var, expr);
             }
@@ -1672,16 +1627,6 @@ pub impl @Liveness {
           None => {}
           Some(lnk) => self.report_illegal_move(lnk, var, move_expr)
         }
-    }
-
-    fn consider_last_use(&self, expr: @expr, ln: LiveNode, var: Variable) {
-        debug!("consider_last_use(expr.id=%?, ln=%s, var=%s)",
-               expr.id, ln.to_str(), var.to_str());
-
-        match self.live_on_exit(ln, var) {
-          Some(_) => {}
-          None => self.ir.add_last_use(expr.id, var)
-       }
     }
 
     fn check_lvalue(&self, expr: @expr, vt: vt<@Liveness>) {

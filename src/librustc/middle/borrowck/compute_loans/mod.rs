@@ -132,7 +132,8 @@ impl ComputeLoansContext {
         }
     }
 
-    fn loan_scope_id(cmt: mc::cmt,
+    fn loan_scope_id(&self,
+                     cmt: mc::cmt,
                      loan_region: ty::Region) -> ast::node_id {
         match loan_region {
             ty::re_scope(id) => id,

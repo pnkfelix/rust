@@ -47,7 +47,6 @@ use writer = std::ebml::writer;
 // Auxiliary maps of things to be encoded
 pub struct Maps {
     root_map: middle::borrowck::root_map,
-    last_use_map: middle::liveness::last_use_map,
     method_map: middle::typeck::method_map,
     vtable_map: middle::typeck::vtable_map,
     write_guard_map: middle::borrowck::write_guard_map,
@@ -904,17 +903,6 @@ fn encode_side_tables_for_id(ecx: @e::EncodeContext,
     //    }
     //}
 
-    do option::iter(&maps.last_use_map.find(&id)) |m| {
-        do ebml_w.tag(c::tag_table_last_use) {
-            ebml_w.id(id);
-            do ebml_w.tag(c::tag_table_val) {
-                do ebml_w.emit_from_vec(/*bad*/ copy *m) |id| {
-                    id.encode(&ebml_w);
-                }
-            }
-        }
-    }
-
     for maps.method_map.find(&id).each |mme| {
         do ebml_w.tag(c::tag_table_method_map) {
             ebml_w.id(id);
@@ -1117,11 +1105,6 @@ fn decode_side_tables(xcx: @ExtendedDecodeContext,
             } else if tag == (c::tag_table_param_bounds as uint) {
                 let bounds = val_dsr.read_bounds(xcx);
                 dcx.tcx.ty_param_bounds.insert(id, bounds);
-            } else if tag == (c::tag_table_last_use as uint) {
-                let ids = val_dsr.read_to_vec(|| {
-                    xcx.tr_id(val_dsr.read_int())
-                });
-                dcx.maps.last_use_map.insert(id, @mut ids);
             } else if tag == (c::tag_table_method_map as uint) {
                 dcx.maps.method_map.insert(
                     id,

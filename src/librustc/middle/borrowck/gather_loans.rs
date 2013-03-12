@@ -98,9 +98,9 @@ fn req_loans_in_fn(fk: &visit::fn_kind,
     // see explanation attached to the `root_ub` field:
     let old_item_id = self.item_ub;
     match fk {
-        visit::fk_anon(*) | visit::fk_fn_block(*) => {}
-        visit::fk_item_fn(*) | visit::fk_method(*) |
-        visit::fk_dtor(*) => {
+        &visit::fk_anon(*) | &visit::fk_fn_block(*) => {}
+        &visit::fk_item_fn(*) | &visit::fk_method(*) |
+        &visit::fk_dtor(*) => {
             self.item_ub = body.node.id;
         }
     }
@@ -228,7 +228,7 @@ fn req_loans_in_expr(ex: @ast::expr,
 
           // during body, can only root for the body
           self.push_repeating_id(body.node.id);
-          (vt.visit_block)((*body), self, vt);
+          (vt.visit_block)(body, self, vt);
           self.pop_repeating_id(body.node.id);
       }
 
@@ -352,7 +352,7 @@ pub impl GatherLoanCtxt {
                loan_region);
         let _i = indenter();
 
-        let root_ub = self.repeating_ids.last();
+        let root_ub = { *self.repeating_ids.last() }; // FIXME(#5074)
 
         let clc = compute_loans::ComputeLoansContext {
             bccx: self.bccx,
@@ -451,7 +451,8 @@ pub impl GatherLoanCtxt {
                   // original vector.  This is effectively a borrow of
                   // the elements of the vector being matched.
 
-                  let slice_ty = self.tcx().ty(slice_pat);
+                  let slice_ty = ty::node_id_to_type(self.tcx(),
+                                                     slice_pat.id);
                   let (slice_mutbl, slice_r) =
                       self.vec_slice_info(slice_pat, slice_ty);
                   let mcx = self.bccx.mc_ctxt();
