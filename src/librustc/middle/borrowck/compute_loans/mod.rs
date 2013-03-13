@@ -35,6 +35,7 @@ pub struct ComputeLoansContext {
 pub enum LoansOrRoot {
     Loans(@LoanPath, ~[Loan]),
     Root(root_map_key, RootInfo),
+    Purity(ast::node_id, BckError),
     Safe
 }
 
@@ -128,6 +129,8 @@ impl ComputeLoansContext {
 
             Safe => Safe,
 
+            Purity(s, e) => Purity(s, e),
+
             Root(k, r) => Root(k, r)
         }
     }
@@ -143,6 +146,22 @@ impl ComputeLoansContext {
                     cmt.span,
                     fmt!("Cannot issue loan for scope region: %?",
                          loan_region));
+            }
+        }
+    }
+
+    fn try_purity(
+        &self,
+        +loan_region: ty::Region,
+        +err: BckError) -> BckResult<LoansOrRoot>
+    {
+        match loan_region {
+            ty::re_scope(id) => {
+                Ok(Purity(id, err))
+            }
+
+            _ => {
+                Err(err)
             }
         }
     }

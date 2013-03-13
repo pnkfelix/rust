@@ -137,10 +137,16 @@ fn freeze_owned_content(
             // we have to ensure that the mut field is not found
             // in an aliasable location.  Adapt the approach
             // described as Mutate-Mut-Borrowed-Pointer in doc.rs.
-            let loans = if_ok!(self.reserve(cmt_base, loan_region,
-                                            ReserveForMutField));
-            Ok(self.add_loan(loans, cmt, loan_region,
-                             MutLoan(m_imm), pt, lp_elem))
+            match self.reserve(cmt_base, loan_region, ReserveForMutField) {
+                Ok(loans) => {
+                    Ok(self.add_loan(loans, cmt, loan_region,
+                                     MutLoan(m_imm), pt, lp_elem))
+                }
+
+                Err(e) => {
+                    self.try_purity(loan_region, e)
+                }
+            }
         }
     }
 }
@@ -162,8 +168,9 @@ fn freeze_borrowed_ptr(
         }
 
         m_const => {
-            Err(BckError {cmt: cmt,
-                          code: err_mutbl(m_imm)})
+            self.try_purity(loan_region,
+                            BckError {cmt: cmt,
+                                      code: err_mutbl(m_imm)})
         }
 
         m_mutbl => {

@@ -155,10 +155,14 @@ fn mutate_owned_content(
             // we have to ensure that the mut field is not found
             // in an aliasable location.  Adapt the approach
             // described as Mutate-Mut-Borrowed-Pointer in doc.rs.
-            let loans = if_ok!(self.reserve(cmt_base, loan_region,
-                                            ReserveForMutField));
-            Ok(self.add_loan(loans, cmt, loan_region,
-                             MutLoan(m_mutbl), pt, lp_elem))
+
+            // NOTE unsound
+            // let loans = if_ok!(self.reserve(cmt_base, loan_region,
+            //                                 ReserveForMutField));
+            // Ok(self.add_loan(loans, cmt, loan_region,
+            //                  MutLoan(m_mutbl), pt, lp_elem))
+
+            Ok(Safe)
         }
     }
 }

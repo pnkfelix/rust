@@ -378,6 +378,10 @@ pub impl GatherLoanCtxt {
                 self.bccx.root_map.insert(key, root_info);
             }
 
+            Ok(compute_loans::Purity(scope, err)) => {
+                self.req_maps.pure_map.insert(scope, err);
+            }
+
             Ok(compute_loans::Safe) => {
             }
 
