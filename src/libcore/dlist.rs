@@ -42,6 +42,12 @@ pub struct DList<T> {
 }
 
 priv impl<T> DListNode<T> {
+    pure fn has_prev(&self) -> bool {
+        self.prev.is_some()
+    }
+    pure fn has_next(&self) -> bool {
+        self.prev.is_some()
+    }
     pure fn assert_links(@mut self) {
         match self.next {
             Some(neighbour) => match neighbour.prev {
@@ -141,10 +147,10 @@ priv impl<T> DList<T> {
             fail!(~"This dlist is empty; that node can't be on it.")
         }
         if !nobe.linked { fail!(~"That node isn't linked to any dlist.") }
-        if !((nobe.prev.is_some()
+        if !((nobe.has_prev()
               || managed::mut_ptr_eq(self.hd.expect(~"headless dlist?"),
                                  nobe)) &&
-             (nobe.next.is_some()
+             (nobe.has_next()
               || managed::mut_ptr_eq(self.tl.expect(~"tailless dlist?"),
                                  nobe))) {
             fail!(~"That node isn't on this dlist.")
@@ -521,10 +527,10 @@ impl<T> BaseIter<T> for @mut DList<T> {
                 fail!(~"The dlist became empty during iteration??")
             }
             if !nobe.linked ||
-                (!((nobe.prev.is_some()
+                (!((nobe.has_prev()
                     || managed::mut_ptr_eq(self.hd.expect(~"headless dlist?"),
                                            nobe))
-                   && (nobe.next.is_some()
+                   && (nobe.has_next()
                     || managed::mut_ptr_eq(self.tl.expect(~"tailless dlist?"),
                                            nobe)))) {
                 fail!(~"Removing a dlist node during iteration is forbidden!")
