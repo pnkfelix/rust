@@ -433,7 +433,7 @@ pub impl CheckLoanCtxt {
         // trigger_loans()
         for self.loan_path(cmt).each |lp| {
             self.check_for_loan_conflicting_with_assignment(
-                at, ex, cmt, *lp);
+                at, ex, cmt, *lp, Total);
         }
 
         // Check for and insert write guards as necessary.
@@ -526,26 +526,56 @@ pub impl CheckLoanCtxt {
                                                   at: assignment_type,
                                                   ex: @ast::expr,
                                                   cmt: mc::cmt,
-                                                  lp: @LoanPath) {
+                                                  lp: @LoanPath,
+                                                  pt: PartialTotal) {
         for self.each_in_scope_loan(ex.id) |loan| {
-            if loan.lp == lp {
-                match loan.kind {
-                    MutLoan(m_const) => {
-                        /* ok */
-                    }
-                    MutLoan(m_mutbl) |
-                    MutLoan(m_imm) |
-                    ReserveLoan => {
-                        self.bccx.span_err(
-                            ex.span,
-                            fmt!("%s prohibited due to outstanding loan",
-                                 at.ing_form(self.bccx.cmt_to_str(cmt))));
-                        self.bccx.span_note(
-                            loan.cmt.span,
-                            fmt!("loan of %s granted here",
-                                 self.bccx.cmt_to_str(loan.cmt)));
-                        return;
-                    }
+            // Loan does not apply to this path
+            if loan.lp != lp { loop; }
+
+            // Subtle: If pt == Partial, that indicates that the
+            // assignment is not to `lp` directly but rather some
+            // owned subpath `lp1` of `lp`.  Because `lp1` is owned,
+            // it is only mutable iff `lp` is mutable.  Therefore, we
+            // looking for immutable loans of `lp`.  We can however
+            // ignore partial loans of `lp`, because those only
+            // indicate an alias was created to some subpath `lp2` of
+            // `lp` and thus the mutability of `lp` itself is
+            // unaffected.  This is hard to explain and makes me think
+            // that our "partial/total" distinction isn't quite the
+            // right one.
+            //
+            // Here is an example:
+            //
+            //    let mut v = ~[1, 2, 3];
+            //    let p = &const v[0];
+            //    v[1] += 1;
+            //
+            // This should be ok, but without this rule an error would
+            // be reported.  This is because of two factors: (1) the
+            // const alias `&const v[0]` issues a partial immutable
+            // loan for `v`, since doing something like `v = ~[4, 5,
+            // 6]` would free the old vector content and thus
+            // invalidate `p`. Then (2) the assignment to `v[1]` is
+            // only legal if `v` is mutable, but there is a (partial)
+            // *immutable* loan of `v`, so an error is reported.
+            if pt == Partial && loan.pt == Partial { loop; }
+
+            match loan.kind {
+                MutLoan(m_const) => {
+                    /* ok */
+                }
+                MutLoan(m_mutbl) |
+                MutLoan(m_imm) |
+                ReserveLoan => {
+                    self.bccx.span_err(
+                        ex.span,
+                        fmt!("%s prohibited due to outstanding loan",
+                             at.ing_form(self.bccx.cmt_to_str(cmt))));
+                    self.bccx.span_note(
+                        loan.cmt.span,
+                        fmt!("loan of %s granted here",
+                             self.bccx.cmt_to_str(loan.cmt)));
+                    return;
                 }
             }
         }
@@ -557,10 +587,11 @@ pub impl CheckLoanCtxt {
         //    let mut x = {f: Some(3)};
         //    let y = &x; // x loaned out as immutable
         //    x.f = none; // changes type of y.f, which appears to be imm
+        // Also see the "Subtle" note above in this function.
         match *lp {
             LpExtend(lp_base, mc::McInherited, _) => {
                 self.check_for_loan_conflicting_with_assignment(
-                    at, ex, cmt, lp_base);
+                    at, ex, cmt, lp_base, Partial);
             }
 
             LpExtend(_, mc::McDeclared, _) => {}

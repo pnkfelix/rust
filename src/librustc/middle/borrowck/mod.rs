@@ -209,7 +209,7 @@ pub enum LoanPathElem {
 #[deriving_eq]
 pub enum LoanKind {
     MutLoan(ast::mutability),
-    ReserveLoan
+    ReserveLoan,
 }
 
 #[deriving_eq]
