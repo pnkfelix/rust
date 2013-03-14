@@ -64,6 +64,7 @@ defined self-referentially as follows:
 
 grammar : rule + ;
 rule    : nonterminal ':' productionrule ';' ;
+nonterminal : IDENTIFIER ;
 productionrule : production [ '|' production ] * ;
 production : term * ;
 term : element repeats ;
@@ -76,9 +77,9 @@ Where:
 
   - Whitespace in the grammar is ignored.
   - Square brackets are used to group rules.
-  - `LITERAL` is a single printable ASCII character, or an escaped hexadecimal
-     ASCII code of the form `\xQQ`, in single quotes, denoting the corresponding
-     Unicode codepoint `U+00QQ`.
+  - `LITERAL` is either a single printable ASCII character in single quotes,
+     or an escaped hexadecimal ASCII code of the form `\xQQ`, denoting the
+     corresponding Unicode codepoint `U+00QQ`, in single quotes.
   - `IDENTIFIER` is a nonempty string of ASCII letters and underscores.
   - The `repeat` forms apply to the adjacent `element`, and are as follows:
     - `?` means zero or one repetition
