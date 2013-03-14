@@ -137,7 +137,7 @@ fn req_loans_in_expr(ex: @ast::expr,
         // make sure that the thing we are pointing out stays valid
         // for the lifetime `scope_r` of the resulting ptr:
         let scope_r = ty_region(ty::expr_ty(tcx, ex));
-        self.guarantee_valid(ex.id, base_cmt, mutbl, scope_r);
+        self.guarantee_valid(ex.id, ex.span, base_cmt, mutbl, scope_r);
         visit::visit_expr(ex, self, vt);
       }
 
@@ -195,7 +195,7 @@ fn req_loans_in_expr(ex: @ast::expr,
         // phased out.  So I elect to leave this undone.
         let scope_r = ty::re_scope(ex.id);
         let rcvr_cmt = self.bccx.cat_expr(rcvr);
-        self.guarantee_valid(rcvr.id, rcvr_cmt, m_imm, scope_r);
+        self.guarantee_valid(rcvr.id, rcvr.span, rcvr_cmt, m_imm, scope_r);
 
         // FIXME (#3387): Total hack: Ignore adjustments for the left-hand
         // side. Their regions will be inferred to be too large.
@@ -276,7 +276,8 @@ pub impl GatherLoanCtxt {
                                  arg_expr: @ast::expr) {
         let scope_r = ty::re_scope(call_expr.callee_id);
         let arg_cmt = self.bccx.cat_expr(arg_expr);
-        self.guarantee_valid(arg_expr.id, arg_cmt, m_imm, scope_r);
+        self.guarantee_valid(arg_expr.id, arg_expr.span,
+                             arg_cmt, m_imm, scope_r);
     }
 
     fn guarantee_adjustments(&mut self,
@@ -312,6 +313,7 @@ pub impl GatherLoanCtxt {
                 match autoref.kind {
                     ty::AutoPtr => {
                         self.guarantee_valid(expr.id,
+                                             expr.span,
                                              cmt,
                                              autoref.mutbl,
                                              autoref.region)
@@ -319,6 +321,7 @@ pub impl GatherLoanCtxt {
                     ty::AutoBorrowVec | ty::AutoBorrowVecRef => {
                         let cmt_index = mcx.cat_index(expr, cmt);
                         self.guarantee_valid(expr.id,
+                                             expr.span,
                                              cmt_index,
                                              autoref.mutbl,
                                              autoref.region)
@@ -326,6 +329,7 @@ pub impl GatherLoanCtxt {
                     ty::AutoBorrowFn => {
                         let cmt_deref = mcx.cat_deref_fn(expr, cmt, 0);
                         self.guarantee_valid(expr.id,
+                                             expr.span,
                                              cmt_deref,
                                              autoref.mutbl,
                                              autoref.region)
@@ -342,6 +346,7 @@ pub impl GatherLoanCtxt {
     // dynamically that they are not freed.
     fn guarantee_valid(&mut self,
                        borrow_id: ast::node_id,
+                       borrow_span: span,
                        cmt: mc::cmt,
                        req_mutbl: ast::mutability,
                        loan_region: ty::Region)
@@ -358,7 +363,8 @@ pub impl GatherLoanCtxt {
             bccx: self.bccx,
             root_ub: root_ub,
             item_ub: self.item_ub,
-            discr_scope: None
+            discr_scope: None,
+            span: borrow_span
         };
 
         let result = match req_mutbl {
@@ -447,11 +453,11 @@ pub impl GatherLoanCtxt {
                     let arm_scope = ty::re_scope(arm_body_id);
                     if self.bccx.is_subregion_of(scope_r, arm_scope) {
                         let cmt_discr = self.bccx.cat_discr(cmt, match_id);
-                        self.guarantee_valid(root_pat.id, cmt_discr,
-                                             mutbl, scope_r);
+                        self.guarantee_valid(root_pat.id, root_pat.span,
+                                             cmt_discr, mutbl, scope_r);
                     } else {
-                        self.guarantee_valid(root_pat.id, cmt,
-                                             mutbl, scope_r);
+                        self.guarantee_valid(root_pat.id, root_pat.span,
+                                             cmt, mutbl, scope_r);
                     }
                   }
                   ast::bind_by_copy | ast::bind_infer => {
@@ -472,7 +478,8 @@ pub impl GatherLoanCtxt {
                       self.vec_slice_info(slice_pat, slice_ty);
                   let mcx = self.bccx.mc_ctxt();
                   let cmt_index = mcx.cat_index(slice_pat, cmt);
-                  self.guarantee_valid(root_pat.id, cmt_index, slice_mutbl, slice_r);
+                  self.guarantee_valid(root_pat.id, root_pat.span,
+                                       cmt_index, slice_mutbl, slice_r);
               }
 
               _ => {}

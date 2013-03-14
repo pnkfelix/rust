@@ -27,6 +27,9 @@ pub struct ComputeLoansContext {
     // Enclosing fn body.
     item_ub: ast::node_id,
 
+    // Span of the code that is triggering these loans
+    span: span,
+
     // Optional override for root scope.
     // See with_discr() below
     discr_scope: Option<ast::node_id>
@@ -101,7 +104,8 @@ impl ComputeLoansContext {
             cmt: cmt,
             kind: kind,
             pt: pt,
-            scope: loan_scope_id
+            scope: loan_scope_id,
+            span: self.span
         }]))
     }
 
@@ -123,7 +127,8 @@ impl ComputeLoansContext {
                     cmt: cmt,
                     kind: kind,
                     pt: pt,
-                    scope: loan_scope_id
+                    scope: loan_scope_id,
+                    span: self.span
                 }))
             }
 

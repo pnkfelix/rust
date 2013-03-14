@@ -189,7 +189,7 @@ pub struct BckError {
 pub enum MoveError {
     MoveOk,
     MoveFromIllegalCmt(mc::cmt),
-    MoveWhileBorrowed(/*move*/ mc::cmt, /*loan*/ mc::cmt)
+    MoveWhileBorrowed(mc::cmt, Loan)
 }
 
 pub type BckResult<T> = Result<T, BckError>;
@@ -226,7 +226,8 @@ pub struct Loan {
     cmt: mc::cmt,
     kind: LoanKind,
     pt: PartialTotal,
-    scope: ast::node_id
+    scope: ast::node_id,
+    span: span,
 }
 
 /// maps computed by `gather_loans` that are then used by `check_loans`

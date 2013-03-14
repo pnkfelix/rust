@@ -343,25 +343,25 @@ pub impl CheckLoanCtxt {
 
             (ReserveLoan, MutLoan(_)) | (MutLoan(_), ReserveLoan) => {
                 self.bccx.span_err(
-                    new_loan.cmt.span,
+                    new_loan.span,
                     fmt!("cannot alias %s \
                           due to prior loan",
                          self.bccx.cmt_to_str(new_loan.cmt)));
                 self.bccx.span_note(
-                    old_loan.cmt.span,
+                    old_loan.span,
                     fmt!("prior loan granted here"));
             }
 
             (MutLoan(om @ m_mutbl), MutLoan(nm)) |
             (MutLoan(om), MutLoan(nm @ m_mutbl)) => {
                 self.bccx.span_err(
-                    new_loan.cmt.span,
+                    new_loan.span,
                     fmt!("loan of %s as %s \
                           conflicts with prior loan",
                          self.bccx.cmt_to_str(new_loan.cmt),
                          self.bccx.mut_to_str(nm)));
                 self.bccx.span_note(
-                    old_loan.cmt.span,
+                    old_loan.span,
                     fmt!("prior loan as %s granted here",
                          self.bccx.mut_to_str(om)));
             }
@@ -572,7 +572,7 @@ pub impl CheckLoanCtxt {
                         fmt!("%s prohibited due to outstanding loan",
                              at.ing_form(self.bccx.cmt_to_str(cmt))));
                     self.bccx.span_note(
-                        loan.cmt.span,
+                        loan.span,
                         fmt!("loan of %s granted here",
                              self.bccx.cmt_to_str(loan.cmt)));
                     return;
@@ -641,16 +641,16 @@ pub impl CheckLoanCtxt {
                             fmt!("moving out of %s",
                                  self.bccx.cmt_to_str(cmt)));
                     }
-                    MoveWhileBorrowed(_, loan_cmt) => {
+                    MoveWhileBorrowed(_, loan) => {
                         self.bccx.span_err(
                             cmt.span,
                             fmt!("moving out of %s prohibited \
                                   due to outstanding loan",
                                  self.bccx.cmt_to_str(cmt)));
                         self.bccx.span_note(
-                            loan_cmt.span,
+                            loan.span,
                             fmt!("loan of %s granted here",
-                                 self.bccx.cmt_to_str(loan_cmt)));
+                                 self.bccx.cmt_to_str(loan.cmt)));
                     }
                 }
             }
@@ -687,7 +687,7 @@ pub impl CheckLoanCtxt {
         for self.loan_path(cmt).each |lp| {
             for self.each_in_scope_loan(cmt.id) |loan| {
                 if *lp == loan.lp {
-                    return MoveWhileBorrowed(cmt, loan.cmt);
+                    return MoveWhileBorrowed(cmt, loan);
                 }
             }
         }
@@ -806,16 +806,16 @@ fn check_loans_in_fn(fk: &visit::fn_kind,
                                 fmt!("illegal by-move capture of %s",
                                      self.bccx.cmt_to_str(move_cmt)));
                         }
-                        MoveWhileBorrowed(move_cmt, loan_cmt) => {
+                        MoveWhileBorrowed(move_cmt, loan) => {
                             self.bccx.span_err(
                                 cap_var.span,
                                 fmt!("by-move capture of %s prohibited \
                                       due to outstanding loan",
                                      self.bccx.cmt_to_str(move_cmt)));
                             self.bccx.span_note(
-                                loan_cmt.span,
+                                loan.span,
                                 fmt!("loan of %s granted here",
-                                     self.bccx.cmt_to_str(loan_cmt)));
+                                     self.bccx.cmt_to_str(loan.cmt)));
                         }
                     }
                 }
