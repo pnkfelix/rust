@@ -38,7 +38,7 @@ struct CheckLoanCtxt {
     bccx: @BorrowckCtxt,
     req_maps: ReqMaps,
 
-    in_scope_loans: ~[Loan],
+    issued_loans: ~[Loan],
 
     reported: HashMap<ast::node_id, ()>,
 
@@ -64,7 +64,7 @@ pub fn check_loans(bccx: @BorrowckCtxt,
     let clcx = @mut CheckLoanCtxt {
         bccx: bccx,
         req_maps: req_maps,
-        in_scope_loans: ~[],
+        issued_loans: ~[],
         reported: HashMap(),
         declared_purity: @mut ast::impure_fn,
         fn_args: @mut @~[]
@@ -72,6 +72,7 @@ pub fn check_loans(bccx: @BorrowckCtxt,
     let vt = visit::mk_vt(@visit::Visitor {visit_expr: check_loans_in_expr,
                                            visit_local: check_loans_in_local,
                                            visit_block: check_loans_in_block,
+                                           visit_pat: check_loans_in_pat,
                                            visit_fn: check_loans_in_fn,
                                            .. *visit::default_visitor()});
     visit::visit_crate(*crate, clcx, vt);
@@ -229,79 +230,121 @@ pub impl CheckLoanCtxt {
         };
     }
 
-    fn introduce_loans(&mut self, borrow_id: ast::node_id) {
+    fn each_in_scope_loan(&self, scope_id: ast::node_id, op: &fn(&Loan) -> bool) {
         /*!
          *
-         * Adds any loans tied to the given `borrow_id` to
-         * `self.in_scope_loans`.  The loans will eventually be
-         * removed by a call to `expire_loans()`.
+         * Iterates over each loan which has been issued and which is in
+         * scope during `scope_id`. (Note that sometimes loans are issued
+         * for scopes that are not yet entered, and hence while they have
+         * been issued they may not yet be in scope)
          */
 
-        debug!("introduce_loans(borrow_id=%?)", borrow_id);
+        let region_map = self.tcx().region_map;
+        for self.issued_loans.each |loan| {
+            if region::scope_contains(region_map, loan.scope, scope_id) {
+                if !op(loan) {
+                    return;
+                }
+            }
+        }
+    }
 
-        let new_loans = match self.req_maps.req_loan_map.find(&borrow_id) {
+    fn trigger_loans(&mut self, scope_id: ast::node_id) {
+        /*!
+         *
+         * Trigger loans adds and removes loans that are tried
+         * the scope `scope_id`. This method is called on
+         * exit from the scope `scope_id`. If `scope_id` is
+         * an expression id (typically but not always the case),
+         * then `trigger_loans()` will add any loans that the
+         * expression creates to `issued_loans`. `trigger_loans()`
+         * will also remove any loans with the scope `scope_id`.
+         *
+         * If `scope_id` represents an expression, the idea is that,
+         * during its execution, various loans have been created.
+         * Therefore, upon exit from the expression, we can bring
+         * those loans into scope and they will endure until their
+         * scope expires.  (In fact, in some cases the loans are issued
+         * for future scopes that have not yet come to pass)
+         */
+
+        let new_loans = match self.req_maps.req_loan_map.find(&scope_id) {
             None => return,
             Some(loans) => loans
         };
 
-        debug!("new_loans has length %?", new_loans.len());
+        debug!("trigger_loans(%?): %u new loans",
+               scope_id,
+               new_loans.len());
 
-        for self.in_scope_loans.each |in_scope_loan| {
+        // Introduce any new loans that are created during the
+        // expression with id `scope_id` (if any)
+        for self.each_in_scope_loan(scope_id) |in_scope_loan| {
             for new_loans.each |new_loan| {
                  self.report_error_if_loans_conflict(in_scope_loan, new_loan);
             }
         }
-
         for new_loans.eachi |i, loan_i| {
+            debug!("trigger_loans(%?): new loan %s",
+                   scope_id,
+                   self.bccx.loan_to_repr(loan_i));
             for new_loans.slice(i+1, new_loans.len()).each |loan_j| {
                 self.report_error_if_loans_conflict(loan_i, loan_j);
             }
         }
-
         let borrowed_new_loans: &~[Loan] = new_loans;
-        self.in_scope_loans.push_all(*borrowed_new_loans);
-    }
+        self.issued_loans.push_all(*borrowed_new_loans);
 
-    fn expire_loans(&mut self, scope_id: ast::node_id) {
-        /*!
-         *
-         * Removes any loans whose scope is `scope_id`.
-         * Invoked upon exit from `scope_id`.
-         */
-
-        if !self.in_scope_loans.any(|l| l.scope == scope_id) {
-            return;
+        // Remove any loans that expire once we exit `scope_id`.
+        //
+        // NB: This must happen *after* the new loan checking above,
+        // since these loans are still considered in scope when the
+        // new loans are created.
+        if self.issued_loans.any(|l| l.scope == scope_id) {
+            self.issued_loans =
+                self.issued_loans.filtered(|l| l.scope != scope_id);
         }
 
-        self.in_scope_loans =
-            self.in_scope_loans.filtered(|l| l.scope != scope_id);
+        debug!("trigger_loans(%?): %u in scope loans at end",
+               scope_id,
+               self.issued_loans.len());
     }
 
     fn report_error_if_loans_conflict(&self,
                                       old_loan: &Loan,
                                       new_loan: &Loan) {
         if old_loan.lp != new_loan.lp {
-            return;
+            return; // The loans refer to different data.
         }
 
         if old_loan.pt == Partial && new_loan.pt == Partial {
-            return;
+            return; // Only Full loans can conflict with other loans.
+        }
+
+        let region_map = self.tcx().region_map;
+        if !region::scopes_intersect(region_map,
+                                     old_loan.scope,
+                                     new_loan.scope) {
+            return; // The loans are not in scope at the same time.
         }
 
         match (old_loan.kind, new_loan.kind) {
             (MutLoan(m_const), MutLoan(_)) |
             (MutLoan(_), MutLoan(m_const)) => {
-                /* ok */
+                // const is compatible with other loans
             }
-
             (MutLoan(m_imm), MutLoan(m_imm)) => {
-                /* ok */
+                // you can create any number of imm pointers
+            }
+            (ReserveLoan, ReserveLoan) => {
+                // reserve says: do not loan this out, it's
+                // ok to reserve more than once
             }
 
-            (ReserveLoan, _) | (_, ReserveLoan) => {
+            (ReserveLoan, MutLoan(_)) | (MutLoan(_), ReserveLoan) => {
                 self.bccx.span_err(
                     new_loan.cmt.span,
-                    fmt!("cannot loan %s \
+                    fmt!("cannot alias %s \
                           due to prior loan",
                          self.bccx.cmt_to_str(new_loan.cmt)));
                 self.bccx.span_note(
@@ -387,7 +430,7 @@ pub impl CheckLoanCtxt {
         // check for a conflicting loan as well, except in the case of
         // taking a mutable ref.  that will create a loan of its own
         // which will be checked for compat separately in
-        // check_for_conflicting_loans()
+        // trigger_loans()
         for self.loan_path(cmt).each |lp| {
             self.check_for_loan_conflicting_with_assignment(
                 at, ex, cmt, *lp);
@@ -484,23 +527,25 @@ pub impl CheckLoanCtxt {
                                                   ex: @ast::expr,
                                                   cmt: mc::cmt,
                                                   lp: @LoanPath) {
-        for self.in_scope_loans.each |loan| {
-            match loan.kind {
-                MutLoan(m_const) => {
-                    /* ok */
-                }
-                MutLoan(m_mutbl) |
-                MutLoan(m_imm) |
-                ReserveLoan => {
-                    self.bccx.span_err(
-                        ex.span,
-                        fmt!("%s prohibited due to outstanding loan",
-                             at.ing_form(self.bccx.cmt_to_str(cmt))));
-                    self.bccx.span_note(
-                        loan.cmt.span,
-                        fmt!("loan of %s granted here",
-                             self.bccx.cmt_to_str(loan.cmt)));
-                    return;
+        for self.each_in_scope_loan(ex.id) |loan| {
+            if loan.lp == lp {
+                match loan.kind {
+                    MutLoan(m_const) => {
+                        /* ok */
+                    }
+                    MutLoan(m_mutbl) |
+                    MutLoan(m_imm) |
+                    ReserveLoan => {
+                        self.bccx.span_err(
+                            ex.span,
+                            fmt!("%s prohibited due to outstanding loan",
+                                 at.ing_form(self.bccx.cmt_to_str(cmt))));
+                        self.bccx.span_note(
+                            loan.cmt.span,
+                            fmt!("loan of %s granted here",
+                                 self.bccx.cmt_to_str(loan.cmt)));
+                        return;
+                    }
                 }
             }
         }
@@ -609,7 +654,7 @@ pub impl CheckLoanCtxt {
 
         // check for a conflicting loan:
         for self.loan_path(cmt).each |lp| {
-            for self.in_scope_loans.each |loan| {
+            for self.each_in_scope_loan(cmt.id) |loan| {
                 if *lp == loan.lp {
                     return MoveWhileBorrowed(cmt, loan.cmt);
                 }
@@ -626,8 +671,9 @@ pub impl CheckLoanCtxt {
                   callee_span: span,
                   args: &[@ast::expr])
     {
-        self.introduce_loans(expr.callee_id);
-        self.expire_loans(expr.callee_id);
+        // There will never be new loans attached to the callee_id,
+        // but some loans may have the scope callee_id.
+        self.trigger_loans(expr.callee_id);
 
         match self.purity(expr.id) {
           None => {}
@@ -761,7 +807,7 @@ fn check_loans_in_expr(expr: @ast::expr,
     debug!("check_loans_in_expr(expr=%?/%s)",
            expr.id, pprust::expr_to_str(expr, self.tcx().sess.intr()));
 
-    self.introduce_loans(expr.id);
+    visit::visit_expr(expr, self, vt);
 
     if self.bccx.moves_map.contains_key(&expr.id) {
         self.check_move_out_from_expr(expr);
@@ -799,24 +845,28 @@ fn check_loans_in_expr(expr: @ast::expr,
                         expr.span,
                         ~[]);
       }
-      ast::expr_match(*) => {
-          // Note: moves out of pattern bindings are not checked by
-          // the borrow checker, at least not directly.  What happens
-          // is that if there are any moved bindings, the discriminant
-          // will be considered a move, and this will be checked as
-          // normal.  Then, in `middle::check_match`, we will check
-          // that no move occurs in a binding that is underneath an
-          // `@` or `&`.  Together these give the same guarantees as
-          // `check_move_out_from_expr()` without requiring us to
-          // rewalk the patterns and rebuild the pattern
-          // categorizations.
-      }
       _ => { }
     }
 
-    visit::visit_expr(expr, self, vt);
+    self.trigger_loans(expr.id);
+}
 
-    self.expire_loans(expr.id);
+fn check_loans_in_pat(pat: @ast::pat,
+                      &&self: @mut CheckLoanCtxt,
+                      vt: visit::vt<@mut CheckLoanCtxt>)
+{
+    self.trigger_loans(pat.id);
+
+    // Note: moves out of pattern bindings are not checked by
+    // the borrow checker, at least not directly.  What happens
+    // is that if there are any moved bindings, the discriminant
+    // will be considered a move, and this will be checked as
+    // normal.  Then, in `middle::check_match`, we will check
+    // that no move occurs in a binding that is underneath an
+    // `@` or `&`.  Together these give the same guarantees as
+    // `check_move_out_from_expr()` without requiring us to
+    // rewalk the patterns and rebuild the pattern
+    // categorizations.
 }
 
 fn check_loans_in_block(blk: &ast::blk,
@@ -824,7 +874,6 @@ fn check_loans_in_block(blk: &ast::blk,
                         vt: visit::vt<@mut CheckLoanCtxt>)
 {
     let old_purity = self.declared_purity;
-    self.introduce_loans(blk.node.id);
 
     match blk.node.rules {
         ast::default_blk => {
@@ -836,7 +885,7 @@ fn check_loans_in_block(blk: &ast::blk,
 
     visit::visit_block(blk, self, vt);
 
-    self.expire_loans(blk.node.id);
+    self.trigger_loans(blk.node.id);
     self.declared_purity = old_purity;
 }
 

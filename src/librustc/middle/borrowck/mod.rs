@@ -417,7 +417,7 @@ pub impl BorrowckCtxt {
     }
 
     fn loan_to_repr(&self, loan: &Loan) -> ~str {
-        fmt!("Loan(cmt=%s, kind=%?, pt=%?, region=%?)",
+        fmt!("Loan(cmt=%s, kind=%?, pt=%?, scope=%?)",
              self.cmt_to_repr(loan.cmt),
              loan.kind,
              loan.pt,

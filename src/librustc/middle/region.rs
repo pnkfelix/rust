@@ -112,6 +112,14 @@ pub fn scope_contains(region_map: region_map, superscope: ast::node_id,
     return true;
 }
 
+pub fn scopes_intersect(region_map: region_map,
+                        scope1: ast::node_id,
+                        scope2: ast::node_id) -> bool
+{
+    scope_contains(region_map, scope1, scope2) ||
+    scope_contains(region_map, scope2, scope1)
+}
+
 /// Determines whether one region is a subregion of another.  This is
 /// intended to run *after inference* and sadly the logic is somewhat
 /// duplicated with the code in infer.rs.

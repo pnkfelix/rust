@@ -371,7 +371,7 @@ pub impl GatherLoanCtxt {
 
         match result {
             Ok(compute_loans::Loans(_, loans)) => {
-                self.add_loans_to_scope_id(borrow_id, loans);
+                self.add_loans_to_expr(borrow_id, loans);
             }
 
             Ok(compute_loans::Root(key, root_info)) => {
@@ -391,10 +391,21 @@ pub impl GatherLoanCtxt {
         }
     }
 
-    fn add_loans_to_scope_id(&mut self,
-                             +borrow_id: ast::node_id,
-                             +loans: ~[Loan]) {
-        debug!("adding %u loans to scope %d: %s",
+    fn add_loans_to_expr(&mut self,
+                         +borrow_id: ast::node_id,
+                         +loans: ~[Loan]) {
+        /*!
+         *
+         * Indicates the evaluation of `borrow_id` triggers
+         * the loans `loans`.  They are therefore
+         * added to the `req_loan_map` for use in
+         * the `check_loans` phase.  Note: the loans will be
+         * considered granted at the end of this expression,
+         * and they stay in scope until the region `loan.scope`
+         * is exited.
+         */
+
+        debug!("adding %u loans to scope %?: %s",
                loans.len(),
                borrow_id,
                str::connect(loans.map(|l| self.bccx.loan_to_repr(l)), ", "));
@@ -412,7 +423,7 @@ pub impl GatherLoanCtxt {
     fn gather_pat(&mut self,
                   discr_cmt: mc::cmt,
                   root_pat: @ast::pat,
-                  arm_id: ast::node_id,
+                  arm_body_id: ast::node_id,
                   match_id: ast::node_id) {
         do self.bccx.cat_pattern(discr_cmt, root_pat) |cmt, pat| {
             match pat.node {
@@ -433,13 +444,13 @@ pub impl GatherLoanCtxt {
                     // with a cat_discr() node.  There is a detailed
                     // discussion of the function of this node in
                     // compute_loans/mod.rs:
-                    let arm_scope = ty::re_scope(arm_id);
+                    let arm_scope = ty::re_scope(arm_body_id);
                     if self.bccx.is_subregion_of(scope_r, arm_scope) {
                         let cmt_discr = self.bccx.cat_discr(cmt, match_id);
-                        self.guarantee_valid(arm_id, cmt_discr,
+                        self.guarantee_valid(root_pat.id, cmt_discr,
                                              mutbl, scope_r);
                     } else {
-                        self.guarantee_valid(arm_id, cmt,
+                        self.guarantee_valid(root_pat.id, cmt,
                                              mutbl, scope_r);
                     }
                   }
@@ -461,7 +472,7 @@ pub impl GatherLoanCtxt {
                       self.vec_slice_info(slice_pat, slice_ty);
                   let mcx = self.bccx.mc_ctxt();
                   let cmt_index = mcx.cat_index(slice_pat, cmt);
-                  self.guarantee_valid(arm_id, cmt_index, slice_mutbl, slice_r);
+                  self.guarantee_valid(root_pat.id, cmt_index, slice_mutbl, slice_r);
               }
 
               _ => {}
