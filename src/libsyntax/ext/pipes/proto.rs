@@ -142,26 +142,23 @@ pub struct protocol_ {
 
 pub impl protocol_ {
     /// Get a state.
-    fn get_state(&mut self, name: ~str) -> state {
+    fn get_state(&self, name: ~str) -> state {
         self.states.find(|i| i.name == name).get()
     }
 
-    fn get_state_by_id(&mut self, id: uint) -> state { self.states[id] }
+    fn get_state_by_id(&self, id: uint) -> state { self.states[id] }
 
-    fn has_state(&mut self, name: ~str) -> bool {
+    fn has_state(&self, name: ~str) -> bool {
         self.states.find(|i| i.name == name).is_some()
     }
 
-    fn filename(&mut self) -> ~str {
+    fn filename(&self) -> ~str {
         ~"proto://" + self.name
     }
 
-    fn num_states(&mut self) -> uint {
-        let states = &mut *self.states;
-        states.len()
-    }
+    fn num_states(&self) -> uint { self.states.len() }
 
-    fn has_ty_params(&mut self) -> bool {
+    fn has_ty_params(&self) -> bool {
         for self.states.each |s| {
             if s.generics.ty_params.len() > 0 {
                 return true;
@@ -169,7 +166,7 @@ pub impl protocol_ {
         }
         false
     }
-    fn is_bounded(&mut self) -> bool {
+    fn is_bounded(&self) -> bool {
         let bounded = self.bounded.get();
         bounded
     }
