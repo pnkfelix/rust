@@ -19,9 +19,6 @@ use cmp::{Eq, Ord, TotalEq, TotalOrd, Ordering, Less, Equal, Greater};
 use clone::Clone;
 use iter::BaseIter;
 use iter;
-#[cfg(stage1)]
-#[cfg(stage2)]
-#[cfg(stage3)]
 use iterator::Iterator;
 use kinds::Copy;
 use libc;
@@ -2714,18 +2711,12 @@ impl<A:Clone> Clone for ~[A] {
 }
 
 // could be implemented with &[T] with .slice(), but this avoids bounds checks
-#[cfg(stage1)]
-#[cfg(stage2)]
-#[cfg(stage3)]
 pub struct VecIterator<'self, T> {
     priv ptr: *T,
     priv end: *T,
     priv lifetime: &'self T // FIXME: #5922
 }
 
-#[cfg(stage1)]
-#[cfg(stage2)]
-#[cfg(stage3)]
 impl<'self, T> Iterator<&'self T> for VecIterator<'self, T> {
     #[inline]
     fn next(&mut self) -> Option<&'self T> {

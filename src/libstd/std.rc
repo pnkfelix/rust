@@ -76,9 +76,6 @@ pub mod rope;
 pub mod smallintmap;
 pub mod sort;
 pub mod dlist;
-#[cfg(stage1)]
-#[cfg(stage2)]
-#[cfg(stage3)]
 pub mod treemap;
 
 // And ... other stuff
