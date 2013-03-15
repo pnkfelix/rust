@@ -230,7 +230,10 @@ pub impl CheckLoanCtxt {
         };
     }
 
-    fn each_in_scope_loan(&self, scope_id: ast::node_id, op: &fn(&Loan) -> bool) {
+    fn each_in_scope_loan(&self,
+                          scope_id: ast::node_id,
+                          op: &fn(&Loan) -> bool)
+    {
         /*!
          *
          * Iterates over each loan which has been issued and which is in
@@ -687,7 +690,7 @@ pub impl CheckLoanCtxt {
         for self.loan_path(cmt).each |lp| {
             for self.each_in_scope_loan(cmt.id) |loan| {
                 if *lp == loan.lp {
-                    return MoveWhileBorrowed(cmt, loan);
+                    return MoveWhileBorrowed(cmt, *loan);
                 }
             }
         }
