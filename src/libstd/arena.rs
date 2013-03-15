@@ -103,7 +103,7 @@ fn chunk(size: uint, is_pod: bool) -> Chunk {
     let mut v: @[u8] = @[];
     unsafe { at_vec::raw::reserve(&mut v, size); }
     Chunk {
-        data: unsafe { cast::transmute(v) },
+        data: v,
         fill: 0u,
         is_pod: is_pod,
     }

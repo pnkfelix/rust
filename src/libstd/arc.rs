@@ -422,24 +422,25 @@ pub struct RWReadMode<'self, T> {
 
 pub impl<T:Const + Owned> RWWriteMode/&self<T> {
     /// Access the pre-downgrade RWARC in write mode.
-    fn write<U>(&self, blk: &fn(x: &mut T) -> U) -> U {
+    fn write<U>(&mut self, blk: &fn(x: &mut T) -> U) -> U {
         match *self {
             RWWriteMode {
-                data: ref data,
+                data: &ref mut data,
                 token: ref token,
                 poison: _
             } => {
                 do token.write {
-                    blk(&mut **data)
+                    blk(data)
                 }
             }
         }
     }
     /// Access the pre-downgrade RWARC in write mode with a condvar.
-    fn write_cond<U>(&self, blk: &fn(x: &x/mut T, c: &c/Condvar) -> U) -> U {
+    fn write_cond<U>(&mut self,
+                     blk: &fn(x: &x/mut T, c: &c/Condvar) -> U) -> U {
         match *self {
             RWWriteMode {
-                data: ref data,
+                data: &ref mut data,
                 token: ref token,
                 poison: ref poison
             } => {
@@ -450,7 +451,7 @@ pub impl<T:Const + Owned> RWWriteMode/&self<T> {
                             failed: &mut *poison.failed,
                             cond: cond
                         };
-                        blk(&mut **data, &cvar)
+                        blk(data, &cvar)
                     }
                 }
             }

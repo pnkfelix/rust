@@ -71,7 +71,7 @@ pub fn sha1() -> @Sha1 {
           msg_block: ~[u8],
           msg_block_idx: uint,
           computed: bool,
-          work_buf: @mut ~[u32]};
+          work_buf: ~[u32]};
 
     fn add_input(st: &mut Sha1State, msg: &[u8]) {
         fail_unless!((!st.computed));
@@ -91,7 +91,7 @@ pub fn sha1() -> @Sha1 {
     }
     fn process_msg_block(st: &mut Sha1State) {
         fail_unless!((vec::len(st.h) == digest_buf_len));
-        fail_unless!((vec::len(*st.work_buf) == work_buf_len));
+        fail_unless!((vec::len(st.work_buf) == work_buf_len));
         let mut t: int; // Loop counter
         let mut w = st.work_buf;
 
@@ -267,7 +267,7 @@ pub fn sha1() -> @Sha1 {
          msg_block: vec::from_elem(msg_block_len, 0u8),
          msg_block_idx: 0u,
          computed: false,
-         work_buf: @mut vec::from_elem(work_buf_len, 0u32)
+         work_buf: vec::from_elem(work_buf_len, 0u32)
     };
     let mut sh = @st as @Sha1;
     sh.reset();
