@@ -2379,9 +2379,6 @@ pub trait StrSlice<'self> {
     fn any(&self, it: &fn(char) -> bool) -> bool;
     fn contains<'a>(&self, needle: &'a str) -> bool;
     fn contains_char(&self, needle: char) -> bool;
-    #[cfg(stage1)]
-    #[cfg(stage2)]
-    #[cfg(stage3)]
     fn char_iter(&self) -> StrCharIterator<'self>;
     fn each(&self, it: &fn(u8) -> bool);
     fn eachi(&self, it: &fn(uint, u8) -> bool);
@@ -2445,9 +2442,6 @@ impl<'self> StrSlice<'self> for &'self str {
         contains_char(*self, needle)
     }
 
-    #[cfg(stage1)]
-    #[cfg(stage2)]
-    #[cfg(stage3)]
     #[inline]
     fn char_iter(&self) -> StrCharIterator<'self> {
         StrCharIterator {
@@ -2646,17 +2640,11 @@ impl Clone for ~str {
     }
 }
 
-#[cfg(stage1)]
-#[cfg(stage2)]
-#[cfg(stage3)]
 pub struct StrCharIterator<'self> {
     priv index: uint,
     priv string: &'self str,
 }
 
-#[cfg(stage1)]
-#[cfg(stage2)]
-#[cfg(stage3)]
 impl<'self> Iterator<char> for StrCharIterator<'self> {
     #[inline]
     fn next(&mut self) -> Option<char> {

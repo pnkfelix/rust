@@ -215,7 +215,7 @@ pub fn map_fn(
                     /* FIXME (#2543) */ copy *generics,
                     dt,
                     parent_id,
-                    @/* FIXME (#2543) */ copy cx.path));
+                    @/* FIXME (#2543) */ copy *cx.path));
       }
       _ => ()
     }
@@ -292,7 +292,7 @@ pub fn map_item(i: @item, cx: @mut Ctx, v: visit::vt<@mut Ctx>) {
                             extend(cx, i.ident)
                         } else {
                             // Anonymous extern mods go in the parent scope
-                            @copy cx.path
+                            @copy *cx.path
                         }
                     )
                 );
@@ -322,6 +322,7 @@ pub fn map_item(i: @item, cx: @mut Ctx, v: visit::vt<@mut Ctx>) {
         }
         _ => ()
     }
+
     match i.node {
         item_mod(_) | item_foreign_mod(_) => {
             cx.path.push(path_mod(i.ident));
