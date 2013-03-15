@@ -170,6 +170,7 @@ fn freeze_borrowed_ptr(
         m_const => {
             self.try_purity(loan_region,
                             BckError {cmt: cmt,
+                                      span: self.span,
                                       code: err_mutbl(m_imm)})
         }
 
@@ -199,6 +200,7 @@ fn freeze_managed_ptr(
 
         m_const => {
             Err(BckError {cmt: cmt,
+                          span: self.span,
                           code: err_mutbl(m_mutbl)})
         }
 

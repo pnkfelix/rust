@@ -204,8 +204,10 @@ impl ComputeLoansContext {
         match cmt.mutbl {
             mc::McDeclared | mc::McInherited => Ok(()),
             mc::McImmutable => Err(BckError {cmt: cmt,
+                                             span: self.span,
                                              code: err_mutbl(m_imm)}),
             mc::McReadOnly => Err(BckError {cmt: cmt,
+                                            span: self.span,
                                             code: err_mutbl(m_const)}),
         }
     }
@@ -216,9 +218,11 @@ impl ComputeLoansContext {
             mc::McImmutable => Ok(()),
             mc::McDeclared | mc::McInherited => {
                 Err(BckError {cmt: cmt,
+                              span: self.span,
                               code: err_mutbl(m_mutbl)})
             }
             mc::McReadOnly => Err(BckError {cmt: cmt,
+                                            span: self.span,
                                             code: err_mutbl(m_const)}),
         }
     }
@@ -283,6 +287,7 @@ impl ComputeLoansContext {
         if !self.bccx.is_subregion_of(loan_region, max_scope) {
             return Err(BckError {
                 cmt: cmt,
+                span: self.span,
                 code: err_out_of_scope(max_scope, loan_region)
             });
         }
@@ -350,6 +355,7 @@ impl ComputeLoansContext {
             Partial => {
                 Err(BckError {
                     cmt: cmt,
+                    span: self.span,
                     code: err_partial_freeze_of_managed_content
                 })
             }

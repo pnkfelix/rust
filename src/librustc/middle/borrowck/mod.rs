@@ -182,6 +182,7 @@ pub enum bckerr_code {
 // that caused it
 #[deriving_eq]
 pub struct BckError {
+    span: span,
     cmt: mc::cmt,
     code: bckerr_code
 }
@@ -324,7 +325,7 @@ pub impl BorrowckCtxt {
 
     fn report(&self, err: BckError) {
         self.span_err(
-            err.cmt.span,
+            err.span,
             fmt!("illegal borrow: %s",
                  self.bckerr_to_str(err)));
         self.note_and_explain_bckerr(err);

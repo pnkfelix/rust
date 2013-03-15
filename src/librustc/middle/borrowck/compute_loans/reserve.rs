@@ -86,7 +86,7 @@ impl Reserve for ComputeLoansContext {
             mc::cat_copied_upvar(_) => {
                 // Copied upvars are aliasable because of the
                 // possibility of recursive calls
-                reserve_aliasable(cmt, reason)
+                reserve_aliasable(self, cmt, reason)
             }
 
             mc::cat_discr(cmt_base, match_id) => {
@@ -99,7 +99,7 @@ impl Reserve for ComputeLoansContext {
             mc::cat_arg(_, ast::by_ref) |
             mc::cat_arg(_, ast::by_val) |
             mc::cat_deref(_, _, mc::gc_ptr(*)) => {
-                reserve_aliasable(cmt, reason)
+                reserve_aliasable(self, cmt, reason)
             }
         }
     }
@@ -141,6 +141,7 @@ fn reserve_borrowed_ptr(
         m_imm | m_const => {
             Err(BckError {
                 cmt: cmt,
+                span: self.span,
                 code: err_cannot_reserve_aliasable_value(reason)
             })
         }
@@ -156,11 +157,13 @@ fn reserve_borrowed_ptr(
 }
 
 fn reserve_aliasable(
+    self: &ComputeLoansContext,
     cmt: mc::cmt,
     reason: ReserveReason) -> BckResult<LoansOrRoot>
 {
     Err(BckError {
         cmt: cmt,
+        span: self.span,
         code: err_cannot_reserve_aliasable_value(reason)
     })
 }

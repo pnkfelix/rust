@@ -92,12 +92,14 @@ impl Mutate for ComputeLoansContext {
             mc::cat_static_item | mc::cat_rvalue => {
                 assert cmt.mutbl.is_immutable();
                 Err(BckError {cmt: cmt,
+                              span: self.span,
                               code: err_mutbl(m_mutbl)})
             }
 
             mc::cat_copied_upvar(_) => {
                 assert cmt.mutbl.is_immutable();
                 Err(BckError {cmt: cmt,
+                              span: self.span,
                               code: err_mutbl(m_mutbl)})
             }
 
@@ -109,6 +111,7 @@ impl Mutate for ComputeLoansContext {
                 // immutable.
                 assert cmt.mutbl.is_immutable();
                 Err(BckError {cmt: cmt,
+                              span: self.span,
                               code: err_mutbl(m_mutbl)})
             }
         }
@@ -147,6 +150,7 @@ fn mutate_owned_content(
         ast::m_const => {
             // Declared as const.  Mutation not permitted.
             Err(BckError {cmt: cmt,
+                          span: self.span,
                           code: err_mutbl(m_mutbl)})
         }
 
