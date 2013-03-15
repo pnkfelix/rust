@@ -453,10 +453,10 @@ pub impl GatherLoanCtxt {
                     let arm_scope = ty::re_scope(arm_body_id);
                     if self.bccx.is_subregion_of(scope_r, arm_scope) {
                         let cmt_discr = self.bccx.cat_discr(cmt, match_id);
-                        self.guarantee_valid(root_pat.id, root_pat.span,
+                        self.guarantee_valid(pat.id, pat.span,
                                              cmt_discr, mutbl, scope_r);
                     } else {
-                        self.guarantee_valid(root_pat.id, root_pat.span,
+                        self.guarantee_valid(pat.id, pat.span,
                                              cmt, mutbl, scope_r);
                     }
                   }
@@ -478,7 +478,7 @@ pub impl GatherLoanCtxt {
                       self.vec_slice_info(slice_pat, slice_ty);
                   let mcx = self.bccx.mc_ctxt();
                   let cmt_index = mcx.cat_index(slice_pat, cmt);
-                  self.guarantee_valid(root_pat.id, root_pat.span,
+                  self.guarantee_valid(pat.id, pat.span,
                                        cmt_index, slice_mutbl, slice_r);
               }
 
