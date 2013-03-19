@@ -407,11 +407,11 @@ operators](#binary-operator-expressions), or [keywords](#keywords).
 ~~~~~~~~ {.ebnf .gram}
 
 expr_path : ident [ "::" expr_path_tail ] + ;
-expr_path_tail : '<' type_expr [ ',' type_expr ] + '>'
+expr_path_tail : '<' type_path [ ',' type_path ] + '>'
                | expr_path ;
 
 type_path : ident [ type_path_tail ] + ;
-type_path_tail : '<' type_expr [ ',' type_expr ] + '>'
+type_path_tail : '<' type_path [ ',' type_path ] + '>'
                | "::" type_path ;
 
 ~~~~~~~~
@@ -473,16 +473,16 @@ with values. `proto!` is an item, defining a new name.
 
 ~~~~~~~~ {.ebnf .gram}
 
-expr_macro_rules : "macro_rules" '!' ident '(' macro_rule * ')'
-macro_rule : '(' matcher * ')' "=>" '(' transcriber * ')' ';'
+expr_macro_rules : "macro_rules" '!' ident '(' macro_rule * ')' ;
+macro_rule : '(' matcher * ')' "=>" '(' transcriber * ')' ';' ;
 matcher : '(' matcher * ')' | '[' matcher * ']'
         | '{' matcher * '}' | '$' ident ':' ident
         | '$' '(' matcher * ')' sep_token? [ '*' | '+' ]
-        | non_special_token
+        | non_special_token ;
 transcriber : '(' transcriber * ')' | '[' transcriber * ']'
             | '{' transcriber * '}' | '$' ident
             | '$' '(' transcriber * ')' sep_token? [ '*' | '+' ]
-            | non_special_token
+            | non_special_token ;
 
 ~~~~~~~~
 
@@ -618,7 +618,7 @@ each of which may have some number of [attributes](#attributes) attached to it.
 ## Items
 
 ~~~~~~~~ {.ebnf .gram}
-item : mod_item | fn_item | type_item | enum_item
+item : mod_item | fn_item | type_item | struct_item | enum_item
      | const_item | trait_item | impl_item | foreign_mod_item ;
 ~~~~~~~~
 
@@ -666,7 +666,7 @@ That is, Rust has no notion of type abstraction: there are no first-class "foral
 ### Modules
 
 ~~~~~~~~ {.ebnf .gram}
-mod_item : "mod" ident ( ';' | '{' mod '}' );
+mod_item : "mod" ident [ ';' | '{' mod '}' ] ;
 mod : [ view_item | item ] * ;
 ~~~~~~~~
 
@@ -776,12 +776,12 @@ extern mod ruststd (name = "std"); // linking to 'std' under another name
 ##### Use declarations
 
 ~~~~~~~~ {.ebnf .gram}
-use_decl : "pub"? "use" ident [ '=' path
+use_decl : "pub"? "use" ident [ '=' path_glob
                           | "::" path_glob ] ;
 
 path_glob : ident [ "::" path_glob ] ?
           | '*'
-          | '{' ident [ ',' ident ] * '}'
+          | '{' ident [ ',' ident ] * '}' ;
 ~~~~~~~~
 
 A _use declaration_ creates one or more local name bindings synonymous
@@ -1350,7 +1350,7 @@ impl Seq<bool> for u32 {
 ### Foreign modules
 
 ~~~ {.ebnf .gram}
-foreign_mod_item : "extern mod" ident '{' foreign_mod '} ;
+foreign_mod_item : "extern" "mod" ident '{' foreign_mod '}' ;
 foreign_mod : [ foreign_fn ] * ;
 ~~~
 
@@ -1410,7 +1410,7 @@ conventions and is linked to all Rust programs anyway.
 
 ~~~~~~~~{.ebnf .gram}
 attribute : '#' '[' attr_list ']' ;
-attr_list : attr [ ',' attr_list ]*
+attr_list : attr [ ',' attr_list ]* ;
 attr : ident [ '=' literal
              | '(' attr_list ')' ] ? ;
 ~~~~~~~~
@@ -1609,7 +1609,7 @@ struct_expr : expr_path '{' ident ':' expr
                       [ ".." expr ] '}' |
               expr_path '(' expr
                       [ ',' expr ] * ')' |
-              expr_path
+              expr_path ;
 ~~~~~~~~
 
 There are several forms of structure expressions.
@@ -1658,7 +1658,7 @@ Point3d {y: 0, z: 10, .. base};
 ~~~~~~~~{.ebnf .gram}
 rec_expr : '{' ident ':' expr
                [ ',' ident ':' expr ] *
-               [ ".." expr ] '}'
+               [ ".." expr ] '}' ;
 ~~~~~~~~
 
 ### Method-call expressions
@@ -1676,7 +1676,7 @@ or dynamically dispatching if the left-hand-side expression is an indirect [obje
 ### Field expressions
 
 ~~~~~~~~{.ebnf .gram}
-field_expr : expr '.' ident
+field_expr : expr '.' ident ;
 ~~~~~~~~
 
 A _field expression_ consists of an expression followed by a single dot and an identifier,
@@ -1698,9 +1698,9 @@ it is automatically derferenced to make the field access possible.
 ### Vector expressions
 
 ~~~~~~~~{.ebnf .gram}
-vec_expr : '[' "mut"? vec_elems? ']'
+vec_expr : '[' "mut"? vec_elems? ']' ;
 
-vec_elems : [expr [',' expr]*] | [expr ',' ".." expr]
+vec_elems : [expr [',' expr]*] | [expr ',' ".." expr] ;
 ~~~~~~~~
 
 A [_vector_](#vector-types) _expression_ is written by enclosing zero or
@@ -1716,7 +1716,7 @@ more comma-separated expressions of uniform type in square brackets.
 ### Index expressions
 
 ~~~~~~~~{.ebnf .gram}
-idx_expr : expr '[' expr ']'
+idx_expr : expr '[' expr ']' ;
 ~~~~~~~~
 
 
@@ -2023,7 +2023,7 @@ even if the operand is an [owning type](#type-kinds).
 
 ### Call expressions
 
-~~~~~~~~ {.abnf .gram}
+~~~~~~~~ {.ebnf .gram}
 expr_list : [ expr [ ',' expr ]* ] ? ;
 paren_expr_list : '(' expr_list ')' ;
 call_expr : expr paren_expr_list ;
@@ -2046,7 +2046,7 @@ let pi = from_str::<f32>("3.14");
 
 ### Lambda expressions
 
-~~~~~~~~ {.abnf .gram}
+~~~~~~~~ {.ebnf .gram}
 ident_list : [ ident [ ',' ident ]* ] ? ;
 lambda_expr : '|' ident_list '|' expr ;
 ~~~~~~~~
@@ -2115,7 +2115,7 @@ A loop expression denotes an infinite loop;
 see [Continue expressions](#continue-expressions) for continue expressions.
 
 ~~~~~~~~{.ebnf .gram}
-loop_expr : "loop" [ ident ':' ] '{' block '}';
+loop_expr : "loop" [ ident ':' ] ? '{' block '}';
 ~~~~~~~~
 
 A `loop` expression may optionally have a _label_.
@@ -2126,7 +2126,7 @@ See [Break expressions](#break-expressions).
 ### Break expressions
 
 ~~~~~~~~{.ebnf .gram}
-break_expr : "break" [ ident ];
+break_expr : "break" [ ident ] ?;
 ~~~~~~~~
 
 A `break` expression has an optional `label`.
@@ -2139,7 +2139,7 @@ but must enclose it.
 ### Continue expressions
 
 ~~~~~~~~{.ebnf .gram}
-continue_expr : "loop" [ ident ];
+continue_expr : "loop" [ ident ] ?;
 ~~~~~~~~
 
 A continue expression, written `loop`, also has an optional `label`.
