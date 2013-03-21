@@ -17,7 +17,6 @@ use e = metadata::encoder;
 use metadata::decoder;
 use metadata::encoder;
 use metadata::tydecode;
-use metadata::tydecode::{DefIdSource, NominalType, TypeWithId, TypeParameter};
 use metadata::tyencode;
 use middle::freevars::freevar_entry;
 use middle::typeck::{method_origin, method_map_entry, vtable_res};
@@ -720,21 +719,6 @@ impl vtable_decoder_helpers for reader::Decoder {
 // ______________________________________________________________________
 // Encoding and decoding the side tables
 
-trait get_ty_str_ctxt {
-    fn ty_str_ctxt(@self) -> @tyencode::ctxt;
-}
-
-impl get_ty_str_ctxt for e::EncodeContext {
-    // IMPLICIT SELF WARNING: fix this!
-    fn ty_str_ctxt(@self) -> @tyencode::ctxt {
-        @tyencode::ctxt {diag: self.tcx.sess.diagnostic(),
-                        ds: e::def_to_str,
-                        tcx: self.tcx,
-                        reachable: |a| encoder::reachable(self, a),
-                        abbrevs: tyencode::ac_use_abbrevs(self.type_abbrevs)}
-    }
-}
-
 trait ebml_writer_helpers {
     fn emit_arg(&self, ecx: @e::EncodeContext, arg: ty::arg);
     fn emit_ty(&self, ecx: @e::EncodeContext, ty: ty::t);
@@ -758,9 +742,9 @@ impl ebml_writer_helpers for writer::Encoder {
         }
     }
 
-    fn emit_arg(&self, ecx: @e::EncodeContext, arg: ty::arg) {
+    fn emit_arg(&self, _ecx: @e::EncodeContext, arg: ty::arg) {
         do self.emit_opaque {
-            tyencode::enc_arg(self.writer, ecx.ty_str_ctxt(), arg);
+            tyencode::encode_arg(self.writer, arg);
         }
     }
 
@@ -770,9 +754,9 @@ impl ebml_writer_helpers for writer::Encoder {
         }
     }
 
-    fn emit_bounds(&self, ecx: @e::EncodeContext, bs: ty::param_bounds) {
+    fn emit_bounds(&self, _ecx: @e::EncodeContext, bs: ty::param_bounds) {
         do self.emit_opaque {
-            tyencode::enc_bounds(self.writer, ecx.ty_str_ctxt(), bs)
+            tyencode::encode_bounds(self.writer, bs)
         }
     }
 
@@ -891,20 +875,6 @@ fn encode_side_tables_for_id(ecx: @e::EncodeContext,
         }
     }
 
-    // I believe it is not necessary to encode this information.  The
-    // ids will appear in the AST but in the *type* information, which
-    // is what we actually use in trans, all modes will have been
-    // resolved.
-    //
-    //for tcx.inferred_modes.find(&id).each |m| {
-    //    ebml_w.tag(c::tag_table_inferred_modes) {||
-    //        ebml_w.id(id);
-    //        ebml_w.tag(c::tag_table_val) {||
-    //            tyencode::enc_mode(ebml_w.writer, ty_str_ctxt(), m);
-    //        }
-    //    }
-    //}
-
     if maps.mutbl_map.contains_key(&id) {
         do ebml_w.tag(c::tag_table_mutbl) {
             ebml_w.id(id);
@@ -987,7 +957,6 @@ trait ebml_decoder_decoder_helpers {
     fn read_ty_param_bounds_and_ty(&self, xcx: @ExtendedDecodeContext)
                                 -> ty::ty_param_bounds_and_ty;
     fn convert_def_id(&self, xcx: @ExtendedDecodeContext,
-                      source: DefIdSource,
                       did: ast::def_id) -> ast::def_id;
 }
 
@@ -995,8 +964,8 @@ impl ebml_decoder_decoder_helpers for reader::Decoder {
     fn read_arg(&self, xcx: @ExtendedDecodeContext) -> ty::arg {
         do self.read_opaque |doc| {
             tydecode::parse_arg_data(
-                doc.data, xcx.dcx.cdata.cnum, doc.start, xcx.dcx.tcx,
-                |s, a| self.convert_def_id(xcx, s, a))
+                xcx.dcx.tcx, xcx.dcx.cdata.cnum, doc,
+                |a| self.convert_def_id(xcx, a))
         }
     }
 
@@ -1007,10 +976,9 @@ impl ebml_decoder_decoder_helpers for reader::Decoder {
         // are not used during trans.
 
         return do self.read_opaque |doc| {
-
             let ty = tydecode::parse_ty_data(
-                doc.data, xcx.dcx.cdata.cnum, doc.start, xcx.dcx.tcx,
-                |s, a| self.convert_def_id(xcx, s, a));
+                xcx.dcx.tcx, xcx.dcx.cdata.cnum, doc,
+                |a| self.convert_def_id(xcx, a));
 
             debug!("read_ty(%s) = %s",
                    type_string(doc), ty_to_str(xcx.dcx.tcx, ty));
@@ -1035,8 +1003,8 @@ impl ebml_decoder_decoder_helpers for reader::Decoder {
                   -> @~[ty::param_bound] {
         do self.read_opaque |doc| {
             tydecode::parse_bounds_data(
-                doc.data, doc.start, xcx.dcx.cdata.cnum, xcx.dcx.tcx,
-                |s, a| self.convert_def_id(xcx, s, a))
+                xcx.dcx.tcx, xcx.dcx.cdata.cnum, doc,
+                |a| self.convert_def_id(xcx, a))
         }
     }
 
@@ -1059,7 +1027,6 @@ impl ebml_decoder_decoder_helpers for reader::Decoder {
     }
 
     fn convert_def_id(&self, xcx: @ExtendedDecodeContext,
-                      source: tydecode::DefIdSource,
                       did: ast::def_id) -> ast::def_id {
         /*!
          *
@@ -1075,11 +1042,8 @@ impl ebml_decoder_decoder_helpers for reader::Decoder {
          * to refer to the new, cloned copy of the type parameter.
          */
 
-        let r = match source {
-            NominalType | TypeWithId => xcx.tr_def_id(did),
-            TypeParameter => xcx.tr_intern_def_id(did)
-        };
-        debug!("convert_def_id(source=%?, did=%?)=%?", source, did, r);
+        let r = xcx.tr_def_id(did);
+        debug!("convert_def_id(did=%?)=%?", did, r);
         return r;
     }
 }

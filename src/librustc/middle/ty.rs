@@ -55,6 +55,8 @@ use syntax;
 // Note: after typeck, you should use resolved_mode() to convert this mode
 // into an rmode, which will take into account the results of mode inference.
 #[deriving(Eq)]
+#[auto_encode]
+#[auto_decode]
 pub struct arg {
     mode: ast::mode,
     ty: t
@@ -77,6 +79,8 @@ pub struct method {
     def_id: ast::def_id
 }
 
+#[auto_encode]
+#[auto_decode]
 pub struct mt {
     ty: t,
     mutbl: ast::mutability,
@@ -360,6 +364,8 @@ pub fn type_def_id(t: t) -> Option<ast::def_id> { get(t).o_def_id }
 pub fn type_id(t: t) -> uint { get(t).id }
 
 #[deriving(Eq)]
+#[auto_encode]
+#[auto_decode]
 pub struct BareFnTy {
     purity: ast::purity,
     abi: Abi,
@@ -367,6 +373,8 @@ pub struct BareFnTy {
 }
 
 #[deriving(Eq)]
+#[auto_encode]
+#[auto_decode]
 pub struct ClosureTy {
     purity: ast::purity,
     sigil: ast::Sigil,
@@ -382,6 +390,8 @@ pub struct ClosureTy {
  * - `inputs` is the list of arguments and their modes.
  * - `output` is the return type. */
 #[deriving(Eq)]
+#[auto_encode]
+#[auto_decode]
 pub struct FnSig {
     inputs: ~[arg],
     output: t
@@ -401,6 +411,8 @@ impl to_bytes::IterBytes for ClosureTy {
 }
 
 #[deriving(Eq)]
+#[auto_encode]
+#[auto_decode]
 pub struct param_ty {
     idx: uint,
     def_id: def_id
@@ -490,6 +502,8 @@ type opt_region = Option<Region>;
  *   `self` type is rather funny in that it can only appear on traits and is
  *   always substituted away to the implementing type for a trait. */
 #[deriving(Eq)]
+#[auto_encode]
+#[auto_decode]
 pub struct substs {
     self_r: opt_region,
     self_ty: Option<ty::t>,
@@ -499,6 +513,8 @@ pub struct substs {
 // NB: If you change this, you'll probably want to change the corresponding
 // AST structure in libsyntax/ast.rs as well.
 #[deriving(Eq)]
+#[auto_encode]
+#[auto_decode]
 pub enum sty {
     ty_nil,
     ty_bot,
@@ -584,6 +600,8 @@ pub enum type_err {
     terr_float_mismatch(expected_found<ast::float_ty>)
 }
 
+#[auto_encode]
+#[auto_decode]
 pub enum param_bound {
     bound_copy,
     bound_durable,
@@ -593,13 +611,25 @@ pub enum param_bound {
 }
 
 #[deriving(Eq)]
-pub struct TyVid(uint);
+#[auto_encode]
+#[auto_decode]
+pub struct TyVid {
+    id: uint
+}
 
 #[deriving(Eq)]
-pub struct IntVid(uint);
+#[auto_encode]
+#[auto_decode]
+pub struct IntVid {
+    id: uint
+}
 
 #[deriving(Eq)]
-pub struct FloatVid(uint);
+#[auto_encode]
+#[auto_decode]
+pub struct FloatVid {
+    id: uint
+}
 
 #[deriving(Eq)]
 #[auto_encode]
@@ -609,6 +639,8 @@ pub struct RegionVid {
 }
 
 #[deriving(Eq)]
+#[auto_encode]
+#[auto_decode]
 pub enum InferTy {
     TyVar(TyVid),
     IntVar(IntVid),
@@ -676,7 +708,7 @@ pub trait Vid {
 }
 
 impl Vid for TyVid {
-    fn to_uint(&self) -> uint { **self }
+    fn to_uint(&self) -> uint { self.id }
 }
 
 impl ToStr for TyVid {
@@ -684,7 +716,7 @@ impl ToStr for TyVid {
 }
 
 impl Vid for IntVid {
-    fn to_uint(&self) -> uint { **self }
+    fn to_uint(&self) -> uint { self.id }
 }
 
 impl ToStr for IntVid {
@@ -692,7 +724,7 @@ impl ToStr for IntVid {
 }
 
 impl Vid for FloatVid {
-    fn to_uint(&self) -> uint { **self }
+    fn to_uint(&self) -> uint { self.id }
 }
 
 impl ToStr for FloatVid {
@@ -860,7 +892,7 @@ fn mk_t(cx: ctxt, +st: sty) -> t { mk_t_with_id(cx, st, None) }
 
 // Interns a type/name combination, stores the resulting box in cx.interner,
 // and returns the box as cast to an unsafe ptr (see comments for t above).
-fn mk_t_with_id(cx: ctxt, +st: sty, o_def_id: Option<ast::def_id>) -> t {
+pub fn mk_t_with_id(cx: ctxt, +st: sty, o_def_id: Option<ast::def_id>) -> t {
     let key = intern_key { sty: to_unsafe_ptr(&st), o_def_id: o_def_id };
     match cx.interner.find(&key) {
       Some(t) => unsafe { return cast::reinterpret_cast(&t); },

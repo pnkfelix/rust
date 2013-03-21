@@ -113,6 +113,10 @@ pub fn type_is_defined_in_local_crate(original_type: t) -> bool {
      * some nominal type defined in this crate.
      */
 
+    // This test is pretty flexible.  For example, Option<Foo> is ok
+    // if Foo is defined in this crate.  I think that makes sense,
+    // though, it still prevents the "orphan" problem.
+
     let mut found_nominal = false;
     do ty::walk_ty(original_type) |t| {
         match get(t).sty {

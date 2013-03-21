@@ -48,9 +48,6 @@ use syntax::opt_vec;
 use syntax;
 use writer = std::ebml::writer;
 
-// used by astencode:
-type abbrev_map = oldmap::HashMap<ty::t, tyencode::ty_abbrev>;
-
 pub type encode_inlined_item = @fn(ecx: @EncodeContext,
                                    ebml_w: writer::Encoder,
                                    path: &[ast_map::path_elt],
@@ -92,8 +89,7 @@ pub struct EncodeContext {
     discrim_symbols: HashMap<ast::node_id, ~str>,
     link_meta: LinkMeta,
     cstore: @mut cstore::CStore,
-    encode_inlined_item: encode_inlined_item,
-    type_abbrevs: abbrev_map
+    encode_inlined_item: encode_inlined_item
 }
 
 pub fn reachable(ecx: @EncodeContext, id: node_id) -> bool {
@@ -111,7 +107,9 @@ fn encode_impl_type_basename(ecx: @EncodeContext, ebml_w: writer::Encoder,
 }
 
 pub fn encode_def_id(ebml_w: writer::Encoder, id: def_id) {
-    ebml_w.wr_tagged_str(tag_def_id, def_to_str(id));
+    do ebml_w.wr_tag(tag_def_id) {
+        id.encode(&ebml_w);
+    }
 }
 
 fn encode_region_param(ecx: @EncodeContext, ebml_w: writer::Encoder,
@@ -167,19 +165,15 @@ fn encode_family(ebml_w: writer::Encoder, c: char) {
     ebml_w.end_tag();
 }
 
-pub fn def_to_str(did: def_id) -> ~str { fmt!("%d:%d", did.crate, did.node) }
+// This should not be needed once we have snapshotted.
+pub fn _def_to_str(did: def_id) -> ~str { fmt!("%d:%d", did.crate, did.node) }
 
-fn encode_ty_type_param_bounds(ebml_w: writer::Encoder, ecx: @EncodeContext,
+fn encode_ty_type_param_bounds(ebml_w: writer::Encoder,
+                               _ecx: @EncodeContext,
                                params: @~[ty::param_bounds]) {
-    let ty_str_ctxt = @tyencode::ctxt {
-        diag: ecx.diag,
-        ds: def_to_str,
-        tcx: ecx.tcx,
-        reachable: |a| reachable(ecx, a),
-        abbrevs: tyencode::ac_use_abbrevs(ecx.type_abbrevs)};
-    for params.each |param| {
+    for params.each |&param| {
         ebml_w.start_tag(tag_items_data_item_ty_param_bounds);
-        tyencode::enc_bounds(ebml_w.writer, ty_str_ctxt, *param);
+        tyencode::encode_bounds(ebml_w.writer, param);
         ebml_w.end_tag();
     }
 }
@@ -195,29 +189,18 @@ fn encode_type_param_bounds(ebml_w: writer::Encoder,
 
 fn encode_variant_id(ebml_w: writer::Encoder, vid: def_id) {
     ebml_w.start_tag(tag_items_data_item_variant);
-    ebml_w.writer.write(str::to_bytes(def_to_str(vid)));
+    vid.encode(&ebml_w);
     ebml_w.end_tag();
 }
 
-pub fn write_type(ecx: @EncodeContext, ebml_w: writer::Encoder, typ: ty::t) {
-    let ty_str_ctxt = @tyencode::ctxt {
-        diag: ecx.diag,
-        ds: def_to_str,
-        tcx: ecx.tcx,
-        reachable: |a| reachable(ecx, a),
-        abbrevs: tyencode::ac_use_abbrevs(ecx.type_abbrevs)};
-    tyencode::enc_ty(ebml_w.writer, ty_str_ctxt, typ);
+pub fn write_type(_ecx: @EncodeContext, ebml_w: writer::Encoder, typ: ty::t) {
+    tyencode::encode_ty(ebml_w.writer, typ);
 }
 
-pub fn write_vstore(ecx: @EncodeContext, ebml_w: writer::Encoder,
+pub fn write_vstore(_ecx: @EncodeContext,
+                    ebml_w: writer::Encoder,
                     vstore: ty::vstore) {
-    let ty_str_ctxt = @tyencode::ctxt {
-        diag: ecx.diag,
-        ds: def_to_str,
-        tcx: ecx.tcx,
-        reachable: |a| reachable(ecx, a),
-        abbrevs: tyencode::ac_use_abbrevs(ecx.type_abbrevs)};
-    tyencode::enc_vstore(ebml_w.writer, ty_str_ctxt, vstore);
+    tyencode::encode_vstore(ebml_w.writer, vstore);
 }
 
 fn encode_type(ecx: @EncodeContext, ebml_w: writer::Encoder, typ: ty::t) {
@@ -257,7 +240,7 @@ fn encode_disr_val(_ecx: @EncodeContext, ebml_w: writer::Encoder,
 
 fn encode_parent_item(ebml_w: writer::Encoder, id: def_id) {
     ebml_w.start_tag(tag_items_data_parent_item);
-    ebml_w.writer.write(str::to_bytes(def_to_str(id)));
+    id.encode(&ebml_w);
     ebml_w.end_tag();
 }
 
@@ -346,7 +329,7 @@ fn encode_info_for_mod(ecx: @EncodeContext, ebml_w: writer::Encoder,
                                                 .sess.parse_sess.interner));
 
                 ebml_w.start_tag(tag_mod_impl);
-                ebml_w.wr_str(def_to_str(local_def(did)));
+                local_def(did).encode(&ebml_w);
                 ebml_w.end_tag();
             }
             _ => {} // FIXME #4573: Encode these too.
@@ -365,7 +348,7 @@ fn encode_info_for_mod(ecx: @EncodeContext, ebml_w: writer::Encoder,
                        *exp.name, id);
                 ebml_w.start_tag(tag_items_data_item_reexport);
                 ebml_w.start_tag(tag_items_data_item_reexport_def_id);
-                ebml_w.wr_str(def_to_str(exp.def_id));
+                exp.def_id.encode(&ebml_w);
                 ebml_w.end_tag();
                 ebml_w.start_tag(tag_items_data_item_reexport_name);
                 ebml_w.wr_str(*exp.name);
@@ -833,7 +816,7 @@ fn encode_info_for_item(ecx: @EncodeContext, ebml_w: writer::Encoder,
         for methods.each |m| {
             ebml_w.start_tag(tag_item_impl_method);
             let method_def_id = local_def(m.id);
-            ebml_w.writer.write(str::to_bytes(def_to_str(method_def_id)));
+            method_def_id.encode(&ebml_w);
             ebml_w.end_tag();
         }
         for opt_trait.each |associated_trait| {
@@ -1345,7 +1328,6 @@ pub fn encode_metadata(parms: EncodeParams, crate: &crate) -> ~[u8] {
         link_meta: /*bad*/copy parms.link_meta,
         cstore: parms.cstore,
         encode_inlined_item: parms.encode_inlined_item,
-        type_abbrevs: ty::new_ty_hash()
      };
 
     let ebml_w = writer::Encoder(wr as @io::Writer);
@@ -1424,18 +1406,11 @@ pub fn encode_metadata(parms: EncodeParams, crate: &crate) -> ~[u8] {
 }
 
 // Get the encoded string for a type
-pub fn encoded_ty(tcx: ty::ctxt, t: ty::t) -> ~str {
-    let cx = @tyencode::ctxt {
-        diag: tcx.diag,
-        ds: def_to_str,
-        tcx: tcx,
-        reachable: |_id| false,
-        abbrevs: tyencode::ac_no_abbrevs};
+pub fn encoded_ty(_tcx: ty::ctxt, t: ty::t) -> ~str {
     do io::with_str_writer |wr| {
-        tyencode::enc_ty(wr, cx, t);
+        tyencode::encode_ty_to_str(wr, t);
     }
 }
-
 
 // Local Variables:
 // mode: rust

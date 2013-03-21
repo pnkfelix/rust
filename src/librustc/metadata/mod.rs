@@ -9,6 +9,7 @@
 // except according to those terms.
 
 pub mod common;
+
 pub mod tyencode;
 pub mod tydecode;
 pub mod encoder;
@@ -18,4 +19,4 @@ pub mod cstore;
 pub mod csearch;
 pub mod loader;
 pub mod filesearch;
-
+pub mod compact;

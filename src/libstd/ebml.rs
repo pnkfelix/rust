@@ -9,6 +9,7 @@
 // except according to those terms.
 
 use core::prelude::*;
+use serialize::Decodable;
 
 // Simple Extensible Binary Markup Language (ebml) reader and writer on a
 // cursor model. See the specification here:
@@ -400,7 +401,13 @@ pub mod reader {
             f()
         }
     }
+}
 
+pub impl Doc {
+    fn decode<D: Decodable<reader::Decoder>>(&self) -> D {
+        let reader = reader::Decoder(*self);
+        Decodable::decode(&reader)
+    }
 }
 
 pub mod writer {

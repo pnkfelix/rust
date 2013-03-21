@@ -19,7 +19,7 @@ use metadata::csearch::{ProvidedTraitMethodInfo, StaticMethodInfo};
 use metadata::csearch;
 use metadata::cstore;
 use metadata::decoder;
-use metadata::tydecode::{parse_ty_data, parse_def_id, parse_bounds_data};
+use metadata::tydecode::{parse_bounds_data, parse_ty_data};
 use middle::{ty, resolve};
 
 use core::hash::{Hash, HashUtil};
@@ -171,8 +171,9 @@ fn item_symbol(item: ebml::Doc) -> ~str {
 }
 
 fn item_parent_item(d: ebml::Doc) -> Option<ast::def_id> {
-    for reader::tagged_docs(d, tag_items_data_parent_item) |did| {
-        return Some(reader::with_doc_data(did, |d| parse_def_id(d)));
+    for reader::tagged_docs(d, tag_items_data_parent_item) |did_doc| {
+        let did: ast::def_id = did_doc.decode();
+        return Some(did);
     }
     None
 }
@@ -192,9 +193,8 @@ fn item_reqd_and_translated_parent_item(cnum: ast::crate_num,
 }
 
 fn item_def_id(d: ebml::Doc, cdata: cmd) -> ast::def_id {
-    let tagdoc = reader::get_doc(d, tag_def_id);
-    return translate_def_id(cdata, reader::with_doc_data(tagdoc,
-                                                    |d| parse_def_id(d)));
+    let tag_doc = reader::get_doc(d, tag_def_id);
+    return translate_def_id(cdata, tag_doc.decode());
 }
 
 fn each_reexport(d: ebml::Doc, f: &fn(ebml::Doc) -> bool) {
@@ -225,9 +225,9 @@ fn variant_disr_val(d: ebml::Doc) -> Option<int> {
 }
 
 fn doc_type(doc: ebml::Doc, tcx: ty::ctxt, cdata: cmd) -> ty::t {
-    let tp = reader::get_doc(doc, tag_items_data_item_type);
-    parse_ty_data(tp.data, cdata.cnum, tp.start, tcx,
-                  |_, did| translate_def_id(cdata, did))
+    let type_doc = reader::get_doc(doc, tag_items_data_item_type);
+    parse_ty_data(tcx, cdata.cnum, type_doc,
+                  |did| translate_def_id(cdata, did))
 }
 
 pub fn item_type(item_id: ast::def_id, item: ebml::Doc,
@@ -252,8 +252,8 @@ fn item_ty_param_bounds(item: ebml::Doc, tcx: ty::ctxt, cdata: cmd)
     -> @~[ty::param_bounds] {
     let mut bounds = ~[];
     for reader::tagged_docs(item, tag_items_data_item_ty_param_bounds) |p| {
-        let bd = parse_bounds_data(p.data, p.start, cdata.cnum, tcx,
-                                   |_, did| translate_def_id(cdata, did));
+        let bd = parse_bounds_data(tcx, cdata.cnum, p,
+                                   |did| translate_def_id(cdata, did));
         bounds.push(bd);
     }
     @bounds
@@ -276,7 +276,7 @@ fn enum_variant_ids(item: ebml::Doc, cdata: cmd) -> ~[ast::def_id] {
     let mut ids: ~[ast::def_id] = ~[];
     let v = tag_items_data_item_variant;
     for reader::tagged_docs(item, v) |p| {
-        let ext = reader::with_doc_data(p, |d| parse_def_id(d));
+        let ext: ast::def_id = p.decode();
         ids.push(ast::def_id { crate: cdata.cnum, node: ext.node });
     };
     return ids;
@@ -392,7 +392,7 @@ pub fn get_impl_method(intr: @ident_interner, cdata: cmd, id: ast::node_id,
     let mut found = None;
     for reader::tagged_docs(find_item(id, items), tag_item_impl_method)
         |mid| {
-            let m_did = reader::with_doc_data(mid, |d| parse_def_id(d));
+            let m_did: ast::def_id = mid.decode();
             if item_name(intr, find_item(m_did.node, items)) == name {
                 found = Some(translate_def_id(cdata, m_did));
             }
@@ -410,7 +410,7 @@ pub fn struct_dtor(cdata: cmd, id: ast::node_id) -> Option<ast::def_id> {
     };
     for reader::tagged_docs(cls_items, tag_item_dtor) |doc| {
          let doc1 = reader::get_doc(doc, tag_def_id);
-         let did = reader::with_doc_data(doc1, |d| parse_def_id(d));
+         let did: ast::def_id = doc1.decode();
          found = Some(translate_def_id(cdata, did));
     };
     found
@@ -488,10 +488,7 @@ pub fn each_path(intr: @ident_interner, cdata: cmd,
                     let def_id_doc =
                         reader::get_doc(reexport_doc,
                             tag_items_data_item_reexport_def_id);
-                    let def_id =
-                        reader::with_doc_data(def_id_doc,
-                                              |d| parse_def_id(d));
-                    let def_id = translate_def_id(cdata, def_id);
+                    let def_id = translate_def_id(cdata, def_id_doc.decode());
 
                     let reexport_name_doc =
                         reader::get_doc(reexport_doc,
@@ -649,7 +646,7 @@ fn item_impl_methods(intr: @ident_interner, cdata: cmd, item: ebml::Doc,
                      base_tps: uint) -> ~[@resolve::MethodInfo] {
     let mut rslt = ~[];
     for reader::tagged_docs(item, tag_item_impl_method) |doc| {
-        let m_did = reader::with_doc_data(doc, |d| parse_def_id(d));
+        let m_did: ast::def_id = doc.decode();
         let mth_item = lookup_item(m_did.node, cdata.data);
         let self_ty = get_self_ty(mth_item);
         rslt.push(@resolve::MethodInfo {
@@ -671,7 +668,7 @@ pub fn get_impls_for_mod(intr: @ident_interner,
     let mod_item = lookup_item(m_id, data);
     let mut result = ~[];
     for reader::tagged_docs(mod_item, tag_mod_impl) |doc| {
-        let did = reader::with_doc_data(doc, |d| parse_def_id(d));
+        let did: ast::def_id = doc.decode();
         let local_did = translate_def_id(cdata, did);
         debug!("(get impls for mod) getting did %? for '%?'",
                local_did, name);
@@ -830,7 +827,8 @@ pub fn get_static_methods_if_impl(intr: @ident_interner,
 
     let mut impl_method_ids = ~[];
     for reader::tagged_docs(item, tag_item_impl_method) |impl_method_doc| {
-        impl_method_ids.push(parse_def_id(reader::doc_data(impl_method_doc)));
+        let impl_method_def_id: ast::def_id = impl_method_doc.decode();
+        impl_method_ids.push(impl_method_def_id);
     }
 
     let mut static_impl_methods = ~[];
@@ -1145,11 +1143,3 @@ pub fn get_link_args_for_crate(cdata: cmd) -> ~[~str] {
     }
     result
 }
-
-// Local Variables:
-// mode: rust
-// fill-column: 78;
-// indent-tabs-mode: nil
-// c-basic-offset: 4
-// buffer-file-coding-system: utf-8-unix
-// End:

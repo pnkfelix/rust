@@ -641,7 +641,7 @@ pub impl InferCtxt {
         self.ty_var_counter += 1;
         let vals = self.ty_var_bindings.vals;
         vals.insert(id, Root(Bounds { lb: None, ub: None }, 0u));
-        return TyVid(id);
+        return TyVid {id: id};
     }
 
     fn next_ty_var(@mut self) -> ty::t {
@@ -653,8 +653,8 @@ pub impl InferCtxt {
     }
 
     fn next_int_var_id(@mut self) -> IntVid {
-        IntVid(next_simple_var(&mut self.int_var_counter,
-                               &mut self.int_var_bindings))
+        IntVid {id: next_simple_var(&mut self.int_var_counter,
+                                    &mut self.int_var_bindings)}
     }
 
     fn next_int_var(@mut self) -> ty::t {
@@ -662,8 +662,8 @@ pub impl InferCtxt {
     }
 
     fn next_float_var_id(@mut self) -> FloatVid {
-        FloatVid(next_simple_var(&mut self.float_var_counter,
-                                 &mut self.float_var_bindings))
+        FloatVid {id: next_simple_var(&mut self.float_var_counter,
+                                      &mut self.float_var_bindings)}
     }
 
     fn next_float_var(@mut self) -> ty::t {
