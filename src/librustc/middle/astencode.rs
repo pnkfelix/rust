@@ -71,10 +71,6 @@ trait tr {
     fn tr(&self, xcx: @ExtendedDecodeContext) -> Self;
 }
 
-trait tr_intern {
-    fn tr_intern(&self, xcx: @ExtendedDecodeContext) -> ast::def_id;
-}
-
 // ______________________________________________________________________
 // Top-level methods.
 
@@ -202,26 +198,8 @@ pub impl ExtendedDecodeContext {
 
         decoder::translate_def_id(self.dcx.cdata, did)
     }
-    fn tr_intern_def_id(&self, did: ast::def_id) -> ast::def_id {
-        /*!
-         *
-         * Translates an INTERNAL def-id, meaning a def-id that is
-         * known to refer to some part of the item currently being
-         * inlined.  In that case, we want to convert the def-id to
-         * refer to the current crate and to the new, inlined node-id.
-         */
-
-        fail_unless!(did.crate == ast::local_crate);
-        ast::def_id { crate: ast::local_crate, node: self.tr_id(did.node) }
-    }
     fn tr_span(&self, _span: span) -> span {
         codemap::dummy_sp() // FIXME (#1972): handle span properly
-    }
-}
-
-impl tr_intern for ast::def_id {
-    fn tr_intern(&self, xcx: @ExtendedDecodeContext) -> ast::def_id {
-        xcx.tr_intern_def_id(*self)
     }
 }
 
