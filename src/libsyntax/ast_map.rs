@@ -372,7 +372,7 @@ pub fn map_stmt(stmt: @stmt, &&cx: @mut Ctx, v: visit::vt<@mut Ctx>) {
 pub fn node_id_to_str(map: map, id: node_id, itr: @ident_interner) -> ~str {
     match map.find(&id) {
       None => {
-        fmt!("unknown node (id=%d)", id)
+        fmt!("unknown node (id=%?)", id)
       }
       Some(node_item(item, path)) => {
         let path_str = path_ident_to_str(*path, item.ident, itr);

@@ -81,8 +81,8 @@ pub fn gather_loans(bccx: @BorrowckCtxt, crate: @ast::crate) -> ReqMaps {
     let glcx = @mut GatherLoanCtxt {
         bccx: bccx,
         req_maps: ReqMaps { req_loan_map: HashMap(), pure_map: HashMap() },
-        item_ub: 0,
-        root_ub: 0,
+        item_ub: ast::zero_node_id,
+        root_ub: ast::zero_node_id,
         ignore_adjustments: LinearSet::new()
     };
     let v = visit::mk_vt(@visit::Visitor {visit_expr: req_loans_in_expr,

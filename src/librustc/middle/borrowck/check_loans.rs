@@ -183,7 +183,7 @@ pub impl CheckLoanCtxt {
         let tcx = self.tcx();
 
         debug!("check_pure_callee_or_arg(pc=%?, expr=%?, \
-                callee_id=%d, ty=%s)",
+                callee_id=%?, ty=%s)",
                pc,
                opt_expr.map(|e| pprust::expr_to_str(*e, tcx.sess.intr()) ),
                callee_id,

@@ -22,7 +22,7 @@ use metadata::compact;
 type ConvertDefIdFn = &'self fn(ast::def_id) -> ast::def_id;
 
 pub fn parse_ty_data(tcx: ty::ctxt,
-                     _crate_num: int, // used only in tydecode_stage0
+                     _crate_num: ast::crate_num,
                      doc: ebml::Doc,
                      conv_def_id: ConvertDefIdFn) -> ty::t
 {
@@ -33,7 +33,7 @@ pub fn parse_ty_data(tcx: ty::ctxt,
 }
 
 pub fn parse_arg_data(tcx: ty::ctxt,
-                      _crate_num: int, // used only in tydecode_stage0
+                      _crate_num: ast::crate_num,
                       doc: ebml::Doc,
                       conv_def_id: ConvertDefIdFn) -> ty::arg
 {
@@ -44,7 +44,7 @@ pub fn parse_arg_data(tcx: ty::ctxt,
 }
 
 pub fn parse_bounds_data(tcx: ty::ctxt,
-                         _crate_num: int, // used only in tydecode_stage0
+                         _crate_num: ast::crate_num,
                          doc: ebml::Doc,
                          conv_def_id: ConvertDefIdFn) -> @~[ty::param_bound]
 {

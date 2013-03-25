@@ -283,7 +283,7 @@ pub fn llvm_type_name(cx: @CrateContext,
         an_enum => { "~enum" }
     };
     return fmt!(
-        "%s %s[#%d]",
+        "%s %s[#%?]",
           name,
         ppaux::parameterized(
             cx.tcx,

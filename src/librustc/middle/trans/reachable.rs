@@ -232,7 +232,7 @@ fn traverse_all_resources_and_impls(cx: ctx, crate_mod: &_mod) {
     visit::visit_mod(
         crate_mod,
         codemap::dummy_sp(),
-        0,
+        ast::crate_node_id,
         cx,
         visit::mk_vt(@visit::Visitor {
             visit_expr: |_e, _cx, _v| { },

@@ -414,7 +414,7 @@ pub fn constrain_regions_in_type_of_node(
     // report errors later on in the writeback phase.
     let ty = rcx.resolve_node_type(id);
     debug!("constrain_regions_in_type_of_node(\
-            ty=%s, id=%d, encl_region=%?)",
+            ty=%s, id=%?, encl_region=%?)",
            ty_to_str(tcx, ty), id, encl_region);
     constrain_regions_in_type(rcx, encl_region, span, ty)
 }

@@ -428,7 +428,7 @@ pub fn check_pat(pcx: pat_ctxt, pat: @ast::pat, expected: ty::t) {
         }
         fcx.write_ty(pat.id, typ);
 
-        debug!("(checking match) writing type for pat id %d", pat.id);
+        debug!("(checking match) writing type for pat %?", pat.id);
 
         match sub {
           Some(p) => check_pat(pcx, p, expected),

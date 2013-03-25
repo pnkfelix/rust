@@ -57,7 +57,8 @@ fn is_visible(srv: astsrv::Srv, doc: doc::ItemDoc) -> bool {
     let id = doc.id;
 
     do astsrv::exec(srv) |ctxt| {
-        match ctxt.ast_map.get(&id) {
+        let n_id = ast::node_id {repr: id};
+        match ctxt.ast_map.get(&n_id) {
             ast_map::node_item(item, _) => {
                 match item.node {
                     ast::item_impl(_, Some(_), _, _) => {

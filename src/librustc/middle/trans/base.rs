@@ -977,7 +977,7 @@ pub fn add_root_cleanup(bcx: block,
                         ty: ty::t) {
 
     debug!("add_root_cleanup(bcx=%s, \
-                             scope=%d, \
+                             scope=%?, \
                              freezes=%?, \
                              root_loc=%s, \
                              ty=%s)",
@@ -1004,7 +1004,7 @@ pub fn add_root_cleanup(bcx: block,
               _ => {
                 match bcx_sid.parent {
                   None => bcx.tcx().sess.bug(
-                      fmt!("no enclosing scope with id %d", scope_id)),
+                      fmt!("no enclosing scope with %?", scope_id)),
                   Some(bcx_par) => bcx_par
                 }
               }
@@ -1617,8 +1617,10 @@ pub fn new_fn_ctxt(ccx: @CrateContext,
                    +path: path,
                    llfndecl: ValueRef,
                    sp: Option<span>)
-                -> fn_ctxt {
-    return new_fn_ctxt_w_id(ccx, path, llfndecl, -1, None, None, sp);
+                -> fn_ctxt
+{
+    return new_fn_ctxt_w_id(ccx, path, llfndecl,
+                            ast::node_id {repr:-1}, None, None, sp);
 }
 
 // NB: must keep 4 fns in sync:
@@ -2186,7 +2188,7 @@ pub fn register_fn_fuller(ccx: @CrateContext,
                           cc: lib::llvm::CallConv,
                           llfty: TypeRef)
                        -> ValueRef {
-    debug!("register_fn_fuller creating fn for item %d with path %s",
+    debug!("register_fn_fuller creating fn for %? with path %s",
            node_id,
            ast_map::path_to_str(path, ccx.sess.parse_sess.interner));
 
@@ -2879,9 +2881,9 @@ pub fn decl_crate_map(sess: session::Session, mapmeta: LinkMeta,
                       llmod: ModuleRef) -> ValueRef {
     let targ_cfg = sess.targ_cfg;
     let int_type = T_int(targ_cfg);
-    let mut n_subcrates = 1;
+    let mut n_subcrates = ast::crate_num {repr: 1};
     let cstore = sess.cstore;
-    while cstore::have_crate_data(cstore, n_subcrates) { n_subcrates += 1; }
+    while cstore::have_crate_data(cstore, n_subcrates) { n_subcrates.repr += 1; }
     let mapname = if *sess.building_library {
         mapmeta.name.to_owned() + ~"_" + mapmeta.vers.to_owned() + ~"_"
             + mapmeta.extras_hash.to_owned()
@@ -2889,7 +2891,7 @@ pub fn decl_crate_map(sess: session::Session, mapmeta: LinkMeta,
         ~"toplevel"
     };
     let sym_name = ~"_rust_crate_map_" + mapname;
-    let arrtype = T_array(int_type, n_subcrates as uint);
+    let arrtype = T_array(int_type, n_subcrates.repr as uint);
     let maptype = T_struct(~[T_i32(), T_ptr(T_i8()), int_type, arrtype]);
     let map = str::as_c_str(sym_name, |buf| {
         unsafe {
@@ -2902,7 +2904,7 @@ pub fn decl_crate_map(sess: session::Session, mapmeta: LinkMeta,
 
 pub fn fill_crate_map(ccx: @CrateContext, map: ValueRef) {
     let mut subcrates: ~[ValueRef] = ~[];
-    let mut i = 1;
+    let mut i = ast::crate_num {repr: 1};
     let cstore = ccx.sess.cstore;
     while cstore::have_crate_data(cstore, i) {
         let cdata = cstore::get_crate_data(cstore, i);
@@ -2915,7 +2917,7 @@ pub fn fill_crate_map(ccx: @CrateContext, map: ValueRef) {
             }
         });
         subcrates.push(p2i(ccx, cr));
-        i += 1;
+        i.repr += 1;
     }
     subcrates.push(C_int(ccx, 0));
 

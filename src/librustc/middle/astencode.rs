@@ -150,9 +150,9 @@ fn reserve_id_range(sess: Session,
     // Handle the case of an empty range:
     if ast_util::empty(from_id_range) { return from_id_range; }
     let cnt = from_id_range.max - from_id_range.min;
-    let to_id_min = sess.parse_sess.next_id;
-    let to_id_max = sess.parse_sess.next_id + cnt;
-    sess.parse_sess.next_id = to_id_max;
+    let to_id_min = sess.parse_sess.next_id.repr;
+    let to_id_max = sess.parse_sess.next_id.repr + cnt;
+    sess.parse_sess.next_id = ast::node_id {repr: to_id_max};
     ast_util::id_range { min: to_id_min, max: to_id_min }
 }
 
@@ -171,7 +171,7 @@ pub impl ExtendedDecodeContext {
 
         // from_id_range should be non-empty
         fail_unless!(!ast_util::empty(self.from_id_range));
-        (id - self.from_id_range.min + self.to_id_range.min)
+        ast::node_id {repr: id.repr - self.from_id_range.min + self.to_id_range.min}
     }
     fn tr_def_id(&self, did: ast::def_id) -> ast::def_id {
         /*!
@@ -767,7 +767,7 @@ impl write_tag_and_id for writer::Encoder {
     }
 
     fn id(&self, id: ast::node_id) {
-        self.wr_tagged_u64(c::tag_table_id as uint, id as u64)
+        self.wr_tagged_u64(c::tag_table_id as uint, id.repr as u64)
     }
 }
 
@@ -794,7 +794,7 @@ fn encode_side_tables_for_id(ecx: @e::EncodeContext,
                              id: ast::node_id) {
     let tcx = ecx.tcx;
 
-    debug!("Encoding side tables for id %d", id);
+    debug!("Encoding side tables for id %?", id);
 
     for tcx.def_map.find(&id).each |def| {
         do ebml_w.tag(c::tag_table_def) {
@@ -805,7 +805,7 @@ fn encode_side_tables_for_id(ecx: @e::EncodeContext,
         }
     }
 
-    for tcx.node_types.find(&(id as uint)).each |&ty| {
+    for tcx.node_types.find(&(id.repr as uint)).each |&ty| {
         do ebml_w.tag(c::tag_table_node_type) {
             ebml_w.id(id);
             do ebml_w.tag(c::tag_table_val) {
@@ -1031,11 +1031,11 @@ fn decode_side_tables(xcx: @ExtendedDecodeContext,
     let dcx = xcx.dcx;
     let tbl_doc = ast_doc[c::tag_table as uint];
     for reader::docs(tbl_doc) |tag, entry_doc| {
-        let id0 = entry_doc[c::tag_table_id as uint].as_int();
+        let id0 = ast::node_id {repr: entry_doc[c::tag_table_id as uint].as_int()};
         let id = xcx.tr_id(id0);
 
         debug!(">> Side table document with tag 0x%x \
-                found for id %d (orig %d)",
+                found for id %? (orig %?)",
                tag, id, id0);
 
         if tag == (c::tag_table_mutbl as uint) {
@@ -1052,7 +1052,7 @@ fn decode_side_tables(xcx: @ExtendedDecodeContext,
                 let ty = val_dsr.read_ty(xcx);
                 debug!("inserting ty for node %?: %s",
                        id, ty_to_str(dcx.tcx, ty));
-                dcx.tcx.node_types.insert(id as uint, ty);
+                dcx.tcx.node_types.insert(id.repr as uint, ty);
             } else if tag == (c::tag_table_node_type_subst as uint) {
                 let tys = val_dsr.read_tys(xcx);
                 dcx.tcx.node_type_substs.insert(id, tys);
@@ -1070,7 +1070,7 @@ fn decode_side_tables(xcx: @ExtendedDecodeContext,
                 dcx.tcx.ty_param_bounds.insert(id, bounds);
             } else if tag == (c::tag_table_last_use as uint) {
                 let ids = val_dsr.read_to_vec(|| {
-                    xcx.tr_id(val_dsr.read_int())
+                    xcx.tr_id(ast::node_id {repr: val_dsr.read_int()})
                 });
                 dcx.maps.last_use_map.insert(id, @mut ids);
             } else if tag == (c::tag_table_method_map as uint) {

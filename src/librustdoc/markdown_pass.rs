@@ -205,7 +205,7 @@ fn write_header_(ctxt: &Ctxt, lvl: Hlvl, title: ~str) {
 pub fn header_kind(doc: doc::ItemTag) -> ~str {
     match doc {
       doc::ModTag(_) => {
-        if doc.id() == syntax::ast::crate_node_id {
+        if doc.id() == syntax::ast::crate_node_id.repr {
             ~"Crate"
         } else {
             ~"Module"
@@ -241,7 +241,7 @@ pub fn header_kind(doc: doc::ItemTag) -> ~str {
 pub fn header_name(doc: doc::ItemTag) -> ~str {
     let fullpath = str::connect(doc.path() + ~[doc.name()], ~"::");
     match &doc {
-      &doc::ModTag(_) if doc.id() != syntax::ast::crate_node_id => {
+      &doc::ModTag(_) if doc.id() != syntax::ast::crate_node_id.repr => {
         fullpath
       }
       &doc::NmodTag(_) => {

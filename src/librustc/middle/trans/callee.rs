@@ -288,7 +288,7 @@ pub fn trans_fn_ref_with_vtables(
         let mut (val, must_cast) =
             monomorphize::monomorphic_fn(ccx, def_id, type_params,
                                          vtables, opt_impl_did, Some(ref_id));
-        if must_cast && ref_id != 0 {
+        if must_cast && ref_id != ast::zero_node_id {
             // Monotype of the REFERENCE to the function (type params
             // are subst'd)
             let ref_ty = common::node_id_type(bcx, ref_id);
@@ -374,7 +374,8 @@ pub fn trans_lang_call(bcx: block,
     let rty = ty::ty_fn_ret(fty);
     return callee::trans_call_inner(
         bcx, None, fty, rty,
-        |bcx| trans_fn_ref_with_vtables_to_callee(bcx, did, 0, ~[], None),
+        |bcx| trans_fn_ref_with_vtables_to_callee(bcx, did, ast::zero_node_id,
+                                                  ~[], None),
         ArgVals(args), dest, DontAutorefArg);
 }
 
@@ -396,7 +397,7 @@ pub fn trans_lang_call_with_type_params(bcx: block,
         bcx, None, fty, rty,
         |bcx| {
             let callee =
-                trans_fn_ref_with_vtables_to_callee(bcx, did, 0,
+                trans_fn_ref_with_vtables_to_callee(bcx, did, ast::zero_node_id,
                                                     type_params,
                                                     None);
 

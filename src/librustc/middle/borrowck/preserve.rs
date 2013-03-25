@@ -102,7 +102,7 @@ pub impl<'self> PreserveCtxt<'self> {
 
             // When we're in a 'const &x = ...' context, self.root_ub is
             // zero and the rvalue is static, not bound to a scope.
-            let scope_region = if self.root_ub == 0 {
+            let scope_region = if self.root_ub == ast::zero_node_id {
                 ty::re_static
             } else {
                 // Maybe if we pass in the parent instead here,
@@ -355,7 +355,7 @@ pub impl<'self> PreserveCtxt<'self> {
           // scope within the fn body
           ty::re_scope(scope_id) => {
             debug!("Considering root map entry for %s: \
-                    node %d:%u -> scope_id %?, root_ub %?",
+                    node %?:%u -> scope_id %?, root_ub %?",
                    self.bccx.cmt_to_repr(cmt), base.id,
                    derefs, scope_id, self.root_ub);
             if self.bccx.is_subregion_of(self.scope_region, root_region) {

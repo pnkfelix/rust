@@ -2749,7 +2749,7 @@ pub fn br_hashmap<V:Copy>() -> HashMap<bound_region, V> {
 
 pub fn node_id_to_type(cx: ctxt, id: ast::node_id) -> t {
     //io::println(fmt!("%?/%?", id, cx.node_types.len()));
-    match cx.node_types.find(&(id as uint)) {
+    match cx.node_types.find(&(id.repr as uint)) {
        Some(&t) => t,
        None => cx.sess.bug(
            fmt!("node_id_to_type: no type for node `%s`",
@@ -3159,7 +3159,7 @@ pub fn expr_kind(tcx: ctxt,
         }
 
         ast::expr_cast(*) => {
-            match tcx.node_types.find(&(expr.id as uint)) {
+            match tcx.node_types.find(&(expr.id.repr as uint)) {
                 Some(&t) => {
                     if ty::type_is_immediate(t) {
                         RvalueDatumExpr

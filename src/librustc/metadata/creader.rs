@@ -44,7 +44,7 @@ pub fn read_crates(diag: @span_handler,
         os: os,
         statik: statik,
         crate_cache: @mut ~[],
-        next_crate_num: 1,
+        next_crate_num: ast::crate_num {repr: 1},
         intr: intr
     };
     let v =
@@ -59,7 +59,7 @@ pub fn read_crates(diag: @span_handler,
 }
 
 struct cache_entry {
-    cnum: int,
+    cnum: ast::crate_num,
     span: span,
     hash: @~str,
     metas: @~[@ast::meta_item]
@@ -225,7 +225,7 @@ fn metas_with_ident(ident: @~str, +metas: ~[@ast::meta_item])
 }
 
 fn existing_match(e: @mut Env, metas: &[@ast::meta_item], hash: @~str)
-               -> Option<int> {
+               -> Option<ast::crate_num> {
     for e.crate_cache.each |c| {
         if loader::metadata_matches(*c.metas, metas)
             && (hash.is_empty() || c.hash == hash) {
@@ -273,7 +273,7 @@ fn resolve_crate(e: @mut Env,
             hash: hash,
             metas: @linkage_metas
         });
-        e.next_crate_num += 1;
+        e.next_crate_num.repr += 1;
 
         // Now resolve the crates referenced by this crate
         let cnum_map = resolve_crate_deps(e, cdata);
@@ -297,7 +297,7 @@ fn resolve_crate(e: @mut Env,
         return cnum;
       }
       Some(cnum) => {
-        return cnum;
+          return cnum;
       }
     }
 }

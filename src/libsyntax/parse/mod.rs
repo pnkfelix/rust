@@ -56,7 +56,7 @@ pub fn new_parse_sess(demitter: Option<Emitter>) -> @mut ParseSess {
     let cm = @CodeMap::new();
     @mut ParseSess {
         cm: cm,
-        next_id: 1,
+        next_id: node_id {repr: 1},
         span_diagnostic: mk_span_handler(mk_handler(demitter), cm),
         interner: mk_ident_interner(),
     }
@@ -67,7 +67,7 @@ pub fn new_parse_sess_special_handler(sh: @span_handler,
                                    -> @mut ParseSess {
     @mut ParseSess {
         cm: cm,
-        next_id: 1,
+        next_id: node_id {repr: 1},
         span_diagnostic: sh,
         interner: mk_ident_interner(),
     }
@@ -212,9 +212,9 @@ pub fn parse_from_source_str<T>(
 
 pub fn next_node_id(sess: @mut ParseSess) -> node_id {
     let rv = sess.next_id;
-    sess.next_id += 1;
+    sess.next_id.repr += 1;
     // ID 0 is reserved for the crate and doesn't actually exist in the AST
-    fail_unless!(rv != 0);
+    fail_unless!(rv.repr != 0);
     return rv;
 }
 

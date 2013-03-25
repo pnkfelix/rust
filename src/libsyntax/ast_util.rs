@@ -362,7 +362,7 @@ pub fn operator_prec(op: ast::binop) -> uint {
 }
 
 pub fn dtor_ty() -> @ast::Ty {
-    @ast::Ty {id: 0, node: ty_nil, span: dummy_sp()}
+    @ast::Ty {id: ast::node_id {repr: 0}, node: ty_nil, span: dummy_sp()}
 }
 
 pub fn dtor_dec() -> fn_decl {
@@ -386,8 +386,8 @@ pub fn empty_generics() -> Generics {
 #[auto_encode]
 #[auto_decode]
 pub struct id_range {
-    min: node_id,
-    max: node_id,
+    min: int,
+    max: int,
 }
 
 pub fn empty(range: id_range) -> bool {
@@ -498,8 +498,8 @@ pub fn compute_id_range(visit_ids_fn: &fn(@fn(node_id))) -> id_range {
     let min = @mut int::max_value;
     let max = @mut int::min_value;
     do visit_ids_fn |id| {
-        *min = int::min(*min, id);
-        *max = int::max(*max, id + 1);
+        *min = int::min(*min, id.repr);
+        *max = int::max(*max, id.repr + 1);
     }
     id_range { min: *min, max: *max }
 }

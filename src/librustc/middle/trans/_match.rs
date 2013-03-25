@@ -512,7 +512,9 @@ pub fn enter_opt<'r>(bcx: block,
     let _indenter = indenter();
 
     let tcx = bcx.tcx();
-    let dummy = @ast::pat {id: 0, node: ast::pat_wild, span: dummy_sp()};
+    let dummy = @ast::pat {id: ast::zero_node_id,
+                           node: ast::pat_wild,
+                           span: dummy_sp()};
     do enter_match(bcx, tcx.def_map, m, col, val) |p| {
         match p.node {
             ast::pat_enum(*) |
@@ -624,7 +626,9 @@ pub fn enter_rec_or_struct(bcx: block,
            bcx.val_str(val));
     let _indenter = indenter();
 
-    let dummy = @ast::pat {id: 0, node: ast::pat_wild, span: dummy_sp()};
+    let dummy = @ast::pat {id: ast::zero_node_id,
+                           node: ast::pat_wild,
+                           span: dummy_sp()};
     do enter_match(bcx, dm, m, col, val) |p| {
         match p.node {
             ast::pat_struct(_, ref fpats, _) => {
@@ -659,7 +663,9 @@ pub fn enter_tup<'r>(bcx: block,
            bcx.val_str(val));
     let _indenter = indenter();
 
-    let dummy = @ast::pat {id: 0, node: ast::pat_wild, span: dummy_sp()};
+    let dummy = @ast::pat {id: ast::zero_node_id,
+                           node: ast::pat_wild,
+                           span: dummy_sp()};
     do enter_match(bcx, dm, m, col, val) |p| {
         match p.node {
             ast::pat_tup(/*bad*/copy elts) => {
@@ -687,7 +693,9 @@ pub fn enter_tuple_struct<'r>(bcx: block,
            bcx.val_str(val));
     let _indenter = indenter();
 
-    let dummy = @ast::pat {id: 0, node: ast::pat_wild, span: dummy_sp()};
+    let dummy = @ast::pat {id: ast::zero_node_id,
+                           node: ast::pat_wild,
+                           span: dummy_sp()};
     do enter_match(bcx, dm, m, col, val) |p| {
         match p.node {
             ast::pat_enum(_, Some(/*bad*/copy elts)) => Some(elts),
@@ -712,7 +720,9 @@ pub fn enter_box<'r>(bcx: block,
            bcx.val_str(val));
     let _indenter = indenter();
 
-    let dummy = @ast::pat {id: 0, node: ast::pat_wild, span: dummy_sp()};
+    let dummy = @ast::pat {id: ast::zero_node_id,
+                           node: ast::pat_wild,
+                           span: dummy_sp()};
     do enter_match(bcx, dm, m, col, val) |p| {
         match p.node {
             ast::pat_box(sub) => {
@@ -739,7 +749,9 @@ pub fn enter_uniq<'r>(bcx: block,
            bcx.val_str(val));
     let _indenter = indenter();
 
-    let dummy = @ast::pat {id: 0, node: ast::pat_wild, span: dummy_sp()};
+    let dummy = @ast::pat {id: ast::zero_node_id,
+                           node: ast::pat_wild,
+                           span: dummy_sp()};
     do enter_match(bcx, dm, m, col, val) |p| {
         match p.node {
             ast::pat_uniq(sub) => {
@@ -766,7 +778,9 @@ pub fn enter_region<'r>(bcx: block,
            bcx.val_str(val));
     let _indenter = indenter();
 
-    let dummy = @ast::pat { id: 0, node: ast::pat_wild, span: dummy_sp() };
+    let dummy = @ast::pat {id: ast::zero_node_id,
+                           node: ast::pat_wild,
+                           span: dummy_sp()};
     do enter_match(bcx, dm, m, col, val) |p| {
         match p.node {
             ast::pat_region(sub) => {
@@ -1294,11 +1308,11 @@ pub fn compile_submatch(bcx: block,
     let vals_left = vec::append(vec::slice(vals, 0u, col).to_vec(),
                                 vec::slice(vals, col + 1u, vals.len()));
     let ccx = *bcx.fcx.ccx;
-    let mut pat_id = 0;
+    let mut pat_id = ast::zero_node_id;
     for vec::each(m) |br| {
         // Find a real id (we're adding placeholder wildcard patterns, but
         // each column is guaranteed to have at least one real pattern)
-        if pat_id == 0 { pat_id = br.pats[col].id; }
+        if pat_id == ast::zero_node_id { pat_id = br.pats[col].id; }
     }
 
     bcx = root_pats_as_necessary(bcx, m, col, val);

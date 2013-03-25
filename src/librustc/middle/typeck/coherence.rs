@@ -773,13 +773,13 @@ pub impl CoherenceChecker {
                               .provided_methods
                               .find(&local_def(item.id)) {
                         None => {
-                            debug!("(creating impl) trait with node_id `%d` \
-                                    has no provided methods", trait_did.node);
+                            debug!("(creating impl) trait with `%?` \
+                                    has no provided methods", trait_did);
                             /* fall through */
                         }
                         Some(all_provided) => {
-                            debug!("(creating impl) trait with node_id `%d` \
-                                    has provided methods", trait_did.node);
+                            debug!("(creating impl) trait with `%?` \
+                                    has provided methods", trait_did);
                             // Add all provided methods.
                             add_provided_methods(
                                 &mut methods,
@@ -950,7 +950,7 @@ pub impl CoherenceChecker {
             self.add_impls_for_module(impls_seen,
                                       crate_store,
                                       def_id { crate: crate_number,
-                                               node: 0 });
+                                               node: ast::crate_node_id });
 
             for each_path(crate_store, crate_number) |_p, def_like| {
                 match def_like {

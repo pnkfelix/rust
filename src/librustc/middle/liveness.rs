@@ -351,7 +351,7 @@ pub impl IrMaps {
         let ln = self.add_live_node(lnk);
         self.live_node_map.insert(node_id, ln);
 
-        debug!("%s is node %d", ln.to_str(), node_id);
+        debug!("%s is node %?", ln.to_str(), node_id);
     }
 
     fn add_variable(&mut self, vk: VarKind) -> Variable {
@@ -377,7 +377,7 @@ pub impl IrMaps {
           Some(var) => var,
           None => {
             self.tcx.sess.span_bug(
-                span, fmt!("No variable registered for id %d", node_id));
+                span, fmt!("No variable registered for id %?", node_id));
           }
         }
     }
@@ -409,7 +409,7 @@ pub impl IrMaps {
 
     fn add_last_use(&mut self, expr_id: node_id, var: Variable) {
         let vk = self.var_kinds[*var];
-        debug!("Node %d is a last use of variable %?", expr_id, vk);
+        debug!("Node %? is a last use of variable %?", expr_id, vk);
         match vk {
           Arg(id, _, by_copy) |
           Local(LocalInfo {id: id, kind: FromLetNoInitializer, _}) |
@@ -441,7 +441,7 @@ fn visit_fn(fk: &visit::fn_kind,
             id: node_id,
             &&self: @mut IrMaps,
             v: vt<@mut IrMaps>) {
-    debug!("visit_fn: id=%d", id);
+    debug!("visit_fn: id=%?", id);
     let _i = ::util::common::indenter();
 
     // swap in a new set of IR maps for this function body:
@@ -457,7 +457,7 @@ fn visit_fn(fk: &visit::fn_kind,
         let mode = ty::resolved_mode(self.tcx, arg.mode);
         do pat_util::pat_bindings(self.tcx.def_map, arg.pat)
                 |_bm, arg_id, _x, path| {
-            debug!("adding argument %d", arg_id);
+            debug!("adding argument %?", arg_id);
             let ident = ast_util::path_to_ident(path);
             fn_maps.add_variable(Arg(arg_id, ident, mode));
         }
@@ -522,7 +522,7 @@ fn visit_fn(fk: &visit::fn_kind,
 fn visit_local(local: @local, &&self: @mut IrMaps, vt: vt<@mut IrMaps>) {
     let def_map = self.tcx.def_map;
     do pat_util::pat_bindings(def_map, local.node.pat) |_bm, p_id, sp, path| {
-        debug!("adding local variable %d", p_id);
+        debug!("adding local variable %?", p_id);
         let name = ast_util::path_to_ident(path);
         self.add_live_node_for_node(p_id, VarDefNode(sp));
         let kind = match local.node.init {
@@ -543,7 +543,7 @@ fn visit_arm(arm: &arm, &&self: @mut IrMaps, vt: vt<@mut IrMaps>) {
     let def_map = self.tcx.def_map;
     for arm.pats.each |pat| {
         do pat_util::pat_bindings(def_map, *pat) |bm, p_id, sp, path| {
-            debug!("adding local variable %d from match with bm %?",
+            debug!("adding local variable %? from match with bm %?",
                    p_id, bm);
             let name = ast_util::path_to_ident(path);
             self.add_live_node_for_node(p_id, VarDefNode(sp));
@@ -563,7 +563,7 @@ fn visit_expr(expr: @expr, &&self: @mut IrMaps, vt: vt<@mut IrMaps>) {
       // live nodes required for uses or definitions of variables:
       expr_path(_) => {
         let def = self.tcx.def_map.get(&expr.id);
-        debug!("expr %d: path that leads to %?", expr.id, def);
+        debug!("expr %?: path that leads to %?", expr.id, def);
         if relevant_def(def).is_some() {
             self.add_live_node_for_node(expr.id, ExprNode(expr.span));
         }
@@ -699,7 +699,7 @@ pub impl Liveness {
             // code have to agree about which AST nodes are worth
             // creating liveness nodes for.
             self.tcx.sess.span_bug(
-                span, fmt!("No live node registered for node %d",
+                span, fmt!("No live node registered for node %?",
                            node_id));
           }
         }
@@ -993,7 +993,7 @@ pub impl Liveness {
               || { self.propagate_through_fn_block(decl, body) });
 
         // hack to skip the loop unless debug! is enabled:
-        debug!("^^ liveness computation results for body %d (entry=%s)",
+        debug!("^^ liveness computation results for body %? (entry=%s)",
                {
                    for uint::range(0u, self.ir.num_live_nodes) |ln_idx| {
                        debug!("%s", self.ln_str(LiveNode(ln_idx)));
@@ -1498,7 +1498,7 @@ pub impl Liveness {
             self.merge_from_succ(ln, succ, first_merge);
             first_merge = false;
         }
-        debug!("propagate_through_loop: using id for loop body %d %s",
+        debug!("propagate_through_loop: using id for loop body %? %s",
                expr.id, block_to_str(body, self.tcx.sess.intr()));
 
         let cond_ln = self.propagate_through_opt_expr(cond, ln);
@@ -1524,7 +1524,7 @@ pub impl Liveness {
                           break_ln: LiveNode,
                           cont_ln: LiveNode,
                           f: &fn() -> R) -> R {
-      debug!("with_loop_nodes: %d %u", loop_node_id, *break_ln);
+      debug!("with_loop_nodes: %? %u", loop_node_id, *break_ln);
         self.loop_scope.push(loop_node_id);
         self.break_ln.insert(loop_node_id, break_ln);
         self.cont_ln.insert(loop_node_id, cont_ln);

@@ -49,11 +49,12 @@ fn fold_mod(
 }
 
 fn is_hidden(srv: astsrv::Srv, doc: doc::ItemDoc) -> bool {
-    use syntax::ast_map;
+    use syntax::{ast, ast_map};
 
     let id = doc.id;
     do astsrv::exec(srv) |ctxt| {
-        let attrs = match ctxt.ast_map.get(&id) {
+        let n_id = ast::node_id {repr: id};
+        let attrs = match ctxt.ast_map.get(&n_id) {
           ast_map::node_item(item, _) => copy item.attrs,
           _ => ~[]
         };

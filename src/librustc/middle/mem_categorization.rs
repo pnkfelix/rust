@@ -397,7 +397,7 @@ pub impl mem_categorization_ctxt {
     }
 
     fn cat_expr_unadjusted(&self, expr: @ast::expr) -> cmt {
-        debug!("cat_expr: id=%d expr=%s",
+        debug!("cat_expr: id=%? expr=%s",
                expr.id, pprust::expr_to_str(expr, self.tcx.sess.intr()));
 
         let tcx = self.tcx;
@@ -885,7 +885,7 @@ pub impl mem_categorization_ctxt {
 
 
         let tcx = self.tcx;
-        debug!("cat_pattern: id=%d pat=%s cmt=%s",
+        debug!("cat_pattern: id=%? pat=%s cmt=%s",
                pat.id, pprust::pat_to_str(pat, tcx.sess.intr()),
                self.cmt_to_repr(cmt));
         let _i = indenter();
@@ -990,10 +990,10 @@ pub impl mem_categorization_ctxt {
           cat_special(sk_heap_upvar) => ~"heap-upvar",
           cat_stack_upvar(_) => ~"stack-upvar",
           cat_rvalue => ~"rvalue",
-          cat_local(node_id) => fmt!("local(%d)", node_id),
-          cat_binding(node_id) => fmt!("binding(%d)", node_id),
-          cat_arg(node_id) => fmt!("arg(%d)", node_id),
-          cat_self(node_id) => fmt!("self(%d)", node_id),
+          cat_local(node_id) => fmt!("local(%?)", node_id),
+          cat_binding(node_id) => fmt!("binding(%?)", node_id),
+          cat_arg(node_id) => fmt!("arg(%?)", node_id),
+          cat_self(node_id) => fmt!("self(%?)", node_id),
           cat_deref(cmt, derefs, ptr) => {
             fmt!("%s->(%s, %u)", self.cat_to_repr(cmt.cat),
                  self.ptr_sigil(ptr), derefs)
@@ -1035,10 +1035,10 @@ pub impl mem_categorization_ctxt {
     fn lp_to_str(&self, lp: @loan_path) -> ~str {
         match *lp {
           lp_local(node_id) => {
-            fmt!("local(%d)", node_id)
+            fmt!("local(%?)", node_id)
           }
           lp_arg(node_id) => {
-            fmt!("arg(%d)", node_id)
+            fmt!("arg(%?)", node_id)
           }
           lp_self => ~"self",
           lp_deref(lp, ptr) => {
@@ -1053,7 +1053,7 @@ pub impl mem_categorization_ctxt {
     }
 
     fn cmt_to_repr(&self, cmt: cmt) -> ~str {
-        fmt!("{%s id:%d m:%? lp:%s ty:%s}",
+        fmt!("{%s id:%? m:%? lp:%s ty:%s}",
              self.cat_to_repr(cmt.cat),
              cmt.id,
              cmt.mutbl,

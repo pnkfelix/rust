@@ -205,7 +205,7 @@ pub fn parent_id(cx: ctxt, span: span) -> ast::node_id {
 /// Records the current parent (if any) as the parent of `child_id`.
 pub fn record_parent(cx: ctxt, child_id: ast::node_id) {
     for cx.parent.each |parent_id| {
-        debug!("parent of node %d is node %d", child_id, *parent_id);
+        debug!("parent of node %? is node %?", child_id, *parent_id);
         cx.region_map.insert(child_id, *parent_id);
     }
 }
@@ -270,12 +270,12 @@ pub fn resolve_expr(expr: @ast::expr, cx: ctxt, visitor: visit::vt<ctxt>) {
       // ast::expr_index(*) | ast::expr_binary(*) |
       // ast::expr_unary(*) |
       ast::expr_call(*) | ast::expr_method_call(*) => {
-        debug!("node %d: %s", expr.id, pprust::expr_to_str(expr,
+        debug!("node %?: %s", expr.id, pprust::expr_to_str(expr,
                                                            cx.sess.intr()));
         new_cx.parent = Some(expr.id);
       }
       ast::expr_match(*) => {
-        debug!("node %d: %s", expr.id, pprust::expr_to_str(expr,
+        debug!("node %?: %s", expr.id, pprust::expr_to_str(expr,
                                                            cx.sess.intr()));
         new_cx.parent = Some(expr.id);
       }
@@ -333,7 +333,7 @@ pub fn resolve_fn(fk: &visit::fn_kind,
         _ => {}
     }
 
-    debug!("visiting fn with body %d. cx.parent: %? \
+    debug!("visiting fn with body %?. cx.parent: %? \
             fn_cx.parent: %?",
            body.node.id, cx.parent, fn_cx.parent);
 
@@ -462,8 +462,8 @@ pub impl DetermineRpCtxt {
     /// Records that item `id` is region-parameterized with the
     /// variance `variance`.  If `id` was already parameterized, then
     /// the new variance is joined with the old variance.
-    fn add_rp(&mut self, id: ast::node_id, variance: region_variance) {
-        fail_unless!(id != 0);
+    fn add_rp(&mut self, +id: ast::node_id, +variance: region_variance) {
+        fail_unless!(id != ast::zero_node_id);
         let old_variance = self.region_paramd_items.find(&id);
         let joined_variance = match old_variance {
           None => variance,
@@ -488,7 +488,7 @@ pub impl DetermineRpCtxt {
     /// contains a value of type `from`, so if `from` is
     /// region-parameterized, so is the current item.
     fn add_dep(&mut self, from: ast::node_id) {
-        debug!("add dependency from %d -> %d (%s -> %s) with variance %?",
+        debug!("add dependency from %? -> %? (%s -> %s) with variance %?",
                from, self.item_id,
                ast_map::node_id_to_str(self.ast_map, from,
                                        self.sess.parse_sess.interner),
@@ -565,17 +565,17 @@ pub impl DetermineRpCtxt {
     }
 
     fn with(@mut self,
-            item_id: ast::node_id,
-            anon_implies_rp: bool,
-            self_implies_rp: bool,
-            f: &fn()) {
+            +item_id: ast::node_id,
+            +anon_implies_rp: bool,
+            +self_implies_rp: bool,
+            +f: &fn()) {
         let old_item_id = self.item_id;
         let old_anon_implies_rp = self.anon_implies_rp;
         let old_self_implies_rp = self.self_implies_rp;
         self.item_id = item_id;
         self.anon_implies_rp = anon_implies_rp;
         self.self_implies_rp = self_implies_rp;
-        debug!("with_item_id(%d, %b, %b)",
+        debug!("with_item_id(%?, %b, %b)",
                item_id,
                anon_implies_rp,
                self_implies_rp);
@@ -642,7 +642,7 @@ pub fn determine_rp_in_ty(ty: @ast::Ty,
     // be region-parameterized.  if cx.item_id is zero, then this type
     // is not a member of a type defn nor is it a constitutent of an
     // impl etc.  So we can ignore it and its components.
-    if cx.item_id == 0 { return; }
+    if cx.item_id == ast::zero_node_id { return; }
 
     // if this type directly references a region pointer like &'r ty,
     // add to the worklist/set.  Note that &'r ty is contravariant with
@@ -792,7 +792,7 @@ pub fn determine_rp_in_crate(sess: Session,
         region_paramd_items: HashMap(),
         dep_map: HashMap(),
         worklist: ~[],
-        item_id: 0,
+        item_id: ast::zero_node_id,
         anon_implies_rp: false,
         self_implies_rp: true,
         ambient_variance: rv_covariant
@@ -823,7 +823,7 @@ pub fn determine_rp_in_crate(sess: Session,
         while cx.worklist.len() != 0 {
             let c_id = cx.worklist.pop();
             let c_variance = cx.region_paramd_items.get(&c_id);
-            debug!("popped %d from worklist", c_id);
+            debug!("popped %? from worklist", c_id);
             match cx.dep_map.find(&c_id) {
               None => {}
               Some(deps) => {

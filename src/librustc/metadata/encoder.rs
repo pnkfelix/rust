@@ -165,9 +165,6 @@ fn encode_family(ebml_w: writer::Encoder, c: char) {
     ebml_w.end_tag();
 }
 
-// This should not be needed once we have snapshotted.
-pub fn _def_to_str(did: def_id) -> ~str { fmt!("%d:%d", did.crate, did.node) }
-
 fn encode_ty_type_param_bounds(ebml_w: writer::Encoder,
                                _ecx: @EncodeContext,
                                params: @~[ty::param_bounds]) {
@@ -218,7 +215,7 @@ fn encode_symbol(ecx: @EncodeContext, ebml_w: writer::Encoder, id: node_id) {
         }
         None => {
             ecx.diag.handler().bug(
-                fmt!("encode_symbol: id not found %d", id));
+                fmt!("encode_symbol: id not found %?", id));
         }
     }
     ebml_w.end_tag();
@@ -256,7 +253,7 @@ fn encode_enum_variant_info(ecx: @EncodeContext, ebml_w: writer::Encoder,
     let vi = ty::enum_variants(ecx.tcx,
                                ast::def_id { crate: local_crate, node: id });
     for variants.each |variant| {
-        index.push(entry {val: variant.node.id, pos: ebml_w.writer.tell()});
+        index.push(entry {val: variant.node.id.repr, pos: ebml_w.writer.tell()});
         ebml_w.start_tag(tag_items_data_item);
         encode_def_id(ebml_w, local_def(variant.node.id));
         encode_family(ebml_w, 'v');
@@ -314,7 +311,7 @@ fn encode_info_for_mod(ecx: @EncodeContext, ebml_w: writer::Encoder,
     encode_def_id(ebml_w, local_def(id));
     encode_family(ebml_w, 'm');
     encode_name(ecx, ebml_w, name);
-    debug!("(encoding info for module) encoding info for module ID %d", id);
+    debug!("(encoding info for module) encoding info for module ID %?", id);
 
     // Encode info about all the module children.
     for md.items.each |item| {
@@ -339,12 +336,12 @@ fn encode_info_for_mod(ecx: @EncodeContext, ebml_w: writer::Encoder,
     encode_path(ecx, ebml_w, path, ast_map::path_mod(name));
 
     // Encode the reexports of this module.
-    debug!("(encoding info for module) encoding reexports for %d", id);
+    debug!("(encoding info for module) encoding reexports for %?", id);
     match ecx.reexports2.find(&id) {
         Some(ref exports) => {
-            debug!("(encoding info for module) found reexports for %d", id);
+            debug!("(encoding info for module) found reexports for %?", id);
             for exports.each |exp| {
-                debug!("(encoding info for module) reexport '%s' for %d",
+                debug!("(encoding info for module) reexport '%s' for %?",
                        *exp.name, id);
                 ebml_w.start_tag(tag_items_data_item_reexport);
                 ebml_w.start_tag(tag_items_data_item_reexport_def_id);
@@ -357,7 +354,7 @@ fn encode_info_for_mod(ecx: @EncodeContext, ebml_w: writer::Encoder,
             }
         }
         None => {
-            debug!("(encoding info for module) found no reexports for %d",
+            debug!("(encoding info for module) found no reexports for %?",
                    id);
         }
     }
@@ -460,10 +457,10 @@ fn encode_info_for_struct(ecx: @EncodeContext, ebml_w: writer::Encoder,
         };
 
         let id = field.node.id;
-        index.push(entry {val: id, pos: ebml_w.writer.tell()});
-        global_index.push(entry {val: id, pos: ebml_w.writer.tell()});
+        index.push(entry {val: id.repr, pos: ebml_w.writer.tell()});
+        global_index.push(entry {val: id.repr, pos: ebml_w.writer.tell()});
         ebml_w.start_tag(tag_items_data_item);
-        debug!("encode_info_for_struct: doing %s %d",
+        debug!("encode_info_for_struct: doing %s %?",
                *tcx.sess.str_of(nm), id);
         encode_struct_field_family(ebml_w, vis);
         encode_name(ecx, ebml_w, nm);
@@ -490,7 +487,7 @@ fn encode_info_for_ctor(ecx: @EncodeContext,
         encode_family(ebml_w, purity_fn_family(ast::impure_fn));
         encode_type_param_bounds(ebml_w, ecx, &generics.ty_params);
         let its_ty = node_id_to_type(ecx.tcx, id);
-        debug!("fn name = %s ty = %s its node id = %d",
+        debug!("fn name = %s ty = %s its node id = %?",
                *ecx.tcx.sess.str_of(ident),
                ty_to_str(ecx.tcx, its_ty), id);
         encode_type(ecx, ebml_w, its_ty);
@@ -512,7 +509,7 @@ fn encode_info_for_struct_ctor(ecx: @EncodeContext,
                                name: ast::ident,
                                ctor_id: node_id,
                                index: @mut ~[entry<int>]) {
-    index.push(entry { val: ctor_id, pos: ebml_w.writer.tell() });
+    index.push(entry { val: ctor_id.repr, pos: ebml_w.writer.tell() });
 
     ebml_w.start_tag(tag_items_data_item);
     encode_def_id(ebml_w, local_def(ctor_id));
@@ -537,7 +534,7 @@ fn encode_info_for_method(ecx: @EncodeContext,
                           parent_visibility: ast::visibility,
                           owner_generics: &ast::Generics,
                           method_generics: &ast::Generics) {
-    debug!("encode_info_for_method: %d %s %u %u", m.id,
+    debug!("encode_info_for_method: %? %s %u %u", m.id,
            *ecx.tcx.sess.str_of(m.ident),
            owner_generics.ty_params.len(),
            method_generics.ty_params.len());
@@ -621,7 +618,7 @@ fn encode_info_for_item(ecx: @EncodeContext, ebml_w: writer::Encoder,
 
     fn add_to_index_(item: @item, ebml_w: writer::Encoder,
                      index: @mut ~[entry<int>]) {
-        index.push(entry { val: item.id, pos: ebml_w.writer.tell() });
+        index.push(entry { val: item.id.repr, pos: ebml_w.writer.tell() });
     }
     let add_to_index: &fn() = || add_to_index_(item, ebml_w, index);
 
@@ -714,7 +711,7 @@ fn encode_info_for_item(ecx: @EncodeContext, ebml_w: writer::Encoder,
                                          struct_def.fields, index);
         /* Encode the dtor */
         for struct_def.dtor.each |dtor| {
-            index.push(entry {val: dtor.node.id, pos: ebml_w.writer.tell()});
+            index.push(entry {val: dtor.node.id.repr, pos: ebml_w.writer.tell()});
           encode_info_for_ctor(ecx,
                                ebml_w,
                                dtor.node.id,
@@ -841,7 +838,7 @@ fn encode_info_for_item(ecx: @EncodeContext, ebml_w: writer::Encoder,
         };
 
         for methods.each |m| {
-            index.push(entry {val: m.id, pos: ebml_w.writer.tell()});
+            index.push(entry {val: m.id.repr, pos: ebml_w.writer.tell()});
             encode_info_for_method(ecx,
                                    ebml_w,
                                    impl_path,
@@ -916,7 +913,7 @@ fn encode_info_for_item(ecx: @EncodeContext, ebml_w: writer::Encoder,
             let ty_m = ast_util::trait_method_to_ty_method(m);
             if ty_m.self_ty.node != ast::sty_static { loop; }
 
-            index.push(entry { val: ty_m.id, pos: ebml_w.writer.tell() });
+            index.push(entry { val: ty_m.id.repr, pos: ebml_w.writer.tell() });
 
             ebml_w.start_tag(tag_items_data_item);
             encode_def_id(ebml_w, local_def(ty_m.id));
@@ -940,7 +937,7 @@ fn encode_info_for_item(ecx: @EncodeContext, ebml_w: writer::Encoder,
 
         // Finally, output all the provided methods as items.
         for provided_methods.each |m| {
-            index.push(entry { val: m.id, pos: ebml_w.writer.tell() });
+            index.push(entry { val: m.id.repr, pos: ebml_w.writer.tell() });
 
             // We do not concatenate the generics of the owning impl and that
             // of provided methods.  I am not sure why this is. -ndm
@@ -968,7 +965,7 @@ fn encode_info_for_foreign_item(ecx: @EncodeContext,
                                 +path: ast_map::path,
                                 abi: foreign_abi) {
     if !reachable(ecx, nitem.id) { return; }
-    index.push(entry { val: nitem.id, pos: ebml_w.writer.tell() });
+    index.push(entry { val: nitem.id.repr, pos: ebml_w.writer.tell() });
 
     ebml_w.start_tag(tag_items_data_item);
     match nitem.node {
@@ -999,7 +996,7 @@ fn encode_info_for_items(ecx: @EncodeContext, ebml_w: writer::Encoder,
                          crate: &crate) -> ~[entry<int>] {
     let index = @mut ~[];
     ebml_w.start_tag(tag_items_data);
-    index.push(entry { val: crate_node_id, pos: ebml_w.writer.tell() });
+    index.push(entry { val: crate_node_id.repr, pos: ebml_w.writer.tell() });
     encode_info_for_mod(ecx, ebml_w, &crate.node.module,
                         crate_node_id, ~[],
                         syntax::parse::token::special_idents::invalid);
@@ -1212,12 +1209,12 @@ fn encode_crate_deps(ecx: @EncodeContext,
         };
 
         // Sort by cnum
-        std::sort::quick_sort(deps, |kv1, kv2| kv1.cnum <= kv2.cnum);
+        std::sort::quick_sort(deps, |kv1, kv2| kv1.cnum.repr <= kv2.cnum.repr);
 
         // Sanity-check the crate numbers
         let mut expected_cnum = 1;
         for deps.each |n| {
-            fail_unless!((n.cnum == expected_cnum));
+            fail_unless!((n.cnum.repr == expected_cnum));
             expected_cnum += 1;
         }
 
@@ -1251,7 +1248,7 @@ fn encode_lang_items(ecx: @EncodeContext, ebml_w: writer::Encoder) {
         ebml_w.end_tag();   // tag_lang_items_item_id
 
         ebml_w.start_tag(tag_lang_items_item_node_id);
-        ebml_w.writer.write_be_u32(def_id.node as u32);
+        ebml_w.writer.write_be_u32(def_id.node.repr as u32);
         ebml_w.end_tag();   // tag_lang_items_item_node_id
 
         ebml_w.end_tag();   // tag_lang_items_item

@@ -115,7 +115,7 @@ fn fold_mod(
 
     let doc = fold::default_any_fold_mod(fold, doc);
 
-    if doc.id() != ast::crate_node_id {
+    if doc.id() != ast::crate_node_id.repr {
 
         let doc = strip_mod(copy doc);
         let page = doc::ItemPage(doc::ModTag(doc));

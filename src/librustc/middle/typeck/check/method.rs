@@ -688,9 +688,8 @@ pub impl<'self> LookupContext<'self> {
             trait_def_id: def_id,
             methods: &mut ~[@ProvidedMethodInfo]) {
         debug!("(pushing candidates from provided methods) considering trait \
-                id %d:%d",
-               trait_def_id.crate,
-               trait_def_id.node);
+                id %?",
+               trait_def_id);
 
         for methods.each |provided_method_info| {
             if provided_method_info.method_info.ident != self.m_name { loop; }
@@ -785,7 +784,7 @@ pub impl<'self> LookupContext<'self> {
             None => None,
             Some(mme) => {
                 debug!("(searching for autoderef'd method) writing \
-                       adjustment (%u) to %d",
+                       adjustment (%u) to %?",
                        autoderefs,
                        self.self_expr.id);
                 self.fcx.write_adjustment(self.self_expr.id, @autoadjust);

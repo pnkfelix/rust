@@ -69,7 +69,7 @@ fn fold_item(fold: &fold::Fold<Ctxt>, doc: doc::ItemDoc) -> doc::ItemDoc {
 
 #[allow(non_implicitly_copyable_typarams)]
 fn fold_mod(fold: &fold::Fold<Ctxt>, doc: doc::ModDoc) -> doc::ModDoc {
-    let is_topmod = doc.id() == ast::crate_node_id;
+    let is_topmod = doc.id() == ast::crate_node_id.repr;
 
     if !is_topmod { fold.ctxt.path.push(doc.name()); }
     let doc = fold::default_any_fold_mod(fold, doc);

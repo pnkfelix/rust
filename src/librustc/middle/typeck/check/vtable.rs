@@ -489,7 +489,7 @@ pub fn connect_trait_tps(vcx: &VtableContext,
 pub fn insert_vtables(fcx: @mut FnCtxt,
                       callee_id: ast::node_id,
                       vtables: vtable_res) {
-    debug!("insert_vtables(callee_id=%d, vtables=%?)",
+    debug!("insert_vtables(callee_id=%?, vtables=%?)",
            callee_id, vtables.map(|v| v.to_str(fcx.tcx())));
     fcx.inh.vtable_map.insert(callee_id, vtables);
 }

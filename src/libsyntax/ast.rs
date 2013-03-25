@@ -12,6 +12,7 @@
 
 use codemap::{span, FileName, spanned};
 
+use core; // NOTE needed by #[deriving(IterBytes)]
 use core::cast;
 use core::option::{None, Option, Some};
 use core::task;
@@ -120,9 +121,19 @@ pub struct path {
     types: ~[@Ty],
 }
 
-pub type crate_num = int;
+#[auto_encode]
+#[auto_decode]
+#[deriving(Eq, IterBytes)]
+pub struct crate_num {
+    repr: int
+}
 
-pub type node_id = int;
+#[auto_encode]
+#[auto_decode]
+#[deriving(Eq, IterBytes)]
+pub struct node_id {
+    repr: int
+}
 
 #[auto_encode]
 #[auto_decode]
@@ -132,8 +143,9 @@ pub struct def_id {
     node: node_id,
 }
 
-pub static local_crate: crate_num = 0;
-pub static crate_node_id: node_id = 0;
+pub static local_crate: crate_num = crate_num { repr: 0 };
+pub static crate_node_id: node_id = node_id { repr: 0 };
+pub static zero_node_id: node_id = node_id { repr: 0 };
 
 #[auto_encode]
 #[auto_decode]

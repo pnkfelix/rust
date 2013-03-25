@@ -250,7 +250,8 @@ pub fn ensure_trait_methods(ccx: &CrateCtxt,
         // build up a subst that shifts all of the parameters over
         // by one and substitute in a new type param for self
 
-        let dummy_defid = ast::def_id {crate: 0, node: 0};
+        let dummy_defid = ast::def_id {crate: ast::local_crate,
+                                       node: ast::zero_node_id};
 
         let non_shifted_trait_tps = do vec::from_fn(trait_bounds.len()) |i| {
             ty::mk_param(ccx.tcx, i, dummy_defid)
@@ -461,7 +462,8 @@ pub fn compare_impl_method(tcx: ty::ctxt,
         let dummy_tps = do vec::from_fn((*trait_m.tps).len()) |i| {
             // hack: we don't know the def id of the impl tp, but it
             // is not important for unification
-            ty::mk_param(tcx, i + impl_tps, ast::def_id {crate: 0, node: 0})
+            ty::mk_param(tcx, i + impl_tps, ast::def_id {crate: ast::local_crate,
+                                                         node: ast::zero_node_id})
         };
         let trait_tps = trait_substs.tps.map(
             |t| replace_bound_self(tcx, *t, dummy_self_r));
@@ -616,7 +618,7 @@ pub fn ensure_no_ty_param_bounds(ccx: &CrateCtxt,
 pub fn convert(ccx: &CrateCtxt, it: @ast::item) {
     let tcx = ccx.tcx;
     let rp = tcx.region_paramd_items.find(&it.id);
-    debug!("convert: item %s with id %d rp %?",
+    debug!("convert: item %s with id %? rp %?",
            *tcx.sess.str_of(it.ident), it.id, rp);
     match it.node {
       // These don't define types.
@@ -649,7 +651,7 @@ pub fn convert(ccx: &CrateCtxt, it: @ast::item) {
       }
       ast::item_trait(ref generics, ref supertraits, ref trait_methods) => {
         let tpt = ty_of_item(ccx, it);
-        debug!("item_trait(it.id=%d, tpt.ty=%s)",
+        debug!("item_trait(it.id=%?, tpt.ty=%s)",
                it.id, ppaux::ty_to_str(tcx, tpt.ty));
         write_ty_to_tcx(tcx, it.id, tpt.ty);
         ensure_trait_methods(ccx, it.id, tpt.ty);
@@ -848,7 +850,7 @@ pub fn ty_of_item(ccx: &CrateCtxt, it: @ast::item)
             region_param: None,
             ty: ty::mk_bare_fn(ccx.tcx, tofd)
         };
-        debug!("type of %s (id %d) is %s",
+        debug!("type of %s (id %?) is %s",
                *tcx.sess.str_of(it.ident),
                it.id,
                ppaux::ty_to_str(tcx, tpt.ty));

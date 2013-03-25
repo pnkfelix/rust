@@ -94,7 +94,7 @@ fn fold_item(
     let srv = fold.ctxt.clone();
     let doc = fold::default_seq_fold_item(fold, doc);
 
-    let desc = if doc.id == ast::crate_node_id {
+    let desc = if doc.id == ast::crate_node_id.repr {
         // This is the top-level mod, use the crate attributes
         do astsrv::exec(srv) |ctxt| {
             attr_parser::parse_desc(copy ctxt.ast.node.attrs)
@@ -114,7 +114,8 @@ fn parse_item_attrs<T:Owned>(
     id: doc::AstId,
     parse_attrs: ~fn(a: ~[ast::attribute]) -> T) -> T {
     do astsrv::exec(srv) |ctxt| {
-        let attrs = match ctxt.ast_map.get(&id) {
+        let node_id = ast::node_id {repr: id};
+        let attrs = match ctxt.ast_map.get(&node_id) {
           ast_map::node_item(item, _) => copy item.attrs,
           ast_map::node_foreign_item(item, _, _, _) => copy item.attrs,
           _ => fail!(~"parse_item_attrs: not an item")
@@ -162,7 +163,8 @@ fn fold_enum(
             let desc = {
                 let variant = copy variant;
                 do astsrv::exec(srv.clone()) |ctxt| {
-                    match ctxt.ast_map.get(&doc_id) {
+                    let n_doc_id = ast::node_id {repr: doc_id};
+                    match ctxt.ast_map.get(&n_doc_id) {
                         ast_map::node_item(@ast::item {
                             node: ast::item_enum(ref enum_definition, _), _
                         }, _) => {
@@ -226,7 +228,8 @@ fn merge_method_attrs(
 
     // Create an assoc list from method name to attributes
     let attrs: ~[(~str, Option<~str>)] = do astsrv::exec(srv) |ctxt| {
-        match ctxt.ast_map.get(&item_id) {
+        let n_item_id = ast::node_id { repr: item_id };
+        match ctxt.ast_map.get(&n_item_id) {
           ast_map::node_item(@ast::item {
             node: ast::item_trait(_, _, ref methods), _
           }, _) => {

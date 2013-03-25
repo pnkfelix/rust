@@ -123,6 +123,7 @@ use std::oldmap::HashMap;
 use std::oldmap;
 use syntax::ast::{provided, required, ty_i};
 use syntax::ast;
+use syntax::ast::zero_node_id;
 use syntax::ast_map;
 use syntax::ast_util::{Private, Public, is_local, local_def};
 use syntax::ast_util;
@@ -555,7 +556,7 @@ pub fn check_struct(ccx: @mut CrateCtxt,
 }
 
 pub fn check_item(ccx: @mut CrateCtxt, it: @ast::item) {
-    debug!("check_item(it.id=%d, it.ident=%s)",
+    debug!("check_item(it.id=%?, it.ident=%s)",
            it.id,
            ty::item_path_str(ccx.tcx, local_def(it.id)));
     let _indenter = indenter();
@@ -573,7 +574,7 @@ pub fn check_item(ccx: @mut CrateCtxt, it: @ast::item) {
       }
       ast::item_impl(_, _, ty, ref ms) => {
         let rp = ccx.tcx.region_paramd_items.find(&it.id);
-        debug!("item_impl %s with id %d rp %?",
+        debug!("item_impl %s with id %? rp %?",
                *ccx.tcx.sess.str_of(it.ident), it.id, rp);
         let self_ty = ccx.to_ty(&rscope::type_rscope(rp), ty);
         for ms.each |m| {
@@ -699,14 +700,14 @@ pub impl FnCtxt {
 
     #[inline(always)]
     fn write_ty(&self, node_id: ast::node_id, ty: ty::t) {
-        debug!("write_ty(%d, %s) in fcx %s",
+        debug!("write_ty(%?, %s) in fcx %s",
                node_id, ppaux::ty_to_str(self.tcx(), ty), self.tag());
         self.inh.node_types.insert(node_id, ty);
     }
 
     fn write_substs(&self, node_id: ast::node_id, +substs: ty::substs) {
         if !ty::substs_is_noop(&substs) {
-            debug!("write_substs(%d, %s) in fcx %s",
+            debug!("write_substs(%?, %s) in fcx %s",
                    node_id,
                    ty::substs_to_str(self.tcx(), &substs),
                    self.tag());
@@ -779,7 +780,7 @@ pub impl FnCtxt {
             Some(t) => t,
             None => {
                 self.tcx().sess.bug(
-                    fmt!("no type for node %d: %s in fcx %s",
+                    fmt!("no type for node %?: %s in fcx %s",
                          id, ast_map::node_id_to_str(
                              self.tcx().items, id,
                              self.tcx().sess.parse_sess.interner),
@@ -792,7 +793,7 @@ pub impl FnCtxt {
             Some(ref ts) => (/*bad*/copy *ts),
             None => {
                 self.tcx().sess.bug(
-                    fmt!("no type substs for node %d: %s in fcx %s",
+                    fmt!("no type substs for %?: %s in fcx %s",
                          id, ast_map::node_id_to_str(
                              self.tcx().items, id,
                              self.tcx().sess.parse_sess.interner),
@@ -2787,7 +2788,7 @@ pub fn check_expr_with_unifier(fcx: @mut FnCtxt,
        }
     }
 
-    debug!("type of expr(%d) %s is...", expr.id,
+    debug!("type of expr(%?) %s is...", expr.id,
            syntax::print::pprust::expr_to_str(expr, tcx.sess.intr()));
     debug!("... %s, expected is %s",
            ppaux::ty_to_str(tcx, fcx.expr_ty(expr)),
@@ -3393,7 +3394,7 @@ pub fn check_bounds_are_used(ccx: @mut CrateCtxt,
 
 pub fn check_intrinsic_type(ccx: @mut CrateCtxt, it: @ast::foreign_item) {
     fn param(ccx: @mut CrateCtxt, n: uint) -> ty::t {
-        ty::mk_param(ccx.tcx, n, local_def(0))
+        ty::mk_param(ccx.tcx, n, local_def(zero_node_id))
     }
     fn arg(m: ast::rmode, ty: ty::t) -> ty::arg {
         arg {mode: ast::expl(m), ty: ty}

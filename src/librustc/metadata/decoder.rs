@@ -68,27 +68,27 @@ fn lookup_hash(d: ebml::Doc, eq_fn: &fn(x:&[u8]) -> bool, hash: uint) ->
 
 pub type GetCrateDataCb = &'self fn(ast::crate_num) -> cmd;
 
-pub fn maybe_find_item(item_id: int, items: ebml::Doc) -> Option<ebml::Doc> {
+pub fn maybe_find_item(item_id: ast::node_id, items: ebml::Doc) -> Option<ebml::Doc> {
     fn eq_item(bytes: &[u8], item_id: int) -> bool {
         return io::u64_from_be_bytes(
             vec::slice(bytes, 0u, 4u), 0u, 4u) as int
             == item_id;
     }
     lookup_hash(items,
-                |a| eq_item(a, item_id),
+                |a| eq_item(a, item_id.repr),
                 item_id.hash() as uint)
 }
 
-fn find_item(item_id: int, items: ebml::Doc) -> ebml::Doc {
+fn find_item(item_id: ast::node_id, items: ebml::Doc) -> ebml::Doc {
     return maybe_find_item(item_id, items).get();
 }
 
 // Looks up an item in the given metadata and returns an ebml doc pointing
 // to the item data.
-fn lookup_item(item_id: int, data: @~[u8]) -> ebml::Doc {
+fn lookup_item(item_id: ast::node_id, data: @~[u8]) -> ebml::Doc {
     let items = reader::get_doc(reader::Doc(data), tag_items);
     match maybe_find_item(item_id, items) {
-       None => fail!(fmt!("lookup_item: id not found: %d", item_id)),
+       None => fail!(fmt!("lookup_item: id not found: %?", item_id)),
        Some(d) => d
     }
 }
@@ -406,7 +406,7 @@ pub fn struct_dtor(cdata: cmd, id: ast::node_id) -> Option<ast::def_id> {
     let cls_items = match maybe_find_item(id, items) {
             Some(it) => it,
             None     => fail!(fmt!("struct_dtor: class id not found \
-              when looking up dtor for %d", id))
+              when looking up dtor for %?", id))
     };
     for reader::tagged_docs(cls_items, tag_item_dtor) |doc| {
          let doc1 = reader::get_doc(doc, tag_def_id);
@@ -444,7 +444,7 @@ pub fn each_lang_item(cdata: cmd, f: &fn(ast::node_id, uint) -> bool) {
         let id = reader::doc_as_u32(id_doc) as uint;
         let node_id_doc = reader::get_doc(item_doc,
                                           tag_lang_items_item_node_id);
-        let node_id = reader::doc_as_u32(node_id_doc) as ast::node_id;
+        let node_id = ast::node_id {repr: reader::doc_as_u32(node_id_doc) as int};
 
         if !f(node_id, id) {
             break;
@@ -555,7 +555,7 @@ pub fn maybe_get_item_ast(intr: @ident_interner, cdata: cmd, tcx: ty::ctxt,
                           id: ast::node_id,
                           decode_inlined_item: decode_inlined_item)
                        -> csearch::found_ast {
-    debug!("Looking up item: %d", id);
+    debug!("Looking up item: %?", id);
     let item_doc = lookup_item(id, cdata.data);
     let path = {
         let item_path = item_path(intr, item_doc);
@@ -1060,7 +1060,7 @@ pub fn get_crate_deps(intr: @ident_interner, data: @~[u8]) -> ~[crate_dep] {
         str::from_bytes(reader::doc_data(reader::get_doc(doc, tag_)))
     }
     for reader::tagged_docs(depsdoc, tag_crate_dep) |depdoc| {
-        deps.push(crate_dep {cnum: crate_num,
+        deps.push(crate_dep {cnum: ast::crate_num {repr: crate_num},
                   name: intr.intern(@docstr(depdoc, tag_crate_dep_name)),
                   vers: @docstr(depdoc, tag_crate_dep_vers),
                   hash: @docstr(depdoc, tag_crate_dep_hash)});
@@ -1074,7 +1074,7 @@ fn list_crate_deps(intr: @ident_interner, data: @~[u8], out: @io::Writer) {
 
     for get_crate_deps(intr, data).each |dep| {
         out.write_str(
-            fmt!("%d %s-%s-%s\n",
+            fmt!("%? %s-%s-%s\n",
                  dep.cnum, *intr.get(dep.name), *dep.hash, *dep.vers));
     }
 

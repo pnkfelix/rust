@@ -734,7 +734,7 @@ pub impl block_ {
     fn to_str(@mut self) -> ~str {
         match self.node_info {
           Some(node_info) => {
-            fmt!("[block %d]", node_info.id)
+            fmt!("[block %?]", node_info.id)
           }
           None => {
             fmt!("[block %x]", ptr::addr_of(&(*self)) as uint)
@@ -1382,7 +1382,7 @@ pub fn node_id_type_params(bcx: block, id: ast::node_id) -> ~[ty::t] {
 
     if !params.all(|t| !ty::type_needs_infer(*t)) {
         bcx.sess().bug(
-            fmt!("Type parameters for node %d include inference types: %s",
+            fmt!("Type parameters for %? include inference types: %s",
                  id, str::connect(params.map(|t| bcx.ty_to_str(*t)), ",")));
     }
 

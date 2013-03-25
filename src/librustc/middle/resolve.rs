@@ -60,6 +60,7 @@ use syntax::ast::{variant, view_item, view_item_extern_mod};
 use syntax::ast::{view_item_use, view_path_glob, view_path_list};
 use syntax::ast::{view_path_simple, visibility, anonymous, named, not};
 use syntax::ast::{unsafe_fn};
+use syntax::ast::{local_crate, crate_node_id, zero_node_id};
 use syntax::ast_util::{def_id_of_def, local_def};
 use syntax::ast_util::{path_to_ident, walk_pat, trait_method_to_ty_method};
 use syntax::ast_util::{Privacy, Public, Private};
@@ -761,7 +762,8 @@ pub fn Resolver(session: Session,
 
     graph_root.define_module(Public,
                              NoParentLink,
-                             Some(def_id { crate: 0, node: 0 }),
+                             Some(def_id {crate: local_crate,
+                                          node: zero_node_id}),
                              NormalModuleKind,
                              crate.span);
 
@@ -1087,7 +1089,7 @@ pub impl Resolver {
                     self.add_child(ident, parent, ForbidDuplicateModules, sp);
 
                 let parent_link = self.get_parent_link(new_parent, ident);
-                let def_id = def_id { crate: 0, node: item.id };
+                let def_id = def_id { crate: local_crate, node: item.id };
                 name_bindings.define_module(privacy,
                                             parent_link,
                                             Some(def_id),
@@ -1109,7 +1111,7 @@ pub impl Resolver {
 
                         let parent_link = self.get_parent_link(new_parent,
                                                                ident);
-                        let def_id = def_id { crate: 0, node: item.id };
+                        let def_id = def_id { crate: local_crate, node: item.id };
                         name_bindings.define_module(privacy,
                                                     parent_link,
                                                     Some(def_id),
@@ -1485,7 +1487,7 @@ pub impl Resolver {
                             self.add_child(name, parent, ForbidDuplicateTypes,
                                            view_item.span);
 
-                        let def_id = def_id { crate: crate_id, node: 0 };
+                        let def_id = def_id { crate: crate_id, node: zero_node_id };
                         let parent_link = ModuleParentLink
                             (self.get_module_from_parent(new_parent), name);
 
@@ -1546,7 +1548,7 @@ pub impl Resolver {
             let block_id = block.node.id;
 
             debug!("(building reduced graph for block) creating a new \
-                    anonymous module for block %d",
+                    anonymous module for block %?",
                    block_id);
 
             let parent_module = self.get_module_from_parent(parent);
@@ -3155,7 +3157,7 @@ pub impl Resolver {
         match /*bad*/copy module_.def_id {
             Some(def_id) => {
                 self.export_map2.insert(def_id.node, exports2);
-                debug!("(computing exports) writing exports for %d (some)",
+                debug!("(computing exports) writing exports for %? (some)",
                        def_id.node);
             }
             None => {}
@@ -3679,7 +3681,7 @@ pub impl Resolver {
 
                 for generics.ty_params.eachi |index, type_parameter| {
                     let name = type_parameter.ident;
-                    debug!("with_type_parameter_rib: %d %d", node_id,
+                    debug!("with_type_parameter_rib: %? %?", node_id,
                            type_parameter.id);
                     let def_like = dl_def(def_ty_param
                         (local_def(type_parameter.id),
@@ -3968,7 +3970,7 @@ pub impl Resolver {
                       id: node_id,
                       visitor: ResolveVisitor) {
         // Write the implementations in scope into the module metadata.
-        debug!("(resolving module) resolving module ID %d", id);
+        debug!("(resolving module) resolving module ID %?", id);
         visit_mod(module_, span, id, (), visitor);
     }
 
@@ -4140,7 +4142,7 @@ pub impl Resolver {
                     Some(def) => {
                         // Write the result into the def map.
                         debug!("(resolving type) writing resolution for `%s` \
-                                (id %d)",
+                                (id %?)",
                                self.idents_to_str(path.idents),
                                path_id);
                         self.record_def(path_id, def);
@@ -5099,18 +5101,16 @@ pub impl Resolver {
                                            trait_def_id: def_id,
                                            name: ident)
                                         -> bool {
-        debug!("(adding trait info if containing method) trying trait %d:%d \
+        debug!("(adding trait info if containing method) trying trait %? \
                 for method '%s'",
-               trait_def_id.crate,
-               trait_def_id.node,
+               trait_def_id,
                *self.session.str_of(name));
 
         match self.trait_info.find(&trait_def_id) {
             Some(trait_info) if trait_info.contains_key(&name) => {
                 debug!("(adding trait info if containing method) found trait \
-                        %d:%d for method '%s'",
-                       trait_def_id.crate,
-                       trait_def_id.node,
+                        %? for method '%s'",
+                       trait_def_id,
                        *self.session.str_of(name));
                 found_traits.push(trait_def_id);
                 true

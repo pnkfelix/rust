@@ -539,7 +539,7 @@ pub impl Datum {
         if bcx.sess().trace() {
             trans_trace(
                 bcx, None,
-                @fmt!("preserving until end of scope %d",
+                @fmt!("preserving until end of scope %?",
                      root_info.scope));
         }
 
@@ -636,7 +636,7 @@ pub impl Datum {
     {
         let ccx = bcx.ccx();
 
-        debug!("try_deref(expr_id=%d, derefs=%?, is_auto=%b, self=%?)",
+        debug!("try_deref(expr_id=%?, derefs=%?, is_auto=%b, self=%?)",
                expr_id, derefs, is_auto, self.to_str(bcx.ccx()));
         let _indenter = indenter();
 
@@ -785,7 +785,7 @@ pub impl Datum {
               -> DatumBlock {
         let _icx = bcx.insn_ctxt("autoderef");
 
-        debug!("autoderef(expr_id=%d, max=%?, self=%?)",
+        debug!("autoderef(expr_id=%?, max=%?, self=%?)",
                expr_id, max, self.to_str(bcx.ccx()));
         let _indenter = indenter();
 

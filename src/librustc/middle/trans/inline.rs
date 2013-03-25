@@ -34,7 +34,7 @@ pub fn maybe_instantiate_inline(ccx: @CrateContext, fn_id: ast::def_id,
     match ccx.external.find(&fn_id) {
       Some(Some(node_id)) => {
         // Already inline
-        debug!("maybe_instantiate_inline(%s): already inline as node id %d",
+        debug!("maybe_instantiate_inline(%s): already inline as %?",
                ty::item_path_str(ccx.tcx, fn_id), node_id);
         local_def(node_id)
       }
@@ -63,7 +63,7 @@ pub fn maybe_instantiate_inline(ccx: @CrateContext, fn_id: ast::def_id,
           }
           csearch::found_parent(parent_id, ast::ii_item(item)) => {
             ccx.external.insert(parent_id, Some(item.id));
-            let mut my_id = 0;
+            let mut my_id = ast::zero_node_id;
             match item.node {
               ast::item_enum(_, _) => {
                 let vs_here = ty::enum_variants(ccx.tcx, local_def(item.id));

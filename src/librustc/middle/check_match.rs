@@ -208,10 +208,10 @@ pub enum ctor {
 pub fn is_useful(cx: @MatchCheckCtxt, m: &matrix, v: &[@pat]) -> useful {
     if m.len() == 0u { return useful_; }
     if m[0].len() == 0u { return not_useful; }
-    let real_pat = match m.find(|r| r[0].id != 0) {
+    let real_pat = match m.find(|r| r[0].id != zero_node_id) {
       Some(r) => r[0], None => v[0]
     };
-    let left_ty = if real_pat.id == 0 { ty::mk_nil(cx.tcx) }
+    let left_ty = if real_pat.id == zero_node_id { ty::mk_nil(cx.tcx) }
                   else { ty::node_id_to_type(cx.tcx, real_pat.id) };
 
     match pat_ctor_id(cx, v[0]) {
@@ -471,7 +471,7 @@ pub fn ctor_arity(cx: @MatchCheckCtxt, ctor: ctor, ty: ty::t) -> uint {
 }
 
 pub fn wild() -> @pat {
-    @pat {id: 0, node: pat_wild, span: dummy_sp()}
+    @pat {id: zero_node_id, node: pat_wild, span: dummy_sp()}
 }
 
 pub fn specialize(cx: @MatchCheckCtxt,
@@ -813,7 +813,7 @@ pub fn check_legality_of_move_bindings(cx: @MatchCheckCtxt,
                     _ => {
                         cx.tcx.sess.span_bug(
                             p.span,
-                            fmt!("Binding pattern %d is \
+                            fmt!("Binding pattern %? is \
                                   not an identifier: %?",
                                  p.id, p.node));
                     }

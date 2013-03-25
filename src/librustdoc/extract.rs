@@ -76,7 +76,7 @@ fn top_moddoc_from_crate(
 
 fn mk_itemdoc(id: ast::node_id, name: ~str) -> doc::ItemDoc {
     doc::ItemDoc {
-        id: id,
+        id: id.repr,
         name: name,
         path: ~[],
         brief: None,

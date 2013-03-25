@@ -86,7 +86,7 @@ pub fn explain_region_and_span(cx: ctxt, region: ty::Region)
           }
           Some(_) | None => {
             // this really should not happen
-            (fmt!("unknown scope: %d.  Please report a bug.", node_id),
+            (fmt!("unknown scope: %?.  Please report a bug.", node_id),
              None)
           }
         }
@@ -108,7 +108,7 @@ pub fn explain_region_and_span(cx: ctxt, region: ty::Region)
           }
           Some(_) | None => {
             // this really should not happen
-            (fmt!("%s node %d", prefix, id), None)
+            (fmt!("%s node %?", prefix, id), None)
           }
         }
       }
@@ -181,7 +181,7 @@ pub fn re_scope_id_to_str(cx: ctxt, node_id: ast::node_id) -> ~str {
         }
       }
       None => {
-        fmt!("<unknown-%d>", node_id)
+        fmt!("<unknown-%?>", node_id)
       }
       _ => { cx.sess.bug(
           fmt!("re_scope refers to %s",
@@ -258,13 +258,13 @@ pub fn vstore_ty_to_str(cx: ctxt, ty: ~str, vs: ty::vstore) -> ~str {
 }
 
 pub fn expr_repr(cx: ctxt, expr: @ast::expr) -> ~str {
-    fmt!("expr(%d: %s)",
+    fmt!("expr(%?: %s)",
          expr.id,
          pprust::expr_to_str(expr, cx.sess.intr()))
 }
 
 pub fn pat_repr(cx: ctxt, pat: @ast::pat) -> ~str {
-    fmt!("pat(%d: %s)",
+    fmt!("pat(%?: %s)",
          pat.id,
          pprust::pat_to_str(pat, cx.sess.intr()))
 }

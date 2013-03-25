@@ -77,7 +77,7 @@ pub fn check_crate(tcx: ty::ctxt,
         tcx: tcx,
         method_map: method_map,
         last_use_map: last_use_map,
-        current_item: -1,
+        current_item: node_id {repr: -1},
     };
     let visit = visit::mk_vt(@visit::Visitor {
         visit_arm: check_arm,
@@ -166,7 +166,8 @@ fn check_item(item: @item, cx: Context, visitor: visit::vt<Context>) {
                 match struct_def.dtor {
                     None => {}
                     Some(ref dtor) => {
-                        let struct_did = def_id { crate: 0, node: item.id };
+                        let struct_did = def_id {crate: local_crate,
+                                                 node: item.id};
                         check_struct_safe_for_destructor(cx,
                                                          dtor.span,
                                                          struct_did);
