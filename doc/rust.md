@@ -1668,6 +1668,12 @@ vec_elems : [expr [',' expr]*] | [expr ',' ".." expr]
 A [_vector_](#vector-types) _expression_ is written by enclosing zero or
 more comma-separated expressions of uniform type in square brackets.
 
+In the `[expr ',' ".." expr]` form, the expression after the `".."`
+must be an expression form that can be evaluated at compile time, such
+as a [literal](#literals) or a [constant](#constants).
+
+<!--- TODO: elaborate the actual subgrammar for constant expressions -->
+
 ~~~~
 [1, 2, 3, 4];
 ["a", "b", "c", "d"];
