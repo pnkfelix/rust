@@ -1675,6 +1675,11 @@ more comma-separated expressions of uniform type in square brackets.
 [0u8, 0u8, 0u8, 0u8];
 ~~~~
 
+The `[expr ',' ".." expr]` form requires a constant
+expression for the repeat count.
+One can use library routines from `vec` and `at_vec` to construct
+vectors whose contents or length are not statically known.
+
 ### Index expressions
 
 ~~~~~~~~{.ebnf .gram}
@@ -2149,6 +2154,36 @@ do f |j| {
 }
 ~~~~
 
+In this example, both calls to the (binary) function `k` are equivalent:
+
+~~~~
+# fn k(x:int, f: &fn(int)) { }
+# fn l(i: int) { }
+
+k(3, |j| l(j));
+
+do k(3) |j| {
+   l(j);
+}
+~~~~
+
+<!---
+The latter form of `do` can be useful in tandem with library functions
+such as `io::with_str_reader`:
+
+~~~~
+io::with_str_reader("abcd", |r| {
+    ...
+# fail!();
+});
+
+do io::with_str_reader("abcd") |r| {
+    ...
+# fail!();
+}
+~~~~
+-->
+
 
 ### For expressions
 
@@ -2177,7 +2212,7 @@ and early boolean-valued returns from the `block` function,
 such that the meaning of `break` and `loop` is preserved in a primitive loop
 when rewritten as a `for` loop controlled by a higher order function.
 
-An example a for loop:
+An example of a for loop over the contents of a vector:
 
 ~~~~
 # type foo = int;
@@ -2191,6 +2226,14 @@ for v.each |e| {
 }
 ~~~~
 
+An example of a for loop over a series of integers:
+
+~~~~
+# fn bar(b:uint) { }
+for uint::range(0, 256) |i| {
+    bar(i);
+}
+~~~~
 
 ### If expressions
 
@@ -2466,13 +2509,20 @@ fail_unless!(b != "world");
 ### Vector types
 
 The vector type-constructor represents a homogeneous array of values of a given type.
-A vector has a fixed size.
+A vector has a fixed size (operations like `vec::push` operate solely on owned vectors).
 A vector type can be accompanied by _definite_ size, written with a trailing asterisk and integer literal, such as `[int * 10]`.
 Such a definite-sized vector can be treated as a first class type since its size is known statically.
 A vector without such a size is said to be of _indefinite_ size,
 and is therefore not a _first class_ type,
 can only be instantiated through a pointer type,
 such as `&[T]`, `@[T]` or `~[T]`.
+
+<!---
+Expressions producing vectors of definite size cannot be put in a
+context expecting a vector of indefinite size; one must copy the
+definite vector contents into a distinct vector of indefinite size.
+-->
+
 The kind of a vector type depends on the kind of its member type, as with other simple structural types.
 
 An example of a vector type and its use:
