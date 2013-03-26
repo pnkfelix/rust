@@ -1681,11 +1681,6 @@ as a [literal](#literals) or a [constant](#constants).
 [0u8, 0u8, 0u8, 0u8];
 ~~~~
 
-The `[expr ',' ".." expr]` form requires a constant
-expression for the repeat count.
-One can use library routines from `vec` and `at_vec` to construct
-vectors whose contents or length are not statically known.
-
 ### Index expressions
 
 ~~~~~~~~{.ebnf .gram}
@@ -2173,23 +2168,6 @@ do k(3) |j| {
 }
 ~~~~
 
-<!---
-The latter form of `do` can be useful in tandem with library functions
-such as `io::with_str_reader`:
-
-~~~~
-io::with_str_reader("abcd", |r| {
-    ...
-# fail!();
-});
-
-do io::with_str_reader("abcd") |r| {
-    ...
-# fail!();
-}
-~~~~
--->
-
 
 ### For expressions
 
@@ -2523,11 +2501,9 @@ and is therefore not a _first class_ type,
 can only be instantiated through a pointer type,
 such as `&[T]`, `@[T]` or `~[T]`.
 
-<!---
-Expressions producing vectors of definite size cannot be put in a
+Expressions producing vectors of definite size cannot be evaluated in a
 context expecting a vector of indefinite size; one must copy the
-definite vector contents into a distinct vector of indefinite size.
--->
+definite-sized vector contents into a distinct vector of indefinite size.
 
 The kind of a vector type depends on the kind of its member type, as with other simple structural types.
 
