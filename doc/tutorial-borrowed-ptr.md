@@ -363,6 +363,91 @@ In this case, two errors are reported, one when the variable `x` is
 modified and another when `x.f` is modified. Either modification would
 invalidate the pointer `y`.
 
+Things get trickier when the unique box is not uniquely owned by the
+stack frame, or when there is no way for the compiler to determine the
+box's owner. Consider a program like this:
+
+~~~
+struct R { g: int }
+struct S { mut f: ~R }
+fn example5a(x: @S, callback: @fn()) -> int {
+    let y = &x.f.g;   // Error reported here.
+    ...
+    callback();
+    ...
+#   return 0;
+}
+~~~
+
+Here the heap looks something like:
+
+~~~ {.notrust}
+     Stack            Managed Heap       Exchange Heap
+
+  x +------+        +-------------+       +------+
+    | @... | ---->  | mut f: ~... | --+-> | g: 3 |
+  y +------+        +-------------+   |   +------+
+    | &int | -------------------------+
+    +------+
+~~~
+
+In this case, the owning reference to the value being borrowed is
+`x.f`. Moreover, `x.f` is both mutable and *aliasable*. Aliasable
+means that there may be other pointers to that same managed box, so
+even if the compiler were to prove an absence of mutations to `x.f`,
+code could mutate `x.f` indirectly by changing an alias of
+`x`. Therefore, to be safe, the compiler only accepts *pure* actions
+during the lifetime of `y`. We define what "pure" means in the section
+on [purity](#purity).
+
+Besides ensuring purity, the only way to borrow the interior of a
+unique found in aliasable memory is to ensure that the borrowed field
+itself is also unique, as in the following example:
+
+~~~
+struct R { g: int }
+struct S { f: ~R }
+fn example5b(x: @S) -> int {
+    let y = &x.f.g;
+    ...
+# return 0;
+}
+~~~
+
+Here, the field `f` is not declared as mutable. But that is enough for
+the compiler to know that, even if aliases to `x` exist, the field `f`
+cannot be changed and hence the unique box `g` will remain valid.
+
+If you do have a unique box in a mutable field, and you wish to borrow
+it, one option is to use the swap operator to move that unique box
+onto your stack:
+
+~~~
+struct R { g: int }
+struct S { mut f: ~R }
+fn example5c(x: @S) -> int {
+    let mut v = ~R {g: 0};
+    v <-> x.f;         // Swap v and x.f
+    { // Block constrains the scope of `y`:
+        let y = &v.g;
+        ...
+    }
+    x.f = move v;          // Replace x.f
+    ...
+# return 0;
+}
+~~~
+
+Of course, this has the side effect of modifying your managed box for
+the duration of the borrow, so it only works when you know that you
+won't be accessing that same box for the duration of the loan. Also,
+it is sometimes necessary to introduce additional blocks to constrain
+the scope of the loan.  In this example, the borrowed pointer `y`
+would still be in scope when you moved the value `v` back into `x.f`,
+and hence moving `v` would be considered illegal.  You cannot move
+values if they are the targets of valid outstanding loans. Introducing
+the block restricts the scope of `y`, making the move legal.
+
 # Borrowing and enums
 
 The previous example showed that the type system forbids any borrowing
