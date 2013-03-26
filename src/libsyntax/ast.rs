@@ -121,15 +121,11 @@ pub struct path {
     types: ~[@Ty],
 }
 
-#[auto_encode]
-#[auto_decode]
 #[deriving(Eq, IterBytes)]
 pub struct crate_num {
     repr: int
 }
 
-#[auto_encode]
-#[auto_decode]
 #[deriving(Eq, IterBytes)]
 pub struct node_id {
     repr: int

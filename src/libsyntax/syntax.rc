@@ -41,6 +41,8 @@ pub mod diagnostic;
 pub mod codemap;
 pub mod ast;
 pub mod ast_util;
+pub mod encode;
+pub mod decode;
 pub mod ast_map;
 pub mod visit;
 pub mod fold;
