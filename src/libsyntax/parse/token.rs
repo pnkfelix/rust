@@ -21,6 +21,7 @@ use core::char;
 use core::hashmap::HashSet;
 use core::str;
 use core::task;
+use core::cleanup;
 
 #[auto_encode]
 #[auto_decode]
@@ -361,7 +362,13 @@ pub struct ident_interner {
 
 pub impl ident_interner {
     fn intern(&self, val: @~str) -> ast::ident {
-        ast::ident { repr: self.interner.intern(val) }
+        let len0 = self.interner.len();
+        let v = self.interner.intern(val);
+        let len1 = self.interner.len();
+        if len0 != len1 {
+            cleanup::set_precious(val);
+        }
+        ast::ident { repr: v }
     }
     fn gensym(&self, val: @~str) -> ast::ident {
         ast::ident { repr: self.interner.gensym(val) }
@@ -436,6 +443,10 @@ pub fn mk_ident_interner() -> @ident_interner {
                 };
 
                 task::local_data::local_data_set(interner_key!(), @rv);
+                cleanup::set_precious(rv);
+                for init_vec.each |p| {
+                    cleanup::set_precious(*p);
+                }
 
                 rv
             }
