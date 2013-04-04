@@ -251,11 +251,19 @@ pub mod raw {
      * * n - The number of elements to reserve space for
      */
     pub unsafe fn reserve<T>(v: &mut @[T], n: uint) {
+        use cleanup::Gc;
         // Only make the (slow) call into the runtime if we have to
         if capacity(*v) < n {
             let ptr: **VecRepr = transmute(v);
+            let pre = *ptr;
             rustrt::vec_reserve_shared_actual(sys::get_type_desc::<T>(),
                                               ptr, n as libc::size_t);
+            let post = *ptr;
+            Gc::get_task_gc().note_realloc(pre as uint,
+                                           post as uint,
+                                           (*post).unboxed.alloc +
+                                           48
+                                           /* size_of::<VecRepr>() */);
         }
     }
 
