@@ -221,6 +221,7 @@ rust_task : public kernel_owned<rust_task>
     int32_t list_index;
 
     boxed_region boxed;
+    void *gc;
     memory_region local_region;
 
     // Indicates that fail() has been called and we are cleaning up.
