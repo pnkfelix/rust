@@ -427,12 +427,14 @@ pub fn pretty_print_input(sess: Session, +cfg: ast::crate_cfg, input: input,
     };
     let is_expanded = upto != cu_parse;
     let src = sess.codemap.get_filemap(source_name(input)).src;
+    let i = sess.parse_sess.interner;
     do io::with_str_reader(*src) |rdr| {
-        pprust::print_crate(sess.codemap, sess.parse_sess.interner,
+        pprust::print_crate(sess.codemap, i,
                             sess.span_diagnostic, crate,
                             source_name(input),
                             rdr, io::stdout(), ann, is_expanded);
     }
+    fail_unless!(i.len() != 0);
 }
 
 pub fn get_os(triple: &str) -> Option<session::os> {
