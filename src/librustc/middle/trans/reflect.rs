@@ -172,7 +172,7 @@ pub impl Reflector {
 
           ty::ty_unboxed_vec(ref mt) => {
               let values = self.c_mt(mt);
-              self.visit(~"vec", values)
+              self.visit(~"unboxed_vec", values)
           }
 
           ty::ty_estr(vst) => {
