@@ -89,7 +89,7 @@ pub fn drop_ty_immediate(bcx: block, v: ValueRef, t: ty::t) -> block {
       ty::ty_box(_) | ty::ty_opaque_box |
       ty::ty_evec(_, ty::vstore_box) |
       ty::ty_estr(ty::vstore_box) => {
-        decr_refcnt_maybe_free(bcx, v, t)
+        bcx
       }
       _ => bcx.tcx().sess.bug(~"drop_ty_immediate: non-box ty")
     }
@@ -101,7 +101,6 @@ pub fn take_ty_immediate(bcx: block, v: ValueRef, t: ty::t) -> Result {
       ty::ty_box(_) | ty::ty_opaque_box |
       ty::ty_evec(_, ty::vstore_box) |
       ty::ty_estr(ty::vstore_box) => {
-        incr_refcnt_of_boxed(bcx, v);
         rslt(bcx, v)
       }
       ty::ty_uniq(_) => {
@@ -116,6 +115,17 @@ pub fn take_ty_immediate(bcx: block, v: ValueRef, t: ty::t) -> Result {
 }
 
 pub fn free_ty(cx: block, v: ValueRef, t: ty::t) -> block {
+
+    match ty::get(t).sty {
+        ty::ty_box(_) | ty::ty_opaque_box |
+        ty::ty_evec(_, ty::vstore_box) |
+        ty::ty_estr(ty::vstore_box) => {
+            fail!(fmt!("free_ty on @-box: %s",
+                       ppaux::ty_to_str(cx.ccx().tcx, t)));
+        }
+        _ => ()
+    }
+
     // NB: v is an *alias* of type t here, not a direct value.
     let _icx = cx.insn_ctxt("free_ty");
     if ty::type_needs_drop(cx.tcx(), t) {
@@ -511,136 +521,107 @@ pub fn make_drop_glue(bcx: block, v0: ValueRef, t: ty::t) {
     let _icx = bcx.insn_ctxt("make_drop_glue");
     let ccx = bcx.ccx();
     let bcx = match ty::get(t).sty {
-      ty::ty_box(_) | ty::ty_opaque_box |
-      ty::ty_estr(ty::vstore_box) | ty::ty_evec(_, ty::vstore_box) => {
-        decr_refcnt_maybe_free(bcx, Load(bcx, v0), t)
-      }
-      ty::ty_uniq(_) |
-      ty::ty_evec(_, ty::vstore_uniq) | ty::ty_estr(ty::vstore_uniq) => {
-        free_ty(bcx, v0, t)
-      }
-      ty::ty_unboxed_vec(_) => {
-        tvec::make_drop_glue_unboxed(bcx, v0, t)
-      }
-      ty::ty_struct(did, ref substs) => {
-        let tcx = bcx.tcx();
-        match ty::ty_dtor(tcx, did) {
-          ty::TraitDtor(dtor) => {
-            trans_struct_drop(bcx, t, v0, dtor, did, substs, true)
-          }
-          ty::LegacyDtor(dtor) => {
-            trans_struct_drop(bcx, t, v0, dtor, did, substs, false)
-          }
-          ty::NoDtor => {
-            // No dtor? Just the default case
-            iter_structural_ty(bcx, v0, t, drop_ty)
-          }
+        ty::ty_box(_) | ty::ty_opaque_box |
+        ty::ty_estr(ty::vstore_box) |
+        ty::ty_evec(_, ty::vstore_box) => bcx,
+
+        ty::ty_uniq(_) |
+        ty::ty_evec(_, ty::vstore_uniq) |
+        ty::ty_estr(ty::vstore_uniq) => {
+            free_ty(bcx, v0, t)
         }
-      }
-      ty::ty_closure(_) => {
-        closure::make_closure_glue(bcx, v0, t, drop_ty)
-      }
-      ty::ty_trait(_, _, ty::BoxTraitStore) |
-      ty::ty_trait(_, _, ty::BareTraitStore) => {
-        let llbox = Load(bcx, GEPi(bcx, v0, [0u, 1u]));
-        decr_refcnt_maybe_free(bcx, llbox, ty::mk_opaque_box(ccx.tcx))
-      }
-      ty::ty_trait(_, _, ty::UniqTraitStore) => {
-        let lluniquevalue = GEPi(bcx, v0, [0, 1]);
-        let lltydesc = Load(bcx, GEPi(bcx, v0, [0, 2]));
-        call_tydesc_glue_full(bcx, lluniquevalue, lltydesc,
-                              abi::tydesc_field_free_glue, None);
-        bcx
-      }
-      ty::ty_opaque_closure_ptr(ck) => {
-        closure::make_opaque_cbox_drop_glue(bcx, ck, v0)
-      }
-      _ => {
-        if ty::type_needs_drop(ccx.tcx, t) &&
-            ty::type_is_structural(t) {
-            iter_structural_ty(bcx, v0, t, drop_ty)
-        } else { bcx }
-      }
+
+        ty::ty_unboxed_vec(_) => {
+            tvec::make_drop_glue_unboxed(bcx, v0, t)
+        }
+        ty::ty_struct(did, ref substs) => {
+            let tcx = bcx.tcx();
+            match ty::ty_dtor(tcx, did) {
+                ty::TraitDtor(dtor) => {
+                    trans_struct_drop(bcx, t, v0, dtor, did, substs, true)
+                }
+                ty::LegacyDtor(dtor) => {
+                    trans_struct_drop(bcx, t, v0, dtor, did, substs, false)
+                }
+                ty::NoDtor => {
+                    // No dtor? Just the default case
+                    iter_structural_ty(bcx, v0, t, drop_ty)
+                }
+            }
+        }
+        ty::ty_closure(_) => {
+            closure::make_closure_glue(bcx, v0, t, drop_ty)
+        }
+        ty::ty_trait(_, _, ty::BoxTraitStore) |
+        ty::ty_trait(_, _, ty::BareTraitStore) => bcx,
+        ty::ty_trait(_, _, ty::UniqTraitStore) => {
+            let lluniquevalue = GEPi(bcx, v0, [0, 1]);
+            let lltydesc = Load(bcx, GEPi(bcx, v0, [0, 2]));
+            call_tydesc_glue_full(bcx, lluniquevalue, lltydesc,
+                                  abi::tydesc_field_free_glue, None);
+            bcx
+        }
+        ty::ty_opaque_closure_ptr(ck) => {
+            closure::make_opaque_cbox_drop_glue(bcx, ck, v0)
+        }
+        _ => {
+            if ty::type_needs_drop(ccx.tcx, t) &&
+                ty::type_is_structural(t) {
+                iter_structural_ty(bcx, v0, t, drop_ty)
+            } else { bcx }
+        }
     };
     build_return(bcx);
 }
-
-pub fn decr_refcnt_maybe_free(bcx: block,
-                              box_ptr: ValueRef,
-                              t: ty::t)
-                           -> block {
-    let _icx = bcx.insn_ctxt("decr_refcnt_maybe_free");
-    let ccx = bcx.ccx();
-
-    do with_cond(bcx, IsNotNull(bcx, box_ptr)) |bcx| {
-        let rc_ptr = GEPi(bcx, box_ptr, [0u, abi::box_field_refcnt]);
-        let rc = Sub(bcx, Load(bcx, rc_ptr), C_int(ccx, 1));
-        Store(bcx, rc, rc_ptr);
-        let zero_test = ICmp(bcx, lib::llvm::IntEQ, C_int(ccx, 0), rc);
-        with_cond(bcx, zero_test, |bcx| free_ty_immediate(bcx, box_ptr, t))
-    }
-}
-
 
 pub fn make_take_glue(bcx: block, v: ValueRef, t: ty::t) {
     let _icx = bcx.insn_ctxt("make_take_glue");
     // NB: v is a *pointer* to type t here, not a direct value.
     let bcx = match ty::get(t).sty {
-      ty::ty_box(_) | ty::ty_opaque_box |
-      ty::ty_evec(_, ty::vstore_box) | ty::ty_estr(ty::vstore_box) => {
-        incr_refcnt_of_boxed(bcx, Load(bcx, v)); bcx
-      }
-      ty::ty_uniq(_) => {
-        let Result {bcx, val} = uniq::duplicate(bcx, Load(bcx, v), t);
-        Store(bcx, val, v);
-        bcx
-      }
-      ty::ty_evec(_, ty::vstore_uniq) | ty::ty_estr(ty::vstore_uniq) => {
-        let Result {bcx, val} = tvec::duplicate_uniq(bcx, Load(bcx, v), t);
-        Store(bcx, val, v);
-        bcx
-      }
-      ty::ty_evec(_, ty::vstore_slice(_))
-      | ty::ty_estr(ty::vstore_slice(_)) => {
-        bcx
-      }
-      ty::ty_closure(_) => {
-        closure::make_closure_glue(bcx, v, t, take_ty)
-      }
-      ty::ty_trait(_, _, ty::BoxTraitStore) |
-      ty::ty_trait(_, _, ty::BareTraitStore) => {
-        let llbox = Load(bcx, GEPi(bcx, v, [0u, 1u]));
-        incr_refcnt_of_boxed(bcx, llbox);
-        bcx
-      }
-      ty::ty_trait(_, _, ty::UniqTraitStore) => {
-        let llval = GEPi(bcx, v, [0, 1]);
-        let lltydesc = Load(bcx, GEPi(bcx, v, [0, 2]));
-        call_tydesc_glue_full(bcx, llval, lltydesc,
-                              abi::tydesc_field_take_glue, None);
-        bcx
-      }
-      ty::ty_opaque_closure_ptr(ck) => {
-        closure::make_opaque_cbox_take_glue(bcx, ck, v)
-      }
-      _ if ty::type_is_structural(t) => {
-        iter_structural_ty(bcx, v, t, take_ty)
-      }
-      _ => bcx
+        ty::ty_box(_) |
+        ty::ty_opaque_box |
+        ty::ty_evec(_, ty::vstore_box) |
+        ty::ty_estr(ty::vstore_box) => bcx,
+
+        ty::ty_uniq(_) => {
+            let Result {bcx, val} = uniq::duplicate(bcx, Load(bcx, v), t);
+            Store(bcx, val, v);
+            bcx
+        }
+        ty::ty_evec(_, ty::vstore_uniq) |
+        ty::ty_estr(ty::vstore_uniq) => {
+            let Result {bcx, val} =
+                tvec::duplicate_uniq(bcx, Load(bcx, v), t);
+            Store(bcx, val, v);
+            bcx
+        }
+        ty::ty_evec(_, ty::vstore_slice(_)) |
+        ty::ty_estr(ty::vstore_slice(_)) => {
+            bcx
+        }
+        ty::ty_closure(_) => {
+            closure::make_closure_glue(bcx, v, t, take_ty)
+        }
+        ty::ty_trait(_, _, ty::BoxTraitStore) |
+        ty::ty_trait(_, _, ty::BareTraitStore) => bcx,
+        ty::ty_trait(_, _, ty::UniqTraitStore) => {
+            let llval = GEPi(bcx, v, [0, 1]);
+            let lltydesc = Load(bcx, GEPi(bcx, v, [0, 2]));
+            call_tydesc_glue_full(bcx, llval, lltydesc,
+                                  abi::tydesc_field_take_glue, None);
+            bcx
+        }
+        ty::ty_opaque_closure_ptr(ck) => {
+            closure::make_opaque_cbox_take_glue(bcx, ck, v)
+        }
+        _ if ty::type_is_structural(t) => {
+            iter_structural_ty(bcx, v, t, take_ty)
+        }
+        _ => bcx
     };
 
     build_return(bcx);
 }
-
-pub fn incr_refcnt_of_boxed(cx: block, box_ptr: ValueRef) {
-    let _icx = cx.insn_ctxt("incr_refcnt_of_boxed");
-    let ccx = cx.ccx();
-    let rc_ptr = GEPi(cx, box_ptr, [0u, abi::box_field_refcnt]);
-    let rc = Load(cx, rc_ptr);
-    let rc = Add(cx, rc, C_int(ccx, 1));
-    Store(cx, rc, rc_ptr);
-}
-
 
 // Generates the declaration for (but doesn't emit) a type descriptor.
 pub fn declare_tydesc(ccx: @CrateContext, t: ty::t) -> @mut tydesc_info {
