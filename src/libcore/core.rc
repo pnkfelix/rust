@@ -204,7 +204,6 @@ pub mod pipes;
 
 /* Runtime and platform support */
 
-pub mod gc;
 pub mod libc;
 pub mod os;
 pub mod path;

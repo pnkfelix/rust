@@ -12,7 +12,6 @@
 
 use cast;
 use cmp::{Eq, Ord};
-use gc;
 use io;
 use libc;
 use libc::{c_void, c_char, size_t};
@@ -150,7 +149,6 @@ pub fn begin_unwind(msg: ~str, file: ~str, line: uint) -> ! {
 // FIXME #4427: Temporary until rt::rt_fail_ goes away
 pub fn begin_unwind_(msg: *c_char, file: *c_char, line: size_t) -> ! {
     unsafe {
-        gc::cleanup_stack_for_failure();
         rustrt::rust_upcall_fail(msg, file, line);
         cast::transmute(())
     }

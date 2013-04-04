@@ -60,11 +60,10 @@ pub static count_type_sizes: uint = 1 << 14;
 pub static meta_stats: uint = 1 << 15;
 pub static no_opt: uint = 1 << 16;
 pub static no_monomorphic_collapse: uint = 1 << 17;
-pub static gc: uint = 1 << 18;
-pub static jit: uint = 1 << 19;
-pub static debug_info: uint = 1 << 20;
-pub static extra_debug_info: uint = 1 << 21;
-pub static static: uint = 1 << 22;
+pub static jit: uint = 1 << 18;
+pub static debug_info: uint = 1 << 19;
+pub static extra_debug_info: uint = 1 << 20;
+pub static static: uint = 1 << 21;
 
 pub fn debugging_opts_map() -> ~[(~str, ~str, uint)] {
     ~[(~"verbose", ~"in general, enable more debug printouts", verbose),
@@ -92,7 +91,6 @@ pub fn debugging_opts_map() -> ~[(~str, ~str, uint)] {
      (~"no-opt", ~"do not optimize, even if -O is passed", no_opt),
      (~"no-monomorphic-collapse", ~"do not collapse template instantiations",
       no_monomorphic_collapse),
-     (~"gc", ~"Garbage collect shared data (experimental)", gc),
      (~"jit", ~"Execute using JIT (experimental)", jit),
      (~"extra-debug-info", ~"Extra debugging info (experimental)",
       extra_debug_info),
@@ -115,7 +113,6 @@ pub struct options {
     // with additional crate configurations during the compile process
     crate_type: crate_type,
     is_static: bool,
-    gc: bool,
     optimize: OptLevel,
     debuginfo: bool,
     extra_debuginfo: bool,
@@ -280,7 +277,6 @@ pub fn basic_options() -> @options {
     @options {
         crate_type: session::lib_crate,
         is_static: false,
-        gc: false,
         optimize: No,
         debuginfo: false,
         extra_debuginfo: false,
