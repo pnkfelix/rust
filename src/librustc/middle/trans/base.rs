@@ -979,7 +979,7 @@ pub fn add_root_cleanup(bcx: block,
     if root_info.freezes {
         add_clean_frozen_root(bcx_scope, root_loc, ty);
     } else {
-        add_clean_temp_mem(bcx_scope, root_loc, ty);
+        add_zero_root(bcx_scope, root_loc);
     }
 
     fn find_bcx_for_scope(bcx: block, scope_id: ast::node_id) -> block {

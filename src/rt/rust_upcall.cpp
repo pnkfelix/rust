@@ -231,6 +231,16 @@ rust_upcall_free(void* ptr) {
     upcall_free(ptr);
 }
 
+/**********************************************************************
+ * Called to write 0 to a root on scope exit (extern to keep the root
+ * rooted until this call)
+ */
+
+extern "C" CDECL void
+rust_upcall_zero_root(char** ptr) {
+    *ptr = NULL;
+}
+
 /**********************************************************************/
 
 extern "C" _Unwind_Reason_Code
