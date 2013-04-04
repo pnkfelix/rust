@@ -223,7 +223,6 @@ pub struct CrateContext {
      tydesc_type: TypeRef,
      int_type: TypeRef,
      float_type: TypeRef,
-     task_type: TypeRef,
      opaque_vec_type: TypeRef,
      builder: BuilderRef_res,
      shape_cx: shape::Ctxt,
@@ -1042,8 +1041,6 @@ pub fn T_chan(cx: @CrateContext, _t: TypeRef) -> TypeRef {
     return T_struct(~[cx.int_type], false); // Refcount
 
 }
-
-pub fn T_taskptr(cx: @CrateContext) -> TypeRef { return T_ptr(cx.task_type); }
 
 
 pub fn T_opaque_cbox_ptr(cx: @CrateContext) -> TypeRef {
