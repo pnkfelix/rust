@@ -192,7 +192,7 @@ pub impl<'self> PreserveCtxt<'self> {
             debug!("base.mutbl = %?", base.mutbl);
             if cmt.cat.derefs_through_mutable_box() {
                 self.attempt_root(cmt, base, derefs)
-            } else if base.mutbl.is_immutable() {
+            } else if false && base.mutbl.is_immutable() {
                 let non_rooting_ctxt = PreserveCtxt {
                     root_managed_data: false,
                     ..*self
