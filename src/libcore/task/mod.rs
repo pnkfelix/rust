@@ -44,6 +44,8 @@ use util;
 use util::replace;
 
 #[cfg(test)] use comm::SharedChan;
+// Re-export this for use by conservative GC.
+pub use task::local_data_priv::each_retained_ptr;
 
 mod local_data_priv;
 pub mod local_data;
