@@ -37,6 +37,9 @@ pub mod rustrt {
 
         #[rust_stack]
         unsafe fn rust_upcall_free(ptr: *c_char);
+
+        #[rust_stack]
+        unsafe fn rust_upcall_zero_root(root: **u8);
     }
 }
 
@@ -97,6 +100,11 @@ pub unsafe fn local_malloc(td: *c_char, size: uintptr_t) -> *c_char {
 pub unsafe fn local_free(ptr: *c_char) {
     rustrt::rust_upcall_free(ptr);
     Gc::get_task_gc().note_free(ptr as uint);
+}
+
+#[lang="zero_root"]
+pub unsafe fn zero_root(ptr: **u8) {
+    rustrt::rust_upcall_zero_root(ptr);
 }
 
 #[lang="borrow_as_imm"]

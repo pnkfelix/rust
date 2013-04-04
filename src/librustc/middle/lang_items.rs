@@ -69,22 +69,23 @@ pub enum LangItem {
     ExchangeFreeFnLangItem,     // 27
     MallocFnLangItem,           // 28
     FreeFnLangItem,             // 29
-    BorrowAsImmFnLangItem,      // 30
-    ReturnToMutFnLangItem,      // 31
-    CheckNotBorrowedFnLangItem, // 32
-    StrDupUniqFnLangItem,       // 33
+    ZeroRootFnLangItem,         // 30
+    BorrowAsImmFnLangItem,      // 31
+    ReturnToMutFnLangItem,      // 32
+    CheckNotBorrowedFnLangItem, // 33
+    StrDupUniqFnLangItem,       // 34
 
-    StartFnLangItem,            // 34
+    StartFnLangItem,            // 35
 }
 
 pub struct LanguageItems {
-    items: [Option<def_id>, ..35]
+    items: [ Option<def_id>, .. 36 ]
 }
 
 pub impl LanguageItems {
     pub fn new() -> LanguageItems {
         LanguageItems {
-            items: [ None, ..35 ]
+            items: [ None, ..36 ]
         }
     }
 
@@ -131,12 +132,13 @@ pub impl LanguageItems {
             27 => "exchange_free",
             28 => "malloc",
             29 => "free",
-            30 => "borrow_as_imm",
-            31 => "return_to_mut",
-            32 => "check_not_borrowed",
-            33 => "strdup_uniq",
+            30 => "zero_root",
+            31 => "borrow_as_imm",
+            32 => "return_to_mut",
+            33 => "check_not_borrowed",
+            34 => "strdup_uniq",
 
-            34 => "start",
+            35 => "start",
 
             _ => "???"
         }
@@ -238,6 +240,9 @@ pub impl LanguageItems {
     pub fn free_fn(&const self) -> def_id {
         self.items[FreeFnLangItem as uint].get()
     }
+    pub fn zero_root_fn(&const self) -> def_id {
+        self.items[ZeroRootFnLangItem as uint].get()
+    }
     pub fn borrow_as_imm_fn(&const self) -> def_id {
         self.items[BorrowAsImmFnLangItem as uint].get()
     }
@@ -296,6 +301,7 @@ fn LanguageItemCollector<'r>(crate: @crate,
     item_refs.insert(@~"exchange_free", ExchangeFreeFnLangItem as uint);
     item_refs.insert(@~"malloc", MallocFnLangItem as uint);
     item_refs.insert(@~"free", FreeFnLangItem as uint);
+    item_refs.insert(@~"zero_root", ZeroRootFnLangItem as uint);
     item_refs.insert(@~"borrow_as_imm", BorrowAsImmFnLangItem as uint);
     item_refs.insert(@~"return_to_mut", ReturnToMutFnLangItem as uint);
     item_refs.insert(@~"check_not_borrowed",
