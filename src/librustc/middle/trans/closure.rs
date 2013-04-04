@@ -465,11 +465,7 @@ pub fn make_opaque_cbox_take_glue(
     // Easy cases:
     let _icx = bcx.insn_ctxt("closure::make_opaque_cbox_take_glue");
     match sigil {
-        ast::BorrowedSigil => {
-            return bcx;
-        }
-        ast::ManagedSigil => {
-            glue::incr_refcnt_of_boxed(bcx, Load(bcx, cboxptr));
+        ast::BorrowedSigil | ast::ManagedSigil => {
             return bcx;
         }
         ast::OwnedSigil => {
@@ -523,12 +519,7 @@ pub fn make_opaque_cbox_drop_glue(
     -> block {
     let _icx = bcx.insn_ctxt("closure::make_opaque_cbox_drop_glue");
     match sigil {
-        ast::BorrowedSigil => bcx,
-        ast::ManagedSigil => {
-            glue::decr_refcnt_maybe_free(
-                bcx, Load(bcx, cboxptr),
-                ty::mk_opaque_closure_ptr(bcx.tcx(), sigil))
-        }
+        ast::BorrowedSigil | ast::ManagedSigil => bcx,
         ast::OwnedSigil => {
             glue::free_ty(
                 bcx, cboxptr,
