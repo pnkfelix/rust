@@ -220,18 +220,36 @@ pub impl<T> TrieMap<T> {
     }
 
     // Returns the (k,v) pair in the map with greatest k where k <= key.
+    #[cfg(stage0)]
     fn prev(&self, key: uint) -> Option<(uint,&'self T)> {
         prev(&self.root, key, 0)
     }
 
     // Returns the (k,v) pair in the map with least k where k >= key.
+    #[cfg(stage0)]
     fn next(&self, key: uint) -> Option<(uint,&'self T)> {
         next(&self.root, key, 0)
     }
 
     // Fires a callback on greatest k where k <= key, if any.
+    #[inline(always)]
     fn mutate_prev(&mut self, key: uint, f: &fn(uint, &mut T)) {
         mutate_prev(&mut self.root, f, key, 0);
+    }
+
+
+    // Returns the (k,v) pair in the map with greatest k where k <= key.
+    #[cfg(not(stage0))]
+    #[inline(always)]
+    fn prev<'r>(&'r self, key: uint) -> Option<(uint,&'r T)> {
+        prev(&self.root, key, 0)
+    }
+
+    // Returns the (k,v) pair in the map with least k where k >= key.
+    #[cfg(not(stage0))]
+    #[inline(always)]
+    fn next<'r>(&'r self, key: uint) -> Option<(uint,&'r T)> {
+        next(&self.root, key, 0)
     }
 }
 
@@ -433,10 +451,10 @@ fn prev<'k, T>(node: &'k TrieNode<T>,
     None
 }
 
-fn mutate_prev<T>(node: &mut TrieNode<T>,
-                  f: &fn(uint, &mut T),
-                  mut key: uint,
-                  idx: uint) -> bool {
+fn mutate_prev<'a, T>(node: &'a mut TrieNode<T>,
+                      f: &fn(uint, &mut T),
+                      mut key: uint,
+                      idx: uint) -> bool {
     let mut c = chunk(key, idx) as int;
     while c >= 0 {
         match node.children[c] {
