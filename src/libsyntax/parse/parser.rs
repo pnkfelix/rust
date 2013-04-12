@@ -2707,28 +2707,8 @@ pub impl Parser {
         if self.eat_keyword(&~"once") { ast::Once } else { ast::Many }
     }
 
-    fn parse_optional_ty_param_bounds(&self) -> @OptVec<TyParamBound> {
-        if !self.eat(&token::COLON) {
-            return @opt_vec::Empty;
-        }
-
-        let mut result = opt_vec::Empty;
-        loop {
-            match *self.token {
-                token::LIFETIME(lifetime) => {
-                    if str::eq_slice(*self.id_to_str(lifetime), "static") {
-                        result.push(RegionTyParamBound);
-                    } else {
-                        self.span_err(*self.span,
-                                      ~"`'static` is the only permissible \
-                                        region bound here");
-                    }
-                    self.bump();
-                }
-                token::MOD_SEP | token::IDENT(*) => {
-                    let maybe_bound = match *self.token {
-                        token::MOD_SEP => None,
-                        token::IDENT(copy sid, _) => {
+    fn id_to_trait_ty_param_bound(&self, sid: ast::ident)
+        -> Option<TyParamBound> {
                             match *self.id_to_str(sid) {
                                 ~"send" |
                                 ~"copy" |
@@ -2744,6 +2724,42 @@ pub impl Parser {
                                         self.mk_ty_path(sid)))
                                 }
                                 _ => None
+                            }
+                        }
+
+    fn parse_optional_ty_param_bounds(&self) -> @OptVec<TyParamBound> {
+        if !self.eat(&token::COLON) {
+            return @opt_vec::Empty;
+        }
+        let mut result = opt_vec::Empty;
+        loop {
+            match *self.token {
+
+                token::LIFETIME(lifetime) => {
+                    if str::eq_slice(*self.id_to_str(lifetime), "static") {
+                        result.push(RegionTyParamBound);
+                    } else {
+                        self.span_err(*self.span,
+                                      ~"`'static` is the only permissible \
+                                        region bound here");
+                    }
+                    self.bump();
+                }
+                token::MOD_SEP | token::IDENT(*) => {
+                    let maybe_bound = match *self.token {
+                        token::MOD_SEP => None,
+                        token::IDENT(copy sid, _) => {
+                            if self.look_ahead(1u) == token::EQ &&
+                                token::is_ident(&self.look_ahead(2u)) {
+                                self.bump();
+                                self.bump();
+                                match *self.token {
+                                    token::IDENT(copy sid2, _) =>
+                                        self.id_to_trait_ty_param_bound(sid2),
+                                    _ => fail!()
+                                }
+                            } else {
+                                self.id_to_trait_ty_param_bound(sid)
                             }
                         }
                         _ => fail!()
