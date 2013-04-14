@@ -34,6 +34,7 @@ use core::ptr::to_unsafe_ptr;
 use core::result::Result;
 use core::result;
 use core::to_bytes;
+use core::to_bytes::IterBytes;
 use core::uint;
 use core::vec;
 use core::hashmap::linear::{LinearMap, LinearSet};
@@ -305,8 +306,10 @@ enum tbox_flag {
     needs_subst = 1 | 2 | 8
 }
 
+#[deriving(Eq)]
 type t_box = @t_box_;
 
+#[deriving(Eq)]
 struct t_box_ {
     sty: sty,
     id: uint,
@@ -319,6 +322,7 @@ struct t_box_ {
 // to cast them back to a box. (Without the cast, compiler performance suffers
 // ~15%.) This does mean that a t value relies on the ctxt to keep its box
 // alive, and using ty::get is unsafe when the ctxt is no longer alive.
+/*
 enum t_opaque {}
 pub type t = *t_opaque;
 
@@ -328,6 +332,28 @@ pub fn get(t: t) -> t_box {
         let t3 = t2;
         cast::forget(t2);
         t3
+    }
+}
+*/
+#[deriving(Eq)]
+// #[deriving(Clone)]
+enum t_opaque { t_opaque_safely(t_box) }
+pub type t = @t_opaque;
+pub fn get(t: t) -> t_box {
+    match t {
+        @t_opaque_safely(tb) => tb
+    }
+}
+impl IterBytes for t_opaque {
+    fn iter_bytes(&self, lsb0: bool, f: to_bytes::Cb) {
+        match self {
+            &t_opaque_safely(t_box) => {
+                t_box.sty.iter_bytes(lsb0, f);
+                t_box.id.iter_bytes(lsb0, f);
+                t_box.flags.iter_bytes(lsb0, f);
+                t_box.o_def_id.iter_bytes(lsb0, f);
+            }
+        }
     }
 }
 
