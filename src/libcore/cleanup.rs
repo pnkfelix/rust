@@ -16,7 +16,7 @@ use cast::transmute;
 use io::{fd_t, WriterUtil};
 use libc::{c_char, c_void, c_uint, intptr_t, uintptr_t};
 use libc;
-use managed::raw::{BoxRepr, RC_MANAGED_UNIQUE, RC_IMMORTAL};
+use managed::raw::{BoxHeaderRepr, BoxRepr, RC_MANAGED_UNIQUE, RC_IMMORTAL};
 use option::{Some,None};
 use ptr::{mut_null, null, to_unsafe_ptr};
 use sys::size_of;
@@ -225,7 +225,6 @@ static always_gc : bool = false;
 #[cfg(stage3)]
 static always_gc : bool = true;
 
-#[cfg(unix)]
 fn check_flag(f: &str) -> bool {
     use libc;
     use os;
@@ -233,11 +232,6 @@ fn check_flag(f: &str) -> bool {
     do os::as_c_charp(f) |p| {
         unsafe { libc::getenv(p) != null() }
     }
-}
-
-#[cfg(windows)]
-fn check_flag(f: &str) -> bool {
-    false;
 }
 
 pub impl Gc {
@@ -823,7 +817,7 @@ pub impl Gc {
                 self.tls_marked.insert(addr);
             }
         }
-        let adj = 32; //size_of::<BoxHeaderRepr>();
+        let adj = size_of::<BoxHeaderRepr>();
         self.marking_stack.push((addr + adj, sz - adj));
     }
 
@@ -994,6 +988,11 @@ pub impl Gc {
 
         self.phase = GcStarting;
 
+        // Debugging consistency check; we've had some
+        // incorrectly-reported sizes of box headers before and
+        // everything goes south if we get this wrong.
+        assert!(size_of::<BoxHeaderRepr>() == 4 * size_of::<uint>());
+
         precise_time_ns(&mut start);
 
         // NB: need this here before we lock down the GC, to make sure
@@ -1131,7 +1130,7 @@ pub fn gc() {
         // Awkward but necessary: registers must be 16-byte
         // aligned on x64 due to dumping xmm state using
         // movapd. So we don't use the Registers structure.
-        let regs = [0u64, ..80];
+        let regs = [0u64, ..120];
         let r : uint = transmute(&regs);
         let r = (r + 16) & (!15);
 
@@ -1151,7 +1150,7 @@ pub fn gc() {
         // Awkward but necessary: registers must be 16-byte
         // aligned on x64 due to dumping xmm state using
         // movapd. So we don't use the Registers structure.
-        let regs = [0u64, ..80];
+        let regs = [0u64, ..120];
         let r : uint = transmute(&regs);
         let r = (r + 16) & (!15);
 

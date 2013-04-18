@@ -258,8 +258,14 @@ pub mod raw {
             Gc::get_task_gc().note_realloc(pre as uint,
                                            post as uint,
                                            (*post).unboxed.alloc +
-                                           48
-                                           /* size_of::<VecRepr>() */);
+                                           sys::size_of::<VecRepr>()
+                                           // FIXME: this is horrible
+                                           // but if we "fix" VecRepr
+                                           // by setting its .data field
+                                           // to () rather than u8,
+                                           // some other code breaks.
+                                           - sys::size_of::<u8>()
+                                          );
         }
     }
 

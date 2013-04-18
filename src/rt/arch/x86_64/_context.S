@@ -56,8 +56,10 @@ First four arguments:
 
 #if defined(__APPLE__) || defined(_WIN32)
 #define SWAP_REGISTERS _swap_registers
+#define DUMP_REGISTERS _dump_registers
 #else
 #define SWAP_REGISTERS swap_registers
+#define DUMP_REGISTERS dump_registers
 #endif
 
 // swap_registers(registers_t *oregs, registers_t *regs)
@@ -124,8 +126,8 @@ SWAP_REGISTERS:
 
 
 // dump_registers(registers_t *oregs, code *fn)
-.globl dump_registers
-dump_registers:
+.globl DUMP_REGISTERS
+DUMP_REGISTERS:
 
         mov %rax, (0*8)(ARG0)
         mov %rbx, (1*8)(ARG0)
@@ -147,25 +149,6 @@ dump_registers:
         mov %r14, (14*8)(ARG0)
         mov %r15, (15*8)(ARG0)
 
-        movapd %xmm0, (16*8)(ARG0)
-        movapd %xmm1, (18*8)(ARG0)
-        movapd %xmm2, (20*8)(ARG0)
-        movapd %xmm3, (22*8)(ARG0)
-        movapd %xmm4, (24*8)(ARG0)
-		
-        movapd %xmm5, (26*8)(ARG0)
-        movapd %xmm6, (28*8)(ARG0)
-        movapd %xmm7, (30*8)(ARG0)
-        movapd %xmm8, (32*8)(ARG0)
-
-        movapd %xmm5, (34*8)(ARG0)
-        movapd %xmm6, (36*8)(ARG0)
-        movapd %xmm7, (38*8)(ARG0)
-        movapd %xmm8, (40*8)(ARG0)
-
-        movapd %xmm5, (42*8)(ARG0)
-        movapd %xmm6, (44*8)(ARG0)
-        movapd %xmm7, (46*8)(ARG0)
-        movapd %xmm8, (48*8)(ARG0)
+        fxsave (16*8)(ARG0)
 
         jmp *ARG1

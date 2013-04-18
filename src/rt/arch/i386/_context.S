@@ -22,8 +22,10 @@ The registers_t variable is in (%esp)
 
 #if defined(__APPLE__) || defined(_WIN32)
 #define SWAP_REGISTERS _swap_registers
+#define DUMP_REGISTERS _dump_registers
 #else
 #define SWAP_REGISTERS swap_registers
+#define DUMP_REGISTERS dump_registers
 #endif
 
 // swap_registers(registers_t *oregs, registers_t *regs)
@@ -63,3 +65,21 @@ SWAP_REGISTERS:
 
     // Return!
     jmp *48(%eax)
+
+
+// dump_registers(registers_t *oregs, code *fn)
+.globl DUMP_REGISTERS
+DUMP_REGISTERS:
+
+	movl 4(%esp), %eax
+    movl %eax, 0(%eax)
+    movl %ebx, 4(%eax)
+    movl %ecx, 8(%eax)
+    movl %edx, 12(%eax)
+    movl %ebp, 16(%eax)
+    movl %esi, 20(%eax)
+    movl %edi, 24(%eax)
+
+    fsave 28(%eax)
+
+	jmp *8(%esp)
