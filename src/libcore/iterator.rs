@@ -199,3 +199,46 @@ impl<'self, A, T: Iterator<A>> Iterator<A> for TakeWhileIterator<'self, A, T> {
         }
     }
 }
+
+pub struct UnfoldrIterator<'self, A, St> {
+    priv f: &'self fn(&mut St) -> Option<A>,
+    priv state: St
+}
+
+impl<'self, A, St> UnfoldrIterator<'self, A, St> {
+    fn new(f: &'self fn(&mut St) -> Option<A>, initial_state: St)
+        -> UnfoldrIterator<'self, A, St> {
+        UnfoldrIterator {
+            f: f,
+            state: initial_state
+        }
+    }
+}
+
+impl<'self, A, St> Iterator<A> for UnfoldrIterator<'self, A, St> {
+    #[inline]
+    fn next(&mut self) -> Option<A> {
+        (self.f)(&mut self.state)
+    }
+}
+
+#[test]
+fn test_unfoldr() {
+    fn count(st: &mut uint) -> Option<uint> {
+        if *st < 10 {
+            let ret = Some(*st);
+            *st += 1;
+            ret
+        } else {
+            None
+        }
+    }
+
+    let mut it = UnfoldrIterator::new(count, 0);
+    let mut i = 0;
+    for it.advance |counted| {
+        assert_eq!(counted, i);
+        i += 1;
+    }
+    assert_eq!(i, 10);
+}
