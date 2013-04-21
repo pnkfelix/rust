@@ -132,7 +132,7 @@ pub fn lookup(
         check_traits: CheckTraitsFlag,      // Whether we check traits only.
         autoderef_receiver: AutoderefReceiverFlag)
      -> Option<method_map_entry> {
-    let mut impl_dups = HashSet::new();
+    let mut impl_dups = @mut HashSet::new();
     let lcx = LookupContext {
         fcx: fcx,
         expr: expr,
@@ -140,7 +140,7 @@ pub fn lookup(
         callee_id: callee_id,
         m_name: m_name,
         supplied_tps: supplied_tps,
-        impl_dups: &mut impl_dups,
+        impl_dups: impl_dups,
         inherent_candidates: @mut ~[],
         extension_candidates: @mut ~[],
         deref_args: deref_args,
@@ -159,7 +159,7 @@ pub struct LookupContext<'self> {
     callee_id: node_id,
     m_name: ast::ident,
     supplied_tps: &'self [ty::t],
-    impl_dups: &'self mut HashSet<def_id>,
+    impl_dups: @mut HashSet<def_id>,
     inherent_candidates: @mut ~[Candidate],
     extension_candidates: @mut ~[Candidate],
     deref_args: check::DerefArgs,

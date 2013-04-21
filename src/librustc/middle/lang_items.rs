@@ -258,7 +258,7 @@ pub impl LanguageItems {
 fn LanguageItemCollector(crate: @crate,
                          session: Session)
                       -> LanguageItemCollector {
-    let item_refs = HashMap();
+    let mut item_refs = HashMap::new();
 
     item_refs.insert(@~"const", ConstTraitLangItem as uint);
     item_refs.insert(@~"copy", CopyTraitLangItem as uint);
@@ -357,12 +357,17 @@ pub impl LanguageItemCollector {
             return;    // Didn't match.
         }
 
-        match self.item_refs.find(&value) {
+        let item_index = self.item_refs.find(&value).map(|x| **x);
+        // prevent borrow checker from considering   ^~~~~~~~~~~
+        // self to be borrowed (annoying)
+
+        match item_index {
+            Some(item_index) => {
+                self.collect_item(item_index, item_def_id);
+            }
             None => {
                 // Didn't match.
-            }
-            Some(&item_index) => {
-                self.collect_item(item_index, item_def_id)
+                return;
             }
         }
     }

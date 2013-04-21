@@ -642,7 +642,7 @@ pub fn RegionVarBindings(tcx: ty::ctxt) -> RegionVarBindings {
 }
 
 pub impl RegionVarBindings {
-    fn in_snapshot(&mut self) -> bool {
+    fn in_snapshot(&self) -> bool {
         self.undo_log.len() > 0
     }
 

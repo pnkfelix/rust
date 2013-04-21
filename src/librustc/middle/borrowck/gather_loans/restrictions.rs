@@ -1,0 +1,239 @@
+// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// file at the top-level directory of this distribution and at
+// http://rust-lang.org/COPYRIGHT.
+//
+// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
+//! Computes the restrictions that result from a borrow.
+
+use core::prelude::*;
+use middle::borrowck::*;
+use mc = middle::mem_categorization;
+use middle::ty;
+use syntax::ast::{m_const, m_imm, m_mutbl};
+use syntax::ast;
+use syntax::codemap::span;
+
+pub enum RestrictionResult {
+    Safe,
+    SafeIf(@LoanPath, ~[Restriction])
+}
+
+pub fn compute_restrictions(bccx: @BorrowckCtxt,
+                            span: span,
+                            cmt: mc::cmt,
+                            req_mutbl: ast::mutability) -> RestrictionResult {
+    let ctxt = RestrictionsContext {
+        bccx: bccx,
+        span: span,
+        cmt_original: cmt
+    };
+
+    let restr = match req_mutbl {
+        m_const => RESTR_EMPTY,
+        m_imm   => RESTR_EMPTY | RESTR_MUTATE,
+        m_mutbl => RESTR_EMPTY | RESTR_MUTATE | RESTR_FREEZE
+    };
+
+    ctxt.compute(cmt, restr)
+}
+
+///////////////////////////////////////////////////////////////////////////
+// Private
+
+struct RestrictionsContext {
+    bccx: @BorrowckCtxt,
+    span: span,
+    cmt_original: mc::cmt
+}
+
+impl RestrictionsContext {
+    fn tcx(&self) -> ty::ctxt {
+        self.bccx.tcx
+    }
+
+    fn compute(&self,
+               cmt: mc::cmt,
+               restrictions: RestrictionSet) -> RestrictionResult {
+        match cmt.cat {
+            mc::cat_rvalue => {
+                // Effectively, rvalues are stored into a
+                // non-aliasable temporary on the stack. Since they
+                // are inherently non-aliasable, they can only be
+                // accessed later through the borrow itself and hence
+                // must inherently comply with its terms.
+                Safe
+            }
+
+            mc::cat_local(local_id) |
+            mc::cat_arg(local_id, ast::by_copy) |
+            mc::cat_self(local_id) => {
+                let lp = @LpVar(local_id);
+                SafeIf(lp, ~[Restriction {loan_path: lp,
+                                          set: restrictions}])
+            }
+
+            mc::cat_interior(cmt_base, i) => {
+                // FIXME(#5397) --- Mut fields are not treated soundly
+                //                  (hopefully they will just get phased out)
+                let result = self.compute(cmt_base, restrictions);
+                self.extend(result, cmt.mutbl, LpInterior(i), restrictions)
+            }
+
+            mc::cat_deref(cmt_base, _, mc::uniq_ptr(*)) => {
+                // When we borrow the interior of an owned pointer, we
+                // cannot permit the base to be mutated, because that
+                // would cause the unique pointer to be freed.
+                let result = self.compute(cmt_base, restrictions | RESTR_MUTATE);
+                self.extend(result, cmt.mutbl, LpDeref, restrictions)
+            }
+
+            mc::cat_copied_upvar(*) | // FIXME(#2152) allow mutation of upvars
+            mc::cat_static_item(*) |
+            mc::cat_implicit_self(*) |
+            mc::cat_arg(_, ast::by_ref) |
+            mc::cat_deref(_, _, mc::region_ptr(m_const, _)) |
+            mc::cat_deref(_, _, mc::region_ptr(m_imm, _)) |
+            mc::cat_deref(_, _, mc::gc_ptr(m_const)) |
+            mc::cat_deref(_, _, mc::gc_ptr(m_imm)) => {
+                // All of these cases are cases where (1) we cannot
+                // control the aliasing and (2) the user cannot mutate
+                // the data. Because of (1), we report an error if the
+                // restrictions request us to prevent aliasing (this
+                // only occurs when re-borrowing an `&mut`, see
+                // below). Because of (2), no restrictions are needed
+                // to enforce RESTR_MUTATE.
+                //
+                // To be 100% consistent, we should report an error if
+                // RESTR_FREEZE is found, because we cannot prevent
+                // freezing, nor would we want to. However, we do not
+                // report such an error, because this restriction only
+                // occurs when the user is creating an `&mut` pointer
+                // to immutable or read-only data, and there is
+                // already another piece of code that checks for this
+                // condition.
+                self.check_aliasing_permitted(restrictions);
+                Safe
+            }
+
+            mc::cat_deref(cmt_base, _, mc::gc_ptr(ast::m_mutbl)) => {
+                // As above, `@mut` is inherently aliasable, so we
+                // just don't permit reborrowing (or mutating etc) an
+                // `&mut` found there. In some ways, this is a bit
+                // surprising, because it is legal to take an `&mut`
+                // borrow and then use `&mut`s that are found within.
+                // This is partly laziness on my part but should not
+                // lead to anything unsound. Basically the compiler
+                // will not allow you to mutate or borrow from an
+                // `&mut` found within any aliasable location,
+                // including an `@mut`. But if you borrow to `&mut`,
+                // then we know that any other attempt to borrow that
+                // `@mut` will result in an error, so we can consider
+                // the `&mut` unique.
+                self.check_aliasing_permitted(restrictions);
+
+                // Technically, no restrictions are *necessary* here.
+                // The validity of the borrow is guaranteed
+                // dynamically.  However, nonetheless we add a
+                // restriction to make a "best effort" to report
+                // static errors. For example, if there is code like
+                //
+                //    let v = @mut ~[1, 2, 3];
+                //    for v.each |e| {
+                //        v.push(e + 1);
+                //    }
+                //
+                // Then the code below would add restrictions on `*v`,
+                // which means that an error would be reported
+                // here. This of course is not perfect. For example,
+                // a function like the following would not report an error
+                // at compile-time but would fail dynamically:
+                //
+                //    let v = @mut ~[1, 2, 3];
+                //    let w = v;
+                //    for v.each |e| {
+                //        w.push(e + 1);
+                //    }
+                //
+                // In addition, we only add a restriction for those cases
+                // where we can construct a sensible loan path, so an
+                // example like the following will fail dynamically:
+                //
+                //    impl V {
+                //      fn get_list(&self) -> @mut ~[int];
+                //    }
+                //    ...
+                //    let v: &V = ...;
+                //    for v.get_list().each |e| {
+                //        v.get_list().push(e + 1);
+                //    }
+                match opt_loan_path(cmt_base) {
+                    None => Safe,
+                    Some(lp_base) => {
+                        let lp = @LpExtend(lp_base, cmt.mutbl, LpDeref);
+                        SafeIf(lp, ~[Restriction {loan_path: lp,
+                                                  set: restrictions}])
+                    }
+                }
+            }
+
+            mc::cat_deref(cmt_base, _, mc::region_ptr(ast::m_mutbl, _)) => {
+                // Because an `&mut` pointer does not inherit its
+                // mutability, we can only prevent mutation or prevent
+                // freezing if it is not aliased. Therefore, in such
+                // cases we restrict aliasing on `cmt_base`.
+                if restrictions.intersects(RESTR_MUTATE | RESTR_FREEZE) {
+                    let result = self.compute(cmt_base, restrictions | RESTR_ALIAS);
+                    self.extend(result, cmt.mutbl, LpDeref, restrictions)
+                } else {
+                    let result = self.compute(cmt_base, restrictions);
+                    self.extend(result, cmt.mutbl, LpDeref, restrictions)
+                }
+            }
+
+            mc::cat_deref(_, _, mc::unsafe_ptr) => {
+                // We are very trusting when working with unsafe pointers.
+                Safe
+            }
+
+            mc::cat_discr(cmt_base, _) => {
+                self.compute(cmt_base, restrictions)
+            }
+        }
+    }
+
+    fn extend(&self,
+              result: RestrictionResult,
+              mc: mc::MutabilityCategory,
+              elem: LoanPathElem,
+              restrictions: RestrictionSet) -> RestrictionResult {
+        match result {
+            Safe => Safe,
+            SafeIf(base_lp, base_vec) => {
+                let lp = @LpExtend(base_lp, mc, elem);
+                SafeIf(lp, vec::append_one(base_vec,
+                                           Restriction {loan_path: lp,
+                                                        set: restrictions}))
+            }
+        }
+    }
+
+    fn check_aliasing_permitted(&self, restrictions: RestrictionSet) {
+        //! This method is invoked when the current `cmt` is something
+        //! where aliasing cannot be controlled. It reports an error if
+        //! the restrictions required that it not be aliased.
+
+        if restrictions.intersects(RESTR_ALIAS) {
+            self.bccx.report(BckError {
+                span: self.span,
+                cmt: self.cmt_original,
+                code: err_cannot_prevent_aliasing
+            });
+        }
+    }
+}
+
