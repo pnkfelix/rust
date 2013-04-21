@@ -32,11 +32,11 @@ use syntax::{visit, ast_map};
 
 pub type map = @HashSet<node_id>;
 
-struct ctx<'self> {
+struct ctx {
     exp_map2: resolve::ExportMap2,
     tcx: ty::ctxt,
     method_map: typeck::method_map,
-    rmap: &'self mut HashSet<node_id>,
+    rmap: @mut HashSet<node_id>,
 }
 
 pub fn find_reachable(crate_mod: &_mod, exp_map2: resolve::ExportMap2,

@@ -50,59 +50,27 @@ The region maps encode information about region relationships.
   - the free region map is populated during type check as we check
     each function. See the function `relate_free_regions` for
     more information.
+- `cleanup_scopes` includes scopes where trans cleanups occur
+  - this is intended to reflect the current state of trans, not
+    necessarily how I think things ought to work
 */
 pub struct RegionMaps {
     priv scope_map: HashMap<ast::node_id, ast::node_id>,
     priv free_region_map: HashMap<FreeRegion, ~[FreeRegion]>,
+    priv cleanup_scopes: HashSet<ast::node_id>
 }
 
-pub struct ctxt {
+pub struct Context {
     sess: Session,
     def_map: resolve::DefMap,
 
     // Generated maps:
     region_maps: @mut RegionMaps,
 
-    // Generally speaking, expressions are parented to their innermost
-    // enclosing block. But some kinds of expressions serve as
-    // parents: calls, methods, etc.  In addition, some expressions
-    // serve as parents by virtue of where they appear.  For example,
-    // the condition in a while loop is always a parent.  In those
-    // cases, we add the node id of such an expression to this set so
-    // that when we visit it we can view it as a parent.
-    root_exprs: @mut HashSet<ast::node_id>,
+    // Innermost enclosing block
+    block: parent,
 
-    // The parent scope is the innermost block, statement, call, or match
-    // expression during the execution of which the current expression
-    // will be evaluated.  Generally speaking, the innermost parent
-    // scope is also the closest suitable ancestor in the AST tree.
-    //
-    // There is a subtle point concerning call arguments.  Imagine
-    // you have a call:
-    //
-    // { // block a
-    //     foo( // call b
-    //        x,
-    //        y);
-    // }
-    //
-    // In what lifetime are the expressions `x` and `y` evaluated?  At
-    // first, I imagine the answer was the block `a`, as the arguments
-    // are evaluated before the call takes place.  But this turns out
-    // to be wrong.  The lifetime of the call must encompass the
-    // argument evaluation as well.
-    //
-    // The reason is that evaluation of an earlier argument could
-    // create a borrow which exists during the evaluation of later
-    // arguments.  Consider this torture test, for example,
-    //
-    // fn test1(x: @mut ~int) {
-    //     foo(&**x, *x = ~5);
-    // }
-    //
-    // Here, the first argument `&**x` will be a borrow of the `~int`,
-    // but the second argument overwrites that very value! Bad.
-    // (This test is borrowck-pure-scope-in-call.rs, btw)
+    // Innermost enclosing expression
     parent: parent,
 }
 
@@ -131,8 +99,20 @@ pub impl RegionMaps {
                      sup: ast::node_id)
     {
         debug!("record_parent(sub=%?, sup=%?)", sub, sup);
+        assert!(sub != sup);
 
         self.scope_map.insert(sub, sup);
+    }
+
+    pub fn record_cleanup_scope(&mut self,
+                                scope_id: ast::node_id)
+    {
+        //! Records that a scope is a CLEANUP SCOPE.  This is invoked
+        //! from within regionck.  We wait until regionck because we do
+        //! not know which operators are overloaded until that point,
+        //! and only overloaded operators result in cleanup scopes.
+
+        self.cleanup_scopes.insert(scope_id);
     }
 
     fn opt_encl_scope(&self,
@@ -154,12 +134,31 @@ pub impl RegionMaps {
         }
     }
 
+    fn cleanup_scope(&self,
+                     expr_id: ast::node_id) -> ast::node_id
+    {
+        //! Returns the scope when temps in expr will be cleaned up
+
+        let mut id = self.encl_scope(expr_id);
+        while !self.cleanup_scopes.contains(&id) {
+            id = self.encl_scope(id);
+        }
+        return id;
+    }
+
     fn encl_region(&self,
                    id: ast::node_id) -> ty::Region
     {
         //! Returns the narrowest scope region that encloses `id`, if any.
 
         ty::re_scope(self.encl_scope(id))
+    }
+
+    pub fn scopes_intersect(&self,
+                            scope1: ast::node_id,
+                            scope2: ast::node_id) -> bool
+    {
+        self.is_sub_scope(scope1, scope2) || self.is_sub_scope(scope2, scope1)
     }
 
     fn is_sub_scope(&self,
@@ -304,6 +303,7 @@ pub impl RegionMaps {
         fn ancestors_of(self: &RegionMaps, scope: ast::node_id)
             -> ~[ast::node_id]
         {
+            // debug!("ancestors_of(scope=%d)", scope);
             let mut result = ~[scope];
             let mut scope = scope;
             loop {
@@ -314,13 +314,14 @@ pub impl RegionMaps {
                         scope = superscope;
                     }
                 }
+                // debug!("ancestors_of_loop(scope=%d)", scope);
             }
         }
     }
 }
 
 /// Extracts that current parent from cx, failing if there is none.
-pub fn parent_id(cx: ctxt, span: span) -> ast::node_id {
+pub fn parent_id(cx: Context, span: span) -> ast::node_id {
     match cx.parent {
       None => {
         cx.sess.span_bug(span, ~"crate should not be parent here");
@@ -332,144 +333,149 @@ pub fn parent_id(cx: ctxt, span: span) -> ast::node_id {
 }
 
 /// Records the current parent (if any) as the parent of `child_id`.
-pub fn record_parent(cx: ctxt, child_id: ast::node_id) {
+pub fn parent_to_expr(cx: Context, child_id: ast::node_id) {
     for cx.parent.each |parent_id| {
         cx.region_maps.record_parent(child_id, *parent_id);
     }
 }
 
-pub fn resolve_block(blk: &ast::blk, cx: ctxt, visitor: visit::vt<ctxt>) {
+/// Records the current parent (if any) as the parent of `child_id`.
+pub fn parent_to_block(cx: Context, child_id: ast::node_id) {
+    for cx.block.each |block_id| {
+        cx.region_maps.record_parent(child_id, *block_id);
+    }
+}
+
+pub fn resolve_block(blk: &ast::blk, cx: Context, visitor: visit::vt<Context>) {
     // Record the parent of this block.
-    record_parent(cx, blk.node.id);
+    parent_to_expr(cx, blk.node.id);
 
     // Descend.
-    let new_cx: ctxt = ctxt {parent: Some(blk.node.id),.. cx};
+    let new_cx = Context {block: Some(blk.node.id),
+                          parent: Some(blk.node.id),
+                          ..cx};
     visit::visit_block(blk, new_cx, visitor);
 }
 
-pub fn resolve_arm(arm: &ast::arm, cx: ctxt, visitor: visit::vt<ctxt>) {
+pub fn resolve_arm(arm: &ast::arm, cx: Context, visitor: visit::vt<Context>) {
     visit::visit_arm(arm, cx, visitor);
 }
 
-pub fn resolve_pat(pat: @ast::pat, cx: ctxt, visitor: visit::vt<ctxt>) {
+pub fn resolve_pat(pat: @ast::pat, cx: Context, visitor: visit::vt<Context>) {
     match pat.node {
-      ast::pat_ident(*) => {
-        let defn_opt = cx.def_map.find(&pat.id);
-        match defn_opt {
-          Some(&ast::def_variant(_,_)) => {
-            /* Nothing to do; this names a variant. */
-          }
-          _ => {
-            /* This names a local. Bind it to the containing scope. */
-            record_parent(cx, pat.id);
-          }
+        ast::pat_ident(*) => {
+            let defn_opt = cx.def_map.find(&pat.id);
+            match defn_opt {
+                Some(&ast::def_variant(_,_)) => {
+                    /* Nothing to do; this names a variant. */
+                }
+                _ => {
+                    /* This names a local. Bind it to the containing scope. */
+                    parent_to_block(cx, pat.id);
+                }
+            }
         }
-      }
-      _ => { /* no-op */ }
+        _ => { /* no-op */ }
     }
 
     visit::visit_pat(pat, cx, visitor);
 }
 
-pub fn resolve_stmt(stmt: @ast::stmt, cx: ctxt, visitor: visit::vt<ctxt>) {
+pub fn resolve_stmt(stmt: @ast::stmt, cx: Context, visitor: visit::vt<Context>) {
     match stmt.node {
-      ast::stmt_decl(*) => {
-        visit::visit_stmt(stmt, cx, visitor);
-      }
-      // This code has to be kept consistent with trans::base::trans_stmt
-      ast::stmt_expr(_, stmt_id) |
-      ast::stmt_semi(_, stmt_id) => {
-        record_parent(cx, stmt_id);
-        let mut expr_cx = cx;
-        expr_cx.parent = Some(stmt_id);
-        visit::visit_stmt(stmt, expr_cx, visitor);
-      }
-      ast::stmt_mac(*) => cx.sess.bug(~"unexpanded macro")
+        ast::stmt_decl(*) => {
+            visit::visit_stmt(stmt, cx, visitor);
+        }
+        ast::stmt_expr(_, stmt_id) |
+        ast::stmt_semi(_, stmt_id) => {
+            parent_to_expr(cx, stmt_id);
+            let expr_cx = Context {parent: Some(stmt_id), ..cx};
+            visit::visit_stmt(stmt, expr_cx, visitor);
+        }
+        ast::stmt_mac(*) => cx.sess.bug(~"unexpanded macro")
     }
 }
 
-pub fn resolve_expr(expr: @ast::expr, cx: ctxt, visitor: visit::vt<ctxt>) {
-    record_parent(cx, expr.id);
+pub fn resolve_expr(expr: @ast::expr, cx: Context, visitor: visit::vt<Context>) {
+    parent_to_expr(cx, expr.id);
 
     let mut new_cx = cx;
+    new_cx.parent = Some(expr.id);
     match expr.node {
-      // Calls or overloadable operators
-      // FIXME #3387
-      // ast::expr_index(*) | ast::expr_binary(*) |
-      // ast::expr_unary(*) |
-      ast::expr_call(*) | ast::expr_method_call(*) => {
-        debug!("node %d: %s", expr.id, pprust::expr_to_str(expr,
-                                                           cx.sess.intr()));
-        new_cx.parent = Some(expr.id);
-      }
-      ast::expr_match(*) => {
-        debug!("node %d: %s", expr.id, pprust::expr_to_str(expr,
-                                                           cx.sess.intr()));
-        new_cx.parent = Some(expr.id);
-      }
-      ast::expr_while(cond, _) => {
-        new_cx.root_exprs.insert(cond.id);
-      }
-      _ => {}
+        ast::expr_index(*) | ast::expr_binary(*) |
+        ast::expr_unary(*) | ast::expr_call(*) | ast::expr_method_call(*) => {
+            // The lifetimes for a call or method call look as follows:
+            //
+            // call.id
+            // - arg0.id
+            // - ...
+            // - argN.id
+            // - call.callee_id
+            //
+            // The idea is that call.callee_id represents *the time when
+            // the invoked function is actually running* and call.id
+            // represents *the time to prepare the arguments and make the
+            // call*.  See the section "Borrows in Calls" borrowck/doc.rs
+            // for an extended explanantion of why this distinction is
+            // important.
+            parent_to_expr(new_cx, expr.callee_id);
+        }
+        _ => {}
     };
 
-    if new_cx.root_exprs.contains(&expr.id) {
-        new_cx.parent = Some(expr.id);
-    }
 
     visit::visit_expr(expr, new_cx, visitor);
 }
 
 pub fn resolve_local(local: @ast::local,
-                     cx: ctxt,
-                     visitor: visit::vt<ctxt>) {
-    record_parent(cx, local.node.id);
+                     cx: Context,
+                     visitor: visit::vt<Context>) {
+    parent_to_block(cx, local.node.id);
     visit::visit_local(local, cx, visitor);
 }
 
-pub fn resolve_item(item: @ast::item, cx: ctxt, visitor: visit::vt<ctxt>) {
+pub fn resolve_item(item: @ast::item, cx: Context, visitor: visit::vt<Context>) {
     // Items create a new outer block scope as far as we're concerned.
-    let new_cx: ctxt = ctxt {parent: None,.. cx};
+    let new_cx = Context {block: None, parent: None, ..cx};
     visit::visit_item(item, new_cx, visitor);
 }
 
 pub fn resolve_fn(fk: &visit::fn_kind,
                   decl: &ast::fn_decl,
                   body: &ast::blk,
-                  sp: span,
+                  _sp: span,
                   id: ast::node_id,
-                  cx: ctxt,
-                  visitor: visit::vt<ctxt>) {
-    let fn_cx = match *fk {
-        visit::fk_item_fn(*) | visit::fk_method(*) |
-        visit::fk_dtor(*) => {
-            // Top-level functions are a root scope.
-            ctxt {parent: Some(id),.. cx}
-        }
+                  cx: Context,
+                  visitor: visit::vt<Context>) {
+    debug!("region::resolve_fn(id=%?, body.node.id=%?, cx.parent=%?)",
+           id, body.node.id, cx.parent);
 
-        visit::fk_anon(*) | visit::fk_fn_block(*) => {
-            // Closures continue with the inherited scope.
-            cx
-        }
-    };
-
-    // Record the ID of `self`.
+    // The arguments and `self` are parented to the body of the fn.
+    let decl_cx = Context {parent: Some(body.node.id),
+                           block: Some(body.node.id),
+                           ..cx};
     match *fk {
         visit::fk_method(_, _, method) => {
             cx.region_maps.record_parent(method.self_id, body.node.id);
         }
         _ => {}
     }
+    visit::visit_fn_decl(decl, decl_cx, visitor);
 
-    debug!("visiting fn with body %d. cx.parent: %? \
-            fn_cx.parent: %?",
-           body.node.id, cx.parent, fn_cx.parent);
-
-    for decl.inputs.each |input| {
-        cx.region_maps.record_parent(input.id, body.node.id);
-    }
-
-    visit::visit_fn(fk, decl, body, sp, id, fn_cx, visitor);
+    // The body of the fn itself is either a root scope (top-level fn)
+    // or it continues with the inherited scope (closures).
+    let body_cx = match *fk {
+        visit::fk_item_fn(*) |
+        visit::fk_method(*) |
+        visit::fk_dtor(*) => {
+            Context {parent: None, block: None, ..cx}
+        }
+        visit::fk_anon(*) |
+        visit::fk_fn_block(*) => {
+            cx
+        }
+    };
+    (visitor.visit_block)(body, body_cx, visitor);
 }
 
 pub fn resolve_crate(sess: Session,
@@ -478,13 +484,14 @@ pub fn resolve_crate(sess: Session,
 {
     let region_maps = @mut RegionMaps {
         scope_map: HashMap::new(),
-        free_region_map: HashMap::new()
+        free_region_map: HashMap::new(),
+        cleanup_scopes: HashSet::new(),
     };
-    let cx: ctxt = ctxt {sess: sess,
-                         def_map: def_map,
-                         region_maps: region_maps,
-                         root_exprs: @mut HashSet::new(),
-                         parent: None};
+    let cx = Context {sess: sess,
+                      def_map: def_map,
+                      region_maps: region_maps,
+                      parent: None,
+                      block: None};
     let visitor = visit::mk_vt(@visit::Visitor {
         visit_block: resolve_block,
         visit_item: resolve_item,

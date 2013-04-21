@@ -213,40 +213,6 @@ pub fn syntax_expander_table() -> SyntaxEnv {
 // when a macro expansion occurs, the resulting nodes have the backtrace()
 // -> expn_info of their expansion context stored into their span.
 pub trait ext_ctxt {
-<<<<<<< HEAD
-    fn codemap(@mut self) -> @CodeMap;
-    fn parse_sess(@mut self) -> @mut parse::ParseSess;
-    fn cfg(@mut self) -> ast::crate_cfg;
-    fn call_site(@mut self) -> span;
-    fn print_backtrace(@mut self);
-    fn backtrace(@mut self) -> Option<@ExpnInfo>;
-    fn mod_push(@mut self, mod_name: ast::ident);
-    fn mod_pop(@mut self);
-    fn mod_path(@mut self) -> ~[ast::ident];
-    fn bt_push(@mut self, ei: codemap::ExpnInfo);
-    fn bt_pop(@mut self);
-    fn span_fatal(@mut self, sp: span, msg: &str) -> !;
-    fn span_err(@mut self, sp: span, msg: &str);
-    fn span_warn(@mut self, sp: span, msg: &str);
-    fn span_unimpl(@mut self, sp: span, msg: &str) -> !;
-    fn span_bug(@mut self, sp: span, msg: &str) -> !;
-    fn bug(@mut self, msg: &str) -> !;
-    fn next_id(@mut self) -> ast::node_id;
-    fn trace_macros(@mut self) -> bool;
-    fn set_trace_macros(@mut self, x: bool);
-||||||| parent of 76694e0... libsyntax: final adjustments
-    fn codemap(@mut self) -> @CodeMap;
-    fn parse_sess(@mut self) -> @mut parse::ParseSess;
-    fn cfg(@mut self) -> ast::crate_cfg;
-    fn call_site(@mut self) -> span;
-    fn print_backtrace(@mut self);
-    fn backtrace(@mut self) -> Option<@ExpnInfo>;
-    fn mod_push(@mut self, mod_name: ast::ident);
-    fn mod_pop(@mut self);
-    fn mod_path(@mut self) -> ~[ast::ident];
-    fn bt_push(@mut self, ei: codemap::ExpnInfo);
-    fn bt_pop(@mut self);
-    fn span_fatal(@mut self, sp: span, msg: &str) -> !;
     fn codemap(&self) -> @CodeMap;
     fn parse_sess(&self) -> @mut parse::ParseSess;
     fn cfg(&self) -> ast::crate_cfg;
@@ -350,16 +316,8 @@ pub fn mk_ctxt(parse_sess: @mut parse::ParseSess, cfg: ast::crate_cfg)
         fn next_id(&self) -> ast::node_id {
             return parse::next_node_id(self.parse_sess);
         }
-<<<<<<< HEAD
-        fn trace_macros(@mut self) -> bool {
-            self.trace_mac
-||||||| parent of 76694e0... libsyntax: final adjustments
-        pure fn trace_macros(@mut self) -> bool {
-            self.trace_mac
-=======
-        pure fn trace_macros(&self) -> bool {
+        fn trace_macros(&self) -> bool {
             *self.trace_mac
->>>>>>> 76694e0... libsyntax: final adjustments
         }
         fn set_trace_macros(&self, x: bool) {
             *self.trace_mac = x

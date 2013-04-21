@@ -73,6 +73,9 @@ pub fn explain_region_and_span(cx: ctxt, region: ty::Region)
           Some(&ast_map::node_block(ref blk)) => {
             explain_span(cx, "block", blk.span)
           }
+          Some(&ast_map::node_callee_scope(expr)) => {
+              explain_span(cx, "callee", expr.span)
+          }
           Some(&ast_map::node_expr(expr)) => {
             match expr.node {
               ast::expr_call(*) => explain_span(cx, "call", expr.span),

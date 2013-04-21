@@ -102,6 +102,7 @@ pub enum ast_node {
     node_dtor(Generics, @struct_dtor, def_id, @path),
     node_block(blk),
     node_struct_ctor(@struct_def, @item, @path),
+    node_callee_scope(@expr)
 }
 
 pub type map = @mut HashMap<node_id, ast_node>;
@@ -215,7 +216,7 @@ pub fn map_fn(
                     /* FIXME (#2543) */ copy *generics,
                     dt,
                     parent_id,
-                    @/* FIXME (#2543) */ copy *cx.path));
+                    @/* FIXME (#2543) */ copy cx.path));
       }
       _ => ()
     }
@@ -292,7 +293,7 @@ pub fn map_item(i: @item, cx: @mut Ctx, v: visit::vt<@mut Ctx>) {
                             extend(cx, i.ident)
                         } else {
                             // Anonymous extern mods go in the parent scope
-                            @copy *cx.path
+                            @copy cx.path
                         }
                     )
                 );
@@ -358,6 +359,17 @@ pub fn map_struct_def(
 
 pub fn map_expr(ex: @expr, cx: @mut Ctx, v: visit::vt<@mut Ctx>) {
     cx.map.insert(ex.id, node_expr(ex));
+    match ex.node {
+        // Expressions which are or might be calls:
+        ast::expr_call(*) |
+        ast::expr_method_call(*) |
+        ast::expr_index(*) |
+        ast::expr_binary(*) |
+        ast::expr_unary(*) => {
+            cx.map.insert(ex.callee_id, node_callee_scope(ex));
+        }
+        _ => {}
+    }
     visit::visit_expr(ex, cx, v);
 }
 
@@ -406,6 +418,9 @@ pub fn node_id_to_str(map: map, id: node_id, itr: @ident_interner) -> ~str {
       }
       Some(&node_expr(expr)) => {
         fmt!("expr %s (id=%?)", pprust::expr_to_str(expr, itr), id)
+      }
+      Some(&node_callee_scope(expr)) => {
+        fmt!("callee_scope %s (id=%?)", pprust::expr_to_str(expr, itr), id)
       }
       Some(&node_stmt(stmt)) => {
         fmt!("stmt %s (id=%?)",
