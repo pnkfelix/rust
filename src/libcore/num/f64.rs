@@ -17,12 +17,7 @@ use to_str;
 use from_str;
 
 #[cfg(notest)] use cmp::{Eq, Ord};
-#[cfg(stage0,notest)]
-use ops::{Add, Sub, Mul, Div, Modulo, Neg};
-#[cfg(stage1,notest)]
-#[cfg(stage2,notest)]
-#[cfg(stage3,notest)]
-use ops::{Add, Sub, Mul, Quot, Rem, Neg};
+#[cfg(notest)] use ops::{Add, Sub, Mul, Quot, Rem, Neg};
 
 pub use cmath::c_double_targ_consts::*;
 pub use cmp::{min, max};
@@ -330,24 +325,12 @@ impl Sub<f64,f64> for f64 {
 impl Mul<f64,f64> for f64 {
     fn mul(&self, other: &f64) -> f64 { *self * *other }
 }
-#[cfg(stage0,notest)]
-impl Div<f64,f64> for f64 {
-    fn div(&self, other: &f64) -> f64 { *self / *other }
-}
-#[cfg(stage1,notest)]
-#[cfg(stage2,notest)]
-#[cfg(stage3,notest)]
+#[cfg(notest)]
 impl Quot<f64,f64> for f64 {
     #[inline(always)]
     fn quot(&self, other: &f64) -> f64 { *self / *other }
 }
-#[cfg(stage0,notest)]
-impl Modulo<f64,f64> for f64 {
-    fn modulo(&self, other: &f64) -> f64 { *self % *other }
-}
-#[cfg(stage1,notest)]
-#[cfg(stage2,notest)]
-#[cfg(stage3,notest)]
+#[cfg(notest)]
 impl Rem<f64,f64> for f64 {
     #[inline(always)]
     fn rem(&self, other: &f64) -> f64 { *self % *other }

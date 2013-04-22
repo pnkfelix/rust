@@ -17,12 +17,7 @@ use from_str;
 use to_str;
 
 #[cfg(notest)] use cmp::{Eq, Ord};
-#[cfg(stage0,notest)]
-use ops::{Add, Sub, Mul, Div, Modulo, Neg};
-#[cfg(stage1,notest)]
-#[cfg(stage2,notest)]
-#[cfg(stage3,notest)]
-use ops::{Add, Sub, Mul, Quot, Rem, Neg};
+#[cfg(notest)] use ops::{Add, Sub, Mul, Quot, Rem, Neg};
 
 pub use cmath::c_float_targ_consts::*;
 
@@ -311,24 +306,12 @@ impl Sub<f32,f32> for f32 {
 impl Mul<f32,f32> for f32 {
     fn mul(&self, other: &f32) -> f32 { *self * *other }
 }
-#[cfg(stage0,notest)]
-impl Div<f32,f32> for f32 {
-    fn div(&self, other: &f32) -> f32 { *self / *other }
-}
-#[cfg(stage1,notest)]
-#[cfg(stage2,notest)]
-#[cfg(stage3,notest)]
+#[cfg(notest)]
 impl Quot<f32,f32> for f32 {
     #[inline(always)]
     fn quot(&self, other: &f32) -> f32 { *self / *other }
 }
-#[cfg(stage0,notest)]
-impl Modulo<f32,f32> for f32 {
-    fn modulo(&self, other: &f32) -> f32 { *self % *other }
-}
-#[cfg(stage1,notest)]
-#[cfg(stage2,notest)]
-#[cfg(stage3,notest)]
+#[cfg(notest)]
 impl Rem<f32,f32> for f32 {
     #[inline(always)]
     fn rem(&self, other: &f32) -> f32 { *self % *other }

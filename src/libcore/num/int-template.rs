@@ -185,24 +185,10 @@ impl Sub<T,T> for T {
 impl Mul<T,T> for T {
     fn mul(&self, other: &T) -> T { *self * *other }
 }
-#[cfg(stage0,notest)]
-impl Div<T,T> for T {
-    fn div(&self, other: &T) -> T { *self / *other }
-}
-#[cfg(stage1,notest)]
-#[cfg(stage2,notest)]
-#[cfg(stage3,notest)]
 impl Quot<T,T> for T {
     #[inline(always)]
     fn quot(&self, other: &T) -> T { *self / *other }
 }
-#[cfg(stage0,notest)]
-impl Modulo<T,T> for T {
-    fn modulo(&self, other: &T) -> T { *self % *other }
-}
-#[cfg(stage1,notest)]
-#[cfg(stage2,notest)]
-#[cfg(stage3,notest)]
 impl Rem<T,T> for T {
     #[inline(always)]
     fn rem(&self, other: &T) -> T { *self % *other }

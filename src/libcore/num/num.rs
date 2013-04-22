@@ -10,15 +10,6 @@
 
 //! An interface for numeric types
 use cmp::{Eq, Ord};
-#[cfg(stage0)]
-use ops::{Add, Sub, Mul, Neg};
-#[cfg(stage0)]
-use Quot = ops::Div;
-#[cfg(stage0)]
-use Rem = ops::Modulo;
-#[cfg(stage1)]
-#[cfg(stage2)]
-#[cfg(stage3)]
 use ops::{Add, Sub, Mul, Quot, Rem, Neg};
 use option::Option;
 use kinds::Copy;
@@ -203,23 +194,7 @@ pub fn pow_with_uint<T:NumCast+One+Zero+Copy+Quot<T,T>+Mul<T,T>>(
     total
 }
 
-#[cfg(stage0,test)]
-fn test_num<T:Num + NumCast>(ten: T, two: T) {
-    assert_eq!(ten.add(&two),    cast(12));
-    assert_eq!(ten.sub(&two),    cast(8));
-    assert_eq!(ten.mul(&two),    cast(20));
-    assert_eq!(ten.div(&two),    cast(5));
-    assert_eq!(ten.modulo(&two), cast(0));
-
-    assert_eq!(ten.add(&two),    ten + two);
-    assert_eq!(ten.sub(&two),    ten - two);
-    assert_eq!(ten.mul(&two),    ten * two);
-    assert_eq!(ten.div(&two),    ten / two);
-    assert_eq!(ten.modulo(&two), ten % two);
-}
-#[cfg(stage1,test)]
-#[cfg(stage2,test)]
-#[cfg(stage3,test)]
+#[cfg(test)]
 fn test_num<T:Num + NumCast>(ten: T, two: T) {
     assert_eq!(ten.add(&two),  cast(12));
     assert_eq!(ten.sub(&two),  cast(8));

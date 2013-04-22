@@ -28,12 +28,7 @@ use to_str;
 use from_str;
 
 #[cfg(notest)] use cmp::{Eq, Ord};
-#[cfg(stage0,notest)]
-use ops::{Add, Sub, Mul, Div, Modulo, Neg};
-#[cfg(stage1,notest)]
-#[cfg(stage2,notest)]
-#[cfg(stage3,notest)]
-use ops::{Add, Sub, Mul, Quot, Rem, Neg};
+#[cfg(notest)] use ops::{Add, Sub, Mul, Quot, Rem, Neg};
 
 pub use f64::{add, sub, mul, quot, rem, lt, le, eq, ne, ge, gt};
 pub use f64::logarithm;
@@ -465,24 +460,12 @@ impl Sub<float,float> for float {
 impl Mul<float,float> for float {
     fn mul(&self, other: &float) -> float { *self * *other }
 }
-#[cfg(stage0,notest)]
-impl Div<float,float> for float {
-    fn div(&self, other: &float) -> float { *self / *other }
-}
-#[cfg(stage1,notest)]
-#[cfg(stage2,notest)]
-#[cfg(stage3,notest)]
+#[cfg(notest)]
 impl Quot<float,float> for float {
     #[inline(always)]
     fn quot(&self, other: &float) -> float { *self / *other }
 }
-#[cfg(stage0,notest)]
-impl Modulo<float,float> for float {
-    fn modulo(&self, other: &float) -> float { *self % *other }
-}
-#[cfg(stage1,notest)]
-#[cfg(stage2,notest)]
-#[cfg(stage3,notest)]
+#[cfg(notest)]
 impl Rem<float,float> for float {
     #[inline(always)]
     fn rem(&self, other: &float) -> float { *self % *other }
