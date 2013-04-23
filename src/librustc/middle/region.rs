@@ -162,21 +162,30 @@ pub impl RegionMaps {
     }
 
     fn is_subscope_of(&self,
-                      sub_scope: ast::node_id,
+                      subscope: ast::node_id,
                       superscope: ast::node_id) -> bool
     {
         /*!
-         * Returns true if `sub_scope` is equal to or is lexically
+         * Returns true if `subscope` is equal to or is lexically
          * nested inside `superscope` and false otherwise.
          */
 
-        let mut sub_scope = sub_scope;
-        while superscope != sub_scope {
-            match self.scope_map.find(&sub_scope) {
-                None => return false,
-                Some(&scope) => sub_scope = scope
+        let mut s = subscope;
+        while superscope != s {
+            match self.scope_map.find(&s) {
+                None => {
+                    debug!("is_subscope_of(%?, %?, s=%?)=false",
+                           subscope, superscope, s);
+
+                    return false;
+                }
+                Some(&scope) => s = scope
             }
         }
+
+        debug!("is_subscope_of(%?, %?)=true",
+               subscope, superscope);
+
         return true;
     }
 

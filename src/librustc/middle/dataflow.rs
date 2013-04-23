@@ -137,24 +137,25 @@ impl<O:DataFlowOperator> DataFlowContext<O> {
     fn apply_gen_kill(&self, id: ast::node_id, bits: &mut [uint]) {
         //! Applies the gen and kill sets for `id` to `bits`
 
+        debug!("apply_gen_kill(id=%?, bits=%s) [before]",
+               id, mut_bits_to_str(bits));
         let (start, end) = self.compute_id_range(id);
         let gens = self.gens.slice(start, end);
         bitwise(bits, gens, |a, b| a | b);
         let kills = self.kills.slice(start, end);
         bitwise(bits, kills, |a, b| a & !b);
+
+        debug!("apply_gen_kill(id=%?, bits=%s) [after]",
+               id, mut_bits_to_str(bits));
     }
 
     fn compute_id_range(&self, absolute_id: ast::node_id) -> (uint, uint) {
-        debug!("compute_id_range(absolute_id=%?, id_range=%?, words_per_id=%?)",
-               absolute_id, self.id_range, self.words_per_id);
-
         assert!(absolute_id >= self.id_range.min);
         assert!(absolute_id < self.id_range.max);
 
         let relative_id = absolute_id - self.id_range.min;
         let start = (relative_id as uint) * self.words_per_id;
         let end = start + self.words_per_id;
-        debug!("   range=%?..%?", start, end);
         (start, end)
     }
 
@@ -741,7 +742,7 @@ fn set_bit(words: &mut [uint], bit: uint) -> bool {
 
 fn bit_str(bit: uint) -> ~str {
     let byte = bit >> 8;
-    let lobits = bit & 0xFF;
+    let lobits = 1 << (bit & 0xFF);
     fmt!("[%u:%u-%02x]", bit, byte, lobits)
 }
 

@@ -184,6 +184,7 @@ pub impl<'self> CheckLoanCtxt<'self> {
             m_imm =>   RESTR_ALIAS | RESTR_FREEZE,
             m_const => RESTR_ALIAS,
         };
+        debug!("illegal_if=%?", illegal_if);
 
         for old_loan.restrictions.each |restr| {
             if !restr.set.intersects(illegal_if) { loop; }

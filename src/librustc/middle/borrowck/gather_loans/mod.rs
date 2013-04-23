@@ -394,7 +394,7 @@ pub impl GatherLoanCtxt {
             }
 
             restrictions::SafeIf(loan_path, restrictions) => {
-                let kill_scope = match loan_region {
+                let loan_scope = match loan_region {
                     ty::re_scope(id) => id,
                     ty::re_free(ref fr) => fr.scope_id,
 
@@ -417,7 +417,11 @@ pub impl GatherLoanCtxt {
                     }
                 };
 
+                let kill_scope = self.compute_kill_scope(loan_scope, loan_path);
+
+                let all_loans = &mut *self.all_loans; // FIXME(#5074)
                 Loan {
+                    index: all_loans.len(),
                     loan_path: loan_path,
                     cmt: cmt,
                     mutbl: req_mutbl,
@@ -449,6 +453,30 @@ pub impl GatherLoanCtxt {
                     }
                 }
             }
+        }
+    }
+
+    fn lexical_scope(&self, lp: @LoanPath) -> ast::node_id {
+        match *lp {
+            LpVar(local_id) => {
+                let rm = self.bccx.tcx.region_maps;
+                rm.encl_scope(local_id)
+            }
+
+            LpExtend(base, _, _) => self.lexical_scope(base)
+        }
+    }
+
+    fn compute_kill_scope(&self,
+                          loan_scope: ast::node_id,
+                          lp: @LoanPath) -> ast::node_id {
+        let lexical_scope = self.lexical_scope(lp);
+        let rm = self.bccx.tcx.region_maps;
+        if rm.is_subscope_of(lexical_scope, loan_scope) {
+            lexical_scope
+        } else {
+            assert!(rm.is_subscope_of(loan_scope, lexical_scope));
+            loan_scope
         }
     }
 

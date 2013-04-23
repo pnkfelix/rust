@@ -2415,7 +2415,6 @@ pub fn create_entry_wrapper(ccx: @CrateContext,
         unsafe {
             llvm::LLVMPositionBuilderAtEnd(bld, llbb);
 
-            let crate_map = ccx.crate_map;
             let start_def_id = ccx.tcx.lang_items.start_fn();
             let start_fn = if start_def_id.crate == ast::local_crate {
                 ccx.sess.bug(~"start lang item is never in the local crate")
@@ -2640,7 +2639,7 @@ pub fn get_item_val(ccx: @CrateContext, id: ast::node_id) -> ValueRef {
             let class_ty = ty::lookup_item_type(tcx, parent_id).ty;
             // This code shouldn't be reached if the class is generic
             assert!(!ty::type_has_params(class_ty));
-            let lldty = unsafe {
+            let lldty = {
                 T_fn(~[
                     T_ptr(T_i8()),
                     T_ptr(type_of(ccx, class_ty))

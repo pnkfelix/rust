@@ -167,7 +167,7 @@ impl GuaranteeLifetimeContext {
         // Make sure that the loan does not exceed the maximum time
         // that we can root the value, dynamically.
         let root_region = ty::re_scope(self.root_scope_id);
-        if self.bccx.is_subregion_of(self.loan_region, root_region) {
+        if !self.bccx.is_subregion_of(self.loan_region, root_region) {
             self.report_error(
                 err_out_of_root_scope(root_region, self.loan_region));
             return;
@@ -257,7 +257,7 @@ impl GuaranteeLifetimeContext {
 
         match cmt.cat {
             mc::cat_rvalue => {
-                self.bccx.tcx.region_maps.cleanup_scope(cmt.id)
+                ty::re_scope(self.bccx.tcx.region_maps.cleanup_scope(cmt.id))
             }
 
             mc::cat_implicit_self |

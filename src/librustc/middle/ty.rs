@@ -1052,7 +1052,7 @@ fn mk_t(cx: ctxt, st: sty) -> t {
 }
 
 #[inline(always)]
-pub fn mk_prim_t(cx: ctxt, primitive: &'static t_box_) -> t {
+pub fn mk_prim_t(_cx: ctxt, primitive: &'static t_box_) -> t {
     unsafe {
         cast::transmute::<&'static t_box_, t>(primitive)
     }

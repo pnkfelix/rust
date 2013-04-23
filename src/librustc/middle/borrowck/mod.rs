@@ -196,6 +196,7 @@ pub enum PartialTotal {
 
 /// Record of a loan that was issued.
 pub struct Loan {
+    index: uint,
     loan_path: @LoanPath,
     cmt: mc::cmt,
     mutbl: ast::mutability,
@@ -541,7 +542,8 @@ impl DataFlowOperator for LoanDataFlowOperator {
 
 impl Repr for Loan {
     fn repr(&self, tcx: ty::ctxt) -> ~str {
-        fmt!("Loan(%s, %?-%?, %s)",
+        fmt!("Loan_%?(%s, %?-%?, %s)",
+             self.index,
              self.loan_path.repr(tcx),
              self.gen_scope,
              self.kill_scope,
