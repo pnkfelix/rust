@@ -76,9 +76,11 @@ fn traverse_def_id(cx: @mut ctx, did: def_id) {
         Some(&ast_map::node_item(item, _)) => traverse_public_item(cx, item),
         Some(&ast_map::node_method(_, impl_id, _)) => traverse_def_id(cx, impl_id),
         Some(&ast_map::node_foreign_item(item, _, _, _)) => {
+            let cx = &mut *cx; // NOTE reborrow @mut
             cx.rmap.insert(item.id);
         }
         Some(&ast_map::node_variant(ref v, _, _)) => {
+            let cx = &mut *cx; // NOTE reborrow @mut
             cx.rmap.insert(v.node.id);
         }
         _ => ()
@@ -108,7 +110,7 @@ fn traverse_public_item(cx: @mut ctx, item: @item) {
       item_foreign_mod(ref nm) => {
           if !traverse_exports(cx, item.id) {
               for nm.items.each |item| {
-                  cx.rmap.insert(item.id);
+                  (&mut *cx).rmap.insert(item.id); // NOTE reborrow @mut
               }
           }
       }
@@ -124,17 +126,17 @@ fn traverse_public_item(cx: @mut ctx, item: @item) {
                 m.generics.ty_params.len() > 0u ||
                 attr::find_inline_attr(m.attrs) != attr::ia_none
             {
-                cx.rmap.insert(m.id);
+                (&mut *cx).rmap.insert(m.id); // NOTE reborrow @mut
                 traverse_inline_body(cx, &m.body);
             }
         }
       }
       item_struct(ref struct_def, ref generics) => {
         for struct_def.ctor_id.each |&ctor_id| {
-            cx.rmap.insert(ctor_id);
+            (&mut *cx).rmap.insert(ctor_id); // NOTE reborrow @mut
         }
         for struct_def.dtor.each |dtor| {
-            cx.rmap.insert(dtor.node.id);
+            (&mut *cx).rmap.insert(dtor.node.id);
             if generics.ty_params.len() > 0u ||
                 attr::find_inline_attr(dtor.node.attrs) != attr::ia_none
             {

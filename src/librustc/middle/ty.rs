@@ -4105,7 +4105,7 @@ pub fn lookup_field_type(tcx: ctxt,
     }
     else {
         match tcx.tcache.find(&id) {
-           Some(tpt) => tpt.ty,
+           Some(&ty_param_bounds_and_ty {ty, _}) => ty,
            None => {
                let tpt = csearch::get_field_type(tcx, struct_id, id);
                tcx.tcache.insert(id, tpt);
