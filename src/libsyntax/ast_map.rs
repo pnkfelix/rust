@@ -365,6 +365,7 @@ pub fn map_expr(ex: @expr, cx: @mut Ctx, v: visit::vt<@mut Ctx>) {
         ast::expr_method_call(*) |
         ast::expr_index(*) |
         ast::expr_binary(*) |
+        ast::expr_assign_op(*) |
         ast::expr_unary(*) => {
             cx.map.insert(ex.callee_id, node_callee_scope(ex));
         }
