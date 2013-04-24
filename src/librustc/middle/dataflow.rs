@@ -78,7 +78,7 @@ struct PropagationContext<'self, O> {
 }
 
 struct LoopScope<'self> {
-    continue_id: ast::node_id,
+    loop_id: ast::node_id,
     break_bits: ~[uint]
 }
 
@@ -310,7 +310,7 @@ impl<'self, O:DataFlowOperator> PropagationContext<'self, O> {
                 if self.dfcx.oper.walk_closures() {
                     // NOTE think hard about this
                     loop_scopes.push(LoopScope {
-                        continue_id: expr.id,
+                        loop_id: expr.id,
                         break_bits: reslice(in_out).to_vec()
                     });
                     for decl.inputs.each |input| {
@@ -362,7 +362,7 @@ impl<'self, O:DataFlowOperator> PropagationContext<'self, O> {
 
                 let mut body_bits = reslice(in_out).to_vec();
                 loop_scopes.push(LoopScope {
-                    continue_id: expr.id,
+                    loop_id: expr.id,
                     break_bits: reslice(in_out).to_vec()
                 });
                 self.walk_block(blk, body_bits, loop_scopes);
@@ -384,7 +384,7 @@ impl<'self, O:DataFlowOperator> PropagationContext<'self, O> {
                 let mut body_bits = reslice(in_out).to_vec();
                 self.reset(in_out);
                 loop_scopes.push(LoopScope {
-                    continue_id: expr.id,
+                    loop_id: expr.id,
                     break_bits: reslice(in_out).to_vec()
                 });
                 self.walk_block(blk, body_bits, loop_scopes);
@@ -442,7 +442,7 @@ impl<'self, O:DataFlowOperator> PropagationContext<'self, O> {
 
             ast::expr_again(label) => {
                 let scope = self.find_scope(expr, label, loop_scopes);
-                self.add_to_entry_set(scope.continue_id, reslice(in_out));
+                self.add_to_entry_set(scope.loop_id, reslice(in_out));
                 self.reset(in_out);
             }
 
@@ -624,15 +624,36 @@ impl<'self, O:DataFlowOperator> PropagationContext<'self, O> {
     fn find_scope<'a>(&self,
                       expr: @ast::expr,
                       label: Option<ast::ident>,
-                      loop_scopes: &'a mut ~[LoopScope]) -> &'a mut LoopScope{
-        if label.is_some() {
-            self.dfcx.tcx.sess.span_bug(
-                expr.span,
-                fmt!("Unimplemented: break/loop with label"));
-        }
+                      loop_scopes: &'a mut ~[LoopScope]) -> &'a mut LoopScope {
+        let index = match label {
+            None => {
+                let len = loop_scopes.len();
+                len - 1
+            }
 
-        let len = loop_scopes.len();
-        &mut loop_scopes[len - 1]
+            Some(_) => {
+                match self.tcx().def_map.find(&expr.id) {
+                    Some(&ast::def_label(loop_id)) => {
+                        match loop_scopes.position(|l| l.loop_id == loop_id) {
+                            Some(i) => i,
+                            None => {
+                                self.tcx().sess.span_bug(
+                                    expr.span,
+                                    fmt!("No loop scope for id %?", loop_id));
+                            }
+                        }
+                    }
+
+                    r => {
+                        self.tcx().sess.span_bug(
+                            expr.span,
+                            fmt!("Bad entry `%?` in def_map for label", r));
+                    }
+                }
+            }
+        };
+
+        &mut loop_scopes[index]
     }
 
     fn is_method_call(&self, expr: @ast::expr) -> bool {
