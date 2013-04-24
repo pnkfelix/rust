@@ -365,7 +365,9 @@ pub impl GatherLoanCtxt {
                        req_mutbl: ast::mutability,
                        loan_region: ty::Region)
     {
-        debug!("guarantee_valid(cmt=%s, req_mutbl=%?, loan_region=%?)",
+        debug!("guarantee_valid(borrow_id=%?, cmt=%s, \
+                req_mutbl=%?, loan_region=%?)",
+               borrow_id,
                cmt.repr(self.tcx()),
                req_mutbl,
                loan_region);
@@ -419,6 +421,10 @@ pub impl GatherLoanCtxt {
 
                 let kill_scope = self.compute_kill_scope(loan_scope, loan_path);
 
+                if req_mutbl == m_mutbl {
+                    self.mark_loan_path_as_mutated(loan_path);
+                }
+
                 let all_loans = &mut *self.all_loans; // FIXME(#5074)
                 Loan {
                     index: all_loans.len(),
@@ -432,6 +438,9 @@ pub impl GatherLoanCtxt {
                 }
             }
         };
+
+        debug!("guarantee_valid(borrow_id=%?), loan=%s",
+               borrow_id, loan.repr(self.tcx()));
         self.all_loans.push(loan);
 
         fn check_mutability(bccx: @BorrowckCtxt,
@@ -456,22 +465,29 @@ pub impl GatherLoanCtxt {
         }
     }
 
-    fn lexical_scope(&self, lp: @LoanPath) -> ast::node_id {
-        match *lp {
-            LpVar(local_id) => {
-                let rm = self.bccx.tcx.region_maps;
-                rm.encl_scope(local_id)
-            }
+    fn mark_loan_path_as_mutated(&self, loan_path: @LoanPath) {
+        //! For mutable loans of content whose mutability derives
+        //! from a local variable, mark the mutability decl as necessary.
 
-            LpExtend(base, _, _) => self.lexical_scope(base)
+        match *loan_path {
+            LpVar(local_id) => {
+                self.tcx().used_mut_nodes.insert(local_id);
+            }
+            LpExtend(base, mc::McInherited, _) => {
+                self.mark_loan_path_as_mutated(base);
+            }
+            LpExtend(_, mc::McDeclared, _) |
+            LpExtend(_, mc::McImmutable, _) |
+            LpExtend(_, mc::McReadOnly, _) => {
+            }
         }
     }
 
     fn compute_kill_scope(&self,
                           loan_scope: ast::node_id,
                           lp: @LoanPath) -> ast::node_id {
-        let lexical_scope = self.lexical_scope(lp);
         let rm = self.bccx.tcx.region_maps;
+        let lexical_scope = rm.encl_scope(lp.node_id());
         if rm.is_subscope_of(lexical_scope, loan_scope) {
             lexical_scope
         } else {

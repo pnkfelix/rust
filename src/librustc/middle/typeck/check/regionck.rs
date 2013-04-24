@@ -186,6 +186,7 @@ fn visit_expr(expr: @ast::expr, rcx: @mut Rcx, v: rvt) {
     match expr.node {
         ast::expr_index(*) |
         ast::expr_binary(*) |
+        ast::expr_assign_op(*) |
         ast::expr_unary(*) if has_method_map => {
             tcx.region_maps.record_cleanup_scope(expr.id);
         }
@@ -231,7 +232,7 @@ fn visit_expr(expr: @ast::expr, rcx: @mut Rcx, v: rvt) {
 
     match expr.node {
         ast::expr_call(arg0, ref args, _) => {
-            constrain_call(rcx, arg0.id, arg0, *args);
+            constrain_call(rcx, expr.callee_id, arg0, *args);
         }
 
         ast::expr_method_call(arg0, _, _, ref args, _) => {
@@ -239,6 +240,7 @@ fn visit_expr(expr: @ast::expr, rcx: @mut Rcx, v: rvt) {
         }
 
         ast::expr_index(lhs, rhs) |
+        ast::expr_assign_op(_, lhs, rhs) |
         ast::expr_binary(_, lhs, rhs) if has_method_map => {
             // As `expr_method_call`, but the call is via an
             // overloaded op.  Note that we (sadly) currently use an

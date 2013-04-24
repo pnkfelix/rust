@@ -1292,9 +1292,11 @@ pub fn check_expr_with_unifier(fcx: @mut FnCtxt,
         // that they appear in call position.
         check_expr(fcx, f);
 
+        // Store the type of `f` as the type of the callee
+        let fn_ty = fcx.expr_ty(f);
+        fcx.write_ty(call_expr.callee_id, fn_ty);
 
         // Extract the function signature from `in_fty`.
-        let fn_ty = fcx.expr_ty(f);
         let fn_sty = structure_of(fcx, f.span, fn_ty);
 
         // FIXME(#3678) For now, do not permit calls to C abi functions.
@@ -1331,7 +1333,7 @@ pub fn check_expr_with_unifier(fcx: @mut FnCtxt,
         let (_, _, fn_sig) =
             replace_bound_regions_in_fn_sig(
                 fcx.tcx(), @Nil, None, &fn_sig,
-                |_br| fcx.infcx().next_region_var(call_expr.span, call_expr.id));
+                |_br| fcx.infcx().next_region_var(call_expr.span, call_expr.callee_id));
 
         // Call the generic checker.
         check_argument_types(fcx, call_expr.span, fn_sig.inputs, f,

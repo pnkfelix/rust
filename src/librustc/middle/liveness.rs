@@ -1668,7 +1668,7 @@ pub impl Liveness {
     }
 
     fn check_for_reassignments_in_pat(&self, pat: @pat, mutbl: bool) {
-        do self.pat_bindings(pat) |ln, var, sp, _id| {
+        do self.pat_bindings(pat) |ln, var, sp, id| {
             self.check_for_reassignment(ln, var, sp,
                                         if mutbl {Some(id)} else {None});
         }

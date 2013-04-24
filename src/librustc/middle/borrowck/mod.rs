@@ -218,6 +218,15 @@ pub enum LoanPathElem {
     LpInterior(mc::interior_kind) // `LV.f` in doc.rs
 }
 
+pub impl LoanPath {
+    fn node_id(&self) -> ast::node_id {
+        match *self {
+            LpVar(local_id) => local_id,
+            LpExtend(base, _, _) => base.node_id()
+        }
+    }
+}
+
 pub fn opt_loan_path(cmt: mc::cmt) -> Option<@LoanPath> {
     //! Computes the `LoanPath` (if any) for a `cmt`.
     //! Note that this logic is somewhat duplicated in
@@ -542,9 +551,10 @@ impl DataFlowOperator for LoanDataFlowOperator {
 
 impl Repr for Loan {
     fn repr(&self, tcx: ty::ctxt) -> ~str {
-        fmt!("Loan_%?(%s, %?-%?, %s)",
+        fmt!("Loan_%?(%s, %?, %?-%?, %s)",
              self.index,
              self.loan_path.repr(tcx),
+             self.mutbl,
              self.gen_scope,
              self.kill_scope,
              self.restrictions.repr(tcx))
