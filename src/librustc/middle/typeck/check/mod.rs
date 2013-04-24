@@ -897,11 +897,9 @@ pub impl FnCtxt {
 
     fn region_var_if_parameterized(&self,
                                    rp: Option<ty::region_variance>,
-                                   span: span,
-                                   lower_bound: ty::Region)
+                                   span: span)
                                 -> Option<ty::Region> {
-        rp.map(
-            |_rp| self.infcx().next_region_var_with_lb(span, lower_bound))
+        rp.map(|_rp| self.infcx().next_region_var_nb(span))
     }
 
     fn type_error_message(&self,
@@ -1082,8 +1080,7 @@ pub fn impl_self_ty(vcx: &VtableContext,
     };
 
     let self_r = if region_param.is_some() {
-        Some(vcx.infcx.next_region_var(location_info.span,
-                                         location_info.id))
+        Some(vcx.infcx.next_region_var_nb(location_info.span))
     } else {
         None
     };
@@ -1913,9 +1910,7 @@ pub fn check_expr_with_unifier(fcx: @mut FnCtxt,
 
         // Generate the struct type.
         let self_region =
-            fcx.region_var_if_parameterized(region_parameterized,
-                                            span,
-                                            ty::re_scope(id));
+            fcx.region_var_if_parameterized(region_parameterized, span);
         let type_parameters = fcx.infcx().next_ty_vars(type_parameter_count);
         let substitutions = substs {
             self_r: self_region,
@@ -2001,9 +1996,7 @@ pub fn check_expr_with_unifier(fcx: @mut FnCtxt,
 
         // Generate the enum type.
         let self_region =
-            fcx.region_var_if_parameterized(region_parameterized,
-                                            span,
-                                            ty::re_scope(id));
+            fcx.region_var_if_parameterized(region_parameterized, span);
         let type_parameters = fcx.infcx().next_ty_vars(type_parameter_count);
         let substitutions = substs {
             self_r: self_region,
@@ -2343,13 +2336,12 @@ pub fn check_expr_with_unifier(fcx: @mut FnCtxt,
         // (and how long it is valid), which we don't know yet until type
         // inference is complete.
         //
-        // Therefore, here we simply generate a region variable with
-        // the current expression as a lower bound.  The region
-        // inferencer will then select the ultimate value.  Finally,
-        // borrowck is charged with guaranteeing that the value whose
-        // address was taken can actually be made to live as long as
-        // it needs to live.
-        let region = fcx.infcx().next_region_var(expr.span, expr.id);
+        // Therefore, here we simply generate a region variable.  The
+        // region inferencer will then select the ultimate value.
+        // Finally, borrowck is charged with guaranteeing that the
+        // value whose address was taken can actually be made to live
+        // as long as it needs to live.
+        let region = fcx.infcx().next_region_var_nb(expr.span);
 
         let tm = ty::mt { ty: fcx.expr_ty(oprnd), mutbl: mutbl };
         let oprnd_t = if ty::type_is_error(tm.ty) {
@@ -2366,8 +2358,7 @@ pub fn check_expr_with_unifier(fcx: @mut FnCtxt,
         let defn = lookup_def(fcx, pth.span, id);
 
         let tpt = ty_param_bounds_and_ty_for_def(fcx, expr.span, defn);
-        let region_lb = ty::re_scope(expr.id);
-        instantiate_path(fcx, pth, tpt, expr.span, expr.id, region_lb);
+        instantiate_path(fcx, pth, tpt, expr.span, expr.id);
       }
       ast::expr_inline_asm(ref ia) => {
           fcx.require_unsafe(expr.span, ~"use of inline assembly");
@@ -3230,8 +3221,7 @@ pub fn instantiate_path(fcx: @mut FnCtxt,
                         pth: @ast::Path,
                         tpt: ty_param_bounds_and_ty,
                         span: span,
-                        node_id: ast::node_id,
-                        region_lb: ty::Region) {
+                        node_id: ast::node_id) {
     debug!(">>> instantiate_path");
 
     let ty_param_count = tpt.generics.type_param_defs.len();
@@ -3257,8 +3247,7 @@ pub fn instantiate_path(fcx: @mut FnCtxt,
         }
       }
       None => { // no lifetime parameter supplied, insert default
-        fcx.region_var_if_parameterized(
-            tpt.generics.region_param, span, region_lb)
+        fcx.region_var_if_parameterized(tpt.generics.region_param, span)
       }
     };
 
@@ -3342,7 +3331,7 @@ pub fn ast_expr_vstore_to_vstore(fcx: @mut FnCtxt,
         ast::expr_vstore_uniq => ty::vstore_uniq,
         ast::expr_vstore_box | ast::expr_vstore_mut_box => ty::vstore_box,
         ast::expr_vstore_slice | ast::expr_vstore_mut_slice => {
-            let r = fcx.infcx().next_region_var(e.span, e.id);
+            let r = fcx.infcx().next_region_var_nb(e.span);
             ty::vstore_slice(r)
         }
     }

@@ -154,6 +154,9 @@ fn enc_region(w: @io::Writer, cx: @ctxt, r: ty::Region) {
       ty::re_static => {
         w.write_char('t');
       }
+      ty::re_empty => {
+        w.write_char('e');
+      }
       ty::re_infer(_) => {
         // these should not crop up after typeck
         cx.diag.handler().bug(~"Cannot encode region variables");

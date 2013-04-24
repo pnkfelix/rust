@@ -148,7 +148,7 @@ use middle::trans::type_of;
 use middle::ty;
 use middle::ty::struct_mutable_fields;
 use middle::ty::{AutoPtr, AutoBorrowVec, AutoBorrowVecRef, AutoBorrowFn,
-                 AutoDerefRef, AutoAddEnv};
+                 AutoDerefRef, AutoAddEnv, AutoUnsafe};
 use util::common::indenter;
 use util::ppaux::ty_to_str;
 
@@ -211,25 +211,24 @@ pub fn trans_to_datum(bcx: block, expr: @ast::expr) -> DatumBlock {
             }
 
             datum = match adj.autoref {
-                None => datum,
-                Some(ref autoref) => {
-                    match autoref.kind {
-                        AutoPtr => {
-                            unpack_datum!(bcx, auto_ref(bcx, datum))
-                        }
-                        AutoBorrowVec => {
-                            unpack_datum!(bcx, auto_slice(bcx, datum))
-                        }
-                        AutoBorrowVecRef => {
-                            unpack_datum!(bcx, auto_slice_and_ref(bcx, datum))
-                        }
-                        AutoBorrowFn => {
-                            // currently, all closure types are
-                            // represented precisely the same, so no
-                            // runtime adjustment is required:
-                            datum
-                        }
-                    }
+                None => {
+                    datum
+                }
+                Some(AutoUnsafe(*)) |
+                Some(AutoPtr(*)) => {
+                    unpack_datum!(bcx, auto_ref(bcx, datum))
+                }
+                Some(AutoBorrowVec(*)) => {
+                    unpack_datum!(bcx, auto_slice(bcx, datum))
+                }
+                Some(AutoBorrowVecRef(*)) => {
+                    unpack_datum!(bcx, auto_slice_and_ref(bcx, datum))
+                }
+                Some(AutoBorrowFn(*)) => {
+                    // currently, all closure types are
+                    // represented precisely the same, so no
+                    // runtime adjustment is required:
+                    datum
                 }
             };
 

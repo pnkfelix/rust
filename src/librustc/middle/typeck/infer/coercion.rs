@@ -122,9 +122,9 @@ pub impl Coerce {
                 };
             }
 
-            ty::ty_ptr(_) => {
+            ty::ty_ptr(mt_b) => {
                 return do self.unpack_actual_value(a) |sty_a| {
-                    self.coerce_unsafe_ptr(a, sty_a, b)
+                    self.coerce_unsafe_ptr(a, sty_a, b, mt_b)
                 };
             }
 
@@ -207,11 +207,7 @@ pub impl Coerce {
         if_ok!(sub.tys(a_borrowed, b));
         Ok(Some(@AutoDerefRef(AutoDerefRef {
             autoderefs: 1,
-            autoref: Some(AutoRef {
-                kind: AutoPtr,
-                region: r_borrow,
-                mutbl: mt_b.mutbl
-            })
+            autoref: Some(AutoPtr(r_borrow, mt_b.mutbl))
         })))
     }
 
@@ -237,11 +233,7 @@ pub impl Coerce {
         if_ok!(self.subtype(a_borrowed, b));
         Ok(Some(@AutoDerefRef(AutoDerefRef {
             autoderefs: 0,
-            autoref: Some(AutoRef {
-                kind: AutoBorrowVec,
-                region: r_a,
-                mutbl: m_imm
-            })
+            autoref: Some(AutoBorrowVec(r_a, m_imm))
         })))
     }
 
@@ -270,11 +262,7 @@ pub impl Coerce {
         if_ok!(sub.tys(a_borrowed, b));
         Ok(Some(@AutoDerefRef(AutoDerefRef {
             autoderefs: 0,
-            autoref: Some(AutoRef {
-                kind: AutoBorrowVec,
-                region: r_borrow,
-                mutbl: mt_b.mutbl
-            })
+            autoref: Some(AutoBorrowVec(r_borrow, mt_b.mutbl))
         })))
     }
 
@@ -310,11 +298,7 @@ pub impl Coerce {
         if_ok!(self.subtype(a_borrowed, b));
         Ok(Some(@AutoDerefRef(AutoDerefRef {
             autoderefs: 0,
-            autoref: Some(AutoRef {
-                kind: AutoBorrowFn,
-                region: r_borrow,
-                mutbl: m_imm
-            })
+            autoref: Some(AutoBorrowFn(r_borrow))
         })))
     }
 
@@ -365,7 +349,8 @@ pub impl Coerce {
     fn coerce_unsafe_ptr(&self,
                          a: ty::t,
                          sty_a: &ty::sty,
-                         b: ty::t) -> CoerceResult
+                         b: ty::t,
+                         mt_b: ty::mt) -> CoerceResult
     {
         debug!("coerce_unsafe_ptr(a=%s, sty_a=%?, b=%s)",
                a.inf_str(self.infcx), sty_a,
@@ -378,10 +363,17 @@ pub impl Coerce {
             }
         };
 
-        // borrowed pointers and unsafe pointers have the same
-        // representation, so just check that the types which they
-        // point at are compatible:
+        // check that the types which they point at are compatible
         let a_unsafe = ty::mk_ptr(self.infcx.tcx, mt_a);
-        self.subtype(a_unsafe, b)
+        if_ok!(self.subtype(a_unsafe, b));
+
+        // although borrowed ptrs and unsafe ptrs have the same
+        // representation, we still register an AutoDerefRef so that
+        // regionck knows that that the region for `a` must be valid
+        // here
+        Ok(Some(@AutoDerefRef(AutoDerefRef {
+            autoderefs: 1,
+            autoref: Some(ty::AutoUnsafe(mt_b.mutbl))
+        })))
     }
 }

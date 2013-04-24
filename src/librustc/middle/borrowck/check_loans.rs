@@ -136,19 +136,15 @@ pub impl<'self> CheckLoanCtxt<'self> {
         }
     }
 
-    fn each_loan_issued_by(&self,
-                           scope_id: ast::node_id,
-                           op: &fn(&Loan) -> bool)
-    {
-        //! Iterates over each loan originated by `scope_id`.
-        //! That is, each loan that is due to `scope_id`.
+    fn loans_generated_by(&self, scope_id: ast::node_id) -> ~[uint] {
+        //! Returns a vector of the loans that are generated as
+        //! we encounter `scope_id`.
 
+        let mut result = ~[];
         for self.dfcx.each_gen_bit(scope_id) |loan_index| {
-            let loan = &self.all_loans[loan_index];
-            if !op(loan) {
-                return;
-            }
+            result.push(loan_index);
         }
+        return result;
     }
 
     fn check_for_conflicting_loans(&mut self, scope_id: ast::node_id) {
@@ -158,9 +154,22 @@ pub impl<'self> CheckLoanCtxt<'self> {
         //! permit two `&mut` borrows of the same variable).
 
         debug!("check_for_conflicting_loans(scope_id=%?)", scope_id);
+
+        let new_loan_indices = self.loans_generated_by(scope_id);
+        debug!("new_loan_indices = %?", new_loan_indices);
+
         for self.each_issued_loan(scope_id) |issued_loan| {
-            for self.each_loan_issued_by(scope_id) |new_loan| {
+            for new_loan_indices.each |&new_loan_index| {
+                let new_loan = &self.all_loans[new_loan_index];
                 self.report_error_if_loans_conflict(issued_loan, new_loan);
+            }
+        }
+
+        for uint::range(0, new_loan_indices.len()) |i| {
+            let old_loan = &self.all_loans[new_loan_indices[i]];
+            for uint::range(i+1, new_loan_indices.len()) |j| {
+                let new_loan = &self.all_loans[new_loan_indices[j]];
+                self.report_error_if_loans_conflict(old_loan, new_loan);
             }
         }
     }
@@ -172,11 +181,10 @@ pub impl<'self> CheckLoanCtxt<'self> {
                old_loan.repr(self.tcx()),
                new_loan.repr(self.tcx()));
 
+        // Should only be called for loans that are in scope at the same time.
         let region_maps = self.tcx().region_maps;
-        if !region_maps.scopes_intersect(old_loan.kill_scope,
-                                         new_loan.kill_scope) {
-            return; // The loans are not in scope at the same time.
-        }
+        assert!(region_maps.scopes_intersect(old_loan.kill_scope,
+                                             new_loan.kill_scope));
 
         // Restrictions that would cause the new loan to be immutable:
         let illegal_if = match new_loan.mutbl {

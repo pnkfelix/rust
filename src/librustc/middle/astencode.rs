@@ -458,11 +458,7 @@ impl tr for ty::AutoAdjustment {
 
 impl tr for ty::AutoRef {
     fn tr(&self, xcx: @ExtendedDecodeContext) -> ty::AutoRef {
-        ty::AutoRef {
-            kind: self.kind,
-            region: self.region.tr(xcx),
-            mutbl: self.mutbl,
-        }
+        self.map_region(|r| r.tr(xcx))
     }
 }
 
@@ -471,7 +467,7 @@ impl tr for ty::Region {
         match *self {
             ty::re_bound(br) => ty::re_bound(br.tr(xcx)),
             ty::re_scope(id) => ty::re_scope(xcx.tr_id(id)),
-            ty::re_static | ty::re_infer(*) => *self,
+            ty::re_empty | ty::re_static | ty::re_infer(*) => *self,
             ty::re_free(ref fr) => {
                 ty::re_free(ty::FreeRegion {scope_id: xcx.tr_id(fr.scope_id),
                                             bound_region: fr.bound_region.tr(xcx)})

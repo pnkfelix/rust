@@ -17,7 +17,8 @@ use middle::ty::{bound_region, br_anon, br_named, br_self, br_cap_avoid,
                  br_fresh};
 use middle::ty::{ctxt, field, method};
 use middle::ty::{mt, t, param_bound, param_ty};
-use middle::ty::{re_bound, re_free, re_scope, re_infer, re_static, Region};
+use middle::ty::{re_bound, re_free, re_scope, re_infer, re_static, re_empty,
+                 Region};
 use middle::ty::{ReSkolemized, ReVar};
 use middle::ty::{ty_bool, ty_bot, ty_box, ty_struct, ty_enum};
 use middle::ty::{ty_err, ty_estr, ty_evec, ty_float, ty_bare_fn, ty_closure};
@@ -124,6 +125,8 @@ pub fn explain_region_and_span(cx: ctxt, region: ty::Region)
 
       re_static => { (~"the static lifetime", None) }
 
+      re_empty => { (~"the empty lifetime", None) }
+
       // I believe these cases should not occur (except when debugging,
       // perhaps)
       re_infer(_) | re_bound(_) => {
@@ -223,7 +226,8 @@ pub fn region_to_str_space(cx: ctxt, prefix: &str, region: Region) -> ~str {
             bound_region_to_str_space(cx, prefix, br)
         }
         re_infer(ReVar(_)) => prefix.to_str(),
-        re_static => fmt!("%s'static ", prefix)
+        re_static => fmt!("%s'static ", prefix),
+        re_empty => fmt!("%s'<empty> ", prefix)
     }
 }
 

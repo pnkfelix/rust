@@ -324,30 +324,31 @@ pub impl GatherLoanCtxt {
                 let mut cmt = mcx.cat_expr_autoderefd(expr, autoderefs);
                 debug!("after autoderef, cmt=%s", cmt.repr(self.tcx()));
 
-                match autoref.kind {
-                    ty::AutoPtr => {
+                match *autoref {
+                    ty::AutoPtr(r, m) => {
                         self.guarantee_valid(expr.id,
                                              expr.span,
                                              cmt,
-                                             autoref.mutbl,
-                                             autoref.region)
+                                             m,
+                                             r)
                     }
-                    ty::AutoBorrowVec | ty::AutoBorrowVecRef => {
+                    ty::AutoBorrowVec(r, m) | ty::AutoBorrowVecRef(r, m) => {
                         let cmt_index = mcx.cat_index(expr, cmt);
                         self.guarantee_valid(expr.id,
                                              expr.span,
                                              cmt_index,
-                                             autoref.mutbl,
-                                             autoref.region)
+                                             m,
+                                             r)
                     }
-                    ty::AutoBorrowFn => {
+                    ty::AutoBorrowFn(r) => {
                         let cmt_deref = mcx.cat_deref_fn(expr, cmt, 0);
                         self.guarantee_valid(expr.id,
                                              expr.span,
                                              cmt_deref,
-                                             autoref.mutbl,
-                                             autoref.region)
+                                             m_imm,
+                                             r)
                     }
+                    ty::AutoUnsafe(_) => {}
                 }
             }
         }
@@ -371,7 +372,12 @@ pub impl GatherLoanCtxt {
                cmt.repr(self.tcx()),
                req_mutbl,
                loan_region);
-        let _i = indenter();
+
+        // a loan for the empty region can never be dereferenced, so
+        // it is always safe
+        if loan_region == ty::re_empty {
+            return;
+        }
 
         let root_ub = { *self.repeating_ids.last() }; // FIXME(#5074)
 
@@ -385,8 +391,9 @@ pub impl GatherLoanCtxt {
 
         // Compute the restrictions that are required to enforce the
         // loan is safe.
-        let restr = restrictions::compute_restrictions(self.bccx, borrow_span,
-                                                       cmt, req_mutbl);
+        let restr = restrictions::compute_restrictions(
+            self.bccx, borrow_span,
+            cmt, self.restriction_set(req_mutbl));
 
         // Create the loan record (if needed).
         let loan = match restr {
@@ -412,12 +419,16 @@ pub impl GatherLoanCtxt {
                         return;
                     }
 
-                    ty::re_bound(*) | ty::re_infer(*) => {
+                    ty::re_empty |
+                    ty::re_bound(*) |
+                    ty::re_infer(*) => {
                         self.tcx().sess.span_bug(
                             cmt.span,
                             fmt!("Invalid borrow lifetime: %?", loan_region));
                     }
                 };
+
+                let gen_scope = self.compute_gen_scope(borrow_id, loan_scope);
 
                 let kill_scope = self.compute_kill_scope(loan_scope, loan_path);
 
@@ -431,7 +442,7 @@ pub impl GatherLoanCtxt {
                     loan_path: loan_path,
                     cmt: cmt,
                     mutbl: req_mutbl,
-                    gen_scope: borrow_id,
+                    gen_scope: gen_scope,
                     kill_scope: kill_scope,
                     span: borrow_span,
                     restrictions: restrictions
@@ -441,7 +452,36 @@ pub impl GatherLoanCtxt {
 
         debug!("guarantee_valid(borrow_id=%?), loan=%s",
                borrow_id, loan.repr(self.tcx()));
+
+        let loan_path = loan.loan_path;
+        let loan_gen_scope = loan.gen_scope;
+        let loan_kill_scope = loan.kill_scope;
         self.all_loans.push(loan);
+
+        if loan_gen_scope != borrow_id {
+            // NOTE handle case where gen_scope is not borrow_id
+            //
+            // Typically, the scope of the loan includes the point at
+            // which the loan is originated. This
+            // This is a subtle case. See the test case
+            // <compile-fail/borrowck-bad-nested-calls-free.rs>
+            // to see what we are guarding against.
+
+            //let restr = restrictions::compute_restrictions(
+            //    self.bccx, borrow_span, cmt, RESTR_EMPTY);
+            //let loan = {
+            //    let all_loans = &mut *self.all_loans; // FIXME(#5074)
+            //    Loan {
+            //        index: all_loans.len(),
+            //        loan_path: loan_path,
+            //        cmt: cmt,
+            //        mutbl: m_const,
+            //        gen_scope: borrow_id,
+            //        kill_scope: kill_scope,
+            //        span: borrow_span,
+            //        restrictions: restrictions
+            //    }
+        }
 
         fn check_mutability(bccx: @BorrowckCtxt,
                             borrow_span: span,
@@ -465,6 +505,14 @@ pub impl GatherLoanCtxt {
         }
     }
 
+    fn restriction_set(&self, req_mutbl: ast::mutability) -> RestrictionSet {
+        match req_mutbl {
+            m_const => RESTR_EMPTY,
+            m_imm   => RESTR_EMPTY | RESTR_MUTATE,
+            m_mutbl => RESTR_EMPTY | RESTR_MUTATE | RESTR_FREEZE
+        }
+    }
+
     fn mark_loan_path_as_mutated(&self, loan_path: @LoanPath) {
         //! For mutable loans of content whose mutability derives
         //! from a local variable, mark the mutability decl as necessary.
@@ -483,9 +531,44 @@ pub impl GatherLoanCtxt {
         }
     }
 
+    fn compute_gen_scope(&self,
+                         borrow_id: ast::node_id,
+                         loan_scope: ast::node_id) -> ast::node_id {
+        //! Determine when to introduce the loan. Typically the loan
+        //! is introduced at the point of the borrow, but in some cases,
+        //! notably method arguments, the loan may be introduced only
+        //! later, once it comes into scope.
+
+        let rm = self.bccx.tcx.region_maps;
+        if rm.is_subscope_of(borrow_id, loan_scope) {
+            borrow_id
+        } else {
+            loan_scope
+        }
+    }
+
     fn compute_kill_scope(&self,
                           loan_scope: ast::node_id,
                           lp: @LoanPath) -> ast::node_id {
+        //! Determine when the loan restrictions go out of scope.
+        //! This is either when the lifetime expires or when the
+        //! local variable which roots the loan-path goes out of scope,
+        //! whichever happens faster.
+        //!
+        //! It may seem surprising that we might have a loan region
+        //! larger than the variable which roots the loan-path; this can
+        //! come about when variables of `&mut` type are re-borrowed,
+        //! as in this example:
+        //!
+        //!     fn counter<'a>(v: &'a mut Foo) -> &'a mut uint {
+        //!         &mut v.counter
+        //!     }
+        //!
+        //! In this case, the borrowed pointer (`'a`) outlives the
+        //! variable `v` that hosts it. Note that this doesn't come up
+        //! with immutable `&` pointers, because borrows of such pointers
+        //! do not require restrictions and hence do not cause a loan.
+
         let rm = self.bccx.tcx.region_maps;
         let lexical_scope = rm.encl_scope(lp.node_id());
         if rm.is_subscope_of(lexical_scope, loan_scope) {

@@ -124,7 +124,8 @@ pub fn lookup(
         // In a call `a.b::<X, Y, ...>(...)`:
         expr: @ast::expr,                   // The expression `a.b(...)`.
         self_expr: @ast::expr,              // The expression `a`.
-        callee_id: node_id,                 // Where to store `a.b`'s type
+        callee_id: node_id,                 /* Where to store `a.b`'s type,
+                                             * also the scope of the call */ 
         m_name: ast::ident,                 // The ident `b`.
         self_ty: ty::t,                     // The type of `a`.
         supplied_tps: &[ty::t],             // The list of types X, Y, ... .
@@ -664,23 +665,19 @@ pub impl<'self> LookupContext<'self> {
         return match ty::get(self_ty).sty {
             ty::ty_rptr(_, self_mt) => {
                 let region = self.infcx().next_region_var(self.expr.span,
-                                                          self.expr.id);
+                                                          self.callee_id);
                 (ty::mk_rptr(tcx, region, self_mt),
                  ty::AutoDerefRef(ty::AutoDerefRef {
                      autoderefs: autoderefs+1,
-                     autoref: Some(ty::AutoRef {kind: AutoPtr,
-                                                region: region,
-                                                mutbl: self_mt.mutbl})}))
+                     autoref: Some(ty::AutoPtr(region, self_mt.mutbl))}))
             }
             ty::ty_evec(self_mt, vstore_slice(_)) => {
                 let region = self.infcx().next_region_var(self.expr.span,
-                                                          self.expr.id);
+                                                          self.callee_id);
                 (ty::mk_evec(tcx, self_mt, vstore_slice(region)),
                  ty::AutoDerefRef(ty::AutoDerefRef {
-                    autoderefs: autoderefs,
-                    autoref: Some(ty::AutoRef {kind: AutoBorrowVec,
-                                               region: region,
-                                               mutbl: self_mt.mutbl})}))
+                     autoderefs: autoderefs,
+                     autoref: Some(ty::AutoBorrowVec(region, self_mt.mutbl))}))
             }
             _ => {
                 (self_ty,
@@ -797,7 +794,7 @@ pub impl<'self> LookupContext<'self> {
 
     fn search_for_some_kind_of_autorefd_method(
         &self,
-        kind: AutoRefKind,
+        kind: &fn(Region, ast::mutability) -> ty::AutoRef,
         autoderefs: uint,
         mutbls: &[ast::mutability],
         mk_autoref_ty: &fn(ast::mutability, ty::Region) -> ty::t)
@@ -806,7 +803,7 @@ pub impl<'self> LookupContext<'self> {
         // This is hokey. We should have mutability inference as a
         // variable.  But for now, try &const, then &, then &mut:
         let region = self.infcx().next_region_var(self.expr.span,
-                                                  self.expr.id);
+                                                  self.callee_id);
         for mutbls.each |mutbl| {
             let autoref_ty = mk_autoref_ty(*mutbl, region);
             match self.search_for_method(autoref_ty) {
@@ -816,12 +813,7 @@ pub impl<'self> LookupContext<'self> {
                         self.self_expr.id,
                         @ty::AutoDerefRef(ty::AutoDerefRef {
                             autoderefs: autoderefs,
-                            autoref: Some(ty::AutoRef {
-                                kind: kind,
-                                region: region,
-                                mutbl: *mutbl,
-                            }),
-                        }));
+                            autoref: Some(kind(region, *mutbl))}));
                     return Some(mme);
                 }
             }
@@ -1029,7 +1021,7 @@ pub impl<'self> LookupContext<'self> {
             replace_bound_regions_in_fn_sig(
                 tcx, @Nil, Some(transformed_self_ty), &bare_fn_ty.sig,
                 |_br| self.fcx.infcx().next_region_var(
-                    self.expr.span, self.expr.callee_id));
+                    self.expr.span, self.callee_id));
         let transformed_self_ty = opt_transformed_self_ty.get();
         let fty = ty::mk_bare_fn(tcx, ty::BareFnTy {sig: fn_sig, ..bare_fn_ty});
         debug!("after replacing bound regions, fty=%s", self.ty_to_str(fty));

@@ -24,7 +24,7 @@ it's worth spending more time on a more involved analysis.  Moreover,
 regions are a simpler case than types: they don't have aggregate
 structure, for example.
 
-Unlike normal type inference, which is similar in spirit H-M and thus
+Unlike normal type inference, which is similar in spirit to H-M and thus
 works progressively, the region type inference works by accumulating
 constraints over the course of a function.  Finally, at the end of
 processing a function, we process and solve the constraints all at
@@ -130,7 +130,7 @@ of these variables can effectively be unified into a single variable.
 Once SCCs are removed, we are left with a DAG.  At this point, we can
 walk the DAG in toplogical order once to compute the expanding nodes,
 and again in reverse topological order to compute the contracting
-nodes.The main reason I did not write it this way is that I did not
+nodes. The main reason I did not write it this way is that I did not
 feel like implementing the SCC and toplogical sort algorithms at the
 moment.
 
@@ -540,7 +540,7 @@ use core::prelude::*;
 
 use middle::ty;
 use middle::ty::{FreeRegion, Region, RegionVid};
-use middle::ty::{re_static, re_infer, re_free, re_bound};
+use middle::ty::{re_empty, re_static, re_infer, re_free, re_bound};
 use middle::ty::{re_scope, ReVar, ReSkolemized, br_fresh};
 use middle::typeck::infer::cres;
 use util::common::indenter;
@@ -850,25 +850,8 @@ pub impl RegionVarBindings {
             Value(r) => r,
 
             NoValue => {
-                // No constraints, report an error.  It is plausible
-                // that we could select an arbitrary region here
-                // instead.  At the moment I am not doing this because
-                // this generally masks bugs in the inference
-                // algorithm, and given our syntax one cannot create
-                // generally create a lifetime variable that isn't
-                // used in some type, and hence all lifetime variables
-                // should ultimately have some bounds.
-
-                self.tcx.sess.span_err(
-                    self.var_spans[rid.to_uint()],
-                    fmt!("Unconstrained region variable #%u", rid.to_uint()));
-
-                // Touch of a hack: to suppress duplicate messages,
-                // replace the NoValue entry with ErrorValue.
-                let mut values = self.values.take();
-                values[rid.to_uint()] = ErrorValue;
-                self.values.put_back(values);
-                re_static
+                // No constraints, return ty::re_empty
+                re_empty
             }
 
             ErrorValue => {
@@ -1036,6 +1019,10 @@ priv impl RegionVarBindings {
             re_static // nothing lives longer than static
           }
 
+          (re_empty, r) | (r, re_empty) => {
+            r // everything lives longer than empty
+          }
+
           (re_infer(ReVar(v_id)), _) | (_, re_infer(ReVar(v_id))) => {
             self.tcx.sess.span_bug(
                 self.var_spans[v_id.to_uint()],
@@ -1130,6 +1117,11 @@ priv impl RegionVarBindings {
             (re_static, r) | (r, re_static) => {
                 // static lives longer than everything else
                 Ok(r)
+            }
+
+            (re_empty, _) | (_, re_empty) => {
+                // nothing lives shorter than everything else
+                Ok(re_empty)
             }
 
             (re_infer(ReVar(v_id)), _) |

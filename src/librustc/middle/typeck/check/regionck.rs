@@ -709,23 +709,24 @@ pub mod guarantor {
         expr_ct = apply_autoderefs(
             rcx, expr, autoderefs, expr_ct);
 
-        match autoref.kind {
-            ty::AutoPtr => {
+        match *autoref {
+            ty::AutoPtr(r, _) => {
                 // In this case, we are implicitly adding an `&`.
-                maybe_make_subregion(rcx, expr, autoref.region,
-                                     expr_ct.cat.guarantor);
+                maybe_make_subregion(rcx, expr, r, expr_ct.cat.guarantor);
             }
 
-            ty::AutoBorrowVec |
-            ty::AutoBorrowVecRef |
-            ty::AutoBorrowFn => {
+            ty::AutoBorrowVec(r, _) |
+            ty::AutoBorrowVecRef(r, _) |
+            ty::AutoBorrowFn(r) => {
                 // In each of these cases, what is being borrowed is
                 // not the (autoderef'd) expr itself but rather the
                 // contents of the autoderef'd expression (i.e., what
                 // the pointer points at).
-                maybe_make_subregion(rcx, expr, autoref.region,
+                maybe_make_subregion(rcx, expr, r,
                                      guarantor_of_deref(&expr_ct.cat));
             }
+
+            ty::AutoUnsafe(_) => {}
         }
 
         fn maybe_make_subregion(
@@ -915,12 +916,24 @@ pub mod guarantor {
                 expr_ct = apply_autoderefs(
                     rcx, expr, adjustment.autoderefs, expr_ct);
 
-                for adjustment.autoref.each |autoref| {
-                    // If there is an autoref, then the result of this
-                    // expression will be some sort of borrowed pointer.
-                    expr_ct.cat.guarantor = None;
-                    expr_ct.cat.pointer = BorrowedPointer(autoref.region);
-                    debug!("autoref, cat=%?", expr_ct.cat);
+                match adjustment.autoref {
+                    None => {
+                    }
+                    Some(ty::AutoUnsafe(_)) => {
+                        expr_ct.cat.guarantor = None;
+                        expr_ct.cat.pointer = OtherPointer;
+                        debug!("autoref, cat=%?", expr_ct.cat);
+                    }
+                    Some(ty::AutoPtr(r, _)) |
+                    Some(ty::AutoBorrowVec(r, _)) |
+                    Some(ty::AutoBorrowVecRef(r, _)) |
+                    Some(ty::AutoBorrowFn(r)) => {
+                        // If there is an autoref, then the result of this
+                        // expression will be some sort of borrowed pointer.
+                        expr_ct.cat.guarantor = None;
+                        expr_ct.cat.pointer = BorrowedPointer(r);
+                        debug!("autoref, cat=%?", expr_ct.cat);
+                    }
                 }
             }
 
