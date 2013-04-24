@@ -645,7 +645,7 @@ pub impl<'self> LookupContext<'self> {
         /*!
          *
          * In the event that we are invoking a method with a receiver
-         * of a linear borrowed type like `&mut T` or `&mut [T]`,
+         * of a borrowed type like `&T`, `&mut T`, or `&mut [T]`,
          * we will "reborrow" the receiver implicitly.  For example, if
          * you have a call `r.inc()` and where `r` has type `&mut T`,
          * then we treat that like `(&mut *r).inc()`.  This avoids
@@ -662,7 +662,7 @@ pub impl<'self> LookupContext<'self> {
 
         let tcx = self.tcx();
         return match ty::get(self_ty).sty {
-            ty::ty_rptr(_, self_mt) if self_mt.mutbl == m_mutbl => {
+            ty::ty_rptr(_, self_mt) => {
                 let region = self.infcx().next_region_var(self.expr.span,
                                                           self.expr.id);
                 (ty::mk_rptr(tcx, region, self_mt),
@@ -672,8 +672,7 @@ pub impl<'self> LookupContext<'self> {
                                                 region: region,
                                                 mutbl: self_mt.mutbl})}))
             }
-            ty::ty_evec(self_mt, vstore_slice(_))
-            if self_mt.mutbl == m_mutbl => {
+            ty::ty_evec(self_mt, vstore_slice(_)) => {
                 let region = self.infcx().next_region_var(self.expr.span,
                                                           self.expr.id);
                 (ty::mk_evec(tcx, self_mt, vstore_slice(region)),
@@ -1030,7 +1029,7 @@ pub impl<'self> LookupContext<'self> {
             replace_bound_regions_in_fn_sig(
                 tcx, @Nil, Some(transformed_self_ty), &bare_fn_ty.sig,
                 |_br| self.fcx.infcx().next_region_var(
-                    self.expr.span, self.expr.id));
+                    self.expr.span, self.expr.callee_id));
         let transformed_self_ty = opt_transformed_self_ty.get();
         let fty = ty::mk_bare_fn(tcx, ty::BareFnTy {sig: fn_sig, ..bare_fn_ty});
         debug!("after replacing bound regions, fty=%s", self.ty_to_str(fty));
