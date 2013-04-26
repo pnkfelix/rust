@@ -370,7 +370,7 @@ pub enum bckerr_code {
     err_out_of_root_scope(ty::Region, ty::Region), // superscope, subscope
     err_out_of_scope(ty::Region, ty::Region), // superscope, subscope
     err_partial_freeze_of_managed_content,
-    err_cannot_prevent_aliasing
+    err_cannot_prevent_aliasing,
 }
 
 // Combination of an error code and the categorization of the expression

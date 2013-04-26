@@ -489,9 +489,22 @@ pub impl GatherLoanCtxt {
                             cmt: mc::cmt,
                             req_mutbl: ast::mutability) {
             match req_mutbl {
-                m_const | m_imm => {
-                    // Data of any mutability can be lent as const or immutable.
-                    // If the data is mutable, this is a freeze.
+                m_const => {
+                    // Data of any mutability can be lent as const.
+                }
+
+                m_imm => {
+                    match cmt.mutbl {
+                        mc::McImmutable | mc::McDeclared | mc::McInherited => {
+                            // both imm and mut data can be lent as imm;
+                            // for mutable data, this is a freeze
+                        }
+                        mc::McReadOnly => {
+                            bccx.report(BckError {span: borrow_span,
+                                                  cmt: cmt,
+                                                  code: err_mutbl(req_mutbl)});
+                        }
+                    }
                 }
 
                 m_mutbl => {
