@@ -226,6 +226,7 @@ fn visit_expr(e: @ast::expr, wbcx: @mut WbCtxt, v: wb_vt) {
     match e.node {
       ast::expr_fn_block(ref decl, _) => {
           for vec::each(decl.inputs) |input| {
+              ty::set_default_mode(wbcx.fcx.ccx.tcx, input.mode, ast::by_copy);
               resolve_type_vars_for_node(wbcx, e.span, input.id);
           }
       }
