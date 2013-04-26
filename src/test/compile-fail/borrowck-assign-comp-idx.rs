@@ -17,9 +17,11 @@ fn a() {
     let mut p = ~[1];
 
     // Create an immutable pointer into p's contents:
-    let _q: &int = &p[0]; //~ NOTE loan of mutable vec content granted here
+    let q: &int = &p[0]; //~ NOTE loan of mutable vec content granted here
 
     p[0] = 5; //~ ERROR assigning to mutable vec content prohibited due to outstanding loan
+
+    debug!("%d", *q);
 }
 
 fn borrow(_x: &[int], _f: &fn()) {}

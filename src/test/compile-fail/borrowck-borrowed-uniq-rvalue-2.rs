@@ -28,5 +28,6 @@ fn defer<'r>(x: &'r [&'r str]) -> defer<'r> {
 }
 
 fn main() {
-    let _x = defer(~["Goodbye", "world!"]); //~ ERROR illegal borrow
+    let x = defer(~["Goodbye", "world!"]); //~ ERROR illegal borrow
+    x.x[0];
 }

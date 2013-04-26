@@ -31,7 +31,7 @@ fn b(x: &Foo) {
 }
 
 fn c(x: &const Foo) {
-    x.f(); //~ ERROR illegal borrow unless pure
+    x.f(); //~ ERROR illegal borrow
     x.g();
     x.h(); //~ ERROR illegal borrow
 }
