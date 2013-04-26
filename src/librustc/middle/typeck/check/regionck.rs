@@ -154,7 +154,6 @@ pub fn regionck_fn(fcx: @mut FnCtxt, blk: &ast::blk) {
 
 fn regionck_visitor() -> rvt {
     visit::mk_vt(@visit::Visitor {visit_item: visit_item,
-                                  visit_stmt: visit_stmt,
                                   visit_expr: visit_expr,
                                   visit_block: visit_block,
                                   .. *visit::default_visitor()})
@@ -173,7 +172,6 @@ fn visit_expr(expr: @ast::expr, rcx: @mut Rcx, v: rvt) {
     debug!("regionck::visit_expr(e=%s)", rcx.fcx.expr_to_str(expr));
 
     let has_method_map = rcx.fcx.inh.method_map.contains_key(&expr.id);
-
 
     // Record cleanup scopes, which are used by borrowck to decide the
     // maximum lifetime of a temporary rvalue.  These were derived by
@@ -207,8 +205,9 @@ fn visit_expr(expr: @ast::expr, rcx: @mut Rcx, v: rvt) {
                 }
             }
         }
-        ast::expr_while(*) => {
-            tcx.region_maps.record_cleanup_scope(expr.id);
+        ast::expr_while(cond, ref body) => {
+            tcx.region_maps.record_cleanup_scope(cond.id);
+            tcx.region_maps.record_cleanup_scope(body.node.id);
         }
         _ => {}
     }
@@ -317,17 +316,6 @@ fn visit_expr(expr: @ast::expr, rcx: @mut Rcx, v: rvt) {
     }
 
     visit::visit_expr(expr, rcx, v);
-}
-
-fn visit_stmt(s: @ast::stmt, rcx: @mut Rcx, v: rvt) {
-    let tcx = rcx.fcx.tcx();
-    match s.node {
-        ast::stmt_mac(*) | ast::stmt_decl(*) => {}
-        ast::stmt_expr(_, id) | ast::stmt_semi(_, id) => {
-            tcx.region_maps.record_cleanup_scope(id);
-        }
-    }
-    visit::visit_stmt(s, rcx, v);
 }
 
 fn constrain_call(rcx: @mut Rcx,

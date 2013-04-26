@@ -87,12 +87,15 @@ impl GuaranteeLifetimeContext {
                 // See rule Freeze-Imm-Managed-Ptr-2 in doc.rs
                 let omit_root = (
                     self.bccx.is_subregion_of(self.loan_region, base_scope) &&
-                    cmt.mutbl.is_immutable() &&
-                    !self.is_moved(cmt)
+                    base.mutbl.is_immutable() &&
+                    !self.is_moved(base)
                 );
 
                 if !omit_root {
                     self.check_root(base, derefs, ptr_mutbl, discr_scope);
+                } else {
+                    debug!("omitting root, base=%s, base_scope=%?",
+                           base.repr(self.tcx()), base_scope);
                 }
             }
 
@@ -164,6 +167,13 @@ impl GuaranteeLifetimeContext {
                   derefs: uint,
                   ptr_mutbl: ast::mutability,
                   discr_scope: Option<ast::node_id>) {
+        debug!("check_root(cmt_base=%s, derefs=%? ptr_mutbl=%?, \
+                discr_scope=%?)",
+               cmt_base.repr(self.tcx()),
+               derefs,
+               ptr_mutbl,
+               discr_scope);
+
         // Make sure that the loan does not exceed the maximum time
         // that we can root the value, dynamically.
         let root_region = ty::re_scope(self.root_scope_id);
@@ -187,7 +197,7 @@ impl GuaranteeLifetimeContext {
 
         // If inside of a match arm, expand the rooting to the entire
         // match. See the detailed discussion in `check()` above.
-        let root_scope = match discr_scope {
+        let mut root_scope = match discr_scope {
             None => root_scope,
             Some(id) => {
                 if self.bccx.is_subscope_of(root_scope, id) {
@@ -197,6 +207,13 @@ impl GuaranteeLifetimeContext {
                 }
             }
         };
+
+        // FIXME(#3511) grow to the nearest cleanup scope---this can
+        // cause observable errors if freezing!
+        if !self.bccx.tcx.region_maps.is_cleanup_scope(root_scope) {
+            debug!("%? is not a cleanup scope, adjusting", root_scope);
+            root_scope = self.bccx.tcx.region_maps.cleanup_scope(root_scope);
+        }
 
         // If we are borrowing the inside of an `@mut` box,
         // we need to dynamically mark it to prevent incompatible
@@ -215,6 +232,8 @@ impl GuaranteeLifetimeContext {
         let rm_key = root_map_key {id: cmt_base.id, derefs: derefs};
         let root_info = RootInfo {scope: root_scope, freeze: opt_dyna};
         self.bccx.root_map.insert(rm_key, root_info);
+
+        debug!("root_key: %? root_info: %?", rm_key, root_info);
     }
 
     fn check_scope(&self, max_scope: ty::Region) {
