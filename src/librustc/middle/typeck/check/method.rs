@@ -664,16 +664,14 @@ pub impl<'self> LookupContext<'self> {
         let tcx = self.tcx();
         return match ty::get(self_ty).sty {
             ty::ty_rptr(_, self_mt) => {
-                let region = self.infcx().next_region_var(self.expr.span,
-                                                          self.callee_id);
+                let region = self.infcx().next_region_var_nb(self.expr.span);
                 (ty::mk_rptr(tcx, region, self_mt),
                  ty::AutoDerefRef(ty::AutoDerefRef {
                      autoderefs: autoderefs+1,
                      autoref: Some(ty::AutoPtr(region, self_mt.mutbl))}))
             }
             ty::ty_evec(self_mt, vstore_slice(_)) => {
-                let region = self.infcx().next_region_var(self.expr.span,
-                                                          self.callee_id);
+                let region = self.infcx().next_region_var_nb(self.expr.span);
                 (ty::mk_evec(tcx, self_mt, vstore_slice(region)),
                  ty::AutoDerefRef(ty::AutoDerefRef {
                      autoderefs: autoderefs,
@@ -802,8 +800,7 @@ pub impl<'self> LookupContext<'self> {
     {
         // This is hokey. We should have mutability inference as a
         // variable.  But for now, try &const, then &, then &mut:
-        let region = self.infcx().next_region_var(self.expr.span,
-                                                  self.callee_id);
+        let region = self.infcx().next_region_var_nb(self.expr.span);
         for mutbls.each |mutbl| {
             let autoref_ty = mk_autoref_ty(*mutbl, region);
             match self.search_for_method(autoref_ty) {
@@ -1020,8 +1017,7 @@ pub impl<'self> LookupContext<'self> {
         let (_, opt_transformed_self_ty, fn_sig) =
             replace_bound_regions_in_fn_sig(
                 tcx, @Nil, Some(transformed_self_ty), &bare_fn_ty.sig,
-                |_br| self.fcx.infcx().next_region_var(
-                    self.expr.span, self.callee_id));
+                |_br| self.fcx.infcx().next_region_var_nb(self.expr.span));
         let transformed_self_ty = opt_transformed_self_ty.get();
         let fty = ty::mk_bare_fn(tcx, ty::BareFnTy {sig: fn_sig, ..bare_fn_ty});
         debug!("after replacing bound regions, fty=%s", self.ty_to_str(fty));

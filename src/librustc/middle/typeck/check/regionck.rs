@@ -32,6 +32,7 @@ use core::prelude::*;
 use middle::freevars::get_freevars;
 use middle::ty::{re_scope};
 use middle::ty;
+use middle::typeck::check::{DerefArgs, DoDerefArgs, DontDerefArgs};
 use middle::typeck::check::FnCtxt;
 use middle::typeck::check::regionmanip::relate_nested_regions;
 use middle::typeck::infer::resolve_and_force_all_but_regions;
@@ -223,6 +224,7 @@ fn visit_expr(expr: @ast::expr, rcx: @mut Rcx, v: rvt) {
                 constrain_derefs(rcx, expr, autoderefs, expr_ty);
                 for opt_autoref.each |autoref| {
                     guarantor::for_autoref(rcx, expr, autoderefs, autoref);
+                    constrain_regions_in_type_of_node(rcx, expr.id, ty::re_scope(expr.id), expr.span);
                 }
             }
             _ => {}
@@ -230,12 +232,12 @@ fn visit_expr(expr: @ast::expr, rcx: @mut Rcx, v: rvt) {
     }
 
     match expr.node {
-        ast::expr_call(arg0, ref args, _) => {
-            constrain_call(rcx, expr.callee_id, arg0, *args);
+        ast::expr_call(_, ref args, _) => {
+            constrain_call(rcx, expr, None, *args, false);
         }
 
         ast::expr_method_call(arg0, _, _, ref args, _) => {
-            constrain_call(rcx, expr.callee_id, arg0, *args);
+            constrain_call(rcx, expr, Some(arg0), *args, false);
         }
 
         ast::expr_index(lhs, rhs) |
@@ -245,13 +247,12 @@ fn visit_expr(expr: @ast::expr, rcx: @mut Rcx, v: rvt) {
             // overloaded op.  Note that we (sadly) currently use an
             // implicit "by ref" sort of passing style here.  This
             // should be converted to an adjustment!
-            constrain_call_arg(rcx, expr.callee_id, ast::expl(ast::by_ref), lhs);
-            constrain_call_arg(rcx, expr.callee_id, ast::expl(ast::by_ref), rhs);
+            constrain_call(rcx, expr, Some(lhs), [rhs], true);
         }
 
         ast::expr_unary(_, lhs) if has_method_map => {
             // As above.
-            constrain_call_arg(rcx, expr.callee_id, ast::expl(ast::by_ref), lhs);
+            constrain_call(rcx, expr, Some(lhs), [], true);
         }
 
         ast::expr_unary(ast::deref, base) => {
@@ -293,6 +294,11 @@ fn visit_expr(expr: @ast::expr, rcx: @mut Rcx, v: rvt) {
 
         ast::expr_addr_of(_, base) => {
             guarantor::for_addr_of(rcx, expr, base);
+
+            // Note: do not apply any adjustments here, we just want the
+            // raw type of the expr, which will be some sort of & ptr
+            let ty0 = rcx.resolve_node_type(expr.id);
+            constrain_regions_in_type(rcx, ty::re_scope(expr.id), expr.span, ty0);
         }
 
         ast::expr_match(discr, ref arms) => {
@@ -319,48 +325,63 @@ fn visit_expr(expr: @ast::expr, rcx: @mut Rcx, v: rvt) {
 }
 
 fn constrain_call(rcx: @mut Rcx,
-                  callee_scope: ast::node_id,
-                  arg0: @ast::expr,
-                  args: &[@ast::expr])
+                  // might be expr_call, expr_method_call, or an overloaded
+                  // operator
+                  call_expr: @ast::expr,
+                  receiver: Option<@ast::expr>,
+                  arg_exprs: &[@ast::expr],
+                  implicitly_ref_args: bool)
 {
-    let callee_ty = rcx.resolve_node_type(callee_scope);
-    if !ty::type_is_error(callee_ty) {
-        let fn_sig = ty::ty_fn_sig(callee_ty);
-        constrain_call_arg(rcx, callee_scope,
-                           ast::expl(ast::by_copy), arg0);
-        for uint::range(0, args.len()) |i| {
-            let arg_mode = fn_sig.inputs[i].mode;
-            constrain_call_arg(rcx, callee_scope, arg_mode, args[i]);
+    //! Invoked on every call site (i.e., normal calls, method calls,
+    //! and overloaded operators). Constrains the regions which appear
+    //! in the type of the function. Also constrains the regions that
+    //! appear in the arguments appropriately.
+
+    let tcx = rcx.fcx.tcx();
+    debug!("constrain_call(call_expr=%s, implicitly_ref_args=%?)",
+           call_expr.repr(tcx), implicitly_ref_args);
+    let callee_ty = rcx.resolve_node_type(call_expr.callee_id);
+    if ty::type_is_error(callee_ty) {
+        return;
+    }
+    let fn_sig = ty::ty_fn_sig(callee_ty);
+
+    // `callee_region` is the scope representing the time in which the
+    // call occurs.
+    //
+    // FIXME(#5074) to support nested method calls, should be callee_id
+    let callee_scope = call_expr.id;
+    let callee_region = ty::re_scope(callee_scope);
+
+    for fn_sig.inputs.eachi |i, input| {
+        // ensure that any regions appearing in the argument type are
+        // valid for at least the lifetime of the function:
+        constrain_regions_in_type_of_node(
+            rcx, arg_exprs[i].id, callee_region, arg_exprs[i].span);
+
+        // unfortunately, there are two means of taking implicit
+        // references, and we need to propagate constraints as a
+        // result. modes are going away and the "DerefArgs" code
+        // should be ported to use adjustments
+        ty::set_default_mode(tcx, input.mode, ast::by_copy);
+        let is_by_ref = ty::resolved_mode(tcx, input.mode) == ast::by_ref;
+        if implicitly_ref_args || is_by_ref {
+            guarantor::for_by_ref(rcx, arg_exprs[i], callee_scope);
         }
     }
-}
 
-fn constrain_call_arg(rcx: @mut Rcx,
-                      callee_scope: ast::node_id,
-                      arg_mode: ast::mode,
-                      expr: @ast::expr)
-{
-    /*!
-     * Invoked on any argument that is passed to a function or method,
-     * including `self`, and also on the function being called.
-     * Guarantees that any lifetimes which appear within
-     * these types outlive the callee.
-     */
-    let tcx = rcx.tcx();
-
-    debug!("constrain_call_arg(callee_scope=%?, expr=%s)",
-           callee_scope, expr.repr(tcx));
-
-    ty::set_default_mode(tcx, arg_mode, ast::by_copy);
-    match ty::resolved_mode(tcx, arg_mode) {
-        ast::by_ref => {
-            guarantor::for_by_ref(rcx, expr, callee_scope);
+    // as loop above, but for receiver
+    for receiver.each |&r| {
+        constrain_regions_in_type_of_node(
+            rcx, r.id, callee_region, r.span);
+        if implicitly_ref_args {
+            guarantor::for_by_ref(rcx, r, callee_scope);
         }
-        ast::by_copy => {}
     }
 
-    constrain_regions_in_type_of_node(rcx, expr.id,
-                                      ty::re_scope(callee_scope), expr.span);
+    // constrain regions that may appear in the return type:
+    constrain_regions_in_type(
+        rcx, callee_region, call_expr.span, fn_sig.output);
 }
 
 fn constrain_derefs(rcx: @mut Rcx,

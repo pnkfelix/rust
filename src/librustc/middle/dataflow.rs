@@ -567,7 +567,7 @@ impl<'self, O:DataFlowOperator> PropagationContext<'self, O> {
     }
 
     fn walk_call(&mut self,
-                 callee_id: ast::node_id,
+                 _callee_id: ast::node_id,
                  call_id: ast::node_id,
                  arg0: @ast::expr,
                  args: &[@ast::expr],
@@ -576,8 +576,9 @@ impl<'self, O:DataFlowOperator> PropagationContext<'self, O> {
         self.walk_expr(arg0, in_out, loop_scopes);
         self.walk_exprs(args, in_out, loop_scopes);
 
-        self.merge_with_entry_set(callee_id, in_out);
-        self.dfcx.apply_gen_kill(callee_id, in_out);
+        // FIXME(#5074) nested method calls
+        // self.merge_with_entry_set(callee_id, in_out);
+        // self.dfcx.apply_gen_kill(callee_id, in_out);
 
         let return_ty = ty::node_id_to_type(self.tcx(), call_id);
         let fails = ty::type_is_bot(return_ty);

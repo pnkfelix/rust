@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// xfail-test #5074 nested method calls
+
 // Test that (safe) nested calls with `&mut` receivers are permitted.
 
 struct Foo {a: uint, b: uint}

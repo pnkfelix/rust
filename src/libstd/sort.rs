@@ -181,7 +181,8 @@ fn qsort3<T:Copy + Ord + Eq>(arr: &mut [T], left: int, right: int) {
  */
 pub fn quick_sort3<T:Copy + Ord + Eq>(arr: &mut [T]) {
     if arr.len() <= 1 { return; }
-    qsort3(arr, 0, (arr.len() - 1) as int);
+    let len = arr.len() - 1; // FIXME(#5074) nested calls
+    qsort3(arr, 0, (len - 1) as int);
 }
 
 pub trait Sort {

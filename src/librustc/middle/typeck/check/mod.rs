@@ -1291,6 +1291,13 @@ pub fn check_expr_with_unifier(fcx: @mut FnCtxt,
 
         // Store the type of `f` as the type of the callee
         let fn_ty = fcx.expr_ty(f);
+
+        // NOTE here we write the callee type before regions have been
+        // substituted; in the method case, we write the type after
+        // regions have been substituted. Methods are correct, but it
+        // is awkward to deal with this now. Best thing would I think
+        // be to just have a separate "callee table" that contains the
+        // FnSig and not a general purpose ty::t
         fcx.write_ty(call_expr.callee_id, fn_ty);
 
         // Extract the function signature from `in_fty`.
@@ -1330,7 +1337,7 @@ pub fn check_expr_with_unifier(fcx: @mut FnCtxt,
         let (_, _, fn_sig) =
             replace_bound_regions_in_fn_sig(
                 fcx.tcx(), @Nil, None, &fn_sig,
-                |_br| fcx.infcx().next_region_var(call_expr.span, call_expr.callee_id));
+                |_br| fcx.infcx().next_region_var_nb(call_expr.span));
 
         // Call the generic checker.
         check_argument_types(fcx, call_expr.span, fn_sig.inputs, f,

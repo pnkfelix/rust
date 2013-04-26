@@ -288,7 +288,8 @@ pub impl GatherLoanCtxt {
     fn guarantee_by_ref_argument(&mut self,
                                  call_expr: @ast::expr,
                                  arg_expr: @ast::expr) {
-        let scope_r = ty::re_scope(call_expr.callee_id);
+        // FIXME(#5074) nested method calls
+        let scope_r = ty::re_scope(call_expr.id);
         let arg_cmt = self.bccx.cat_expr(arg_expr);
         self.guarantee_valid(arg_expr.id, arg_expr.span,
                              arg_cmt, m_imm, scope_r);

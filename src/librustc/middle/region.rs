@@ -134,6 +134,10 @@ pub impl RegionMaps {
         }
     }
 
+    fn is_cleanup_scope(&self, scope_id: ast::node_id) -> bool {
+        self.cleanup_scopes.contains(&scope_id)
+    }
+
     fn cleanup_scope(&self,
                      expr_id: ast::node_id) -> ast::node_id
     {
@@ -413,6 +417,8 @@ pub fn resolve_expr(expr: @ast::expr, cx: Context, visitor: visit::vt<Context>) 
     match expr.node {
         ast::expr_assign_op(*) | ast::expr_index(*) | ast::expr_binary(*) |
         ast::expr_unary(*) | ast::expr_call(*) | ast::expr_method_call(*) => {
+            // FIXME(#5074) Nested method calls
+            //
             // The lifetimes for a call or method call look as follows:
             //
             // call.id
@@ -427,7 +433,8 @@ pub fn resolve_expr(expr: @ast::expr, cx: Context, visitor: visit::vt<Context>) 
             // call*.  See the section "Borrows in Calls" borrowck/doc.rs
             // for an extended explanantion of why this distinction is
             // important.
-            parent_to_expr(new_cx, expr.callee_id);
+            //
+            // parent_to_expr(new_cx, expr.callee_id);
         }
         _ => {}
     };
@@ -791,7 +798,8 @@ pub fn determine_rp_in_ty(ty: @ast::Ty,
                    pprust::ty_to_str(ty, sess.intr()));
 
             if cx.region_is_relevant(r) {
-                cx.add_rp(cx.item_id, cx.add_variance(rv_contravariant))
+                let rv = cx.add_variance(rv_contravariant);
+                cx.add_rp(cx.item_id, rv)
             }
         }
 
@@ -801,14 +809,14 @@ pub fn determine_rp_in_ty(ty: @ast::Ty,
             match f.region {
                 Some(_) => {
                     if cx.region_is_relevant(f.region) {
-                        cx.add_rp(cx.item_id,
-                                  cx.add_variance(rv_contravariant))
+                        let rv = cx.add_variance(rv_contravariant);
+                        cx.add_rp(cx.item_id, rv)
                     }
                 }
                 None => {
                     if f.sigil == ast::BorrowedSigil && cx.anon_implies_rp {
-                        cx.add_rp(cx.item_id,
-                                  cx.add_variance(rv_contravariant));
+                        let rv = cx.add_variance(rv_contravariant);
+                        cx.add_rp(cx.item_id, rv)
                     }
                 }
             }
@@ -839,7 +847,8 @@ pub fn determine_rp_in_ty(ty: @ast::Ty,
                     debug!("reference to external, rp'd type %s",
                            pprust::ty_to_str(ty, sess.intr()));
                     if cx.region_is_relevant(path.rp) {
-                        cx.add_rp(cx.item_id, cx.add_variance(variance))
+                        let rv = cx.add_variance(variance);
+                        cx.add_rp(cx.item_id, rv)
                     }
                   }
                 }

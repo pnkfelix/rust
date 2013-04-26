@@ -493,7 +493,7 @@ pub impl<'self> CheckLoanCtxt<'self> {
     fn check_call(&mut self,
                   _expr: @ast::expr,
                   _callee: Option<@ast::expr>,
-                  callee_id: ast::node_id,
+                  _callee_id: ast::node_id,
                   _callee_span: span,
                   _args: &[@ast::expr])
     {
@@ -501,7 +501,9 @@ pub impl<'self> CheckLoanCtxt<'self> {
         // necessary, because the callee_id never issues new loans.
         // However, I added it for consistency and lest the system
         // should change in the future.
-        self.check_for_conflicting_loans(callee_id);
+        //
+        // FIXME(#5074) nested method calls
+        // self.check_for_conflicting_loans(callee_id);
     }
 }
 
