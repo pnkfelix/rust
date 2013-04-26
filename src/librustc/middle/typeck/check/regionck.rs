@@ -232,7 +232,8 @@ fn visit_expr(expr: @ast::expr, rcx: @mut Rcx, v: rvt) {
     }
 
     match expr.node {
-        ast::expr_call(_, ref args, _) => {
+        ast::expr_call(callee, ref args, _) => {
+            constrain_callee(rcx, expr, callee);
             constrain_call(rcx, expr, None, *args, false);
         }
 
@@ -322,6 +323,41 @@ fn visit_expr(expr: @ast::expr, rcx: @mut Rcx, v: rvt) {
     }
 
     visit::visit_expr(expr, rcx, v);
+}
+
+fn constrain_callee(rcx: @mut Rcx,
+                    call_expr: @ast::expr,
+                    callee_expr: @ast::expr)
+{
+    let tcx = rcx.fcx.tcx();
+
+    let call_region = ty::re_scope(call_expr.id);
+
+    let callee_ty = rcx.resolve_node_type(call_expr.callee_id);
+    match ty::get(callee_ty).sty {
+        ty::ty_bare_fn(*) => { }
+        ty::ty_closure(ref closure_ty) => {
+            match rcx.fcx.mk_subr(true, callee_expr.span,
+                                  call_region, closure_ty.region) {
+                result::Err(_) => {
+                    tcx.sess.span_err(
+                        callee_expr.span,
+                        fmt!("cannot invoke closure outside of its lifetime"));
+                    note_and_explain_region(
+                        tcx,
+                        "the closure is only valid for ",
+                        closure_ty.region,
+                        "");
+                }
+                result::Ok(_) => {}
+            }
+        }
+        _ => {
+            tcx.sess.span_bug(
+                callee_expr.span,
+                fmt!("Calling non-function: %s", callee_ty.repr(tcx)));
+        }
+    }
 }
 
 fn constrain_call(rcx: @mut Rcx,
@@ -490,10 +526,13 @@ fn constrain_free_variables(rcx: @mut Rcx,
      */
 
     let tcx = rcx.fcx.ccx.tcx;
+    debug!("constrain_free_variables(%s, %s)",
+           region.repr(tcx), expr.repr(tcx));
     for get_freevars(tcx, expr.id).each |freevar| {
         debug!("freevar def is %?", freevar.def);
         let def = freevar.def;
         let en_region = encl_region_of_def(rcx.fcx, def);
+        debug!("en_region = %s", en_region.repr(tcx));
         match rcx.fcx.mk_subr(true, freevar.span,
                               region, en_region) {
           result::Ok(()) => {}
