@@ -203,6 +203,7 @@ pub fn const_expr(cx: @CrateContext, e: @ast::expr) -> ValueRef {
                         None => const_addr_of(cx, llconst)
                     };
                     match *autoref {
+                        ty::AutoUnsafe(m) |
                         ty::AutoPtr(ty::re_static, m) => {
                             assert!(m != ast::m_mutbl);
                             llconst = llptr;

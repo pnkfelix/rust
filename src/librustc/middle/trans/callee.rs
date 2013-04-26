@@ -675,7 +675,6 @@ pub fn trans_arg_expr(bcx: block,
            formal_ty.ty.repr(bcx.tcx()),
            arg_expr.repr(bcx.tcx()),
            ret_flag.map(|v| bcx.val_str(*v)));
-    let _indenter = indenter();
 
     // translate the arg expr to a datum
     let arg_datumblock = match ret_flag {

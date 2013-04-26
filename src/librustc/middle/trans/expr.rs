@@ -150,7 +150,7 @@ use middle::ty::struct_mutable_fields;
 use middle::ty::{AutoPtr, AutoBorrowVec, AutoBorrowVecRef, AutoBorrowFn,
                  AutoDerefRef, AutoAddEnv, AutoUnsafe};
 use util::common::indenter;
-use util::ppaux::ty_to_str;
+use util::ppaux::Repr;
 
 use core::cast::transmute;
 use core::hashmap::HashMap;
@@ -203,6 +203,8 @@ pub fn trans_to_datum(bcx: block, expr: @ast::expr) -> DatumBlock {
                 trans_to_datum_unadjusted(bcx, expr)
             });
 
+            debug!("unadjusted datum: %s", datum.to_str(bcx.ccx()));
+
             if adj.autoderefs > 0 {
                 let DatumBlock { bcx: new_bcx, datum: new_datum } =
                     datum.autoderef(bcx, expr.id, adj.autoderefs);
@@ -214,7 +216,7 @@ pub fn trans_to_datum(bcx: block, expr: @ast::expr) -> DatumBlock {
                 None => {
                     datum
                 }
-                Some(AutoUnsafe(*)) |
+                Some(AutoUnsafe(*)) | // region + unsafe ptrs have same repr
                 Some(AutoPtr(*)) => {
                     unpack_datum!(bcx, auto_ref(bcx, datum))
                 }
@@ -274,7 +276,7 @@ pub fn trans_to_datum(bcx: block, expr: @ast::expr) -> DatumBlock {
 
         let tcx = bcx.tcx();
         let closure_ty = expr_ty_adjusted(bcx, expr);
-        debug!("add_env(closure_ty=%s)", ty_to_str(tcx, closure_ty));
+        debug!("add_env(closure_ty=%s)", closure_ty.repr(tcx));
         let scratch = scratch_datum(bcx, closure_ty, false);
         let llfn = GEPi(bcx, scratch.val, [0u, abi::fn_field_code]);
         assert!(datum.appropriate_mode() == ByValue);
@@ -613,7 +615,7 @@ fn trans_rvalue_dps_unadjusted(bcx: block, expr: @ast::expr,
             let sigil = ty::ty_closure_sigil(expr_ty);
             debug!("translating fn_block %s with type %s",
                    expr_to_str(expr, tcx.sess.intr()),
-                   ty_to_str(tcx, expr_ty));
+                   expr_ty.repr(tcx));
             return closure::trans_expr_fn(bcx, sigil, decl, body,
                                           expr.id, expr.id,
                                           None, dest);
@@ -1089,6 +1091,9 @@ pub fn trans_local_var(bcx: block, def: ast::def) -> Datum {
                 }
             };
 
+            debug!("def_self() reference, self_info.t=%s",
+                   self_info.t.repr(bcx.tcx()));
+
             // This cast should not be necessary. We should cast self *once*,
             // but right now this conflicts with default methods.
             let real_self_ty = monomorphize_type(bcx, self_info.t);
@@ -1152,7 +1157,7 @@ pub fn with_field_tys<R>(tcx: ty::ctxt,
                     tcx.sess.bug(fmt!(
                         "cannot get field types from the enum type %s \
                          without a node ID",
-                        ty_to_str(tcx, ty)));
+                        ty.repr(tcx)));
                 }
                 Some(node_id) => {
                     match *tcx.def_map.get(&node_id) {
@@ -1174,7 +1179,7 @@ pub fn with_field_tys<R>(tcx: ty::ctxt,
         _ => {
             tcx.sess.bug(fmt!(
                 "cannot get field types from the type %s",
-                ty_to_str(tcx, ty)));
+                ty.repr(tcx)));
         }
     }
 }
