@@ -688,17 +688,12 @@ pub fn task_rng() -> @IsaacRng {
     }
 }
 
-// Allow direct chaining with `task_rng`
-impl<R: Rng> Rng for @R {
-    fn next(&self) -> u32 { (*self).next() }
-}
-
 /**
  * Returns a random value of a Rand type, using the task's random number
  * generator.
  */
 pub fn random<T: Rand>() -> T {
-    task_rng().gen()
+    (*task_rng()).gen()
 }
 
 #[cfg(test)]
