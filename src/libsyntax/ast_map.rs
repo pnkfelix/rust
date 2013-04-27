@@ -21,6 +21,7 @@ use diagnostic::span_handler;
 use parse::token::ident_interner;
 use print::pprust;
 use visit;
+use syntax::parse::token::special_idents;
 
 use core::cmp;
 use core::hashmap::HashMap;
@@ -94,10 +95,8 @@ pub enum ast_node {
     node_variant(variant, @item, @path),
     node_expr(@expr),
     node_stmt(@stmt),
-    // Locals are numbered, because the alias analysis needs to know in which
-    // order they are introduced.
-    node_arg(arg, uint),
-    node_local(uint),
+    node_arg,
+    node_local(ident),
     // Destructor for a struct
     node_dtor(Generics, @struct_dtor, def_id, @path),
     node_block(blk),
@@ -110,7 +109,6 @@ pub type map = @mut HashMap<node_id, ast_node>;
 pub struct Ctx {
     map: map,
     path: path,
-    local_id: uint,
     diag: @span_handler,
 }
 
@@ -137,7 +135,6 @@ pub fn map_crate(diag: @span_handler, c: @crate) -> map {
     let cx = @mut Ctx {
         map: @mut HashMap::new(),
         path: ~[],
-        local_id: 0u,
         diag: diag,
     };
     visit::visit_crate(c, cx, mk_ast_map_visitor());
@@ -160,7 +157,6 @@ pub fn map_decoded_item(diag: @span_handler,
     let cx = @mut Ctx {
         map: map,
         path: copy path,
-        local_id: 0,
         diag: diag,
     };
     let v = mk_ast_map_visitor();
@@ -195,9 +191,7 @@ pub fn map_fn(
     v: visit::vt<@mut Ctx>
 ) {
     for decl.inputs.each |a| {
-        cx.map.insert(a.id,
-                      node_arg(/* FIXME (#2543) */ copy *a, cx.local_id));
-        cx.local_id += 1u;
+        cx.map.insert(a.id, node_arg);
     }
     match *fk {
         visit::fk_dtor(generics, ref attrs, self_id, parent_id) => {
@@ -231,9 +225,8 @@ pub fn map_block(b: &blk, cx: @mut Ctx, v: visit::vt<@mut Ctx>) {
 pub fn number_pat(cx: @mut Ctx, pat: @pat) {
     do ast_util::walk_pat(pat) |p| {
         match p.node {
-          pat_ident(*) => {
-            cx.map.insert(p.id, node_local(cx.local_id));
-            cx.local_id += 1u;
+          pat_ident(_, path, _) => {
+            cx.map.insert(p.id, node_local(ast_util::path_to_ident(path)));
           }
           _ => ()
         }
@@ -253,8 +246,7 @@ pub fn map_arm(arm: &arm, cx: @mut Ctx, v: visit::vt<@mut Ctx>) {
 pub fn map_method(impl_did: def_id, impl_path: @path,
                   m: @method, cx: @mut Ctx) {
     cx.map.insert(m.id, node_method(m, impl_did, impl_path));
-    cx.map.insert(m.self_id, node_local(cx.local_id));
-    cx.local_id += 1u;
+    cx.map.insert(m.self_id, node_local(special_idents::self_));
 }
 
 pub fn map_item(i: @item, cx: @mut Ctx, v: visit::vt<@mut Ctx>) {
@@ -427,11 +419,11 @@ pub fn node_id_to_str(map: map, id: node_id, itr: @ident_interner) -> ~str {
         fmt!("stmt %s (id=%?)",
              pprust::stmt_to_str(stmt, itr), id)
       }
-      Some(&node_arg(_, _)) => { // add more info here
+      Some(&node_arg) => {
         fmt!("arg (id=%?)", id)
       }
-      Some(&node_local(_)) => { // add more info here
-        fmt!("local (id=%?)", id)
+      Some(&node_local(ident)) => {
+        fmt!("local (id=%?, name=%s)", id, *itr.get(ident))
       }
       Some(&node_dtor(*)) => { // add more info here
         fmt!("node_dtor (id=%?)", id)

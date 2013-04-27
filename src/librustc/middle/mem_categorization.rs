@@ -1000,6 +1000,12 @@ pub fn field_mutbl(tcx: ty::ctxt,
     return None;
 }
 
+pub enum AliasableReason {
+    AliasableManaged(ast::mutability),
+    AliasableBorrowed(ast::mutability),
+    AliasableOther
+}
+
 pub impl cmt_ {
     fn guarantor(@self) -> cmt {
         //! Returns `self` after stripping away any owned pointer derefs or
@@ -1028,6 +1034,10 @@ pub impl cmt_ {
     }
 
     fn is_freely_aliasable(&self) -> bool {
+        self.freely_aliasable().is_some()
+    }
+
+    fn freely_aliasable(&self) -> Option<AliasableReason> {
         //! True if this lvalue resides in an area that is
         //! freely aliasable, meaning that rustc cannot track
         //! the aliases with precision.
@@ -1042,25 +1052,31 @@ pub impl cmt_ {
             cat_local(*) |
             cat_arg(_, ast::by_copy) |
             cat_self(*) |
+            cat_deref(_, _, unsafe_ptr(*)) | // of course it is aliasable, but...
             cat_deref(_, _, region_ptr(m_mutbl, _)) => {
-                false
+                None
             }
 
             cat_copied_upvar(CopiedUpvar {onceness: ast::Many, _}) |
             cat_static_item(*) |
             cat_implicit_self(*) |
-            cat_arg(_, ast::by_ref) |
-            cat_deref(_, _, gc_ptr(*)) |
-            cat_deref(_, _, region_ptr(m_const, _)) |
-            cat_deref(_, _, region_ptr(m_imm, _)) |
-            cat_deref(_, _, unsafe_ptr(*)) => {
-                true
+            cat_arg(_, ast::by_ref) => {
+                Some(AliasableOther)
+            }
+
+            cat_deref(_, _, gc_ptr(m)) => {
+                Some(AliasableManaged(m))
+            }
+
+            cat_deref(_, _, region_ptr(m @ m_const, _)) |
+            cat_deref(_, _, region_ptr(m @ m_imm, _)) => {
+                Some(AliasableBorrowed(m))
             }
 
             cat_deref(b, _, uniq_ptr(*)) |
             cat_interior(b, _) |
             cat_discr(b, _) => {
-                b.is_freely_aliasable()
+                b.freely_aliasable()
             }
         }
     }

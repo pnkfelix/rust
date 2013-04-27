@@ -61,22 +61,7 @@ pub fn check_loans(bccx: @BorrowckCtxt,
 enum MoveError {
     MoveOk,
     MoveFromIllegalCmt(mc::cmt),
-    MoveWhileBorrowed(/*move*/mc::cmt, /*loan*/mc::cmt, /*loan*/span)
-}
-
-#[deriving(Eq)]
-enum assignment_type {
-    at_straight_up,
-    at_swap
-}
-
-pub impl assignment_type {
-    fn ing_form(&self, desc: &str) -> ~str {
-        match *self {
-          at_straight_up => fmt!("assigning to %s", desc),
-          at_swap => fmt!("swapping to and from %s", desc)
-        }
-    }
+    MoveWhileBorrowed(/*loan*/@LoanPath, /*loan*/span)
 }
 
 pub impl<'self> CheckLoanCtxt<'self> {
@@ -198,16 +183,33 @@ pub impl<'self> CheckLoanCtxt<'self> {
             if !restr.set.intersects(illegal_if) { loop; }
             if restr.loan_path != new_loan.loan_path { loop; }
 
-            self.bccx.span_err(
-                new_loan.span,
-                fmt!("loan of %s as %s \
-                      conflicts with prior loan",
-                     self.bccx.cmt_to_str(new_loan.cmt),
-                     self.bccx.mut_to_str(new_loan.mutbl)));
-            self.bccx.span_note(
-                old_loan.span,
-                fmt!("prior loan as %s granted here",
-                     self.bccx.mut_to_str(old_loan.mutbl)));
+            match (new_loan.mutbl, old_loan.mutbl) {
+                (m_mutbl, m_mutbl) => {
+                    self.bccx.span_err(
+                        new_loan.span,
+                        fmt!("cannot borrow `%s` as mutable \
+                              more than once at at a time",
+                             self.bccx.loan_path_to_str(new_loan.loan_path)));
+                    self.bccx.span_note(
+                        old_loan.span,
+                        fmt!("second borrow of `%s` as mutable occurs here",
+                             self.bccx.loan_path_to_str(new_loan.loan_path)));
+                }
+
+                _ => {
+                    self.bccx.span_err(
+                        new_loan.span,
+                        fmt!("cannot borrow `%s` as %s because \
+                              it is also borrowed as %s"
+                             self.bccx.loan_path_to_str(new_loan.loan_path),
+                             self.bccx.mut_to_str(new_loan.mutbl),
+                             self.bccx.mut_to_str(old_loan.mutbl)));
+                    self.bccx.span_note(
+                        old_loan.span,
+                        fmt!("second borrow of `%s` occurs here",
+                             self.bccx.loan_path_to_str(new_loan.loan_path)));
+                }
+            }
         }
     }
 
@@ -218,7 +220,7 @@ pub impl<'self> CheckLoanCtxt<'self> {
         }
     }
 
-    fn check_assignment(&self, at: assignment_type, expr: @ast::expr) {
+    fn check_assignment(&self, expr: @ast::expr) {
         // We don't use cat_expr() here because we don't want to treat
         // auto-ref'd parameters in overloaded operators as rvalues.
         let cmt = match self.bccx.tcx.adjustments.find(&expr.id) {
@@ -242,19 +244,18 @@ pub impl<'self> CheckLoanCtxt<'self> {
                 if !self.is_local_variable(cmt) {
                     self.bccx.span_err(
                         expr.span,
-                        at.ing_form(self.bccx.cmt_to_str(cmt)));
+                        fmt!("cannot mutate %s", self.bccx.cmt_to_str(cmt)));
                 }
                 return;
             }
         }
 
-        if check_for_aliasable_mutable_writes(self, at, expr, cmt) {
+        if check_for_aliasable_mutable_writes(self, expr, cmt) {
             check_for_assignment_to_restricted_or_frozen_location(
-                self, at, expr, cmt);
+                self, expr, cmt);
         }
 
         fn check_for_aliasable_mutable_writes(self: &CheckLoanCtxt,
-                                              at: assignment_type,
                                               expr: @ast::expr,
                                               cmt: mc::cmt) -> bool {
             //! Safety checks related to writes to aliasable, mutable locations
@@ -264,12 +265,14 @@ pub impl<'self> CheckLoanCtxt<'self> {
                 mc::cat_deref(b, _, mc::region_ptr(m_mutbl, _)) => {
                     // Statically prohibit writes to `&mut` when aliasable
 
-                    if b.is_freely_aliasable() {
-                        self.bccx.span_err(
-                            expr.span,
-                            fmt!("%s an `&mut` pointer in an aliasable location \
-                                  prohibited", at.ing_form("")));
-                        return false; // errors reported
+                    match b.freely_aliasable() {
+                        None => {}
+                        Some(cause) => {
+                            self.bccx.report_aliasability_violation(
+                                expr.span,
+                                MutabilityViolation,
+                                cause);
+                        }
                     }
                 }
 
@@ -291,7 +294,6 @@ pub impl<'self> CheckLoanCtxt<'self> {
 
         fn check_for_assignment_to_restricted_or_frozen_location(
             self: &CheckLoanCtxt,
-            at: assignment_type,
             expr: @ast::expr,
             cmt: mc::cmt) -> bool
         {
@@ -337,14 +339,7 @@ pub impl<'self> CheckLoanCtxt<'self> {
                 |loan, restr|
             {
                 if restr.set.intersects(RESTR_MUTATE) {
-                    self.bccx.span_err(
-                        expr.span,
-                        fmt!("%s prohibited due to outstanding loan",
-                             at.ing_form(self.bccx.cmt_to_str(cmt))));
-                    self.bccx.span_note(
-                        loan.span,
-                        fmt!("loan of %s granted here",
-                             self.bccx.cmt_to_str(loan.cmt)));
+                    self.report_illegal_mutation(expr, loan_path, loan);
                     return false;
                 }
             }
@@ -404,19 +399,26 @@ pub impl<'self> CheckLoanCtxt<'self> {
                 // Check for a non-const loan of `loan_path`
                 for self.each_in_scope_loan(expr.id) |loan| {
                     if loan.loan_path == loan_path && loan.mutbl != m_const {
-                        self.bccx.span_err(
-                            expr.span,
-                            fmt!("%s prohibited due to outstanding loan",
-                                 at.ing_form(self.bccx.cmt_to_str(cmt))));
-                        self.bccx.span_note(
-                            loan.span,
-                            fmt!("loan of %s granted here",
-                                 self.bccx.cmt_to_str(loan.cmt)));
+                        self.report_illegal_mutation(expr, loan_path, loan);
                         return false;
                     }
                 }
             }
         }
+    }
+
+    fn report_illegal_mutation(&self,
+                               expr: @ast::expr,
+                               loan_path: &LoanPath,
+                               loan: &Loan) {
+        self.bccx.span_err(
+            expr.span,
+            fmt!("cannot mutate `%s` because it is borrowed",
+                 self.bccx.loan_path_to_str(loan_path)));
+        self.bccx.span_note(
+            loan.span,
+            fmt!("borrow of `%s` occurs here",
+                 self.bccx.loan_path_to_str(loan_path)));
     }
 
     fn check_move_out_from_expr(&self, ex: @ast::expr) {
@@ -433,19 +435,19 @@ pub impl<'self> CheckLoanCtxt<'self> {
                     MoveFromIllegalCmt(_) => {
                         self.bccx.span_err(
                             cmt.span,
-                            fmt!("moving out of %s",
+                            fmt!("cannot move out of %s",
                                  self.bccx.cmt_to_str(cmt)));
                     }
-                    MoveWhileBorrowed(_, loan_cmt, loan_span) => {
+                    MoveWhileBorrowed(loan_path, loan_span) => {
                         self.bccx.span_err(
                             cmt.span,
-                            fmt!("moving out of %s prohibited \
-                                  due to outstanding loan",
-                                 self.bccx.cmt_to_str(cmt)));
+                            fmt!("cannot move out of `%s` \
+                                  because it is borrowed",
+                                 self.bccx.loan_path_to_str(loan_path)));
                         self.bccx.span_note(
                             loan_span,
-                            fmt!("loan of %s granted here",
-                                 self.bccx.cmt_to_str(loan_cmt)));
+                            fmt!("borrow of `%s` occurs here",
+                                 self.bccx.loan_path_to_str(loan_path)));
                     }
                 }
             }
@@ -483,7 +485,7 @@ pub impl<'self> CheckLoanCtxt<'self> {
         for opt_loan_path(cmt).each |&lp| {
             for self.each_in_scope_restriction(cmt.id, lp) |loan, _| {
                 // Any restriction prevents moves.
-                return MoveWhileBorrowed(cmt, loan.cmt, loan.span);
+                return MoveWhileBorrowed(loan.loan_path, loan.span);
             }
         }
 
@@ -556,16 +558,16 @@ fn check_loans_in_fn<'a>(fk: &visit::fn_kind,
                                 fmt!("illegal by-move capture of %s",
                                      self.bccx.cmt_to_str(move_cmt)));
                         }
-                        MoveWhileBorrowed(move_cmt, loan_cmt, loan_span) => {
+                        MoveWhileBorrowed(loan_path, loan_span) => {
                             self.bccx.span_err(
                                 cap_var.span,
-                                fmt!("by-move capture of %s prohibited \
-                                      due to outstanding loan",
-                                     self.bccx.cmt_to_str(move_cmt)));
+                                fmt!("cannot move `%s` into closure \
+                                      because it is borrowed",
+                                     self.bccx.loan_path_to_str(loan_path)));
                             self.bccx.span_note(
                                 loan_span,
-                                fmt!("loan of %s granted here",
-                                     self.bccx.cmt_to_str(loan_cmt)));
+                                fmt!("borrow of `%s` occurs here",
+                                     self.bccx.loan_path_to_str(loan_path)));
                         }
                     }
                 }
@@ -598,12 +600,12 @@ fn check_loans_in_expr<'a>(expr: @ast::expr,
 
     match expr.node {
       ast::expr_swap(l, r) => {
-        self.check_assignment(at_swap, l);
-        self.check_assignment(at_swap, r);
+        self.check_assignment(l);
+        self.check_assignment(r);
       }
       ast::expr_assign(dest, _) |
       ast::expr_assign_op(_, dest, _) => {
-        self.check_assignment(at_straight_up, dest);
+        self.check_assignment(dest);
       }
       ast::expr_call(f, ref args, _) => {
         self.check_call(expr, Some(f), f.id, f.span, *args);

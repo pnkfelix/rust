@@ -53,6 +53,16 @@ impl RestrictionsContext {
     fn compute(&self,
                cmt: mc::cmt,
                restrictions: RestrictionSet) -> RestrictionResult {
+
+        // Check for those cases where we cannot control the aliasing
+        // and make sure that we are not being asked to.
+        match cmt.freely_aliasable() {
+            None => {}
+            Some(cause) => {
+                self.check_aliasing_permitted(cause, restrictions);
+            }
+        }
+
         match cmt.cat {
             mc::cat_rvalue => {
                 // Effectively, rvalues are stored into a
@@ -94,42 +104,10 @@ impl RestrictionsContext {
             mc::cat_deref(_, _, mc::region_ptr(m_imm, _)) |
             mc::cat_deref(_, _, mc::gc_ptr(m_const)) |
             mc::cat_deref(_, _, mc::gc_ptr(m_imm)) => {
-                // All of these cases are cases where (1) we cannot
-                // control the aliasing and (2) the user cannot mutate
-                // the data. Because of (1), we report an error if the
-                // restrictions request us to prevent aliasing (this
-                // only occurs when re-borrowing an `&mut`, see
-                // below). Because of (2), no restrictions are needed
-                // to enforce RESTR_MUTATE.
-                //
-                // To be 100% consistent, we should report an error if
-                // RESTR_FREEZE is found, because we cannot prevent
-                // freezing, nor would we want to. However, we do not
-                // report such an error, because this restriction only
-                // occurs when the user is creating an `&mut` pointer
-                // to immutable or read-only data, and there is
-                // already another piece of code that checks for this
-                // condition.
-                self.check_aliasing_permitted(restrictions);
                 Safe
             }
 
             mc::cat_deref(cmt_base, _, mc::gc_ptr(ast::m_mutbl)) => {
-                // As above, `@mut` is inherently aliasable, so we
-                // just don't permit reborrowing (or mutating etc) an
-                // `&mut` found there. In some ways, this is a bit
-                // surprising, because it is legal to take an `&mut`
-                // borrow and then use `&mut`s that are found within.
-                // This is partly laziness on my part but should not
-                // lead to anything unsound. Basically the compiler
-                // will not allow you to mutate or borrow from an
-                // `&mut` found within any aliasable location,
-                // including an `@mut`. But if you borrow to `&mut`,
-                // then we know that any other attempt to borrow that
-                // `@mut` will result in an error, so we can consider
-                // the `&mut` unique.
-                self.check_aliasing_permitted(restrictions);
-
                 // Technically, no restrictions are *necessary* here.
                 // The validity of the borrow is guaranteed
                 // dynamically.  However, nonetheless we add a
@@ -216,17 +194,27 @@ impl RestrictionsContext {
         }
     }
 
-    fn check_aliasing_permitted(&self, restrictions: RestrictionSet) {
+    fn check_aliasing_permitted(&self,
+                                cause: mc::AliasableReason,
+                                restrictions: RestrictionSet) {
         //! This method is invoked when the current `cmt` is something
         //! where aliasing cannot be controlled. It reports an error if
-        //! the restrictions required that it not be aliased.
+        //! the restrictions required that it not be aliased; currently
+        //! this only occurs when re-borrowing an `&mut` pointer.
+        //!
+        //! NB: To be 100% consistent, we should report an error if
+        //! RESTR_FREEZE is found, because we cannot prevent freezing,
+        //! nor would we want to. However, we do not report such an
+        //! error, because this restriction only occurs when the user
+        //! is creating an `&mut` pointer to immutable or read-only
+        //! data, and there is already another piece of code that
+        //! checks for this condition.
 
         if restrictions.intersects(RESTR_ALIAS) {
-            self.bccx.report(BckError {
-                span: self.span,
-                cmt: self.cmt_original,
-                code: err_cannot_prevent_aliasing
-            });
+            self.bccx.report_aliasability_violation(
+                self.span,
+                BorrowViolation,
+                cause);
         }
     }
 }

@@ -428,10 +428,13 @@ pub impl GatherLoanCtxt {
                             fmt!("Invalid borrow lifetime: %?", loan_region));
                     }
                 };
+                debug!("loan_scope = %?", loan_scope);
 
                 let gen_scope = self.compute_gen_scope(borrow_id, loan_scope);
+                debug!("gen_scope = %?", gen_scope);
 
                 let kill_scope = self.compute_kill_scope(loan_scope, loan_path);
+                debug!("kill_scope = %?", kill_scope);
 
                 if req_mutbl == m_mutbl {
                     self.mark_loan_path_as_mutated(loan_path);
@@ -454,12 +457,12 @@ pub impl GatherLoanCtxt {
         debug!("guarantee_valid(borrow_id=%?), loan=%s",
                borrow_id, loan.repr(self.tcx()));
 
-        let loan_path = loan.loan_path;
-        let loan_gen_scope = loan.gen_scope;
-        let loan_kill_scope = loan.kill_scope;
+        // let loan_path = loan.loan_path;
+        // let loan_gen_scope = loan.gen_scope;
+        // let loan_kill_scope = loan.kill_scope;
         self.all_loans.push(loan);
 
-        if loan_gen_scope != borrow_id {
+        // if loan_gen_scope != borrow_id {
             // NOTE handle case where gen_scope is not borrow_id
             //
             // Typically, the scope of the loan includes the point at
@@ -482,7 +485,7 @@ pub impl GatherLoanCtxt {
             //        span: borrow_span,
             //        restrictions: restrictions
             //    }
-        }
+        // }
 
         fn check_mutability(bccx: @BorrowckCtxt,
                             borrow_span: span,

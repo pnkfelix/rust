@@ -27,6 +27,7 @@ use core::io;
 use core::result::{Result};
 use core::ops::{BitOr, BitAnd};
 use syntax::ast;
+use syntax::ast_map;
 use syntax::visit;
 use syntax::codemap::span;
 
@@ -369,8 +370,6 @@ pub enum bckerr_code {
     err_mutbl(ast::mutability),
     err_out_of_root_scope(ty::Region, ty::Region), // superscope, subscope
     err_out_of_scope(ty::Region, ty::Region), // superscope, subscope
-    err_partial_freeze_of_managed_content,
-    err_cannot_prevent_aliasing,
 }
 
 // Combination of an error code and the categorization of the expression
@@ -380,6 +379,11 @@ pub struct BckError {
     span: span,
     cmt: mc::cmt,
     code: bckerr_code
+}
+
+pub enum AliasableViolationKind {
+    MutabilityViolation,
+    BorrowViolation
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -464,12 +468,9 @@ pub impl BorrowckCtxt {
     fn bckerr_to_str(&self, err: BckError) -> ~str {
         match err.code {
             err_mutbl(lk) => {
-                fmt!("creating %s alias to %s",
-                     self.mut_to_str(lk),
-                     self.cmt_to_str(err.cmt))
-            }
-            err_cannot_prevent_aliasing => {
-                ~"cannot reborrow `&mut` pointer in aliasable location"
+                fmt!("cannot borrow %s as %s",
+                     self.cmt_to_str(err.cmt),
+                     self.mut_to_str(lk))
             }
             err_out_of_root_scope(*) => {
                 ~"cannot root managed value long enough"
@@ -477,8 +478,46 @@ pub impl BorrowckCtxt {
             err_out_of_scope(*) => {
                 ~"borrowed value does not live long enough"
             }
-            err_partial_freeze_of_managed_content => {
-                ~"cannot partially borrow an `@mut` value"
+        }
+    }
+
+    fn report_aliasability_violation(&self,
+                                     span: span,
+                                     kind: AliasableViolationKind,
+                                     cause: mc::AliasableReason) {
+        let prefix = match kind {
+            MutabilityViolation => "cannot mutate an `&mut`",
+            BorrowViolation => "cannot borrow an `&mut`"
+        };
+
+        match cause {
+            mc::AliasableOther => {
+                self.tcx.sess.span_err(
+                    span,
+                    fmt!("%s in an aliasable location", prefix));
+            }
+            mc::AliasableManaged(ast::m_mutbl) => {
+                // FIXME(#5074) we should prob do this borrow
+                self.tcx.sess.span_err(
+                    span,
+                    fmt!("%s in a `@mut` pointer; \
+                          try borrowing as `&mut` first", prefix));
+            }
+            mc::AliasableManaged(m) => {
+                self.tcx.sess.span_err(
+                    span,
+                    fmt!("%s in a `@%s` pointer; \
+                          try an `@mut` instead",
+                         prefix,
+                         self.mut_to_keyword(m)));
+            }
+            mc::AliasableBorrowed(m) => {
+                self.tcx.sess.span_err(
+                    span,
+                    fmt!("%s in a `&%s` pointer; \
+                          try an `&mut` instead",
+                         prefix,
+                         self.mut_to_keyword(m)));
             }
         }
     }
@@ -486,8 +525,6 @@ pub impl BorrowckCtxt {
     fn note_and_explain_bckerr(&self, err: BckError) {
         let code = err.code;
         match code {
-            err_cannot_prevent_aliasing |
-            err_partial_freeze_of_managed_content |
             err_mutbl(*) => {}
 
             err_out_of_root_scope(super_scope, sub_scope) => {
@@ -518,6 +555,67 @@ pub impl BorrowckCtxt {
         }
     }
 
+    fn append_loan_path_to_str_from_interior(&self,
+                                             loan_path: &LoanPath,
+                                             out: &mut ~str) {
+        match *loan_path {
+            LpExtend(_, _, LpDeref) => {
+                str::push_char(out, '(');
+                self.append_loan_path_to_str(loan_path, out);
+                str::push_char(out, ')');
+            }
+            LpExtend(_, _, LpInterior(_)) |
+            LpVar(_) => {
+                self.append_loan_path_to_str(loan_path, out);
+            }
+        }
+    }
+
+    fn append_loan_path_to_str(&self, loan_path: &LoanPath, out: &mut ~str) {
+        match *loan_path {
+            LpVar(id) => {
+                match self.tcx.items.find(&id) {
+                    Some(&ast_map::node_local(ident)) => {
+                        str::push_str(out, *self.tcx.sess.intr().get(ident));
+                    }
+                    r => {
+                        self.tcx.sess.bug(
+                            fmt!("Loan path LpVar(%?) maps to %?, not local",
+                                 id, r));
+                    }
+                }
+            }
+
+            LpExtend(lp_base, _, LpInterior(mc::interior_field(fld, _))) => {
+                self.append_loan_path_to_str_from_interior(lp_base, out);
+                str::push_char(out, '.');
+                str::push_str(out, *self.tcx.sess.intr().get(fld));
+            }
+
+            LpExtend(lp_base, _, LpInterior(mc::interior_index(*))) => {
+                self.append_loan_path_to_str_from_interior(lp_base, out);
+                str::push_str(out, "[]");
+            }
+
+            LpExtend(lp_base, _, LpInterior(mc::interior_tuple)) |
+            LpExtend(lp_base, _, LpInterior(mc::interior_anon_field)) |
+            LpExtend(lp_base, _, LpInterior(mc::interior_variant(_))) => {
+                self.append_loan_path_to_str_from_interior(lp_base, out);
+                str::push_str(out, ".(tuple)");
+            }
+
+            LpExtend(lp_base, _, LpDeref) => {
+                str::push_char(out, '*');
+                self.append_loan_path_to_str(lp_base, out);
+            }
+        }
+    }
+
+    fn loan_path_to_str(&self, loan_path: &LoanPath) -> ~str {
+        let mut result = ~"";
+        self.append_loan_path_to_str(loan_path, &mut result);
+        result
+    }
 
     fn cmt_to_str(&self, cmt: mc::cmt) -> ~str {
         let mc = &mc::mem_categorization_ctxt {tcx: self.tcx,
@@ -529,6 +627,14 @@ pub impl BorrowckCtxt {
         let mc = &mc::mem_categorization_ctxt {tcx: self.tcx,
                                                method_map: self.method_map};
         mc.mut_to_str(mutbl)
+    }
+
+    fn mut_to_keyword(&self, mutbl: ast::mutability) -> &'static str {
+        match mutbl {
+            ast::m_imm => "",
+            ast::m_const => "const",
+            ast::m_mutbl => "mut"
+        }
     }
 }
 
