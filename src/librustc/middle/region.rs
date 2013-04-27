@@ -67,8 +67,8 @@ pub struct Context {
     // Generated maps:
     region_maps: @mut RegionMaps,
 
-    // Innermost enclosing block
-    block: parent,
+    // Scope where variables should be parented to
+    var_parent: parent,
 
     // Innermost enclosing expression
     parent: parent,
@@ -352,19 +352,12 @@ pub fn parent_to_expr(cx: Context, child_id: ast::node_id) {
     }
 }
 
-/// Records the current parent (if any) as the parent of `child_id`.
-pub fn parent_to_block(cx: Context, child_id: ast::node_id) {
-    for cx.block.each |block_id| {
-        cx.region_maps.record_parent(child_id, *block_id);
-    }
-}
-
 pub fn resolve_block(blk: &ast::blk, cx: Context, visitor: visit::vt<Context>) {
     // Record the parent of this block.
     parent_to_expr(cx, blk.node.id);
 
     // Descend.
-    let new_cx = Context {block: Some(blk.node.id),
+    let new_cx = Context {var_parent: Some(blk.node.id),
                           parent: Some(blk.node.id),
                           ..cx};
     visit::visit_block(blk, new_cx, visitor);
@@ -375,22 +368,8 @@ pub fn resolve_arm(arm: &ast::arm, cx: Context, visitor: visit::vt<Context>) {
 }
 
 pub fn resolve_pat(pat: @ast::pat, cx: Context, visitor: visit::vt<Context>) {
-    match pat.node {
-        ast::pat_ident(*) => {
-            let defn_opt = cx.def_map.find(&pat.id);
-            match defn_opt {
-                Some(&ast::def_variant(_,_)) => {
-                    /* Nothing to do; this names a variant. */
-                }
-                _ => {
-                    /* This names a local. Bind it to the containing scope. */
-                    parent_to_block(cx, pat.id);
-                }
-            }
-        }
-        _ => { /* no-op */ }
-    }
-
+    assert!(cx.var_parent == cx.parent);
+    parent_to_expr(cx, pat.id);
     visit::visit_pat(pat, cx, visitor);
 }
 
@@ -436,6 +415,11 @@ pub fn resolve_expr(expr: @ast::expr, cx: Context, visitor: visit::vt<Context>) 
             //
             // parent_to_expr(new_cx, expr.callee_id);
         }
+
+        ast::expr_match(*) => {
+            new_cx.var_parent = Some(expr.id);
+        }
+
         _ => {}
     };
 
@@ -446,13 +430,14 @@ pub fn resolve_expr(expr: @ast::expr, cx: Context, visitor: visit::vt<Context>) 
 pub fn resolve_local(local: @ast::local,
                      cx: Context,
                      visitor: visit::vt<Context>) {
-    parent_to_block(cx, local.node.id);
+    assert!(cx.var_parent == cx.parent);
+    parent_to_expr(cx, local.node.id);
     visit::visit_local(local, cx, visitor);
 }
 
 pub fn resolve_item(item: @ast::item, cx: Context, visitor: visit::vt<Context>) {
     // Items create a new outer block scope as far as we're concerned.
-    let new_cx = Context {block: None, parent: None, ..cx};
+    let new_cx = Context {var_parent: None, parent: None, ..cx};
     visit::visit_item(item, new_cx, visitor);
 }
 
@@ -468,7 +453,7 @@ pub fn resolve_fn(fk: &visit::fn_kind,
 
     // The arguments and `self` are parented to the body of the fn.
     let decl_cx = Context {parent: Some(body.node.id),
-                           block: Some(body.node.id),
+                           var_parent: Some(body.node.id),
                            ..cx};
     match *fk {
         visit::fk_method(_, _, method) => {
@@ -484,7 +469,7 @@ pub fn resolve_fn(fk: &visit::fn_kind,
         visit::fk_item_fn(*) |
         visit::fk_method(*) |
         visit::fk_dtor(*) => {
-            Context {parent: None, block: None, ..cx}
+            Context {parent: None, var_parent: None, ..cx}
         }
         visit::fk_anon(*) |
         visit::fk_fn_block(*) => {
@@ -507,7 +492,7 @@ pub fn resolve_crate(sess: Session,
                       def_map: def_map,
                       region_maps: region_maps,
                       parent: None,
-                      block: None};
+                      var_parent: None};
     let visitor = visit::mk_vt(@visit::Visitor {
         visit_block: resolve_block,
         visit_item: resolve_item,

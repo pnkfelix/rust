@@ -156,6 +156,7 @@ pub fn regionck_fn(fcx: @mut FnCtxt, blk: &ast::blk) {
 fn regionck_visitor() -> rvt {
     visit::mk_vt(@visit::Visitor {visit_item: visit_item,
                                   visit_expr: visit_expr,
+                                  visit_pat: visit_pat,
                                   visit_block: visit_block,
                                   .. *visit::default_visitor()})
 }
@@ -167,6 +168,19 @@ fn visit_item(_item: @ast::item, _rcx: @mut Rcx, _v: rvt) {
 fn visit_block(b: &ast::blk, rcx: @mut Rcx, v: rvt) {
     rcx.fcx.tcx().region_maps.record_cleanup_scope(b.node.id);
     visit::visit_block(b, rcx, v);
+}
+
+fn visit_pat(pat: @ast::pat, rcx: @mut Rcx, v: rvt) {
+    match pat.node {
+        ast::pat_ident(ast::bind_by_ref(_), _, _) => {
+            // The ref binding must be in scope for the pattern
+            constrain_regions_in_type_of_node(
+                rcx, pat.id, ty::re_scope(pat.id), pat.span);
+        }
+        _ => {}
+    }
+
+    visit::visit_pat(pat, rcx, v);
 }
 
 fn visit_expr(expr: @ast::expr, rcx: @mut Rcx, v: rvt) {
@@ -224,7 +238,10 @@ fn visit_expr(expr: @ast::expr, rcx: @mut Rcx, v: rvt) {
                 constrain_derefs(rcx, expr, autoderefs, expr_ty);
                 for opt_autoref.each |autoref| {
                     guarantor::for_autoref(rcx, expr, autoderefs, autoref);
-                    constrain_regions_in_type_of_node(rcx, expr.id, ty::re_scope(expr.id), expr.span);
+
+                    // FIXME(#5074) remove to support nested method calls
+                    constrain_regions_in_type_of_node(
+                        rcx, expr.id, ty::re_scope(expr.id), expr.span);
                 }
             }
             _ => {}
