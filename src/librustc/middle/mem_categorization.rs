@@ -66,6 +66,7 @@ pub enum categorization {
     cat_static_item,
     cat_implicit_self,
     cat_copied_upvar(CopiedUpvar),     // upvar copied into @fn or ~fn env
+    cat_stack_upvar(cmt),              // by ref upvar from &fn
     cat_local(ast::node_id),           // local variable
     cat_arg(ast::node_id, ast::rmode), // formal argument
     cat_deref(cmt, uint, ptr_kind),    // deref of a ptr
@@ -329,11 +330,11 @@ pub impl MutabilityCategory {
         }
     }
 
-    fn to_user_str(&self) -> ~str {
+    fn to_user_str(&self) -> &'static str {
         match *self {
-            McDeclared | McInherited => ~"mutable",
-            McImmutable => ~"immutable",
-            McReadOnly => ~"const"
+            McDeclared | McInherited => "mutable",
+            McImmutable => "immutable",
+            McReadOnly => "const"
         }
     }
 }
@@ -501,7 +502,15 @@ pub impl mem_categorization_ctxt {
                       let sigil = closure_ty.sigil;
                       match sigil {
                           ast::BorrowedSigil => {
-                              self.cat_def(id, span, expr_ty, *inner)
+                              let upvar_cmt =
+                                  self.cat_def(id, span, expr_ty, *inner);
+                              @cmt_ {
+                                  id:id,
+                                  span:span,
+                                  cat:cat_stack_upvar(upvar_cmt),
+                                  mutbl:upvar_cmt.mutbl.inherit(),
+                                  ty:upvar_cmt.ty
+                              }
                           }
                           ast::OwnedSigil | ast::ManagedSigil => {
                               // FIXME #2152 allow mutation of moved upvars
@@ -922,7 +931,6 @@ pub impl mem_categorization_ctxt {
     }
 
     fn cmt_to_str(&self, cmt: cmt) -> ~str {
-        let mut_str = cmt.mutbl.to_user_str();
         match cmt.cat {
           cat_static_item => ~"static item",
           cat_implicit_self => ~"self reference",
@@ -930,22 +938,23 @@ pub impl mem_categorization_ctxt {
               ~"captured outer variable in a heap closure"
           }
           cat_rvalue => ~"non-lvalue",
-          cat_local(_) => mut_str + ~" local variable",
+          cat_local(_) => ~" local variable",
           cat_self(_) => ~"self value",
           cat_arg(*) => ~"argument",
-          cat_deref(_, _, pk) => fmt!("dereference of %s %s pointer",
-                                      mut_str, ptr_sigil(pk)),
-          cat_interior(_, interior_field(*)) => mut_str + ~" field",
+          cat_deref(_, _, pk) => fmt!("dereference of %s pointer",
+                                      ptr_sigil(pk)),
+          cat_interior(_, interior_field(*)) => ~"field",
           cat_interior(_, interior_tuple) => ~"tuple content",
           cat_interior(_, interior_anon_field) => ~"anonymous field",
           cat_interior(_, interior_variant(_)) => ~"enum content",
           cat_interior(_, interior_index(t, _)) => {
             match ty::get(t).sty {
-              ty::ty_evec(*) => mut_str + ~" vec content",
-              ty::ty_estr(*) => mut_str + ~" str content",
-              _ => mut_str + ~" indexed content"
+              ty::ty_evec(*) => ~" vec content",
+              ty::ty_estr(*) => ~" str content",
+              _ => ~" indexed content"
             }
           }
+          cat_stack_upvar(cmt) |
           cat_discr(cmt, _) => {
             self.cmt_to_str(cmt)
           }
@@ -1025,6 +1034,7 @@ pub impl cmt_ {
             cat_deref(_, _, region_ptr(*)) => {
                 self
             }
+            cat_stack_upvar(b) |
             cat_discr(b, _) |
             cat_interior(b, _) |
             cat_deref(b, _, uniq_ptr(*)) => {
@@ -1040,7 +1050,7 @@ pub impl cmt_ {
     fn freely_aliasable(&self) -> Option<AliasableReason> {
         //! True if this lvalue resides in an area that is
         //! freely aliasable, meaning that rustc cannot track
-        //! the aliases with precision.
+        //! the alias//es with precision.
 
         // Maybe non-obvious: copied upvars can only be considered
         // non-aliasable in once closures, since any other kind can be
@@ -1073,6 +1083,7 @@ pub impl cmt_ {
                 Some(AliasableBorrowed(m))
             }
 
+            cat_stack_upvar(b) |
             cat_deref(b, _, uniq_ptr(*)) |
             cat_interior(b, _) |
             cat_discr(b, _) => {
@@ -1111,6 +1122,7 @@ impl Repr for categorization {
                      cmt.cat.repr(tcx),
                      interior.repr(tcx))
             }
+            cat_stack_upvar(cmt) |
             cat_discr(cmt, _) => cmt.cat.repr(tcx)
         }
     }

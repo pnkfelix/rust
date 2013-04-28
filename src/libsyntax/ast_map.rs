@@ -124,9 +124,8 @@ pub fn mk_ast_map_visitor() -> vt {
         visit_expr: map_expr,
         visit_stmt: map_stmt,
         visit_fn: map_fn,
-        visit_local: map_local,
-        visit_arm: map_arm,
         visit_block: map_block,
+        visit_pat: map_pat,
         .. *visit::default_visitor()
     });
 }
@@ -222,25 +221,16 @@ pub fn map_block(b: &blk, cx: @mut Ctx, v: visit::vt<@mut Ctx>) {
     visit::visit_block(b, cx, v);
 }
 
-pub fn number_pat(cx: @mut Ctx, pat: @pat) {
-    do ast_util::walk_pat(pat) |p| {
-        match p.node {
-          pat_ident(_, path, _) => {
-            cx.map.insert(p.id, node_local(ast_util::path_to_ident(path)));
-          }
-          _ => ()
+pub fn map_pat(pat: @pat, cx: @mut Ctx, v: visit::vt<@mut Ctx>) {
+    match pat.node {
+        pat_ident(_, path, _) => {
+            // Note: this is at least *potentially* a pattern...
+            cx.map.insert(pat.id, node_local(ast_util::path_to_ident(path)));
         }
-    };
-}
+        _ => ()
+    }
 
-pub fn map_local(loc: @local, cx: @mut Ctx, v: visit::vt<@mut Ctx>) {
-    number_pat(cx, loc.node.pat);
-    visit::visit_local(loc, cx, v);
-}
-
-pub fn map_arm(arm: &arm, cx: @mut Ctx, v: visit::vt<@mut Ctx>) {
-    number_pat(cx, arm.pats[0]);
-    visit::visit_arm(arm, cx, v);
+    visit::visit_pat(pat, cx, v);
 }
 
 pub fn map_method(impl_did: def_id, impl_path: @path,

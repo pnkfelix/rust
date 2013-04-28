@@ -77,8 +77,19 @@ struct PropagationContext<'self, O> {
     changed: bool
 }
 
+#[deriving(Eq)]
+enum LoopKind {
+    /// A `while` or `loop` loop
+    TrueLoop,
+
+    /// A `for` "loop" (i.e., really a func call where `break`, `return`,
+    /// and `loop` all essentially perform an early return from the closure)
+    ForLoop
+}
+
 struct LoopScope<'self> {
     loop_id: ast::node_id,
+    loop_kind: LoopKind,
     break_bits: ~[uint]
 }
 
@@ -308,17 +319,91 @@ impl<'self, O:DataFlowOperator> PropagationContext<'self, O> {
         match expr.node {
             ast::expr_fn_block(ref decl, ref body) => {
                 if self.dfcx.oper.walk_closures() {
-                    // NOTE think hard about this
+                    // In the absence of once fns, we must assume that
+                    // every function body will execute more than
+                    // once. Thus we treat every function body like a
+                    // loop.
+                    //
+                    // What is subtle and a bit tricky, also, is how
+                    // to deal with the "output" bits---that is, what
+                    // do we consider to be the successor of a
+                    // function body, given that it could be called
+                    // from any point within its lifetime? What we do
+                    // is to add their effects immediately as of the
+                    // point of creation. Of course we have to ensure
+                    // that this is sound for the analyses which make
+                    // use of dataflow.
+                    //
+                    // In the case of the initedness checker (which
+                    // does not currently use dataflow, but I hope to
+                    // convert at some point), we will simply not walk
+                    // closures at all, so it's a moot point.
+                    //
+                    // In the case of the borrow checker, this means
+                    // the loans which would be created by calling a
+                    // function come into effect immediately when the
+                    // function is created. This is guaranteed to be
+                    // earlier than the point at which the loan
+                    // actually comes into scope (which is the point
+                    // at which the closure is *called*). Because
+                    // loans persist until the scope of the loans is
+                    // exited, it is always a safe approximation to
+                    // have a loan begin earlier than it actually will
+                    // at runtime, so this should be sound.
+                    //
+                    // We stil have to be careful in the region
+                    // checker and borrow checker to treat function
+                    // bodies like loops, which implies some
+                    // limitations. For example, a closure cannot root
+                    // a managed box for longer than its body.
+                    //
+                    // General control flow looks like this:
+                    //
+                    //  +- (expr) <----------+
+                    //  |    |               |
+                    //  |    v               |
+                    //  |  (body) -----------+--> (exit)
+                    //  |    |               |
+                    //  |    + (break/loop) -+
+                    //  |                    |
+                    //  +--------------------+
+                    //
+                    // This is a bit more conservative than a loop.
+                    // Note that we must assume that even after a
+                    // `break` occurs (e.g., in a `for` loop) that the
+                    // closure may be reinvoked.
+                    //
+                    // One difference from other loops is that `loop`
+                    // and `break` statements which target a closure
+                    // both simply add to the `break_bits`.
+
+                    // func_bits represents the state when the function
+                    // returns
+                    let mut func_bits = reslice(in_out).to_vec();
+
                     loop_scopes.push(LoopScope {
                         loop_id: expr.id,
+                        loop_kind: ForLoop,
                         break_bits: reslice(in_out).to_vec()
                     });
                     for decl.inputs.each |input| {
-                        self.walk_pat(input.pat, in_out, loop_scopes);
+                        self.walk_pat(input.pat, func_bits, loop_scopes);
                     }
-                    self.walk_block(body, in_out, loop_scopes);
+                    self.walk_block(body, func_bits, loop_scopes);
+
+                    // add the bits from any early return via `break`,
+                    // `continue`, or `return` into `func_bits`
                     let loop_scope = loop_scopes.pop();
-                    join_bits(&self.dfcx.oper, loop_scope.break_bits, in_out);
+                    join_bits(&self.dfcx.oper, loop_scope.break_bits, func_bits);
+
+                    // add `func_bits` to the entry bits for `expr`,
+                    // since we must assume the function may be called
+                    // more than once
+                    self.add_to_entry_set(expr.id, reslice(func_bits));
+
+                    // the final exit bits include whatever was present
+                    // in the original, joined with the bits from the function
+                    join_bits(&self.dfcx.oper, func_bits, in_out);
                 }
             }
 
@@ -363,6 +448,7 @@ impl<'self, O:DataFlowOperator> PropagationContext<'self, O> {
                 let mut body_bits = reslice(in_out).to_vec();
                 loop_scopes.push(LoopScope {
                     loop_id: expr.id,
+                    loop_kind: TrueLoop,
                     break_bits: reslice(in_out).to_vec()
                 });
                 self.walk_block(blk, body_bits, loop_scopes);
@@ -385,13 +471,14 @@ impl<'self, O:DataFlowOperator> PropagationContext<'self, O> {
                 self.reset(in_out);
                 loop_scopes.push(LoopScope {
                     loop_id: expr.id,
+                    loop_kind: TrueLoop,
                     break_bits: reslice(in_out).to_vec()
                 });
                 self.walk_block(blk, body_bits, loop_scopes);
                 self.add_to_entry_set(expr.id, body_bits);
 
                 let new_loop_scope = loop_scopes.pop();
-                // FIXME() --- we can eliminate this copy after snapshot
+                assert_eq!(new_loop_scope.loop_id, expr.id);
                 copy_bits(new_loop_scope.break_bits, in_out);
             }
 
@@ -431,18 +518,51 @@ impl<'self, O:DataFlowOperator> PropagationContext<'self, O> {
 
             ast::expr_ret(o_e) => {
                 self.walk_opt_expr(o_e, in_out, loop_scopes);
+
+                // is this a return from a `for`-loop closure?
+                match loop_scopes.position(|s| s.loop_kind == ForLoop) {
+                    Some(i) => {
+                        // if so, add the in_out bits to the state
+                        // upon exit. Remember that we cannot count
+                        // upon the `for` loop function not to invoke
+                        // the closure again etc.
+                        join_bits(&self.dfcx.oper,
+                                  loop_scopes[i].break_bits,
+                                  in_out);
+                    }
+
+                    None => {}
+                }
+
                 self.reset(in_out);
             }
 
             ast::expr_break(label) => {
                 let scope = self.find_scope(expr, label, loop_scopes);
-                join_bits(&self.dfcx.oper, scope.break_bits, in_out);
+                join_bits(&self.dfcx.oper, reslice(in_out), scope.break_bits);
+                debug!("break_bits %s", bits_to_str(reslice(scope.break_bits)));
                 self.reset(in_out);
             }
 
             ast::expr_again(label) => {
                 let scope = self.find_scope(expr, label, loop_scopes);
-                self.add_to_entry_set(scope.loop_id, reslice(in_out));
+
+                match scope.loop_kind {
+                    TrueLoop => {
+                        self.add_to_entry_set(scope.loop_id, reslice(in_out));
+                    }
+
+                    ForLoop => {
+                        // If this `loop` construct is looping back to a `for`
+                        // loop, then `loop` is really just a return from the
+                        // closure. Therefore, we treat it the same as `break`.
+                        // See case for `expr_fn_block` for more details.
+                        join_bits(&self.dfcx.oper, reslice(in_out), scope.break_bits);
+                        debug!("break_bits %s",
+                               bits_to_str(reslice(scope.break_bits)));
+                    }
+                }
+
                 self.reset(in_out);
             }
 

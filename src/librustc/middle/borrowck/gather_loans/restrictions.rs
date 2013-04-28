@@ -172,6 +172,7 @@ impl RestrictionsContext {
                 Safe
             }
 
+            mc::cat_stack_upvar(cmt_base) |
             mc::cat_discr(cmt_base, _) => {
                 self.compute(cmt_base, restrictions)
             }

@@ -162,6 +162,9 @@ pub impl<'self> CheckLoanCtxt<'self> {
     fn report_error_if_loans_conflict(&self,
                                       old_loan: &Loan,
                                       new_loan: &Loan) {
+        //! Checks whether `old_loan` and `new_loan` can safely be issued
+        //! simultaneously.
+
         debug!("report_error_if_loans_conflict(old_loan=%s, new_loan=%s)",
                old_loan.repr(self.tcx()),
                new_loan.repr(self.tcx()));
@@ -171,17 +174,36 @@ pub impl<'self> CheckLoanCtxt<'self> {
         assert!(region_maps.scopes_intersect(old_loan.kill_scope,
                                              new_loan.kill_scope));
 
+        self.report_error_if_loan_conflicts_with_restriction(
+            old_loan, new_loan, old_loan, new_loan) &&
+        self.report_error_if_loan_conflicts_with_restriction(
+            new_loan, old_loan, old_loan, new_loan);
+    }
+
+    fn report_error_if_loan_conflicts_with_restriction(&self,
+                                                       loan1: &Loan,
+                                                       loan2: &Loan,
+                                                       old_loan: &Loan,
+                                                       new_loan: &Loan) -> bool {
+        //! Checks whether the restrictions introduced by `loan1` would
+        //! prohibit `loan2`. Returns false if an error is reported.
+
+        debug!("report_error_if_loan_conflicts_with_restriction(\
+                loan1=%s, loan2=%s)",
+               loan1.repr(self.tcx()),
+               loan2.repr(self.tcx()));
+
         // Restrictions that would cause the new loan to be immutable:
-        let illegal_if = match new_loan.mutbl {
+        let illegal_if = match loan2.mutbl {
             m_mutbl => RESTR_ALIAS | RESTR_FREEZE | RESTR_MUTATE,
             m_imm =>   RESTR_ALIAS | RESTR_FREEZE,
             m_const => RESTR_ALIAS,
         };
         debug!("illegal_if=%?", illegal_if);
 
-        for old_loan.restrictions.each |restr| {
+        for loan1.restrictions.each |restr| {
             if !restr.set.intersects(illegal_if) { loop; }
-            if restr.loan_path != new_loan.loan_path { loop; }
+            if restr.loan_path != loan2.loan_path { loop; }
 
             match (new_loan.mutbl, old_loan.mutbl) {
                 (m_mutbl, m_mutbl) => {
@@ -194,6 +216,7 @@ pub impl<'self> CheckLoanCtxt<'self> {
                         old_loan.span,
                         fmt!("second borrow of `%s` as mutable occurs here",
                              self.bccx.loan_path_to_str(new_loan.loan_path)));
+                    return false;
                 }
 
                 _ => {
@@ -208,9 +231,12 @@ pub impl<'self> CheckLoanCtxt<'self> {
                         old_loan.span,
                         fmt!("second borrow of `%s` occurs here",
                              self.bccx.loan_path_to_str(new_loan.loan_path)));
+                    return false;
                 }
             }
         }
+
+        true
     }
 
     fn is_local_variable(&self, cmt: mc::cmt) -> bool {
@@ -233,7 +259,13 @@ pub impl<'self> CheckLoanCtxt<'self> {
         // check that the value being assigned is declared as mutable
         // and report an error otherwise.
         match cmt.mutbl {
-            mc::McDeclared | mc::McInherited => { /*ok*/ }
+            mc::McDeclared => {
+                // OK
+            }
+            mc::McInherited => {
+                // OK, but we may have to add an entry to `used_mut_nodes`
+                mark_writes_through_upvars_as_used_mut(self, cmt);
+            }
             mc::McReadOnly | mc::McImmutable => {
                 // Subtle: liveness guarantees that immutable local
                 // variables are only assigned once, so no need to
@@ -244,7 +276,9 @@ pub impl<'self> CheckLoanCtxt<'self> {
                 if !self.is_local_variable(cmt) {
                     self.bccx.span_err(
                         expr.span,
-                        fmt!("cannot mutate %s", self.bccx.cmt_to_str(cmt)));
+                        fmt!("cannot assign to %s %s"
+                             cmt.mutbl.to_user_str(),
+                             self.bccx.cmt_to_str(cmt)));
                 }
                 return;
             }
@@ -253,6 +287,54 @@ pub impl<'self> CheckLoanCtxt<'self> {
         if check_for_aliasable_mutable_writes(self, expr, cmt) {
             check_for_assignment_to_restricted_or_frozen_location(
                 self, expr, cmt);
+        }
+
+        fn mark_writes_through_upvars_as_used_mut(self: &CheckLoanCtxt,
+                                                  cmt: mc::cmt) {
+            //! If the mutability of the `cmt` being written is inherited
+            //! from a local variable in another closure, liveness may
+            //! not have been able to detect that this variable's mutability
+            //! is important, so we must add the variable to the
+            //! `used_mut_nodes` table here. This is because liveness
+            //! does not consider closures.
+
+            let mut passed_upvar = false;
+            let mut cmt = cmt;
+            loop {
+                match cmt.cat {
+                    mc::cat_local(id) |
+                    mc::cat_arg(id, _) |
+                    mc::cat_self(id) => {
+                        if passed_upvar {
+                            self.tcx().used_mut_nodes.insert(id);
+                        }
+                        return;
+                    }
+
+                    mc::cat_stack_upvar(b) => {
+                        cmt = b;
+                        passed_upvar = true;
+                    }
+
+                    mc::cat_rvalue |
+                    mc::cat_static_item |
+                    mc::cat_implicit_self |
+                    mc::cat_copied_upvar(*) |
+                    mc::cat_deref(_, _, mc::unsafe_ptr(*)) |
+                    mc::cat_deref(_, _, mc::gc_ptr(*)) |
+                    mc::cat_deref(_, _, mc::region_ptr(*)) => {
+                        assert_eq!(cmt.mutbl, mc::McDeclared);
+                        return;
+                    }
+
+                    mc::cat_discr(b, _) |
+                    mc::cat_interior(b, _) |
+                    mc::cat_deref(b, _, mc::uniq_ptr(*)) => {
+                        assert_eq!(cmt.mutbl, mc::McInherited);
+                        cmt = b;
+                    }
+                }
+            }
         }
 
         fn check_for_aliasable_mutable_writes(self: &CheckLoanCtxt,
@@ -378,6 +460,7 @@ pub impl<'self> CheckLoanCtxt<'self> {
             //
             // Here the restriction that `v` not be mutated would be misapplied
             // to block the subpath `v[1]`.
+            let full_loan_path = loan_path;
             let mut loan_path = loan_path;
             loop {
                 match *loan_path {
@@ -399,7 +482,7 @@ pub impl<'self> CheckLoanCtxt<'self> {
                 // Check for a non-const loan of `loan_path`
                 for self.each_in_scope_loan(expr.id) |loan| {
                     if loan.loan_path == loan_path && loan.mutbl != m_const {
-                        self.report_illegal_mutation(expr, loan_path, loan);
+                        self.report_illegal_mutation(expr, full_loan_path, loan);
                         return false;
                     }
                 }
@@ -413,7 +496,7 @@ pub impl<'self> CheckLoanCtxt<'self> {
                                loan: &Loan) {
         self.bccx.span_err(
             expr.span,
-            fmt!("cannot mutate `%s` because it is borrowed",
+            fmt!("cannot assign to `%s` because it is borrowed",
                  self.bccx.loan_path_to_str(loan_path)));
         self.bccx.span_note(
             loan.span,

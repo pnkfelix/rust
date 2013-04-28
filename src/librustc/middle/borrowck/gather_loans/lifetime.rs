@@ -78,6 +78,10 @@ impl GuaranteeLifetimeContext {
                 self.check_scope(scope)
             }
 
+            mc::cat_stack_upvar(cmt) => {
+                self.check(cmt, discr_scope)
+            }
+
             mc::cat_static_item => {
             }
 
@@ -262,6 +266,7 @@ impl GuaranteeLifetimeContext {
                 false
             }
             r @ mc::cat_interior(*) |
+            r @ mc::cat_stack_upvar(*) |
             r @ mc::cat_discr(*) => {
                 self.tcx().sess.span_bug(
                     cmt.span,
@@ -272,39 +277,38 @@ impl GuaranteeLifetimeContext {
 
     fn scope(&self, cmt: mc::cmt) -> ty::Region {
         //! Returns the maximal region scope for the which the
-        //! lvalue `cmt` is guaranteed to be valid.
+        //! lvalue `cmt` is guaranteed to be valid without any
+        //! rooting etc, and presuming `cmt` is not mutated.
 
         match cmt.cat {
             mc::cat_rvalue => {
                 ty::re_scope(self.bccx.tcx.region_maps.cleanup_scope(cmt.id))
             }
-
             mc::cat_implicit_self |
             mc::cat_copied_upvar(_) => {
                 ty::re_scope(self.item_scope_id)
             }
-
             mc::cat_static_item => {
                 ty::re_static
             }
-
             mc::cat_local(local_id) |
             mc::cat_arg(local_id, _) |
             mc::cat_self(local_id) => {
                 self.bccx.tcx.region_maps.encl_region(local_id)
             }
-
-            mc::cat_deref(cmt, _, mc::uniq_ptr(*)) => self.scope(cmt),
-
-            mc::cat_deref(cmt, _, mc::gc_ptr(*)) => self.scope(cmt),
-
-            mc::cat_deref(_, _, mc::unsafe_ptr(*)) => ty::re_static,
-
-            mc::cat_deref(_, _, mc::region_ptr(_, r)) => r,
-
-            mc::cat_interior(cmt, _) => self.scope(cmt),
-
-            mc::cat_discr(cmt, _) => self.scope(cmt),
+            mc::cat_deref(_, _, mc::unsafe_ptr(*)) => {
+                ty::re_static
+            }
+            mc::cat_deref(_, _, mc::region_ptr(_, r)) => {
+                r
+            }
+            mc::cat_deref(cmt, _, mc::uniq_ptr(*)) |
+            mc::cat_deref(cmt, _, mc::gc_ptr(*)) |
+            mc::cat_interior(cmt, _) |
+            mc::cat_stack_upvar(cmt) |
+            mc::cat_discr(cmt, _) => {
+                self.scope(cmt)
+            }
         }
     }
 

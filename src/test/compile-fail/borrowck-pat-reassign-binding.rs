@@ -19,7 +19,7 @@ fn main() {
       }
       Some(ref i) => {
           // But on this branch, `i` is an outstanding borrow
-          x = Some(*i+1); //~ ERROR cannot mutate `x`
+          x = Some(*i+1); //~ ERROR cannot assign to `x`
       }
     }
     copy x; // just to prevent liveness warnings

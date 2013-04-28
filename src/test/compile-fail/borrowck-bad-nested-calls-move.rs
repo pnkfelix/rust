@@ -30,14 +30,14 @@ fn implicit() {
     //    argument!
     add(
         a,
-        a); //~ ERROR moving out of mutable local variable prohibited
+        a); //~ ERROR cannot move
 }
 
 fn explicit() {
     let mut a = ~1;
     add(
         &*a,
-        a); //~ ERROR moving out of mutable local variable prohibited
+        a); //~ ERROR cannot move
 }
 
 fn main() {}

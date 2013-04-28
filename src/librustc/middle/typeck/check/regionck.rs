@@ -39,6 +39,7 @@ use middle::typeck::infer::resolve_and_force_all_but_regions;
 use middle::typeck::infer::resolve_type;
 use util::ppaux::{note_and_explain_region, ty_to_str,
                   region_to_str};
+use middle::pat_util;
 
 use core::result;
 use syntax::ast::{ManagedSigil, OwnedSigil, BorrowedSigil};
@@ -171,13 +172,33 @@ fn visit_block(b: &ast::blk, rcx: @mut Rcx, v: rvt) {
 }
 
 fn visit_pat(pat: @ast::pat, rcx: @mut Rcx, v: rvt) {
-    match pat.node {
-        ast::pat_ident(ast::bind_by_ref(_), _, _) => {
-            // The ref binding must be in scope for the pattern
-            constrain_regions_in_type_of_node(
-                rcx, pat.id, ty::re_scope(pat.id), pat.span);
-        }
-        _ => {}
+    let tcx = rcx.fcx.tcx();
+    if pat_util::pat_is_binding(tcx.def_map, pat) {
+        // If we have a variable that contains region'd data, that
+        // data will be accessible from anywhere that the variable is
+        // accessed. We must be wary of loops like this:
+        //
+        //     // from src/test/compile-fail/borrowck-lend-flow.rs
+        //     let mut v = ~3, w = ~4;
+        //     let mut x = &mut w;
+        //     loop {
+        //         **x += 1;   // (2)
+        //         borrow(v);  //~ ERROR cannot borrow
+        //         x = &mut v; // (1)
+        //     }
+        //
+        // Typically, we try to determine the region of a borrow from
+        // those points where it is dereferenced. In this case, one
+        // might imagine that the lifetime of `x` need only be the
+        // body of the loop. But of course this is incorrect because
+        // the pointer that is created at point (1) is consumed at
+        // point (2), meaning that it must be live across the loop
+        // iteration. The easiest way to guarantee this is to require
+        // that the lifetime of any regions that appear in a
+        // variable's type enclose at least the variable's scope.
+
+        let encl_region = tcx.region_maps.encl_region(pat.id);
+        constrain_regions_in_type_of_node(rcx, pat.id, encl_region, pat.span);
     }
 
     visit::visit_pat(pat, rcx, v);
@@ -239,6 +260,9 @@ fn visit_expr(expr: @ast::expr, rcx: @mut Rcx, v: rvt) {
                 for opt_autoref.each |autoref| {
                     guarantor::for_autoref(rcx, expr, autoderefs, autoref);
 
+                    // Require that the resulting region encompasses
+                    // the current node.
+                    //
                     // FIXME(#5074) remove to support nested method calls
                     constrain_regions_in_type_of_node(
                         rcx, expr.id, ty::re_scope(expr.id), expr.span);
@@ -313,8 +337,13 @@ fn visit_expr(expr: @ast::expr, rcx: @mut Rcx, v: rvt) {
         ast::expr_addr_of(_, base) => {
             guarantor::for_addr_of(rcx, expr, base);
 
-            // Note: do not apply any adjustments here, we just want the
-            // raw type of the expr, which will be some sort of & ptr
+            // Require that when you write a `&expr` expression, the
+            // resulting pointer has a lifetime that encompasses the
+            // `&expr` expression itself. Note that we constraining
+            // the type of the node expr.id here *before applying
+            // adjustments*.
+            //
+            // FIXME(#5074) nested method calls requires that this rule change
             let ty0 = rcx.resolve_node_type(expr.id);
             constrain_regions_in_type(rcx, ty::re_scope(expr.id), expr.span, ty0);
         }
@@ -432,7 +461,8 @@ fn constrain_call(rcx: @mut Rcx,
         }
     }
 
-    // constrain regions that may appear in the return type:
+    // constrain regions that may appear in the return type to be
+    // valid for the function call:
     constrain_regions_in_type(
         rcx, callee_region, call_expr.span, fn_sig.output);
 }
@@ -578,6 +608,10 @@ fn constrain_regions_in_type_of_node(
     minimum_lifetime: ty::Region,
     span: span) -> bool
 {
+    //! Guarantees that any lifetimes which appear in the type of
+    //! the node `id` (after applying adjustments) are valid for at
+    //! least `minimum_lifetime`
+
     let tcx = rcx.fcx.tcx();
 
     // Try to resolve the type.  If we encounter an error, then typeck

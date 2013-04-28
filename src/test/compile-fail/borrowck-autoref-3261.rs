@@ -20,7 +20,7 @@ fn main() {
     do (&mut x).with |opt| {
         match opt {
             &Right(ref f) => {
-                x = X(Left((0,0))); //~ ERROR assigning to mutable local variable
+                x = X(Left((0,0))); //~ ERROR cannot assign to `x`
                 (*f)()
             },
             _ => fail!()

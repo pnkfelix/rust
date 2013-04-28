@@ -30,14 +30,14 @@ fn implicit() {
     //    argument!
     add(
         a,
-        rewrite(&mut a)); //~ ERROR conflicts with prior loan
+        rewrite(&mut a)); //~ ERROR cannot borrow
 }
 
 fn explicit() {
     let mut a = ~1;
     add(
         &*a,
-        rewrite(&mut a)); //~ ERROR conflicts with prior loan
+        rewrite(&mut a)); //~ ERROR cannot borrow
 }
 
 fn main() {}

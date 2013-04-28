@@ -17,7 +17,7 @@ fn a() {
     // This assignment is illegal because the field x is not
     // inherently mutable; since `p` was made immutable, `p.x` is now
     // immutable.  Otherwise the type of &_q.x (&int) would be wrong.
-    p.x = 5; //~ ERROR prohibited due to outstanding loan
+    p.x = 5; //~ ERROR cannot assign to `p.x`
     q.x;
 }
 
@@ -27,8 +27,9 @@ fn c() {
 
     let mut p = point {x: 3, y: 4};
     let q = &p.y;
-    p = point {x: 5, y: 7};//~ ERROR prohibited due to outstanding loan
-    *q;
+    p = point {x: 5, y: 7};//~ ERROR cannot assign to `p`
+    p.x; // silence warning
+    *q; // stretch loan
 }
 
 fn d() {
@@ -37,7 +38,7 @@ fn d() {
 
     let mut p = point {x: 3, y: 4};
     let q = &p.y;
-    p.y = 5; //~ ERROR prohibited due to outstanding loan
+    p.y = 5; //~ ERROR cannot assign to `p.y`
     *q;
 }
 

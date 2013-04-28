@@ -260,6 +260,7 @@ pub fn opt_loan_path(cmt: mc::cmt) -> Option<@LoanPath> {
                 |&lp| @LpExtend(lp, cmt.mutbl, LpInterior(ik)))
         }
 
+        mc::cat_stack_upvar(cmt_base) |
         mc::cat_discr(cmt_base, _) => {
             opt_loan_path(cmt_base)
         }
@@ -433,6 +434,7 @@ pub impl BorrowckCtxt {
 
     fn cat_discr(&self, cmt: mc::cmt, match_id: ast::node_id) -> mc::cmt {
         @mc::cmt_ {cat:mc::cat_discr(cmt, match_id),
+                   mutbl:cmt.mutbl.inherit(),
                    ..*cmt}
     }
 
@@ -452,8 +454,7 @@ pub impl BorrowckCtxt {
     fn report(&self, err: BckError) {
         self.span_err(
             err.span,
-            fmt!("illegal borrow: %s",
-                 self.bckerr_to_str(err)));
+            self.bckerr_to_str(err));
         self.note_and_explain_bckerr(err);
     }
 
@@ -468,7 +469,8 @@ pub impl BorrowckCtxt {
     fn bckerr_to_str(&self, err: BckError) -> ~str {
         match err.code {
             err_mutbl(lk) => {
-                fmt!("cannot borrow %s as %s",
+                fmt!("cannot borrow %s %s as %s",
+                     err.cmt.mutbl.to_user_str(),
                      self.cmt_to_str(err.cmt),
                      self.mut_to_str(lk))
             }
@@ -486,7 +488,7 @@ pub impl BorrowckCtxt {
                                      kind: AliasableViolationKind,
                                      cause: mc::AliasableReason) {
         let prefix = match kind {
-            MutabilityViolation => "cannot mutate an `&mut`",
+            MutabilityViolation => "cannot assign to an `&mut`",
             BorrowViolation => "cannot borrow an `&mut`"
         };
 
