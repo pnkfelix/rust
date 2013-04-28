@@ -107,7 +107,7 @@ impl RestrictionsContext {
                 Safe
             }
 
-            mc::cat_deref(cmt_base, _, mc::gc_ptr(ast::m_mutbl)) => {
+            mc::cat_deref(cmt_base, _, mc::gc_ptr(m_mutbl)) => {
                 // Technically, no restrictions are *necessary* here.
                 // The validity of the borrow is guaranteed
                 // dynamically.  However, nonetheless we add a
@@ -153,7 +153,7 @@ impl RestrictionsContext {
                 }
             }
 
-            mc::cat_deref(cmt_base, _, mc::region_ptr(ast::m_mutbl, _)) => {
+            mc::cat_deref(cmt_base, _, mc::region_ptr(m_mutbl, _)) => {
                 // Because an `&mut` pointer does not inherit its
                 // mutability, we can only prevent mutation or prevent
                 // freezing if it is not aliased. Therefore, in such
