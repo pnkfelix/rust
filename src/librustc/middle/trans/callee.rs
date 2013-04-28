@@ -41,7 +41,6 @@ use middle::trans::monomorphize;
 use middle::trans::type_of;
 use middle::ty;
 use middle::typeck;
-use util::common::indenter;
 use util::ppaux::Repr;
 
 use syntax::ast;

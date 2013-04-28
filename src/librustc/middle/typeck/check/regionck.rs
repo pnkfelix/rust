@@ -32,7 +32,6 @@ use core::prelude::*;
 use middle::freevars::get_freevars;
 use middle::ty::{re_scope};
 use middle::ty;
-use middle::typeck::check::{DerefArgs, DoDerefArgs, DontDerefArgs};
 use middle::typeck::check::FnCtxt;
 use middle::typeck::check::regionmanip::relate_nested_regions;
 use middle::typeck::infer::resolve_and_force_all_but_regions;

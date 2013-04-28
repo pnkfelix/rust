@@ -938,7 +938,7 @@ pub impl mem_categorization_ctxt {
               ~"captured outer variable in a heap closure"
           }
           cat_rvalue => ~"non-lvalue",
-          cat_local(_) => ~" local variable",
+          cat_local(_) => ~"local variable",
           cat_self(_) => ~"self value",
           cat_arg(*) => ~"argument",
           cat_deref(_, _, pk) => fmt!("dereference of %s pointer",
@@ -949,9 +949,9 @@ pub impl mem_categorization_ctxt {
           cat_interior(_, interior_variant(_)) => ~"enum content",
           cat_interior(_, interior_index(t, _)) => {
             match ty::get(t).sty {
-              ty::ty_evec(*) => ~" vec content",
-              ty::ty_estr(*) => ~" str content",
-              _ => ~" indexed content"
+              ty::ty_evec(*) => ~"vec content",
+              ty::ty_estr(*) => ~"str content",
+              _ => ~"indexed content"
             }
           }
           cat_stack_upvar(cmt) |
