@@ -156,7 +156,15 @@ pub fn regionck_fn(fcx: @mut FnCtxt, blk: &ast::blk) {
 fn regionck_visitor() -> rvt {
     visit::mk_vt(@visit::Visitor {visit_item: visit_item,
                                   visit_expr: visit_expr,
-                                  visit_pat: visit_pat,
+
+                                  // NOTE this should be visit_pat
+                                  // but causes errors in formal
+                                  // arguments in closures due to
+                                  // #XYZ!
+                                  //visit_pat: visit_pat,
+                                  visit_arm: visit_arm,
+                                  visit_local: visit_local,
+
                                   visit_block: visit_block,
                                   .. *visit::default_visitor()})
 }
@@ -170,8 +178,24 @@ fn visit_block(b: &ast::blk, rcx: @mut Rcx, v: rvt) {
     visit::visit_block(b, rcx, v);
 }
 
+fn visit_arm(arm: &ast::arm, rcx: @mut Rcx, v: rvt) {
+    // see above
+    for arm.pats.each |&p| {
+        (v.visit_pat)(p, rcx, v);
+    }
+
+    visit::visit_arm(arm, rcx, v);
+}
+
+fn visit_local(l: @ast::local, rcx: @mut Rcx, v: rvt) {
+    // see above
+    (v.visit_pat)(l.node.pat, rcx, v);
+    visit::visit_local(l, rcx, v);
+}
+
 fn visit_pat(pat: @ast::pat, rcx: @mut Rcx, v: rvt) {
     let tcx = rcx.fcx.tcx();
+    debug!("regionck::visit_pat(pat=%s)", pat.repr(tcx));
     if pat_util::pat_is_binding(tcx.def_map, pat) {
         // If we have a variable that contains region'd data, that
         // data will be accessible from anywhere that the variable is
