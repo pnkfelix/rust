@@ -15,8 +15,10 @@
 // cases are noted.
 
 fn borrow(_v: &int) {}
-
 fn borrow_mut(_v: &mut int) {}
+fn cond() -> bool { fail!() }
+fn for_func(_f: &fn() -> bool) { fail!() }
+fn produce<T>() -> T { fail!(); }
 
 fn inc(v: &mut ~int) {
     *v = ~(**v + 1);
@@ -53,10 +55,10 @@ fn loop_overarching_alias_mut() {
 
     let mut v = ~3;
     let mut x = &mut v;
+    **x += 1;
     loop {
         borrow(v); //~ ERROR cannot borrow
     }
-    *x = ~5;
 }
 
 fn block_overarching_alias_mut() {
@@ -74,24 +76,73 @@ fn loop_aliased_mut() {
     // In this instance, the borrow is carried through the loop.
 
     let mut v = ~3, w = ~4;
-    let mut x = &mut w;
+    let mut _x = &w;
     loop {
-        **x += 1;
-        borrow(v); //~ ERROR cannot borrow
-        x = &mut v; //~ ERROR cannot borrow
+        borrow_mut(v); //~ ERROR cannot borrow
+        _x = &v;
     }
 }
 
-fn while_aliased_mut(cond: bool) {
-    // In this instance, the borrow is carried through the while loop.
+fn while_aliased_mut() {
+    // In this instance, the borrow is carried through the loop.
 
     let mut v = ~3, w = ~4;
-    let mut x = &mut w;
-    while cond {
-        **x += 1;
-        borrow(v); //~ ERROR cannot borrow
-        x = &mut v;
+    let mut _x = &w;
+    while cond() {
+        borrow_mut(v); //~ ERROR cannot borrow
+        _x = &v;
     }
+}
+
+fn for_loop_aliased_mut() {
+    // In this instance, the borrow is carried through the loop.
+
+    let mut v = ~3, w = ~4;
+    let mut _x = &w;
+    for for_func {
+        borrow_mut(v); //~ ERROR cannot borrow
+        _x = &v;
+    }
+}
+
+fn loop_aliased_mut_break() {
+    // In this instance, the borrow is carried through the loop.
+
+    let mut v = ~3, w = ~4;
+    let mut _x = &w;
+    loop {
+        borrow_mut(v);
+        _x = &v;
+        break;
+    }
+    borrow_mut(v); //~ ERROR cannot borrow
+}
+
+fn while_aliased_mut_break() {
+    // In this instance, the borrow is carried through the loop.
+
+    let mut v = ~3, w = ~4;
+    let mut _x = &w;
+    while cond() {
+        borrow_mut(v);
+        _x = &v;
+        break;
+    }
+    borrow_mut(v); //~ ERROR cannot borrow
+}
+
+fn for_aliased_mut_break() {
+    // In this instance, the borrow is carried through the loop.
+
+    let mut v = ~3, w = ~4;
+    let mut _x = &w;
+    for for_func {
+        // here we cannot be sure that `for_func` respects the break below
+        borrow_mut(v); //~ ERROR cannot borrow
+        _x = &v;
+        break;
+    }
+    borrow_mut(v); //~ ERROR cannot borrow
 }
 
 fn while_aliased_mut_cond(cond: bool, cond2: bool) {
@@ -106,16 +157,6 @@ fn while_aliased_mut_cond(cond: bool, cond2: bool) {
     }
 }
 
-fn loop_in_block() {
-    let mut v = ~3, w = ~4;
-    let mut x = &mut w;
-    for uint::range(0u, 10u) |_i| {
-        **x += 1;
-        borrow(v); //~ ERROR cannot borrow
-        x = &mut v;
-    }
-}
-
 fn at_most_once_block() {
     fn at_most_once(f: &fn()) { f() }
 
@@ -127,6 +168,36 @@ fn at_most_once_block() {
     do at_most_once {
         borrow(v); //~ ERROR loan of mutable local variable as immutable cannot borrow
         _x = &mut v; //~ NOTE prior loan as mutable granted here
+    }
+}
+
+fn loop_break_pops_scopes<'r>(_v: &'r mut [uint], f: &fn(&'r mut uint) -> bool) {
+    // Here we check that when you break out of an inner loop, the
+    // borrows that go out of scope as you exit the inner loop are
+    // removed from the bitset.
+
+    while cond() {
+        while cond() {
+            // this borrow is limited to the scope of `r`...
+            let r: &'r mut uint = produce();
+            if !f(&mut *r) {
+                break; // ...so it is not live as exit the `while` loop here
+            }
+        }
+    }
+}
+
+fn loop_loop_pops_scopes<'r>(_v: &'r mut [uint], f: &fn(&'r mut uint) -> bool) {
+    // Similar to `loop_break_pops_scopes` but for the `loop` keyword
+
+    while cond() {
+        while cond() {
+            // this borrow is limited to the scope of `r`...
+            let r: &'r mut uint = produce();
+            if !f(&mut *r) {
+                loop; // ...so it is not live as exit (and re-enter) the `while` loop here
+            }
+        }
     }
 }
 

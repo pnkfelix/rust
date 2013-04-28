@@ -837,7 +837,6 @@ pub impl RegionVarBindings {
     }
 
     fn resolve_var(&mut self, rid: RegionVid) -> ty::Region {
-        debug!("RegionVarBindings: resolve_var(%?=%u)", rid, rid.to_uint());
         if self.values.is_empty() {
             self.tcx.sess.span_bug(
                 self.var_spans[rid.to_uint()],
@@ -846,6 +845,8 @@ pub impl RegionVarBindings {
         }
 
         let v = self.values.with_ref(|values| values[rid.to_uint()]);
+        debug!("RegionVarBindings: resolve_var(%?=%u)=%?",
+               rid, rid.to_uint(), v);
         match v {
             Value(r) => r,
 
@@ -1326,11 +1327,15 @@ pub impl RegionVarBindings {
                        node_id: RegionVid,
                        edge_dir: Direction,
                        edge_idx: uint) {
+            //! Insert edge `edge_idx` on the link list of edges in direction
+            //! `edge_dir` for the node `node_id`
             let edge_dir = edge_dir as uint;
-            graph.edges[edge_idx].next_edge[edge_dir] =
-                graph.nodes[node_id.to_uint()].head_edge[edge_dir];
-            graph.nodes[node_id.to_uint()].head_edge[edge_dir] =
-                edge_idx;
+            assert_eq!(graph.edges[edge_idx].next_edge[edge_dir],
+                       uint::max_value);
+            let n = node_id.to_uint();
+            let prev_head = graph.nodes[n].head_edge[edge_dir];
+            graph.edges[edge_idx].next_edge[edge_dir] = prev_head;
+            graph.nodes[n].head_edge[edge_dir] = edge_idx;
         }
     }
 
@@ -1481,6 +1486,8 @@ pub impl RegionVarBindings {
                     }
                 }
                 Err(_) => {
+                    debug!("Setting %? to ErrorValue: no glb of %?, %?",
+                           a_vid, a_region, b_region);
                     a_node.value = ErrorValue;
                     false
                 }
@@ -1492,6 +1499,7 @@ pub impl RegionVarBindings {
         &mut self,
         graph: &Graph) -> ~[GraphNodeValue]
     {
+        debug!("extract_values_and_report_conflicts()");
         let mut dup_map = HashSet::new();
         graph.nodes.mapi(|idx, node| {
             match node.value {
@@ -1606,6 +1614,14 @@ pub impl RegionVarBindings {
                 }
             }
         }
+
+        self.tcx.sess.span_bug(
+            self.var_spans[node_idx.to_uint()],
+            fmt!("report_error_for_expanding_node() could not find error \
+                  for var %?, lower_bounds=%s, upper_bounds=%s",
+                 node_idx,
+                 lower_bounds.map(|x| x.region).repr(self.tcx),
+                 upper_bounds.map(|x| x.region).repr(self.tcx)));
     }
 
     fn report_error_for_contracting_node(&mut self,
@@ -1660,6 +1676,13 @@ pub impl RegionVarBindings {
                 }
             }
         }
+
+        self.tcx.sess.span_bug(
+            self.var_spans[node_idx.to_uint()],
+            fmt!("report_error_for_contracting_node() could not find error \
+                  for var %?, upper_bounds=%s",
+                 node_idx,
+                 upper_bounds.map(|x| x.region).repr(self.tcx)));
     }
 
     fn collect_concrete_regions(&mut self,
@@ -1667,43 +1690,70 @@ pub impl RegionVarBindings {
                                 orig_node_idx: RegionVid,
                                 dir: Direction)
                              -> ~[SpannedRegion] {
-        let mut set = HashSet::new();
-        let mut stack = ~[orig_node_idx];
-        set.insert(orig_node_idx.to_uint());
-        let mut result = ~[];
-        while !vec::is_empty(stack) {
-            let node_idx = stack.pop();
-            for self.each_edge(graph, node_idx, dir) |edge| {
+        struct WalkState {
+            set: HashSet<RegionVid>,
+            stack: ~[RegionVid],
+            result: ~[SpannedRegion]
+        }
+        let mut state = WalkState {
+            set: HashSet::new(),
+            stack: ~[orig_node_idx],
+            result: ~[]
+        };
+        state.set.insert(orig_node_idx);
+
+        // to start off the process, walk the source node in the
+        // direction specified
+        process_edges(self, &mut state, graph, orig_node_idx, dir);
+
+        while !state.stack.is_empty() {
+            let node_idx = state.stack.pop();
+            let classification = graph.nodes[node_idx.to_uint()].classification;
+
+            debug!("collect_concrete_regions(orig_node_idx=%?, node_idx=%?, \
+                    classification=%?)",
+                   orig_node_idx, node_idx, classification);
+
+            // figure out the direction from which this node takes its
+            // values, and search for concrete regions etc in that direction
+            let dir = match classification {
+                Expanding => Incoming,
+                Contracting => Outgoing
+            };
+
+            process_edges(self, &mut state, graph, node_idx, dir);
+        }
+
+        let WalkState {result, _} = state;
+        return result;
+
+        fn process_edges(self: &mut RegionVarBindings,
+                         state: &mut WalkState,
+                         graph: &Graph,
+                         source_vid: RegionVid,
+                         dir: Direction) {
+            debug!("process_edges(source_vid=%?, dir=%?)", source_vid, dir);
+
+            for self.each_edge(graph, source_vid, dir) |edge| {
                 match edge.constraint {
-                  ConstrainVarSubVar(from_vid, to_vid) => {
-                    let vid = match dir {
-                      Incoming => from_vid,
-                      Outgoing => to_vid
-                    };
-                    if set.insert(vid.to_uint()) {
-                        stack.push(vid);
+                    ConstrainVarSubVar(from_vid, to_vid) => {
+                        let opp_vid =
+                            if from_vid == source_vid {to_vid} else {from_vid};
+                        if state.set.insert(opp_vid) {
+                            state.stack.push(opp_vid);
+                        }
                     }
-                  }
 
-                  ConstrainRegSubVar(region, _) => {
-                    assert!(dir == Incoming);
-                    result.push(SpannedRegion {
-                        region: region,
-                        span: edge.span
-                    });
-                  }
-
-                  ConstrainVarSubReg(_, region) => {
-                    assert!(dir == Outgoing);
-                    result.push(SpannedRegion {
-                        region: region,
-                        span: edge.span
-                    });
-                  }
+                    ConstrainRegSubVar(region, _) |
+                    ConstrainVarSubReg(_, region) => {
+                        state.result.push(SpannedRegion {
+                            region: region,
+                            span: edge.span
+                        });
+                    }
                 }
             }
         }
-        return result;
     }
 
     fn each_edge(&mut self,

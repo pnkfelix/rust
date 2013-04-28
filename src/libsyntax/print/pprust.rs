@@ -79,6 +79,12 @@ pub fn end(s: @ps) {
 }
 
 pub fn rust_printer(writer: @io::Writer, intr: @ident_interner) -> @ps {
+    return rust_printer_annotated(writer, intr, no_ann());
+}
+
+pub fn rust_printer_annotated(writer: @io::Writer,
+                              intr: @ident_interner,
+                              ann: pp_ann) -> @ps {
     return @ps {
         s: pp::mk_printer(writer, default_columns),
         cm: None::<@CodeMap>,
@@ -90,7 +96,7 @@ pub fn rust_printer(writer: @io::Writer, intr: @ident_interner) -> @ps {
             cur_lit: 0
         },
         boxes: @mut ~[],
-        ann: no_ann()
+        ann: ann
     };
 }
 
