@@ -301,6 +301,8 @@ pub impl<'self> CheckLoanCtxt<'self> {
             let mut passed_upvar = false;
             let mut cmt = cmt;
             loop {
+                debug!("mark_writes_through_upvars_as_used_mut(cmt=%s)",
+                       cmt.repr(self.tcx()));
                 match cmt.cat {
                     mc::cat_local(id) |
                     mc::cat_arg(id, _) |
@@ -328,10 +330,17 @@ pub impl<'self> CheckLoanCtxt<'self> {
                     }
 
                     mc::cat_discr(b, _) |
-                    mc::cat_interior(b, _) |
                     mc::cat_deref(b, _, mc::uniq_ptr(*)) => {
                         assert_eq!(cmt.mutbl, mc::McInherited);
                         cmt = b;
+                    }
+
+                    mc::cat_interior(b, _) => {
+                        if cmt.mutbl == mc::McInherited {
+                            cmt = b;
+                        } else {
+                            return; // field declared as mutable or some such
+                        }
                     }
                 }
             }
