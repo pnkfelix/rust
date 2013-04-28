@@ -181,7 +181,7 @@ fn visit_block(b: &ast::blk, rcx: @mut Rcx, v: rvt) {
 fn visit_arm(arm: &ast::arm, rcx: @mut Rcx, v: rvt) {
     // see above
     for arm.pats.each |&p| {
-        (v.visit_pat)(p, rcx, v);
+        visit_pat(p, rcx, v);
     }
 
     visit::visit_arm(arm, rcx, v);
@@ -189,7 +189,7 @@ fn visit_arm(arm: &ast::arm, rcx: @mut Rcx, v: rvt) {
 
 fn visit_local(l: @ast::local, rcx: @mut Rcx, v: rvt) {
     // see above
-    (v.visit_pat)(l.node.pat, rcx, v);
+    visit_pat(l.node.pat, rcx, v);
     visit::visit_local(l, rcx, v);
 }
 
