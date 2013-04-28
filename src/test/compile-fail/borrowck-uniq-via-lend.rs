@@ -43,7 +43,7 @@ fn aliased_const() {
 
 fn aliased_mut() {
     let mut v = ~3;
-    let _w = &mut v; //~ NOTE prior loan as mutable granted here
+    let _w = &mut v;
     borrow(v); //~ ERROR loan of mutable local variable as immutable cannot borrow
 }
 
@@ -56,7 +56,7 @@ fn aliased_other() {
 fn aliased_other_reassign() {
     let mut v = ~3, w = ~4;
     let mut _x = &mut w;
-    _x = &mut v; //~ NOTE prior loan as mutable granted here
+    _x = &mut v;
     borrow(v); //~ ERROR loan of mutable local variable as immutable cannot borrow
 }
 

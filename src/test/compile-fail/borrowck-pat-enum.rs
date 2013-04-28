@@ -26,7 +26,7 @@ fn match_ref_unused(&&v: Option<int>) {
 
 fn match_const_reg(v: &const Option<int>) -> int {
     match *v {
-      Some(ref i) => {*i} //~ ERROR illegal borrow
+      Some(ref i) => {*i} //~ ERROR cannot borrow
       None => {0}
     }
 }
@@ -43,7 +43,7 @@ fn match_const_reg_unused(v: &const Option<int>) {
 
 fn match_const_reg_impure(v: &const Option<int>) {
     match *v {
-      Some(ref i) => {impure(*i)} //~ ERROR illegal borrow
+      Some(ref i) => {impure(*i)} //~ ERROR cannot borrow
       None => {}
     }
 }

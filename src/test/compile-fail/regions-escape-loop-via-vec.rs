@@ -14,7 +14,7 @@ fn broken() {
     let mut _y = ~[&mut x];
     while x < 10 {
         let mut z = x;
-        _y.push(&mut z); //~ ERROR illegal borrow
+        _y.push(&mut z); //~ ERROR cannot borrow
         x += 1; //~ ERROR assigning to mutable local variable prohibited due to outstanding loan
     }
 }

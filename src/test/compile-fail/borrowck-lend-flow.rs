@@ -167,7 +167,7 @@ fn at_most_once_block() {
     let mut _x = &mut w;
     do at_most_once {
         borrow(v); //~ ERROR loan of mutable local variable as immutable cannot borrow
-        _x = &mut v; //~ NOTE prior loan as mutable granted here
+        _x = &mut v;
     }
 }
 

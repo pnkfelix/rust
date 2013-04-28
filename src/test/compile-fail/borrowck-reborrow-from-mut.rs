@@ -95,7 +95,7 @@ fn borrow_mut_and_imm(foo: &mut Foo) {
 }
 
 fn borrow_mut_from_imm(foo: &Foo) {
-    let _bar1 = &mut foo.bar1; //~ ERROR illegal borrow
+    let _bar1 = &mut foo.bar1; //~ ERROR cannot borrow
 }
 
 fn borrow_long_path_both_mut(foo: &mut Foo) {

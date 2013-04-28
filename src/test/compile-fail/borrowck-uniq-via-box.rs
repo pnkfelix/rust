@@ -27,15 +27,15 @@ struct Innermost {
 fn borrow(_v: &int) {}
 
 fn box_mut(v: @mut ~int) {
-    borrow(*v); //~ ERROR illegal borrow unless pure
+    borrow(*v); //~ ERROR cannot borrow
 }
 
 fn box_mut_rec(v: @mut Rec) {
-    borrow(v.f); //~ ERROR illegal borrow unless pure
+    borrow(v.f); //~ ERROR cannot borrow
 }
 
 fn box_mut_recs(v: @mut Outer) {
-    borrow(v.f.g.h); //~ ERROR illegal borrow unless pure
+    borrow(v.f.g.h); //~ ERROR cannot borrow
 }
 
 fn box_imm(v: @~int) {

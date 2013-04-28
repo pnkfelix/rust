@@ -1,6 +1,6 @@
 fn a() -> &[int] {
     let vec = [1, 2, 3, 4];
-    let tail = match vec { //~ ERROR illegal borrow
+    let tail = match vec { //~ ERROR cannot borrow
         [_, ..tail] => tail,
         _ => fail!(~"a")
     };
@@ -9,7 +9,7 @@ fn a() -> &[int] {
 
 fn b() -> &[int] {
     let vec = [1, 2, 3, 4];
-    let init = match vec { //~ ERROR illegal borrow
+    let init = match vec { //~ ERROR cannot borrow
         [..init, _] => init,
         _ => fail!(~"b")
     };
@@ -18,7 +18,7 @@ fn b() -> &[int] {
 
 fn c() -> &[int] {
     let vec = [1, 2, 3, 4];
-    let slice = match vec { //~ ERROR illegal borrow
+    let slice = match vec { //~ ERROR cannot borrow
         [_, ..slice, _] => slice,
         _ => fail!(~"c")
     };

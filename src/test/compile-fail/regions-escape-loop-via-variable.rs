@@ -18,6 +18,6 @@ fn main() {
 
     loop {
         let x = 1 + *p;
-        p = &x; //~ ERROR illegal borrow
+        p = &x; //~ ERROR cannot borrow
     }
 }

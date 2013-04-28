@@ -13,7 +13,7 @@ fn take(_v: ~int) {
 
 fn box_imm() {
     let v = ~3;
-    let _w = &v; //~ NOTE loan of immutable local variable granted here
+    let _w = &v;
     take(v); //~ ERROR moving out of immutable local variable prohibited due to outstanding loan
 }
 

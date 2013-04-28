@@ -10,5 +10,5 @@
 
 fn main () {
     let mut _p: & int = & 4;
-    _p = &*~3; //~ ERROR illegal borrow
+    _p = &*~3; //~ ERROR cannot borrow
 }

@@ -10,7 +10,7 @@
 
 fn main() {
     let msg;
-    match Some(~"Hello") { //~ ERROR illegal borrow
+    match Some(~"Hello") { //~ ERROR cannot borrow
         Some(ref m) => {
             msg = m;
         },  

@@ -9,7 +9,7 @@
 // except according to those terms.
 
 fn foo(+x: ~int) -> int {
-    let y = &*x; //~ NOTE loan of argument granted here
+    let y = &*x;
     free(x); //~ ERROR moving out of argument prohibited due to outstanding loan
     *y
 }
