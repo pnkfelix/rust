@@ -81,7 +81,22 @@ impl RestrictionsContext {
                                           set: restrictions}])
             }
 
-            mc::cat_interior(cmt_base, i) => {
+            mc::cat_interior(cmt_base, i @ mc::interior_variant(_)) => {
+                // When we borrow the interior of an enum, we have to
+                // ensure the enum itself is not mutated, because that
+                // could cause the type of the memory to change.
+                let result = self.compute(cmt_base, restrictions | RESTR_MUTATE);
+                self.extend(result, cmt.mutbl, LpInterior(i), restrictions)
+            }
+
+            mc::cat_interior(cmt_base, i @ mc::interior_tuple) |
+            mc::cat_interior(cmt_base, i @ mc::interior_anon_field) |
+            mc::cat_interior(cmt_base, i @ mc::interior_field(*)) |
+            mc::cat_interior(cmt_base, i @ mc::interior_index(*)) => {
+                // For all of these cases, overwriting the base would
+                // not change the type of the memory, so no additional
+                // restrictions are needed.
+                //
                 // FIXME(#5397) --- Mut fields are not treated soundly
                 //                  (hopefully they will just get phased out)
                 let result = self.compute(cmt_base, restrictions);
@@ -100,10 +115,14 @@ impl RestrictionsContext {
             mc::cat_static_item(*) |
             mc::cat_implicit_self(*) |
             mc::cat_arg(_, ast::by_ref) |
-            mc::cat_deref(_, _, mc::region_ptr(m_const, _)) |
             mc::cat_deref(_, _, mc::region_ptr(m_imm, _)) |
-            mc::cat_deref(_, _, mc::gc_ptr(m_const)) |
             mc::cat_deref(_, _, mc::gc_ptr(m_imm)) => {
+                Safe
+            }
+
+            mc::cat_deref(_, _, mc::region_ptr(m_const, _)) |
+            mc::cat_deref(_, _, mc::gc_ptr(m_const)) => {
+                self.check_no_mutability_control(cmt, restrictions);
                 Safe
             }
 
@@ -216,6 +235,16 @@ impl RestrictionsContext {
                 self.span,
                 BorrowViolation,
                 cause);
+        }
+    }
+
+    fn check_no_mutability_control(&self,
+                                   cmt: mc::cmt,
+                                   restrictions: RestrictionSet) {
+        if restrictions.intersects(RESTR_MUTATE | RESTR_FREEZE) {
+            self.bccx.report(BckError {span: self.span,
+                                       cmt: cmt,
+                                       code: err_freeze_aliasable_const});
         }
     }
 }

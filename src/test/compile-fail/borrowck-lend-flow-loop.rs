@@ -24,32 +24,6 @@ fn inc(v: &mut ~int) {
     *v = ~(**v + 1);
 }
 
-fn post_aliased_const() {
-    // In this instance, the const alias starts after the borrow.
-
-    let mut v = ~3;
-    borrow(v);
-    let _w = &const v;
-}
-
-fn post_aliased_mut() {
-    // In this instance, the mutable borrow starts after the immutable borrow.
-
-    let mut v = ~3;
-    borrow(v);
-    let w = &mut v;
-    *w = ~5;
-}
-
-fn post_aliased_scope(cond: bool) {
-    // In this instance, the mutable alias starts after the borrow,
-    // but it is also ruled out because of the scope.
-
-    let mut v = ~3;
-    borrow(v);
-    if cond { inc(&mut v); }
-}
-
 fn loop_overarching_alias_mut() {
     // In this instance, the borrow encompasses the entire loop.
 
@@ -152,22 +126,8 @@ fn while_aliased_mut_cond(cond: bool, cond2: bool) {
         **x += 1;
         borrow(v); //~ ERROR cannot borrow
         if cond2 {
-            x = &mut v;
+            x = &mut v; //~ ERROR cannot borrow
         }
-    }
-}
-
-fn at_most_once_block() {
-    fn at_most_once(f: &fn()) { f() }
-
-    // Here, the borrow check has no way of knowing that the block is
-    // executed at most once.
-
-    let mut v = ~3, w = ~4;
-    let mut _x = &mut w;
-    do at_most_once {
-        borrow(v); //~ ERROR loan of mutable local variable as immutable cannot borrow
-        _x = &mut v;
     }
 }
 

@@ -32,8 +32,10 @@ fn b(x: &Foo) {
 
 fn c(x: &const Foo) {
     x.f(); //~ ERROR cannot borrow
+    //~^ ERROR unsafe borrow
     x.g();
     x.h(); //~ ERROR cannot borrow
+    //~^ ERROR unsafe borrow
 }
 
 fn main() {

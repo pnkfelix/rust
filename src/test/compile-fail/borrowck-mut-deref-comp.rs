@@ -11,8 +11,8 @@
 struct foo(~int);
 
 fn borrow(x: @mut foo) {
-    let _y = &***x; //~ ERROR cannot borrow
-    *x = foo(~4);
+    let _y = &***x;
+    *x = foo(~4); //~ ERROR cannot assign
 }
 
 fn main() {

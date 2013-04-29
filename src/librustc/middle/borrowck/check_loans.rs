@@ -42,6 +42,8 @@ pub fn check_loans(bccx: @BorrowckCtxt,
                    dfcx: &LoanDataFlow,
                    all_loans: &[Loan],
                    body: &ast::blk) {
+    debug!("check_loans(body id=%?)", body.node.id);
+
     let clcx = @mut CheckLoanCtxt {
         bccx: bccx,
         dfcx: dfcx,

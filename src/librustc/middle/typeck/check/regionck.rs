@@ -181,7 +181,7 @@ fn visit_block(b: &ast::blk, rcx: @mut Rcx, v: rvt) {
 fn visit_arm(arm: &ast::arm, rcx: @mut Rcx, v: rvt) {
     // see above
     for arm.pats.each |&p| {
-        visit_pat(p, rcx, v);
+        constrain_bindings_in_pat(p, rcx);
     }
 
     visit::visit_arm(arm, rcx, v);
@@ -189,14 +189,14 @@ fn visit_arm(arm: &ast::arm, rcx: @mut Rcx, v: rvt) {
 
 fn visit_local(l: @ast::local, rcx: @mut Rcx, v: rvt) {
     // see above
-    visit_pat(l.node.pat, rcx, v);
+    constrain_bindings_in_pat(l.node.pat, rcx);
     visit::visit_local(l, rcx, v);
 }
 
-fn visit_pat(pat: @ast::pat, rcx: @mut Rcx, v: rvt) {
+fn constrain_bindings_in_pat(pat: @ast::pat, rcx: @mut Rcx) {
     let tcx = rcx.fcx.tcx();
     debug!("regionck::visit_pat(pat=%s)", pat.repr(tcx));
-    if pat_util::pat_is_binding(tcx.def_map, pat) {
+    do pat_util::pat_bindings(tcx.def_map, pat) |_, id, span, _| {
         // If we have a variable that contains region'd data, that
         // data will be accessible from anywhere that the variable is
         // accessed. We must be wary of loops like this:
@@ -220,11 +220,9 @@ fn visit_pat(pat: @ast::pat, rcx: @mut Rcx, v: rvt) {
         // that the lifetime of any regions that appear in a
         // variable's type enclose at least the variable's scope.
 
-        let encl_region = tcx.region_maps.encl_region(pat.id);
-        constrain_regions_in_type_of_node(rcx, pat.id, encl_region, pat.span);
+        let encl_region = tcx.region_maps.encl_region(id);
+        constrain_regions_in_type_of_node(rcx, id, encl_region, span);
     }
-
-    visit::visit_pat(pat, rcx, v);
 }
 
 fn visit_expr(expr: @ast::expr, rcx: @mut Rcx, v: rvt) {

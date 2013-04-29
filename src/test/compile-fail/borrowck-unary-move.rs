@@ -10,7 +10,7 @@
 
 fn foo(+x: ~int) -> int {
     let y = &*x;
-    free(x); //~ ERROR moving out of argument prohibited due to outstanding loan
+    free(x); //~ ERROR cannot move out of `*x` because it is borrowed
     *y
 }
 

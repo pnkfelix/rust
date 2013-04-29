@@ -9,7 +9,7 @@
 // except according to those terms.
 
 fn f<'a>(_x : &'a int) -> &'a int {
-    return &3; //~ ERROR cannot borrow
+    return &3; //~ ERROR borrowed value does not live long enough
 }
 
 fn main() {

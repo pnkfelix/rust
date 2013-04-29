@@ -23,8 +23,8 @@ pub impl Foo {
 }
 
 fn bar(f: &mut Foo) {
-  do f.foo |a| { //~ ERROR cannot borrow
-    f.n.insert(*a);
+  do f.foo |a| {
+    f.n.insert(*a); //~ ERROR cannot borrow
   }
 }
 

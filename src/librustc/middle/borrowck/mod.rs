@@ -115,12 +115,13 @@ fn borrowck_fn(fk: &visit::fn_kind,
         &visit::fk_anon(*) |
         &visit::fk_fn_block(*) => {
             // Closures are checked as part of their containing fn item.
-            visit::visit_fn(fk, decl, body, sp, id, self, v);
         }
 
         &visit::fk_item_fn(*) |
         &visit::fk_method(*) |
         &visit::fk_dtor(*) => {
+            debug!("borrowck_fn(id=%?)", id);
+
             // Check the body of fn items.
             let (id_range, all_loans) =
                 gather_loans::gather_loans(self, body);
@@ -139,6 +140,8 @@ fn borrowck_fn(fk: &visit::fn_kind,
             check_loans::check_loans(self, &dfcx, *all_loans, body);
         }
     }
+
+    visit::visit_fn(fk, decl, body, sp, id, self, v);
 }
 
 // ----------------------------------------------------------------------
@@ -371,6 +374,7 @@ pub enum bckerr_code {
     err_mutbl(ast::mutability),
     err_out_of_root_scope(ty::Region, ty::Region), // superscope, subscope
     err_out_of_scope(ty::Region, ty::Region), // superscope, subscope
+    err_freeze_aliasable_const
 }
 
 // Combination of an error code and the categorization of the expression
@@ -475,10 +479,17 @@ pub impl BorrowckCtxt {
                      self.mut_to_str(lk))
             }
             err_out_of_root_scope(*) => {
-                ~"cannot root managed value long enough"
+                fmt!("cannot root managed value long enough")
             }
             err_out_of_scope(*) => {
-                ~"borrowed value does not live long enough"
+                fmt!("borrowed value does not live long enough")
+            }
+            err_freeze_aliasable_const => {
+                // Means that the user borrowed a ~T or enum value
+                // residing in &const or @const pointer.  Terrible
+                // error message, but then &const and @const are
+                // supposed to be going away.
+                fmt!("unsafe borrow of aliasable, const value")
             }
         }
     }
@@ -527,7 +538,7 @@ pub impl BorrowckCtxt {
     fn note_and_explain_bckerr(&self, err: BckError) {
         let code = err.code;
         match code {
-            err_mutbl(*) => {}
+            err_mutbl(*) | err_freeze_aliasable_const(*) => {}
 
             err_out_of_root_scope(super_scope, sub_scope) => {
                 note_and_explain_region(

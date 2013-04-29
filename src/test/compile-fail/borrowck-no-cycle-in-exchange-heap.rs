@@ -21,7 +21,7 @@ fn main() {
     // Create a cycle!
     match *x {
       node(ref mut y) => {
-        y.a = x; //~ ERROR moving out of mutable local variable prohibited due to outstanding loan
+        y.a = x; //~ ERROR cannot move out of
       }
       empty => {}
     };

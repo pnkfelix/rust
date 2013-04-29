@@ -14,7 +14,7 @@ fn take(_v: ~int) {
 fn box_imm() {
     let v = ~3;
     let _w = &v;
-    take(v); //~ ERROR moving out of immutable local variable prohibited due to outstanding loan
+    take(v); //~ ERROR cannot move out of `v` because it is borrowed
 }
 
 fn main() {

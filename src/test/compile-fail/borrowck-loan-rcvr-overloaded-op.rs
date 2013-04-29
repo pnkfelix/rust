@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-struct Point { 
+struct Point {
     x: int,
     y: int,
 }
@@ -41,7 +41,7 @@ fn b() {
     let q = &mut p;
 
     p + 3;  // ok for pure fns
-    p.times(3); //~ ERROR loan of mutable local variable as immutable cannot borrow
+    p.times(3); //~ ERROR cannot borrow `p`
 
     q.x += 1;
 }

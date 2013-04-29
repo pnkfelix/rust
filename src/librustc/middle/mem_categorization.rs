@@ -954,7 +954,9 @@ pub impl mem_categorization_ctxt {
               _ => ~"indexed content"
             }
           }
-          cat_stack_upvar(cmt) |
+          cat_stack_upvar(_) => {
+              ~"captured outer variable"
+          }
           cat_discr(cmt, _) => {
             self.cmt_to_str(cmt)
           }
