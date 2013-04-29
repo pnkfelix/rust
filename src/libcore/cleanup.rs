@@ -166,7 +166,7 @@ fn debug_mem() -> bool {
 #[cfg(notest)]
 #[lang="annihilate"]
 pub unsafe fn annihilate() {
-    use unstable::lang::local_free;
+    use unstable::lang::{local_free, debug_ptr};
     use io::WriterUtil;
     use io;
     use libc;
@@ -186,8 +186,10 @@ pub unsafe fn annihilate() {
     for each_live_alloc(true) |box, uniq| {
         stats.n_total_boxes += 1;
         if uniq {
+            debug_ptr("Managed-uniq: ", &*box);
             stats.n_unique_boxes += 1;
         } else {
+            debug_ptr("Immortalizing: ", &*box);
             (*box).header.ref_count = managed::raw::RC_IMMORTAL;
         }
     }
@@ -199,9 +201,13 @@ pub unsafe fn annihilate() {
     // callback, as the original value may have been freed.
     for each_live_alloc(false) |box, uniq| {
         if !uniq {
+            debug_ptr("Invoking tydesc/glue on: ", &*box);
             let tydesc: *TypeDesc = transmute(copy (*box).header.type_desc);
             let drop_glue: DropGlue = transmute(((*tydesc).drop_glue, 0));
+            debug_ptr("Box data: ", &(*box).data);
+            debug_ptr("Type descriptor: ", tydesc);
             drop_glue(to_unsafe_ptr(&tydesc), transmute(&(*box).data));
+            debug_ptr("Dropped ", &*box);
         }
     }
 
@@ -213,6 +219,7 @@ pub unsafe fn annihilate() {
     // not be valid after.
     for each_live_alloc(true) |box, uniq| {
         if !uniq {
+            debug_ptr("About to free: ", &*box);
             stats.n_bytes_freed +=
                 (*((*box).header.type_desc)).size
                 + sys::size_of::<BoxRepr>();
