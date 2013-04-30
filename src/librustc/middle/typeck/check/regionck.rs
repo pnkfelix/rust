@@ -401,6 +401,10 @@ fn constrain_callee(rcx: @mut Rcx,
     let call_region = ty::re_scope(call_expr.id);
 
     let callee_ty = rcx.resolve_node_type(call_expr.callee_id);
+    if ty::type_is_error(callee_ty) {
+        return;
+    }
+
     match ty::get(callee_ty).sty {
         ty::ty_bare_fn(*) => { }
         ty::ty_closure(ref closure_ty) => {
