@@ -8,9 +8,20 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Check that bogus field access is non-fatal
-fn main() {
-    let x = 0;
-    let _ = x.foo; //~ ERROR attempted access of field
-    let _ = x.bar; //~ ERROR attempted access of field
+// Tests that auto-ref can't create mutable aliases to immutable memory.
+
+struct Foo {
+    x: int
 }
+
+pub impl Foo {
+    fn printme(&mut self) {
+        io::println(fmt!("%d", self.x));
+    }
+}
+
+fn main() {
+    let x = Foo { x: 3 };
+    x.printme();    //~ ERROR cannot borrow
+}
+
