@@ -552,6 +552,7 @@ use core::result::{Err, Ok};
 use core::to_bytes;
 use core::uint;
 use core::vec;
+use core;
 use syntax::codemap::span;
 use syntax::ast;
 
@@ -577,16 +578,10 @@ impl to_bytes::IterBytes for Constraint {
     }
 }
 
-#[deriving(Eq)]
+#[deriving(Eq, IterBytes)]
 struct TwoRegions {
     a: Region,
     b: Region,
-}
-
-impl to_bytes::IterBytes for TwoRegions {
-    fn iter_bytes(&self, lsb0: bool, f: to_bytes::Cb) {
-        to_bytes::iter_bytes_2(&self.a, &self.b, lsb0, f)
-    }
 }
 
 enum UndoLogEntry {
@@ -1264,8 +1259,6 @@ struct SpannedRegion {
     span: span,
 }
 
-type TwoRegionsMap = HashSet<TwoRegions>;
-
 pub impl RegionVarBindings {
     fn infer_variable_values(&mut self) -> ~[GraphNodeValue] {
         let mut graph = self.construct_graph();
@@ -1500,7 +1493,20 @@ pub impl RegionVarBindings {
         graph: &Graph) -> ~[GraphNodeValue]
     {
         debug!("extract_values_and_report_conflicts()");
-        let mut dup_map = HashSet::new();
+
+        // This is the best way that I have found to suppress
+        // duplicate and related errors. Basically we keep a set of
+        // flags for every node. Whenever an error occurs, we will
+        // walk some portion of the graph looking to find pairs of
+        // conflicting regions to report to the user. As we walk, we
+        // trip the flags from false to true, and if we find that
+        // we've already reported an error involving any particular
+        // node we just stop and don't report the current error.  The
+        // idea is to report errors that derive from independent
+        // regions of the graph, but not those that derive from
+        // overlapping locations.
+        let mut dup_vec = graph.nodes.map(|_| uint::max_value);
+
         graph.nodes.mapi(|idx, node| {
             match node.value {
                 Value(_) => {
@@ -1535,15 +1541,16 @@ pub impl RegionVarBindings {
                        that is not used is not a problem, so if this rule
                        starts to create problems we'll have to revisit
                        this portion of the code and think hard about it. =) */
+
                     let node_vid = RegionVid { id: idx };
                     match node.classification {
                         Expanding => {
                             self.report_error_for_expanding_node(
-                                graph, &mut dup_map, node_vid);
+                                graph, dup_vec, node_vid);
                         }
                         Contracting => {
                             self.report_error_for_contracting_node(
-                                graph, &mut dup_map, node_vid);
+                                graph, dup_vec, node_vid);
                         }
                     }
                 }
@@ -1553,37 +1560,25 @@ pub impl RegionVarBindings {
         })
     }
 
-    // Used to suppress reporting the same basic error over and over
-    fn is_reported(&mut self,
-                   dup_map: &mut TwoRegionsMap,
-                   r_a: Region,
-                   r_b: Region)
-                -> bool {
-        let key = TwoRegions { a: r_a, b: r_b };
-        !dup_map.insert(key)
-    }
-
     fn report_error_for_expanding_node(&mut self,
                                        graph: &Graph,
-                                       dup_map: &mut TwoRegionsMap,
+                                       dup_vec: &mut [uint],
                                        node_idx: RegionVid) {
         // Errors in expanding nodes result from a lower-bound that is
         // not contained by an upper-bound.
-        let lower_bounds =
-            self.collect_concrete_regions(graph, node_idx, Incoming);
-        let upper_bounds =
-            self.collect_concrete_regions(graph, node_idx, Outgoing);
+        let (lower_bounds, lower_dup) =
+            self.collect_concrete_regions(graph, node_idx, Incoming, dup_vec);
+        let (upper_bounds, upper_dup) =
+            self.collect_concrete_regions(graph, node_idx, Outgoing, dup_vec);
+
+        if lower_dup || upper_dup {
+            return;
+        }
 
         for vec::each(lower_bounds) |lower_bound| {
             for vec::each(upper_bounds) |upper_bound| {
                 if !self.is_subregion_of(lower_bound.region,
                                          upper_bound.region) {
-
-                    if self.is_reported(dup_map,
-                                        lower_bound.region,
-                                        upper_bound.region) {
-                        return;
-                    }
 
                     self.tcx.sess.span_err(
                         self.var_spans[node_idx.to_uint()],
@@ -1626,12 +1621,16 @@ pub impl RegionVarBindings {
 
     fn report_error_for_contracting_node(&mut self,
                                          graph: &Graph,
-                                         dup_map: &mut TwoRegionsMap,
+                                         dup_vec: &mut [uint],
                                          node_idx: RegionVid) {
         // Errors in contracting nodes result from two upper-bounds
         // that have no intersection.
-        let upper_bounds = self.collect_concrete_regions(graph, node_idx,
-                                                         Outgoing);
+        let (upper_bounds, dup_found) =
+            self.collect_concrete_regions(graph, node_idx, Outgoing, dup_vec);
+
+        if dup_found {
+            return;
+        }
 
         for vec::each(upper_bounds) |upper_bound_1| {
             for vec::each(upper_bounds) |upper_bound_2| {
@@ -1639,12 +1638,6 @@ pub impl RegionVarBindings {
                                                 upper_bound_2.region) {
                   Ok(_) => {}
                   Err(_) => {
-
-                    if self.is_reported(dup_map,
-                                        upper_bound_1.region,
-                                        upper_bound_2.region) {
-                        return;
-                    }
 
                     self.tcx.sess.span_err(
                         self.var_spans[node_idx.to_uint()],
@@ -1688,17 +1681,20 @@ pub impl RegionVarBindings {
     fn collect_concrete_regions(&mut self,
                                 graph: &Graph,
                                 orig_node_idx: RegionVid,
-                                dir: Direction)
-                             -> ~[SpannedRegion] {
+                                dir: Direction,
+                                dup_vec: &mut [uint])
+                             -> (~[SpannedRegion], bool) {
         struct WalkState {
             set: HashSet<RegionVid>,
             stack: ~[RegionVid],
-            result: ~[SpannedRegion]
+            result: ~[SpannedRegion],
+            dup_found: bool
         }
         let mut state = WalkState {
             set: HashSet::new(),
             stack: ~[orig_node_idx],
-            result: ~[]
+            result: ~[],
+            dup_found: false
         };
         state.set.insert(orig_node_idx);
 
@@ -1709,6 +1705,13 @@ pub impl RegionVarBindings {
         while !state.stack.is_empty() {
             let node_idx = state.stack.pop();
             let classification = graph.nodes[node_idx.to_uint()].classification;
+
+            // check whether we've visited this node on some previous walk
+            if dup_vec[node_idx.to_uint()] == uint::max_value {
+                dup_vec[node_idx.to_uint()] = orig_node_idx.to_uint();
+            } else if dup_vec[node_idx.to_uint()] != orig_node_idx.to_uint() {
+                state.dup_found = true;
+            }
 
             debug!("collect_concrete_regions(orig_node_idx=%?, node_idx=%?, \
                     classification=%?)",
@@ -1724,8 +1727,8 @@ pub impl RegionVarBindings {
             process_edges(self, &mut state, graph, node_idx, dir);
         }
 
-        let WalkState {result, _} = state;
-        return result;
+        let WalkState {result, dup_found, _} = state;
+        return (result, dup_found);
 
         fn process_edges(self: &mut RegionVarBindings,
                          state: &mut WalkState,
