@@ -666,7 +666,8 @@ impl<'self> LookupContext<'self> {
          * `~[]` to `&[]`. */
 
         let tcx = self.tcx();
-        match ty::get(self_ty).sty {
+        let sty = copy ty::get(self_ty).sty;
+        match sty {
             ty_evec(mt, vstore_box) |
             ty_evec(mt, vstore_uniq) |
             ty_evec(mt, vstore_slice(_)) | // NDM(#3148)
@@ -713,8 +714,20 @@ impl<'self> LookupContext<'self> {
                     })
             }
 
-            ty_trait(*) | ty_closure(*) => {
-                // NDM---eventually these should be some variant of autoref
+            ty_trait(trt_did, trt_substs, _, _) => {
+                // Coerce ~/@/&Trait instances to &Trait.
+
+                self.search_for_some_kind_of_autorefd_method(
+                    AutoBorrowObj, autoderefs, [m_const, m_imm, m_mutbl],
+                    |trt_mut, reg| {
+                        ty::mk_trait(tcx, trt_did, copy trt_substs,
+                                     RegionTraitStore(reg), trt_mut)
+                    })
+            }
+
+            ty_closure(*) => {
+                // This case should probably be handled similarly to
+                // Trait instances.
                 None
             }
 
@@ -897,25 +910,7 @@ impl<'self> LookupContext<'self> {
         assert!(candidate.method_ty.explicit_self != sty_static);
 
         let transformed_self_ty = match candidate.origin {
-            method_trait(*) => {
-                match candidate.method_ty.explicit_self {
-                    sty_region(*) => {
-                        // FIXME(#5762) again, preserving existing
-                        // behavior here which (for &self) desires
-                        // &@Trait where @Trait is the type of the
-                        // receiver.  Here we fetch the method's
-                        // transformed_self_ty which will be something
-                        // like &'a Self.  We then perform a
-                        // substitution which will replace Self with
-                        // @Trait.
-                        let t = candidate.method_ty.transformed_self_ty.get();
-                        ty::subst(tcx, &candidate.rcvr_substs, t)
-                    }
-                    _ => {
-                        candidate.rcvr_ty
-                    }
-                }
-            }
+            method_trait(*) => candidate.rcvr_ty,
             _ => {
                 let t = candidate.method_ty.transformed_self_ty.get();
                 ty::subst(tcx, &candidate.rcvr_substs, t)
@@ -1065,26 +1060,19 @@ impl<'self> LookupContext<'self> {
         debug!("is_relevant(rcvr_ty=%s, candidate=%s)",
                self.ty_to_str(rcvr_ty), self.cand_to_str(candidate));
 
-        // Check for calls to object methods.  We resolve these differently.
-        //
-        // FIXME(#5762)---we don't check that an @self method is only called
-        // on an @Trait object here and so forth
+        // Check for calls to trait object methods. Ensure that @self
+        // methods are only called on @Trait objects, and so forth.
         match candidate.origin {
             method_trait(*) => {
                 match candidate.method_ty.explicit_self {
                     sty_static | sty_value => {
                         return false;
                     }
-                    sty_region(*) => {
-                        // just echoing current behavior here, which treats
-                        // an &self method on an @Trait object as requiring
-                        // an &@Trait receiver (wacky)
-                    }
-                    sty_box(*) | sty_uniq(*) => {
+                    sty_region(*) | sty_box(*) | sty_uniq(*) => {
                         return self.fcx.can_mk_subty(rcvr_ty,
                                                      candidate.rcvr_ty).is_ok();
                     }
-                };
+                }
             }
             _ => {}
         }

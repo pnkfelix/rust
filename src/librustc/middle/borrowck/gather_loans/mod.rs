@@ -348,6 +348,9 @@ impl GatherLoanCtxt {
                                              m_imm,
                                              r)
                     }
+                    ty::AutoBorrowObj(r, _) => {
+                        // FIXME(#5762) add this
+                    }
                     ty::AutoUnsafe(_) => {}
                 }
             }

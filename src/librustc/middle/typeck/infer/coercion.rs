@@ -66,7 +66,7 @@ we may want to adjust precisely when coercions occur.
 
 use core::prelude::*;
 
-use middle::ty::{AutoPtr, AutoBorrowVec, AutoBorrowFn};
+use middle::ty::{AutoPtr, AutoBorrowVec, AutoBorrowFn, AutoBorrowObj};
 use middle::ty::{AutoDerefRef};
 use middle::ty::{vstore_slice, vstore_box, vstore_uniq};
 use middle::ty::{mt};
@@ -119,6 +119,12 @@ impl Coerce {
             ty::ty_closure(ty::ClosureTy {sigil: ast::BorrowedSigil, _}) => {
                 return do self.unpack_actual_value(a) |sty_a| {
                     self.coerce_borrowed_fn(a, sty_a, b)
+                };
+            }
+
+            ty::ty_trait(_, _, ty::RegionTraitStore(*), _) => {
+                return do self.unpack_actual_value(a) |sty_a| {
+                    self.coerce_borrowed_object(a, sty_a, b)
                 };
             }
 
@@ -263,6 +269,41 @@ impl Coerce {
         Ok(Some(@AutoDerefRef(AutoDerefRef {
             autoderefs: 0,
             autoref: Some(AutoBorrowVec(r_borrow, mt_b.mutbl))
+        })))
+    }
+
+    fn coerce_borrowed_object(&self,
+                              a: ty::t,
+                              sty_a: &ty::sty,
+                              b: ty::t) -> CoerceResult
+    {
+        debug!("coerce_borrowed_object(a=%s, sty_a=%?, b=%s)",
+               a.inf_str(self.infcx), sty_a,
+               b.inf_str(self.infcx));
+
+        let tcx = self.infcx.tcx;
+        let r_a = self.infcx.next_region_var_nb(self.span);
+        let trt_mut;
+
+        let a_borrowed = match *sty_a {
+            ty::ty_trait(_, _, ty::RegionTraitStore(_), _) => {
+                return self.subtype(a, b);
+            }
+            ty::ty_trait(did, copy substs, _, m) => {
+                trt_mut = m;
+                ty::mk_trait(tcx, did, substs,
+                             ty::RegionTraitStore(r_a), m)
+            }
+            _ => {
+                tcx.sess.bug(~"coerce_borrowed_object: \
+                               trait type isn't a ty_trait.");
+            }
+        };
+
+        if_ok!(self.tys(a_borrowed, b));
+        Ok(Some(@AutoDerefRef(AutoDerefRef {
+            autoderefs: 0,
+            autoref: Some(AutoBorrowObj(r_a, trt_mut))
         })))
     }
 

@@ -214,7 +214,10 @@ pub enum AutoRef {
     AutoBorrowFn(Region),
 
     /// Convert from T to *T
-    AutoUnsafe(ast::mutability)
+    AutoUnsafe(ast::mutability),
+
+    /// Convert from @Trait/~Trait/&Trait to &Trait
+    AutoBorrowObj(Region, ast::mutability),
 }
 
 // Stores information about provided methods (a.k.a. default methods) in
@@ -1047,7 +1050,11 @@ fn mk_t(cx: ctxt, st: sty) -> t {
       &ty_self(_) => flags |= has_self as uint,
       &ty_enum(_, ref substs) | &ty_struct(_, ref substs) |
       &ty_trait(_, ref substs, _, _) => {
-        flags |= sflags(substs);
+          flags |= sflags(substs);
+          match st {
+              ty_trait(_, _, RegionTraitStore(r), _) => { flags |= rflags(r); }
+              _ => {}
+          }
       }
       &ty_box(ref m) | &ty_uniq(ref m) | &ty_evec(ref m, _) |
       &ty_ptr(ref m) | &ty_unboxed_vec(ref m) => {
@@ -1470,8 +1477,14 @@ pub fn fold_regions_and_ty(
       ty_struct(def_id, ref substs) => {
         ty::mk_struct(cx, def_id, fold_substs(substs, fldr, fldt))
       }
-      ty_trait(def_id, ref substs, st, mutbl) => {
-        ty::mk_trait(cx, def_id, fold_substs(substs, fldr, fldt), st, mutbl)
+      ty_trait(def_id, ref substs, store, mutbl) => {
+          let folded_store = match store {
+              RegionTraitStore(r) => RegionTraitStore(fldr(r)),
+              _ => store
+          };
+
+          ty::mk_trait(cx, def_id, fold_substs(substs, fldr, fldt),
+                       folded_store, mutbl)
       }
       ty_bare_fn(ref f) => {
           ty::mk_bare_fn(cx, BareFnTy {sig: fold_sig(&f.sig, fldfnt),
@@ -3085,6 +3098,10 @@ pub fn adjust_ty(cx: ctxt,
                         AutoUnsafe(m) => {
                             mk_ptr(cx, mt {ty: adjusted_ty, mutbl: m})
                         }
+
+                        AutoBorrowObj(r, m) => {
+                            borrow_obj(cx, span, r, m, adjusted_ty)
+                        }
                     }
                 }
             }
@@ -3130,6 +3147,22 @@ pub fn adjust_ty(cx: ctxt,
             }
         }
     }
+
+    fn borrow_obj(cx: ctxt, span: span, r: Region,
+                        m: ast::mutability, ty: ty::t) -> ty::t {
+        match get(ty).sty {
+            ty_trait(trt_did, copy trt_substs, _, _) => {
+                ty::mk_trait(cx, trt_did, trt_substs,
+                             RegionTraitStore(r), m)
+            }
+            ref s => {
+                cx.sess.span_bug(
+                    span,
+                    fmt!("borrow-trait-obj associated with bad sty: %?",
+                         s));
+            }
+        }
+    }
 }
 
 impl AutoRef {
@@ -3140,6 +3173,7 @@ impl AutoRef {
             ty::AutoBorrowVecRef(r, m) => ty::AutoBorrowVecRef(f(r), m),
             ty::AutoBorrowFn(r) => ty::AutoBorrowFn(f(r)),
             ty::AutoUnsafe(m) => ty::AutoUnsafe(m),
+            ty::AutoBorrowObj(r, m) => ty::AutoBorrowObj(f(r), m),
         }
     }
 }
