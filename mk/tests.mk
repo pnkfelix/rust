@@ -129,10 +129,10 @@ cleantestlibs:
          -name '*.def' -o     \
          -name '*.bc' -o      \
          -name '*.dSYM' -o    \
-         -name '*.libaux' -o      \
+         -name '*.libaux' -o  \
          -name '*.out' -o     \
          -name '*.err' -o     \
-	 -name '*.debugger.script' \
+         -name '*.debugger.script' \
          | xargs rm -rf
 
 
@@ -179,9 +179,9 @@ tidy:
 		$(Q)find $(S)src/etc -name '*.py' \
 		| xargs -n 10 $(CFG_PYTHON) $(S)src/etc/tidy.py
 		$(Q)echo $(ALL_CS) \
-	  	| xargs -n 10 $(CFG_PYTHON) $(S)src/etc/tidy.py
+		| xargs -n 10 $(CFG_PYTHON) $(S)src/etc/tidy.py
 		$(Q)echo $(ALL_HS) \
-	  	| xargs -n 10 $(CFG_PYTHON) $(S)src/etc/tidy.py
+		| xargs -n 10 $(CFG_PYTHON) $(S)src/etc/tidy.py
 
 endif
 
@@ -192,43 +192,43 @@ endif
 
 define DEF_TEST_SETS
 
-check-stage$(1)-T-$(2)-H-$(3)-exec:     				\
-	check-stage$(1)-T-$(2)-H-$(3)-rpass-exec			\
-	check-stage$(1)-T-$(2)-H-$(3)-rfail-exec			\
-	check-stage$(1)-T-$(2)-H-$(3)-cfail-exec			\
-	check-stage$(1)-T-$(2)-H-$(3)-rpass-full-exec			\
-        check-stage$(1)-T-$(2)-H-$(3)-crates-exec                      \
-	check-stage$(1)-T-$(2)-H-$(3)-bench-exec			\
-	check-stage$(1)-T-$(2)-H-$(3)-debuginfo-exec \
-	check-stage$(1)-T-$(2)-H-$(3)-doc-exec \
-	check-stage$(1)-T-$(2)-H-$(3)-pretty-exec
+check-stage$(1)-T-$(2)-H-$(3)-exec:				\
+		check-stage$(1)-T-$(2)-H-$(3)-rpass-exec	\
+		check-stage$(1)-T-$(2)-H-$(3)-rfail-exec	\
+		check-stage$(1)-T-$(2)-H-$(3)-cfail-exec	\
+		check-stage$(1)-T-$(2)-H-$(3)-rpass-full-exec	\
+		check-stage$(1)-T-$(2)-H-$(3)-crates-exec	\
+		check-stage$(1)-T-$(2)-H-$(3)-bench-exec	\
+		check-stage$(1)-T-$(2)-H-$(3)-debuginfo-exec	\
+		check-stage$(1)-T-$(2)-H-$(3)-doc-exec		\
+		check-stage$(1)-T-$(2)-H-$(3)-pretty-exec
 
 # Only test the compiler-dependent crates when the target is
 # able to build a compiler (when the target triple is in the set of host triples)
 ifneq ($$(findstring $(2),$$(CFG_HOST_TRIPLES)),)
 
-check-stage$(1)-T-$(2)-H-$(3)-crates-exec: \
-	$$(foreach crate,$$(TEST_CRATES), \
-           check-stage$(1)-T-$(2)-H-$(3)-$$(crate)-exec)
+check-stage$(1)-T-$(2)-H-$(3)-crates-exec:			\
+		$$(foreach crate,$$(TEST_CRATES),		\
+		    check-stage$(1)-T-$(2)-H-$(3)-$$(crate)-exec)
 
 else
 
-check-stage$(1)-T-$(2)-H-$(3)-crates-exec: \
-	$$(foreach crate,$$(TEST_TARGET_CRATES), \
-           check-stage$(1)-T-$(2)-H-$(3)-$$(crate)-exec)
+check-stage$(1)-T-$(2)-H-$(3)-crates-exec:			\
+		$$(foreach crate,$$(TEST_TARGET_CRATES),	\
+		    check-stage$(1)-T-$(2)-H-$(3)-$$(crate)-exec)
 
 endif
 
-check-stage$(1)-T-$(2)-H-$(3)-doc-exec: \
-        $$(foreach docname,$$(DOC_TEST_NAMES), \
-           check-stage$(1)-T-$(2)-H-$(3)-doc-$$(docname)-exec)
+check-stage$(1)-T-$(2)-H-$(3)-doc-exec:				\
+		$$(foreach docname,$$(DOC_TEST_NAMES),		\
+		    check-stage$(1)-T-$(2)-H-$(3)-doc-$$(docname)-exec)
 
-check-stage$(1)-T-$(2)-H-$(3)-pretty-exec: \
-	check-stage$(1)-T-$(2)-H-$(3)-pretty-rpass-exec	\
-	check-stage$(1)-T-$(2)-H-$(3)-pretty-rpass-full-exec	\
-	check-stage$(1)-T-$(2)-H-$(3)-pretty-rfail-exec	\
-	check-stage$(1)-T-$(2)-H-$(3)-pretty-bench-exec	\
-	check-stage$(1)-T-$(2)-H-$(3)-pretty-pretty-exec
+check-stage$(1)-T-$(2)-H-$(3)-pretty-exec:			\
+		check-stage$(1)-T-$(2)-H-$(3)-pretty-rpass-exec	\
+		check-stage$(1)-T-$(2)-H-$(3)-pretty-rpass-full-exec \
+		check-stage$(1)-T-$(2)-H-$(3)-pretty-rfail-exec	\
+		check-stage$(1)-T-$(2)-H-$(3)-pretty-bench-exec	\
+		check-stage$(1)-T-$(2)-H-$(3)-pretty-pretty-exec
 
 endef
 
@@ -253,51 +253,59 @@ STDTESTDEP_$(1)_$(2)_$(3) =
 endif
 
 $(3)/test/coretest.stage$(1)-$(2)$$(X_$(2)):			\
-		$$(CORELIB_CRATE) $$(CORELIB_INPUTS)	\
+		$$(CORELIB_CRATE) $$(CORELIB_INPUTS)		\
 		$$(STDTESTDEP_$(1)_$(2)_$(3))
+
 	@$$(call E, compile_and_link: $$@)
 	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< --test
 
 $(3)/test/stdtest.stage$(1)-$(2)$$(X_$(2)):			\
-		$$(STDLIB_CRATE) $$(STDLIB_INPUTS)	\
+		$$(STDLIB_CRATE) $$(STDLIB_INPUTS)		\
 		$$(STDTESTDEP_$(1)_$(2)_$(3))
+
 	@$$(call E, compile_and_link: $$@)
 	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< --test
 
 $(3)/test/syntaxtest.stage$(1)-$(2)$$(X_$(2)):			\
 		$$(LIBSYNTAX_CRATE) $$(LIBSYNTAX_INPUTS)	\
 		$$(STDTESTDEP_$(1)_$(2)_$(3))
+
 	@$$(call E, compile_and_link: $$@)
 	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< --test
 
-$(3)/test/rustctest.stage$(1)-$(2)$$(X_$(2)):					\
-		$$(COMPILER_CRATE) $$(COMPILER_INPUTS) \
+$(3)/test/rustctest.stage$(1)-$(2)$$(X_$(2)):			\
+		$$(COMPILER_CRATE) $$(COMPILER_INPUTS)		\
 		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_RUSTLLVM_$(2)) \
-                $$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBSYNTAX_$(2))
+		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBSYNTAX_$(2))
+
 	@$$(call E, compile_and_link: $$@)
 	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< --test
 
-$(3)/test/rustpkgtest.stage$(1)-$(2)$$(X_$(2)):					\
+$(3)/test/rustpkgtest.stage$(1)-$(2)$$(X_$(2)):			\
 		$$(RUSTPKG_LIB) $$(RUSTPKG_INPUTS)		\
 		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBRUSTC_$(2))
+
 	@$$(call E, compile_and_link: $$@)
 	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< --test
 
-$(3)/test/rustitest.stage$(1)-$(2)$$(X_$(2)):					\
-		$$(RUSTI_LIB) $$(RUSTI_INPUTS)		\
+$(3)/test/rustitest.stage$(1)-$(2)$$(X_$(2)):			\
+		$$(RUSTI_LIB) $$(RUSTI_INPUTS)			\
 		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBRUSTC_$(2))
+
 	@$$(call E, compile_and_link: $$@)
 	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< --test
 
-$(3)/test/rusttest.stage$(1)-$(2)$$(X_$(2)):					\
-		$$(RUST_LIB) $$(RUST_INPUTS)		\
+$(3)/test/rusttest.stage$(1)-$(2)$$(X_$(2)):			\
+		$$(RUST_LIB) $$(RUST_INPUTS)			\
 		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBRUSTC_$(2))
+
 	@$$(call E, compile_and_link: $$@)
 	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< --test
 
-$(3)/test/rustdoctest.stage$(1)-$(2)$$(X_$(2)):					\
+$(3)/test/rustdoctest.stage$(1)-$(2)$$(X_$(2)):			\
 		$$(RUSTDOC_LIB) $$(RUSTDOC_INPUTS)		\
 		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBRUSTC_$(2))
+
 	@$$(call E, compile_and_link: $$@)
 	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< --test
 
@@ -311,10 +319,10 @@ $(foreach host,$(CFG_HOST_TRIPLES), \
 define DEF_TEST_CRATE_RULES
 check-stage$(1)-T-$(2)-H-$(3)-$(4)-exec: $$(call TEST_OK_FILE,$(1),$(2),$(3),$(4))
 
-$$(call TEST_OK_FILE,$(1),$(2),$(3),$(4)): \
+$$(call TEST_OK_FILE,$(1),$(2),$(3),$(4)):			\
 		$(3)/test/$(4)test.stage$(1)-$(2)$$(X_$(2))
 	@$$(call E, run: $$<)
-	$$(Q)$$(call CFG_RUN_TEST_$(2),$$<,$(2),$(3)) $$(TESTARGS)	\
+	$$(Q)$$(call CFG_RUN_TEST_$(2),$$<,$(2),$(3)) $$(TESTARGS) \
 	--logfile $$(call TEST_LOG_FILE,$(1),$(2),$(3),$(4)) \
 	&& touch $$@
 endef
@@ -451,9 +459,10 @@ check-stage$(1)-T-$(2)-H-$(3)-$(4)-exec: $$(call TEST_OK_FILE,$(1),$(2),$(3),$(4
 
 ifeq ($$(CTEST_DISABLE_$(4)),)
 
-$$(call TEST_OK_FILE,$(1),$(2),$(3),$(4)): \
-		$$(TEST_SREQ$(1)_T_$(2)_H_$(3)) \
-                $$(CTEST_DEPS_$(4)_$(1)-T-$(2)-H-$(3))
+$$(call TEST_OK_FILE,$(1),$(2),$(3),$(4)):			\
+		$$(TEST_SREQ$(1)_T_$(2)_H_$(3))			\
+		$$(CTEST_DEPS_$(4)_$(1)-T-$(2)-H-$(3))
+
 	@$$(call E, run $(4): $$<)
 	$$(Q)$$(call CFG_RUN_CTEST_$(2),$(1),$$<,$(3)) \
 		$$(CTEST_ARGS$(1)-T-$(2)-H-$(3)-$(4)) \
@@ -462,9 +471,10 @@ $$(call TEST_OK_FILE,$(1),$(2),$(3),$(4)): \
 
 else
 
-$$(call TEST_OK_FILE,$(1),$(2),$(3),$(4)): \
-		$$(TEST_SREQ$(1)_T_$(2)_H_$(3)) \
-                $$(CTEST_DEPS_$(4)_$(1)-T-$(2)-H-$(3))
+$$(call TEST_OK_FILE,$(1),$(2),$(3),$(4)):			\
+		$$(TEST_SREQ$(1)_T_$(2)_H_$(3))			\
+		$$(CTEST_DEPS_$(4)_$(1)-T-$(2)-H-$(3))
+
 	@$$(call E, run $(4): $$<)
 	@$$(call E, warning: tests disabled: $$(CTEST_DISABLE_$(4)))
 	touch $$@
@@ -503,9 +513,10 @@ PRETTY_ARGS$(1)-T-$(2)-H-$(3)-$(4) :=			\
 
 check-stage$(1)-T-$(2)-H-$(3)-$(4)-exec: $$(call TEST_OK_FILE,$(1),$(2),$(3),$(4))
 
-$$(call TEST_OK_FILE,$(1),$(2),$(3),$(4)): \
-	        $$(TEST_SREQ$(1)_T_$(2)_H_$(3))		\
-	        $$(PRETTY_DEPS_$(4))
+$$(call TEST_OK_FILE,$(1),$(2),$(3),$(4)):			\
+		$$(TEST_SREQ$(1)_T_$(2)_H_$(3))			\
+		$$(PRETTY_DEPS_$(4))
+
 	@$$(call E, run pretty-rpass: $$<)
 	$$(Q)$$(call CFG_RUN_CTEST_$(2),$(1),$$<,$(3)) \
 		$$(PRETTY_ARGS$(1)-T-$(2)-H-$(3)-$(4)) \
@@ -530,13 +541,14 @@ DOC_TEST_ARGS$(1)-T-$(2)-H-$(3)-doc-$(4) := \
 
 check-stage$(1)-T-$(2)-H-$(3)-doc-$(4)-exec: $$(call TEST_OK_FILE,$(1),$(2),$(3),doc-$(4))
 
-$$(call TEST_OK_FILE,$(1),$(2),$(3),doc-$(4)): \
-	        $$(TEST_SREQ$(1)_T_$(2)_H_$(3))		\
-                doc-$(4)-extract$(3)
+$$(call TEST_OK_FILE,$(1),$(2),$(3),doc-$(4)):			\
+		$$(TEST_SREQ$(1)_T_$(2)_H_$(3))			\
+		doc-$(4)-extract$(3)
+
 	@$$(call E, run doc-$(4): $$<)
 	$$(Q)$$(call CFG_RUN_CTEST_$(2),$(1),$$<,$(3)) \
                 $$(DOC_TEST_ARGS$(1)-T-$(2)-H-$(3)-doc-$(4)) \
-		--logfile $$(call TEST_LOG_FILE,$(1),$(2),$(3),doc-$(4)) \
+                --logfile $$(call TEST_LOG_FILE,$(1),$(2),$(3),doc-$(4)) \
                 && touch $$@
 
 endef
@@ -660,9 +672,10 @@ FT_DRIVER := $(FT)_driver
 
 GENERATED += tmp/$(FT).rc tmp/$(FT_DRIVER).rs
 
-tmp/$(FT).rc tmp/$(FT_DRIVER).rs: \
-		$(RPASS_TESTS) \
+tmp/$(FT).rc tmp/$(FT_DRIVER).rs:				\
+		$(RPASS_TESTS)					\
 		$(S)src/etc/combine-tests.py
+
 	@$(call E, check: building combined stage2 test runner)
 	$(Q)$(CFG_PYTHON) $(S)src/etc/combine-tests.py
 
@@ -671,27 +684,30 @@ define DEF_CHECK_FAST_FOR_T_H
 # $(2) target triple
 # $(3) host triple
 
-$$(TLIB2_T_$(2)_H_$(3))/$$(FT_LIB): \
-		tmp/$$(FT).rc \
+$$(TLIB2_T_$(2)_H_$(3))/$$(FT_LIB):				\
+		tmp/$$(FT).rc					\
 		$$(SREQ2_T_$(2)_H_$(3))
+
 	@$$(call E, compile_and_link: $$@)
 	$$(STAGE2_T_$(2)_H_$(3)) --lib -o $$@ $$<
 
-$(3)/test/$$(FT_DRIVER)-$(2)$$(X_$(2)): \
-		tmp/$$(FT_DRIVER).rs \
-		$$(TLIB2_T_$(2)_H_$(3))/$$(FT_LIB) \
+$(3)/test/$$(FT_DRIVER)-$(2)$$(X_$(2)):				\
+		tmp/$$(FT_DRIVER).rs				\
+		$$(TLIB2_T_$(2)_H_$(3))/$$(FT_LIB)		\
 		$$(SREQ2_T_$(2)_H_$(3))
+
 	@$$(call E, compile_and_link: $$@ $$<)
 	$$(STAGE2_T_$(2)_H_$(3)) -o $$@ $$<
 
-$(3)/test/$$(FT_DRIVER)-$(2).out: \
-		$(3)/test/$$(FT_DRIVER)-$(2)$$(X_$(2)) \
+$(3)/test/$$(FT_DRIVER)-$(2).out:				\
+		$(3)/test/$$(FT_DRIVER)-$(2)$$(X_$(2))		\
 		$$(SREQ2_T_$(2)_H_$(3))
+
 	$$(Q)$$(call CFG_RUN_TEST_$(2),$$<,$(2),$(3)) \
 	--logfile tmp/$$(FT_DRIVER)-$(2).log
 
-check-fast-T-$(2)-H-$(3):     			\
-	$(3)/test/$$(FT_DRIVER)-$(2).out
+check-fast-T-$(2)-H-$(3):					\
+		$(3)/test/$$(FT_DRIVER)-$(2).out
 
 endef
 
@@ -703,7 +719,7 @@ check-fast: tidy check-fast-H-$(CFG_BUILD_TRIPLE)
 
 define DEF_CHECK_FAST_FOR_H
 
-check-fast-H-$(1): 		check-fast-T-$(1)-H-$(1)
+check-fast-H-$(1):		check-fast-T-$(1)-H-$(1)
 
 endef
 

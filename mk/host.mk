@@ -23,26 +23,26 @@ define CP_HOST_STAGE_N
 
 # Note: $(3) and $(4) are both the same!
 
-$$(HBIN$(2)_H_$(4))/rustc$$(X_$(4)): \
-	$$(TBIN$(1)_T_$(4)_H_$(3))/rustc$$(X_$(4)) \
-	$$(HLIB$(2)_H_$(4))/$(CFG_RUNTIME_$(4)) \
-	$$(HLIB$(2)_H_$(4))/$(CFG_RUSTLLVM_$(4)) \
-	$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTC_$(4)) \
-	$$(HCORELIB_DEFAULT$(2)_H_$(4)) \
-	$$(HSTDLIB_DEFAULT$(2)_H_$(4)) \
-	| $$(HBIN$(2)_H_$(4))/
+$$(HBIN$(2)_H_$(4))/rustc$$(X_$(4)):				\
+		$$(TBIN$(1)_T_$(4)_H_$(3))/rustc$$(X_$(4))	\
+		$$(HLIB$(2)_H_$(4))/$(CFG_RUNTIME_$(4))		\
+		$$(HLIB$(2)_H_$(4))/$(CFG_RUSTLLVM_$(4))	\
+		$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTC_$(4))	\
+		$$(HCORELIB_DEFAULT$(2)_H_$(4))			\
+		$$(HSTDLIB_DEFAULT$(2)_H_$(4))			\
+		| $$(HBIN$(2)_H_$(4))/
 
 	@$$(call E, cp: $$@)
 	$$(Q)cp $$< $$@
 
-$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTC_$(4)): \
-	$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTC_$(4)) \
-	$$(HLIB$(2)_H_$(4))/$(CFG_LIBSYNTAX_$(4)) \
-	$$(HLIB$(2)_H_$(4))/$(CFG_RUNTIME_$(4)) \
-	$$(HLIB$(2)_H_$(4))/$(CFG_RUSTLLVM_$(4)) \
-	$$(HCORELIB_DEFAULT$(2)_H_$(4)) \
-	$$(HSTDLIB_DEFAULT$(2)_H_$(4)) \
-	| $$(HLIB$(2)_H_$(4))/
+$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTC_$(4)):			\
+		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTC_$(4))	\
+		$$(HLIB$(2)_H_$(4))/$(CFG_LIBSYNTAX_$(4))	\
+		$$(HLIB$(2)_H_$(4))/$(CFG_RUNTIME_$(4))		\
+		$$(HLIB$(2)_H_$(4))/$(CFG_RUSTLLVM_$(4))	\
+		$$(HCORELIB_DEFAULT$(2)_H_$(4))			\
+		$$(HSTDLIB_DEFAULT$(2)_H_$(4))			\
+		| $$(HLIB$(2)_H_$(4))/
 
 	@$$(call E, cp: $$@)
 	$$(Q)cp $$< $$@
@@ -50,29 +50,32 @@ $$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTC_$(4)): \
 		$(wildcard $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUSTC_DSYM_GLOB_$(4))) \
 	        $$(HLIB$(2)_H_$(4))
 
-$$(HLIB$(2)_H_$(4))/$(CFG_LIBSYNTAX_$(4)): \
-	$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBSYNTAX_$(4)) \
-	$$(HLIB$(2)_H_$(4))/$(CFG_RUNTIME_$(4)) \
-	$$(HLIB$(2)_H_$(4))/$(CFG_RUSTLLVM_$(4)) \
-	$$(HCORELIB_DEFAULT$(2)_H_$(4)) \
-	$$(HSTDLIB_DEFAULT$(2)_H_$(4)) \
-	| $$(HLIB$(2)_H_$(4))/
+$$(HLIB$(2)_H_$(4))/$(CFG_LIBSYNTAX_$(4)):			\
+		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBSYNTAX_$(4)) \
+		$$(HLIB$(2)_H_$(4))/$(CFG_RUNTIME_$(4))		\
+		$$(HLIB$(2)_H_$(4))/$(CFG_RUSTLLVM_$(4))	\
+		$$(HCORELIB_DEFAULT$(2)_H_$(4))			\
+		$$(HSTDLIB_DEFAULT$(2)_H_$(4))			\
+		| $$(HLIB$(2)_H_$(4))/
+
 	@$$(call E, cp: $$@)
 	$$(Q)cp $$< $$@
 	$$(Q)cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBSYNTAX_GLOB_$(4)) \
 		$$(wildcard $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBSYNTAX_DSYM_GLOB_$(4))) \
 	        $$(HLIB$(2)_H_$(4))
 
-$$(HLIB$(2)_H_$(4))/$(CFG_RUNTIME_$(4)): \
-	$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_RUNTIME_$(4)) \
-	| $$(HLIB$(2)_H_$(4))/
+$$(HLIB$(2)_H_$(4))/$(CFG_RUNTIME_$(4)):			\
+		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_RUNTIME_$(4))	\
+		| $$(HLIB$(2)_H_$(4))/
+
 	@$$(call E, cp: $$@)
 	$$(Q)cp $$< $$@
 
-$$(HLIB$(2)_H_$(4))/$(CFG_CORELIB_$(4)): \
-	$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_CORELIB_$(4)) \
-	$$(HLIB$(2)_H_$(4))/$(CFG_RUNTIME_$(4)) \
-	| $$(HLIB$(2)_H_$(4))/
+$$(HLIB$(2)_H_$(4))/$(CFG_CORELIB_$(4)):			\
+		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_CORELIB_$(4))	\
+		$$(HLIB$(2)_H_$(4))/$(CFG_RUNTIME_$(4))		\
+		| $$(HLIB$(2)_H_$(4))/
+
 	@$$(call E, cp: $$@)
 	$$(Q)cp $$< $$@
 # Subtle: We do not let the shell expand $(CORELIB_DSYM_GLOB) directly rather
@@ -86,44 +89,49 @@ $$(HLIB$(2)_H_$(4))/$(CFG_CORELIB_$(4)): \
 		$$(wildcard $$(TLIB$(1)_T_$(4)_H_$(3))/$(CORELIB_DSYM_GLOB_$(4))) \
 	        $$(HLIB$(2)_H_$(4))
 
-$$(HLIB$(2)_H_$(4))/$(CFG_STDLIB_$(4)): \
-	$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_STDLIB_$(4)) \
-	$$(HLIB$(2)_H_$(4))/$(CFG_CORELIB_$(4)) \
-	$$(HLIB$(2)_H_$(4))/$(CFG_RUNTIME_$(4)) \
-	| $$(HLIB$(2)_H_$(4))/
+$$(HLIB$(2)_H_$(4))/$(CFG_STDLIB_$(4)):				\
+		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_STDLIB_$(4))	\
+		$$(HLIB$(2)_H_$(4))/$(CFG_CORELIB_$(4))		\
+		$$(HLIB$(2)_H_$(4))/$(CFG_RUNTIME_$(4))		\
+		| $$(HLIB$(2)_H_$(4))/
+
 	@$$(call E, cp: $$@)
 	$$(Q)cp $$< $$@
 	$$(Q)cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(STDLIB_GLOB_$(4)) \
 		$$(wildcard $$(TLIB$(1)_T_$(4)_H_$(3))/$(STDLIB_DSYM_GLOB_$(4))) \
 	        $$(HLIB$(2)_H_$(4))
 
-$$(HLIB$(2)_H_$(4))/libcore.rlib: \
-	$$(TLIB$(1)_T_$(4)_H_$(3))/libcore.rlib \
-	$$(HLIB$(2)_H_$(4))/$$(CFG_RUNTIME_$(4)) \
-	| $$(HLIB$(2)_H_$(4))/
+$$(HLIB$(2)_H_$(4))/libcore.rlib:				\
+		$$(TLIB$(1)_T_$(4)_H_$(3))/libcore.rlib		\
+		$$(HLIB$(2)_H_$(4))/$$(CFG_RUNTIME_$(4))	\
+		| $$(HLIB$(2)_H_$(4))/
+
 	@$$(call E, cp: $$@)
 	$$(Q)cp $$< $$@
 
-$$(HLIB$(2)_H_$(4))/libstd.rlib: \
-	$$(TLIB$(1)_T_$(4)_H_$(3))/libstd.rlib \
-	$$(HLIB$(2)_H_$(4))/libcore.rlib \
-	$$(HLIB$(2)_H_$(4))/$$(CFG_RUNTIME_$(4)) \
-	| $$(HLIB$(2)_H_$(4))/
+$$(HLIB$(2)_H_$(4))/libstd.rlib:				\
+		$$(TLIB$(1)_T_$(4)_H_$(3))/libstd.rlib		\
+		$$(HLIB$(2)_H_$(4))/libcore.rlib		\
+		$$(HLIB$(2)_H_$(4))/$$(CFG_RUNTIME_$(4))	\
+		| $$(HLIB$(2)_H_$(4))/
+
 	@$$(call E, cp: $$@)
 	$$(Q)cp $$< $$@
 
-$$(HLIB$(2)_H_$(4))/librustc.rlib: \
-	$$(TLIB$(1)_T_$(4)_H_$(3))/librustc.rlib \
-	$$(HLIB$(2)_H_$(4))/libcore.rlib \
-	$$(HLIB$(2)_H_$(4))/libstd.rlib \
-	$$(HLIB$(2)_H_$(4))/$$(CFG_RUNTIME_$(4)) \
-	| $$(HLIB$(2)_H_$(4))/
+$$(HLIB$(2)_H_$(4))/librustc.rlib:				\
+		$$(TLIB$(1)_T_$(4)_H_$(3))/librustc.rlib	\
+		$$(HLIB$(2)_H_$(4))/libcore.rlib		\
+		$$(HLIB$(2)_H_$(4))/libstd.rlib			\
+		$$(HLIB$(2)_H_$(4))/$$(CFG_RUNTIME_$(4))	\
+		| $$(HLIB$(2)_H_$(4))/
+
 	@$$(call E, cp: $$@)
 	$$(Q)cp $$< $$@
 
-$$(HLIB$(2)_H_$(4))/$(CFG_RUSTLLVM_$(4)): \
-	$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_RUSTLLVM_$(4)) \
-	| $$(HLIB$(2)_H_$(4))/
+$$(HLIB$(2)_H_$(4))/$(CFG_RUSTLLVM_$(4)):			\
+		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_RUSTLLVM_$(4))	\
+		| $$(HLIB$(2)_H_$(4))/
+
 	@$$(call E, cp: $$@)
 	$$(Q)cp $$< $$@
 
@@ -135,7 +143,7 @@ $$(HLIB$(2)_H_$(4))/:
 
 endef
 
-$(foreach t,$(CFG_HOST_TRIPLES),					\
-	$(eval $(call CP_HOST_STAGE_N,0,1,$(t),$(t)))	\
-	$(eval $(call CP_HOST_STAGE_N,1,2,$(t),$(t)))	\
+$(foreach t,$(CFG_HOST_TRIPLES),				\
+	$(eval $(call CP_HOST_STAGE_N,0,1,$(t),$(t)))		\
+	$(eval $(call CP_HOST_STAGE_N,1,2,$(t),$(t)))		\
 	$(eval $(call CP_HOST_STAGE_N,2,3,$(t),$(t))))
