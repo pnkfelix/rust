@@ -19,6 +19,7 @@
 use middle::resolve;
 use middle::ty;
 use middle::typeck;
+use util::common::ice;
 
 use core::hashmap::HashSet;
 use syntax::ast;
@@ -136,7 +137,7 @@ fn traverse_public_item(cx: &ctx, item: @item) {
       }
       item_const(*) |
       item_enum(*) | item_trait(*) => (),
-      item_mac(*) => fail!(~"item macros unimplemented")
+      item_mac(*) => ice::cond.raise(~"item macros unimplemented")
     }
 }
 

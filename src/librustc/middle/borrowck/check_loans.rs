@@ -28,6 +28,7 @@ use middle::mem_categorization::{cat_local, cat_rvalue, cat_self};
 use middle::mem_categorization::{cat_special, cmt, gc_ptr, loan_path, lp_arg};
 use middle::mem_categorization::{lp_comp, lp_deref, lp_local};
 use middle::ty;
+use util::common::ice;
 use util::ppaux::ty_to_str;
 
 use core::hashmap::HashSet;
@@ -487,7 +488,7 @@ pub impl CheckLoanCtxt {
     fn report_purity_error(&mut self, pc: Either<purity_cause, impurity_cause>,
                            sp: span, msg: ~str) {
         match pc {
-          Right(pc_default) => { fail!(~"pc_default should be filtered sooner") }
+          Right(pc_default) => { ice::cond.raise(~"pc_default should be filtered sooner") }
           Right(pc_unsafe) => {
             // this error was prevented by being marked as unsafe, so flag the
             // definition as having contributed to the validity of the program
@@ -601,7 +602,7 @@ pub impl CheckLoanCtxt {
             Right(pc_unsafe) => {
                 match do with(&mut self.declared_purity.purity,
                               ast::impure_fn) { self.purity(expr.id) } {
-                    Right(pc_unsafe) => fail!(~"unsafe can't trump twice"),
+                    Right(pc_unsafe) => ice::cond.raise(~"unsafe can't trump twice"),
                     Right(pc_default) => return,
                     Left(_) => ()
                 }

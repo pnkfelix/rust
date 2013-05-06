@@ -13,10 +13,16 @@
 
 use middle::resolve;
 use middle::ty;
+use util::common::ice;
 
 use core::hashmap::HashMap;
 use syntax::codemap::span;
 use syntax::{ast, ast_util, visit};
+
+macro_rules! ice_fail(
+        () => ( ice_fail!(~"explicit failure") );
+        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
+)
 
 // A vector of defs representing the free variables referred to in a function.
 // (The def_upvar will already have been stripped).
@@ -48,7 +54,7 @@ fn collect_freevars(def_map: resolve::DefMap, blk: &ast::blk)
               ast::expr_path(*) => {
                   let mut i = 0;
                   match def_map.find(&expr.id) {
-                    None => fail!(~"path not found"),
+                    None => ice_fail!(~"path not found"),
                     Some(&df) => {
                       let mut def = df;
                       while i < depth {
@@ -111,7 +117,7 @@ pub fn annotate_freevars(def_map: resolve::DefMap, crate: @ast::crate) ->
 
 pub fn get_freevars(tcx: ty::ctxt, fid: ast::node_id) -> freevar_info {
     match tcx.freevars.find(&fid) {
-      None => fail!(~"get_freevars: "+int::to_str(fid)+~" has no freevars"),
+      None => ice_fail!(~"get_freevars: "+int::to_str(fid)+~" has no freevars"),
       Some(&d) => return d
     }
 }

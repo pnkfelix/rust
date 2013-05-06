@@ -41,7 +41,7 @@ use middle::typeck::infer;
 use middle::typeck::rscope::*;
 use middle::typeck::rscope;
 use middle::typeck::{CrateCtxt, lookup_def_tcx, no_params, write_ty_to_tcx};
-use util::common::{indenter, pluralize};
+use util::common::{ice,indenter, pluralize};
 use util::ppaux;
 
 use syntax::abi::AbiSet;
@@ -55,6 +55,11 @@ use syntax::print::pprust::{path_to_str, self_ty_to_str};
 use syntax::visit;
 use syntax::opt_vec::OptVec;
 use syntax::opt_vec;
+
+macro_rules! ice_fail(
+        () => ( ice_fail!(~"explicit failure") );
+        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
+)
 
 pub fn collect_item_types(ccx: @mut CrateCtxt, crate: @ast::crate) {
 
@@ -1098,8 +1103,8 @@ pub fn ty_of_item(ccx: &CrateCtxt, it: @ast::item)
           return tpt;
       }
       ast::item_impl(*) | ast::item_mod(_) |
-      ast::item_foreign_mod(_) => fail!(),
-      ast::item_mac(*) => fail!(~"item macros unimplemented")
+      ast::item_foreign_mod(_) => ice_fail!(~"item does not have type"),
+      ast::item_mac(*) => ice_fail!(~"item macros unimplemented")
     }
 }
 

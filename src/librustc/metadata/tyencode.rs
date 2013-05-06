@@ -12,6 +12,7 @@
 
 use middle::ty::param_ty;
 use middle::ty;
+use util::common::ice;
 
 use core::hashmap::HashMap;
 use core::io::WriterUtil;
@@ -331,7 +332,7 @@ fn enc_sty(w: @io::Writer, cx: @ctxt, st: ty::sty) {
           debug!("~~~~ %s", ~"]");
           w.write_char(']');
       }
-      ty::ty_err => fail!(~"Shouldn't encode error type")
+      ty::ty_err => ice::cond.raise(~"Shouldn't encode error type")
     }
 }
 

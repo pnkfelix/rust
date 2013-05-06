@@ -11,6 +11,7 @@
 use driver::session;
 use metadata::cstore;
 use metadata::filesearch;
+use util::common::ice;
 
 use core::util;
 use core::hashmap::HashSet;
@@ -173,7 +174,7 @@ pub fn get_install_prefix_rpath(target_triple: &str) -> Path {
     let install_prefix = env!("CFG_PREFIX");
 
     if install_prefix == ~"" {
-        fail!(~"rustc compiled without CFG_PREFIX environment variable");
+        ice::cond.raise(~"rustc compiled without CFG_PREFIX environment variable");
     }
 
     let tlib = filesearch::relative_target_lib_path(target_triple);

@@ -100,7 +100,7 @@ pub impl Env {
         return match search_mod(self, &self.crate.node.module, 0, names) {
             Some(id) => id,
             None => {
-                fail!(fmt!("No item found: `%s`", str::connect(names, "::")));
+                ice.raise(fmt!("No item found: `%s`", str::connect(names, "::")));
             }
         };
 
@@ -153,7 +153,7 @@ pub impl Env {
 
     fn assert_subtype(&self, a: ty::t, b: ty::t) {
         if !self.is_subtype(a, b) {
-            fail!(fmt!("%s is not a subtype of %s, but it should be",
+            ice.raise(fmt!("%s is not a subtype of %s, but it should be",
                       self.ty_to_str(a),
                       self.ty_to_str(b)));
         }
@@ -161,7 +161,7 @@ pub impl Env {
 
     fn assert_not_subtype(&self, a: ty::t, b: ty::t) {
         if self.is_subtype(a, b) {
-            fail!(fmt!("%s is a subtype of %s, but it shouldn't be",
+            ice.raise(fmt!("%s is a subtype of %s, but it shouldn't be",
                       self.ty_to_str(a),
                       self.ty_to_str(b)));
         }
@@ -240,7 +240,7 @@ pub impl Env {
     fn check_lub(&self, t1: ty::t, t2: ty::t, t_lub: ty::t) {
         match self.lub().tys(t1, t2) {
             Err(e) => {
-                fail!(fmt!("Unexpected error computing LUB: %?", e))
+                ice.raise(fmt!("Unexpected error computing LUB: %?", e))
             }
             Ok(t) => {
                 self.assert_eq(t, t_lub);
@@ -262,7 +262,7 @@ pub impl Env {
                self.ty_to_str(t_glb));
         match self.glb().tys(t1, t2) {
             Err(e) => {
-                fail!(fmt!("Unexpected error computing LUB: %?", e))
+                ice.raise(fmt!("Unexpected error computing LUB: %?", e))
             }
             Ok(t) => {
                 self.assert_eq(t, t_glb);
@@ -281,7 +281,7 @@ pub impl Env {
         match self.lub().tys(t1, t2) {
             Err(_) => {}
             Ok(t) => {
-                fail!(fmt!("Unexpected success computing LUB: %?",
+                ice.raise(fmt!("Unexpected success computing LUB: %?",
                           self.ty_to_str(t)))
             }
         }
@@ -292,7 +292,7 @@ pub impl Env {
         match self.glb().tys(t1, t2) {
             Err(_) => {}
             Ok(t) => {
-                fail!(fmt!("Unexpected success computing GLB: %?",
+                ice.raise(fmt!("Unexpected success computing GLB: %?",
                           self.ty_to_str(t)))
             }
         }

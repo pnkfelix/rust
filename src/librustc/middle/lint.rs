@@ -12,6 +12,7 @@ use driver::session::Session;
 use driver::session;
 use middle::ty;
 use middle::pat_util;
+use util::common::ice;
 use util::ppaux::{ty_to_str};
 
 use core::hashmap::HashMap;
@@ -20,6 +21,11 @@ use syntax::attr;
 use syntax::codemap::span;
 use syntax::codemap;
 use syntax::{ast, visit};
+
+macro_rules! ice_fail(
+        () => ( ice_fail!(~"explicit failure") );
+        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
+)
 
 /**
  * A 'lint' check is a kind of miscellaneous constraint that a user _might_
@@ -508,7 +514,7 @@ fn check_item_type_limits(cx: ty::ctxt, it: @ast::item) {
             ast::gt => v >= min,
             ast::ge => v > min,
             ast::eq | ast::ne => v >= min && v <= max,
-            _ => fail!()
+            _ => ice_fail!()
         }
     }
 
@@ -567,7 +573,7 @@ fn check_item_type_limits(cx: ty::ctxt, it: @ast::item) {
                         ast::lit_int_unsuffixed(v) => v,
                         _ => return true
                     },
-                    _ => fail!()
+                    _ => ice_fail!()
                 };
                 is_valid(norm_binop, lit_val, min, max)
             }
@@ -580,7 +586,7 @@ fn check_item_type_limits(cx: ty::ctxt, it: @ast::item) {
                         ast::lit_int_unsuffixed(v) => v as u64,
                         _ => return true
                     },
-                    _ => fail!()
+                    _ => ice_fail!()
                 };
                 is_valid(norm_binop, lit_val, min, max)
             }

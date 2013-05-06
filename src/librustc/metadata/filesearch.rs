@@ -12,6 +12,13 @@
 // FIXME (#2658): I'm not happy how this module turned out. Should
 // probably just be folded into cstore.
 
+use util::common::ice;
+
+macro_rules! ice_fail(
+        () => ( ice_fail!(~"explicit failure") );
+        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
+)
+
 pub type pick<'self, T> = &'self fn(path: &Path) -> Option<T>;
 
 pub fn pick_file(file: Path, path: &Path) -> Option<Path> {
@@ -111,7 +118,7 @@ fn make_target_lib_path(sysroot: &Path,
 fn get_or_default_sysroot() -> Path {
     match os::self_exe_path() {
       option::Some(ref p) => (*p).pop(),
-      option::None => fail!(~"can't determine value for sysroot")
+      option::None => ice_fail!(~"can't determine value for sysroot")
     }
 }
 
@@ -179,7 +186,7 @@ fn get_rustpkg_lib_path_nearest() -> Result<Path, ~str> {
 pub fn libdir() -> ~str {
    let libdir = env!("CFG_LIBDIR");
    if str::is_empty(libdir) {
-      fail!(~"rustc compiled without CFG_LIBDIR environment variable");
+      ice_fail!(~"rustc compiled without CFG_LIBDIR environment variable");
    }
    libdir
 }

@@ -51,11 +51,17 @@ use syntax::visit::{default_simple_visitor, default_visitor};
 use syntax::visit::{mk_simple_visitor, mk_vt, visit_crate, visit_item};
 use syntax::visit::{Visitor, SimpleVisitor};
 use syntax::visit::{visit_mod};
+use util::common::ice;
 use util::ppaux::ty_to_str;
 
 use core::result::Ok;
 use core::hashmap::{HashMap, HashSet};
 use core::uint;
+
+macro_rules! ice_fail(
+        () => ( ice_fail!(~"explicit failure") );
+        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
+)
 
 pub struct UniversalQuantificationResult {
     monotype: t,
@@ -142,7 +148,7 @@ pub fn get_base_type_def_id(inference_context: @mut InferCtxt,
                     return Some(def_id);
                 }
                 _ => {
-                    fail!(~"get_base_type() returned a type that wasn't an \
+                    ice_fail!(~"get_base_type() returned a type that wasn't an \
                            enum, class, or trait");
                 }
             }

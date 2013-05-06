@@ -39,12 +39,18 @@ use middle::trans::monomorphize;
 use middle::trans::type_of;
 use middle::ty;
 use middle::typeck;
+use util::common::ice;
 use util::common::indenter;
 use util::ppaux::Repr;
 
 use syntax::ast;
 use syntax::ast_map;
 use syntax::visit;
+
+macro_rules! ice_fail(
+        () => ( ice_fail!(~"explicit failure") );
+        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
+)
 
 // Represents a (possibly monomorphized) top-level fn item or method
 // item.  Note that this is just the fn-ptr and is not a Rust closure
@@ -425,7 +431,7 @@ pub fn trans_lang_call_with_type_params(bcx: block,
                                                       substituted);
                     new_llval = PointerCast(callee.bcx, fn_data.llfn, llfnty);
                 }
-                _ => fail!()
+                _ => ice_fail!(~"unmatched callee data")
             }
             Callee { bcx: callee.bcx, data: Fn(FnData { llfn: new_llval }) }
         },

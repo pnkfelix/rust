@@ -14,6 +14,7 @@ use middle::liveness;
 use middle::pat_util;
 use middle::ty;
 use middle::typeck;
+use util::common::ice;
 use util::ppaux::{Repr, ty_to_str};
 
 use syntax::ast::*;
@@ -280,7 +281,7 @@ pub fn check_expr(e: @expr, cx: Context, v: visit::vt<Context>) {
         };
         if ts.len() != type_param_defs.len() {
             // Fail earlier to make debugging easier
-            fail!(fmt!("internal error: in kind::check_expr, length \
+            ice::cond.raise(fmt!("internal error: in kind::check_expr, length \
                        mismatch between actual and declared bounds: actual = \
                         %s, declared = %s",
                        ts.repr(cx.tcx),

@@ -91,7 +91,7 @@ use middle::typeck::infer;
 use middle::typeck::{method_map_entry, method_origin, method_param};
 use middle::typeck::{method_self, method_static, method_trait, method_super};
 use middle::typeck::check::regionmanip::replace_bound_regions_in_fn_sig;
-use util::common::indenter;
+use util::common::{ice,indenter};
 
 use core::hashmap::HashSet;
 use std::list::Nil;
@@ -100,6 +100,11 @@ use syntax::ast::{sty_uniq, sty_static, node_id};
 use syntax::ast::{m_const, m_mutbl, m_imm};
 use syntax::ast;
 use syntax::ast_map;
+
+macro_rules! ice_fail(
+        () => ( ice_fail!(~"explicit failure") );
+        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
+)
 
 #[deriving(Eq)]
 pub enum CheckTraitsFlag {
@@ -1241,7 +1246,7 @@ pub impl<'self> LookupContext<'self> {
         let span = if did.crate == ast::local_crate {
             match self.tcx().items.find(&did.node) {
               Some(&ast_map::node_method(m, _, _)) => m.span,
-              _ => fail!(fmt!("report_static_candidate: bad item %?", did))
+              _ => ice_fail!(fmt!("report_static_candidate: bad item %?", did))
             }
         } else {
             self.expr.span

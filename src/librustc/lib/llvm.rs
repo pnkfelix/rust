@@ -10,6 +10,12 @@
 
 use core::hashmap::HashMap;
 use core::libc::c_uint;
+use util::common::ice;
+
+macro_rules! ice_fail(
+        () => ( ice_fail!(~"explicit failure") );
+        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
+)
 
 pub type Opcode = u32;
 pub type Bool = c_uint;
@@ -2012,7 +2018,7 @@ pub fn type_to_str_inner(names: @TypeNames, outer0: &[TypeRef], ty: TypeRef)
           Vector => return @"Vector",
           Metadata => return @"Metadata",
           X86_MMX => return @"X86_MMAX",
-          _ => fail!()
+          _ => ice_fail!(~"unmatched LLVMTypeKind")
         }
     }
 }
@@ -2024,7 +2030,7 @@ pub fn float_width(llt: TypeRef) -> uint {
               2 => 64u,
               3 => 80u,
               4 | 5 => 128u,
-              _ => fail!(~"llvm_float_width called on a non-float type")
+              _ => ice_fail!(~"llvm_float_width called on a non-float type")
             };
     }
 }

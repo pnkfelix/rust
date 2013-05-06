@@ -20,6 +20,7 @@ use middle::lang_items::LanguageItems;
 use middle::lint::{allow, level, unused_imports};
 use middle::lint::{get_lint_level, get_lint_settings_level};
 use middle::pat_util::pat_bindings;
+use util::common::ice;
 
 use syntax::ast::{RegionTyParamBound, TraitTyParamBound, _mod, add, arm};
 use syntax::ast::{binding_mode, bitand, bitor, bitxor, blk};
@@ -76,6 +77,11 @@ use core::option::Some;
 use core::str::each_split_str;
 use core::hashmap::{HashMap, HashSet};
 use core::util;
+
+macro_rules! ice_fail(
+        () => ( ice_fail!(~"explicit failure") );
+        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
+)
 
 // Definition mapping
 pub type DefMap = @mut HashMap<node_id,def>;
@@ -320,7 +326,7 @@ pub fn namespace_for_duplicate_checking_mode(mode: DuplicateCheckingMode)
         ForbidDuplicateModules | ForbidDuplicateTypes |
         ForbidDuplicateTypesAndValues => TypeNS,
         ForbidDuplicateValues => ValueNS,
-        OverwriteDuplicates => fail!(~"OverwriteDuplicates has no namespace")
+        OverwriteDuplicates => ice_fail!(~"OverwriteDuplicates has no namespace")
     }
 }
 
@@ -604,7 +610,7 @@ pub impl NameBindings {
     fn get_module(@mut self) -> @mut Module {
         match self.get_module_if_available() {
             None => {
-                fail!(~"get_module called on a node with no module \
+                ice_fail!(~"get_module called on a node with no module \
                        definition!")
             }
             Some(module_def) => module_def
@@ -1350,7 +1356,7 @@ pub impl Resolver {
             }
 
             item_mac(*) => {
-                fail!(~"item macros unimplemented")
+                ice_fail!(~"item macros unimplemented")
             }
         }
     }
@@ -1591,7 +1597,7 @@ pub impl Resolver {
                     match existing_module.parent_link {
                       NoParentLink |
                       BlockParentLink(*) => {
-                        fail!(~"can't happen");
+                        ice_fail!(~"can't happen");
                       }
                       ModuleParentLink(parent_module, ident) => {
                         let name_bindings = parent_module.children.get(
@@ -1661,7 +1667,7 @@ pub impl Resolver {
           def_prim_ty(*) | def_ty_param(*) | def_binding(*) |
           def_use(*) | def_upvar(*) | def_region(*) |
           def_typaram_binder(*) | def_label(*) | def_self_ty(*) => {
-            fail!(fmt!("didn't expect `%?`", def));
+            ice_fail!(fmt!("didn't expect `%?`", def));
           }
         }
     }
@@ -2284,7 +2290,7 @@ pub impl Resolver {
             }
             UnboundResult => { /* Continue. */ }
             UnknownResult => {
-                fail!(~"value result should be known at this point");
+                ice_fail!(~"value result should be known at this point");
             }
         }
         match type_result {
@@ -2294,7 +2300,7 @@ pub impl Resolver {
             }
             UnboundResult => { /* Continue. */ }
             UnknownResult => {
-                fail!(~"type result should be known at this point");
+                ice_fail!(~"type result should be known at this point");
             }
         }
 
@@ -3597,7 +3603,7 @@ pub impl Resolver {
             }
 
           item_mac(*) => {
-            fail!(~"item macros unimplemented")
+            ice_fail!(~"item macros unimplemented")
           }
         }
 
@@ -4336,7 +4342,7 @@ pub impl Resolver {
             Success(target) => {
                 match target.bindings.value_def {
                     None => {
-                        fail!(~"resolved name in the value namespace to a \
+                        ice_fail!(~"resolved name in the value namespace to a \
                               set of name bindings with no def?!");
                     }
                     Some(def) => {
@@ -4356,7 +4362,7 @@ pub impl Resolver {
             }
 
             Indeterminate => {
-                fail!(~"unexpected indeterminate result");
+                ice_fail!(~"unexpected indeterminate result");
             }
 
             Failed => {
@@ -4527,7 +4533,7 @@ pub impl Resolver {
             }
 
             Indeterminate => {
-                fail!(~"indeterminate unexpected");
+                ice_fail!(~"indeterminate unexpected");
             }
 
             Success(resulting_module) => {
@@ -4576,7 +4582,7 @@ pub impl Resolver {
             }
 
             Indeterminate => {
-                fail!(~"indeterminate unexpected");
+                ice_fail!(~"indeterminate unexpected");
             }
 
             Success(resulting_module) => {
@@ -4657,7 +4663,7 @@ pub impl Resolver {
                 }
             }
             Indeterminate => {
-                fail!(~"unexpected indeterminate result");
+                ice_fail!(~"unexpected indeterminate result");
             }
             Failed => {
                 return None;

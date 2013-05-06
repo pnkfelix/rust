@@ -12,11 +12,17 @@ use metadata::csearch;
 use middle::astencode;
 use middle::ty;
 use middle;
+use util::common::ice;
 
 use syntax::{ast, ast_map, ast_util, visit};
 use syntax::ast::*;
 
 use core::hashmap::{HashMap, HashSet};
+
+macro_rules! ice_fail(
+        () => ( ice_fail!(~"explicit failure") );
+        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
+)
 
 //
 // This pass classifies expressions by their constant-ness.
@@ -244,7 +250,7 @@ pub enum const_val {
 pub fn eval_const_expr(tcx: middle::ty::ctxt, e: @expr) -> const_val {
     match eval_const_expr_partial(tcx, e) {
         Ok(ref r) => (/*bad*/copy *r),
-        Err(ref s) => fail!(/*bad*/copy *s)
+        Err(ref s) => ice_fail!(/*bad*/copy *s)
     }
 }
 
@@ -469,7 +475,7 @@ pub fn compare_const_vals(a: &const_val, b: &const_val) -> int {
             1
         }
     }
-    _ => fail!(~"compare_const_vals: ill-typed comparison")
+    _ => ice_fail!(~"compare_const_vals: ill-typed comparison")
   }
 }
 

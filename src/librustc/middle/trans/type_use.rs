@@ -32,6 +32,7 @@ use middle::trans::common::*;
 use middle::trans::inline;
 use middle::ty;
 use middle::typeck;
+use util::common::ice;
 
 use core::option::{Some, None};
 use core::uint;
@@ -43,6 +44,11 @@ use syntax::ast::*;
 use syntax::ast_map;
 use syntax::ast_util;
 use syntax::visit;
+
+macro_rules! ice_fail(
+        () => ( ice_fail!(~"explicit failure") );
+        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
+)
 
 pub type type_uses = uint; // Bitmask
 pub static use_repr: uint = 1;   /* Dependency on size/alignment/mode and
@@ -152,7 +158,7 @@ pub fn type_uses_for(ccx: @CrateContext, fn_id: def_id, n_tps: uint)
                 ~"bswap16" | ~"bswap32" | ~"bswap64" => 0,
 
                 // would be cool to make these an enum instead of strings!
-                _ => fail!(~"unknown intrinsic in type_use")
+                _ => ice_fail!(~"unknown intrinsic in type_use")
             };
             for uint::range(0u, n_tps) |n| { cx.uses[n] |= flags;}
         }

@@ -9,6 +9,7 @@
 // except according to those terms.
 
 use middle::ty;
+use util::common::ice;
 
 use syntax::ast;
 use syntax::codemap::span;
@@ -227,7 +228,7 @@ impl region_scope for type_rscope {
             None => {
                 // if the self region is used, region parameterization should
                 // have inferred that this type is RP
-                fail!(~"region parameterization should have inferred that \
+                ice::cond.raise(~"region parameterization should have inferred that \
                         this type is RP");
             }
             Some(ref region_parameterization) => {

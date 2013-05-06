@@ -19,7 +19,7 @@ use metadata::{creader, cstore, filesearch};
 use metadata;
 use middle::{trans, freevars, kind, ty, typeck, lint, astencode};
 use middle;
-use util::common::time;
+use util::common::{ice,time};
 use util::ppaux;
 
 use core::int;
@@ -38,6 +38,11 @@ use syntax::diagnostic;
 use syntax::parse;
 use syntax::print::{pp, pprust};
 use syntax;
+
+macro_rules! ice_fail(
+        () => ( ice_fail!(~"explicit failure") );
+        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
+)
 
 pub enum pp_mode {
     ppm_normal,
@@ -524,7 +529,7 @@ pub fn host_triple() -> ~str {
     return if ht != ~"" {
             ht
         } else {
-            fail!(~"rustc built without CFG_BUILD_TRIPLE")
+            ice_fail!(~"rustc built without CFG_BUILD_TRIPLE")
         };
 }
 
@@ -897,7 +902,7 @@ pub fn build_output_filenames(input: &input,
 
 pub fn early_error(emitter: diagnostic::Emitter, msg: ~str) -> ! {
     emitter(None, msg, diagnostic::fatal);
-    fail!();
+    ice_fail!(~"early_error");
 }
 
 pub fn list_metadata(sess: Session, path: &Path, out: @io::Writer) {
@@ -923,7 +928,7 @@ mod test {
         let matches =
             &match getopts(~[~"--test"], optgroups()) {
               Ok(copy m) => m,
-              Err(copy f) => fail!(~"test_switch_implies_cfg_test: " +
+              Err(copy f) => ice_fail!(~"test_switch_implies_cfg_test: " +
                              getopts::fail_str(f))
             };
         let sessopts = build_session_options(
@@ -941,7 +946,7 @@ mod test {
             &match getopts(~[~"--test", ~"--cfg=test"], optgroups()) {
               Ok(copy m) => m,
               Err(copy f) => {
-                fail!(~"test_switch_implies_cfg_test_unless_cfg_test: " +
+                ice_fail!(~"test_switch_implies_cfg_test_unless_cfg_test: " +
                     getopts::fail_str(f));
               }
             };

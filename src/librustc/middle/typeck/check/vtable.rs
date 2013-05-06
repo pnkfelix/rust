@@ -19,7 +19,7 @@ use middle::typeck::infer;
 use middle::typeck::{CrateCtxt, vtable_origin, vtable_param, vtable_res};
 use middle::typeck::vtable_static;
 use middle::subst::Subst;
-use util::common::indenter;
+use util::common::{ice,indenter};
 use util::ppaux::tys_to_str;
 use util::ppaux;
 
@@ -29,6 +29,11 @@ use syntax::ast_util;
 use syntax::codemap::span;
 use syntax::print::pprust::expr_to_str;
 use syntax::visit;
+
+macro_rules! ice_fail(
+        () => ( ice_fail!(~"explicit failure") );
+        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
+)
 
 // vtable resolution looks for places where trait bounds are
 // subsituted in and figures out which vtable is used. There is some
@@ -141,7 +146,7 @@ fn fixup_substs(vcx: &VtableContext, location_info: &LocationInfo,
     do fixup_ty(vcx, location_info, t, is_early).map |t_f| {
         match ty::get(*t_f).sty {
           ty::ty_trait(_, ref substs_f, _, _) => (/*bad*/copy *substs_f),
-          _ => fail!(~"t_f should be a trait")
+          _ => ice_fail!(~"t_f should be a trait")
         }
     }
 }

@@ -21,6 +21,7 @@ use middle::freevars::freevar_entry;
 use middle::typeck::{method_origin, method_map_entry};
 use middle::{ty, typeck, moves};
 use middle;
+use util::common::ice;
 use util::ppaux::ty_to_str;
 
 use std::ebml::reader;
@@ -41,6 +42,11 @@ use writer = std::ebml::writer;
 
 #[cfg(test)] use syntax::parse;
 #[cfg(test)] use syntax::print::pprust;
+
+macro_rules! ice_fail(
+        () => ( ice_fail!(~"explicit failure") );
+        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
+)
 
 // Auxiliary maps of things to be encoded
 pub struct Maps {
@@ -298,7 +304,7 @@ fn simplify_ast(ii: &ast::inlined_item) -> ast::inlined_item {
                                              span: _}, _) => true,
               ast::stmt_decl(@codemap::spanned { node: ast::decl_item(_),
                                              span: _}, _) => false,
-              ast::stmt_mac(*) => fail!(~"unexpanded macro in astencode")
+              ast::stmt_mac(*) => ice_fail!(~"unexpanded macro in astencode")
             }
         };
         let blk_sans_items = ast::blk_ {
@@ -695,7 +701,7 @@ impl vtable_decoder_helpers for reader::Decoder {
                     )
                   }
                   // hard to avoid - user input
-                  _ => fail!(~"bad enum variant")
+                  _ => ice_fail!(~"bad enum variant")
                 }
             }
         }

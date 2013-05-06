@@ -15,6 +15,7 @@ use lib::llvm::{ValueRef, TypeRef, BasicBlockRef, BuilderRef, ModuleRef};
 use lib;
 use middle::trans::common::*;
 use syntax::codemap::span;
+use util::common::ice;
 
 use core::hashmap::HashMap;
 use core::libc::{c_uint, c_ulonglong, c_char};
@@ -25,7 +26,7 @@ pub fn terminate(cx: block, _: &str) {
 
 pub fn check_not_terminated(cx: block) {
     if cx.terminated {
-        fail!(~"already terminated!");
+        ice::cond.raise(~"already terminated!");
     }
 }
 

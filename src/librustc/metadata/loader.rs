@@ -21,9 +21,15 @@ use syntax::diagnostic::span_handler;
 use syntax::parse::token::ident_interner;
 use syntax::print::pprust;
 use syntax::{ast, attr};
+use util::common::ice;
 
 use core::flate;
 use core::os::consts::{macos, freebsd, linux, android, win32};
+
+macro_rules! ice_fail(
+        () => ( ice_fail!(~"explicit failure") );
+        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
+)
 
 pub enum os {
     os_macos,
@@ -139,10 +145,10 @@ pub fn crate_name_from_metas(metas: &[@ast::meta_item]) -> @~str {
                 Some(n) => n,
                 // FIXME (#2406): Probably want a warning here since the user
                 // is using the wrong type of meta item.
-                _ => fail!()
+                _ => ice_fail!(~"wrong type of meta item")
             }
         }
-        None => fail!(~"expected to find the crate name")
+        None => ice_fail!(~"expected to find the crate name")
     }
 }
 

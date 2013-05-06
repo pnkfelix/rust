@@ -30,6 +30,7 @@ use middle::trans::type_of::*;
 use middle::trans::type_of;
 use middle::ty;
 use middle::ty::{FnSig, arg};
+use util::common::ice;
 use util::ppaux::ty_to_str;
 
 use syntax::codemap::span;
@@ -40,6 +41,11 @@ use syntax::parse::token::special_idents;
 use syntax::abi::{X86, X86_64, Arm, Mips};
 use syntax::abi::{RustIntrinsic, Rust, Stdcall, Fastcall,
                   Cdecl, Aapcs, C};
+
+macro_rules! ice_fail(
+        () => ( ice_fail!(~"explicit failure") );
+        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
+)
 
 fn abi_info(ccx: @CrateContext) -> @cabi::ABIInfo {
     return match ccx.sess.targ_cfg.arch {
@@ -726,7 +732,7 @@ pub fn trans_intrinsic(ccx: @CrateContext,
             if in_type_size != out_type_size {
                 let sp = match *ccx.tcx.items.get(&ref_id.get()) {
                     ast_map::node_expr(e) => e.span,
-                    _ => fail!(~"transmute has non-expr arg"),
+                    _ => ice_fail!(~"transmute has non-expr arg"),
                 };
                 let pluralize = |n| if 1u == n { "" } else { "s" };
                 ccx.sess.span_fatal(sp,

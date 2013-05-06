@@ -17,8 +17,14 @@ use middle::trans::build::*;
 use middle::trans::callee;
 use middle::trans::common::*;
 use middle::ty;
+use util::common::ice;
 
 use syntax::ast;
+
+macro_rules! ice_fail(
+        () => ( ice_fail!(~"explicit failure") );
+        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
+)
 
 // Take an inline assembly expression and splat it out via LLVM
 pub fn trans_inline_asm(bcx: block, ia: &ast::inline_asm) -> block {
@@ -47,7 +53,7 @@ pub fn trans_inline_asm(bcx: block, ia: &ast::inline_asm) -> block {
 
         let e = match out.node {
             ast::expr_addr_of(_, e) => e,
-            _ => fail!(~"Expression must be addr of")
+            _ => ice_fail!(~"Expression must be addr of")
         };
 
         let outty = ty::arg {

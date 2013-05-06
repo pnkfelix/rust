@@ -32,6 +32,7 @@ use driver::driver::{pp_mode, pretty_print_input, list_metadata};
 use driver::driver::{compile_input};
 use driver::session;
 use middle::lint;
+use util::common::ice;
 
 use std::getopts::{groups, opt_present};
 use std::getopts;
@@ -345,7 +346,7 @@ pub fn monitor(f: ~fn(diagnostic::Emitter)) {
                 }
             }
             // Fail so the process returns a failure code
-            fail!();
+            ice::cond.raise(~"rustc failure");
         }
     }
 }

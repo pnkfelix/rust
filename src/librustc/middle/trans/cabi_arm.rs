@@ -16,10 +16,16 @@ use lib::llvm::True;
 use middle::trans::cabi::{ABIInfo, FnType, LLVMType};
 use middle::trans::common::{T_i8, T_i16, T_i32, T_i64};
 use middle::trans::common::{T_array, T_ptr, T_void};
+use util::common::ice;
 
 use core::option::{Option, None, Some};
 use core::uint;
 use core::vec;
+
+macro_rules! ice_fail(
+        () => ( ice_fail!(~"explicit failure") );
+        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
+)
 
 fn align_up_to(off: uint, a: uint) -> uint {
     return (off + a - 1u) / a * a;
@@ -52,7 +58,7 @@ fn ty_align(ty: TypeRef) -> uint {
                 let elt = llvm::LLVMGetElementType(ty);
                 ty_align(elt)
             }
-            _ => fail!(~"ty_align: unhandled type")
+            _ => ice_fail!(~"ty_align: unhandled type")
         };
     }
 }
@@ -84,7 +90,7 @@ fn ty_size(ty: TypeRef) -> uint {
                 let eltsz = ty_size(elt);
                 len * eltsz
             }
-            _ => fail!(~"ty_size: unhandled type")
+            _ => ice_fail!(~"ty_size: unhandled type")
         };
     }
 }

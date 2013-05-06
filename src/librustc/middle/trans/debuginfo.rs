@@ -17,6 +17,7 @@ use middle::trans::machine;
 use middle::trans::type_of;
 use middle::trans;
 use middle::ty;
+use util::common::ice;
 use util::ppaux::ty_to_str;
 
 use core::hashmap::HashMap;
@@ -24,6 +25,11 @@ use core::libc;
 use syntax::codemap::span;
 use syntax::parse::token::ident_interner;
 use syntax::{ast, codemap, ast_util, ast_map};
+
+macro_rules! ice_fail(
+        () => ( ice_fail!(~"explicit failure") );
+        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
+)
 
 static LLVMDebugVersion: int = (9 << 16);
 
@@ -285,7 +291,7 @@ fn create_block(cx: block) -> @Metadata<BlockMetadata> {
     while cx.node_info.is_none() {
         match cx.parent {
           Some(b) => cx = b,
-          None => fail!()
+          None => ice::cond.raise(~"missing parent")
         }
     }
     let sp = cx.node_info.get().span;
@@ -837,7 +843,7 @@ pub fn create_local_var(bcx: block, local: @ast::local)
     let name = match local.node.pat.node {
       ast::pat_ident(_, pth, _) => ast_util::path_to_ident(pth),
       // FIXME this should be handled (#2533)
-      _ => fail!(~"no single variable name for local")
+      _ => ice_fail!(~"no single variable name for local")
     };
     let loc = cx.sess.codemap.lookup_char_pos(local.span.lo);
     let ty = node_id_type(bcx, local.node.id);

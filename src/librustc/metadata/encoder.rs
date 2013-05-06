@@ -18,6 +18,7 @@ use middle::trans::reachable;
 use middle::ty::node_id_to_type;
 use middle::ty;
 use middle;
+use util::common::ice;
 use util::ppaux::ty_to_str;
 
 use core::flate;
@@ -38,6 +39,11 @@ use syntax::opt_vec::OptVec;
 use syntax::opt_vec;
 use syntax;
 use writer = std::ebml::writer;
+
+macro_rules! ice_fail(
+        () => ( ice_fail!(~"explicit failure") );
+        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
+)
 
 // used by astencode:
 type abbrev_map = @mut HashMap<ty::t, tyencode::ty_abbrev>;
@@ -669,7 +675,7 @@ fn purity_static_method_family(p: purity) -> char {
       unsafe_fn => 'U',
       pure_fn => 'P',
       impure_fn => 'F',
-      _ => fail!(~"extern fn can't be static")
+      _ => ice_fail!(~"extern fn can't be static")
     }
 }
 
@@ -981,7 +987,7 @@ fn encode_info_for_item(ecx: @EncodeContext,
             ebml_w.end_tag();
         }
       }
-      item_mac(*) => fail!(~"item macros unimplemented")
+      item_mac(*) => ice_fail!(~"item macros unimplemented")
     }
 }
 
@@ -1040,7 +1046,7 @@ fn encode_info_for_items(ecx: @EncodeContext,
                         let mut ebml_w = copy ebml_w;
                         encode_info_for_item(ecx, &mut ebml_w, i, index, *pt);
                     }
-                    _ => fail!(~"bad item")
+                    _ => ice_fail!(~"bad item")
                 }
             }
         },
@@ -1059,7 +1065,7 @@ fn encode_info_for_items(ecx: @EncodeContext,
                                                      abi);
                     }
                     // case for separate item and foreign-item tables
-                    _ => fail!(~"bad foreign item")
+                    _ => ice_fail!(~"bad foreign item")
                 }
             }
         },

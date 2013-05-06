@@ -18,12 +18,18 @@ use lib::llvm::struct_tys;
 use lib::llvm::True;
 use middle::trans::common::*;
 use middle::trans::cabi::*;
+use util::common::ice;
 
 use core::libc::c_uint;
 use core::option;
 use core::option::Option;
 use core::uint;
 use core::vec;
+
+macro_rules! ice_fail(
+        () => ( ice_fail!(~"explicit failure") );
+        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
+)
 
 #[deriving(Eq)]
 enum x86_64_reg_class {
@@ -89,7 +95,7 @@ fn classify_ty(ty: TypeRef) -> ~[x86_64_reg_class] {
                     let elt = llvm::LLVMGetElementType(ty);
                     ty_align(elt)
                 }
-                _ => fail!(~"ty_size: unhandled type")
+                _ => ice_fail!(~"ty_size: unhandled type")
             };
         }
     }
@@ -121,7 +127,7 @@ fn classify_ty(ty: TypeRef) -> ~[x86_64_reg_class] {
                   let eltsz = ty_size(elt);
                   len * eltsz
                 }
-                _ => fail!(~"ty_size: unhandled type")
+                _ => ice_fail!(~"ty_size: unhandled type")
             };
         }
     }
@@ -214,7 +220,7 @@ fn classify_ty(ty: TypeRef) -> ~[x86_64_reg_class] {
                         i += 1u;
                     }
                 }
-                _ => fail!(~"classify: unhandled type")
+                _ => ice_fail!(~"classify: unhandled type")
             }
         }
     }
@@ -315,7 +321,7 @@ fn llreg_ty(cls: &[x86_64_reg_class]) -> TypeRef {
                 sse_ds_class => {
                     tys.push(T_f64());
                 }
-                _ => fail!(~"llregtype: unhandled class")
+                _ => ice_fail!(~"llregtype: unhandled class")
             }
             i += 1u;
         }
