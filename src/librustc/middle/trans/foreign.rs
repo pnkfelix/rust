@@ -30,7 +30,7 @@ use middle::trans::type_of::*;
 use middle::trans::type_of;
 use middle::ty;
 use middle::ty::{FnSig, arg};
-use util::common::ice;
+use util::ice::ice;
 use util::ppaux::ty_to_str;
 
 use syntax::codemap::span;
@@ -41,11 +41,6 @@ use syntax::parse::token::special_idents;
 use syntax::abi::{X86, X86_64, Arm, Mips};
 use syntax::abi::{RustIntrinsic, Rust, Stdcall, Fastcall,
                   Cdecl, Aapcs, C};
-
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
 
 fn abi_info(ccx: @CrateContext) -> @cabi::ABIInfo {
     return match ccx.sess.targ_cfg.arch {

@@ -56,11 +56,6 @@ use syntax::visit;
 use syntax::opt_vec::OptVec;
 use syntax::opt_vec;
 
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
-
 pub fn collect_item_types(ccx: @mut CrateCtxt, crate: @ast::crate) {
 
     // FIXME (#2592): hooking into the "intrinsic" root module is crude.

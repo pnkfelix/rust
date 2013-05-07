@@ -24,11 +24,6 @@ use syntax::ast_util::{unguarded_pat, walk_pat};
 use syntax::codemap::{span, dummy_sp, spanned};
 use syntax::visit;
 
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
-
 pub struct MatchCheckCtxt {
     tcx: ty::ctxt,
     method_map: method_map,

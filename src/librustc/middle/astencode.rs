@@ -21,7 +21,7 @@ use middle::freevars::freevar_entry;
 use middle::typeck::{method_origin, method_map_entry};
 use middle::{ty, typeck, moves};
 use middle;
-use util::common::ice;
+use util::ice::ice;
 use util::ppaux::ty_to_str;
 
 use std::ebml::reader;
@@ -42,11 +42,6 @@ use writer = std::ebml::writer;
 
 #[cfg(test)] use syntax::parse;
 #[cfg(test)] use syntax::print::pprust;
-
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
 
 // Auxiliary maps of things to be encoded
 pub struct Maps {

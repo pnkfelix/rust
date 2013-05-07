@@ -20,7 +20,7 @@ use metadata::tydecode::{parse_ty_data, parse_def_id,
                          parse_type_param_def_data,
                          parse_bare_fn_ty_data, parse_trait_ref_data};
 use middle::{ty, resolve};
-use util::common::ice;
+use util::ice::ice;
 
 use core::hash::HashUtil;
 use core::int;
@@ -39,11 +39,6 @@ use syntax::parse::token::{StringRef, ident_interner, special_idents};
 use syntax::print::pprust;
 use syntax::{ast, ast_util};
 use syntax::codemap;
-
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
 
 type cmd = @crate_metadata;
 

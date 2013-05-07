@@ -60,7 +60,7 @@ use middle::trans::tvec;
 use middle::trans::type_of;
 use middle::trans::type_of::*;
 use middle::ty;
-use util::common::ice;
+use util::ice::ice;
 use util::common::indenter;
 use util::ppaux::{Repr, ty_to_str};
 use util::ppaux;
@@ -79,12 +79,6 @@ use syntax::print::pprust::stmt_to_str;
 use syntax::visit;
 use syntax::{ast, ast_util, codemap, ast_map};
 use syntax::abi::{X86, X86_64, Arm, Mips};
-
-// include!("../../ice_macros.rs")
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
 
 pub struct icx_popper {
     ccx: @CrateContext,

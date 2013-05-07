@@ -12,7 +12,7 @@ use driver::session::Session;
 use driver::session;
 use middle::ty;
 use middle::pat_util;
-use util::common::ice;
+use util::ice::ice;
 use util::ppaux::{ty_to_str};
 
 use core::hashmap::HashMap;
@@ -21,11 +21,6 @@ use syntax::attr;
 use syntax::codemap::span;
 use syntax::codemap;
 use syntax::{ast, visit};
-
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
 
 /**
  * A 'lint' check is a kind of miscellaneous constraint that a user _might_

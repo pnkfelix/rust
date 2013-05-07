@@ -32,12 +32,20 @@ use driver::driver::{pp_mode, pretty_print_input, list_metadata};
 use driver::driver::{compile_input};
 use driver::session;
 use middle::lint;
-use util::common::ice;
+use util::ice::ice;
 
 use std::getopts::{groups, opt_present};
 use std::getopts;
 use syntax::codemap;
 use syntax::diagnostic;
+
+// allow the ice_fail macro to escape this module:
+#[macro_escape]
+pub mod util {
+    pub mod ice;
+    pub mod common;
+    pub mod ppaux;
+}
 
 pub mod middle {
     pub mod trans {
@@ -122,11 +130,6 @@ pub mod metadata;
 
 #[path = "driver/mod.rs"]
 pub mod driver;
-
-pub mod util {
-    pub mod common;
-    pub mod ppaux;
-}
 
 pub mod lib {
     pub mod llvm;

@@ -10,12 +10,7 @@
 
 use core::hashmap::HashMap;
 use core::libc::c_uint;
-use util::common::ice;
-
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
+use util::ice::ice;
 
 pub type Opcode = u32;
 pub type Bool = c_uint;

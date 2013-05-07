@@ -25,7 +25,8 @@ use middle;
 use util::ppaux::{note_and_explain_region, bound_region_to_str};
 use util::ppaux::{trait_store_to_str, ty_to_str, vstore_to_str};
 use util::ppaux::Repr;
-use util::common::{ice,indenter};
+use util::ice::ice;
+use util::common::indenter;
 
 use core;
 use core::ptr::to_unsafe_ptr;
@@ -44,11 +45,6 @@ use syntax::opt_vec::OptVec;
 use syntax::opt_vec;
 use syntax::abi::AbiSet;
 use syntax;
-
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
 
 // Data types
 

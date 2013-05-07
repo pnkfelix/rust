@@ -21,15 +21,10 @@ use syntax::diagnostic::span_handler;
 use syntax::parse::token::ident_interner;
 use syntax::print::pprust;
 use syntax::{ast, attr};
-use util::common::ice;
+use util::ice::ice;
 
 use core::flate;
 use core::os::consts::{macos, freebsd, linux, android, win32};
-
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
 
 pub enum os {
     os_macos,

@@ -12,7 +12,7 @@
 
 use middle::ty::param_ty;
 use middle::ty;
-use util::common::ice;
+use util::ice::ice;
 
 use core::hashmap::HashMap;
 use core::io::WriterUtil;

@@ -19,7 +19,8 @@ use metadata::{creader, cstore, filesearch};
 use metadata;
 use middle::{trans, freevars, kind, ty, typeck, lint, astencode};
 use middle;
-use util::common::{ice,time};
+use util::ice::ice;
+use util::common::time;
 use util::ppaux;
 
 use core::int;
@@ -38,11 +39,6 @@ use syntax::diagnostic;
 use syntax::parse;
 use syntax::print::{pp, pprust};
 use syntax;
-
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
 
 pub enum pp_mode {
     ppm_normal,
@@ -929,7 +925,7 @@ mod test {
             &match getopts(~[~"--test"], optgroups()) {
               Ok(copy m) => m,
               Err(copy f) => ice_fail!(~"test_switch_implies_cfg_test: " +
-                             getopts::fail_str(f))
+                                       getopts::fail_str(f))
             };
         let sessopts = build_session_options(
             @~"rustc", matches, diagnostic::emit);
@@ -947,7 +943,7 @@ mod test {
               Ok(copy m) => m,
               Err(copy f) => {
                 ice_fail!(~"test_switch_implies_cfg_test_unless_cfg_test: " +
-                    getopts::fail_str(f));
+                          getopts::fail_str(f));
               }
             };
         let sessopts = build_session_options(

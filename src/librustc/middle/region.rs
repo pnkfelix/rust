@@ -23,7 +23,7 @@ use middle::resolve;
 use middle::ty::{region_variance, rv_covariant, rv_invariant};
 use middle::ty::{rv_contravariant, FreeRegion};
 use middle::ty;
-use util::common::ice;
+use util::ice::ice;
 
 use core::hashmap::{HashMap, HashSet};
 use syntax::ast_map;
@@ -31,11 +31,6 @@ use syntax::codemap::span;
 use syntax::print::pprust;
 use syntax::parse::token::special_idents;
 use syntax::{ast, visit};
-
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
 
 pub type parent = Option<ast::node_id>;
 

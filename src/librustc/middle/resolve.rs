@@ -20,7 +20,7 @@ use middle::lang_items::LanguageItems;
 use middle::lint::{allow, level, unused_imports};
 use middle::lint::{get_lint_level, get_lint_settings_level};
 use middle::pat_util::pat_bindings;
-use util::common::ice;
+use util::ice::ice;
 
 use syntax::ast::{RegionTyParamBound, TraitTyParamBound, _mod, add, arm};
 use syntax::ast::{binding_mode, bitand, bitor, bitxor, blk};
@@ -77,11 +77,6 @@ use core::option::Some;
 use core::str::each_split_str;
 use core::hashmap::{HashMap, HashSet};
 use core::util;
-
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
 
 // Definition mapping
 pub type DefMap = @mut HashMap<node_id,def>;

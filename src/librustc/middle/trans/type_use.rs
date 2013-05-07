@@ -32,7 +32,7 @@ use middle::trans::common::*;
 use middle::trans::inline;
 use middle::ty;
 use middle::typeck;
-use util::common::ice;
+use util::ice::ice;
 
 use core::option::{Some, None};
 use core::uint;
@@ -44,11 +44,6 @@ use syntax::ast::*;
 use syntax::ast_map;
 use syntax::ast_util;
 use syntax::visit;
-
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
 
 pub type type_uses = uint; // Bitmask
 pub static use_repr: uint = 1;   /* Dependency on size/alignment/mode and

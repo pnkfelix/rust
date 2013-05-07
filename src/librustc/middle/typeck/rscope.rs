@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use middle::ty;
-use util::common::ice;
+use util::ice::ice;
 
 use syntax::ast;
 use syntax::codemap::span;

@@ -15,7 +15,7 @@ use lib::llvm::{ValueRef, TypeRef, BasicBlockRef, BuilderRef, ModuleRef};
 use lib;
 use middle::trans::common::*;
 use syntax::codemap::span;
-use util::common::ice;
+use util::ice::ice;
 
 use core::hashmap::HashMap;
 use core::libc::{c_uint, c_ulonglong, c_char};

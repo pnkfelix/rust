@@ -17,7 +17,7 @@ use middle::trans::machine;
 use middle::trans::type_of;
 use middle::trans;
 use middle::ty;
-use util::common::ice;
+use util::ice::ice;
 use util::ppaux::ty_to_str;
 
 use core::hashmap::HashMap;
@@ -25,11 +25,6 @@ use core::libc;
 use syntax::codemap::span;
 use syntax::parse::token::ident_interner;
 use syntax::{ast, codemap, ast_util, ast_map};
-
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
 
 static LLVMDebugVersion: int = (9 << 16);
 

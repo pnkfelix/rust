@@ -101,11 +101,6 @@ use syntax::ast::{m_const, m_mutbl, m_imm};
 use syntax::ast;
 use syntax::ast_map;
 
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
-
 #[deriving(Eq)]
 pub enum CheckTraitsFlag {
     CheckTraitsOnly,

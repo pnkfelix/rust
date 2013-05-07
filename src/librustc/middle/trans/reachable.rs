@@ -19,7 +19,7 @@
 use middle::resolve;
 use middle::ty;
 use middle::typeck;
-use util::common::ice;
+use util::ice::ice;
 
 use core::hashmap::HashSet;
 use syntax::ast;

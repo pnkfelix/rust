@@ -18,18 +18,13 @@ use lib::llvm::struct_tys;
 use lib::llvm::True;
 use middle::trans::common::*;
 use middle::trans::cabi::*;
-use util::common::ice;
+use util::ice::ice;
 
 use core::libc::c_uint;
 use core::option;
 use core::option::Option;
 use core::uint;
 use core::vec;
-
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
 
 #[deriving(Eq)]
 enum x86_64_reg_class {

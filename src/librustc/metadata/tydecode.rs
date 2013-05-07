@@ -15,7 +15,7 @@
 // for some of these
 
 use middle::ty;
-use util::common::ice;
+use util::ice::ice;
 
 use syntax::abi::AbiSet;
 use syntax::abi;
@@ -23,11 +23,6 @@ use syntax::ast;
 use syntax::ast::*;
 use syntax::codemap::dummy_sp;
 use syntax::opt_vec;
-
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
 
 // Compact string representation for ty::t values. API ty_str &
 // parse_from_str. Extra parameters are for converting to/from def_ids in the

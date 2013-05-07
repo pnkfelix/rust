@@ -15,12 +15,7 @@ use lib::llvm::{StructRetAttribute};
 use lib::llvm::True;
 use middle::trans::common::*;
 use middle::trans::cabi::*;
-use util::common::ice;
-
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
+use util::ice::ice;
 
 fn align_up_to(off: uint, a: uint) -> uint {
     return (off + a - 1u) / a * a;

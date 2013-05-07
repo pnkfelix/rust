@@ -19,7 +19,8 @@ use middle::typeck::infer;
 use middle::typeck::{CrateCtxt, vtable_origin, vtable_param, vtable_res};
 use middle::typeck::vtable_static;
 use middle::subst::Subst;
-use util::common::{ice,indenter};
+use util::ice::ice;
+use util::common::indenter;
 use util::ppaux::tys_to_str;
 use util::ppaux;
 
@@ -29,11 +30,6 @@ use syntax::ast_util;
 use syntax::codemap::span;
 use syntax::print::pprust::expr_to_str;
 use syntax::visit;
-
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
 
 // vtable resolution looks for places where trait bounds are
 // subsituted in and figures out which vtable is used. There is some

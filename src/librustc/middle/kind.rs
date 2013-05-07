@@ -14,7 +14,7 @@ use middle::liveness;
 use middle::pat_util;
 use middle::ty;
 use middle::typeck;
-use util::common::ice;
+use util::ice::ice;
 use util::ppaux::{Repr, ty_to_str};
 
 use syntax::ast::*;

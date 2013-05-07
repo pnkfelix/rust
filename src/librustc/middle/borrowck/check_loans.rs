@@ -28,7 +28,7 @@ use middle::mem_categorization::{cat_local, cat_rvalue, cat_self};
 use middle::mem_categorization::{cat_special, cmt, gc_ptr, loan_path, lp_arg};
 use middle::mem_categorization::{lp_comp, lp_deref, lp_local};
 use middle::ty;
-use util::common::ice;
+use util::ice::ice;
 use util::ppaux::ty_to_str;
 
 use core::hashmap::HashSet;

@@ -12,12 +12,7 @@
 // FIXME (#2658): I'm not happy how this module turned out. Should
 // probably just be folded into cstore.
 
-use util::common::ice;
-
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
+use util::ice::ice;
 
 pub type pick<'self, T> = &'self fn(path: &Path) -> Option<T>;
 

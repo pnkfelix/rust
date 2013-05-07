@@ -27,18 +27,13 @@ use middle::trans::type_of::*;
 use middle::ty;
 use middle::ty::arg;
 use middle::typeck;
-use util::common::ice;
 use util::common::indenter;
+use util::ice::ice;
 use util::ppaux::Repr;
 
 use syntax::ast_map::{path, path_mod, path_name};
 use syntax::ast_util;
 use syntax::{ast, ast_map};
-
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
 
 /**
 The main "translation" pass for methods.  Generates code

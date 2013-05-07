@@ -163,8 +163,8 @@ use middle::trans::glue;
 use middle::trans::tvec;
 use middle::trans::type_of;
 use middle::ty;
-use util::common::ice;
 use util::common::indenter;
+use util::ice::ice;
 
 use core::hashmap::HashMap;
 use syntax::ast;
@@ -173,11 +173,6 @@ use syntax::ast_util::path_to_ident;
 use syntax::ast_util;
 use syntax::codemap::{span, dummy_sp};
 use syntax::print::pprust::pat_to_str;
-
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
 
 // An option identifying a literal: either a unit-like struct or an
 // expression.

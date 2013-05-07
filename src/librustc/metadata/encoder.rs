@@ -18,7 +18,7 @@ use middle::trans::reachable;
 use middle::ty::node_id_to_type;
 use middle::ty;
 use middle;
-use util::common::ice;
+use util::ice::ice;
 use util::ppaux::ty_to_str;
 
 use core::flate;
@@ -39,11 +39,6 @@ use syntax::opt_vec::OptVec;
 use syntax::opt_vec;
 use syntax;
 use writer = std::ebml::writer;
-
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
 
 // used by astencode:
 type abbrev_map = @mut HashMap<ty::t, tyencode::ty_abbrev>;

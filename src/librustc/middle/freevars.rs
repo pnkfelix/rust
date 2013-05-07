@@ -13,16 +13,11 @@
 
 use middle::resolve;
 use middle::ty;
-use util::common::ice;
+use util::ice::ice;
 
 use core::hashmap::HashMap;
 use syntax::codemap::span;
 use syntax::{ast, ast_util, visit};
-
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
 
 // A vector of defs representing the free variables referred to in a function.
 // (The def_upvar will already have been stripped).

@@ -12,17 +12,12 @@ use metadata::csearch;
 use middle::astencode;
 use middle::ty;
 use middle;
-use util::common::ice;
+use util::ice::ice;
 
 use syntax::{ast, ast_map, ast_util, visit};
 use syntax::ast::*;
 
 use core::hashmap::{HashMap, HashSet};
-
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
 
 //
 // This pass classifies expressions by their constant-ness.

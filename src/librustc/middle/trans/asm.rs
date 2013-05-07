@@ -17,14 +17,9 @@ use middle::trans::build::*;
 use middle::trans::callee;
 use middle::trans::common::*;
 use middle::ty;
-use util::common::ice;
+use util::ice::ice;
 
 use syntax::ast;
-
-macro_rules! ice_fail(
-        () => ( ice_fail!(~"explicit failure") );
-        ($msg:expr) => ( { ice::cond.raise($msg); fail!($msg); } )
-)
 
 // Take an inline assembly expression and splat it out via LLVM
 pub fn trans_inline_asm(bcx: block, ia: &ast::inline_asm) -> block {
