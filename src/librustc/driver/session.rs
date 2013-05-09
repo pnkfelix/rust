@@ -64,6 +64,7 @@ pub static debug_info: uint = 1 << 20;
 pub static extra_debug_info: uint = 1 << 21;
 pub static static: uint = 1 << 22;
 pub static print_link_args: uint = 1 << 23;
+pub static omit_wrappers: uint = 1 << 24;
 
 pub fn debugging_opts_map() -> ~[(~str, ~str, uint)] {
     ~[(~"verbose", ~"in general, enable more debug printouts", verbose),
@@ -99,6 +100,8 @@ pub fn debugging_opts_map() -> ~[(~str, ~str, uint)] {
      (~"debug-info", ~"Produce debug info (experimental)", debug_info),
      (~"static", ~"Use or produce static libraries or binaries " +
       "(experimental)", static)
+     (~"omit-wrappers", ~"Do not use wrappers when linking to extern fns",
+      omit_wrappers)
     ]
 }
 
@@ -280,6 +283,7 @@ pub impl Session_ {
     fn no_monomorphic_collapse(@self) -> bool {
         self.debugging_opt(no_monomorphic_collapse)
     }
+    fn omit_wrappers(@self) -> bool { self.debugging_opt(omit_wrappers) }
 
     fn str_of(@self, id: ast::ident) -> @~str {
         self.parse_sess.interner.get(id)

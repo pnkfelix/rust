@@ -447,7 +447,7 @@ pub fn body_contains_ret(body: &ast::blk) -> bool {
 // See [Note-arg-mode]
 pub fn trans_call_inner(in_cx: block,
                         call_info: Option<NodeInfo>,
-                        fn_expr_ty: ty::t,
+                        callee_ty: ty::t,
                         ret_ty: ty::t,
                         get_callee: &fn(block) -> Callee,
                         args: CallArgs,
@@ -504,7 +504,12 @@ pub fn trans_call_inner(in_cx: block,
             }
         };
 
-        let llretslot = trans_ret_slot(bcx, fn_expr_ty, dest);
+        let abi = match ty::get(callee_ty).sty {
+            ty::ty_XXX
+            _ => AbiSet::Rust()
+        };
+
+        let llretslot = trans_ret_slot(bcx, callee_ty, dest);
 
         let mut llargs = ~[];
 
@@ -517,7 +522,7 @@ pub fn trans_call_inner(in_cx: block,
         }
 
         llargs.push(llenv);
-        bcx = trans_args(bcx, args, fn_expr_ty,
+        bcx = trans_args(bcx, args, callee_ty,
                          ret_flag, autoref_arg, &mut llargs);
 
 
