@@ -61,6 +61,8 @@ pub mod rustrt {
         fn rust_try_get_task() -> *rust_task;
 
         fn rust_dbg_breakpoint();
+
+        unsafe fn rust_upcall_zero_root(root: **u8);
     }
 }
 
@@ -273,6 +275,11 @@ pub unsafe fn local_free(ptr: *c_char) {
         }
     }
     Gc::get_task_gc().note_free(ptr as uint);
+}
+
+#[lang="zero_root"]
+pub unsafe fn zero_root(ptr: **u8) {
+    rustrt::rust_upcall_zero_root(ptr);
 }
 
 #[cfg(stage0)]

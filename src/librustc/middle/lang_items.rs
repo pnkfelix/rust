@@ -71,18 +71,19 @@ pub enum LangItem {
     StrDupUniqFnLangItem,       // 33
     RecordBorrowFnLangItem,     // 34
     UnrecordBorrowFnLangItem,   // 35
+    ZeroRootFnLangItem,         // 36
 
-    StartFnLangItem,            // 36
+    StartFnLangItem,            // 37
 }
 
 pub struct LanguageItems {
-    items: [Option<def_id>, ..37]
+    items: [Option<def_id>, ..38]
 }
 
 pub impl LanguageItems {
     pub fn new() -> LanguageItems {
         LanguageItems {
-            items: [ None, ..37 ]
+            items: [ None, ..38 ]
         }
     }
 
@@ -135,8 +136,9 @@ pub impl LanguageItems {
             33 => "strdup_uniq",
             34 => "record_borrow",
             35 => "unrecord_borrow",
+            36 => "zero_root",
 
-            36 => "start",
+            37 => "start",
 
             _ => "???"
         }
@@ -235,6 +237,9 @@ pub impl LanguageItems {
     pub fn free_fn(&const self) -> def_id {
         self.items[FreeFnLangItem as uint].get()
     }
+    pub fn zero_root_fn(&const self) -> def_id {
+        self.items[ZeroRootFnLangItem as uint].get()
+    }
     pub fn borrow_as_imm_fn(&const self) -> def_id {
         self.items[BorrowAsImmFnLangItem as uint].get()
     }
@@ -300,6 +305,7 @@ fn LanguageItemCollector(crate: @crate,
     item_refs.insert(@~"exchange_free", ExchangeFreeFnLangItem as uint);
     item_refs.insert(@~"malloc", MallocFnLangItem as uint);
     item_refs.insert(@~"free", FreeFnLangItem as uint);
+    item_refs.insert(@~"zero_root", ZeroRootFnLangItem as uint);
     item_refs.insert(@~"borrow_as_imm", BorrowAsImmFnLangItem as uint);
     item_refs.insert(@~"borrow_as_mut", BorrowAsMutFnLangItem as uint);
     item_refs.insert(@~"return_to_mut", ReturnToMutFnLangItem as uint);
