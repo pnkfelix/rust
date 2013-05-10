@@ -247,8 +247,11 @@ pub impl ReprVisitor {
 
     fn write_unboxed_vec_repr(&self, mtbl: uint, v: &UnboxedVecRepr,
                               inner: *TyDesc) -> bool {
-        self.write_vec_range(mtbl, ptr::to_unsafe_ptr(&v.data),
-                             v.fill, inner)
+        unsafe {
+            self.write_vec_range(mtbl,
+                                 transmute(ptr::to_unsafe_ptr(&v.data)),
+                                 v.fill, inner)
+        }
     }
 
 
