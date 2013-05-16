@@ -3149,7 +3149,7 @@ pub fn adjust_ty(cx: ctxt,
     }
 
     fn borrow_obj(cx: ctxt, span: span, r: Region,
-                        m: ast::mutability, ty: ty::t) -> ty::t {
+                  m: ast::mutability, ty: ty::t) -> ty::t {
         match get(ty).sty {
             ty_trait(trt_did, copy trt_substs, _, _) => {
                 ty::mk_trait(cx, trt_did, trt_substs,

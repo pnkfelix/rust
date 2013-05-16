@@ -1072,7 +1072,7 @@ impl<'self> LookupContext<'self> {
                         return self.fcx.can_mk_subty(rcvr_ty,
                                                      candidate.rcvr_ty).is_ok();
                     }
-                }
+                };
             }
             _ => {}
         }
