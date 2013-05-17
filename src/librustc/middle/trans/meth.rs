@@ -271,12 +271,11 @@ pub fn trans_method_callee(bcx: block,
                 None => fail!("trans_method_callee: missing param_substs")
             }
         }
-        typeck::method_trait(_, off, store) => {
+        typeck::method_trait(_, off) => {
             trans_trait_callee(bcx,
                                callee_id,
                                off,
                                this,
-                               store,
                                mentry.explicit_self)
         }
         typeck::method_self(*) | typeck::method_super(*) => {
@@ -595,7 +594,6 @@ pub fn trans_trait_callee(bcx: block,
                           callee_id: ast::node_id,
                           n_method: uint,
                           self_expr: @ast::expr,
-                          store: ty::TraitStore,
                           explicit_self: ast::explicit_self_)
                        -> Callee {
     //!
@@ -620,7 +618,6 @@ pub fn trans_trait_callee(bcx: block,
                                   callee_ty,
                                   n_method,
                                   llpair,
-                                  store,
                                   explicit_self)
 }
 
@@ -628,7 +625,6 @@ pub fn trans_trait_callee_from_llval(bcx: block,
                                      callee_ty: ty::t,
                                      n_method: uint,
                                      llpair: ValueRef,
-                                     store: ty::TraitStore,
                                      explicit_self: ast::explicit_self_)
                                   -> Callee {
     //!
@@ -655,29 +651,19 @@ pub fn trans_trait_callee_from_llval(bcx: block,
     let llbox = Load(bcx, GEPi(bcx, llpair, [0u, abi::trt_field_box]));
 
     // Handle and enforce the method's `self` type.
-    match (explicit_self, store) {
-        (ast::sty_region(*), ty::RegionTraitStore(*)) |
-        (ast::sty_uniq(*), ty::UniqTraitStore) => {}
-        (ast::sty_box(*), ty::BoxTraitStore) => {
+    match explicit_self {
+        ast::sty_region(*) | ast::sty_uniq(*) => {
+        }
+        ast::sty_box(*) => {
             // Bump the reference count on the box.
             bcx = glue::take_ty(bcx, llbox, callee_ty);
         }
-        (ast::sty_static, _) => {
+        ast::sty_static => {
             bcx.tcx().sess.bug(~"shouldn't see static method here");
         }
-        (ast::sty_value, _) => {
+        ast::sty_value => {
             bcx.tcx().sess.bug(~"methods with by-value self should not be \
                                called on objects");
-        }
-        (ast::sty_region(*), _) => {
-            bcx.tcx().sess.bug(~"&self receiver with non-&Trait");
-        }
-        (ast::sty_box(*), _) => {
-            bcx = glue::take_ty(bcx, llbox, callee_ty);
-            bcx.tcx().sess.bug(~"@self receiver with non-@Trait");
-        }
-        (ast::sty_uniq(*), _) => {
-            bcx.tcx().sess.bug(~"~self receiver with non-~Trait")
         }
     };
 

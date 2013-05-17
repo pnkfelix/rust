@@ -100,14 +100,16 @@ impl Reflector {
         }
         let bool_ty = ty::mk_bool();
         let scratch = scratch_datum(bcx, bool_ty, false);
-        // XXX: Should not be BoxTraitStore!
+
+        // FIXME I think the visitor here is a @Visitor? We may have to
+        // add some hokey adaptation
+
         let bcx = callee::trans_call_inner(
             self.bcx, None, mth_ty, bool_ty,
             |bcx| meth::trans_trait_callee_from_llval(bcx,
                                                       mth_ty,
                                                       mth_idx,
                                                       v,
-                                                      ty::BoxTraitStore,
                                                       ast::sty_region(
                                                         None,
                                                         ast::m_imm)),

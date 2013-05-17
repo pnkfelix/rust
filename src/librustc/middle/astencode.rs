@@ -589,8 +589,8 @@ impl tr for method_origin {
                 }
             )
           }
-          typeck::method_trait(did, m, vstore) => {
-              typeck::method_trait(did.tr(xcx), m, vstore)
+          typeck::method_trait(did, m) => {
+              typeck::method_trait(did.tr(xcx), m)
           }
           typeck::method_self(did, m) => {
               typeck::method_self(did.tr(xcx), m)

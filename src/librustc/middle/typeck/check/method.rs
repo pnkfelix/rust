@@ -94,6 +94,7 @@ use middle::typeck::{method_map_entry, method_origin, method_param};
 use middle::typeck::{method_self, method_static, method_trait, method_super};
 use middle::typeck::check::regionmanip::replace_bound_regions_in_fn_sig;
 use util::common::indenter;
+use util::ppaux::Repr;
 
 use core::hashmap::HashSet;
 use core::result;
@@ -173,14 +174,27 @@ pub struct LookupContext<'self> {
  * is of a suitable type.
  */
 pub struct Candidate {
-    rcvr_ty: ty::t,
+    rcvr_match_condition: RcvrMatchCondition,
     rcvr_substs: ty::substs,
     method_ty: @ty::Method,
     origin: method_origin,
 }
 
-impl<'self> LookupContext<'self> {
-    pub fn do_lookup(&self, self_ty: ty::t) -> Option<method_map_entry> {
+/// This type represents the conditions under which the receiver is
+/// considered to "match" a given method candidate. Typically the test
+/// is whether the receiver is of a particular type. However, this
+/// type is the type of the receiver *after accounting for the
+/// method's self type* (e.g., if the method is an `@self` method, we
+/// have *already verified* that the receiver is of some type `@T` and
+/// now we must check that the type `T` is correct).  Unfortunately,
+/// because traits are not types, this is a pain to do.
+enum RcvrMatchCondition {
+    RcvrMatchesIfObject(ast::def_id),
+    RcvrMatchesIfSubtype(ty::t)
+}
+
+pub impl<'self> LookupContext<'self> {
+    fn do_lookup(&self, self_ty: ty::t) -> Option<method_map_entry> {
         let self_ty = structurally_resolved_type(self.fcx,
                                                      self.self_expr.span,
                                                      self_ty);
@@ -292,9 +306,8 @@ impl<'self> LookupContext<'self> {
                 ty_param(p) => {
                     self.push_inherent_candidates_from_param(self_ty, p);
                 }
-                ty_trait(did, ref substs, store, _) => {
-                    self.push_inherent_candidates_from_trait(
-                        self_ty, did, substs, store);
+                ty_trait(did, ref substs, _, _) => {
+                    self.push_inherent_candidates_from_trait(did, substs);
                     self.push_inherent_impl_candidates_for_type(did);
                 }
                 ty_self(self_did) => {
@@ -391,7 +404,7 @@ impl<'self> LookupContext<'self> {
             let method = trait_methods[pos];
 
             let cand = Candidate {
-                rcvr_ty: rcvr_ty,
+                rcvr_match_condition: RcvrMatchesIfSubtype(rcvr_ty),
                 rcvr_substs: copy bound_trait_ref.substs,
                 method_ty: method,
                 origin: method_param(
@@ -408,11 +421,10 @@ impl<'self> LookupContext<'self> {
         }
     }
 
-    pub fn push_inherent_candidates_from_trait(&self,
-                                               self_ty: ty::t,
-                                               did: def_id,
-                                               substs: &ty::substs,
-                                               store: ty::TraitStore) {
+    // TODO: dralston, pub?
+    fn push_inherent_candidates_from_trait(&self,
+                                           did: def_id,
+                                           substs: &ty::substs) {
         debug!("push_inherent_candidates_from_trait(did=%s, substs=%s)",
                self.did_to_str(did),
                substs_to_str(self.tcx(), substs));
@@ -426,37 +438,31 @@ impl<'self> LookupContext<'self> {
         };
         let method = ms[index];
 
-        /* FIXME(#5762) we should transform the vstore in accordance
-           with the self type
-
-        match method.self_type {
-            ast::sty_region(_) => {
-                return; // inapplicable
+        match method.explicit_self {
+            ast::sty_static => {
+                return; // not a method we can call with dot notation
             }
-            ast::sty_region(_) => vstore_slice(r)
-            ast::sty_box(_) => vstore_box, // NDM mutability, as per #5762
-            ast::sty_uniq(_) => vstore_uniq
+            _ => {}
         }
-        */
 
         // It is illegal to invoke a method on a trait instance that
-        // refers to the `self` type.  Nonetheless, we substitute
-        // `trait_ty` for `self` here, because it allows the compiler
-        // to soldier on.  An error will be reported should this
-        // candidate be selected if the method refers to `self`.
+        // refers to the `self` type. An error will be reported by
+        // `enforce_object_limitations()` if the method refers
+        // to the `Self` type. Substituting ty_err here allows
+        // compiler to soldier on.
         //
-        // NB: `confirm_candidate()` also relies upon this substitution
-        // for Self.
+        // NOTE: `confirm_candidate()` also relies upon this substitution
+        // for Self. (fix)
         let rcvr_substs = substs {
-            self_ty: Some(self_ty),
+            self_ty: Some(ty::mk_err()),
             ../*bad*/copy *substs
         };
 
         self.inherent_candidates.push(Candidate {
-            rcvr_ty: self_ty,
+            rcvr_match_condition: RcvrMatchesIfObject(did),
             rcvr_substs: rcvr_substs,
             method_ty: method,
-            origin: method_trait(did, index, store)
+            origin: method_trait(did, index)
         });
     }
 
@@ -514,7 +520,7 @@ impl<'self> LookupContext<'self> {
                     method_super(info.trait_def_id, info.index)
                 };
                 self.inherent_candidates.push(Candidate {
-                    rcvr_ty: self_ty,
+                    rcvr_match_condition: RcvrMatchesIfSubtype(self_ty),
                     rcvr_substs: rcvr_substs,
                     method_ty: info.method_ty,
                     origin: origin
@@ -564,11 +570,47 @@ impl<'self> LookupContext<'self> {
         } = impl_self_ty(&vcx, location_info, impl_info.did);
 
         candidates.push(Candidate {
-            rcvr_ty: impl_ty,
+            rcvr_match_condition: RcvrMatchesIfSubtype(impl_ty),
             rcvr_substs: impl_substs,
             method_ty: method,
             origin: method_static(method.def_id)
         });
+    }
+
+    fn push_candidates_from_provided_methods(
+            &self,
+            candidates: &mut ~[Candidate],
+            self_ty: ty::t,
+            trait_def_id: def_id,
+            methods: &mut ~[@ProvidedMethodInfo]) {
+        debug!("(pushing candidates from provided methods) considering trait \
+                id %d:%d",
+               trait_def_id.crate,
+               trait_def_id.node);
+
+        for methods.each |provided_method_info| {
+            if provided_method_info.method_info.ident != self.m_name { loop; }
+
+            debug!("(pushing candidates from provided methods) adding \
+                    candidate");
+
+            let method = ty::method(self.tcx(),
+                                    provided_method_info.method_info.did);
+
+            // XXX: Needs to support generics.
+            let dummy_substs = substs {
+                self_r: None,
+                self_ty: None,
+                tps: ~[]
+            };
+
+            candidates.push(Candidate {
+                rcvr_match_condition: RcvrMatchesIfSubtype(self_ty),
+                rcvr_substs: dummy_substs,
+                method_ty: method,
+                origin: method_static(provided_method_info.method_info.did)
+             });
+        }
     }
 
     // ______________________________________________________________________
@@ -903,14 +945,17 @@ impl<'self> LookupContext<'self> {
                self.cand_to_str(candidate),
                self.ty_to_str(fty));
 
-        self.enforce_trait_instance_limitations(fty, candidate);
+        self.enforce_object_limitations(fty, candidate);
         self.enforce_drop_trait_limitations(candidate);
 
         // static methods should never have gotten this far:
         assert!(candidate.method_ty.explicit_self != sty_static);
 
         let transformed_self_ty = match candidate.origin {
-            method_trait(*) => candidate.rcvr_ty,
+            method_trait(trait_def_id, _) => {
+                self.construct_transformed_self_ty_for_object(
+                    trait_def_id, candidate)
+            }
             _ => {
                 let t = candidate.method_ty.transformed_self_ty.get();
                 ty::subst(tcx, &candidate.rcvr_substs, t)
@@ -994,23 +1039,85 @@ impl<'self> LookupContext<'self> {
         self.fcx.write_ty(self.callee_id, fty);
         self.fcx.write_substs(self.callee_id, all_substs);
         method_map_entry {
-            self_ty: candidate.rcvr_ty,
+            self_ty: transformed_self_ty,
             self_mode: self_mode,
             explicit_self: candidate.method_ty.explicit_self,
             origin: candidate.origin,
         }
     }
 
-    pub fn enforce_trait_instance_limitations(&self,
-                                              method_fty: ty::t,
-                                              candidate: &Candidate) {
+    fn construct_transformed_self_ty_for_object(&self,
+                                                trait_def_id: ast::def_id,
+                                                candidate: &Candidate) -> ty::t
+    {
         /*!
+         * This is a bit tricky. We have a match against a trait method
+         * being invoked on an object, and we want to generate the
+         * self-type. As an example, consider a trait
          *
-         * There are some limitations to calling functions through a
-         * traint instance, because (a) the self type is not known
+         *     trait Foo {
+         *         fn r_method<'a>(&'a self);
+         *         fn m_method(@mut self);
+         *     }
+         *
+         * Now, assuming that `r_method` is being called, we want the
+         * result to be `&'a Foo`. Assuming that `m_method` is being
+         * called, we want the result to be `@mut Foo`. Of course,
+         * this transformation has already been done as part of
+         * `candidate.method_ty.transformed_self_ty`, but there the
+         * type is expressed in terms of `Self` (i.e., `&'a Self`, `@mut Self`).
+         * Because objects are not standalone types, we can't just substitute
+         * `s/Self/Foo/`, so we must instead perform this kind of hokey
+         * match below.
+         */
+
+        let substs = ty::substs {self_r: candidate.rcvr_substs.self_r,
+                                 self_ty: None,
+                                 tps: copy candidate.rcvr_substs.tps};
+        match candidate.method_ty.explicit_self {
+            ast::sty_static => {
+                self.bug(~"static method for object type receiver");
+            }
+            ast::sty_value => {
+                ty::mk_err() // error reported in `enforce_object_limitations()`
+            }
+            ast::sty_region(*) | ast::sty_box(*) | ast::sty_uniq(*) => {
+                let transformed_self_ty =
+                    candidate.method_ty.transformed_self_ty.get();
+                match ty::get(transformed_self_ty).sty {
+                    ty::ty_rptr(r, mt) => { // must be sty_region
+                        ty::mk_trait(self.tcx(), trait_def_id,
+                                     substs, RegionTraitStore(r), mt.mutbl)
+                    }
+                    ty::ty_box(mt) => { // must be sty_box
+                        ty::mk_trait(self.tcx(), trait_def_id,
+                                     substs, BoxTraitStore, mt.mutbl)
+                    }
+                    ty::ty_uniq(mt) => { // must be sty_uniq
+                        ty::mk_trait(self.tcx(), trait_def_id,
+                                     substs, UniqTraitStore, mt.mutbl)
+                    }
+                    _ => {
+                        self.bug(
+                            fmt!("'impossible' transformed_self_ty: %s",
+                                 transformed_self_ty.repr(self.tcx())));
+                    }
+                }
+            }
+        }
+    }
+
+    fn enforce_object_limitations(&self,
+                                  method_fty: ty::t,
+                                  candidate: &Candidate)
+    {
+        /*!
+         * There are some limitations to calling functions through an
+         * object, because (a) the self type is not known
          * (that's the whole point of a trait instance, after all, to
          * obscure the self type) and (b) the call must go through a
-         * vtable and hence cannot be monomorphized. */
+         * vtable and hence cannot be monomorphized.
+         */
 
         match candidate.origin {
             method_static(*) | method_param(*) |
@@ -1020,17 +1127,35 @@ impl<'self> LookupContext<'self> {
             method_trait(*) => {}
         }
 
-        if ty::type_has_self(method_fty) {
+        match candidate.method_ty.explicit_self {
+            ast::sty_static => { // reason (a) above
+                self.tcx().sess.span_err(
+                    self.expr.span,
+                    "cannot call a method without a receiver \
+                     through an object");
+            }
+
+            ast::sty_value => { // reason (a) above
+                self.tcx().sess.span_err(
+                    self.expr.span,
+                    "cannot call a method with a by-value receiver \
+                     through an object");
+            }
+
+            ast::sty_region(*) | ast::sty_box(*) | ast::sty_uniq(*) => {}
+        }
+
+        if ty::type_has_self(method_fty) { // reason (a) above
             self.tcx().sess.span_err(
                 self.expr.span,
                 "cannot call a method whose type contains a \
-                 self-type through a boxed trait");
+                 self-type through an object");
         }
 
-        if candidate.method_ty.generics.has_type_params() {
+        if candidate.method_ty.generics.has_type_params() { // reason (b) above
             self.tcx().sess.span_err(
                 self.expr.span,
-                "cannot call a generic method through a boxed trait");
+                "cannot call a generic method through an object");
         }
     }
 
@@ -1043,7 +1168,7 @@ impl<'self> LookupContext<'self> {
                 bad = self.tcx().destructors.contains(&method_id);
             }
             method_param(method_param { trait_id: trait_id, _ }) |
-            method_trait(trait_id, _, _) => {
+            method_trait(trait_id, _) => {
                 bad = self.tcx().destructor_for_type.contains_key(&trait_id);
             }
         }
@@ -1060,37 +1185,25 @@ impl<'self> LookupContext<'self> {
         debug!("is_relevant(rcvr_ty=%s, candidate=%s)",
                self.ty_to_str(rcvr_ty), self.cand_to_str(candidate));
 
-        // Check for calls to trait object methods. Ensure that @self
-        // methods are only called on @Trait objects, and so forth.
-        match candidate.origin {
-            method_trait(*) => {
-                match candidate.method_ty.explicit_self {
-                    sty_static | sty_value => {
-                        return false;
-                    }
-                    sty_region(*) | sty_box(*) | sty_uniq(*) => {
-                        return self.fcx.can_mk_subty(rcvr_ty,
-                                                     candidate.rcvr_ty).is_ok();
-                    }
-                };
-            }
-            _ => {}
-        }
-
         return match candidate.method_ty.explicit_self {
             sty_static => {
                 false
             }
 
             sty_value => {
-                self.fcx.can_mk_subty(rcvr_ty, candidate.rcvr_ty).is_ok()
+                rcvr_matches_ty(self.fcx, rcvr_ty, candidate)
             }
 
             sty_region(_, m) => {
                 match ty::get(rcvr_ty).sty {
                     ty::ty_rptr(_, mt) => {
                         mutability_matches(mt.mutbl, m) &&
-                        self.fcx.can_mk_subty(mt.ty, candidate.rcvr_ty).is_ok()
+                        rcvr_matches_ty(self.fcx, mt.ty, candidate)
+                    }
+
+                    ty::ty_trait(self_did, _, RegionTraitStore(_), self_m) => {
+                        mutability_matches(self_m, m) &&
+                        rcvr_matches_object(self_did, candidate)
                     }
 
                     _ => false
@@ -1101,7 +1214,12 @@ impl<'self> LookupContext<'self> {
                 match ty::get(rcvr_ty).sty {
                     ty::ty_box(mt) => {
                         mutability_matches(mt.mutbl, m) &&
-                        self.fcx.can_mk_subty(mt.ty, candidate.rcvr_ty).is_ok()
+                        rcvr_matches_ty(self.fcx, mt.ty, candidate)
+                    }
+
+                    ty::ty_trait(self_did, _, BoxTraitStore, self_m) => {
+                        mutability_matches(self_m, self_m) &&
+                        rcvr_matches_object(self_did, candidate)
                     }
 
                     _ => false
@@ -1112,13 +1230,43 @@ impl<'self> LookupContext<'self> {
                 match ty::get(rcvr_ty).sty {
                     ty::ty_uniq(mt) => {
                         mutability_matches(mt.mutbl, m) &&
-                        self.fcx.can_mk_subty(mt.ty, candidate.rcvr_ty).is_ok()
+                        rcvr_matches_ty(self.fcx, mt.ty, candidate)
+                    }
+
+                    ty::ty_trait(self_did, _, UniqTraitStore, self_m) => {
+                        mutability_matches(self_m, self_m) &&
+                        rcvr_matches_object(self_did, candidate)
                     }
 
                     _ => false
                 }
             }
         };
+
+        fn rcvr_matches_object(self_did: ast::def_id,
+                               candidate: &Candidate) -> bool {
+            match candidate.rcvr_match_condition {
+                RcvrMatchesIfObject(desired_did) => {
+                    self_did == desired_did
+                }
+                RcvrMatchesIfSubtype(_) => {
+                    false
+                }
+            }
+        }
+
+        fn rcvr_matches_ty(fcx: @mut FnCtxt,
+                           rcvr_ty: ty::t,
+                           candidate: &Candidate) -> bool {
+            match candidate.rcvr_match_condition {
+                RcvrMatchesIfObject(_) => {
+                    false
+                }
+                RcvrMatchesIfSubtype(of_type) => {
+                    fcx.can_mk_subty(rcvr_ty, of_type).is_ok()
+                }
+            }
+        }
 
         fn mutability_matches(self_mutbl: ast::mutability,
                               candidate_mutbl: ast::mutability) -> bool {
@@ -1144,7 +1292,7 @@ impl<'self> LookupContext<'self> {
             method_param(ref mp) => {
                 type_of_trait_method(self.tcx(), mp.trait_id, mp.method_num)
             }
-            method_trait(did, idx, _) | method_self(did, idx) |
+            method_trait(did, idx) | method_self(did, idx) |
                 method_super(did, idx) => {
                 type_of_trait_method(self.tcx(), did, idx)
             }
@@ -1166,7 +1314,7 @@ impl<'self> LookupContext<'self> {
             method_param(ref mp) => {
                 self.report_param_candidate(idx, (*mp).trait_id)
             }
-            method_trait(trait_did, _, _) | method_self(trait_did, _)
+            method_trait(trait_did, _) | method_self(trait_did, _)
                 | method_super(trait_did, _) => {
                 self.report_trait_candidate(idx, trait_did)
             }
@@ -1220,7 +1368,7 @@ impl<'self> LookupContext<'self> {
 
     pub fn cand_to_str(&self, cand: &Candidate) -> ~str {
         fmt!("Candidate(rcvr_ty=%s, rcvr_substs=%s, origin=%?)",
-             self.ty_to_str(cand.rcvr_ty),
+             cand.rcvr_match_condition.repr(self.tcx()),
              ty::substs_to_str(self.tcx(), &cand.rcvr_substs),
              cand.origin)
     }
@@ -1230,7 +1378,7 @@ impl<'self> LookupContext<'self> {
     }
 
     pub fn bug(&self, s: ~str) -> ! {
-        self.tcx().sess.bug(s)
+        self.tcx().sess.span_bug(self.self_expr.span, s)
     }
 }
 
@@ -1238,5 +1386,18 @@ pub fn get_mode_from_explicit_self(explicit_self: ast::explicit_self_) -> SelfMo
     match explicit_self {
         sty_value => ty::ByCopy,
         _ => ty::ByRef,
+    }
+}
+
+impl Repr for RcvrMatchCondition {
+    fn repr(&self, tcx: ty::ctxt) -> ~str {
+        match *self {
+            RcvrMatchesIfObject(d) => {
+                fmt!("RcvrMatchesIfObject(%s)", d.repr(tcx))
+            }
+            RcvrMatchesIfSubtype(t) => {
+                fmt!("RcvrMatchesIfSubtype(%s)", t.repr(tcx))
+            }
+        }
     }
 }

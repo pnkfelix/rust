@@ -310,7 +310,7 @@ pub fn check_crate<'mm>(tcx: ty::ctxt,
                  method_num: method_num,
                  _
             }) |
-            method_trait(trait_id, method_num, _) |
+            method_trait(trait_id, method_num) |
             method_self(trait_id, method_num) |
             method_super(trait_id, method_num) => {
                 if trait_id.crate == local_crate {
