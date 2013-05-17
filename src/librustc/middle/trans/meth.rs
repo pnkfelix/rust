@@ -601,23 +601,19 @@ pub fn trans_trait_callee(bcx: block,
     //!
     //
     // Create a method callee where the method is coming from a trait
-    // instance (e.g., @Trait type).  In this case, we must pull the
-    // fn pointer out of the vtable that is packaged up with the
-    // @/~/&Trait instance.  @/~/&Traits are represented as a pair, so we
-    // first evaluate the self expression (expected a by-ref result) and then
-    // extract the self data and vtable out of the pair.
+    // object (e.g., @Trait type).  In this case, we must pull the fn
+    // pointer out of the vtable that is packaged up with the
+    // @/~/&Trait object.  @/~/&Traits are represented as a pair, so
+    // we first evaluate the self expression (expected a by-ref
+    // result) and then extract the self data and vtable out of the
+    // pair.
 
     let _icx = bcx.insn_ctxt("impl::trans_trait_callee");
     let mut bcx = bcx;
+
     let self_datum = unpack_datum!(bcx,
         expr::trans_to_datum(bcx, self_expr));
     let llpair = self_datum.to_ref_llval(bcx);
-
-    let llpair = match explicit_self {
-        ast::sty_region(*) => Load(bcx, llpair),
-        ast::sty_static | ast::sty_value |
-        ast::sty_box(_) | ast::sty_uniq(_) => llpair
-    };
 
     let callee_ty = node_id_type(bcx, callee_id);
     trans_trait_callee_from_llval(bcx,
@@ -655,71 +651,40 @@ pub fn trans_trait_callee_from_llval(bcx: block,
 
     // Load the box from the @Trait pair and GEP over the box header if
     // necessary:
-    let mut llself;
     debug!("(translating trait callee) loading second index from pair");
     let llbox = Load(bcx, GEPi(bcx, llpair, [0u, abi::trt_field_box]));
 
-    // Munge `llself` appropriately for the type of `self` in the method.
-    let self_mode;
-    match explicit_self {
-        ast::sty_static => {
-            bcx.tcx().sess.bug("shouldn't see static method here");
-        }
-        ast::sty_value => {
-            bcx.tcx().sess.bug("methods with by-value self should not be \
-                                called on objects");
-        }
-        ast::sty_region(*) => {
-            // As before, we need to pass a pointer to a pointer to the
-            // payload.
-            match store {
-                ty::BoxTraitStore |
-                ty::UniqTraitStore => {
-                    llself = GEPi(bcx, llbox, [0u, abi::box_field_body]);
-                }
-                ty::RegionTraitStore(_) => {
-                    llself = llbox;
-                }
-            }
-
-            let llscratch = alloca(bcx, val_ty(llself));
-            Store(bcx, llself, llscratch);
-            llself = llscratch;
-
-            self_mode = ty::ByRef;
-        }
-        ast::sty_box(_) => {
+    // Handle and enforce the method's `self` type.
+    match (explicit_self, store) {
+        (ast::sty_region(*), ty::RegionTraitStore(*)) |
+        (ast::sty_uniq(*), ty::UniqTraitStore) => {}
+        (ast::sty_box(*), ty::BoxTraitStore) => {
             // Bump the reference count on the box.
-            debug!("(translating trait callee) callee type is `%s`",
-                   bcx.ty_to_str(callee_ty));
             bcx = glue::take_ty(bcx, llbox, callee_ty);
-
-            // Pass a pointer to the box.
-            match store {
-                ty::BoxTraitStore => llself = llbox,
-                _ => bcx.tcx().sess.bug("@self receiver with non-@Trait")
-            }
-
-            let llscratch = alloca(bcx, val_ty(llself));
-            Store(bcx, llself, llscratch);
-            llself = llscratch;
-
-            self_mode = ty::ByRef;
         }
-        ast::sty_uniq(_) => {
-            // Pass the unique pointer.
-            match store {
-                ty::UniqTraitStore => llself = llbox,
-                _ => bcx.tcx().sess.bug("~self receiver with non-~Trait")
-            }
-
-            let llscratch = alloca(bcx, val_ty(llself));
-            Store(bcx, llself, llscratch);
-            llself = llscratch;
-
-            self_mode = ty::ByRef;
+        (ast::sty_static, _) => {
+            bcx.tcx().sess.bug(~"shouldn't see static method here");
         }
-    }
+        (ast::sty_value, _) => {
+            bcx.tcx().sess.bug(~"methods with by-value self should not be \
+                               called on objects");
+        }
+        (ast::sty_region(*), _) => {
+            bcx.tcx().sess.bug(~"&self receiver with non-&Trait");
+        }
+        (ast::sty_box(*), _) => {
+            bcx = glue::take_ty(bcx, llbox, callee_ty);
+            bcx.tcx().sess.bug(~"@self receiver with non-@Trait");
+        }
+        (ast::sty_uniq(*), _) => {
+            bcx.tcx().sess.bug(~"~self receiver with non-~Trait")
+        }
+    };
+
+    let llscratch = alloca(bcx, val_ty(llbox));
+    Store(bcx, llbox, llscratch);
+    let self_mode = ty::ByRef;
+    let llself = llscratch;
 
     // Load the function from the vtable and cast it to the expected type.
     debug!("(translating trait callee) loading method");
