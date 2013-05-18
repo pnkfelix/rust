@@ -17,7 +17,7 @@ use io::{fd_t, WriterUtil};
 use libc::{c_char, c_void, c_uint, intptr_t, uintptr_t};
 use libc;
 use managed::raw::{BoxHeaderRepr, BoxRepr, RC_MANAGED_UNIQUE, RC_IMMORTAL};
-use option::{Some,None};
+use option::{Some,None,Option};
 use ptr::{mut_null, null, to_unsafe_ptr};
 use sys::size_of;
 use sys::{TypeDesc, size_of};
@@ -30,6 +30,9 @@ use unstable::intrinsics::ctlz64;
 
 use container::{Container, Mutable, Map};
 use trie::{TrieMap, TrieSet};
+
+use os;
+use ops::Drop;
 
 #[cfg(not(test))] use ptr::to_unsafe_ptr;
 
@@ -169,6 +172,7 @@ pub struct Gc {
     gc_zeal: bool,
     report_gc_stats: bool,
     check_gc_consistency: bool,
+    write_graph: bool,
 
     phase: GcPhase,
     free_buffer: TrieSet,
@@ -182,6 +186,8 @@ pub struct Gc {
 
     threshold: uint,
     alloc_count: uint,
+
+    graph: Option<GraphWriter>,
 
     n_collections: uint,
     n_ns_marking: Stat,
@@ -265,6 +271,8 @@ pub impl Gc {
             check_gc_consistency: zealous ||
                 dbg ||
                 check_flag("RUST_CHECK_GC_CONSISTENCY"),
+            write_graph:
+                check_flag("RUST_WRITE_GC_GRAPH"),
 
             phase: GcIdle,
             free_buffer: TrieSet::new(),
@@ -279,6 +287,7 @@ pub impl Gc {
             threshold: 1024,
             alloc_count: 0,
 
+            graph: None,
             n_collections: 0,
             n_ns_marking: Stat::new(),
             n_ns_sweeping: Stat::new(),
@@ -782,7 +791,15 @@ pub impl Gc {
     }
 
     #[inline(always)]
-    unsafe fn mark_one(&mut self, mut addr: uint) {
+    fn maybe_write_edge(w: &Option<GraphWriter>, from: uint, to: uint) {
+        match *w {
+            None => (),
+            Some(ref gw) => gw.write_uint_edge(from, to)
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn mark_one(&mut self, from: uint, mut addr: uint) {
         if addr < self.lowest || addr > self.highest {
             return;
         }
@@ -793,6 +810,7 @@ pub impl Gc {
                           &mut already_marked,
                           &mut self.heap) {
             if already_marked {
+                Gc::maybe_write_edge(&self.graph, from, addr);
                 if self.phase == GcMarkingStack {
                     self.debug_str_range("  already marked via stack",
                                          addr, sz);
@@ -803,6 +821,7 @@ pub impl Gc {
             }
             return;
         }
+        Gc::maybe_write_edge(&self.graph, from, addr);
         if self.debug_gc {
             if self.phase == GcMarkingStack {
                 self.debug_str_range("  marked via stack",
@@ -873,7 +892,7 @@ pub impl Gc {
                     loop;
                 }
                 */
-                self.mark_one(addr);
+                self.mark_one(curr-1, addr);
             }
             self.debug_str_range("finished scanning range",
                                  ptr, sz);
@@ -900,7 +919,7 @@ pub impl Gc {
         do each_retained_ptr(transmute(self.task)) |p| {
             self.debug_str_hex("marking TLS value",
                                transmute(p));
-            self.mark_one(transmute(p));
+            self.mark_one(0, transmute(p));
         }
         self.mark_queued();
 
@@ -989,6 +1008,10 @@ pub impl Gc {
         // everything goes south if we get this wrong.
         assert!(size_of::<BoxHeaderRepr>() == 4 * size_of::<uint>());
 
+        if self.write_graph {
+            self.graph = Some(GraphWriter::new());
+        }
+
         precise_time_ns(&mut start);
 
         // NB: need this here before we lock down the GC, to make sure
@@ -1023,6 +1046,9 @@ pub impl Gc {
         self.n_ns_total.curr += (end - start) as i64;
 
         self.flush_and_report_stats("gc");
+        if self.write_graph {
+            self.graph = None;
+        }
     }
 
     unsafe fn annihilate(&mut self) {
@@ -1181,3 +1207,38 @@ extern {
     fn dump_registers(out_regs: *mut Registers, next_fn: *c_void);
 }
 
+
+struct GraphWriter {
+    file: *libc::FILE
+}
+
+impl GraphWriter {
+    fn new() -> GraphWriter {
+        let file = do os::as_c_charp("./graph.dot") |filep| {
+            do os::as_c_charp("w") |modep| {
+                unsafe {
+                    libc::fopen(filep, modep)
+                }
+            }
+        };
+        file.write_str("digraph g {\n");
+        GraphWriter { file: file }
+    }
+
+    fn write_uint_edge(&self, from: uint, to: uint) {
+        self.file.write_str("    n");
+        self.file.write_hex_uint(from);
+        self.file.write_str(" -> n");
+        self.file.write_hex_uint(to);
+        self.file.write_str(";\n");
+    }
+}
+
+impl Drop for GraphWriter {
+    fn finalize(&self) {
+        unsafe {
+            self.file.write_str("\n}\n");
+            libc::fclose(self.file);
+        }
+    }
+}
