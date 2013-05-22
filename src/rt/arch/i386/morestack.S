@@ -160,7 +160,11 @@ MORESTACK:
 
 	// FIXME (1226): main is compiled with the split-stack prologue,
 	// causing it to call __morestack, so we have to jump back out
+#ifdef __linux__
+	calll RUST_GET_TASK@PLT
+#else
 	calll RUST_GET_TASK
+#endif
 	testl %eax,%eax
 	jz .L$bail
 
@@ -178,7 +182,11 @@ MORESTACK:
 	movl 36(%esp),%eax // The amount of stack needed
 	movl %eax,(%esp)
 
+#ifdef __linux__
+	call UPCALL_NEW_STACK@PLT
+#else
 	call UPCALL_NEW_STACK
+#endif
 
 	// Save the address of the new stack
 	movl %eax, (%esp)
@@ -209,7 +217,11 @@ MORESTACK:
 	// Save the return value of the function we allocated space for
 	movl %eax, (%esp)
 
+#ifdef __linux__
+	call UPCALL_DEL_STACK@PLT
+#else
 	call UPCALL_DEL_STACK
+#endif		
 
 	// And restore it
 	movl (%esp), %eax
