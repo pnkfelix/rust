@@ -38,6 +38,7 @@ use middle::typeck::infer::combine::Combine;
 use middle::typeck::infer::InferCtxt;
 use middle::typeck::infer::{new_infer_ctxt, resolve_ivar};
 use middle::typeck::infer::{resolve_nested_tvar, resolve_type};
+use middle::typeck::infer;
 use syntax::ast::{crate, def_id, def_mod, def_struct, def_trait, def_ty};
 use syntax::ast::{item, item_enum, item_impl, item_mod, item_struct};
 use syntax::ast::{local_crate, method, trait_ref, ty_path};
@@ -563,10 +564,10 @@ pub impl CoherenceChecker {
     // type variables. Returns the monotype and the type variables created.
     fn universally_quantify_polytype(&self, polytype: ty_param_bounds_and_ty)
                                   -> UniversalQuantificationResult {
-        // NDM--this span is bogus.
         let self_region =
             polytype.generics.region_param.map(
-                |_r| self.inference_context.next_region_var_nb(dummy_sp()));
+                |_| self.inference_context.next_region_var(
+                    infer::BoundRegionInCoherence));
 
         let bounds_count = polytype.generics.type_param_defs.len();
         let type_parameters = self.inference_context.next_ty_vars(bounds_count);
@@ -598,7 +599,7 @@ pub impl CoherenceChecker {
           -> bool {
         let mut might_unify = true;
         let _ = do self.inference_context.probe {
-            let result = self.inference_context.sub(true, dummy_sp())
+            let result = self.inference_context.sub(true, infer::Unknown)
                                                .tys(a.monotype, b.monotype);
             if result.is_ok() {
                 // Check to ensure that each parameter binding respected its

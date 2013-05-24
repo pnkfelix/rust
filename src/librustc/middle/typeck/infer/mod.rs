@@ -263,7 +263,7 @@ use middle::typeck::infer::to_str::InferStr;
 use middle::typeck::infer::unify::{ValsAndBindings, Root};
 use middle::typeck::isr_alist;
 use util::common::indent;
-use util::ppaux::{bound_region_to_str, ty_to_str, trait_ref_to_str};
+use util::ppaux::{bound_region_to_str, ty_to_str, trait_ref_to_str, Repr};
 
 use std::list::Nil;
 use std::smallintmap::SmallIntMap;
@@ -316,6 +316,94 @@ pub struct InferCtxt {
     region_vars: RegionVarBindings,
 }
 
+pub enum ConstraintOrigin {
+    Unknown,
+
+    FromExpr(@ast::expr),
+
+    // Miscellaneous constraint: not very informative. Probably
+    // indicates code that should be refactored.
+    Misc(span),
+
+    Reborrow(span),
+
+    MethodCompatCheck(span),
+
+    // Invocation of closure must be within its lifetime
+    InvokeClosure(span),
+
+    // Dereference of borrowed pointer must be within its lifetime
+    DerefPointer(span),
+
+    // Closure bound must not outlive captured free variables
+    FreeVariable(span),
+
+    // Index into slice must be within its lifetime
+    IndexSlice(span),
+
+    // Relating trait refs when resolving vtables
+    RelateTraitRefs(span),
+
+    // Relating trait refs when resolving vtables
+    RelateSelfType(span),
+
+    // When casting `&'a T` to an `&'b Trait` object,
+    // relating `'a` to `'b`
+    RelateObjectBound(span),
+
+    // Region resulting from a `&` expr must enclose the `&` expr
+    RelateAddrOf(span),
+
+    // Region in return type of invoked fn must enclose call
+    RelateCallReturn(span),
+}
+
+/// Reasons to create a region inference variable
+pub enum RegionVariableOrigin {
+    // Region variables created for ill-categorized reasons,
+    // mostly indicates places in need of refactoring
+    MiscVariable(span),
+
+    // Regions created by a `&P` or `[...]` pattern
+    PatternRegion(span),
+
+    // Regions created by `&` operator
+    AddrOfRegion(span),
+
+    // Regions created by `&[...]` literal
+    AddrOfSlice(span),
+
+    // Regions created as part of an autoref of a method receiver
+    Autoref(span),
+
+    // Regions created as part of an automatic coercion
+    Coerce(ConstraintOrigin),
+
+    // Region variables created for bound regions
+    // in a function or method that is called
+    BoundRegionInFnCall(span, ty::bound_region),
+
+    // Region variables created for bound regions
+    // when doing subtyping/lub/glb computations
+    BoundRegionInFnType(span, ty::bound_region),
+
+    BoundRegionInTypeOrImpl(span),
+
+    BoundRegionInCoherence,
+
+    BoundRegionError(span),
+}
+
+impl ConstraintOrigin {
+    pub fn span(&self) -> span {
+        match *self {
+            Unknown => codemap::dummy_sp(),
+            Misc(s) => s,
+            Reborrow(s) => s,
+        }
+    }
+}
+
 pub enum fixup_err {
     unresolved_int_ty(IntVid),
     unresolved_ty(TyVid),
@@ -363,14 +451,14 @@ pub fn new_infer_ctxt(tcx: ty::ctxt) -> @mut InferCtxt {
 
 pub fn mk_subty(cx: @mut InferCtxt,
                 a_is_expected: bool,
-                span: span,
+                origin: ConstraintOrigin,
                 a: ty::t,
                 b: ty::t)
              -> ures {
     debug!("mk_subty(%s <: %s)", a.inf_str(cx), b.inf_str(cx));
     do indent {
         do cx.commit {
-            cx.sub(a_is_expected, span).tys(a, b)
+            cx.sub(a_is_expected, origin).tys(a, b)
         }
     }.to_ures()
 }
@@ -379,35 +467,35 @@ pub fn can_mk_subty(cx: @mut InferCtxt, a: ty::t, b: ty::t) -> ures {
     debug!("can_mk_subty(%s <: %s)", a.inf_str(cx), b.inf_str(cx));
     do indent {
         do cx.probe {
-            cx.sub(true, codemap::dummy_sp()).tys(a, b)
+            cx.sub(true, Unknown).tys(a, b)
         }
     }.to_ures()
 }
 
 pub fn mk_subr(cx: @mut InferCtxt,
                a_is_expected: bool,
-               span: span,
+               origin: ConstraintOrigin,
                a: ty::Region,
                b: ty::Region)
             -> ures {
     debug!("mk_subr(%s <: %s)", a.inf_str(cx), b.inf_str(cx));
     do indent {
         do cx.commit {
-            cx.sub(a_is_expected, span).regions(a, b)
+            cx.sub(a_is_expected, origin).regions(a, b)
         }
     }.to_ures()
 }
 
 pub fn mk_eqty(cx: @mut InferCtxt,
                a_is_expected: bool,
-               span: span,
+               origin: ConstraintOrigin,
                a: ty::t,
                b: ty::t)
             -> ures {
     debug!("mk_eqty(%s <: %s)", a.inf_str(cx), b.inf_str(cx));
     do indent {
         do cx.commit {
-            let suber = cx.sub(a_is_expected, span);
+            let suber = cx.sub(a_is_expected, origin);
             eq_tys(&suber, a, b)
         }
     }.to_ures()
@@ -415,7 +503,7 @@ pub fn mk_eqty(cx: @mut InferCtxt,
 
 pub fn mk_sub_trait_refs(cx: @mut InferCtxt,
                          a_is_expected: bool,
-                         span: span,
+                         origin: ConstraintOrigin,
                          a: &ty::TraitRef,
                          b: &ty::TraitRef)
     -> ures
@@ -424,7 +512,7 @@ pub fn mk_sub_trait_refs(cx: @mut InferCtxt,
            a.inf_str(cx), b.inf_str(cx));
     do indent {
         do cx.commit {
-            let suber = cx.sub(a_is_expected, span);
+            let suber = cx.sub(a_is_expected, origin);
             suber.trait_refs(a, b)
         }
     }.to_ures()
@@ -432,14 +520,14 @@ pub fn mk_sub_trait_refs(cx: @mut InferCtxt,
 
 pub fn mk_coercety(cx: @mut InferCtxt,
                    a_is_expected: bool,
-                   span: span,
+                   origin: ConstraintOrigin,
                    a: ty::t,
                    b: ty::t)
                 -> CoerceResult {
     debug!("mk_coercety(%s -> %s)", a.inf_str(cx), b.inf_str(cx));
     do indent {
         do cx.commit {
-            Coerce(cx.combine_fields(a_is_expected, span)).tys(a, b)
+            Coerce(cx.combine_fields(a_is_expected, origin)).tys(a, b)
         }
     }
 }
@@ -448,8 +536,7 @@ pub fn can_mk_coercety(cx: @mut InferCtxt, a: ty::t, b: ty::t) -> ures {
     debug!("can_mk_coercety(%s -> %s)", a.inf_str(cx), b.inf_str(cx));
     do indent {
         do cx.probe {
-            let span = codemap::dummy_sp();
-            Coerce(cx.combine_fields(true, span)).tys(a, b)
+            Coerce(cx.combine_fields(true, Unknown)).tys(a, b)
         }
     }.to_ures()
 }
@@ -534,14 +621,14 @@ struct Snapshot {
 pub impl InferCtxt {
     fn combine_fields(@mut self,
                       a_is_expected: bool,
-                      span: span) -> CombineFields {
+                      origin: ConstraintOrigin) -> CombineFields {
         CombineFields {infcx: self,
                        a_is_expected: a_is_expected,
-                       span: span}
+                       origin: origin}
     }
 
-    fn sub(@mut self, a_is_expected: bool, span: span) -> Sub {
-        Sub(self.combine_fields(a_is_expected, span))
+    fn sub(@mut self, a_is_expected: bool, origin: ConstraintOrigin) -> Sub {
+        Sub(self.combine_fields(a_is_expected, origin))
     }
 
     fn in_snapshot(&self) -> bool {
@@ -661,25 +748,8 @@ pub impl InferCtxt {
         ty::mk_float_var(self.tcx, self.next_float_var_id())
     }
 
-    fn next_region_var_nb(&mut self, span: span) -> ty::Region {
-        ty::re_infer(ty::ReVar(self.region_vars.new_region_var(span)))
-    }
-
-    fn next_region_var_with_lb(&mut self, span: span,
-                               lb_region: ty::Region) -> ty::Region {
-        let region_var = self.next_region_var_nb(span);
-
-        // add lb_region as a lower bound on the newly built variable
-        assert!(self.region_vars.make_subregion(span,
-                                                     lb_region,
-                                                     region_var).is_ok());
-
-        return region_var;
-    }
-
-    fn next_region_var(&mut self, span: span, scope_id: ast::node_id)
-                      -> ty::Region {
-        self.next_region_var_with_lb(span, ty::re_scope(scope_id))
+    fn next_region_var(&mut self, origin: RegionVariableOrigin) -> ty::Region {
+        ty::re_infer(ty::ReVar(self.region_vars.new_region_var(origin)))
     }
 
     fn resolve_regions(&mut self) {
@@ -796,16 +866,12 @@ pub impl InferCtxt {
     }
 
     fn replace_bound_regions_with_fresh_regions(&mut self,
-            span: span,
+            origin: ConstraintOrigin,
             fsig: &ty::FnSig)
          -> (ty::FnSig, isr_alist) {
         let(isr, _, fn_sig) =
             replace_bound_regions_in_fn_sig(self.tcx, @Nil, None, fsig, |br| {
-                // N.B.: The name of the bound region doesn't have anything to
-                // do with the region variable that's created for it.  The
-                // only thing we're doing with `br` here is using it in the
-                // debug message.
-                let rvar = self.next_region_var_nb(span);
+                let rvar = self.next_region_var(BoundRegionInFnType(origin, br));
                 debug!("Bound region %s maps to %?",
                        bound_region_to_str(self.tcx, br),
                        rvar);
@@ -822,5 +888,23 @@ pub fn fold_regions_in_sig(
 {
     do ty::fold_sig(fn_sig) |t| {
         ty::fold_regions(tcx, t, fldr)
+    }
+}
+
+impl Repr for ConstraintOrigin {
+    fn repr(&self, tcx: ty::ctxt) -> ~str {
+        match *self {
+            Unknown => {
+                ~"Unknown"
+            }
+            Misc(span) => {
+                fmt!("Misc(%s)",
+                     tcx.sess.codemap.span_to_str(span))
+            }
+            Reborrow(span) => {
+                fmt!("Reborrow(%s)",
+                     tcx.sess.codemap.span_to_str(span))
+            }
+        }
     }
 }

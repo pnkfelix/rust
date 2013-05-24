@@ -18,6 +18,7 @@ use middle::typeck::infer::glb::Glb;
 use middle::typeck::infer::InferCtxt;
 use middle::typeck::infer::lub::Lub;
 use middle::typeck::infer::to_str::InferStr;
+use middle::typeck::infer::ConstraintOrigin;
 use util::common::{indent, indenter};
 use util::ppaux::bound_region_to_str;
 
@@ -34,7 +35,7 @@ impl Combine for Sub {
     fn infcx(&self) -> @mut InferCtxt { self.infcx }
     fn tag(&self) -> ~str { ~"sub" }
     fn a_is_expected(&self) -> bool { self.a_is_expected }
-    fn span(&self) -> span { self.span }
+    fn origin(&self) -> ConstraintOrigin { self.origin }
 
     fn sub(&self) -> Sub { Sub(**self) }
     fn lub(&self) -> Lub { Lub(**self) }
@@ -60,11 +61,9 @@ impl Combine for Sub {
                self.tag(),
                a.inf_str(self.infcx),
                b.inf_str(self.infcx));
-        do indent {
-            match self.infcx.region_vars.make_subregion(self.span, a, b) {
-              Ok(()) => Ok(a),
-              Err(ref e) => Err((*e))
-            }
+        match self.infcx.region_vars.make_subregion(self.origin, a, b) {
+            Ok(()) => Ok(a),
+            Err(ref e) => Err((*e))
         }
     }
 
@@ -168,7 +167,7 @@ impl Combine for Sub {
         // region variable.
         let (a_sig, _) =
             self.infcx.replace_bound_regions_with_fresh_regions(
-                self.span, a);
+                self.origin, a);
 
         // Second, we instantiate each bound region in the supertype with a
         // fresh concrete region.

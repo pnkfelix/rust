@@ -157,8 +157,11 @@ fn relate_trait_refs(vcx: &VtableContext,
      * error otherwise.
      */
 
-    match infer::mk_sub_trait_refs(vcx.infcx, false, location_info.span,
-                                   act_trait_ref, exp_trait_ref)
+    match infer::mk_sub_trait_refs(vcx.infcx,
+                                   false,
+                                   infer::RelateTraitRefs(location_info.span),
+                                   act_trait_ref,
+                                   exp_trait_ref)
     {
         result::Ok(()) => {} // Ok.
         result::Err(ref err) => {
@@ -295,7 +298,8 @@ fn lookup_vtable(vcx: &VtableContext,
                             } = impl_self_ty(vcx, location_info, im.did);
                             match infer::mk_subty(vcx.infcx,
                                                   false,
-                                                  location_info.span,
+                                                  infer::RelateSelfType(
+                                                      location_info.span),
                                                   ty,
                                                   for_ty) {
                                 result::Err(_) => loop,
@@ -607,7 +611,8 @@ pub fn early_resolve_expr(ex: @ast::expr,
                                ty::RegionTraitStore(rb)) => {
                                   infer::mk_subr(fcx.infcx(),
                                                  false,
-                                                 ex.span,
+                                                 infer::RelateObjectRegion(
+                                                     ex.span),
                                                  rb,
                                                  ra);
                               }

@@ -34,6 +34,7 @@ use middle::typeck::check::FnCtxt;
 use middle::typeck::check::regionmanip::relate_nested_regions;
 use middle::typeck::infer::resolve_and_force_all_but_regions;
 use middle::typeck::infer::resolve_type;
+use middle::typeck::infer;
 use util::ppaux::{note_and_explain_region, ty_to_str,
                   region_to_str};
 use middle::pat_util;
@@ -356,8 +357,11 @@ fn visit_expr(expr: @ast::expr, rcx: @mut Rcx, v: rvt) {
             match ty::get(target_ty).sty {
                 ty::ty_trait(_, _, ty::RegionTraitStore(trait_region), _) => {
                     let source_ty = rcx.fcx.expr_ty(source);
-                    constrain_regions_in_type(rcx, trait_region,
-                                              expr.span, source_ty);
+                    constrain_regions_in_type(
+                        rcx,
+                        trait_region,
+                        infer::RelateObjectBound(expr.span),
+                        source_ty);
                 }
                 _ => ()
             }
@@ -374,7 +378,8 @@ fn visit_expr(expr: @ast::expr, rcx: @mut Rcx, v: rvt) {
             //
             // FIXME(#6268) nested method calls requires that this rule change
             let ty0 = rcx.resolve_node_type(expr.id);
-            constrain_regions_in_type(rcx, ty::re_scope(expr.id), expr.span, ty0);
+            constrain_regions_in_type(rcx, ty::re_scope(expr.id),
+                                      infer::RelateAddrOf(expr.span), ty0);
         }
 
         ast::expr_match(discr, ref arms) => {
@@ -412,7 +417,7 @@ fn constrain_callee(rcx: @mut Rcx,
     match ty::get(callee_ty).sty {
         ty::ty_bare_fn(*) => { }
         ty::ty_closure(ref closure_ty) => {
-            match rcx.fcx.mk_subr(true, callee_expr.span,
+            match rcx.fcx.mk_subr(true, infer::InvokeClosure(callee_expr.span),
                                   call_region, closure_ty.region) {
                 result::Err(_) => {
                     tcx.sess.span_err(
@@ -491,7 +496,8 @@ fn constrain_call(rcx: @mut Rcx,
     // constrain regions that may appear in the return type to be
     // valid for the function call:
     constrain_regions_in_type(
-        rcx, callee_region, call_expr.span, fn_sig.output);
+        rcx, callee_region, infer::RelateCallReturn(call_expr.span),
+        fn_sig.output);
 }
 
 fn constrain_derefs(rcx: @mut Rcx,
@@ -535,7 +541,7 @@ pub fn mk_subregion_due_to_derefence(rcx: @mut Rcx,
                                      deref_span: span,
                                      minimum_lifetime: ty::Region,
                                      maximum_lifetime: ty::Region) {
-    match rcx.fcx.mk_subr(true, deref_span,
+    match rcx.fcx.mk_subr(true, infer::DerefPointer(deref_span),
                           minimum_lifetime, maximum_lifetime) {
         result::Ok(*) => {}
         result::Err(*) => {
@@ -572,7 +578,8 @@ fn constrain_index(rcx: @mut Rcx,
     match ty::get(indexed_ty).sty {
         ty::ty_estr(ty::vstore_slice(r_ptr)) |
         ty::ty_evec(_, ty::vstore_slice(r_ptr)) => {
-            match rcx.fcx.mk_subr(true, index_expr.span, r_index_expr, r_ptr) {
+            match rcx.fcx.mk_subr(true, infer::IndexSlice(index_expr.span),
+                                  r_index_expr, r_ptr) {
                 result::Ok(*) => {}
                 result::Err(*) => {
                     tcx.sess.span_err(
@@ -607,7 +614,7 @@ fn constrain_free_variables(rcx: @mut Rcx,
         let def = freevar.def;
         let en_region = encl_region_of_def(rcx.fcx, def);
         debug!("en_region = %s", en_region.repr(tcx));
-        match rcx.fcx.mk_subr(true, freevar.span,
+        match rcx.fcx.mk_subr(true, infer::FreeVariable(freevar.span),
                               region, en_region) {
           result::Ok(()) => {}
           result::Err(_) => {
@@ -657,7 +664,7 @@ fn constrain_regions_in_type_of_node(
 fn constrain_regions_in_type(
     rcx: @mut Rcx,
     minimum_lifetime: ty::Region,
-    span: span,
+    origin: infer::ConstraintOrigin,
     ty: ty::t) -> bool
 {
     /*!
@@ -692,11 +699,11 @@ fn constrain_regions_in_type(
             // constrained by `minimum_lifetime` as they are placeholders
             // for regions that are as-yet-unknown.
         } else {
-            match rcx.fcx.mk_subr(true, span, r_sub, r_sup) {
+            match rcx.fcx.mk_subr(true, origin, r_sub, r_sup) {
                 result::Err(_) => {
                     if r_sub == minimum_lifetime {
                         tcx.sess.span_err(
-                            span,
+                            origin.span(),
                             fmt!("reference is not valid outside of its lifetime"));
                         note_and_explain_region(
                             tcx,
@@ -705,7 +712,7 @@ fn constrain_regions_in_type(
                             "");
                     } else {
                         tcx.sess.span_err(
-                            span,
+                            origin.span(),
                             fmt!("in type `%s`, pointer has a longer lifetime than \
                                   the data it references",
                                  rcx.fcx.infcx().ty_to_str(ty)));
@@ -1246,7 +1253,7 @@ pub mod guarantor {
 
 pub fn infallibly_mk_subr(rcx: @mut Rcx,
                           a_is_expected: bool,
-                          span: span,
+                          origin: infer::ConstraintOrigin,
                           a: ty::Region,
                           b: ty::Region) {
     /*!
@@ -1256,11 +1263,11 @@ pub fn infallibly_mk_subr(rcx: @mut Rcx,
      * ever see `Err(_)`.
      */
 
-    match rcx.fcx.mk_subr(a_is_expected, span, a, b) {
+    match rcx.fcx.mk_subr(a_is_expected, origin, a, b) {
         result::Ok(()) => {}
         result::Err(e) => {
             rcx.fcx.ccx.tcx.sess.span_bug(
-                span,
+                origin.span(),
                 fmt!("Supposedly infallible attempt to \
                       make %? < %? failed: %?",
                      a, b, e));

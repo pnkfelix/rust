@@ -62,7 +62,7 @@ use middle::typeck::infer::glb::Glb;
 use middle::typeck::infer::lub::Lub;
 use middle::typeck::infer::sub::Sub;
 use middle::typeck::infer::to_str::InferStr;
-use middle::typeck::infer::{cres, InferCtxt, ures};
+use middle::typeck::infer::{cres, InferCtxt, ures, ConstraintOrigin};
 use util::common::indent;
 
 use core::result::{iter_vec2, map_vec2};
@@ -76,7 +76,7 @@ pub trait Combine {
     fn infcx(&self) -> @mut InferCtxt;
     fn tag(&self) -> ~str;
     fn a_is_expected(&self) -> bool;
-    fn span(&self) -> span;
+    fn origin(&self) -> ConstraintOrigin;
 
     fn sub(&self) -> Sub;
     fn lub(&self) -> Lub;
@@ -118,7 +118,7 @@ pub trait Combine {
 pub struct CombineFields {
     infcx: @mut InferCtxt,
     a_is_expected: bool,
-    span: span,
+    origin: ConstraintOrigin,
 }
 
 pub fn expected_found<C:Combine,T>(
