@@ -33,7 +33,7 @@ $$(HBIN$(2)_H_$(4))/rustc$$(X_$(4)): \
 	| $$(HBIN$(2)_H_$(4))/
 
 	@$$(call E, cp: $$@)
-	$$(Q)cp $$< $$@
+	$$(Q) cp $$< $$@
 
 $$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTC_$(4)): \
 	$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTC_$(4)) \
@@ -45,8 +45,8 @@ $$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTC_$(4)): \
 	| $$(HLIB$(2)_H_$(4))/
 
 	@$$(call E, cp: $$@)
-	$$(Q)cp $$< $$@
-	$$(Q)cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUSTC_GLOB_$(4)) \
+	$$(Q) cp $$< $$@
+	$$(Q) cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUSTC_GLOB_$(4)) \
 		$(wildcard $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUSTC_DSYM_GLOB_$(4))) \
 	        $$(HLIB$(2)_H_$(4))
 
@@ -58,8 +58,8 @@ $$(HLIB$(2)_H_$(4))/$(CFG_LIBSYNTAX_$(4)): \
 	$$(HEXTRALIB_DEFAULT$(2)_H_$(4)) \
 	| $$(HLIB$(2)_H_$(4))/
 	@$$(call E, cp: $$@)
-	$$(Q)cp $$< $$@
-	$$(Q)cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBSYNTAX_GLOB_$(4)) \
+	$$(Q) cp $$< $$@
+	$$(Q) cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBSYNTAX_GLOB_$(4)) \
 		$$(wildcard $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBSYNTAX_DSYM_GLOB_$(4))) \
 	        $$(HLIB$(2)_H_$(4))
 
@@ -67,14 +67,14 @@ $$(HLIB$(2)_H_$(4))/$(CFG_RUNTIME_$(4)): \
 	$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_RUNTIME_$(4)) \
 	| $$(HLIB$(2)_H_$(4))/
 	@$$(call E, cp: $$@)
-	$$(Q)cp $$< $$@
+	$$(Q) cp $$< $$@
 
 $$(HLIB$(2)_H_$(4))/$(CFG_STDLIB_$(4)): \
 	$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_STDLIB_$(4)) \
 	$$(HLIB$(2)_H_$(4))/$(CFG_RUNTIME_$(4)) \
 	| $$(HLIB$(2)_H_$(4))/
 	@$$(call E, cp: $$@)
-	$$(Q)cp $$< $$@
+	$$(Q) cp $$< $$@
 # Subtle: We do not let the shell expand $(STDLIB_DSYM_GLOB) directly rather
 # we use Make's $$(wildcard) facility. The reason is that, on mac, when using
 # USE_SNAPSHOT_STDLIB, we copy the std.dylib file out of the snapshot.
@@ -82,7 +82,7 @@ $$(HLIB$(2)_H_$(4))/$(CFG_STDLIB_$(4)): \
 # glob, and cp reports an error because libstd-*.dylib.dsym does not exist.
 # Make instead expands the glob to nothing, which gives us the correct behavior.
 # (Copy .dsym file if it exists, but do nothing otherwise)
-	$$(Q)cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(STDLIB_GLOB_$(4)) \
+	$$(Q) cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(STDLIB_GLOB_$(4)) \
 		$$(wildcard $$(TLIB$(1)_T_$(4)_H_$(3))/$(STDLIB_DSYM_GLOB_$(4))) \
 	        $$(HLIB$(2)_H_$(4))
 
@@ -92,8 +92,8 @@ $$(HLIB$(2)_H_$(4))/$(CFG_EXTRALIB_$(4)): \
 	$$(HLIB$(2)_H_$(4))/$(CFG_RUNTIME_$(4)) \
 	| $$(HLIB$(2)_H_$(4))/
 	@$$(call E, cp: $$@)
-	$$(Q)cp $$< $$@
-	$$(Q)cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(EXTRALIB_GLOB_$(4)) \
+	$$(Q) cp $$< $$@
+	$$(Q) cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(EXTRALIB_GLOB_$(4)) \
 		$$(wildcard $$(TLIB$(1)_T_$(4)_H_$(3))/$(EXTRALIB_DSYM_GLOB_$(4))) \
 	        $$(HLIB$(2)_H_$(4))
 
@@ -102,7 +102,7 @@ $$(HLIB$(2)_H_$(4))/libstd.rlib: \
 	$$(HLIB$(2)_H_$(4))/$$(CFG_RUNTIME_$(4)) \
 	| $$(HLIB$(2)_H_$(4))/
 	@$$(call E, cp: $$@)
-	$$(Q)cp $$< $$@
+	$$(Q) cp $$< $$@
 
 $$(HLIB$(2)_H_$(4))/libextra.rlib: \
 	$$(TLIB$(1)_T_$(4)_H_$(3))/libextra.rlib \
@@ -110,7 +110,7 @@ $$(HLIB$(2)_H_$(4))/libextra.rlib: \
 	$$(HLIB$(2)_H_$(4))/$$(CFG_RUNTIME_$(4)) \
 	| $$(HLIB$(2)_H_$(4))/
 	@$$(call E, cp: $$@)
-	$$(Q)cp $$< $$@
+	$$(Q) cp $$< $$@
 
 $$(HLIB$(2)_H_$(4))/librustc.rlib: \
 	$$(TLIB$(1)_T_$(4)_H_$(3))/librustc.rlib \
@@ -119,13 +119,13 @@ $$(HLIB$(2)_H_$(4))/librustc.rlib: \
 	$$(HLIB$(2)_H_$(4))/$$(CFG_RUNTIME_$(4)) \
 	| $$(HLIB$(2)_H_$(4))/
 	@$$(call E, cp: $$@)
-	$$(Q)cp $$< $$@
+	$$(Q) cp $$< $$@
 
 $$(HLIB$(2)_H_$(4))/$(CFG_RUSTLLVM_$(4)): \
 	$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_RUSTLLVM_$(4)) \
 	| $$(HLIB$(2)_H_$(4))/
 	@$$(call E, cp: $$@)
-	$$(Q)cp $$< $$@
+	$$(Q) cp $$< $$@
 
 $$(HBIN$(2)_H_$(4))/:
 	mkdir -p $$@

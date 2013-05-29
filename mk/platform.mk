@@ -106,7 +106,31 @@ ifeq ($(CFG_C_COMPILER),gcc)
     CPP=gcc
   endif
 else
+ifeq ($(CFG_C_COMPILER),ccache clang)
+  ifeq ($(origin CC),default)
+    CC=ccache clang
+  endif
+  ifeq ($(origin CXX),default)
+    CXX=ccache clang++
+  endif
+  ifeq ($(origin CPP),default)
+    CPP=ccache clang
+  endif
+else
+ifeq ($(CFG_C_COMPILER),ccache gcc)
+  ifeq ($(origin CC),default)
+    CC=ccache gcc
+  endif
+  ifeq ($(origin CXX),default)
+    CXX=ccache g++
+  endif
+  ifeq ($(origin CPP),default)
+    CPP=ccache gcc
+  endif
+else
   CFG_ERR := $(error please try on a system with gcc or clang)
+endif
+endif
 endif
 endif
 

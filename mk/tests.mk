@@ -135,30 +135,30 @@ endif
 ######################################################################
 
 check: cleantestlibs cleantmptestlogs tidy all check-stage2
-	$(Q)$(CFG_PYTHON) $(S)src/etc/check-summary.py tmp/*.log
+	$(Q) $(CFG_PYTHON) $(S)src/etc/check-summary.py tmp/*.log
 
 check-notidy: cleantestlibs cleantmptestlogs all check-stage2
-	$(Q)$(CFG_PYTHON) $(S)src/etc/check-summary.py tmp/*.log
+	$(Q) $(CFG_PYTHON) $(S)src/etc/check-summary.py tmp/*.log
 
 check-full: cleantestlibs cleantmptestlogs tidy \
             all check-stage1 check-stage2 check-stage3
-	$(Q)$(CFG_PYTHON) $(S)src/etc/check-summary.py tmp/*.log
+	$(Q) $(CFG_PYTHON) $(S)src/etc/check-summary.py tmp/*.log
 
 check-test: cleantestlibs cleantmptestlogs all check-stage2-rfail
-	$(Q)$(CFG_PYTHON) $(S)src/etc/check-summary.py tmp/*.log
+	$(Q) $(CFG_PYTHON) $(S)src/etc/check-summary.py tmp/*.log
 
 check-lite: cleantestlibs cleantmptestlogs \
 	check-stage2-std check-stage2-extra check-stage2-rpass \
 	check-stage2-rfail check-stage2-cfail
-	$(Q)$(CFG_PYTHON) $(S)src/etc/check-summary.py tmp/*.log
+	$(Q) $(CFG_PYTHON) $(S)src/etc/check-summary.py tmp/*.log
 
 .PHONY: cleantmptestlogs cleantestlibs
 
 cleantmptestlogs:
-	$(Q)rm -f tmp/*.log
+	$(Q) rm -f tmp/*.log
 
 cleantestlibs:
-	$(Q)find $(CFG_BUILD_TRIPLE)/test \
+	$(Q) find $(CFG_BUILD_TRIPLE)/test \
          -name '*.[odasS]' -o \
          -name '*.so' -o      \
          -name '*.dylib' -o   \
@@ -210,14 +210,14 @@ ALL_HS := $(filter-out $(S)src/rt/vg/valgrind.h \
 # Run the tidy script in multiple parts to avoid huge 'echo' commands
 tidy:
 		@$(call E, check: formatting)
-		$(Q)find $(S)src -name '*.r[sc]' \
+		$(Q) find $(S)src -name '*.r[sc]' \
 		| grep '^$(S)src/test' -v \
 		| xargs -n 10 $(CFG_PYTHON) $(S)src/etc/tidy.py
-		$(Q)find $(S)src/etc -name '*.py' \
+		$(Q) find $(S)src/etc -name '*.py' \
 		| xargs -n 10 $(CFG_PYTHON) $(S)src/etc/tidy.py
-		$(Q)echo $(ALL_CS) \
+		$(Q) echo $(ALL_CS) \
 		| xargs -n 10 $(CFG_PYTHON) $(S)src/etc/tidy.py
-		$(Q)echo $(ALL_HS) \
+		$(Q) echo $(ALL_HS) \
 		| xargs -n 10 $(CFG_PYTHON) $(S)src/etc/tidy.py
 
 endif
@@ -351,7 +351,7 @@ check-stage$(1)-T-$(2)-H-$(3)-$(4)-exec: $$(call TEST_OK_FILE,$(1),$(2),$(3),$(4
 $$(call TEST_OK_FILE,$(1),$(2),$(3),$(4)): \
 		$(3)/stage$(1)/test/$(4)test-$(2)$$(X_$(2))
 	@$$(call E, run: $$<)
-	$$(Q)$$(call CFG_RUN_TEST_$(2),$$<,$(2),$(3)) $$(TESTARGS)	\
+	$$(Q) $$(call CFG_RUN_TEST_$(2),$$<,$(2),$(3)) $$(TESTARGS)	\
 	--logfile $$(call TEST_LOG_FILE,$(1),$(2),$(3),$(4)) \
 	&& touch $$@
 endef
@@ -537,7 +537,7 @@ $$(call TEST_OK_FILE,$(1),$(2),$(3),$(4)): \
 		$$(TEST_SREQ$(1)_T_$(2)_H_$(3)) \
                 $$(CTEST_DEPS_$(4)_$(1)-T-$(2)-H-$(3))
 	@$$(call E, run $(4) [$(2)]: $$<)
-	$$(Q)$$(call CFG_RUN_CTEST_$(2),$(1),$$<,$(3)) \
+	$$(Q) $$(call CFG_RUN_CTEST_$(2),$(1),$$<,$(3)) \
 		$$(CTEST_ARGS$(1)-T-$(2)-H-$(3)-$(4)) \
 		--logfile $$(call TEST_LOG_FILE,$(1),$(2),$(3),$(4)) \
                 && touch $$@
@@ -589,7 +589,7 @@ $$(call TEST_OK_FILE,$(1),$(2),$(3),$(4)): \
 	        $$(TEST_SREQ$(1)_T_$(2)_H_$(3))		\
 	        $$(PRETTY_DEPS_$(4))
 	@$$(call E, run pretty-rpass [$(2)]: $$<)
-	$$(Q)$$(call CFG_RUN_CTEST_$(2),$(1),$$<,$(3)) \
+	$$(Q) $$(call CFG_RUN_CTEST_$(2),$(1),$$<,$(3)) \
 		$$(PRETTY_ARGS$(1)-T-$(2)-H-$(3)-$(4)) \
 		--logfile $$(call TEST_LOG_FILE,$(1),$(2),$(3),$(4)) \
                 && touch $$@
@@ -616,7 +616,7 @@ $$(call TEST_OK_FILE,$(1),$(2),$(3),doc-$(4)): \
 	        $$(TEST_SREQ$(1)_T_$(2)_H_$(3))		\
                 doc-$(4)-extract$(3)
 	@$$(call E, run doc-$(4) [$(2)]: $$<)
-	$$(Q)$$(call CFG_RUN_CTEST_$(2),$(1),$$<,$(3)) \
+	$$(Q) $$(call CFG_RUN_CTEST_$(2),$(1),$$<,$(3)) \
                 $$(DOC_TEST_ARGS$(1)-T-$(2)-H-$(3)-doc-$(4)) \
 		--logfile $$(call TEST_LOG_FILE,$(1),$(2),$(3),doc-$(4)) \
                 && touch $$@
@@ -640,8 +640,8 @@ define DEF_DOC_TEST_HOST
 
 doc-$(2)-extract$(1):
 	@$$(call E, extract: $(2) tests)
-	$$(Q)rm -f $(1)/test/doc-$(2)/*.rs
-	$$(Q)$$(EXTRACT_TESTS) $$(S)doc/$(2).md $(1)/test/doc-$(2)
+	$$(Q) rm -f $(1)/test/doc-$(2)/*.rs
+	$$(Q) $$(EXTRACT_TESTS) $$(S)doc/$(2).md $(1)/test/doc-$(2)
 
 endef
 
@@ -746,7 +746,7 @@ tmp/$(FT).rc tmp/$(FT_DRIVER).rs: \
 		$(RPASS_TESTS) \
 		$(S)src/etc/combine-tests.py
 	@$(call E, check: building combined stage2 test runner)
-	$(Q)$(CFG_PYTHON) $(S)src/etc/combine-tests.py
+	$(Q) $(CFG_PYTHON) $(S)src/etc/combine-tests.py
 
 define DEF_CHECK_FAST_FOR_T_H
 # $(1) unused
@@ -769,7 +769,7 @@ $(3)/test/$$(FT_DRIVER)-$(2)$$(X_$(2)): \
 $(3)/test/$$(FT_DRIVER)-$(2).out: \
 		$(3)/test/$$(FT_DRIVER)-$(2)$$(X_$(2)) \
 		$$(SREQ2_T_$(2)_H_$(3))
-	$$(Q)$$(call CFG_RUN_TEST_$(2),$$<,$(2),$(3)) \
+	$$(Q) $$(call CFG_RUN_TEST_$(2),$$<,$(2),$(3)) \
 	--logfile tmp/$$(FT_DRIVER)-$(2).log
 
 check-fast-T-$(2)-H-$(3):     			\

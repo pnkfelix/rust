@@ -123,28 +123,28 @@ RUNTIME_LIBS_$(1) := $$(LIBUV_LIB_$(1))
 
 rt/$(1)/%.o: rt/%.cpp $$(MKFILE_DEPS)
 	@$$(call E, compile: $$@)
-	$$(Q)$$(call CFG_COMPILE_CXX_$(1), $$@, $$(RUNTIME_INCS_$(1)) \
+	$$(Q) $$(call CFG_COMPILE_CXX_$(1), $$@, $$(RUNTIME_INCS_$(1)) \
                  $$(SNAP_DEFINES)) $$<
 
 rt/$(1)/%.o: rt/%.c $$(MKFILE_DEPS)
 	@$$(call E, compile: $$@)
-	$$(Q)$$(call CFG_COMPILE_C_$(1), $$@, $$(RUNTIME_INCS_$(1)) \
+	$$(Q) $$(call CFG_COMPILE_C_$(1), $$@, $$(RUNTIME_INCS_$(1)) \
                  $$(SNAP_DEFINES)) $$<
 
 rt/$(1)/%.o: rt/%.S  $$(MKFILE_DEPS) \
                      $$(LLVM_CONFIG_$$(CFG_BUILD_TRIPLE))
 	@$$(call E, compile: $$@)
-	$$(Q)$$(call CFG_ASSEMBLE_$(1),$$@,$$<)
+	$$(Q) $$(call CFG_ASSEMBLE_$(1),$$@,$$<)
 
 rt/$(1)/arch/$$(HOST_$(1))/libmorestack.a: $$(MORESTACK_OBJ_$(1))
 	@$$(call E, link: $$@)
-	$$(Q)$(AR_$(1)) rcs $$@ $$<
+	$$(Q) $(AR_$(1)) rcs $$@ $$<
 
 rt/$(1)/$(CFG_RUNTIME_$(1)): $$(RUNTIME_OBJS_$(1)) $$(MKFILE_DEPS) \
                         $$(RUNTIME_DEF_$(1)) \
                         $$(RUNTIME_LIBS_$(1))
 	@$$(call E, link: $$@)
-	$$(Q)$$(call CFG_LINK_CXX_$(1),$$@, $$(RUNTIME_OBJS_$(1)) \
+	$$(Q) $$(call CFG_LINK_CXX_$(1),$$@, $$(RUNTIME_OBJS_$(1)) \
 	  $$(CFG_GCCISH_POST_LIB_FLAGS_$(1)) $$(RUNTIME_LIBS_$(1)) \
 	  $$(CFG_LIBUV_LINK_FLAGS_$(1)),$$(RUNTIME_DEF_$(1)),$$(CFG_RUNTIME_$(1)))
 
@@ -166,13 +166,13 @@ endif
 # XXX: Shouldn't need platform-specific conditions here
 ifdef CFG_WINDOWSY_$(1)
 $$(LIBUV_LIB_$(1)): $$(LIBUV_DEPS)
-	$$(Q)$$(MAKE) -C $$(S)src/libuv/ \
+	$$(Q) $$(MAKE) -C $$(S)src/libuv/ \
 		builddir_name="$$(CFG_BUILD_DIR)/rt/$(1)/libuv" \
 		OS=mingw \
 		V=$$(VERBOSE)
 else ifeq ($(OSTYPE_$(1)), linux-androideabi)
 $$(LIBUV_LIB_$(1)): $$(LIBUV_DEPS)
-	$$(Q)$$(MAKE) -C $$(S)src/libuv/ \
+	$$(Q) $$(MAKE) -C $$(S)src/libuv/ \
 		CFLAGS="$$(CFG_GCCISH_CFLAGS) $$(LIBUV_FLAGS_$$(HOST_$(1))) $$(SNAP_DEFINES)" \
 		LDFLAGS="$$(CFG_GCCISH_LINK_FLAGS) $$(LIBUV_FLAGS_$$(HOST_$(1)))" \
 		CC="$$(CC_$(1))" \
@@ -184,7 +184,7 @@ $$(LIBUV_LIB_$(1)): $$(LIBUV_DEPS)
 		V=$$(VERBOSE)
 else
 $$(LIBUV_LIB_$(1)): $$(LIBUV_DEPS)
-	$$(Q)$$(MAKE) -C $$(S)src/libuv/ \
+	$$(Q) $$(MAKE) -C $$(S)src/libuv/ \
 		CFLAGS="$$(CFG_GCCISH_CFLAGS) $$(LIBUV_FLAGS_$$(HOST_$(1))) $$(SNAP_DEFINES)" \
 		LDFLAGS="$$(CFG_GCCISH_LINK_FLAGS) $$(LIBUV_FLAGS_$$(HOST_$(1)))" \
 		CC="$$(CC_$(1))" \
@@ -200,31 +200,31 @@ endif
 # This regexp has a single $, escaped twice
 %.bsd.def:    %.def.in $$(MKFILE_DEPS)
 	@$$(call E, def: $$@)
-	$$(Q)echo "{" > $$@
-	$$(Q)sed 's/.$$$$/&;/' $$< >> $$@
-	$$(Q)echo "};" >> $$@
+	$$(Q) echo "{" > $$@
+	$$(Q) sed 's/.$$$$/&;/' $$< >> $$@
+	$$(Q) echo "};" >> $$@
 
 %.linux.def:    %.def.in $$(MKFILE_DEPS)
 	@$$(call E, def: $$@)
-	$$(Q)echo "{" > $$@
-	$$(Q)sed 's/.$$$$/&;/' $$< >> $$@
-	$$(Q)echo "};" >> $$@
+	$$(Q) echo "{" > $$@
+	$$(Q) sed 's/.$$$$/&;/' $$< >> $$@
+	$$(Q) echo "};" >> $$@
 
 %.darwin.def:	%.def.in $$(MKFILE_DEPS)
 	@$$(call E, def: $$@)
-	$$(Q)sed 's/^./_&/' $$< > $$@
+	$$(Q) sed 's/^./_&/' $$< > $$@
 
 %.android.def:  %.def.in $$(MKFILE_DEPS)
 	@$$(call E, def: $$@)
-	$$(Q)echo "{" > $$@
-	$$(Q)sed 's/.$$$$/&;/' $$< >> $$@
-	$$(Q)echo "};" >> $$@
+	$$(Q) echo "{" > $$@
+	$$(Q) sed 's/.$$$$/&;/' $$< >> $$@
+	$$(Q) echo "};" >> $$@
 
 %.mingw32.def:	%.def.in $$(MKFILE_DEPS)
 	@$$(call E, def: $$@)
-	$$(Q)echo LIBRARY $$* > $$@
-	$$(Q)echo EXPORTS >> $$@
-	$$(Q)sed 's/^./    &/' $$< >> $$@
+	$$(Q) echo LIBRARY $$* > $$@
+	$$(Q) echo EXPORTS >> $$@
+	$$(Q) sed 's/^./    &/' $$< >> $$@
 
 endef
 

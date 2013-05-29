@@ -60,15 +60,15 @@ LICENSE.txt: $(S)COPYRIGHT $(S)LICENSE-APACHE $(S)LICENSE-MIT
 $(PKG_EXE): rust.iss modpath.iss LICENSE.txt rust-logo.ico \
             $(PKG_FILES) all rustc-stage3
 	@$(call E, ISCC: $@)
-	$(Q)"$(CFG_ISCC)" $<
+	$(Q) "$(CFG_ISCC)" $<
 endif
 
 
 $(PKG_TAR): $(PKG_FILES)
 	@$(call E, making dist dir)
-	$(Q)rm -Rf dist
-	$(Q)mkdir -p dist/$(PKG_DIR)
-	$(Q)tar \
+	$(Q) rm -Rf dist
+	$(Q) mkdir -p dist/$(PKG_DIR)
+	$(Q) tar \
          -C $(S) \
          --exclude-vcs \
          --exclude=*~ \
@@ -79,8 +79,8 @@ $(PKG_TAR): $(PKG_FILES)
          --exclude=*/llvm/test/*/*/*.td \
          --exclude=*/llvm/test/*/*/*.s \
          -c $(UNROOTED_PKG_FILES) | tar -x -C dist/$(PKG_DIR)
-	$(Q)tar -czf $(PKG_TAR) -C dist $(PKG_DIR)
-	$(Q)rm -Rf dist
+	$(Q) tar -czf $(PKG_TAR) -C dist $(PKG_DIR)
+	$(Q) rm -Rf dist
 
 .PHONY: dist distcheck
 
@@ -99,18 +99,18 @@ else
 dist: $(PKG_TAR)
 
 distcheck: $(PKG_TAR)
-	$(Q)rm -Rf dist
-	$(Q)mkdir -p dist
+	$(Q) rm -Rf dist
+	$(Q) mkdir -p dist
 	@$(call E, unpacking $(PKG_TAR) in dist/$(PKG_DIR))
-	$(Q)cd dist && tar -xzf ../$(PKG_TAR)
+	$(Q) cd dist && tar -xzf ../$(PKG_TAR)
 	@$(call E, configuring in dist/$(PKG_DIR)-build)
-	$(Q)mkdir -p dist/$(PKG_DIR)-build
-	$(Q)cd dist/$(PKG_DIR)-build && ../$(PKG_DIR)/configure
+	$(Q) mkdir -p dist/$(PKG_DIR)-build
+	$(Q) cd dist/$(PKG_DIR)-build && ../$(PKG_DIR)/configure
 	@$(call E, making 'check' in dist/$(PKG_DIR)-build)
-	$(Q)+make -C dist/$(PKG_DIR)-build check
+	$(Q) +make -C dist/$(PKG_DIR)-build check
 	@$(call E, making 'clean' in dist/$(PKG_DIR)-build)
-	$(Q)+make -C dist/$(PKG_DIR)-build clean
-	$(Q)rm -Rf dist
+	$(Q) +make -C dist/$(PKG_DIR)-build clean
+	$(Q) rm -Rf dist
 	@echo
 	@echo -----------------------------------------------
 	@echo $(PKG_TAR) ready for distribution
