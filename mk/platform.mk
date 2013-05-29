@@ -390,6 +390,10 @@ CFG_LDPATH_x86_64-unknown-freebsd :=
 CFG_RUN_x86_64-unknown-freebsd=$(2)
 CFG_RUN_TARG_x86_64-unknown-freebsd=$(call CFG_RUN_x86_64-unknown-freebsd,,$(2))
 
+ifeq ($(CFG_CCACHE_CPP2),1)
+  CCACHE_CPP2=1
+  export CCACHE_CPP
+endif
 
 define CFG_MAKE_TOOLCHAIN
   CFG_COMPILE_C_$(1) = $$(CC_$(1))  \
