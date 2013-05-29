@@ -33,7 +33,7 @@ use syntax::parse::token::special_idents;
 use syntax::print::pprust::path_to_str;
 use syntax::codemap::{span, dummy_sp, BytePos};
 use syntax::visit::{mk_simple_visitor, default_simple_visitor, SimpleVisitor};
-use syntax::visit::{default_visitor, mk_vt, Visitor, visit_block};
+use syntax::visit::{default_visitor, mk_vt, VisitorStruct, visit_block};
 use syntax::visit::{visit_crate, visit_expr, visit_expr_opt};
 use syntax::visit::{visit_foreign_item, visit_item};
 use syntax::visit::{visit_mod, visit_ty, vt};
@@ -898,7 +898,7 @@ pub impl Resolver {
     fn build_reduced_graph(@mut self) {
         let initial_parent =
             ModuleReducedGraphParent(self.graph_root.get_module());
-        visit_crate(self.crate, initial_parent, mk_vt(@Visitor {
+        visit_crate(self.crate, initial_parent, mk_vt(@VisitorStruct {
             visit_item: |item, context, visitor|
                 self.build_reduced_graph_for_item(item, context, visitor),
 
@@ -3435,7 +3435,7 @@ pub impl Resolver {
     fn resolve_crate(@mut self) {
         debug!("(resolving crate) starting");
 
-        visit_crate(self.crate, (), mk_vt(@Visitor {
+        visit_crate(self.crate, (), mk_vt(@VisitorStruct {
             visit_item: |item, _context, visitor|
                 self.resolve_item(item, visitor),
             visit_arm: |arm, _context, visitor|

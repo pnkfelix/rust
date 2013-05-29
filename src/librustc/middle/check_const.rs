@@ -26,7 +26,7 @@ pub fn check_crate(sess: Session,
                    def_map: resolve::DefMap,
                    method_map: typeck::method_map,
                    tcx: ty::ctxt) {
-    visit::visit_crate(crate, false, visit::mk_vt(@visit::Visitor {
+    visit::visit_crate(crate, false, visit::mk_vt(@visit::VisitorStruct {
         visit_item: |a,b,c| check_item(sess, ast_map, def_map, a, b, c),
         visit_pat: check_pat,
         visit_expr: |a,b,c|
@@ -217,7 +217,7 @@ pub fn check_item_recursion(sess: Session,
         idstack: @mut ~[]
     };
 
-    let visitor = visit::mk_vt(@visit::Visitor {
+    let visitor = visit::mk_vt(@visit::VisitorStruct {
         visit_item: visit_item,
         visit_expr: visit_expr,
         .. *visit::default_visitor()

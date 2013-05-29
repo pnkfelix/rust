@@ -84,7 +84,7 @@ pub fn gather_loans(bccx: @BorrowckCtxt,
         repeating_ids: ~[body.node.id],
         move_data: @mut MoveData::new()
     };
-    let v = visit::mk_vt(@visit::Visitor {visit_expr: gather_loans_in_expr,
+    let v = visit::mk_vt(@visit::VisitorStruct {visit_expr: gather_loans_in_expr,
                                           visit_block: gather_loans_in_block,
                                           visit_fn: gather_loans_in_fn,
                                           visit_stmt: add_stmt_to_map,

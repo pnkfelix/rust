@@ -388,7 +388,7 @@ pub fn check_crate(tcx: ty::ctxt,
         }
     };
 
-    let visitor = visit::mk_vt(@visit::Visitor {
+    let visitor = visit::mk_vt(@visit::VisitorStruct {
         visit_mod: |the_module, span, node_id, method_map, visitor| {
             let n_added = add_privileged_items(the_module.items);
 

@@ -69,7 +69,7 @@ pub fn check_crate(tcx: ty::ctxt,
         method_map: method_map,
         current_item: -1
     };
-    let visit = visit::mk_vt(@visit::Visitor {
+    let visit = visit::mk_vt(@visit::VisitorStruct {
         visit_arm: check_arm,
         visit_expr: check_expr,
         visit_fn: check_fn,

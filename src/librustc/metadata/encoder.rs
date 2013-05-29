@@ -1072,7 +1072,7 @@ fn encode_info_for_items(ecx: @EncodeContext,
     encode_info_for_mod(ecx, ebml_w, &crate.node.module,
                         crate_node_id, [],
                         syntax::parse::token::special_idents::invalid);
-    visit::visit_crate(crate, (), visit::mk_vt(@visit::Visitor {
+    visit::visit_crate(crate, (), visit::mk_vt(@visit::VisitorStruct {
         visit_expr: |_e, _cx, _v| { },
         visit_item: {
             let ebml_w = copy *ebml_w;

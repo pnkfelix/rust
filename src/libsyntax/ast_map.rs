@@ -113,7 +113,7 @@ pub fn extend(cx: @mut Ctx, elt: ident) -> @path {
 }
 
 pub fn mk_ast_map_visitor() -> vt {
-    return visit::mk_vt(@visit::Visitor {
+    return visit::mk_vt(@visit::VisitorStruct {
         visit_item: map_item,
         visit_expr: map_expr,
         visit_stmt: map_stmt,

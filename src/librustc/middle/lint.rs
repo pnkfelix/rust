@@ -484,7 +484,7 @@ pub fn each_lint(sess: session::Session,
 // not traverse into subitems, since that is handled by the outer
 // lint visitor.
 fn item_stopping_visitor<E: Copy>(v: visit::vt<E>) -> visit::vt<E> {
-    visit::mk_vt(@visit::Visitor {
+    visit::mk_vt(@visit::VisitorStruct {
         visit_item: |_i, _e, _v| { },
         visit_fn: |fk, fd, b, s, id, e, v| {
             match *fk {
@@ -496,11 +496,11 @@ fn item_stopping_visitor<E: Copy>(v: visit::vt<E>) -> visit::vt<E> {
 }
 
 fn ty_stopping_visitor<E>(v: visit::vt<E>) -> visit::vt<E> {
-    visit::mk_vt(@visit::Visitor {visit_ty: |_t, _e, _v| { },.. **v})
+    visit::mk_vt(@visit::VisitorStruct {visit_ty: |_t, _e, _v| { },.. **v})
 }
 
 fn lint_while_true() -> visit::vt<@mut Context> {
-    visit::mk_vt(@visit::Visitor {
+    visit::mk_vt(@visit::VisitorStruct {
         visit_expr: |e, cx: @mut Context, vt| {
             match e.node {
                 ast::expr_while(cond, _) => {
@@ -622,7 +622,7 @@ fn lint_type_limits() -> visit::vt<@mut Context> {
         }
     }
 
-    visit::mk_vt(@visit::Visitor {
+    visit::mk_vt(@visit::VisitorStruct {
         visit_expr: |e, cx: @mut Context, vt| {
             match e.node {
                 ast::expr_binary(ref binop, @ref l, @ref r) => {
@@ -758,7 +758,7 @@ fn check_item_heap(cx: &Context, it: @ast::item) {
 }
 
 fn lint_heap() -> visit::vt<@mut Context> {
-    visit::mk_vt(@visit::Visitor {
+    visit::mk_vt(@visit::VisitorStruct {
         visit_expr: |e, cx: @mut Context, vt| {
             let ty = ty::expr_ty(cx.tcx, e);
             check_type(cx, e.span, ty);
@@ -769,7 +769,7 @@ fn lint_heap() -> visit::vt<@mut Context> {
 }
 
 fn lint_path_statement() -> visit::vt<@mut Context> {
-    visit::mk_vt(@visit::Visitor {
+    visit::mk_vt(@visit::VisitorStruct {
         visit_stmt: |s, cx: @mut Context, vt| {
             match s.node {
                 ast::stmt_semi(
@@ -835,7 +835,7 @@ fn check_item_non_camel_case_types(cx: &Context, it: @ast::item) {
 }
 
 fn lint_unused_unsafe() -> visit::vt<@mut Context> {
-    visit::mk_vt(@visit::Visitor {
+    visit::mk_vt(@visit::VisitorStruct {
         visit_expr: |e, cx: @mut Context, vt| {
             match e.node {
                 ast::expr_block(ref blk) if blk.node.rules == ast::unsafe_blk => {
@@ -878,7 +878,7 @@ fn lint_unused_mut() -> visit::vt<@mut Context> {
         }
     }
 
-    visit::mk_vt(@visit::Visitor {
+    visit::mk_vt(@visit::VisitorStruct {
         visit_local: |l, cx: @mut Context, vt| {
             if l.node.is_mutbl {
                 check_pat(cx, l.node.pat);
@@ -951,7 +951,7 @@ fn lint_unnecessary_allocations() -> visit::vt<@mut Context> {
         }
     }
 
-    visit::mk_vt(@visit::Visitor {
+    visit::mk_vt(@visit::VisitorStruct {
         visit_expr: |e, cx: @mut Context, vt| {
             check(cx, e);
             visit::visit_expr(e, cx, vt);
@@ -961,7 +961,7 @@ fn lint_unnecessary_allocations() -> visit::vt<@mut Context> {
 }
 
 fn lint_missing_struct_doc() -> visit::vt<@mut Context> {
-    visit::mk_vt(@visit::Visitor {
+    visit::mk_vt(@visit::VisitorStruct {
         visit_struct_field: |field, cx: @mut Context, vt| {
             let relevant = match field.node.kind {
                 ast::named_field(_, vis) => vis != ast::private,
@@ -989,7 +989,7 @@ fn lint_missing_struct_doc() -> visit::vt<@mut Context> {
 }
 
 fn lint_missing_trait_doc() -> visit::vt<@mut Context> {
-    visit::mk_vt(@visit::Visitor {
+    visit::mk_vt(@visit::VisitorStruct {
         visit_trait_method: |method, cx: @mut Context, vt| {
             let mut has_doc = false;
             let span = match copy *method {
@@ -1061,7 +1061,7 @@ pub fn check_crate(tcx: ty::ctxt, crate: @ast::crate) {
     do cx.with_lint_attrs(crate.node.attrs) {
         cx.process(Crate(crate));
 
-        visit::visit_crate(crate, cx, visit::mk_vt(@visit::Visitor {
+        visit::visit_crate(crate, cx, visit::mk_vt(@visit::VisitorStruct {
             visit_item: |it, cx: @mut Context, vt| {
                 do cx.with_lint_attrs(it.attrs) {
                     check_item_ctypes(cx, it);

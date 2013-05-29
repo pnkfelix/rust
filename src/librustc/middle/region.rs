@@ -491,7 +491,7 @@ pub fn resolve_crate(sess: Session,
                       region_maps: region_maps,
                       parent: None,
                       var_parent: None};
-    let visitor = visit::mk_vt(@visit::Visitor {
+    let visitor = visit::mk_vt(@visit::VisitorStruct {
         visit_block: resolve_block,
         visit_item: resolve_item,
         visit_fn: resolve_fn,
@@ -917,7 +917,7 @@ pub fn determine_rp_in_crate(sess: Session,
     };
 
     // Gather up the base set, worklist and dep_map
-    let visitor = visit::mk_vt(@visit::Visitor {
+    let visitor = visit::mk_vt(@visit::VisitorStruct {
         visit_fn: determine_rp_in_fn,
         visit_item: determine_rp_in_item,
         visit_ty: determine_rp_in_ty,

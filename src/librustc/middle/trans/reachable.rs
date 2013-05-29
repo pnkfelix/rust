@@ -143,7 +143,7 @@ fn traverse_public_item(cx: @mut ctx, item: @item) {
       }
       item_ty(t, _) => {
         traverse_ty(t, cx,
-                    visit::mk_vt(@visit::Visitor {visit_ty: traverse_ty,
+                    visit::mk_vt(@visit::VisitorStruct {visit_ty: traverse_ty,
                                                   ..*visit::default_visitor()}))
       }
       item_const(*) |
@@ -228,7 +228,7 @@ fn traverse_inline_body(cx: @mut ctx, body: &blk) {
     fn traverse_item(i: @item, cx: @mut ctx, _v: visit::vt<@mut ctx>) {
       traverse_public_item(cx, i);
     }
-    visit::visit_block(body, cx, visit::mk_vt(@visit::Visitor {
+    visit::visit_block(body, cx, visit::mk_vt(@visit::VisitorStruct {
         visit_expr: traverse_expr,
         visit_item: traverse_item,
          ..*visit::default_visitor()
@@ -241,7 +241,7 @@ fn traverse_all_resources_and_impls(cx: @mut ctx, crate_mod: &_mod) {
         codemap::dummy_sp(),
         0,
         cx,
-        visit::mk_vt(@visit::Visitor {
+        visit::mk_vt(@visit::VisitorStruct {
             visit_expr: |_e, _cx, _v| { },
             visit_item: |i, cx, v| {
                 visit::visit_item(i, cx, v);

@@ -295,7 +295,7 @@ fn visit_item(_item: @ast::item, _wbcx: @mut WbCtxt, _v: wb_vt) {
 }
 
 fn mk_visitor() -> visit::vt<@mut WbCtxt> {
-    visit::mk_vt(@visit::Visitor {visit_item: visit_item,
+    visit::mk_vt(@visit::VisitorStruct {visit_item: visit_item,
                                   visit_stmt: visit_stmt,
                                   visit_expr: visit_expr,
                                   visit_block: visit_block,

@@ -22,7 +22,7 @@ pub struct Context {
 pub fn check_crate(tcx: ty::ctxt, crate: @crate) {
     visit::visit_crate(crate,
                        Context { in_loop: false, can_ret: true },
-                       visit::mk_vt(@visit::Visitor {
+                       visit::mk_vt(@visit::VisitorStruct {
         visit_item: |i, _cx, v| {
             visit::visit_item(i, Context {
                                     in_loop: false,

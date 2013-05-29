@@ -191,7 +191,7 @@ pub fn compute_moves(tcx: ty::ctxt,
                      method_map: method_map,
                      crate: @crate) -> MoveMaps
 {
-    let visitor = visit::mk_vt(@visit::Visitor {
+    let visitor = visit::mk_vt(@visit::VisitorStruct {
         visit_expr: compute_modes_for_expr,
         .. *visit::default_visitor()
     });

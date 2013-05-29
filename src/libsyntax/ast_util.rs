@@ -395,7 +395,7 @@ pub fn id_visitor<T: Copy>(vfn: @fn(node_id, T)) -> visit::vt<T> {
             vfn(p.id, t);
         }
     };
-    visit::mk_vt(@visit::Visitor {
+    visit::mk_vt(@visit::VisitorStruct {
         visit_mod: |m, sp, id, t, vt| {
             vfn(id, t);
             visit::visit_mod(m, sp, id, t, vt);

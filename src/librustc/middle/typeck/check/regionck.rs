@@ -161,7 +161,7 @@ fn regionck_visitor() -> rvt {
     // addressed by deferring the construction of the region
     // hierarchy, and in particular the relationships between free
     // regions, until regionck, as described in #3238.
-    visit::mk_vt(@visit::Visitor {visit_item: visit_item,
+    visit::mk_vt(@visit::VisitorStruct {visit_item: visit_item,
                                   visit_expr: visit_expr,
 
                                   //visit_pat: visit_pat, // (*) see above

@@ -54,7 +54,7 @@ pub fn check_loans(bccx: @BorrowckCtxt,
         reported: @mut HashSet::new(),
     };
 
-    let vt = visit::mk_vt(@visit::Visitor {visit_expr: check_loans_in_expr,
+    let vt = visit::mk_vt(@visit::VisitorStruct {visit_expr: check_loans_in_expr,
                                            visit_local: check_loans_in_local,
                                            visit_block: check_loans_in_block,
                                            visit_pat: check_loans_in_pat,

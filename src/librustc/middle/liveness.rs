@@ -147,7 +147,7 @@ pub fn check_crate(tcx: ty::ctxt,
                    method_map: typeck::method_map,
                    capture_map: moves::CaptureMap,
                    crate: @crate) {
-    let visitor = visit::mk_vt(@visit::Visitor {
+    let visitor = visit::mk_vt(@visit::VisitorStruct {
         visit_fn: visit_fn,
         visit_local: visit_local,
         visit_expr: visit_expr,
@@ -391,7 +391,7 @@ fn visit_fn(fk: &visit::fn_kind,
     let entry_ln = (*lsets).compute(decl, body);
 
     // check for various error conditions
-    let check_vt = visit::mk_vt(@visit::Visitor {
+    let check_vt = visit::mk_vt(@visit::VisitorStruct {
         visit_fn: check_fn,
         visit_local: check_local,
         visit_expr: check_expr,

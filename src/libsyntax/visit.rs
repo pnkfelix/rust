@@ -72,7 +72,7 @@ pub fn generics_of_fn(fk: &fn_kind) -> Generics {
     }
 }
 
-pub struct Visitor<E> {
+pub struct VisitorStruct<E> {
     visit_mod: @fn(&_mod, span, node_id, E, vt<E>),
     visit_view_item: @fn(@view_item, E, vt<E>),
     visit_foreign_item: @fn(@foreign_item, E, vt<E>),
@@ -95,10 +95,10 @@ pub struct Visitor<E> {
     visit_struct_method: @fn(@method, E, vt<E>)
 }
 
-pub type visitor<E> = @Visitor<E>;
+pub type visitor<E> = @VisitorStruct<E>;
 
 pub fn default_visitor<E: Copy>() -> visitor<E> {
-    return @Visitor {
+    return @VisitorStruct {
         visit_mod: |a,b,c,d,e|visit_mod::<E>(a, b, c, d, e),
         visit_view_item: |a,b,c|visit_view_item::<E>(a, b, c),
         visit_foreign_item: |a,b,c|visit_foreign_item::<E>(a, b, c),
@@ -730,7 +730,7 @@ pub fn mk_simple_visitor(v: simple_visitor) -> vt<()> {
         f(m);
         visit_struct_method(m, e, v);
     }
-    return mk_vt(@Visitor {
+    return mk_vt(@VisitorStruct {
         visit_mod: |a,b,c,d,e|v_mod(v.visit_mod, a, b, c, d, e),
         visit_view_item: |a,b,c| v_view_item(v.visit_view_item, a, b, c),
         visit_foreign_item:
