@@ -239,6 +239,8 @@ pub impl Scheduler {
     // * Scheduler-context operations
 
     fn interpret_message_queue(~self) -> bool {
+        // NDM `&mut self` seems more appropriate than `~self` here
+        // NDM And then there would be no need to call `Local::put`
         assert!(!self.in_task_context());
 
         rtdebug!("looking for scheduler messages");
@@ -247,12 +249,14 @@ pub impl Scheduler {
         match this.message_queue.pop() {
             Some(Wake) => {
                 rtdebug!("recv Wake message");
+                // NDM assert!(this.sleepy);
                 this.sleepy = false;
                 Local::put(this);
                 return true;
             }
             Some(Shutdown) => {
                 rtdebug!("recv Shutdown message");
+                // NDM Read more into the shutdown protocol
                 if this.sleepy {
                     // There may be an outstanding handle on the sleeper list.
                     // Pop them all to make sure that's not the case.
@@ -329,6 +333,8 @@ pub impl Scheduler {
     fn schedule_task(~self, task: ~Coroutine) {
         assert!(self.in_task_context());
 
+        // NDM Why have this and schedule_new_task?
+
         do self.switch_running_tasks_and_then(task) |sched, last_task| {
             let last_task = Cell(last_task);
             sched.enqueue_task(last_task.take());
@@ -359,8 +365,23 @@ pub impl Scheduler {
             // and saving the scheduler's
             Context::swap(sched_context, next_task_context);
 
+            // NDM "Other task runs here, eventually swapping back to this
+            // NDM context, at which point we resume."
+
+            // NDM Based on comments elsehwere, I guess that
+            // NDM we can be in another thread when we resume? This should
+            // NDM be documented. I haven't fully wrapped my hand around
+            // NDM the implications of that yet, I guess.
+            // NDM
+            // NDM In general, I guess that the use of unsafe_borrow here
+            // NDM is a kind of micro-optimization, since conceptually you
+            // NDM are taking ownership long enough to extract the cleanup_job
+            // NDM and then giving it back.
             let sched = Local::unsafe_borrow::<Scheduler>();
+
             // The running task should have passed ownership elsewhere
+            // NDM "Running task should now be in a suspended state,
+            // NDM and hence owned elsewhere"
             assert!((*sched).current_task.is_none());
 
             // Running tasks may have asked us to do some cleanup
@@ -398,12 +419,15 @@ pub impl Scheduler {
         Local::put(this);
 
         unsafe {
+            // NDM I don't quite get why there is always a last_task_context
             let sched = Local::unsafe_borrow::<Scheduler>();
             let (sched_context, last_task_context, _) = (*sched).get_contexts();
             let last_task_context = last_task_context.unwrap();
             Context::swap(last_task_context, sched_context);
 
             // We could be executing in a different thread now
+            // NDM how could we be running in a different thread now?
+            // NDM I guess the more pertinent question is...who is "we"?
             let sched = Local::unsafe_borrow::<Scheduler>();
             (*sched).run_cleanup_job();
         }
@@ -412,8 +436,14 @@ pub impl Scheduler {
     /// Switch directly to another task, without going through the scheduler.
     /// You would want to think hard about doing this, e.g. if there are
     /// pending I/O events it would be a bad idea.
+    // NDM Why would calling `switch_running_tasks_and_then` be a bad idea
+    // NDM if there were pending I/O? How do we know that there *isn't*
+    // NDM pending I/O, since this is called directly from spawn?
     fn switch_running_tasks_and_then(~self, next_task: ~Coroutine,
                                      f: &fn(&mut Scheduler, ~Coroutine)) {
+        // NDM: If I understand this code correctly,
+        // NDM: `f` may run on some other thread,
+        // NDM: should the new task be stolen?
         let mut this = self;
         assert!(this.in_task_context());
 
@@ -477,8 +507,9 @@ pub impl Scheduler {
     fn get_contexts<'a>(&'a mut self) -> (&'a mut Context,
                                           Option<&'a mut Context>,
                                           Option<&'a mut Context>) {
+        // NDM all this unsafe code is no longer needed. I removed it.
         let last_task = match self.cleanup_job {
-            Some(GiveTask(~ref task, _)) => {
+            Some(GiveTask(~ref mut task, _)) => {
                 Some(task)
             }
             Some(DoNothing) => {
@@ -486,22 +517,15 @@ pub impl Scheduler {
             }
             None => fail!("all context switches should have a cleanup job")
         };
-        // XXX: Pattern matching mutable pointers above doesn't work
-        // because borrowck thinks the three patterns are conflicting
-        // borrows
-        unsafe {
-            let last_task = transmute::<Option<&Coroutine>, Option<&mut Coroutine>>(last_task);
-            let last_task_context = match last_task {
-                Some(t) => Some(&mut t.saved_context), None => None
-            };
-            let next_task_context = match self.current_task {
-                Some(ref mut t) => Some(&mut t.saved_context), None => None
-            };
-            // XXX: These transmutes can be removed after snapshot
-            return (transmute(&mut self.saved_context),
-                    last_task_context,
-                    transmute(next_task_context));
-        }
+        let last_task_context = match last_task {
+            Some(t) => Some(&mut t.saved_context), None => None
+        };
+        let next_task_context = match self.current_task {
+            Some(ref mut t) => Some(&mut t.saved_context), None => None
+        };
+        return (&mut self.saved_context,
+                last_task_context,
+                next_task_context);
     }
 }
 

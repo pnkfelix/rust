@@ -27,6 +27,10 @@ pub trait EventLoop {
     fn run(&mut self);
     fn callback(&mut self, ~fn());
     fn callback_ms(&mut self, ms: u64, ~fn());
+
+    // NDM "Returns an object with a `fire` method. When `fire` is called,
+    // NDM it will kick this event loop into action and cause it to invoke
+    // NDM the `~fn` provided."
     fn remote_callback(&mut self, ~fn()) -> ~RemoteCallbackObject;
     /// The asynchronous I/O services. Not all event loops may provide one
     fn io<'a>(&'a mut self) -> Option<&'a mut IoFactoryObject>;

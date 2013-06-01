@@ -31,6 +31,7 @@ impl SleeperList {
     }
 
     pub fn push(&mut self, handle: SchedHandle) {
+        // NDM once fn would be nice here, or else modify `with` to take args
         let handle = Cell(handle);
         self.stack.with(|s| s.push(handle.take()));
     }

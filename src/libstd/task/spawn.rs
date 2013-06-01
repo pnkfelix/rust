@@ -579,6 +579,9 @@ fn spawn_raw_newsched(_opts: TaskOpts, f: ~fn()) {
     let mut sched = Local::take::<Scheduler>();
     let task = ~Coroutine::new(&mut sched.stack_pool, f);
     sched.schedule_new_task(task);
+    // NDM If I read this correctly, we eagerly switch into
+    // NDM the new task, rather than pushing it? It's not clear to me
+    // NDM that this is the right thing, but ok.
 }
 
 fn spawn_raw_oldsched(mut opts: TaskOpts, f: ~fn()) {

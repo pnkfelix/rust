@@ -138,6 +138,10 @@ impl<T> ChanOne<T> {
                     let mut sched = Local::take::<Scheduler>();
                     rtdebug!("rendezvous send");
                     sched.metrics.rendezvous_sends += 1;
+
+                    // NDM It is not clear to me that eagerly switching
+                    // NDM to the receiver is always right, but I guess it's
+                    // NDM as good as any
                     sched.schedule_task(recvr);
                 }
             }
@@ -165,6 +169,11 @@ impl<T> PortOne<T> {
         let packet = this.inner.packet();
 
         // XXX: Optimize this to not require the two context switches when data is available
+
+        // NDM: this is, I guess, as simple as reading the current state
+        // NDM: (with suitable fences). If you see STATE_ONE, after all,
+        // NDM: you know that the data is waiting for you and no further
+        // NDM: transitions will occur?
 
         // Switch to the scheduler to put the ~Task into the Packet state.
         let sched = Local::take::<Scheduler>();
@@ -210,6 +219,9 @@ impl<T> PortOne<T> {
         // 3) We encountered STATE_BOTH above and blocked, but the receiving task (this task)
         //    is pinned to some other scheduler, so the sending task had to give us to
         //    a different scheduler for resuming. That send synchronized memory.
+
+        // NDM I don't see any logic in the scheduler pertaining to
+        // NDM task pinning?
 
         unsafe {
             let payload = util::replace(&mut (*packet).payload, None);
