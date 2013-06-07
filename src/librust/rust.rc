@@ -102,6 +102,17 @@ static commands: &'static [Command<'static>] = &[
         )
     },
     Command{
+        cmd: "objdump",
+        action: Call(cmd_objdump),
+        usage_line: "display information from object files.",
+        usage_full: UsgStr(
+            "The objdump command prints the contents of a object file or \
+             crate in human-readble form.  It is an experimental tool for \
+             use in debugging; its output format is subject to change and \
+             thus not suitable for use with other tools."
+            )
+    },
+    Command{
         cmd: "doc",
         action: CallMain("rustdoc", rustdoc::main),
         usage_line: "generate documentation from doc comments",
@@ -190,6 +201,15 @@ fn cmd_run(args: &[~str]) -> ValidUsage {
             Valid(exit_code)
         }
         _ => Invalid
+    }
+}
+
+fn cmd_objdump(args: &[~str]) -> ValidUsage {
+    match args {
+        [ref filename, ..prog_args] => {
+            fail!(~"bye1");
+        },
+        _ => fail!(~"bye2")
     }
 }
 
