@@ -72,6 +72,29 @@ pub fn generics_of_fn(fk: &fn_kind) -> Generics {
     }
 }
 
+trait Visitor {
+    fn visit_mod(&self, &_mod, span, node_id);
+    fn visit_view_item(&self, @view_item);
+    fn visit_foreign_item(&self, @foreign_item);
+    fn visit_item(&self, @item);
+    fn visit_local(&self, @local);
+    fn visit_block(&self, &blk);
+    fn visit_stmt(&self, @stmt);
+    fn visit_arm(&self, &arm);
+    fn visit_pat(&self, @pat);
+    fn visit_decl(&self, @decl);
+    fn visit_expr(&self, @expr);
+    fn visit_expr_post(&self, @expr);
+    fn visit_ty(&self, @Ty);
+    fn visit_generics(&self, &Generics);
+    fn visit_fn(&self, &fn_kind, &fn_decl, &blk, span, node_id);
+    fn visit_ty_method(&self, &ty_method);
+    fn visit_trait_method(&self, &trait_method);
+    fn visit_struct_def(&self, @struct_def, ident, &Generics, node_id);
+    fn visit_struct_field(&self, @struct_field);
+    fn visit_struct_method(&self, @method);
+}
+
 pub struct VisitorStruct<E> {
     visit_mod: @fn(&_mod, span, node_id, (E, vt<E>)),
     visit_view_item: @fn(@view_item, (E, vt<E>)),
@@ -93,6 +116,89 @@ pub struct VisitorStruct<E> {
     visit_struct_def: @fn(@struct_def, ident, &Generics, node_id, (E, vt<E>)),
     visit_struct_field: @fn(@struct_field, (E, vt<E>)),
     visit_struct_method: @fn(@method, (E, vt<E>))
+}
+
+impl<E:Copy> Visitor for (E, vt<E>) {
+    fn visit_mod(&self, m: &_mod, s: span, i: node_id) {
+        let &(_, mk_vt(ref v)) = self;
+        (v.visit_mod)(m, s, i, *self);
+    }
+    fn visit_view_item(&self, i: @view_item) {
+        let &(_, mk_vt(ref v)) = self;
+        (v.visit_view_item)(i, *self);
+    }
+    fn visit_foreign_item(&self, i: @foreign_item) {
+        let &(_, mk_vt(ref v)) = self;
+        (v.visit_foreign_item)(i, *self);
+    }
+    fn visit_item(&self, i: @item) {
+        let &(_, mk_vt(ref v)) = self;
+        (v.visit_item)(i, *self);
+    }
+    fn visit_local(&self, l: @local) {
+        let &(_, mk_vt(ref v)) = self;
+        (v.visit_local)(l, *self);
+    }
+    fn visit_block(&self, b: &blk) {
+        let &(_, mk_vt(ref v)) = self;
+        (v.visit_block)(b, *self);
+    }
+    fn visit_stmt(&self, s: @stmt) {
+        let &(_, mk_vt(ref v)) = self;
+        (v.visit_stmt)(s, *self);
+    }
+    fn visit_arm(&self, a: &arm) {
+        let &(_, mk_vt(ref v)) = self;
+        (v.visit_arm)(a, *self);
+    }
+    fn visit_pat(&self, p: @pat) {
+        let &(_, mk_vt(ref v)) = self;
+        (v.visit_pat)(p, *self);
+    }
+    fn visit_decl(&self, d: @decl) {
+        let &(_, mk_vt(ref v)) = self;
+        (v.visit_decl)(d, *self);
+    }
+    fn visit_expr(&self, e: @expr) {
+        let &(_, mk_vt(ref v)) = self;
+        (v.visit_expr)(e, *self);
+    }
+    fn visit_expr_post(&self, e: @expr) {
+        let &(_, mk_vt(ref v)) = self;
+        (v.visit_expr_post)(e, *self);
+    }
+    fn visit_ty(&self, t: @Ty) {
+        let &(_, mk_vt(ref v)) = self;
+        (v.visit_ty)(t, *self);
+    }
+    fn visit_generics(&self, g: &Generics) {
+        let &(_, mk_vt(ref v)) = self;
+        (v.visit_generics)(g, *self);
+    }
+    fn visit_fn(&self, k: &fn_kind, d: &fn_decl, b: &blk, s: span, n: node_id) {
+        let &(_, mk_vt(ref v)) = self;
+        (v.visit_fn)(k, d, b, s, n, *self);
+    }
+    fn visit_ty_method(&self, m: &ty_method) {
+        let &(_, mk_vt(ref v)) = self;
+        (v.visit_ty_method)(m, *self);
+    }
+    fn visit_trait_method(&self, m: &trait_method) {
+        let &(_, mk_vt(ref v)) = self;
+        (v.visit_trait_method)(m, *self);
+    }
+    fn visit_struct_def(&self, d: @struct_def, i: ident, g: &Generics, n: node_id) {
+        let &(_, mk_vt(ref v)) = self;
+        (v.visit_struct_def)(d, i, g, n, *self);
+    }
+    fn visit_struct_field(&self, f: @struct_field) {
+        let &(_, mk_vt(ref v)) = self;
+        (v.visit_struct_field)(f, *self);
+    }
+    fn visit_struct_method(&self, m: @method) {
+        let &(_, mk_vt(ref v)) = self;
+        (v.visit_struct_method)(m, *self);
+    }
 }
 
 pub type visitor<E> = @VisitorStruct<E>;
