@@ -40,7 +40,7 @@ pub fn check_crate(tcx: ty::ctxt,
     let cx = @MatchCheckCtxt {tcx: tcx,
                               method_map: method_map,
                               moves_map: moves_map};
-    visit::visit_crate(crate, ((), visit::mk_vt(@visit::Visitor {
+    visit::visit_crate(crate, ((), visit::mk_vt(@visit::VisitorStruct {
         visit_expr: |a,b| check_expr(cx, a, b),
         visit_local: |a,b| check_local(cx, a, b),
         visit_fn: |kind, decl, body, sp, id, (e, v)|

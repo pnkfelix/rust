@@ -25,7 +25,7 @@ use parse;
 use parse::{parse_item_from_source_str};
 use parse::token::{ident_to_str, intern};
 use visit;
-use visit::Visitor;
+use visit::{VisitorStruct,visitor};
 
 use core::vec;
 
@@ -367,9 +367,9 @@ pub fn expand_stmt(extsbox: @mut SyntaxEnv,
 // return a visitor that extracts the pat_ident paths
 // from a given pattern and puts them in a mutable
 // array (passed in to the traversal)
-pub fn new_name_finder() -> @Visitor<@mut ~[ast::ident]> {
+pub fn new_name_finder() -> visitor<@mut ~[ast::ident]> {
     let default_visitor = visit::default_visitor();
-    @Visitor{
+    @VisitorStruct{
         visit_pat : |p:@ast::pat,
                      (ident_accum, v): (@mut ~[ast::ident], visit::vt<@mut ~[ast::ident]>)| {
             match *p {
