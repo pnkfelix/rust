@@ -228,6 +228,456 @@ pub fn default_visitor<E: Copy>() -> visitor<E> {
     };
 }
 
+trait Walk {
+    fn walk_crate(&self, &crate);
+    fn walk_mod(&self, &_mod, span, node_id);
+    fn walk_view_item(&self, @view_item);
+    fn walk_local(&self, loc: @local);
+    fn walk_trait_ref(&self, @ast::trait_ref);
+    fn walk_item(&self, @item);
+    fn walk_enum_def(&self, &ast::enum_def, &Generics);
+    fn walk_ty(&self, @Ty);
+    fn walk_path(&self, @Path);
+    fn walk_pat(&self, @pat);
+    fn walk_foreign_item(&self, @foreign_item);
+    fn walk_ty_param_bounds(&self, @OptVec<TyParamBound>);
+    fn walk_generics(&self, &Generics);
+    fn walk_fn_decl(&self, &fn_decl);
+    fn walk_method_helper(&self, &method);
+    fn walk_fn(&self, &fn_kind, &fn_decl, &blk, span, node_id);
+    fn walk_ty_method(&self, &ty_method);
+    fn walk_trait_method(&self, &trait_method);
+    fn walk_struct_def(&self, @struct_def, ast::ident, &Generics, node_id);
+    fn walk_struct_field(&self, @struct_field);
+    fn walk_struct_method(&self, @method);
+    fn walk_block(&self, &blk);
+    fn walk_stmt(&self, @stmt);
+    fn walk_decl(&self, @decl);
+    fn walk_expr_opt(&self, Option<@expr>);
+    fn walk_exprs(&self, &[@expr]);
+    fn walk_mac(&self, &mac);
+    fn walk_expr(&self, @expr);
+    fn walk_arm(&self, &arm);
+}
+
+impl<'self> Walk for &'self Visitor {
+    fn walk_crate(&self, c: &crate) {
+        self.visit_mod(&c.node.module, c.span, crate_node_id);
+    }
+
+    fn walk_mod(&self, m: &_mod, _sp: span, _id: node_id) {
+        for m.view_items.each |vi| { self.visit_view_item(*vi); }
+        for m.items.each |i| { self.visit_item(*i); }
+    }
+
+    fn walk_view_item(&self, _vi: @view_item) { }
+
+    fn walk_local(&self, loc: @local) {
+        self.visit_pat(loc.node.pat);
+        self.visit_ty(loc.node.ty);
+        match loc.node.init {
+            None => (),
+            Some(ex) => self.visit_expr(ex)
+        }
+    }
+
+    fn walk_trait_ref(&self, tref: @ast::trait_ref) {
+        self.walk_path(tref.path);
+    }
+
+    fn walk_item(&self, i: @item) {
+        match i.node {
+            item_const(t, ex) => {
+                self.visit_ty(t);
+                self.visit_expr(ex);
+            }
+            item_fn(ref decl, purity, abi, ref generics, ref body) => {
+                self.visit_fn(
+                    &fk_item_fn(
+                        i.ident,
+                        generics,
+                        purity,
+                        abi
+                    ),
+                    decl,
+                    body,
+                    i.span,
+                    i.id
+                );
+            }
+            item_mod(ref m) => self.visit_mod(m, i.span, i.id),
+            item_foreign_mod(ref nm) => {
+                for nm.view_items.each |vi| { self.visit_view_item(*vi); }
+                for nm.items.each |ni| { self.visit_foreign_item(*ni); }
+            }
+            item_ty(t, ref tps) => {
+                self.visit_ty(t);
+                self.visit_generics(tps);
+            }
+            item_enum(ref enum_definition, ref tps) => {
+                self.visit_generics(tps);
+                self.walk_enum_def(
+                    enum_definition,
+                    tps
+                );
+            }
+            item_impl(ref tps, ref traits, ty, ref methods) => {
+                self.visit_generics(tps);
+                for traits.iter().advance |&p| {
+                    self.walk_trait_ref(p);
+                }
+                self.visit_ty(ty);
+                for methods.each |m| {
+                    self.walk_method_helper(*m)
+                }
+            }
+            item_struct(struct_def, ref generics) => {
+                self.visit_generics(generics);
+                self.visit_struct_def(struct_def, i.ident, generics, i.id);
+            }
+            item_trait(ref generics, ref traits, ref methods) => {
+                self.visit_generics(generics);
+                for traits.each |p| { self.walk_path(p.path); }
+                for methods.each |m| {
+                    self.visit_trait_method(m);
+                }
+            }
+            item_mac(ref m) => self.walk_mac(m)
+        }
+    }
+
+    fn walk_enum_def(&self, enum_definition: &ast::enum_def, tps: &Generics) {
+        for enum_definition.variants.each |vr| {
+            match vr.node.kind {
+                tuple_variant_kind(ref variant_args) => {
+                    for variant_args.each |va| { self.visit_ty(va.ty); }
+                }
+                struct_variant_kind(struct_def) => {
+                    self.visit_struct_def(struct_def, vr.node.name, tps,
+                                         vr.node.id);
+                }
+            }
+            // Visit the disr expr if it exists
+            for vr.node.disr_expr.iter().advance |ex| { self.visit_expr(*ex) }
+        }
+    }
+
+    fn walk_ty(&self, t: @Ty) {
+        match t.node {
+            ty_box(mt) | ty_uniq(mt) |
+            ty_vec(mt) | ty_ptr(mt) | ty_rptr(_, mt) => {
+                self.visit_ty(mt.ty);
+            },
+            ty_tup(ref ts) => {
+                for ts.each |tt| {
+                    self.visit_ty(*tt);
+                }
+            },
+            ty_closure(ref f) => {
+                for f.decl.inputs.each |a| { self.visit_ty(a.ty); }
+                self.visit_ty(f.decl.output);
+            },
+            ty_bare_fn(ref f) => {
+                for f.decl.inputs.each |a| { self.visit_ty(a.ty); }
+                self.visit_ty(f.decl.output);
+            },
+            ty_path(p, _) => self.walk_path(p),
+            ty_fixed_length_vec(ref mt, ex) => {
+                self.visit_ty(mt.ty);
+                self.visit_expr(ex);
+            },
+            ty_nil | ty_bot | ty_mac(_) | ty_infer => ()
+        }
+    }
+
+    fn walk_path(&self, p: @Path) {
+        for p.types.each |tp| { self.visit_ty(*tp); }
+    }
+
+    fn walk_pat(&self, p: @pat) {
+        match p.node {
+            pat_enum(path, ref children) => {
+                self.walk_path(path);
+                for children.iter().advance |children| {
+                    for children.iter().advance |child| { self.visit_pat(*child); }
+                }
+            }
+            pat_struct(path, ref fields, _) => {
+                self.walk_path(path);
+                for fields.each |f| {
+                    self.visit_pat(f.pat);
+                }
+            }
+            pat_tup(ref elts) => {
+                for elts.each |elt| {
+                    self.visit_pat(*elt)
+                }
+            },
+            pat_box(inner) | pat_uniq(inner) | pat_region(inner) => {
+                self.visit_pat(inner)
+            },
+            pat_ident(_, path, ref inner) => {
+                self.walk_path(path);
+                for inner.iter().advance |subpat| { self.visit_pat(*subpat) }
+            }
+            pat_lit(ex) => self.visit_expr(ex),
+            pat_range(e1, e2) => {
+                self.visit_expr(e1);
+                self.visit_expr(e2);
+            }
+            pat_wild => (),
+            pat_vec(ref before, ref slice, ref after) => {
+                for before.each |elt| {
+                    self.visit_pat(*elt);
+                }
+                for slice.iter().advance |elt| {
+                    self.visit_pat(*elt);
+                }
+                for after.each |tail| {
+                    self.visit_pat(*tail);
+                }
+            }
+        }
+    }
+
+    fn walk_foreign_item(&self, ni: @foreign_item) {
+        match ni.node {
+            foreign_item_fn(ref fd, _, ref generics) => {
+                self.walk_fn_decl(fd);
+                self.visit_generics(generics);
+            }
+            foreign_item_const(t) => {
+                self.visit_ty(t);
+            }
+        }
+    }
+
+    fn walk_ty_param_bounds(&self, bounds: @OptVec<TyParamBound>) {
+        for bounds.each |bound| {
+            match *bound {
+                TraitTyParamBound(ty) => self.walk_trait_ref(ty),
+                RegionTyParamBound => {}
+            }
+        }
+    }
+
+    fn walk_generics(&self, generics: &Generics) {
+        for generics.ty_params.each |tp| {
+            self.walk_ty_param_bounds(tp.bounds);
+        }
+    }
+
+    fn walk_fn_decl(&self, fd: &fn_decl) {
+        for fd.inputs.each |a| {
+            self.visit_pat(a.pat);
+            self.visit_ty(a.ty);
+        }
+        self.visit_ty(fd.output);
+    }
+
+    // Note: there is no visit_method() method in the visitor, instead override
+    // visit_fn() and check for fk_method().  This has the suffix _helper
+    // because it is not a default impl of any method, though I doubt that really
+    // clarifies anything. - Niko
+    fn walk_method_helper(&self, m: &method) {
+        self.visit_fn(
+            &fk_method(
+                /* FIXME (#2543) */ copy m.ident,
+                &m.generics,
+                m
+            ),
+            &m.decl,
+            &m.body,
+            m.span,
+            m.id
+        );
+    }
+
+    fn walk_fn(&self, fk: &fn_kind, decl: &fn_decl, body: &blk, _sp: span,
+                        _id: node_id) {
+        self.walk_fn_decl(decl);
+        let generics = generics_of_fn(fk);
+        self.visit_generics(&generics);
+        self.visit_block(body);
+    }
+
+    fn walk_ty_method(&self, m: &ty_method) {
+        for m.decl.inputs.each |a| { self.visit_ty(a.ty); }
+        self.visit_generics(&m.generics);
+        self.visit_ty(m.decl.output);
+    }
+
+    fn walk_trait_method(&self, m: &trait_method) {
+        match *m {
+            required(ref ty_m) => self.visit_ty_method(ty_m),
+            provided(m) => self.walk_method_helper(m)
+        }
+    }
+
+    fn walk_struct_def(&self,
+        sd: @struct_def,
+        _nm: ast::ident,
+        _generics: &Generics,
+        _id: node_id
+    ) {
+        for sd.fields.each |f| {
+            self.visit_struct_field(*f);
+        }
+    }
+
+    fn walk_struct_field(&self, sf: @struct_field) {
+        self.visit_ty(sf.node.ty);
+    }
+
+    fn walk_struct_method(&self, m: @method) {
+        self.walk_method_helper(m);
+    }
+
+    fn walk_block(&self, b: &blk) {
+        for b.node.view_items.each |vi| {
+            self.visit_view_item(*vi);
+        }
+        for b.node.stmts.each |s| {
+            self.visit_stmt(*s);
+        }
+        self.walk_expr_opt(b.node.expr);
+    }
+
+    fn walk_stmt(&self, s: @stmt) {
+        match s.node {
+            stmt_decl(d, _) => self.visit_decl(d),
+            stmt_expr(ex, _) => self.visit_expr(ex),
+            stmt_semi(ex, _) => self.visit_expr(ex),
+            stmt_mac(ref mac, _) => self.walk_mac(mac)
+        }
+    }
+
+    fn walk_decl(&self, d: @decl) {
+        match d.node {
+            decl_local(ref loc) => self.visit_local(*loc),
+            decl_item(it) => self.visit_item(it)
+        }
+    }
+
+    fn walk_expr_opt(&self, eo: Option<@expr>) {
+        match eo { None => (), Some(ex) => self.visit_expr(ex) }
+    }
+
+    fn walk_exprs(&self, exprs: &[@expr]) {
+        for exprs.each |ex| { self.visit_expr(*ex); }
+    }
+
+    fn walk_mac(&self, _m: &mac) {
+        /* no user-serviceable parts inside */
+    }
+
+    fn walk_expr(&self, ex: @expr) {
+        match ex.node {
+            expr_vstore(x, _) => self.visit_expr(x),
+            expr_vec(ref es, _) => self.walk_exprs(*es),
+            expr_repeat(element, count, _) => {
+                self.visit_expr(element);
+                self.visit_expr(count);
+            }
+            expr_struct(p, ref flds, base) => {
+                self.walk_path(p);
+                for flds.each |f| { self.visit_expr(f.node.expr); }
+                self.walk_expr_opt(base);
+            }
+            expr_tup(ref elts) => {
+                for elts.each |el| { self.visit_expr(*el) }
+            }
+            expr_call(callee, ref args, _) => {
+                self.walk_exprs(*args);
+                self.visit_expr(callee);
+            }
+            expr_method_call(_, callee, _, ref tys, ref args, _) => {
+                self.walk_exprs(*args);
+                for tys.each |tp| { self.visit_ty(*tp); }
+                self.visit_expr(callee);
+            }
+            expr_binary(_, _, a, b) => {
+                self.visit_expr(a);
+                self.visit_expr(b);
+            }
+            expr_addr_of(_, x) | expr_unary(_, _, x) |
+            expr_loop_body(x) | expr_do_body(x) => self.visit_expr(x),
+            expr_lit(_) => (),
+            expr_cast(x, t) => {
+                self.visit_expr(x);
+                self.visit_ty(t);
+            }
+            expr_if(x, ref b, eo) => {
+                self.visit_expr(x);
+                self.visit_block(b);
+                self.walk_expr_opt(eo);
+            }
+            expr_while(x, ref b) => {
+                self.visit_expr(x);
+                self.visit_block(b);
+            }
+            expr_loop(ref b, _) => self.visit_block(b),
+            expr_match(x, ref arms) => {
+                self.visit_expr(x);
+                for arms.each |a| { self.visit_arm(a); }
+            }
+            expr_fn_block(ref decl, ref body) => {
+                self.visit_fn(
+                    &fk_fn_block,
+                    decl,
+                    body,
+                    ex.span,
+                    ex.id
+                );
+            }
+            expr_block(ref b) => self.visit_block(b),
+            expr_assign(a, b) => {
+                self.visit_expr(b);
+                self.visit_expr(a);
+            }
+            expr_copy(a) => self.visit_expr(a),
+            expr_assign_op(_, _, a, b) => {
+                self.visit_expr(b);
+                self.visit_expr(a);
+            }
+            expr_field(x, _, ref tys) => {
+                self.visit_expr(x);
+                for tys.each |tp| { self.visit_ty(*tp); }
+            }
+            expr_index(_, a, b) => {
+                self.visit_expr(a);
+                self.visit_expr(b);
+            }
+            expr_path(p) => self.walk_path(p),
+            expr_self => (),
+            expr_break(_) => (),
+            expr_again(_) => (),
+            expr_ret(eo) => self.walk_expr_opt(eo),
+            expr_log(lv, x) => {
+                self.visit_expr(lv);
+                self.visit_expr(x);
+            }
+            expr_mac(ref mac) => self.walk_mac(mac),
+            expr_paren(x) => self.visit_expr(x),
+            expr_inline_asm(ref a) => {
+                for a.inputs.each |&(_, in)| {
+                    self.visit_expr(in);
+                }
+                for a.outputs.each |&(_, out)| {
+                    self.visit_expr(out);
+                }
+            }
+        }
+        self.visit_expr_post(ex);
+    }
+
+    fn walk_arm(&self, a: &arm) {
+        for a.pats.iter().advance |p| { self.visit_pat(*p); }
+        self.walk_expr_opt(a.guard);
+        self.visit_block(&a.body);
+    }
+}
+
 pub fn visit_crate<E: Copy>(c: &crate, (e, v): (E, vt<E>)) {
     (v.visit_mod)(&c.node.module, c.span, crate_node_id, (e, v));
 }
