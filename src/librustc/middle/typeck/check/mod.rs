@@ -515,7 +515,8 @@ pub fn check_fn(ccx: @mut CrateCtxt,
         fn visit_item(_i: @ast::item, (_e,_v): ((), visit::vt<()>)) { }
 
         let visit = visit::mk_vt(
-            @visit::Visitor {visit_local: visit_local,
+            @visit::VisitorStruct {
+                             visit_local: visit_local,
                              visit_pat: visit_pat,
                              visit_fn: visit_fn,
                              visit_item: visit_item,

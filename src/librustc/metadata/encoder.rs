@@ -1141,7 +1141,7 @@ fn encode_info_for_items(ecx: &EncodeContext,
     // See comment in `encode_side_tables_for_ii` in astencode
     let ecx_ptr : *() = unsafe { cast::transmute(ecx) };
 
-    visit::visit_crate(crate, ((), visit::mk_vt(@visit::Visitor {
+    visit::visit_crate(crate, ((), visit::mk_vt(@visit::VisitorStruct {
         visit_expr: |_e, (_cx, _v)| { },
         visit_item: {
             let ebml_w = copy *ebml_w;
