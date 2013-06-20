@@ -1218,7 +1218,7 @@ pub impl<'self> LookupContext<'self> {
                     }
 
                     ty::ty_trait(self_did, _, BoxTraitStore, self_m) => {
-                        mutability_matches(self_m, self_m) &&
+                        mutability_matches(self_m, m) &&
                         rcvr_matches_object(self_did, candidate)
                     }
 
@@ -1234,7 +1234,7 @@ pub impl<'self> LookupContext<'self> {
                     }
 
                     ty::ty_trait(self_did, _, UniqTraitStore, self_m) => {
-                        mutability_matches(self_m, self_m) &&
+                        mutability_matches(self_m, m) &&
                         rcvr_matches_object(self_did, candidate)
                     }
 
