@@ -710,10 +710,10 @@ impl<'self> get_ty_str_ctxt for e::EncodeContext<'self> {
     fn ty_str_ctxt(&self) -> @tyencode::ctxt {
         let r = self.reachable;
         @tyencode::ctxt {diag: self.tcx.sess.diagnostic(),
-                        ds: e::def_to_str,
-                        tcx: self.tcx,
-                        reachable: |a| r.contains(&a),
-                        abbrevs: tyencode::ac_use_abbrevs(self.type_abbrevs)}
+                         ds: e::def_to_str,
+                         tcx: self.tcx,
+                         reachable: |a| r.contains(&a),
+                         abbrevs: tyencode::ac_use_abbrevs(self.type_abbrevs)}
     }
 }
 

@@ -193,7 +193,7 @@ enum RcvrMatchCondition {
     RcvrMatchesIfSubtype(ty::t)
 }
 
-pub impl<'self> LookupContext<'self> {
+impl<'self> LookupContext<'self> {
     fn do_lookup(&self, self_ty: ty::t) -> Option<method_map_entry> {
         let self_ty = structurally_resolved_type(self.fcx,
                                                      self.self_expr.span,

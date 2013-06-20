@@ -289,9 +289,9 @@ impl Coerce {
             ty::ty_trait(_, _, ty::RegionTraitStore(_), _) => {
                 return self.subtype(a, b);
             }
-            ty::ty_trait(did, copy substs, _, m) => {
+            ty::ty_trait(did, ref substs, _, m) => {
                 trt_mut = m;
-                ty::mk_trait(tcx, did, substs,
+                ty::mk_trait(tcx, did, copy *substs,
                              ty::RegionTraitStore(r_a), m)
             }
             _ => {

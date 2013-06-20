@@ -43,7 +43,7 @@ pub enum os {
 }
 
 pub struct Context {
-    diag: @span_handler,
+    diag: @mut span_handler,
     filesearch: @FileSearch,
     span: span,
     ident: ast::ident,
@@ -156,7 +156,7 @@ pub fn crate_name_from_metas(metas: &[@ast::meta_item]) -> @str {
 }
 
 pub fn note_linkage_attrs(intr: @ident_interner,
-                          diag: @span_handler,
+                          diag: @mut span_handler,
                           attrs: ~[ast::attribute]) {
     for attr::find_linkage_metas(attrs).each |mi| {
         diag.handler().note(fmt!("meta: %s",

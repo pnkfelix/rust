@@ -105,7 +105,7 @@ pub type map = @mut HashMap<node_id, ast_node>;
 pub struct Ctx {
     map: map,
     path: path,
-    diag: @span_handler,
+    diag: @mut span_handler,
 }
 
 pub type vt = visit::vt<@mut Ctx>;
@@ -126,7 +126,7 @@ pub fn mk_ast_map_visitor() -> vt {
     });
 }
 
-pub fn map_crate(diag: @span_handler, c: @crate) -> map {
+pub fn map_crate(diag: @mut span_handler, c: @crate) -> map {
     let cx = @mut Ctx {
         map: @mut HashMap::new(),
         path: ~[],
@@ -139,7 +139,7 @@ pub fn map_crate(diag: @span_handler, c: @crate) -> map {
 // Used for items loaded from external crate that are being inlined into this
 // crate.  The `path` should be the path to the item but should not include
 // the item itself.
-pub fn map_decoded_item(diag: @span_handler,
+pub fn map_decoded_item(diag: @mut span_handler,
                         map: map,
                         path: path,
                         ii: &inlined_item) {

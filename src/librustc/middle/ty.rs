@@ -243,7 +243,7 @@ pub struct ProvidedMethodSource {
 pub type ctxt = @ctxt_;
 
 struct ctxt_ {
-    diag: @syntax::diagnostic::span_handler,
+    diag: @mut syntax::diagnostic::span_handler,
     interner: @mut HashMap<intern_key, ~t_box_>,
     next_id: @mut uint,
     cstore: @mut metadata::cstore::CStore,
@@ -3151,8 +3151,8 @@ pub fn adjust_ty(cx: ctxt,
     fn borrow_obj(cx: ctxt, span: span, r: Region,
                   m: ast::mutability, ty: ty::t) -> ty::t {
         match get(ty).sty {
-            ty_trait(trt_did, copy trt_substs, _, _) => {
-                ty::mk_trait(cx, trt_did, trt_substs,
+            ty_trait(trt_did, ref trt_substs, _, _) => {
+                ty::mk_trait(cx, trt_did, copy *trt_substs,
                              RegionTraitStore(r), m)
             }
             ref s => {

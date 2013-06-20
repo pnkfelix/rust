@@ -108,7 +108,7 @@ pub static default_columns: uint = 78u;
 // copy forward.
 pub fn print_crate(cm: @CodeMap,
                    intr: @ident_interner,
-                   span_diagnostic: @diagnostic::span_handler,
+                   span_diagnostic: @mut diagnostic::span_handler,
                    crate: @ast::crate,
                    filename: @str,
                    in: @io::Reader,

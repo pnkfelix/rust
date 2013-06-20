@@ -30,7 +30,7 @@ pub fn expand_trace_macros(cx: @ExtCtxt,
         None,
         vec::to_owned(tt)
     );
-    let rdr = tt_rdr as @reader;
+    let rdr = tt_rdr as @mut reader;
     let rust_parser = Parser(
         sess,
         copy cfg,

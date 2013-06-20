@@ -29,7 +29,7 @@ use syntax::ast;
 
 // Traverses an AST, reading all the information about use'd crates and extern
 // libraries necessary for later resolving, typechecking, linking, etc.
-pub fn read_crates(diag: @span_handler,
+pub fn read_crates(diag: @mut span_handler,
                    crate: @ast::crate,
                    cstore: @mut cstore::CStore,
                    filesearch: @FileSearch,
@@ -74,7 +74,7 @@ fn dump_crates(crate_cache: @mut ~[cache_entry]) {
 }
 
 fn warn_if_multiple_versions(e: @mut Env,
-                             diag: @span_handler,
+                             diag: @mut span_handler,
                              crate_cache: @mut ~[cache_entry]) {
     use core::either::*;
 
@@ -116,7 +116,7 @@ fn warn_if_multiple_versions(e: @mut Env,
 }
 
 struct Env {
-    diag: @span_handler,
+    diag: @mut span_handler,
     filesearch: @FileSearch,
     cstore: @mut cstore::CStore,
     os: loader::os,

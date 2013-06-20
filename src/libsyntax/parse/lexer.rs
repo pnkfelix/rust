@@ -29,16 +29,16 @@ pub trait reader {
     fn is_eof(@mut self) -> bool;
     fn next_token(@mut self) -> TokenAndSpan;
     fn fatal(@mut self, ~str) -> !;
-    fn span_diag(@mut self) -> @span_handler;
+    fn span_diag(@mut self) -> @mut span_handler;
     fn peek(@mut self) -> TokenAndSpan;
-    fn dup(@mut self) -> @reader;
+    fn dup(@mut self) -> @mut reader;
 }
 
 #[deriving(Eq)]
 pub struct TokenAndSpan {tok: token::Token, sp: span}
 
 pub struct StringReader {
-    span_diagnostic: @span_handler,
+    span_diagnostic: @mut span_handler,
     src: @str,
     // The absolute offset within the codemap of the next character to read
     pos: BytePos,
@@ -54,7 +54,7 @@ pub struct StringReader {
     peek_span: span
 }
 
-pub fn new_string_reader(span_diagnostic: @span_handler,
+pub fn new_string_reader(span_diagnostic: @mut span_handler,
                          filemap: @codemap::FileMap)
                       -> @mut StringReader {
     let r = new_low_level_string_reader(span_diagnostic, filemap);
@@ -63,13 +63,14 @@ pub fn new_string_reader(span_diagnostic: @span_handler,
 }
 
 /* For comments.rs, which hackily pokes into 'pos' and 'curr' */
-pub fn new_low_level_string_reader(span_diagnostic: @span_handler,
+pub fn new_low_level_string_reader(span_diagnostic: @mut span_handler,
                                    filemap: @codemap::FileMap)
                                 -> @mut StringReader {
     // Force the initial reader bump to start on a fresh line
     let initial_char = '\n';
     let r = @mut StringReader {
-        span_diagnostic: span_diagnostic, src: filemap.src,
+        span_diagnostic: span_diagnostic,
+        src: filemap.src,
         pos: filemap.start_pos,
         last_pos: filemap.start_pos,
         col: CharPos(0),
@@ -114,14 +115,14 @@ impl reader for StringReader {
     fn fatal(@mut self, m: ~str) -> ! {
         self.span_diagnostic.span_fatal(copy self.peek_span, m)
     }
-    fn span_diag(@mut self) -> @span_handler { self.span_diagnostic }
+    fn span_diag(@mut self) -> @mut span_handler { self.span_diagnostic }
     fn peek(@mut self) -> TokenAndSpan {
         TokenAndSpan {
             tok: copy self.peek_tok,
             sp: copy self.peek_span,
         }
     }
-    fn dup(@mut self) -> @reader { dup_string_reader(self) as @reader }
+    fn dup(@mut self) -> @mut reader { dup_string_reader(self) as @mut reader }
 }
 
 impl reader for TtReader {
@@ -130,14 +131,14 @@ impl reader for TtReader {
     fn fatal(@mut self, m: ~str) -> ! {
         self.sp_diag.span_fatal(copy self.cur_span, m);
     }
-    fn span_diag(@mut self) -> @span_handler { self.sp_diag }
+    fn span_diag(@mut self) -> @mut span_handler { self.sp_diag }
     fn peek(@mut self) -> TokenAndSpan {
         TokenAndSpan {
             tok: copy self.cur_tok,
             sp: copy self.cur_span,
         }
     }
-    fn dup(@mut self) -> @reader { dup_tt_reader(self) as @reader }
+    fn dup(@mut self) -> @mut reader { dup_tt_reader(self) as @mut reader }
 }
 
 // EFFECT: advance peek_tok and peek_span to refer to the next token.
