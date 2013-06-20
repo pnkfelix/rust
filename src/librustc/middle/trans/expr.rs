@@ -308,44 +308,52 @@ pub fn trans_to_datum(bcx: block, expr: @ast::expr) -> DatumBlock {
         auto_ref(bcx, datum)
     }
 
-    fn auto_borrow_obj(bcx: block, expr: @ast::expr,
-                       datum: Datum) -> DatumBlock {
+    fn auto_borrow_obj(bcx: block,
+                       expr: @ast::expr,
+                       source_datum: Datum) -> DatumBlock {
         let tcx = bcx.tcx();
-        let trt_obj_ty = expr_ty_adjusted(bcx, expr);
-        debug!("auto_borrow_trait_obj(trait_ty=%s)",
-               trt_obj_ty.repr(tcx));
-        let scratch = scratch_datum(bcx, trt_obj_ty, false);
+        let target_obj_ty = expr_ty_adjusted(bcx, expr);
+        debug!("auto_borrow_obj(target=%s)",
+               target_obj_ty.repr(tcx));
+        let scratch = scratch_datum(bcx, target_obj_ty, false);
 
-        // Copy the pair or triple which represents a trait object to
-        // a new pair or triple accessed through scratch.
+        // Convert a @Object, ~Object, or &Object pair into an &Object pair.
+
+        // Get a pointer to the source object, which is represented as
+        // a (vtable, data) pair.
+        let source_llval = source_datum.to_ref_llval(bcx);
 
         // Set the vtable field of the new pair
-        let trt_vtable = GEPi(bcx, datum.to_appropriate_llval(bcx),
-                              [0u, abi::trt_field_vtable]);
-        Store(bcx, trt_vtable, GEPi(bcx, scratch.val,
-                                    [0u, abi::trt_field_vtable]));
+        let vtable_ptr = GEPi(bcx, source_llval, [0u, abi::trt_field_vtable]);
+        let vtable = Load(bcx, vtable_ptr);
+        Store(bcx, vtable, GEPi(bcx, scratch.val, [0u, abi::trt_field_vtable]));
 
-        // Set the box field of the new pair/triple.
-        let trt_box = GEPi(bcx, datum.to_appropriate_llval(bcx),
-                           [0u, abi::trt_field_box]);
-        Store(bcx, trt_box, GEPi(bcx, scratch.val,
-                                 [0u, abi::trt_field_box]));
-
-        // Set the type descriptor field of the new triple, if it *is*
-        // a triple. Only unique/owned trait objects are triples/have
-        // type descriptors.
-        match ty::get(trt_obj_ty).sty {
-            ty::ty_trait(_, _, ty::UniqTraitStore, _) => {
-
-                let trt_tydesc = GEPi(bcx, datum.to_appropriate_llval(bcx),
-                                      [0u, abi::trt_field_tydesc]);
-                Store(bcx, trt_tydesc, GEPi(bcx, scratch.val,
-                                            [0u, abi::trt_field_tydesc]));
+        // Load the data for the source, which is either an @T,
+        // ~T, or &T, depending on source_obj_ty.
+        let source_data_ptr = GEPi(bcx, source_llval, [0u, abi::trt_field_box]);
+        let source_data = Load(bcx, source_data_ptr); // always a ptr
+        let source_store = match ty::get(source_datum.ty).sty {
+            ty::ty_trait(_, _, s, _) => s,
+            _ => {
+                bcx.sess().span_bug(
+                    expr.span,
+                    fmt!("auto_borrow_trait_obj expected a trait, found %s",
+                         source_datum.ty.repr(bcx.tcx())));
             }
-            ty::ty_trait(*) => {},
-            _ => tcx.sess.bug(~"auto_borrow_trait_obj: \
-                                trait type isn't a ty_trait.")
-        }
+        };
+        let target_data = match source_store {
+            ty::BoxTraitStore(*) |
+            ty::UniqTraitStore(*) => {
+                non_gc_box_cast(
+                    bcx,
+                    GEPi(bcx, source_data, [0u, abi::box_field_body]))
+            }
+            ty::RegionTraitStore(*) => {
+                source_data
+            }
+        };
+        Store(bcx, target_data,
+              GEPi(bcx, scratch.val, [0u, abi::trt_field_box]));
 
         DatumBlock { bcx: bcx, datum: scratch }
     }

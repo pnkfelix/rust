@@ -937,7 +937,7 @@ pub fn T_vec(ccx: &CrateContext, t: TypeRef) -> TypeRef {
 
 // Note that the size of this one is in bytes.
 pub fn T_opaque_vec(targ_cfg: @session::config) -> TypeRef {
-    return T_vec2(targ_cfg, T_i8());
+    return T_vec2(targ_cfg, T_opaque());
 }
 
 // Let T be the content of a box @T.  tuplify_box_ty(t) returns the
@@ -972,8 +972,12 @@ pub fn T_box_ptr(t: TypeRef) -> TypeRef {
     }
 }
 
+pub fn T_opaque() -> TypeRef {
+    return T_i8();
+}
+
 pub fn T_opaque_box(cx: &CrateContext) -> TypeRef {
-    return T_box(cx, T_i8());
+    return T_box(cx, T_opaque());
 }
 
 pub fn T_opaque_box_ptr(cx: &CrateContext) -> TypeRef {
@@ -1018,15 +1022,16 @@ pub fn T_captured_tydescs(cx: &CrateContext, n: uint) -> TypeRef {
 pub fn T_opaque_trait(cx: &CrateContext, store: ty::TraitStore) -> TypeRef {
     match store {
         ty::BoxTraitStore => {
-            T_struct([T_ptr(cx.tydesc_type), T_opaque_box_ptr(cx)], false)
+            T_struct([T_ptr(cx.tydesc_type),
+                      T_opaque_box_ptr(cx)], false)
         }
         ty::UniqTraitStore => {
             T_struct([T_ptr(cx.tydesc_type),
-                      T_unique_ptr(T_unique(cx, T_i8()))],
-                     false)
+                      T_unique_ptr(T_unique(cx, T_opaque()))], false)
         }
         ty::RegionTraitStore(_) => {
-            T_struct([T_ptr(cx.tydesc_type), T_ptr(T_i8())], false)
+            T_struct([T_ptr(cx.tydesc_type),
+                      T_ptr(T_opaque())], false)
         }
     }
 }
