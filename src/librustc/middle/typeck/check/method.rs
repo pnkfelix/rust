@@ -13,7 +13,7 @@
 # Method lookup
 
 Method lookup can be rather complex due to the interaction of a number
-of factors, such as self types, autoderef, trait lookup, etc.  The
+of factors, such as self types, autoderef, trait lookup, etc. The
 algorithm is divided into two parts: candidate collection and
 candidate selection.
 
@@ -119,6 +119,26 @@ pub enum AutoderefReceiverFlag {
     DontAutoderefReceiver,
 }
 
+macro_rules! if_ok(
+    ($inp: expr) => (
+        match $inp {
+            Ok(v) => { v }
+            Err(e) => { return Err(e); }
+        }
+    )
+)
+
+macro_rules! if_err(
+    ($inp: expr) => (
+        match $inp {
+            Ok(v) => { return Ok(v); }
+            Err(e) => { e }
+        }
+    )
+)
+
+type MethodResult<T> = Result<T, ()>;
+
 pub fn lookup(
         fcx: @mut FnCtxt,
 
@@ -133,7 +153,7 @@ pub fn lookup(
         deref_args: check::DerefArgs,       // Whether we autopointer first.
         check_traits: CheckTraitsFlag,      // Whether we check traits only.
         autoderef_receiver: AutoderefReceiverFlag)
-     -> Option<method_map_entry> {
+        -> MethodResult<method_map_entry> {
     let impl_dups = @mut HashSet::new();
     let lcx = LookupContext {
         fcx: fcx,
@@ -194,7 +214,7 @@ enum RcvrMatchCondition {
 }
 
 impl<'self> LookupContext<'self> {
-    fn do_lookup(&self, self_ty: ty::t) -> Option<method_map_entry> {
+    fn do_lookup(&self, self_ty: ty::t) -> MethodResult<method_map_entry> {
         let self_ty = structurally_resolved_type(self.fcx,
                                                      self.self_expr.span,
                                                      self_ty);
@@ -203,6 +223,8 @@ impl<'self> LookupContext<'self> {
                self.ty_to_str(self_ty),
                self.expr.repr(self.tcx()),
                self.self_expr.repr(self.tcx()));
+
+        if_err!(self.attempt_inherent_candidate(self_ty));
 
         // Prepare the list of candidates
         self.push_inherent_candidates(self_ty);
@@ -286,10 +308,10 @@ impl<'self> LookupContext<'self> {
         }
     }
 
-    // ______________________________________________________________________
-    // Candidate collection (see comment at start of file)
+    ///////////////////////////////////////////////////////////////////////////
+    // Inherent Methods
 
-    pub fn push_inherent_candidates(&self, self_ty: ty::t) {
+    fn attempt_inherent_candidate(&self, self_ty: ty::t) -> Option<method_map_entry> {
         /*!
          * Collect all inherent candidates into
          * `self.inherent_candidates`.  See comment at the start of
@@ -304,11 +326,11 @@ impl<'self> LookupContext<'self> {
         loop {
             match get(self_ty).sty {
                 ty_param(p) => {
-                    self.push_inherent_candidates_from_param(self_ty, p);
+                    if_err!(self.attempt_inherent_candidates_from_param(self_ty, p));
                 }
                 ty_trait(did, ref substs, _, _) => {
-                    self.push_inherent_candidates_from_trait(did, substs);
-                    self.push_inherent_impl_candidates_for_type(did);
+                    if_err!(self.attempt_inherent_candidates_from_trait(did, substs));
+                    if_err!(self.attempt_inherent_impl_candidates_for_type(did));
                 }
                 ty_self(self_did) => {
                     // Call is of the form "self.foo()" and appears in one
@@ -322,51 +344,28 @@ impl<'self> LookupContext<'self> {
                         self_ty, self_did, &substs);
                 }
                 ty_enum(did, _) | ty_struct(did, _) => {
-                    if self.check_traits == CheckTraitsAndInherentMethods {
-                        self.push_inherent_impl_candidates_for_type(did);
-                    }
+                    if_err!(self.attempt_inherent_impl_candidates_for_type(did));
                 }
                 _ => { /* No inherent methods in these types */ }
             }
 
             // n.b.: Generally speaking, we only loop if we hit the
             // fallthrough case in the match above.  The exception
-            // would be newtype enums.
+            // would be newtype enums and structs.
             self_ty = match self.deref(self_ty, &mut enum_dids) {
-                None => { return; }
+                None => { return Err(()); }
                 Some(ty) => { ty }
             }
         }
     }
 
-    pub fn push_extension_candidates(&self) {
-        // If the method being called is associated with a trait, then
-        // find all the impls of that trait.  Each of those are
-        // candidates.
-        let trait_map: &mut resolve::TraitMap = &mut self.fcx.ccx.trait_map;
-        let opt_applicable_traits = trait_map.find(&self.expr.id);
-        for opt_applicable_traits.iter().advance |applicable_traits| {
-            for applicable_traits.each |trait_did| {
-                let coherence_info = self.fcx.ccx.coherence_info;
-
-                // Look for explicit implementations.
-                let opt_impl_infos =
-                    coherence_info.extension_methods.find(trait_did);
-                for opt_impl_infos.iter().advance |impl_infos| {
-                    for impl_infos.each |impl_info| {
-                        self.push_candidates_from_impl(
-                            self.extension_candidates, *impl_info);
-
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn push_inherent_candidates_from_param(&self,
-                                               rcvr_ty: ty::t,
-                                               param_ty: param_ty) {
-        debug!("push_inherent_candidates_from_param(param_ty=%?)",
+    pub fn attempt_inherent_candidates_from_param(
+        &self,
+        rcvr_ty: ty::t,
+        param_ty: param_ty)
+        -> MethodResult<method_map_entry>
+    {
+        debug!("attempt_inherent_candidates_from_param(param_ty=%?)",
                param_ty);
         let _indenter = indenter();
 
@@ -537,6 +536,34 @@ impl<'self> LookupContext<'self> {
             for impl_infos.each |impl_info| {
                 self.push_candidates_from_impl(
                     self.inherent_candidates, *impl_info);
+            }
+        }
+    }
+
+
+    // ______________________________________________________________________
+    // Candidate collection (see comment at start of file)
+
+    pub fn push_extension_candidates(&self) {
+        // If the method being called is associated with a trait, then
+        // find all the impls of that trait.  Each of those are
+        // candidates.
+        let trait_map: &mut resolve::TraitMap = &mut self.fcx.ccx.trait_map;
+        let opt_applicable_traits = trait_map.find(&self.expr.id);
+        for opt_applicable_traits.iter().advance |applicable_traits| {
+            for applicable_traits.each |trait_did| {
+                let coherence_info = self.fcx.ccx.coherence_info;
+
+                // Look for explicit implementations.
+                let opt_impl_infos =
+                    coherence_info.extension_methods.find(trait_did);
+                for opt_impl_infos.iter().advance |impl_infos| {
+                    for impl_infos.each |impl_info| {
+                        self.push_candidates_from_impl(
+                            self.extension_candidates, *impl_info);
+
+                    }
+                }
             }
         }
     }
