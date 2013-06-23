@@ -298,15 +298,22 @@ pub fn check_bare_fn(ccx: @mut CrateCtxt,
                      id: ast::node_id,
                      self_info: Option<SelfInfo>) {
     let fty = ty::node_id_to_type(ccx.tcx, id);
+
+    debug!("check_bare_fn decl: %? body: %? id: %? self_info: %?",
+           decl, body, id, self_info);
+
     match ty::get(fty).sty {
         ty::ty_bare_fn(ref fn_ty) => {
+            debug!("check_fn");
             let fcx =
                 check_fn(ccx, self_info, fn_ty.purity,
                          &fn_ty.sig, decl, id, body, Vanilla,
                          @Nil, blank_inherited(ccx));;
-
+            debug!("resolve_in_block");
             vtable::resolve_in_block(fcx, body);
+            debug!("regionck_fn");
             regionck::regionck_fn(fcx, body);
+            debug!("resolve_type_vars_in_fn");
             writeback::resolve_type_vars_in_fn(fcx, decl, body, self_info);
         }
         _ => ccx.tcx.sess.impossible_case(body.span,
@@ -538,6 +545,9 @@ pub fn check_method(ccx: @mut CrateCtxt,
                   span: method.explicit_self.span}
     });
 
+    debug!("check_method def_id: %? ty: %? opt_self_info: %?",
+           method_def_id, method_ty, opt_self_info);
+
     check_bare_fn(
         ccx,
         &method.decl,
@@ -612,6 +622,8 @@ pub fn check_item(ccx: @mut CrateCtxt, it: @ast::item) {
                 // bodies to check.
               }
               provided(m) => {
+                debug!("check provided method ccx, m: %?",
+                       ccx.tcx.sess.str_of(m.ident));
                 check_method(ccx, m);
               }
             }

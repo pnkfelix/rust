@@ -1659,6 +1659,10 @@ impl Resolver {
 
                     new_parent.import_resolutions.insert(ident, resolution);
                 }
+
+                debug!("(finished reduced graph for \
+                        external crate) building module \
+                        %s", final_ident);
               }
             }
           }
@@ -1741,6 +1745,7 @@ impl Resolver {
             fail!("didn't expect `%?`", def);
           }
         }
+
     }
 
     /**
