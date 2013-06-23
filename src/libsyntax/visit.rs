@@ -73,7 +73,12 @@ pub fn generics_of_fn(fk: &fn_kind) -> Generics {
 }
 
 trait Visitor {
-    fn visit_mod(&self, &_mod, span, node_id);
+    #[cfg(not(stage2))]
+    fn visit_mod(&self, m:&_mod, s:span, i:node_id);
+    #[cfg(stage2)]
+    fn visit_mod(&self, m:&_mod, s:span, i:node_id) {
+        walk_mod(self, m, s, i);
+    }
     fn visit_view_item(&self, @view_item);
     fn visit_foreign_item(&self, @foreign_item);
     fn visit_item(&self, @item);
@@ -687,7 +692,7 @@ fn walk_mod<V:Visitor>(v:&V, m: &_mod, _sp: span, _id: node_id) {
     for m.items.each |i| { v.visit_item(*i); }
 }
 
-fn walk_view_item<V:Visitor>(v:&V, _vi: @view_item) { }
+fn walk_view_item<V:Visitor>(_v:&V, _vi: @view_item) { }
 
 fn walk_local<V:Visitor>(v:&V, loc: @local) {
     v.visit_pat(loc.node.pat);
@@ -984,7 +989,7 @@ fn walk_exprs<V:Visitor>(v:&V, exprs: &[@expr]) {
     for exprs.each |ex| { v.visit_expr(*ex); }
 }
 
-fn walk_mac<V:Visitor>(v:&V, _m: &mac) {
+fn walk_mac<V:Visitor>(_v:&V, _m: &mac) {
     /* no user-serviceable parts inside */
 }
 

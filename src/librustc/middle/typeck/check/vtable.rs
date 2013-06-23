@@ -201,6 +201,7 @@ fn lookup_vtable(vcx: &VtableContext,
 
     let tcx = vcx.tcx();
 
+    debug!("lookup_vtable fixup_ty");
     let ty = match fixup_ty(vcx, location_info, ty, is_early) {
         Some(ty) => ty,
         None => {
@@ -212,9 +213,11 @@ fn lookup_vtable(vcx: &VtableContext,
             return Some(vtable_param(0, 0));
         }
     };
+    debug!("lookup_vtable fixup_ty => %?", ty);
 
     match ty::get(ty).sty {
         ty::ty_param(param_ty {idx: n, def_id: did}) => {
+            debug!("lookup_vtable sty is ty_param");
             let mut n_bound = 0;
             let type_param_def = tcx.ty_param_defs.get(&did.node);
             for ty::each_bound_trait_and_supertraits(
@@ -238,15 +241,27 @@ fn lookup_vtable(vcx: &VtableContext,
         }
 
         _ => {
+            debug!("lookup_vtable sty not ty_param");
             let mut found = ~[];
 
             let mut impls_seen = HashSet::new();
 
-            match vcx.ccx.coherence_info.extension_methods.find(&trait_ref.def_id) {
+            let def_id = &trait_ref.def_id;
+            let ext_meths =
+                vcx.ccx.coherence_info.extension_methods.find(def_id);
+            debug!("lookup_vtable def_id: %? ext_meths: %?", def_id, ext_meths);
+            match ext_meths {
                 None => {
                     // Nothing found. Continue.
                 }
                 Some(implementations) => {
+                    let len = { // FIXME(#5074): stage0 requires it
+                        let implementations: &mut ~[@Impl] = *implementations;
+                        implementations.len()
+                    };
+
+                    debug!("lookup_vtable impls len: %?", len);
+
                     // implementations is the list of all impls in scope for
                     // trait_ref. (Usually, there's just one.)
                     for implementations.iter().advance |im| {
@@ -397,6 +412,7 @@ fn lookup_vtable(vcx: &VtableContext,
                 }
             }
 
+            debug!("lookup_vtable found.len: %u", found.len());
             match found.len() {
                 0 => { /* fallthrough */ }
                 1 => { return Some(/*bad*/copy found[0]); }
