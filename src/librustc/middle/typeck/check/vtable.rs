@@ -256,7 +256,8 @@ fn lookup_vtable(vcx: &VtableContext,
                 }
                 Some(implementations) => {
                     let len = { // FIXME(#5074): stage0 requires it
-                        let implementations: &mut ~[@Impl] = *implementations;
+                        //let implementations: &mut ~[@Impl] = *implementations;
+                        let implementations = *implementations;
                         implementations.len()
                     };
 

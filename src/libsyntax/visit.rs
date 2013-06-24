@@ -126,83 +126,83 @@ pub struct VisitorStruct<E> {
 impl<E:Copy> Visitor for (E, vt<E>) {
     fn visit_mod(&self, m: &_mod, s: span, i: node_id) {
         let &(_, mk_vt(ref v)) = self;
-        (v.visit_mod)(m, s, i, *self);
+        (v.visit_mod)(m, s, i, copy *self);
     }
     fn visit_view_item(&self, i: @view_item) {
         let &(_, mk_vt(ref v)) = self;
-        (v.visit_view_item)(i, *self);
+        (v.visit_view_item)(i, copy *self);
     }
     fn visit_foreign_item(&self, i: @foreign_item) {
         let &(_, mk_vt(ref v)) = self;
-        (v.visit_foreign_item)(i, *self);
+        (v.visit_foreign_item)(i, copy *self);
     }
     fn visit_item(&self, i: @item) {
         let &(_, mk_vt(ref v)) = self;
-        (v.visit_item)(i, *self);
+        (v.visit_item)(i, copy *self);
     }
     fn visit_local(&self, l: @local) {
         let &(_, mk_vt(ref v)) = self;
-        (v.visit_local)(l, *self);
+        (v.visit_local)(l, copy *self);
     }
     fn visit_block(&self, b: &blk) {
         let &(_, mk_vt(ref v)) = self;
-        (v.visit_block)(b, *self);
+        (v.visit_block)(b, copy *self);
     }
     fn visit_stmt(&self, s: @stmt) {
         let &(_, mk_vt(ref v)) = self;
-        (v.visit_stmt)(s, *self);
+        (v.visit_stmt)(s, copy *self);
     }
     fn visit_arm(&self, a: &arm) {
         let &(_, mk_vt(ref v)) = self;
-        (v.visit_arm)(a, *self);
+        (v.visit_arm)(a, copy *self);
     }
     fn visit_pat(&self, p: @pat) {
         let &(_, mk_vt(ref v)) = self;
-        (v.visit_pat)(p, *self);
+        (v.visit_pat)(p, copy *self);
     }
     fn visit_decl(&self, d: @decl) {
         let &(_, mk_vt(ref v)) = self;
-        (v.visit_decl)(d, *self);
+        (v.visit_decl)(d, copy *self);
     }
     fn visit_expr(&self, e: @expr) {
         let &(_, mk_vt(ref v)) = self;
-        (v.visit_expr)(e, *self);
+        (v.visit_expr)(e, copy *self);
     }
     fn visit_expr_post(&self, e: @expr) {
         let &(_, mk_vt(ref v)) = self;
-        (v.visit_expr_post)(e, *self);
+        (v.visit_expr_post)(e, copy *self);
     }
     fn visit_ty(&self, t: @Ty) {
         let &(_, mk_vt(ref v)) = self;
-        (v.visit_ty)(t, *self);
+        (v.visit_ty)(t, copy *self);
     }
     fn visit_generics(&self, g: &Generics) {
         let &(_, mk_vt(ref v)) = self;
-        (v.visit_generics)(g, *self);
+        (v.visit_generics)(g, copy *self);
     }
     fn visit_fn(&self, k: &fn_kind, d: &fn_decl, b: &blk, s: span, n: node_id) {
         let &(_, mk_vt(ref v)) = self;
-        (v.visit_fn)(k, d, b, s, n, *self);
+        (v.visit_fn)(k, d, b, s, n, copy *self);
     }
     fn visit_ty_method(&self, m: &ty_method) {
         let &(_, mk_vt(ref v)) = self;
-        (v.visit_ty_method)(m, *self);
+        (v.visit_ty_method)(m, copy *self);
     }
     fn visit_trait_method(&self, m: &trait_method) {
         let &(_, mk_vt(ref v)) = self;
-        (v.visit_trait_method)(m, *self);
+        (v.visit_trait_method)(m, copy *self);
     }
     fn visit_struct_def(&self, d: @struct_def, i: ident, g: &Generics, n: node_id) {
         let &(_, mk_vt(ref v)) = self;
-        (v.visit_struct_def)(d, i, g, n, *self);
+        (v.visit_struct_def)(d, i, g, n, copy *self);
     }
     fn visit_struct_field(&self, f: @struct_field) {
         let &(_, mk_vt(ref v)) = self;
-        (v.visit_struct_field)(f, *self);
+        (v.visit_struct_field)(f, copy *self);
     }
     fn visit_struct_method(&self, m: @method) {
         let &(_, mk_vt(ref v)) = self;
-        (v.visit_struct_method)(m, *self);
+        (v.visit_struct_method)(m, copy *self);
     }
 }
 
@@ -271,8 +271,8 @@ impl<'self> Walk for &'self Visitor {
     }
 
     fn walk_mod(&self, m: &_mod, _sp: span, _id: node_id) {
-        for m.view_items.each |vi| { self.visit_view_item(*vi); }
-        for m.items.each |i| { self.visit_item(*i); }
+        for m.view_items.iter().advance |vi| { self.visit_view_item(*vi); }
+        for m.items.iter().advance |i| { self.visit_item(*i); }
     }
 
     fn walk_view_item(&self, _vi: @view_item) { }
@@ -312,8 +312,8 @@ impl<'self> Walk for &'self Visitor {
             }
             item_mod(ref m) => self.visit_mod(m, i.span, i.id),
             item_foreign_mod(ref nm) => {
-                for nm.view_items.each |vi| { self.visit_view_item(*vi); }
-                for nm.items.each |ni| { self.visit_foreign_item(*ni); }
+                for nm.view_items.iter().advance |vi| { self.visit_view_item(*vi); }
+                for nm.items.iter().advance |ni| { self.visit_foreign_item(*ni); }
             }
             item_ty(t, ref tps) => {
                 self.visit_ty(t);
@@ -332,7 +332,7 @@ impl<'self> Walk for &'self Visitor {
                     self.walk_trait_ref(p);
                 }
                 self.visit_ty(ty);
-                for methods.each |m| {
+                for methods.iter().advance |m| {
                     self.walk_method_helper(*m)
                 }
             }
@@ -342,8 +342,8 @@ impl<'self> Walk for &'self Visitor {
             }
             item_trait(ref generics, ref traits, ref methods) => {
                 self.visit_generics(generics);
-                for traits.each |p| { self.walk_path(p.path); }
-                for methods.each |m| {
+                for traits.iter().advance |p| { self.walk_path(p.path); }
+                for methods.iter().advance |m| {
                     self.visit_trait_method(m);
                 }
             }
@@ -352,10 +352,10 @@ impl<'self> Walk for &'self Visitor {
     }
 
     fn walk_enum_def(&self, enum_definition: &ast::enum_def, tps: &Generics) {
-        for enum_definition.variants.each |vr| {
+        for enum_definition.variants.iter().advance |vr| {
             match vr.node.kind {
                 tuple_variant_kind(ref variant_args) => {
-                    for variant_args.each |va| { self.visit_ty(va.ty); }
+                    for variant_args.iter().advance |va| { self.visit_ty(va.ty); }
                 }
                 struct_variant_kind(struct_def) => {
                     self.visit_struct_def(struct_def, vr.node.name, tps,
@@ -374,16 +374,16 @@ impl<'self> Walk for &'self Visitor {
                 self.visit_ty(mt.ty);
             },
             ty_tup(ref ts) => {
-                for ts.each |tt| {
+                for ts.iter().advance |tt| {
                     self.visit_ty(*tt);
                 }
             },
             ty_closure(ref f) => {
-                for f.decl.inputs.each |a| { self.visit_ty(a.ty); }
+                for f.decl.inputs.iter().advance |a| { self.visit_ty(a.ty); }
                 self.visit_ty(f.decl.output);
             },
             ty_bare_fn(ref f) => {
-                for f.decl.inputs.each |a| { self.visit_ty(a.ty); }
+                for f.decl.inputs.iter().advance |a| { self.visit_ty(a.ty); }
                 self.visit_ty(f.decl.output);
             },
             ty_path(p, _) => self.walk_path(p),
@@ -396,7 +396,7 @@ impl<'self> Walk for &'self Visitor {
     }
 
     fn walk_path(&self, p: @Path) {
-        for p.types.each |tp| { self.visit_ty(*tp); }
+        for p.types.iter().advance |tp| { self.visit_ty(*tp); }
     }
 
     fn walk_pat(&self, p: @pat) {
@@ -409,12 +409,12 @@ impl<'self> Walk for &'self Visitor {
             }
             pat_struct(path, ref fields, _) => {
                 self.walk_path(path);
-                for fields.each |f| {
+                for fields.iter().advance |f| {
                     self.visit_pat(f.pat);
                 }
             }
             pat_tup(ref elts) => {
-                for elts.each |elt| {
+                for elts.iter().advance |elt| {
                     self.visit_pat(*elt)
                 }
             },
@@ -432,13 +432,13 @@ impl<'self> Walk for &'self Visitor {
             }
             pat_wild => (),
             pat_vec(ref before, ref slice, ref after) => {
-                for before.each |elt| {
+                for before.iter().advance |elt| {
                     self.visit_pat(*elt);
                 }
                 for slice.iter().advance |elt| {
                     self.visit_pat(*elt);
                 }
-                for after.each |tail| {
+                for after.iter().advance |tail| {
                     self.visit_pat(*tail);
                 }
             }
@@ -473,7 +473,7 @@ impl<'self> Walk for &'self Visitor {
     }
 
     fn walk_fn_decl(&self, fd: &fn_decl) {
-        for fd.inputs.each |a| {
+        for fd.inputs.iter().advance |a| {
             self.visit_pat(a.pat);
             self.visit_ty(a.ty);
         }
@@ -507,7 +507,7 @@ impl<'self> Walk for &'self Visitor {
     }
 
     fn walk_ty_method(&self, m: &ty_method) {
-        for m.decl.inputs.each |a| { self.visit_ty(a.ty); }
+        for m.decl.inputs.iter().advance |a| { self.visit_ty(a.ty); }
         self.visit_generics(&m.generics);
         self.visit_ty(m.decl.output);
     }
@@ -525,7 +525,7 @@ impl<'self> Walk for &'self Visitor {
         _generics: &Generics,
         _id: node_id
     ) {
-        for sd.fields.each |f| {
+        for sd.fields.iter().advance |f| {
             self.visit_struct_field(*f);
         }
     }
@@ -539,10 +539,10 @@ impl<'self> Walk for &'self Visitor {
     }
 
     fn walk_block(&self, b: &blk) {
-        for b.node.view_items.each |vi| {
+        for b.node.view_items.iter().advance |vi| {
             self.visit_view_item(*vi);
         }
-        for b.node.stmts.each |s| {
+        for b.node.stmts.iter().advance |s| {
             self.visit_stmt(*s);
         }
         self.walk_expr_opt(b.node.expr);
@@ -569,7 +569,7 @@ impl<'self> Walk for &'self Visitor {
     }
 
     fn walk_exprs(&self, exprs: &[@expr]) {
-        for exprs.each |ex| { self.visit_expr(*ex); }
+        for exprs.iter().advance |ex| { self.visit_expr(*ex); }
     }
 
     fn walk_mac(&self, _m: &mac) {
@@ -586,11 +586,11 @@ impl<'self> Walk for &'self Visitor {
             }
             expr_struct(p, ref flds, base) => {
                 self.walk_path(p);
-                for flds.each |f| { self.visit_expr(f.node.expr); }
+                for flds.iter().advance |f| { self.visit_expr(f.node.expr); }
                 self.walk_expr_opt(base);
             }
             expr_tup(ref elts) => {
-                for elts.each |el| { self.visit_expr(*el) }
+                for elts.iter().advance |el| { self.visit_expr(*el) }
             }
             expr_call(callee, ref args, _) => {
                 self.walk_exprs(*args);
@@ -598,7 +598,7 @@ impl<'self> Walk for &'self Visitor {
             }
             expr_method_call(_, callee, _, ref tys, ref args, _) => {
                 self.walk_exprs(*args);
-                for tys.each |tp| { self.visit_ty(*tp); }
+                for tys.iter().advance |tp| { self.visit_ty(*tp); }
                 self.visit_expr(callee);
             }
             expr_binary(_, _, a, b) => {
@@ -624,7 +624,7 @@ impl<'self> Walk for &'self Visitor {
             expr_loop(ref b, _) => self.visit_block(b),
             expr_match(x, ref arms) => {
                 self.visit_expr(x);
-                for arms.each |a| { self.visit_arm(a); }
+                for arms.iter().advance |a| { self.visit_arm(a); }
             }
             expr_fn_block(ref decl, ref body) => {
                 self.visit_fn(
@@ -647,7 +647,7 @@ impl<'self> Walk for &'self Visitor {
             }
             expr_field(x, _, ref tys) => {
                 self.visit_expr(x);
-                for tys.each |tp| { self.visit_ty(*tp); }
+                for tys.iter().advance |tp| { self.visit_ty(*tp); }
             }
             expr_index(_, a, b) => {
                 self.visit_expr(a);
@@ -665,10 +665,10 @@ impl<'self> Walk for &'self Visitor {
             expr_mac(ref mac) => self.walk_mac(mac),
             expr_paren(x) => self.visit_expr(x),
             expr_inline_asm(ref a) => {
-                for a.inputs.each |&(_, in)| {
+                for a.inputs.iter().advance |&(_, in)| {
                     self.visit_expr(in);
                 }
-                for a.outputs.each |&(_, out)| {
+                for a.outputs.iter().advance |&(_, out)| {
                     self.visit_expr(out);
                 }
             }
@@ -688,8 +688,8 @@ fn walk_crate<V:Visitor>(v:&V, c: &crate) {
 }
 
 fn walk_mod<V:Visitor>(v:&V, m: &_mod, _sp: span, _id: node_id) {
-    for m.view_items.each |vi| { v.visit_view_item(*vi); }
-    for m.items.each |i| { v.visit_item(*i); }
+    for m.view_items.iter().advance |vi| { v.visit_view_item(*vi); }
+    for m.items.iter().advance |i| { v.visit_item(*i); }
 }
 
 fn walk_view_item<V:Visitor>(_v:&V, _vi: @view_item) { }
@@ -729,8 +729,8 @@ fn walk_item<V:Visitor>(v:&V, i: @item) {
         }
         item_mod(ref m) => v.visit_mod(m, i.span, i.id),
         item_foreign_mod(ref nm) => {
-            for nm.view_items.each |vi| { v.visit_view_item(*vi); }
-            for nm.items.each |ni| { v.visit_foreign_item(*ni); }
+            for nm.view_items.iter().advance |vi| { v.visit_view_item(*vi); }
+            for nm.items.iter().advance |ni| { v.visit_foreign_item(*ni); }
         }
         item_ty(t, ref tps) => {
             v.visit_ty(t);
@@ -749,7 +749,7 @@ fn walk_item<V:Visitor>(v:&V, i: @item) {
                 walk_trait_ref(v, p);
             }
             v.visit_ty(ty);
-            for methods.each |m| {
+            for methods.iter().advance |m| {
                 walk_method_helper(v, *m)
             }
         }
@@ -759,8 +759,8 @@ fn walk_item<V:Visitor>(v:&V, i: @item) {
         }
         item_trait(ref generics, ref traits, ref methods) => {
             v.visit_generics(generics);
-            for traits.each |p| { walk_path(v, p.path); }
-            for methods.each |m| {
+            for traits.iter().advance |p| { walk_path(v, p.path); }
+            for methods.iter().advance |m| {
                 v.visit_trait_method(m);
             }
         }
@@ -769,10 +769,10 @@ fn walk_item<V:Visitor>(v:&V, i: @item) {
 }
 
 fn walk_enum_def<V:Visitor>(v:&V, enum_definition: &ast::enum_def, tps: &Generics) {
-    for enum_definition.variants.each |vr| {
+    for enum_definition.variants.iter().advance |vr| {
         match vr.node.kind {
             tuple_variant_kind(ref variant_args) => {
-                for variant_args.each |va| { v.visit_ty(va.ty); }
+                for variant_args.iter().advance |va| { v.visit_ty(va.ty); }
             }
             struct_variant_kind(struct_def) => {
                 v.visit_struct_def(struct_def, vr.node.name, tps,
@@ -791,16 +791,16 @@ fn walk_ty<V:Visitor>(v:&V, t: @Ty) {
             v.visit_ty(mt.ty);
         },
         ty_tup(ref ts) => {
-            for ts.each |tt| {
+            for ts.iter().advance |tt| {
                 v.visit_ty(*tt);
             }
         },
         ty_closure(ref f) => {
-            for f.decl.inputs.each |a| { v.visit_ty(a.ty); }
+            for f.decl.inputs.iter().advance |a| { v.visit_ty(a.ty); }
             v.visit_ty(f.decl.output);
         },
         ty_bare_fn(ref f) => {
-            for f.decl.inputs.each |a| { v.visit_ty(a.ty); }
+            for f.decl.inputs.iter().advance |a| { v.visit_ty(a.ty); }
             v.visit_ty(f.decl.output);
         },
         ty_path(p, _) => walk_path(v, p),
@@ -813,7 +813,7 @@ fn walk_ty<V:Visitor>(v:&V, t: @Ty) {
 }
 
 fn walk_path<V:Visitor>(v:&V, p: @Path) {
-    for p.types.each |tp| { v.visit_ty(*tp); }
+    for p.types.iter().advance |tp| { v.visit_ty(*tp); }
 }
 
 fn walk_pat<V:Visitor>(v:&V, p: @pat) {
@@ -826,12 +826,12 @@ fn walk_pat<V:Visitor>(v:&V, p: @pat) {
         }
         pat_struct(path, ref fields, _) => {
             walk_path(v, path);
-            for fields.each |f| {
+            for fields.iter().advance |f| {
                 v.visit_pat(f.pat);
             }
         }
         pat_tup(ref elts) => {
-            for elts.each |elt| {
+            for elts.iter().advance |elt| {
                 v.visit_pat(*elt)
             }
         },
@@ -849,13 +849,13 @@ fn walk_pat<V:Visitor>(v:&V, p: @pat) {
         }
         pat_wild => (),
         pat_vec(ref before, ref slice, ref after) => {
-            for before.each |elt| {
+            for before.iter().advance |elt| {
                 v.visit_pat(*elt);
             }
             for slice.iter().advance |elt| {
                 v.visit_pat(*elt);
             }
-            for after.each |tail| {
+            for after.iter().advance |tail| {
                 v.visit_pat(*tail);
             }
         }
@@ -890,7 +890,7 @@ fn walk_generics<V:Visitor>(v:&V, generics: &Generics) {
 }
 
 fn walk_fn_decl<V:Visitor>(v:&V, fd: &fn_decl) {
-    for fd.inputs.each |a| {
+    for fd.inputs.iter().advance |a| {
         v.visit_pat(a.pat);
         v.visit_ty(a.ty);
     }
@@ -924,7 +924,7 @@ fn walk_fn<V:Visitor>(v:&V, fk: &fn_kind, decl: &fn_decl, body: &blk, _sp: span,
 }
 
 fn walk_ty_method<V:Visitor>(v:&V, m: &ty_method) {
-    for m.decl.inputs.each |a| { v.visit_ty(a.ty); }
+    for m.decl.inputs.iter().advance |a| { v.visit_ty(a.ty); }
     v.visit_generics(&m.generics);
     v.visit_ty(m.decl.output);
 }
@@ -942,7 +942,7 @@ fn walk_struct_def<V:Visitor>(v:&V,
                               _generics: &Generics,
                               _id: node_id
                              ) {
-    for sd.fields.each |f| {
+    for sd.fields.iter().advance |f| {
         v.visit_struct_field(*f);
     }
 }
@@ -956,10 +956,10 @@ fn walk_struct_method<V:Visitor>(v:&V, m: @method) {
 }
 
 fn walk_block<V:Visitor>(v:&V, b: &blk) {
-    for b.node.view_items.each |vi| {
+    for b.node.view_items.iter().advance |vi| {
         v.visit_view_item(*vi);
     }
-    for b.node.stmts.each |s| {
+    for b.node.stmts.iter().advance |s| {
         v.visit_stmt(*s);
     }
     walk_expr_opt(v, b.node.expr);
@@ -986,7 +986,7 @@ fn walk_expr_opt<V:Visitor>(v:&V, eo: Option<@expr>) {
 }
 
 fn walk_exprs<V:Visitor>(v:&V, exprs: &[@expr]) {
-    for exprs.each |ex| { v.visit_expr(*ex); }
+    for exprs.iter().advance |ex| { v.visit_expr(*ex); }
 }
 
 fn walk_mac<V:Visitor>(_v:&V, _m: &mac) {
@@ -1003,11 +1003,11 @@ fn walk_expr<V:Visitor>(v:&V, ex: @expr) {
         }
         expr_struct(p, ref flds, base) => {
             walk_path(v, p);
-            for flds.each |f| { v.visit_expr(f.node.expr); }
+            for flds.iter().advance |f| { v.visit_expr(f.node.expr); }
             walk_expr_opt(v, base);
         }
         expr_tup(ref elts) => {
-            for elts.each |el| { v.visit_expr(*el) }
+            for elts.iter().advance |el| { v.visit_expr(*el) }
         }
         expr_call(callee, ref args, _) => {
             walk_exprs(v, *args);
@@ -1015,7 +1015,7 @@ fn walk_expr<V:Visitor>(v:&V, ex: @expr) {
         }
         expr_method_call(_, callee, _, ref tys, ref args, _) => {
             walk_exprs(v, *args);
-            for tys.each |tp| { v.visit_ty(*tp); }
+            for tys.iter().advance |tp| { v.visit_ty(*tp); }
             v.visit_expr(callee);
         }
         expr_binary(_, _, a, b) => {
@@ -1041,7 +1041,7 @@ fn walk_expr<V:Visitor>(v:&V, ex: @expr) {
         expr_loop(ref b, _) => v.visit_block(b),
         expr_match(x, ref arms) => {
             v.visit_expr(x);
-            for arms.each |a| { v.visit_arm(a); }
+            for arms.iter().advance |a| { v.visit_arm(a); }
         }
         expr_fn_block(ref decl, ref body) => {
             v.visit_fn(
@@ -1064,7 +1064,7 @@ fn walk_expr<V:Visitor>(v:&V, ex: @expr) {
         }
         expr_field(x, _, ref tys) => {
             v.visit_expr(x);
-            for tys.each |tp| { v.visit_ty(*tp); }
+            for tys.iter().advance |tp| { v.visit_ty(*tp); }
         }
         expr_index(_, a, b) => {
             v.visit_expr(a);
@@ -1082,10 +1082,10 @@ fn walk_expr<V:Visitor>(v:&V, ex: @expr) {
         expr_mac(ref mac) => walk_mac(v, mac),
         expr_paren(x) => v.visit_expr(x),
         expr_inline_asm(ref a) => {
-            for a.inputs.each |&(_, in)| {
+            for a.inputs.iter().advance |&(_, in)| {
                 v.visit_expr(in);
             }
-            for a.outputs.each |&(_, out)| {
+            for a.outputs.iter().advance |&(_, out)| {
                 v.visit_expr(out);
             }
         }
