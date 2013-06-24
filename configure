@@ -616,6 +616,21 @@ do
     fi
 
     case $i in
+        arm-unknown-linux-gnueabihf)
+            if [ ! $(command -v arm-linux-gnueabihf-gcc) ]
+            then
+                err "arm-linux-gnueabihf-gcc not found"
+            fi
+            if [ ! $(command -v arm-linux-gnueabihf-g++) ]
+            then
+                err "arm-linux-gnueabihf-g++ not found"
+            fi
+            if [ ! $(command -v arm-linux-gnueabihf-ar) ]
+            then
+                err "arm-linux-gnueabihf-ar not found"
+            fi
+            ;;
+
         arm-linux-androideabi)
 
             if [ ! -f $CFG_ANDROID_CROSS_PATH/bin/arm-linux-androideabi-gcc ]

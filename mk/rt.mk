@@ -150,7 +150,7 @@ rt/$(1)/stage$(2)/%.o: rt/%.c $$(MKFILE_DEPS)
 
 rt/$(1)/stage$(2)/%.o: rt/%.S  $$(MKFILE_DEPS) \
                      $$(LLVM_CONFIG_$$(CFG_BUILD_TRIPLE))
-	@$$(call E, compile: $$@)
+	@$$(call E, assemble: $$@)
 	$$(Q)$$(call CFG_ASSEMBLE_$(1),$$@,$$<)
 
 rt/$(1)/stage$(2)/arch/$$(HOST_$(1))/libmorestack.a: $$(MORESTACK_OBJ_$(1)_$(2))

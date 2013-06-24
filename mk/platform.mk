@@ -269,6 +269,7 @@ CC_arm-unknown-linux-gnueabihf=arm-linux-gnueabihf-gcc
 CXX_arm-unknown-linux-gnueabihf=arm-linux-gnueabihf-g++
 CPP_arm-unknown-linux-gnueabihf=arm-linux-gnueabihf-gcc -E
 AR_arm-unknown-linux-gnueabihf=arm-linux-gnueabihf-ar
+AS_arm-unknown-linux-gnueabihf=arm-linux-gnueabihf-as
 CFG_LIB_NAME_arm-unknown-linux-gnueabihf=lib$(1).so
 CFG_LIB_GLOB_arm-unknown-linux-gnueabihf=lib$(1)-*.so
 CFG_LIB_DSYM_GLOB_arm-unknown-linux-gnueabihf=lib$(1)-*.dylib.dSYM
@@ -425,7 +426,20 @@ define CFG_MAKE_TOOLCHAIN
         $$(CFG_GCCISH_DEF_FLAG_$(1))$$(3) $$(2)        \
         $$(call CFG_INSTALL_NAME_$(1),$$(4))
 
-  ifneq ($(1),arm-linux-androideabi)
+  ifeq ($(1),arm-linux-androideabi)
+
+  # For the Android cross use the Android assembler
+  # XXX: We should be able to use the LLVM assembler
+  CFG_ASSEMBLE_$(1)=$$(CPP_$(1)) $$(CFG_DEPEND_FLAGS) $$(2) -c -o $$(1)
+
+  else
+  ifeq ($(1),arm-unknown-linux-gnueabihf)
+
+  # For the Android cross use the Android assembler
+  # XXX: We should be able to use the LLVM assembler
+  CFG_ASSEMBLE_$(1)=$$(AS_$(1)) $$(2) -o $$(1)
+
+  else
 
   # We're using llvm-mc as our assembler because it supports
   # .cfi pseudo-ops on mac
@@ -435,12 +449,8 @@ define CFG_MAKE_TOOLCHAIN
                     -filetype=obj \
                     -triple=$(1) \
                     -o=$$(1)
-  else
 
-  # For the Android cross, use the Android assembler
-  # XXX: We should be able to use the LLVM assembler
-  CFG_ASSEMBLE_$(1)=$$(CPP_$(1)) $$(CFG_DEPEND_FLAGS) $$(2) -c -o $$(1)
-
+  endif
   endif
 
 endef
