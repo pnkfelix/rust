@@ -1758,6 +1758,7 @@ impl<'self,T:Copy> CopyableVector<T> for &'self [T] {
 
 #[allow(missing_doc)]
 pub trait ImmutableVector<'self, T> {
+    //? fn each(&self, f: &fn(T) -> bool) -> bool { self.iter().advance(f) }
     fn slice(&self, start: uint, end: uint) -> &'self [T];
     fn iter(self) -> VecIterator<'self, T>;
     fn rev_iter(self) -> VecRevIterator<'self, T>;
