@@ -322,6 +322,7 @@ pub fn compile_rest(sess: Session,
 
     // NB: Android hack
     if sess.targ_cfg.arch == abi::Arm &&
+        sess.targ_cfg.os == session::os_android &&
             (sess.opts.output_type == link::output_type_object ||
              sess.opts.output_type == link::output_type_exe) {
         let output_type = link::output_type_assembly;

@@ -378,7 +378,7 @@ pub mod write {
                 fmt!("%s/bin/arm-linux-androideabi-gcc", *path)
             }
             &None => {
-                sess.fatal("need Android NDK path for building \
+                sess.fatal("need Android NDK path for run_ndk building \
                             (--android-cross-path)")
             }
         };
