@@ -982,7 +982,7 @@ fn get_attributes(md: ebml::Doc) -> ~[ast::attribute] {
                         value: meta_item,
                         is_sugared_doc: false,
                     },
-                    span: codemap::dummy_sp()
+                    span: codemap::dummy_sp
                 });
         };
       }

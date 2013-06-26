@@ -74,7 +74,7 @@ fn generate_test_harness(sess: session::Session,
 
     let ext_cx = cx.ext_cx;
     ext_cx.bt_push(ExpandedFrom(CallInfo {
-        call_site: dummy_sp(),
+        call_site: dummy_sp,
         callee: NameAndSpan {
             name: @"test",
             span: None
@@ -290,7 +290,7 @@ fn mk_std(cx: &TestCtxt) -> @ast::view_item {
         node: vi,
         attrs: ~[],
         vis: ast::public,
-        span: dummy_sp()
+        span: dummy_sp
     };
     return @vi;
 }
@@ -329,7 +329,7 @@ fn mk_test_module(cx: &TestCtxt) -> @ast::item {
         id: cx.sess.next_node_id(),
         node: item_,
         vis: ast::public,
-        span: dummy_sp(),
+        span: dummy_sp,
      };
 
     debug!("Synthetic test module:\n%s\n",
@@ -339,11 +339,11 @@ fn mk_test_module(cx: &TestCtxt) -> @ast::item {
 }
 
 fn nospan<T:Copy>(t: T) -> codemap::spanned<T> {
-    codemap::spanned { node: t, span: dummy_sp() }
+    codemap::spanned { node: t, span: dummy_sp }
 }
 
 fn path_node(ids: ~[ast::ident]) -> @ast::Path {
-    @ast::Path { span: dummy_sp(),
+    @ast::Path { span: dummy_sp,
                 global: false,
                 idents: ids,
                 rp: None,
@@ -351,7 +351,7 @@ fn path_node(ids: ~[ast::ident]) -> @ast::Path {
 }
 
 fn path_node_global(ids: ~[ast::ident]) -> @ast::Path {
-    @ast::Path { span: dummy_sp(),
+    @ast::Path { span: dummy_sp,
                  global: true,
                  idents: ids,
                  rp: None,
@@ -394,13 +394,13 @@ fn mk_test_descs(cx: &TestCtxt) -> @ast::expr {
     let inner_expr = @ast::expr {
         id: sess.next_node_id(),
         node: ast::expr_vec(descs, ast::m_imm),
-        span: dummy_sp(),
+        span: dummy_sp,
     };
 
     @ast::expr {
         id: sess.next_node_id(),
         node: ast::expr_vstore(inner_expr, ast::expr_vstore_slice),
-        span: dummy_sp(),
+        span: dummy_sp,
     }
 }
 

@@ -390,12 +390,12 @@ mod test {
     use syntax::codemap;
 
     fn make_crate_type_attr(t: @str) -> ast::attribute {
-        codemap::respan(codemap::dummy_sp(), ast::attribute_ {
+        codemap::respan(codemap::dummy_sp, ast::attribute_ {
             style: ast::attr_outer,
-            value: @codemap::respan(codemap::dummy_sp(),
+            value: @codemap::respan(codemap::dummy_sp,
                 ast::meta_name_value(
                     @"crate_type",
-                    codemap::respan(codemap::dummy_sp(),
+                    codemap::respan(codemap::dummy_sp,
                                      ast::lit_str(t)))),
             is_sugared_doc: false
         })
@@ -405,7 +405,7 @@ mod test {
         let mut attrs = ~[];
         if with_bin { attrs += [make_crate_type_attr(@"bin")]; }
         if with_lib { attrs += [make_crate_type_attr(@"lib")]; }
-        @codemap::respan(codemap::dummy_sp(), ast::crate_ {
+        @codemap::respan(codemap::dummy_sp, ast::crate_ {
             module: ast::_mod { view_items: ~[], items: ~[] },
             attrs: attrs,
             config: ~[]

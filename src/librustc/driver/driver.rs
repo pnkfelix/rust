@@ -54,11 +54,11 @@ pub enum pp_mode {
  * The name used for source code that doesn't originate in a file
  * (e.g. source from stdin or a string)
  */
-pub fn anon_src() -> @str { @"<anon>" }
+pub fn anon_src() -> ~str { ~"<anon>" }
 
-pub fn source_name(input: &input) -> @str {
+pub fn source_name(input: &input) -> ~str {
     match *input {
-      file_input(ref ifile) => ifile.to_str().to_managed(),
+      file_input(ref ifile) => ifile.to_str(),
       str_input(_) => anon_src()
     }
 }
@@ -93,7 +93,7 @@ pub fn default_configuration(sess: Session, argv0: @str, input: &input) ->
          mk(@"target_libc", libc),
          // Build bindings.
          mk(@"build_compiler", argv0),
-         mk(@"build_input", source_name(input))];
+         mk(@"build_input", source_name(input).to_managed())];
 }
 
 pub fn append_configuration(cfg: ast::crate_cfg, name: @str)
@@ -126,7 +126,7 @@ fn parse_cfgspecs(cfgspecs: ~[~str],
                   demitter: diagnostic::Emitter) -> ast::crate_cfg {
     do vec::map_consume(cfgspecs) |s| {
         let sess = parse::new_parse_sess(Some(demitter));
-        parse::parse_meta_from_source_str(@"cfgspec", s.to_managed(), ~[], sess)
+        parse::parse_meta_from_source_str(@"cfgspec", s, ~[], sess)
     }
 }
 
@@ -135,19 +135,17 @@ pub enum input {
     file_input(Path),
     /// The string is the source
     // FIXME (#2319): Don't really want to box the source string
-    str_input(@str)
+    str_input(~str)
 }
 
-pub fn parse_input(sess: Session, cfg: ast::crate_cfg, input: &input)
-    -> @ast::crate {
+pub fn parse_input(sess: Session, cfg: ast::crate_cfg, input: &input) -> @ast::crate {
     match *input {
-      file_input(ref file) => {
-        parse::parse_crate_from_file(&(*file), cfg, sess.parse_sess)
-      }
-      str_input(src) => {
-        parse::parse_crate_from_source_str(
-            anon_src(), src, cfg, sess.parse_sess)
-      }
+        file_input(ref file) => {
+            parse::parse_crate_from_file(&(*file), cfg, sess.parse_sess)
+        }
+        str_input(ref src) => {
+            parse::parse_crate_from_source_str(anon_src().to_managed(), src.clone(), cfg, sess.parse_sess)
+        }
     }
 }
 
@@ -451,11 +449,11 @@ pub fn pretty_print_input(sess: Session, cfg: ast::crate_cfg, input: &input,
       }
     };
     let is_expanded = upto != cu_parse;
-    let src = sess.codemap.get_filemap(source_name(input)).src;
+    let src = sess.codemap.get_filemap(source_name(input)).src.clone();
     do io::with_str_reader(src) |rdr| {
         pprust::print_crate(sess.codemap, token::get_ident_interner(),
                             sess.span_diagnostic, crate.unwrap(),
-                            source_name(input),
+                            source_name(input).to_managed(),
                             rdr, io::stdout(), ann, is_expanded);
     }
 }
@@ -964,7 +962,7 @@ mod test {
         let sessopts = build_session_options(
             @"rustc", matches, diagnostic::emit);
         let sess = build_session(sessopts, diagnostic::emit);
-        let cfg = build_configuration(sess, @"whatever", &str_input(@""));
+        let cfg = build_configuration(sess, @"whatever", &str_input(~""));
         assert!((attr::contains_name(cfg, "test")));
     }
 
@@ -982,7 +980,7 @@ mod test {
         let sessopts = build_session_options(
             @"rustc", matches, diagnostic::emit);
         let sess = build_session(sessopts, diagnostic::emit);
-        let cfg = build_configuration(sess, @"whatever", &str_input(@""));
+        let cfg = build_configuration(sess, @"whatever", &str_input(~""));
         let test_items = attr::find_meta_items_by_name(cfg, "test");
         assert_eq!(test_items.len(), 1u);
     }

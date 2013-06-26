@@ -550,7 +550,7 @@ impl CoherenceChecker {
         // NDM--this span is bogus.
         let self_region =
             polytype.generics.region_param.map(
-                |_r| self.inference_context.next_region_var_nb(dummy_sp()));
+                |_r| self.inference_context.next_region_var_nb(dummy_sp));
 
         let bounds_count = polytype.generics.type_param_defs.len();
         let type_parameters = self.inference_context.next_ty_vars(bounds_count);
@@ -583,7 +583,7 @@ impl CoherenceChecker {
                                                 -> bool {
         let mut might_unify = true;
         let _ = do self.inference_context.probe {
-            let result = self.inference_context.sub(true, dummy_sp())
+            let result = self.inference_context.sub(true, dummy_sp)
                                                .tys(a.monotype, b.monotype);
             if result.is_ok() {
                 // Check to ensure that each parameter binding respected its
@@ -885,7 +885,7 @@ impl CoherenceChecker {
 
             if associated_traits.is_none() {
                 match get_base_type_def_id(self.inference_context,
-                                           dummy_sp(),
+                                           dummy_sp,
                                            self_type.ty) {
                     None => {
                         let session = self.crate_context.tcx.sess;
@@ -925,7 +925,7 @@ impl CoherenceChecker {
             // type for this implementation.
 
             match get_base_type_def_id(self.inference_context,
-                                     dummy_sp(),
+                                     dummy_sp,
                                      self_type.ty) {
                 None => {
                     // Nothing to do.

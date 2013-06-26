@@ -1646,7 +1646,7 @@ impl Resolver {
                                                       parent_link,
                                                       Some(def_id),
                                                       NormalModuleKind,
-                                                      dummy_sp());
+                                                      dummy_sp);
                     modules.insert(def_id,
                                    child_name_bindings.get_module());
                 } else {
@@ -1686,12 +1686,12 @@ impl Resolver {
             // We assume the parent is visible, or else we wouldn't have seen
             // it.
             let privacy = variant_visibility_to_privacy(visibility, true);
-            child_name_bindings.define_value(privacy, def, dummy_sp());
+            child_name_bindings.define_value(privacy, def, dummy_sp);
           }
           def_fn(*) | def_static_method(*) | def_static(*) => {
             debug!("(building reduced graph for external \
                     crate) building value %s", final_ident);
-            child_name_bindings.define_value(privacy, def, dummy_sp());
+            child_name_bindings.define_value(privacy, def, dummy_sp);
           }
           def_trait(def_id) => {
               debug!("(building reduced graph for external \
@@ -1728,7 +1728,7 @@ impl Resolver {
                   }
               }
 
-              child_name_bindings.define_type(privacy, def, dummy_sp());
+              child_name_bindings.define_type(privacy, def, dummy_sp);
 
               // Define a module if necessary.
               let parent_link = self.get_parent_link(new_parent, ident);
@@ -1736,19 +1736,19 @@ impl Resolver {
                                                   parent_link,
                                                   Some(def_id),
                                                   TraitModuleKind,
-                                                  dummy_sp())
+                                                  dummy_sp)
           }
           def_ty(_) => {
               debug!("(building reduced graph for external \
                       crate) building type %s", final_ident);
 
-              child_name_bindings.define_type(privacy, def, dummy_sp());
+              child_name_bindings.define_type(privacy, def, dummy_sp);
           }
           def_struct(def_id) => {
             debug!("(building reduced graph for external \
                     crate) building type %s",
                    final_ident);
-            child_name_bindings.define_type(privacy, def, dummy_sp());
+            child_name_bindings.define_type(privacy, def, dummy_sp);
             self.structs.insert(def_id);
           }
           def_self(*) | def_arg(*) | def_local(*) |
@@ -1791,7 +1791,7 @@ impl Resolver {
                     self.add_child(ident,
                                    ModuleReducedGraphParent(current_module),
                                    OverwriteDuplicates,
-                                   dummy_sp());
+                                   dummy_sp);
 
                 // Define or reuse the module node.
                 match child_name_bindings.type_def {
@@ -1805,7 +1805,7 @@ impl Resolver {
                                                           parent_link,
                                                           None,
                                                           NormalModuleKind,
-                                                          dummy_sp());
+                                                          dummy_sp);
                     }
                     Some(type_ns_def)
                             if type_ns_def.module_def.is_none() => {
@@ -1818,7 +1818,7 @@ impl Resolver {
                                                           parent_link,
                                                           None,
                                                           NormalModuleKind,
-                                                          dummy_sp());
+                                                          dummy_sp);
                     }
                     _ => {} // Fall through.
                 }
@@ -1834,7 +1834,7 @@ impl Resolver {
                                        ModuleReducedGraphParent(
                                             current_module),
                                        OverwriteDuplicates,
-                                       dummy_sp());
+                                       dummy_sp);
 
                     self.handle_external_def(def,
                                              visibility,
@@ -1867,7 +1867,7 @@ impl Resolver {
                                             ModuleReducedGraphParent(
                                                             current_module),
                                             OverwriteDuplicates,
-                                            dummy_sp());
+                                            dummy_sp);
 
                                     // Process the static methods. First,
                                     // create the module.
@@ -1894,7 +1894,7 @@ impl Resolver {
                                                 parent_link,
                                                 Some(def),
                                                 ImplModuleKind,
-                                                dummy_sp());
+                                                dummy_sp);
                                             type_module =
                                                 child_name_bindings.
                                                     get_module();
@@ -1916,12 +1916,12 @@ impl Resolver {
                                                 ident,
                                                 new_parent,
                                                 OverwriteDuplicates,
-                                                dummy_sp());
+                                                dummy_sp);
                                         let def = def_fn(
                                             static_method_info.def_id,
                                             static_method_info.purity);
                                         method_name_bindings.define_value(
-                                            Public, def, dummy_sp());
+                                            Public, def, dummy_sp);
                                     }
                                 }
 
@@ -5301,7 +5301,7 @@ impl Resolver {
         // because this means that they were generated in some fashion by the
         // compiler and we don't need to consider them.
         if vi.vis == public { return }
-        if vi.span == dummy_sp() { return }
+        if vi.span == dummy_sp { return }
 
         match vi.node {
             view_item_extern_mod(*) => {} // ignore

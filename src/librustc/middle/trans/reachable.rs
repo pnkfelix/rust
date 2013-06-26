@@ -227,7 +227,7 @@ fn traverse_inline_body(cx: @mut ctx, body: &blk) {
 fn traverse_all_resources_and_impls(cx: @mut ctx, crate_mod: &_mod) {
     visit::visit_mod(
         crate_mod,
-        codemap::dummy_sp(),
+        codemap::dummy_sp,
         0,
         (cx,
         visit::mk_vt(@visit::Visitor {

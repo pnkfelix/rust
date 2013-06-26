@@ -218,9 +218,9 @@ impl Env {
         ty::mk_imm_rptr(self.tcx, ty::re_static, self.t_int())
     }
 
-    pub fn lub() -> Lub { Lub(self.infcx.combine_fields(true, dummy_sp())) }
+    pub fn lub() -> Lub { Lub(self.infcx.combine_fields(true, dummy_sp)) }
 
-    pub fn glb() -> Glb { Glb(self.infcx.combine_fields(true, dummy_sp())) }
+    pub fn glb() -> Glb { Glb(self.infcx.combine_fields(true, dummy_sp)) }
 
     pub fn resolve_regions(exp_count: uint) {
         debug!("resolve_regions(%u)", exp_count);

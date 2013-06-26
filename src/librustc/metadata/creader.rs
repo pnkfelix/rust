@@ -324,7 +324,7 @@ fn resolve_crate_deps(e: @mut Env, cdata: @~[u8]) -> cstore::cnum_map {
             // This is a new one so we've got to load it
             // FIXME (#2404): Need better error reporting than just a bogus
             // span.
-            let fake_span = dummy_sp();
+            let fake_span = dummy_sp;
             let local_cnum = resolve_crate(e, cname, cmetas, dep.hash,
                                            fake_span);
             cnum_map.insert(extrn_cnum, local_cnum);

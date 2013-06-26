@@ -383,7 +383,7 @@ pub fn can_mk_subty(cx: @mut InferCtxt, a: ty::t, b: ty::t) -> ures {
     debug!("can_mk_subty(%s <: %s)", a.inf_str(cx), b.inf_str(cx));
     do indent {
         do cx.probe {
-            cx.sub(true, codemap::dummy_sp()).tys(a, b)
+            cx.sub(true, codemap::dummy_sp).tys(a, b)
         }
     }.to_ures()
 }
@@ -452,7 +452,7 @@ pub fn can_mk_coercety(cx: @mut InferCtxt, a: ty::t, b: ty::t) -> ures {
     debug!("can_mk_coercety(%s -> %s)", a.inf_str(cx), b.inf_str(cx));
     do indent {
         do cx.probe {
-            let span = codemap::dummy_sp();
+            let span = codemap::dummy_sp;
             Coerce(cx.combine_fields(true, span)).tys(a, b)
         }
     }.to_ures()

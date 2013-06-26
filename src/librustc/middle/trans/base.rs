@@ -1913,7 +1913,7 @@ pub fn trans_enum_variant(ccx: @mut CrateContext,
             ty: varg.ty,
             pat: ast_util::ident_to_pat(
                 ccx.tcx.sess.next_node_id(),
-                codemap::dummy_sp(),
+                codemap::dummy_sp,
                 special_idents::arg),
             id: varg.id,
         }
@@ -1987,7 +1987,7 @@ pub fn trans_tuple_struct(ccx: @mut CrateContext,
             is_mutbl: false,
             ty: field.node.ty,
             pat: ast_util::ident_to_pat(ccx.tcx.sess.next_node_id(),
-                                        codemap::dummy_sp(),
+                                        codemap::dummy_sp,
                                         special_idents::arg),
             id: field.node.id
         }

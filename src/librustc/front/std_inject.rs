@@ -36,7 +36,7 @@ fn use_std(crate: @ast::crate) -> bool {
 
 fn inject_libstd_ref(sess: Session, crate: @ast::crate) -> @ast::crate {
     fn spanned<T:Copy>(x: T) -> codemap::spanned<T> {
-        codemap::spanned { node: x, span: dummy_sp() }
+        codemap::spanned { node: x, span: dummy_sp }
     }
 
     let precursor = @fold::AstFoldFns {
@@ -56,7 +56,7 @@ fn inject_libstd_ref(sess: Session, crate: @ast::crate) -> @ast::crate {
                     })
                 ],
                 vis: ast::private,
-                span: dummy_sp()
+                span: dummy_sp
             };
 
             let vis = vec::append(~[vi1], crate.module.view_items);
@@ -77,7 +77,7 @@ fn inject_libstd_ref(sess: Session, crate: @ast::crate) -> @ast::crate {
             let n2 = sess.next_node_id();
 
             let prelude_path = @ast::Path {
-                span: dummy_sp(),
+                span: dummy_sp,
                 global: false,
                 idents: ~[
                     sess.ident_of("std"),
@@ -91,7 +91,7 @@ fn inject_libstd_ref(sess: Session, crate: @ast::crate) -> @ast::crate {
             let vi2 = @ast::view_item { node: ast::view_item_use(~[vp]),
                                         attrs: ~[],
                                         vis: ast::private,
-                                        span: dummy_sp() };
+                                        span: dummy_sp };
 
             let vis = vec::append(~[vi2], module.view_items);
 

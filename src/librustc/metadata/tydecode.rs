@@ -140,7 +140,7 @@ fn parse_path(st: &mut PState) -> @ast::Path {
           ':' => { next(st); next(st); }
           c => {
             if c == '(' {
-                return @ast::Path { span: dummy_sp(),
+                return @ast::Path { span: dummy_sp,
                                     global: false,
                                     idents: idents,
                                     rp: None,

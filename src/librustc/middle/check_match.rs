@@ -473,7 +473,7 @@ pub fn ctor_arity(cx: @MatchCheckCtxt, ctor: &ctor, ty: ty::t) -> uint {
 }
 
 pub fn wild() -> @pat {
-    @pat {id: 0, node: pat_wild, span: dummy_sp()}
+    @pat {id: 0, node: pat_wild, span: dummy_sp}
 }
 
 pub fn specialize(cx: @MatchCheckCtxt,
