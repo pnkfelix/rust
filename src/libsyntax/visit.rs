@@ -292,7 +292,7 @@ impl<'self> Walk for &'self Visitor {
 
     fn walk_item(&self, i: @item) {
         match i.node {
-            item_const(t, ex) => {
+            item_static(t, _, ex) => {
                 self.visit_ty(t);
                 self.visit_expr(ex);
             }
@@ -386,7 +386,10 @@ impl<'self> Walk for &'self Visitor {
                 for f.decl.inputs.iter().advance |a| { self.visit_ty(a.ty); }
                 self.visit_ty(f.decl.output);
             },
-            ty_path(p, _) => self.walk_path(p),
+            ty_path(p, bounds, _) => {
+                self.walk_path(p);
+                self.walk_ty_param_bounds(bounds);
+            },
             ty_fixed_length_vec(ref mt, ex) => {
                 self.visit_ty(mt.ty);
                 self.visit_expr(ex);
@@ -451,7 +454,7 @@ impl<'self> Walk for &'self Visitor {
                 self.walk_fn_decl(fd);
                 self.visit_generics(generics);
             }
-            foreign_item_const(t) => {
+            foreign_item_static(t, _) => {
                 self.visit_ty(t);
             }
         }
@@ -709,7 +712,7 @@ fn walk_trait_ref<V:Visitor>(v:&V, tref: @ast::trait_ref) {
 
 fn walk_item<V:Visitor>(v:&V, i: @item) {
     match i.node {
-        item_const(t, ex) => {
+        item_static(t, _, ex) => {
             v.visit_ty(t);
             v.visit_expr(ex);
         }
@@ -803,7 +806,10 @@ fn walk_ty<V:Visitor>(v:&V, t: @Ty) {
             for f.decl.inputs.iter().advance |a| { v.visit_ty(a.ty); }
             v.visit_ty(f.decl.output);
         },
-        ty_path(p, _) => walk_path(v, p),
+        ty_path(p, bounds, _) => {
+            walk_path(v, p);
+            walk_ty_param_bounds(v, bounds);
+        }
         ty_fixed_length_vec(ref mt, ex) => {
             v.visit_ty(mt.ty);
             v.visit_expr(ex);
@@ -868,7 +874,7 @@ fn walk_foreign_item<V:Visitor>(v:&V, ni: @foreign_item) {
             walk_fn_decl(v, fd);
             v.visit_generics(generics);
         }
-        foreign_item_const(t) => {
+        foreign_item_static(t, _) => {
             v.visit_ty(t);
         }
     }
