@@ -73,7 +73,7 @@ pub fn generics_of_fn(fk: &fn_kind) -> Generics {
 }
 
 #[allow(default_methods)]
-trait Visitor {
+pub trait Visitor {
     // pnkfelix would prefer the methods prefixed by "default_" to be
     // top-level methods, but Issue #7183 forces them to be in a
     // [super-]trait to be callable from the trait default methods,
@@ -81,7 +81,7 @@ trait Visitor {
     // they cannot be in a strict super-trait).
     // FIXME (#7183): Move these to top-level methods once that is supported.
     // (i.e., do not override these in your own impl of Visitor!)
-    fn default_visit_mod(&self, m:&_mod, s:span, i:node_id) {
+    fn default_visit_mod(&self, m:&_mod, _s:span, _i:node_id) {
         let v = self;
         for m.view_items.iter().advance |vi| { v.visit_view_item(*vi); }
         for m.items.iter().advance |i| { v.visit_item(*i); }
@@ -666,7 +666,6 @@ impl<E:Copy> Visitor for (E, vt<E>) {
         (v.visit_ty)(t, copy *self);
     }
     fn visit_ty_param_bounds(&self, bounds: &OptVec<TyParamBound>) {
-        let &(_, mk_vt(ref v)) = self;
         // XXX this doesnt match established pattern; codesmell.
         visit_ty_param_bounds(bounds, copy *self);
     }
@@ -1180,7 +1179,7 @@ impl<'self> Walk for &'self Visitor {
     }
 }
 
-fn walk_crate<V:Visitor>(v:&V, c: &crate) {
+pub fn walk_crate<V:Visitor>(v:&V, c: &crate) {
     v.visit_mod(&c.node.module, c.span, crate_node_id);
 }
 
