@@ -89,6 +89,8 @@ pub struct span {
     expn_info: Option<@ExpnInfo>
 }
 
+pub static dummy_sp: span = span { lo: BytePos(0), hi: BytePos(0), expn_info: None };
+
 #[deriving(Eq, Encodable, Decodable)]
 pub struct spanned<T> { node: T, span: span }
 
@@ -108,7 +110,7 @@ impl<S:Encoder> Encodable<S> for span {
 
 impl<D:Decoder> Decodable<D> for span {
     fn decode(_d: &mut D) -> span {
-        dummy_sp()
+        dummy_sp
     }
 }
 
@@ -121,18 +123,13 @@ pub fn respan<T>(sp: span, t: T) -> spanned<T> {
 }
 
 pub fn dummy_spanned<T>(t: T) -> spanned<T> {
-    respan(dummy_sp(), t)
+    respan(dummy_sp, t)
 }
 
 /* assuming that we're not in macro expansion */
 pub fn mk_sp(lo: BytePos, hi: BytePos) -> span {
     span {lo: lo, hi: hi, expn_info: None}
 }
-
-// make this a const, once the compiler supports it
-pub fn dummy_sp() -> span { return mk_sp(BytePos(0), BytePos(0)); }
-
-
 
 /// A source code location used for error reporting
 pub struct Loc {
@@ -352,7 +349,7 @@ impl CodeMap {
 
     pub fn span_to_str(&self, sp: span) -> ~str {
         let files = &*self.files;
-        if files.len() == 0 && sp == dummy_sp() {
+        if files.len() == 0 && sp == dummy_sp {
             return ~"no-location";
         }
 

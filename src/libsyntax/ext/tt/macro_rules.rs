@@ -33,7 +33,7 @@ pub fn add_new_extension(cx: @ExtCtxt,
                       -> base::MacResult {
     // these spans won't matter, anyways
     fn ms(m: matcher_) -> matcher {
-        spanned { node: copy m, span: dummy_sp() }
+        spanned { node: copy m, span: dummy_sp }
     }
 
     let lhs_nm =  gensym_ident("lhs");
@@ -87,7 +87,7 @@ pub fn add_new_extension(cx: @ExtCtxt,
         }
 
         // Which arm's failure should we report? (the one furthest along)
-        let mut best_fail_spot = dummy_sp();
+        let mut best_fail_spot = dummy_sp;
         let mut best_fail_msg = ~"internal error: ran no matchers";
 
         let s_d = cx.parse_sess().span_diagnostic;

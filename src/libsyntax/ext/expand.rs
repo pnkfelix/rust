@@ -671,12 +671,12 @@ pub fn expand_crate(parse_sess: @mut parse::ParseSess,
     // head of the program (ick).
     let attrs = ~[
         spanned {
-            span: codemap::dummy_sp(),
+            span: codemap::dummy_sp,
             node: attribute_ {
                 style: attr_outer,
                 value: @spanned {
                     node: meta_word(@"macro_escape"),
-                    span: codemap::dummy_sp(),
+                    span: codemap::dummy_sp,
                 },
                 is_sugared_doc: false,
             }
@@ -844,12 +844,12 @@ mod test {
     // make a "meta_word" outer attribute with the given name
     fn make_dummy_attr(s: @str) -> ast::attribute {
         spanned {
-            span:codemap::dummy_sp(),
+            span:codemap::dummy_sp,
             node: attribute_ {
                 style: attr_outer,
                 value: @spanned {
                     node: meta_word(s),
-                    span: codemap::dummy_sp(),
+                    span: codemap::dummy_sp,
                 },
                 is_sugared_doc: false,
             }

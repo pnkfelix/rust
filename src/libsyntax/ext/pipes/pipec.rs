@@ -122,7 +122,7 @@ impl gen_send for message {
 
             let name = if try {cx.ident_of(~"try_" + name)} else {cx.ident_of(name)};
 
-            cx.item_fn_poly(dummy_sp(),
+            cx.item_fn_poly(dummy_sp,
                             name,
                             args_ast,
                             rty,
@@ -174,7 +174,7 @@ impl gen_send for message {
 
                 let name = if try {cx.ident_of(~"try_" + name)} else {cx.ident_of(name)};
 
-                cx.item_fn_poly(dummy_sp(),
+                cx.item_fn_poly(dummy_sp,
                                 name,
                                 args_ast,
                                 if try {
@@ -271,11 +271,11 @@ impl to_type_decls for state {
                         path_global(~[cx.ident_of("std"),
                                       cx.ident_of("pipes"),
                                       cx.ident_of(dir.to_str() + "Packet")],
-                             dummy_sp())
+                             dummy_sp)
                         .add_ty(cx.ty_path(
                             path(~[cx.ident_of("super"),
                                    self.data_name()],
-                                 dummy_sp())
+                                 dummy_sp)
                             .add_tys(cx.ty_vars(
                                 &self.generics.ty_params)), @None)),
                         @None),
@@ -291,11 +291,11 @@ impl to_type_decls for state {
                                       cx.ident_of("pipes"),
                                       cx.ident_of(dir.to_str()
                                                   + "PacketBuffered")],
-                             dummy_sp())
+                             dummy_sp)
                         .add_tys(~[cx.ty_path(
                             path(~[cx.ident_of("super"),
                                    self.data_name()],
-                                        dummy_sp())
+                                        dummy_sp)
                             .add_tys(cx.ty_vars_global(
                                 &self.generics.ty_params)), @None),
                                    self.proto.buffer_ty_path(cx)]), @None),
@@ -329,12 +329,12 @@ impl gen_init for protocol {
 
     fn gen_buffer_init(&self, ext_cx: @ExtCtxt) -> @ast::expr {
         ext_cx.expr_struct(
-            dummy_sp(),
+            dummy_sp,
             path(~[ext_cx.ident_of("__Buffer")],
-                 dummy_sp()),
+                 dummy_sp),
             self.states.iter().transform(|s| {
                 let fty = s.to_ty(ext_cx);
-                ext_cx.field_imm(dummy_sp(),
+                ext_cx.field_imm(dummy_sp,
                                  ext_cx.ident_of(s.name),
                                  quote_expr!(
                                      ::std::pipes::mk_packet::<$fty>()
@@ -408,7 +408,7 @@ impl gen_init for protocol {
                     ty: fty,
                     attrs: ~[],
                 },
-                span: dummy_sp()
+                span: dummy_sp
             }
         }.collect();
 
@@ -418,7 +418,7 @@ impl gen_init for protocol {
         };
 
         cx.item_struct_poly(
-            dummy_sp(),
+            dummy_sp,
             cx.ident_of("__Buffer"),
             ast::struct_def {
                 fields: fields,

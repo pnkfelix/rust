@@ -297,7 +297,7 @@ impl AstBuilder for @ExtCtxt {
 
     fn ty_option(&self, ty: @ast::Ty) -> @ast::Ty {
         self.ty_path(
-            self.path_all(dummy_sp(),
+            self.path_all(dummy_sp,
                           true,
                           ~[
                               self.ident_of("std"),
@@ -325,7 +325,7 @@ impl AstBuilder for @ExtCtxt {
         @ast::Ty {
             id: self.next_id(),
             node: ast::ty_nil,
-            span: dummy_sp(),
+            span: dummy_sp,
         }
     }
 
@@ -338,13 +338,13 @@ impl AstBuilder for @ExtCtxt {
     // incorrect code.
     fn ty_vars(&self, ty_params: &OptVec<ast::TyParam>) -> ~[@ast::Ty] {
         opt_vec::take_vec(
-            ty_params.map(|p| self.ty_ident(dummy_sp(), p.ident)))
+            ty_params.map(|p| self.ty_ident(dummy_sp, p.ident)))
     }
 
     fn ty_vars_global(&self, ty_params: &OptVec<ast::TyParam>) -> ~[@ast::Ty] {
         opt_vec::take_vec(
             ty_params.map(|p| self.ty_path(
-                self.path_global(dummy_sp(), ~[p.ident]), @None)))
+                self.path_global(dummy_sp, ~[p.ident]), @None)))
     }
 
     fn strip_bounds(&self, generics: &Generics) -> Generics {

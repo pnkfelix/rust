@@ -66,7 +66,7 @@ pub fn new_tt_reader(sp_diag: @span_handler,
         repeat_len: ~[],
         /* dummy values, never read: */
         cur_tok: EOF,
-        cur_span: dummy_sp()
+        cur_span: dummy_sp
     };
     tt_next_token(r); /* get cur_tok and cur_span set up */
     return r;
