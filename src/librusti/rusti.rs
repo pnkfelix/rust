@@ -202,7 +202,7 @@ fn run(mut repl: Repl, input: ~str) -> Repl {
     let input = to_run.connect("\n");
     let test = repl.program.test_code(input, &result, *new_locals);
     debug!("testing with ^^^^^^ %?", (||{ println(test) })());
-    let dinput = driver::str_input(test.to_managed());
+    let dinput = driver::str_input(test);
     let cfg = driver::build_configuration(sess, binary, &dinput);
     let outputs = driver::build_output_filenames(&dinput, &None, &None, [], sess);
     let (crate, tcx) = driver::compile_upto(sess, copy cfg, &dinput,
@@ -219,7 +219,7 @@ fn run(mut repl: Repl, input: ~str) -> Repl {
     info!("actually running code");
     let code = repl.program.code(input, &result);
     debug!("actually running ^^^^^^ %?", (||{ println(code) })());
-    let input = driver::str_input(code.to_managed());
+    let input = driver::str_input(code);
     let cfg = driver::build_configuration(sess, binary, &input);
     let outputs = driver::build_output_filenames(&input, &None, &None, [], sess);
     let sess = driver::build_session(options, diagnostic::emit);
@@ -238,7 +238,7 @@ fn run(mut repl: Repl, input: ~str) -> Repl {
     fn parse_input(sess: session::Session, binary: @str,
                    input: &str) -> @ast::crate {
         let code = fmt!("fn main() {\n %s \n}", input);
-        let input = driver::str_input(code.to_managed());
+        let input = driver::str_input(code);
         let cfg = driver::build_configuration(sess, binary, &input);
         let outputs = driver::build_output_filenames(&input, &None, &None, [], sess);
         let (crate, _) = driver::compile_upto(sess, cfg, &input,

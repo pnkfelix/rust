@@ -393,7 +393,7 @@ pub fn link_exe(src: &Path, dest: &Path) -> bool {
 pub fn mk_string_lit(s: @str) -> ast::lit {
     spanned {
         node: ast::lit_str(s),
-        span: dummy_sp()
+        span: dummy_sp
     }
 }
 

@@ -25,7 +25,7 @@ pub fn from_file(file: &Path) -> @ast::crate {
 
 pub fn from_str(source: @str) -> @ast::crate {
     parse::parse_crate_from_source_str(
-        @"-", source, ~[], parse::new_parse_sess(None))
+        @"-", source.to_owned(), ~[], parse::new_parse_sess(None))
 }
 
 pub fn from_file_sess(sess: session::Session, file: &Path) -> @ast::crate {
@@ -35,7 +35,7 @@ pub fn from_file_sess(sess: session::Session, file: &Path) -> @ast::crate {
 
 pub fn from_str_sess(sess: session::Session, source: @str) -> @ast::crate {
     parse::parse_crate_from_source_str(
-        @"-", source, cfg(sess, str_input(source)), sess.parse_sess)
+        @"-", source.to_owned(), cfg(sess, str_input(source.to_owned())), sess.parse_sess)
 }
 
 fn cfg(sess: session::Session, input: driver::input) -> ast::crate_cfg {
