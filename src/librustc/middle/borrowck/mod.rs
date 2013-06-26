@@ -52,6 +52,21 @@ pub mod move_data;
 pub struct LoanDataFlowOperator;
 pub type LoanDataFlow = DataFlowContext<LoanDataFlowOperator>;
 
+#[cfg(stage0)]
+fn do_visit(crate: @ast::crate, bccx: @BorrowckCtxt)
+{
+    let v = visit::mk_vt(@visit::VisitorStruct {
+                                          visit_fn: borrowck_fn,
+                                          ..*visit::default_visitor()});
+    visit::visit_crate(crate, (bccx, v));
+}
+
+#[cfg(not(stage0))]
+fn do_visit(crate: @ast::crate, bccx: @BorrowckCtxt)
+{
+    visit::walk_crate(&bccx, crate);
+}
+
 pub fn check_crate(
     tcx: ty::ctxt,
     method_map: typeck::method_map,
@@ -79,10 +94,7 @@ pub fn check_crate(
         }
     };
 
-    let v = visit::mk_vt(@visit::VisitorStruct {
-                                          visit_fn: borrowck_fn,
-                                          ..*visit::default_visitor()});
-    visit::visit_crate(crate, (bccx, v));
+    do_visit(crate, bccx);
 
     if tcx.sess.borrowck_stats() {
         io::println("--- borrowck stats ---");
@@ -107,13 +119,26 @@ pub fn check_crate(
     }
 }
 
-fn borrowck_fn(fk: &visit::fn_kind,
-               decl: &ast::fn_decl,
-               body: &ast::blk,
-               sp: span,
-               id: ast::node_id,
-               (this, v): (@BorrowckCtxt,
-                           visit::vt<@BorrowckCtxt>)) {
+#[cfg(not(stage0))]
+impl visit::Visitor for @BorrowckCtxt {
+    fn visit_fn(&self,
+                fk: &visit::fn_kind,
+                decl: &ast::fn_decl,
+                body: &ast::blk,
+                sp: span,
+                id: ast::node_id) {
+        borrowck_fn_core(fk, decl, body, sp, id, *self);
+        self.default_visit_fn(fk, decl, body, sp, id);
+    }
+}
+
+fn borrowck_fn_core(fk: &visit::fn_kind,
+                    _decl: &ast::fn_decl,
+                    body: &ast::blk,
+                    _sp: span,
+                    id: ast::node_id,
+                    this: @BorrowckCtxt) {
+
     match fk {
         &visit::fk_anon(*) |
         &visit::fk_fn_block(*) => {
@@ -150,6 +175,16 @@ fn borrowck_fn(fk: &visit::fn_kind,
         }
     }
 
+}
+
+fn borrowck_fn(fk: &visit::fn_kind,
+               decl: &ast::fn_decl,
+               body: &ast::blk,
+               sp: span,
+               id: ast::node_id,
+               (this, v): (@BorrowckCtxt,
+                           visit::vt<@BorrowckCtxt>)) {
+    borrowck_fn_core(fk, decl, body, sp, id, this);
     visit::visit_fn(fk, decl, body, sp, id, (this, v));
 }
 
