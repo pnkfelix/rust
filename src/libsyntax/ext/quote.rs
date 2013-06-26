@@ -72,7 +72,7 @@ pub mod rt {
 
     impl ToSource for ast::ident {
         fn to_source(&self) -> @str {
-            ident_to_str(self)
+            ident_to_str(self).to_managed()
         }
     }
 

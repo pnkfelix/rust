@@ -329,8 +329,8 @@ impl Parser {
     }
     pub fn get_id(&self) -> node_id { next_node_id(self.sess) }
 
-    pub fn id_to_str(&self, id: ident) -> @str {
-        get_ident_interner().get(id.name)
+    pub fn id_to_str(&self, id: ident) -> &str {
+        get_ident_interner().get(id.name).unwrap()
     }
 
     // is this one of the keywords that signals a closure type?
@@ -886,10 +886,10 @@ impl Parser {
             token::LIT_INT(i, it) => lit_int(i, it),
             token::LIT_UINT(u, ut) => lit_uint(u, ut),
             token::LIT_INT_UNSUFFIXED(i) => lit_int_unsuffixed(i),
-            token::LIT_FLOAT(s, ft) => lit_float(self.id_to_str(s), ft),
+            token::LIT_FLOAT(s, ft) => lit_float(self.id_to_str(s).to_managed(), ft),
             token::LIT_FLOAT_UNSUFFIXED(s) =>
-                lit_float_unsuffixed(self.id_to_str(s)),
-            token::LIT_STR(s) => lit_str(self.id_to_str(s)),
+                lit_float_unsuffixed(self.id_to_str(s).to_managed()),
+            token::LIT_STR(s) => lit_str(self.id_to_str(s).to_managed()),
             token::LPAREN => { self.expect(&token::RPAREN); lit_nil },
             _ => { self.unexpected_last(tok); }
         }
@@ -3372,7 +3372,7 @@ impl Parser {
             }
             if fields.len() == 0 {
                 self.fatal(fmt!("Unit-like struct should be written as `struct %s;`",
-                                get_ident_interner().get(class_name.name)));
+                                get_ident_interner().get(class_name.name).unwrap()));
             }
             self.bump();
         } else if *self.token == token::LPAREN {
@@ -3590,7 +3590,7 @@ impl Parser {
             attrs, "path") {
 
             Some(d) => d,
-            None => default_path
+            None => default_path.to_managed()
         };
         self.mod_path_stack.push(file_path)
     }
@@ -4543,7 +4543,7 @@ impl Parser {
         match *self.token {
             token::LIT_STR(s) => {
                 self.bump();
-                ident_to_str(&s)
+                ident_to_str(&s).to_managed()
             }
             _ =>  self.fatal("expected string literal")
         }

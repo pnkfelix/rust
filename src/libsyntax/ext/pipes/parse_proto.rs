@@ -61,7 +61,7 @@ impl proto_parser for parser::Parser {
             ast_util::empty_generics()
         };
 
-        let state = proto.add_state_poly(name, id, dir, generics);
+        let state = proto.add_state_poly(name.to_managed(), id, dir, generics);
 
         // parse the messages
         self.parse_unspanned_seq(
@@ -108,7 +108,7 @@ impl proto_parser for parser::Parser {
                 )
             }
             else { ~[] };
-            Some(next_state {state: name, tys: ntys})
+            Some(next_state {state: name.to_managed(), tys: ntys})
           }
           token::NOT => {
             // -> !
@@ -118,7 +118,7 @@ impl proto_parser for parser::Parser {
           _ => self.fatal("invalid next state")
         };
 
-        state.add_message(mname, *self.span, args, next);
+        state.add_message(mname.to_managed(), *self.span, args, next);
 
     }
 }

@@ -12,8 +12,7 @@ use ast;
 use ast::Name;
 use ast_util;
 use parse::token;
-use util::interner::StrInterner;
-use util::interner;
+use util::interner::Interner;
 
 use std::cast;
 use std::char;
@@ -192,8 +191,8 @@ pub fn to_str(in: @ident_interner, t: &Token) -> ~str {
       LIT_STR(ref s) => { fmt!("\"%s\"", ident_to_str(s).escape_default()) }
 
       /* Name components */
-      IDENT(s, _) => in.get(s.name).to_owned(),
-      LIFETIME(s) => fmt!("'%s", in.get(s.name)),
+      IDENT(s, _) => in.get(s.name).unwrap().to_owned(),
+      LIFETIME(s) => fmt!("'%s", in.get(s.name).unwrap()),
       UNDERSCORE => ~"_",
 
       /* Other */
@@ -371,33 +370,10 @@ pub fn token_to_binop(tok: Token) -> Option<ast::binop> {
   }
 }
 
-pub struct ident_interner {
-    priv interner: StrInterner,
-}
-
-impl ident_interner {
-    pub fn intern(&self, val: &str) -> Name {
-        self.interner.intern(val)
-    }
-    pub fn gensym(&self, val: &str) -> Name {
-        self.interner.gensym(val)
-    }
-    pub fn get(&self, idx: Name) -> @str {
-        self.interner.get(idx)
-    }
-    // is this really something that should be exposed?
-    pub fn len(&self) -> uint {
-        self.interner.len()
-    }
-    pub fn find_equiv<Q:Hash + IterBytes + Equiv<@str>>(&self, val: &Q)
-                                                     -> Option<Name> {
-        self.interner.find_equiv(val)
-    }
-}
-
+pub type ident_interner = Interner;
 
 // return a fresh interner, preloaded with special identifiers.
-fn mk_fresh_ident_interner() -> @ident_interner {
+fn mk_fresh_ident_interner() -> Interner {
     // the indices here must correspond to the numbers in
     // special_idents.
     let init_vec = ~[
@@ -473,24 +449,20 @@ fn mk_fresh_ident_interner() -> @ident_interner {
         "be",                 // 65
     ];
 
-    @ident_interner {
-        interner: interner::StrInterner::prefill(init_vec)
-    }
+    Interner::prefill(init_vec)
 }
 
+priv fn interner_key(_: @Interner) { }
 // if an interner exists in TLS, return it. Otherwise, prepare a
 // fresh one.
-pub fn get_ident_interner() -> @ident_interner {
+
+pub fn get_ident_interner() -> @Interner {
     unsafe {
-        let key =
-            (cast::transmute::<(uint, uint),
-             &fn(v: @@::parse::token::ident_interner)>(
-                 (-3 as uint, 0u)));
-        match local_data::local_data_get(key) {
-            Some(interner) => *interner,
+        match local_data::local_data_get(interner_key) {
+            Some(interner) => interner,
             None => {
-                let interner = mk_fresh_ident_interner();
-                local_data::local_data_set(key, @interner);
+                let interner = @mk_fresh_ident_interner();
+                local_data::local_data_set(interner_key, interner);
                 interner
             }
         }
@@ -499,39 +471,38 @@ pub fn get_ident_interner() -> @ident_interner {
 
 /* for when we don't care about the contents; doesn't interact with TLD or
    serialization */
-pub fn mk_fake_ident_interner() -> @ident_interner {
-    @ident_interner { interner: interner::StrInterner::new() }
+pub fn mk_fake_ident_interner() -> @Interner {
+    @Interner::new()
 }
 
 // maps a string to its interned representation
-pub fn intern(str : &str) -> Name {
-    let interner = get_ident_interner();
+pub fn intern(str: &str) -> Name {
+    let mut interner = get_ident_interner();
     interner.intern(str)
 }
 
 // gensyms a new uint, using the current interner
-pub fn gensym(str : &str) -> Name {
-    let interner = get_ident_interner();
-    interner.gensym(str)
+pub fn gensym(str: &str) -> Name {
+    get_ident_interner().gensym(str)
 }
 
 // map an interned representation back to a string
-pub fn interner_get(name : Name) -> @str {
-    get_ident_interner().get(name)
+pub fn interner_get(name: Name) -> &str {
+    get_ident_interner().get(name).unwrap()
 }
 
 // maps an identifier to the string that it corresponds to
-pub fn ident_to_str(id : &ast::ident) -> @str {
+pub fn ident_to_str(id: &ast::ident) -> &str {
     interner_get(id.name)
 }
 
 // maps a string to an identifier with an empty syntax context
-pub fn str_to_ident(str : &str) -> ast::ident {
+pub fn str_to_ident(str: &str) -> ast::ident {
     ast::new_ident(intern(str))
 }
 
 // maps a string to a gensym'ed identifier
-pub fn gensym_ident(str : &str) -> ast::ident {
+pub fn gensym_ident(str: &str) -> ast::ident {
     ast::new_ident(gensym(str))
 }
 
@@ -546,7 +517,7 @@ pub fn gensym_ident(str : &str) -> ast::ident {
 // and the int helps to avoid confusion.
 pub fn fresh_name(src_name : &str) -> Name {
     let num = rand::rng().gen_uint_range(0,0xffff);
-   gensym(fmt!("%s_%u",src_name,num))
+    gensym(fmt!("%s_%u",src_name,num))
 }
 
 /**

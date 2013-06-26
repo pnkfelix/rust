@@ -48,7 +48,7 @@ pub fn expand_expr(extsbox: @mut SyntaxEnv,
                                   separators"));
                     }
                     let extname = &pth.idents[0];
-                    let extnamestr = ident_to_str(extname);
+                    let extnamestr = ident_to_str(extname).to_managed();
                     // leaving explicit deref here to highlight unbox op:
                     match (*extsbox).find(&extname.name) {
                         None => {
@@ -215,7 +215,7 @@ pub fn expand_item_mac(extsbox: @mut SyntaxEnv,
     };
 
     let extname = &pth.idents[0];
-    let extnamestr = ident_to_str(extname);
+    let extnamestr = ident_to_str(extname).to_managed();
     let expanded = match (*extsbox).find(&extname.name) {
         None => cx.span_fatal(pth.span,
                               fmt!("macro undefined: '%s!'", extnamestr)),
@@ -321,7 +321,7 @@ pub fn expand_stmt(extsbox: @mut SyntaxEnv,
             SyntaxExpanderTT{expander: exp, span: exp_sp}))) => {
             cx.bt_push(ExpandedFrom(CallInfo {
                 call_site: sp,
-                callee: NameAndSpan { name: extnamestr, span: exp_sp }
+                callee: NameAndSpan { name: extnamestr.to_managed(), span: exp_sp }
             }));
             let expanded = match exp(cx, mac.span, tts) {
                 MRExpr(e) =>

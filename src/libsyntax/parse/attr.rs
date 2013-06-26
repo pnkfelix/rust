@@ -46,7 +46,7 @@ impl parser_attr for Parser {
               }
               token::DOC_COMMENT(s) => {
                 let attr = ::attr::mk_sugared_doc_attr(
-                    self.id_to_str(s),
+                    self.id_to_str(s).to_managed(),
                     self.span.lo,
                     self.span.hi
                 );
@@ -119,7 +119,7 @@ impl parser_attr for Parser {
               }
               token::DOC_COMMENT(s) => {
                 let attr = ::attr::mk_sugared_doc_attr(
-                    self.id_to_str(s),
+                    self.id_to_str(s).to_managed(),
                     self.span.lo,
                     self.span.hi
                 );
@@ -148,16 +148,16 @@ impl parser_attr for Parser {
                 self.bump();
                 let lit = self.parse_lit();
                 let hi = self.span.hi;
-                @spanned(lo, hi, ast::meta_name_value(name, lit))
+                @spanned(lo, hi, ast::meta_name_value(name.to_managed(), lit))
             }
             token::LPAREN => {
                 let inner_items = self.parse_meta_seq();
                 let hi = self.span.hi;
-                @spanned(lo, hi, ast::meta_list(name, inner_items))
+                @spanned(lo, hi, ast::meta_list(name.to_managed(), inner_items))
             }
             _ => {
                 let hi = self.last_span.hi;
-                @spanned(lo, hi, ast::meta_word(name))
+                @spanned(lo, hi, ast::meta_word(name.to_managed()))
             }
         }
     }

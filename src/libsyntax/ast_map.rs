@@ -55,8 +55,7 @@ pub fn path_to_str_with_sep(p: &[path_elt], sep: &str, itr: @ident_interner)
                          -> ~str {
     let strs = do p.map |e| {
         match *e {
-          path_mod(s) => itr.get(s.name),
-          path_name(s) => itr.get(s.name)
+          path_mod(s) | path_name(s) => itr.get(s.name).unwrap(),
         }
     };
     strs.connect(sep)
@@ -65,9 +64,9 @@ pub fn path_to_str_with_sep(p: &[path_elt], sep: &str, itr: @ident_interner)
 pub fn path_ident_to_str(p: &path, i: ident, itr: @ident_interner) -> ~str {
     if p.is_empty() {
         //FIXME /* FIXME (#2543) */ copy *i
-        itr.get(i.name).to_owned()
+        itr.get(i.name).unwrap().to_owned()
     } else {
-        fmt!("%s::%s", path_to_str(*p, itr), itr.get(i.name))
+        fmt!("%s::%s", path_to_str(*p, itr), itr.get(i.name).unwrap())
     }
 }
 
@@ -77,8 +76,7 @@ pub fn path_to_str(p: &[path_elt], itr: @ident_interner) -> ~str {
 
 pub fn path_elt_to_str(pe: path_elt, itr: @ident_interner) -> ~str {
     match pe {
-        path_mod(s) => itr.get(s.name).to_owned(),
-        path_name(s) => itr.get(s.name).to_owned()
+        path_mod(s) | path_name(s) => itr.get(s.name).unwrap().to_owned(),
     }
 }
 
@@ -356,16 +354,16 @@ pub fn node_id_to_str(map: map, id: node_id, itr: @ident_interner) -> ~str {
       }
       Some(&node_method(m, _, path)) => {
         fmt!("method %s in %s (id=%?)",
-             itr.get(m.ident.name), path_to_str(*path, itr), id)
+             itr.get(m.ident.name).unwrap(), path_to_str(*path, itr), id)
       }
       Some(&node_trait_method(ref tm, _, path)) => {
         let m = ast_util::trait_method_to_ty_method(&**tm);
         fmt!("method %s in %s (id=%?)",
-             itr.get(m.ident.name), path_to_str(*path, itr), id)
+             itr.get(m.ident.name).unwrap(), path_to_str(*path, itr), id)
       }
       Some(&node_variant(ref variant, _, path)) => {
         fmt!("variant %s in %s (id=%?)",
-             itr.get(variant.node.name.name), path_to_str(*path, itr), id)
+             itr.get(variant.node.name.name).unwrap(), path_to_str(*path, itr), id)
       }
       Some(&node_expr(expr)) => {
         fmt!("expr %s (id=%?)", pprust::expr_to_str(expr, itr), id)
@@ -381,7 +379,7 @@ pub fn node_id_to_str(map: map, id: node_id, itr: @ident_interner) -> ~str {
         fmt!("arg (id=%?)", id)
       }
       Some(&node_local(ident)) => {
-        fmt!("local (id=%?, name=%s)", id, itr.get(ident.name))
+        fmt!("local (id=%?, name=%s)", id, itr.get(ident.name).unwrap())
       }
       Some(&node_block(_)) => {
         fmt!("block")
