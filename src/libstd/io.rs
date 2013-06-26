@@ -1025,10 +1025,15 @@ pub fn stdin() -> @Reader {
     }
 }
 
+fn as_c_charp<T>(s: &str, f: &fn(*libc::c_char) -> T) -> T
+{
+    str::as_c_str(s, |b| f(b as *libc::c_char))
+}
+
 pub fn file_reader(path: &Path) -> Result<@Reader, ~str> {
     unsafe {
-        let f = os::as_c_charp(path.to_str(), |pathbuf| {
-            os::as_c_charp("r", |modebuf|
+        let f = as_c_charp(path.to_str(), |pathbuf| {
+            as_c_charp("r", |modebuf|
                 libc::fopen(pathbuf, modebuf)
             )
         });
@@ -1270,7 +1275,7 @@ pub fn mk_file_writer(path: &Path, flags: &[FileFlag])
         }
     }
     let fd = unsafe {
-        do os::as_c_charp(path.to_str()) |pathbuf| {
+        do as_c_charp(path.to_str()) |pathbuf| {
             libc::open(pathbuf, fflags,
                        (S_IRUSR | S_IWUSR) as c_int)
         }
@@ -1556,8 +1561,8 @@ pub fn file_writer(path: &Path, flags: &[FileFlag]) -> Result<@Writer, ~str> {
 // FIXME: fileflags // #2004
 pub fn buffered_file_writer(path: &Path) -> Result<@Writer, ~str> {
     unsafe {
-        let f = do os::as_c_charp(path.to_str()) |pathbuf| {
-            do os::as_c_charp("w") |modebuf| {
+        let f = do as_c_charp(path.to_str()) |pathbuf| {
+            do as_c_charp("w") |modebuf| {
                 libc::fopen(pathbuf, modebuf)
             }
         };

@@ -85,7 +85,7 @@ pub fn getcwd() -> Path {
 
 // FIXME: move these to str perhaps? #2620
 
-pub fn as_c_charp<T>(s: &str, f: &fn(*c_char) -> T) -> T {
+fn as_c_charp<T>(s: &str, f: &fn(*c_char) -> T) -> T {
     str::as_c_str(s, |b| f(b as *c_char))
 }
 
