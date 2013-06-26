@@ -437,6 +437,8 @@ impl CoherenceChecker {
     }
 
     pub fn add_trait_method(&self, trait_id: def_id, implementation: @Impl) {
+        debug!("add_trait_method trait_id: %? impl: %?",
+               trait_id, implementation.did);
         let implementation_list;
         match self.crate_context.coherence_info.extension_methods
                   .find(&trait_id) {

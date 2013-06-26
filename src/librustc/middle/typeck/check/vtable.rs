@@ -108,6 +108,10 @@ fn lookup_vtables(vcx: &VtableContext,
             match lookup_vtable(vcx, location_info, *ty, &trait_ref, is_early) {
                 Some(vtable) => result.push(vtable),
                 None => {
+                    debug!("lookup_vtables failure trait: %s ty: %s is_early: %?",
+                           vcx.infcx.trait_ref_to_str(&trait_ref),
+                           vcx.infcx.ty_to_str(*ty),
+                           is_early);
                     vcx.tcx().sess.span_fatal(
                         location_info.span,
                         fmt!("failed to find an implementation of \
@@ -213,7 +217,7 @@ fn lookup_vtable(vcx: &VtableContext,
             return Some(vtable_param(0, 0));
         }
     };
-    debug!("lookup_vtable fixup_ty => %?", ty);
+    debug!("lookup_vtable fixup_ty => %? == %s", ty, vcx.infcx.ty_to_str(ty));
 
     match ty::get(ty).sty {
         ty::ty_param(param_ty {idx: n, def_id: did}) => {
@@ -239,6 +243,9 @@ fn lookup_vtable(vcx: &VtableContext,
                 n_bound += 1;
             }
         }
+
+        // May or may not be special case for 7183.
+        // ty::ty_self(did) => { ... }
 
         _ => {
             debug!("lookup_vtable sty not ty_param");
@@ -267,6 +274,8 @@ fn lookup_vtable(vcx: &VtableContext,
                     // trait_ref. (Usually, there's just one.)
                     for implementations.iter().advance |im| {
                         // im is one specific impl of trait_ref.
+
+                        debug!("lookup_vtable impl: %? %?", im.did, im.ident);
 
                         // First, ensure we haven't processed this impl yet.
                         if impls_seen.contains(&im.did) {
@@ -588,6 +597,10 @@ pub fn early_resolve_expr(ex: @ast::expr,
                                   self_ty: Some(mt.ty)
                               }
                           };
+                          debug!("looking up trait %s via trait_ref %s on type %s",
+                                 fcx.infcx().ty_to_str(target_ty),
+                                 fcx.infcx().trait_ref_to_str(&target_trait_ref),
+                                 fcx.infcx().ty_to_str(mt.ty));
                           let vtable_opt =
                               lookup_vtable(&vcx,
                                             location_info,
@@ -604,6 +617,7 @@ pub fn early_resolve_expr(ex: @ast::expr,
                                   }
                               }
                               None => {
+                                  debug!("early_resolve_expr expr_cast case failure");
                                   fcx.tcx().sess.span_err(
                                       ex.span,
                                       fmt!("failed to find an implementation \
