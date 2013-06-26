@@ -222,7 +222,7 @@ pub struct FileMap {
     /// Extra information used by qquote
     substr: FileSubstr,
     /// The complete source code
-    src: @str,
+    src: ~str,
     /// The start position of this source in the CodeMap
     start_pos: BytePos,
     /// Locations of lines beginnings in the source code
@@ -277,14 +277,14 @@ impl CodeMap {
     }
 
     /// Add a new FileMap to the CodeMap and return it
-    pub fn new_filemap(&self, filename: FileName, src: @str) -> @FileMap {
+    pub fn new_filemap(&self, filename: FileName, src: ~str) -> @FileMap {
         return self.new_filemap_w_substr(filename, FssNone, src);
     }
 
     pub fn new_filemap_w_substr(&self,
                                 filename: FileName,
                                 substr: FileSubstr,
-                                src: @str)
+                                src: ~str)
                                 -> @FileMap {
         let files = &mut *self.files;
         let start_pos = if files.len() == 0 {

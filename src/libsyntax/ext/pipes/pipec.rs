@@ -111,7 +111,7 @@ impl gen_send for message {
                               } else { ::std::pipes::rt::make_none() } }");
             }
 
-            let body = cx.parse_expr(body.to_managed());
+            let body = cx.parse_expr(body);
 
             let mut rty = cx.ty_path(path(~[next.data_name()],
                                           span)
@@ -170,7 +170,7 @@ impl gen_send for message {
                                   } }");
                 }
 
-                let body = cx.parse_expr(body.to_managed());
+                let body = cx.parse_expr(body);
 
                 let name = if try {cx.ident_of(~"try_" + name)} else {cx.ident_of(name)};
 
@@ -324,7 +324,7 @@ impl gen_init for protocol {
                            start_state.generics.to_source(),
                            start_state.to_ty(cx).to_source(),
                            start_state.to_ty(cx).to_source(),
-                           body.to_source()).to_managed())
+                           body.to_source()))
     }
 
     fn gen_buffer_init(&self, ext_cx: @ExtCtxt) -> @ast::expr {
@@ -352,14 +352,14 @@ impl gen_init for protocol {
 
         let entangle_body = ext_cx.expr_blk(
             ext_cx.blk(
-                dummy_sp(),
-                self.states.iter().transform(
-                    |s| ext_cx.parse_stmt(
-                        fmt!("data.%s.set_buffer(buffer)",
-                             s.name).to_managed())).collect(),
-                Some(ext_cx.parse_expr(fmt!(
-                    "::std::ptr::to_mut_unsafe_ptr(&mut (data.%s))",
-                    self.states[0].name).to_managed()))));
+                dummy_sp,
+                self.states.iter().transform( |s| ext_cx.parse_stmt(
+                        fmt!("data.%s.set_buffer(buffer)", s.name) )
+                                            ).collect(),
+                Some(ext_cx.parse_expr(fmt!("::std::ptr::to_mut_unsafe_ptr(&mut (data.%s))",
+                                            self.states[0].name)))
+            )
+        );
 
         quote_expr!({
             let buffer = $buffer;

@@ -67,7 +67,7 @@ pub fn new_low_level_string_reader(span_diagnostic: @span_handler,
     // Force the initial reader bump to start on a fresh line
     let initial_char = '\n';
     let r = @mut StringReader {
-        span_diagnostic: span_diagnostic, src: filemap.src,
+        span_diagnostic: span_diagnostic, src: filemap.src.to_managed(),
         pos: filemap.start_pos,
         last_pos: filemap.start_pos,
         col: CharPos(0),

@@ -452,9 +452,9 @@ pub fn new_span(cx: @ExtCtxt, sp: span) -> span {
 // the default compilation environment. It would be much nicer to use
 // a mechanism like syntax_quote to ensure hygiene.
 
-pub fn core_macros() -> @str {
+pub fn core_macros() -> ~str {
     return
-@"pub mod macros {
+~"pub mod macros {
     macro_rules! ignore (($($x:tt)*) => (()))
 
     macro_rules! error (
@@ -683,10 +683,7 @@ pub fn expand_crate(parse_sess: @mut parse::ParseSess,
         }
     ];
 
-    let cm = match parse_item_from_source_str(@"<core-macros>",
-                                              core_macros(),
-                                              copy cfg,
-                                              attrs,
+    let cm = match parse_item_from_source_str(@"<core-macros>", core_macros(), copy cfg, attrs,
                                               parse_sess) {
         Some(item) => item,
         None => cx.bug("expected core macros to parse correctly")
