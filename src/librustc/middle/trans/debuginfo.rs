@@ -148,7 +148,7 @@ pub fn create_local_var(bcx: block, local: @ast::local) -> DIVariable {
     let loc = span_start(cx, local.span);
     let ty = node_id_type(bcx, local.node.id);
     let tymd = create_ty(cx, ty, local.node.ty.span);
-    let filemd = create_file(cx, loc.file.name);
+    let filemd = create_file(cx, cx.sess.codemap.span_to_filename(local.span));
     let context = match bcx.parent {
         None => create_function(bcx.fcx),
         Some(_) => create_block(bcx)
@@ -171,7 +171,7 @@ pub fn create_local_var(bcx: block, local: @ast::local) -> DIVariable {
         }
     };
 
-    set_debug_location(cx, create_block(bcx), loc.line, loc.col.to_uint());
+    set_debug_location(cx, create_block(bcx), loc.line, loc.column);
     unsafe {
         let instr = llvm::LLVMDIBuilderInsertDeclareAtEnd(DIB(cx), llptr, var_md, bcx.llbb);
         llvm::LLVMSetInstDebugLocation(trans::build::B(bcx), instr);
@@ -195,14 +195,15 @@ pub fn create_arg(bcx: block, arg: ast::arg, span: span) -> Option<DIVariable> {
     let fcx = bcx.fcx;
     let cx = fcx.ccx;
 
+    let filename = cx.sess.codemap.span_to_filename(span);
     let loc = span_start(cx, span);
-    if "<intrinsic>" == loc.file.name {
+    if "<intrinsic>" == filename {
         return None;
     }
 
     let ty = node_id_type(bcx, arg.id);
     let tymd = create_ty(cx, ty, arg.ty.span);
-    let filemd = create_file(cx, loc.file.name);
+    let filemd = create_file(cx, filename);
     let context = create_function(fcx);
 
     match arg.pat.node {
@@ -226,7 +227,7 @@ pub fn create_arg(bcx: block, arg: ast::arg, span: span) -> Option<DIVariable> {
             }};
 
             let llptr = fcx.llargs.get_copy(&arg.id);
-            set_debug_location(cx, create_block(bcx), loc.line, loc.col.to_uint());
+            set_debug_location(cx, create_block(bcx), loc.line, loc.column);
             unsafe {
                 let instr = llvm::LLVMDIBuilderInsertDeclareAtEnd(
                         DIB(cx), llptr, mdnode, bcx.llbb);
@@ -249,7 +250,7 @@ pub fn update_source_pos(bcx: block, span: span) {
     }
     debug!("update_source_pos: %s", bcx.sess().codemap.span_to_str(span));
     let loc = span_start(bcx.ccx(), span);
-    set_debug_location(bcx.ccx(), create_block(bcx), loc.line, loc.col.to_uint())
+    set_debug_location(bcx.ccx(), create_block(bcx), loc.line, loc.column)
 }
 
 /// Creates debug information for the given function.
@@ -293,7 +294,7 @@ pub fn create_function(fcx: fn_ctxt) -> DISubprogram {
     debug!("create_function: %s, %s", cx.sess.str_of(ident), cx.sess.codemap.span_to_str(span));
 
     let loc = span_start(cx, span);
-    let file_md = create_file(cx, loc.file.name);
+    let file_md = create_file(cx, cx.sess.codemap.span_to_filename(span));
 
     let ret_ty_md = if cx.sess.opts.extra_debuginfo {
         match ret_ty.node {
@@ -424,13 +425,13 @@ fn create_block(bcx: block) -> DILexicalBlock {
     };
     let cx = bcx.ccx();
     let loc = span_start(cx, span);
-    let file_md = create_file(cx, loc.file.name);
+    let file_md = create_file(cx, cx.sess.codemap.span_to_filename(span));
 
     let block_md = unsafe {
         llvm::LLVMDIBuilderCreateLexicalBlock(
             DIB(cx),
             parent, file_md,
-            loc.line as c_uint, loc.col.to_uint() as c_uint)
+            loc.line as c_uint, loc.column as c_uint)
     };
 
     dbg_cx(cx).created_blocks.insert(id, block_md);
@@ -594,7 +595,7 @@ fn create_struct(cx: &mut CrateContext, struct_type: ty::t, fields: ~[ty::field]
     debug!("create_struct: %?", ty::get(struct_type));
 
     let loc = span_start(cx, span);
-    let file_md = create_file(cx, loc.file.name);
+    let file_md = create_file(cx, cx.sess.codemap.span_to_filename(span));
 
     let mut scx = StructContext::new(cx, ty_to_str(cx.tcx, struct_type), file_md, loc.line);
     for fields.iter().advance |field| {
@@ -626,7 +627,7 @@ fn create_tuple(cx: &mut CrateContext, tuple_type: ty::t, elements: &[ty::t], sp
     debug!("create_tuple: %?", ty::get(tuple_type));
 
     let loc = span_start(cx, span);
-    let file_md = create_file(cx, loc.file.name);
+    let file_md = create_file(cx, cx.sess.codemap.span_to_filename(span));
 
     let name = (cx.sess.str_of((dbg_cx(cx).names)("tuple"))).to_owned();
     let mut scx = StructContext::new(cx, name, file_md, loc.line);
@@ -643,7 +644,7 @@ fn create_boxed_type(cx: &mut CrateContext, contents: ty::t,
     debug!("create_boxed_type: %?", ty::get(contents));
 
     let loc = span_start(cx, span);
-    let file_md = create_file(cx, loc.file.name);
+    let file_md = create_file(cx, cx.sess.codemap.span_to_filename(span));
     let int_t = ty::mk_int();
     let refcount_type = create_basic_type(cx, int_t, span);
     let name = ty_to_str(cx.tcx, contents);
@@ -689,7 +690,7 @@ fn create_boxed_vec(cx: &mut CrateContext, vec_t: ty::t, elem_t: ty::t,
     debug!("create_boxed_vec: %?", ty::get(vec_t));
 
     let loc = span_start(cx, vec_ty_span);
-    let file_md = create_file(cx, loc.file.name);
+    let file_md = create_file(cx, cx.sess.codemap.span_to_filename(vec_ty_span));
     let elem_ty_md = create_ty(cx, elem_t, vec_ty_span);
 
     let mut vec_scx = StructContext::new(cx, ty_to_str(cx.tcx, vec_t), file_md, 0);
@@ -759,7 +760,7 @@ fn create_vec_slice(cx: &mut CrateContext, vec_t: ty::t, elem_t: ty::t, span: sp
     debug!("create_vec_slice: %?", ty::get(vec_t));
 
     let loc = span_start(cx, span);
-    let file_md = create_file(cx, loc.file.name);
+    let file_md = create_file(cx, cx.sess.codemap.span_to_filename(span));
     let elem_ty_md = create_ty(cx, elem_t, span);
     let uint_type = create_basic_type(cx, ty::mk_uint(), span);
     let elem_ptr = create_pointer_type(cx, elem_t, span, elem_ty_md);
@@ -776,7 +777,7 @@ fn create_fn_ty(cx: &mut CrateContext, _fn_ty: ty::t, inputs: ~[ty::t], output: 
     debug!("create_fn_ty: %?", ty::get(_fn_ty));
 
     let loc = span_start(cx, span);
-    let file_md = create_file(cx, loc.file.name);
+    let file_md = create_file(cx, cx.sess.codemap.span_to_filename(span));
     let (vp, _, _) = voidptr(cx);
     let output_md = create_ty(cx, output, span);
     let output_ptr_md = create_pointer_type(cx, output, span, output_md);
@@ -923,7 +924,7 @@ fn roundup(x: uint, a: uint) -> uint {
 }
 
 /// Return codemap::Loc corresponding to the beginning of the span
-fn span_start(cx: &CrateContext, span: span) -> codemap::Loc {
+fn span_start(cx: &CrateContext, span: span) -> codemap::FileCoord {
     cx.sess.codemap.lookup_char_pos(span.lo)
 }
 

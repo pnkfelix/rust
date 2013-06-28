@@ -10,8 +10,7 @@
 
 use ast;
 use codemap;
-use codemap::{Pos, ExpandedFrom, span};
-use codemap::{CallInfo, NameAndSpan};
+use codemap::{CallInfo, CalleeInfo, span};
 use ext::base::*;
 use ext::base;
 use ext::build::AstBuilder;
@@ -45,7 +44,7 @@ pub fn expand_col(cx: @ExtCtxt, sp: span, tts: &[ast::token_tree])
 
     let topmost = topmost_expn_info(cx.backtrace().get());
     let loc = cx.codemap().lookup_char_pos(topmost.call_site.lo);
-    base::MRExpr(cx.expr_uint(topmost.call_site, loc.col.to_uint()))
+    base::MRExpr(cx.expr_uint(topmost.call_site, loc.column))
 }
 
 /* file!(): expands to the current filename */
@@ -56,9 +55,8 @@ pub fn expand_file(cx: @ExtCtxt, sp: span, tts: &[ast::token_tree])
     base::check_zero_tts(cx, sp, tts, "file!");
 
     let topmost = topmost_expn_info(cx.backtrace().get());
-    let loc = cx.codemap().lookup_char_pos(topmost.call_site.lo);
-    let filename = loc.file.name;
-    base::MRExpr(cx.expr_str(topmost.call_site, filename))
+    let filename = cx.codemap().span_to_filename(topmost.call_site);
+    base::MRExpr(cx.expr_str(topmost.call_site, filename.to_managed()))
 }
 
 pub fn expand_stringify(cx: @ExtCtxt, sp: span, tts: &[ast::token_tree])
@@ -117,17 +115,17 @@ pub fn expand_include_bin(cx: @ExtCtxt, sp: span, tts: &[ast::token_tree])
     }
 }
 
-// recur along an ExpnInfo chain to find the original expression
-fn topmost_expn_info(expn_info: @codemap::ExpnInfo) -> @codemap::ExpnInfo {
+// recur along an CallInfo chain to find the original expression
+fn topmost_expn_info(expn_info: @codemap::CallInfo) -> @codemap::CallInfo {
     match *expn_info {
-        ExpandedFrom(CallInfo { call_site: ref call_site, _ }) => {
+        CallInfo { call_site: ref call_site, _ } => {
             match call_site.expn_info {
                 Some(next_expn_info) => {
                     match *next_expn_info {
-                        ExpandedFrom(CallInfo {
-                            callee: NameAndSpan { name: ref name, _ },
+                        CallInfo {
+                            callee: CalleeInfo { name: ref name, _ },
                             _
-                        }) => {
+                        } => {
                             // Don't recurse into file using "include!"
                             if "include" == *name  {
                                 expn_info
@@ -148,7 +146,7 @@ fn topmost_expn_info(expn_info: @codemap::ExpnInfo) -> @codemap::ExpnInfo {
 fn res_rel_file(cx: @ExtCtxt, sp: codemap::span, arg: &Path) -> Path {
     // NB: relative paths are resolved relative to the compilation unit
     if !arg.is_absolute {
-        let cu = Path(cx.codemap().span_to_filename(sp));
+        let cu = Path(cx.codemap().span_to_filename(sp).to_owned());
         cu.dir_path().push_many(arg.components)
     } else {
         copy *arg

@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use codemap::{Pos, span};
+use codemap::{span};
 use codemap;
 
 use std::io;
@@ -227,7 +227,6 @@ pub fn collect(messages: @mut ~[~str])
 pub fn emit(cmsp: Option<(@codemap::CodeMap, span)>, msg: &str, lvl: level) {
     match cmsp {
       Some((cm, sp)) => {
-        let sp = cm.adjust_span(sp);
         let ss = cm.span_to_str(sp);
         let lines = cm.span_to_lines(sp);
         print_diagnostic(ss, lvl, msg);
@@ -240,17 +239,15 @@ pub fn emit(cmsp: Option<(@codemap::CodeMap, span)>, msg: &str, lvl: level) {
     }
 }
 
-fn highlight_lines(cm: @codemap::CodeMap,
-                   sp: span, lvl: level,
-                   lines: @codemap::FileLines) {
-    let fm = lines.file;
+fn highlight_lines(cm: @codemap::CodeMap, sp: span, lvl: level, lines: &[uint]) {
+    let fm = cm.span_to_filemap(sp);
 
     // arbitrarily only print up to six lines of the error
     let max_lines = 6u;
     let mut elided = false;
-    let mut display_lines = /* FIXME (#2543) */ copy lines.lines;
+    let mut display_lines = lines;
     if display_lines.len() > max_lines {
-        display_lines = vec::slice(display_lines, 0u, max_lines).to_owned();
+        display_lines = vec::slice(display_lines, 0u, max_lines);
         elided = true;
     }
     // Print the offending lines
@@ -271,16 +268,16 @@ fn highlight_lines(cm: @codemap::CodeMap,
 
     // FIXME (#3260)
     // If there's one line at fault we can easily point to the problem
-    if lines.lines.len() == 1u {
+    if lines.len() == 1u {
         let lo = cm.lookup_char_pos(sp.lo);
         let mut digits = 0u;
-        let mut num = (lines.lines[0] + 1u) / 10u;
+        let mut num = (lines[0] + 1u) / 10u;
 
         // how many digits must be indent past?
         while num > 0u { num /= 10u; digits += 1u; }
 
         // indent past |name:## | and the 0-offset column location
-        let left = fm.name.len() + digits + lo.col.to_uint() + 3u;
+        let left = fm.name.len() + digits + lo.column + 3u;
         let mut s = ~"";
         // Skip is the number of characters we need to skip because they are
         // part of the 'filename:line ' part of the previous line.
@@ -288,7 +285,7 @@ fn highlight_lines(cm: @codemap::CodeMap,
         for skip.times() {
             s += " ";
         }
-        let orig = fm.get_line(lines.lines[0] as int);
+        let orig = fm.get_line(lines[0] as int);
         for uint::range(0u,left-skip) |pos| {
             let curChar = (orig[pos] as char);
             s += match curChar { // Whenever a tab occurs on the previous
@@ -299,9 +296,9 @@ fn highlight_lines(cm: @codemap::CodeMap,
         io::stderr().write_str(s);
         let mut s = ~"^";
         let hi = cm.lookup_char_pos(sp.hi);
-        if hi.col != lo.col {
+        if hi.column != lo.column {
             // the ^ already takes up one space
-            let num_squigglies = hi.col.to_uint()-lo.col.to_uint()-1u;
+            let num_squigglies = hi.column - lo.column -1u;
             for num_squigglies.times() { s += "~"; }
         }
         print_maybe_colored(s + "\n", diagnosticcolor(lvl));

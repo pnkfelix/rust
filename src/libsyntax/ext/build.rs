@@ -533,6 +533,7 @@ impl AstBuilder for @ExtCtxt {
 
     fn expr_unreachable(&self, span: span) -> @ast::expr {
         let loc = self.codemap().lookup_char_pos(span.lo);
+        let name = self.codemap().span_to_filename(span);
         self.expr_call_global(
             span,
             ~[
@@ -543,7 +544,7 @@ impl AstBuilder for @ExtCtxt {
             ],
             ~[
                 self.expr_str(span, @"internal error: entered unreachable code"),
-                self.expr_str(span, loc.file.name),
+                self.expr_str(span, name.to_managed()),
                 self.expr_uint(span, loc.line),
             ])
     }

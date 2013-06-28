@@ -52,9 +52,8 @@ pub struct StringReader {
     peek_span: span
 }
 
-pub fn new_string_reader(span_diagnostic: @span_handler,
-                         filemap: @codemap::FileMap)
-                      -> @mut StringReader {
+pub fn new_string_reader(span_diagnostic: @span_handler, filemap: @codemap::FileMap) 
+    -> @mut StringReader {
     let r = new_low_level_string_reader(span_diagnostic, filemap);
     string_advance_token(r); /* fill in peek_* */
     return r;
@@ -62,8 +61,7 @@ pub fn new_string_reader(span_diagnostic: @span_handler,
 
 /* For comments.rs, which hackily pokes into 'pos' and 'curr' */
 pub fn new_low_level_string_reader(span_diagnostic: @span_handler,
-                                   filemap: @codemap::FileMap)
-                                -> @mut StringReader {
+                                   filemap: @codemap::FileMap) -> @mut StringReader {
     // Force the initial reader bump to start on a fresh line
     let initial_char = '\n';
     let r = @mut StringReader {
@@ -289,10 +287,10 @@ fn consume_any_line_comment(rdr: @mut StringReader)
         if nextch(rdr) == '!' {
             // I guess this is the only way to figure out if
             // we're at the beginning of the file...
-            let cmap = @CodeMap::new();
+            let mut cmap = @CodeMap::new();
             (*cmap).files.push(rdr.filemap);
-            let loc = cmap.lookup_char_pos_adj(rdr.last_pos);
-            if loc.line == 1u && loc.col == CharPos(0u) {
+            let loc = cmap.lookup_char_pos(rdr.last_pos);
+            if loc.line == 1u && loc.column == 1 {
                 while rdr.curr != '\n' && !is_eof(rdr) { bump(rdr); }
                 return consume_whitespace_and_comments(rdr);
             }

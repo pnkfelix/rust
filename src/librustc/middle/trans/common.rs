@@ -1096,7 +1096,8 @@ pub fn dummy_substs(tps: ~[ty::t]) -> ty::substs {
 pub fn filename_and_line_num_from_span(bcx: block,
                                        span: span) -> (ValueRef, ValueRef) {
     let loc = bcx.sess().parse_sess.cm.lookup_char_pos(span.lo);
-    let filename_cstr = C_cstr(bcx.ccx(), loc.file.name);
+    let filename_cstr = C_cstr(bcx.ccx(),
+                               bcx.sess().parse_sess.cm.span_to_filename(span).to_managed());
     let filename = build::PointerCast(bcx, filename_cstr, Type::i8p());
     let line = C_int(bcx.ccx(), loc.line as int);
     (filename, line)

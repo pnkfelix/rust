@@ -338,8 +338,8 @@ pub fn gather_comments_and_literals(span_diagnostic:
                                  -> (~[cmnt], ~[lit]) {
     let src = str::from_bytes(srdr.read_whole_stream());
     let cm = CodeMap::new();
-    let filemap = cm.new_filemap(path, src);
-    let rdr = lexer::new_low_level_string_reader(span_diagnostic, filemap);
+    let filemap = cm.new_filemap(path.to_owned(), src);
+    let rdr = lexer::new_low_level_string_reader(span_diagnostic,filemap);
 
     let mut comments: ~[cmnt] = ~[];
     let mut literals: ~[lit] = ~[];

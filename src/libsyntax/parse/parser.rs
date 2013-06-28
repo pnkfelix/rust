@@ -3610,7 +3610,7 @@ impl Parser {
                     outer_attrs: ~[ast::attribute],
                     id_sp: span) -> (ast::item_, ~[ast::attribute]) {
 
-        let prefix = Path(self.sess.cm.span_to_filename(*self.span));
+        let prefix = Path(self.sess.cm.span_to_filename(*self.span).to_owned());
         let prefix = prefix.dir_path();
         let mod_path_stack = &*self.mod_path_stack;
         let mod_path = Path(".").push_many(*mod_path_stack);

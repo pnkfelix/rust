@@ -182,8 +182,8 @@ fn eq(a: @ast::meta_item, b: @ast::meta_item) -> bool {
             ast::meta_word(ref nb) => (*na) == (*nb),
             _ => false
         },
-        ast::meta_name_value(ref na, va) => match b.node {
-            ast::meta_name_value(ref nb, vb) => {
+        ast::meta_name_value(ref na, ref va) => match b.node {
+            ast::meta_name_value(ref nb, ref vb) => {
                 (*na) == (*nb) && va.node == vb.node
             }
             _ => false

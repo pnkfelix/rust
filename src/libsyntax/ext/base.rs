@@ -11,8 +11,7 @@
 use ast;
 use ast::Name;
 use codemap;
-use codemap::{CodeMap, span, ExpnInfo, ExpandedFrom};
-use codemap::CallInfo;
+use codemap::{CodeMap, span, CallInfo};
 use diagnostic::span_handler;
 use ext;
 use parse;
@@ -215,7 +214,7 @@ pub fn syntax_expander_table() -> SyntaxEnv {
 pub struct ExtCtxt {
     parse_sess: @mut parse::ParseSess,
     cfg: ast::crate_cfg,
-    backtrace: @mut Option<@ExpnInfo>,
+    backtrace: @mut Option<@CallInfo>,
 
     // These two @mut's should really not be here,
     // but the self types for CtxtRepr are all wrong
@@ -243,32 +242,31 @@ impl ExtCtxt {
     pub fn cfg(&self) -> ast::crate_cfg { copy self.cfg }
     pub fn call_site(&self) -> span {
         match *self.backtrace {
-            Some(@ExpandedFrom(CallInfo {call_site: cs, _})) => cs,
+            Some(@CallInfo {call_site: cs, _}) => cs,
             None => self.bug("missing top span")
         }
     }
     pub fn print_backtrace(&self) { }
-    pub fn backtrace(&self) -> Option<@ExpnInfo> { *self.backtrace }
+    pub fn backtrace(&self) -> Option<@CallInfo> { *self.backtrace }
     pub fn mod_push(&self, i: ast::ident) { self.mod_path.push(i); }
     pub fn mod_pop(&self) { self.mod_path.pop(); }
     pub fn mod_path(&self) -> ~[ast::ident] { copy *self.mod_path }
-    pub fn bt_push(&self, ei: codemap::ExpnInfo) {
+    pub fn bt_push(&self, ei: codemap::CallInfo) {
         match ei {
-            ExpandedFrom(CallInfo {call_site: cs, callee: ref callee}) => {
-                *self.backtrace =
-                    Some(@ExpandedFrom(CallInfo {
-                        call_site: span {lo: cs.lo, hi: cs.hi,
-                                         expn_info: *self.backtrace},
-                        callee: copy *callee}));
+            CallInfo {call_site: cs, callee: ref callee} => {
+                *self.backtrace = Some(@CallInfo {
+                                       call_site: span {lo: cs.lo, hi: cs.hi,
+                                       expn_info: *self.backtrace},
+                                       callee: copy *callee}
+                                      );
             }
         }
     }
     pub fn bt_pop(&self) {
         match *self.backtrace {
-            Some(@ExpandedFrom(
-                CallInfo {
+            Some(@CallInfo {
                     call_site: span {expn_info: prev, _}, _
-                })) => {
+                 }) => {
                 *self.backtrace = prev
             }
             _ => self.bug("tried to pop without a push")

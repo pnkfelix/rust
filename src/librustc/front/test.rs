@@ -18,7 +18,7 @@ use front::config;
 use core::vec;
 use syntax::ast_util::*;
 use syntax::attr;
-use syntax::codemap::{dummy_sp, span, ExpandedFrom, CallInfo, NameAndSpan};
+use syntax::codemap::{dummy_sp, span, CallInfo, CalleeInfo};
 use syntax::codemap;
 use syntax::ext::base::ExtCtxt;
 use syntax::fold;
@@ -73,13 +73,13 @@ fn generate_test_harness(sess: session::Session,
     };
 
     let ext_cx = cx.ext_cx;
-    ext_cx.bt_push(ExpandedFrom(CallInfo {
+    ext_cx.bt_push(CallInfo {
         call_site: dummy_sp,
-        callee: NameAndSpan {
-            name: @"test",
+        callee: CalleeInfo {
+            name: ~"test",
             span: None
         }
-    }));
+    });
 
     let precursor = @fold::AstFoldFns {
         fold_crate: fold::wrap(|a,b| fold_crate(cx, a, b) ),

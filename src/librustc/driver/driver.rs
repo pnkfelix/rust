@@ -449,7 +449,7 @@ pub fn pretty_print_input(sess: Session, cfg: ast::crate_cfg, input: &input,
       }
     };
     let is_expanded = upto != cu_parse;
-    let src = sess.codemap.get_filemap(source_name(input)).src.clone();
+    let src = sess.codemap.filemap_from_name(source_name(input)).src.clone();
     do io::with_str_reader(src) |rdr| {
         pprust::print_crate(sess.codemap, token::get_ident_interner(),
                             sess.span_diagnostic, crate.unwrap(),
