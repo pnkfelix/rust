@@ -157,6 +157,30 @@ fn range_step_core(i: &mut $T, stop: $T, step: $T, it: &fn($T) -> bool) -> bool 
 #[inline]
 pub fn range_step(start: $T, stop: $T, step: $T, it: &fn($T) -> bool) -> bool {
     let mut i = start;
+    if step == 0 {
+        fail!(~"range_step called with step == 0");
+    } else if step > 0 { // ascending
+        while i < stop {
+            if !it(i) { return false; }
+            // avoiding overflow. break if i + step > max_value
+            if i > max_value - step { return true; }
+            i += step;
+        }
+    } else { // descending
+        while i > stop {
+            if !it(i) { return false; }
+            // avoiding underflow. break if i + step < min_value
+            if i < min_value - step { return true; }
+            i += step;
+        }
+    }
+    return true;
+}
+
+/// Proposed replacement for range_step
+#[inline]
+pub fn range_step_new(start: $T, stop: $T, step: $T, it: &fn($T) -> bool) -> bool {
+    let mut i = start;
     range_step_core(&mut i, stop, step, it)
 }
 
@@ -183,10 +207,20 @@ pub fn range_step_inclusive(start: $T, last: $T, step: $T, it: &fn($T) -> bool) 
 pub fn range(lo: $T, hi: $T, it: &fn($T) -> bool) -> bool {
     range_step(lo, hi, 1 as $T, it)
 }
+#[inline]
+/// Proposed new version of range
+pub fn range_new(lo: $T, hi: $T, it: &fn($T) -> bool) -> bool {
+    range_step_new(lo, hi, 1 as $T, it)
+}
 
 #[inline]
-/// Iterate over the range (`hi`..`lo`]
+/// Iterate over the range [`hi`..`lo`)
 pub fn range_rev(hi: $T, lo: $T, it: &fn($T) -> bool) -> bool {
+    range_step(hi, lo, -1 as $T, it)
+}
+#[inline]
+/// Proposed new version of range_rev
+pub fn range_rev_new(hi: $T, lo: $T, it: &fn($T) -> bool) -> bool {
     if hi == min_value { return true; }
     range_step_inclusive(hi-1, lo, -1 as $T, it)
 }
