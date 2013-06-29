@@ -12,11 +12,11 @@ use std::int;
 use std::uint;
 
 fn uint_range(lo: uint, hi: uint, it: &fn(uint) -> bool) -> bool {
-    uint::range(lo, hi, it)
+    uint::range_new(lo, hi, it)
 }
 
 fn int_range(lo: int,  hi: int, it: &fn(int) -> bool) -> bool {
-    int::range(lo, hi, it)
+    int::range_new(lo, hi, it)
 }
 
 fn uint_range_rev(hi: uint, lo: uint, it: &fn(uint) -> bool) -> bool {
@@ -28,11 +28,11 @@ fn int_range_rev(hi: int,  lo: int, it: &fn(int) -> bool) -> bool {
 }
 
 fn int_range_step(a: int, b: int, step: int, it: &fn(int) -> bool) -> bool {
-    int::range_step(a, b, step, it)
+    int::range_step_new(a, b, step, it)
 }
 
 fn uint_range_step(a: uint, b: uint, step: int, it: &fn(uint) -> bool) -> bool {
-    uint::range_step(a, b, step, it)
+    uint::range_step_new(a, b, step, it)
 }
 
 
