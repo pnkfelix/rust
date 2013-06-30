@@ -21,11 +21,11 @@ DOCS :=
 
 doc/rust.css: rust.css
 	@$(call E, cp: $@)
-	$(Q)cp -a $< $@ 2> /dev/null
+	$(Q)$(C) cp -a $< $@ 2> /dev/null
 
 doc/manual.css: manual.css
 	@$(call E, cp: $@)
-	$(Q)cp -a $< $@ 2> /dev/null
+	$(Q)$(C) cp -a $< $@ 2> /dev/null
 
 ifeq ($(CFG_PANDOC),)
   $(info cfg: no pandoc found, omitting docs)
@@ -42,7 +42,7 @@ ifneq ($(NO_DOCS),1)
 DOCS += doc/rust.html
 doc/rust.html: rust.md doc/version_info.html doc/rust.css doc/manual.css
 	@$(call E, pandoc: $@)
-	$(Q)$(CFG_NODE) $(S)doc/prep.js --highlight $< | \
+	$(Q)$(C) $(CFG_NODE) $(S)doc/prep.js --highlight $< | \
 	"$(CFG_PANDOC)" \
          --standalone --toc \
          --section-divs \
@@ -56,7 +56,7 @@ doc/rust.html: rust.md doc/version_info.html doc/rust.css doc/manual.css
 DOCS += doc/rust.tex
 doc/rust.tex: rust.md doc/version.md
 	@$(call E, pandoc: $@)
-	$(Q)$(CFG_NODE) $(S)doc/prep.js $< | \
+	$(Q)$(C) $(CFG_NODE) $(S)doc/prep.js $< | \
 	"$(CFG_PANDOC)" \
          --standalone --toc \
          --number-sections \
@@ -67,7 +67,7 @@ doc/rust.tex: rust.md doc/version.md
 DOCS += doc/rustpkg.html
 doc/rustpkg.html: rustpkg.md doc/version_info.html doc/rust.css doc/manual.css
 	@$(call E, pandoc: $@)
-	$(Q)$(CFG_NODE) $(S)doc/prep.js --highlight $< | \
+	$(Q)$(C) $(CFG_NODE) $(S)doc/prep.js --highlight $< | \
 	"$(CFG_PANDOC)" \
          --standalone --toc \
          --section-divs \
@@ -81,7 +81,7 @@ doc/rustpkg.html: rustpkg.md doc/version_info.html doc/rust.css doc/manual.css
 DOCS += doc/tutorial.html
 doc/tutorial.html: tutorial.md doc/version_info.html doc/rust.css
 	@$(call E, pandoc: $@)
-	$(Q)$(CFG_NODE) $(S)doc/prep.js --highlight $< | \
+	$(Q)$(C) $(CFG_NODE) $(S)doc/prep.js --highlight $< | \
           $(CFG_PANDOC) --standalone --toc \
            --section-divs --number-sections \
            --from=markdown --to=html --css=rust.css \
@@ -92,7 +92,7 @@ DOCS += doc/tutorial-macros.html
 doc/tutorial-macros.html: tutorial-macros.md doc/version_info.html \
 						  doc/rust.css
 	@$(call E, pandoc: $@)
-	$(Q)$(CFG_NODE) $(S)doc/prep.js --highlight $< | \
+	$(Q)$(C) $(CFG_NODE) $(S)doc/prep.js --highlight $< | \
           $(CFG_PANDOC) --standalone --toc \
            --section-divs --number-sections \
            --from=markdown --to=html --css=rust.css \
@@ -102,7 +102,7 @@ doc/tutorial-macros.html: tutorial-macros.md doc/version_info.html \
 DOCS += doc/tutorial-container.html
 doc/tutorial-container.html: tutorial-container.md doc/version_info.html doc/rust.css
 	@$(call E, pandoc: $@)
-	$(Q)$(CFG_NODE) $(S)doc/prep.js --highlight $< | \
+	$(Q)$(C) $(CFG_NODE) $(S)doc/prep.js --highlight $< | \
           $(CFG_PANDOC) --standalone --toc \
            --section-divs --number-sections \
            --from=markdown --to=html --css=rust.css \
@@ -112,7 +112,7 @@ doc/tutorial-container.html: tutorial-container.md doc/version_info.html doc/rus
 DOCS += doc/tutorial-ffi.html
 doc/tutorial-ffi.html: tutorial-ffi.md doc/version_info.html doc/rust.css
 	@$(call E, pandoc: $@)
-	$(Q)$(CFG_NODE) $(S)doc/prep.js --highlight $< | \
+	$(Q)$(C) $(CFG_NODE) $(S)doc/prep.js --highlight $< | \
           $(CFG_PANDOC) --standalone --toc \
            --section-divs --number-sections \
            --from=markdown --to=html --css=rust.css \
@@ -122,7 +122,7 @@ doc/tutorial-ffi.html: tutorial-ffi.md doc/version_info.html doc/rust.css
 DOCS += doc/tutorial-borrowed-ptr.html
 doc/tutorial-borrowed-ptr.html: tutorial-borrowed-ptr.md doc/version_info.html doc/rust.css
 	@$(call E, pandoc: $@)
-	$(Q)$(CFG_NODE) $(S)doc/prep.js --highlight $< | \
+	$(Q)$(C) $(CFG_NODE) $(S)doc/prep.js --highlight $< | \
           $(CFG_PANDOC) --standalone --toc \
            --section-divs --number-sections \
            --from=markdown --to=html --css=rust.css \
@@ -132,7 +132,7 @@ doc/tutorial-borrowed-ptr.html: tutorial-borrowed-ptr.md doc/version_info.html d
 DOCS += doc/tutorial-tasks.html
 doc/tutorial-tasks.html: tutorial-tasks.md doc/version_info.html doc/rust.css
 	@$(call E, pandoc: $@)
-	$(Q)$(CFG_NODE) $(S)doc/prep.js --highlight $< | \
+	$(Q)$(C) $(CFG_NODE) $(S)doc/prep.js --highlight $< | \
           $(CFG_PANDOC) --standalone --toc \
            --section-divs --number-sections \
            --from=markdown --to=html --css=rust.css \
@@ -152,7 +152,7 @@ doc/tutorial-tasks.html: tutorial-tasks.md doc/version_info.html doc/rust.css
 DOCS += doc/rust.pdf
 doc/rust.pdf: doc/rust.tex
 	@$(call E, pdflatex: $@)
-	$(Q)$(CFG_PDFLATEX) \
+	$(Q)$(C) $(CFG_PDFLATEX) \
         -interaction=batchmode \
         -output-directory=doc \
         $<
@@ -173,12 +173,12 @@ else
 
 doc/rust.g: rust.md $(S)src/etc/extract_grammar.py
 	@$(call E, extract_grammar: $@)
-	$(Q)$(CFG_PYTHON) $(S)src/etc/extract_grammar.py $< >$@
+	$(Q)$(C) $(CFG_PYTHON) $(S)src/etc/extract_grammar.py $< >$@
 
 verify-grammar: doc/rust.g
 	@$(call E, LLnextgen: $<)
-	$(Q)$(CFG_LLNEXTGEN) --generate-lexer-wrapper=no $< >$@
-	$(Q)rm -f doc/rust.c doc/rust.h
+	$(Q)$(C) $(CFG_LLNEXTGEN) --generate-lexer-wrapper=no $< >$@
+	$(Q)$(C) rm -f doc/rust.c doc/rust.h
 endif
 
 
@@ -200,11 +200,11 @@ RUSTDOC = $(HBIN2_H_$(CFG_BUILD_TRIPLE))/rustdoc$(X_$(CFG_BUILD_TRIPLE))
 define libdoc
 doc/$(1)/index.html: $(2) $(3) $$(RUSTDOC) doc/$(1)/rust.css
 	@$$(call E, rustdoc: $$@)
-	$(Q)$(RUSTDOC) $(2) --output-dir=doc/$(1)
+	$(Q)$(C) $(RUSTDOC) $(2) --output-dir=doc/$(1)
 
 doc/$(1)/rust.css: rust.css
 	@$$(call E, cp: $$@)
-	$(Q)cp $$< $$@
+	$(Q)$(C) cp $$< $$@
 
 DOCS += doc/$(1)/index.html
 endef
@@ -222,7 +222,7 @@ endif
 
 doc/version.md: $(MKFILE_DEPS) $(wildcard $(S)doc/*.*)
 	@$(call E, version-stamp: $@)
-	$(Q)echo "$(CFG_VERSION)" >$@
+	$(Q)$(C) echo "$(CFG_VERSION)" >$@
 
 doc/version_info.html: version_info.html.template $(MKFILE_DEPS) \
                        $(wildcard $(S)doc/*.*)

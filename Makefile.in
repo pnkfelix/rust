@@ -168,14 +168,18 @@ endif
 # Target-and-rule "utility variables"
 ######################################################################
 
+# Q toggle for echo'ing make's comamnd invocations.
+# E is how explanatory text is echoed, if at all.
 ifdef VERBOSE
   Q :=
-  E =
+  E ?=
 else
   Q := @
-  E = echo $(1)
+  E ?= echo $(1)
 endif
 
+# C is inserted before every command invocation (e.g. to insert `time`)
+C ?=
 S := $(CFG_SRC_DIR)
 
 define DEF_X
@@ -442,7 +446,7 @@ endif
 endif
 
 STAGE$(1)_T_$(2)_H_$(3) := 						\
-	$$(Q)$$(call CFG_RUN_TARG_$(3),$(1),				\
+	$$(Q)$(C) $$(call CFG_RUN_TARG_$(3),$(1),				\
 		$$(CFG_VALGRIND_COMPILE$(1)) 			\
 		$$(HBIN$(1)_H_$(3))/rustc$$(X_$(3))			\
 		--cfg $$(CFGFLAG$(1)_T_$(2)_H_$(3))			\
@@ -450,7 +454,7 @@ STAGE$(1)_T_$(2)_H_$(3) := 						\
                 $$(RUSTC_FLAGS_$(2))
 
 PERF_STAGE$(1)_T_$(2)_H_$(3) := 				\
-	$$(Q)$$(call CFG_RUN_TARG_$(3),$(1),				\
+	$$(Q)$(C) $$(call CFG_RUN_TARG_$(3),$(1),				\
 		$$(CFG_PERF_TOOL) 						\
 		$$(HBIN$(1)_H_$(3))/rustc$$(X_$(3))			\
 		--cfg $$(CFGFLAG$(1)_T_$(2)_H_$(3))			\
@@ -575,7 +579,7 @@ Makefile config.mk: config.stamp
 
 config.stamp: $(S)configure $(S)Makefile.in $(S)src/snapshots.txt
 	@$(call E, cfg: reconfiguring)
-	$(Q)$(S)configure $(CFG_CONFIGURE_ARGS)
+	$(Q)$(C) $(S)configure $(CFG_CONFIGURE_ARGS)
 
 
 ######################################################################
