@@ -63,53 +63,57 @@ pub fn ge(x: $T, y: $T) -> bool { x >= y }
 #[inline]
 pub fn gt(x: $T, y: $T) -> bool { x > y }
 
+enum Range { Closed, HalfOpen }
+
 #[inline]
 ///
 /// Iterate through a range with a given step value.
 ///
-/// Let `start` denote the initial value for *i.
+/// Let `term` denote the closed interval `[stop-step,stop]` if `r` is Closed;
+/// otherwise `term` denotes the  half-open interval `[stop-step,stop)`.
 /// Iterates through the range `[x_0, x_1, ..., x_n]` where
-/// `x_j == start + step*j`, and
-/// `x_n` lies in the half-open interval `[stop-step,stop)`.
-///
-/// Leaves `*i` set to `x_n`.
+/// `x_j == start + step*j`, and `x_n` lies in the interval `term`.
 ///
 /// If no such nonnegative integer `n` exists, then the iteration range
-/// is empty and `*i` is left as `start`.
+/// is empty.
 ///
-fn range_step_core(i: &mut $T, stop: $T, step: $T_SIGNED, it: &fn($T) -> bool) -> bool {
+fn range_step_core(start: $T, stop: $T, step: $T_SIGNED, r: Range, it: &fn($T) -> bool) -> bool {
+    let mut i = start;
     if step == 0 {
         fail!("range_step called with step == 0");
     } else if step == (1 as $T_SIGNED) { // elide bounds check to tighten loop
-        while *i < stop {
-            if !it(*i) { return false; }
+        while i < stop {
+            if !it(i) { return false; }
             // no need for overflow check;
-            // cannot have *i + 1 > max_value because *i < stop <= max_value
-            *i += (1 as $T);
+            // cannot have i + 1 > max_value because i < stop <= max_value
+            i += (1 as $T);
         }
     } else if step == (-1 as $T_SIGNED) { // elide bounds check to tighten loop
-        while *i > stop {
-            if !it(*i) { return false; }
+        while i > stop {
+            if !it(i) { return false; }
             // no need for underflow check;
-            // cannot have *i - 1 < min_value because *i > stop >= min_value
-            *i -= (1 as $T);
+            // cannot have i - 1 < min_value because i > stop >= min_value
+            i -= (1 as $T);
         }
     } else if step > 0 { // ascending
-        while *i < stop {
-            if !it(*i) { return false; }
+        while i < stop {
+            if !it(i) { return false; }
             // avoiding overflow. break if i + step > max_value
-            if *i > max_value - (step as $T) { return true; }
-            *i += step as $T;
+            if i > max_value - (step as $T) { return true; }
+            i += step as $T;
         }
     } else { // descending
-        while *i > stop {
-            if !it(*i) { return false; }
+        while i > stop {
+            if !it(i) { return false; }
             // avoiding underflow. break if i + step < min_value
-            if *i < min_value + ((-step) as $T) { return true; }
-            *i -= -step as $T;
+            if i < min_value + ((-step) as $T) { return true; }
+            i -= -step as $T;
         }
     }
-    return true;
+    match r {
+        HalfOpen => return true,
+        Closed => return (i != stop || it(i))
+    }
 }
 
 #[inline]
@@ -161,8 +165,7 @@ pub fn range_step_old(start: $T, stop: $T, step: $T_SIGNED, it: &fn($T) -> bool)
 #[inline]
 /// proposed new version of range_step
 pub fn range_step(start: $T, stop: $T, step: $T_SIGNED, it: &fn($T) -> bool) -> bool {
-    let mut i = start;
-    range_step_core(&mut i, stop, step, it)
+    range_step_core(start, stop, step, HalfOpen, it)
 }
 
 #[inline]
@@ -176,10 +179,7 @@ pub fn range_step(start: $T, stop: $T, step: $T_SIGNED, it: &fn($T) -> bool) -> 
 ///  range is empty.)
 ///
 pub fn range_step_inclusive(start: $T, last: $T, step: $T_SIGNED, it: &fn($T) -> bool) -> bool {
-    let mut i = start;
-    if !range_step_core(&mut i, last, step, it) { return false; }
-    if i == last { return it(i); }
-    return true;
+    range_step_core(start, last, step, Closed, it)
 }
 
 #[inline]
@@ -200,9 +200,15 @@ pub fn range_rev_old(hi: $T, lo: $T, it: &fn($T) -> bool) -> bool {
 }
 #[inline]
 /// Proposed new version of range_rev
+/// Iterate over the range [`hi`..`lo`)
 pub fn range_rev(hi: $T, lo: $T, it: &fn($T) -> bool) -> bool {
-    if hi == min_value { return true; }
-    range_step_inclusive(hi-1, lo, -1 as $T_SIGNED, it)
+    // if hi == min_value { return true; }
+    // range_step_inclusive(hi-1, lo, -1 as $T_SIGNED, it)
+
+    // if lo == max_value { return true; }
+    // range_step_inclusive(hi, lo+1, -1 as $T_SIGNED, it)
+
+    range_step(hi, lo, -1 as $T_SIGNED, it)
 }
 
 /// Computes the bitwise complement
