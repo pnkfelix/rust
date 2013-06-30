@@ -223,15 +223,15 @@ pub fn range_rev_old(hi: $T, lo: $T, it: &fn($T) -> bool) -> bool {
 /// Iterate over the range [`hi`..`lo`)
 pub fn range_rev(hi: $T, lo: $T, it: &fn($T) -> bool) -> bool {
     // (`hi`..`lo`]
-    // if hi == min_value { return true; }
-    // range_step_inclusive(hi - 1, lo, -1 as $T, it)
+    if hi == min_value { return true; }
+    range_step_inclusive(hi - 1, lo, -1 as $T, it)
 
     // [`hi`..`lo`)
-    // if low == max_value { return true; }
+    // if lo == max_value { return true; }
     // range_step_inclusive(hi, lo + 1, -1 as $T, it)
 
     // [`hi`..`lo`)
-    range_step(hi, lo, -1 as $T, it)
+    // range_step(hi, lo, -1 as $T, it)
 }
 
 /// Computes the bitwise complement
