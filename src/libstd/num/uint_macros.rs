@@ -140,30 +140,6 @@ fn range_step_core(start: $T, stop: $T, step: $T_SIGNED, r: Range, it: &fn($T) -
 /// }
 /// ~~~
 ///
-pub fn range_step_old(start: $T, stop: $T, step: $T_SIGNED, it: &fn($T) -> bool) -> bool {
-    let mut i = start;
-    if step == 0 {
-        fail!("range_step called with step == 0");
-    }
-    if step >= 0 {
-        while i < stop {
-            if !it(i) { return false; }
-            // avoiding overflow. break if i + step > max_value
-            if i > max_value - (step as $T) { return true; }
-            i += step as $T;
-        }
-    } else {
-        while i > stop {
-            if !it(i) { return false; }
-            // avoiding underflow. break if i + step < min_value
-            if i < min_value + ((-step) as $T) { return true; }
-            i -= -step as $T;
-        }
-    }
-    return true;
-}
-#[inline]
-/// proposed new version of range_step
 pub fn range_step(start: $T, stop: $T, step: $T_SIGNED, it: &fn($T) -> bool) -> bool {
     range_step_core(start, stop, step, HalfOpen, it)
 }
@@ -184,31 +160,15 @@ pub fn range_step_inclusive(start: $T, last: $T, step: $T_SIGNED, it: &fn($T) ->
 
 #[inline]
 /// Iterate over the range [`lo`..`hi`)
-pub fn range_old(lo: $T, hi: $T, it: &fn($T) -> bool) -> bool {
-    range_step_old(lo, hi, 1 as $T_SIGNED, it)
-}
-#[inline]
-/// Proposed new version of range
 pub fn range(lo: $T, hi: $T, it: &fn($T) -> bool) -> bool {
     range_step(lo, hi, 1 as $T_SIGNED, it)
 }
 
 #[inline]
 /// Iterate over the range [`hi`..`lo`)
-pub fn range_rev_old(hi: $T, lo: $T, it: &fn($T) -> bool) -> bool {
-    range_step_old(hi, lo, -1 as $T_SIGNED, it)
-}
-#[inline]
-/// Proposed new version of range_rev
-/// Iterate over the range [`hi`..`lo`)
 pub fn range_rev(hi: $T, lo: $T, it: &fn($T) -> bool) -> bool {
     if hi == min_value { return true; }
     range_step_inclusive(hi-1, lo, -1 as $T_SIGNED, it)
-
-    // if lo == max_value { return true; }
-    // range_step_inclusive(hi, lo+1, -1 as $T_SIGNED, it)
-
-    // range_step(hi, lo, -1 as $T_SIGNED, it)
 }
 
 /// Computes the bitwise complement
