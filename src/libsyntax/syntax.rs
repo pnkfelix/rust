@@ -45,6 +45,7 @@ pub mod ast;
 pub mod ast_util;
 pub mod ast_map;
 pub mod visit;
+pub mod visit_new;
 pub mod fold;
 
 
