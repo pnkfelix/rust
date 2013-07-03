@@ -27,7 +27,6 @@ this point a bit better.
 
 */
 
-use core::prelude::*;
 
 use middle::freevars::get_freevars;
 use middle::ty::{re_scope};
@@ -39,8 +38,8 @@ use middle::typeck::infer::resolve_type;
 use util::ppaux::{note_and_explain_region, ty_to_str, region_to_str};
 use middle::pat_util;
 
-use core::result;
-use core::uint;
+use std::result;
+use std::uint;
 use syntax::ast::{ManagedSigil, OwnedSigil, BorrowedSigil};
 use syntax::ast::{def_arg, def_binding, def_local, def_self, def_upvar};
 use syntax::ast;
@@ -184,7 +183,7 @@ fn visit_block(b: &ast::blk, (rcx, v): (@mut Rcx, rvt)) {
 
 fn visit_arm(arm: &ast::arm, (rcx, v): (@mut Rcx, rvt)) {
     // see above
-    for arm.pats.each |&p| {
+    for arm.pats.iter().advance |&p| {
         constrain_bindings_in_pat(p, rcx);
     }
 
@@ -230,7 +229,7 @@ fn constrain_bindings_in_pat(pat: @ast::pat, rcx: @mut Rcx) {
 }
 
 fn visit_expr(expr: @ast::expr, (rcx, v): (@mut Rcx, rvt)) {
-    debug!("regionck::visit_expr(e=%s)", rcx.fcx.expr_to_str(expr));
+    debug!("regionck::visit_expr(e=?)");
 
     let has_method_map = rcx.fcx.inh.method_map.contains_key(&expr.id);
 
@@ -267,7 +266,7 @@ fn visit_expr(expr: @ast::expr, (rcx, v): (@mut Rcx, rvt)) {
         }
         ast::expr_match(_, ref arms) => {
             tcx.region_maps.record_cleanup_scope(expr.id);
-            for arms.each |arm| {
+            for arms.iter().advance |arm| {
                 for arm.guard.iter().advance |guard| {
                     tcx.region_maps.record_cleanup_scope(guard.id);
                 }
@@ -360,7 +359,7 @@ fn visit_expr(expr: @ast::expr, (rcx, v): (@mut Rcx, rvt)) {
             // explaining how it goes about doing that.
             let target_ty = rcx.resolve_node_type(expr.id);
             match ty::get(target_ty).sty {
-                ty::ty_trait(_, _, ty::RegionTraitStore(trait_region), _) => {
+                ty::ty_trait(_, _, ty::RegionTraitStore(trait_region), _, _) => {
                     let source_ty = rcx.fcx.expr_ty(source);
                     constrain_regions_in_type(rcx, trait_region,
                                               expr.span, source_ty);
@@ -476,7 +475,7 @@ fn constrain_call(rcx: @mut Rcx,
     let callee_scope = call_expr.id;
     let callee_region = ty::re_scope(callee_scope);
 
-    for arg_exprs.each |&arg_expr| {
+    for arg_exprs.iter().advance |&arg_expr| {
         // ensure that any regions appearing in the argument type are
         // valid for at least the lifetime of the function:
         constrain_regions_in_type_of_node(
@@ -520,8 +519,7 @@ fn constrain_derefs(rcx: @mut Rcx,
     let tcx = rcx.fcx.tcx();
     let r_deref_expr = ty::re_scope(deref_expr.id);
     for uint::range(0, derefs) |i| {
-        debug!("constrain_derefs(deref_expr=%s, derefd_ty=%s, derefs=%?/%?",
-               rcx.fcx.expr_to_str(deref_expr),
+        debug!("constrain_derefs(deref_expr=?, derefd_ty=%s, derefs=%?/%?",
                rcx.fcx.infcx().ty_to_str(derefd_ty),
                i, derefs);
 
@@ -576,8 +574,7 @@ fn constrain_index(rcx: @mut Rcx,
 
     let tcx = rcx.fcx.tcx();
 
-    debug!("constrain_index(index_expr=%s, indexed_ty=%s",
-           rcx.fcx.expr_to_str(index_expr),
+    debug!("constrain_index(index_expr=?, indexed_ty=%s",
            rcx.fcx.infcx().ty_to_str(indexed_ty));
 
     let r_index_expr = ty::re_scope(index_expr.id);
@@ -614,7 +611,7 @@ fn constrain_free_variables(rcx: @mut Rcx,
     let tcx = rcx.fcx.ccx.tcx;
     debug!("constrain_free_variables(%s, %s)",
            region.repr(tcx), expr.repr(tcx));
-    for get_freevars(tcx, expr.id).each |freevar| {
+    for get_freevars(tcx, expr.id).iter().advance |freevar| {
         debug!("freevar def is %?", freevar.def);
         let def = freevar.def;
         let en_region = encl_region_of_def(rcx.fcx, def);
@@ -690,13 +687,13 @@ fn constrain_regions_in_type(
     let tcx = rcx.fcx.ccx.tcx;
 
     debug!("constrain_regions_in_type(minimum_lifetime=%s, ty=%s)",
-           region_to_str(tcx, minimum_lifetime),
+           region_to_str(tcx, "", false, minimum_lifetime),
            ty_to_str(tcx, ty));
 
     do relate_nested_regions(tcx, Some(minimum_lifetime), ty) |r_sub, r_sup| {
         debug!("relate(r_sub=%s, r_sup=%s)",
-               region_to_str(tcx, r_sub),
-               region_to_str(tcx, r_sup));
+               region_to_str(tcx, "", false, r_sub),
+               region_to_str(tcx, "", false, r_sup));
 
         if r_sup.is_bound() || r_sub.is_bound() {
             // a bound region is one which appears inside an fn type.
@@ -790,7 +787,6 @@ pub mod guarantor {
      * but more special purpose.
      */
 
-    use core::prelude::*;
 
     use middle::typeck::check::regionck::{Rcx, infallibly_mk_subr};
     use middle::typeck::check::regionck::mk_subregion_due_to_derefence;
@@ -799,7 +795,7 @@ pub mod guarantor {
     use syntax::codemap::span;
     use util::ppaux::{ty_to_str};
 
-    use core::uint;
+    use std::uint;
 
     pub fn for_addr_of(rcx: @mut Rcx, expr: @ast::expr, base: @ast::expr) {
         /*!
@@ -808,7 +804,7 @@ pub mod guarantor {
          * to the lifetime of its guarantor (if any).
          */
 
-        debug!("guarantor::for_addr_of(base=%s)", rcx.fcx.expr_to_str(base));
+        debug!("guarantor::for_addr_of(base=?)");
 
         let guarantor = guarantor(rcx, base);
         link(rcx, expr.span, expr.id, guarantor);
@@ -824,8 +820,8 @@ pub mod guarantor {
         debug!("regionck::for_match()");
         let discr_guarantor = guarantor(rcx, discr);
         debug!("discr_guarantor=%s", discr_guarantor.repr(rcx.tcx()));
-        for arms.each |arm| {
-            for arm.pats.each |pat| {
+        for arms.iter().advance |arm| {
+            for arm.pats.iter().advance |pat| {
                 link_ref_bindings_in_pat(rcx, *pat, discr_guarantor);
             }
         }
@@ -842,8 +838,7 @@ pub mod guarantor {
          * region pointers.
          */
 
-        debug!("guarantor::for_autoref(expr=%s, autoref=%?)",
-               rcx.fcx.expr_to_str(expr), autoref);
+        debug!("guarantor::for_autoref(autoref=%?)", autoref);
 
         let mut expr_ct = categorize_unadjusted(rcx, expr);
         debug!("    unadjusted cat=%?", expr_ct.cat);
@@ -971,7 +966,7 @@ pub mod guarantor {
          * `&expr`).
          */
 
-        debug!("guarantor(expr=%s)", rcx.fcx.expr_to_str(expr));
+        debug!("guarantor()");
         match expr.node {
             ast::expr_unary(_, ast::deref, b) => {
                 let cat = categorize(rcx, b);
@@ -1035,7 +1030,7 @@ pub mod guarantor {
     }
 
     fn categorize(rcx: @mut Rcx, expr: @ast::expr) -> ExprCategorization {
-        debug!("categorize(expr=%s)", rcx.fcx.expr_to_str(expr));
+        debug!("categorize()");
 
         let mut expr_ct = categorize_unadjusted(rcx, expr);
         debug!("before adjustments, cat=%?", expr_ct.cat);
@@ -1088,7 +1083,7 @@ pub mod guarantor {
     fn categorize_unadjusted(rcx: @mut Rcx,
                              expr: @ast::expr)
                           -> ExprCategorizationType {
-        debug!("categorize_unadjusted(expr=%s)", rcx.fcx.expr_to_str(expr));
+        debug!("categorize_unadjusted()");
 
         let guarantor = {
             if rcx.fcx.inh.method_map.contains_key(&expr.id) {
@@ -1219,7 +1214,7 @@ pub mod guarantor {
                 link_ref_bindings_in_pats(rcx, pats, guarantor);
             }
             ast::pat_struct(_, ref fpats, _) => {
-                for fpats.each |fpat| {
+                for fpats.iter().advance |fpat| {
                     link_ref_bindings_in_pat(rcx, fpat.pat, guarantor);
                 }
             }
@@ -1260,7 +1255,7 @@ pub mod guarantor {
     fn link_ref_bindings_in_pats(rcx: @mut Rcx,
                                  pats: &~[@ast::pat],
                                  guarantor: Option<ty::Region>) {
-        for pats.each |pat| {
+        for pats.iter().advance |pat| {
             link_ref_bindings_in_pat(rcx, *pat, guarantor);
         }
     }

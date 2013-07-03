@@ -8,7 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
 
 use middle::ty::{BuiltinBounds};
 use middle::ty::RegionVid;
@@ -28,7 +27,7 @@ use extra::list;
 use syntax::abi::AbiSet;
 use syntax::ast;
 use syntax::ast::{Many, Once, extern_fn, m_const, impure_fn};
-use syntax::ast::{pure_fn, unsafe_fn};
+use syntax::ast::{unsafe_fn};
 use syntax::ast::{Onceness, purity};
 use syntax::codemap::span;
 
@@ -92,8 +91,7 @@ impl Combine for Lub {
         match (a, b) {
           (unsafe_fn, _) | (_, unsafe_fn) => Ok(unsafe_fn),
           (impure_fn, _) | (_, impure_fn) => Ok(impure_fn),
-          (extern_fn, _) | (_, extern_fn) => Ok(extern_fn),
-          (pure_fn, pure_fn) => Ok(pure_fn)
+          (extern_fn, extern_fn) => Ok(extern_fn),
         }
     }
 
@@ -175,7 +173,7 @@ impl Combine for Lub {
             // Variables created during LUB computation which are
             // *related* to regions that pre-date the LUB computation
             // stay as they are.
-            if !tainted.all(|r| is_var_in_set(new_vars, *r)) {
+            if !tainted.iter().all(|r| is_var_in_set(new_vars, *r)) {
                 debug!("generalize_region(r0=%?): \
                         non-new-variables found in %?",
                        r0, tainted);
@@ -189,7 +187,7 @@ impl Combine for Lub {
             // with.
             for list::each(a_isr) |pair| {
                 let (a_br, a_r) = *pair;
-                if tainted.contains(&a_r) {
+                if tainted.iter().any_(|x| x == &a_r) {
                     debug!("generalize_region(r0=%?): \
                             replacing with %?, tainted=%?",
                            r0, a_br, tainted);

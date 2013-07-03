@@ -8,7 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
 
 use middle::pat_util::{PatIdMap, pat_id_map, pat_is_binding, pat_is_const};
 use middle::ty;
@@ -18,7 +17,7 @@ use middle::typeck::check::{instantiate_path, lookup_def};
 use middle::typeck::check::{structure_of, valid_range_bounds};
 use middle::typeck::require_same_types;
 
-use core::hashmap::{HashMap, HashSet};
+use std::hashmap::{HashMap, HashSet};
 use syntax::ast;
 use syntax::ast_util;
 use syntax::codemap::span;
@@ -35,7 +34,7 @@ pub fn check_match(fcx: @mut FnCtxt,
 
     // Typecheck the patterns first, so that we get types for all the
     // bindings.
-    for arms.each |arm| {
+    for arms.iter().advance |arm| {
         let pcx = pat_ctxt {
             fcx: fcx,
             map: pat_id_map(tcx.def_map, arm.pats[0]),
@@ -43,14 +42,14 @@ pub fn check_match(fcx: @mut FnCtxt,
             block_region: ty::re_scope(arm.body.node.id)
         };
 
-        for arm.pats.each |p| { check_pat(&pcx, *p, pattern_ty);}
+        for arm.pats.iter().advance |p| { check_pat(&pcx, *p, pattern_ty);}
     }
 
     // Now typecheck the blocks.
     let mut result_ty = fcx.infcx().next_ty_var();
     let mut arm_non_bot = false;
     let mut saw_err = false;
-    for arms.each |arm| {
+    for arms.iter().advance |arm| {
         let mut guard_err = false;
         let mut guard_bot = false;
         match arm.guard {
@@ -248,7 +247,7 @@ pub fn check_pat_variant(pcx: &pat_ctxt, pat: @ast::pat, path: @ast::Path,
 
     if error_happened {
         for subpats.iter().advance |pats| {
-            for pats.each |pat| {
+            for pats.iter().advance |pat| {
                 check_pat(pcx, *pat, ty::mk_err());
             }
         }
@@ -274,13 +273,13 @@ pub fn check_struct_pat_fields(pcx: &pat_ctxt,
 
     // Index the class fields.
     let mut field_map = HashMap::new();
-    for class_fields.eachi |i, class_field| {
+    for class_fields.iter().enumerate().advance |(i, class_field)| {
         field_map.insert(class_field.ident, i);
     }
 
     // Typecheck each field.
     let mut found_fields = HashSet::new();
-    for fields.each |field| {
+    for fields.iter().advance |field| {
         match field_map.find(&field.ident) {
             Some(&index) => {
                 let class_field = class_fields[index];
@@ -303,7 +302,7 @@ pub fn check_struct_pat_fields(pcx: &pat_ctxt,
 
     // Report an error if not all the fields were specified.
     if !etc {
-        for class_fields.eachi |i, field| {
+        for class_fields.iter().enumerate().advance |(i, field)| {
             if found_fields.contains(&i) {
                 loop;
             }
@@ -510,13 +509,13 @@ pub fn check_pat(pcx: &pat_ctxt, pat: @ast::pat, expected: ty::t) {
         let e_count = elts.len();
         match s {
             ty::ty_tup(ref ex_elts) if e_count == ex_elts.len() => {
-                for elts.eachi |i, elt| {
+                for elts.iter().enumerate().advance |(i, elt)| {
                     check_pat(pcx, *elt, ex_elts[i]);
                 }
                 fcx.write_ty(pat.id, expected);
             }
             _ => {
-                for elts.each |elt| {
+                for elts.iter().advance |elt| {
                     check_pat(pcx, *elt, ty::mk_err());
                 }
                 // use terr_tuple_size if both types are tuples
@@ -538,7 +537,7 @@ pub fn check_pat(pcx: &pat_ctxt, pat: @ast::pat, expected: ty::t) {
           check_pointer_pat(pcx, Managed, inner, pat.id, pat.span, expected);
       }
       ast::pat_uniq(inner) => {
-          check_pointer_pat(pcx, Owned, inner, pat.id, pat.span, expected);
+          check_pointer_pat(pcx, Send, inner, pat.id, pat.span, expected);
       }
       ast::pat_region(inner) => {
           check_pointer_pat(pcx, Borrowed, inner, pat.id, pat.span, expected);
@@ -565,13 +564,13 @@ pub fn check_pat(pcx: &pat_ctxt, pat: @ast::pat, expected: ty::t) {
             (mt, default_region_var)
           },
           _ => {
-              for before.each |&elt| {
+              for before.iter().advance |&elt| {
                   check_pat(pcx, elt, ty::mk_err());
               }
               for slice.iter().advance |&elt| {
                   check_pat(pcx, elt, ty::mk_err());
               }
-              for after.each |&elt| {
+              for after.iter().advance |&elt| {
                   check_pat(pcx, elt, ty::mk_err());
               }
               fcx.infcx().type_error_message_str_with_expected(
@@ -587,7 +586,7 @@ pub fn check_pat(pcx: &pat_ctxt, pat: @ast::pat, expected: ty::t) {
               return;
           }
         };
-        for before.each |elt| {
+        for before.iter().advance |elt| {
             check_pat(pcx, *elt, elt_type.ty);
         }
         match slice {
@@ -600,7 +599,7 @@ pub fn check_pat(pcx: &pat_ctxt, pat: @ast::pat, expected: ty::t) {
             }
             None => ()
         }
-        for after.each |elt| {
+        for after.iter().advance |elt| {
             check_pat(pcx, *elt, elt_type.ty);
         }
         fcx.write_ty(pat.id, expected);
@@ -624,7 +623,7 @@ pub fn check_pointer_pat(pcx: &pat_ctxt,
         ty::ty_box(e_inner) if pointer_kind == Managed => {
             check_inner(e_inner);
         }
-        ty::ty_uniq(e_inner) if pointer_kind == Owned => {
+        ty::ty_uniq(e_inner) if pointer_kind == Send => {
             check_inner(e_inner);
         }
         ty::ty_rptr(_, e_inner) if pointer_kind == Borrowed => {
@@ -641,7 +640,7 @@ pub fn check_pointer_pat(pcx: &pat_ctxt,
                 Some(expected),
                 fmt!("%s pattern", match pointer_kind {
                     Managed => "an @-box",
-                    Owned => "a ~-box",
+                    Send => "a ~-box",
                     Borrowed => "an &-pointer"
                 }),
                 None);
@@ -651,4 +650,4 @@ pub fn check_pointer_pat(pcx: &pat_ctxt,
 }
 
 #[deriving(Eq)]
-enum PointerKind { Managed, Owned, Borrowed }
+enum PointerKind { Managed, Send, Borrowed }

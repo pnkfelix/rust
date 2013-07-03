@@ -75,13 +75,6 @@ vec_reserve_shared_actual(type_desc* ty, rust_vec_box** vp,
     reserve_vec_exact_shared(task, vp, n_elts * ty->size);
 }
 
-// This is completely misnamed.
-extern "C" CDECL void
-vec_reserve_shared(type_desc* ty, rust_vec_box** vp,
-                   size_t n_elts) {
-    reserve_vec_exact(vp, n_elts * ty->size);
-}
-
 extern "C" CDECL size_t
 rand_seed_size() {
     return rng_seed_size();
@@ -152,6 +145,16 @@ debug_abi_2(floats f) {
                   0xff,
                   f.a - 1.0 };
     return ff;
+}
+
+extern "C" int
+debug_static_mut;
+
+int debug_static_mut = 3;
+
+extern "C" void
+debug_static_mut_check_four() {
+    assert(debug_static_mut == 4);
 }
 
 /* Debug builtins for std::dbg. */
@@ -729,22 +732,6 @@ rust_task_deref(rust_task *task) {
     task->deref();
 }
 
-// Must call on rust stack.
-extern "C" CDECL void
-rust_call_tydesc_glue(void *root, size_t *tydesc, size_t glue_index) {
-#ifdef _RUST_STAGE0
-    void (*glue_fn)(void *, void *, void *, void *) =
-        (void (*)(void *, void *, void *, void *))tydesc[glue_index];
-    if (glue_fn)
-        glue_fn(0, 0, 0, root);
-#else
-    void (*glue_fn)(void *, void *, void *) =
-        (void (*)(void *, void *, void *))tydesc[glue_index];
-    if (glue_fn)
-        glue_fn(0, 0, root);
-#endif
-}
-
 // Don't run on the Rust stack!
 extern "C" void
 rust_log_str(uint32_t level, const char *str, size_t size) {
@@ -762,11 +749,7 @@ public:
 
     virtual void run() {
         record_sp_limit(0);
-#ifdef _RUST_STAGE0
-        fn.f(NULL, fn.env, NULL);
-#else
         fn.f(fn.env, NULL);
-#endif
     }
 };
 

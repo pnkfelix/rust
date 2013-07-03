@@ -8,7 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
 
 use middle::ty::{BuiltinBounds};
 use middle::ty;
@@ -18,6 +17,7 @@ use middle::typeck::infer::combine::*;
 use middle::typeck::infer::cres;
 use middle::typeck::infer::glb::Glb;
 use middle::typeck::infer::InferCtxt;
+use middle::typeck::infer::lattice::CombineFieldsLatticeMethods;
 use middle::typeck::infer::lub::Lub;
 use middle::typeck::infer::to_str::InferStr;
 use util::common::{indent, indenter};
@@ -179,7 +179,7 @@ impl Combine for Sub {
                                               None, b) |br| {
                 let skol = self.infcx.region_vars.new_skolemized(br);
                 debug!("Bound region %s skolemized to %?",
-                       bound_region_to_str(self.infcx.tcx, br),
+                       bound_region_to_str(self.infcx.tcx, "", false, br),
                        skol);
                 skol
             }
@@ -198,12 +198,12 @@ impl Combine for Sub {
         for list::each(skol_isr) |pair| {
             let (skol_br, skol) = *pair;
             let tainted = self.infcx.region_vars.tainted(snapshot, skol);
-            for tainted.each |tainted_region| {
+            for tainted.iter().advance |tainted_region| {
                 // Each skolemized should only be relatable to itself
                 // or new variables:
                 match *tainted_region {
                     ty::re_infer(ty::ReVar(ref vid)) => {
-                        if new_vars.contains(vid) { loop; }
+                        if new_vars.iter().any_(|x| x == vid) { loop; }
                     }
                     _ => {
                         if *tainted_region == skol { loop; }

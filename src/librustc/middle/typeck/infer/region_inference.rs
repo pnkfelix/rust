@@ -536,7 +536,6 @@ more convincing in the future.
 
 */
 
-use core::prelude::*;
 
 use middle::ty;
 use middle::ty::{FreeRegion, Region, RegionVid};
@@ -546,43 +545,18 @@ use middle::typeck::infer::cres;
 use util::common::indenter;
 use util::ppaux::note_and_explain_region;
 
-use core::cell::Cell;
-use core::hashmap::{HashMap, HashSet};
-use core::to_bytes;
-use core::uint;
-use core::vec;
+use std::cell::Cell;
+use std::hashmap::{HashMap, HashSet};
+use std::uint;
+use std::vec;
 use syntax::codemap::span;
 use syntax::ast;
 
-#[deriving(Eq)]
+#[deriving(Eq,IterBytes)]
 enum Constraint {
     ConstrainVarSubVar(RegionVid, RegionVid),
     ConstrainRegSubVar(Region, RegionVid),
     ConstrainVarSubReg(RegionVid, Region)
-}
-
-impl to_bytes::IterBytes for Constraint {
-   fn iter_bytes(&self, lsb0: bool, f: to_bytes::Cb) -> bool {
-        match *self {
-            ConstrainVarSubVar(ref v0, ref v1) => {
-                0u8.iter_bytes(lsb0, f) &&
-                v0.iter_bytes(lsb0, f) &&
-                v1.iter_bytes(lsb0, f)
-            }
-
-            ConstrainRegSubVar(ref ra, ref va) => {
-                1u8.iter_bytes(lsb0, f) &&
-                ra.iter_bytes(lsb0, f) &&
-                va.iter_bytes(lsb0, f)
-            }
-
-            ConstrainVarSubReg(ref va, ref ra) => {
-                2u8.iter_bytes(lsb0, f) &&
-                va.iter_bytes(lsb0, f) &&
-                ra.iter_bytes(lsb0, f)
-            }
-        }
-    }
 }
 
 #[deriving(Eq, IterBytes)]
@@ -980,7 +954,7 @@ impl RegionVarBindings {
         {
             let mut result_set = result_set;
             if *r == *r1 { // Clearly, this is potentially inefficient.
-                if !result_set.contains(r2) {
+                if !result_set.iter().any_(|x| x == r2) {
                     result_set.push(*r2);
                 }
             }
@@ -1285,7 +1259,7 @@ impl RegionVarBindings {
 
         // It would be nice to write this using map():
         let mut edges = vec::with_capacity(num_edges);
-        for self.constraints.each |constraint, span| {
+        for self.constraints.iter().advance |(constraint, span)| {
             edges.push(GraphEdge {
                 next_edge: [uint::max_value, uint::max_value],
                 constraint: *constraint,
@@ -1504,7 +1478,7 @@ impl RegionVarBindings {
         // overlapping locations.
         let mut dup_vec = graph.nodes.map(|_| uint::max_value);
 
-        graph.nodes.mapi(|idx, node| {
+        graph.nodes.iter().enumerate().transform(|(idx, node)| {
             match node.value {
                 Value(_) => {
                     /* Inference successful */
@@ -1554,7 +1528,7 @@ impl RegionVarBindings {
             }
 
             node.value
-        })
+        }).collect()
     }
 
     pub fn report_error_for_expanding_node(&mut self,
@@ -1572,8 +1546,8 @@ impl RegionVarBindings {
             return;
         }
 
-        for lower_bounds.each |lower_bound| {
-            for upper_bounds.each |upper_bound| {
+        for lower_bounds.iter().advance |lower_bound| {
+            for upper_bounds.iter().advance |upper_bound| {
                 if !self.is_subregion_of(lower_bound.region,
                                          upper_bound.region) {
 
@@ -1629,8 +1603,8 @@ impl RegionVarBindings {
             return;
         }
 
-        for upper_bounds.each |upper_bound_1| {
-            for upper_bounds.each |upper_bound_2| {
+        for upper_bounds.iter().advance |upper_bound_1| {
+            for upper_bounds.iter().advance |upper_bound_2| {
                 match self.glb_concrete_regions(upper_bound_1.region,
                                                 upper_bound_2.region) {
                   Ok(_) => {}

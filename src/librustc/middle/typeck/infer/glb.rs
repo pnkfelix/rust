@@ -8,7 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
 
 use middle::ty::{BuiltinBounds};
 use middle::ty::RegionVid;
@@ -23,7 +22,7 @@ use middle::typeck::infer::fold_regions_in_sig;
 use middle::typeck::isr_alist;
 use syntax::ast;
 use syntax::ast::{Many, Once, extern_fn, impure_fn, m_const, m_imm, m_mutbl};
-use syntax::ast::{pure_fn, unsafe_fn};
+use syntax::ast::{unsafe_fn};
 use syntax::ast::{Onceness, purity};
 use syntax::abi::AbiSet;
 use syntax::codemap::span;
@@ -103,7 +102,6 @@ impl Combine for Glb {
 
     fn purities(&self, a: purity, b: purity) -> cres<purity> {
         match (a, b) {
-          (pure_fn, _) | (_, pure_fn) => Ok(pure_fn),
           (extern_fn, _) | (_, extern_fn) => Ok(extern_fn),
           (impure_fn, _) | (_, impure_fn) => Ok(impure_fn),
           (unsafe_fn, unsafe_fn) => Ok(unsafe_fn)
@@ -223,7 +221,7 @@ impl Combine for Glb {
             let mut a_r = None;
             let mut b_r = None;
             let mut only_new_vars = true;
-            for tainted.each |r| {
+            for tainted.iter().advance |r| {
                 if is_var_in_set(a_vars, *r) {
                     if a_r.is_some() {
                         return fresh_bound_variable(this);

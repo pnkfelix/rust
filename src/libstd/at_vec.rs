@@ -12,26 +12,29 @@
 
 use cast::transmute;
 use container::Container;
+use iterator::IteratorUtil;
 use kinds::Copy;
-use old_iter;
-use old_iter::BaseIter;
 use option::Option;
 use sys;
 use uint;
 use vec;
+use vec::ImmutableVector;
 
 /// Code for dealing with @-vectors. This is pretty incomplete, and
 /// contains a bunch of duplication from the code for ~-vectors.
 
 pub mod rustrt {
     use libc;
-    use sys;
     use vec;
+    #[cfg(stage0)]
+    use intrinsic::{TyDesc};
+    #[cfg(not(stage0))]
+    use unstable::intrinsics::{TyDesc};
 
     #[abi = "cdecl"]
     #[link_name = "rustrt"]
     pub extern {
-        pub unsafe fn vec_reserve_shared_actual(t: *sys::TypeDesc,
+        pub unsafe fn vec_reserve_shared_actual(t: *TyDesc,
                                                 v: **vec::raw::VecRepr,
                                                 n: libc::size_t);
     }
@@ -105,9 +108,9 @@ pub fn build_sized_opt<A>(size: Option<uint>,
 /// Iterates over the `rhs` vector, copying each element and appending it to the
 /// `lhs`. Afterwards, the `lhs` is then returned for use again.
 #[inline]
-pub fn append<T:Copy>(lhs: @[T], rhs: &const [T]) -> @[T] {
+pub fn append<T:Copy>(lhs: @[T], rhs: &[T]) -> @[T] {
     do build_sized(lhs.len() + rhs.len()) |push| {
-        for lhs.each |x| { push(copy *x); }
+        for lhs.iter().advance |x| { push(copy *x); }
         for uint::range(0, rhs.len()) |i| { push(copy rhs[i]); }
     }
 }
@@ -116,7 +119,7 @@ pub fn append<T:Copy>(lhs: @[T], rhs: &const [T]) -> @[T] {
 /// Apply a function to each element of a vector and return the results
 pub fn map<T, U>(v: &[T], f: &fn(x: &T) -> U) -> @[U] {
     do build_sized(v.len()) |push| {
-        for v.each |elem| {
+        for v.iter().advance |elem| {
             push(f(elem));
         }
     }
@@ -128,7 +131,7 @@ pub fn map<T, U>(v: &[T], f: &fn(x: &T) -> U) -> @[U] {
  * Creates an immutable vector of size `n_elts` and initializes the elements
  * to the value returned by the function `op`.
  */
-pub fn from_fn<T>(n_elts: uint, op: old_iter::InitOp<T>) -> @[T] {
+pub fn from_fn<T>(n_elts: uint, op: &fn(uint) -> T) -> @[T] {
     do build_sized(n_elts) |push| {
         let mut i: uint = 0u;
         while i < n_elts { push(op(i)); i += 1u; }
@@ -177,9 +180,9 @@ pub mod traits {
     use kinds::Copy;
     use ops::Add;
 
-    impl<'self,T:Copy> Add<&'self const [T],@[T]> for @[T] {
+    impl<'self,T:Copy> Add<&'self [T],@[T]> for @[T] {
         #[inline]
-        fn add(&self, rhs: & &'self const [T]) -> @[T] {
+        fn add(&self, rhs: & &'self [T]) -> @[T] {
             append(*self, (*rhs))
         }
     }
@@ -197,6 +200,10 @@ pub mod raw {
     use uint;
     use unstable::intrinsics::{move_val_init};
     use vec;
+    #[cfg(stage0)]
+    use intrinsic::{get_tydesc};
+    #[cfg(not(stage0))]
+    use unstable::intrinsics::{get_tydesc};
 
     pub type VecRepr = vec::raw::VecRepr;
     pub type SliceRepr = vec::raw::SliceRepr;
@@ -258,7 +265,7 @@ pub mod raw {
         // Only make the (slow) call into the runtime if we have to
         if capacity(*v) < n {
             let ptr: **VecRepr = transmute(v);
-            rustrt::vec_reserve_shared_actual(sys::get_type_desc::<T>(),
+            rustrt::vec_reserve_shared_actual(get_tydesc::<T>(),
                                               ptr, n as libc::size_t);
         }
     }

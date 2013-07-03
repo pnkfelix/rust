@@ -15,7 +15,6 @@ Dynamic library facilities.
 A simple wrapper over the platforms dynamic library facilities
 
 */
-use ptr;
 use cast;
 use path;
 use libc;
@@ -26,7 +25,7 @@ use result::*;
 pub struct DynamicLibrary { priv handle: *libc::c_void }
 
 impl Drop for DynamicLibrary {
-    fn finalize(&self) {
+    fn drop(&self) {
         match do dl::check_for_errors_in {
             unsafe {
                 dl::close(self.handle)
@@ -165,7 +164,6 @@ mod dl {
     use libc;
     use path;
     use ptr;
-    use str;
     use task;
     use result::*;
 
@@ -176,7 +174,7 @@ mod dl {
     }
 
     pub unsafe fn open_internal() -> *libc::c_void {
-        let mut handle = ptr::null();
+        let handle = ptr::null();
         GetModuleHandleExW(0 as libc::DWORD, ptr::null(), &handle as **libc::c_void);
         handle
     }

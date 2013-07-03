@@ -242,7 +242,6 @@ section on "Type Combining" below for details.
 
 */
 
-use core::prelude::*;
 
 pub use middle::ty::IntVarValue;
 pub use middle::typeck::infer::resolve::resolve_and_force_all_but_regions;
@@ -267,8 +266,8 @@ use middle::typeck::isr_alist;
 use util::common::indent;
 use util::ppaux::{bound_region_to_str, ty_to_str, trait_ref_to_str};
 
-use core::result;
-use core::vec;
+use std::result;
+use std::vec;
 use extra::list::Nil;
 use extra::smallintmap::SmallIntMap;
 use syntax::ast::{m_imm, m_mutbl};
@@ -582,7 +581,7 @@ impl InferCtxt {
 
         debug!("commit()");
         do indent {
-            let r = self.try(f);
+            let r = self.try(|| f());
 
             self.ty_var_bindings.bindings.truncate(0);
             self.int_var_bindings.bindings.truncate(0);
@@ -717,10 +716,11 @@ impl InferCtxt {
                                   trait_ref.def_id,
                                   copy trait_ref.substs,
                                   ty::UniqTraitStore,
-                                  ast::m_imm);
+                                  ast::m_imm,
+                                  ty::EmptyBuiltinBounds());
         let dummy1 = self.resolve_type_vars_if_possible(dummy0);
         match ty::get(dummy1).sty {
-            ty::ty_trait(ref def_id, ref substs, _, _) => {
+            ty::ty_trait(ref def_id, ref substs, _, _, _) => {
                 ty::TraitRef {def_id: *def_id,
                               substs: copy *substs}
             }
@@ -821,7 +821,7 @@ impl InferCtxt {
                 // debug message.
                 let rvar = self.next_region_var_nb(span);
                 debug!("Bound region %s maps to %?",
-                       bound_region_to_str(self.tcx, br),
+                       bound_region_to_str(self.tcx, "", false, br),
                        rvar);
                 rvar
             });
@@ -835,6 +835,6 @@ pub fn fold_regions_in_sig(
     fldr: &fn(r: ty::Region, in_fn: bool) -> ty::Region) -> ty::FnSig
 {
     do ty::fold_sig(fn_sig) |t| {
-        ty::fold_regions(tcx, t, fldr)
+        ty::fold_regions(tcx, t, |r, in_fn| fldr(r, in_fn))
     }
 }

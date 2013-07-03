@@ -8,9 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
 
-use middle::resolve::Impl;
 use middle::ty::param_ty;
 use middle::ty;
 use middle::typeck::check::{FnCtxt, impl_self_ty};
@@ -18,16 +16,15 @@ use middle::typeck::check::{structurally_resolved_type};
 use middle::typeck::infer::fixup_err_to_str;
 use middle::typeck::infer::{resolve_and_force_all_but_regions, resolve_type};
 use middle::typeck::infer;
-use middle::typeck::{CrateCtxt, vtable_origin, vtable_param, vtable_res};
-use middle::typeck::vtable_static;
+use middle::typeck::{CrateCtxt, vtable_origin, vtable_res};
+use middle::typeck::{vtable_static, vtable_param, vtable_self};
 use middle::subst::Subst;
 use util::common::indenter;
 use util::ppaux::tys_to_str;
 use util::ppaux;
 
-use core::hashmap::HashSet;
-use core::result;
-use core::uint;
+use std::hashmap::HashSet;
+use std::result;
 use syntax::ast;
 use syntax::ast_util;
 use syntax::codemap::span;
@@ -66,11 +63,11 @@ pub struct VtableContext {
 }
 
 impl VtableContext {
-    pub fn tcx(&const self) -> ty::ctxt { self.ccx.tcx }
+    pub fn tcx(&self) -> ty::ctxt { self.ccx.tcx }
 }
 
 fn has_trait_bounds(type_param_defs: &[ty::TypeParameterDef]) -> bool {
-    type_param_defs.any(
+    type_param_defs.iter().any_(
         |type_param_def| !type_param_def.bounds.trait_bounds.is_empty())
 }
 
@@ -90,8 +87,9 @@ fn lookup_vtables(vcx: &VtableContext,
     let tcx = vcx.tcx();
     let mut result = ~[];
     let mut i = 0u;
-    for substs.tps.each |ty| {
+    for substs.tps.iter().advance |ty| {
         // ty is the value supplied for the type parameter A...
+        let mut param_result = ~[];
 
         for ty::each_bound_trait_and_supertraits(
             tcx, type_param_defs[i].bounds) |trait_ref|
@@ -108,7 +106,7 @@ fn lookup_vtables(vcx: &VtableContext,
             debug!("after subst: %s", trait_ref.repr(tcx));
 
             match lookup_vtable(vcx, location_info, *ty, &trait_ref, is_early) {
-                Some(vtable) => result.push(vtable),
+                Some(vtable) => param_result.push(vtable),
                 None => {
                     vcx.tcx().sess.span_fatal(
                         location_info.span,
@@ -119,6 +117,7 @@ fn lookup_vtables(vcx: &VtableContext,
                 }
             }
         }
+        result.push(@param_result);
         i += 1u;
     }
     debug!("lookup_vtables result(\
@@ -141,10 +140,11 @@ fn fixup_substs(vcx: &VtableContext, location_info: &LocationInfo,
     let t = ty::mk_trait(tcx,
                          id, substs,
                          ty::RegionTraitStore(ty::re_static),
-                         ast::m_imm);
+                         ast::m_imm,
+                         ty::EmptyBuiltinBounds());
     do fixup_ty(vcx, location_info, t, is_early).map |t_f| {
         match ty::get(*t_f).sty {
-          ty::ty_trait(_, ref substs_f, _, _) => (/*bad*/copy *substs_f),
+          ty::ty_trait(_, ref substs_f, _, _, _) => (/*bad*/copy *substs_f),
           _ => fail!("t_f should be a trait")
         }
     }
@@ -238,6 +238,17 @@ fn lookup_vtable(vcx: &VtableContext,
             }
         }
 
+        ty::ty_self(trait_id) => {
+            debug!("trying to find %? vtable for type %?",
+                   trait_ref.def_id, trait_id);
+
+            if trait_id == trait_ref.def_id {
+                let vtable = vtable_self(trait_id);
+                debug!("found self vtable: %?", vtable);
+                return Some(vtable);
+            }
+        }
+
         _ => {
             let mut found = ~[];
 
@@ -248,16 +259,9 @@ fn lookup_vtable(vcx: &VtableContext,
                     // Nothing found. Continue.
                 }
                 Some(implementations) => {
-                    let len = { // FIXME(#5074): stage0 requires it
-                        let implementations: &mut ~[@Impl] = *implementations;
-                        implementations.len()
-                    };
-
                     // implementations is the list of all impls in scope for
                     // trait_ref. (Usually, there's just one.)
-                    for uint::range(0, len) |i| {
-                        let im = implementations[i];
-
+                    for implementations.iter().advance |im| {
                         // im is one specific impl of trait_ref.
 
                         // First, ensure we haven't processed this impl yet.
@@ -475,6 +479,12 @@ pub fn location_info_for_expr(expr: @ast::expr) -> LocationInfo {
         id: expr.id
     }
 }
+pub fn location_info_for_item(item: @ast::item) -> LocationInfo {
+    LocationInfo {
+        span: item.span,
+        id: item.id
+    }
+}
 
 pub fn early_resolve_expr(ex: @ast::expr,
                           fcx: @mut FnCtxt,
@@ -539,7 +549,9 @@ pub fn early_resolve_expr(ex: @ast::expr,
           debug!("vtable resolution on expr %s", ex.repr(fcx.tcx()));
           let target_ty = fcx.expr_ty(ex);
           match ty::get(target_ty).sty {
-              ty::ty_trait(target_def_id, ref target_substs, store, target_mutbl) => {
+              // Bounds of type's contents are not checked here, but in kind.rs.
+              ty::ty_trait(target_def_id, ref target_substs, store,
+                           target_mutbl, _bounds) => {
                   fn mutability_allowed(a_mutbl: ast::mutability,
                                         b_mutbl: ast::mutability) -> bool {
                       a_mutbl == b_mutbl ||
@@ -589,7 +601,8 @@ pub fn early_resolve_expr(ex: @ast::expr,
                                   // vtable (that is: "ex has vtable
                                   // <vtable>")
                                   if !is_early {
-                                      insert_vtables(fcx, ex.id, @~[vtable]);
+                                      insert_vtables(fcx, ex.id,
+                                                     @~[@~[vtable]]);
                                   }
                               }
                               None => {
@@ -654,6 +667,27 @@ fn resolve_expr(ex: @ast::expr,
                            visit::vt<@mut FnCtxt>)) {
     early_resolve_expr(ex, fcx, false);
     visit::visit_expr(ex, (fcx, v));
+}
+
+pub fn resolve_impl(ccx: @mut CrateCtxt, impl_item: @ast::item) {
+    let def_id = ast_util::local_def(impl_item.id);
+    match ty::impl_trait_ref(ccx.tcx, def_id) {
+        None => {},
+        Some(trait_ref) => {
+            let infcx = infer::new_infer_ctxt(ccx.tcx);
+            let vcx = VtableContext { ccx: ccx, infcx: infcx };
+            let trait_def = ty::lookup_trait_def(ccx.tcx, trait_ref.def_id);
+
+            let vtbls = lookup_vtables(&vcx,
+                                       &location_info_for_item(impl_item),
+                                       *trait_def.generics.type_param_defs,
+                                       &trait_ref.substs,
+                                       false);
+
+            // FIXME(#7450): Doesn't work cross crate
+            ccx.vtable_map.insert(impl_item.id, vtbls);
+        }
+    }
 }
 
 // Detect points where a trait-bounded type parameter is
