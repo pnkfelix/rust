@@ -50,6 +50,8 @@ $$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTPKG_$(4)):		\
 		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_EXTRALIB_$(4))	\
 		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTC_$(4))
 	@$$(call E, compile_and_link: $$@)
+	ls -drt1 `dirname $$@`/$(LIBRUSTPKG_GLOB_$(4) | grep -v `basename $$@` && echo "Warning: removing previous" $(LIBRUSTPKG_GLOB_$(4) "libraries"
+	ls -drt1 `dirname $$@`/$(LIBRUSTPKG_GLOB_$(4) | grep -v `basename $$@` | xargs rm -v
 	$$(STAGE$(1)_T_$(4)_H_$(3)) -o $$@ $$< && touch $$@
 
 $$(TBIN$(1)_T_$(4)_H_$(3))/rustpkg$$(X_$(4)):				\
@@ -65,6 +67,8 @@ $$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTDOC_$(4)):		\
 		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_EXTRALIB_$(4))	\
 		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTC_$(4))
 	@$$(call E, compile_and_link: $$@)
+	ls -drt1 `dirname $$@`/$(LIBRUSTDOC_GLOB_$(4) | grep -v `basename $$@` && echo "Warning: removing previous" $(LIBRUSTDOC_GLOB_$(4) "libraries"
+	ls -drt1 `dirname $$@`/$(LIBRUSTDOC_GLOB_$(4) | grep -v `basename $$@` | xargs rm -v
 	$$(STAGE$(1)_T_$(4)_H_$(3)) -o $$@ $$< && touch $$@
 
 $$(TBIN$(1)_T_$(4)_H_$(3))/rustdoc$$(X_$(4)):			\
@@ -80,6 +84,8 @@ $$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTI_$(4)):		\
 		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_EXTRALIB_$(4))	\
 		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTC_$(4))
 	@$$(call E, compile_and_link: $$@)
+	ls -drt1 `dirname $$@`/$(LIBRUSTI_GLOB_$(4) | grep -v `basename $$@` && echo "Warning: removing previous" $(LIBRUSTI_GLOB_$(4) "libraries"
+	ls -drt1 `dirname $$@`/$(LIBRUSTI_GLOB_$(4) | grep -v `basename $$@` | xargs rm -v
 	$$(STAGE$(1)_T_$(4)_H_$(3)) -o $$@ $$< && touch $$@
 
 $$(TBIN$(1)_T_$(4)_H_$(3))/rusti$$(X_$(4)):			\
@@ -98,6 +104,8 @@ $$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUST_$(4)):		\
 		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTDOC_$(4))	\
 		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTC_$(4))
 	@$$(call E, compile_and_link: $$@)
+	ls -drt1 `dirname $$@`/$(LIBRUST_GLOB_$(4) | grep -v `basename $$@` && echo "Warning: removing previous" $(LIBRUST_GLOB_$(4) "libraries"
+	ls -drt1 `dirname $$@`/$(LIBRUST_GLOB_$(4) | grep -v `basename $$@` | xargs rm -v
 	$$(STAGE$(1)_T_$(4)_H_$(3)) -o $$@ $$< && touch $$@
 
 $$(TBIN$(1)_T_$(4)_H_$(3))/rust$$(X_$(4)):			\
@@ -122,6 +130,8 @@ $$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTPKG_$(4)):				\
 		$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTC_$(4))		\
 		$$(HSREQ$(2)_H_$(4))
 	@$$(call E, cp: $$@)
+	ls -drt1 `dirname $$@`/$(LIBRUSTPKG_GLOB_$(4) | grep -v `basename $$@` && echo "Warning: removing previous" $(LIBRUSTPKG_GLOB_$(4) "libraries"
+	ls -drt1 `dirname $$@`/$(LIBRUSTPKG_GLOB_$(4) | grep -v `basename $$@` | xargs rm -v
 	$$(Q)cp $$< $$@
 	$$(Q)cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUSTPKG_GLOB_$(4)) \
 		$$(wildcard $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUSTPKG_DSYM_GLOB_$(4))) \
@@ -139,6 +149,8 @@ $$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTDOC_$(4)):					\
 		$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTC_$(4))			\
 		$$(HSREQ$(2)_H_$(4))
 	@$$(call E, cp: $$@)
+	ls -drt1 `dirname $$@`/$(LIBRUSTDOC_GLOB_$(4) | grep -v `basename $$@` && echo "Warning: removing previous" $(LIBRUSTDOC_GLOB_$(4) "libraries"
+	ls -drt1 `dirname $$@`/$(LIBRUSTDOC_GLOB_$(4) | grep -v `basename $$@` | xargs rm -v
 	$$(Q)cp $$< $$@
 	$$(Q)cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUSTDOC_GLOB_$(4)) \
 		$$(wildcard $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUSTDOC_DSYM_GLOB_$(4))) \
@@ -156,6 +168,8 @@ $$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTI_$(4)):					\
 		$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTC_$(4))			\
 		$$(HSREQ$(2)_H_$(4))
 	@$$(call E, cp: $$@)
+	ls -drt1 `dirname $$@`/$(LIBRUSTI_GLOB_$(4) | grep -v `basename $$@` && echo "Warning: removing previous" $(LIBRUSTI_GLOB_$(4) "libraries"
+	ls -drt1 `dirname $$@`/$(LIBRUSTI_GLOB_$(4) | grep -v `basename $$@` | xargs rm -v
 	$$(Q)cp $$< $$@
 	$$(Q)cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUSTI_GLOB_$(4)) \
 		$$(wildcard $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUSTI_DSYM_GLOB_$(4))) \
@@ -173,6 +187,8 @@ $$(HLIB$(2)_H_$(4))/$(CFG_LIBRUST_$(4)):					\
 		$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTC_$(4))			\
 		$$(HSREQ$(2)_H_$(4))
 	@$$(call E, cp: $$@)
+	ls -drt1 `dirname $$@`/$(LIBRUST_GLOB_$(4) | grep -v `basename $$@` && echo "Warning: removing previous" $(LIBRUST_GLOB_$(4) "libraries"
+	ls -drt1 `dirname $$@`/$(LIBRUST_GLOB_$(4) | grep -v `basename $$@` | xargs rm -v
 	$$(Q)cp $$< $$@
 	$$(Q)cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUST_GLOB_$(4)) \
 		$$(wildcard $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUST_DSYM_GLOB)_$(4)) \

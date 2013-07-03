@@ -43,8 +43,9 @@ $$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTC_$(4)): \
 	$$(HSTDLIB_DEFAULT$(2)_H_$(4)) \
 	$$(HEXTRALIB_DEFAULT$(2)_H_$(4)) \
 	| $$(HLIB$(2)_H_$(4))/
-
 	@$$(call E, cp: $$@)
+	ls -drt1 `dirname $$@`/$(LIBRUSTC_GLOB_$(4) | grep -v `basename $$@` && echo "Warning: removing previous" $(LIBRUSTC_GLOB_$(4) "libraries"
+	ls -drt1 `dirname $$@`/$(LIBRUSTC_GLOB_$(4) | grep -v `basename $$@` | xargs rm -v
 	$$(Q)cp $$< $$@
 	$$(Q)cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUSTC_GLOB_$(4)) \
 		$(wildcard $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUSTC_DSYM_GLOB_$(4))) \
@@ -57,6 +58,8 @@ $$(HLIB$(2)_H_$(4))/$(CFG_LIBSYNTAX_$(4)): \
 	$$(HSTDLIB_DEFAULT$(2)_H_$(4)) \
 	$$(HEXTRALIB_DEFAULT$(2)_H_$(4)) \
 	| $$(HLIB$(2)_H_$(4))/
+	ls -drt1 `dirname $$@`/$(LIBSYNTAX_GLOB_$(4) | grep -v `basename $$@` && echo "Warning: removing previous" $(LIBSYNTAX_GLOB_$(4) "libraries"
+	ls -drt1 `dirname $$@`/$(LIBSYNTAX_GLOB_$(4) | grep -v `basename $$@` | xargs rm -v
 	@$$(call E, cp: $$@)
 	$$(Q)cp $$< $$@
 	$$(Q)cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBSYNTAX_GLOB_$(4)) \
@@ -73,6 +76,8 @@ $$(HLIB$(2)_H_$(4))/$(CFG_STDLIB_$(4)): \
 	$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_STDLIB_$(4)) \
 	$$(HLIB$(2)_H_$(4))/$(CFG_RUNTIME_$(4)) \
 	| $$(HLIB$(2)_H_$(4))/
+	ls -drt1 `dirname $$@`/$(STDLIB_GLOB_$(4) | grep -v `basename $$@` && echo "Warning: removing previous" $(STDLIB_GLOB_$(4) "libraries"
+	ls -drt1 `dirname $$@`/$(STDLIB_GLOB_$(4) | grep -v `basename $$@` | xargs rm -v
 	@$$(call E, cp: $$@)
 	$$(Q)cp $$< $$@
 # Subtle: We do not let the shell expand $(STDLIB_DSYM_GLOB) directly rather
@@ -92,6 +97,8 @@ $$(HLIB$(2)_H_$(4))/$(CFG_EXTRALIB_$(4)): \
 	$$(HLIB$(2)_H_$(4))/$(CFG_RUNTIME_$(4)) \
 	| $$(HLIB$(2)_H_$(4))/
 	@$$(call E, cp: $$@)
+	ls -drt1 `dirname $$@`/$(EXTRALIB_GLOB_$(4) | grep -v `basename $$@` && echo "Warning: removing previous" $(EXTRALIB_GLOB_$(4) "libraries"
+	ls -drt1 `dirname $$@`/$(EXTRALIB_GLOB_$(4) | grep -v `basename $$@` | xargs rm -v
 	$$(Q)cp $$< $$@
 	$$(Q)cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(EXTRALIB_GLOB_$(4)) \
 		$$(wildcard $$(TLIB$(1)_T_$(4)_H_$(3))/$(EXTRALIB_DSYM_GLOB_$(4))) \

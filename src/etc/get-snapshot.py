@@ -8,16 +8,29 @@ def unpack_snapshot(triple, dl_path):
   print("opening snapshot " + dl_path)
   tar = tarfile.open(dl_path)
   kernel = get_kernel(triple)
+  stagep = os.path.join(triple, "stage0")
+
+  # List of previously installed snapshot's files
+  prior_stage0 = [os.path.join(dirpath, f)
+                  for dirpath, _, files in os.walk(stagep) for f in files]
+  for f in prior_stage0:
+    print(f)
   for p in tar.getnames():
     name = p.replace("rust-stage0/", "", 1);
-    stagep = os.path.join(triple, "stage0")
     fp = os.path.join(stagep, name)
     print("extracting " + p)
     tar.extract(p, download_unpack_base)
     tp = os.path.join(download_unpack_base, p)
     shutil.move(tp, fp)
+    # If a file is reinstalled, remove it from our prior list
+    if fp in prior_stage0:
+      prior_stage0.remove(fp)
   tar.close()
   shutil.rmtree(download_unpack_base)
+  # Now prior list contains only files that were not in tarball; remove them.
+  for p in prior_stage0:
+    print("removing " + p)
+    os.remove(p)
 
 def determine_curr_snapshot(triple):
   i = 0
