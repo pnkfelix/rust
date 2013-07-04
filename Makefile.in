@@ -239,8 +239,8 @@ define CHECK_FOR_OLD_GLOB_MATCHES_EXCEPT
 # $(2) is the glob to use in the match
 # $(3) is filename (usually the target being created) to filter out from match
 #      (i.e. filename is not out-of-date artifact from prior Rust version/build)
-  ls -drt1 `dirname $$@`/$(LIBRUSTC_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` && echo "Warning: there are previous" $(LIBRUSTC_GLOB_$(4)) "libraries:" || true
-  ls -drt1 `dirname $$@`/$(LIBRUSTC_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` || true
+  ls -drt1 $(1)/$(2) 2>/dev/null || true | grep -v $(3) && echo "Warning: there are previous" '$(2)' "libraries:" || true
+  ls -drt1 $(1)/$(2) 2>/dev/null || true | grep -v $(3) || true
 endef
 
 $(foreach target,$(CFG_TARGET_TRIPLES),\

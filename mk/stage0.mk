@@ -80,25 +80,22 @@ $$(HLIB0_H_$(1))/$(CFG_RUNTIME_$(1)): \
 $$(HLIB0_H_$(1))/$(CFG_STDLIB_$(1)): \
 		$$(TLIB$(2)_T_$(1)_H_$(3))/$(CFG_STDLIB_$(1)) \
 		| $(HLIB0_H_$(1))/
-	ls -drt1 `dirname $$@`/$(STDLIB_GLOB_$(1) | grep -v `basename $$@` && echo "Warning: removing previous" $(STDLIB_GLOB_$(1) "libraries"
-	ls -drt1 `dirname $$@`/$(STDLIB_GLOB_$(1) | grep -v `basename $$@` | xargs rm -v
 	@$$(call E, cp: $$@)
+	@$$(call CHECK_FOR_OLD_GLOB_MATCHES_EXCEPT, `dirname $$@`, $(EXTRALIB_GLOB_$(4)), `basename $$@`)
 	$$(Q)cp $$(TLIB$(2)_T_$(1)_H_$(3))/$(STDLIB_GLOB_$(1)) $$@
 
 $$(HLIB0_H_$(1))/$(CFG_EXTRALIB_$(1)): \
 		$$(TLIB$(2)_T_$(1)_H_$(3))/$(CFG_EXTRALIB_$(1)) \
 		| $(HLIB0_H_$(1))/
-	ls -drt1 `dirname $$@`/$(EXTRALIB_GLOB_$(1) | grep -v `basename $$@` && echo "Warning: removing previous" $(EXTRALIB_GLOB_$(1) "libraries"
-	ls -drt1 `dirname $$@`/$(EXTRALIB_GLOB_$(1) | grep -v `basename $$@` | xargs rm -v
 	@$$(call E, cp: $$@)
+	@$$(call CHECK_FOR_OLD_GLOB_MATCHES_EXCEPT, `dirname $$@`, $(EXTRALIB_GLOB_$(4)), `basename $$@`)
 	$$(Q)cp $$(TLIB$(2)_T_$(1)_H_$(3))/$(EXTRALIB_GLOB_$(1)) $$@
 
 $$(HLIB0_H_$(1))/$(CFG_LIBRUSTC_$(1)): \
 		$$(TLIB$(2)_T_$(1)_H_$(3))/$(CFG_LIBRUSTC_$(1)) \
 		| $(HLIB0_H_$(1))/
-	ls -drt1 `dirname $$@`/$(LIBRUSTC_GLOB_$(1) | grep -v `basename $$@` && echo "Warning: removing previous" $(LIBRUSTC_GLOB_$(1) "libraries"
-	ls -drt1 `dirname $$@`/$(LIBRUSTC_GLOB_$(1) | grep -v `basename $$@` | xargs rm -v
 	@$$(call E, cp: $$@)
+	@$$(call CHECK_FOR_OLD_GLOB_MATCHES_EXCEPT, `dirname $$@`, $(LIBRUSTC_GLOB_$(4)), `basename $$@`)
 	$$(Q)cp $$(TLIB$(2)_T_$(1)_H_$(3))/$(LIBRUSTC_GLOB_$(1)) $$@
 
 $$(HLIB0_H_$(1))/$(CFG_RUSTLLVM_$(1)): \
