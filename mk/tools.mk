@@ -35,74 +35,105 @@ RUST_INPUTS := $(wildcard $(S)src/librust/*.rs)
 # have tools that need to built for other targets.
 define TOOLS_STAGE_N_TARGET
 
-$$(TBIN$(1)_T_$(4)_H_$(3))/compiletest$$(X_$(4)):			\
+#$$(TBIN$(1)_T_$(4)_H_$(3))/:
+#	mkdir -p $$@
+#
+#$$(TLIB$(1)_T_$(4)_H_$(3))/:
+#	mkdir -p $$@
+#
+#$$(HBIN$(2)_H_$(4))/:
+#	mkdir -p $$@
+#
+#ifneq ($(CFG_LIBDIR),bin)
+#$$(HLIB$(2)_H_$(4))/:
+#	mkdir -p $$@
+#endif
+
+$$(TBIN$(1)_T_$(4)_H_$(3))/compiletest$$(X_$(4)):		\
 		$$(COMPILETEST_CRATE) $$(COMPILETEST_INPUTS)	\
-		$$(TSREQ$(1)_T_$(4)_H_$(3))						\
-		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_STDLIB_$(4))      \
-		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_EXTRALIB_$(4))
+		$$(TSREQ$(1)_T_$(4)_H_$(3))			\
+		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_STDLIB_$(4))	\
+		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_EXTRALIB_$(4))	\
+		| $$(TBIN$(1)_T_$(4)_H_$(3))/
 	@$$(call E, compile_and_link: $$@)
 	$$(STAGE$(1)_T_$(4)_H_$(3)) -o $$@ $$<
 
 $$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTPKG_$(4)):		\
-		$$(RUSTPKG_LIB) $$(RUSTPKG_INPUTS)		    \
-		$$(TSREQ$(1)_T_$(4)_H_$(3))					\
+		$$(RUSTPKG_LIB) $$(RUSTPKG_INPUTS)		\
+		$$(TSREQ$(1)_T_$(4)_H_$(3))			\
 		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_STDLIB_$(4))	\
 		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_EXTRALIB_$(4))	\
-		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTC_$(4))
+		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTC_$(4))	\
+		| $$(TLIB$(1)_T_$(4)_H_$(3))/
 	@$$(call E, compile_and_link: $$@)
+	ls -drt1 `dirname $$@`/$(LIBRUSTPKG_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` && echo "Warning: there are previous" $(LIBRUSTPKG_GLOB_$(4)) "libraries" || true
+	ls -drt1 `dirname $$@`/$(LIBRUSTPKG_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` || true
 	$$(STAGE$(1)_T_$(4)_H_$(3)) -o $$@ $$< && touch $$@
 
 $$(TBIN$(1)_T_$(4)_H_$(3))/rustpkg$$(X_$(4)):				\
-		$$(DRIVER_CRATE) 							\
-		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTPKG_$(4))
+		$$(DRIVER_CRATE)					\
+		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTPKG_$(4))	\
+		| $$(TBIN$(1)_T_$(4)_H_$(3))/
 	@$$(call E, compile_and_link: $$@)
 	$$(STAGE$(1)_T_$(4)_H_$(3)) --cfg rustpkg -o $$@ $$<
 
 $$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTDOC_$(4)):		\
-		$$(RUSTDOC_LIB) $$(RUSTDOC_INPUTS)			\
-		$$(TSREQ$(1)_T_$(4)_H_$(3))					\
+		$$(RUSTDOC_LIB) $$(RUSTDOC_INPUTS)		\
+		$$(TSREQ$(1)_T_$(4)_H_$(3))			\
 		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_STDLIB_$(4))	\
 		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_EXTRALIB_$(4))	\
-		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTC_$(4))
+		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTC_$(4))	\
+		| $$(TLIB$(1)_T_$(4)_H_$(3))/
 	@$$(call E, compile_and_link: $$@)
+	ls -drt1 `dirname $$@`/$(LIBRUSTDOC_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` && echo "Warning: there are previous" $(LIBRUSTDOC_GLOB_$(4)) "libraries" || true
+	ls -drt1 `dirname $$@`/$(LIBRUSTDOC_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` || true
 	$$(STAGE$(1)_T_$(4)_H_$(3)) -o $$@ $$< && touch $$@
 
-$$(TBIN$(1)_T_$(4)_H_$(3))/rustdoc$$(X_$(4)):			\
-		$$(DRIVER_CRATE) 							\
-		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTDOC_$(4))
+$$(TBIN$(1)_T_$(4)_H_$(3))/rustdoc$$(X_$(4)):				\
+		$$(DRIVER_CRATE)					\
+		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTDOC_$(4))	\
+		| $$(TBIN$(1)_T_$(4)_H_$(3))/
 	@$$(call E, compile_and_link: $$@)
 	$$(STAGE$(1)_T_$(4)_H_$(3)) --cfg rustdoc -o $$@ $$<
 
 $$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTI_$(4)):		\
 		$$(RUSTI_LIB) $$(RUSTI_INPUTS)			\
-		$$(TSREQ$(1)_T_$(4)_H_$(3))					\
+		$$(TSREQ$(1)_T_$(4)_H_$(3))			\
 		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_STDLIB_$(4))	\
 		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_EXTRALIB_$(4))	\
-		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTC_$(4))
+		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTC_$(4))	\
+		| $$(TLIB$(1)_T_$(4)_H_$(3))/
 	@$$(call E, compile_and_link: $$@)
+	ls -drt1 `dirname $$@`/$(LIBRUSTI_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` && echo "Warning: there are previous" $(LIBRUSTI_GLOB_$(4)) "libraries" || true
+	ls -drt1 `dirname $$@`/$(LIBRUSTI_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` || true
 	$$(STAGE$(1)_T_$(4)_H_$(3)) -o $$@ $$< && touch $$@
 
 $$(TBIN$(1)_T_$(4)_H_$(3))/rusti$$(X_$(4)):			\
-		$$(DRIVER_CRATE) 							\
-		$$(TLIB$(1)_T_$(4)_H_$(4))/$(CFG_LIBRUSTI_$(4))
+		$$(DRIVER_CRATE)				\
+		$$(TLIB$(1)_T_$(4)_H_$(4))/$(CFG_LIBRUSTI_$(4)) \
+		| $$(TBIN$(1)_T_$(4)_H_$(3))/
 	@$$(call E, compile_and_link: $$@)
 	$$(STAGE$(1)_T_$(4)_H_$(3)) --cfg rusti -o $$@ $$<
 
-$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUST_$(4)):		\
-		$$(RUST_LIB) $$(RUST_INPUTS)			\
-		$$(TSREQ$(1)_T_$(4)_H_$(3))					\
-		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_STDLIB_$(4))	\
-		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_EXTRALIB_$(4))	\
+$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUST_$(4)):				\
+		$$(RUST_LIB) $$(RUST_INPUTS)				\
+		$$(TSREQ$(1)_T_$(4)_H_$(3))				\
+		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_STDLIB_$(4))		\
+		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_EXTRALIB_$(4))		\
 		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTPKG_$(4))	\
 		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTI_$(4))		\
 		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTDOC_$(4))	\
-		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTC_$(4))
+		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTC_$(4))		\
+		| $$(TLIB$(1)_T_$(4)_H_$(3))/
 	@$$(call E, compile_and_link: $$@)
+	ls -drt1 `dirname $$@`/$(LIBRUST_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` && echo "Warning: there are previous" $(LIBRUST_GLOB_$(4)) "libraries" || true
+	ls -drt1 `dirname $$@`/$(LIBRUST_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` || true
 	$$(STAGE$(1)_T_$(4)_H_$(3)) -o $$@ $$< && touch $$@
 
 $$(TBIN$(1)_T_$(4)_H_$(3))/rust$$(X_$(4)):			\
-		$$(DRIVER_CRATE) 							\
-		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUST_$(4))
+		$$(DRIVER_CRATE)				\
+		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUST_$(4))	\
+		| $$(TBIN$(1)_T_$(4)_H_$(3))/
 	@$$(call E, compile_and_link: $$@)
 	$$(STAGE$(1)_T_$(4)_H_$(3)) --cfg rust -o $$@ $$<
 
@@ -112,7 +143,8 @@ define TOOLS_STAGE_N_HOST
 
 $$(HBIN$(2)_H_$(4))/compiletest$$(X_$(4)):				\
 		$$(TBIN$(1)_T_$(4)_H_$(3))/compiletest$$(X_$(4))	\
-		$$(HSREQ$(2)_H_$(4))
+		$$(HSREQ$(2)_H_$(4))	\
+		| $$(HBIN$(2)_H_$(4))/
 	@$$(call E, cp: $$@)
 	$$(Q)cp $$< $$@
 
@@ -120,8 +152,11 @@ $$(HBIN$(2)_H_$(4))/compiletest$$(X_$(4)):				\
 $$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTPKG_$(4)):				\
 		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTPKG_$(4))	\
 		$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTC_$(4))		\
-		$$(HSREQ$(2)_H_$(4))
+		$$(HSREQ$(2)_H_$(4))					\
+		| $$(HLIB$(2)_H_$(4))/
 	@$$(call E, cp: $$@)
+	ls -drt1 `dirname $$@`/$(LIBRUSTPKG_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` && echo "Warning: removing previous" $(LIBRUSTPKG_GLOB_$(4)) "libraries" || true
+	ls -drt1 `dirname $$@`/$(LIBRUSTPKG_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` || true
 	$$(Q)cp $$< $$@
 	$$(Q)cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUSTPKG_GLOB_$(4)) \
 		$$(wildcard $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUSTPKG_DSYM_GLOB_$(4))) \
@@ -130,15 +165,19 @@ $$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTPKG_$(4)):				\
 $$(HBIN$(2)_H_$(4))/rustpkg$$(X_$(4)):				\
 		$$(TBIN$(1)_T_$(4)_H_$(3))/rustpkg$$(X_$(4))	\
 		$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTPKG_$(4))	\
-		$$(HSREQ$(2)_H_$(4))
+		$$(HSREQ$(2)_H_$(4))				\
+			| $$(HBIN$(2)_H_$(4))/
 	@$$(call E, cp: $$@)
 	$$(Q)cp $$< $$@
 
-$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTDOC_$(4)):					\
+$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTDOC_$(4)):				\
 		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTDOC_$(4))	\
-		$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTC_$(4))			\
-		$$(HSREQ$(2)_H_$(4))
+		$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTC_$(4))		\
+		$$(HSREQ$(2)_H_$(4))					\
+		| $$(HLIB$(2)_H_$(4))/
 	@$$(call E, cp: $$@)
+	ls -drt1 `dirname $$@`/$(LIBRUSTDOC_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` && echo "Warning: there are previous" $(LIBRUSTDOC_GLOB_$(4)) "libraries" || true
+	ls -drt1 `dirname $$@`/$(LIBRUSTDOC_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` || true
 	$$(Q)cp $$< $$@
 	$$(Q)cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUSTDOC_GLOB_$(4)) \
 		$$(wildcard $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUSTDOC_DSYM_GLOB_$(4))) \
@@ -147,15 +186,19 @@ $$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTDOC_$(4)):					\
 $$(HBIN$(2)_H_$(4))/rustdoc$$(X_$(4)):				\
 		$$(TBIN$(1)_T_$(4)_H_$(3))/rustdoc$$(X_$(4))	\
 		$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTDOC_$(4))	\
-		$$(HSREQ$(2)_H_$(4))
+		$$(HSREQ$(2)_H_$(4))				\
+		| $$(HBIN$(2)_H_$(4))/
 	@$$(call E, cp: $$@)
 	$$(Q)cp $$< $$@
 
-$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTI_$(4)):					\
+$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTI_$(4)):			\
 		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTI_$(4))	\
-		$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTC_$(4))			\
-		$$(HSREQ$(2)_H_$(4))
+		$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTC_$(4))	\
+		$$(HSREQ$(2)_H_$(4))				\
+		| $$(HLIB$(2)_H_$(4))/
 	@$$(call E, cp: $$@)
+	ls -drt1 `dirname $$@`/$(LIBRUSTI_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` && echo "Warning: there are previous" $(LIBRUSTI_GLOB_$(4)) "libraries" || true
+	ls -drt1 `dirname $$@`/$(LIBRUSTI_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` || true
 	$$(Q)cp $$< $$@
 	$$(Q)cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUSTI_GLOB_$(4)) \
 		$$(wildcard $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUSTI_DSYM_GLOB_$(4))) \
@@ -164,15 +207,19 @@ $$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTI_$(4)):					\
 $$(HBIN$(2)_H_$(4))/rusti$$(X_$(4)):				\
 		$$(TBIN$(1)_T_$(4)_H_$(3))/rusti$$(X_$(4))	\
 		$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTI_$(4))	\
-		$$(HSREQ$(2)_H_$(4))
+		$$(HSREQ$(2)_H_$(4))				\
+		| $$(HBIN$(2)_H_$(4))/
 	@$$(call E, cp: $$@)
 	$$(Q)cp $$< $$@
 
-$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUST_$(4)):					\
+$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUST_$(4)):			\
 		$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUST_$(4))	\
-		$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTC_$(4))			\
-		$$(HSREQ$(2)_H_$(4))
+		$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTC_$(4))	\
+		$$(HSREQ$(2)_H_$(4))				\
+		| $$(HLIB$(2)_H_$(4))/
 	@$$(call E, cp: $$@)
+	ls -drt1 `dirname $$@`/$(LIBRUST_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` && echo "Warning: there are previous" $(LIBRUST_GLOB_$(4)) "libraries" || true
+	ls -drt1 `dirname $$@`/$(LIBRUST_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` || true
 	$$(Q)cp $$< $$@
 	$$(Q)cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUST_GLOB_$(4)) \
 		$$(wildcard $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUST_DSYM_GLOB)_$(4)) \
@@ -180,8 +227,9 @@ $$(HLIB$(2)_H_$(4))/$(CFG_LIBRUST_$(4)):					\
 
 $$(HBIN$(2)_H_$(4))/rust$$(X_$(4)):				\
 		$$(TBIN$(1)_T_$(4)_H_$(3))/rust$$(X_$(4))	\
-		$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUST_$(4))	\
-		$$(HSREQ$(2)_H_$(4))
+		$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUST_$(4))		\
+		$$(HSREQ$(2)_H_$(4))				\
+		| $$(HBIN$(2)_H_$(4))/
 	@$$(call E, cp: $$@)
 	$$(Q)cp $$< $$@
 

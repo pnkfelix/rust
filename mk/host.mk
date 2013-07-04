@@ -23,6 +23,14 @@ define CP_HOST_STAGE_N
 
 # Note: $(3) and $(4) are both the same!
 
+#$$(HBIN$(2)_H_$(4))/:
+#	mkdir -p $$@
+#
+#ifneq ($(CFG_LIBDIR),bin)
+#$$(HLIB$(2)_H_$(4))/:
+#	mkdir -p $$@
+#endif
+
 $$(HBIN$(2)_H_$(4))/rustc$$(X_$(4)): \
 	$$(TBIN$(1)_T_$(4)_H_$(3))/rustc$$(X_$(4)) \
 	$$(HLIB$(2)_H_$(4))/$(CFG_RUNTIME_$(4)) \
@@ -31,7 +39,6 @@ $$(HBIN$(2)_H_$(4))/rustc$$(X_$(4)): \
 	$$(HSTDLIB_DEFAULT$(2)_H_$(4)) \
 	$$(HEXTRALIB_DEFAULT$(2)_H_$(4)) \
 	| $$(HBIN$(2)_H_$(4))/
-
 	@$$(call E, cp: $$@)
 	$$(Q)cp $$< $$@
 
@@ -43,8 +50,8 @@ $$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTC_$(4)): \
 	$$(HSTDLIB_DEFAULT$(2)_H_$(4)) \
 	$$(HEXTRALIB_DEFAULT$(2)_H_$(4)) \
 	| $$(HLIB$(2)_H_$(4))/
-
 	@$$(call E, cp: $$@)
+	@$$(call CHECK_FOR_OLD_GLOB_MATCHES_EXCEPT, `dirname $$@`, $(LIBRUSTC_GLOB_$(4)), `basename $$@`)
 	$$(Q)cp $$< $$@
 	$$(Q)cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUSTC_GLOB_$(4)) \
 		$(wildcard $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUSTC_DSYM_GLOB_$(4))) \
@@ -57,6 +64,8 @@ $$(HLIB$(2)_H_$(4))/$(CFG_LIBSYNTAX_$(4)): \
 	$$(HSTDLIB_DEFAULT$(2)_H_$(4)) \
 	$$(HEXTRALIB_DEFAULT$(2)_H_$(4)) \
 	| $$(HLIB$(2)_H_$(4))/
+	@ls -drt1 `dirname $$@`/$(LIBSYNTAX_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` && echo "Warning: there are previous" $(LIBSYNTAX_GLOB_$(4)) "libraries:" || true
+	@ls -drt1 `dirname $$@`/$(LIBSYNTAX_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` || true
 	@$$(call E, cp: $$@)
 	$$(Q)cp $$< $$@
 	$$(Q)cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBSYNTAX_GLOB_$(4)) \
@@ -73,6 +82,8 @@ $$(HLIB$(2)_H_$(4))/$(CFG_STDLIB_$(4)): \
 	$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_STDLIB_$(4)) \
 	$$(HLIB$(2)_H_$(4))/$(CFG_RUNTIME_$(4)) \
 	| $$(HLIB$(2)_H_$(4))/
+	@ls -drt1 `dirname $$@`/$(STDLIB_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` && echo "Warning: there are previous" $(STDLIB_GLOB_$(4)) "libraries" || true
+	@ls -drt1 `dirname $$@`/$(STDLIB_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` || true
 	@$$(call E, cp: $$@)
 	$$(Q)cp $$< $$@
 # Subtle: We do not let the shell expand $(STDLIB_DSYM_GLOB) directly rather
@@ -92,6 +103,8 @@ $$(HLIB$(2)_H_$(4))/$(CFG_EXTRALIB_$(4)): \
 	$$(HLIB$(2)_H_$(4))/$(CFG_RUNTIME_$(4)) \
 	| $$(HLIB$(2)_H_$(4))/
 	@$$(call E, cp: $$@)
+	@ls -drt1 `dirname $$@`/$(EXTRALIB_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` && echo "Warning: there are previous" $(EXTRALIB_GLOB_$(4)) "libraries" || true
+	@ls -drt1 `dirname $$@`/$(EXTRALIB_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` || true
 	$$(Q)cp $$< $$@
 	$$(Q)cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(EXTRALIB_GLOB_$(4)) \
 		$$(wildcard $$(TLIB$(1)_T_$(4)_H_$(3))/$(EXTRALIB_DSYM_GLOB_$(4))) \
@@ -126,14 +139,6 @@ $$(HLIB$(2)_H_$(4))/$(CFG_RUSTLLVM_$(4)): \
 	| $$(HLIB$(2)_H_$(4))/
 	@$$(call E, cp: $$@)
 	$$(Q)cp $$< $$@
-
-$$(HBIN$(2)_H_$(4))/:
-	mkdir -p $$@
-
-ifneq ($(CFG_LIBDIR),bin)
-$$(HLIB$(2)_H_$(4))/:
-	mkdir -p $$@
-endif
 
 endef
 

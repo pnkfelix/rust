@@ -69,7 +69,9 @@ include config.mk
 # and include all of the .d files in one fell swoop.
 ALL_OBJ_FILES :=
 
-MKFILE_DEPS := config.stamp $(call rwildcard,$(CFG_SRC_DIR)mk/,*)
+### XXX PUT BELOW BACK FELIX AFTER DONE DEV'ING #3225
+#MKFILE_DEPS := config.stamp $(call rwildcard,$(CFG_SRC_DIR)mk/,*)
+MKFILE_DEPS := config.stamp
 NON_BUILD_HOST_TRIPLES = $(filter-out $(CFG_BUILD_TRIPLE),$(CFG_HOST_TRIPLES))
 NON_BUILD_TARGET_TRIPLES = $(filter-out $(CFG_BUILD_TRIPLE),$(CFG_TARGET_TRIPLES))
 
@@ -230,6 +232,15 @@ LIBRUSTDOC_DSYM_GLOB_$(1) :=$(call CFG_LIB_DSYM_GLOB_$(1),rustdoc)
 LIBRUSTI_DSYM_GLOB_$(1) :=$(call CFG_LIB_DSYM_GLOB_$(1),rusti)
 LIBRUST_DSYM_GLOB_$(1) :=$(call CFG_LIB_DSYM_GLOB_$(1),rust)
 
+endef
+
+define CHECK_FOR_OLD_GLOB_MATCHES_EXCEPT
+# $(1) is the path for directory to match against
+# $(2) is the glob to use in the match
+# $(3) is filename (usually the target being created) to filter out from match
+#      (i.e. filename is not out-of-date artifact from prior Rust version/build)
+  ls -drt1 `dirname $$@`/$(LIBRUSTC_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` && echo "Warning: there are previous" $(LIBRUSTC_GLOB_$(4)) "libraries:" || true
+  ls -drt1 `dirname $$@`/$(LIBRUSTC_GLOB_$(4)) 2>/dev/null || true | grep -v `basename $$@` || true
 endef
 
 $(foreach target,$(CFG_TARGET_TRIPLES),\
