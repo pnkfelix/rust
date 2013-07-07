@@ -101,6 +101,7 @@ pub trait Stats {
 }
 
 /// Extracted collection of all the summary statistics of a sample set.
+#[deriving(Eq)]
 struct Summary {
     sum: f64,
     min: f64,
@@ -117,7 +118,9 @@ struct Summary {
 }
 
 impl Summary {
-    fn new(samples: &[f64]) -> Summary {
+
+    /// Construct a new summary of a sample set.
+    pub fn new(samples: &[f64]) -> Summary {
         Summary {
             sum: samples.sum(),
             min: samples.min(),
