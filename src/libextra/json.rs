@@ -28,6 +28,7 @@ use std::to_str;
 use serialize::Encodable;
 use serialize;
 use sort::Sort;
+use treemap::TreeMap;
 
 /// Represents a json value
 pub enum Json {
@@ -1324,6 +1325,16 @@ impl<A:ToJson> ToJson for ~[A] {
 }
 
 impl<A:ToJson + Copy> ToJson for HashMap<~str, A> {
+    fn to_json(&self) -> Json {
+        let mut d = HashMap::new();
+        for self.iter().advance |(key, value)| {
+            d.insert(copy *key, value.to_json());
+        }
+        Object(~d)
+    }
+}
+
+impl<A:ToJson + Copy> ToJson for TreeMap<~str, A> {
     fn to_json(&self) -> Json {
         let mut d = HashMap::new();
         for self.iter().advance |(key, value)| {
