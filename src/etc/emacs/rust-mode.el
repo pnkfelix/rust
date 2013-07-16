@@ -327,6 +327,12 @@
   (add-to-list 'auto-mode-alist '("\\.rs$" . rust-mode))
   (add-to-list 'auto-mode-alist '("\\.rc$" . rust-mode)))
 
+(let ((re (concat "^\\([^ \n]+\\):\\([0-9]+\\):\\([0-9]+\\): "
+                  "\\([0-9]+\\):\\([0-9]+\\) "
+                  "\\(?:[Ee]rror\\|\\([Ww]arning\\)\\):")))
+  (add-to-list 'compilation-error-regexp-alist-alist
+               `(rustc ,re 1 (2 . 4) (3 . 5) (6))))
+
 (provide 'rust-mode)
 
 ;;; rust-mode.el ends here
