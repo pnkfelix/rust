@@ -75,7 +75,7 @@ pub fn loop_query(b: &ast::Block, p: @fn(&ast::expr_) -> bool) -> bool {
           _ => visit::visit_expr(e, (flag, v))
         }
     };
-    let v = visit::mk_vt(@visit::Visitor {
+    let v = visit::mk_vt(@visit::ViaFns {
         visit_expr: visit_expr,
         .. *visit::default_visitor()});
     visit::visit_block(b, (rs, v));
@@ -92,7 +92,7 @@ pub fn block_query(b: &ast::Block, p: @fn(@ast::expr) -> bool) -> bool {
         *flag |= p(e);
         visit::visit_expr(e, (flag, v))
     };
-    let v = visit::mk_vt(@visit::Visitor{
+    let v = visit::mk_vt(@visit::ViaFns{
         visit_expr: visit_expr,
         .. *visit::default_visitor()});
     visit::visit_block(b, (rs, v));

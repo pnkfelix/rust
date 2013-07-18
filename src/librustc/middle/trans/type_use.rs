@@ -406,7 +406,7 @@ pub fn mark_for_expr(cx: &Context, e: &expr) {
 }
 
 pub fn handle_body(cx: &Context, body: &Block) {
-    let v = visit::mk_vt(@visit::Visitor {
+    let v = visit::mk_vt(@visit::ViaFns {
         visit_expr: |e, (cx, v)| {
             visit::visit_expr(e, (cx, v));
             mark_for_expr(cx, e);

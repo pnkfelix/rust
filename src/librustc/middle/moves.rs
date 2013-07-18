@@ -194,7 +194,7 @@ pub fn compute_moves(tcx: ty::ctxt,
                      method_map: method_map,
                      crate: &Crate) -> MoveMaps
 {
-    let visitor = visit::mk_vt(@visit::Visitor {
+    let visitor = visit::mk_vt(@visit::ViaFns {
         visit_fn: compute_modes_for_fn,
         visit_expr: compute_modes_for_expr,
         visit_local: compute_modes_for_local,
