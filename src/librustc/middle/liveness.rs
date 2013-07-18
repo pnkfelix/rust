@@ -316,8 +316,15 @@ impl IrMaps {
 
     pub fn variable_name(&mut self, var: Variable) -> @str {
         match self.var_kinds[*var] {
-            Local(LocalInfo { ident: nm, _ }) | Arg(_, nm) => {
-                self.tcx.sess.str_of(nm)
+            Local(LocalInfo { ident: nm, _ }) => {
+                let s = self.tcx.sess.str_of(nm);
+                assert!(s.len() > 0);
+                s
+            },
+            Arg(_, nm) => {
+                let s = self.tcx.sess.str_of(nm);
+                assert!(s.len() > 0);
+                s
             },
             ImplicitRet => @"<implicit-ret>"
         }
@@ -365,6 +372,7 @@ fn visit_fn(fk: &visit::fn_kind,
                 |_bm, arg_id, _x, path| {
             debug!("adding argument %d", arg_id);
             let ident = ast_util::path_to_ident(path);
+            assert!(this.tcx.sess.str_of(ident).len() > 0);
             fn_maps.add_variable(Arg(arg_id, ident));
         }
     };
