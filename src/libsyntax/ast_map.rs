@@ -199,7 +199,7 @@ pub fn map_crate(diag: @span_handler, c: &Crate) -> map {
         path: ~[],
         diag: diag,
     };
-    visit::visit_crate(c, (cx, mk_ast_map_visitor()));
+    visit::walk_crate(&(cx, mk_ast_map_visitor()), c);
     cx.map
 }
 
