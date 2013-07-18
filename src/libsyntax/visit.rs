@@ -266,7 +266,11 @@ pub fn default_visitor<E:Clone>() -> visitor<E> {
 }
 
 pub fn visit_crate<E:Clone>(c: &crate, e_vt: (E, vt<E>)) {
-    e_vt.visit_mod(&c.node.module, c.span, crate_node_id);
+    walk_crate(&e_vt, c)
+}
+
+pub fn walk_crate<V:Visitor>(v:&V, c: &crate) {
+    v.visit_mod(&c.node.module, c.span, crate_node_id);
 }
 
 pub fn visit_mod<E:Clone>(m: &_mod, sp: span, id: node_id, e_vt: (E, vt<E>)) {
