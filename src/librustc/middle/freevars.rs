@@ -75,7 +75,7 @@ fn collect_freevars(def_map: resolve::DefMap, blk: &ast::blk)
             }
         };
 
-    let v = visit::mk_vt(@visit::Visitor {visit_item: ignore_item,
+    let v = visit::mk_vt(@visit::ViaFns  {visit_item: ignore_item,
                                           visit_expr: walk_expr,
                                           .. *visit::default_visitor()});
     (v.visit_block)(blk, (1, v));

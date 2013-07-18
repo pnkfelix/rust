@@ -85,7 +85,7 @@ pub fn gather_loans(bccx: @BorrowckCtxt,
         move_data: @mut MoveData::new()
     };
     glcx.gather_fn_arg_patterns(decl, body);
-    let v = visit::mk_vt(@visit::Visitor {visit_expr: gather_loans_in_expr,
+    let v = visit::mk_vt(@visit::ViaFns  {visit_expr: gather_loans_in_expr,
                                           visit_block: gather_loans_in_block,
                                           visit_fn: gather_loans_in_fn,
                                           visit_stmt: add_stmt_to_map,

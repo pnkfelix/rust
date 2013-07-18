@@ -555,7 +555,7 @@ pub fn trans_lang_call_with_type_params(bcx: block,
 
 pub fn body_contains_ret(body: &ast::blk) -> bool {
     let cx = @mut false;
-    visit::visit_block(body, (cx, visit::mk_vt(@visit::Visitor {
+    visit::visit_block(body, (cx, visit::mk_vt(@visit::ViaFns {
         visit_item: |_i, (_cx, _v)| { },
         visit_expr: |e: @ast::expr, (cx, v): (@mut bool, visit::vt<@mut bool>)| {
             if !*cx {

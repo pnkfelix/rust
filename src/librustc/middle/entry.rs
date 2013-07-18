@@ -14,7 +14,8 @@ use driver::session::Session;
 use syntax::parse::token::special_idents;
 use syntax::ast::{crate, node_id, item, item_fn};
 use syntax::codemap::span;
-use syntax::visit::{default_visitor, mk_vt, vt, Visitor, visit_crate, visit_item};
+use syntax::visit;
+use syntax::visit::{default_visitor, mk_vt, vt, visit_crate, visit_item};
 use syntax::attr::{attrs_contains_name};
 use syntax::ast_map;
 use std::util;
@@ -58,7 +59,7 @@ pub fn find_entry_point(session: Session, crate: &crate, ast_map: ast_map::map) 
         non_main_fns: ~[],
     };
 
-    visit_crate(crate, (ctxt, mk_vt(@Visitor {
+    visit_crate(crate, (ctxt, mk_vt(@visit::ViaFns {
         visit_item: |item, (ctxt, visitor)| find_item(item, ctxt, visitor),
         .. *default_visitor()
     })));
