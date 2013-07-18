@@ -297,7 +297,7 @@ pub fn struct_field_visibility(field: ast::struct_field) -> visibility {
 pub trait inlined_item_utils {
     fn ident(&self) -> ident;
     fn id(&self) -> ast::node_id;
-    fn accept<E: Clone>(&self, e: E, v: visit::vt<E>);
+    fn accept<E: Clone>(&self, (E, visit::vt<E>));
 }
 
 impl inlined_item_utils for inlined_item {
@@ -317,7 +317,7 @@ impl inlined_item_utils for inlined_item {
         }
     }
 
-    fn accept<E: Clone>(&self, e: E, v: visit::vt<E>) {
+    fn accept<E: Clone>(&self, (e,v): (E, visit::vt<E>)) {
         match *self {
             ii_item(i) => (v.visit_item)(i, (e, v)),
             ii_foreign(i) => (v.visit_foreign_item)(i, (e, v)),
@@ -516,7 +516,7 @@ pub fn id_visitor<T: Clone>(vfn: @fn(node_id, T)) -> visit::vt<T> {
 }
 
 pub fn visit_ids_for_inlined_item(item: &inlined_item, vfn: @fn(node_id)) {
-    item.accept((), id_visitor(|id, ()| vfn(id)));
+    item.accept(((), id_visitor(|id, ()| vfn(id))));
 }
 
 pub fn compute_id_range(visit_ids_fn: &fn(@fn(node_id))) -> id_range {
