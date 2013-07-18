@@ -271,7 +271,11 @@ pub fn default_visitor<E:Clone>() -> visitor<E> {
 }
 
 pub fn visit_crate<E:Clone>(c: &Crate, e_vt: (E, vt<E>)) {
-    e_vt.visit_mod(&c.module, c.span, crate_node_id);
+    walk_crate(&e_vt, c)
+}
+
+pub fn walk_crate<V:Visitor>(v:&V, c: &Crate) {
+    v.visit_mod(&c.module, c.span, crate_node_id);
 }
 
 pub fn visit_mod<E:Clone>(m: &_mod, sp: span, id: node_id, e_vt: (E, vt<E>)) {
@@ -722,13 +726,7 @@ pub fn walk_expr<V:Visitor>(v:&V, ex: @expr) {
         expr_struct(ref p, ref flds, base) => {
             walk_path(v, p);
             for flds.iter().advance |f| {
-<<<<<<< HEAD
-                (v.visit_expr)(f.expr, (e.clone(), v));
-||||||| merged common ancestors
-                (v.visit_expr)(f.node.expr, (e.clone(), v));
-=======
-                v.visit_expr(f.node.expr);
->>>>>>> checkpoint
+                v.visit_expr(f.expr); // FIXME: need v.clone() here?
             }
             walk_expr_opt(v, base);
         }
