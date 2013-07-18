@@ -87,7 +87,7 @@ pub fn check_crate(
         }
     };
 
-    let v = visit::mk_vt(@visit::Visitor {visit_fn: borrowck_fn,
+    let v = visit::mk_vt(@visit::ViaFns  {visit_fn: borrowck_fn,
                                           ..*visit::default_visitor()});
     visit::visit_crate(crate, (bccx, v));
 

@@ -71,7 +71,7 @@ pub fn check_crate(tcx: ty::ctxt,
         }
     };
 
-    let visitor = visit::mk_vt(@visit::Visitor {
+    let visitor = visit::mk_vt(@visit::ViaFns {
         visit_fn: |fn_kind, fn_decl, block, span, node_id, (_, visitor)| {
             let (is_item_fn, is_unsafe_fn) = match *fn_kind {
                 fk_item_fn(_, _, purity, _) => (true, purity == unsafe_fn),
