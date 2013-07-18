@@ -240,7 +240,7 @@ pub fn map_decoded_item(diag: @span_handler,
     }
 
     // visit the item / method contents and add those to the map:
-    ii.accept((cx, v));
+    ii.accept(&(cx, v));
 }
 
 pub fn map_fn_new(
