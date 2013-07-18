@@ -71,6 +71,7 @@ pub fn generics_of_fn(fk: &fn_kind) -> Generics {
     }
 }
 
+#[cfg(stage0)]
 pub trait Visitor {
     fn visit_mod(&self, m:&_mod, s:span, n:node_id);
     fn visit_view_item(&self, &view_item);
@@ -91,6 +92,65 @@ pub trait Visitor {
     fn visit_trait_method(&self, &trait_method);
     fn visit_struct_def(&self, @struct_def, ident, &Generics, node_id);
     fn visit_struct_field(&self, @struct_field);
+}
+
+#[cfg(not(stage0))]
+pub trait Visitor {
+    fn visit_mod(&self, m:&_mod, s:span, n:node_id) {
+        self::walk_mod(self, m, s, n)
+    }
+    fn visit_view_item(&self, v:&view_item) {
+        self::walk_view_item(self, v)
+    }
+    fn visit_foreign_item(&self, f:@foreign_item) {
+        self::walk_foreign_item(self, f)
+    }
+    fn visit_item(&self, i:@item) {
+        self::walk_item(self, i)
+    }
+    fn visit_local(&self, l:@local) {
+        self::walk_local(self, l)
+    }
+    fn visit_block(&self, b:&blk) {
+        self::walk_block(self, b)
+    }
+    fn visit_stmt(&self, s:@stmt) {
+        self::walk_stmt(self, s)
+    }
+    fn visit_arm(&self, a:&arm) {
+        self::walk_arm(self, a)
+    }
+    fn visit_pat(&self, p:@pat) {
+        self::walk_pat(self, p)
+    }
+    fn visit_decl(&self, d:@decl) {
+        self::walk_decl(self, d)
+    }
+    fn visit_expr(&self, e:@expr) {
+        self::walk_expr(self, e)
+    }
+    fn visit_expr_post(&self, _e:@expr) { } // XXX default method (bug?) requires an arg even if unused.  and underscore alone does not work there either, which seems somehow worse
+    fn visit_ty(&self, t:&Ty) {
+        self::walk_ty(self, t)
+    }
+    fn visit_generics(&self, g:&Generics) {
+        self::walk_generics(self, g)
+    }
+    fn visit_fn(&self, k:&fn_kind, d:&fn_decl, b:&blk, s:span, n:node_id) {
+        self::walk_fn(self, k, d, b, s, n)
+    }
+    fn visit_ty_method(&self, t:&ty_method) {
+        self::walk_ty_method(self, t)
+    }
+    fn visit_trait_method(&self, t: &trait_method) {
+        self::walk_trait_method(self, t)
+    }
+    fn visit_struct_def(&self, d:@struct_def, i:ident, g:&Generics, n:node_id) {
+        self::walk_struct_def(self, d, i, g, n)
+    }
+    fn visit_struct_field(&self, f:@struct_field) {
+        self::walk_struct_field(self, f)
+    }
 }
 
 pub struct ViaFns<E> {
