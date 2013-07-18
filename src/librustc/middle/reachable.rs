@@ -26,7 +26,6 @@ use syntax::ast_map;
 use syntax::ast_util::def_id_of_def;
 use syntax::attr;
 use syntax::parse::token;
-use syntax::visit::Visitor;
 use syntax::visit;
 
 // Returns true if the given set of attributes contains the `#[inline]`
@@ -113,7 +112,7 @@ impl ReachableContext {
     fn mark_public_symbols(&self, crate: @crate) {
         let reachable_symbols = self.reachable_symbols;
         let worklist = self.worklist;
-        let visitor = visit::mk_vt(@Visitor {
+        let visitor = visit::mk_vt(@visit::ViaFns {
             visit_item: |item, (privacy_context, visitor):
                     (PrivacyContext, visit::vt<PrivacyContext>)| {
                 match item.node {
@@ -274,7 +273,7 @@ impl ReachableContext {
     fn init_visitor(&self) -> visit::vt<()> {
         let (worklist, method_map) = (self.worklist, self.method_map);
         let (tcx, reachable_symbols) = (self.tcx, self.reachable_symbols);
-        visit::mk_vt(@visit::Visitor {
+        visit::mk_vt(@visit::ViaFns {
             visit_expr: |expr, (_, visitor)| {
                 match expr.node {
                     expr_path(_) => {

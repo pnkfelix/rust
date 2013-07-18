@@ -45,9 +45,10 @@ use syntax::ast_map;
 use syntax::ast_util::{def_id_of_def, local_def};
 use syntax::codemap::{span, dummy_sp};
 use syntax::parse;
+use syntax::visit;
 use syntax::visit::{default_simple_visitor, default_visitor};
 use syntax::visit::{mk_simple_visitor, mk_vt, visit_crate, visit_item};
-use syntax::visit::{Visitor, SimpleVisitor};
+use syntax::visit::SimpleVisitor;
 use syntax::visit::{visit_mod};
 use util::ppaux::ty_to_str;
 
@@ -482,7 +483,7 @@ impl CoherenceChecker {
 
     // Privileged scope checking
     pub fn check_privileged_scopes(self, crate: &crate) {
-        visit_crate(crate, ((), mk_vt(@Visitor {
+        visit_crate(crate, ((), mk_vt(@visit::ViaFns {
             visit_item: |item, (_context, visitor)| {
                 match item.node {
                     item_mod(ref module_) => {
