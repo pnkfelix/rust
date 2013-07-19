@@ -194,7 +194,7 @@ pub fn map_crate(diag: @span_handler, c: &crate) -> map {
         path: ~[],
         diag: diag,
     };
-    visit::walk_crate(&(cx, mk_ast_map_visitor()), c);
+    visit::walk_crate(&cx, c);
     cx.map
 }
 
@@ -216,7 +216,6 @@ pub fn map_decoded_item(diag: @span_handler,
         path: path.clone(),
         diag: diag,
     };
-    let v = mk_ast_map_visitor();
 
     // methods get added to the AST map when their impl is visited.  Since we
     // don't decode and instantiate the impl, but just the method, we have to
@@ -235,7 +234,7 @@ pub fn map_decoded_item(diag: @span_handler,
     }
 
     // visit the item / method contents and add those to the map:
-    ii.accept(&(cx, v));
+    ii.accept(&cx);
 }
 
 pub fn map_fn_new(
