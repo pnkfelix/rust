@@ -145,7 +145,12 @@ impl visit::Visitor for @mut Ctx {
 //    fn visit_expr(&self, e:@expr) {
 //        visit::walk_expr(self, e)
 //    }
-    fn visit_expr_post(&self, _e:@expr) { } // XXX default method (bug?) requires an arg even if unused.  and underscore alone does not work there either, which seems somehow worse
+
+// XXX default method (bug?) requires an arg even if unused.  and
+// underscore alone does not work there either, which seems somehow
+// worse
+    fn visit_expr_post(&self, _e:@expr) { }
+
     fn visit_ty(&self, t:&Ty) {
         visit::walk_ty(self, t)
     }
