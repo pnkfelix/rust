@@ -29,6 +29,7 @@ use syntax::ast;
 use syntax::ast_util;
 use syntax::codemap::span;
 use syntax::visit;
+use syntax::visit::Visitor;
 use util::ppaux::Repr;
 
 #[deriving(Clone)]
@@ -38,6 +39,76 @@ struct CheckLoanCtxt<'self> {
     move_data: @move_data::FlowedMoveData,
     all_loans: &'self [Loan],
     reported: @mut HashSet<ast::node_id>,
+}
+
+
+#[cfg(stage0)] // workaround broken default methods
+impl<'self> Visitor for CheckLoanCtxt<'self> {
+    fn visit_expr(&self, e:@ast::expr) { check_loans_in_expr_vtor(e, *self) }
+    fn visit_local(&self, l:@ast::local) { check_loans_in_local_vtor(l, *self) }
+    fn visit_block(&self, b:&ast::blk) { check_loans_in_block_vtor(b, *self) }
+    fn visit_pat(&self, p:@ast::pat) { check_loans_in_pat_vtor(p, *self) }
+    fn visit_fn(&self, k:&visit::fn_kind, d:&ast::fn_decl, b:&ast::blk, s:span, i:ast::node_id) {
+        check_loans_in_fn_vtor(k, d, b, s, i, *self)
+    }
+
+
+    fn visit_mod(&self, m:&ast::_mod, s:span, n:ast::node_id) {
+        visit::walk_mod(self, m, s, n)
+    }
+    fn visit_view_item(&self, v:&ast::view_item) {
+        visit::walk_view_item(self, v)
+    }
+    fn visit_foreign_item(&self, f:@ast::foreign_item) {
+        visit::walk_foreign_item(self, f)
+    }
+    fn visit_item(&self, i:@ast::item) {
+        visit::walk_item(self, i)
+    }
+    fn visit_stmt(&self, s:@ast::stmt) {
+        visit::walk_stmt(self, s)
+    }
+    fn visit_arm(&self, a:&ast::arm) {
+        visit::walk_arm(self, a)
+    }
+    fn visit_decl(&self, d:@ast::decl) {
+        visit::walk_decl(self, d)
+    }
+
+    // XXX default method (bug?) requires an arg even if unused.  and
+    // underscore alone does not work there either, which seems
+    // somehow worse
+    fn visit_expr_post(&self, _e:@ast::expr) { }
+
+    fn visit_ty(&self, t:&ast::Ty) {
+        visit::walk_ty(self, t)
+    }
+    fn visit_generics(&self, g:&ast::Generics) {
+        visit::walk_generics(self, g)
+    }
+    fn visit_ty_method(&self, t:&ast::ty_method) {
+        visit::walk_ty_method(self, t)
+    }
+    fn visit_trait_method(&self, t: &ast::trait_method) {
+        visit::walk_trait_method(self, t)
+    }
+    fn visit_struct_def(&self, d:@ast::struct_def, i:ast::ident, g:&ast::Generics, n:ast::node_id) {
+        visit::walk_struct_def(self, d, i, g, n)
+    }
+    fn visit_struct_field(&self, f:@ast::struct_field) {
+        visit::walk_struct_field(self, f)
+    }
+}
+
+#[cfg(not(stage0))]
+impl<'self> Visitor for CheckLoanCtxt<'self> {
+    fn visit_expr(&self, e:@ast::expr) { check_loans_in_expr_vtor(e, *self) }
+    fn visit_local(&self, l:@ast::local) { check_loans_in_local_vtor(l, *self) }
+    fn visit_block(&self, b:&ast::blk) { check_loans_in_block_vtor(b, *self) }
+    fn visit_pat(&self, p:@ast::pat) { check_loans_in_pat_vtor(p, *self) }
+    fn visit_fn(&self, k:&visit::fn_kind, d:&ast::fn_decl, b:&ast::blk, s:span, i:ast::node_id) {
+        check_loans_in_fn_vtor(k, d, b, s, i, *self)
+    }
 }
 
 pub fn check_loans(bccx: @BorrowckCtxt,
@@ -62,6 +133,8 @@ pub fn check_loans(bccx: @BorrowckCtxt,
                                            visit_fn: check_loans_in_fn,
                                            .. *visit::default_visitor()});
     (vt.visit_block)(body, (clcx, vt));
+
+    // clcx.visit_block(body);
 }
 
 enum MoveError {
@@ -613,6 +686,17 @@ impl<'self> CheckLoanCtxt<'self> {
     }
 }
 
+fn check_loans_in_fn_vtor<'a>(fk: &visit::fn_kind,
+                              decl: &ast::fn_decl,
+                              body: &ast::blk,
+                              sp: span,
+                              id: ast::node_id,
+                              this: CheckLoanCtxt<'a>) {
+    if check_loans_in_fn_pre(fk, decl, body, sp, id, this) {
+        visit::walk_fn(&this, fk, decl, body, sp, id);
+    }
+}
+
 fn check_loans_in_fn<'a>(fk: &visit::fn_kind,
                          decl: &ast::fn_decl,
                          body: &ast::blk,
@@ -620,11 +704,23 @@ fn check_loans_in_fn<'a>(fk: &visit::fn_kind,
                          id: ast::node_id,
                          (this, visitor): (CheckLoanCtxt<'a>,
                                            visit::vt<CheckLoanCtxt<'a>>)) {
+    if check_loans_in_fn_pre(fk, decl, body, sp, id, this) {
+        visit::visit_fn(fk, decl, body, sp, id, (this, visitor));
+    }
+}
+
+fn check_loans_in_fn_pre<'a>(fk: &visit::fn_kind,
+                              decl: &ast::fn_decl,
+                              body: &ast::blk,
+                              sp: span,
+                              id: ast::node_id,
+                              this: CheckLoanCtxt<'a>) -> bool
+{
     match *fk {
         visit::fk_item_fn(*) |
         visit::fk_method(*) => {
             // Don't process nested items.
-            return;
+            return false;
         }
 
         visit::fk_anon(*) |
@@ -632,8 +728,7 @@ fn check_loans_in_fn<'a>(fk: &visit::fn_kind,
             check_captured_variables(this, id, sp);
         }
     }
-
-    visit::visit_fn(fk, decl, body, sp, id, (this, visitor));
+    return true;
 
     fn check_captured_variables(this: CheckLoanCtxt,
                                 closure_id: ast::node_id,
@@ -676,6 +771,10 @@ fn check_loans_in_fn<'a>(fk: &visit::fn_kind,
     }
 }
 
+fn check_loans_in_local_vtor<'a>(local: @ast::local, this: CheckLoanCtxt<'a>) {
+    visit::walk_local(&this, local);
+}
+
 fn check_loans_in_local<'a>(local: @ast::local,
                             (this, vt): (CheckLoanCtxt<'a>,
                                          visit::vt<CheckLoanCtxt<'a>>)) {
@@ -686,7 +785,15 @@ fn check_loans_in_expr<'a>(expr: @ast::expr,
                            (this, vt): (CheckLoanCtxt<'a>,
                                         visit::vt<CheckLoanCtxt<'a>>)) {
     visit::visit_expr(expr, (this, vt));
+    check_loans_in_expr_core(expr, this);
+}
 
+fn check_loans_in_expr_vtor<'a>(expr: @ast::expr, this: CheckLoanCtxt<'a>) {
+    visit::walk_expr(&this, expr);
+    check_loans_in_expr_core(expr, this);
+}
+
+fn check_loans_in_expr_core<'a>(expr: @ast::expr, this: CheckLoanCtxt<'a>) {
     debug!("check_loans_in_expr(expr=%s)",
            expr.repr(this.tcx()));
 
@@ -736,6 +843,13 @@ fn check_loans_in_expr<'a>(expr: @ast::expr,
     }
 }
 
+fn check_loans_in_pat_vtor<'a>(pat: @ast::pat, this: CheckLoanCtxt<'a>)
+{
+    this.check_for_conflicting_loans(pat.id);
+    this.check_move_out_from_id(pat.id, pat.span);
+    visit::walk_pat(&this, pat);
+}
+
 fn check_loans_in_pat<'a>(pat: @ast::pat,
                           (this, vt): (CheckLoanCtxt<'a>,
                                        visit::vt<CheckLoanCtxt<'a>>))
@@ -743,6 +857,12 @@ fn check_loans_in_pat<'a>(pat: @ast::pat,
     this.check_for_conflicting_loans(pat.id);
     this.check_move_out_from_id(pat.id, pat.span);
     visit::visit_pat(pat, (this, vt));
+}
+
+fn check_loans_in_block_vtor<'a>(blk: &ast::blk, this: CheckLoanCtxt<'a>) 
+{
+    visit::walk_block(&this, blk);
+    this.check_for_conflicting_loans(blk.id);
 }
 
 fn check_loans_in_block<'a>(blk: &ast::blk,
