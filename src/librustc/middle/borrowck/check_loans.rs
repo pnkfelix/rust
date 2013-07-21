@@ -859,7 +859,7 @@ fn check_loans_in_pat<'a>(pat: @ast::pat,
     visit::visit_pat(pat, (this, vt));
 }
 
-fn check_loans_in_block_vtor<'a>(blk: &ast::blk, this: CheckLoanCtxt<'a>) 
+fn check_loans_in_block_vtor<'a>(blk: &ast::blk, this: CheckLoanCtxt<'a>)
 {
     visit::walk_block(&this, blk);
     this.check_for_conflicting_loans(blk.id);
