@@ -21,8 +21,11 @@ use std::str;
 pub type pick<'self, T> = &'self fn(path: &Path) -> Option<T>;
 
 pub fn pick_file(file: Path, path: &Path) -> Option<Path> {
-    if path.file_path() == file { option::Some(copy *path) }
-    else { option::None }
+    if path.file_path() == file {
+        option::Some((*path).clone())
+    } else {
+        option::None
+    }
 }
 
 pub trait FileSearch {
@@ -84,14 +87,14 @@ pub fn mk_filesearch(maybe_sysroot: &Option<@Path>,
     } as @FileSearch
 }
 
-pub fn search<T:Copy>(filesearch: @FileSearch, pick: pick<T>) -> Option<T> {
+pub fn search<T>(filesearch: @FileSearch, pick: pick<T>) -> Option<T> {
     let mut rslt = None;
     for filesearch.for_each_lib_search_path() |lib_search_path| {
         debug!("searching %s", lib_search_path.to_str());
         let r = os::list_dir_path(lib_search_path);
         for r.iter().advance |path| {
             debug!("testing %s", path.to_str());
-            let maybe_picked = pick(*path);
+            let maybe_picked = pick(path);
             if maybe_picked.is_some() {
                 debug!("picked %s", path.to_str());
                 rslt = maybe_picked;

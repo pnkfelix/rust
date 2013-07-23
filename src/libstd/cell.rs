@@ -14,7 +14,6 @@
 
 use cast::transmute_mut;
 use prelude::*;
-use util::replace;
 
 /*
 A dynamic, mutable location.
@@ -22,7 +21,6 @@ A dynamic, mutable location.
 Similar to a mutable option type, but friendlier.
 */
 
-#[mutable] // XXX remove after snap
 #[no_freeze]
 #[deriving(Clone, DeepClone, Eq)]
 #[allow(missing_doc)]
@@ -48,7 +46,7 @@ impl<T> Cell<T> {
             fail!("attempt to take an empty cell");
         }
 
-        replace(&mut this.value, None).unwrap()
+        this.value.take_unwrap()
     }
 
     /// Returns the value, failing if the cell is full.

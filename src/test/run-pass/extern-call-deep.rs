@@ -13,7 +13,7 @@ use std::libc;
 mod rustrt {
     use std::libc;
 
-    pub extern {
+    extern {
         pub fn rust_dbg_call(cb: *u8, data: libc::uintptr_t)
                              -> libc::uintptr_t;
     }
@@ -29,13 +29,13 @@ extern fn cb(data: libc::uintptr_t) -> libc::uintptr_t {
 
 fn count(n: uint) -> uint {
     unsafe {
-        debug!("n = %?", n);
+        info!("n = %?", n);
         rustrt::rust_dbg_call(cb, n)
     }
 }
 
 pub fn main() {
     let result = count(1000u);
-    debug!("result = %?", result);
+    info!("result = %?", result);
     assert_eq!(result, 1000u);
 }

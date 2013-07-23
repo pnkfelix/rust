@@ -12,10 +12,10 @@
 use driver::session;
 use driver::session::Session;
 use syntax::parse::token::special_idents;
-use syntax::ast::{crate, node_id, item, item_fn};
+use syntax::ast::{Crate, node_id, item, item_fn};
+use syntax::attr;
 use syntax::codemap::span;
 use syntax::visit::{default_visitor, mk_vt, vt, Visitor, visit_crate, visit_item};
-use syntax::attr::{attrs_contains_name};
 use syntax::ast_map;
 use std::util;
 
@@ -40,7 +40,7 @@ struct EntryContext {
 
 type EntryVisitor = vt<@mut EntryContext>;
 
-pub fn find_entry_point(session: Session, crate: &crate, ast_map: ast_map::map) {
+pub fn find_entry_point(session: Session, crate: &Crate, ast_map: ast_map::map) {
 
     // FIXME #4404 android JNI hacks
     if *session.building_library &&
@@ -90,7 +90,7 @@ fn find_item(item: @item, ctxt: @mut EntryContext, visitor: EntryVisitor) {
                 }
             }
 
-            if attrs_contains_name(item.attrs, "main") {
+            if attr::contains_name(item.attrs, "main") {
                 if ctxt.attr_main_fn.is_none() {
                     ctxt.attr_main_fn = Some((item.id, item.span));
                 } else {
@@ -100,7 +100,7 @@ fn find_item(item: @item, ctxt: @mut EntryContext, visitor: EntryVisitor) {
                 }
             }
 
-            if attrs_contains_name(item.attrs, "start") {
+            if attr::contains_name(item.attrs, "start") {
                 if ctxt.start_fn.is_none() {
                     ctxt.start_fn = Some((item.id, item.span));
                 } else {

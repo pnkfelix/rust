@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use ast::{meta_item, item, expr};
+use ast::{MetaItem, item, expr};
 use codemap::span;
 use ext::base::ExtCtxt;
 use ext::build::AstBuilder;
@@ -18,7 +18,7 @@ use std::vec;
 
 pub fn expand_deriving_zero(cx: @ExtCtxt,
                             span: span,
-                            mitem: @meta_item,
+                            mitem: @MetaItem,
                             in_items: ~[@item])
     -> ~[@item] {
     let trait_def = TraitDef {
@@ -63,7 +63,7 @@ fn zero_substructure(cx: @ExtCtxt, span: span, substr: &Substructure) -> @expr {
         cx.ident_of("zero")
     ];
     let zero_call = || {
-        cx.expr_call_global(span, copy zero_ident, ~[])
+        cx.expr_call_global(span, zero_ident.clone(), ~[])
     };
 
     return match *substr.fields {

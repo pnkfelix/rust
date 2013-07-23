@@ -34,6 +34,7 @@ use extra::getopts;
 use syntax::ast;
 use syntax::abi;
 use syntax::attr;
+use syntax::attr::{AttrMetaMethods};
 use syntax::codemap;
 use syntax::diagnostic;
 use syntax::parse;
@@ -63,7 +64,7 @@ pub fn source_name(input: &input) -> @str {
 }
 
 pub fn default_configuration(sess: Session, argv0: @str, input: &input) ->
-   ast::crate_cfg {
+   ast::CrateConfig {
     let (libc, tos) = match sess.targ_cfg.os {
         session::os_win32 =>   (@"msvcrt.dll", @"win32"),
         session::os_macos =>   (@"libc.dylib", @"macos"),
@@ -95,38 +96,32 @@ pub fn default_configuration(sess: Session, argv0: @str, input: &input) ->
          mk(@"build_input", source_name(input))];
 }
 
-pub fn append_configuration(cfg: ast::crate_cfg, name: @str)
-                         -> ast::crate_cfg {
-    if attr::contains_name(cfg, name) {
-        cfg
-    } else {
-        vec::append_one(cfg, attr::mk_word_item(name))
+pub fn append_configuration(cfg: &mut ast::CrateConfig, name: @str) {
+    if !cfg.iter().any(|mi| mi.name() == name) {
+        cfg.push(attr::mk_word_item(name))
     }
 }
 
 pub fn build_configuration(sess: Session, argv0: @str, input: &input) ->
-   ast::crate_cfg {
+   ast::CrateConfig {
     // Combine the configuration requested by the session (command line) with
     // some default and generated configuration items
     let default_cfg = default_configuration(sess, argv0, input);
-    let user_cfg = /*bad*/copy sess.opts.cfg;
+    let mut user_cfg = sess.opts.cfg.clone();
     // If the user wants a test runner, then add the test cfg
-    let user_cfg = if sess.opts.test { append_configuration(user_cfg, @"test") }
-                   else { user_cfg };
+    if sess.opts.test { append_configuration(&mut user_cfg, @"test") }
     // If the user requested GC, then add the GC cfg
-    let user_cfg = append_configuration(
-        user_cfg,
-        if sess.opts.gc { @"gc" } else { @"nogc" });
+    append_configuration(&mut user_cfg, if sess.opts.gc { @"gc" } else { @"nogc" });
     return vec::append(user_cfg, default_cfg);
 }
 
 // Convert strings provided as --cfg [cfgspec] into a crate_cfg
 fn parse_cfgspecs(cfgspecs: ~[~str],
-                  demitter: diagnostic::Emitter) -> ast::crate_cfg {
-    do vec::map_consume(cfgspecs) |s| {
+                  demitter: diagnostic::Emitter) -> ast::CrateConfig {
+    do cfgspecs.consume_iter().transform |s| {
         let sess = parse::new_parse_sess(Some(demitter));
         parse::parse_meta_from_source_str(@"cfgspec", s.to_managed(), ~[], sess)
-    }
+    }.collect::<ast::CrateConfig>()
 }
 
 pub enum input {
@@ -137,8 +132,8 @@ pub enum input {
     str_input(@str)
 }
 
-pub fn parse_input(sess: Session, cfg: ast::crate_cfg, input: &input)
-    -> @ast::crate {
+pub fn parse_input(sess: Session, cfg: ast::CrateConfig, input: &input)
+    -> @ast::Crate {
     match *input {
       file_input(ref file) => {
         parse::parse_crate_from_file(&(*file), cfg, sess.parse_sess)
@@ -172,11 +167,11 @@ pub enum compile_phase {
 
 #[fixed_stack_segment]
 pub fn compile_rest(sess: Session,
-                    cfg: ast::crate_cfg,
+                    cfg: ast::CrateConfig,
                     phases: compile_upto,
                     outputs: Option<@OutputFilenames>,
-                    curr: Option<@ast::crate>)
-    -> (Option<@ast::crate>, Option<ty::ctxt>) {
+                    curr: Option<@ast::Crate>)
+    -> (Option<@ast::Crate>, Option<ty::ctxt>) {
 
     let time_passes = sess.time_passes();
 
@@ -194,27 +189,36 @@ pub fn compile_rest(sess: Session,
         //   mod bar { macro_rules! baz!(() => {{}}) }
         //
         // baz! should not use this definition unless foo is enabled.
+        crate = time(time_passes, ~"std macros injection", ||
+                     syntax::ext::expand::inject_std_macros(sess.parse_sess,
+                                                            cfg.clone(),
+                                                            crate));
+
         crate = time(time_passes, ~"configuration 1", ||
                      front::config::strip_unconfigured_items(crate));
 
         crate = time(time_passes, ~"expansion", ||
-                     syntax::ext::expand::expand_crate(sess.parse_sess, copy cfg,
+                     syntax::ext::expand::expand_crate(sess.parse_sess,
+                                                       cfg.clone(),
                                                        crate));
 
         // strip again, in case expansion added anything with a #[cfg].
         crate = time(time_passes, ~"configuration 2", ||
                      front::config::strip_unconfigured_items(crate));
 
+
         crate = time(time_passes, ~"maybe building test harness", ||
                      front::test::modify_for_testing(sess, crate));
     }
 
-    if phases.to == cu_expand { return (Some(crate), None); }
+    if phases.to == cu_expand {
+        return (Some(crate), None);
+    }
 
     assert!(phases.from != cu_no_trans);
 
     let (llcx, llmod, link_meta) = {
-        crate = time(time_passes, ~"extra injection", ||
+        crate = time(time_passes, ~"std injection", ||
                      front::std_inject::maybe_inject_libstd_ref(sess, crate));
 
         let ast_map = time(time_passes, ~"ast indexing", ||
@@ -314,7 +318,6 @@ pub fn compile_rest(sess: Session,
             method_map: method_map,
             vtable_map: vtable_map,
             write_guard_map: write_guard_map,
-            moves_map: moves_map,
             capture_map: capture_map
         };
 
@@ -368,20 +371,31 @@ pub fn compile_rest(sess: Session,
     return (None, None);
 }
 
-pub fn compile_upto(sess: Session, cfg: ast::crate_cfg,
-                input: &input, upto: compile_phase,
-                outputs: Option<@OutputFilenames>)
-    -> (Option<@ast::crate>, Option<ty::ctxt>) {
+pub fn compile_upto(sess: Session,
+                    cfg: ast::CrateConfig,
+                    input: &input,
+                    upto: compile_phase,
+                    outputs: Option<@OutputFilenames>)
+                    -> (Option<@ast::Crate>, Option<ty::ctxt>) {
     let time_passes = sess.time_passes();
-    let crate = time(time_passes, ~"parsing",
-                         || parse_input(sess, copy cfg, input) );
-    if upto == cu_parse { return (Some(crate), None); }
+    let crate = time(time_passes,
+                     ~"parsing",
+                     || parse_input(sess, cfg.clone(), input) );
+    if upto == cu_parse {
+        return (Some(crate), None);
+    }
 
-    compile_rest(sess, cfg, compile_upto { from: cu_parse, to: upto },
-                 outputs, Some(crate))
+    compile_rest(sess,
+                 cfg,
+                 compile_upto {
+                    from: cu_parse,
+                    to: upto
+                 },
+                 outputs,
+                 Some(crate))
 }
 
-pub fn compile_input(sess: Session, cfg: ast::crate_cfg, input: &input,
+pub fn compile_input(sess: Session, cfg: ast::CrateConfig, input: &input,
                      outdir: &Option<Path>, output: &Option<Path>) {
     let upto = if sess.opts.parse_only { cu_parse }
                else if sess.opts.no_trans { cu_no_trans }
@@ -390,7 +404,7 @@ pub fn compile_input(sess: Session, cfg: ast::crate_cfg, input: &input,
     compile_upto(sess, cfg, input, upto, Some(outputs));
 }
 
-pub fn pretty_print_input(sess: Session, cfg: ast::crate_cfg, input: &input,
+pub fn pretty_print_input(sess: Session, cfg: ast::CrateConfig, input: &input,
                           ppm: pp_mode) {
     fn ann_paren_for_expr(node: pprust::ann_node) {
         match node {
@@ -419,7 +433,7 @@ pub fn pretty_print_input(sess: Session, cfg: ast::crate_cfg, input: &input,
           pprust::node_block(s, ref blk) => {
             pp::space(s.s);
             pprust::synth_comment(
-                s, ~"block " + int::to_str(blk.node.id));
+                s, ~"block " + int::to_str(blk.id));
           }
           pprust::node_expr(s, expr) => {
             pp::space(s.s);
@@ -848,7 +862,7 @@ pub struct OutputFilenames {
 pub fn build_output_filenames(input: &input,
                               odir: &Option<Path>,
                               ofile: &Option<Path>,
-                              attrs: &[ast::attribute],
+                              attrs: &[ast::Attribute],
                               sess: Session)
                            -> @OutputFilenames {
     let obj_path;
@@ -874,7 +888,7 @@ pub fn build_output_filenames(input: &input,
           // have to make up a name
           // We want to toss everything after the final '.'
           let dirpath = match *odir {
-              Some(ref d) => (/*bad*/copy *d),
+              Some(ref d) => (*d).clone(),
               None => match *input {
                   str_input(_) => os::getcwd(),
                   file_input(ref ifile) => (*ifile).dir_path()
@@ -890,12 +904,10 @@ pub fn build_output_filenames(input: &input,
           let linkage_metas = attr::find_linkage_metas(attrs);
           if !linkage_metas.is_empty() {
               // But if a linkage meta is present, that overrides
-              let maybe_matches = attr::find_meta_items_by_name(linkage_metas, "name");
-              if !maybe_matches.is_empty() {
-                  match attr::get_meta_item_value_str(maybe_matches[0]) {
-                      Some(s) => stem = s,
-                      _ => ()
-                  }
+              let maybe_name = linkage_metas.iter().find_(|m| "name" == m.name());
+              match maybe_name.chain(|m| m.value_str()) {
+                  Some(s) => stem = s,
+                  _ => ()
               }
               // If the name is missing, we just default to the filename
               // version
@@ -911,9 +923,9 @@ pub fn build_output_filenames(input: &input,
       }
 
       Some(ref out_file) => {
-        out_path = (/*bad*/copy *out_file);
+        out_path = (*out_file).clone();
         obj_path = if stop_after_codegen {
-            (/*bad*/copy *out_file)
+            (*out_file).clone()
         } else {
             (*out_file).with_filetype(obj_suffix)
         };
@@ -989,7 +1001,8 @@ mod test {
             @"rustc", matches, diagnostic::emit);
         let sess = build_session(sessopts, diagnostic::emit);
         let cfg = build_configuration(sess, @"whatever", &str_input(@""));
-        let test_items = attr::find_meta_items_by_name(cfg, "test");
-        assert_eq!(test_items.len(), 1u);
+        let mut test_items = cfg.iter().filter(|m| "test" == m.name());
+        assert!(test_items.next().is_some());
+        assert!(test_items.next().is_none());
     }
 }

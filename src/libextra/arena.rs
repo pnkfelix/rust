@@ -40,20 +40,13 @@ use list::{MutList, MutCons, MutNil};
 use std::at_vec;
 use std::cast::{transmute, transmute_mut, transmute_mut_region};
 use std::cast;
+use std::num;
 use std::ptr;
 use std::sys;
 use std::uint;
 use std::vec;
 use std::unstable::intrinsics;
-use std::unstable::intrinsics::{TyDesc};
-
-#[cfg(not(stage0))]
-use std::unstable::intrinsics::{get_tydesc};
-
-#[cfg(stage0)]
-unsafe fn get_tydesc<T>() -> *TyDesc {
-    intrinsics::get_tydesc::<T>() as *TyDesc
-}
+use std::unstable::intrinsics::{TyDesc, get_tydesc};
 
 // The way arena uses arrays is really deeply awful. The arrays are
 // allocated, and have capacities reserved, but the fill for the array
@@ -64,7 +57,6 @@ struct Chunk {
     is_pod: bool,
 }
 
-#[mutable] // XXX remove after snap
 #[no_freeze]
 pub struct Arena {
     // The head is separated out from the list as a unbenchmarked
@@ -116,19 +108,6 @@ fn round_up_to(base: uint, align: uint) -> uint {
     (base + (align - 1)) & !(align - 1)
 }
 
-#[inline]
-#[cfg(not(stage0))]
-unsafe fn call_drop_glue(tydesc: *TyDesc, data: *i8) {
-    // This function should be inlined when stage0 is gone
-    ((*tydesc).drop_glue)(data);
-}
-
-#[inline]
-#[cfg(stage0)]
-unsafe fn call_drop_glue(tydesc: *TyDesc, data: *i8) {
-    ((*tydesc).drop_glue)(0 as **TyDesc, data);
-}
-
 // Walk down a chunk, running the destructors for any objects stored
 // in it.
 unsafe fn destroy_chunk(chunk: &Chunk) {
@@ -148,7 +127,7 @@ unsafe fn destroy_chunk(chunk: &Chunk) {
         //debug!("freeing object: idx = %u, size = %u, align = %u, done = %b",
         //       start, size, align, is_done);
         if is_done {
-            call_drop_glue(tydesc, ptr::offset(buf, start) as *i8);
+            ((*tydesc).drop_glue)(ptr::offset(buf, start) as *i8);
         }
 
         // Find where the next tydesc lives
@@ -175,8 +154,8 @@ impl Arena {
     fn alloc_pod_grow(&mut self, n_bytes: uint, align: uint) -> *u8 {
         // Allocate a new chunk.
         let chunk_size = at_vec::capacity(self.pod_head.data);
-        let new_min_chunk_size = uint::max(n_bytes, chunk_size);
-        self.chunks = @mut MutCons(copy self.pod_head, self.chunks);
+        let new_min_chunk_size = num::max(n_bytes, chunk_size);
+        self.chunks = @mut MutCons(self.pod_head, self.chunks);
         self.pod_head =
             chunk(uint::next_power_of_two(new_min_chunk_size + 1u), true);
 
@@ -217,8 +196,8 @@ impl Arena {
                          -> (*u8, *u8) {
         // Allocate a new chunk.
         let chunk_size = at_vec::capacity(self.head.data);
-        let new_min_chunk_size = uint::max(n_bytes, chunk_size);
-        self.chunks = @mut MutCons(copy self.head, self.chunks);
+        let new_min_chunk_size = num::max(n_bytes, chunk_size);
+        self.chunks = @mut MutCons(self.head, self.chunks);
         self.head =
             chunk(uint::next_power_of_two(new_min_chunk_size + 1u), false);
 

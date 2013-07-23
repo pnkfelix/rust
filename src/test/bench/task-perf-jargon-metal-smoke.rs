@@ -43,12 +43,12 @@ fn child_generation(gens_left: uint, c: comm::Chan<()>) {
 
 fn main() {
     let args = os::args();
-    let args = if os::getenv(~"RUST_BENCH").is_some() {
+    let args = if os::getenv("RUST_BENCH").is_some() {
         ~[~"", ~"100000"]
     } else if args.len() <= 1 {
         ~[~"", ~"100"]
     } else {
-        copy args
+        args.clone()
     };
 
     let (p,c) = comm::stream();

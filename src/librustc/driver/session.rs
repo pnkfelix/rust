@@ -33,7 +33,12 @@ use std::hashmap::HashMap;
 #[deriving(Eq)]
 pub enum os { os_win32, os_macos, os_linux, os_android, os_freebsd, }
 
-pub enum crate_type { bin_crate, lib_crate, unknown_crate, }
+#[deriving(Clone)]
+pub enum crate_type {
+    bin_crate,
+    lib_crate,
+    unknown_crate,
+}
 
 pub struct config {
     os: os,
@@ -118,7 +123,7 @@ pub fn debugging_opts_map() -> ~[(~str, ~str, uint)] {
     ]
 }
 
-#[deriving(Eq)]
+#[deriving(Clone, Eq)]
 pub enum OptLevel {
     No, // -O0
     Less, // -O1
@@ -126,6 +131,7 @@ pub enum OptLevel {
     Aggressive // -O3
 }
 
+#[deriving(Clone)]
 pub struct options {
     // The crate config requested for the session, which may be combined
     // with additional crate configurations during the compile process
@@ -152,7 +158,7 @@ pub struct options {
     // items to the crate config, and during parsing the entire crate config
     // will be added to the crate AST node.  This should not be used for
     // anything except building the full crate config prior to parsing.
-    cfg: ast::crate_cfg,
+    cfg: ast::CrateConfig,
     binary: @str,
     test: bool,
     parse_only: bool,
@@ -345,15 +351,13 @@ pub fn basic_options() -> @options {
 }
 
 // Seems out of place, but it uses session, so I'm putting it here
-pub fn expect<T:Copy>(sess: Session,
-                       opt: Option<T>,
-                       msg: &fn() -> ~str)
-                    -> T {
+pub fn expect<T:Clone>(sess: Session, opt: Option<T>, msg: &fn() -> ~str)
+                       -> T {
     diagnostic::expect(sess.diagnostic(), opt, msg)
 }
 
 pub fn building_library(req_crate_type: crate_type,
-                        crate: &ast::crate,
+                        crate: &ast::Crate,
                         testing: bool) -> bool {
     match req_crate_type {
       bin_crate => false,
@@ -363,9 +367,9 @@ pub fn building_library(req_crate_type: crate_type,
             false
         } else {
             match syntax::attr::first_attr_value_str_by_name(
-                crate.node.attrs,
+                crate.attrs,
                 "crate_type") {
-              Some(s) if "lib" == s => true,
+              Some(s) => "lib" == s,
               _ => false
             }
         }
@@ -391,21 +395,14 @@ mod test {
     use driver::session::{unknown_crate};
 
     use syntax::ast;
+    use syntax::attr;
     use syntax::codemap;
 
-    fn make_crate_type_attr(t: @str) -> ast::attribute {
-        codemap::respan(codemap::dummy_sp(), ast::attribute_ {
-            style: ast::attr_outer,
-            value: @codemap::respan(codemap::dummy_sp(),
-                ast::meta_name_value(
-                    @"crate_type",
-                    codemap::respan(codemap::dummy_sp(),
-                                     ast::lit_str(t)))),
-            is_sugared_doc: false
-        })
+    fn make_crate_type_attr(t: @str) -> ast::Attribute {
+        attr::mk_attr(attr::mk_name_value_item_str(@"crate_type", t))
     }
 
-    fn make_crate(with_bin: bool, with_lib: bool) -> @ast::crate {
+    fn make_crate(with_bin: bool, with_lib: bool) -> @ast::Crate {
         let mut attrs = ~[];
         if with_bin {
             attrs.push(make_crate_type_attr(@"bin"));
@@ -413,11 +410,12 @@ mod test {
         if with_lib {
             attrs.push(make_crate_type_attr(@"lib"));
         }
-        @codemap::respan(codemap::dummy_sp(), ast::crate_ {
+        @ast::Crate {
             module: ast::_mod { view_items: ~[], items: ~[] },
             attrs: attrs,
-            config: ~[]
-        })
+            config: ~[],
+            span: codemap::dummy_sp(),
+        }
     }
 
     #[test]

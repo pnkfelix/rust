@@ -18,9 +18,9 @@ use std::task;
 mod rustrt {
     use std::libc;
 
-    pub extern {
+    extern {
         pub fn rust_dbg_call(cb: *u8, data: libc::uintptr_t)
-                          -> libc::uintptr_t;
+                             -> libc::uintptr_t;
     }
 }
 
@@ -43,7 +43,7 @@ fn main() {
     for 10u.times {
         do task::spawn {
             let result = count(5u);
-            debug!("result = %?", result);
+            info!("result = %?", result);
             fail!();
         };
     }

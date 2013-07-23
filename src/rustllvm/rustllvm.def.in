@@ -409,6 +409,7 @@ LLVMInsertBasicBlock
 LLVMInsertBasicBlockInContext
 LLVMInsertIntoBuilder
 LLVMInsertIntoBuilderWithName
+LLVMInstructionEraseFromParent
 LLVMInt16Type
 LLVMInt16TypeInContext
 LLVMInt1Type
@@ -608,3 +609,6 @@ LLVMDIBuilderCreateSubroutineType
 LLVMDIBuilderGetOrCreateArray
 LLVMDIBuilderInsertDeclareAtEnd
 LLVMDIBuilderInsertDeclareBefore
+LLVMDIBuilderCreateEnumerator
+LLVMDIBuilderCreateEnumerationType
+LLVMDIBuilderCreateUnionType

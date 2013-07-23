@@ -9,6 +9,7 @@
 // except according to those terms.
 
 // xfail-fast
+// xfail-test needs networking
 
 extern mod extra;
 
@@ -103,7 +104,7 @@ priv fn cmd_to_str(cmd: ~[~str]) -> ~str {
   res.push_str("\r\n");
     for cmd.iter().advance |s| {
     res.push_str([~"$", s.len().to_str(), ~"\r\n",
-                  copy *s, ~"\r\n"].concat() );
+                  (*s).clone(), ~"\r\n"].concat() );
     }
   res
 }

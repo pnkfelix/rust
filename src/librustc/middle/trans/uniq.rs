@@ -9,13 +9,11 @@
 // except according to those terms.
 
 
-use back;
 use lib::llvm::ValueRef;
 use middle::trans::base::*;
 use middle::trans::build::*;
 use middle::trans::common::*;
 use middle::trans::datum::immediate_rvalue;
-use middle::trans::datum;
 use middle::trans::glue;
 use middle::ty;
 
@@ -35,22 +33,4 @@ pub fn make_free_glue(bcx: block, vptrptr: ValueRef, box_ty: ty::t)
             glue::trans_exchange_free(bcx, box_datum.val)
         }
     }
-}
-
-pub fn duplicate(bcx: block, src_box: ValueRef, src_ty: ty::t) -> Result {
-    let _icx = push_ctxt("uniq::duplicate");
-
-    // Load the body of the source (*src)
-    let src_datum = immediate_rvalue(src_box, src_ty);
-    let body_datum = src_datum.box_body(bcx);
-
-    // Malloc space in exchange heap and copy src into it
-    let MallocResult {
-        bcx: bcx,
-        box: dst_box,
-        body: dst_body
-    } = malloc_unique(bcx, body_datum.ty);
-    body_datum.copy_to(bcx, datum::INIT, dst_body);
-
-    rslt(bcx, dst_box)
 }

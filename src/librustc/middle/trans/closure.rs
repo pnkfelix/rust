@@ -11,23 +11,20 @@
 
 use back::abi;
 use back::link::{mangle_internal_name_by_path_and_seq};
-use lib::llvm::{llvm, ValueRef};
+use lib::llvm::ValueRef;
 use middle::moves;
 use middle::trans::base::*;
 use middle::trans::build::*;
-use middle::trans::callee;
 use middle::trans::common::*;
 use middle::trans::datum::{Datum, INIT, ByRef, ZeroMem};
 use middle::trans::expr;
 use middle::trans::glue;
-use middle::trans::machine;
 use middle::trans::type_of::*;
 use middle::ty;
 use util::ppaux::ty_to_str;
 
 use middle::trans::type_::Type;
 
-use std::str;
 use std::vec;
 use syntax::ast;
 use syntax::ast_map::path_name;
@@ -173,16 +170,6 @@ pub fn allocate_cbox(bcx: block, sigil: ast::Sigil, cdata_ty: ty::t)
     let ccx = bcx.ccx();
     let tcx = ccx.tcx;
 
-    fn nuke_ref_count(bcx: block, llbox: ValueRef) {
-        let _icx = push_ctxt("closure::nuke_ref_count");
-        // Initialize ref count to arbitrary value for debugging:
-        let ccx = bcx.ccx();
-        let llbox = PointerCast(bcx, llbox, Type::opaque_box(ccx).ptr_to());
-        let ref_cnt = GEPi(bcx, llbox, [0u, abi::box_field_refcnt]);
-        let rc = C_int(ccx, 0x12345678);
-        Store(bcx, rc, ref_cnt);
-    }
-
     // Allocate and initialize the box:
     match sigil {
         ast::ManagedSigil => {
@@ -193,8 +180,7 @@ pub fn allocate_cbox(bcx: block, sigil: ast::Sigil, cdata_ty: ty::t)
         }
         ast::BorrowedSigil => {
             let cbox_ty = tuplify_box_ty(tcx, cdata_ty);
-            let llbox = alloc_ty(bcx, cbox_ty);
-            nuke_ref_count(bcx, llbox);
+            let llbox = alloc_ty(bcx, cbox_ty, "__closure");
             rslt(bcx, llbox)
         }
     }
@@ -220,16 +206,24 @@ pub fn store_environment(bcx: block,
     // compute the type of the closure
     let cdata_ty = mk_closure_tys(tcx, bound_values);
 
-    // allocate closure in the heap
-    let Result {bcx: bcx, val: llbox} = allocate_cbox(bcx, sigil, cdata_ty);
-
     // cbox_ty has the form of a tuple: (a, b, c) we want a ptr to a
     // tuple.  This could be a ptr in uniq or a box or on stack,
     // whatever.
     let cbox_ty = tuplify_box_ty(tcx, cdata_ty);
     let cboxptr_ty = ty::mk_ptr(tcx, ty::mt {ty:cbox_ty, mutbl:ast::m_imm});
+    let llboxptr_ty = type_of(ccx, cboxptr_ty);
 
-    let llbox = PointerCast(bcx, llbox, type_of(ccx, cboxptr_ty));
+    // If there are no bound values, no point in allocating anything.
+    if bound_values.is_empty() {
+        return ClosureResult {llbox: C_null(llboxptr_ty),
+                              cdata_ty: cdata_ty,
+                              bcx: bcx};
+    }
+
+    // allocate closure in the heap
+    let Result {bcx: bcx, val: llbox} = allocate_cbox(bcx, sigil, cdata_ty);
+
+    let llbox = PointerCast(bcx, llbox, llboxptr_ty);
     debug!("tuplify_box_ty = %s", ty_to_str(tcx, cbox_ty));
 
     // Copy expr values into boxed bindings.
@@ -268,6 +262,7 @@ pub fn build_closure(bcx0: block,
                      sigil: ast::Sigil,
                      include_ret_handle: Option<ValueRef>) -> ClosureResult {
     let _icx = push_ctxt("closure::build_closure");
+
     // If we need to, package up the iterator body to call
     let bcx = bcx0;
 
@@ -330,23 +325,12 @@ pub fn load_environment(fcx: fn_ctxt,
                         sigil: ast::Sigil) {
     let _icx = push_ctxt("closure::load_environment");
 
-    let llloadenv = match fcx.llloadenv {
-        Some(ll) => ll,
-        None => {
-            let ll =
-                str::as_c_str("load_env",
-                              |buf|
-                              unsafe {
-                                llvm::LLVMAppendBasicBlockInContext(fcx.ccx.llcx,
-                                                                    fcx.llfn,
-                                                                    buf)
-                              });
-            fcx.llloadenv = Some(ll);
-            ll
-        }
-    };
+    // Don't bother to create the block if there's nothing to load
+    if cap_vars.len() == 0 && !load_ret_handle {
+        return;
+    }
 
-    let bcx = raw_block(fcx, false, llloadenv);
+    let bcx = fcx.entry_bcx.get();
 
     // Load a pointer to the closure data, skipping over the box header:
     let llcdata = opaque_box_body(bcx, cdata_ty, fcx.llenv);
@@ -374,7 +358,7 @@ pub fn load_environment(fcx: fn_ctxt,
 pub fn trans_expr_fn(bcx: block,
                      sigil: ast::Sigil,
                      decl: &ast::fn_decl,
-                     body: &ast::blk,
+                     body: &ast::Block,
                      outer_id: ast::node_id,
                      user_id: ast::node_id,
                      is_loop_body: Option<Option<ValueRef>>,
@@ -413,11 +397,11 @@ pub fn trans_expr_fn(bcx: block,
 
     let llfnty = type_of_fn_from_ty(ccx, fty);
 
-    let sub_path = vec::append_one(/*bad*/copy bcx.fcx.path,
+    let sub_path = vec::append_one(bcx.fcx.path.clone(),
                                    path_name(special_idents::anon));
     // XXX: Bad copy.
     let s = mangle_internal_name_by_path_and_seq(ccx,
-                                                 copy sub_path,
+                                                 sub_path.clone(),
                                                  "expr_fn");
     let llfn = decl_internal_cdecl_fn(ccx.llmod, s, llfnty);
 
@@ -449,7 +433,7 @@ pub fn trans_expr_fn(bcx: block,
                           body,
                           llfn,
                           no_self,
-                          /*bad*/ copy bcx.fcx.param_substs,
+                          bcx.fcx.param_substs,
                           user_id,
                           [],
                           real_return_type,
@@ -509,47 +493,8 @@ pub fn make_opaque_cbox_take_glue(
             return bcx;
         }
         ast::OwnedSigil => {
-            /* hard case: fallthrough to code below */
+            fail!("unique closures are not copyable")
         }
-    }
-
-    // ~fn requires a deep copy.
-    let ccx = bcx.ccx();
-    let tcx = ccx.tcx;
-    let llopaquecboxty = Type::opaque_box(ccx).ptr_to();
-    let cbox_in = Load(bcx, cboxptr);
-    do with_cond(bcx, IsNotNull(bcx, cbox_in)) |bcx| {
-        // Load the size from the type descr found in the cbox
-        let cbox_in = PointerCast(bcx, cbox_in, llopaquecboxty);
-        let tydescptr = GEPi(bcx, cbox_in, [0u, abi::box_field_tydesc]);
-        let tydesc = Load(bcx, tydescptr);
-        let tydesc = PointerCast(bcx, tydesc, ccx.tydesc_type.ptr_to());
-        let sz = Load(bcx, GEPi(bcx, tydesc, [0u, abi::tydesc_field_size]));
-
-        // Adjust sz to account for the rust_opaque_box header fields
-        let sz = Add(bcx, sz, machine::llsize_of(ccx, Type::box_header(ccx)));
-
-        // Allocate memory, update original ptr, and copy existing data
-        let opaque_tydesc = PointerCast(bcx, tydesc, Type::i8p());
-        let rval = alloca(bcx, Type::i8p());
-        let bcx = callee::trans_lang_call(
-            bcx,
-            bcx.tcx().lang_items.closure_exchange_malloc_fn(),
-            [opaque_tydesc, sz],
-            expr::SaveIn(rval));
-        let cbox_out = PointerCast(bcx, Load(bcx, rval), llopaquecboxty);
-        call_memcpy(bcx, cbox_out, cbox_in, sz, 1);
-        Store(bcx, cbox_out, cboxptr);
-
-        // Take the (deeply cloned) type descriptor
-        let tydesc_out = GEPi(bcx, cbox_out, [0u, abi::box_field_tydesc]);
-        let bcx = glue::take_ty(bcx, tydesc_out, ty::mk_type(tcx));
-
-        // Take the data in the tuple
-        let cdata_out = GEPi(bcx, cbox_out, [0u, abi::box_field_body]);
-        glue::call_tydesc_glue_full(bcx, cdata_out, tydesc,
-                                    abi::tydesc_field_take_glue, None);
-        bcx
     }
 }
 

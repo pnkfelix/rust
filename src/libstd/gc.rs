@@ -9,6 +9,7 @@
 // except according to those terms.
 
 #[doc(hidden)];
+#[allow(non_uppercase_statics)];
 
 /*! Precise garbage collector
 
@@ -38,7 +39,7 @@ with destructors.
 */
 
 use cast;
-use container::{Map, Set};
+use container::{Set, MutableSet};
 use io;
 use libc::{uintptr_t};
 use option::{None, Option, Some};
@@ -63,7 +64,7 @@ pub mod rustrt {
     use super::StackSegment;
 
     #[link_name = "rustrt"]
-    pub extern {
+    extern {
         #[rust_stack]
         pub unsafe fn rust_gc_metadata() -> *Word;
 
@@ -316,19 +317,6 @@ fn expect_sentinel() -> bool { true }
 #[cfg(nogc)]
 fn expect_sentinel() -> bool { false }
 
-#[inline]
-#[cfg(not(stage0))]
-unsafe fn call_drop_glue(tydesc: *TyDesc, data: *i8) {
-    // This function should be inlined when stage0 is gone
-    ((*tydesc).drop_glue)(data);
-}
-
-#[inline]
-#[cfg(stage0)]
-unsafe fn call_drop_glue(tydesc: *TyDesc, data: *i8) {
-    ((*tydesc).drop_glue)(0 as **TyDesc, data);
-}
-
 // Entry point for GC-based cleanup. Walks stack looking for exchange
 // heap and stack allocations requiring drop, and runs all
 // destructors.
@@ -372,7 +360,7 @@ pub fn cleanup_stack_for_failure() {
                 // FIXME #4420: Destroy this box
                 // FIXME #4330: Destroy this box
             } else {
-                call_drop_glue(tydesc, *root as *i8);
+                ((*tydesc).drop_glue)(*root as *i8);
             }
         }
     }

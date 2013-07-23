@@ -17,7 +17,7 @@ use util::ppaux::{Repr, ty_to_str};
 use util::ppaux::UserString;
 
 use syntax::ast::*;
-use syntax::attr::attrs_contains_name;
+use syntax::attr;
 use syntax::codemap::span;
 use syntax::print::pprust::expr_to_str;
 use syntax::{visit, ast_util};
@@ -29,7 +29,6 @@ use syntax::{visit, ast_util};
 // of the following attributes.
 //
 //  send: Things that can be sent on channels or included in spawned closures.
-//  copy: Things that can be copied.
 //  freeze: Things thare are deeply immutable. They are guaranteed never to
 //    change, and can be safely shared without copying between tasks.
 //  'static: Things that do not contain borrowed pointers.
@@ -37,14 +36,12 @@ use syntax::{visit, ast_util};
 // Send includes scalar types as well as classes and unique types containing
 // only sendable types.
 //
-// Copy includes boxes, closure and unique types containing copyable types.
-//
 // Freeze include scalar types, things without non-const fields, and pointers
 // to freezable things.
 //
 // This pass ensures that type parameters are only instantiated with types
 // whose kinds are equal or less general than the way the type parameter was
-// annotated (with the `Send`, `Copy` or `Freeze` bound).
+// annotated (with the `Send` or `Freeze` bound).
 //
 // It also verifies that noncopyable kinds are not copied. Sendability is not
 // applied, since none of our language primitives send. Instead, the sending
@@ -53,6 +50,7 @@ use syntax::{visit, ast_util};
 
 pub static try_adding: &'static str = "Try adding a move";
 
+#[deriving(Clone)]
 pub struct Context {
     tcx: ty::ctxt,
     method_map: typeck::method_map,
@@ -61,7 +59,7 @@ pub struct Context {
 
 pub fn check_crate(tcx: ty::ctxt,
                    method_map: typeck::method_map,
-                   crate: &crate) {
+                   crate: &Crate) {
     let ctx = Context {
         tcx: tcx,
         method_map: method_map,
@@ -109,23 +107,23 @@ fn check_struct_safe_for_destructor(cx: Context,
     }
 }
 
-fn check_block(block: &blk, (cx, visitor): (Context, visit::vt<Context>)) {
+fn check_block(block: &Block, (cx, visitor): (Context, visit::vt<Context>)) {
     visit::visit_block(block, (cx, visitor));
 }
 
 fn check_item(item: @item, (cx, visitor): (Context, visit::vt<Context>)) {
     // If this is a destructor, check kinds.
-    if !attrs_contains_name(item.attrs, "unsafe_destructor") {
+    if !attr::contains_name(item.attrs, "unsafe_destructor") {
         match item.node {
-            item_impl(_, Some(trait_ref), self_type, _) => {
+            item_impl(_, Some(ref trait_ref), ref self_type, _) => {
                 match cx.tcx.def_map.find(&trait_ref.ref_id) {
                     None => cx.tcx.sess.bug("trait ref not in def map!"),
                     Some(&trait_def) => {
                         let trait_def_id = ast_util::def_id_of_def(trait_def);
-                        if cx.tcx.lang_items.drop_trait() == trait_def_id {
+                        if cx.tcx.lang_items.drop_trait() == Some(trait_def_id) {
                             // Yes, it's a destructor.
                             match self_type.node {
-                                ty_path(_, bounds, path_node_id) => {
+                                ty_path(_, ref bounds, path_node_id) => {
                                     assert!(bounds.is_none());
                                     let struct_def = cx.tcx.def_map.get_copy(
                                         &path_node_id);
@@ -198,8 +196,9 @@ fn with_appropriate_checker(cx: Context, id: node_id,
     fn check_for_bare(cx: Context, fv: @freevar_entry) {
         cx.tcx.sess.span_err(
             fv.span,
-            "attempted dynamic environment capture");
-    }
+            "can't capture dynamic environment in a fn item; \
+            use the || { ... } closure form instead");
+    } // same check is done in resolve.rs, but shouldn't be done
 
     let fty = ty::node_id_to_type(cx.tcx, id);
     match ty::get(fty).sty {
@@ -228,7 +227,7 @@ fn with_appropriate_checker(cx: Context, id: node_id,
 fn check_fn(
     fk: &visit::fn_kind,
     decl: &fn_decl,
-    body: &blk,
+    body: &Block,
     sp: span,
     fn_id: node_id,
     (cx, v): (Context,
@@ -286,6 +285,10 @@ pub fn check_expr(e: @expr, (cx, v): (Context, visit::vt<Context>)) {
     }
 
     match e.node {
+        expr_unary(_, box(_), interior) => {
+            let interior_type = ty::expr_ty(cx.tcx, interior);
+            let _ = check_durable(cx.tcx, interior_type, interior.span);
+        }
         expr_cast(source, _) => {
             check_cast_for_escaping_regions(cx, source, e);
             match ty::get(ty::expr_ty(cx.tcx, e)).sty {
@@ -296,19 +299,8 @@ pub fn check_expr(e: @expr, (cx, v): (Context, visit::vt<Context>)) {
                 _ => { }
             }
         }
-        expr_copy(expr) => {
-            // Note: This is the only place where we must check whether the
-            // argument is copyable.  This is not because this is the only
-            // kind of expression that may copy things, but rather because all
-            // other copies will have been converted to moves by by the
-            // `moves` pass if the value is not copyable.
-            check_copy(cx,
-                       ty::expr_ty(cx.tcx, expr),
-                       expr.span,
-                       "explicit copy requires a copyable argument");
-        }
         expr_repeat(element, count_expr, _) => {
-            let count = ty::eval_repeat_count(cx.tcx, count_expr);
+            let count = ty::eval_repeat_count(&cx.tcx, count_expr);
             if count > 1 {
                 let element_ty = ty::expr_ty(cx.tcx, element);
                 check_copy(cx, element_ty, element.span,
@@ -320,7 +312,7 @@ pub fn check_expr(e: @expr, (cx, v): (Context, visit::vt<Context>)) {
     visit::visit_expr(e, (cx, v));
 }
 
-fn check_ty(aty: @Ty, (cx, v): (Context, visit::vt<Context>)) {
+fn check_ty(aty: &Ty, (cx, v): (Context, visit::vt<Context>)) {
     match aty.node {
       ty_path(_, _, id) => {
           let r = cx.tcx.node_type_substs.find(&id);
@@ -442,7 +434,7 @@ fn check_copy(cx: Context, ty: ty::t, sp: span, reason: &str) {
     debug!("type_contents(%s)=%s",
            ty_to_str(cx.tcx, ty),
            ty::type_contents(cx.tcx, ty).to_str());
-    if !ty::type_is_copyable(cx.tcx, ty) {
+    if ty::type_moves_by_default(cx.tcx, ty) {
         cx.tcx.sess.span_err(
             sp, fmt!("copying a value of non-copyable type `%s`",
                      ty_to_str(cx.tcx, ty)));
@@ -535,7 +527,7 @@ pub fn check_cast_for_escaping_regions(
     // Check, based on the region associated with the trait, whether it can
     // possibly escape the enclosing fn item (note that all type parameters
     // must have been declared on the enclosing fn item).
-    if target_regions.iter().any_(|r| is_re_scope(*r)) {
+    if target_regions.iter().any(|r| is_re_scope(*r)) {
         return; /* case (1) */
     }
 
@@ -550,7 +542,7 @@ pub fn check_cast_for_escaping_regions(
         |_r| {
             // FIXME(#5723) --- turn this check on once &Objects are usable
             //
-            // if !target_regions.iter().any_(|t_r| is_subregion_of(cx, *t_r, r)) {
+            // if !target_regions.iter().any(|t_r| is_subregion_of(cx, *t_r, r)) {
             //     cx.tcx.sess.span_err(
             //         source.span,
             //         fmt!("source contains borrowed pointer with lifetime \
@@ -564,7 +556,7 @@ pub fn check_cast_for_escaping_regions(
         |ty| {
             match ty::get(ty).sty {
                 ty::ty_param(source_param) => {
-                    if target_params.iter().any_(|x| x == &source_param) {
+                    if target_params.iter().any(|x| x == &source_param) {
                         /* case (2) */
                     } else {
                         check_durable(cx.tcx, ty, source.span); /* case (3) */
@@ -586,4 +578,3 @@ pub fn check_cast_for_escaping_regions(
         cx.tcx.region_maps.is_subregion_of(r_sub, r_sup)
     }
 }
-

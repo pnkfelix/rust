@@ -31,8 +31,8 @@ use syntax::visit;
 
 // Returns true if the given set of attributes contains the `#[inline]`
 // attribute.
-fn attributes_specify_inlining(attrs: &[attribute]) -> bool {
-    attr::attrs_contains_name(attrs, "inline")
+fn attributes_specify_inlining(attrs: &[Attribute]) -> bool {
+    attr::contains_name(attrs, "inline")
 }
 
 // Returns true if the given set of generics implies that the item it's
@@ -76,7 +76,7 @@ fn trait_method_might_be_inlined(trait_method: &trait_method) -> bool {
 // The context we're in. If we're in a public context, then public symbols are
 // marked reachable. If we're in a private context, then only trait
 // implementations are marked reachable.
-#[deriving(Eq)]
+#[deriving(Clone, Eq)]
 enum PrivacyContext {
     PublicContext,
     PrivateContext,
@@ -110,7 +110,7 @@ impl ReachableContext {
 
     // Step 1: Mark all public symbols, and add all public symbols that might
     // be inlined to a worklist.
-    fn mark_public_symbols(&self, crate: @crate) {
+    fn mark_public_symbols(&self, crate: @Crate) {
         let reachable_symbols = self.reachable_symbols;
         let worklist = self.worklist;
         let visitor = visit::mk_vt(@Visitor {
@@ -141,7 +141,7 @@ impl ReachableContext {
                             }
                         }
                     }
-                    item_impl(ref generics, trait_ref, _, ref methods) => {
+                    item_impl(ref generics, ref trait_ref, _, ref methods) => {
                         // XXX(pcwalton): We conservatively assume any methods
                         // on a trait implementation are reachable, when this
                         // is not the case. We could be more precise by only
@@ -403,7 +403,7 @@ impl ReachableContext {
 
 pub fn find_reachable(tcx: ty::ctxt,
                       method_map: typeck::method_map,
-                      crate: @crate)
+                      crate: @Crate)
                       -> @mut HashSet<node_id> {
     // XXX(pcwalton): We only need to mark symbols that are exported. But this
     // is more complicated than just looking at whether the symbol is `pub`,
@@ -431,4 +431,3 @@ pub fn find_reachable(tcx: ty::ctxt,
     // Return the set of reachable symbols.
     reachable_context.reachable_symbols
 }
-

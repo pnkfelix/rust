@@ -31,9 +31,6 @@ use to_str::ToStr;
 use vec::raw::{VecRepr, SliceRepr};
 use vec;
 use vec::{OwnedVector, UnboxedVecRepr};
-#[cfg(stage0)]
-use intrinsic::{Opaque, TyDesc, TyVisitor, get_tydesc, visit_tydesc};
-#[cfg(not(stage0))]
 use unstable::intrinsics::{Opaque, TyDesc, TyVisitor, get_tydesc, visit_tydesc};
 
 #[cfg(test)] use io;
@@ -200,25 +197,27 @@ impl ReprVisitor {
     }
 
     pub fn write_vec_range(&self,
-                           mtbl: uint,
+                           _mtbl: uint,
                            ptr: *u8,
                            len: uint,
                            inner: *TyDesc)
                            -> bool {
         let mut p = ptr;
-        let end = ptr::offset(p, len);
         let (sz, al) = unsafe { ((*inner).size, (*inner).align) };
         self.writer.write_char('[');
         let mut first = true;
-        while (p as uint) < (end as uint) {
+        let mut left = len;
+        // unit structs have 0 size, and don't loop forever.
+        let dec = if sz == 0 {1} else {sz};
+        while left > 0 {
             if first {
                 first = false;
             } else {
                 self.writer.write_str(", ");
             }
-            self.write_mut_qualifier(mtbl);
             self.visit_ptr_inner(p as *c_void, inner);
             p = align(ptr::offset(p, sz) as uint, al) as *u8;
+            left -= dec;
         }
         self.writer.write_char(']');
         true
@@ -265,9 +264,6 @@ impl TyVisitor for ReprVisitor {
         }
     }
 
-    // Type no longer exists, vestigial function.
-    fn visit_str(&self) -> bool { fail!(); }
-
     fn visit_estr_box(&self) -> bool {
         do self.get::<@str> |s| {
             self.writer.write_char('@');
@@ -299,9 +295,15 @@ impl TyVisitor for ReprVisitor {
         }
     }
 
-    fn visit_uniq(&self, mtbl: uint, inner: *TyDesc) -> bool {
+    fn visit_uniq(&self, _mtbl: uint, inner: *TyDesc) -> bool {
         self.writer.write_char('~');
-        self.write_mut_qualifier(mtbl);
+        do self.get::<*c_void> |b| {
+            self.visit_ptr_inner(*b, inner);
+        }
+    }
+
+    fn visit_uniq_managed(&self, _mtbl: uint, inner: *TyDesc) -> bool {
+        self.writer.write_char('~');
         do self.get::<&managed::raw::BoxRepr> |b| {
             let p = ptr::to_unsafe_ptr(&b.data) as *c_void;
             self.visit_ptr_inner(p, inner);
@@ -336,11 +338,19 @@ impl TyVisitor for ReprVisitor {
     fn visit_evec_box(&self, mtbl: uint, inner: *TyDesc) -> bool {
         do self.get::<&VecRepr> |b| {
             self.writer.write_char('@');
+            self.write_mut_qualifier(mtbl);
             self.write_unboxed_vec_repr(mtbl, &b.unboxed, inner);
         }
     }
 
     fn visit_evec_uniq(&self, mtbl: uint, inner: *TyDesc) -> bool {
+        do self.get::<&UnboxedVecRepr> |b| {
+            self.writer.write_char('~');
+            self.write_unboxed_vec_repr(mtbl, *b, inner);
+        }
+    }
+
+    fn visit_evec_uniq_managed(&self, mtbl: uint, inner: *TyDesc) -> bool {
         do self.get::<&VecRepr> |b| {
             self.writer.write_char('~');
             self.write_unboxed_vec_repr(mtbl, &b.unboxed, inner);
@@ -535,22 +545,11 @@ impl TyVisitor for ReprVisitor {
     fn visit_self(&self) -> bool { true }
     fn visit_type(&self) -> bool { true }
 
-    #[cfg(not(stage0))]
     fn visit_opaque_box(&self) -> bool {
         self.writer.write_char('@');
         do self.get::<&managed::raw::BoxRepr> |b| {
             let p = ptr::to_unsafe_ptr(&b.data) as *c_void;
             self.visit_ptr_inner(p, b.header.type_desc);
-        }
-    }
-    #[cfg(stage0)]
-    fn visit_opaque_box(&self) -> bool {
-        self.writer.write_char('@');
-        do self.get::<&managed::raw::BoxRepr> |b| {
-            let p = ptr::to_unsafe_ptr(&b.data) as *c_void;
-            unsafe {
-                self.visit_ptr_inner(p, transmute(b.header.type_desc));
-            }
         }
     }
 
@@ -593,13 +592,14 @@ fn test_repr() {
     exact_test(&(@"hello"), "@\"hello\"");
     exact_test(&(~"he\u10f3llo"), "~\"he\\u10f3llo\"");
 
-    // FIXME #4210: the mut fields are a bit off here.
     exact_test(&(@10), "@10");
-    exact_test(&(@mut 10), "@10");
+    exact_test(&(@mut 10), "@10"); // FIXME: #4210: incorrect
+    exact_test(&((@mut 10, 2)), "(@mut 10, 2)");
     exact_test(&(~10), "~10");
     exact_test(&(&10), "&10");
     let mut x = 10;
     exact_test(&(&mut x), "&mut 10");
+    exact_test(&(@mut [1, 2]), "@mut [1, 2]");
 
     exact_test(&(1,), "(1,)");
     exact_test(&(@[1,2,3,4,5,6,7,8]),
@@ -626,4 +626,7 @@ fn test_repr() {
                "(10, ~\"hello\")");
     exact_test(&(10_u64, ~"hello"),
                "(10, ~\"hello\")");
+
+    struct Foo;
+    exact_test(&(~[Foo, Foo, Foo]), "~[{}, {}, {}]");
 }

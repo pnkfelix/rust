@@ -27,6 +27,9 @@
 #define RUST_DEBUG_MEM "RUST_DEBUG_MEM"
 #define RUST_DEBUG_BORROW "RUST_DEBUG_BORROW"
 
+#define DEFAULT_RUST_MIN_STACK_32 0x300
+#define DEFAULT_RUST_MIN_STACK_64 0x400000
+
 static lock_and_signal env_lock;
 
 extern "C" CDECL void
@@ -40,7 +43,7 @@ rust_drop_env_lock() {
 }
 
 #if defined(__WIN32__)
-static int
+int
 get_num_cpus() {
     SYSTEM_INFO sysinfo;
     GetSystemInfo(&sysinfo);
@@ -48,7 +51,7 @@ get_num_cpus() {
     return (int) sysinfo.dwNumberOfProcessors;
 }
 #elif defined(__BSD__)
-static int
+int
 get_num_cpus() {
     /* swiped from http://stackoverflow.com/questions/150355/
        programmatically-find-the-number-of-cores-on-a-machine */
@@ -75,7 +78,7 @@ get_num_cpus() {
     return numCPU;
 }
 #elif defined(__GNUC__)
-static int
+int
 get_num_cpus() {
     return sysconf(_SC_NPROCESSORS_ONLN);
 }
@@ -99,8 +102,10 @@ get_min_stk_size() {
     if(minsz) {
         return strtol(minsz, NULL, 0);
     }
-    else {
-        return 0x300;
+    else if (sizeof(size_t) > 4) {
+        return DEFAULT_RUST_MIN_STACK_64;
+    } else {
+        return DEFAULT_RUST_MIN_STACK_32;
     }
 }
 

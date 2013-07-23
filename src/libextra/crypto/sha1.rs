@@ -240,19 +240,19 @@ impl Digest for Sha1 {
 
 #[cfg(test)]
 mod tests {
-    use std::vec;
 
     use digest::{Digest, DigestUtil};
     use sha1::Sha1;
 
+    #[deriving(Clone)]
+    struct Test {
+        input: ~str,
+        output: ~[u8],
+        output_str: ~str,
+    }
+
     #[test]
     fn test() {
-        struct Test {
-            input: ~str,
-            output: ~[u8],
-            output_str: ~str,
-        }
-
         fn a_million_letter_a() -> ~str {
             let mut i = 0;
             let mut rs = ~"";
@@ -337,7 +337,7 @@ mod tests {
         for tests.iter().advance |t| {
             (*sh).input_str(t.input);
             sh.result(out);
-            assert!(vec::eq(t.output, out));
+            assert!(t.output.as_slice() == out);
 
             let out_str = (*sh).result_str();
             assert_eq!(out_str.len(), 40);
@@ -357,7 +357,7 @@ mod tests {
                 left = left - take;
             }
             sh.result(out);
-            assert!(vec::eq(t.output, out));
+            assert!(t.output.as_slice() == out);
 
             let out_str = (*sh).result_str();
             assert_eq!(out_str.len(), 40);
@@ -366,4 +366,42 @@ mod tests {
             sh.reset();
         }
     }
+}
+
+#[cfg(test)]
+mod bench {
+
+    use sha1::Sha1;
+    use test::BenchHarness;
+
+    #[bench]
+    pub fn sha1_10(bh: & mut BenchHarness) {
+        let mut sh = Sha1::new();
+        let bytes = [1u8, ..10];
+        do bh.iter {
+            sh.input(bytes);
+        }
+        bh.bytes = bytes.len() as u64;
+    }
+
+    #[bench]
+    pub fn sha1_1k(bh: & mut BenchHarness) {
+        let mut sh = Sha1::new();
+        let bytes = [1u8, ..1024];
+        do bh.iter {
+            sh.input(bytes);
+        }
+        bh.bytes = bytes.len() as u64;
+    }
+
+    #[bench]
+    pub fn sha1_64k(bh: & mut BenchHarness) {
+        let mut sh = Sha1::new();
+        let bytes = [1u8, ..65536];
+        do bh.iter {
+            sh.input(bytes);
+        }
+        bh.bytes = bytes.len() as u64;
+    }
+
 }

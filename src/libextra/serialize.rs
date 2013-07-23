@@ -23,7 +23,8 @@ use std::hashmap::{HashMap, HashSet};
 use std::trie::{TrieMap, TrieSet};
 use std::uint;
 use std::vec;
-use deque::Deque;
+use ringbuf::RingBuf;
+use container::Deque;
 use dlist::DList;
 use treemap::{TreeMap, TreeSet};
 
@@ -422,9 +423,21 @@ impl<S:Encoder,T:Encodable<S>> Encodable<S> for @T {
     }
 }
 
-impl<D:Decoder,T:Decodable<D>> Decodable<D> for @T {
+impl<D:Decoder,T:Decodable<D> + 'static> Decodable<D> for @T {
     fn decode(d: &mut D) -> @T {
         @Decodable::decode(d)
+    }
+}
+
+impl<S:Encoder,T:Encodable<S>> Encodable<S> for @mut T {
+    fn encode(&self, s: &mut S) {
+        (**self).encode(s)
+    }
+}
+
+impl<D:Decoder,T:Decodable<D> + 'static> Decodable<D> for @mut T {
+    fn decode(d: &mut D) -> @mut T {
+        @mut Decodable::decode(d)
     }
 }
 
@@ -651,25 +664,23 @@ impl<
 
 impl<
     S: Encoder,
-    T: Encodable<S> + Copy
-> Encodable<S> for @mut DList<T> {
+    T: Encodable<S>
+> Encodable<S> for DList<T> {
     fn encode(&self, s: &mut S) {
-        do s.emit_seq(self.size) |s| {
-            let mut i = 0;
-            for self.each |e| {
+        do s.emit_seq(self.len()) |s| {
+            for self.iter().enumerate().advance |(i, e)| {
                 s.emit_seq_elt(i, |s| e.encode(s));
-                i += 1;
             }
         }
     }
 }
 
-impl<D:Decoder,T:Decodable<D>> Decodable<D> for @mut DList<T> {
-    fn decode(d: &mut D) -> @mut DList<T> {
-        let list = DList();
+impl<D:Decoder,T:Decodable<D>> Decodable<D> for DList<T> {
+    fn decode(d: &mut D) -> DList<T> {
+        let mut list = DList::new();
         do d.read_seq |d, len| {
             for uint::range(0, len) |i| {
-                list.push(d.read_seq_elt(i, |d| Decodable::decode(d)));
+                list.push_back(d.read_seq_elt(i, |d| Decodable::decode(d)));
             }
         }
         list
@@ -679,22 +690,22 @@ impl<D:Decoder,T:Decodable<D>> Decodable<D> for @mut DList<T> {
 impl<
     S: Encoder,
     T: Encodable<S>
-> Encodable<S> for Deque<T> {
+> Encodable<S> for RingBuf<T> {
     fn encode(&self, s: &mut S) {
         do s.emit_seq(self.len()) |s| {
-            for self.eachi |i, e| {
+            for self.iter().enumerate().advance |(i, e)| {
                 s.emit_seq_elt(i, |s| e.encode(s));
             }
         }
     }
 }
 
-impl<D:Decoder,T:Decodable<D>> Decodable<D> for Deque<T> {
-    fn decode(d: &mut D) -> Deque<T> {
-        let mut deque = Deque::new();
+impl<D:Decoder,T:Decodable<D>> Decodable<D> for RingBuf<T> {
+    fn decode(d: &mut D) -> RingBuf<T> {
+        let mut deque = RingBuf::new();
         do d.read_seq |d, len| {
             for uint::range(0, len) |i| {
-                deque.add_back(d.read_seq_elt(i, |d| Decodable::decode(d)));
+                deque.push_back(d.read_seq_elt(i, |d| Decodable::decode(d)));
             }
         }
         deque

@@ -192,6 +192,7 @@ pub struct LookupContext<'self> {
  * A potential method that might be called, assuming the receiver
  * is of a suitable type.
  */
+#[deriving(Clone)]
 pub struct Candidate {
     rcvr_match_condition: RcvrMatchCondition,
     rcvr_substs: ty::substs,
@@ -289,7 +290,7 @@ impl<'self> LookupContext<'self> {
             ty_enum(did, _) => {
                 // Watch out for newtype'd enums like "enum t = @T".
                 // See discussion in typeck::check::do_autoderef().
-                if enum_dids.iter().any_(|x| x == &did) {
+                if enum_dids.iter().any(|x| x == &did) {
                     return None;
                 }
                 enum_dids.push(did);
@@ -363,8 +364,7 @@ impl<'self> LookupContext<'self> {
         for opt_applicable_traits.iter().advance |applicable_traits| {
             for applicable_traits.iter().advance |trait_did| {
                 // Look for explicit implementations.
-                let opt_impl_infos =
-                    self.fcx.ccx.coherence_info.extension_methods.find(trait_did);
+                let opt_impl_infos = self.tcx().trait_impls.find(trait_did);
                 for opt_impl_infos.iter().advance |impl_infos| {
                     for impl_infos.iter().advance |impl_info| {
                         self.push_candidates_from_impl(
@@ -402,7 +402,7 @@ impl<'self> LookupContext<'self> {
 
             let trait_methods = ty::trait_methods(tcx, bound_trait_ref.def_id);
             let pos = {
-                match trait_methods.iter().position_(|m| {
+                match trait_methods.iter().position(|m| {
                     m.explicit_self != ast::sty_static &&
                         m.ident == self.m_name })
                 {
@@ -418,7 +418,7 @@ impl<'self> LookupContext<'self> {
 
             let cand = Candidate {
                 rcvr_match_condition: RcvrMatchesIfSubtype(rcvr_ty),
-                rcvr_substs: copy bound_trait_ref.substs,
+                rcvr_substs: bound_trait_ref.substs.clone(),
                 method_ty: method,
                 origin: method_param(
                     method_param {
@@ -445,7 +445,7 @@ impl<'self> LookupContext<'self> {
 
         let tcx = self.tcx();
         let ms = ty::trait_methods(tcx, did);
-        let index = match ms.iter().position_(|m| m.ident == self.m_name) {
+        let index = match ms.iter().position(|m| m.ident == self.m_name) {
             Some(i) => i,
             None => { return; } // no method with the right name
         };
@@ -468,7 +468,7 @@ impl<'self> LookupContext<'self> {
         // for Self. (fix)
         let rcvr_substs = substs {
             self_ty: Some(ty::mk_err()),
-            ../*bad*/copy *substs
+            ..(*substs).clone()
         };
 
         self.inherent_candidates.push(Candidate {
@@ -493,7 +493,7 @@ impl<'self> LookupContext<'self> {
         // First, try self methods
         let mut method_info: Option<MethodInfo> = None;
         let methods = ty::trait_methods(tcx, did);
-        match methods.iter().position_(|m| m.ident == self.m_name) {
+        match methods.iter().position(|m| m.ident == self.m_name) {
             Some(i) => {
                 method_info = Some(MethodInfo {
                     method_ty: methods[i],
@@ -509,7 +509,7 @@ impl<'self> LookupContext<'self> {
             for ty::trait_supertraits(tcx, did).iter().advance |trait_ref| {
                 let supertrait_methods =
                     ty::trait_methods(tcx, trait_ref.def_id);
-                match supertrait_methods.iter().position_(|m| m.ident == self.m_name) {
+                match supertrait_methods.iter().position(|m| m.ident == self.m_name) {
                     Some(i) => {
                         method_info = Some(MethodInfo {
                             method_ty: supertrait_methods[i],
@@ -533,7 +533,7 @@ impl<'self> LookupContext<'self> {
                 };
                 self.inherent_candidates.push(Candidate {
                     rcvr_ty: self_ty,
-                    rcvr_substs: copy info.trait_ref.substs,
+                    rcvr_substs: info.trait_ref.substs.clone(),
                     method_ty: info.method_ty,
                     origin: origin
                 });
@@ -543,8 +543,7 @@ impl<'self> LookupContext<'self> {
     }
 
     pub fn push_inherent_impl_candidates_for_type(&self, did: def_id) {
-        let opt_impl_infos =
-            self.fcx.ccx.coherence_info.inherent_methods.find(&did);
+        let opt_impl_infos = self.tcx().inherent_impls.find(&did);
         for opt_impl_infos.iter().advance |impl_infos| {
             for impl_infos.iter().advance |impl_info| {
                 self.push_candidates_from_impl(
@@ -583,7 +582,7 @@ impl<'self> LookupContext<'self> {
 
     pub fn push_candidates_from_impl(&self,
                                      candidates: &mut ~[Candidate],
-                                     impl_info: &resolve::Impl) {
+                                     impl_info: &ty::Impl) {
         if !self.impl_dups.insert(impl_info.did) {
             return; // already visited
         }
@@ -593,13 +592,13 @@ impl<'self> LookupContext<'self> {
                impl_info.methods.map(|m| m.ident).repr(self.tcx()));
 
         let idx = {
-            match impl_info.methods.iter().position_(|m| m.ident == self.m_name) {
+            match impl_info.methods.iter().position(|m| m.ident == self.m_name) {
                 Some(idx) => idx,
                 None => { return; } // No method with the right name.
             }
         };
 
-        let method = ty::method(self.tcx(), impl_info.methods[idx].did);
+        let method = ty::method(self.tcx(), impl_info.methods[idx].def_id);
 
         // determine the `self` of the impl with fresh
         // variables for each parameter:
@@ -710,14 +709,18 @@ impl<'self> LookupContext<'self> {
                      autoref: None}))
             }
             ty::ty_rptr(_, self_mt) => {
-                let region = self.infcx().next_region_var_nb(self.expr.span);
+                let region =
+                    self.infcx().next_region_var(
+                        infer::Autoref(self.expr.span));
                 (ty::mk_rptr(tcx, region, self_mt),
                  ty::AutoDerefRef(ty::AutoDerefRef {
                      autoderefs: autoderefs+1,
                      autoref: Some(ty::AutoPtr(region, self_mt.mutbl))}))
             }
             ty::ty_evec(self_mt, vstore_slice(_)) => {
-                let region = self.infcx().next_region_var_nb(self.expr.span);
+                let region =
+                    self.infcx().next_region_var(
+                        infer::Autoref(self.expr.span));
                 (ty::mk_evec(tcx, self_mt, vstore_slice(region)),
                  ty::AutoDerefRef(ty::AutoDerefRef {
                      autoderefs: autoderefs,
@@ -862,7 +865,9 @@ impl<'self> LookupContext<'self> {
         -> Option<method_map_entry> {
         // This is hokey. We should have mutability inference as a
         // variable.  But for now, try &const, then &, then &mut:
-        let region = self.infcx().next_region_var_nb(self.expr.span);
+        let region =
+            self.infcx().next_region_var(
+                infer::Autoref(self.expr.span));
         for mutbls.iter().advance |mutbl| {
             let autoref_ty = mk_autoref_ty(*mutbl, region);
             match self.search_for_method(autoref_ty) {
@@ -912,8 +917,9 @@ impl<'self> LookupContext<'self> {
                                rcvr_ty: ty::t,
                                candidates: &mut ~[Candidate])
                                -> Option<method_map_entry> {
+        // XXX(pcwalton): Do we need to clone here?
         let relevant_candidates: ~[Candidate] =
-            candidates.iter().transform(|c| copy *c).
+            candidates.iter().transform(|c| (*c).clone()).
                 filter(|c| self.is_relevant(rcvr_ty, c)).collect();
 
         let relevant_candidates = self.merge_candidates(relevant_candidates);
@@ -938,7 +944,7 @@ impl<'self> LookupContext<'self> {
         let mut merged = ~[];
         let mut i = 0;
         while i < candidates.len() {
-            let candidate_a = /*bad*/copy candidates[i];
+            let candidate_a = &candidates[i];
 
             let mut skip = false;
 
@@ -973,7 +979,7 @@ impl<'self> LookupContext<'self> {
                 // There are more than one of these and we need only one
                 loop;
             } else {
-                merged.push(candidate_a);
+                merged.push(candidate_a.clone());
             }
         }
 
@@ -1034,9 +1040,9 @@ impl<'self> LookupContext<'self> {
         // Construct the full set of type parameters for the method,
         // which is equal to the class tps + the method tps.
         let all_substs = substs {
-            tps: vec::append(/*bad*/copy candidate.rcvr_substs.tps,
-                             m_substs),
-            ../*bad*/copy candidate.rcvr_substs
+            tps: vec::append(candidate.rcvr_substs.tps.clone(), m_substs),
+            self_r: candidate.rcvr_substs.self_r,
+            self_ty: candidate.rcvr_substs.self_ty,
         };
 
         // Compute the method type with type parameters substituted
@@ -1049,7 +1055,7 @@ impl<'self> LookupContext<'self> {
         // Replace any bound regions that appear in the function
         // signature with region variables
         let bare_fn_ty = match ty::get(fty).sty {
-            ty::ty_bare_fn(ref f) => copy *f,
+            ty::ty_bare_fn(ref f) => f,
             ref s => {
                 tcx.sess.span_bug(
                     self.expr.span,
@@ -1059,9 +1065,14 @@ impl<'self> LookupContext<'self> {
         let (_, opt_transformed_self_ty, fn_sig) =
             replace_bound_regions_in_fn_sig(
                 tcx, @Nil, Some(transformed_self_ty), &bare_fn_ty.sig,
-                |_br| self.fcx.infcx().next_region_var_nb(self.expr.span));
+                |br| self.fcx.infcx().next_region_var(
+                    infer::BoundRegionInFnCall(self.expr.span, br)));
         let transformed_self_ty = opt_transformed_self_ty.get();
-        let fty = ty::mk_bare_fn(tcx, ty::BareFnTy {sig: fn_sig, ..bare_fn_ty});
+        let fty = ty::mk_bare_fn(tcx, ty::BareFnTy {
+            sig: fn_sig,
+            purity: bare_fn_ty.purity,
+            abis: bare_fn_ty.abis.clone(),
+        });
         debug!("after replacing bound regions, fty=%s", self.ty_to_str(fty));
 
         let self_mode = get_mode_from_explicit_self(candidate.method_ty.explicit_self);
@@ -1071,7 +1082,7 @@ impl<'self> LookupContext<'self> {
         // variables to unify etc).  Since we checked beforehand, and
         // nothing has changed in the meantime, this unification
         // should never fail.
-        match self.fcx.mk_subty(false, self.self_expr.span,
+        match self.fcx.mk_subty(false, infer::Misc(self.self_expr.span),
                                 rcvr_ty, transformed_self_ty) {
             result::Ok(_) => (),
             result::Err(_) => {
@@ -1350,7 +1361,7 @@ impl<'self> LookupContext<'self> {
                                 trait_did: def_id,
                                 method_num: uint) -> ty::t {
             let trait_methods = ty::trait_methods(tcx, trait_did);
-            ty::mk_bare_fn(tcx, copy trait_methods[method_num].fty)
+            ty::mk_bare_fn(tcx, trait_methods[method_num].fty.clone())
         }
     }
 

@@ -22,7 +22,7 @@ use std::io;
 use std::str;
 use std::uint;
 
-#[deriving(Eq)]
+#[deriving(Clone, Eq)]
 pub enum cmnt_style {
     isolated, // No code on either side of each line of the comment
     trailing, // Code exists to the left of the comment
@@ -30,6 +30,7 @@ pub enum cmnt_style {
     blank_line, // Just a manual blank line "\n\n", for layout
 }
 
+#[deriving(Clone)]
 pub struct cmnt {
     style: cmnt_style,
     lines: ~[~str],
@@ -43,12 +44,12 @@ pub fn is_doc_comment(s: &str) -> bool {
     s.starts_with("/*!")
 }
 
-pub fn doc_comment_style(comment: &str) -> ast::attr_style {
+pub fn doc_comment_style(comment: &str) -> ast::AttrStyle {
     assert!(is_doc_comment(comment));
     if comment.starts_with("//!") || comment.starts_with("/*!") {
-        ast::attr_inner
+        ast::AttrInner
     } else {
-        ast::attr_outer
+        ast::AttrOuter
     }
 }
 
@@ -324,6 +325,7 @@ fn consume_comment(rdr: @mut StringReader,
     debug!("<<< consume comment");
 }
 
+#[deriving(Clone)]
 pub struct lit {
     lit: ~str,
     pos: BytePos

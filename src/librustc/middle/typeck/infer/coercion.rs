@@ -70,7 +70,7 @@ use middle::ty::{AutoDerefRef};
 use middle::ty::{vstore_slice, vstore_box, vstore_uniq};
 use middle::ty::{mt};
 use middle::ty;
-use middle::typeck::infer::{CoerceResult, resolve_type};
+use middle::typeck::infer::{CoerceResult, resolve_type, Coercion};
 use middle::typeck::infer::combine::CombineFields;
 use middle::typeck::infer::sub::Sub;
 use middle::typeck::infer::to_str::InferStr;
@@ -171,7 +171,7 @@ impl Coerce {
             }
             Err(e) => {
                 self.infcx.tcx.sess.span_bug(
-                    self.span,
+                    self.trace.origin.span(),
                     fmt!("Failed to resolve even without \
                           any force options: %?", e));
             }
@@ -195,7 +195,7 @@ impl Coerce {
         // yield.
 
         let sub = Sub(**self);
-        let r_borrow = self.infcx.next_region_var_nb(self.span);
+        let r_borrow = self.infcx.next_region_var(Coercion(self.trace));
 
         let inner_ty = match *sty_a {
             ty::ty_box(mt_a) => mt_a.ty,
@@ -233,7 +233,7 @@ impl Coerce {
             }
         };
 
-        let r_a = self.infcx.next_region_var_nb(self.span);
+        let r_a = self.infcx.next_region_var(Coercion(self.trace));
         let a_borrowed = ty::mk_estr(self.infcx.tcx, vstore_slice(r_a));
         if_ok!(self.subtype(a_borrowed, b));
         Ok(Some(@AutoDerefRef(AutoDerefRef {
@@ -253,7 +253,7 @@ impl Coerce {
                b.inf_str(self.infcx));
 
         let sub = Sub(**self);
-        let r_borrow = self.infcx.next_region_var_nb(self.span);
+        let r_borrow = self.infcx.next_region_var(Coercion(self.trace));
         let ty_inner = match *sty_a {
             ty::ty_evec(mt, _) => mt.ty,
             _ => {
@@ -316,8 +316,10 @@ impl Coerce {
                b.inf_str(self.infcx));
 
         let fn_ty = match *sty_a {
-            ty::ty_closure(ref f) if f.sigil == ast::ManagedSigil => copy *f,
-            ty::ty_closure(ref f) if f.sigil == ast::OwnedSigil => copy *f,
+            ty::ty_closure(ref f) if f.sigil == ast::ManagedSigil ||
+                                     f.sigil == ast::OwnedSigil => {
+                (*f).clone()
+            }
             ty::ty_bare_fn(ref f) => {
                 return self.coerce_from_bare_fn(a, f, b);
             }
@@ -326,7 +328,7 @@ impl Coerce {
             }
         };
 
-        let r_borrow = self.infcx.next_region_var_nb(self.span);
+        let r_borrow = self.infcx.next_region_var(Coercion(self.trace));
         let a_borrowed = ty::mk_closure(
             self.infcx.tcx,
             ty::ClosureTy {
@@ -372,16 +374,16 @@ impl Coerce {
         }
 
         let fn_ty_b = match *sty_b {
-            ty::ty_closure(ref f) => {copy *f}
-            _ => {
-                return self.subtype(a, b);
-            }
+            ty::ty_closure(ref f) => (*f).clone(),
+            _ => return self.subtype(a, b),
         };
 
         let adj = @ty::AutoAddEnv(fn_ty_b.region, fn_ty_b.sigil);
-        let a_closure = ty::mk_closure(
-            self.infcx.tcx,
-            ty::ClosureTy {sig: copy fn_ty_a.sig, ..fn_ty_b});
+        let a_closure = ty::mk_closure(self.infcx.tcx,
+                                       ty::ClosureTy {
+                                            sig: fn_ty_a.sig.clone(),
+                                            ..fn_ty_b
+                                       });
         if_ok!(self.subtype(a_closure, b));
         Ok(Some(adj))
     }

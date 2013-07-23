@@ -1,0 +1,123 @@
+// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// file at the top-level directory of this distribution and at
+// http://rust-lang.org/COPYRIGHT.
+//
+// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
+//! Container traits for extra
+
+use std::container::Mutable;
+
+/// A double-ended sequence that allows querying, insertion and deletion at both ends.
+pub trait Deque<T> : Mutable {
+    /// Provide a reference to the front element, or None if the sequence is empty
+    fn front<'a>(&'a self) -> Option<&'a T>;
+
+    /// Provide a mutable reference to the front element, or None if the sequence is empty
+    fn front_mut<'a>(&'a mut self) -> Option<&'a mut T>;
+
+    /// Provide a reference to the back element, or None if the sequence is empty
+    fn back<'a>(&'a self) -> Option<&'a T>;
+
+    /// Provide a mutable reference to the back element, or None if the sequence is empty
+    fn back_mut<'a>(&'a mut self) -> Option<&'a mut T>;
+
+    /// Insert an element first in the sequence
+    fn push_front(&mut self, elt: T);
+
+    /// Insert an element last in the sequence
+    fn push_back(&mut self, elt: T);
+
+    /// Remove the last element and return it, or None if the sequence is empty
+    fn pop_back(&mut self) -> Option<T>;
+
+    /// Remove the first element and return it, or None if the sequence is empty
+    fn pop_front(&mut self) -> Option<T>;
+}
+
+#[cfg(test)]
+mod bench {
+
+    use std::container::MutableMap;
+    use std::{vec,rand,uint};
+    use std::rand::RngUtil;
+    use test::BenchHarness;
+
+    pub fn insert_rand_n<M:MutableMap<uint,uint>>(n: uint,
+                                                  map: &mut M,
+                                                  bh: &mut BenchHarness) {
+        // setup
+        let mut rng = rand::XorShiftRng::new();
+
+        map.clear();
+        for uint::range(0,n) |_i| {
+            map.insert(rng.gen::<uint>() % n, 1);
+        }
+
+        // measure
+        do bh.iter {
+            let k = rng.gen::<uint>() % n;
+            map.insert(k, 1);
+            map.remove(&k);
+        }
+    }
+
+    pub fn insert_seq_n<M:MutableMap<uint,uint>>(n: uint,
+                                                 map: &mut M,
+                                                 bh: &mut BenchHarness) {
+        // setup
+        map.clear();
+        for uint::range(0, n) |i| {
+            map.insert(i*2, 1);
+        }
+
+        // measure
+        let mut i = 1;
+        do bh.iter {
+            map.insert(i, 1);
+            map.remove(&i);
+            i = (i + 2) % n;
+        }
+    }
+
+    pub fn find_rand_n<M:MutableMap<uint,uint>>(n: uint,
+                                                map: &mut M,
+                                                bh: &mut BenchHarness) {
+        // setup
+        let mut rng = rand::XorShiftRng::new();
+        let mut keys = vec::from_fn(n, |_| rng.gen::<uint>() % n);
+
+        for keys.iter().advance() |k| {
+            map.insert(*k, 1);
+        }
+
+        rng.shuffle_mut(keys);
+
+        // measure
+        let mut i = 0;
+        do bh.iter {
+            map.find(&(keys[i]));
+            i = (i + 1) % n;
+        }
+    }
+
+    pub fn find_seq_n<M:MutableMap<uint,uint>>(n: uint,
+                                               map: &mut M,
+                                               bh: &mut BenchHarness) {
+        // setup
+        for uint::range(0, n) |i| {
+            map.insert(i, 1);
+        }
+
+        // measure
+        let mut i = 0;
+        do bh.iter {
+            map.find(&i);
+            i = (i + 1) % n;
+        }
+     }
+}

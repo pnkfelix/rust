@@ -58,6 +58,7 @@ pub enum Linkage {
     LinkerPrivateWeakLinkage = 16,
 }
 
+#[deriving(Clone)]
 pub enum Attribute {
     ZExtAttribute = 1,
     SExtAttribute = 2,
@@ -272,7 +273,7 @@ pub mod llvm {
     #[link_args = "-Lrustllvm -lrustllvm"]
     #[link_name = "rustllvm"]
     #[abi = "cdecl"]
-    pub extern {
+    extern {
         /* Create and destroy contexts. */
         #[fast_ffi]
         pub unsafe fn LLVMContextCreate() -> ContextRef;
@@ -983,6 +984,8 @@ pub mod llvm {
         pub unsafe fn LLVMGetNextInstruction(Inst: ValueRef) -> ValueRef;
         #[fast_ffi]
         pub unsafe fn LLVMGetPreviousInstruction(Inst: ValueRef) -> ValueRef;
+        #[fast_ffi]
+        pub unsafe fn LLVMInstructionEraseFromParent(Inst: ValueRef);
 
         /* Operations on call sites */
         #[fast_ffi]
@@ -1634,6 +1637,14 @@ pub mod llvm {
         #[fast_ffi]
         pub unsafe fn LLVMABIAlignmentOfType(TD: TargetDataRef,
                                   Ty: TypeRef) -> c_uint;
+
+        /** Computes the byte offset of the indexed struct element for a target. */
+        #[fast_ffi]
+        pub unsafe fn LLVMOffsetOfElement(TD: TargetDataRef,
+                                          StructTy: TypeRef,
+                                          Element: c_uint)
+                                       -> c_ulonglong;
+
         /**
          * Returns the minimum alignment of a type when part of a call frame.
          */
@@ -2088,6 +2099,37 @@ pub mod llvm {
             Val: ValueRef,
             VarInfo: DIVariable,
             InsertBefore: ValueRef) -> ValueRef;
+
+        #[fast_ffi]
+        pub unsafe fn LLVMDIBuilderCreateEnumerator(
+            Builder: DIBuilderRef,
+            Name: *c_char,
+            Val: c_ulonglong) -> ValueRef;
+
+        #[fast_ffi]
+        pub unsafe fn LLVMDIBuilderCreateEnumerationType(
+            Builder: DIBuilderRef,
+            Scope: ValueRef,
+            Name: *c_char,
+            File: ValueRef,
+            LineNumber: c_uint,
+            SizeInBits: c_ulonglong,
+            AlignInBits: c_ulonglong,
+            Elements: ValueRef,
+            ClassType: ValueRef) -> ValueRef;
+
+        #[fast_ffi]
+        pub unsafe fn LLVMDIBuilderCreateUnionType(
+            Builder: DIBuilderRef,
+            Scope: ValueRef,
+            Name: *c_char,
+            File: ValueRef,
+            LineNumber: c_uint,
+            SizeInBits: c_ulonglong,
+            AlignInBits: c_ulonglong,
+            Flags: c_uint ,
+            Elements: ValueRef,
+            RunTimeLang: c_uint) -> ValueRef;
     }
 }
 

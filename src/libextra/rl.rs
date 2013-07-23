@@ -19,7 +19,7 @@ use std::str;
 pub mod rustrt {
     use std::libc::{c_char, c_int};
 
-    pub extern {
+    extern {
         pub unsafe fn linenoise(prompt: *c_char) -> *c_char;
         pub unsafe fn linenoiseHistoryAdd(line: *c_char) -> c_int;
         pub unsafe fn linenoiseHistorySetMaxLen(len: c_int) -> c_int;
@@ -66,24 +66,25 @@ pub unsafe fn read(prompt: &str) -> Option<~str> {
     }
 }
 
-pub type CompletionCb<'self> = @fn(~str, &'self fn(~str));
+pub type CompletionCb = @fn(~str, @fn(~str));
 
-fn complete_key(_v: @CompletionCb) {}
+static complete_key: local_data::Key<@CompletionCb> = &local_data::Key;
 
 /// Bind to the main completion callback
 pub unsafe fn complete(cb: CompletionCb) {
-    local_data::local_data_set(complete_key, @(cb));
+    local_data::set(complete_key, @cb);
 
     extern fn callback(line: *c_char, completions: *()) {
-        unsafe {
-            let cb = *local_data::local_data_get(complete_key)
-                .get();
+        do local_data::get(complete_key) |cb| {
+            let cb = **cb.unwrap();
 
-            do cb(str::raw::from_c_str(line)) |suggestion| {
-                do str::as_c_str(suggestion) |buf| {
-                    rustrt::linenoiseAddCompletion(completions, buf);
+            unsafe {
+                do cb(str::raw::from_c_str(line)) |suggestion| {
+                    do str::as_c_str(suggestion) |buf| {
+                        rustrt::linenoiseAddCompletion(completions, buf);
+                    }
                 }
-            }
+}
         }
     }
 

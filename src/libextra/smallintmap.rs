@@ -15,11 +15,10 @@
 
 #[allow(missing_doc)];
 
-
-use std::cmp;
-use std::container::{Container, Mutable, Map, Set};
+use std::iterator::{Iterator, IteratorUtil, EnumerateIterator, FilterMapIterator, InvertIterator};
 use std::uint;
 use std::util::replace;
+use std::vec::{VecIterator, VecMutIterator, VecConsumeIterator};
 
 #[allow(missing_doc)]
 pub struct SmallIntMap<T> {
@@ -65,7 +64,9 @@ impl<V> Map<uint, V> for SmallIntMap<V> {
             None
         }
     }
+}
 
+impl<V> MutableMap<uint, V> for SmallIntMap<V> {
     /// Return a mutable reference to the value corresponding to the key
     fn find_mut<'a>(&'a mut self, key: &uint) -> Option<&'a mut V> {
         if *key < self.v.len() {
@@ -114,7 +115,7 @@ impl<V> Map<uint, V> for SmallIntMap<V> {
         if *key >= self.v.len() {
             return None;
         }
-        replace(&mut self.v[*key], None)
+        self.v[*key].take()
     }
 }
 
@@ -157,8 +158,8 @@ impl<V> SmallIntMap<V> {
     /// Visit all key-value pairs in reverse order
     pub fn each_reverse<'a>(&'a self, it: &fn(uint, &'a V) -> bool) -> bool {
         for uint::range_rev(self.v.len(), 0) |i| {
-            match self.v[i - 1] {
-              Some(ref elt) => if !it(i - 1, elt) { return false; },
+            match self.v[i] {
+              Some(ref elt) => if !it(i, elt) { return false; },
               None => ()
             }
         }
@@ -168,14 +169,59 @@ impl<V> SmallIntMap<V> {
     pub fn get<'a>(&'a self, key: &uint) -> &'a V {
         self.find(key).expect("key not present")
     }
+
+    /// An iterator visiting all key-value pairs in ascending order by the keys.
+    /// Iterator element type is (uint, &'r V)
+    pub fn iter<'r>(&'r self) -> SmallIntMapIterator<'r, V> {
+        SmallIntMapIterator {
+            front: 0,
+            back: self.v.len(),
+            iter: self.v.iter()
+        }
+    }
+
+    /// An iterator visiting all key-value pairs in ascending order by the keys,
+    /// with mutable references to the values
+    /// Iterator element type is (uint, &'r mut V)
+    pub fn mut_iter<'r>(&'r mut self) -> SmallIntMapMutIterator<'r, V> {
+        SmallIntMapMutIterator {
+            front: 0,
+            back: self.v.len(),
+            iter: self.v.mut_iter()
+        }
+    }
+
+    /// An iterator visiting all key-value pairs in descending order by the keys.
+    /// Iterator element type is (uint, &'r V)
+    pub fn rev_iter<'r>(&'r self) -> SmallIntMapRevIterator<'r, V> {
+        self.iter().invert()
+    }
+
+    /// An iterator visiting all key-value pairs in descending order by the keys,
+    /// with mutable references to the values
+    /// Iterator element type is (uint, &'r mut V)
+    pub fn mut_rev_iter<'r>(&'r mut self) -> SmallIntMapMutRevIterator <'r, V> {
+        self.mut_iter().invert()
+    }
+
+    /// Empties the hash map, moving all values into the specified closure
+    pub fn consume(&mut self)
+        -> FilterMapIterator<(uint, Option<V>), (uint, V),
+                EnumerateIterator<Option<V>, VecConsumeIterator<Option<V>>>>
+    {
+        let values = replace(&mut self.v, ~[]);
+        values.consume_iter().enumerate().filter_map(|(i, v)| {
+            v.map_consume(|v| (i, v))
+        })
+    }
 }
 
-impl<V:Copy> SmallIntMap<V> {
+impl<V:Clone> SmallIntMap<V> {
     pub fn update_with_key(&mut self, key: uint, val: V,
                            ff: &fn(uint, V, V) -> V) -> bool {
         let new_val = match self.find(&key) {
             None => val,
-            Some(orig) => ff(key, copy *orig, val)
+            Some(orig) => ff(key, (*orig).clone(), val)
         };
         self.insert(key, new_val)
     }
@@ -186,105 +232,83 @@ impl<V:Copy> SmallIntMap<V> {
     }
 }
 
-/// A set implemented on top of the SmallIntMap type. This set is always a set
-/// of integers, and the space requirements are on the order of the highest
-/// valued integer in the set.
-pub struct SmallIntSet {
-    priv map: SmallIntMap<()>
-}
 
-impl Container for SmallIntSet {
-    /// Return the number of elements in the map
-    fn len(&self) -> uint {
-        self.map.len()
-    }
+macro_rules! iterator {
+    (impl $name:ident -> $elem:ty, $getter:ident) => {
+        impl<'self, T> Iterator<$elem> for $name<'self, T> {
+            #[inline]
+            fn next(&mut self) -> Option<$elem> {
+                while self.front < self.back {
+                    match self.iter.next() {
+                        Some(elem) => {
+                            if elem.is_some() {
+                                let index = self.front;
+                                self.front += 1;
+                                return Some((index, elem. $getter ()));
+                            }
+                        }
+                        _ => ()
+                    }
+                    self.front += 1;
+                }
+                None
+            }
 
-    /// Return true if the map contains no elements
-    fn is_empty(&self) -> bool { self.len() == 0 }
-}
-
-impl Mutable for SmallIntSet {
-    /// Clear the map, removing all key-value pairs.
-    fn clear(&mut self) { self.map.clear() }
-}
-
-impl Set<uint> for SmallIntSet {
-    /// Return true if the set contains a value
-    fn contains(&self, value: &uint) -> bool { self.map.contains_key(value) }
-
-    /// Add a value to the set. Return true if the value was not already
-    /// present in the set.
-    fn insert(&mut self, value: uint) -> bool { self.map.insert(value, ()) }
-
-    /// Remove a value from the set. Return true if the value was
-    /// present in the set.
-    fn remove(&mut self, value: &uint) -> bool { self.map.remove(value) }
-
-    /// Return true if the set has no elements in common with `other`.
-    /// This is equivalent to checking for an empty uintersection.
-    fn is_disjoint(&self, other: &SmallIntSet) -> bool {
-        for self.each |v| { if other.contains(v) { return false } }
-        true
-    }
-
-    /// Return true if the set is a subset of another
-    fn is_subset(&self, other: &SmallIntSet) -> bool {
-        for self.each |v| { if !other.contains(v) { return false } }
-        true
-    }
-
-    /// Return true if the set is a superset of another
-    fn is_superset(&self, other: &SmallIntSet) -> bool {
-        other.is_subset(self)
-    }
-
-    /// Visit the values representing the difference
-    fn difference(&self, other: &SmallIntSet, f: &fn(&uint) -> bool) -> bool {
-        self.each(|v| other.contains(v) || f(v))
-    }
-
-    /// Visit the values representing the symmetric difference
-    fn symmetric_difference(&self,
-                            other: &SmallIntSet,
-                            f: &fn(&uint) -> bool) -> bool {
-        let len = cmp::max(self.map.v.len() ,other.map.v.len());
-
-        for uint::range(0, len) |i| {
-            if self.contains(&i) ^ other.contains(&i) {
-                if !f(&i) { return false; }
+            #[inline]
+            fn size_hint(&self) -> (uint, Option<uint>) {
+                (0, Some(self.back - self.front))
             }
         }
-        return true;
     }
+}
 
-    /// Visit the values representing the uintersection
-    fn intersection(&self, other: &SmallIntSet, f: &fn(&uint) -> bool) -> bool {
-        self.each(|v| !other.contains(v) || f(v))
-    }
-
-    /// Visit the values representing the union
-    fn union(&self, other: &SmallIntSet, f: &fn(&uint) -> bool) -> bool {
-        let len = cmp::max(self.map.v.len() ,other.map.v.len());
-
-        for uint::range(0, len) |i| {
-            if self.contains(&i) || other.contains(&i) {
-                if !f(&i) { return false; }
+macro_rules! double_ended_iterator {
+    (impl $name:ident -> $elem:ty, $getter:ident) => {
+        impl<'self, T> DoubleEndedIterator<$elem> for $name<'self, T> {
+            #[inline]
+            fn next_back(&mut self) -> Option<$elem> {
+                while self.front < self.back {
+                    match self.iter.next_back() {
+                        Some(elem) => {
+                            if elem.is_some() {
+                                self.back -= 1;
+                                return Some((self.back, elem. $getter ()));
+                            }
+                        }
+                        _ => ()
+                    }
+                    self.back -= 1;
+                }
+                None
             }
         }
-        return true;
     }
 }
 
-impl SmallIntSet {
-    /// Create an empty SmallIntSet
-    pub fn new() -> SmallIntSet { SmallIntSet{map: SmallIntMap::new()} }
-
-    /// Visit all values in order
-    pub fn each(&self, f: &fn(&uint) -> bool) -> bool { self.map.each_key(f) }
+pub struct SmallIntMapIterator<'self, T> {
+    priv front: uint,
+    priv back: uint,
+    priv iter: VecIterator<'self, Option<T>>
 }
+
+iterator!(impl SmallIntMapIterator -> (uint, &'self T), get_ref)
+double_ended_iterator!(impl SmallIntMapIterator -> (uint, &'self T), get_ref)
+pub type SmallIntMapRevIterator<'self, T> = InvertIterator<(uint, &'self T),
+                                                           SmallIntMapIterator<'self, T>>;
+
+pub struct SmallIntMapMutIterator<'self, T> {
+    priv front: uint,
+    priv back: uint,
+    priv iter: VecMutIterator<'self, Option<T>>
+}
+
+iterator!(impl SmallIntMapMutIterator -> (uint, &'self mut T), get_mut_ref)
+double_ended_iterator!(impl SmallIntMapMutIterator -> (uint, &'self mut T), get_mut_ref)
+pub type SmallIntMapMutRevIterator<'self, T> = InvertIterator<(uint, &'self mut T),
+                                                              SmallIntMapMutIterator<'self, T>>;
 
 #[cfg(test)]
-mod tests {
+mod test_map {
 
     use super::SmallIntMap;
 
@@ -375,164 +399,185 @@ mod tests {
         assert_eq!(m.pop(&1), Some(2));
         assert_eq!(m.pop(&1), None);
     }
+
+    #[test]
+    fn test_iterator() {
+        let mut m = SmallIntMap::new();
+
+        assert!(m.insert(0, 1));
+        assert!(m.insert(1, 2));
+        assert!(m.insert(3, 5));
+        assert!(m.insert(6, 10));
+        assert!(m.insert(10, 11));
+
+        let mut it = m.iter();
+        assert_eq!(it.size_hint(), (0, Some(11)));
+        assert_eq!(it.next().unwrap(), (0, &1));
+        assert_eq!(it.size_hint(), (0, Some(10)));
+        assert_eq!(it.next().unwrap(), (1, &2));
+        assert_eq!(it.size_hint(), (0, Some(9)));
+        assert_eq!(it.next().unwrap(), (3, &5));
+        assert_eq!(it.size_hint(), (0, Some(7)));
+        assert_eq!(it.next().unwrap(), (6, &10));
+        assert_eq!(it.size_hint(), (0, Some(4)));
+        assert_eq!(it.next().unwrap(), (10, &11));
+        assert_eq!(it.size_hint(), (0, Some(0)));
+        assert!(it.next().is_none());
+    }
+
+    #[test]
+    fn test_iterator_size_hints() {
+        let mut m = SmallIntMap::new();
+
+        assert!(m.insert(0, 1));
+        assert!(m.insert(1, 2));
+        assert!(m.insert(3, 5));
+        assert!(m.insert(6, 10));
+        assert!(m.insert(10, 11));
+
+        assert_eq!(m.iter().size_hint(), (0, Some(11)));
+        assert_eq!(m.rev_iter().size_hint(), (0, Some(11)));
+        assert_eq!(m.mut_iter().size_hint(), (0, Some(11)));
+        assert_eq!(m.mut_rev_iter().size_hint(), (0, Some(11)));
+    }
+
+    #[test]
+    fn test_mut_iterator() {
+        let mut m = SmallIntMap::new();
+
+        assert!(m.insert(0, 1));
+        assert!(m.insert(1, 2));
+        assert!(m.insert(3, 5));
+        assert!(m.insert(6, 10));
+        assert!(m.insert(10, 11));
+
+        for m.mut_iter().advance |(k, v)| {
+            *v += k as int;
+        }
+
+        let mut it = m.iter();
+        assert_eq!(it.next().unwrap(), (0, &1));
+        assert_eq!(it.next().unwrap(), (1, &3));
+        assert_eq!(it.next().unwrap(), (3, &8));
+        assert_eq!(it.next().unwrap(), (6, &16));
+        assert_eq!(it.next().unwrap(), (10, &21));
+        assert!(it.next().is_none());
+    }
+
+    #[test]
+    fn test_rev_iterator() {
+        let mut m = SmallIntMap::new();
+
+        assert!(m.insert(0, 1));
+        assert!(m.insert(1, 2));
+        assert!(m.insert(3, 5));
+        assert!(m.insert(6, 10));
+        assert!(m.insert(10, 11));
+
+        let mut it = m.rev_iter();
+        assert_eq!(it.next().unwrap(), (10, &11));
+        assert_eq!(it.next().unwrap(), (6, &10));
+        assert_eq!(it.next().unwrap(), (3, &5));
+        assert_eq!(it.next().unwrap(), (1, &2));
+        assert_eq!(it.next().unwrap(), (0, &1));
+        assert!(it.next().is_none());
+    }
+
+    #[test]
+    fn test_mut_rev_iterator() {
+        let mut m = SmallIntMap::new();
+
+        assert!(m.insert(0, 1));
+        assert!(m.insert(1, 2));
+        assert!(m.insert(3, 5));
+        assert!(m.insert(6, 10));
+        assert!(m.insert(10, 11));
+
+        for m.mut_rev_iter().advance |(k, v)| {
+            *v += k as int;
+        }
+
+        let mut it = m.iter();
+        assert_eq!(it.next().unwrap(), (0, &1));
+        assert_eq!(it.next().unwrap(), (1, &3));
+        assert_eq!(it.next().unwrap(), (3, &8));
+        assert_eq!(it.next().unwrap(), (6, &16));
+        assert_eq!(it.next().unwrap(), (10, &21));
+        assert!(it.next().is_none());
+    }
+
+    #[test]
+    fn test_consume() {
+        let mut m = SmallIntMap::new();
+        m.insert(1, ~2);
+        let mut called = false;
+        for m.consume().advance |(k, v)| {
+            assert!(!called);
+            called = true;
+            assert_eq!(k, 1);
+            assert_eq!(v, ~2);
+        }
+        assert!(called);
+        m.insert(2, ~1);
+    }
 }
 
 #[cfg(test)]
-mod test_set {
+mod bench {
 
-    use super::SmallIntSet;
+    use super::*;
+    use test::BenchHarness;
+    use container::bench::*;
 
-    #[test]
-    fn test_disjoint() {
-        let mut xs = SmallIntSet::new();
-        let mut ys = SmallIntSet::new();
-        assert!(xs.is_disjoint(&ys));
-        assert!(ys.is_disjoint(&xs));
-        assert!(xs.insert(5));
-        assert!(ys.insert(11));
-        assert!(xs.is_disjoint(&ys));
-        assert!(ys.is_disjoint(&xs));
-        assert!(xs.insert(7));
-        assert!(xs.insert(19));
-        assert!(xs.insert(4));
-        assert!(ys.insert(2));
-        assert!(xs.is_disjoint(&ys));
-        assert!(ys.is_disjoint(&xs));
-        assert!(ys.insert(7));
-        assert!(!xs.is_disjoint(&ys));
-        assert!(!ys.is_disjoint(&xs));
+    // Find seq
+    #[bench]
+    pub fn insert_rand_100(bh: &mut BenchHarness) {
+        let mut m : SmallIntMap<uint> = SmallIntMap::new();
+        insert_rand_n(100, &mut m, bh);
     }
 
-    #[test]
-    fn test_subset_and_superset() {
-        let mut a = SmallIntSet::new();
-        assert!(a.insert(0));
-        assert!(a.insert(5));
-        assert!(a.insert(11));
-        assert!(a.insert(7));
-
-        let mut b = SmallIntSet::new();
-        assert!(b.insert(0));
-        assert!(b.insert(7));
-        assert!(b.insert(19));
-        assert!(b.insert(250));
-        assert!(b.insert(11));
-        assert!(b.insert(200));
-
-        assert!(!a.is_subset(&b));
-        assert!(!a.is_superset(&b));
-        assert!(!b.is_subset(&a));
-        assert!(!b.is_superset(&a));
-
-        assert!(b.insert(5));
-
-        assert!(a.is_subset(&b));
-        assert!(!a.is_superset(&b));
-        assert!(!b.is_subset(&a));
-        assert!(b.is_superset(&a));
+    #[bench]
+    pub fn insert_rand_10_000(bh: &mut BenchHarness) {
+        let mut m : SmallIntMap<uint> = SmallIntMap::new();
+        insert_rand_n(10_000, &mut m, bh);
     }
 
-    #[test]
-    fn test_intersection() {
-        let mut a = SmallIntSet::new();
-        let mut b = SmallIntSet::new();
-
-        assert!(a.insert(11));
-        assert!(a.insert(1));
-        assert!(a.insert(3));
-        assert!(a.insert(77));
-        assert!(a.insert(103));
-        assert!(a.insert(5));
-
-        assert!(b.insert(2));
-        assert!(b.insert(11));
-        assert!(b.insert(77));
-        assert!(b.insert(5));
-        assert!(b.insert(3));
-
-        let mut i = 0;
-        let expected = [3, 5, 11, 77];
-        for a.intersection(&b) |x| {
-            assert!(expected.contains(x));
-            i += 1
-        }
-        assert_eq!(i, expected.len());
+    // Insert seq
+    #[bench]
+    pub fn insert_seq_100(bh: &mut BenchHarness) {
+        let mut m : SmallIntMap<uint> = SmallIntMap::new();
+        insert_seq_n(100, &mut m, bh);
     }
 
-    #[test]
-    fn test_difference() {
-        let mut a = SmallIntSet::new();
-        let mut b = SmallIntSet::new();
-
-        assert!(a.insert(1));
-        assert!(a.insert(3));
-        assert!(a.insert(5));
-        assert!(a.insert(9));
-        assert!(a.insert(11));
-
-        assert!(b.insert(3));
-        assert!(b.insert(9));
-
-        let mut i = 0;
-        let expected = [1, 5, 11];
-        for a.difference(&b) |x| {
-            assert!(expected.contains(x));
-            i += 1
-        }
-        assert_eq!(i, expected.len());
+    #[bench]
+    pub fn insert_seq_10_000(bh: &mut BenchHarness) {
+        let mut m : SmallIntMap<uint> = SmallIntMap::new();
+        insert_seq_n(10_000, &mut m, bh);
     }
 
-    #[test]
-    fn test_symmetric_difference() {
-        let mut a = SmallIntSet::new();
-        let mut b = SmallIntSet::new();
-
-        assert!(a.insert(1));
-        assert!(a.insert(3));
-        assert!(a.insert(5));
-        assert!(a.insert(9));
-        assert!(a.insert(11));
-
-        assert!(b.insert(3));
-        assert!(b.insert(9));
-        assert!(b.insert(14));
-        assert!(b.insert(22));
-
-        let mut i = 0;
-        let expected = [1, 5, 11, 14, 22];
-        for a.symmetric_difference(&b) |x| {
-            assert!(expected.contains(x));
-            i += 1
-        }
-        assert_eq!(i, expected.len());
+    // Find rand
+    #[bench]
+    pub fn find_rand_100(bh: &mut BenchHarness) {
+        let mut m : SmallIntMap<uint> = SmallIntMap::new();
+        find_rand_n(100, &mut m, bh);
     }
 
-    #[test]
-    fn test_union() {
-        let mut a = SmallIntSet::new();
-        let mut b = SmallIntSet::new();
+    #[bench]
+    pub fn find_rand_10_000(bh: &mut BenchHarness) {
+        let mut m : SmallIntMap<uint> = SmallIntMap::new();
+        find_rand_n(10_000, &mut m, bh);
+    }
 
-        assert!(a.insert(1));
-        assert!(a.insert(3));
-        assert!(a.insert(5));
-        assert!(a.insert(9));
-        assert!(a.insert(11));
-        assert!(a.insert(16));
-        assert!(a.insert(19));
-        assert!(a.insert(24));
+    // Find seq
+    #[bench]
+    pub fn find_seq_100(bh: &mut BenchHarness) {
+        let mut m : SmallIntMap<uint> = SmallIntMap::new();
+        find_seq_n(100, &mut m, bh);
+    }
 
-        assert!(b.insert(1));
-        assert!(b.insert(5));
-        assert!(b.insert(9));
-        assert!(b.insert(13));
-        assert!(b.insert(19));
-
-        let mut i = 0;
-        let expected = [1, 3, 5, 9, 11, 13, 16, 19, 24];
-        for a.union(&b) |x| {
-            assert!(expected.contains(x));
-            i += 1
-        }
-        assert_eq!(i, expected.len());
+    #[bench]
+    pub fn find_seq_10_000(bh: &mut BenchHarness) {
+        let mut m : SmallIntMap<uint> = SmallIntMap::new();
+        find_seq_n(10_000, &mut m, bh);
     }
 }

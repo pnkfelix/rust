@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use libc::{c_char, c_void, size_t, uintptr_t, free, malloc, realloc};
+use libc::{c_void, c_char, size_t, uintptr_t, free, malloc, realloc};
 use managed::raw::{BoxHeaderRepr, BoxRepr};
 use unstable::intrinsics::TyDesc;
 use sys::size_of;
@@ -56,38 +56,22 @@ pub unsafe fn realloc_raw(ptr: *mut c_void, size: uint) -> *mut c_void {
     p
 }
 
-// FIXME #4942: Make these signatures agree with exchange_alloc's signatures
-#[cfg(stage0, not(test))]
+/// The allocator for unique pointers without contained managed pointers.
+#[cfg(not(test))]
 #[lang="exchange_malloc"]
 #[inline]
-pub unsafe fn exchange_malloc(td: *c_char, size: uintptr_t) -> *c_char {
-    let td = td as *TyDesc;
-    let size = size as uint;
-
-    assert!(td.is_not_null());
-
-    let total_size = get_box_size(size, (*td).align);
-    let p = malloc_raw(total_size as uint);
-
-    let box: *mut BoxRepr = p as *mut BoxRepr;
-    (*box).header.ref_count = -1;
-    (*box).header.type_desc = td;
-
-    box as *c_char
-}
-
-// FIXME #4942: Make these signatures agree with exchange_alloc's signatures
-#[cfg(not(stage0), not(test))]
-#[lang="exchange_malloc"]
-#[inline]
-pub unsafe fn exchange_malloc(align: u32, size: uintptr_t) -> *c_char {
-    let total_size = get_box_size(size as uint, align as uint);
-    malloc_raw(total_size as uint) as *c_char
+pub unsafe fn exchange_malloc(size: uintptr_t) -> *c_char {
+    malloc_raw(size as uint) as *c_char
 }
 
 // FIXME: #7496
 #[cfg(not(test))]
 #[lang="closure_exchange_malloc"]
+#[inline]
+pub unsafe fn closure_exchange_malloc_(td: *c_char, size: uintptr_t) -> *c_char {
+    closure_exchange_malloc(td, size)
+}
+
 #[inline]
 pub unsafe fn closure_exchange_malloc(td: *c_char, size: uintptr_t) -> *c_char {
     let td = td as *TyDesc;
@@ -108,6 +92,11 @@ pub unsafe fn closure_exchange_malloc(td: *c_char, size: uintptr_t) -> *c_char {
 // inside a landing pad may corrupt the state of the exception handler.
 #[cfg(not(test))]
 #[lang="exchange_free"]
+#[inline]
+pub unsafe fn exchange_free_(ptr: *c_char) {
+    exchange_free(ptr)
+}
+
 #[inline]
 pub unsafe fn exchange_free(ptr: *c_char) {
     free(ptr as *c_void);

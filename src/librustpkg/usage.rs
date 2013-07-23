@@ -14,7 +14,7 @@ pub fn general() {
     io::println("Usage: rustpkg [options] <cmd> [args..]
 
 Where <cmd> is one of:
-    build, clean, do, info, install, prefer, test, uninstall, unprefer
+    build, clean, do, info, install, list, prefer, test, uninstall, unprefer
 
 Options:
 
@@ -23,10 +23,11 @@ Options:
 }
 
 pub fn build() {
-    io::println("rustpkg [options..] build
+    io::println("rustpkg [options..] build [package-ID]
 
-Build all targets described in the package script in the current
-directory.
+Build the given package ID if specified. With no package ID argument,
+build the package in the current directory. In that case, the current
+directory must be a direct child of an `src` directory in a workspace.
 
 Options:
     -c, --cfg      Pass a cfg flag to the package script");
@@ -53,6 +54,12 @@ Probe the package script in the current directory for information.
 
 Options:
     -j, --json      Output the result as JSON");
+}
+
+pub fn list() {
+    io::println("rustpkg list
+
+List all installed packages.");
 }
 
 pub fn install() {

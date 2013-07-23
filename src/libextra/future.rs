@@ -53,10 +53,23 @@ priv enum FutureState<A> {
 }
 
 /// Methods on the `future` type
-impl<A:Copy> Future<A> {
+impl<A:Clone> Future<A> {
     pub fn get(&mut self) -> A {
         //! Get the value of the future.
-        copy *(self.get_ref())
+        (*(self.get_ref())).clone()
+    }
+}
+
+impl<A> Future<A> {
+    /// Gets the value from this future, forcing evaluation.
+    pub fn unwrap(self) -> A {
+        let mut this = self;
+        this.get_ref();
+        let state = replace(&mut this.state, Evaluating);
+        match state {
+            Forced(v) => v,
+            _ => fail!( "Logic error." ),
+        }
     }
 }
 
@@ -145,7 +158,6 @@ pub fn spawn<A:Send>(blk: ~fn() -> A) -> Future<A> {
     return from_port(port);
 }
 
-#[allow(non_implicitly_copyable_typarams)]
 #[cfg(test)]
 mod test {
     use future::*;
@@ -178,6 +190,12 @@ mod test {
     fn test_interface_get() {
         let mut f = from_value(~"fail");
         assert_eq!(f.get(), ~"fail");
+    }
+
+    #[test]
+    fn test_interface_unwrap() {
+        let mut f = from_value(~"fail");
+        assert_eq!(f.unwrap(), ~"fail");
     }
 
     #[test]

@@ -17,13 +17,12 @@ use std::task;
 mod rustrt {
     use std::libc;
 
-    pub extern {
+    extern {
         pub fn debug_get_stk_seg() -> *u8;
 
         pub fn rust_get_sched_id() -> libc::intptr_t;
         pub fn rust_get_argc() -> libc::c_int;
         pub fn get_task_id() -> libc::intptr_t;
-        pub fn rust_sched_threads();
         pub fn rust_get_task();
     }
 }
@@ -31,7 +30,6 @@ mod rustrt {
 fn calllink01() { unsafe { rustrt::rust_get_sched_id(); } }
 fn calllink02() { unsafe { rustrt::rust_get_argc(); } }
 fn calllink08() { unsafe { rustrt::get_task_id(); } }
-fn calllink09() { unsafe { rustrt::rust_sched_threads(); } }
 fn calllink10() { unsafe { rustrt::rust_get_task(); } }
 
 fn runtest(f: extern fn(), frame_backoff: u32) {
@@ -45,7 +43,7 @@ fn runtest2(f: extern fn(), frame_backoff: u32, last_stk: *u8) -> u32 {
             // We switched stacks, go back and try to hit the dynamic linker
             frame_backoff
         } else {
-            let frame_backoff = runtest2(copy f, frame_backoff, curr_stk);
+            let frame_backoff = runtest2(f, frame_backoff, curr_stk);
             if frame_backoff > 1u32 {
                 frame_backoff - 1u32
             } else if frame_backoff == 1u32 {
@@ -64,7 +62,6 @@ pub fn main() {
         calllink01,
         calllink02,
         calllink08,
-        calllink09,
         calllink10
     ];
     let mut rng = rand::rng();

@@ -31,10 +31,17 @@ enum TreeNode<K, V> {
 }
 
 /// Create a treemap
-pub fn init<K, V>() -> Treemap<K, V> { @Empty }
+pub fn init<K: 'static, V: 'static>() -> Treemap<K, V> {
+    @Empty
+}
 
 /// Insert a value into the map
-pub fn insert<K:Eq + Ord,V>(m: Treemap<K, V>, k: K, v: V) -> Treemap<K, V> {
+pub fn insert<K:Eq + Ord + 'static,
+              V:'static>(
+              m: Treemap<K, V>,
+              k: K,
+              v: V)
+              -> Treemap<K, V> {
     @match m {
         @Empty => Node(@k, @v, @Empty, @Empty),
         @Node(kk, vv, left, right) => cond!(
@@ -46,11 +53,15 @@ pub fn insert<K:Eq + Ord,V>(m: Treemap<K, V>, k: K, v: V) -> Treemap<K, V> {
 }
 
 /// Find a value based on the key
-pub fn find<K:Eq + Ord,V:Copy>(m: Treemap<K, V>, k: K) -> Option<V> {
+pub fn find<K:Eq + Ord + 'static,
+            V:Clone + 'static>(
+            m: Treemap<K, V>,
+            k: K)
+            -> Option<V> {
     match *m {
         Empty => None,
         Node(kk, v, left, right) => cond!(
-            (k == *kk) { Some(copy *v)  }
+            (k == *kk) { Some((*v).clone()) }
             (k <  *kk) { find(left, k)  }
             _          { find(right, k) }
         )
@@ -58,7 +69,7 @@ pub fn find<K:Eq + Ord,V:Copy>(m: Treemap<K, V>, k: K) -> Option<V> {
 }
 
 /// Visit all pairs in the map in order.
-pub fn traverse<K, V: Copy>(m: Treemap<K, V>, f: &fn(&K, &V)) {
+pub fn traverse<K, V>(m: Treemap<K, V>, f: &fn(&K, &V)) {
     match *m {
         Empty => (),
         // Previously, this had what looked like redundant

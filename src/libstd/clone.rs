@@ -15,14 +15,13 @@ assign them or pass them as arguments, the receiver will get a copy,
 leaving the original value in place. These types do not require
 allocation to copy and do not have finalizers (i.e. they do not
 contain owned boxes or implement `Drop`), so the compiler considers
-them cheap and safe to copy and automatically implements the `Copy`
-trait for them. For other types copies must be made explicitly,
-by convention implementing the `Clone` trait and calling the
-`clone` method.
+them cheap and safe to copy. For other types copies must be made
+explicitly, by convention implementing the `Clone` trait and calling
+the `clone` method.
 
 */
 
-use core::kinds::Freeze;
+use std::kinds::Freeze;
 
 /// A common trait for cloning an object.
 pub trait Clone {
@@ -113,7 +112,7 @@ impl<T: DeepClone> DeepClone for ~T {
 }
 
 // FIXME: #6525: should also be implemented for `T: Send + DeepClone`
-impl<T: Freeze + DeepClone> DeepClone for @T {
+impl<T: Freeze + DeepClone + 'static> DeepClone for @T {
     /// Return a deep copy of the managed box. The `Freeze` trait is required to prevent performing
     /// a deep clone of a potentially cyclical type.
     #[inline]
@@ -121,7 +120,7 @@ impl<T: Freeze + DeepClone> DeepClone for @T {
 }
 
 // FIXME: #6525: should also be implemented for `T: Send + DeepClone`
-impl<T: Freeze + DeepClone> DeepClone for @mut T {
+impl<T: Freeze + DeepClone + 'static> DeepClone for @mut T {
     /// Return a deep copy of the managed box. The `Freeze` trait is required to prevent performing
     /// a deep clone of a potentially cyclical type.
     #[inline]
