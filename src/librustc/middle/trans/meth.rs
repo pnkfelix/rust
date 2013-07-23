@@ -124,7 +124,7 @@ pub fn trans_method(ccx: @mut CrateContext,
              []);
 }
 
-pub fn trans_self_arg(bcx: block,
+pub fn trans_self_arg(bcx: @mut Block,
                       base: @ast::expr,
                       temp_cleanups: &mut ~[ValueRef],
                       mentry: typeck::method_map_entry) -> Result {
@@ -141,7 +141,7 @@ pub fn trans_self_arg(bcx: block,
                    DontAutorefArg)
 }
 
-pub fn trans_method_callee(bcx: block,
+pub fn trans_method_callee(bcx: @mut Block,
                            callee_id: ast::node_id,
                            this: @ast::expr,
                            mentry: typeck::method_map_entry)
@@ -250,7 +250,7 @@ pub fn trans_method_callee(bcx: block,
     }
 }
 
-pub fn trans_static_method_callee(bcx: block,
+pub fn trans_static_method_callee(bcx: @mut Block,
                                   method_id: ast::def_id,
                                   trait_id: ast::def_id,
                                   callee_id: ast::node_id)
@@ -347,7 +347,7 @@ pub fn method_with_name(ccx: &mut CrateContext,
     meth.def_id
 }
 
-pub fn trans_monomorphized_callee(bcx: block,
+pub fn trans_monomorphized_callee(bcx: @mut Block,
                                   callee_id: ast::node_id,
                                   base: @ast::expr,
                                   mentry: typeck::method_map_entry,
@@ -408,7 +408,7 @@ pub fn trans_monomorphized_callee(bcx: block,
 
 }
 
-pub fn combine_impl_and_methods_tps(bcx: block,
+pub fn combine_impl_and_methods_tps(bcx: @mut Block,
                                     mth_did: ast::def_id,
                                     callee_id: ast::node_id,
                                     rcvr_substs: &[ty::t],
@@ -458,7 +458,7 @@ pub fn combine_impl_and_methods_tps(bcx: block,
 }
 
 
-pub fn trans_trait_callee(bcx: block,
+pub fn trans_trait_callee(bcx: @mut Block,
                           callee_id: ast::node_id,
                           n_method: uint,
                           self_expr: @ast::expr,
@@ -489,7 +489,7 @@ pub fn trans_trait_callee(bcx: block,
                                   explicit_self)
 }
 
-pub fn trans_trait_callee_from_llval(bcx: block,
+pub fn trans_trait_callee_from_llval(bcx: @mut Block,
                                      callee_ty: ty::t,
                                      n_method: uint,
                                      llpair: ValueRef,
@@ -594,7 +594,7 @@ pub fn vtable_id(ccx: @mut CrateContext,
 
 /// Creates a returns a dynamic vtable for the given type and vtable origin.
 /// This is used only for objects.
-pub fn get_vtable(bcx: block,
+pub fn get_vtable(bcx: @mut Block,
                   self_ty: ty::t,
                   origin: typeck::vtable_origin)
                   -> ValueRef {
@@ -638,7 +638,7 @@ pub fn make_vtable(ccx: &mut CrateContext,
 }
 
 /// Generates a dynamic vtable for objects.
-pub fn make_impl_vtable(bcx: block,
+pub fn make_impl_vtable(bcx: @mut Block,
                         impl_id: ast::def_id,
                         self_ty: ty::t,
                         substs: &[ty::t],
@@ -682,12 +682,12 @@ pub fn make_impl_vtable(bcx: block,
     make_vtable(ccx, tydesc, methods)
 }
 
-pub fn trans_trait_cast(bcx: block,
+pub fn trans_trait_cast(bcx: @mut Block,
                         val: @ast::expr,
                         id: ast::node_id,
                         dest: expr::Dest,
                         _store: ty::TraitStore)
-                     -> block {
+                     -> @mut Block {
     let mut bcx = bcx;
     let _icx = push_ctxt("impl::trans_cast");
 
