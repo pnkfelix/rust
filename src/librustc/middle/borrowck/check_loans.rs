@@ -126,6 +126,7 @@ pub fn check_loans(bccx: @BorrowckCtxt,
         reported: @mut HashSet::new(),
     };
 
+/*
     let vt = visit::mk_vt(@visit::ViaFns  {visit_expr: check_loans_in_expr,
                                            visit_local: check_loans_in_local,
                                            visit_block: check_loans_in_block,
@@ -133,8 +134,8 @@ pub fn check_loans(bccx: @BorrowckCtxt,
                                            visit_fn: check_loans_in_fn,
                                            .. *visit::default_visitor()});
     (vt.visit_block)(body, (clcx, vt));
-
-    // clcx.visit_block(body);
+*/
+    clcx.visit_block(body);
 }
 
 enum MoveError {
