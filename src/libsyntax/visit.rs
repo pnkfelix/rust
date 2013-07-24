@@ -97,63 +97,83 @@ pub trait Visitor {
 #[cfg(not(stage0))]
 pub trait Visitor {
     fn visit_mod(&self, m:&_mod, s:span, n:node_id) {
+        debug!("default visit_mod %?", _mod);
         self::walk_mod(self, m, s, n)
     }
     fn visit_view_item(&self, v:&view_item) {
+        debug!("default visit_view_item %?", v);
         self::walk_view_item(self, v)
     }
     fn visit_foreign_item(&self, f:@foreign_item) {
+        debug!("default visit_foreign_item %?", f);
         self::walk_foreign_item(self, f)
     }
     fn visit_item(&self, i:@item) {
+        debug!("default visit_item %?", i);
         self::walk_item(self, i)
     }
     fn visit_local(&self, l:@local) {
+        debug!("default visit_local %?", l);
         self::walk_local(self, l)
     }
-    fn visit_block(&self, b:&blk) {
+    fn visit_block(&self, b:&Block) {
+        debug!("default visit_block %?", b);
         self::walk_block(self, b)
     }
     fn visit_stmt(&self, s:@stmt) {
+        debug!("default visit_stmt %?", s);
         self::walk_stmt(self, s)
     }
     fn visit_arm(&self, a:&arm) {
+        debug!("default visit_arm %?", a);
         self::walk_arm(self, a)
     }
     fn visit_pat(&self, p:@pat) {
+        debug!("default visit_pat %?", p);
         self::walk_pat(self, p)
     }
     fn visit_decl(&self, d:@decl) {
+        debug!("default visit_decl %?", d);
         self::walk_decl(self, d)
     }
     fn visit_expr(&self, e:@expr) {
+        debug!("default visit_expr %?", e);
         self::walk_expr(self, e)
     }
 
     // XXX default method (bug?) requires an arg even if unused.  and
     // underscore alone does not work there either, which seems
     // somehow worse
-    fn visit_expr_post(&self, _e:@expr) { }
+    fn visit_expr_post(&self, _e:@expr) {
+        debug!("default visit_expr_post %?", e);
+    }
 
     fn visit_ty(&self, t:&Ty) {
+        debug!("default visit_ty %?", t);
         self::walk_ty(self, t)
     }
     fn visit_generics(&self, g:&Generics) {
+        debug!("default visit_generics %?", g);
         self::walk_generics(self, g)
     }
-    fn visit_fn(&self, k:&fn_kind, d:&fn_decl, b:&blk, s:span, n:node_id) {
+    fn visit_fn(&self, k:&fn_kind, d:&fn_decl, b:&Block, s:span, n:node_id) {
+        debug!("default visit_fn %?", d);
         self::walk_fn(self, k, d, b, s, n)
     }
     fn visit_ty_method(&self, t:&ty_method) {
+        debug!("default visit_ty_method %?", t);
         self::walk_ty_method(self, t)
     }
     fn visit_trait_method(&self, t: &trait_method) {
+        debug!("default visit_trait_method %?", t);
         self::walk_trait_method(self, t)
     }
     fn visit_struct_def(&self, d:@struct_def, i:ident, g:&Generics, n:node_id) {
+        debug!("default visit_struct_def %?", d);
         self::walk_struct_def(self, d, i, g, n)
     }
     fn visit_struct_field(&self, f:@struct_field) {
+        debug!("default visit_struct_field %?", f);
         self::walk_struct_field(self, f)
     }
 }
@@ -188,60 +208,79 @@ fn visit_fns<E>(e_vt:&(E, vt<E>)) -> visitor<E> {
 
 impl<E:Clone> Visitor for (E, vt<E>) {
     fn visit_mod(&self, m:&_mod, s:span, n:node_id) {
+        debug!("I E_vt visit_mod %?", m);
         (visit_fns(self).visit_mod)(m, s, n, self.clone())
     }
     fn visit_view_item(&self, v:&view_item) {
+        debug!("I E_vt visit_view_item %?", v);
         (visit_fns(self).visit_view_item)(v, self.clone())
     }
     fn visit_foreign_item(&self, i:@foreign_item) {
+        debug!("I E_vt visit_foreign_item %?", i);
         (visit_fns(self).visit_foreign_item)(i, self.clone())
     }
     fn visit_item(&self, i:@item) {
+        debug!("I E_vt visit_item %?", i);
         (visit_fns(self).visit_item)(i, self.clone())
     }
     fn visit_local(&self, l:@Local) {
+        debug!("I E_vt visit_local %?", l);
         (visit_fns(self).visit_local)(l, self.clone())
     }
     fn visit_block(&self, b:&Block) {
+        debug!("I E_vt visit_block %?", b);
         (visit_fns(self).visit_block)(b, self.clone())
     }
     fn visit_stmt(&self, s:@stmt) {
+        debug!("I E_vt visit_stmt %?", s);
         (visit_fns(self).visit_stmt)(s, self.clone())
     }
     fn visit_arm(&self, a:&arm) {
+        debug!("I E_vt visit_arm %?", a);
         (visit_fns(self).visit_arm)(a, self.clone())
     }
     fn visit_pat(&self, p:@pat) {
+        debug!("I E_vt visit_pat %?", p);
         (visit_fns(self).visit_pat)(p, self.clone())
     }
     fn visit_decl(&self, d:@decl) {
+        debug!("I E_vt visit_decl %?", d);
         (visit_fns(self).visit_decl)(d, self.clone())
     }
     fn visit_expr(&self, e:@expr) {
+        debug!("I E_vt visit_expr %?", e);
         (visit_fns(self).visit_expr)(e, self.clone())
     }
     fn visit_expr_post(&self, e:@expr) {
+        debug!("I E_vt visit_expr_post %?", e);
         (visit_fns(self).visit_expr_post)(e, self.clone())
     }
     fn visit_ty(&self, t:&Ty) {
+        debug!("I E_vt visit_ty %?", t);
         (visit_fns(self).visit_ty)(t, self.clone())
     }
     fn visit_generics(&self, g:&Generics) {
+        debug!("I E_vt visit_generics %?", g);
         (visit_fns(self).visit_generics)(g, self.clone())
     }
     fn visit_fn(&self, k:&fn_kind, d:&fn_decl, b:&Block, s:span, n:node_id) {
+        debug!("I E_vt visit_fn %?", d);
         (visit_fns(self).visit_fn)(k, d, b, s, n, self.clone())
     }
     fn visit_ty_method(&self, m:&ty_method) {
+        debug!("I E_vt visit_ty_method %?", m);
         (visit_fns(self).visit_ty_method)(m, self.clone())
     }
     fn visit_trait_method(&self, t:&trait_method) {
+        debug!("I E_vt visit_trait_method %?", t);
         (visit_fns(self).visit_trait_method)(t, self.clone())
     }
     fn visit_struct_def(&self, d:@struct_def, i:ident, g:&Generics, n:node_id) {
+        debug!("I E_vt visit_struct_def %?", d);
         (visit_fns(self).visit_struct_def)(d, i, g, n, self.clone())
     }
     fn visit_struct_field(&self, s:@struct_field) {
+        debug!("I E_vt visit_struct_field %?", s);
         (visit_fns(self).visit_struct_field)(s, self.clone())
     }
 }
@@ -271,18 +310,22 @@ pub fn default_visitor<E:Clone>() -> visitor<E> {
 }
 
 pub fn visit_crate<E:Clone>(c: &Crate, e_vt: (E, vt<E>)) {
+    debug!("visit::visit_crate %?", c);
     walk_crate(&e_vt, c)
 }
 
 pub fn walk_crate<V:Visitor>(v:&V, c: &Crate) {
+    debug!("visit::walk_crate %?", c);
     v.visit_mod(&c.module, c.span, crate_node_id);
 }
 
 pub fn visit_mod<E:Clone>(m: &_mod, sp: span, id: node_id, e_vt: (E, vt<E>)) {
+    debug!("visit::visit_mod %?", m);
     walk_mod(&e_vt, m, sp, id)
 }
 
 pub fn walk_mod<V:Visitor>(v:&V, m: &_mod, _: span, _: node_id) {
+    debug!("visit::walk_mod %?", m);
     for m.view_items.iter().advance |vi| {
         v.visit_view_item(vi);
     }
@@ -292,16 +335,21 @@ pub fn walk_mod<V:Visitor>(v:&V, m: &_mod, _: span, _: node_id) {
 }
 
 pub fn visit_view_item<E:Clone>(vi: &view_item, e_vt: (E, vt<E>)) {
+    debug!("visit::visit_view_item %?", vi);
     walk_view_item(&e_vt, vi)
 }
 
-pub fn walk_view_item<V:Visitor>(_v:&V, _vi: &view_item) { }
+pub fn walk_view_item<V:Visitor>(_v:&V, _vi: &view_item) {
+    debug!("visit::walk_view_item %?", _vi);
+}
 
 pub fn visit_local<E:Clone>(loc: &local, e_vt: (E, vt<E>)) {
+    debug!("visit::visit_local %?", loc);
     walk_local(&e_vt, loc)
 }
 
 pub fn walk_local<V:Visitor>(v:&V, loc: &Local) {
+    debug!("visit::walk_local %?", loc);
     v.visit_pat(loc.pat);
     v.visit_ty(&loc.ty);
     match loc.init {
@@ -311,18 +359,22 @@ pub fn walk_local<V:Visitor>(v:&V, loc: &Local) {
 }
 
 fn visit_trait_ref<E:Clone>(tref: &ast::trait_ref, e_vt: (E, vt<E>)) {
+    debug!("visit::visit_trait_ref %?", tref);
     walk_trait_ref(&e_vt, tref);
 }
 
 fn walk_trait_ref<V:Visitor>(v:&V, tref: &ast::trait_ref) {
+    debug!("visit::walk_trait_ref %?", tref);
     walk_path(v, &tref.path);
 }
 
 pub fn visit_item<E:Clone>(i: &item, e_vt: (E, vt<E>)) {
+    debug!("visit::visit_item %?", i);
     walk_item(&e_vt, i);
 }
 
 pub fn walk_item<V:Visitor>(v:&V, i: &item) {
+    debug!("visit::walk_item %?", v);
     match i.node {
         item_static(ref t, _, ex) => {
             v.visit_ty(t);
@@ -393,12 +445,14 @@ pub fn walk_item<V:Visitor>(v:&V, i: &item) {
 pub fn visit_enum_def<E:Clone>(enum_definition: &ast::enum_def,
                                tps: &Generics,
                                e_vt: (E, vt<E>)) {
+    debug!("visit::visit_enum_def %?", enum_definition);
     walk_enum_def(&e_vt, enum_definition, tps)
 }
 
 pub fn walk_enum_def<V:Visitor>(v:&V,
                                 enum_definition: &ast::enum_def,
                                 tps: &Generics) {
+    debug!("visit::walk_enum_def %?", enum_definition);
     for enum_definition.variants.iter().advance |vr| {
         match vr.node.kind {
             tuple_variant_kind(ref variant_args) => {
@@ -420,10 +474,12 @@ pub fn walk_enum_def<V:Visitor>(v:&V,
 pub fn skip_ty<E>(_t: &Ty, (_e,_v): (E, vt<E>)) {}
 
 pub fn visit_ty<E:Clone>(t: &Ty, e_vt: (E, vt<E>)) {
+    debug!("visit::visit_ty %?", t);
     walk_ty(&e_vt, t)
 }
 
 pub fn walk_ty<V:Visitor>(v:&V, t: &Ty) {
+    debug!("visit::walk_ty %?", t);
     match t.node {
         ty_box(ref mt) | ty_uniq(ref mt) |
         ty_vec(ref mt) | ty_ptr(ref mt) | ty_rptr(_, ref mt) => {
@@ -464,18 +520,22 @@ pub fn walk_ty<V:Visitor>(v:&V, t: &Ty) {
 }
 
 pub fn visit_path<E:Clone>(p: &Path, e_vt: (E, vt<E>)) {
+    debug!("visit::visit_path %?", p);
     walk_path(&e_vt, p)
 }
 
 pub fn walk_path<V:Visitor>(v:&V, p: &Path) {
+    debug!("visit::walk_path %?", p);
     for p.types.iter().advance |tp| { v.visit_ty(tp); }
 }
 
 pub fn visit_pat<E:Clone>(p: &pat, e_vt: (E, vt<E>)) {
+    debug!("visit::visit_pat %?", p);
     walk_pat(&e_vt, p)
 }
 
 pub fn walk_pat<V:Visitor>(v:&V, p: &pat) {
+    debug!("visit::walk_pat %?", p);
     match p.node {
         pat_enum(ref path, ref children) => {
             walk_path(v, path);
@@ -526,10 +586,12 @@ pub fn walk_pat<V:Visitor>(v:&V, p: &pat) {
 }
 
 pub fn visit_foreign_item<E:Clone>(ni: &foreign_item, e_vt: (E, vt<E>)) {
+    debug!("visit::visit_foreign_item %?", ni);
     walk_foreign_item(&e_vt, ni)
 }
 
 pub fn walk_foreign_item<V:Visitor>(v:&V, ni: &foreign_item) {
+    debug!("visit::walk_foreign_item %?", ni);
     match ni.node {
         foreign_item_fn(ref fd, _, ref generics) => {
             walk_fn_decl(v, fd);
@@ -543,10 +605,12 @@ pub fn walk_foreign_item<V:Visitor>(v:&V, ni: &foreign_item) {
 
 pub fn visit_ty_param_bounds<E:Clone>(bounds: &OptVec<TyParamBound>,
                                       e_vt: (E, vt<E>)) {
+    debug!("visit::visit_ty_param_bounds %?", bounds);
     walk_ty_param_bounds(&e_vt, bounds);
 }
 
 pub fn walk_ty_param_bounds<V:Visitor>(v:&V, bounds: &OptVec<TyParamBound>) {
+    debug!("visit::walk_ty_param_bounds %?", bounds);
     for bounds.iter().advance |bound| {
         match *bound {
             TraitTyParamBound(ref ty) => walk_trait_ref(v, ty),
@@ -556,20 +620,24 @@ pub fn walk_ty_param_bounds<V:Visitor>(v:&V, bounds: &OptVec<TyParamBound>) {
 }
 
 pub fn visit_generics<E:Clone>(generics: &Generics, e_vt: (E, vt<E>)) {
+    debug!("visit::visit_generics %?", generics);
     walk_generics(&e_vt, generics)
 }
 
 pub fn walk_generics<V:Visitor>(v:&V, generics: &Generics) {
+    debug!("visit::walk_generics %?", generics);
     for generics.ty_params.iter().advance |tp| {
         walk_ty_param_bounds(v, &tp.bounds);
     }
 }
 
 pub fn visit_fn_decl<E:Clone>(fd: &fn_decl, e_vt: (E, vt<E>)) {
+    debug!("visit:;visit_fn_decl %?", fd);
     walk_fn_decl(&e_vt, fd)
 }
 
 pub fn walk_fn_decl<V:Visitor>(v:&V, fd: &fn_decl) {
+    debug!("visit::walk_fn_decl %?", fd);
     for fd.inputs.iter().advance |a| {
         v.visit_pat(a.pat);
         v.visit_ty(&a.ty);
@@ -582,10 +650,12 @@ pub fn walk_fn_decl<V:Visitor>(v:&V, fd: &fn_decl) {
 // because it is not a default impl of any method, though I doubt that really
 // clarifies anything. - Niko
 pub fn visit_method_helper<E:Clone>(m: &method, e_vt: (E, vt<E>)) {
+    debug!("visit::visit_method_helper %?", m);
     walk_method_helper(&e_vt, m)
 }
 
 pub fn walk_method_helper<V:Visitor>(v:&V, m: &method) {
+    debug!("visit::walk_method_helper %?", m);
     v.visit_fn(&fk_method(m.ident, &m.generics, m),
                &m.decl,
                &m.body,
@@ -595,22 +665,27 @@ pub fn walk_method_helper<V:Visitor>(v:&V, m: &method) {
 
 pub fn visit_fn<E:Clone>(fk: &fn_kind, decl: &fn_decl, body: &Block, sp: span,
                          id: node_id, e_vt: (E, vt<E>)) {
+    debug!("visit::visit_fn %?", decl);
     walk_fn(&e_vt, fk, decl, body, sp, id)
 }
 
 pub fn walk_fn<V:Visitor>(v:&V, fk: &fn_kind, decl: &fn_decl, body: &Block,
                           _sp: span, _id: node_id) {
+    debug!("visit::walk_fn %?", decl);
     walk_fn_decl(v, decl);
     let generics = generics_of_fn(fk);
     v.visit_generics(&generics);
     v.visit_block(body);
 }
 
-pub fn visit_ty_method<E:Clone>(m: &ty_method, e_vt: (E, vt<E>)) {
+pub fn visit_ty_method<E:Clone>(m: &ty_method, e_vt: (E, vt<E>))
+{
+    debug!("visit::visit_ty_method %?", m);
     walk_ty_method(&e_vt, m)
 }
 
 pub fn walk_ty_method<V:Visitor>(v:&V, m: &ty_method) {
+    debug!("visit::walk_ty_method %?", m);
     for m.decl.inputs.iter().advance |a| {
         v.visit_ty(&a.ty);
     }
@@ -619,10 +694,12 @@ pub fn walk_ty_method<V:Visitor>(v:&V, m: &ty_method) {
 }
 
 pub fn visit_trait_method<E:Clone>(m: &trait_method, e_vt: (E, vt<E>)) {
+    debug!("visit::visit_trait_method %?", m);
     walk_trait_method(&e_vt, m)
 }
 
 pub fn walk_trait_method<V:Visitor>(v:&V, m: &trait_method) {
+    debug!("visit::walk_trait_method %?", m);
     match *m {
         required(ref ty_m) => v.visit_ty_method(ty_m),
         provided(m) => walk_method_helper(v, m)
@@ -631,29 +708,35 @@ pub fn walk_trait_method<V:Visitor>(v:&V, m: &trait_method) {
 
 pub fn visit_struct_def<E:Clone>(sd: @struct_def, nm: ast::ident,
                                  g: &Generics, id: node_id, e_vt: (E, vt<E>)) {
+    debug!("visit::visit_struct_def %?", sd);
     walk_struct_def(&e_vt, sd, nm, g, id)
 }
 
 pub fn walk_struct_def<V:Visitor>(v:&V, sd: @struct_def,
                                   _nm: ast::ident, _: &Generics, _: node_id) {
+    debug!("visit::walk_struct_def %?", sd);
     for sd.fields.iter().advance |f| {
         v.visit_struct_field(*f);
     }
 }
 
 pub fn visit_struct_field<E:Clone>(sf: &struct_field, e_vt: (E, vt<E>)) {
+    debug!("visit::visit_struct_field %?", sf);
     walk_struct_field(&e_vt, sf);
 }
 
 pub fn walk_struct_field<V:Visitor>(v:&V, sf: &struct_field) {
+    debug!("visit::walk_struct_field %?", sf);
     v.visit_ty(&sf.node.ty);
 }
 
 pub fn visit_block<E:Clone>(b: &Block, e_vt: (E, vt<E>)) {
+    debug!("visit::visit_block %?", b);
     walk_block(&e_vt, b)
 }
 
 pub fn walk_block<V:Visitor>(v:&V, b: &Block) {
+    debug!("visit::walk_block %?", b);
     for b.view_items.iter().advance |vi| {
         v.visit_view_item(vi);
     }
@@ -664,10 +747,12 @@ pub fn walk_block<V:Visitor>(v:&V, b: &Block) {
 }
 
 pub fn visit_stmt<E:Clone>(s: &stmt, e_vt: (E, vt<E>)) {
+    debug!("visit::visit_stmt %?", s);
     walk_stmt(&e_vt, s)
 }
 
 pub fn walk_stmt<V:Visitor>(v:&V, s: &stmt) {
+    debug!("visit::walk_stmt %?", s);
     match s.node {
         stmt_decl(d, _) => v.visit_decl(d),
         stmt_expr(ex, _) => v.visit_expr(ex),
@@ -677,10 +762,12 @@ pub fn walk_stmt<V:Visitor>(v:&V, s: &stmt) {
 }
 
 pub fn visit_decl<E:Clone>(d: &decl, e_vt: (E, vt<E>)) {
+    debug!("visit::visit_decl %?", d);
     walk_decl(&e_vt, d)
 }
 
 pub fn walk_decl<V:Visitor>(v:&V, d: &decl) {
+    debug!("visit::walk_decl %?", d);
     match d.node {
         decl_local(ref loc) => v.visit_local(*loc),
         decl_item(it) => v.visit_item(it)
@@ -688,34 +775,42 @@ pub fn walk_decl<V:Visitor>(v:&V, d: &decl) {
 }
 
 pub fn visit_expr_opt<E:Clone>(eo: Option<@expr>, e_vt: (E, vt<E>)) {
+    debug!("visit::visit_expr_opt %?", eo);
     walk_expr_opt(&e_vt, eo)
 }
 
 pub fn walk_expr_opt<V:Visitor>(v:&V, eo: Option<@expr>) {
+    debug!("visit::walk_expr_opt %?", eo);
     match eo { None => (), Some(ex) => v.visit_expr(ex) }
 }
 
 pub fn visit_exprs<E:Clone>(exprs: &[@expr], e_vt: (E, vt<E>)) {
+    debug!("visit::visit_exprs %?", exprs);
     walk_exprs(&e_vt, exprs)
 }
 
 pub fn walk_exprs<V:Visitor>(v:&V, exprs: &[@expr]) {
+    debug!("visit::walk_exprs %?", exprs);
     for exprs.iter().advance |ex| { v.visit_expr(*ex); }
 }
 
 pub fn visit_mac<E:Clone>(m: &mac, e_vt: (E, vt<E>)) {
+    debug!("visit::visit_mac %?", m);
     walk_mac(&e_vt, m)
 }
 
 pub fn walk_mac<V:Visitor>(_v:&V, _m: &mac) {
+    debug!("visit::walk_mac %?", _m);
     /* no user-serviceable parts inside */
 }
 
 pub fn visit_expr<E:Clone>(ex: @expr, e_vt: (E, vt<E>)) {
+    debug!("visit::visit_expr %?", ex);
     walk_expr(&e_vt, ex)
 }
 
 pub fn walk_expr<V:Visitor>(v:&V, ex: @expr) {
+    debug!("visit::walk_expr %?", ex);
     match ex.node {
         expr_vstore(x, _) => v.visit_expr(x),
         expr_vec(ref es, _) => walk_exprs(v, *es),
@@ -821,10 +916,12 @@ pub fn walk_expr<V:Visitor>(v:&V, ex: @expr) {
 }
 
 pub fn visit_arm<E:Clone>(a: &arm, e_vt: (E, vt<E>)) {
+    debug!("visit::visit_arm %?", a);
     walk_arm(&e_vt, a)
 }
 
 pub fn walk_arm<V:Visitor>(v:&V, a: &arm) {
+    debug!("visit::walk_arm %?", a);
     for a.pats.iter().advance |p| { v.visit_pat(*p); }
     walk_expr_opt(v, a.guard);
     v.visit_block(&a.body);
@@ -858,30 +955,32 @@ pub struct SimpleVisitor {
 
 pub type simple_visitor = @SimpleVisitor;
 
-pub fn simple_ignore_ty(_t: &Ty) {}
+pub fn simple_ignore_ty(_t: &Ty) {
+    debug!("default_simple_visitor simple_ignore_ty %?", _t);
+}
 
 pub fn default_simple_visitor() -> @SimpleVisitor {
     @SimpleVisitor {
-        visit_mod: |_m, _sp, _id| { },
-        visit_view_item: |_vi| { },
-        visit_foreign_item: |_ni| { },
-        visit_item: |_i| { },
-        visit_local: |_l| { },
-        visit_block: |_b| { },
-        visit_stmt: |_s| { },
-        visit_arm: |_a| { },
-        visit_pat: |_p| { },
-        visit_decl: |_d| { },
-        visit_expr: |_e| { },
-        visit_expr_post: |_e| { },
+        visit_mod: |_m, _sp, _id| { debug!("default_simple_visitor visit_mod %?", _m); },
+        visit_view_item: |_vi| { debug!("default_simple_visitor visit_view_item %?", _vi); },
+        visit_foreign_item: |_ni| { debug!("default_simple_visitor visit_foreign_item %?", _ni); },
+        visit_item: |_i| { debug!("default_simple_visitor visit_item %?", _i); },
+        visit_local: |_l| { debug!("default_simple_visitor visit_local %?", _l); },
+        visit_block: |_b| { debug!("default_simple_visitor visit_block %?", _b); },
+        visit_stmt: |_s| { debug!("default_simple_visitor visit_stmt %?", _s); },
+        visit_arm: |_a| { debug!("default_simple_visitor visit_arm %?", _a); },
+        visit_pat: |_p| { debug!("default_simple_visitor visit_pat %?", _p); },
+        visit_decl: |_d| { debug!("default_simple_visitor visit_decl %?", _d); },
+        visit_expr: |_e| { debug!("default_simple_visitor visit_expr %?", _e); },
+        visit_expr_post: |_e| { debug!("default_simple_visitor visit_expr_post %?", _e); },
         visit_ty: simple_ignore_ty,
-        visit_generics: |_| {},
-        visit_fn: |_, _, _, _, _| {},
-        visit_ty_method: |_| {},
-        visit_trait_method: |_| {},
-        visit_struct_def: |_, _, _, _| {},
-        visit_struct_field: |_| {},
-        visit_struct_method: |_| {},
+        visit_generics: |_g| { debug!("default_simple_visitor visit_expr_post %?", _g);  },
+        visit_fn: |_, _, _d, _, _| { debug!("default_simple_visitor visit_fn %?", _d); },
+        visit_ty_method: |_m| { debug!("default_simple_visitor visit_ty_method %?", _m); },
+        visit_trait_method: |_t| { debug!("default_simple_visitor visit_trait_method %?", _t); },
+        visit_struct_def: |_d, _, _, _| { debug!("default_simple_visitor visit_trait_method %?", _d); },
+        visit_struct_field: |_f| { debug!("default_simple_visitor visit_struct_field %?", _f); },
+        visit_struct_method: |_m| { debug!("default_simple_visitor visit_struct_field %?", _m); },
     }
 }
 
@@ -893,63 +992,78 @@ pub fn mk_simple_visitor(v: simple_visitor) -> vt<()> {
         id: node_id,
         e_vt: ((), vt<()>)
     ) {
+        debug!("mk_simple_visitor visit_mod %?", m);
         f(m, sp, id);
         visit_mod(m, sp, id, e_vt);
     }
     fn v_view_item(f: @fn(&view_item), vi: &view_item, e_vt: ((), vt<()>)) {
+        debug!("mk_simple_visitor visit_view_item %?", vi);
         f(vi);
         visit_view_item(vi, e_vt);
     }
     fn v_foreign_item(f: @fn(@foreign_item), ni: @foreign_item, e_vt: ((), vt<()>)) {
+        debug!("mk_simple_visitor visit_foreign_item %?", ni);
         f(ni);
         visit_foreign_item(ni, e_vt);
     }
     fn v_item(f: @fn(@item), i: @item, e_vt: ((), vt<()>)) {
+        debug!("mk_simple_visitor visit_item %?", i);
         f(i);
         visit_item(i, e_vt);
     }
     fn v_local(f: @fn(@Local), l: @Local, e_vt: ((), vt<()>)) {
+        debug!("mk_simple_visitor visit_local %?", l);
         f(l);
         visit_local(l, e_vt);
     }
     fn v_block(f: @fn(&ast::Block), bl: &ast::Block, e_vt: ((), vt<()>)) {
+        debug!("mk_simple_visitor visit_block %?", bl);
         f(bl);
         visit_block(bl, e_vt);
     }
     fn v_stmt(f: @fn(@stmt), st: @stmt, e_vt: ((), vt<()>)) {
+        debug!("mk_simple_visitor visit_stmt %?", st);
         f(st);
         visit_stmt(st, e_vt);
     }
     fn v_arm(f: @fn(&arm), a: &arm, e_vt: ((), vt<()>)) {
+        debug!("mk_simple_visitor visit_arm %?", a);
         f(a);
         visit_arm(a, e_vt);
     }
     fn v_pat(f: @fn(@pat), p: @pat, e_vt: ((), vt<()>)) {
+        debug!("mk_simple_visitor visit_pat %?", p);
         f(p);
         visit_pat(p, e_vt);
     }
     fn v_decl(f: @fn(@decl), d: @decl, e_vt: ((), vt<()>)) {
+        debug!("mk_simple_visitor visit_decl %?", d);
         f(d);
         visit_decl(d, e_vt);
     }
     fn v_expr(f: @fn(@expr), ex: @expr, e_vt: ((), vt<()>)) {
+        debug!("mk_simple_visitor visit_expr %?", ex);
         f(ex);
         visit_expr(ex, e_vt);
     }
     fn v_expr_post(f: @fn(@expr), ex: @expr, (_e, _v): ((), vt<()>)) {
+        debug!("mk_simple_visitor visit_expr_post %?", ex);
         f(ex);
     }
     fn v_ty(f: @fn(&Ty), ty: &Ty, e_vt: ((), vt<()>)) {
+        debug!("mk_simple_visitor visit_ty %?", ty);
         f(ty);
         visit_ty(ty, e_vt);
     }
     fn v_ty_method(f: @fn(&ty_method), ty: &ty_method, e_vt: ((), vt<()>)) {
+        debug!("mk_simple_visitor visit_ty_method %?", ty);
         f(ty);
         visit_ty_method(ty, e_vt);
     }
     fn v_trait_method(f: @fn(&trait_method),
                       m: &trait_method,
                       e_vt: ((), vt<()>)) {
+        debug!("mk_simple_visitor visit_trait_method %?", m);
         f(m);
         visit_trait_method(m, e_vt);
     }
@@ -961,6 +1075,7 @@ pub fn mk_simple_visitor(v: simple_visitor) -> vt<()> {
         id: node_id,
         e_vt: ((), vt<()>)
     ) {
+        debug!("mk_simple_visitor visit_struct_def %?", sd);
         f(sd, nm, generics, id);
         visit_struct_def(sd, nm, generics, id, e_vt);
     }
@@ -969,6 +1084,7 @@ pub fn mk_simple_visitor(v: simple_visitor) -> vt<()> {
         ps: &Generics,
         e_vt: ((), vt<()>)
     ) {
+        debug!("mk_simple_visitor visit_generics %?", ps);
         f(ps);
         visit_generics(ps, e_vt);
     }
@@ -981,12 +1097,14 @@ pub fn mk_simple_visitor(v: simple_visitor) -> vt<()> {
         id: node_id,
         e_vt: ((), vt<()>)
     ) {
+        debug!("mk_simple_visitor visit_fn %?", decl);
         f(fk, decl, body, sp, id);
         visit_fn(fk, decl, body, sp, id, e_vt);
     }
     let visit_ty: @fn(&Ty, ((), vt<()>)) =
         |a,b| v_ty(v.visit_ty, a, b);
     fn v_struct_field(f: @fn(@struct_field), sf: @struct_field, e_vt: ((), vt<()>)) {
+        debug!("mk_simple_visitor visit_struct_field %?", sf);
         f(sf);
         visit_struct_field(sf, e_vt);
     }
