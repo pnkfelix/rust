@@ -704,10 +704,22 @@ fn check_loans_in_fn<'a>(fk: &visit::fn_kind,
                          id: ast::node_id,
                          (this, visitor): (CheckLoanCtxt<'a>,
                                            visit::vt<CheckLoanCtxt<'a>>)) {
-    if check_loans_in_fn_pre(fk, decl, body, sp, id, this) {
-        visit::visit_fn(fk, decl, body, sp, id, (this, visitor));
+    match *fk {
+        visit::fk_item_fn(*) |
+        visit::fk_method(*) => {
+            // Don't process nested items.
+            return;
+        }
+
+        visit::fk_anon(*) |
+        visit::fk_fn_block(*) => {
+            check_captured_variables(this, id, sp);
+        }
     }
+
+    visit::visit_fn(fk, decl, body, sp, id, (this, visitor));
 }
+
 
 fn check_loans_in_fn_pre<'a>(fk: &visit::fn_kind,
                               decl: &ast::fn_decl,
@@ -729,6 +741,8 @@ fn check_loans_in_fn_pre<'a>(fk: &visit::fn_kind,
         }
     }
     return true;
+
+}
 
     fn check_captured_variables(this: CheckLoanCtxt,
                                 closure_id: ast::node_id,
@@ -769,7 +783,6 @@ fn check_loans_in_fn_pre<'a>(fk: &visit::fn_kind,
             }
         }
     }
-}
 
 fn check_loans_in_local_vtor<'a>(local: @ast::Local, this: CheckLoanCtxt<'a>) {
     visit::walk_local(&this, local);
@@ -785,7 +798,58 @@ fn check_loans_in_expr<'a>(expr: @ast::expr,
                            (this, vt): (CheckLoanCtxt<'a>,
                                         visit::vt<CheckLoanCtxt<'a>>)) {
     visit::visit_expr(expr, (this, vt));
-    check_loans_in_expr_core(expr, this);
+
+    // check_loans_in_expr_core(expr, this); // future; past below
+
+    debug!("check_loans_in_expr(expr=%s)",
+           expr.repr(this.tcx()));
+
+    this.check_for_conflicting_loans(expr.id);
+    this.check_move_out_from_expr(expr);
+
+    match expr.node {
+      ast::expr_self |
+      ast::expr_path(*) => {
+          if !this.move_data.is_assignee(expr.id) {
+              let cmt = this.bccx.cat_expr_unadjusted(expr);
+              debug!("path cmt=%s", cmt.repr(this.tcx()));
+              let r = opt_loan_path(cmt);
+              for r.iter().advance |&lp| {
+                  this.check_if_path_is_moved(expr.id, expr.span, MovedInUse, lp);
+              }
+          }
+      }
+      ast::expr_assign(dest, _) |
+      ast::expr_assign_op(_, _, dest, _) => {
+        this.check_assignment(dest);
+      }
+      ast::expr_call(f, ref args, _) => {
+        this.check_call(expr, Some(f), f.id, f.span, *args);
+      }
+      ast::expr_method_call(callee_id, _, _, _, ref args, _) => {
+        this.check_call(expr, None, callee_id, expr.span, *args);
+      }
+      ast::expr_index(callee_id, _, rval) |
+      ast::expr_binary(callee_id, _, _, rval)
+      if this.bccx.method_map.contains_key(&expr.id) => {
+        this.check_call(expr,
+                        None,
+                        callee_id,
+                        expr.span,
+                        [rval]);
+      }
+      ast::expr_unary(callee_id, _, _) | ast::expr_index(callee_id, _, _)
+      if this.bccx.method_map.contains_key(&expr.id) => {
+        this.check_call(expr,
+                        None,
+                        callee_id,
+                        expr.span,
+                        []);
+      }
+      _ => { }
+    }
+
+
 }
 
 fn check_loans_in_expr_vtor<'a>(expr: @ast::expr, this: CheckLoanCtxt<'a>) {
