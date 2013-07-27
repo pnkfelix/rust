@@ -44,70 +44,134 @@ struct CheckLoanCtxt<'self> {
 
 #[cfg(stage0)] // workaround broken default methods
 impl<'self> Visitor for CheckLoanCtxt<'self> {
-    fn visit_expr(&self, e:@ast::expr) { check_loans_in_expr_vtor(e, *self) }
-    fn visit_local(&self, l:@ast::Local) { check_loans_in_local_vtor(l, *self) }
-    fn visit_block(&self, b:&ast::Block) { check_loans_in_block_vtor(b, *self) }
-    fn visit_pat(&self, p:@ast::pat) { check_loans_in_pat_vtor(p, *self) }
+    fn visit_expr(&self, e:@ast::expr) {
+        debug!("check_loans::Visitor.visit_expr start");
+        check_loans_in_expr_vtor(e, *self);
+        debug!("check_loans::Visitor.visit_expr finis");
+    }
+    fn visit_local(&self, l:@ast::Local) {
+        debug!("check_loans::Visitor.visit_local start");
+        check_loans_in_local_vtor(l, *self);
+        debug!("check_loans::Visitor.visit_local finis");
+    }
+    fn visit_block(&self, b:&ast::Block) {
+        debug!("check_loans::Visitor.visit_block start");
+        check_loans_in_block_vtor(b, *self);
+        debug!("check_loans::Visitor.visit_block finis");
+    }
+    fn visit_pat(&self, p:@ast::pat) {
+        debug!("check_loans::Visitor.visit_pat start");
+        check_loans_in_pat_vtor(p, *self);
+        debug!("check_loans::Visitor.visit_pat finis");
+    }
     fn visit_fn(&self, k:&visit::fn_kind, d:&ast::fn_decl, b:&ast::Block, s:span, i:ast::node_id) {
-        check_loans_in_fn_vtor(k, d, b, s, i, *self)
+        debug!("check_loans::Visitor.visit_fn start");
+        check_loans_in_fn_vtor(k, d, b, s, i, *self);
+        debug!("check_loans::Visitor.visit_fn finis");
     }
 
 
     fn visit_mod(&self, m:&ast::_mod, s:span, n:ast::node_id) {
-        visit::walk_mod(self, m, s, n)
+        debug!("        check_loans::Visitor.visit_mod (default) start");
+        visit::walk_mod(self, m, s, n);
+        debug!("        check_loans::Visitor.visit_mod (default) finis");
     }
     fn visit_view_item(&self, v:&ast::view_item) {
-        visit::walk_view_item(self, v)
+        debug!("        check_loans::Visitor.visit_view_item (default) start");
+        visit::walk_view_item(self, v);
+        debug!("        check_loans::Visitor.visit_view_item (default) finis");
     }
     fn visit_foreign_item(&self, f:@ast::foreign_item) {
-        visit::walk_foreign_item(self, f)
+        debug!("        check_loans::Visitor.visit_foreign_item (default) start");
+        visit::walk_foreign_item(self, f);
+        debug!("        check_loans::Visitor.visit_foreign_item (default) finis");
     }
     fn visit_item(&self, i:@ast::item) {
-        visit::walk_item(self, i)
+        debug!("        check_loans::Visitor.visit_item (default) start");
+        visit::walk_item(self, i);
+        debug!("        check_loans::Visitor.visit_item (default) finis");
     }
     fn visit_stmt(&self, s:@ast::stmt) {
-        visit::walk_stmt(self, s)
+        debug!("        check_loans::Visitor.visit_stmt (default) start");
+        visit::walk_stmt(self, s);
+        debug!("        check_loans::Visitor.visit_stmt (default) finis");
     }
     fn visit_arm(&self, a:&ast::arm) {
-        visit::walk_arm(self, a)
+        debug!("        check_loans::Visitor.visit_arm (default) start");
+        visit::walk_arm(self, a);
+        debug!("        check_loans::Visitor.visit_arm (default) finis");
     }
     fn visit_decl(&self, d:@ast::decl) {
-        visit::walk_decl(self, d)
+        debug!("        check_loans::Visitor.visit_decl (default) start");
+        visit::walk_decl(self, d);
+        debug!("        check_loans::Visitor.visit_decl (default) finis");
     }
 
     // XXX default method (bug?) requires an arg even if unused.  and
     // underscore alone does not work there either, which seems
     // somehow worse
-    fn visit_expr_post(&self, _e:@ast::expr) { }
+    fn visit_expr_post(&self, _e:@ast::expr) {
+        debug!("        check_loans::Visitor.visit_expr_post (default)");
+    }
 
     fn visit_ty(&self, t:&ast::Ty) {
-        visit::walk_ty(self, t)
+        debug!("        check_loans::Visitor.visit_ty (default) start");
+        visit::walk_ty(self, t);
+        debug!("        check_loans::Visitor.visit_ty (default) finis");
     }
     fn visit_generics(&self, g:&ast::Generics) {
-        visit::walk_generics(self, g)
+        debug!("        check_loans::Visitor.visit_generics (default) start");
+        visit::walk_generics(self, g);
+        debug!("        check_loans::Visitor.visit_generics (default) finis");
     }
     fn visit_ty_method(&self, t:&ast::ty_method) {
-        visit::walk_ty_method(self, t)
+        debug!("        check_loans::Visitor.visit_ty_method (default) start");
+        visit::walk_ty_method(self, t);
+        debug!("        check_loans::Visitor.visit_ty_method (default) finis");
     }
     fn visit_trait_method(&self, t: &ast::trait_method) {
-        visit::walk_trait_method(self, t)
+        debug!("        check_loans::Visitor.visit_trait_method (default) start");
+        visit::walk_trait_method(self, t);
+        debug!("        check_loans::Visitor.visit_trait_method (default) finis");
     }
     fn visit_struct_def(&self, d:@ast::struct_def, i:ast::ident, g:&ast::Generics, n:ast::node_id) {
-        visit::walk_struct_def(self, d, i, g, n)
+        debug!("        check_loans::Visitor.visit_struct_def (default) start");
+        visit::walk_struct_def(self, d, i, g, n);
+        debug!("        check_loans::Visitor.visit_struct_def (default) finis");
     }
     fn visit_struct_field(&self, f:@ast::struct_field) {
-        visit::walk_struct_field(self, f)
+        debug!("        check_loans::Visitor.visit_struct_field (default) start");
+        visit::walk_struct_field(self, f);
+        debug!("        check_loans::Visitor.visit_struct_field (default) finis");
     }
 }
 
 #[cfg(not(stage0))]
 impl<'self> Visitor for CheckLoanCtxt<'self> {
-    fn visit_expr(&self, e:@ast::expr) { check_loans_in_expr_vtor(e, *self) }
-    fn visit_local(&self, l:@ast::Local) { check_loans_in_local_vtor(l, *self) }
-    fn visit_block(&self, b:&ast::Block) { check_loans_in_block_vtor(b, *self) }
-    fn visit_pat(&self, p:@ast::pat) { check_loans_in_pat_vtor(p, *self) }
+    fn visit_expr(&self, e:@ast::expr) {
+        debug!("check_loans::Visitor.visit_expr start");
+        check_loans_in_expr_vtor(e, *self);
+        debug!("check_loans::Visitor.visit_expr finis");
+    }
+    fn visit_local(&self, l:@ast::Local) {
+        debug!("check_loans::Visitor.visit_local start");
+        check_loans_in_local_vtor(l, *self);
+        debug!("check_loans::Visitor.visit_local finis");
+    }
+    fn visit_block(&self, b:&ast::Block) {
+        debug!("check_loans::Visitor.visit_block start");
+        check_loans_in_block_vtor(b, *self);
+        debug!("check_loans::Visitor.visit_block finis");
+    }
+    fn visit_pat(&self, p:@ast::pat) {
+        debug!("check_loans::Visitor.visit_pat start");
+        check_loans_in_pat_vtor(p, *self);
+        debug!("check_loans::Visitor.visit_pat finis");
+    }
     fn visit_fn(&self, k:&visit::fn_kind, d:&ast::fn_decl, b:&ast::Block, s:span, i:ast::node_id) {
-        check_loans_in_fn_vtor(k, d, b, s, i, *self)
+        debug!("check_loans::Visitor.visit_fn start");
+        check_loans_in_fn_vtor(k, d, b, s, i, *self);
+        debug!("check_loans::Visitor.visit_fn finis");
     }
 }
 
@@ -116,7 +180,7 @@ pub fn check_loans(bccx: @BorrowckCtxt,
                    move_data: move_data::FlowedMoveData,
                    all_loans: &[Loan],
                    body: &ast::Block) {
-    debug!("check_loans(body id=%?)", body.id);
+    debug!("check_loans(body id=%?) start", body.id);
 
     let clcx = CheckLoanCtxt {
         bccx: bccx,
@@ -133,9 +197,12 @@ pub fn check_loans(bccx: @BorrowckCtxt,
                                            visit_pat: check_loans_in_pat,
                                            visit_fn: check_loans_in_fn,
                                            .. *visit::default_visitor()});
+    debug!("vt.visit_block");
     (vt.visit_block)(body, (clcx, vt));
 */
+    debug!("clcx.visit_block");
     clcx.visit_block(body);
+    debug!("check_loans(body id=%?) finis", body.id);
 }
 
 enum MoveError {
@@ -693,9 +760,11 @@ fn check_loans_in_fn_vtor<'a>(fk: &visit::fn_kind,
                               sp: span,
                               id: ast::node_id,
                               this: CheckLoanCtxt<'a>) {
+    debug!("check_loans::check_loans_in_fn_vtor start");
     if check_loans_in_fn_pre(fk, decl, body, sp, id, this) {
         visit::walk_fn(&this, fk, decl, body, sp, id);
     }
+    debug!("check_loans::check_loans_in_fn_vtor finis");
 }
 
 fn check_loans_in_fn<'a>(fk: &visit::fn_kind,
@@ -705,6 +774,7 @@ fn check_loans_in_fn<'a>(fk: &visit::fn_kind,
                          id: ast::node_id,
                          (this, visitor): (CheckLoanCtxt<'a>,
                                            visit::vt<CheckLoanCtxt<'a>>)) {
+    debug!("check_loans::check_loans_in_fn");
     match *fk {
         visit::fk_item_fn(*) |
         visit::fk_method(*) => {
@@ -719,6 +789,7 @@ fn check_loans_in_fn<'a>(fk: &visit::fn_kind,
     }
 
     visit::visit_fn(fk, decl, body, sp, id, (this, visitor));
+    debug!("check_loans::check_loans_in_fn finis");
 }
 
 
@@ -729,10 +800,12 @@ fn check_loans_in_fn_pre<'a>(fk: &visit::fn_kind,
                               id: ast::node_id,
                               this: CheckLoanCtxt<'a>) -> bool
 {
+    debug!("check_loans::check_loans_in_pre start");
     match *fk {
         visit::fk_item_fn(*) |
         visit::fk_method(*) => {
             // Don't process nested items.
+            debug!("check_loans::check_loans_in_pre finis false");
             return false;
         }
 
@@ -741,6 +814,7 @@ fn check_loans_in_fn_pre<'a>(fk: &visit::fn_kind,
             check_captured_variables(this, id, sp);
         }
     }
+    debug!("check_loans::check_loans_in_pre finis true");
     return true;
 
 }
@@ -786,18 +860,23 @@ fn check_loans_in_fn_pre<'a>(fk: &visit::fn_kind,
     }
 
 fn check_loans_in_local_vtor<'a>(local: @ast::Local, this: CheckLoanCtxt<'a>) {
+    debug!("check_loans::check_loans_in_local_vtor start");
     visit::walk_local(&this, local);
+    debug!("check_loans::check_loans_in_local_vtor finis");
 }
 
 fn check_loans_in_local<'a>(local: @ast::Local,
                             (this, vt): (CheckLoanCtxt<'a>,
                                          visit::vt<CheckLoanCtxt<'a>>)) {
+    debug!("check_loans::check_loans_in_local start");
     visit::visit_local(local, (this, vt));
+    debug!("check_loans::check_loans_in_local finis");
 }
 
 fn check_loans_in_expr<'a>(expr: @ast::expr,
                            (this, vt): (CheckLoanCtxt<'a>,
                                         visit::vt<CheckLoanCtxt<'a>>)) {
+    debug!("check_loans::check_loans_in_expr outset start");
     visit::visit_expr(expr, (this, vt));
 
     // check_loans_in_expr_core(expr, this); // future; past below
@@ -850,16 +929,18 @@ fn check_loans_in_expr<'a>(expr: @ast::expr,
       _ => { }
     }
 
-
+    debug!("check_loans::check_loans_in_expr outset finis");
 }
 
 fn check_loans_in_expr_vtor<'a>(expr: @ast::expr, this: CheckLoanCtxt<'a>) {
+    debug!("check_loans::check_loans_in_expr_vtor outset start");
     visit::walk_expr(&this, expr);
     check_loans_in_expr_core(expr, this);
+    debug!("check_loans::check_loans_in_expr_vtor outset finis");
 }
 
 fn check_loans_in_expr_core<'a>(expr: @ast::expr, this: CheckLoanCtxt<'a>) {
-    debug!("check_loans_in_expr(expr=%s)",
+    debug!("check_loans_in_expr(expr=%s) start",
            expr.repr(this.tcx()));
 
     this.check_for_conflicting_loans(expr.id);
@@ -906,34 +987,47 @@ fn check_loans_in_expr_core<'a>(expr: @ast::expr, this: CheckLoanCtxt<'a>) {
       }
       _ => { }
     }
+
+    debug!("check_loans_in_expr(expr=%s) finis",
+           expr.repr(this.tcx()));
 }
 
 fn check_loans_in_pat_vtor<'a>(pat: @ast::pat, this: CheckLoanCtxt<'a>)
 {
+    debug!("check_loans::check_loans_in_pat_vtor outset start");
     this.check_for_conflicting_loans(pat.id);
     this.check_move_out_from_id(pat.id, pat.span);
     visit::walk_pat(&this, pat);
+    debug!("check_loans::check_loans_in_pat_vtor outset finis");
 }
 
 fn check_loans_in_pat<'a>(pat: @ast::pat,
                           (this, vt): (CheckLoanCtxt<'a>,
                                        visit::vt<CheckLoanCtxt<'a>>))
 {
+    debug!("check_loans::check_loans_in_pat outset start");
     this.check_for_conflicting_loans(pat.id);
     this.check_move_out_from_id(pat.id, pat.span);
     visit::visit_pat(pat, (this, vt));
+    debug!("check_loans::check_loans_in_pat outset finis");
 }
 
 fn check_loans_in_block_vtor<'a>(blk: &ast::Block, this: CheckLoanCtxt<'a>)
 {
+    debug!("check_loans::check_loans_in_block_vtor outset start");
     visit::walk_block(&this, blk);
+    debug!("check_loans::check_loans_in_block_vtor done recurring");
     this.check_for_conflicting_loans(blk.id);
+    debug!("check_loans::check_loans_in_block_vtor outset finis");
 }
 
 fn check_loans_in_block<'a>(blk: &ast::Block,
                             (this, vt): (CheckLoanCtxt<'a>,
                                          visit::vt<CheckLoanCtxt<'a>>))
 {
+    debug!("check_loans::check_loans_in_block outset start");
     visit::visit_block(blk, (this, vt));
+    debug!("check_loans::check_loans_in_block done recurring");
     this.check_for_conflicting_loans(blk.id);
+    debug!("check_loans::check_loans_in_block outset finis");
 }
