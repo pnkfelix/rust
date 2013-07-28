@@ -149,8 +149,8 @@ pub trait Visitor {
     }
 
     fn visit_ty(&self, t:&Ty) {
-        debug!("default visit_ty");
-        self::walk_ty(self, t)
+        debug!("default visit_ty, skips");
+        // self::walk_ty(self, t)
     }
     fn visit_generics(&self, g:&Generics) {
         debug!("default visit_generics");
@@ -161,8 +161,8 @@ pub trait Visitor {
         self::walk_fn(self, k, d, b, s, n)
     }
     fn visit_ty_method(&self, t:&ty_method) {
-        debug!("default visit_ty_method");
-        self::walk_ty_method(self, t)
+        debug!("default visit_ty_method, skips");
+        // self::walk_ty_method(self, t)
     }
     fn visit_trait_method(&self, t: &trait_method) {
         debug!("default visit_trait_method");
@@ -349,13 +349,16 @@ pub fn visit_local<E:Clone>(loc: &Local, e_vt: (E, vt<E>)) {
 }
 
 pub fn walk_local<V:Visitor>(v:&V, loc: &Local) {
-    debug!("visit::walk_local");
+    debug!("visit::walk_local start");
+    debug!("visit::walk_local recur v.visit_pat");
     v.visit_pat(loc.pat);
+    debug!("visit::walk_local recur v.visit_ty");
     v.visit_ty(&loc.ty);
     match loc.init {
       None => (),
-      Some(ex) => v.visit_expr(ex)
+      Some(ex) => { debug!("visit::walk_local recur v.visit_expr"); v.visit_expr(ex) }
     }
+    debug!("visit::walk_local finis");
 }
 
 fn visit_trait_ref<E:Clone>(tref: &ast::trait_ref, e_vt: (E, vt<E>)) {
@@ -821,7 +824,7 @@ pub fn walk_expr<V:Visitor>(v:&V, ex: @expr) {
         expr_struct(ref p, ref flds, base) => {
             walk_path(v, p);
             for flds.iter().advance |f| {
-                v.visit_expr(f.expr); // FIXME: need v.clone() here?
+                v.visit_expr(f.expr); // FIXME (#7081): need v.clone() here?
             }
             walk_expr_opt(v, base);
         }
@@ -956,7 +959,7 @@ pub struct SimpleVisitor {
 pub type simple_visitor = @SimpleVisitor;
 
 pub fn simple_ignore_ty(_t: &Ty) {
-    debug!("default_simple_visitor simple_ignore_ty"); 
+    debug!("default_simple_visitor simple_ignore_ty");
 }
 
 pub fn default_simple_visitor() -> @SimpleVisitor {
