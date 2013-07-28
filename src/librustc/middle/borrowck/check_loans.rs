@@ -115,8 +115,8 @@ impl<'self> Visitor for CheckLoanCtxt<'self> {
     }
 
     fn visit_ty(&self, t:&ast::Ty) {
-        debug!("        check_loans::Visitor.visit_ty (default) start");
-        visit::walk_ty(self, t);
+        debug!("        check_loans::Visitor.visit_ty (default) start, skips");
+        // visit::walk_ty(self, t);
         debug!("        check_loans::Visitor.visit_ty (default) finis");
     }
     fn visit_generics(&self, g:&ast::Generics) {
@@ -287,7 +287,7 @@ impl<'self> CheckLoanCtxt<'self> {
         //! issued when we enter `scope_id` (for example, we do not
         //! permit two `&mut` borrows of the same variable).
 
-        debug!("check_for_conflicting_loans(scope_id=%?)", scope_id);
+        debug!("check_for_conflicting_loans(scope_id=%?) start", scope_id);
 
         let new_loan_indices = self.loans_generated_by(scope_id);
         debug!("new_loan_indices = %?", new_loan_indices);
@@ -306,6 +306,7 @@ impl<'self> CheckLoanCtxt<'self> {
                 self.report_error_if_loans_conflict(old_loan, new_loan);
             }
         }
+        debug!("check_for_conflicting_loans(scope_id=%?) finis", scope_id);
     }
 
     pub fn report_error_if_loans_conflict(&self,
