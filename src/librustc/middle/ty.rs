@@ -977,12 +977,14 @@ fn mk_t(cx: ctxt, st: sty) -> t {
       &ty_param(_) => flags |= has_params as uint,
       &ty_infer(_) => flags |= needs_infer as uint,
       &ty_self(_) => flags |= has_self as uint,
-      &ty_enum(_, ref substs) | &ty_struct(_, ref substs) |
+      &ty_enum(_, ref substs) | &ty_struct(_, ref substs) => {
+        flags |= sflags(substs);
+      }
       &ty_trait(_, ref substs, ref store, _, _) => {
         flags |= sflags(substs);
         match *store {
             RegionTraitStore(r) => { flags |= rflags(r); }
-            _ = { }
+            _ => { }
         }
       }
       &ty_box(ref m) | &ty_uniq(ref m) | &ty_evec(ref m, _) |
@@ -3029,9 +3031,9 @@ pub fn adjust_ty(cx: ctxt,
     fn borrow_obj(cx: ctxt, span: span, r: Region,
                   m: ast::mutability, ty: ty::t) -> ty::t {
         match get(ty).sty {
-            ty_trait(trt_did, ref trt_substs, _, _) => {
-                ty::mk_trait(cx, trt_did, copy *trt_substs,
-                             RegionTraitStore(r), m)
+            ty_trait(trt_did, ref trt_substs, _, _, b) => {
+                ty::mk_trait(cx, trt_did, trt_substs.clone(),
+                             RegionTraitStore(r), m, b)
             }
             ref s => {
                 cx.sess.span_bug(

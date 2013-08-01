@@ -304,14 +304,14 @@ pub fn trans_to_datum(bcx: @mut Block, expr: @ast::expr) -> DatumBlock {
         auto_ref(bcx, datum)
     }
 
-    fn auto_borrow_obj(bcx: block,
+    fn auto_borrow_obj(bcx: @mut Block,
                        expr: @ast::expr,
                        source_datum: Datum) -> DatumBlock {
         let tcx = bcx.tcx();
         let target_obj_ty = expr_ty_adjusted(bcx, expr);
         debug!("auto_borrow_obj(target=%s)",
                target_obj_ty.repr(tcx));
-        let scratch = scratch_datum(bcx, target_obj_ty, false);
+        let scratch = scratch_datum(bcx, target_obj_ty, "__borrow", false);
 
         // Convert a @Object, ~Object, or &Object pair into an &Object pair.
 
@@ -331,7 +331,7 @@ pub fn trans_to_datum(bcx: @mut Block, expr: @ast::expr) -> DatumBlock {
         let source_data_ptr = GEPi(bcx, source_llval, [0u, abi::trt_field_box]);
         let source_data = Load(bcx, source_data_ptr); // always a ptr
         let source_store = match ty::get(source_datum.ty).sty {
-            ty::ty_trait(_, _, s, _) => s,
+            ty::ty_trait(_, _, s, _, _) => s,
             _ => {
                 bcx.sess().span_bug(
                     expr.span,
@@ -342,9 +342,7 @@ pub fn trans_to_datum(bcx: @mut Block, expr: @ast::expr) -> DatumBlock {
         let target_data = match source_store {
             ty::BoxTraitStore(*) |
             ty::UniqTraitStore(*) => {
-                non_gc_box_cast(
-                    bcx,
-                    GEPi(bcx, source_data, [0u, abi::box_field_body]))
+                GEPi(bcx, source_data, [0u, abi::box_field_body])
             }
             ty::RegionTraitStore(*) => {
                 source_data

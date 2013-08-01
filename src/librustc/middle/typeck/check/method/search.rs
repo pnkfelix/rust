@@ -14,40 +14,60 @@
  * or method comments for more details.
  */
 
+use extra::list::Nil;
+use middle::ty;
 use middle::typeck::check;
+use middle::typeck::check::method;
+use middle::typeck::check::method::get_mode_from_explicit_self;
+use middle::typeck::check::method::LookupContext;
+use middle::typeck::check::regionmanip;
+use middle::typeck::check::vtable;
+use middle::typeck::infer;
+use middle::typeck::method_map_entry;
+use middle::typeck::method_origin;
+use middle::typeck::method_param;
+use middle::typeck::method_static;
+use middle::typeck::method_self;
+use middle::typeck::method_super;
+use middle::typeck::method_trait;
 use middle::subst::Subst;
+use syntax::ast;
+use util::ppaux::Repr;
 
 ///////////////////////////////////////////////////////////////////////////
 // Types
 
-enum RcvrType {
-    SizedType(ty::t),                // T
-    ExistentialType(def_id, substs), // Trait
-    VectorType(ty::t),               // [T]
-    StringType,                      // str
+pub enum RcvrType {
+    SizedType(ty::t),                         // T
+    ExistentialType(ast::def_id, ty::substs), // Trait
+    VectorType(ty::t),                        // [T]
+    StringType,                               // str
 }
 
 struct RcvrAdjustment {
     autoderefs: uint,
-    autoslice: Option((Region, ast::mutability))
+    autoslice: Option<(ty::Region, ast::mutability)>
 }
 
-trait MethodSearch {
-    fn push_candidates(&mut self, rcvr_ty: &RcvrType, out: &mut [Candidate]);
+pub trait MethodSearch {
+    fn push_candidates(&mut self,
+                       lookupcx: &method::LookupContext,
+                       rcvr_ty: &RcvrType,
+                       out: &mut ~[Candidate]);
 }
 
-struct Candidate {
+#[deriving(Clone)]
+pub struct Candidate {
     rcvr_substs: ty::substs,
     method_ty: @ty::Method,
     origin: method_origin,
 }
 
-enum SearchError {
+pub enum SearchError {
     StaticMethodCalled,
-    NoMethodFound, // just didn't find a suitable method at all
     NotManaged, // `@self` method invoked on non-pointer receiver
     NotOwned, // `~self` method invoked on non-pointer receiver
-    ExpectedFound(ty::t, ty::t),
+    ExpectedFound(ty::t, ty::t, ty::type_err),
     UnsizedReceiverWithByValueMethod, // by-value method on unsized type
     ObjectMethodReferencingSelf, // object method called with `Self` type
     ObjectMethodGeneric, // object method called with type params
@@ -56,15 +76,19 @@ enum SearchError {
     MultipleCandidates(~[Candidate]),
 }
 
-type SearchResult = Result<method_map_entry, SearchError>;
+enum SearchResult {
+    NoMethodFound,
+    MethodFound(method_map_entry),
+    Error(SearchError)
+}
 
 ///////////////////////////////////////////////////////////////////////////
 // Methods
 
-impl LookupContext {
+impl<'self> method::LookupContext<'self> {
     pub fn do_search<M:MethodSearch>(&mut self,
                                      start_ty: ty::t,
-                                     search: &mut M)
+                                     mut search: M)
                                      -> SearchResult {
         /*!
          * Overarching search routine. Given the search routine `search`,
@@ -78,14 +102,18 @@ impl LookupContext {
         let mut candidates = ~[];
 
         loop {
-            search.push_candidates(rcvr_tys.last(), &mut candidates);
+            search.push_candidates(self, rcvr_tys.last(), &mut candidates);
             if !candidates.is_empty() {
-                return self.candidates_found(rcvr_tys, candidates);
+                let adjustment = RcvrAdjustment {
+                    autoderefs: rcvr_tys.len() - 1,
+                    autoslice: None
+                };
+                return self.candidates_found(rcvr_tys, candidates, adjustment);
             }
 
             match self.deref(rcvr_tys.last(), &mut dids) {
                 None => {
-                    return self.search_slice(rcvr_tys, search);
+                    return self.search_slice(rcvr_tys, &mut search);
                 }
                 Some(t) => {
                     rcvr_tys.push(t);
@@ -96,7 +124,7 @@ impl LookupContext {
 
     fn deref(&mut self,
              rcvr_ty: &RcvrType,
-             dids: &mut [ast::def_id])
+             dids: &mut ~[ast::def_id])
              -> Option<RcvrType> {
         /*!
          * Attempts to deref the type `rcvr_ty`, yielding result type.
@@ -104,22 +132,22 @@ impl LookupContext {
 
         let ty = match *rcvr_ty {
             SizedType(ty) => ty,
-            ExistentialType(_) | RepeatingRcvrType(_) => {
+            ExistentialType(*) | VectorType(*) | StringType(*) => {
                 return None;
             }
         };
 
         match ty::get(ty).sty {
-            ty_trait(def_id, ref substs, _, _) => {
-                return Some(ExistentialType(def_id, copy *substs));
+            ty::ty_trait(def_id, ref substs, _, _, _) => {
+                return Some(ExistentialType(def_id, substs.clone()));
             }
-            ty_evec(mt, _) => {
-                return Some(RepeatingRcvrType(VectorType(mt.ty)));
+            ty::ty_evec(mt, _) => {
+                return Some(VectorType(mt.ty));
             }
-            ty_estr(_) => {
-                return Some(RepeatingRcvrType(StringType));
+            ty::ty_estr(_) => {
+                return Some(StringType);
             }
-            ty_enum(did, _) | ty_struct(did, _) => {
+            ty::ty_enum(did, _) | ty::ty_struct(did, _) => {
                 // Watch out for newtype'd enums like "struct T(@T)",
                 // which could induce an infinite loop. See discussion
                 // in typeck::check::do_autoderef().
@@ -174,61 +202,98 @@ impl LookupContext {
          * that DST is a good idea! - nmatsakis
          */
 
+        let tcx = self.tcx();
         match *rcvr_tys.last() {
             SizedType(*) => {
-                Err(NotFound)
+                NoMethodFound
             }
 
             ExistentialType(*) => {
                 // We never handled this case before, hopefully we can
                 // implement DST before it becomes important!
-                Err(NotFound)
+                NoMethodFound
             }
 
-            RepeatingRcvrType(VectorType(t_elem)) => {
-                self.search_repeating_type(
+            VectorType(t_elem) => {
+                // First try [T] to &m [T]
+                match self.search_repeating_type(
+                    search,
                     rcvr_tys,
-                    [m_const, m_imm, m_mutbl],
-                    |r, m| ty::mk_evec(tcx,
+                    [ast::m_const, ast::m_imm, ast::m_mutbl],
+                    |r, m| ty::mk_evec(self.tcx(),
                                        ty::mt {mutbl: m, ty: t_elem},
-                                       vstore_slice(r)))
+                                       ty::vstore_slice(r)),
+                    |r, m| ty::AutoBorrowVec(r, m))
+                {
+                    NoMethodFound => { /* Keep searching */ }
+                    r @ MethodFound(*) | r @ Error(*) => { return r; }
+                }
+
+                // Then try [T] to &&m [T]. This horrible hack is
+                // needed for calling &self methods implemented on
+                // &[T] on an ~[T] receiver.  DST! DST!
+                self.search_repeating_type(
+                    search,
+                    rcvr_tys,
+                    [ast::m_const, ast::m_imm, ast::m_mutbl],
+                    |r, m| {
+                        let slice_ty = ty::mk_evec(self.tcx(),
+                                                   ty::mt {mutbl: m, ty: t_elem},
+                                                   ty::vstore_slice(r));
+                        // NB: we do not try to autoref to a mutable
+                        // pointer. That would be creating a pointer
+                        // to a temporary pointer (the borrowed
+                        // slice), so any update the callee makes to
+                        // it can't be observed.
+                        ty::mk_rptr(tcx, r, ty::mt {ty:slice_ty,
+                                                    mutbl:ast::m_imm})
+                    },
+                    |r, m| ty::AutoBorrowVecRef(r, m))
             }
 
-            RepeatingRcvrType(StringType) => {
+            StringType => {
                 self.search_repeating_type(
+                    search,
                     rcvr_tys,
-                    [m_imm],
-                    |r, _| ty::mk_estr(tcx, vstore_slice(r)))
+                    [ast::m_imm],
+                    |r, _| ty::mk_estr(self.tcx(),
+                                       ty::vstore_slice(r)),
+                    |r, m| ty::AutoBorrowVecRef(r, m))
             }
         }
     }
 
-    fn search_repeating_type(&mut self,
-                             rcvr_tys: &[RcvrType],
-                             mutabilities: &[ast::mutability],
-                             mk_ty: &fn(Region, ast::mutability) -> ty::t,
-                             mk_ref: &fn(Region, ast::mutability) -> AutoRef)
-                             -> SearchResult {
+    fn search_repeating_type<M:MethodSearch>(
+        &mut self,
+        search: &mut M,
+        rcvr_tys: &[RcvrType],
+        mutabilities: &[ast::mutability],
+        mk_ty: &fn(ty::Region, ast::mutability) -> ty::t,
+        mk_ref: &fn(ty::Region, ast::mutability) -> ty::AutoRef)
+        -> SearchResult
+    {
         /*!
          * See `search_slice` above.
          */
 
-        let region = self.infcx().next_region_var_nb(self.expr.span);
+        let region =
+            self.infcx().next_region_var(
+                infer::Autoref(self.expr.span));
         let mut candidates = ~[];
-        for mutbls.each |mutbl| {
+        for mutabilities.iter().advance |&mutbl| {
             let slice_rcvr_ty = SizedType(mk_ty(region, mutbl));
-            search.search(&slice_rcvr_ty, candidates);
+            search.push_candidates(self, &slice_rcvr_ty, &mut candidates);
             if candidates.is_empty() { loop; }
 
-            let adjustment = AutoDerefRef {
+            let adjustment = RcvrAdjustment {
                 autoderefs: rcvr_tys.len() - 1,
-                autoref: Some(mk_ref(region, mutbl))
+                autoslice: Some(mk_ref(region, mutbl))
             };
             return self.candidates_found(~[slice_rcvr_ty],
                                          candidates,
                                          adjustment);
         }
-        Err(NotFound)
+        NoMethodFound
     }
 
     fn candidates_found(&mut self,
@@ -248,7 +313,7 @@ impl LookupContext {
         if candidates.len() > 1 {
             candidates = self.merge_candidates(candidates);
             if candidates.len() > 1 {
-                return Err(MultipleCandidates(candidates));
+                return Error(MultipleCandidates(candidates));
             }
         }
 
@@ -288,6 +353,9 @@ impl LookupContext {
                         // impl
                         same_trait && same_method && same_param
                     }
+                    (&method_static(did1), &method_static(did2)) => {
+                        did1 == did2
+                    }
                     _ => false
                 };
                 if candidates_same {
@@ -303,7 +371,7 @@ impl LookupContext {
                 // There are more than one of these and we need only one
                 loop;
             } else {
-                merged.push(copy *candidate_a);
+                merged.push(candidate_a.clone());
             }
         }
 
@@ -323,35 +391,35 @@ impl LookupContext {
          */
 
         assert!(!rcvr_tys.is_empty());
-        match candidate.explicit_self {
-            sty_static => {
+        match candidate.method_ty.explicit_self {
+            ast::sty_static => {
                 Err(StaticMethodCalled)
             }
 
-            sty_value => {
+            ast::sty_value => {
                 self.adjust_for_by_value_candidate(rcvr_tys.pop(),
                                                    candidate,
                                                    adjustment)
             }
 
-            sty_region(_, mutbl) => {
+            ast::sty_region(_, mutbl) => {
                 self.adjust_for_borrowed_candidate(rcvr_tys.pop(),
                                                    candidate,
                                                    mutbl,
                                                    adjustment)
             }
 
-            sty_box(_) => {
+            ast::sty_box(_) => {
                 self.adjust_for_boxed_candidate(rcvr_tys,
                                                 candidate,
-                                                box_adjustment,
+                                                adjustment,
                                                 NotManaged)
             }
 
-            sty_uniq(_) => {
+            ast::sty_uniq(_) => {
                 self.adjust_for_boxed_candidate(rcvr_tys,
                                                 candidate,
-                                                box_adjustment,
+                                                adjustment,
                                                 NotOwned)
             }
         }
@@ -370,12 +438,12 @@ impl LookupContext {
 
         match rcvr_ty {
             SizedType(t) => {
-                let auto_adj = AutoDerefRef {
+                let auto_adj = RcvrAdjustment {
                     autoderefs:
                         adjustment.autoderefs,
                     autoref:
                         adjustment.autoslice.map(
-                            |&(r, m)| AutoBorrowVec(r, m))
+                            |&(r, m)| ty::AutoBorrowVec(r, m))
                 };
 
                 self.test_any_candidate(t, candidate, auto_adj)
@@ -444,51 +512,54 @@ impl LookupContext {
                 match *rcvr_ty {
                     ExistentialType(*) => {
                         (region,
-                         AutoDerefRef {
+                         ty::AutoDerefRef {
                              autoderefs: adjustment.autoderefs - 1,
-                             autoref: Some(AutoBorrowObj(region, mutbl))})
+                             autoref: Some(ty::AutoBorrowObj(region, mutbl))})
                     }
 
                     _ => {
                         (region,
-                         AutoDerefRef {
+                         ty::AutoDerefRef {
                              autoderefs: adjustment.autoderefs,
-                             autoref: Some(AutoPtr(region, mutbl))})
+                             autoref: Some(ty::AutoPtr(region, mutbl))})
                     }
                 }
             }
 
-            Some((r, m)) if mutbl == m_imm => {
+            Some((r, m)) if mutbl == ast::m_imm => {
                 // NB: We don't let user borrow from `~[]` to `&mut &[]`,
                 // though we could safely do so. It's just kind of a footgun,
                 // since the mutable effects of the method would affect
                 // a temporary.
-                (r, AutoDerefRef {autoderefs: adjustment.autoderefs,
-                                  autoref: Some(AutoBorrowVecRef(r, m))})
+                (r, ty::AutoDerefRef {autoderefs: adjustment.autoderefs,
+                                      autoref: Some(ty::AutoBorrowVecRef(r, m))})
             }
 
             Some((_, _)) => {
-                return Err(NotFound);
+                return NoMethodFound;
             }
         };
 
+        let tcx = self.tcx();
         let rptr_ty = match *rcvr_ty {
             SizedType(t) => {
-                ty::mk_rptr(tcx, r, mt {ty: t, mutbl: mutbl})
+                ty::mk_rptr(tcx, region, ty::mt {ty: t, mutbl: mutbl})
             }
             ExistentialType(def_id, substs) => {
-                ty::mk_trait(tcx, def_id, substs, RegionTraitStore(r), mutbl)
+                ty::mk_trait(tcx, def_id, substs,
+                             ty::RegionTraitStore(region), mutbl)
             }
 
             // In fact, these cases cannot occur right now, because
             // there are never inherent methods or traits defined on
             // a type like `[T]`. But I still handle them.
             VectorType(t) => {
-                ty::mk_evec(cx, mt {ty: t, mutbl: mutbl}, vstore_slice(r))
+                ty::mk_evec(tcx, ty::mt {ty: t, mutbl: mutbl},
+                            ty::vstore_slice(region))
             }
             StringType => {
-                assert_eq!(mutbl,  m_imm);
-                ty::mk_estr(cx, vstore_slice(r))
+                assert_eq!(mutbl, ast::m_imm);
+                ty::mk_estr(tcx, ty::vstore_slice(region))
             }
         };
 
@@ -497,6 +568,7 @@ impl LookupContext {
 
     fn adjust_for_boxed_candidate(&mut self,
                                   rcvr_tys: ~[RcvrType],
+                                  candidate: Candidate,
                                   adjustment: RcvrAdjustment,
                                   err_if_not_derefd: SearchError)
                                   -> SearchResult {
@@ -546,15 +618,15 @@ impl LookupContext {
         assert_eq!(adjustment.autoslice, None);
 
         // Convert autoadjustment to include one fewer autoderef.
-        let auto_adj = AutoDerefRef {autoderefs: adjustment.autoderefs - 1,
-                                     autoref: None};
+        let auto_adj = ty::AutoDerefRef {autoderefs: adjustment.autoderefs - 1,
+                                         autoref: None};
 
         // Find the type before the last autoderef; it must be a sized
         // type, since no unsized types are autoderefable.
         let self_ty = match rcvr_tys[rcvr_tys.len() - 1] {
             SizedType(ty) => ty,
             r => {
-                tcx.sess.span_bug(
+                self.tcx().sess.span_bug(
                     self.expr.span,
                     fmt!("Removing an autoderef yielded unsized type: %?", r));
             }
@@ -602,16 +674,16 @@ impl LookupContext {
         // Check for various error conditions:
         match self.enforce_object_limitations(fty, candidate) {
             Ok(()) => {}
-            Err(e) => { return Err(e); }
+            Err(e) => { return Error(e); }
         }
 
         match self.enforce_drop_trait_limitations(candidate) {
             Ok(()) => {}
-            Err(e) => { return Err(e); }
+            Err(e) => { return Error(e); }
         }
 
         // static methods should never have gotten this far:
-        assert!(candidate.method_ty.explicit_self != sty_static);
+        assert!(candidate.method_ty.explicit_self != ast::sty_static);
 
         // Find the "transformed" self type, meaning the self type
         // after the explicit self declaration is taken into account.
@@ -644,10 +716,9 @@ impl LookupContext {
 
         // Construct the full set of type parameters for the method,
         // which is equal to the class tps + the method tps.
-        let all_substs = substs {
-            tps: vec::append(/*bad*/copy candidate.rcvr_substs.tps,
-                             m_substs),
-            ../*bad*/copy candidate.rcvr_substs
+        let all_substs = ty::substs {
+            tps: candidate.rcvr_substs.tps.clone().append(m_substs),
+            ..candidate.rcvr_substs.clone()
         };
 
         // Compute the method type with type parameters substituted
@@ -658,7 +729,7 @@ impl LookupContext {
         // Replace any bound regions that appear in the function
         // signature with region variables
         let bare_fn_ty = match ty::get(fty).sty {
-            ty::ty_bare_fn(ref f) => copy *f,
+            ty::ty_bare_fn(ref f) => f.clone(),
             ref s => {
                 tcx.sess.span_bug(
                     self.expr.span,
@@ -666,7 +737,7 @@ impl LookupContext {
             }
         };
         let (_, opt_transformed_self_ty, fn_sig) =
-            replace_bound_regions_in_fn_sig(
+            regionmanip::replace_bound_regions_in_fn_sig(
                 tcx, @Nil, Some(transformed_self_ty), &bare_fn_ty.sig,
                 |_br| self.fcx.infcx().next_region_var_nb(self.expr.span));
         let transformed_self_ty = opt_transformed_self_ty.get();
@@ -675,15 +746,15 @@ impl LookupContext {
 
         let self_mode = get_mode_from_explicit_self(candidate.method_ty.explicit_self);
 
-        // Check that `self_ty` is a subtype of `rcvr_ty`.  This can
-        // fail if the self type doesn't line up; e.g., `self_ty` is
-        // `@Foo` and we are calling an method on `Foo` with a `~self`
-        // declaration.
+        // Check that the receiver's type is a subtype of the actual,
+        // expected type. This can fail if the self type doesn't line
+        // up; e.g., `self_ty` is `@Foo` and we are calling an method
+        // on `Foo` with a `~self` declaration.
         match self.fcx.mk_subty(false, self.self_expr.span,
-                                rcvr_ty, transformed_self_ty) {
+                                adj_self_ty, transformed_self_ty) {
             Ok(_) => {}
-            Err(_) => {
-                return Err(ExpectedFound(transformed_self_ty, rcvr_ty));
+            Err(e) => {
+                return Err(ExpectedFound(transformed_self_ty, adj_self_ty, e));
             }
         }
 
@@ -781,7 +852,7 @@ impl LookupContext {
 
         let substs = ty::substs {self_r: candidate.rcvr_substs.self_r,
                                  self_ty: None,
-                                 tps: copy candidate.rcvr_substs.tps};
+                                 tps: candidate.rcvr_substs.tps.clone()};
         match candidate.method_ty.explicit_self {
             r @ ast::sty_static | r @ ast::sty_value => {
                 // Should have reported an error in the earlier stages
@@ -795,15 +866,15 @@ impl LookupContext {
                 match ty::get(transformed_self_ty).sty {
                     ty::ty_rptr(r, mt) => { // must be sty_region
                         ty::mk_trait(self.tcx(), trait_def_id,
-                                     substs, RegionTraitStore(r), mt.mutbl)
+                                     substs, ty::RegionTraitStore(r), mt.mutbl)
                     }
                     ty::ty_box(mt) => { // must be sty_box
                         ty::mk_trait(self.tcx(), trait_def_id,
-                                     substs, BoxTraitStore, mt.mutbl)
+                                     substs, ty::BoxTraitStore, mt.mutbl)
                     }
                     ty::ty_uniq(mt) => { // must be sty_uniq
                         ty::mk_trait(self.tcx(), trait_def_id,
-                                     substs, UniqTraitStore, mt.mutbl)
+                                     substs, ty::UniqTraitStore, mt.mutbl)
                     }
                     _ => {
                         self.bug(
@@ -813,5 +884,49 @@ impl LookupContext {
                 }
             }
         }
+    }
+}
+
+// Useful helper function. This is used by both `inherent` and
+// `traits` searchers.
+
+pub fn push_candidates_from_impl(lookupcx: &LookupContext,
+                                 impl_info: &ty::Impl,
+                                 out: &mut ~[Candidate]) {
+    // Search for a method with the required name.
+    let idx = {
+        match impl_info.methods.position(|m| m.ident == lookupcx.m_name) {
+            Some(idx) => idx,
+            None => { return; } // No method with the right name.
+        }
+    };
+    let method = ty::method(lookupcx.tcx(), impl_info.methods[idx].did);
+
+    // Obtain a substitution `impl_substs` with fresh type
+    // variables for each of the impl's type parameters.
+    let location_info = &vtable::location_info_for_expr(lookupcx.self_expr);
+    let vcx = vtable::VtableContext {
+        ccx: lookupcx.fcx.ccx,
+        infcx: lookupcx.fcx.infcx()
+    };
+    let ty::ty_param_substs_and_ty {
+        substs: impl_substs,
+        ty: _
+    } = check::impl_self_ty(&vcx, location_info, impl_info.did);
+
+    // Push the result.
+    out.push(Candidate {
+        rcvr_substs: impl_substs,
+        method_ty: method,
+        origin: method_static(method.def_id)
+    });
+}
+
+impl Repr for Candidate {
+    fn repr(&self, tcx: ty::ctxt) -> ~str {
+        fmt!("Candidate(rcvr_substs=%s, method_ty=%s, origin=%s)",
+             self.rcvr_substs.repr(tcx),
+             self.method_ty.repr(tcx),
+             self.origin.repr(tcx))
     }
 }

@@ -535,7 +535,7 @@ pub fn trans_trait_callee_from_llval(bcx: @mut Block,
         }
     };
 
-    let llscratch = alloca(bcx, val_ty(llbox));
+    let llscratch = alloca(bcx, val_ty(llbox), "__self");
     Store(bcx, llbox, llscratch);
     let self_mode = ty::ByRef;
     let llself = llscratch;

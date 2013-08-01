@@ -138,6 +138,8 @@ pub mod writeback;
 pub mod regionmanip;
 pub mod regionck;
 pub mod demand;
+
+#[path = "method/mod.rs"]
 pub mod method;
 
 pub struct SelfInfo {

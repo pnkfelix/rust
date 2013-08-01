@@ -103,7 +103,7 @@ impl Reflector {
         // FIXME I think the visitor here is a @Visitor? We may have to
         // add some hokey adaptation
 
-        let bcx = callee::trans_call_inner(
+        let result = unpack_result!(bcx, callee::trans_call_inner(
             self.bcx, None, mth_ty, bool_ty,
             |bcx| meth::trans_trait_callee_from_llval(bcx,
                                                       mth_ty,

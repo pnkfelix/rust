@@ -290,7 +290,7 @@ impl Coerce {
             }
             ty::ty_trait(did, ref substs, _, m) => {
                 trt_mut = m;
-                ty::mk_trait(tcx, did, copy *substs,
+                ty::mk_trait(tcx, did, substs.clone(),
                              ty::RegionTraitStore(r_a), m)
             }
             _ => {
