@@ -16,14 +16,12 @@ use cast;
 use clone::Clone;
 use comm::{stream, SharedChan, GenericChan, GenericPort};
 use io;
-use iterator::IteratorUtil;
 use libc::{pid_t, c_void, c_int};
 use libc;
 use option::{Some, None};
 use os;
 use prelude::*;
 use ptr;
-use str;
 use task;
 use vec::ImmutableVector;
 
@@ -153,7 +151,7 @@ impl Process {
         let (in_pipe, in_fd) = match options.in_fd {
             None => {
                 let pipe = os::pipe();
-                (Some(pipe), pipe.in)
+                (Some(pipe), pipe.input)
             },
             Some(fd) => (None, fd)
         };
@@ -176,17 +174,17 @@ impl Process {
                                    in_fd, out_fd, err_fd);
 
         unsafe {
-            for in_pipe.iter().advance  |pipe| { libc::close(pipe.in); }
-            for out_pipe.iter().advance |pipe| { libc::close(pipe.out); }
-            for err_pipe.iter().advance |pipe| { libc::close(pipe.out); }
+            foreach pipe in in_pipe.iter() { libc::close(pipe.input); }
+            foreach pipe in out_pipe.iter() { libc::close(pipe.out); }
+            foreach pipe in err_pipe.iter() { libc::close(pipe.out); }
         }
 
         Process {
             pid: res.pid,
             handle: res.handle,
             input: in_pipe.map(|pipe| pipe.out),
-            output: out_pipe.map(|pipe| os::fdopen(pipe.in)),
-            error: err_pipe.map(|pipe| os::fdopen(pipe.in)),
+            output: out_pipe.map(|pipe| os::fdopen(pipe.input)),
+            error: err_pipe.map(|pipe| os::fdopen(pipe.input)),
             exit_code: None,
         }
     }
@@ -323,7 +321,7 @@ impl Process {
      * If the child has already been finished then the exit code is returned.
      */
     pub fn finish(&mut self) -> int {
-        for self.exit_code.iter().advance |&code| {
+        foreach &code in self.exit_code.iter() {
             return code;
         }
         self.close_input();
@@ -507,7 +505,7 @@ fn spawn_process_os(prog: &str, args: &[~str],
 
         do with_envp(env) |envp| {
             do with_dirp(dir) |dirp| {
-                do str::as_c_str(cmd) |cmdp| {
+                do cmd.as_c_str |cmdp| {
                     let created = CreateProcessA(ptr::null(), cast::transmute(cmdp),
                                                  ptr::mut_null(), ptr::mut_null(), TRUE,
                                                  0, envp, dirp, &mut si, &mut pi);
@@ -522,7 +520,7 @@ fn spawn_process_os(prog: &str, args: &[~str],
         CloseHandle(si.hStdOutput);
         CloseHandle(si.hStdError);
 
-        for create_err.iter().advance |msg| {
+        foreach msg in create_err.iter() {
             fail!("failure in CreateProcess: %s", *msg);
         }
 
@@ -576,12 +574,9 @@ fn zeroed_process_information() -> libc::types::os::arch::extra::PROCESS_INFORMA
 // FIXME: this is only pub so it can be tested (see issue #4536)
 #[cfg(windows)]
 pub fn make_command_line(prog: &str, args: &[~str]) -> ~str {
-
-    use uint;
-
     let mut cmd = ~"";
     append_arg(&mut cmd, prog);
-    for args.iter().advance |arg| {
+    foreach arg in args.iter() {
         cmd.push_char(' ');
         append_arg(&mut cmd, *arg);
     }
@@ -592,7 +587,7 @@ pub fn make_command_line(prog: &str, args: &[~str]) -> ~str {
         if quote {
             cmd.push_char('"');
         }
-        for uint::range(0, arg.len()) |i| {
+        foreach i in range(0u, arg.len()) {
             append_char_at(cmd, arg, i);
         }
         if quote {
@@ -696,12 +691,12 @@ fn spawn_process_os(prog: &str, args: &[~str],
 #[cfg(unix)]
 fn with_argv<T>(prog: &str, args: &[~str],
                 cb: &fn(**libc::c_char) -> T) -> T {
-    let mut argptrs = ~[str::as_c_str(prog, |b| b)];
+    let mut argptrs = ~[prog.as_c_str(|b| b)];
     let mut tmps = ~[];
-    for args.iter().advance |arg| {
+    foreach arg in args.iter() {
         let t = @(*arg).clone();
         tmps.push(t);
-        argptrs.push(str::as_c_str(*t, |b| b));
+        argptrs.push(t.as_c_str(|b| b));
     }
     argptrs.push(ptr::null());
     argptrs.as_imm_buf(|buf, _len| cb(buf))
@@ -716,14 +711,14 @@ fn with_envp<T>(env: Option<&[(~str, ~str)]>, cb: &fn(*c_void) -> T) -> T {
         let mut tmps = ~[];
         let mut ptrs = ~[];
 
-        for es.iter().advance |pair| {
+        foreach pair in es.iter() {
             // Use of match here is just to workaround limitations
             // in the stage0 irrefutable pattern impl.
             match pair {
                 &(ref k, ref v) => {
                     let kv = @fmt!("%s=%s", *k, *v);
                     tmps.push(kv);
-                    ptrs.push(str::as_c_str(*kv, |b| b));
+                    ptrs.push(kv.as_c_str(|b| b));
                 }
             }
         }
@@ -745,9 +740,9 @@ fn with_envp<T>(env: Option<&[(~str, ~str)]>, cb: &fn(*mut c_void) -> T) -> T {
     match env {
       Some(es) => {
         let mut blk = ~[];
-        for es.iter().advance |pair| {
+        foreach pair in es.iter() {
             let kv = fmt!("%s=%s", pair.first(), pair.second());
-            blk.push_all(kv.as_bytes_with_null_consume());
+            blk.push_all(kv.to_bytes_with_null());
         }
         blk.push(0);
         blk.as_imm_buf(|p, _len|
@@ -761,7 +756,7 @@ fn with_envp<T>(env: Option<&[(~str, ~str)]>, cb: &fn(*mut c_void) -> T) -> T {
 fn with_dirp<T>(d: Option<&Path>,
                 cb: &fn(*libc::c_char) -> T) -> T {
     match d {
-      Some(dir) => str::as_c_str(dir.to_str(), cb),
+      Some(dir) => dir.to_str().as_c_str(cb),
       None => cb(ptr::null())
     }
 }
@@ -1026,7 +1021,7 @@ mod tests {
         let mut proc = run::Process::new("cat", [], run::ProcessOptions {
             dir: None,
             env: None,
-            in_fd: Some(pipe_in.in),
+            in_fd: Some(pipe_in.input),
             out_fd: Some(pipe_out.out),
             err_fd: Some(pipe_err.out)
         });
@@ -1035,14 +1030,14 @@ mod tests {
         assert!(proc.output_redirected());
         assert!(proc.error_redirected());
 
-        os::close(pipe_in.in);
+        os::close(pipe_in.input);
         os::close(pipe_out.out);
         os::close(pipe_err.out);
 
         let expected = ~"test";
         writeclose(pipe_in.out, expected);
-        let actual = readclose(pipe_out.in);
-        readclose(pipe_err.in);
+        let actual = readclose(pipe_out.input);
+        readclose(pipe_err.input);
         proc.finish();
 
         assert_eq!(expected, actual);
@@ -1301,7 +1296,7 @@ mod tests {
         let output = str::from_bytes(prog.finish_with_output().output);
 
         let r = os::env();
-        for r.iter().advance |&(ref k, ref v)| {
+        foreach &(ref k, ref v) in r.iter() {
             // don't check windows magical empty-named variables
             assert!(k.is_empty() || output.contains(fmt!("%s=%s", *k, *v)));
         }
@@ -1315,7 +1310,7 @@ mod tests {
         let output = str::from_bytes(prog.finish_with_output().output);
 
         let r = os::env();
-        for r.iter().advance |&(k, v)| {
+        foreach &(k, v) in r.iter() {
             // don't check android RANDOM variables
             if k != ~"RANDOM" {
                 assert!(output.contains(fmt!("%s=%s", k, v)) ||

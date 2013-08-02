@@ -17,9 +17,9 @@ use ast::{RegionTyParamBound, TraitTyParamBound};
 use ast::{provided, public, purity};
 use ast::{_mod, add, arg, arm, Attribute, bind_by_ref, bind_infer};
 use ast::{bitand, bitor, bitxor, Block};
-use ast::{blk_check_mode, box};
+use ast::{BlockCheckMode, box};
 use ast::{Crate, CrateConfig, decl, decl_item};
-use ast::{decl_local, default_blk, deref, div, enum_def, explicit_self};
+use ast::{decl_local, DefaultBlock, deref, div, enum_def, explicit_self};
 use ast::{expr, expr_, expr_addr_of, expr_match, expr_again};
 use ast::{expr_assign, expr_assign_op, expr_binary, expr_block};
 use ast::{expr_break, expr_call, expr_cast, expr_do_body};
@@ -29,7 +29,7 @@ use ast::{expr_method_call, expr_paren, expr_path, expr_repeat};
 use ast::{expr_ret, expr_self, expr_struct, expr_tup, expr_unary};
 use ast::{expr_vec, expr_vstore, expr_vstore_mut_box};
 use ast::{expr_vstore_slice, expr_vstore_box};
-use ast::{expr_vstore_mut_slice, expr_while, extern_fn, Field, fn_decl};
+use ast::{expr_vstore_mut_slice, expr_while, expr_for_loop, extern_fn, Field, fn_decl};
 use ast::{expr_vstore_uniq, Onceness, Once, Many};
 use ast::{foreign_item, foreign_item_static, foreign_item_fn, foreign_mod};
 use ast::{ident, impure_fn, inherited, item, item_, item_static};
@@ -39,7 +39,7 @@ use ast::{lit_bool, lit_float, lit_float_unsuffixed, lit_int};
 use ast::{lit_int_unsuffixed, lit_nil, lit_str, lit_uint, Local, m_const};
 use ast::{m_imm, m_mutbl, mac_, mac_invoc_tt, matcher, match_nonterminal};
 use ast::{match_seq, match_tok, method, mt, mul, mutability};
-use ast::{named_field, neg, node_id, noreturn, not, pat, pat_box, pat_enum};
+use ast::{named_field, neg, NodeId, noreturn, not, pat, pat_box, pat_enum};
 use ast::{pat_ident, pat_lit, pat_range, pat_region, pat_struct};
 use ast::{pat_tup, pat_uniq, pat_wild, private};
 use ast::{rem, required};
@@ -49,11 +49,11 @@ use ast::{struct_variant_kind, subtract};
 use ast::{sty_box, sty_region, sty_static, sty_uniq, sty_value};
 use ast::{token_tree, trait_method, trait_ref, tt_delim, tt_seq, tt_tok};
 use ast::{tt_nonterminal, tuple_variant_kind, Ty, ty_, ty_bot, ty_box};
-use ast::{ty_field, ty_fixed_length_vec, ty_closure, ty_bare_fn};
-use ast::{ty_infer, ty_method};
+use ast::{TypeField, ty_fixed_length_vec, ty_closure, ty_bare_fn};
+use ast::{ty_infer, TypeMethod};
 use ast::{ty_nil, TyParam, TyParamBound, ty_path, ty_ptr, ty_rptr};
 use ast::{ty_tup, ty_u32, ty_uniq, ty_vec, uniq};
-use ast::{unnamed_field, unsafe_blk, unsafe_fn, view_item};
+use ast::{unnamed_field, UnsafeBlock, unsafe_fn, view_item};
 use ast::{view_item_, view_item_extern_mod, view_item_use};
 use ast::{view_path, view_path_glob, view_path_list, view_path_simple};
 use ast::visibility;
@@ -71,7 +71,7 @@ use parse::lexer::TokenAndSpan;
 use parse::obsolete::{ObsoleteClassTraits};
 use parse::obsolete::{ObsoleteLet, ObsoleteFieldTerminator};
 use parse::obsolete::{ObsoleteMoveInit, ObsoleteBinaryMove, ObsoleteSwap};
-use parse::obsolete::{ObsoleteSyntax, ObsoleteLowerCaseKindBounds};
+use parse::obsolete::ObsoleteSyntax;
 use parse::obsolete::{ObsoleteUnsafeBlock, ObsoleteImplSyntax};
 use parse::obsolete::{ObsoleteMutOwnedPointer};
 use parse::obsolete::{ObsoleteMutVector, ObsoleteImplVisibility};
@@ -645,7 +645,7 @@ impl Parser {
     pub fn abort_if_errors(&self) {
         self.sess.span_diagnostic.handler().abort_if_errors();
     }
-    pub fn get_id(&self) -> node_id { next_node_id(self.sess) }
+    pub fn get_id(&self) -> NodeId { next_node_id(self.sess) }
 
     pub fn id_to_str(&self, id: ident) -> @str {
         get_ident_interner().get(id.name)
@@ -837,7 +837,7 @@ impl Parser {
                 debug!("parse_trait_methods(): parsing required method");
                 // NB: at the moment, visibility annotations on required
                 // methods are ignored; this could change.
-                required(ty_method {
+                required(TypeMethod {
                     ident: ident,
                     attrs: attrs,
                     purity: pur,
@@ -889,20 +889,18 @@ impl Parser {
 
     // parse [mut/const/imm] ID : TY
     // now used only by obsolete record syntax parser...
-    pub fn parse_ty_field(&self) -> ty_field {
+    pub fn parse_ty_field(&self) -> TypeField {
         let lo = self.span.lo;
         let mutbl = self.parse_mutability();
         let id = self.parse_ident();
         self.expect(&token::COLON);
         let ty = ~self.parse_ty(false);
-        spanned(
-            lo,
-            ty.span.hi,
-            ast::ty_field_ {
-                ident: id,
-                mt: ast::mt { ty: ty, mutbl: mutbl },
-            }
-        )
+        let hi = ty.span.hi;
+        ast::TypeField {
+            ident: id,
+            mt: ast::mt { ty: ty, mutbl: mutbl },
+            span: mk_sp(lo, hi),
+        }
     }
 
     // parse optional return type [ -> TY ] in function decl
@@ -1614,7 +1612,7 @@ impl Parser {
             }
         } else if *self.token == token::LBRACE {
             self.bump();
-            let blk = self.parse_block_tail(lo, default_blk);
+            let blk = self.parse_block_tail(lo, DefaultBlock);
             return self.mk_expr(blk.span.lo, blk.span.hi,
                                  expr_block(blk));
         } else if token::is_bar(&*self.token) {
@@ -1624,6 +1622,8 @@ impl Parser {
             hi = self.span.hi;
         } else if self.eat_keyword(keywords::If) {
             return self.parse_if_expr();
+        } else if self.eat_keyword(keywords::ForEach) {
+            return self.parse_for_expr();
         } else if self.eat_keyword(keywords::For) {
             return self.parse_sugary_call_expr(lo, ~"for", ForSugar,
                                                expr_loop_body);
@@ -1643,7 +1643,7 @@ impl Parser {
         } else if self.eat_keyword(keywords::Match) {
             return self.parse_match_expr();
         } else if self.eat_keyword(keywords::Unsafe) {
-            return self.parse_block_expr(lo, unsafe_blk);
+            return self.parse_block_expr(lo, UnsafeBlock);
         } else if *self.token == token::LBRACKET {
             self.bump();
             let mutbl = self.parse_mutability();
@@ -1779,7 +1779,7 @@ impl Parser {
     }
 
     // parse a block or unsafe block
-    pub fn parse_block_expr(&self, lo: BytePos, blk_mode: blk_check_mode)
+    pub fn parse_block_expr(&self, lo: BytePos, blk_mode: BlockCheckMode)
                             -> @expr {
         self.expect(&token::LBRACE);
         let blk = self.parse_block_tail(lo, blk_mode);
@@ -2308,7 +2308,7 @@ impl Parser {
             stmts: ~[],
             expr: Some(body),
             id: self.get_id(),
-            rules: default_blk,
+            rules: DefaultBlock,
             span: body.span,
         };
 
@@ -2324,6 +2324,21 @@ impl Parser {
             return self.mk_expr(blk.span.lo, blk.span.hi, expr_block(blk));
         }
     }
+
+    // parse a 'foreach' .. 'in' expression ('foreach' token already eaten)
+    pub fn parse_for_expr(&self) -> @expr {
+        // Parse: `foreach <src_pat> in <src_expr> <src_loop_block>`
+
+        let lo = self.last_span.lo;
+        let pat = self.parse_pat();
+        self.expect_keyword(keywords::In);
+        let expr = self.parse_expr();
+        let loop_block = self.parse_block();
+        let hi = self.span.hi;
+
+        self.mk_expr(lo, hi, expr_for_loop(pat, expr, loop_block))
+    }
+
 
     // parse a 'for' or 'do'.
     // the 'for' and 'do' expressions parse as calls, but look like
@@ -2474,7 +2489,7 @@ impl Parser {
                 stmts: ~[],
                 expr: Some(expr),
                 id: self.get_id(),
-                rules: default_blk,
+                rules: DefaultBlock,
                 span: expr.span,
             };
 
@@ -3093,7 +3108,7 @@ impl Parser {
         }
         self.expect(&token::LBRACE);
 
-        return self.parse_block_tail_(lo, default_blk, ~[]);
+        return self.parse_block_tail_(lo, DefaultBlock, ~[]);
     }
 
     // parse a block. Inner attrs are allowed.
@@ -3109,19 +3124,19 @@ impl Parser {
         self.expect(&token::LBRACE);
         let (inner, next) = self.parse_inner_attrs_and_next();
 
-        (inner, self.parse_block_tail_(lo, default_blk, next))
+        (inner, self.parse_block_tail_(lo, DefaultBlock, next))
     }
 
     // Precondition: already parsed the '{' or '#{'
     // I guess that also means "already parsed the 'impure'" if
     // necessary, and this should take a qualifier.
     // some blocks start with "#{"...
-    fn parse_block_tail(&self, lo: BytePos, s: blk_check_mode) -> Block {
+    fn parse_block_tail(&self, lo: BytePos, s: BlockCheckMode) -> Block {
         self.parse_block_tail_(lo, s, ~[])
     }
 
     // parse the rest of a block expression or function body
-    fn parse_block_tail_(&self, lo: BytePos, s: blk_check_mode,
+    fn parse_block_tail_(&self, lo: BytePos, s: BlockCheckMode,
                          first_item_attrs: ~[Attribute]) -> Block {
         let mut stmts = ~[];
         let mut expr = None;
@@ -3135,7 +3150,7 @@ impl Parser {
         } = self.parse_items_and_view_items(first_item_attrs,
                                             false, false);
 
-        for items.iter().advance |item| {
+        foreach item in items.iter() {
             let decl = @spanned(item.span.lo, item.span.hi, decl_item(*item));
             stmts.push(@spanned(item.span.lo, item.span.hi,
                                 stmt_decl(decl, self.get_id())));
@@ -3294,30 +3309,8 @@ impl Parser {
                     self.bump();
                 }
                 token::MOD_SEP | token::IDENT(*) => {
-                    let obsolete_bound = match *self.token {
-                        token::MOD_SEP => false,
-                        token::IDENT(sid, _) => {
-                            match self.id_to_str(sid).as_slice() {
-                                "send" |
-                                "copy" |
-                                "const" |
-                                "owned" => {
-                                    self.obsolete(
-                                        *self.span,
-                                        ObsoleteLowerCaseKindBounds);
-                                    self.bump();
-                                    true
-                                }
-                                _ => false
-                            }
-                        }
-                        _ => fail!()
-                    };
-
-                    if !obsolete_bound {
-                        let tref = self.parse_trait_ref();
-                        result.push(TraitTyParamBound(tref));
-                    }
+                    let tref = self.parse_trait_ref();
+                    result.push(TraitTyParamBound(tref));
                 }
                 _ => break,
             }
@@ -3762,7 +3755,7 @@ impl Parser {
             fields = ~[];
             while *self.token != token::RBRACE {
                 let r = self.parse_struct_decl_field();
-                for r.iter().advance |struct_field| {
+                foreach struct_field in r.iter() {
                     fields.push(*struct_field)
                 }
             }
@@ -4045,7 +4038,7 @@ impl Parser {
             Some(i) => {
                 let stack = &self.sess.included_mod_stack;
                 let mut err = ~"circular modules: ";
-                for stack.slice(i, stack.len()).iter().advance |p| {
+                foreach p in stack.slice(i, stack.len()).iter() {
                     err.push_str(p.to_str());
                     err.push_str(" -> ");
                 }
@@ -4196,7 +4189,7 @@ impl Parser {
 
             // Do not allow visibility to be specified.
             if visibility != ast::inherited {
-                self.obsolete(*self.span, ObsoleteExternVisibility);
+                self.obsolete(*self.last_span, ObsoleteExternVisibility);
             }
 
             let abis = opt_abis.get_or_default(AbiSet::C());
@@ -4253,7 +4246,7 @@ impl Parser {
         let mut fields: ~[@struct_field] = ~[];
         while *self.token != token::RBRACE {
             let r = self.parse_struct_decl_field();
-            for r.iter().advance |struct_field| {
+            foreach struct_field in r.iter() {
                 fields.push(*struct_field);
             }
         }
@@ -4293,7 +4286,7 @@ impl Parser {
                     seq_sep_trailing_disallowed(token::COMMA),
                     |p| p.parse_ty(false)
                 );
-                for arg_tys.consume_iter().advance |ty| {
+                foreach ty in arg_tys.consume_iter() {
                     args.push(ast::variant_arg {
                         ty: ty,
                         id: self.get_id(),
@@ -4402,7 +4395,7 @@ impl Parser {
                 self.bump();
                 let the_string = ident_to_str(&s);
                 let mut abis = AbiSet::empty();
-                for the_string.word_iter().advance |word| {
+                foreach word in the_string.word_iter() {
                     match abi::lookup(word) {
                         Some(abi) => {
                             if abis.contains(abi) {

@@ -260,7 +260,7 @@ impl Tm {
 priv fn do_strptime(s: &str, format: &str) -> Result<Tm, ~str> {
     fn match_str(s: &str, pos: uint, needle: &str) -> bool {
         let mut i = pos;
-        for needle.bytes_iter().advance |ch| {
+        foreach ch in needle.byte_iter() {
             if s[i] != ch {
                 return false;
             }
@@ -863,9 +863,7 @@ mod tests {
 
     use std::float;
     use std::os;
-    use std::result;
     use std::result::{Err, Ok};
-    use std::str;
 
     fn test_get_time() {
         static SOME_RECENT_DATE: i64 = 1325376000i64; // 2012-01-01T00:00:00Z
@@ -1027,7 +1025,7 @@ mod tests {
 
         fn test(s: &str, format: &str) -> bool {
             match strptime(s, format) {
-              Ok(ref tm) => tm.strftime(format) == str::to_owned(s),
+              Ok(ref tm) => tm.strftime(format) == s.to_owned(),
               Err(e) => fail!(e)
             }
         }
@@ -1041,7 +1039,7 @@ mod tests {
             ~"Friday",
             ~"Saturday"
         ];
-        for days.iter().advance |day| {
+        foreach day in days.iter() {
             assert!(test(*day, "%A"));
         }
 
@@ -1054,7 +1052,7 @@ mod tests {
             ~"Fri",
             ~"Sat"
         ];
-        for days.iter().advance |day| {
+        foreach day in days.iter() {
             assert!(test(*day, "%a"));
         }
 
@@ -1072,7 +1070,7 @@ mod tests {
             ~"November",
             ~"December"
         ];
-        for months.iter().advance |day| {
+        foreach day in months.iter() {
             assert!(test(*day, "%B"));
         }
 
@@ -1090,7 +1088,7 @@ mod tests {
             ~"Nov",
             ~"Dec"
         ];
-        for months.iter().advance |day| {
+        foreach day in months.iter() {
             assert!(test(*day, "%b"));
         }
 
@@ -1132,13 +1130,13 @@ mod tests {
         assert!(test("6", "%w"));
         assert!(test("2009", "%Y"));
         assert!(test("09", "%y"));
-        assert!(result::unwrap(strptime("UTC", "%Z")).tm_zone ==
+        assert!(strptime("UTC", "%Z").unwrap().tm_zone ==
             ~"UTC");
-        assert!(result::unwrap(strptime("PST", "%Z")).tm_zone ==
+        assert!(strptime("PST", "%Z").unwrap().tm_zone ==
             ~"");
-        assert!(result::unwrap(strptime("-0000", "%z")).tm_gmtoff ==
+        assert!(strptime("-0000", "%z").unwrap().tm_gmtoff ==
             0);
-        assert!(result::unwrap(strptime("-0800", "%z")).tm_gmtoff ==
+        assert!(strptime("-0800", "%z").unwrap().tm_gmtoff ==
             0);
         assert!(test("%", "%%"));
 

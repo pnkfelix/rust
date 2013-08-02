@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// xfail-test newsched transition
+
 // This test attempts to force the dynamic linker to resolve
 // external symbols as close to the red zone as possible.
 
@@ -65,7 +67,7 @@ pub fn main() {
         calllink10
     ];
     let mut rng = rand::rng();
-    for fns.iter().advance |f| {
+    foreach f in fns.iter() {
         let f = *f;
         let sz = rng.next() % 256u32 + 256u32;
         let frame_backoff = rng.next() % 10u32 + 1u32;

@@ -110,6 +110,25 @@ cmp_impl!(impl TotalEq, equals)
 cmp_impl!(impl Ord, lt, gt, le, ge)
 cmp_impl!(impl TotalOrd, cmp -> cmp::Ordering)
 
+impl<T: Clone + Integer + Ord> Orderable for Ratio<T> {
+    #[inline]
+    fn min(&self, other: &Ratio<T>) -> Ratio<T> {
+        if *self < *other { self.clone() } else { other.clone() }
+    }
+
+    #[inline]
+    fn max(&self, other: &Ratio<T>) -> Ratio<T> {
+        if *self > *other { self.clone() } else { other.clone() }
+    }
+
+    #[inline]
+    fn clamp(&self, mn: &Ratio<T>, mx: &Ratio<T>) -> Ratio<T> {
+        if *self > *mx { mx.clone()} else
+        if *self < *mn { mn.clone() } else { self.clone() }
+    }
+}
+
+
 /* Arithmetic */
 // a/b * c/d = (a*c)/(b*d)
 impl<T: Clone + Integer + Ord>
@@ -481,7 +500,7 @@ mod test {
         }
 
         let xs = ["0 /1", "abc", "", "1/", "--1/2","3/2/1"];
-        for xs.iter().advance |&s| {
+        foreach &s in xs.iter() {
             test(s);
         }
     }
@@ -521,7 +540,7 @@ mod test {
         }
 
         let xs = ["0 /1", "abc", "", "1/", "--1/2","3/2/1", "3/2"];
-        for xs.iter().advance |&s| {
+        foreach &s in xs.iter() {
             test(s);
         }
     }

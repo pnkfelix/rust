@@ -170,7 +170,6 @@ use ext::build::AstBuilder;
 use codemap::{span,respan};
 use opt_vec;
 
-use std::uint;
 use std::vec;
 
 pub use self::ty::*;
@@ -284,7 +283,7 @@ impl<'self> TraitDef<'self> {
                   _mitem: @ast::MetaItem,
                   in_items: ~[@ast::item]) -> ~[@ast::item] {
         let mut result = ~[];
-        for in_items.iter().advance |item| {
+        foreach item in in_items.iter() {
             result.push(*item);
             match item.node {
                 ast::item_struct(struct_def, ref generics) => {
@@ -322,11 +321,11 @@ impl<'self> TraitDef<'self> {
 
         let mut trait_generics = self.generics.to_generics(cx, span, type_ident, generics);
         // Copy the lifetimes
-        for generics.lifetimes.iter().advance |l| {
+        foreach l in generics.lifetimes.iter() {
             trait_generics.lifetimes.push(*l)
         };
         // Create the type parameters.
-        for generics.ty_params.iter().advance |ty_param| {
+        foreach ty_param in generics.ty_params.iter() {
             // I don't think this can be moved out of the loop, since
             // a TyParamBound requires an ast id
             let mut bounds = opt_vec::from(
@@ -486,7 +485,7 @@ impl<'self> MethodDef<'self> {
             None => respan(span, ast::sty_static),
         };
 
-        for self.args.iter().enumerate().advance |(i, ty)| {
+        foreach (i, ty) in self.args.iter().enumerate() {
             let ast_ty = ty.to_ty(cx, span, type_ident, generics);
             let ident = cx.ident_of(fmt!("__arg_%u", i));
             arg_tys.push((ident, ast_ty));
@@ -580,13 +579,13 @@ impl<'self> MethodDef<'self> {
         let mut raw_fields = ~[]; // ~[[fields of self],
                                  // [fields of next Self arg], [etc]]
         let mut patterns = ~[];
-        for uint::range(0, self_args.len()) |i| {
+        foreach i in range(0u, self_args.len()) {
             let (pat, ident_expr) = create_struct_pattern(cx, span,
                                                           type_ident, struct_def,
                                                           fmt!("__self_%u", i), ast::m_imm);
             patterns.push(pat);
             raw_fields.push(ident_expr);
-        };
+        }
 
         // transpose raw_fields
         let fields = match raw_fields {
@@ -615,7 +614,7 @@ impl<'self> MethodDef<'self> {
         // make a series of nested matches, to destructure the
         // structs. This is actually right-to-left, but it shoudn't
         // matter.
-        for self_args.iter().zip(patterns.iter()).advance |(&arg_expr, &pat)| {
+        foreach (&arg_expr, &pat) in self_args.iter().zip(patterns.iter()) {
             body = cx.expr_match(span, arg_expr,
                                  ~[ cx.arm(span, ~[pat], body) ])
         }
@@ -739,10 +738,10 @@ impl<'self> MethodDef<'self> {
 
                     let mut enum_matching_fields = vec::from_elem(self_vec.len(), ~[]);
 
-                    for matches_so_far.tail().iter().advance |triple| {
+                    foreach triple in matches_so_far.tail().iter() {
                         match triple {
                             &(_, _, ref other_fields) => {
-                                for other_fields.iter().enumerate().advance |(i, pair)| {
+                                foreach (i, pair) in other_fields.iter().enumerate() {
                                     enum_matching_fields[i].push(pair.second());
                                 }
                             }
@@ -815,7 +814,7 @@ impl<'self> MethodDef<'self> {
                 }
             } else {
                 // create an arm matching on each variant
-                for enum_def.variants.iter().enumerate().advance |(index, variant)| {
+                foreach (index, variant) in enum_def.variants.iter().enumerate() {
                     let (pattern, idents) = create_enum_variant_pattern(cx, span,
                                                                        variant,
                                                                        current_match_str,
@@ -878,7 +877,7 @@ fn summarise_struct(cx: @ExtCtxt, span: span,
                     struct_def: &struct_def) -> Either<uint, ~[ident]> {
     let mut named_idents = ~[];
     let mut unnamed_count = 0;
-    for struct_def.fields.iter().advance |field| {
+    foreach field in struct_def.fields.iter() {
         match field.node.kind {
             ast::named_field(ident, _) => named_idents.push(ident),
             ast::unnamed_field => unnamed_count += 1,
@@ -932,7 +931,7 @@ fn create_struct_pattern(cx: @ExtCtxt,
     let mut ident_expr = ~[];
     let mut struct_type = Unknown;
 
-    for struct_def.fields.iter().enumerate().advance |(i, struct_field)| {
+    foreach (i, struct_field) in struct_def.fields.iter().enumerate() {
         let opt_id = match struct_field.node.kind {
             ast::named_field(ident, _) if (struct_type == Unknown ||
                                            struct_type == Record) => {
@@ -960,7 +959,7 @@ fn create_struct_pattern(cx: @ExtCtxt,
     // must be nonempty to reach here
     let pattern = if struct_type == Record {
         let field_pats = do vec::build |push| {
-            for subpats.iter().zip(ident_expr.iter()).advance |(&pat, &(id, _))| {
+            foreach (&pat, &(id, _)) in subpats.iter().zip(ident_expr.iter()) {
                 // id is guaranteed to be Some
                 push(ast::field_pat { ident: id.get(), pat: pat })
             }
@@ -992,7 +991,7 @@ fn create_enum_variant_pattern(cx: @ExtCtxt,
 
             let mut paths = ~[];
             let mut ident_expr = ~[];
-            for uint::range(0, variant_args.len()) |i| {
+            foreach i in range(0u, variant_args.len()) {
                 let path = cx.path_ident(span,
                                          cx.ident_of(fmt!("%s_%u", prefix, i)));
 

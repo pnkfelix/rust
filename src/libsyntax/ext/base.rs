@@ -81,8 +81,8 @@ pub enum SyntaxExtension {
     // An IdentTT is a macro that has an
     // identifier in between the name of the
     // macro and the argument. Currently,
-    // the only examples of this are
-    // macro_rules! and proto!
+    // the only examples of this is
+    // macro_rules!
 
     // perhaps macro_rules! will lose its odd special identifier argument,
     // and this can go away also
@@ -197,8 +197,6 @@ pub fn syntax_expander_table() -> SyntaxEnv {
     syntax_expanders.insert(intern(&"module_path"),
                             builtin_normal_tt(
                                 ext::source_util::expand_mod));
-    syntax_expanders.insert(intern(&"proto"),
-                            builtin_item_tt(ext::pipes::expand_proto));
     syntax_expanders.insert(intern(&"asm"),
                             builtin_normal_tt(ext::asm::expand_asm));
     syntax_expanders.insert(
@@ -294,7 +292,7 @@ impl ExtCtxt {
         self.print_backtrace();
         self.parse_sess.span_diagnostic.handler().bug(msg);
     }
-    pub fn next_id(&self) -> ast::node_id {
+    pub fn next_id(&self) -> ast::NodeId {
         parse::next_node_id(self.parse_sess)
     }
     pub fn trace_macros(&self) -> bool {
@@ -357,15 +355,16 @@ pub fn get_single_str_from_tts(cx: @ExtCtxt,
     }
 }
 
-pub fn get_exprs_from_tts(cx: @ExtCtxt, tts: &[ast::token_tree])
-                       -> ~[@ast::expr] {
+pub fn get_exprs_from_tts(cx: @ExtCtxt,
+                          sp: span,
+                          tts: &[ast::token_tree]) -> ~[@ast::expr] {
     let p = parse::new_parser_from_tts(cx.parse_sess(),
                                        cx.cfg(),
                                        tts.to_owned());
     let mut es = ~[];
     while *p.token != token::EOF {
-        if es.len() != 0 {
-            p.eat(&token::COMMA);
+        if es.len() != 0 && !p.eat(&token::COMMA) {
+            cx.span_fatal(sp, "expected token: `,`");
         }
         es.push(p.parse_expr());
     }

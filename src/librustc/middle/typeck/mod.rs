@@ -66,23 +66,21 @@ use syntax::print::pprust::*;
 use syntax::{ast, ast_map, abi};
 use syntax::opt_vec;
 
-#[path = "check/mod.rs"]
 pub mod check;
 pub mod rscope;
 pub mod astconv;
-#[path = "infer/mod.rs"]
 pub mod infer;
 pub mod collect;
 pub mod coherence;
 
+#[deriving(Clone, Encodable, Decodable, Eq, Ord)]
+pub enum param_index {
+    param_numbered(uint),
+    param_self
+}
+
 #[deriving(Clone, Encodable, Decodable)]
 pub enum method_origin {
-    // supertrait method invoked on "self" inside a default method
-    // first field is supertrait ID;
-    // second field is method index (relative to the *supertrait*
-    // method list)
-    method_super(ast::def_id, uint),
-
     // fully statically resolved method
     method_static(ast::def_id),
 
@@ -91,9 +89,6 @@ pub enum method_origin {
 
     // method invoked on a trait instance
     method_trait(ast::def_id, uint),
-
-    // method invoked on "self" inside a default method
-    method_self(ast::def_id, uint)
 
 }
 
@@ -109,7 +104,7 @@ pub struct method_param {
 
     // index of the type parameter (from those that are in scope) that is
     // the type of the receiver
-    param_num: uint,
+    param_num: param_index,
 
     // index of the bound for this type parameter which specifies the trait
     bound_num: uint,
@@ -133,7 +128,7 @@ pub struct method_map_entry {
 
 // maps from an expression id that corresponds to a method call to the details
 // of the method to be invoked
-pub type method_map = @mut HashMap<ast::node_id, method_map_entry>;
+pub type method_map = @mut HashMap<ast::NodeId, method_map_entry>;
 
 pub type vtable_param_res = @~[vtable_origin];
 // Resolutions for bounds of all parameters, left to right, for a given path.
@@ -153,15 +148,10 @@ pub enum vtable_origin {
       fn foo<T:quux,baz,bar>(a: T) -- a's vtable would have a
       vtable_param origin
 
-      The first uint is the param number (identifying T in the example),
+      The first argument is the param index (identifying T in the example),
       and the second is the bound number (identifying baz)
      */
-    vtable_param(uint, uint),
-
-    /*
-     Dynamic vtable, comes from self.
-    */
-    vtable_self(ast::def_id)
+    vtable_param(param_index, uint),
 }
 
 impl Repr for vtable_origin {
@@ -178,14 +168,33 @@ impl Repr for vtable_origin {
             vtable_param(x, y) => {
                 fmt!("vtable_param(%?, %?)", x, y)
             }
-            vtable_self(def_id) => {
-                fmt!("vtable_self(%?)", def_id)
-            }
         }
     }
 }
 
-pub type vtable_map = @mut HashMap<ast::node_id, vtable_res>;
+pub type vtable_map = @mut HashMap<ast::NodeId, vtable_res>;
+
+
+// Information about the vtable resolutions for for a trait impl.
+// Mostly the information is important for implementing default
+// methods.
+#[deriving(Clone)]
+pub struct impl_res {
+    // resolutions for any bounded params on the trait definition
+    trait_vtables: vtable_res,
+    // resolutions for the trait /itself/ (and for supertraits)
+    self_vtables: vtable_param_res
+}
+
+impl Repr for impl_res {
+    fn repr(&self, tcx: ty::ctxt) -> ~str {
+        fmt!("impl_res {trait_vtables=%s, self_vtables=%s}",
+             self.trait_vtables.repr(tcx),
+             self.self_vtables.repr(tcx))
+    }
+}
+
+pub type impl_vtable_map = @mut HashMap<ast::def_id, impl_res>;
 
 pub struct CrateCtxt {
     // A mapping from method call sites to traits that have that method.
@@ -196,13 +205,13 @@ pub struct CrateCtxt {
 }
 
 // Functions that write types into the node type table
-pub fn write_ty_to_tcx(tcx: ty::ctxt, node_id: ast::node_id, ty: ty::t) {
+pub fn write_ty_to_tcx(tcx: ty::ctxt, node_id: ast::NodeId, ty: ty::t) {
     debug!("write_ty_to_tcx(%d, %s)", node_id, ppaux::ty_to_str(tcx, ty));
     assert!(!ty::type_needs_infer(ty));
     tcx.node_types.insert(node_id as uint, ty);
 }
 pub fn write_substs_to_tcx(tcx: ty::ctxt,
-                           node_id: ast::node_id,
+                           node_id: ast::NodeId,
                            substs: ~[ty::t]) {
     if substs.len() > 0u {
         debug!("write_substs_to_tcx(%d, %?)", node_id,
@@ -212,7 +221,7 @@ pub fn write_substs_to_tcx(tcx: ty::ctxt,
     }
 }
 pub fn write_tpt_to_tcx(tcx: ty::ctxt,
-                        node_id: ast::node_id,
+                        node_id: ast::NodeId,
                         tpt: &ty::ty_param_substs_and_ty) {
     write_ty_to_tcx(tcx, node_id, tpt.ty);
     if !tpt.substs.tps.is_empty() {
@@ -220,7 +229,7 @@ pub fn write_tpt_to_tcx(tcx: ty::ctxt,
     }
 }
 
-pub fn lookup_def_tcx(tcx: ty::ctxt, sp: span, id: ast::node_id) -> ast::def {
+pub fn lookup_def_tcx(tcx: ty::ctxt, sp: span, id: ast::NodeId) -> ast::def {
     match tcx.def_map.find(&id) {
       Some(&x) => x,
       _ => {
@@ -229,7 +238,7 @@ pub fn lookup_def_tcx(tcx: ty::ctxt, sp: span, id: ast::node_id) -> ast::def {
     }
 }
 
-pub fn lookup_def_ccx(ccx: &CrateCtxt, sp: span, id: ast::node_id)
+pub fn lookup_def_ccx(ccx: &CrateCtxt, sp: span, id: ast::NodeId)
                    -> ast::def {
     lookup_def_tcx(ccx.tcx, sp, id)
 }
@@ -299,7 +308,7 @@ impl get_and_find_region for isr_alist {
 }
 
 fn check_main_fn_ty(ccx: &CrateCtxt,
-                    main_id: ast::node_id,
+                    main_id: ast::NodeId,
                     main_span: span) {
     let tcx = ccx.tcx;
     let main_t = ty::node_id_to_type(tcx, main_id);
@@ -343,7 +352,7 @@ fn check_main_fn_ty(ccx: &CrateCtxt,
 }
 
 fn check_start_fn_ty(ccx: &CrateCtxt,
-                     start_id: ast::node_id,
+                     start_id: ast::NodeId,
                      start_span: span) {
     let tcx = ccx.tcx;
     let start_t = ty::node_id_to_type(tcx, start_id);

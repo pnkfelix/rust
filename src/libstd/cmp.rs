@@ -21,7 +21,6 @@ and `Eq` to overload the `==` and `!=` operators.
 */
 
 #[allow(missing_doc)];
-#[allow(default_methods)]; // NOTE: Remove when allowed in stage0
 
 /**
 * Trait for values that can be compared for equality and inequality.
@@ -86,6 +85,12 @@ pub trait TotalOrd: TotalEq {
     fn cmp(&self, other: &Self) -> Ordering;
 }
 
+impl TotalEq for Ordering {
+    #[inline]
+    fn equals(&self, other: &Ordering) -> bool {
+        *self == *other
+    }
+}
 impl TotalOrd for Ordering {
     #[inline]
     fn cmp(&self, other: &Ordering) -> Ordering {

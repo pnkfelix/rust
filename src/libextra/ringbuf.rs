@@ -14,9 +14,8 @@
 //! extra::container::Deque`.
 
 use std::num;
-use std::uint;
 use std::vec;
-use std::iterator::{FromIterator, InvertIterator};
+use std::iterator::{FromIterator, Invert, RandomAccessIterator, Extendable};
 
 use container::Deque;
 
@@ -34,15 +33,12 @@ pub struct RingBuf<T> {
 impl<T> Container for RingBuf<T> {
     /// Return the number of elements in the RingBuf
     fn len(&self) -> uint { self.nelts }
-
-    /// Return true if the RingBufcontains no elements
-    fn is_empty(&self) -> bool { self.len() == 0 }
 }
 
 impl<T> Mutable for RingBuf<T> {
     /// Clear the RingBuf, removing all values.
     fn clear(&mut self) {
-        for self.elts.mut_iter().advance |x| { *x = None }
+        foreach x in self.elts.mut_iter() { *x = None }
         self.nelts = 0;
         self.lo = 0;
     }
@@ -179,23 +175,21 @@ impl<T> RingBuf<T> {
 
     /// Front-to-back iterator.
     pub fn iter<'a>(&'a self) -> RingBufIterator<'a, T> {
-        RingBufIterator{index: 0, rindex: self.nelts - 1,
-                        nelts: self.nelts, elts: self.elts, lo: self.lo}
+        RingBufIterator{index: 0, rindex: self.nelts, lo: self.lo, elts: self.elts}
     }
 
     /// Back-to-front iterator.
-    pub fn rev_iter<'a>(&'a self) -> InvertIterator<&'a T, RingBufIterator<'a, T>> {
+    pub fn rev_iter<'a>(&'a self) -> Invert<RingBufIterator<'a, T>> {
         self.iter().invert()
     }
 
     /// Front-to-back iterator which returns mutable values.
     pub fn mut_iter<'a>(&'a mut self) -> RingBufMutIterator<'a, T> {
-        RingBufMutIterator{index: 0, rindex: self.nelts - 1,
-                           nelts: self.nelts, elts: self.elts, lo: self.lo}
+        RingBufMutIterator{index: 0, rindex: self.nelts, lo: self.lo, elts: self.elts}
     }
 
     /// Back-to-front iterator which returns mutable values.
-    pub fn mut_rev_iter<'a>(&'a mut self) -> InvertIterator<&'a mut T, RingBufMutIterator<'a, T>> {
+    pub fn mut_rev_iter<'a>(&'a mut self) -> Invert<RingBufMutIterator<'a, T>> {
         self.mut_iter().invert()
     }
 }
@@ -205,18 +199,18 @@ macro_rules! iterator {
         impl<'self, T> Iterator<$elem> for $name<'self, T> {
             #[inline]
             fn next(&mut self) -> Option<$elem> {
-                if self.nelts == 0 {
+                if self.index == self.rindex {
                     return None;
                 }
                 let raw_index = raw_index(self.lo, self.elts.len(), self.index);
                 self.index += 1;
-                self.nelts -= 1;
-                Some(self.elts[raw_index]. $getter ())
+                Some(self.elts[raw_index] . $getter ())
             }
 
             #[inline]
             fn size_hint(&self) -> (uint, Option<uint>) {
-                (self.nelts, Some(self.nelts))
+                let len = self.rindex - self.index;
+                (len, Some(len))
             }
         }
     }
@@ -227,22 +221,21 @@ macro_rules! iterator_rev {
         impl<'self, T> DoubleEndedIterator<$elem> for $name<'self, T> {
             #[inline]
             fn next_back(&mut self) -> Option<$elem> {
-                if self.nelts == 0 {
+                if self.index == self.rindex {
                     return None;
                 }
-                let raw_index = raw_index(self.lo, self.elts.len(), self.rindex);
                 self.rindex -= 1;
-                self.nelts -= 1;
-                Some(self.elts[raw_index]. $getter ())
+                let raw_index = raw_index(self.lo, self.elts.len(), self.rindex);
+                Some(self.elts[raw_index] . $getter ())
             }
         }
     }
 }
 
+
 /// RingBuf iterator
 pub struct RingBufIterator<'self, T> {
     priv lo: uint,
-    priv nelts: uint,
     priv index: uint,
     priv rindex: uint,
     priv elts: &'self [Option<T>],
@@ -250,10 +243,24 @@ pub struct RingBufIterator<'self, T> {
 iterator!{impl RingBufIterator -> &'self T, get_ref}
 iterator_rev!{impl RingBufIterator -> &'self T, get_ref}
 
+impl<'self, T> RandomAccessIterator<&'self T> for RingBufIterator<'self, T> {
+    #[inline]
+    fn indexable(&self) -> uint { self.rindex - self.index }
+
+    #[inline]
+    fn idx(&self, j: uint) -> Option<&'self T> {
+        if j >= self.indexable() {
+            None
+        } else {
+            let raw_index = raw_index(self.lo, self.elts.len(), self.index + j);
+            Some(self.elts[raw_index].get_ref())
+        }
+    }
+}
+
 /// RingBuf mutable iterator
 pub struct RingBufMutIterator<'self, T> {
     priv lo: uint,
-    priv nelts: uint,
     priv index: uint,
     priv rindex: uint,
     priv elts: &'self mut [Option<T>],
@@ -270,7 +277,7 @@ fn grow<T>(nelts: uint, loptr: &mut uint, elts: &mut ~[Option<T>]) {
     elts.reserve(newlen);
 
     /* fill with None */
-    for uint::range(elts.len(), elts.capacity()) |_| {
+    foreach _ in range(elts.len(), elts.capacity()) {
         elts.push(None);
     }
 
@@ -285,11 +292,11 @@ fn grow<T>(nelts: uint, loptr: &mut uint, elts: &mut ~[Option<T>]) {
 
     assert!(newlen - nelts/2 >= nelts);
     if lo <= (nelts - lo) { // A
-        for uint::range(0, lo) |i| {
+        foreach i in range(0u, lo) {
             elts.swap(i, nelts + i);
         }
     } else {                // B
-        for uint::range(lo, nelts) |i| {
+        foreach i in range(lo, nelts) {
             elts.swap(i, newlen - nelts + i);
         }
         *loptr += newlen - nelts;
@@ -317,11 +324,18 @@ impl<A: Eq> Eq for RingBuf<A> {
 
 impl<A, T: Iterator<A>> FromIterator<A, T> for RingBuf<A> {
     fn from_iterator(iterator: &mut T) -> RingBuf<A> {
-        let mut deq = RingBuf::new();
-        for iterator.advance |elt| {
-            deq.push_back(elt);
-        }
+        let (lower, _) = iterator.size_hint();
+        let mut deq = RingBuf::with_capacity(lower);
+        deq.extend(iterator);
         deq
+    }
+}
+
+impl<A, T: Iterator<A>> Extendable<A, T> for RingBuf<A> {
+    fn extend(&mut self, iterator: &mut T) {
+        foreach elt in *iterator {
+            self.push_back(elt);
+        }
     }
 }
 
@@ -330,7 +344,6 @@ mod tests {
     use super::*;
     use std::clone::Clone;
     use std::cmp::Eq;
-    use std::{int, uint};
     use extra::test;
 
     #[test]
@@ -448,21 +461,21 @@ mod tests {
     #[test]
     fn test_push_front_grow() {
         let mut deq = RingBuf::new();
-        for uint::range(0, 66) |i| {
+        foreach i in range(0u, 66) {
             deq.push_front(i);
         }
         assert_eq!(deq.len(), 66);
 
-        for uint::range(0, 66) |i| {
+        foreach i in range(0u, 66) {
             assert_eq!(*deq.get(i), 65 - i);
         }
 
         let mut deq = RingBuf::new();
-        for uint::range(0, 66) |i| {
+        foreach i in range(0u, 66) {
             deq.push_back(i);
         }
 
-        for uint::range(0, 66) |i| {
+        foreach i in range(0u, 66) {
             assert_eq!(*deq.get(i), i);
         }
     }
@@ -494,7 +507,7 @@ mod tests {
     fn bench_grow(b: &mut test::BenchHarness) {
         let mut deq = RingBuf::new();
         do b.iter {
-            for 65.times {
+            do 65.times {
                 deq.push_front(1);
             }
         }
@@ -593,12 +606,12 @@ mod tests {
         assert_eq!(d.iter().next(), None);
         assert_eq!(d.iter().size_hint(), (0, Some(0)));
 
-        for int::range(0,5) |i| {
+        foreach i in range(0, 5) {
             d.push_back(i);
         }
         assert_eq!(d.iter().collect::<~[&int]>(), ~[&0,&1,&2,&3,&4]);
 
-        for int::range(6,9) |i| {
+        foreach i in range(6, 9) {
             d.push_front(i);
         }
         assert_eq!(d.iter().collect::<~[&int]>(), ~[&8,&7,&6,&0,&1,&2,&3,&4]);
@@ -618,12 +631,12 @@ mod tests {
         let mut d = RingBuf::new();
         assert_eq!(d.rev_iter().next(), None);
 
-        for int::range(0,5) |i| {
+        foreach i in range(0, 5) {
             d.push_back(i);
         }
         assert_eq!(d.rev_iter().collect::<~[&int]>(), ~[&4,&3,&2,&1,&0]);
 
-        for int::range(6,9) |i| {
+        foreach i in range(6, 9) {
             d.push_front(i);
         }
         assert_eq!(d.rev_iter().collect::<~[&int]>(), ~[&4,&3,&2,&1,&0,&6,&7,&8]);
@@ -634,11 +647,11 @@ mod tests {
         let mut d = RingBuf::new();
         assert!(d.mut_iter().next().is_none());
 
-        for uint::range(0,3) |i| {
+        foreach i in range(0u, 3) {
             d.push_front(i);
         }
 
-        for d.mut_iter().enumerate().advance |(i, elt)| {
+        foreach (i, elt) in d.mut_iter().enumerate() {
             assert_eq!(*elt, 2 - i);
             *elt = i;
         }
@@ -657,11 +670,11 @@ mod tests {
         let mut d = RingBuf::new();
         assert!(d.mut_rev_iter().next().is_none());
 
-        for uint::range(0,3) |i| {
+        foreach i in range(0u, 3) {
             d.push_front(i);
         }
 
-        for d.mut_rev_iter().enumerate().advance |(i, elt)| {
+        foreach (i, elt) in d.mut_rev_iter().enumerate() {
             assert_eq!(*elt, i);
             *elt = i;
         }
@@ -685,7 +698,7 @@ mod tests {
 
         let mut seq = iterator::Counter::new(0u, 2).take_(256);
         let deq: RingBuf<uint> = seq.collect();
-        for deq.iter().enumerate().advance |(i, &x)| {
+        foreach (i, &x) in deq.iter().enumerate() {
             assert_eq!(2*i, x);
         }
         assert_eq!(deq.len(), 256);

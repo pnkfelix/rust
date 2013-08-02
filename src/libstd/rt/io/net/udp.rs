@@ -13,7 +13,7 @@ use result::{Ok, Err};
 use rt::io::net::ip::IpAddr;
 use rt::io::{Reader, Writer};
 use rt::io::{io_error, read_error, EndOfFile};
-use rt::rtio::{RtioUdpSocketObject, RtioUdpSocket, IoFactory, IoFactoryObject};
+use rt::rtio::{RtioSocket, RtioUdpSocketObject, RtioUdpSocket, IoFactory, IoFactoryObject};
 use rt::local::Local;
 
 pub struct UdpSocket(~RtioUdpSocketObject);
@@ -52,6 +52,17 @@ impl UdpSocket {
 
     pub fn connect(self, other: IpAddr) -> UdpStream {
         UdpStream { socket: self, connectedTo: other }
+    }
+
+    pub fn socket_name(&mut self) -> Option<IpAddr> {
+        match (***self).socket_name() {
+            Ok(sn) => Some(sn),
+            Err(ioerr) => {
+                rtdebug!("failed to get socket name: %?", ioerr);
+                io_error::cond.raise(ioerr);
+                None
+            }
+        }
     }
 }
 
@@ -106,7 +117,7 @@ mod test {
             do io_error::cond.trap(|e| {
                 assert!(e.kind == PermissionDenied);
                 called = true;
-            }).in {
+            }).inside {
                 let addr = Ipv4(0, 0, 0, 0, 1);
                 let socket = UdpSocket::bind(addr);
                 assert!(socket.is_none());
@@ -121,7 +132,7 @@ mod test {
             let server_ip = next_test_ip4();
             let client_ip = next_test_ip4();
 
-            do spawntask_immediately {
+            do spawntask {
                 match UdpSocket::bind(server_ip) {
                     Some(ref mut server) => {
                         let mut buf = [0];
@@ -138,7 +149,7 @@ mod test {
                 }
             }
 
-            do spawntask_immediately {
+            do spawntask {
                 match UdpSocket::bind(client_ip) {
                     Some(ref mut client) => client.sendto([99], server_ip),
                     None => fail!()
@@ -153,7 +164,7 @@ mod test {
             let server_ip = next_test_ip6();
             let client_ip = next_test_ip6();
 
-            do spawntask_immediately {
+            do spawntask {
                 match UdpSocket::bind(server_ip) {
                     Some(ref mut server) => {
                         let mut buf = [0];
@@ -170,7 +181,7 @@ mod test {
                 }
             }
 
-            do spawntask_immediately {
+            do spawntask {
                 match UdpSocket::bind(client_ip) {
                     Some(ref mut client) => client.sendto([99], server_ip),
                     None => fail!()
@@ -185,7 +196,7 @@ mod test {
             let server_ip = next_test_ip4();
             let client_ip = next_test_ip4();
 
-            do spawntask_immediately {
+            do spawntask {
                 match UdpSocket::bind(server_ip) {
                     Some(server) => {
                         let server = ~server;
@@ -203,7 +214,7 @@ mod test {
                 }
             }
 
-            do spawntask_immediately {
+            do spawntask {
                 match UdpSocket::bind(client_ip) {
                     Some(client) => {
                         let client = ~client;
@@ -222,7 +233,7 @@ mod test {
             let server_ip = next_test_ip6();
             let client_ip = next_test_ip6();
 
-            do spawntask_immediately {
+            do spawntask {
                 match UdpSocket::bind(server_ip) {
                     Some(server) => {
                         let server = ~server;
@@ -240,7 +251,7 @@ mod test {
                 }
             }
 
-            do spawntask_immediately {
+            do spawntask {
                 match UdpSocket::bind(client_ip) {
                     Some(client) => {
                         let client = ~client;
@@ -251,5 +262,34 @@ mod test {
                 }
             }
         }
+    }
+
+    #[cfg(test)]
+    fn socket_name(addr: IpAddr) {
+        do run_in_newsched_task {
+            do spawntask {
+                let server = UdpSocket::bind(addr);
+
+                assert!(server.is_some());
+                let mut server = server.unwrap();
+
+                // Make sure socket_name gives
+                // us the socket we binded to.
+                let so_name = server.socket_name();
+                assert!(so_name.is_some());
+                assert_eq!(addr, so_name.unwrap());
+
+            }
+        }
+    }
+
+    #[test]
+    fn socket_name_ip4() {
+        socket_name(next_test_ip4());
+    }
+
+    #[test]
+    fn socket_name_ip6() {
+        socket_name(next_test_ip6());
     }
 }

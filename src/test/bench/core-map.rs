@@ -24,26 +24,26 @@ fn timed(label: &str, f: &fn()) {
     let start = time::precise_time_s();
     f();
     let end = time::precise_time_s();
-    io::println(fmt!("  %s: %f", label, end - start));
+    printfln!("  %s: %f", label, end - start);
 }
 
 fn ascending<M: MutableMap<uint, uint>>(map: &mut M, n_keys: uint) {
     io::println(" Ascending integers:");
 
     do timed("insert") {
-        for uint::range(0, n_keys) |i| {
+        foreach i in range(0u, n_keys) {
             map.insert(i, i + 1);
         }
     }
 
     do timed("search") {
-        for uint::range(0, n_keys) |i| {
+        foreach i in range(0u, n_keys) {
             assert_eq!(map.find(&i).unwrap(), &(i + 1));
         }
     }
 
     do timed("remove") {
-        for uint::range(0, n_keys) |i| {
+        foreach i in range(0, n_keys) {
             assert!(map.remove(&i));
         }
     }
@@ -74,19 +74,19 @@ fn descending<M: MutableMap<uint, uint>>(map: &mut M, n_keys: uint) {
 fn vector<M: MutableMap<uint, uint>>(map: &mut M, n_keys: uint, dist: &[uint]) {
 
     do timed("insert") {
-        for uint::range(0, n_keys) |i| {
+        foreach i in range(0u, n_keys) {
             map.insert(dist[i], i + 1);
         }
     }
 
     do timed("search") {
-        for uint::range(0, n_keys) |i| {
+        foreach i in range(0u, n_keys) {
             assert_eq!(map.find(&dist[i]).unwrap(), &(i + 1));
         }
     }
 
     do timed("remove") {
-        for uint::range(0, n_keys) |i| {
+        foreach i in range(0u, n_keys) {
             assert!(map.remove(&dist[i]));
         }
     }
@@ -116,7 +116,7 @@ fn main() {
         }
     }
 
-    io::println(fmt!("%? keys", n_keys));
+    printfln!("%? keys", n_keys);
 
     io::println("\nTreeMap:");
 

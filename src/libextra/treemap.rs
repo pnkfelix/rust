@@ -15,7 +15,7 @@
 
 use std::num;
 use std::util::{swap, replace};
-use std::iterator::FromIterator;
+use std::iterator::{FromIterator, Extendable};
 
 // This is implemented as an AA tree, which is a simplified variation of
 // a red-black tree where red (horizontal) nodes can only be added
@@ -47,7 +47,7 @@ impl<K: Eq + TotalOrd, V: Eq> Eq for TreeMap<K, V> {
         } else {
             let mut x = self.iter();
             let mut y = other.iter();
-            for self.len().times {
+            foreach _ in range(0u, self.len()) {
                 if x.next().unwrap() != y.next().unwrap() {
                     return false
                 }
@@ -65,7 +65,7 @@ fn lt<K: Ord + TotalOrd, V: Ord>(a: &TreeMap<K, V>,
     let mut y = b.iter();
 
     let (a_len, b_len) = (a.len(), b.len());
-    for num::min(a_len, b_len).times {
+    foreach _ in range(0u, num::min(a_len, b_len)) {
         let (key_a, value_a) = x.next().unwrap();
         let (key_b, value_b) = y.next().unwrap();
         if *key_a < *key_b { return true; }
@@ -135,19 +135,6 @@ impl<K: TotalOrd, V> MutableMap<K, V> for TreeMap<K, V> {
         find_mut(&mut self.root, key)
     }
 
-    /// Insert a key-value pair into the map. An existing value for a
-    /// key is replaced by the new value. Return true if the key did
-    /// not already exist in the map.
-    fn insert(&mut self, key: K, value: V) -> bool {
-        self.swap(key, value).is_none()
-    }
-
-    /// Remove a key-value pair from the map. Return true if the key
-    /// was present in the map, otherwise false.
-    fn remove(&mut self, key: &K) -> bool {
-        self.pop(key).is_some()
-    }
-
     /// Insert a key-value pair from the map. If the key already had a value
     /// present in the map, that value is returned. Otherwise None is returned.
     fn swap(&mut self, key: K, value: V) -> Option<V> {
@@ -204,6 +191,19 @@ impl<K: TotalOrd, V> TreeMap<K, V> {
     pub fn iter<'a>(&'a self) -> TreeMapIterator<'a, K, V> {
         TreeMapIterator{stack: ~[], node: &self.root, remaining: self.length}
     }
+
+    /// Get a lazy iterator that consumes the treemap.
+    pub fn consume_iter(self) -> TreeMapConsumeIterator<K, V> {
+        let TreeMap { root: root, length: length } = self;
+        let stk = match root {
+            None => ~[],
+            Some(~tn) => ~[tn]
+        };
+        TreeMapConsumeIterator {
+            stack: stk,
+            remaining: length
+        }
+    }
 }
 
 /// Lazy forward iterator over a map
@@ -239,6 +239,56 @@ impl<'self, K, V> Iterator<(&'self K, &'self V)> for TreeMapIterator<'self, K, V
     fn size_hint(&self) -> (uint, Option<uint>) {
         (self.remaining, Some(self.remaining))
     }
+}
+
+/// Lazy forward iterator over a map that consumes the map while iterating
+pub struct TreeMapConsumeIterator<K, V> {
+    priv stack: ~[TreeNode<K, V>],
+    priv remaining: uint
+}
+
+impl<K, V> Iterator<(K, V)> for TreeMapConsumeIterator<K,V> {
+    #[inline]
+    fn next(&mut self) -> Option<(K, V)> {
+        while !self.stack.is_empty() {
+            let TreeNode {
+                key: key,
+                value: value,
+                left: left,
+                right: right,
+                level: level
+            } = self.stack.pop();
+
+            match left {
+                Some(~left) => {
+                    let n = TreeNode {
+                        key: key,
+                        value: value,
+                        left: None,
+                        right: right,
+                        level: level
+                    };
+                    self.stack.push(n);
+                    self.stack.push(left);
+                }
+                None => {
+                    match right {
+                        Some(~right) => self.stack.push(right),
+                        None => ()
+                    }
+                    self.remaining -= 1;
+                    return Some((key, value))
+                }
+            }
+        }
+        None
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (uint, Option<uint>) {
+        (self.remaining, Some(self.remaining))
+    }
+
 }
 
 impl<'self, T> Iterator<&'self T> for TreeSetIterator<'self, T> {
@@ -346,9 +396,40 @@ impl<T: TotalOrd> Set<T> for TreeSet<T> {
         }
         true
     }
+}
+
+impl<T: TotalOrd> MutableSet<T> for TreeSet<T> {
+    /// Add a value to the set. Return true if the value was not already
+    /// present in the set.
+    #[inline]
+    fn insert(&mut self, value: T) -> bool { self.map.insert(value, ()) }
+
+    /// Remove a value from the set. Return true if the value was
+    /// present in the set.
+    #[inline]
+    fn remove(&mut self, value: &T) -> bool { self.map.remove(value) }
+}
+
+impl<T: TotalOrd> TreeSet<T> {
+    /// Create an empty TreeSet
+    #[inline]
+    pub fn new() -> TreeSet<T> { TreeSet{map: TreeMap::new()} }
+
+    /// Get a lazy iterator over the values in the set.
+    /// Requires that it be frozen (immutable).
+    #[inline]
+    pub fn iter<'a>(&'a self) -> TreeSetIterator<'a, T> {
+        TreeSetIterator{iter: self.map.iter()}
+    }
+
+    /// Visit all values in reverse order
+    #[inline]
+    pub fn each_reverse(&self, f: &fn(&T) -> bool) -> bool {
+        self.map.each_key_reverse(f)
+    }
 
     /// Visit the values (in-order) representing the difference
-    fn difference(&self, other: &TreeSet<T>, f: &fn(&T) -> bool) -> bool {
+    pub fn difference(&self, other: &TreeSet<T>, f: &fn(&T) -> bool) -> bool {
         let mut x = self.iter();
         let mut y = other.iter();
 
@@ -377,7 +458,7 @@ impl<T: TotalOrd> Set<T> for TreeSet<T> {
     }
 
     /// Visit the values (in-order) representing the symmetric difference
-    fn symmetric_difference(&self, other: &TreeSet<T>,
+    pub fn symmetric_difference(&self, other: &TreeSet<T>,
                             f: &fn(&T) -> bool) -> bool {
         let mut x = self.iter();
         let mut y = other.iter();
@@ -411,7 +492,7 @@ impl<T: TotalOrd> Set<T> for TreeSet<T> {
     }
 
     /// Visit the values (in-order) representing the intersection
-    fn intersection(&self, other: &TreeSet<T>, f: &fn(&T) -> bool) -> bool {
+    pub fn intersection(&self, other: &TreeSet<T>, f: &fn(&T) -> bool) -> bool {
         let mut x = self.iter();
         let mut y = other.iter();
 
@@ -437,7 +518,7 @@ impl<T: TotalOrd> Set<T> for TreeSet<T> {
     }
 
     /// Visit the values (in-order) representing the union
-    fn union(&self, other: &TreeSet<T>, f: &fn(&T) -> bool) -> bool {
+    pub fn union(&self, other: &TreeSet<T>, f: &fn(&T) -> bool) -> bool {
         let mut x = self.iter();
         let mut y = other.iter();
 
@@ -466,37 +547,6 @@ impl<T: TotalOrd> Set<T> for TreeSet<T> {
             }
         }
         b.iter().advance(|&x| f(x)) && y.advance(f)
-    }
-}
-
-impl<T: TotalOrd> MutableSet<T> for TreeSet<T> {
-    /// Add a value to the set. Return true if the value was not already
-    /// present in the set.
-    #[inline]
-    fn insert(&mut self, value: T) -> bool { self.map.insert(value, ()) }
-
-    /// Remove a value from the set. Return true if the value was
-    /// present in the set.
-    #[inline]
-    fn remove(&mut self, value: &T) -> bool { self.map.remove(value) }
-}
-
-impl<T: TotalOrd> TreeSet<T> {
-    /// Create an empty TreeSet
-    #[inline]
-    pub fn new() -> TreeSet<T> { TreeSet{map: TreeMap::new()} }
-
-    /// Get a lazy iterator over the values in the set.
-    /// Requires that it be frozen (immutable).
-    #[inline]
-    pub fn iter<'a>(&'a self) -> TreeSetIterator<'a, T> {
-        TreeSetIterator{iter: self.map.iter()}
-    }
-
-    /// Visit all values in reverse order
-    #[inline]
-    pub fn each_reverse(&self, f: &fn(&T) -> bool) -> bool {
-        self.map.each_key_reverse(f)
     }
 }
 
@@ -624,7 +674,7 @@ fn remove<K: TotalOrd, V>(node: &mut Option<~TreeNode<K, V>>,
     fn heir_swap<K: TotalOrd, V>(node: &mut ~TreeNode<K, V>,
                                  child: &mut Option<~TreeNode<K, V>>) {
         // *could* be done without recursion, but it won't borrow check
-        for child.mut_iter().advance |x| {
+        foreach x in child.mut_iter() {
             if x.right.is_some() {
                 heir_swap(node, &mut x.right);
             } else {
@@ -679,18 +729,18 @@ fn remove<K: TotalOrd, V>(node: &mut Option<~TreeNode<K, V>>,
                 save.level -= 1;
 
                 if right_level > save.level {
-                    for save.right.mut_iter().advance |x| { x.level = save.level }
+                    foreach x in save.right.mut_iter() { x.level = save.level }
                 }
 
                 skew(save);
 
-                for save.right.mut_iter().advance |right| {
+                foreach right in save.right.mut_iter() {
                     skew(right);
-                    for right.right.mut_iter().advance |x| { skew(x) }
+                    foreach x in right.right.mut_iter() { skew(x) }
                 }
 
                 split(save);
-                for save.right.mut_iter().advance |x| { split(x) }
+                foreach x in save.right.mut_iter() { split(x) }
             }
 
             return ret;
@@ -703,26 +753,36 @@ fn remove<K: TotalOrd, V>(node: &mut Option<~TreeNode<K, V>>,
 }
 
 impl<K: TotalOrd, V, T: Iterator<(K, V)>> FromIterator<(K, V), T> for TreeMap<K, V> {
-    pub fn from_iterator(iter: &mut T) -> TreeMap<K, V> {
+    fn from_iterator(iter: &mut T) -> TreeMap<K, V> {
         let mut map = TreeMap::new();
-
-        for iter.advance |(k, v)| {
-            map.insert(k, v);
-        }
-
+        map.extend(iter);
         map
+    }
+}
+
+impl<K: TotalOrd, V, T: Iterator<(K, V)>> Extendable<(K, V), T> for TreeMap<K, V> {
+    #[inline]
+    fn extend(&mut self, iter: &mut T) {
+        foreach (k, v) in *iter {
+            self.insert(k, v);
+        }
     }
 }
 
 impl<T: TotalOrd, Iter: Iterator<T>> FromIterator<T, Iter> for TreeSet<T> {
     pub fn from_iterator(iter: &mut Iter) -> TreeSet<T> {
         let mut set = TreeSet::new();
-
-        for iter.advance |elem| {
-            set.insert(elem);
-        }
-
+        set.extend(iter);
         set
+    }
+}
+
+impl<T: TotalOrd, Iter: Iterator<T>> Extendable<T, Iter> for TreeSet<T> {
+    #[inline]
+    fn extend(&mut self, iter: &mut Iter) {
+        foreach elem in *iter {
+            self.insert(elem);
+        }
     }
 }
 
@@ -803,13 +863,13 @@ mod test_treemap {
     fn check_equal<K: Eq + TotalOrd, V: Eq>(ctrl: &[(K, V)],
                                             map: &TreeMap<K, V>) {
         assert_eq!(ctrl.is_empty(), map.is_empty());
-        for ctrl.iter().advance |x| {
+        foreach x in ctrl.iter() {
             let &(ref k, ref v) = x;
             assert!(map.find(k).unwrap() == v)
         }
-        for map.iter().advance |(map_k, map_v)| {
+        foreach (map_k, map_v) in map.iter() {
             let mut found = false;
-            for ctrl.iter().advance |x| {
+            foreach x in ctrl.iter() {
                 let &(ref ctrl_k, ref ctrl_v) = x;
                 if *map_k == *ctrl_k {
                     assert!(*map_v == *ctrl_v);
@@ -871,8 +931,8 @@ mod test_treemap {
 
         let mut rng = rand::IsaacRng::new_seeded(&[42]);
 
-        for 3.times {
-            for 90.times {
+        do 3.times {
+            do 90.times {
                 let k = rng.gen();
                 let v = rng.gen();
                 if !ctrl.iter().any(|x| x == &(k, v)) {
@@ -883,7 +943,7 @@ mod test_treemap {
                 }
             }
 
-            for 30.times {
+            do 30.times {
                 let r = rng.gen_uint_range(0, ctrl.len());
                 let (key, _) = ctrl.remove(r);
                 assert!(map.remove(&key));
@@ -923,7 +983,7 @@ mod test_treemap {
         assert!(m.insert(1, 2));
 
         let mut n = 0;
-        for m.iter().advance |(k, v)| {
+        foreach (k, v) in m.iter() {
             assert_eq!(*k, n);
             assert_eq!(*v, n * 2);
             n += 1;
@@ -941,11 +1001,12 @@ mod test_treemap {
         assert!(m.insert(1, 2));
 
         let mut n = 4;
-        for m.each_reverse |k, v| {
+        do m.each_reverse |k, v| {
             assert_eq!(*k, n);
             assert_eq!(*v, n * 2);
             n -= 1;
-        }
+            true
+        };
     }
 
     #[test]
@@ -1030,7 +1091,7 @@ mod test_treemap {
                         (&x5, &y5)];
         let mut i = 0;
 
-        for b.advance |x| {
+        foreach x in b {
             assert_eq!(expected[i], x);
             i += 1;
 
@@ -1039,7 +1100,7 @@ mod test_treemap {
             }
         }
 
-        for b.advance |x| {
+        foreach x in b {
             assert_eq!(expected[i], x);
             i += 1;
         }
@@ -1051,7 +1112,7 @@ mod test_treemap {
 
         let map: TreeMap<int, int> = xs.iter().transform(|&x| x).collect();
 
-        for xs.iter().advance |&(k, v)| {
+        foreach &(k, v) in xs.iter() {
             assert_eq!(map.find(&k), Some(&v));
         }
     }
@@ -1199,8 +1260,8 @@ mod test_set {
         assert!(m.insert(1));
 
         let mut n = 0;
-        for m.iter().advance |x| {
-            println(fmt!("%?", x));
+        foreach x in m.iter() {
+            printfln!(x);
             assert_eq!(*x, n);
             n += 1
         }
@@ -1217,10 +1278,11 @@ mod test_set {
         assert!(m.insert(1));
 
         let mut n = 4;
-        for m.each_reverse |x| {
+        do m.each_reverse |x| {
             assert_eq!(*x, n);
-            n -= 1
-        }
+            n -= 1;
+            true
+        };
     }
 
     fn check(a: &[int], b: &[int], expected: &[int],
@@ -1228,14 +1290,15 @@ mod test_set {
         let mut set_a = TreeSet::new();
         let mut set_b = TreeSet::new();
 
-        for a.iter().advance |x| { assert!(set_a.insert(*x)) }
-        for b.iter().advance |y| { assert!(set_b.insert(*y)) }
+        foreach x in a.iter() { assert!(set_a.insert(*x)) }
+        foreach y in b.iter() { assert!(set_b.insert(*y)) }
 
         let mut i = 0;
-        for f(&set_a, &set_b) |x| {
+        do f(&set_a, &set_b) |x| {
             assert_eq!(*x, expected[i]);
             i += 1;
-        }
+            true
+        };
         assert_eq!(i, expected.len());
     }
 
@@ -1350,7 +1413,7 @@ mod test_set {
 
         let set: TreeSet<int> = xs.iter().transform(|&x| x).collect();
 
-        for xs.iter().advance |x: &int| {
+        foreach x in xs.iter() {
             assert!(set.contains(x));
         }
     }

@@ -68,7 +68,7 @@ fn AsciiArt(width: uint, height: uint, fill: char) -> AsciiArt {
     // Use an anonymous function to build a vector of vectors containing
     // blank characters for each position in our canvas.
     let mut lines = do vec::build_sized(height) |push| {
-            for height.times {
+            do height.times {
                 push(vec::from_elem(width, '.'));
             }
         };
@@ -120,7 +120,7 @@ trait Canvas {
     // Unlike interfaces traits support default implementations.
     // Got an ICE as soon as I added this method.
     fn add_points(&mut self, shapes: &[Point]) {
-        for shapes.iter().advance |pt| {self.add_point(*pt)};
+        foreach pt in shapes.iter() {self.add_point(*pt)};
     }
 }
 
@@ -134,13 +134,13 @@ impl Canvas for AsciiArt {
 
     fn add_rect(&mut self, shape: Rect) {
         // Add the top and bottom lines.
-        for int::range(shape.top_left.x, shape.top_left.x + shape.size.width) |x| {
+        foreach x in range(shape.top_left.x, shape.top_left.x + shape.size.width) {
             self.add_pt(x, shape.top_left.y);
             self.add_pt(x, shape.top_left.y + shape.size.height - 1);
         }
 
         // Add the left and right lines.
-        for int::range(shape.top_left.y, shape.top_left.y + shape.size.height) |y|{
+        foreach y in range(shape.top_left.y, shape.top_left.y + shape.size.height) {
             self.add_pt(shape.top_left.x, y);
             self.add_pt(shape.top_left.x + shape.size.width - 1, y);
         }

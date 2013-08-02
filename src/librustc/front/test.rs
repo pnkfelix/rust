@@ -25,7 +25,7 @@ use syntax::print::pprust;
 use syntax::{ast, ast_util};
 use syntax::attr::AttrMetaMethods;
 
-type node_id_gen = @fn() -> ast::node_id;
+type node_id_gen = @fn() -> ast::NodeId;
 
 struct Test {
     span: span,
@@ -380,7 +380,7 @@ fn is_extra(cx: &TestCtxt) -> bool {
 fn mk_test_descs(cx: &TestCtxt) -> @ast::expr {
     debug!("building test vector from %u tests", cx.testfns.len());
     let mut descs = ~[];
-    for cx.testfns.iter().advance |test| {
+    foreach test in cx.testfns.iter() {
         descs.push(mk_test_desc_and_fn_rec(cx, test));
     }
 

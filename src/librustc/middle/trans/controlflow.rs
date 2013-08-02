@@ -27,7 +27,6 @@ use util::ppaux;
 
 use middle::trans::type_::Type;
 
-use std::str;
 use syntax::ast;
 use syntax::ast::ident;
 use syntax::ast_map::path_mod;
@@ -37,7 +36,7 @@ use syntax::codemap::span;
 pub fn trans_block(bcx: @mut Block, b: &ast::Block, dest: expr::Dest) -> @mut Block {
     let _icx = push_ctxt("trans_block");
     let mut bcx = bcx;
-    for b.stmts.iter().advance |s| {
+    foreach s in b.stmts.iter() {
         debuginfo::update_source_pos(bcx, b.span);
         bcx = trans_stmt(bcx, *s);
     }
@@ -66,43 +65,35 @@ pub fn trans_if(bcx: @mut Block,
 
     let _icx = push_ctxt("trans_if");
 
-    match cond.node {
-        // `if true` and `if false` can be trans'd more efficiently,
-        // by dropping branches that are known to be impossible.
-        ast::expr_lit(@ref l) => match l.node {
-            ast::lit_bool(true) => {
-                // if true { .. } [else { .. }]
-                let then_bcx_in = scope_block(bcx, thn.info(), "if_true_then");
-                let then_bcx_out = trans_block(then_bcx_in, thn, dest);
-                let then_bcx_out = trans_block_cleanups(then_bcx_out,
-                                                        block_cleanups(then_bcx_in));
-                Br(bcx, then_bcx_in.llbb);
-                return then_bcx_out;
-            }
-            ast::lit_bool(false) => {
-                match els {
-                    // if false { .. } else { .. }
-                    Some(elexpr) => {
-                        let (else_bcx_in, else_bcx_out) =
-                            trans_if_else(bcx, elexpr, dest, "if_false_else");
-                        Br(bcx, else_bcx_in.llbb);
-                        return else_bcx_out;
-                    }
-                    // if false { .. }
-                    None => return bcx,
-                }
-            }
-            _ => {}
-        },
-        _ => {}
-    }
-
     let Result {bcx, val: cond_val} =
         expr::trans_to_datum(bcx, cond).to_result();
 
-    let then_bcx_in = scope_block(bcx, thn.info(), "then");
-
     let cond_val = bool_to_i1(bcx, cond_val);
+
+    // Drop branches that are known to be impossible
+    if is_const(cond_val) && !is_undef(cond_val) {
+        if const_to_uint(cond_val) == 1 {
+            // if true { .. } [else { .. }]
+            return do with_scope(bcx, thn.info(), "if_true_then") |bcx| {
+                let bcx_out = trans_block(bcx, thn, dest);
+                trans_block_cleanups(bcx_out, block_cleanups(bcx))
+            }
+        } else {
+            match els {
+                // if false { .. } else { .. }
+                Some(elexpr) => {
+                    return do with_scope(bcx, elexpr.info(), "if_false_then") |bcx| {
+                        let bcx_out = trans_if_else(bcx, elexpr, dest);
+                        trans_block_cleanups(bcx_out, block_cleanups(bcx))
+                    }
+                }
+                // if false { .. }
+                None => return bcx,
+            }
+        }
+    }
+
+    let then_bcx_in = scope_block(bcx, thn.info(), "then");
 
     let then_bcx_out = trans_block(then_bcx_in, thn, dest);
     let then_bcx_out = trans_block_cleanups(then_bcx_out,
@@ -114,7 +105,8 @@ pub fn trans_if(bcx: @mut Block,
     // 'else' context
     let (else_bcx_in, next_bcx) = match els {
       Some(elexpr) => {
-          let (else_bcx_in, else_bcx_out) = trans_if_else(bcx, elexpr, dest, "else");
+          let else_bcx_in = scope_block(bcx, elexpr.info(), "else");
+          let else_bcx_out = trans_if_else(else_bcx_in, elexpr, dest);
           (else_bcx_in, join_blocks(bcx, [then_bcx_out, else_bcx_out]))
       }
       _ => {
@@ -132,9 +124,8 @@ pub fn trans_if(bcx: @mut Block,
     return next_bcx;
 
     // trans `else [ if { .. } ... | { .. } ]`
-    fn trans_if_else(bcx: @mut Block, elexpr: @ast::expr,
-                     dest: expr::Dest, scope_name: &str) -> (@mut Block, @mut Block) {
-        let else_bcx_in = scope_block(bcx, elexpr.info(), scope_name);
+    fn trans_if_else(else_bcx_in: @mut Block, elexpr: @ast::expr,
+                     dest: expr::Dest) -> @mut Block {
         let else_bcx_out = match elexpr.node {
             ast::expr_if(_, _, _) => {
                 let elseif_blk = ast_util::block_from_expr(elexpr);
@@ -144,18 +135,16 @@ pub fn trans_if(bcx: @mut Block,
                 trans_block(else_bcx_in, blk, dest)
             }
             // would be nice to have a constraint on ifs
-            _ => bcx.tcx().sess.bug("strange alternative in if")
+            _ => else_bcx_in.tcx().sess.bug("strange alternative in if")
         };
-        let else_bcx_out = trans_block_cleanups(else_bcx_out,
-                                                block_cleanups(else_bcx_in));
-        (else_bcx_in, else_bcx_out)
+        trans_block_cleanups(else_bcx_out, block_cleanups(else_bcx_in))
     }
 }
 
 pub fn join_blocks(parent_bcx: @mut Block, in_cxs: &[@mut Block]) -> @mut Block {
     let out = sub_block(parent_bcx, "join");
     let mut reachable = false;
-    for in_cxs.iter().advance |bcx| {
+    foreach bcx in in_cxs.iter() {
         if !bcx.unreachable {
             Br(*bcx, out.llbb);
             reachable = true;
@@ -234,7 +223,7 @@ pub fn trans_log(log_ex: &ast::expr,
     let (modpath, modname) = {
         let path = &mut bcx.fcx.path;
         let mut modpath = ~[path_mod(ccx.sess.ident_of(ccx.link_meta.name))];
-        for path.iter().advance |e| {
+        foreach e in path.iter() {
             match *e {
                 path_mod(_) => { modpath.push(*e) }
                 _ => {}
@@ -251,9 +240,9 @@ pub fn trans_log(log_ex: &ast::expr,
             ccx, modpath, "loglevel");
         let global;
         unsafe {
-            global = str::as_c_str(s, |buf| {
+            global = do s.as_c_str |buf| {
                 llvm::LLVMAddGlobal(ccx.llmod, Type::i32().to_ref(), buf)
-            });
+            };
             llvm::LLVMSetGlobalConstant(global, False);
             llvm::LLVMSetInitializer(global, C_null(Type::i32()));
             lib::llvm::SetLinkage(global, lib::llvm::InternalLinkage);

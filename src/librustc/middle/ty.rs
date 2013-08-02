@@ -34,7 +34,6 @@ use std::ops;
 use std::ptr::to_unsafe_ptr;
 use std::to_bytes;
 use std::u32;
-use std::uint;
 use std::vec;
 use syntax::ast::*;
 use syntax::ast_util::is_local;
@@ -49,7 +48,7 @@ use syntax::opt_vec;
 use syntax::abi::AbiSet;
 use syntax;
 
-pub static INITIAL_DISCRIMINANT_VALUE: int = 0;
+pub static INITIAL_DISCRIMINANT_VALUE: uint = 0;
 
 // Data types
 
@@ -254,7 +253,7 @@ struct ctxt_ {
     // of this node.  This only applies to nodes that refer to entities
     // parameterized by type parameters, such as generic fns, types, or
     // other items.
-    node_type_substs: @mut HashMap<node_id, ~[t]>,
+    node_type_substs: @mut HashMap<NodeId, ~[t]>,
 
     // Maps from a method to the method "descriptor"
     methods: @mut HashMap<def_id, @Method>,
@@ -267,7 +266,7 @@ struct ctxt_ {
 
     impl_trait_cache: @mut HashMap<ast::def_id, Option<@ty::TraitRef>>,
 
-    trait_refs: @mut HashMap<node_id, @TraitRef>,
+    trait_refs: @mut HashMap<NodeId, @TraitRef>,
     trait_defs: @mut HashMap<def_id, @TraitDef>,
 
     items: ast_map::map,
@@ -279,10 +278,10 @@ struct ctxt_ {
     short_names_cache: @mut HashMap<t, @str>,
     needs_unwind_cleanup_cache: @mut HashMap<t, bool>,
     tc_cache: @mut HashMap<uint, TypeContents>,
-    ast_ty_to_ty_cache: @mut HashMap<node_id, ast_ty_to_ty_cache_entry>,
+    ast_ty_to_ty_cache: @mut HashMap<NodeId, ast_ty_to_ty_cache_entry>,
     enum_var_cache: @mut HashMap<def_id, @~[@VariantInfo]>,
-    ty_param_defs: @mut HashMap<ast::node_id, TypeParameterDef>,
-    adjustments: @mut HashMap<ast::node_id, @AutoAdjustment>,
+    ty_param_defs: @mut HashMap<ast::NodeId, TypeParameterDef>,
+    adjustments: @mut HashMap<ast::NodeId, @AutoAdjustment>,
     normalized_cache: @mut HashMap<t, t>,
     lang_items: middle::lang_items::LanguageItems,
     // A mapping of fake provided method def_ids to the default implementation
@@ -314,12 +313,15 @@ struct ctxt_ {
 
     // Set of used unsafe nodes (functions or blocks). Unsafe nodes not
     // present in this set can be warned about.
-    used_unsafe: @mut HashSet<ast::node_id>,
+    used_unsafe: @mut HashSet<ast::NodeId>,
 
     // Set of nodes which mark locals as mutable which end up getting used at
     // some point. Local variable definitions not in this set can be warned
     // about.
-    used_mut_nodes: @mut HashSet<ast::node_id>,
+    used_mut_nodes: @mut HashSet<ast::NodeId>,
+
+    // vtable resolution information for impl declarations
+    impl_vtables: typeck::impl_vtable_map
 }
 
 pub enum tbox_flag {
@@ -430,7 +432,7 @@ pub enum Region {
     re_free(FreeRegion),
 
     /// A concrete region naming some expression within the current function.
-    re_scope(node_id),
+    re_scope(NodeId),
 
     /// Static data that has an "infinite" lifetime. Top in the region lattice.
     re_static,
@@ -459,7 +461,7 @@ impl Region {
 
 #[deriving(Clone, Eq, IterBytes, Encodable, Decodable)]
 pub struct FreeRegion {
-    scope_id: node_id,
+    scope_id: NodeId,
     bound_region: bound_region
 }
 
@@ -486,10 +488,18 @@ pub enum bound_region {
      * enclosing scope, which may define the same names.  For an example of
      * where this comes up, see src/test/compile-fail/regions-ret-borrowed.rs
      * and regions-ret-borrowed-1.rs. */
-    br_cap_avoid(ast::node_id, @bound_region),
+    br_cap_avoid(ast::NodeId, @bound_region),
 }
 
-type opt_region = Option<Region>;
+/**
+ * Represents the values to use when substituting lifetime parameters.
+ * If the value is `ErasedRegions`, then this subst is occurring during
+ * trans, and all region parameters will be replaced with `ty::re_static`. */
+#[deriving(Clone, Eq, IterBytes)]
+pub enum RegionSubsts {
+    ErasedRegions,
+    NonerasedRegions(OptVec<ty::Region>)
+}
 
 /**
  * The type substs represents the kinds of things that can be substituted to
@@ -510,9 +520,9 @@ type opt_region = Option<Region>;
  *   always substituted away to the implementing type for a trait. */
 #[deriving(Clone, Eq, IterBytes)]
 pub struct substs {
-    self_r: opt_region,
     self_ty: Option<ty::t>,
-    tps: ~[t]
+    tps: ~[t],
+    regions: RegionSubsts,
 }
 
 mod primitives {
@@ -914,6 +924,7 @@ pub fn mk_ctxt(s: session::Session,
         impls:  @mut HashMap::new(),
         used_unsafe: @mut HashSet::new(),
         used_mut_nodes: @mut HashSet::new(),
+        impl_vtables: @mut HashMap::new(),
      }
 }
 
@@ -950,8 +961,15 @@ fn mk_t(cx: ctxt, st: sty) -> t {
     }
     fn sflags(substs: &substs) -> uint {
         let mut f = 0u;
-        for substs.tps.iter().advance |tt| { f |= get(*tt).flags; }
-        for substs.self_r.iter().advance |r| { f |= rflags(*r) }
+        foreach tt in substs.tps.iter() { f |= get(*tt).flags; }
+        match substs.regions {
+            ErasedRegions => {}
+            NonerasedRegions(ref regions) => {
+                foreach r in regions.iter() {
+                    f |= rflags(*r)
+                }
+            }
+        }
         return f;
     }
     match &st {
@@ -995,16 +1013,16 @@ fn mk_t(cx: ctxt, st: sty) -> t {
         flags |= rflags(r);
         flags |= get(m.ty).flags;
       }
-      &ty_tup(ref ts) => for ts.iter().advance |tt| { flags |= get(*tt).flags; },
+      &ty_tup(ref ts) => foreach tt in ts.iter() { flags |= get(*tt).flags; },
       &ty_bare_fn(ref f) => {
-        for f.sig.inputs.iter().advance |a| { flags |= get(*a).flags; }
-         flags |= get(f.sig.output).flags;
-         // T -> _|_ is *not* _|_ !
-         flags &= !(has_ty_bot as uint);
+        foreach a in f.sig.inputs.iter() { flags |= get(*a).flags; }
+        flags |= get(f.sig.output).flags;
+        // T -> _|_ is *not* _|_ !
+        flags &= !(has_ty_bot as uint);
       }
       &ty_closure(ref f) => {
         flags |= rflags(f.region);
-        for f.sig.inputs.iter().advance |a| { flags |= get(*a).flags; }
+        foreach a in f.sig.inputs.iter() { flags |= get(*a).flags; }
         flags |= get(f.sig.output).flags;
         // T -> _|_ is *not* _|_ !
         flags &= !(has_ty_bot as uint);
@@ -1259,15 +1277,15 @@ pub fn maybe_walk_ty(ty: t, f: &fn(t) -> bool) {
       }
       ty_enum(_, ref substs) | ty_struct(_, ref substs) |
       ty_trait(_, ref substs, _, _, _) => {
-        for (*substs).tps.iter().advance |subty| { maybe_walk_ty(*subty, |x| f(x)); }
+        foreach subty in (*substs).tps.iter() { maybe_walk_ty(*subty, |x| f(x)); }
       }
-      ty_tup(ref ts) => { for ts.iter().advance |tt| { maybe_walk_ty(*tt, |x| f(x)); } }
+      ty_tup(ref ts) => { foreach tt in ts.iter() { maybe_walk_ty(*tt, |x| f(x)); } }
       ty_bare_fn(ref ft) => {
-        for ft.sig.inputs.iter().advance |a| { maybe_walk_ty(*a, |x| f(x)); }
+        foreach a in ft.sig.inputs.iter() { maybe_walk_ty(*a, |x| f(x)); }
         maybe_walk_ty(ft.sig.output, f);
       }
       ty_closure(ref ft) => {
-        for ft.sig.inputs.iter().advance |a| { maybe_walk_ty(*a, |x| f(x)); }
+        foreach a in ft.sig.inputs.iter() { maybe_walk_ty(*a, |x| f(x)); }
         maybe_walk_ty(ft.sig.output, f);
       }
     }
@@ -1295,7 +1313,7 @@ pub fn fold_bare_fn_ty(fty: &BareFnTy, fldop: &fn(t) -> t) -> BareFnTy {
 
 fn fold_sty(sty: &sty, fldop: &fn(t) -> t) -> sty {
     fn fold_substs(substs: &substs, fldop: &fn(t) -> t) -> substs {
-        substs {self_r: substs.self_r,
+        substs {regions: substs.regions.clone(),
                 self_ty: substs.self_ty.map(|t| fldop(*t)),
                 tps: substs.tps.map(|t| fldop(*t))}
     }
@@ -1387,8 +1405,15 @@ pub fn fold_regions_and_ty(
         fldr: &fn(r: Region) -> Region,
         fldt: &fn(t: t) -> t)
      -> substs {
+        let regions = match substs.regions {
+            ErasedRegions => ErasedRegions,
+            NonerasedRegions(ref regions) => {
+                NonerasedRegions(regions.map(|r| fldr(*r)))
+            }
+        };
+
         substs {
-            self_r: substs.self_r.map(|r| fldr(*r)),
+            regions: regions,
             self_ty: substs.self_ty.map(|t| fldt(*t)),
             tps: substs.tps.map(|t| fldt(*t))
         }
@@ -1487,8 +1512,13 @@ pub fn subst_tps(cx: ctxt, tps: &[t], self_ty_opt: Option<t>, typ: t) -> t {
 }
 
 pub fn substs_is_noop(substs: &substs) -> bool {
+    let regions_is_noop = match substs.regions {
+        ErasedRegions => false, // may be used to canonicalize
+        NonerasedRegions(ref regions) => regions.is_empty()
+    };
+
     substs.tps.len() == 0u &&
-        substs.self_r.is_none() &&
+        regions_is_noop &&
         substs.self_ty.is_none()
 }
 
@@ -1744,8 +1774,8 @@ fn type_needs_unwind_cleanup_(cx: ctxt, ty: t,
             true
           }
           ty_enum(did, ref substs) => {
-            for (*enum_variants(cx, did)).iter().advance |v| {
-                for v.args.iter().advance |aty| {
+            foreach v in (*enum_variants(cx, did)).iter() {
+                foreach aty in v.args.iter() {
                     let t = subst(cx, substs, *aty);
                     needs_unwind_cleanup |=
                         type_needs_unwind_cleanup_(cx, t, tycache,
@@ -2113,7 +2143,7 @@ pub fn type_contents(cx: ctxt, ty: t) -> TypeContents {
                 // If this assertion failures, it is likely because of a
                 // failure in the cross-crate inlining code to translate a
                 // def-id.
-                assert_eq!(p.def_id.crate, ast::local_crate);
+                assert_eq!(p.def_id.crate, ast::LOCAL_CRATE);
 
                 type_param_def_to_contents(
                     cx, cx.ty_param_defs.get(&p.def_id.node))
@@ -2413,8 +2443,8 @@ pub fn type_structurally_contains(cx: ctxt,
     if test(sty) { return true; }
     match *sty {
       ty_enum(did, ref substs) => {
-        for (*enum_variants(cx, did)).iter().advance |variant| {
-            for variant.args.iter().advance |aty| {
+        foreach variant in (*enum_variants(cx, did)).iter() {
+            foreach aty in variant.args.iter() {
                 let sty = subst(cx, substs, *aty);
                 if type_structurally_contains(cx, sty, |x| test(x)) { return true; }
             }
@@ -2423,7 +2453,7 @@ pub fn type_structurally_contains(cx: ctxt,
       }
       ty_struct(did, ref substs) => {
         let r = lookup_struct_fields(cx, did);
-        for r.iter().advance |field| {
+        foreach field in r.iter() {
             let ft = lookup_field_type(cx, did, field.id, substs);
             if type_structurally_contains(cx, ft, |x| test(x)) { return true; }
         }
@@ -2431,7 +2461,7 @@ pub fn type_structurally_contains(cx: ctxt,
       }
 
       ty_tup(ref ts) => {
-        for ts.iter().advance |tt| {
+        foreach tt in ts.iter() {
             if type_structurally_contains(cx, *tt, |x| test(x)) { return true; }
         }
         return false;
@@ -2510,7 +2540,7 @@ pub fn type_is_pod(cx: ctxt, ty: t) -> bool {
       // Structural types
       ty_enum(did, ref substs) => {
         let variants = enum_variants(cx, did);
-        for (*variants).iter().advance |variant| {
+        foreach variant in (*variants).iter() {
             // XXX(pcwalton): This is an inefficient way to do this. Don't
             // synthesize a tuple!
             //
@@ -2521,7 +2551,7 @@ pub fn type_is_pod(cx: ctxt, ty: t) -> bool {
         }
       }
       ty_tup(ref elts) => {
-        for elts.iter().advance |elt| { if !type_is_pod(cx, *elt) { result = false; } }
+        foreach elt in elts.iter() { if !type_is_pod(cx, *elt) { result = false; } }
       }
       ty_estr(vstore_fixed(_)) => result = true,
       ty_evec(ref mt, vstore_fixed(_)) | ty_unboxed_vec(ref mt) => {
@@ -2710,7 +2740,7 @@ impl cmp::TotalEq for bound_region {
     }
 }
 
-pub fn node_id_to_trait_ref(cx: ctxt, id: ast::node_id) -> @ty::TraitRef {
+pub fn node_id_to_trait_ref(cx: ctxt, id: ast::NodeId) -> @ty::TraitRef {
     match cx.trait_refs.find(&id) {
        Some(&t) => t,
        None => cx.sess.bug(
@@ -2720,8 +2750,8 @@ pub fn node_id_to_trait_ref(cx: ctxt, id: ast::node_id) -> @ty::TraitRef {
     }
 }
 
-pub fn node_id_to_type(cx: ctxt, id: ast::node_id) -> t {
-    //io::println(fmt!("%?/%?", id, cx.node_types.len()));
+pub fn node_id_to_type(cx: ctxt, id: ast::NodeId) -> t {
+    //printfln!("%?/%?", id, cx.node_types.len());
     match cx.node_types.find(&(id as uint)) {
        Some(&t) => t,
        None => cx.sess.bug(
@@ -2732,14 +2762,14 @@ pub fn node_id_to_type(cx: ctxt, id: ast::node_id) -> t {
 }
 
 // XXX(pcwalton): Makes a copy, bleh. Probably better to not do that.
-pub fn node_id_to_type_params(cx: ctxt, id: ast::node_id) -> ~[t] {
+pub fn node_id_to_type_params(cx: ctxt, id: ast::NodeId) -> ~[t] {
     match cx.node_type_substs.find(&id) {
       None => return ~[],
       Some(ts) => return (*ts).clone(),
     }
 }
 
-fn node_id_has_type_params(cx: ctxt, id: ast::node_id) -> bool {
+fn node_id_has_type_params(cx: ctxt, id: ast::NodeId) -> bool {
     cx.node_type_substs.contains_key(&id)
 }
 
@@ -2940,7 +2970,7 @@ pub fn adjust_ty(cx: ctxt,
             let mut adjusted_ty = unadjusted_ty;
 
             if (!ty::type_is_error(adjusted_ty)) {
-                for uint::range(0, adj.autoderefs) |i| {
+                foreach i in range(0, adj.autoderefs) {
                     match ty::deref(cx, adjusted_ty, true) {
                         Some(mt) => { adjusted_ty = mt.ty; }
                         None => {
@@ -3078,7 +3108,7 @@ pub fn expr_has_ty_params(cx: ctxt, expr: &ast::expr) -> bool {
 
 pub fn method_call_type_param_defs(tcx: ctxt,
                                    method_map: typeck::method_map,
-                                   id: ast::node_id)
+                                   id: ast::NodeId)
                                    -> Option<@~[TypeParameterDef]> {
     do method_map.find(&id).map |method| {
         match method.origin {
@@ -3091,9 +3121,7 @@ pub fn method_call_type_param_defs(tcx: ctxt,
           typeck::method_param(typeck::method_param {
               trait_id: trt_id,
               method_num: n_mth, _}) |
-          typeck::method_trait(trt_id, n_mth) |
-          typeck::method_self(trt_id, n_mth) |
-          typeck::method_super(trt_id, n_mth) => {
+          typeck::method_trait(trt_id, n_mth) => {
             // ...trait methods bounds, in contrast, include only the
             // method bounds, so we must preprend the tps from the
             // trait itself.  This ought to be harmonized.
@@ -3241,6 +3269,8 @@ pub fn expr_kind(tcx: ctxt,
             RvalueStmtExpr
         }
 
+        ast::expr_for_loop(*) => fail!("non-desugared expr_for_loop"),
+
         ast::expr_lit(_) | // Note: lit_str is carved out above
         ast::expr_unary(*) |
         ast::expr_addr_of(*) |
@@ -3261,7 +3291,7 @@ pub fn expr_kind(tcx: ctxt,
     }
 }
 
-pub fn stmt_node_id(s: &ast::stmt) -> ast::node_id {
+pub fn stmt_node_id(s: &ast::stmt) -> ast::NodeId {
     match s.node {
       ast::stmt_decl(_, id) | stmt_expr(_, id) | stmt_semi(_, id) => {
         return id;
@@ -3272,14 +3302,14 @@ pub fn stmt_node_id(s: &ast::stmt) -> ast::node_id {
 
 pub fn field_idx(id: ast::ident, fields: &[field]) -> Option<uint> {
     let mut i = 0u;
-    for fields.iter().advance |f| { if f.ident == id { return Some(i); } i += 1u; }
+    foreach f in fields.iter() { if f.ident == id { return Some(i); } i += 1u; }
     return None;
 }
 
 pub fn field_idx_strict(tcx: ty::ctxt, id: ast::ident, fields: &[field])
                      -> uint {
     let mut i = 0u;
-    for fields.iter().advance |f| { if f.ident == id { return i; } i += 1u; }
+    foreach f in fields.iter() { if f.ident == id { return i; } i += 1u; }
     tcx.sess.bug(fmt!(
         "No field named `%s` found in the list of fields `%?`",
         tcx.sess.str_of(id),
@@ -3617,7 +3647,7 @@ fn lookup_locally_or_in_crate_store<V:Clone>(
         None => { }
     }
 
-    if def_id.crate == ast::local_crate {
+    if def_id.crate == ast::LOCAL_CRATE {
         fail!("No def'n found for %? in tcx.%s", def_id, descr);
     }
     let v = load_external();
@@ -3660,7 +3690,7 @@ pub fn impl_trait_ref(cx: ctxt, id: ast::def_id) -> Option<@TraitRef> {
         Some(&ret) => { return ret; }
         None => {}
     }
-    let ret = if id.crate == ast::local_crate {
+    let ret = if id.crate == ast::LOCAL_CRATE {
         debug!("(impl_trait_ref) searching for trait impl %?", id);
         match cx.items.find(&id.node) {
             Some(&ast_map::node_item(@ast::item {
@@ -3692,7 +3722,7 @@ pub fn ty_to_def_id(ty: t) -> Option<ast::def_id> {
 /// None if the struct is not tuple-like. Fails if the given def ID does not
 /// refer to a struct at all.
 fn struct_ctor_id(cx: ctxt, struct_did: ast::def_id) -> Option<ast::def_id> {
-    if struct_did.crate != ast::local_crate {
+    if struct_did.crate != ast::LOCAL_CRATE {
         // XXX: Cross-crate functionality.
         cx.sess.unimpl("constructor ID of cross-crate tuple structs");
     }
@@ -3719,7 +3749,7 @@ pub struct VariantInfo {
     ctor_ty: t,
     name: ast::ident,
     id: ast::def_id,
-    disr_val: int,
+    disr_val: uint,
     vis: visibility
 }
 
@@ -3730,7 +3760,7 @@ impl VariantInfo {
     /// Does not do any caching of the value in the type context.
     pub fn from_ast_variant(cx: ctxt,
                             ast_variant: &ast::variant,
-                            discriminant: int) -> VariantInfo {
+                            discriminant: uint) -> VariantInfo {
 
         let ctor_ty = node_id_to_type(cx, ast_variant.node.id);
 
@@ -3842,7 +3872,7 @@ pub fn has_dtor(cx: ctxt, struct_id: def_id) -> bool {
 }
 
 pub fn item_path(cx: ctxt, id: ast::def_id) -> ast_map::path {
-    if id.crate != ast::local_crate {
+    if id.crate != ast::LOCAL_CRATE {
         csearch::get_item_path(cx, id)
     } else {
         // FIXME (#5521): uncomment this code and don't have a catch-all at the
@@ -3911,7 +3941,7 @@ pub fn enum_variants(cx: ctxt, id: ast::def_id) -> @~[@VariantInfo] {
       _ => { /* fallthrough */ }
     }
 
-    let result = if ast::local_crate != id.crate {
+    let result = if ast::LOCAL_CRATE != id.crate {
         @csearch::get_enum_variants(cx, id)
     } else {
         /*
@@ -3924,7 +3954,7 @@ pub fn enum_variants(cx: ctxt, id: ast::def_id) -> @~[@VariantInfo] {
                     node: ast::item_enum(ref enum_definition, _),
                     _
                 }, _) => {
-            let mut last_discriminant: Option<int> = None;
+            let mut last_discriminant: Option<uint> = None;
             @enum_definition.variants.iter().transform(|variant| {
 
                 let mut discriminant = match last_discriminant {
@@ -3934,7 +3964,8 @@ pub fn enum_variants(cx: ctxt, id: ast::def_id) -> @~[@VariantInfo] {
 
                 match variant.node.disr_expr {
                     Some(e) => match const_eval::eval_const_expr_partial(&cx, e) {
-                        Ok(const_eval::const_int(val)) => discriminant = val as int,
+                        Ok(const_eval::const_int(val)) => discriminant = val as uint,
+                        Ok(const_eval::const_uint(val)) => discriminant = val as uint,
                         Ok(_) => {
                             cx.sess.span_err(e.span, "expected signed integer constant");
                         }
@@ -3985,6 +4016,14 @@ pub fn lookup_item_type(cx: ctxt,
         || csearch::get_type(cx, did))
 }
 
+pub fn lookup_impl_vtables(cx: ctxt,
+                           did: ast::def_id)
+                     -> typeck::impl_res {
+    lookup_locally_or_in_crate_store(
+        "impl_vtables", did, cx.impl_vtables,
+        || csearch::get_impl_vtables(cx, did) )
+}
+
 /// Given the did of a trait, returns its canonical trait ref.
 pub fn lookup_trait_def(cx: ctxt, did: ast::def_id) -> @ty::TraitDef {
     match cx.trait_defs.find(&did) {
@@ -3994,7 +4033,7 @@ pub fn lookup_trait_def(cx: ctxt, did: ast::def_id) -> @ty::TraitDef {
             return trait_def;
         }
         None => {
-            assert!(did.crate != ast::local_crate);
+            assert!(did.crate != ast::LOCAL_CRATE);
             let trait_def = @csearch::get_trait_def(cx, did);
             cx.trait_defs.insert(did, trait_def);
             return trait_def;
@@ -4040,7 +4079,7 @@ pub fn lookup_field_type(tcx: ctxt,
                          id: def_id,
                          substs: &substs)
                       -> ty::t {
-    let t = if id.crate == ast::local_crate {
+    let t = if id.crate == ast::LOCAL_CRATE {
         node_id_to_type(tcx, id.node)
     }
     else {
@@ -4059,7 +4098,7 @@ pub fn lookup_field_type(tcx: ctxt,
 // Look up the list of field names and IDs for a given struct
 // Fails if the id is not bound to a struct.
 pub fn lookup_struct_fields(cx: ctxt, did: ast::def_id) -> ~[field_ty] {
-  if did.crate == ast::local_crate {
+  if did.crate == ast::LOCAL_CRATE {
     match cx.items.find(&did.node) {
        Some(&ast_map::node_item(i,_)) => {
          match i.node {
@@ -4257,30 +4296,33 @@ pub fn normalize_ty(cx: ctxt, t: t) -> t {
             })
         }
 
-        ty_enum(did, ref r) =>
-            match (*r).self_r {
-                Some(_) =>
-                    // Use re_static since trans doesn't care about regions
-                    mk_enum(cx, did,
-                     substs {
-                        self_r: Some(ty::re_static),
-                        self_ty: None,
-                        tps: (*r).tps.clone()
-                     }),
-                None =>
+        ty_enum(did, ref r) => {
+            match (*r).regions {
+                NonerasedRegions(_) => {
+                    // trans doesn't care about regions
+                    mk_enum(cx, did, substs {regions: ty::ErasedRegions,
+                                             self_ty: None,
+                                             tps: (*r).tps.clone()})
+                }
+                ErasedRegions => {
                     t
-            },
+                }
+            }
+        }
 
-        ty_struct(did, ref r) =>
-            match (*r).self_r {
-              Some(_) =>
-                // Ditto.
-                mk_struct(cx, did, substs {self_r: Some(ty::re_static),
-                                           self_ty: None,
-                                           tps: (*r).tps.clone()}),
-              None =>
-                t
-            },
+        ty_struct(did, ref r) => {
+            match (*r).regions {
+                NonerasedRegions(_) => {
+                    // Ditto.
+                    mk_struct(cx, did, substs {regions: ty::ErasedRegions,
+                                               self_ty: None,
+                                               tps: (*r).tps.clone()})
+                }
+                ErasedRegions => {
+                    t
+                }
+            }
+        }
 
         _ =>
             t
@@ -4349,10 +4391,10 @@ pub fn eval_repeat_count<T: ExprTyProvider>(tcx: &T, count_expr: &ast::expr) -> 
 }
 
 // Determine what purity to check a nested function under
-pub fn determine_inherited_purity(parent: (ast::purity, ast::node_id),
-                                  child: (ast::purity, ast::node_id),
+pub fn determine_inherited_purity(parent: (ast::purity, ast::NodeId),
+                                  child: (ast::purity, ast::NodeId),
                                   child_sigil: ast::Sigil)
-                                    -> (ast::purity, ast::node_id) {
+                                    -> (ast::purity, ast::NodeId) {
     // If the closure is a stack closure and hasn't had some non-standard
     // purity inferred for it, then check it under its parent's purity.
     // Otherwise, use its own
@@ -4368,9 +4410,9 @@ pub fn determine_inherited_purity(parent: (ast::purity, ast::node_id),
 // relation on the supertraits from each bounded trait's constraint
 // list.
 pub fn each_bound_trait_and_supertraits(tcx: ctxt,
-                                        bounds: &ParamBounds,
+                                        bounds: &[@TraitRef],
                                         f: &fn(@TraitRef) -> bool) -> bool {
-    for bounds.trait_bounds.iter().advance |&bound_trait_ref| {
+    foreach &bound_trait_ref in bounds.iter() {
         let mut supertrait_set = HashMap::new();
         let mut trait_refs = ~[];
         let mut i = 0;
@@ -4390,7 +4432,7 @@ pub fn each_bound_trait_and_supertraits(tcx: ctxt,
 
             // Add supertraits to supertrait_set
             let supertrait_refs = trait_ref_supertraits(tcx, trait_refs[i]);
-            for supertrait_refs.iter().advance |&supertrait_ref| {
+            foreach &supertrait_ref in supertrait_refs.iter() {
                 debug!("each_bound_trait_and_supertraits(supertrait_ref=%s)",
                        supertrait_ref.repr(tcx));
 
@@ -4411,37 +4453,13 @@ pub fn each_bound_trait_and_supertraits(tcx: ctxt,
 pub fn count_traits_and_supertraits(tcx: ctxt,
                                     type_param_defs: &[TypeParameterDef]) -> uint {
     let mut total = 0;
-    for type_param_defs.iter().advance |type_param_def| {
-        for each_bound_trait_and_supertraits(tcx, type_param_def.bounds) |_| {
+    foreach type_param_def in type_param_defs.iter() {
+        for each_bound_trait_and_supertraits(
+            tcx, type_param_def.bounds.trait_bounds) |_| {
             total += 1;
         }
     }
     return total;
-}
-
-// Given a trait and a type, returns the impl of that type.
-// This is broken, of course, by parametric impls. This used to use
-// a table specifically for this mapping, but I removed that table.
-// This is only used when calling a supertrait method from a default method,
-// and should go away once I fix how that works. -sully
-pub fn bogus_get_impl_id_from_ty(tcx: ctxt,
-                                 trait_id: def_id, self_ty: t) -> def_id {
-    match tcx.trait_impls.find(&trait_id) {
-        Some(ty_to_impl) => {
-            for ty_to_impl.iter().advance |imp| {
-                let impl_ty = tcx.tcache.get_copy(&imp.did);
-                if impl_ty.ty == self_ty { return imp.did; }
-            }
-            // try autoderef!
-            match deref(tcx, self_ty, false) {
-                Some(some_ty) =>
-                  bogus_get_impl_id_from_ty(tcx, trait_id, some_ty.ty),
-                None => tcx.sess.bug("get_impl_id: no impl of trait for \
-                                      this type")
-            }
-        },
-        None => tcx.sess.bug("get_impl_id: trait isn't in trait_impls")
-    }
 }
 
 pub fn get_tydesc_ty(tcx: ctxt) -> Result<t, ~str> {
@@ -4464,7 +4482,7 @@ pub fn visitor_object_ty(tcx: ctxt) -> Result<(@TraitRef, t), ~str> {
         Err(s) => { return Err(s); }
     };
     let substs = substs {
-        self_r: None,
+        regions: ty::NonerasedRegions(opt_vec::Empty),
         self_ty: None,
         tps: ~[]
     };

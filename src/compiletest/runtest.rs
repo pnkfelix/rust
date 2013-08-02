@@ -22,7 +22,7 @@ use util::logv;
 
 use std::io;
 use std::os;
-use std::uint;
+use std::str;
 use std::vec;
 
 use extra::test::MetricMap;
@@ -282,7 +282,7 @@ fn run_debuginfo_test(config: &config, props: &TestProps, testfile: &Path) {
         // check if each line in props.check_lines appears in the
         // output (in order)
         let mut i = 0u;
-        for ProcRes.stdout.line_iter().advance |line| {
+        foreach line in ProcRes.stdout.line_iter() {
             if check_lines[i].trim() == line.trim() {
                 i += 1u;
             }
@@ -292,7 +292,7 @@ fn run_debuginfo_test(config: &config, props: &TestProps, testfile: &Path) {
             }
         }
         if i != num_check_lines {
-            fatal_ProcRes(fmt!("line not found in debugger output: %s"
+            fatal_ProcRes(fmt!("line not found in debugger output: %s",
                                check_lines[i]), &ProcRes);
         }
     }
@@ -312,7 +312,7 @@ fn check_error_patterns(props: &TestProps,
     let mut next_err_idx = 0u;
     let mut next_err_pat = &props.error_patterns[next_err_idx];
     let mut done = false;
-    for ProcRes.stderr.line_iter().advance |line| {
+    foreach line in ProcRes.stderr.line_iter() {
         if line.contains(*next_err_pat) {
             debug!("found error pattern %s", *next_err_pat);
             next_err_idx += 1u;
@@ -332,7 +332,7 @@ fn check_error_patterns(props: &TestProps,
         fatal_ProcRes(fmt!("error pattern '%s' not found!",
                            missing_patterns[0]), ProcRes);
     } else {
-        for missing_patterns.iter().advance |pattern| {
+        foreach pattern in missing_patterns.iter() {
             error(fmt!("error pattern '%s' not found!", *pattern));
         }
         fatal_ProcRes(~"multiple error patterns not found", ProcRes);
@@ -355,19 +355,43 @@ fn check_expected_errors(expected_errors: ~[errors::ExpectedError],
         fmt!("%s:%u:", testfile.to_str(), ee.line)
     }).collect::<~[~str]>();
 
+    fn to_lower( s : &str ) -> ~str {
+        let i = s.iter();
+        let c : ~[char] = i.transform( |c| {
+            if c.is_ascii() {
+                c.to_ascii().to_lower().to_char()
+            } else {
+                c
+            }
+        } ).collect();
+        str::from_chars( c )
+    }
+
+    #[cfg(target_os = "win32")]
+    fn prefix_matches( line : &str, prefix : &str ) -> bool {
+        to_lower(line).starts_with( to_lower(prefix) )
+    }
+
+    #[cfg(target_os = "linux")]
+    #[cfg(target_os = "macos")]
+    #[cfg(target_os = "freebsd")]
+    fn prefix_matches( line : &str, prefix : &str ) -> bool {
+        line.starts_with( prefix )
+    }
+
     // Scan and extract our error/warning messages,
     // which look like:
     //    filename:line1:col1: line2:col2: *error:* msg
     //    filename:line1:col1: line2:col2: *warning:* msg
     // where line1:col1: is the starting point, line2:col2:
     // is the ending point, and * represents ANSI color codes.
-    for ProcRes.stderr.line_iter().advance |line| {
+    foreach line in ProcRes.stderr.line_iter() {
         let mut was_expected = false;
-        for expected_errors.iter().enumerate().advance |(i, ee)| {
+        foreach (i, ee) in expected_errors.iter().enumerate() {
             if !found_flags[i] {
                 debug!("prefix=%s ee.kind=%s ee.msg=%s line=%s",
                        prefixes[i], ee.kind, ee.msg, line);
-                if (line.starts_with(prefixes[i]) &&
+                if (prefix_matches(line, prefixes[i]) &&
                     line.contains(ee.kind) &&
                     line.contains(ee.msg)) {
                     found_flags[i] = true;
@@ -389,7 +413,7 @@ fn check_expected_errors(expected_errors: ~[errors::ExpectedError],
         }
     }
 
-    for uint::range(0u, found_flags.len()) |i| {
+    foreach i in range(0u, found_flags.len()) {
         if !found_flags[i] {
             let ee = &expected_errors[i];
             fatal_ProcRes(fmt!("expected %s on line %u not found: %s",
@@ -534,7 +558,7 @@ fn compose_and_run_compiler(
     let extra_link_args = ~[~"-L",
                             aux_output_dir_name(config, testfile).to_str()];
 
-    for props.aux_builds.iter().advance |rel_ab| {
+    foreach rel_ab in props.aux_builds.iter() {
         let abs_ab = config.aux_base.push_rel(&Path(*rel_ab));
         let aux_args =
             make_compile_args(config, props, ~[~"--lib"] + extra_link_args,
@@ -681,7 +705,7 @@ fn make_out_name(config: &config, testfile: &Path, extension: &str) -> Path {
 }
 
 fn aux_output_dir_name(config: &config, testfile: &Path) -> Path {
-    output_base_name(config, testfile).with_filetype("libaux")
+    Path(output_base_name(config, testfile).to_str() + ".libaux")
 }
 
 fn output_testname(testfile: &Path) -> Path {
@@ -761,7 +785,7 @@ fn _arm_exec_compiled_test(config: &config, props: &TestProps,
     runargs.push(fmt!("%s", config.adb_test_dir));
     runargs.push(fmt!("%s", prog_short));
 
-    for args.args.iter().advance |tv| {
+    foreach tv in args.args.iter() {
         runargs.push(tv.to_owned());
     }
 
@@ -778,7 +802,7 @@ fn _arm_exec_compiled_test(config: &config, props: &TestProps,
                      Some(~""));
 
     let mut exitcode : int = 0;
-    for exitcode_out.iter().advance |c| {
+    foreach c in exitcode_out.iter() {
         if !c.is_digit() { break; }
         exitcode = exitcode * 10 + match c {
             '0' .. '9' => c as int - ('0' as int),
@@ -827,7 +851,7 @@ fn _arm_push_aux_shared_library(config: &config, testfile: &Path) {
     let tstr = aux_output_dir_name(config, testfile).to_str();
 
     let dirs = os::list_dir_path(&Path(tstr));
-    for dirs.iter().advance |file| {
+    foreach file in dirs.iter() {
 
         if (file.filetype() == Some(~".so")) {
 

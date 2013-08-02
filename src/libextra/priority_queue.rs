@@ -16,7 +16,7 @@ use std::clone::Clone;
 use std::unstable::intrinsics::{move_val_init, init};
 use std::util::{replace, swap};
 use std::vec;
-use std::iterator::FromIterator;
+use std::iterator::{FromIterator, Extendable};
 
 /// A priority queue implemented with a binary heap
 #[deriving(Clone)]
@@ -27,9 +27,6 @@ pub struct PriorityQueue<T> {
 impl<T:Ord> Container for PriorityQueue<T> {
     /// Returns the length of the queue
     fn len(&self) -> uint { self.data.len() }
-
-    /// Returns true if a queue contains no elements
-    fn is_empty(&self) -> bool { self.len() == 0 }
 }
 
 impl<T:Ord> Mutable for PriorityQueue<T> {
@@ -194,17 +191,24 @@ impl<'self, T> Iterator<&'self T> for PriorityQueueIterator<'self, T> {
 }
 
 impl<T: Ord, Iter: Iterator<T>> FromIterator<T, Iter> for PriorityQueue<T> {
-    pub fn from_iterator(iter: &mut Iter) -> PriorityQueue<T> {
-        let (lower, _) = iter.size_hint();
-
+    fn from_iterator(iter: &mut Iter) -> PriorityQueue<T> {
         let mut q = PriorityQueue::new();
-        q.reserve_at_least(lower);
-
-        for iter.advance |elem| {
-            q.push(elem);
-        }
+        q.extend(iter);
 
         q
+    }
+}
+
+impl<T: Ord, Iter: Iterator<T>> Extendable<T, Iter> for PriorityQueue<T> {
+    fn extend(&mut self, iter: &mut Iter) {
+        let (lower, _) = iter.size_hint();
+
+        let len = self.capacity();
+        self.reserve_at_least(len + lower);
+
+        foreach elem in *iter {
+            self.push(elem);
+        }
     }
 }
 
@@ -219,7 +223,7 @@ mod tests {
         let iterout = ~[9, 5, 3];
         let pq = PriorityQueue::from_vec(data);
         let mut i = 0;
-        for pq.iter().advance |el| {
+        foreach el in pq.iter() {
             assert_eq!(*el, iterout[i]);
             i += 1;
         }
@@ -365,7 +369,7 @@ mod tests {
 
         let mut q: PriorityQueue<uint> = xs.rev_iter().transform(|&x| x).collect();
 
-        for xs.iter().advance |&x| {
+        foreach &x in xs.iter() {
             assert_eq!(q.pop(), x);
         }
     }

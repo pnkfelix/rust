@@ -75,7 +75,7 @@ impl<'self> ToBase64 for &'self [u8] {
      *
      * fn main () {
      *     let str = [52,32].to_base64(standard);
-     *     println(fmt!("%s", str));
+     *     printfln!("%s", str);
      * }
      * ~~~
      */
@@ -164,7 +164,7 @@ impl<'self> ToBase64 for &'self str {
      *
      * fn main () {
      *     let str = "Hello, World".to_base64(standard);
-     *     println(fmt!("%s",str));
+     *     printfln!("%s", str);
      * }
      * ~~~
      *
@@ -194,9 +194,9 @@ impl<'self> FromBase64 for &'self [u8] {
      *
      * fn main () {
      *     let str = [52,32].to_base64(standard);
-     *     println(fmt!("%s", str));
+     *     printfln!("%s", str);
      *     let bytes = str.from_base64();
-     *     println(fmt!("%?",bytes));
+     *     printfln!("%?", bytes);
      * }
      * ~~~
      */
@@ -206,7 +206,7 @@ impl<'self> FromBase64 for &'self [u8] {
         let mut modulus = 0;
 
         let mut it = self.iter();
-        for it.advance |&byte| {
+        foreach &byte in it {
             let ch = byte as char;
             let val = byte as u32;
 
@@ -271,11 +271,11 @@ impl<'self> FromBase64 for &'self str {
      *
      * fn main () {
      *     let hello_str = "Hello, World".to_base64(standard);
-     *     println(fmt!("%s",hello_str));
+     *     printfln!("%s", hello_str);
      *     let bytes = hello_str.from_base64();
-     *     println(fmt!("%?",bytes));
+     *     printfln!("%?", bytes);
      *     let result_str = str::from_bytes(bytes);
-     *     println(fmt!("%s",result_str));
+     *     printfln!("%s", result_str);
      * }
      * ~~~
      */
@@ -358,9 +358,9 @@ mod test {
         use std::rand::{task_rng, random, RngUtil};
         use std::vec;
 
-        for 1000.times {
+        do 1000.times {
             let v: ~[u8] = do vec::build |push| {
-                for task_rng().gen_uint_range(1, 100).times {
+                do task_rng().gen_uint_range(1, 100).times {
                     push(random());
                 }
             };

@@ -2,7 +2,7 @@ use std::cast::transmute;
 use std::from_str::FromStr;
 use std::libc::{FILE, STDOUT_FILENO, c_int, fdopen, fputc, fputs, fwrite, size_t};
 use std::os;
-use std::uint::{min, range};
+use std::uint::min;
 use std::vec::bytes::copy_memory;
 use std::vec;
 
@@ -58,7 +58,7 @@ static HOMO_SAPIENS: [AminoAcid, ..4] = [
 fn sum_and_scale(a: &'static [AminoAcid]) -> ~[AminoAcid] {
     let mut result = ~[];
     let mut p = 0f32;
-    for a.iter().advance |a_i| {
+    foreach a_i in a.iter() {
         let mut a_i = *a_i;
         p += a_i.p;
         a_i.p = p * LOOKUP_SCALE;
@@ -134,7 +134,7 @@ impl RandomFasta {
     fn make_lookup(a: &[AminoAcid]) -> [AminoAcid, ..LOOKUP_SIZE] {
         let mut lookup = [ NULL_AMINO_ACID, ..LOOKUP_SIZE ];
         let mut j = 0;
-        for lookup.mut_iter().enumerate().advance |(i, slot)| {
+        foreach (i, slot) in lookup.mut_iter().enumerate() {
             while a[j].p < (i as f32) {
                 j += 1;
             }
@@ -150,7 +150,7 @@ impl RandomFasta {
 
     fn nextc(&mut self) -> u8 {
         let r = self.rng(1.0);
-        for self.lookup.iter().advance |a| {
+        foreach a in self.lookup.iter() {
             if a.p >= r {
                 return a.c;
             }
@@ -164,8 +164,8 @@ impl RandomFasta {
             let chars_left = n % LINE_LEN;
             let mut buf = [0, ..LINE_LEN + 1];
 
-            for lines.times {
-                for range(0, LINE_LEN) |i| {
+            do lines.times {
+                foreach i in range(0u, LINE_LEN) {
                     buf[i] = self.nextc();
                 }
                 buf[LINE_LEN] = '\n' as u8;
@@ -174,7 +174,7 @@ impl RandomFasta {
                        1,
                        self.stdout);
             }
-            for range(0, chars_left) |i| {
+            foreach i in range(0u, chars_left) {
                 buf[i] = self.nextc();
             }
             fwrite(transmute(&buf[0]), chars_left as size_t, 1, self.stdout);

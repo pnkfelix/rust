@@ -115,7 +115,7 @@ return type, such as `while` loops or assignments (`a = b`).
 
 
 use back::abi;
-use lib::llvm::{ValueRef, llvm};
+use lib::llvm::{ValueRef, llvm, SetLinkage, ExternalLinkage};
 use lib;
 use metadata::csearch;
 use middle::trans::_match;
@@ -132,7 +132,6 @@ use middle::trans::consts;
 use middle::trans::controlflow;
 use middle::trans::datum::*;
 use middle::trans::debuginfo;
-use middle::trans::inline;
 use middle::trans::machine;
 use middle::trans::meth;
 use middle::trans::tvec;
@@ -147,7 +146,6 @@ use middle::trans::machine::llsize_of;
 
 use middle::trans::type_::Type;
 
-use std::cast::transmute;
 use std::hashmap::HashMap;
 use std::vec;
 use syntax::print::pprust::{expr_to_str};
@@ -989,24 +987,14 @@ fn trans_lvalue_unadjusted(bcx: @mut Block, expr: @ast::expr) -> DatumBlock {
         //! Translates a reference to a path.
 
         let _icx = push_ctxt("trans_def_lvalue");
-        let ccx = bcx.ccx();
         match def {
             ast::def_static(did, _) => {
                 let const_ty = expr_ty(bcx, ref_expr);
 
-                fn get_did(ccx: @mut CrateContext, did: ast::def_id)
-                    -> ast::def_id {
-                    if did.crate != ast::local_crate {
-                        inline::maybe_instantiate_inline(ccx, did)
-                    } else {
-                        did
-                    }
-                }
-
                 fn get_val(bcx: @mut Block, did: ast::def_id, const_ty: ty::t)
                            -> ValueRef {
                     // For external constants, we don't inline.
-                    if did.crate == ast::local_crate {
+                    if did.crate == ast::LOCAL_CRATE {
                         // The LLVM global has the type of its initializer,
                         // which may not be equal to the enum's type for
                         // non-C-like enums.
@@ -1029,8 +1017,12 @@ fn trans_lvalue_unadjusted(bcx: @mut Block, expr: @ast::expr) -> DatumBlock {
                             let symbol = csearch::get_symbol(
                                 bcx.ccx().sess.cstore,
                                 did);
-                            let llval = llvm::LLVMAddGlobal( bcx.ccx().llmod, llty.to_ref(),
-                                transmute::<&u8,*i8>(&symbol[0]));
+                            let llval = do symbol.as_c_str |buf| {
+                                llvm::LLVMAddGlobal(bcx.ccx().llmod,
+                                                    llty.to_ref(),
+                                                    buf)
+                            };
+                            SetLinkage(llval, ExternalLinkage);
                             let extern_const_values = &mut bcx.ccx().extern_const_values;
                             extern_const_values.insert(did, llval);
                             llval
@@ -1038,7 +1030,6 @@ fn trans_lvalue_unadjusted(bcx: @mut Block, expr: @ast::expr) -> DatumBlock {
                     }
                 }
 
-                let did = get_did(ccx, did);
                 let val = get_val(bcx, did, const_ty);
                 DatumBlock {
                     bcx: bcx,
@@ -1110,8 +1101,8 @@ pub fn trans_local_var(bcx: @mut Block, def: ast::def) -> Datum {
     };
 
     fn take_local(bcx: @mut Block,
-                  table: &HashMap<ast::node_id, ValueRef>,
-                  nid: ast::node_id) -> Datum {
+                  table: &HashMap<ast::NodeId, ValueRef>,
+                  nid: ast::NodeId) -> Datum {
         let v = match table.find(&nid) {
             Some(&v) => v,
             None => {
@@ -1135,8 +1126,8 @@ pub fn trans_local_var(bcx: @mut Block, def: ast::def) -> Datum {
 // is and `node_id_opt` is none, this function fails).
 pub fn with_field_tys<R>(tcx: ty::ctxt,
                          ty: ty::t,
-                         node_id_opt: Option<ast::node_id>,
-                         op: &fn(int, (&[ty::field])) -> R) -> R {
+                         node_id_opt: Option<ast::NodeId>,
+                         op: &fn(uint, (&[ty::field])) -> R) -> R {
     match ty::get(ty).sty {
         ty::ty_struct(did, ref substs) => {
             op(0, struct_fields(tcx, did, substs))
@@ -1180,7 +1171,7 @@ fn trans_rec_or_struct(bcx: @mut Block,
                        fields: &[ast::Field],
                        base: Option<@ast::expr>,
                        expr_span: codemap::span,
-                       id: ast::node_id,
+                       id: ast::NodeId,
                        dest: Dest) -> @mut Block
 {
     let _icx = push_ctxt("trans_rec");
@@ -1207,7 +1198,7 @@ fn trans_rec_or_struct(bcx: @mut Block,
         let optbase = match base {
             Some(base_expr) => {
                 let mut leftovers = ~[];
-                for need_base.iter().enumerate().advance |(i, b)| {
+                foreach (i, b) in need_base.iter().enumerate() {
                     if *b {
                         leftovers.push((i, field_tys[i].mt.ty))
                     }
@@ -1253,7 +1244,7 @@ struct StructBaseInfo {
  * - `optbase` contains information on the base struct (if any) from
  * which remaining fields are copied; see comments on `StructBaseInfo`.
  */
-fn trans_adt(bcx: @mut Block, repr: &adt::Repr, discr: int,
+fn trans_adt(bcx: @mut Block, repr: &adt::Repr, discr: uint,
              fields: &[(uint, @ast::expr)],
              optbase: Option<StructBaseInfo>,
              dest: Dest) -> @mut Block {
@@ -1261,10 +1252,10 @@ fn trans_adt(bcx: @mut Block, repr: &adt::Repr, discr: int,
     let mut bcx = bcx;
     let addr = match dest {
         Ignore => {
-            for fields.iter().advance |&(_i, e)| {
+            foreach &(_i, e) in fields.iter() {
                 bcx = trans_into(bcx, e, Ignore);
             }
-            for optbase.iter().advance |sbi| {
+            foreach sbi in optbase.iter() {
                 // FIXME #7261: this moves entire base, not just certain fields
                 bcx = trans_into(bcx, sbi.expr, Ignore);
             }
@@ -1274,18 +1265,18 @@ fn trans_adt(bcx: @mut Block, repr: &adt::Repr, discr: int,
     };
     let mut temp_cleanups = ~[];
     adt::trans_start_init(bcx, repr, addr, discr);
-    for fields.iter().advance |&(i, e)| {
+    foreach &(i, e) in fields.iter() {
         let dest = adt::trans_field_ptr(bcx, repr, addr, discr, i);
         let e_ty = expr_ty(bcx, e);
         bcx = trans_into(bcx, e, SaveIn(dest));
         add_clean_temp_mem(bcx, dest, e_ty);
         temp_cleanups.push(dest);
     }
-    for optbase.iter().advance |base| {
+    foreach base in optbase.iter() {
         // FIXME #6573: is it sound to use the destination's repr on the base?
         // And, would it ever be reasonable to be here with discr != 0?
         let base_datum = unpack_datum!(bcx, trans_to_datum(bcx, base.expr));
-        for base.fields.iter().advance |&(i, t)| {
+        foreach &(i, t) in base.fields.iter() {
             let datum = do base_datum.get_element(bcx, t, ZeroMem) |srcval| {
                 adt::trans_field_ptr(bcx, repr, srcval, discr, i)
             };
@@ -1294,7 +1285,7 @@ fn trans_adt(bcx: @mut Block, repr: &adt::Repr, discr: int,
         }
     }
 
-    for temp_cleanups.iter().advance |cleanup| {
+    foreach cleanup in temp_cleanups.iter() {
         revoke_clean(bcx, *cleanup);
     }
     return bcx;
@@ -1582,7 +1573,7 @@ fn trans_binary(bcx: @mut Block,
 
 fn trans_overloaded_op(bcx: @mut Block,
                        expr: &ast::expr,
-                       callee_id: ast::node_id,
+                       callee_id: ast::NodeId,
                        rcvr: @ast::expr,
                        args: ~[@ast::expr],
                        ret_ty: ty::t,
@@ -1658,7 +1649,7 @@ pub fn cast_type_kind(t: ty::t) -> cast_kind {
 }
 
 fn trans_imm_cast(bcx: @mut Block, expr: @ast::expr,
-                  id: ast::node_id) -> DatumBlock {
+                  id: ast::NodeId) -> DatumBlock {
     let _icx = push_ctxt("trans_cast");
     let ccx = bcx.ccx();
 
@@ -1721,7 +1712,7 @@ fn trans_imm_cast(bcx: @mut Block, expr: @ast::expr,
 
 fn trans_assign_op(bcx: @mut Block,
                    expr: @ast::expr,
-                   callee_id: ast::node_id,
+                   callee_id: ast::NodeId,
                    op: ast::binop,
                    dst: @ast::expr,
                    src: @ast::expr) -> @mut Block

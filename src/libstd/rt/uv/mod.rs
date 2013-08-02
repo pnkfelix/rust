@@ -51,7 +51,7 @@ use rt::io::net::ip::IpAddr;
 
 use rt::io::IoError;
 
-#[cfg(test)] use unstable::run_in_bare_thread;
+//#[cfg(test)] use unstable::run_in_bare_thread;
 
 pub use self::file::FsRequest;
 pub use self::net::{StreamWatcher, TcpWatcher, UdpWatcher};
@@ -282,14 +282,14 @@ pub fn uv_error_to_io_error(uverr: UvError) -> IoError {
 }
 
 /// Given a uv handle, convert a callback status to a UvError
-// XXX: Follow the pattern below by parameterizing over T: Watcher, not T
-pub fn status_to_maybe_uv_error<T>(handle: *T, status: c_int) -> Option<UvError> {
+pub fn status_to_maybe_uv_error<T, U: Watcher + NativeHandle<*T>>(handle: U,
+                                                                 status: c_int) -> Option<UvError> {
     if status != -1 {
         None
     } else {
         unsafe {
-            rtdebug!("handle: %x", handle as uint);
-            let loop_ = uvll::get_loop_for_uv_handle(handle);
+            rtdebug!("handle: %x", handle.native_handle() as uint);
+            let loop_ = uvll::get_loop_for_uv_handle(handle.native_handle());
             rtdebug!("loop: %x", loop_ as uint);
             let err = uvll::last_error(loop_);
             Some(UvError(err))
@@ -333,7 +333,7 @@ pub fn vec_from_uv_buf(buf: Buf) -> Option<~[u8]> {
         return None;
     }
 }
-
+/*
 #[test]
 fn test_slice_to_uv_buf() {
     let slice = [0, .. 20];
@@ -360,3 +360,4 @@ fn loop_smoke_test() {
         loop_.close();
     }
 }
+*/

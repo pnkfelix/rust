@@ -13,11 +13,11 @@
 use libc;
 use libc::{c_void, uintptr_t, size_t};
 use ops::Drop;
-use repr::BoxRepr;
 use rt;
 use rt::OldTaskContext;
 use rt::local::Local;
 use rt::task::Task;
+use unstable::raw;
 
 type MemoryRegion = c_void;
 
@@ -26,7 +26,7 @@ struct Env { priv opaque: () }
 struct BoxedRegion {
     env: *Env,
     backing_region: *MemoryRegion,
-    live_allocs: *BoxRepr
+    live_allocs: *raw::Box<()>,
 }
 
 pub type OpaqueBox = c_void;
@@ -103,7 +103,7 @@ pub unsafe fn local_free(ptr: *libc::c_char) {
     }
 }
 
-pub fn live_allocs() -> *BoxRepr {
+pub fn live_allocs() -> *raw::Box<()> {
     let region = match rt::context() {
         OldTaskContext => {
             unsafe { rust_current_boxed_region() }
@@ -134,4 +134,23 @@ extern {
                                  size: size_t) -> *OpaqueBox;
     fn rust_boxed_region_free(region: *BoxedRegion, box: *OpaqueBox);
     fn rust_current_boxed_region() -> *BoxedRegion;
+}
+
+#[cfg(test)]
+mod bench {
+    use extra::test::BenchHarness;
+
+    #[bench]
+    fn alloc_managed_small(bh: &mut BenchHarness) {
+        do bh.iter {
+            @10;
+        }
+    }
+
+    #[bench]
+    fn alloc_managed_big(bh: &mut BenchHarness) {
+        do bh.iter {
+            @[10, ..1000];
+        }
+    }
 }

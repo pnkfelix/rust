@@ -212,7 +212,7 @@ fn invalid_node() -> LiveNode { LiveNode(uint::max_value) }
 struct CaptureInfo {
     ln: LiveNode,
     is_move: bool,
-    var_nid: node_id
+    var_nid: NodeId
 }
 
 enum LocalKind {
@@ -222,14 +222,14 @@ enum LocalKind {
 }
 
 struct LocalInfo {
-    id: node_id,
+    id: NodeId,
     ident: ident,
     is_mutbl: bool,
     kind: LocalKind,
 }
 
 enum VarKind {
-    Arg(node_id, ident),
+    Arg(NodeId, ident),
     Local(LocalInfo),
     ImplicitRet
 }
@@ -241,9 +241,9 @@ struct IrMaps {
 
     num_live_nodes: uint,
     num_vars: uint,
-    live_node_map: HashMap<node_id, LiveNode>,
-    variable_map: HashMap<node_id, Variable>,
-    capture_info_map: HashMap<node_id, @~[CaptureInfo]>,
+    live_node_map: HashMap<NodeId, LiveNode>,
+    variable_map: HashMap<NodeId, Variable>,
+    capture_info_map: HashMap<NodeId, @~[CaptureInfo]>,
     var_kinds: ~[VarKind],
     lnks: ~[LiveNodeKind],
 }
@@ -279,7 +279,7 @@ impl IrMaps {
     }
 
     pub fn add_live_node_for_node(&mut self,
-                                  node_id: node_id,
+                                  node_id: NodeId,
                                   lnk: LiveNodeKind) {
         let ln = self.add_live_node(lnk);
         self.live_node_map.insert(node_id, ln);
@@ -304,7 +304,7 @@ impl IrMaps {
         v
     }
 
-    pub fn variable(&mut self, node_id: node_id, span: span) -> Variable {
+    pub fn variable(&mut self, node_id: NodeId, span: span) -> Variable {
         match self.variable_map.find(&node_id) {
           Some(&var) => var,
           None => {
@@ -323,7 +323,7 @@ impl IrMaps {
         }
     }
 
-    pub fn set_captures(&mut self, node_id: node_id, cs: ~[CaptureInfo]) {
+    pub fn set_captures(&mut self, node_id: NodeId, cs: ~[CaptureInfo]) {
         self.capture_info_map.insert(node_id, @cs);
     }
 
@@ -345,7 +345,7 @@ fn visit_fn(fk: &visit::fn_kind,
             decl: &fn_decl,
             body: &Block,
             sp: span,
-            id: node_id,
+            id: NodeId,
             (this, v): (@mut IrMaps,
                         vt<@mut IrMaps>)) {
     debug!("visit_fn: id=%d", id);
@@ -360,7 +360,7 @@ fn visit_fn(fk: &visit::fn_kind,
         debug!("creating fn_maps: %x", transmute(&*fn_maps));
     }
 
-    for decl.inputs.iter().advance |arg| {
+    foreach arg in decl.inputs.iter() {
         do pat_util::pat_bindings(this.tcx.def_map, arg.pat)
                 |_bm, arg_id, _x, path| {
             debug!("adding argument %d", arg_id);
@@ -436,7 +436,7 @@ fn visit_local(local: @Local, (this, vt): (@mut IrMaps, vt<@mut IrMaps>)) {
 
 fn visit_arm(arm: &arm, (this, vt): (@mut IrMaps, vt<@mut IrMaps>)) {
     let def_map = this.tcx.def_map;
-    for arm.pats.iter().advance |pat| {
+    foreach pat in arm.pats.iter() {
         do pat_util::pat_bindings(def_map, *pat) |bm, p_id, sp, path| {
             debug!("adding local variable %d from match with bm %?",
                    p_id, bm);
@@ -475,7 +475,7 @@ fn visit_expr(expr: @expr, (this, vt): (@mut IrMaps, vt<@mut IrMaps>)) {
         // construction site.
         let cvs = this.capture_map.get(&expr.id);
         let mut call_caps = ~[];
-        for cvs.iter().advance |cv| {
+        foreach cv in cvs.iter() {
             match moves::moved_variable_node_id_from_def(cv.def) {
               Some(rv) => {
                 let cv_ln = this.add_live_node(FreeVarNode(cv.span));
@@ -503,6 +503,7 @@ fn visit_expr(expr: @expr, (this, vt): (@mut IrMaps, vt<@mut IrMaps>)) {
         this.add_live_node_for_node(expr.id, ExprNode(expr.span));
         visit::visit_expr(expr, (this, vt));
       }
+      expr_for_loop(*) => fail!("non-desugared expr_for_loop"),
       expr_binary(_, op, _, _) if ast_util::lazy_binop(op) => {
         this.add_live_node_for_node(expr.id, ExprNode(expr.span));
         visit::visit_expr(expr, (this, vt));
@@ -553,7 +554,7 @@ static ACC_READ: uint = 1u;
 static ACC_WRITE: uint = 2u;
 static ACC_USE: uint = 4u;
 
-type LiveNodeMap = @mut HashMap<node_id, LiveNode>;
+type LiveNodeMap = @mut HashMap<NodeId, LiveNode>;
 
 struct Liveness {
     tcx: ty::ctxt,
@@ -563,7 +564,7 @@ struct Liveness {
     users: @mut ~[Users],
     // The list of node IDs for the nested loop scopes
     // we're in.
-    loop_scope: @mut ~[node_id],
+    loop_scope: @mut ~[NodeId],
     // mappings from loop node ID to LiveNode
     // ("break" label should map to loop node ID,
     // it probably doesn't now)
@@ -586,7 +587,7 @@ fn Liveness(ir: @mut IrMaps, specials: Specials) -> Liveness {
 }
 
 impl Liveness {
-    pub fn live_node(&self, node_id: node_id, span: span) -> LiveNode {
+    pub fn live_node(&self, node_id: NodeId, span: span) -> LiveNode {
         let ir: &mut IrMaps = self.ir;
         match ir.live_node_map.find(&node_id) {
           Some(&ln) => ln,
@@ -614,11 +615,11 @@ impl Liveness {
         }
     }
 
-    pub fn variable(&self, node_id: node_id, span: span) -> Variable {
+    pub fn variable(&self, node_id: NodeId, span: span) -> Variable {
         self.ir.variable(node_id, span)
     }
 
-    pub fn variable_from_def_map(&self, node_id: node_id, span: span)
+    pub fn variable_from_def_map(&self, node_id: NodeId, span: span)
                                  -> Option<Variable> {
         match self.tcx.def_map.find(&node_id) {
           Some(&def) => {
@@ -635,7 +636,7 @@ impl Liveness {
 
     pub fn pat_bindings(&self,
                         pat: @pat,
-                        f: &fn(LiveNode, Variable, span, node_id)) {
+                        f: &fn(LiveNode, Variable, span, NodeId)) {
         let def_map = self.tcx.def_map;
         do pat_util::pat_bindings(def_map, pat) |_bm, p_id, sp, _n| {
             let ln = self.live_node(p_id, sp);
@@ -646,7 +647,7 @@ impl Liveness {
 
     pub fn arm_pats_bindings(&self,
                              pats: &[@pat],
-                             f: &fn(LiveNode, Variable, span, node_id)) {
+                             f: &fn(LiveNode, Variable, span, NodeId)) {
         // only consider the first pattern; any later patterns must have
         // the same bindings, and we also consider the first pattern to be
         // the "authoratative" set of ids
@@ -709,7 +710,7 @@ impl Liveness {
 
     pub fn indices(&self, ln: LiveNode, op: &fn(uint)) {
         let node_base_idx = self.idx(ln, Variable(0));
-        for uint::range(0, self.ir.num_vars) |var_idx| {
+        foreach var_idx in range(0u, self.ir.num_vars) {
             op(node_base_idx + var_idx)
         }
     }
@@ -720,7 +721,7 @@ impl Liveness {
                     op: &fn(uint, uint)) {
         let node_base_idx = self.idx(ln, Variable(0u));
         let succ_base_idx = self.idx(succ_ln, Variable(0u));
-        for uint::range(0u, self.ir.num_vars) |var_idx| {
+        foreach var_idx in range(0u, self.ir.num_vars) {
             op(node_base_idx + var_idx, succ_base_idx + var_idx);
         }
     }
@@ -730,7 +731,7 @@ impl Liveness {
                       ln: LiveNode,
                       test: &fn(uint) -> LiveNode) {
         let node_base_idx = self.idx(ln, Variable(0));
-        for uint::range(0, self.ir.num_vars) |var_idx| {
+        foreach var_idx in range(0u, self.ir.num_vars) {
             let idx = node_base_idx + var_idx;
             if test(idx).is_valid() {
                 wr.write_str(" ");
@@ -741,9 +742,9 @@ impl Liveness {
 
     pub fn find_loop_scope(&self,
                            opt_label: Option<ident>,
-                           id: node_id,
+                           id: NodeId,
                            sp: span)
-                           -> node_id {
+                           -> NodeId {
         match opt_label {
             Some(_) => // Refers to a labeled loop. Use the results of resolve
                       // to find with one
@@ -765,7 +766,7 @@ impl Liveness {
         }
     }
 
-    pub fn last_loop_scope(&self) -> node_id {
+    pub fn last_loop_scope(&self) -> NodeId {
         let loop_scope = &mut *self.loop_scope;
         *loop_scope.last()
     }
@@ -899,7 +900,7 @@ impl Liveness {
         // hack to skip the loop unless debug! is enabled:
         debug!("^^ liveness computation results for body %d (entry=%s)",
                {
-                   for uint::range(0u, self.ir.num_live_nodes) |ln_idx| {
+                   foreach ln_idx in range(0u, self.ir.num_live_nodes) {
                        debug!("%s", self.ln_str(LiveNode(ln_idx)));
                    }
                    body.id
@@ -1057,6 +1058,8 @@ impl Liveness {
             self.propagate_through_loop(expr, Some(cond), blk, succ)
           }
 
+          expr_for_loop(*) => fail!("non-desugared expr_for_loop"),
+
           // Note that labels have been resolved, so we don't need to look
           // at the label ident
           expr_loop(ref blk, _) => {
@@ -1081,7 +1084,7 @@ impl Liveness {
             let ln = self.live_node(expr.id, expr.span);
             self.init_empty(ln, succ);
             let mut first_merge = true;
-            for arms.iter().advance |arm| {
+            foreach arm in arms.iter() {
                 let body_succ =
                     self.propagate_through_block(&arm.body, succ);
                 let guard_succ =
@@ -1388,7 +1391,7 @@ impl Liveness {
     }
 
     pub fn with_loop_nodes<R>(&self,
-                              loop_node_id: node_id,
+                              loop_node_id: NodeId,
                               break_ln: LiveNode,
                               cont_ln: LiveNode,
                               f: &fn() -> R)
@@ -1458,12 +1461,12 @@ fn check_expr(expr: @expr, (this, vt): (@Liveness, vt<@Liveness>)) {
       }
 
       expr_inline_asm(ref ia) => {
-        for ia.inputs.iter().advance |&(_, in)| {
-          (vt.visit_expr)(in, (this, vt));
+        foreach &(_, input) in ia.inputs.iter() {
+          (vt.visit_expr)(input, (this, vt));
         }
 
         // Output operands must be lvalues
-        for ia.outputs.iter().advance |&(_, out)| {
+        foreach &(_, out) in ia.outputs.iter() {
           match out.node {
             expr_addr_of(_, inner) => {
               this.check_lvalue(inner, vt);
@@ -1487,11 +1490,12 @@ fn check_expr(expr: @expr, (this, vt): (@Liveness, vt<@Liveness>)) {
       expr_paren(*) | expr_fn_block(*) | expr_path(*) | expr_self(*) => {
         visit::visit_expr(expr, (this, vt));
       }
+      expr_for_loop(*) => fail!("non-desugared expr_for_loop")
     }
 }
 
 fn check_fn(_fk: &visit::fn_kind, _decl: &fn_decl,
-            _body: &Block, _sp: span, _id: node_id,
+            _body: &Block, _sp: span, _id: NodeId,
             (_self, _v): (@Liveness, vt<@Liveness>)) {
     // do not check contents of nested fns
 }
@@ -1505,7 +1509,7 @@ enum ReadKind {
 
 impl Liveness {
     pub fn check_ret(&self,
-                     id: node_id,
+                     id: NodeId,
                      sp: span,
                      _fk: &visit::fn_kind,
                      entry_ln: LiveNode) {
@@ -1599,7 +1603,7 @@ impl Liveness {
     }
 
     pub fn warn_about_unused_args(&self, decl: &fn_decl, entry_ln: LiveNode) {
-        for decl.inputs.iter().advance |arg| {
+        foreach arg in decl.inputs.iter() {
             do pat_util::pat_bindings(self.tcx.def_map, arg.pat)
                     |_bm, p_id, sp, _n| {
                 let var = self.variable(p_id, sp);
@@ -1618,13 +1622,13 @@ impl Liveness {
 
     pub fn warn_about_unused(&self,
                              sp: span,
-                             id: node_id,
+                             id: NodeId,
                              ln: LiveNode,
                              var: Variable)
                              -> bool {
         if !self.used_on_entry(ln, var) {
             let r = self.should_warn(var);
-            for r.iter().advance |name| {
+            foreach name in r.iter() {
 
                 // annoying: for parameters in funcs like `fn(x: int)
                 // {ret}`, there is only one node, so asking about
@@ -1652,12 +1656,12 @@ impl Liveness {
 
     pub fn warn_about_dead_assign(&self,
                                   sp: span,
-                                  id: node_id,
+                                  id: NodeId,
                                   ln: LiveNode,
                                   var: Variable) {
         if self.live_on_exit(ln, var).is_none() {
             let r = self.should_warn(var);
-            for r.iter().advance |name| {
+            foreach name in r.iter() {
                 self.tcx.sess.add_lint(dead_assignment, id, sp,
                     fmt!("value assigned to `%s` is never read", *name));
             }

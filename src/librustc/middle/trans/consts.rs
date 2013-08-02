@@ -31,7 +31,6 @@ use util::ppaux::{Repr, ty_to_str};
 use middle::trans::type_::Type;
 
 use std::libc::c_uint;
-use std::str;
 use syntax::{ast, ast_util, ast_map};
 
 pub fn const_lit(cx: &mut CrateContext, e: &ast::expr, lit: ast::lit)
@@ -189,7 +188,7 @@ pub fn const_expr(cx: @mut CrateContext, e: @ast::expr) -> ValueRef {
         Some(@ty::AutoDerefRef(ref adj)) => {
             let mut ty = ety;
             let mut maybe_ptr = None;
-            for adj.autoderefs.times {
+            do adj.autoderefs.times {
                 let (dv, dt) = const_deref(cx, llconst, ty, false);
                 maybe_ptr = Some(llconst);
                 llconst = dv;
@@ -212,11 +211,16 @@ pub fn const_expr(cx: @mut CrateContext, e: @ast::expr) -> ValueRef {
                         }
                         ty::AutoBorrowVec(ty::re_static, m) => {
                             assert!(m != ast::m_mutbl);
-                            let size = machine::llsize_of(cx,
-                                                          val_ty(llconst));
                             assert_eq!(abi::slice_elt_base, 0);
                             assert_eq!(abi::slice_elt_len, 1);
-                            llconst = C_struct([llptr, size]);
+
+                            match ty::get(ty).sty {
+                                ty::ty_evec(_, ty::vstore_fixed(*)) => {
+                                    let size = machine::llsize_of(cx, val_ty(llconst));
+                                    llconst = C_struct([llptr, size]);
+                                }
+                                _ => {}
+                            }
                         }
                         _ => {
                             cx.sess.span_bug(e.span,
@@ -447,7 +451,7 @@ fn const_expr_unadjusted(cx: @mut CrateContext, e: &ast::expr) -> ValueRef {
               (expr::cast_enum, expr::cast_float)  => {
                 let repr = adt::represent_type(cx, basety);
                 let discr = adt::const_get_discrim(cx, repr, v);
-                let iv = C_int(cx, discr);
+                let iv = C_uint(cx, discr);
                 let ety_cast = expr::cast_type_kind(ety);
                 match ety_cast {
                     expr::cast_integral => {
@@ -481,20 +485,30 @@ fn const_expr_unadjusted(cx: @mut CrateContext, e: &ast::expr) -> ValueRef {
               let vals = es.map(|&e| const_expr(cx, e));
               adt::trans_const(cx, repr, 0, vals)
           }
-          ast::expr_struct(_, ref fs, None) => {
+          ast::expr_struct(_, ref fs, ref base_opt) => {
               let ety = ty::expr_ty(cx.tcx, e);
               let repr = adt::represent_type(cx, ety);
               let tcx = cx.tcx;
+
+              let base_val = match *base_opt {
+                Some(base) => Some(const_expr(cx, base)),
+                None => None
+              };
+
               do expr::with_field_tys(tcx, ety, Some(e.id))
                   |discr, field_tys| {
-                  let cs = field_tys.map(|field_ty| {
+                  let cs: ~[ValueRef] = field_tys.iter().enumerate()
+                      .transform(|(ix, &field_ty)| {
                       match fs.iter().find_(|f| field_ty.ident == f.ident) {
                           Some(f) => const_expr(cx, (*f).expr),
                           None => {
-                              cx.tcx.sess.span_bug(e.span, "missing struct field");
+                              match base_val {
+                                Some(bv) => adt::const_get_field(cx, repr, bv, discr, ix),
+                                None => cx.tcx.sess.span_bug(e.span, "missing struct field")
+                              }
                           }
                       }
-                  });
+                  }).collect();
                   adt::trans_const(cx, repr, discr, cs)
               }
           }
@@ -513,7 +527,7 @@ fn const_expr_unadjusted(cx: @mut CrateContext, e: &ast::expr) -> ValueRef {
               ast::expr_vec(ref es, ast::m_imm) => {
                 let (cv, sz, llunitty) = const_vec(cx, e, *es);
                 let llty = val_ty(cv);
-                let gv = do str::as_c_str("const") |name| {
+                let gv = do "const".as_c_str |name| {
                     llvm::LLVMAddGlobal(cx.llmod, llty.to_ref(), name)
                 };
                 llvm::LLVMSetInitializer(gv, cv);
@@ -587,7 +601,7 @@ fn const_expr_unadjusted(cx: @mut CrateContext, e: &ast::expr) -> ValueRef {
     }
 }
 
-pub fn trans_const(ccx: @mut CrateContext, m: ast::mutability, id: ast::node_id) {
+pub fn trans_const(ccx: @mut CrateContext, m: ast::mutability, id: ast::NodeId) {
     unsafe {
         let _icx = push_ctxt("trans_const");
         let g = base::get_item_val(ccx, id);

@@ -632,7 +632,7 @@ fn mk_tt(cx: @ExtCtxt, sp: span, tt: &ast::token_tree)
 fn mk_tts(cx: @ExtCtxt, sp: span, tts: &[ast::token_tree])
     -> ~[@ast::stmt] {
     let mut ss = ~[];
-    for tts.iter().advance |tt| {
+    foreach tt in tts.iter() {
         ss.push_all_move(mk_tt(cx, sp, tt));
     }
     ss
@@ -683,7 +683,7 @@ fn expand_tts(cx: @ExtCtxt,
     // the site the string literal occurred, which was in a source file
     // _other_ than the one the user has control over. For example, an
     // error in a quote from the protocol compiler, invoked in user code
-    // using proto! for example, will be attributed to the pipec.rs file in
+    // using macro_rules! for example, will be attributed to the macro_rules.rs file in
     // libsyntax, which the user might not even have source to (unless they
     // happen to have a compiler on hand). Over all, the phase distinction
     // just makes quotes "hard to attribute". Possibly this could be fixed

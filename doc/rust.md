@@ -880,11 +880,11 @@ the function name.
 
 ~~~~ {.xfail-test}
 fn iter<T>(seq: &[T], f: &fn(T)) {
-    for seq.iter().advance |elt| { f(elt); }
+    foreach elt in seq.iter() { f(elt); }
 }
 fn map<T, U>(seq: &[T], f: &fn(T) -> U) -> ~[U] {
     let mut acc = ~[];
-    for seq.iter().advance |elt| { acc.push(f(elt)); }
+    foreach elt in seq.iter() { acc.push(f(elt)); }
     acc
 }
 ~~~~
@@ -1494,7 +1494,7 @@ mod m1 {
 This example shows how one can use `allow` and `warn` to toggle
 a particular check on and off.
 
-~~~
+~~~{.xfail-test}
 #[warn(missing_doc)]
 mod m2{
     #[allow(missing_doc)]
@@ -2378,7 +2378,7 @@ An example of a for loop over the contents of a vector:
 
 let v: &[foo] = &[a, b, c];
 
-for v.iter().advance |e| {
+foreach e in v.iter() {
     bar(*e);
 }
 ~~~~
@@ -2386,9 +2386,8 @@ for v.iter().advance |e| {
 An example of a for loop over a series of integers:
 
 ~~~~
-# use std::uint;
 # fn bar(b:uint) { }
-for uint::range(0, 256) |i| {
+foreach i in range(0u, 256) {
     bar(i);
 }
 ~~~~

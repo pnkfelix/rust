@@ -21,7 +21,6 @@ use parse::token::{Token, EOF, to_str, nonterminal, get_ident_interner, ident_to
 use parse::token;
 
 use std::hashmap::HashMap;
-use std::uint;
 use std::vec;
 
 /* This is an Earley-like parser, without support for in-grammar nonterminals,
@@ -138,7 +137,7 @@ pub fn count_names(ms: &[matcher]) -> uint {
 pub fn initial_matcher_pos(ms: ~[matcher], sep: Option<Token>, lo: BytePos)
                         -> ~MatcherPos {
     let mut match_idx_hi = 0u;
-    for ms.iter().advance |elt| {
+    foreach elt in ms.iter() {
         match elt.node {
           match_tok(_) => (),
           match_seq(_,_,_,_,hi) => {
@@ -195,7 +194,7 @@ pub fn nameize(p_s: @mut ParseSess, ms: &[matcher], res: &[@named_match])
         match *m {
           codemap::spanned {node: match_tok(_), _} => (),
           codemap::spanned {node: match_seq(ref more_ms, _, _, _, _), _} => {
-            for more_ms.iter().advance |next_m| {
+            foreach next_m in more_ms.iter() {
                 n_rec(p_s, next_m, res, ret_val)
             };
           }
@@ -211,7 +210,7 @@ pub fn nameize(p_s: @mut ParseSess, ms: &[matcher], res: &[@named_match])
         }
     }
     let mut ret_val = HashMap::new();
-    for ms.iter().advance |m| { n_rec(p_s, m, res, &mut ret_val) }
+    foreach m in ms.iter() { n_rec(p_s, m, res, &mut ret_val) }
     ret_val
 }
 
@@ -280,7 +279,7 @@ pub fn parse(
                         // most of the time.
 
                         // Only touch the binders we have actually bound
-                        for uint::range(ei.match_lo, ei.match_hi) |idx| {
+                        foreach idx in range(ei.match_lo, ei.match_hi) {
                             let sub = ei.matches[idx].clone();
                             new_pos.matches[idx]
                                 .push(@matched_seq(sub,
@@ -321,7 +320,7 @@ pub fn parse(
                         let mut new_ei = ei.clone();
                         new_ei.idx += 1u;
                         //we specifically matched zero repeats.
-                        for uint::range(match_idx_lo, match_idx_hi) |idx| {
+                        foreach idx in range(match_idx_lo, match_idx_hi) {
                             new_ei.matches[idx].push(@matched_seq(~[], sp));
                         }
 
@@ -356,7 +355,7 @@ pub fn parse(
         if tok == EOF {
             if eof_eis.len() == 1u {
                 let mut v = ~[];
-                for eof_eis[0u].matches.mut_iter().advance |dv| {
+                foreach dv in eof_eis[0u].matches.mut_iter() {
                     v.push(dv.pop());
                 }
                 return success(nameize(sess, ms, v));
@@ -403,7 +402,7 @@ pub fn parse(
                 }
                 cur_eis.push(ei);
 
-                for rust_parser.tokens_consumed.times() || {
+                do rust_parser.tokens_consumed.times() || {
                     rdr.next_token();
                 }
             }

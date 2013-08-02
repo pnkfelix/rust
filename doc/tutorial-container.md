@@ -108,12 +108,14 @@ impl Iterator<int> for ZeroStream {
 ## Container iterators
 
 Containers implement iteration over the contained elements by returning an
-iterator object. For example, vector slices have four iterators available:
+iterator object. For example, vector slices several iterators available:
 
-* `vector.iter()`, for immutable references to the elements
-* `vector.mut_iter()`, for mutable references to the elements
-* `vector.rev_iter()`, for immutable references to the elements in reverse order
-* `vector.mut_rev_iter()`, for mutable references to the elements in reverse order
+* `iter()` and `rev_iter()`, for immutable references to the elements
+* `mut_iter()` and `mut_rev_iter()`, for mutable references to the elements
+* `consume_iter()` and `consume_rev_iter`, to move the elements out by-value
+
+A typical mutable container will implement at least `iter()`, `mut_iter()` and
+`consume_iter()` along with the reverse variants if it maintains an order.
 
 ### Freezing
 
@@ -162,20 +164,19 @@ dropped when they become unnecessary.
 
 ## For loops
 
-The `for` loop syntax is currently in transition, and will switch from the old
-closure-based iteration protocol to iterator objects. For now, the `advance`
-adaptor is required as a compatibility shim to use iterators with for loops.
+The `foreach` keyword is transitional, and is going to replace the current
+obsolete `for` loop.
 
 ~~~
 let xs = [2, 3, 5, 7, 11, 13, 17];
 
 // print out all the elements in the vector
-for xs.iter().advance |x| {
+foreach x in xs.iter() {
     println(x.to_str())
 }
 
 // print out all but the first 3 elements in the vector
-for xs.iter().skip(3).advance |x| {
+foreach x in xs.iter().skip(3) {
     println(x.to_str())
 }
 ~~~
@@ -191,8 +192,8 @@ let ys = ["foo", "bar", "baz", "foobar"];
 let mut it = xs.iter().zip(ys.iter());
 
 // print out the pairs of elements up to (&3, &"baz")
-for it.advance |(x, y)| {
-    println(fmt!("%d %s", *x, *y));
+foreach (x, y) in it {
+    printfln!("%d %s", *x, *y);
 
     if *x == 3 {
         break;
@@ -200,7 +201,7 @@ for it.advance |(x, y)| {
 }
 
 // yield and print the last pair from the iterator
-println(fmt!("last: %?", it.next()));
+printfln!("last: %?", it.next());
 
 // the iterator is now fully consumed
 assert!(it.next().is_none());
@@ -228,7 +229,7 @@ impl<A, T: Iterator<A>> FromIterator<A, T> for ~[A] {
     pub fn from_iterator(iterator: &mut T) -> ~[A] {
         let (lower, _) = iterator.size_hint();
         let mut xs = with_capacity(lower);
-        for iterator.advance |x| {
+        foreach x in iterator {
             xs.push(x);
         }
         xs
@@ -294,15 +295,59 @@ another `DoubleEndedIterator` with `next` and `next_back` exchanged.
 ~~~
 let xs = [1, 2, 3, 4, 5, 6];
 let mut it = xs.iter();
-println(fmt!("%?", it.next())); // prints `Some(&1)`
-println(fmt!("%?", it.next())); // prints `Some(&2)`
-println(fmt!("%?", it.next_back())); // prints `Some(&6)`
+printfln!("%?", it.next()); // prints `Some(&1)`
+printfln!("%?", it.next()); // prints `Some(&2)`
+printfln!("%?", it.next_back()); // prints `Some(&6)`
 
 // prints `5`, `4` and `3`
-for it.invert().advance |&x| {
-    println(fmt!("%?", x))
+foreach &x in it.invert() {
+    printfln!("%?", x)
 }
 ~~~
 
 The `rev_iter` and `mut_rev_iter` methods on vectors just return an inverted
 version of the standard immutable and mutable vector iterators.
+
+The `chain_`, `transform`, `filter`, `filter_map` and `peek` adaptors are
+`DoubleEndedIterator` implementations if the underlying iterators are.
+
+~~~
+let xs = [1, 2, 3, 4];
+let ys = [5, 6, 7, 8];
+let mut it = xs.iter().chain_(ys.iter()).transform(|&x| x * 2);
+
+printfln!("%?", it.next()); // prints `Some(2)`
+
+// prints `16`, `14`, `12`, `10`, `8`, `6`, `4`
+foreach x in it.invert() {
+    printfln!("%?", x);
+}
+~~~
+
+## Random-access iterators
+
+The `RandomAccessIterator` trait represents an iterator offering random access
+to the whole range. The `indexable` method retrieves the number of elements
+accessible with the `idx` method.
+
+The `chain_` adaptor is an implementation of `RandomAccessIterator` if the
+underlying iterators are.
+
+~~~
+let xs = [1, 2, 3, 4, 5];
+let ys = ~[7, 9, 11];
+let mut it = xs.iter().chain_(ys.iter());
+printfln!("%?", it.idx(0)); // prints `Some(&1)`
+printfln!("%?", it.idx(5)); // prints `Some(&7)`
+printfln!("%?", it.idx(7)); // prints `Some(&11)`
+printfln!("%?", it.idx(8)); // prints `None`
+
+// yield two elements from the beginning, and one from the end
+it.next();
+it.next();
+it.next_back();
+
+printfln!("%?", it.idx(0)); // prints `Some(&3)`
+printfln!("%?", it.idx(4)); // prints `Some(&9)`
+printfln!("%?", it.idx(6)); // prints `None`
+~~~

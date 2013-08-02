@@ -374,7 +374,7 @@ impl RegionVarBindings {
     pub fn vars_created_since_snapshot(&mut self, snapshot: uint)
                                        -> ~[RegionVid] {
         do vec::build |push| {
-            for uint::range(snapshot, self.undo_log.len()) |i| {
+            foreach i in range(snapshot, self.undo_log.len()) {
                 match self.undo_log[i] {
                     AddVar(vid) => push(vid),
                     _ => ()
@@ -686,8 +686,8 @@ impl RegionVarBindings {
     fn intersect_scopes(&self,
                         region_a: ty::Region,
                         region_b: ty::Region,
-                        scope_a: ast::node_id,
-                        scope_b: ast::node_id) -> cres<Region>
+                        scope_a: ast::NodeId,
+                        scope_b: ast::NodeId) -> cres<Region>
     {
         // We want to generate the intersection of two
         // scopes or two free regions.  So, if one of
@@ -916,7 +916,7 @@ impl RegionVarBindings {
         &self,
         errors: &mut OptVec<RegionResolutionError>)
     {
-        for self.constraints.iter().advance |(constraint, _)| {
+        foreach (constraint, _) in self.constraints.iter() {
             let (sub, sup) = match *constraint {
                 ConstrainVarSubVar(*) |
                 ConstrainRegSubVar(*) |
@@ -962,7 +962,7 @@ impl RegionVarBindings {
 
         let mut opt_graph = None;
 
-        for uint::range(0, self.num_vars()) |idx| {
+        foreach idx in range(0u, self.num_vars()) {
             match var_data[idx].value {
                 Value(_) => {
                     /* Inference successful */
@@ -1027,12 +1027,12 @@ impl RegionVarBindings {
         let mut graph = graph::Graph::with_capacity(num_vars + 1,
                                                     num_edges);
 
-        for uint::range(0, num_vars) |_| {
+        foreach _ in range(0u, num_vars) {
             graph.add_node(());
         }
         let dummy_idx = graph.add_node(());
 
-        for self.constraints.iter().advance |(constraint, _)| {
+        foreach (constraint, _) in self.constraints.iter() {
             match *constraint {
                 ConstrainVarSubVar(a_id, b_id) => {
                     graph.add_edge(NodeIndex(a_id.to_uint()),
@@ -1080,8 +1080,8 @@ impl RegionVarBindings {
             return;
         }
 
-        for lower_bounds.iter().advance |lower_bound| {
-            for upper_bounds.iter().advance |upper_bound| {
+        foreach lower_bound in lower_bounds.iter() {
+            foreach upper_bound in upper_bounds.iter() {
                 if !self.is_subregion_of(lower_bound.region,
                                          upper_bound.region) {
                     errors.push(SubSupConflict(
@@ -1122,8 +1122,8 @@ impl RegionVarBindings {
             return;
         }
 
-        for upper_bounds.iter().advance |upper_bound_1| {
-            for upper_bounds.iter().advance |upper_bound_2| {
+        foreach upper_bound_1 in upper_bounds.iter() {
+            foreach upper_bound_2 in upper_bounds.iter() {
                 match self.glb_concrete_regions(upper_bound_1.region,
                                                 upper_bound_2.region) {
                   Ok(_) => {}
@@ -1242,7 +1242,7 @@ impl RegionVarBindings {
             changed = false;
             iteration += 1;
             debug!("---- %s Iteration #%u", tag, iteration);
-            for self.constraints.iter().advance |(constraint, _)| {
+            foreach (constraint, _) in self.constraints.iter() {
                 let edge_changed = body(constraint);
                 if edge_changed {
                     debug!("Updated due to constraint %s",

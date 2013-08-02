@@ -20,7 +20,6 @@ use middle::trans::type_::Type;
 use std::cast;
 use std::hashmap::HashMap;
 use std::libc::{c_uint, c_ulonglong, c_char};
-use std::str;
 use std::vec;
 use syntax::codemap::span;
 
@@ -424,9 +423,9 @@ impl Builder {
             if name.is_empty() {
                 llvm::LLVMBuildAlloca(self.llbuilder, ty.to_ref(), noname())
             } else {
-                str::as_c_str(
-                    name,
-                    |c| llvm::LLVMBuildAlloca(self.llbuilder, ty.to_ref(), c))
+                do name.as_c_str |c| {
+                    llvm::LLVMBuildAlloca(self.llbuilder, ty.to_ref(), c)
+                }
             }
         }
     }
@@ -517,7 +516,7 @@ impl Builder {
         // we care about.
         if ixs.len() < 16 {
             let mut small_vec = [ C_i32(0), ..16 ];
-            for small_vec.mut_iter().zip(ixs.iter()).advance |(small_vec_e, &ix)| {
+            foreach (small_vec_e, &ix) in small_vec.mut_iter().zip(ixs.iter()) {
                 *small_vec_e = C_i32(ix as i32);
             }
             self.inbounds_gep(base, small_vec.slice(0, ixs.len()))
@@ -896,9 +895,9 @@ impl Builder {
             let BB: BasicBlockRef = llvm::LLVMGetInsertBlock(self.llbuilder);
             let FN: ValueRef = llvm::LLVMGetBasicBlockParent(BB);
             let M: ModuleRef = llvm::LLVMGetGlobalParent(FN);
-            let T: ValueRef = str::as_c_str("llvm.trap", |buf| {
+            let T: ValueRef = do "llvm.trap".as_c_str |buf| {
                 llvm::LLVMGetNamedFunction(M, buf)
-            });
+            };
             assert!((T as int != 0));
             let args: &[ValueRef] = [];
             self.count_insn("trap");
@@ -942,6 +941,12 @@ impl Builder {
                      order: AtomicOrdering) -> ValueRef {
         unsafe {
             llvm::LLVMBuildAtomicRMW(self.llbuilder, op, dst, src, order)
+        }
+    }
+
+    pub fn atomic_fence(&self, order: AtomicOrdering) {
+        unsafe {
+            llvm::LLVMBuildAtomicFence(self.llbuilder, order);
         }
     }
 }

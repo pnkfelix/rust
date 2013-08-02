@@ -21,7 +21,6 @@ use middle::ty;
 
 use middle::trans::type_::Type;
 
-use std::str;
 use syntax::ast;
 
 // Take an inline assembly expression and splat it out via LLVM
@@ -63,20 +62,20 @@ pub fn trans_inline_asm(bcx: @mut Block, ia: &ast::inline_asm) -> @mut Block {
 
     };
 
-    for cleanups.iter().advance |c| {
+    foreach c in cleanups.iter() {
         revoke_clean(bcx, *c);
     }
     cleanups.clear();
 
     // Now the input operands
-    let inputs = do ia.inputs.map |&(c, in)| {
+    let inputs = do ia.inputs.map |&(c, input)| {
         constraints.push(c);
 
         unpack_result!(bcx, {
             callee::trans_arg_expr(bcx,
-                                   expr_ty(bcx, in),
+                                   expr_ty(bcx, input),
                                    ty::ByCopy,
-                                   in,
+                                   input,
                                    &mut cleanups,
                                    None,
                                    callee::DontAutorefArg)
@@ -84,7 +83,7 @@ pub fn trans_inline_asm(bcx: @mut Block, ia: &ast::inline_asm) -> @mut Block {
 
     };
 
-    for cleanups.iter().advance |c| {
+    foreach c in cleanups.iter() {
         revoke_clean(bcx, *c);
     }
 
@@ -123,8 +122,8 @@ pub fn trans_inline_asm(bcx: @mut Block, ia: &ast::inline_asm) -> @mut Block {
         ast::asm_intel => lib::llvm::AD_Intel
     };
 
-    let r = do str::as_c_str(ia.asm) |a| {
-        do str::as_c_str(constraints) |c| {
+    let r = do ia.asm.as_c_str |a| {
+        do constraints.as_c_str |c| {
             InlineAsmCall(bcx, a, c, inputs, output, ia.volatile, ia.alignstack, dialect)
         }
     };
@@ -134,7 +133,7 @@ pub fn trans_inline_asm(bcx: @mut Block, ia: &ast::inline_asm) -> @mut Block {
         let op = PointerCast(bcx, aoutputs[0], val_ty(outputs[0]).ptr_to());
         Store(bcx, r, op);
     } else {
-        for aoutputs.iter().enumerate().advance |(i, o)| {
+        foreach (i, o) in aoutputs.iter().enumerate() {
             let v = ExtractValue(bcx, r, i);
             let op = PointerCast(bcx, *o, val_ty(outputs[i]).ptr_to());
             Store(bcx, v, op);

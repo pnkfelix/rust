@@ -12,7 +12,6 @@
 use std::option;
 use std::os;
 use std::result;
-use std::str;
 
 // A module for searching for libraries
 // FIXME (#2658): I'm not happy how this module turned out. Should
@@ -83,7 +82,7 @@ pub fn mk_filesearch(maybe_sysroot: &Option<@Path>,
     @FileSearchImpl {
         sysroot: sysroot,
         addl_lib_search_paths: addl_lib_search_paths,
-        target_triple: str::to_owned(target_triple)
+        target_triple: target_triple.to_owned()
     } as @FileSearch
 }
 
@@ -92,7 +91,7 @@ pub fn search<T>(filesearch: @FileSearch, pick: pick<T>) -> Option<T> {
     for filesearch.for_each_lib_search_path() |lib_search_path| {
         debug!("searching %s", lib_search_path.to_str());
         let r = os::list_dir_path(lib_search_path);
-        for r.iter().advance |path| {
+        foreach path in r.iter() {
             debug!("testing %s", path.to_str());
             let maybe_picked = pick(path);
             if maybe_picked.is_some() {
@@ -110,7 +109,7 @@ pub fn search<T>(filesearch: @FileSearch, pick: pick<T>) -> Option<T> {
 
 pub fn relative_target_lib_path(target_triple: &str) -> Path {
     Path(libdir()).push_many([~"rustc",
-                              str::to_owned(target_triple),
+                              target_triple.to_owned(),
                               libdir()])
 }
 
@@ -148,7 +147,7 @@ pub fn get_rustpkg_root() -> Result<Path, ~str> {
 }
 
 pub fn get_rustpkg_root_nearest() -> Result<Path, ~str> {
-    do result::chain(get_rustpkg_root()) |p| {
+    do get_rustpkg_root().chain |p| {
         let cwd = os::getcwd();
         let cwd_rustpkg = cwd.push(".rustpkg");
         let rustpkg_is_non_root_file =
@@ -174,13 +173,13 @@ pub fn get_rustpkg_root_nearest() -> Result<Path, ~str> {
 }
 
 fn get_rustpkg_lib_path() -> Result<Path, ~str> {
-    do result::chain(get_rustpkg_root()) |p| {
+    do get_rustpkg_root().chain |p| {
         result::Ok(p.push(libdir()))
     }
 }
 
 fn get_rustpkg_lib_path_nearest() -> Result<Path, ~str> {
-    do result::chain(get_rustpkg_root_nearest()) |p| {
+    do get_rustpkg_root_nearest().chain |p| {
         result::Ok(p.push(libdir()))
     }
 }

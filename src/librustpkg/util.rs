@@ -18,7 +18,6 @@ use syntax::ext::base::ExtCtxt;
 use syntax::{ast, attr, codemap, diagnostic, fold};
 use syntax::attr::AttrMetaMethods;
 use rustc::back::link::output_type_exe;
-use rustc::driver::driver::compile_upto;
 use rustc::driver::session::{lib_crate, bin_crate};
 use context::Ctx;
 use package_id::PkgId;
@@ -105,12 +104,12 @@ fn fold_item(ctx: @mut ReadyCtx,
     let mut cmds = ~[];
     let mut had_pkg_do = false;
 
-    for item.attrs.iter().advance |attr| {
+    foreach attr in item.attrs.iter() {
         if "pkg_do" == attr.name() {
             had_pkg_do = true;
             match attr.node.value.node {
                 ast::MetaList(_, ref mis) => {
-                    for mis.iter().advance |mi| {
+                    foreach mi in mis.iter() {
                         match mi.node {
                             ast::MetaWord(cmd) => cmds.push(cmd.to_owned()),
                             _ => {}
@@ -211,7 +210,7 @@ pub fn compile_input(ctxt: &Ctx,
     let addl_lib_search_paths = @mut options.addl_lib_search_paths;
     // Make sure all the library directories actually exist, since the linker will complain
     // otherwise
-    for addl_lib_search_paths.iter().advance |p| {
+    foreach p in addl_lib_search_paths.iter() {
         assert!(os::path_is_dir(p));
     }
 
@@ -220,12 +219,8 @@ pub fn compile_input(ctxt: &Ctx,
     // Infer dependencies that rustpkg needs to build, by scanning for
     // `extern mod` directives.
     let cfg = driver::build_configuration(sess, binary, &input);
-    let (crate_opt, _) = driver::compile_upto(sess, cfg.clone(), &input, driver::cu_expand, None);
-
-    let mut crate = match crate_opt {
-        Some(c) => c,
-        None => fail!("compile_input expected...")
-    };
+    let mut crate = driver::phase_1_parse_input(sess, cfg.clone(), &input);
+    crate = driver::phase_2_configure_and_expand(sess, cfg, crate);
 
     // Not really right. Should search other workspaces too, and the installed
     // database (which doesn't exist yet)
@@ -257,7 +252,7 @@ pub fn compile_input(ctxt: &Ctx,
 
     debug!("calling compile_crate_from_input, out_dir = %s,
            building_library = %?", out_dir.to_str(), sess.building_library);
-    compile_crate_from_input(&input, out_dir, sess, crate, cfg.clone(), driver::cu_expand);
+    compile_crate_from_input(&input, out_dir, sess, crate);
     true
 }
 
@@ -269,9 +264,7 @@ pub fn compile_input(ctxt: &Ctx,
 pub fn compile_crate_from_input(input: &driver::input,
                                 build_dir: &Path,
                                 sess: session::Session,
-                                crate: @ast::Crate,
-                                cfg: ast::CrateConfig,
-                                compile_from: driver::compile_phase) {
+                                crate: @ast::Crate) {
     debug!("Calling build_output_filenames with %s, building library? %?",
            build_dir.to_str(), sess.building_library);
 
@@ -281,18 +274,16 @@ pub fn compile_crate_from_input(input: &driver::input,
 
     debug!("Outputs are %? and output type = %?", outputs, sess.opts.output_type);
     debug!("additional libraries:");
-    for sess.opts.addl_lib_search_paths.iter().advance |lib| {
+    foreach lib in sess.opts.addl_lib_search_paths.iter() {
         debug!("an additional library: %s", lib.to_str());
     }
-
-    driver::compile_rest(sess,
-                         cfg,
-                         compile_upto {
-                             from: compile_from,
-                             to: driver::cu_everything
-                         },
-                         Some(outputs),
-                         Some(crate));
+    let analysis = driver::phase_3_run_analysis_passes(sess, crate);
+    let translation = driver::phase_4_translate_to_llvm(sess, crate,
+                                                        &analysis,
+                                                        outputs);
+    driver::phase_5_run_llvm_passes(sess, &translation, outputs);
+    if driver::stop_after_phase_5(sess) { return; }
+    driver::phase_6_link_output(sess, &translation, outputs);
 }
 
 #[cfg(windows)]
@@ -312,7 +303,7 @@ pub fn compile_crate(ctxt: &Ctx, pkg_id: &PkgId,
                      what: OutputType) -> bool {
     debug!("compile_crate: crate=%s, dir=%s", crate.to_str(), dir.to_str());
     debug!("compile_crate: short_name = %s, flags =...", pkg_id.to_str());
-    for flags.iter().advance |fl| {
+    foreach fl in flags.iter() {
         debug!("+++ %s", *fl);
     }
     compile_input(ctxt, pkg_id, crate, dir, flags, cfgs, opt, what)
@@ -380,10 +371,10 @@ pub fn link_exe(_src: &Path, _dest: &Path) -> bool {
 #[cfg(target_os = "freebsd")]
 #[cfg(target_os = "macos")]
 pub fn link_exe(src: &Path, dest: &Path) -> bool {
-    use std::{libc, str};
+    use std::libc;
     unsafe {
-        do str::as_c_str(src.to_str()) |src_buf| {
-            do str::as_c_str(dest.to_str()) |dest_buf| {
+        do src.to_str().as_c_str |src_buf| {
+            do dest.to_str().as_c_str |dest_buf| {
                 libc::link(src_buf, dest_buf) == 0 as libc::c_int &&
                     libc::chmod(dest_buf, 755) == 0 as libc::c_int
             }

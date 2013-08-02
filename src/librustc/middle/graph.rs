@@ -187,16 +187,12 @@ impl<N,E> Graph<N,E> {
 
     pub fn each_node(&self, f: &fn(NodeIndex, &Node<N>) -> bool) -> bool {
         //! Iterates over all edges defined in the graph.
-
-        uint::range(0, self.nodes.len(),
-                    |i| f(NodeIndex(i), &self.nodes[i]))
+        range(0u, self.nodes.len()).advance(|i| f(NodeIndex(i), &self.nodes[i]))
     }
 
     pub fn each_edge(&self, f: &fn(EdgeIndex, &Edge<E>) -> bool) -> bool {
         //! Iterates over all edges defined in the graph.
-
-        uint::range(0, self.nodes.len(),
-                    |i| f(EdgeIndex(i), &self.edges[i]))
+        range(0u, self.nodes.len()).advance(|i| f(EdgeIndex(i), &self.edges[i]))
     }
 
     pub fn each_outgoing_edge(&self,
@@ -251,7 +247,7 @@ impl<N,E> Graph<N,E> {
         while changed {
             changed = false;
             iteration += 1;
-            for self.edges.iter().enumerate().advance |(i, edge)| {
+            foreach (i, edge) in self.edges.iter().enumerate() {
                 changed |= op(iteration, EdgeIndex(i), edge);
             }
         }

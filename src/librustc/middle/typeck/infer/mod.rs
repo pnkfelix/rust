@@ -52,7 +52,6 @@ pub mod combine;
 pub mod glb;
 pub mod lattice;
 pub mod lub;
-#[path = "region_inference/mod.rs"]
 pub mod region_inference;
 pub mod resolve;
 pub mod sub;
@@ -653,6 +652,11 @@ impl InferCtxt {
                   self.resolve_type_vars_if_possible(t))
     }
 
+    pub fn tys_to_str(@mut self, ts: &[ty::t]) -> ~str {
+        let tstrs = ts.map(|t| self.ty_to_str(*t));
+        fmt!("(%s)", tstrs.connect(", "))
+    }
+
     pub fn trait_ref_to_str(@mut self, t: &ty::TraitRef) -> ~str {
         let t = self.resolve_type_vars_in_trait_ref_if_possible(t);
         trait_ref_to_str(self.tcx, &t)
@@ -726,7 +730,7 @@ impl InferCtxt {
                         fmt!("%s%s", mk_msg(Some(self.ty_to_str(e)), actual_ty), error_str));
                 }
             }
-            for err.iter().advance |err| {
+            foreach err in err.iter() {
                 ty::note_and_explain_type_err(self.tcx, *err)
             }
         }

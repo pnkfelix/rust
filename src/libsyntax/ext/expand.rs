@@ -16,11 +16,12 @@ use ast_util::{new_rename, new_mark, resolve};
 use attr;
 use attr::AttrMetaMethods;
 use codemap;
-use codemap::{span, ExpnInfo, NameAndSpan};
+use codemap::{span, spanned, ExpnInfo, NameAndSpan};
 use ext::base::*;
 use fold::*;
 use parse;
 use parse::{parse_item_from_source_str};
+use parse::token;
 use parse::token::{ident_to_str, intern};
 use visit;
 use visit::Visitor;
@@ -99,6 +100,159 @@ pub fn expand_expr(extsbox: @mut SyntaxEnv,
                 }
             }
         }
+
+        // Desugar expr_for_loop
+        // From: `foreach <src_pat> in <src_expr> <src_loop_block>`
+        ast::expr_for_loop(src_pat, src_expr, ref src_loop_block) => {
+            let src_pat = src_pat.clone();
+            let src_expr = src_expr.clone();
+
+            // Expand any interior macros etc.
+            // NB: we don't fold pats yet. Curious.
+            let src_expr = fld.fold_expr(src_expr).clone();
+            let src_loop_block = fld.fold_block(src_loop_block).clone();
+
+            let span = s;
+            let lo = s.lo;
+            let hi = s.hi;
+
+            pub fn mk_expr(cx: @ExtCtxt, span: span,
+                           node: expr_) -> @ast::expr {
+                @ast::expr {
+                    id: cx.next_id(),
+                    node: node,
+                    span: span,
+                }
+            }
+
+            fn mk_block(cx: @ExtCtxt,
+                        stmts: &[@ast::stmt],
+                        expr: Option<@ast::expr>,
+                        span: span) -> ast::Block {
+                ast::Block {
+                    view_items: ~[],
+                    stmts: stmts.to_owned(),
+                    expr: expr,
+                    id: cx.next_id(),
+                    rules: ast::DefaultBlock,
+                    span: span,
+                }
+            }
+
+            fn mk_simple_path(ident: ast::ident, span: span) -> ast::Path {
+                ast::Path {
+                    span: span,
+                    global: false,
+                    idents: ~[ident],
+                    rp: None,
+                    types: ~[]
+                }
+            }
+
+            // to:
+            //
+            // {
+            //   let _i = &mut <src_expr>;
+            //   loop {
+            //       match i.next() {
+            //           None => break,
+            //           Some(<src_pat>) => <src_loop_block>
+            //       }
+            //   }
+            // }
+
+            let local_ident = token::gensym_ident("i");
+            let some_ident = token::str_to_ident("Some");
+            let none_ident = token::str_to_ident("None");
+            let next_ident = token::str_to_ident("next");
+
+            let local_path_1 = mk_simple_path(local_ident, span);
+            let local_path_2 = mk_simple_path(local_ident, span);
+            let some_path = mk_simple_path(some_ident, span);
+            let none_path = mk_simple_path(none_ident, span);
+
+            // `let i = &mut <src_expr>`
+            let iter_decl_stmt = {
+                let ty = ast::Ty {
+                    id: cx.next_id(),
+                    node: ast::ty_infer,
+                    span: span
+                };
+                let local = @ast::Local {
+                    is_mutbl: false,
+                    ty: ty,
+                    pat: @ast::pat {
+                        id: cx.next_id(),
+                        node: ast::pat_ident(ast::bind_infer, local_path_1, None),
+                        span: src_expr.span
+                    },
+                    init: Some(mk_expr(cx, src_expr.span,
+                                       ast::expr_addr_of(ast::m_mutbl, src_expr))),
+                    id: cx.next_id(),
+                    span: src_expr.span,
+                };
+                let e = @spanned(src_expr.span.lo,
+                                 src_expr.span.hi,
+                                 ast::decl_local(local));
+                @spanned(lo, hi, ast::stmt_decl(e, cx.next_id()))
+            };
+
+            // `None => break;`
+            let none_arm = {
+                let break_expr = mk_expr(cx, span, ast::expr_break(None));
+                let break_stmt = @spanned(lo, hi, ast::stmt_expr(break_expr, cx.next_id()));
+                let none_block = mk_block(cx, [break_stmt], None, span);
+                let none_pat = @ast::pat {
+                    id: cx.next_id(),
+                    node: ast::pat_ident(ast::bind_infer, none_path, None),
+                    span: span
+                };
+                ast::arm {
+                    pats: ~[none_pat],
+                    guard: None,
+                    body: none_block
+                }
+            };
+
+            // `Some(<src_pat>) => <src_loop_block>`
+            let some_arm = {
+                let pat = @ast::pat {
+                    id: cx.next_id(),
+                    node: ast::pat_enum(some_path, Some(~[src_pat])),
+                    span: src_pat.span
+                };
+                ast::arm {
+                    pats: ~[pat],
+                    guard: None,
+                    body: src_loop_block
+                }
+            };
+
+            // `match i.next() { ... }`
+            let match_stmt = {
+                let local_expr = mk_expr(cx, span, ast::expr_path(local_path_2));
+                let next_call_expr = mk_expr(cx, span,
+                                             ast::expr_method_call(cx.next_id(),
+                                                                   local_expr, next_ident,
+                                                                   ~[], ~[], ast::NoSugar));
+                let match_expr = mk_expr(cx, span, ast::expr_match(next_call_expr,
+                                                                   ~[none_arm, some_arm]));
+                @spanned(lo, hi, ast::stmt_expr(match_expr, cx.next_id()))
+            };
+
+            // `loop { ... }`
+            let loop_block = {
+                let loop_body_block = mk_block(cx, [match_stmt], None, span);
+                let loop_body_expr = mk_expr(cx, span, ast::expr_loop(loop_body_block, None));
+                let loop_body_stmt = @spanned(lo, hi, ast::stmt_expr(loop_body_expr, cx.next_id()));
+                mk_block(cx, [iter_decl_stmt,
+                              loop_body_stmt],
+                         None, span)
+            };
+
+            (ast::expr_block(loop_block), span)
+        }
+
         _ => orig(e, s, fld)
     }
 }
@@ -381,7 +535,7 @@ pub fn new_name_finder() -> @Visitor<@mut ~[ast::ident]> {
                         _ => ()
                     }
                     // visit optional subpattern of pat_ident:
-                    for inner.iter().advance |subpat: &@ast::pat| {
+                    foreach subpat in inner.iter() {
                         (v.visit_pat)(*subpat, (ident_accum, v))
                     }
                 }
@@ -529,7 +683,7 @@ pub fn std_macros() -> @str {
         ($cond:expr) => {
             if !$cond {
                 ::std::sys::FailWithCause::fail_with(
-                    ~\"assertion failed: \" + stringify!($cond), file!(), line!())
+                    \"assertion failed: \" + stringify!($cond), file!(), line!())
             }
         };
         ($cond:expr, $msg:expr) => {
@@ -596,16 +750,16 @@ pub fn std_macros() -> @str {
 
     macro_rules! condition (
 
-        { pub $c:ident: $in:ty -> $out:ty; } => {
+        { pub $c:ident: $input:ty -> $out:ty; } => {
 
             pub mod $c {
                 #[allow(non_uppercase_statics)];
                 static key: ::std::local_data::Key<
-                    @::std::condition::Handler<$in, $out>> =
+                    @::std::condition::Handler<$input, $out>> =
                     &::std::local_data::Key;
 
                 pub static cond :
-                    ::std::condition::Condition<$in,$out> =
+                    ::std::condition::Condition<$input,$out> =
                     ::std::condition::Condition {
                         name: stringify!($c),
                         key: key
@@ -613,17 +767,17 @@ pub fn std_macros() -> @str {
             }
         };
 
-        { $c:ident: $in:ty -> $out:ty; } => {
+        { $c:ident: $input:ty -> $out:ty; } => {
 
             // FIXME (#6009): remove mod's `pub` below once variant above lands.
             pub mod $c {
                 #[allow(non_uppercase_statics)];
                 static key: ::std::local_data::Key<
-                    @::std::condition::Handler<$in, $out>> =
+                    @::std::condition::Handler<$input, $out>> =
                     &::std::local_data::Key;
 
                 pub static cond :
-                    ::std::condition::Condition<$in,$out> =
+                    ::std::condition::Condition<$input,$out> =
                     ::std::condition::Condition {
                         name: stringify!($c),
                         key: key

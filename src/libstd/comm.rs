@@ -14,15 +14,11 @@ Message passing
 
 #[allow(missing_doc)];
 
-use cast::{transmute, transmute_mut};
-use container::Container;
+use cast::transmute;
 use either::{Either, Left, Right};
 use kinds::Send;
-use option::{Option, Some, None};
-use uint;
-use vec::OwnedVector;
-use util::replace;
-use unstable::sync::{Exclusive, exclusive};
+use option::{Option, Some};
+use unstable::sync::Exclusive;
 use rtcomm = rt::comm;
 use rt;
 
@@ -143,81 +139,6 @@ impl<T: Send> Selectable for Port<T> {
     }
 }
 
-/// Treat many ports as one.
-#[unsafe_mut_field(ports)]
-pub struct PortSet<T> {
-    ports: ~[pipesy::Port<T>],
-}
-
-impl<T: Send> PortSet<T> {
-    pub fn new() -> PortSet<T> {
-        PortSet {
-            ports: ~[]
-        }
-    }
-
-    pub fn add(&self, port: Port<T>) {
-        let Port { inner } = port;
-        let port = match inner {
-            Left(p) => p,
-            Right(_) => fail!("PortSet not implemented")
-        };
-        unsafe {
-            let self_ports = transmute_mut(&self.ports);
-            self_ports.push(port)
-        }
-    }
-
-    pub fn chan(&self) -> Chan<T> {
-        let (po, ch) = stream();
-        self.add(po);
-        ch
-    }
-}
-
-impl<T:Send> GenericPort<T> for PortSet<T> {
-    fn try_recv(&self) -> Option<T> {
-        unsafe {
-            let self_ports = transmute_mut(&self.ports);
-            let mut result = None;
-            // we have to swap the ports array so we aren't borrowing
-            // aliasable mutable memory.
-            let mut ports = replace(self_ports, ~[]);
-            while result.is_none() && ports.len() > 0 {
-                let i = wait_many(ports);
-                match ports[i].try_recv() {
-                    Some(m) => {
-                        result = Some(m);
-                    }
-                    None => {
-                        // Remove this port.
-                        let _ = ports.swap_remove(i);
-                    }
-                }
-            }
-            *self_ports = ports;
-            result
-        }
-    }
-    fn recv(&self) -> T {
-        self.try_recv().expect("port_set: endpoints closed")
-    }
-}
-
-impl<T: Send> Peekable<T> for PortSet<T> {
-    fn peek(&self) -> bool {
-        // It'd be nice to use self.port.each, but that version isn't
-        // pure.
-        for uint::range(0, self.ports.len()) |i| {
-            let port: &pipesy::Port<T> = &self.ports[i];
-            if port.peek() {
-                return true;
-            }
-        }
-        false
-    }
-}
-
 /// A channel that can be shared between many senders.
 pub struct SharedChan<T> {
     inner: Either<Exclusive<pipesy::Chan<T>>, rtcomm::SharedChan<T>>
@@ -228,7 +149,7 @@ impl<T: Send> SharedChan<T> {
     pub fn new(c: Chan<T>) -> SharedChan<T> {
         let Chan { inner } = c;
         let c = match inner {
-            Left(c) => Left(exclusive(c)),
+            Left(c) => Left(Exclusive::new(c)),
             Right(c) => Right(rtcomm::SharedChan::new(c))
         };
         SharedChan { inner: c }

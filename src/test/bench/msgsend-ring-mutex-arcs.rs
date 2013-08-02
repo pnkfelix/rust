@@ -11,9 +11,9 @@
 // This test creates a bunch of tasks that simultaneously send to each
 // other in a ring. The messages should all be basically
 // independent.
-// This is like msgsend-ring-pipes but adapted to use ARCs.
+// This is like msgsend-ring-pipes but adapted to use Arcs.
 
-// This also serves as a pipes test, because ARCs are implemented with pipes.
+// This also serves as a pipes test, because Arcs are implemented with pipes.
 
 extern mod extra;
 
@@ -26,7 +26,7 @@ use std::os;
 use std::uint;
 
 // A poor man's pipe.
-type pipe = arc::MutexARC<~[uint]>;
+type pipe = arc::MutexArc<~[uint]>;
 
 fn send(p: &pipe, msg: uint) {
     unsafe {
@@ -48,7 +48,7 @@ fn recv(p: &pipe) -> uint {
 }
 
 fn init() -> (pipe,pipe) {
-    let m = arc::MutexARC(~[]);
+    let m = arc::MutexArc::new(~[]);
     ((&m).clone(), m)
 }
 
@@ -57,7 +57,7 @@ fn thread_ring(i: uint, count: uint, num_chan: pipe, num_port: pipe) {
     let mut num_chan = Some(num_chan);
     let mut num_port = Some(num_port);
     // Send/Receive lots of messages.
-    for uint::range(0u, count) |j| {
+    foreach j in range(0u, count) {
         //error!("task %?, iter %?", i, j);
         let num_chan2 = num_chan.take_unwrap();
         let num_port2 = num_port.take_unwrap();
@@ -90,7 +90,7 @@ fn main() {
     // create the ring
     let mut futures = ~[];
 
-    for uint::range(1u, num_tasks) |i| {
+    foreach i in range(1u, num_tasks) {
         //error!("spawning %?", i);
         let (new_chan, num_port) = init();
         let num_chan2 = Cell::new(num_chan.take());
@@ -108,7 +108,7 @@ fn main() {
     thread_ring(0, msg_per_task, num_chan.take(), num_port);
 
     // synchronize
-    for futures.mut_iter().advance |f| {
+    foreach f in futures.mut_iter() {
         f.get()
     }
 
@@ -119,8 +119,7 @@ fn main() {
     let elapsed = (stop - start);
     let rate = (num_msgs as float) / elapsed;
 
-    io::println(fmt!("Sent %? messages in %? seconds",
-                     num_msgs, elapsed));
-    io::println(fmt!("  %? messages / second", rate));
-    io::println(fmt!("  %? μs / message", 1000000. / rate));
+    printfln!("Sent %? messages in %? seconds", num_msgs, elapsed);
+    printfln!("  %? messages / second", rate);
+    printfln!("  %? μs / message", 1000000. / rate);
 }

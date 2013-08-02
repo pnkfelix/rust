@@ -19,11 +19,10 @@ Cross-platform file path handling
 use clone::Clone;
 use container::Container;
 use cmp::Eq;
-use iterator::IteratorUtil;
+use iterator::{Iterator, IteratorUtil};
 use libc;
 use option::{None, Option, Some};
 use str::{OwnedStr, Str, StrSlice, StrVector};
-use str;
 use to_str::ToStr;
 use ascii::{AsciiCast, AsciiStr};
 use vec::{OwnedVector, ImmutableVector};
@@ -342,13 +341,11 @@ mod stat {
 #[cfg(target_os = "win32")]
 impl WindowsPath {
     pub fn stat(&self) -> Option<libc::stat> {
-        unsafe {
-             do str::as_c_str(self.to_str()) |buf| {
-                let mut st = stat::arch::default_stat();
-                match libc::stat(buf, &mut st) {
-                    0 => Some(st),
-                    _ => None,
-                }
+        do self.to_str().as_c_str |buf| {
+            let mut st = stat::arch::default_stat();
+            match unsafe { libc::stat(buf, &mut st) } {
+                0 => Some(st),
+                _ => None,
             }
         }
     }
@@ -378,13 +375,11 @@ impl WindowsPath {
 #[cfg(not(target_os = "win32"))]
 impl PosixPath {
     pub fn stat(&self) -> Option<libc::stat> {
-        unsafe {
-             do str::as_c_str(self.to_str()) |buf| {
-                let mut st = stat::arch::default_stat();
-                match libc::stat(buf, &mut st) {
-                    0 => Some(st),
-                    _ => None,
-                }
+        do self.to_str().as_c_str |buf| {
+            let mut st = stat::arch::default_stat();
+            match unsafe { libc::stat(buf as *libc::c_char, &mut st) } {
+                0 => Some(st),
+                _ => None,
             }
         }
     }
@@ -458,13 +453,11 @@ impl PosixPath {
 #[cfg(unix)]
 impl PosixPath {
     pub fn lstat(&self) -> Option<libc::stat> {
-        unsafe {
-            do str::as_c_str(self.to_str()) |buf| {
-                let mut st = stat::arch::default_stat();
-                match libc::lstat(buf, &mut st) {
-                    0 => Some(st),
-                    _ => None,
-                }
+        do self.to_str().as_c_str |buf| {
+            let mut st = stat::arch::default_stat();
+            match unsafe { libc::lstat(buf, &mut st) } {
+                0 => Some(st),
+                _ => None,
             }
         }
     }
@@ -594,7 +587,7 @@ impl GenericPath for PosixPath {
     }
 
     fn with_filename(&self, f: &str) -> PosixPath {
-        assert!(! f.iter().all(windows::is_sep));
+        assert!(!f.iter().all(posix::is_sep));
         self.dir_path().push(f)
     }
 
@@ -654,8 +647,8 @@ impl GenericPath for PosixPath {
 
     fn push_many<S: Str>(&self, cs: &[S]) -> PosixPath {
         let mut v = self.components.clone();
-        for cs.iter().advance |e| {
-            for e.as_slice().split_iter(windows::is_sep).advance |s| {
+        foreach e in cs.iter() {
+            foreach s in e.as_slice().split_iter(posix::is_sep) {
                 if !s.is_empty() {
                     v.push(s.to_owned())
                 }
@@ -669,7 +662,7 @@ impl GenericPath for PosixPath {
 
     fn push(&self, s: &str) -> PosixPath {
         let mut v = self.components.clone();
-        for s.split_iter(windows::is_sep).advance |s| {
+        foreach s in s.split_iter(posix::is_sep) {
             if !s.is_empty() {
                 v.push(s.to_owned())
             }
@@ -929,8 +922,8 @@ impl GenericPath for WindowsPath {
 
     fn push_many<S: Str>(&self, cs: &[S]) -> WindowsPath {
         let mut v = self.components.clone();
-        for cs.iter().advance |e| {
-            for e.as_slice().split_iter(windows::is_sep).advance |s| {
+        foreach e in cs.iter() {
+            foreach s in e.as_slice().split_iter(windows::is_sep) {
                 if !s.is_empty() {
                     v.push(s.to_owned())
                 }
@@ -947,7 +940,7 @@ impl GenericPath for WindowsPath {
 
     fn push(&self, s: &str) -> WindowsPath {
         let mut v = self.components.clone();
-        for s.split_iter(windows::is_sep).advance |s| {
+        foreach s in s.split_iter(windows::is_sep) {
             if !s.is_empty() {
                 v.push(s.to_owned())
             }
@@ -996,7 +989,7 @@ impl GenericPath for WindowsPath {
 
 pub fn normalize(components: &[~str]) -> ~[~str] {
     let mut cs = ~[];
-    for components.iter().advance |c| {
+    foreach c in components.iter() {
         if *c == ~"." && components.len() > 1 { loop; }
         if *c == ~"" { loop; }
         if *c == ~".." && cs.len() != 0 {
@@ -1008,7 +1001,17 @@ pub fn normalize(components: &[~str]) -> ~[~str] {
     cs
 }
 
-// Various windows helpers, and tests for the impl.
+// Various posix helpers.
+pub mod posix {
+
+    #[inline]
+    pub fn is_sep(u: char) -> bool {
+        u == '/'
+    }
+
+}
+
+// Various windows helpers.
 pub mod windows {
     use libc;
     use option::{None, Option, Some};
@@ -1144,6 +1147,14 @@ mod tests {
             .with_filestem("librustc")),
           "/usr/bin/rust/lib/librustc.so");
 
+    }
+
+    #[test]
+    fn test_posix_push_with_backslash() {
+        let a = PosixPath("/aaa/bbb");
+        let b = a.push("x\\y"); // \ is not a file separator for posix paths
+        assert_eq!(a.components.len(), 2);
+        assert_eq!(b.components.len(), 3);
     }
 
     #[test]

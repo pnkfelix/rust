@@ -10,13 +10,12 @@
 
 //! Managed vectors
 
-use cast::transmute;
 use clone::Clone;
 use container::Container;
-use iterator::IteratorUtil;
-use option::Option;
+use iterator::{Iterator, range};
+use option::{Option, Some, None};
 use sys;
-use uint;
+use unstable::raw::Repr;
 use vec::{ImmutableVector, OwnedVector};
 
 /// Code for dealing with @-vectors. This is pretty incomplete, and
@@ -26,8 +25,8 @@ use vec::{ImmutableVector, OwnedVector};
 #[inline]
 pub fn capacity<T>(v: @[T]) -> uint {
     unsafe {
-        let repr: **raw::VecRepr = transmute(&v);
-        (**repr).unboxed.alloc / sys::size_of::<T>()
+        let box = v.repr();
+        (*box).data.alloc / sys::size_of::<T>()
     }
 }
 
@@ -45,10 +44,10 @@ pub fn capacity<T>(v: @[T]) -> uint {
  */
 #[inline]
 pub fn build_sized<A>(size: uint, builder: &fn(push: &fn(v: A))) -> @[A] {
-    let mut vec: @[A] = @[];
+    let mut vec = @[];
     unsafe { raw::reserve(&mut vec, size); }
     builder(|x| unsafe { raw::push(&mut vec, x) });
-    return unsafe { transmute(vec) };
+    vec
 }
 
 /**
@@ -92,10 +91,10 @@ pub fn build_sized_opt<A>(size: Option<uint>,
 #[inline]
 pub fn append<T:Clone>(lhs: @[T], rhs: &[T]) -> @[T] {
     do build_sized(lhs.len() + rhs.len()) |push| {
-        for lhs.iter().advance |x| {
+        foreach x in lhs.iter() {
             push((*x).clone());
         }
-        for uint::range(0, rhs.len()) |i| {
+        foreach i in range(0u, rhs.len()) {
             push(rhs[i].clone());
         }
     }
@@ -105,7 +104,7 @@ pub fn append<T:Clone>(lhs: @[T], rhs: &[T]) -> @[T] {
 /// Apply a function to each element of a vector and return the results
 pub fn map<T, U>(v: &[T], f: &fn(x: &T) -> U) -> @[U] {
     do build_sized(v.len()) |push| {
-        for v.iter().advance |elem| {
+        foreach elem in v.iter() {
             push(f(elem));
         }
     }
@@ -148,10 +147,10 @@ pub fn to_managed_consume<T>(v: ~[T]) -> @[T] {
     let mut av = @[];
     unsafe {
         raw::reserve(&mut av, v.len());
-        for v.consume_iter().advance |x| {
+        foreach x in v.consume_iter() {
             raw::push(&mut av, x);
         }
-        transmute(av)
+        av
     }
 }
 
@@ -195,13 +194,9 @@ pub mod raw {
     use ptr;
     use sys;
     use uint;
-    use unstable::intrinsics;
     use unstable::intrinsics::{move_val_init, TyDesc};
-    use vec;
-    use vec::UnboxedVecRepr;
-
-    pub type VecRepr = vec::raw::VecRepr;
-    pub type SliceRepr = vec::raw::SliceRepr;
+    use unstable::intrinsics;
+    use unstable::raw::{Box, Vec};
 
     /**
      * Sets the length of a vector
@@ -211,9 +206,9 @@ pub mod raw {
      * the vector is actually the specified size.
      */
     #[inline]
-    pub unsafe fn set_len<T>(v: @[T], new_len: uint) {
-        let repr: **mut VecRepr = transmute(&v);
-        (**repr).unboxed.fill = new_len * sys::size_of::<T>();
+    pub unsafe fn set_len<T>(v: &mut @[T], new_len: uint) {
+        let repr: *mut Box<Vec<T>> = cast::transmute_copy(v);
+        (*repr).data.fill = new_len * sys::size_of::<T>();
     }
 
     /**
@@ -221,9 +216,11 @@ pub mod raw {
      */
     #[inline]
     pub unsafe fn push<T>(v: &mut @[T], initval: T) {
-        let repr: **VecRepr = transmute_copy(&v);
-        let fill = (**repr).unboxed.fill;
-        if (**repr).unboxed.alloc > fill {
+        let full = {
+            let repr: *Box<Vec<T>> = cast::transmute_copy(v);
+            (*repr).data.alloc > (*repr).data.fill
+        };
+        if full {
             push_fast(v, initval);
         } else {
             push_slow(v, initval);
@@ -232,16 +229,15 @@ pub mod raw {
 
     #[inline] // really pretty please
     unsafe fn push_fast<T>(v: &mut @[T], initval: T) {
-        let repr: **mut VecRepr = ::cast::transmute(v);
-        let fill = (**repr).unboxed.fill;
-        (**repr).unboxed.fill += sys::size_of::<T>();
-        let p = &((**repr).unboxed.data);
-        let p = ptr::offset(p, fill) as *mut T;
+        let repr: *mut Box<Vec<T>> = cast::transmute_copy(v);
+        let amt = v.len();
+        (*repr).data.fill += sys::size_of::<T>();
+        let p = ptr::offset(&(*repr).data.data as *T, amt as int) as *mut T;
         move_val_init(&mut(*p), initval);
     }
 
     unsafe fn push_slow<T>(v: &mut @[T], initval: T) {
-        reserve_at_least(&mut *v, v.len() + 1u);
+        reserve_at_least(v, v.len() + 1u);
         push_fast(v, initval);
     }
 
@@ -259,7 +255,7 @@ pub mod raw {
     pub unsafe fn reserve<T>(v: &mut @[T], n: uint) {
         // Only make the (slow) call into the runtime if we have to
         if capacity(*v) < n {
-            let ptr: *mut *mut VecRepr = transmute(v);
+            let ptr: *mut *mut Box<Vec<()>> = transmute(v);
             let ty = intrinsics::get_tydesc::<T>();
             // XXX transmute shouldn't be necessary
             let ty = cast::transmute(ty);
@@ -269,16 +265,14 @@ pub mod raw {
 
     // Implementation detail. Shouldn't be public
     #[allow(missing_doc)]
-    pub fn reserve_raw(ty: *TyDesc, ptr: *mut *mut VecRepr, n: uint) {
+    pub fn reserve_raw(ty: *TyDesc, ptr: *mut *mut Box<Vec<()>>, n: uint) {
 
         unsafe {
             let size_in_bytes = n * (*ty).size;
-            if size_in_bytes > (**ptr).unboxed.alloc {
-                let total_size = size_in_bytes + sys::size_of::<UnboxedVecRepr>();
-                // XXX: UnboxedVecRepr has an extra u8 at the end
-                let total_size = total_size - sys::size_of::<u8>();
-                (*ptr) = local_realloc(*ptr as *(), total_size) as *mut VecRepr;
-                (**ptr).unboxed.alloc = size_in_bytes;
+            if size_in_bytes > (**ptr).data.alloc {
+                let total_size = size_in_bytes + sys::size_of::<Vec<()>>();
+                (*ptr) = local_realloc(*ptr as *(), total_size) as *mut Box<Vec<()>>;
+                (**ptr).data.alloc = size_in_bytes;
             }
         }
 
@@ -328,14 +322,14 @@ pub mod raw {
 #[cfg(test)]
 mod test {
     use super::*;
-    use uint;
+    use prelude::*;
 
     #[test]
     fn test() {
         // Some code that could use that, then:
         fn seq_range(lo: uint, hi: uint) -> @[uint] {
             do build |push| {
-                for uint::range(lo, hi) |i| {
+                foreach i in range(lo, hi) {
                     push(i);
                 }
             }

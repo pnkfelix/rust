@@ -34,7 +34,7 @@ impl AsyncWatcher {
 
         extern fn async_cb(handle: *uvll::uv_async_t, status: c_int) {
             let mut watcher: AsyncWatcher = NativeHandle::from_native_handle(handle);
-            let status = status_to_maybe_uv_error(watcher.native_handle(), status);
+            let status = status_to_maybe_uv_error(watcher, status);
             let data = watcher.get_watcher_data();
             let cb = data.async_cb.get_ref();
             (*cb)(watcher, status);
@@ -94,12 +94,13 @@ mod test {
             let mut loop_ = Loop::new();
             let watcher = AsyncWatcher::new(&mut loop_, |w, _| w.close(||()) );
             let watcher_cell = Cell::new(watcher);
-            let _thread = do Thread::start {
+            let thread = do Thread::start {
                 let mut watcher = watcher_cell.take();
                 watcher.send();
             };
             loop_.run();
             loop_.close();
+            thread.join();
         }
     }
 }

@@ -17,11 +17,12 @@ use metadata::decoder;
 use metadata::tyencode;
 use middle::ty::{node_id_to_type, lookup_item_type};
 use middle::ty;
+use middle::typeck;
+use middle::astencode;
 use middle;
 
 use std::hash::HashUtil;
 use std::hashmap::{HashMap, HashSet};
-use std::int;
 use std::io;
 use std::str;
 use std::uint;
@@ -57,12 +58,12 @@ pub struct EncodeParams<'self> {
     diag: @mut span_handler,
     tcx: ty::ctxt,
     reexports2: middle::resolve::ExportMap2,
-    item_symbols: &'self HashMap<ast::node_id, ~str>,
-    discrim_symbols: &'self HashMap<ast::node_id, @str>,
+    item_symbols: &'self HashMap<ast::NodeId, ~str>,
+    discrim_symbols: &'self HashMap<ast::NodeId, @str>,
     link_meta: &'self LinkMeta,
     cstore: @mut cstore::CStore,
     encode_inlined_item: encode_inlined_item<'self>,
-    reachable: @mut HashSet<ast::node_id>,
+    reachable: @mut HashSet<ast::NodeId>,
 }
 
 struct Stats {
@@ -85,16 +86,16 @@ pub struct EncodeContext<'self> {
     tcx: ty::ctxt,
     stats: @mut Stats,
     reexports2: middle::resolve::ExportMap2,
-    item_symbols: &'self HashMap<ast::node_id, ~str>,
-    discrim_symbols: &'self HashMap<ast::node_id, @str>,
+    item_symbols: &'self HashMap<ast::NodeId, ~str>,
+    discrim_symbols: &'self HashMap<ast::NodeId, @str>,
     link_meta: &'self LinkMeta,
     cstore: &'self cstore::CStore,
     encode_inlined_item: encode_inlined_item<'self>,
     type_abbrevs: abbrev_map,
-    reachable: @mut HashSet<ast::node_id>,
+    reachable: @mut HashSet<ast::NodeId>,
 }
 
-pub fn reachable(ecx: &EncodeContext, id: node_id) -> bool {
+pub fn reachable(ecx: &EncodeContext, id: NodeId) -> bool {
     ecx.reachable.contains(&id)
 }
 
@@ -119,7 +120,7 @@ fn encode_region_param(ecx: &EncodeContext,
                        ebml_w: &mut writer::Encoder,
                        it: @ast::item) {
     let opt_rp = ecx.tcx.region_paramd_items.find(&it.id);
-    for opt_rp.iter().advance |rp| {
+    foreach rp in opt_rp.iter() {
         ebml_w.start_tag(tag_region_param);
         rp.encode(ebml_w);
         ebml_w.end_tag();
@@ -162,6 +163,15 @@ fn encode_trait_ref(ebml_w: &mut writer::Encoder,
     ebml_w.end_tag();
 }
 
+fn encode_impl_vtables(ebml_w: &mut writer::Encoder,
+                       ecx: &EncodeContext,
+                       vtables: &typeck::impl_res) {
+    ebml_w.start_tag(tag_item_impl_vtables);
+    astencode::encode_vtable_res(ecx, ebml_w, vtables.trait_vtables);
+    astencode::encode_vtable_param_res(ecx, ebml_w, vtables.self_vtables);
+    ebml_w.end_tag();
+}
+
 // Item info table encoding
 fn encode_family(ebml_w: &mut writer::Encoder, c: char) {
     ebml_w.start_tag(tag_items_data_item_family);
@@ -183,7 +193,7 @@ fn encode_ty_type_param_defs(ebml_w: &mut writer::Encoder,
         tcx: ecx.tcx,
         abbrevs: tyencode::ac_use_abbrevs(ecx.type_abbrevs)
     };
-    for params.iter().advance |param| {
+    foreach param in params.iter() {
         ebml_w.start_tag(tag);
         tyencode::enc_type_param_def(ebml_w.writer, ty_str_ctxt, param);
         ebml_w.end_tag();
@@ -240,7 +250,7 @@ fn encode_type(ecx: &EncodeContext,
 fn encode_transformed_self_ty(ecx: &EncodeContext,
                               ebml_w: &mut writer::Encoder,
                               opt_typ: Option<ty::t>) {
-    for opt_typ.iter().advance |&typ| {
+    foreach &typ in opt_typ.iter() {
         ebml_w.start_tag(tag_item_method_transformed_self_ty);
         write_type(ecx, ebml_w, typ);
         ebml_w.end_tag();
@@ -265,7 +275,7 @@ fn encode_method_fty(ecx: &EncodeContext,
 
 fn encode_symbol(ecx: &EncodeContext,
                  ebml_w: &mut writer::Encoder,
-                 id: node_id) {
+                 id: NodeId) {
     ebml_w.start_tag(tag_items_data_item_symbol);
     match ecx.item_symbols.find(&id) {
         Some(x) => {
@@ -282,7 +292,7 @@ fn encode_symbol(ecx: &EncodeContext,
 
 fn encode_discriminant(ecx: &EncodeContext,
                        ebml_w: &mut writer::Encoder,
-                       id: node_id) {
+                       id: NodeId) {
     ebml_w.start_tag(tag_items_data_item_symbol);
     ebml_w.writer.write(ecx.discrim_symbols.get_copy(&id).as_bytes());
     ebml_w.end_tag();
@@ -290,9 +300,9 @@ fn encode_discriminant(ecx: &EncodeContext,
 
 fn encode_disr_val(_: &EncodeContext,
                    ebml_w: &mut writer::Encoder,
-                   disr_val: int) {
+                   disr_val: uint) {
     ebml_w.start_tag(tag_disr_val);
-    let s = int::to_str(disr_val);
+    let s = uint::to_str(disr_val);
     ebml_w.writer.write(s.as_bytes());
     ebml_w.end_tag();
 }
@@ -306,7 +316,7 @@ fn encode_parent_item(ebml_w: &mut writer::Encoder, id: def_id) {
 
 fn encode_enum_variant_info(ecx: &EncodeContext,
                             ebml_w: &mut writer::Encoder,
-                            id: node_id,
+                            id: NodeId,
                             variants: &[variant],
                             path: &[ast_map::path_elt],
                             index: @mut ~[entry<int>],
@@ -316,8 +326,8 @@ fn encode_enum_variant_info(ecx: &EncodeContext,
     let mut disr_val = 0;
     let mut i = 0;
     let vi = ty::enum_variants(ecx.tcx,
-                               ast::def_id { crate: local_crate, node: id });
-    for variants.iter().advance |variant| {
+                               ast::def_id { crate: LOCAL_CRATE, node: id });
+    foreach variant in variants.iter() {
         let def_id = local_def(variant.node.id);
         index.push(entry {val: variant.node.id, pos: ebml_w.writer.tell()});
         ebml_w.start_tag(tag_items_data_item);
@@ -365,7 +375,7 @@ fn encode_path(ecx: &EncodeContext,
 
     ebml_w.start_tag(tag_path);
     ebml_w.wr_tagged_u32(tag_path_len, (path.len() + 1) as u32);
-    for path.iter().advance |pe| {
+    foreach pe in path.iter() {
         encode_path_elt(ecx, ebml_w, *pe);
     }
     encode_path_elt(ecx, ebml_w, name);
@@ -395,8 +405,8 @@ fn encode_reexported_static_base_methods(ecx: &EncodeContext,
                                          -> bool {
     match ecx.tcx.inherent_impls.find(&exp.def_id) {
         Some(implementations) => {
-            for implementations.iter().advance |&base_impl| {
-                for base_impl.methods.iter().advance |&m| {
+            foreach &base_impl in implementations.iter() {
+                foreach &m in base_impl.methods.iter() {
                     if m.explicit_self == ast::sty_static {
                         encode_reexported_static_method(ecx, ebml_w, exp,
                                                         m.def_id, m.ident);
@@ -416,7 +426,7 @@ fn encode_reexported_static_trait_methods(ecx: &EncodeContext,
                                           -> bool {
     match ecx.tcx.trait_methods_cache.find(&exp.def_id) {
         Some(methods) => {
-            for methods.iter().advance |&m| {
+            foreach &m in methods.iter() {
                 if m.explicit_self == ast::sty_static {
                     encode_reexported_static_method(ecx, ebml_w, exp,
                                                     m.def_id, m.ident);
@@ -471,12 +481,12 @@ fn encode_reexported_static_methods(ecx: &EncodeContext,
 /// * For enums, iterates through the node IDs of the variants.
 ///
 /// * For newtype structs, iterates through the node ID of the constructor.
-fn each_auxiliary_node_id(item: @item, callback: &fn(node_id) -> bool)
+fn each_auxiliary_node_id(item: @item, callback: &fn(NodeId) -> bool)
                           -> bool {
     let mut continue = true;
     match item.node {
         item_enum(ref enum_def, _) => {
-            for enum_def.variants.iter().advance |variant| {
+            foreach variant in enum_def.variants.iter() {
                 continue = callback(variant.node.id);
                 if !continue {
                     break
@@ -502,13 +512,13 @@ fn each_auxiliary_node_id(item: @item, callback: &fn(node_id) -> bool)
 
 fn encode_reexports(ecx: &EncodeContext,
                     ebml_w: &mut writer::Encoder,
-                    id: node_id,
+                    id: NodeId,
                     path: &[ast_map::path_elt]) {
     debug!("(encoding info for module) encoding reexports for %d", id);
     match ecx.reexports2.find(&id) {
         Some(ref exports) => {
             debug!("(encoding info for module) found reexports for %d", id);
-            for exports.iter().advance |exp| {
+            foreach exp in exports.iter() {
                 debug!("(encoding info for module) reexport '%s' for %d",
                        exp.name, id);
                 ebml_w.start_tag(tag_items_data_item_reexport);
@@ -532,7 +542,7 @@ fn encode_reexports(ecx: &EncodeContext,
 fn encode_info_for_mod(ecx: &EncodeContext,
                        ebml_w: &mut writer::Encoder,
                        md: &_mod,
-                       id: node_id,
+                       id: NodeId,
                        path: &[ast_map::path_elt],
                        name: ident,
                        vis: visibility) {
@@ -543,7 +553,7 @@ fn encode_info_for_mod(ecx: &EncodeContext,
     debug!("(encoding info for module) encoding info for module ID %d", id);
 
     // Encode info about all the module children.
-    for md.items.iter().advance |item| {
+    foreach item in md.items.iter() {
         ebml_w.start_tag(tag_mod_child);
         ebml_w.wr_str(def_to_str(local_def(item.id)));
         ebml_w.end_tag();
@@ -653,7 +663,7 @@ fn encode_method_sort(ebml_w: &mut writer::Encoder, sort: char) {
 
 fn encode_provided_source(ebml_w: &mut writer::Encoder,
                           source_opt: Option<def_id>) {
-    for source_opt.iter().advance |source| {
+    foreach source in source_opt.iter() {
         ebml_w.start_tag(tag_item_method_provided_source);
         let s = def_to_str(*source);
         ebml_w.writer.write(s.as_bytes());
@@ -674,7 +684,7 @@ fn encode_info_for_struct(ecx: &EncodeContext,
     let tcx = ecx.tcx;
      /* We encode both private and public fields -- need to include
         private fields to get the offsets right */
-    for fields.iter().advance |field| {
+    foreach field in fields.iter() {
         let (nm, vis) = match field.node.kind {
             named_field(nm, vis) => (nm, vis),
             unnamed_field => (special_idents::unnamed_field, inherited)
@@ -700,7 +710,7 @@ fn encode_info_for_struct_ctor(ecx: &EncodeContext,
                                ebml_w: &mut writer::Encoder,
                                path: &[ast_map::path_elt],
                                name: ast::ident,
-                               ctor_id: node_id,
+                               ctor_id: NodeId,
                                index: @mut ~[entry<int>]) {
     index.push(entry { val: ctor_id, pos: ebml_w.writer.tell() });
 
@@ -745,7 +755,7 @@ fn encode_info_for_method(ecx: &EncodeContext,
                           m: &ty::Method,
                           impl_path: &[ast_map::path_elt],
                           is_default_impl: bool,
-                          parent_id: node_id,
+                          parent_id: NodeId,
                           ast_method_opt: Option<@method>) {
 
     debug!("encode_info_for_method: %? %s", m.def_id,
@@ -761,7 +771,7 @@ fn encode_info_for_method(ecx: &EncodeContext,
 
     encode_path(ecx, ebml_w, impl_path, ast_map::path_name(m.ident));
 
-    for ast_method_opt.iter().advance |ast_method| {
+    foreach ast_method in ast_method_opt.iter() {
         let num_params = tpt.generics.type_param_defs.len();
         if num_params > 0u || is_default_impl
             || should_inline(ast_method.attrs) {
@@ -871,7 +881,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
         encode_path(ecx, ebml_w, path, ast_map::path_name(item.ident));
 
         // Encode all the items in this module.
-        for fm.items.iter().advance |foreign_item| {
+        foreach foreign_item in fm.items.iter() {
             ebml_w.start_tag(tag_mod_child);
             ebml_w.wr_str(def_to_str(local_def(foreign_item.id)));
             ebml_w.end_tag();
@@ -898,7 +908,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
         encode_family(ebml_w, 't');
         encode_bounds_and_type(ebml_w, ecx, &lookup_item_type(tcx, def_id));
         encode_name(ecx, ebml_w, item.ident);
-        for (*enum_definition).variants.iter().advance |v| {
+        foreach v in (*enum_definition).variants.iter() {
             encode_variant_id(ebml_w, local_def(v.node.id));
         }
         (ecx.encode_inlined_item)(ecx, ebml_w, path, ii_item(item));
@@ -939,7 +949,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
         /* Encode def_ids for each field and method
          for methods, write all the stuff get_trait_method
         needs to know*/
-        for struct_def.fields.iter().advance |f| {
+        foreach f in struct_def.fields.iter() {
             match f.node.kind {
                 named_field(ident, vis) => {
                    ebml_w.start_tag(tag_item_field);
@@ -999,16 +1009,18 @@ fn encode_info_for_item(ecx: &EncodeContext,
             }
             _ => {}
         }
-        for imp.methods.iter().advance |method| {
+        foreach method in imp.methods.iter() {
             ebml_w.start_tag(tag_item_impl_method);
             let s = def_to_str(method.def_id);
             ebml_w.writer.write(s.as_bytes());
             ebml_w.end_tag();
         }
-        for opt_trait.iter().advance |ast_trait_ref| {
+        foreach ast_trait_ref in opt_trait.iter() {
             let trait_ref = ty::node_id_to_trait_ref(
                 tcx, ast_trait_ref.ref_id);
             encode_trait_ref(ebml_w, ecx, trait_ref, tag_item_trait_ref);
+            let impl_vtables = ty::lookup_impl_vtables(tcx, def_id);
+            encode_impl_vtables(ebml_w, ecx, &impl_vtables);
         }
         encode_path(ecx, ebml_w, path, ast_map::path_name(item.ident));
         ebml_w.end_tag();
@@ -1022,7 +1034,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
         // appear first in the impl structure, in the same order they do
         // in the ast. This is a little sketchy.
         let num_implemented_methods = ast_methods.len();
-        for imp.methods.iter().enumerate().advance |(i, m)| {
+        foreach (i, m) in imp.methods.iter().enumerate() {
             let ast_method = if i < num_implemented_methods {
                 Some(ast_methods[i])
             } else { None };
@@ -1050,7 +1062,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
         encode_trait_ref(ebml_w, ecx, trait_def.trait_ref, tag_item_trait_ref);
         encode_name(ecx, ebml_w, item.ident);
         encode_attributes(ebml_w, item.attrs);
-        for ty::trait_method_def_ids(tcx, def_id).iter().advance |&method_def_id| {
+        foreach &method_def_id in ty::trait_method_def_ids(tcx, def_id).iter() {
             ebml_w.start_tag(tag_item_trait_method);
             encode_def_id(ebml_w, method_def_id);
             ebml_w.end_tag();
@@ -1060,7 +1072,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
             ebml_w.end_tag();
         }
         encode_path(ecx, ebml_w, path, ast_map::path_name(item.ident));
-        for super_traits.iter().advance |ast_trait_ref| {
+        foreach ast_trait_ref in super_traits.iter() {
             let trait_ref = ty::node_id_to_trait_ref(ecx.tcx, ast_trait_ref.ref_id);
             encode_trait_ref(ebml_w, ecx, trait_ref, tag_item_super_trait_ref);
         }
@@ -1068,8 +1080,8 @@ fn encode_info_for_item(ecx: &EncodeContext,
 
         // Now output the method info for each method.
         let r = ty::trait_method_def_ids(tcx, def_id);
-        for r.iter().enumerate().advance |(i, &method_def_id)| {
-            assert_eq!(method_def_id.crate, ast::local_crate);
+        foreach (i, &method_def_id) in r.iter().enumerate() {
+            assert_eq!(method_def_id.crate, ast::LOCAL_CRATE);
 
             let method_ty = ty::method(tcx, method_def_id);
 
@@ -1174,11 +1186,11 @@ fn encode_info_for_items(ecx: &EncodeContext,
                          -> ~[entry<int>] {
     let index = @mut ~[];
     ebml_w.start_tag(tag_items_data);
-    index.push(entry { val: crate_node_id, pos: ebml_w.writer.tell() });
+    index.push(entry { val: CRATE_NODE_ID, pos: ebml_w.writer.tell() });
     encode_info_for_mod(ecx,
                         ebml_w,
                         &crate.module,
-                        crate_node_id,
+                        CRATE_NODE_ID,
                         [],
                         syntax::parse::token::special_idents::invalid,
                         public);
@@ -1244,14 +1256,14 @@ fn create_index<T:Clone + Hash + IterBytes + 'static>(
                 index: ~[entry<T>])
                 -> ~[@~[entry<T>]] {
     let mut buckets: ~[@mut ~[entry<T>]] = ~[];
-    for uint::range(0u, 256u) |_i| { buckets.push(@mut ~[]); };
-    for index.iter().advance |elt| {
+    foreach _ in range(0u, 256u) { buckets.push(@mut ~[]); };
+    foreach elt in index.iter() {
         let h = elt.val.hash() as uint;
         buckets[h % 256].push((*elt).clone());
     }
 
     let mut buckets_frozen = ~[];
-    for buckets.iter().advance |bucket| {
+    foreach bucket in buckets.iter() {
         buckets_frozen.push(@/*bad*/(**bucket).clone());
     }
     return buckets_frozen;
@@ -1265,10 +1277,10 @@ fn encode_index<T:'static>(
     ebml_w.start_tag(tag_index);
     let mut bucket_locs: ~[uint] = ~[];
     ebml_w.start_tag(tag_index_buckets);
-    for buckets.iter().advance |bucket| {
+    foreach bucket in buckets.iter() {
         bucket_locs.push(ebml_w.writer.tell());
         ebml_w.start_tag(tag_index_buckets_bucket);
-        for (**bucket).iter().advance |elt| {
+        foreach elt in (**bucket).iter() {
             ebml_w.start_tag(tag_index_buckets_bucket_elt);
             assert!(elt.pos < 0xffff_ffff);
             writer.write_be_u32(elt.pos as u32);
@@ -1279,7 +1291,7 @@ fn encode_index<T:'static>(
     }
     ebml_w.end_tag();
     ebml_w.start_tag(tag_index_table);
-    for bucket_locs.iter().advance |pos| {
+    foreach pos in bucket_locs.iter() {
         assert!(*pos < 0xffff_ffff);
         writer.write_be_u32(*pos as u32);
     }
@@ -1325,7 +1337,7 @@ fn encode_meta_item(ebml_w: &mut writer::Encoder, mi: @MetaItem) {
         ebml_w.start_tag(tag_meta_item_name);
         ebml_w.writer.write(name.as_bytes());
         ebml_w.end_tag();
-        for items.iter().advance |inner_item| {
+        foreach inner_item in items.iter() {
             encode_meta_item(ebml_w, *inner_item);
         }
         ebml_w.end_tag();
@@ -1335,7 +1347,7 @@ fn encode_meta_item(ebml_w: &mut writer::Encoder, mi: @MetaItem) {
 
 fn encode_attributes(ebml_w: &mut writer::Encoder, attrs: &[Attribute]) {
     ebml_w.start_tag(tag_attributes);
-    for attrs.iter().advance |attr| {
+    foreach attr in attrs.iter() {
         ebml_w.start_tag(tag_attribute);
         encode_meta_item(ebml_w, attr.node.value);
         ebml_w.end_tag();
@@ -1377,7 +1389,7 @@ fn synthesize_crate_attrs(ecx: &EncodeContext,
 
     let mut attrs = ~[];
     let mut found_link_attr = false;
-    for crate.attrs.iter().advance |attr| {
+    foreach attr in crate.attrs.iter() {
         attrs.push(
             if "link" != attr.name()  {
                 *attr
@@ -1419,7 +1431,7 @@ fn encode_crate_deps(ecx: &EncodeContext,
 
         // Sanity-check the crate numbers
         let mut expected_cnum = 1;
-        for deps.iter().advance |n| {
+        foreach n in deps.iter() {
             assert_eq!(n.cnum, expected_cnum);
             expected_cnum += 1;
         }
@@ -1433,7 +1445,7 @@ fn encode_crate_deps(ecx: &EncodeContext,
     // but is enough to get transitive crate dependencies working.
     ebml_w.start_tag(tag_crate_deps);
     let r = get_ordered_deps(ecx, cstore);
-    for r.iter().advance |dep| {
+    foreach dep in r.iter() {
         encode_crate_dep(ecx, ebml_w, *dep);
     }
     ebml_w.end_tag();
@@ -1443,7 +1455,10 @@ fn encode_lang_items(ecx: &EncodeContext, ebml_w: &mut writer::Encoder) {
     ebml_w.start_tag(tag_lang_items);
 
     for ecx.tcx.lang_items.each_item |def_id, i| {
-        if def_id.crate != local_crate {
+        let def_id = match def_id {
+            Some(id) => id, None => { loop }
+        };
+        if def_id.crate != LOCAL_CRATE {
             loop;
         }
 
@@ -1467,7 +1482,7 @@ fn encode_link_args(ecx: &EncodeContext, ebml_w: &mut writer::Encoder) {
     ebml_w.start_tag(tag_link_args);
 
     let link_args = cstore::get_used_link_args(ecx.cstore);
-    for link_args.iter().advance |link_arg| {
+    foreach link_arg in link_args.iter() {
         ebml_w.start_tag(tag_link_args_arg);
         ebml_w.writer.write_str(link_arg.to_str());
         ebml_w.end_tag();
@@ -1481,7 +1496,7 @@ fn encode_misc_info(ecx: &EncodeContext,
                     ebml_w: &mut writer::Encoder) {
     ebml_w.start_tag(tag_misc_info);
     ebml_w.start_tag(tag_misc_info_crate_items);
-    for crate.module.items.iter().advance |&item| {
+    foreach &item in crate.module.items.iter() {
         ebml_w.start_tag(tag_mod_child);
         ebml_w.wr_str(def_to_str(local_def(item.id)));
         ebml_w.end_tag();
@@ -1617,23 +1632,23 @@ pub fn encode_metadata(parms: EncodeParams, crate: &Crate) -> ~[u8] {
     ecx.stats.total_bytes = *wr.pos;
 
     if (tcx.sess.meta_stats()) {
-        for wr.bytes.iter().advance |e| {
+        foreach e in wr.bytes.iter() {
             if *e == 0 {
                 ecx.stats.zero_bytes += 1;
             }
         }
 
         io::println("metadata stats:");
-        io::println(fmt!("    inline bytes: %u", ecx.stats.inline_bytes));
-        io::println(fmt!(" attribute bytes: %u", ecx.stats.attr_bytes));
-        io::println(fmt!("       dep bytes: %u", ecx.stats.dep_bytes));
-        io::println(fmt!(" lang item bytes: %u", ecx.stats.lang_item_bytes));
-        io::println(fmt!(" link args bytes: %u", ecx.stats.link_args_bytes));
-        io::println(fmt!("      misc bytes: %u", ecx.stats.misc_bytes));
-        io::println(fmt!("      item bytes: %u", ecx.stats.item_bytes));
-        io::println(fmt!("     index bytes: %u", ecx.stats.index_bytes));
-        io::println(fmt!("      zero bytes: %u", ecx.stats.zero_bytes));
-        io::println(fmt!("     total bytes: %u", ecx.stats.total_bytes));
+        printfln!("    inline bytes: %u", ecx.stats.inline_bytes);
+        printfln!(" attribute bytes: %u", ecx.stats.attr_bytes);
+        printfln!("       dep bytes: %u", ecx.stats.dep_bytes);
+        printfln!(" lang item bytes: %u", ecx.stats.lang_item_bytes);
+        printfln!(" link args bytes: %u", ecx.stats.link_args_bytes);
+        printfln!("      misc bytes: %u", ecx.stats.misc_bytes);
+        printfln!("      item bytes: %u", ecx.stats.item_bytes);
+        printfln!("     index bytes: %u", ecx.stats.index_bytes);
+        printfln!("      zero bytes: %u", ecx.stats.zero_bytes);
+        printfln!("     total bytes: %u", ecx.stats.total_bytes);
     }
 
     // Pad this, since something (LLVM, presumably) is cutting off the

@@ -8,11 +8,56 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! Vectors
+/*!
+
+The `vec` module contains useful code to help work with vector values. Vectors are Rust's list
+type. Vectors contain zero or more values of homogeneous types:
+
+~~~ {.rust}
+let int_vector = [1,2,3];
+let str_vector = ["one", "two", "three"];
+~~~
+
+This is a big module, but for a high-level overview:
+
+## Structs
+
+Several structs that are useful for vectors, such as `VecIterator`, which
+represents iteration over a vector.
+
+## Traits
+
+A number of traits that allow you to accomplish tasks with vectors, like the
+`MutableVector` and `ImmutableVector` traits.
+
+## Implementations of other traits
+
+Vectors are a very useful type, and so there's tons of implementations of
+traits found elsewhere. Some notable examples:
+
+* `Clone`
+* `Iterator`
+* `Zero`
+
+## Function definitions
+
+There are a number of different functions that take vectors, here are some
+broad categories:
+
+* Modifying a vector, like `append` and `grow`.
+* Searching in a vector, like `bsearch`.
+* Iterating over vectors, like `each_permutation`.
+* Functional transformations on vectors, like `map` and `partition`.
+* Stack/queue operations, like `push`/`pop` and `shift`/`unshift`.
+* Cons-y operations, like `head` and `tail`.
+* Zipper operations, like `zip` and `unzip`.
+
+And much, much more.
+
+*/
 
 #[warn(non_camel_case_types)];
 
-use cast::transmute;
 use cast;
 use clone::Clone;
 use container::{Container, Mutable};
@@ -32,6 +77,7 @@ use sys::size_of;
 use uint;
 use unstable::intrinsics;
 use unstable::intrinsics::{get_tydesc, contains_managed};
+use unstable::raw::{Box, Repr, Slice, Vec};
 use vec;
 use util;
 
@@ -49,12 +95,11 @@ pub fn same_length<T, U>(xs: &[T], ys: &[U]) -> bool {
 pub fn from_fn<T>(n_elts: uint, op: &fn(uint) -> T) -> ~[T] {
     unsafe {
         let mut v = with_capacity(n_elts);
-        do v.as_mut_buf |p, _len| {
-            let mut i: uint = 0u;
-            while i < n_elts {
-                intrinsics::move_val_init(&mut(*ptr::mut_offset(p, i)), op(i));
-                i += 1u;
-            }
+        let p = raw::to_mut_ptr(v);
+        let mut i: uint = 0u;
+        while i < n_elts {
+            intrinsics::move_val_init(&mut(*ptr::mut_offset(p, i as int)), op(i));
+            i += 1u;
         }
         raw::set_len(&mut v, n_elts);
         v
@@ -74,12 +119,11 @@ pub fn from_elem<T:Clone>(n_elts: uint, t: T) -> ~[T] {
     // vec::with_capacity/ptr::set_memory for primitive types.
     unsafe {
         let mut v = with_capacity(n_elts);
-        do v.as_mut_buf |p, _len| {
-            let mut i = 0u;
-            while i < n_elts {
-                intrinsics::move_val_init(&mut(*ptr::mut_offset(p, i)), t.clone());
-                i += 1u;
-            }
+        let p = raw::to_mut_ptr(v);
+        let mut i = 0u;
+        while i < n_elts {
+            intrinsics::move_val_init(&mut(*ptr::mut_offset(p, i as int)), t.clone());
+            i += 1u;
         }
         raw::set_len(&mut v, n_elts);
         v
@@ -87,6 +131,7 @@ pub fn from_elem<T:Clone>(n_elts: uint, t: T) -> ~[T] {
 }
 
 /// Creates a new vector with a capacity of `capacity`
+#[inline]
 pub fn with_capacity<T>(capacity: uint) -> ~[T] {
     unsafe {
         if contains_managed::<T>() {
@@ -95,7 +140,7 @@ pub fn with_capacity<T>(capacity: uint) -> ~[T] {
             vec
         } else {
             let alloc = capacity * sys::nonzero_size_of::<T>();
-            let ptr = malloc_raw(alloc + sys::size_of::<UnboxedVecRepr>()) as *mut UnboxedVecRepr;
+            let ptr = malloc_raw(alloc + sys::size_of::<Vec<()>>()) as *mut Vec<()>;
             (*ptr).alloc = alloc;
             (*ptr).fill = 0;
             cast::transmute(ptr)
@@ -158,14 +203,14 @@ pub fn build_sized_opt<A>(size: Option<uint>,
 
 /// An iterator over the slices of a vector separated by elements that
 /// match a predicate function.
-pub struct VecSplitIterator<'self, T> {
+pub struct SplitIterator<'self, T> {
     priv v: &'self [T],
     priv n: uint,
     priv pred: &'self fn(t: &T) -> bool,
     priv finished: bool
 }
 
-impl<'self, T> Iterator<&'self [T]> for VecSplitIterator<'self, T> {
+impl<'self, T> Iterator<&'self [T]> for SplitIterator<'self, T> {
     fn next(&mut self) -> Option<&'self [T]> {
         if self.finished { return None; }
 
@@ -191,14 +236,14 @@ impl<'self, T> Iterator<&'self [T]> for VecSplitIterator<'self, T> {
 
 /// An iterator over the slices of a vector separated by elements that
 /// match a predicate function, from back to front.
-pub struct VecRSplitIterator<'self, T> {
+pub struct RSplitIterator<'self, T> {
     priv v: &'self [T],
     priv n: uint,
     priv pred: &'self fn(t: &T) -> bool,
     priv finished: bool
 }
 
-impl<'self, T> Iterator<&'self [T]> for VecRSplitIterator<'self, T> {
+impl<'self, T> Iterator<&'self [T]> for RSplitIterator<'self, T> {
     fn next(&mut self) -> Option<&'self [T]> {
         if self.finished { return None; }
 
@@ -250,7 +295,7 @@ pub fn append_one<T>(lhs: ~[T], x: T) -> ~[T] {
  */
 pub fn flat_map<T, U>(v: &[T], f: &fn(t: &T) -> ~[U]) -> ~[U] {
     let mut result = ~[];
-    for v.iter().advance |elem| { result.push_all_move(f(elem)); }
+    foreach elem in v.iter() { result.push_all_move(f(elem)); }
     result
 }
 
@@ -284,7 +329,7 @@ impl<'self, T:Clone> VectorVector<T> for &'self [~[T]] {
     pub fn connect_vec(&self, sep: &T) -> ~[T] {
         let mut r = ~[];
         let mut first = true;
-        for self.iter().advance |inner| {
+        foreach inner in self.iter() {
             if first { first = false; } else { r.push((*sep).clone()); }
             r.push_all((*inner).clone());
         }
@@ -302,7 +347,7 @@ impl<'self,T:Clone> VectorVector<T> for &'self [&'self [T]] {
     pub fn connect_vec(&self, sep: &T) -> ~[T] {
         let mut r = ~[];
         let mut first = true;
-        for self.iter().advance |&inner| {
+        foreach &inner in self.iter() {
             if first { first = false; } else { r.push((*sep).clone()); }
             r.push_all(inner);
         }
@@ -320,7 +365,7 @@ impl<'self,T:Clone> VectorVector<T> for &'self [&'self [T]] {
 pub fn unzip_slice<T:Clone,U:Clone>(v: &[(T, U)]) -> (~[T], ~[U]) {
     let mut ts = ~[];
     let mut us = ~[];
-    for v.iter().advance |p| {
+    foreach p in v.iter() {
         let (t, u) = (*p).clone();
         ts.push(t);
         us.push(u);
@@ -339,7 +384,7 @@ pub fn unzip_slice<T:Clone,U:Clone>(v: &[(T, U)]) -> (~[T], ~[U]) {
 pub fn unzip<T,U>(v: ~[(T, U)]) -> (~[T], ~[U]) {
     let mut ts = ~[];
     let mut us = ~[];
-    for v.consume_iter().advance |p| {
+    foreach p in v.consume_iter() {
         let (t, u) = p;
         ts.push(t);
         us.push(u);
@@ -428,7 +473,7 @@ pub fn each_permutation<T:Clone>(values: &[T], fun: &fn(perm : &[T]) -> bool) ->
         indices.swap(k, l);
         indices.mut_slice(k+1, length).reverse();
         // fixup permutation based on indices
-        for uint::range(k, length) |i| {
+        foreach i in range(k, length) {
             permutation[i] = values[indices[i]].clone();
         }
     }
@@ -436,12 +481,12 @@ pub fn each_permutation<T:Clone>(values: &[T], fun: &fn(perm : &[T]) -> bool) ->
 
 /// An iterator over the (overlapping) slices of length `size` within
 /// a vector.
-pub struct VecWindowIter<'self, T> {
+pub struct WindowIter<'self, T> {
     priv v: &'self [T],
     priv size: uint
 }
 
-impl<'self, T> Iterator<&'self [T]> for VecWindowIter<'self, T> {
+impl<'self, T> Iterator<&'self [T]> for WindowIter<'self, T> {
     fn next(&mut self) -> Option<&'self [T]> {
         if self.size > self.v.len() {
             None
@@ -455,12 +500,12 @@ impl<'self, T> Iterator<&'self [T]> for VecWindowIter<'self, T> {
 
 /// An iterator over a vector in (non-overlapping) chunks (`size`
 /// elements at a time).
-pub struct VecChunkIter<'self, T> {
+pub struct ChunkIter<'self, T> {
     priv v: &'self [T],
     priv size: uint
 }
 
-impl<'self, T> Iterator<&'self [T]> for VecChunkIter<'self, T> {
+impl<'self, T> Iterator<&'self [T]> for ChunkIter<'self, T> {
     fn next(&mut self) -> Option<&'self [T]> {
         if self.size == 0 {
             None
@@ -485,6 +530,7 @@ pub mod traits {
     use clone::Clone;
     use cmp::{Eq, Ord, TotalEq, TotalOrd, Ordering, Equal, Equiv};
     use ops::Add;
+    use option::{Some, None};
 
     impl<'self,T:Eq> Eq for &'self [T] {
         fn eq(&self, other: & &'self [T]) -> bool {
@@ -543,7 +589,7 @@ pub mod traits {
 
     impl<'self,T:TotalOrd> TotalOrd for &'self [T] {
         fn cmp(&self, other: & &'self [T]) -> Ordering {
-            for self.iter().zip(other.iter()).advance |(s,o)| {
+            foreach (s,o) in self.iter().zip(other.iter()) {
                 match s.cmp(o) {
                     Equal => {},
                     non_eq => { return non_eq; }
@@ -565,7 +611,7 @@ pub mod traits {
 
     impl<'self,T:Ord> Ord for &'self [T] {
         fn lt(&self, other: & &'self [T]) -> bool {
-            for self.iter().zip(other.iter()).advance |(s,o)| {
+            foreach (s,o) in self.iter().zip(other.iter()) {
                 if *s < *o { return true; }
                 if *s > *o { return false; }
             }
@@ -679,7 +725,7 @@ impl<'self,T:Clone> CopyableVector<T> for &'self [T] {
     #[inline]
     fn to_owned(&self) -> ~[T] {
         let mut result = with_capacity(self.len());
-        for self.iter().advance |e| {
+        foreach e in self.iter() {
             result.push((*e).clone());
         }
         result
@@ -692,14 +738,14 @@ pub trait ImmutableVector<'self, T> {
     fn slice_from(&self, start: uint) -> &'self [T];
     fn slice_to(&self, end: uint) -> &'self [T];
     fn iter(self) -> VecIterator<'self, T>;
-    fn rev_iter(self) -> VecRevIterator<'self, T>;
-    fn split_iter(self, pred: &'self fn(&T) -> bool) -> VecSplitIterator<'self, T>;
-    fn splitn_iter(self, n: uint, pred: &'self fn(&T) -> bool) -> VecSplitIterator<'self, T>;
-    fn rsplit_iter(self, pred: &'self fn(&T) -> bool) -> VecRSplitIterator<'self, T>;
-    fn rsplitn_iter(self,  n: uint, pred: &'self fn(&T) -> bool) -> VecRSplitIterator<'self, T>;
+    fn rev_iter(self) -> RevIterator<'self, T>;
+    fn split_iter(self, pred: &'self fn(&T) -> bool) -> SplitIterator<'self, T>;
+    fn splitn_iter(self, n: uint, pred: &'self fn(&T) -> bool) -> SplitIterator<'self, T>;
+    fn rsplit_iter(self, pred: &'self fn(&T) -> bool) -> RSplitIterator<'self, T>;
+    fn rsplitn_iter(self,  n: uint, pred: &'self fn(&T) -> bool) -> RSplitIterator<'self, T>;
 
-    fn window_iter(self, size: uint) -> VecWindowIter<'self, T>;
-    fn chunk_iter(self, size: uint) -> VecChunkIter<'self, T>;
+    fn window_iter(self, size: uint) -> WindowIter<'self, T>;
+    fn chunk_iter(self, size: uint) -> ChunkIter<'self, T>;
 
     fn head(&self) -> &'self T;
     fn head_opt(&self) -> Option<&'self T>;
@@ -735,8 +781,10 @@ impl<'self,T> ImmutableVector<'self, T> for &'self [T] {
         assert!(end <= self.len());
         do self.as_imm_buf |p, _len| {
             unsafe {
-                transmute((ptr::offset(p, start),
-                           (end - start) * sys::nonzero_size_of::<T>()))
+                cast::transmute(Slice {
+                    data: ptr::offset(p, start as int),
+                    len: (end - start) * sys::nonzero_size_of::<T>(),
+                })
             }
         }
     }
@@ -766,29 +814,29 @@ impl<'self,T> ImmutableVector<'self, T> for &'self [T] {
         unsafe {
             let p = vec::raw::to_ptr(self);
             VecIterator{ptr: p,
-                        end: cast::transmute(p as uint + self.len() *
-                                             sys::nonzero_size_of::<T>()),
+                        end: (p as uint + self.len() *
+                              sys::nonzero_size_of::<T>()) as *T,
                         lifetime: cast::transmute(p)}
         }
     }
 
     #[inline]
-    fn rev_iter(self) -> VecRevIterator<'self, T> {
+    fn rev_iter(self) -> RevIterator<'self, T> {
         self.iter().invert()
     }
 
     /// Returns an iterator over the subslices of the vector which are
     /// separated by elements that match `pred`.
     #[inline]
-    fn split_iter(self, pred: &'self fn(&T) -> bool) -> VecSplitIterator<'self, T> {
+    fn split_iter(self, pred: &'self fn(&T) -> bool) -> SplitIterator<'self, T> {
         self.splitn_iter(uint::max_value, pred)
     }
     /// Returns an iterator over the subslices of the vector which are
     /// separated by elements that match `pred`, limited to splitting
     /// at most `n` times.
     #[inline]
-    fn splitn_iter(self, n: uint, pred: &'self fn(&T) -> bool) -> VecSplitIterator<'self, T> {
-        VecSplitIterator {
+    fn splitn_iter(self, n: uint, pred: &'self fn(&T) -> bool) -> SplitIterator<'self, T> {
+        SplitIterator {
             v: self,
             n: n,
             pred: pred,
@@ -799,7 +847,7 @@ impl<'self,T> ImmutableVector<'self, T> for &'self [T] {
     /// separated by elements that match `pred`. This starts at the
     /// end of the vector and works backwards.
     #[inline]
-    fn rsplit_iter(self, pred: &'self fn(&T) -> bool) -> VecRSplitIterator<'self, T> {
+    fn rsplit_iter(self, pred: &'self fn(&T) -> bool) -> RSplitIterator<'self, T> {
         self.rsplitn_iter(uint::max_value, pred)
     }
     /// Returns an iterator over the subslices of the vector which are
@@ -807,8 +855,8 @@ impl<'self,T> ImmutableVector<'self, T> for &'self [T] {
     /// at most `n` times. This starts at the end of the vector and
     /// works backwards.
     #[inline]
-    fn rsplitn_iter(self, n: uint, pred: &'self fn(&T) -> bool) -> VecRSplitIterator<'self, T> {
-        VecRSplitIterator {
+    fn rsplitn_iter(self, n: uint, pred: &'self fn(&T) -> bool) -> RSplitIterator<'self, T> {
+        RSplitIterator {
             v: self,
             n: n,
             pred: pred,
@@ -832,15 +880,15 @@ impl<'self,T> ImmutableVector<'self, T> for &'self [T] {
      *
      * ~~~ {.rust}
      * let v = &[1,2,3,4];
-     * for v.window_iter().advance |win| {
-     *     io::println(fmt!("%?", win));
+     * foreach win in v.window_iter() {
+     *     printfln!(win);
      * }
      * ~~~
      *
      */
-    fn window_iter(self, size: uint) -> VecWindowIter<'self, T> {
+    fn window_iter(self, size: uint) -> WindowIter<'self, T> {
         assert!(size != 0);
-        VecWindowIter { v: self, size: size }
+        WindowIter { v: self, size: size }
     }
 
     /**
@@ -861,15 +909,15 @@ impl<'self,T> ImmutableVector<'self, T> for &'self [T] {
      *
      * ~~~ {.rust}
      * let v = &[1,2,3,4,5];
-     * for v.chunk_iter().advance |win| {
-     *     io::println(fmt!("%?", win));
+     * foreach win in v.chunk_iter() {
+     *     printfln!(win);
      * }
      * ~~~
      *
      */
-    fn chunk_iter(self, size: uint) -> VecChunkIter<'self, T> {
+    fn chunk_iter(self, size: uint) -> ChunkIter<'self, T> {
         assert!(size != 0);
-        VecChunkIter { v: self, size: size }
+        ChunkIter { v: self, size: size }
     }
 
     /// Returns the first element of a vector, failing if the vector is empty.
@@ -927,7 +975,7 @@ impl<'self,T> ImmutableVector<'self, T> for &'self [T] {
      */
     #[inline]
     fn rposition(&self, f: &fn(t: &T) -> bool) -> Option<uint> {
-        for self.rev_iter().enumerate().advance |(i, t)| {
+        foreach (i, t) in self.rev_iter().enumerate() {
             if f(t) { return Some(self.len() - i - 1); }
         }
         None
@@ -946,8 +994,7 @@ impl<'self,T> ImmutableVector<'self, T> for &'self [T] {
     /// bounds checking.
     #[inline]
     unsafe fn unsafe_ref(&self, index: uint) -> *T {
-        let (ptr, _): (*T, uint) = transmute(*self);
-        ptr.offset(index)
+        self.repr().data.offset(index as int)
     }
 
     /**
@@ -1001,11 +1048,8 @@ impl<'self,T> ImmutableVector<'self, T> for &'self [T] {
         // into `s` and pass them to `f()`, but in fact they are potentially
         // pointing at *mutable memory*.  Use `as_mut_buf` instead!
 
-        unsafe {
-            let v : *(*T,uint) = transmute(self);
-            let (buf,len) = *v;
-            f(buf, len / sys::nonzero_size_of::<T>())
-        }
+        let s = self.repr();
+        f(s.data, s.len / sys::nonzero_size_of::<T>())
     }
 }
 
@@ -1031,7 +1075,7 @@ impl<'self,T:Eq> ImmutableEqVector<T> for &'self [T] {
 
     /// Return true if a vector contains an element with the given value
     fn contains(&self, x: &T) -> bool {
-        for self.iter().advance |elt| { if *x == *elt { return true; } }
+        foreach elt in self.iter() { if *x == *elt { return true; } }
         false
     }
 }
@@ -1069,7 +1113,7 @@ impl<'self,T:Clone> ImmutableCopyableVector<T> for &'self [T] {
         let mut lefts  = ~[];
         let mut rights = ~[];
 
-        for self.iter().advance |elt| {
+        foreach elt in self.iter() {
             if f(elt) {
                 lefts.push((*elt).clone());
             } else {
@@ -1089,8 +1133,8 @@ impl<'self,T:Clone> ImmutableCopyableVector<T> for &'self [T] {
 
 #[allow(missing_doc)]
 pub trait OwnedVector<T> {
-    fn consume_iter(self) -> VecConsumeIterator<T>;
-    fn consume_rev_iter(self) -> VecConsumeRevIterator<T>;
+    fn consume_iter(self) -> ConsumeIterator<T>;
+    fn consume_rev_iter(self) -> ConsumeRevIterator<T>;
 
     fn reserve(&mut self, n: uint);
     fn reserve_at_least(&mut self, n: uint);
@@ -1126,19 +1170,19 @@ impl<T> OwnedVector<T> for ~[T] {
     ///
     /// ~~~ {.rust}
     /// let v = ~[~"a", ~"b"];
-    /// for v.consume_iter().advance |s| {
+    /// foreach s in v.consume_iter() {
     ///   // s has type ~str, not &~str
     ///   println(s);
     /// }
     /// ~~~
-    fn consume_iter(self) -> VecConsumeIterator<T> {
-        VecConsumeIterator { v: self, idx: 0 }
+    fn consume_iter(self) -> ConsumeIterator<T> {
+        ConsumeIterator { v: self, idx: 0 }
     }
     /// Creates a consuming iterator that moves out of the vector in
     /// reverse order. Also see `consume_iter`, however note that this
     /// is more efficient.
-    fn consume_rev_iter(self) -> VecConsumeRevIterator<T> {
-        VecConsumeRevIterator { v: self }
+    fn consume_rev_iter(self) -> ConsumeRevIterator<T> {
+        ConsumeRevIterator { v: self }
     }
 
     /**
@@ -1157,17 +1201,17 @@ impl<T> OwnedVector<T> for ~[T] {
             unsafe {
                 let td = get_tydesc::<T>();
                 if contains_managed::<T>() {
-                    let ptr: *mut *mut raw::VecRepr = cast::transmute(self);
+                    let ptr: *mut *mut Box<Vec<()>> = cast::transmute(self);
                     ::at_vec::raw::reserve_raw(td, ptr, n);
                 } else {
-                    let ptr: *mut *mut UnboxedVecRepr = cast::transmute(self);
+                    let ptr: *mut *mut Vec<()> = cast::transmute(self);
                     let alloc = n * sys::nonzero_size_of::<T>();
-                    let size = alloc + sys::size_of::<UnboxedVecRepr>();
+                    let size = alloc + sys::size_of::<Vec<()>>();
                     if alloc / sys::nonzero_size_of::<T>() != n || size < alloc {
                         fail!("vector size is too large: %u", n);
                     }
                     *ptr = realloc_raw(*ptr as *mut c_void, size)
-                           as *mut UnboxedVecRepr;
+                           as *mut Vec<()>;
                     (**ptr).alloc = alloc;
                 }
             }
@@ -1197,10 +1241,10 @@ impl<T> OwnedVector<T> for ~[T] {
     fn capacity(&self) -> uint {
         unsafe {
             if contains_managed::<T>() {
-                let repr: **raw::VecRepr = transmute(self);
-                (**repr).unboxed.alloc / sys::nonzero_size_of::<T>()
+                let repr: **Box<Vec<()>> = cast::transmute(self);
+                (**repr).data.alloc / sys::nonzero_size_of::<T>()
             } else {
-                let repr: **UnboxedVecRepr = transmute(self);
+                let repr: **Vec<()> = cast::transmute(self);
                 (**repr).alloc / sys::nonzero_size_of::<T>()
             }
         }
@@ -1211,16 +1255,16 @@ impl<T> OwnedVector<T> for ~[T] {
     fn push(&mut self, t: T) {
         unsafe {
             if contains_managed::<T>() {
-                let repr: **raw::VecRepr = transmute(&mut *self);
-                let fill = (**repr).unboxed.fill;
-                if (**repr).unboxed.alloc <= fill {
+                let repr: **Box<Vec<()>> = cast::transmute(&mut *self);
+                let fill = (**repr).data.fill;
+                if (**repr).data.alloc <= fill {
                     let new_len = self.len() + 1;
                     self.reserve_at_least(new_len);
                 }
 
                 self.push_fast(t);
             } else {
-                let repr: **UnboxedVecRepr = transmute(&mut *self);
+                let repr: **Vec<()> = cast::transmute(&mut *self);
                 let fill = (**repr).fill;
                 if (**repr).alloc <= fill {
                     let new_len = self.len() + 1;
@@ -1236,18 +1280,18 @@ impl<T> OwnedVector<T> for ~[T] {
     #[inline] // really pretty please
     unsafe fn push_fast(&mut self, t: T) {
         if contains_managed::<T>() {
-            let repr: **mut raw::VecRepr = transmute(self);
-            let fill = (**repr).unboxed.fill;
-            (**repr).unboxed.fill += sys::nonzero_size_of::<T>();
-            let p = to_unsafe_ptr(&((**repr).unboxed.data));
-            let p = ptr::offset(p, fill) as *mut T;
+            let repr: **mut Box<Vec<u8>> = cast::transmute(self);
+            let fill = (**repr).data.fill;
+            (**repr).data.fill += sys::nonzero_size_of::<T>();
+            let p = to_unsafe_ptr(&((**repr).data.data));
+            let p = ptr::offset(p, fill as int) as *mut T;
             intrinsics::move_val_init(&mut(*p), t);
         } else {
-            let repr: **mut UnboxedVecRepr = transmute(self);
+            let repr: **mut Vec<u8> = cast::transmute(self);
             let fill = (**repr).fill;
             (**repr).fill += sys::nonzero_size_of::<T>();
             let p = to_unsafe_ptr(&((**repr).data));
-            let p = ptr::offset(p, fill) as *mut T;
+            let p = ptr::offset(p, fill as int) as *mut T;
             intrinsics::move_val_init(&mut(*p), t);
         }
     }
@@ -1273,7 +1317,7 @@ impl<T> OwnedVector<T> for ~[T] {
         unsafe { // Note: infallible.
             let self_p = vec::raw::to_mut_ptr(*self);
             let rhs_p = vec::raw::to_ptr(rhs);
-            ptr::copy_memory(ptr::mut_offset(self_p, self_len), rhs_p, rhs_len);
+            ptr::copy_memory(ptr::mut_offset(self_p, self_len as int), rhs_p, rhs_len);
             raw::set_len(self, new_len);
             raw::set_len(&mut rhs, 0);
         }
@@ -1337,14 +1381,14 @@ impl<T> OwnedVector<T> for ~[T] {
             {
                 let first_slice = self.slice(0, 1);
                 let last_slice = self.slice(next_ln, ln);
-                raw::copy_memory(transmute(last_slice), first_slice, 1);
+                raw::copy_memory(cast::transmute(last_slice), first_slice, 1);
             }
 
             // Memcopy everything to the left one element
             {
                 let init_slice = self.slice(0, next_ln);
                 let tail_slice = self.slice(1, ln);
-                raw::copy_memory(transmute(init_slice),
+                raw::copy_memory(cast::transmute(init_slice),
                                  tail_slice,
                                  next_ln);
             }
@@ -1354,7 +1398,7 @@ impl<T> OwnedVector<T> for ~[T] {
 
             // Swap out the element we want from the end
             let vp = raw::to_mut_ptr(*self);
-            let vp = ptr::mut_offset(vp, next_ln - 1);
+            let vp = ptr::mut_offset(vp, (next_ln - 1) as int);
 
             Some(ptr::replace_ptr(vp, work_elt))
         }
@@ -1417,8 +1461,8 @@ impl<T> OwnedVector<T> for ~[T] {
             assert!(newlen <= oldlen);
             unsafe {
                 // This loop is optimized out for non-drop types.
-                for uint::range(newlen, oldlen) |i| {
-                    ptr::read_and_zero_ptr(ptr::mut_offset(p, i));
+                foreach i in range(newlen, oldlen) {
+                    ptr::read_and_zero_ptr(ptr::mut_offset(p, i as int));
                 }
             }
         }
@@ -1433,7 +1477,7 @@ impl<T> OwnedVector<T> for ~[T] {
         let len = self.len();
         let mut deleted: uint = 0;
 
-        for uint::range(0, len) |i| {
+        foreach i in range(0u, len) {
             if !f(&self[i]) {
                 deleted += 1;
             } else if deleted > 0 {
@@ -1455,7 +1499,7 @@ impl<T> OwnedVector<T> for ~[T] {
         let mut lefts  = ~[];
         let mut rights = ~[];
 
-        for self.consume_iter().advance |elt| {
+        foreach elt in self.consume_iter() {
             if f(&elt) {
                 lefts.push(elt);
             } else {
@@ -1517,7 +1561,7 @@ impl<T:Clone> OwnedCopyableVector<T> for ~[T] {
         let new_len = self.len() + rhs.len();
         self.reserve(new_len);
 
-        for uint::range(0u, rhs.len()) |i| {
+        foreach i in range(0u, rhs.len()) {
             self.push(unsafe { raw::get(rhs, i) })
         }
     }
@@ -1637,8 +1681,8 @@ impl<T:Eq> OwnedEqVector<T> for ~[T] {
             let mut w = 1;
 
             while r < ln {
-                let p_r = ptr::mut_offset(p, r);
-                let p_wm1 = ptr::mut_offset(p, w - 1);
+                let p_r = ptr::mut_offset(p, r as int);
+                let p_wm1 = ptr::mut_offset(p, (w - 1) as int);
                 if *p_r != *p_wm1 {
                     if r != w {
                         let p_w = ptr::mut_offset(p_wm1, 1);
@@ -1657,8 +1701,10 @@ impl<T:Eq> OwnedEqVector<T> for ~[T] {
 #[allow(missing_doc)]
 pub trait MutableVector<'self, T> {
     fn mut_slice(self, start: uint, end: uint) -> &'self mut [T];
+    fn mut_slice_from(self, start: uint) -> &'self mut [T];
+    fn mut_slice_to(self, end: uint) -> &'self mut [T];
     fn mut_iter(self) -> VecMutIterator<'self, T>;
-    fn mut_rev_iter(self) -> VecMutRevIterator<'self, T>;
+    fn mut_rev_iter(self) -> MutRevIterator<'self, T>;
 
     fn swap(self, a: uint, b: uint);
 
@@ -1688,10 +1734,10 @@ pub trait MutableVector<'self, T> {
      */
     fn move_from(self, src: ~[T], start: uint, end: uint) -> uint;
 
-    unsafe fn unsafe_mut_ref(&self, index: uint) -> *mut T;
-    unsafe fn unsafe_set(&self, index: uint, val: T);
+    unsafe fn unsafe_mut_ref(self, index: uint) -> *mut T;
+    unsafe fn unsafe_set(self, index: uint, val: T);
 
-    fn as_mut_buf<U>(&self, f: &fn(*mut T, uint) -> U) -> U;
+    fn as_mut_buf<U>(self, f: &fn(*mut T, uint) -> U) -> U;
 }
 
 impl<'self,T> MutableVector<'self, T> for &'self mut [T] {
@@ -1702,10 +1748,33 @@ impl<'self,T> MutableVector<'self, T> for &'self mut [T] {
         assert!(end <= self.len());
         do self.as_mut_buf |p, _len| {
             unsafe {
-                transmute((ptr::mut_offset(p, start),
-                           (end - start) * sys::nonzero_size_of::<T>()))
+                cast::transmute(Slice {
+                    data: ptr::mut_offset(p, start as int) as *T,
+                    len: (end - start) * sys::nonzero_size_of::<T>()
+                })
             }
         }
+    }
+
+    /**
+     * Returns a slice of self from `start` to the end of the vec.
+     *
+     * Fails when `start` points outside the bounds of self.
+     */
+    #[inline]
+    fn mut_slice_from(self, start: uint) -> &'self mut [T] {
+        let len = self.len();
+        self.mut_slice(start, len)
+    }
+
+    /**
+     * Returns a slice of self from the start of the vec to `end`.
+     *
+     * Fails when `end` points outside the bounds of self.
+     */
+    #[inline]
+    fn mut_slice_to(self, end: uint) -> &'self mut [T] {
+        self.mut_slice(0, end)
     }
 
     #[inline]
@@ -1722,14 +1791,14 @@ impl<'self,T> MutableVector<'self, T> for &'self mut [T] {
         unsafe {
             let p = vec::raw::to_mut_ptr(self);
             VecMutIterator{ptr: p,
-                           end: cast::transmute(p as uint + self.len() *
-                                                sys::nonzero_size_of::<T>()),
+                           end: (p as uint + self.len() *
+                                 sys::nonzero_size_of::<T>()) as *mut T,
                            lifetime: cast::transmute(p)}
         }
     }
 
     #[inline]
-    fn mut_rev_iter(self) -> VecMutRevIterator<'self, T> {
+    fn mut_rev_iter(self) -> MutRevIterator<'self, T> {
         self.mut_iter().invert()
     }
 
@@ -1763,32 +1832,27 @@ impl<'self,T> MutableVector<'self, T> for &'self mut [T] {
 
     #[inline]
     fn move_from(self, mut src: ~[T], start: uint, end: uint) -> uint {
-        for self.mut_iter().zip(src.mut_slice(start, end).mut_iter()).advance |(a, b)| {
+        foreach (a, b) in self.mut_iter().zip(src.mut_slice(start, end).mut_iter()) {
             util::swap(a, b);
         }
         cmp::min(self.len(), end-start)
     }
 
     #[inline]
-    unsafe fn unsafe_mut_ref(&self, index: uint) -> *mut T {
-        let pair_ptr: &(*mut T, uint) = transmute(self);
-        let (ptr, _) = *pair_ptr;
-        ptr.offset(index)
+    unsafe fn unsafe_mut_ref(self, index: uint) -> *mut T {
+        ptr::mut_offset(self.repr().data as *mut T, index as int)
     }
 
     #[inline]
-    unsafe fn unsafe_set(&self, index: uint, val: T) {
+    unsafe fn unsafe_set(self, index: uint, val: T) {
         *self.unsafe_mut_ref(index) = val;
     }
 
     /// Similar to `as_imm_buf` but passing a `*mut T`
     #[inline]
-    fn as_mut_buf<U>(&self, f: &fn(*mut T, uint) -> U) -> U {
-        unsafe {
-            let v : *(*mut T,uint) = transmute(self);
-            let (buf,len) = *v;
-            f(buf, len / sys::nonzero_size_of::<T>())
-        }
+    fn as_mut_buf<U>(self, f: &fn(*mut T, uint) -> U) -> U {
+        let Slice{ data, len } = self.repr();
+        f(data as *mut T, len / sys::nonzero_size_of::<T>())
     }
 
 }
@@ -1803,7 +1867,7 @@ pub trait MutableCloneableVector<T> {
 impl<'self, T:Clone> MutableCloneableVector<T> for &'self mut [T] {
     #[inline]
     fn copy_from(self, src: &[T]) -> uint {
-        for self.mut_iter().zip(src.iter()).advance |(a, b)| {
+        foreach (a, b) in self.mut_iter().zip(src.iter()) {
             *a = b.clone();
         }
         cmp::min(self.len(), src.len())
@@ -1823,40 +1887,17 @@ pub unsafe fn from_buf<T>(ptr: *T, elts: uint) -> ~[T] {
     raw::from_buf_raw(ptr, elts)
 }
 
-/// The internal 'unboxed' representation of a vector
-#[allow(missing_doc)]
-pub struct UnboxedVecRepr {
-    fill: uint,
-    alloc: uint,
-    data: u8
-}
-
 /// Unsafe operations
 pub mod raw {
-    use cast::transmute;
+    use cast;
     use clone::Clone;
-    use managed;
     use option::Some;
     use ptr;
     use sys;
     use unstable::intrinsics;
-    use vec::{UnboxedVecRepr, with_capacity, ImmutableVector, MutableVector};
+    use vec::{with_capacity, ImmutableVector, MutableVector};
     use unstable::intrinsics::contains_managed;
-
-    /// The internal representation of a (boxed) vector
-    #[allow(missing_doc)]
-    pub struct VecRepr {
-        box_header: managed::raw::BoxHeaderRepr,
-        unboxed: UnboxedVecRepr
-    }
-
-    /// The internal representation of a slice
-    pub struct SliceRepr {
-        /// Pointer to the base of this slice
-        data: *u8,
-        /// The length of the slice
-        len: uint
-    }
+    use unstable::raw::{Box, Vec, Slice};
 
     /**
      * Sets the length of a vector
@@ -1868,10 +1909,10 @@ pub mod raw {
     #[inline]
     pub unsafe fn set_len<T>(v: &mut ~[T], new_len: uint) {
         if contains_managed::<T>() {
-            let repr: **mut VecRepr = transmute(v);
-            (**repr).unboxed.fill = new_len * sys::nonzero_size_of::<T>();
+            let repr: **mut Box<Vec<()>> = cast::transmute(v);
+            (**repr).data.fill = new_len * sys::nonzero_size_of::<T>();
         } else {
-            let repr: **mut UnboxedVecRepr = transmute(v);
+            let repr: **mut Vec<()> = cast::transmute(v);
             (**repr).fill = new_len * sys::nonzero_size_of::<T>();
         }
     }
@@ -1887,19 +1928,13 @@ pub mod raw {
      */
     #[inline]
     pub fn to_ptr<T>(v: &[T]) -> *T {
-        unsafe {
-            let repr: **SliceRepr = transmute(&v);
-            transmute(&((**repr).data))
-        }
+        v.repr().data
     }
 
     /** see `to_ptr()` */
     #[inline]
     pub fn to_mut_ptr<T>(v: &mut [T]) -> *mut T {
-        unsafe {
-            let repr: **SliceRepr = transmute(&v);
-            transmute(&((**repr).data))
-        }
+        v.repr().data as *mut T
     }
 
     /**
@@ -1910,9 +1945,10 @@ pub mod raw {
     pub unsafe fn buf_as_slice<T,U>(p: *T,
                                     len: uint,
                                     f: &fn(v: &[T]) -> U) -> U {
-        let pair = (p, len * sys::nonzero_size_of::<T>());
-        let v : *(&'blk [T]) = transmute(&pair);
-        f(*v)
+        f(cast::transmute(Slice {
+            data: p,
+            len: len * sys::nonzero_size_of::<T>()
+        }))
     }
 
     /**
@@ -1923,9 +1959,10 @@ pub mod raw {
     pub unsafe fn mut_buf_as_slice<T,U>(p: *mut T,
                                         len: uint,
                                         f: &fn(v: &mut [T]) -> U) -> U {
-        let pair = (p, len * sys::nonzero_size_of::<T>());
-        let v : *(&'blk mut [T]) = transmute(&pair);
-        f(*v)
+        f(cast::transmute(Slice {
+            data: p as *T,
+            len: len * sys::nonzero_size_of::<T>()
+        }))
     }
 
     /**
@@ -1933,7 +1970,7 @@ pub mod raw {
      */
     #[inline]
     pub unsafe fn get<T:Clone>(v: &[T], i: uint) -> T {
-        v.as_imm_buf(|p, _len| (*ptr::offset(p, i)).clone())
+        v.as_imm_buf(|p, _len| (*ptr::offset(p, i as int)).clone())
     }
 
     /**
@@ -1945,7 +1982,7 @@ pub mod raw {
     pub unsafe fn init_elem<T>(v: &mut [T], i: uint, val: T) {
         let mut box = Some(val);
         do v.as_mut_buf |p, _len| {
-            intrinsics::move_val_init(&mut(*ptr::mut_offset(p, i)),
+            intrinsics::move_val_init(&mut(*ptr::mut_offset(p, i as int)),
                                       box.take_unwrap());
         }
     }
@@ -2117,7 +2154,7 @@ macro_rules! iterator {
             #[inline]
             fn size_hint(&self) -> (uint, Option<uint>) {
                 let diff = (self.end as uint) - (self.ptr as uint);
-                let exact = diff / sys::nonzero_size_of::<$elem>();
+                let exact = diff / sys::nonzero_size_of::<T>();
                 (exact, Some(exact))
             }
         }
@@ -2145,6 +2182,24 @@ macro_rules! double_ended_iterator {
     }
 }
 
+impl<'self, T> RandomAccessIterator<&'self T> for VecIterator<'self, T> {
+    #[inline]
+    fn indexable(&self) -> uint {
+        let (exact, _) = self.size_hint();
+        exact
+    }
+
+    fn idx(&self, index: uint) -> Option<&'self T> {
+        unsafe {
+            if index < self.indexable() {
+                cast::transmute(self.ptr.offset(index as int))
+            } else {
+                None
+            }
+        }
+    }
+}
+
 //iterator!{struct VecIterator -> *T, &'self T}
 /// An iterator for iterating over a vector.
 pub struct VecIterator<'self, T> {
@@ -2154,7 +2209,7 @@ pub struct VecIterator<'self, T> {
 }
 iterator!{impl VecIterator -> &'self T}
 double_ended_iterator!{impl VecIterator -> &'self T}
-pub type VecRevIterator<'self, T> = InvertIterator<&'self T, VecIterator<'self, T>>;
+pub type RevIterator<'self, T> = Invert<VecIterator<'self, T>>;
 
 impl<'self, T> Clone for VecIterator<'self, T> {
     fn clone(&self) -> VecIterator<'self, T> { *self }
@@ -2169,16 +2224,16 @@ pub struct VecMutIterator<'self, T> {
 }
 iterator!{impl VecMutIterator -> &'self mut T}
 double_ended_iterator!{impl VecMutIterator -> &'self mut T}
-pub type VecMutRevIterator<'self, T> = InvertIterator<&'self mut T, VecMutIterator<'self, T>>;
+pub type MutRevIterator<'self, T> = Invert<VecMutIterator<'self, T>>;
 
 /// An iterator that moves out of a vector.
 #[deriving(Clone)]
-pub struct VecConsumeIterator<T> {
+pub struct ConsumeIterator<T> {
     priv v: ~[T],
     priv idx: uint,
 }
 
-impl<T> Iterator<T> for VecConsumeIterator<T> {
+impl<T> Iterator<T> for ConsumeIterator<T> {
     fn next(&mut self) -> Option<T> {
         // this is peculiar, but is required for safety with respect
         // to dtors. It traverses the first half of the vec, and
@@ -2200,24 +2255,35 @@ impl<T> Iterator<T> for VecConsumeIterator<T> {
 
 /// An iterator that moves out of a vector in reverse order.
 #[deriving(Clone)]
-pub struct VecConsumeRevIterator<T> {
+pub struct ConsumeRevIterator<T> {
     priv v: ~[T]
 }
 
-impl<T> Iterator<T> for VecConsumeRevIterator<T> {
+impl<T> Iterator<T> for ConsumeRevIterator<T> {
     fn next(&mut self) -> Option<T> {
         self.v.pop_opt()
     }
 }
 
 impl<A, T: Iterator<A>> FromIterator<A, T> for ~[A] {
-    pub fn from_iterator(iterator: &mut T) -> ~[A] {
+    fn from_iterator(iterator: &mut T) -> ~[A] {
         let (lower, _) = iterator.size_hint();
         let mut xs = with_capacity(lower);
-        for iterator.advance |x| {
+        foreach x in *iterator {
             xs.push(x);
         }
         xs
+    }
+}
+
+impl<A, T: Iterator<A>> Extendable<A, T> for ~[A] {
+    fn extend(&mut self, iterator: &mut T) {
+        let (lower, _) = iterator.size_hint();
+        let len = self.len();
+        self.reserve(len + lower);
+        foreach x in *iterator {
+            self.push(x);
+        }
     }
 }
 
@@ -2539,9 +2605,9 @@ mod tests {
     #[test]
     fn test_swap_remove_noncopyable() {
         // Tests that we don't accidentally run destructors twice.
-        let mut v = ~[::unstable::sync::exclusive(()),
-                      ::unstable::sync::exclusive(()),
-                      ::unstable::sync::exclusive(())];
+        let mut v = ~[::unstable::sync::Exclusive::new(()),
+                      ::unstable::sync::Exclusive::new(()),
+                      ::unstable::sync::Exclusive::new(())];
         let mut _e = v.swap_remove(0);
         assert_eq!(v.len(), 2);
         _e = v.swap_remove(1);
@@ -2701,19 +2767,19 @@ mod tests {
         let mut results: ~[~[int]];
 
         results = ~[];
-        for each_permutation([]) |v| { results.push(v.to_owned()); }
+        do each_permutation([]) |v| { results.push(v.to_owned()); true };
         assert_eq!(results, ~[~[]]);
 
         results = ~[];
-        for each_permutation([7]) |v| { results.push(v.to_owned()); }
+        do each_permutation([7]) |v| { results.push(v.to_owned()); true };
         assert_eq!(results, ~[~[7]]);
 
         results = ~[];
-        for each_permutation([1,1]) |v| { results.push(v.to_owned()); }
+        do each_permutation([1,1]) |v| { results.push(v.to_owned()); true };
         assert_eq!(results, ~[~[1,1],~[1,1]]);
 
         results = ~[];
-        for each_permutation([5,2,0]) |v| { results.push(v.to_owned()); }
+        do each_permutation([5,2,0]) |v| { results.push(v.to_owned()); true };
         assert!(results ==
             ~[~[5,2,0],~[5,0,2],~[2,5,0],~[2,0,5],~[0,5,2],~[0,2,5]]);
     }
@@ -3041,12 +3107,13 @@ mod tests {
     fn test_permute_fail() {
         let v = [(~0, @0), (~0, @0), (~0, @0), (~0, @0)];
         let mut i = 0;
-        for each_permutation(v) |_elt| {
+        do each_permutation(v) |_elt| {
             if i == 2 {
                 fail!()
             }
             i += 0;
-        }
+            true
+        };
     }
 
     #[test]
@@ -3109,6 +3176,45 @@ mod tests {
     }
 
     #[test]
+    fn test_random_access_iterator() {
+        use iterator::*;
+        let xs = [1, 2, 5, 10, 11];
+        let mut it = xs.iter();
+
+        assert_eq!(it.indexable(), 5);
+        assert_eq!(it.idx(0).unwrap(), &1);
+        assert_eq!(it.idx(2).unwrap(), &5);
+        assert_eq!(it.idx(4).unwrap(), &11);
+        assert!(it.idx(5).is_none());
+
+        assert_eq!(it.next().unwrap(), &1);
+        assert_eq!(it.indexable(), 4);
+        assert_eq!(it.idx(0).unwrap(), &2);
+        assert_eq!(it.idx(3).unwrap(), &11);
+        assert!(it.idx(4).is_none());
+
+        assert_eq!(it.next().unwrap(), &2);
+        assert_eq!(it.indexable(), 3);
+        assert_eq!(it.idx(1).unwrap(), &10);
+        assert!(it.idx(3).is_none());
+
+        assert_eq!(it.next().unwrap(), &5);
+        assert_eq!(it.indexable(), 2);
+        assert_eq!(it.idx(1).unwrap(), &11);
+
+        assert_eq!(it.next().unwrap(), &10);
+        assert_eq!(it.indexable(), 1);
+        assert_eq!(it.idx(0).unwrap(), &11);
+        assert!(it.idx(1).is_none());
+
+        assert_eq!(it.next().unwrap(), &11);
+        assert_eq!(it.indexable(), 0);
+        assert!(it.idx(0).is_none());
+
+        assert!(it.next().is_none());
+    }
+
+    #[test]
     fn test_iter_size_hints() {
         use iterator::*;
         let mut xs = [1, 2, 5, 10, 11];
@@ -3133,7 +3239,7 @@ mod tests {
     fn test_mut_iterator() {
         use iterator::*;
         let mut xs = [1, 2, 3, 4, 5];
-        for xs.mut_iter().advance |x| {
+        foreach x in xs.mut_iter() {
             *x += 1;
         }
         assert_eq!(xs, [2, 3, 4, 5, 6])
@@ -3146,7 +3252,7 @@ mod tests {
         let xs = [1, 2, 5, 10, 11];
         let ys = [11, 10, 5, 2, 1];
         let mut i = 0;
-        for xs.rev_iter().advance |&x| {
+        foreach &x in xs.rev_iter() {
             assert_eq!(x, ys[i]);
             i += 1;
         }
@@ -3157,7 +3263,7 @@ mod tests {
     fn test_mut_rev_iterator() {
         use iterator::*;
         let mut xs = [1u, 2, 3, 4, 5];
-        for xs.mut_rev_iter().enumerate().advance |(i,x)| {
+        foreach (i,x) in xs.mut_rev_iter().enumerate() {
             *x += i;
         }
         assert_eq!(xs, [5, 5, 5, 5, 5])
@@ -3320,9 +3426,10 @@ mod tests {
     fn test_permutations0() {
         let values = [];
         let mut v : ~[~[int]] = ~[];
-        for each_permutation(values) |p| {
+        do each_permutation(values) |p| {
             v.push(p.to_owned());
-        }
+            true
+        };
         assert_eq!(v, ~[~[]]);
     }
 
@@ -3330,9 +3437,10 @@ mod tests {
     fn test_permutations1() {
         let values = [1];
         let mut v : ~[~[int]] = ~[];
-        for each_permutation(values) |p| {
+        do each_permutation(values) |p| {
             v.push(p.to_owned());
-        }
+            true
+        };
         assert_eq!(v, ~[~[1]]);
     }
 
@@ -3340,9 +3448,10 @@ mod tests {
     fn test_permutations2() {
         let values = [1,2];
         let mut v : ~[~[int]] = ~[];
-        for each_permutation(values) |p| {
+        do each_permutation(values) |p| {
             v.push(p.to_owned());
-        }
+            true
+        };
         assert_eq!(v, ~[~[1,2],~[2,1]]);
     }
 
@@ -3350,9 +3459,10 @@ mod tests {
     fn test_permutations3() {
         let values = [1,2,3];
         let mut v : ~[~[int]] = ~[];
-        for each_permutation(values) |p| {
+        do each_permutation(values) |p| {
             v.push(p.to_owned());
-        }
+            true
+        };
         assert_eq!(v, ~[~[1,2,3],~[1,3,2],~[2,1,3],~[2,3,1],~[3,1,2],~[3,2,1]]);
     }
 
@@ -3397,12 +3507,12 @@ mod tests {
         {
             let (left, right) = values.mut_split(2);
             assert_eq!(left.slice(0, left.len()), [1, 2]);
-            for left.mut_iter().advance |p| {
+            foreach p in left.mut_iter() {
                 *p += 1;
             }
 
             assert_eq!(right.slice(0, right.len()), [3, 4, 5]);
-            for right.mut_iter().advance |p| {
+            foreach p in right.mut_iter() {
                 *p += 2;
             }
         }
@@ -3419,25 +3529,25 @@ mod tests {
         assert_eq!(v.len(), 3);
         let mut cnt = 0;
 
-        for v.iter().advance |f| {
+        foreach f in v.iter() {
             assert!(*f == Foo);
             cnt += 1;
         }
         assert_eq!(cnt, 3);
 
-        for v.slice(1, 3).iter().advance |f| {
+        foreach f in v.slice(1, 3).iter() {
             assert!(*f == Foo);
             cnt += 1;
         }
         assert_eq!(cnt, 5);
 
-        for v.mut_iter().advance |f| {
+        foreach f in v.mut_iter() {
             assert!(*f == Foo);
             cnt += 1;
         }
         assert_eq!(cnt, 8);
 
-        for v.consume_iter().advance |f| {
+        foreach f in v.consume_iter() {
             assert!(f == Foo);
             cnt += 1;
         }
@@ -3449,7 +3559,7 @@ mod tests {
         let xs: [Foo, ..3] = [Foo, Foo, Foo];
         assert_eq!(fmt!("%?", xs.slice(0, 2).to_owned()), ~"~[{}, {}]");
         cnt = 0;
-        for xs.iter().advance |f| {
+        foreach f in xs.iter() {
             assert!(*f == Foo);
             cnt += 1;
         }

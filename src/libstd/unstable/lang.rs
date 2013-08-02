@@ -56,8 +56,8 @@ pub fn fail_bounds_check(file: *c_char, line: size_t,
                          index: size_t, len: size_t) {
     let msg = fmt!("index out of bounds: the len is %d but the index is %d",
                     len as int, index as int);
-    do str::as_buf(msg) |p, _len| {
-        fail_(p as *c_char, file, line);
+    do msg.as_c_str |buf| {
+        fail_(buf, file, line);
     }
 }
 
@@ -70,9 +70,6 @@ pub unsafe fn local_malloc(td: *c_char, size: uintptr_t) -> *c_char {
         _ => {
             let mut alloc = ::ptr::null();
             do Local::borrow::<Task,()> |task| {
-                rtdebug!("task pointer: %x, heap pointer: %x",
-                         to_uint(task),
-                         to_uint(&task.heap));
                 alloc = task.heap.alloc(td as *c_void, size as uint) as *c_char;
             }
             return alloc;

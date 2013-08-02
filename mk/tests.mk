@@ -34,12 +34,16 @@ ifdef CHECK_XFAILS
   TESTARGS += --ignored
 endif
 
-CTEST_BENCH = --bench
+TEST_BENCH = --bench
 
 # Arguments to the cfail/rfail/rpass/bench tests
 ifdef CFG_VALGRIND
   CTEST_RUNTOOL = --runtool "$(CFG_VALGRIND)"
-  CTEST_BENCH =
+  TEST_BENCH =
+endif
+
+ifdef NO_BENCH
+  TEST_BENCH =
 endif
 
 # Arguments to the perf tests
@@ -69,12 +73,12 @@ TEST_RATCHET_NOISE_PERCENT=10.0
 # Whether to ratchet or merely save benchmarks
 ifdef CFG_RATCHET_BENCH
 CRATE_TEST_BENCH_ARGS=\
-  --test $(CTEST_BENCH) \
+  --test $(TEST_BENCH) \
   --ratchet-metrics $(call TEST_RATCHET_FILE,$(1),$(2),$(3),$(4)) \
   --ratchet-noise-percent $(TEST_RATCHET_NOISE_PERCENT)
 else
 CRATE_TEST_BENCH_ARGS=\
-  --test $(CTEST_BENCH) \
+  --test $(TEST_BENCH) \
   --save-metrics $(call TEST_RATCHET_FILE,$(1),$(2),$(3),$(4))
 endif
 
@@ -211,25 +215,20 @@ else
 ALL_CS := $(wildcard $(S)src/rt/*.cpp \
                      $(S)src/rt/*/*.cpp \
                      $(S)src/rt/*/*/*.cpp \
-                     $(S)srcrustllvm/*.cpp)
-ALL_CS := $(filter-out $(S)src/rt/bigint/bigint_ext.cpp \
-                       $(S)src/rt/bigint/bigint_int.cpp \
-                       $(S)src/rt/miniz.cpp \
+                     $(S)src/rustllvm/*.cpp)
+ALL_CS := $(filter-out $(S)src/rt/miniz.cpp \
                        $(S)src/rt/linenoise/linenoise.c \
                        $(S)src/rt/linenoise/utf8.c \
 	,$(ALL_CS))
 ALL_HS := $(wildcard $(S)src/rt/*.h \
                      $(S)src/rt/*/*.h \
                      $(S)src/rt/*/*/*.h \
-                     $(S)srcrustllvm/*.h)
+                     $(S)src/rustllvm/*.h)
 ALL_HS := $(filter-out $(S)src/rt/vg/valgrind.h \
                        $(S)src/rt/vg/memcheck.h \
-                       $(S)src/rt/uthash/uthash.h \
-                       $(S)src/rt/uthash/utlist.h \
                        $(S)src/rt/msvc/typeof.h \
                        $(S)src/rt/msvc/stdint.h \
                        $(S)src/rt/msvc/inttypes.h \
-                       $(S)src/rt/bigint/bigint.h \
                        $(S)src/rt/linenoise/linenoise.h \
                        $(S)src/rt/linenoise/utf8.h \
 	,$(ALL_HS))
@@ -312,7 +311,8 @@ define TEST_RUNNER
 # If NO_REBUILD is set then break the dependencies on extra so we can
 # test crates without rebuilding std and extra first
 ifeq ($(NO_REBUILD),)
-STDTESTDEP_$(1)_$(2)_$(3) = $$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_EXTRALIB_$(2))
+STDTESTDEP_$(1)_$(2)_$(3) = $$(SREQ$(1)_T_$(2)_H_$(3)) \
+                            $$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_EXTRALIB_$(2))
 else
 STDTESTDEP_$(1)_$(2)_$(3) =
 endif
@@ -338,6 +338,7 @@ $(3)/stage$(1)/test/syntaxtest-$(2)$$(X_$(2)):			\
 $(3)/stage$(1)/test/rustctest-$(2)$$(X_$(2)): CFG_COMPILER_TRIPLE = $(2)
 $(3)/stage$(1)/test/rustctest-$(2)$$(X_$(2)):					\
 		$$(COMPILER_CRATE) $$(COMPILER_INPUTS) \
+		$$(SREQ$(1)_T_$(2)_H_$(3)) \
 		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_RUSTLLVM_$(2)) \
                 $$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBSYNTAX_$(2))
 	@$$(call E, compile_and_link: $$@)
@@ -345,24 +346,28 @@ $(3)/stage$(1)/test/rustctest-$(2)$$(X_$(2)):					\
 
 $(3)/stage$(1)/test/rustpkgtest-$(2)$$(X_$(2)):					\
 		$$(RUSTPKG_LIB) $$(RUSTPKG_INPUTS)		\
+		$$(SREQ$(1)_T_$(2)_H_$(3)) \
 		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBRUSTC_$(2))
 	@$$(call E, compile_and_link: $$@)
 	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< --test
 
 $(3)/stage$(1)/test/rustitest-$(2)$$(X_$(2)):					\
 		$$(RUSTI_LIB) $$(RUSTI_INPUTS)		\
+		$$(SREQ$(1)_T_$(2)_H_$(3)) \
 		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBRUSTC_$(2))
 	@$$(call E, compile_and_link: $$@)
 	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< --test
 
 $(3)/stage$(1)/test/rusttest-$(2)$$(X_$(2)):					\
 		$$(RUST_LIB) $$(RUST_INPUTS)		\
+		$$(SREQ$(1)_T_$(2)_H_$(3)) \
 		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBRUSTC_$(2))
 	@$$(call E, compile_and_link: $$@)
 	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< --test
 
 $(3)/stage$(1)/test/rustdoctest-$(2)$$(X_$(2)):					\
 		$$(RUSTDOC_LIB) $$(RUSTDOC_INPUTS)		\
+		$$(SREQ$(1)_T_$(2)_H_$(3)) \
 		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBRUSTC_$(2))
 	@$$(call E, compile_and_link: $$@)
 	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< --test
@@ -537,6 +542,10 @@ TEST_SREQ$(1)_T_$(2)_H_$(3) = \
 
 # Rules for the cfail/rfail/rpass/bench/perf test runner
 
+# The tests select when to use debug configuration on their own;
+# remove directive, if present, from CFG_RUSTC_FLAGS (issue #7898).
+CTEST_RUSTC_FLAGS = $$(subst --cfg debug,,$$(CFG_RUSTC_FLAGS))
+
 CTEST_COMMON_ARGS$(1)-T-$(2)-H-$(3) :=						\
 		--compile-lib-path $$(HLIB$(1)_H_$(3))				\
         --run-lib-path $$(TLIB$(1)_T_$(2)_H_$(3))			\
@@ -548,7 +557,7 @@ CTEST_COMMON_ARGS$(1)-T-$(2)-H-$(3) :=						\
         --target $(2)                                       \
         --adb-path=$(CFG_ADB)                          \
         --adb-test-dir=$(CFG_ADB_TEST_DIR)                  \
-        --rustcflags "$(RUSTC_FLAGS_$(2)) $$(CFG_RUSTC_FLAGS) --target=$(2)" \
+        --rustcflags "$(RUSTC_FLAGS_$(2)) $$(CTEST_RUSTC_FLAGS) --target=$(2)" \
         $$(CTEST_TESTARGS)
 
 CTEST_DEPS_rpass_$(1)-T-$(2)-H-$(3) = $$(RPASS_TESTS)

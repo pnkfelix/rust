@@ -37,9 +37,7 @@ use util::ppaux::ty_to_short_str;
 
 use middle::trans::type_::Type;
 
-use std::io;
 use std::libc::c_uint;
-use std::str;
 use syntax::ast;
 
 pub fn trans_free(cx: @mut Block, v: ValueRef) -> @mut Block {
@@ -138,7 +136,10 @@ pub fn simplified_glue_type(tcx: ty::ctxt, field: uint, t: ty::t) -> ty::t {
 
     if field == abi::tydesc_field_take_glue {
         match ty::get(t).sty {
-          ty::ty_unboxed_vec(*) => { return ty::mk_u32(); }
+          ty::ty_unboxed_vec(*) |
+              ty::ty_uniq(*) |
+              ty::ty_estr(ty::vstore_uniq) |
+              ty::ty_evec(_, ty::vstore_uniq) => { return ty::mk_u32(); }
           _ => ()
         }
     }
@@ -425,7 +426,7 @@ pub fn trans_struct_drop_flag(bcx: @mut Block, t: ty::t, v0: ValueRef, dtor_did:
 
         // Drop the fields
         let field_tys = ty::struct_fields(bcx.tcx(), class_did, substs);
-        for field_tys.iter().enumerate().advance |(i, fld)| {
+        foreach (i, fld) in field_tys.iter().enumerate() {
             let llfld_a = adt::trans_field_ptr(bcx, repr, v0, 0, i);
             bcx = drop_ty(bcx, llfld_a, fld.mt.ty);
         }
@@ -460,7 +461,7 @@ pub fn trans_struct_drop(mut bcx: @mut Block, t: ty::t, v0: ValueRef, dtor_did: 
 
     // Drop the fields
     let field_tys = ty::struct_fields(bcx.tcx(), class_did, substs);
-    for field_tys.iter().enumerate().advance |(i, fld)| {
+    foreach (i, fld) in field_tys.iter().enumerate() {
         let llfld_a = adt::trans_field_ptr(bcx, repr, v0, 0, i);
         bcx = drop_ty(bcx, llfld_a, fld.mt.ty);
     }
@@ -649,8 +650,8 @@ pub fn declare_tydesc(ccx: &mut CrateContext, t: ty::t) -> @mut tydesc_info {
     let llty = type_of(ccx, t);
 
     if ccx.sess.count_type_sizes() {
-        io::println(fmt!("%u\t%s", llsize_of_real(ccx, llty),
-                         ppaux::ty_to_str(ccx.tcx, t)));
+        printfln!("%u\t%s", llsize_of_real(ccx, llty),
+                  ppaux::ty_to_str(ccx.tcx, t));
     }
 
     let llsize = llsize_of(ccx, llty);
@@ -658,11 +659,11 @@ pub fn declare_tydesc(ccx: &mut CrateContext, t: ty::t) -> @mut tydesc_info {
     let name = mangle_internal_name_by_type_and_seq(ccx, t, "tydesc").to_managed();
     note_unique_llvm_symbol(ccx, name);
     debug!("+++ declare_tydesc %s %s", ppaux::ty_to_str(ccx.tcx, t), name);
-    let gvar = str::as_c_str(name, |buf| {
+    let gvar = do name.as_c_str |buf| {
         unsafe {
             llvm::LLVMAddGlobal(ccx.llmod, ccx.tydesc_type.to_ref(), buf)
         }
-    });
+    };
     let inf = @mut tydesc_info {
         ty: t,
         tydesc: gvar,

@@ -11,7 +11,7 @@
 //! An ordered map and set for integer keys implemented as a radix trie
 
 use prelude::*;
-use iterator::{IteratorUtil, FromIterator};
+use iterator::{IteratorUtil, FromIterator, Extendable};
 use uint;
 use util::{swap, replace};
 
@@ -36,10 +36,6 @@ impl<T> Container for TrieMap<T> {
     /// Return the number of elements in the map
     #[inline]
     fn len(&self) -> uint { self.length }
-
-    /// Return true if the map contains no elements
-    #[inline]
-    fn is_empty(&self) -> bool { self.len() == 0 }
 }
 
 impl<T> Mutable for TrieMap<T> {
@@ -85,21 +81,6 @@ impl<T> MutableMap<uint, T> for TrieMap<T> {
     #[inline]
     fn find_mut<'a>(&'a mut self, key: &uint) -> Option<&'a mut T> {
         find_mut(&mut self.root.children[chunk(*key, 0)], *key, 1)
-    }
-
-    /// Insert a key-value pair into the map. An existing value for a
-    /// key is replaced by the new value. Return true if the key did
-    /// not already exist in the map.
-    #[inline]
-    fn insert(&mut self, key: uint, value: T) -> bool {
-        self.swap(key, value).is_none()
-    }
-
-    /// Remove a key-value pair from the map. Return true if the key
-    /// was present in the map, otherwise false.
-    #[inline]
-    fn remove(&mut self, key: &uint) -> bool {
-        self.pop(key).is_some()
     }
 
     /// Insert a key-value pair from the map. If the key already had a value
@@ -174,14 +155,18 @@ impl<T> TrieMap<T> {
 }
 
 impl<T, Iter: Iterator<(uint, T)>> FromIterator<(uint, T), Iter> for TrieMap<T> {
-    pub fn from_iterator(iter: &mut Iter) -> TrieMap<T> {
+    fn from_iterator(iter: &mut Iter) -> TrieMap<T> {
         let mut map = TrieMap::new();
-
-        for iter.advance |(k, v)| {
-            map.insert(k, v);
-        }
-
+        map.extend(iter);
         map
+    }
+}
+
+impl<T, Iter: Iterator<(uint, T)>> Extendable<(uint, T), Iter> for TrieMap<T> {
+    fn extend(&mut self, iter: &mut Iter) {
+        foreach (k, v) in *iter {
+            self.insert(k, v);
+        }
     }
 }
 
@@ -194,10 +179,6 @@ impl Container for TrieSet {
     /// Return the number of elements in the set
     #[inline]
     fn len(&self) -> uint { self.map.len() }
-
-    /// Return true if the set contains no elements
-    #[inline]
-    fn is_empty(&self) -> bool { self.map.is_empty() }
 }
 
 impl Mutable for TrieSet {
@@ -245,14 +226,18 @@ impl TrieSet {
 }
 
 impl<Iter: Iterator<uint>> FromIterator<uint, Iter> for TrieSet {
-    pub fn from_iterator(iter: &mut Iter) -> TrieSet {
+    fn from_iterator(iter: &mut Iter) -> TrieSet {
         let mut set = TrieSet::new();
-
-        for iter.advance |elem| {
-            set.insert(elem);
-        }
-
+        set.extend(iter);
         set
+    }
+}
+
+impl<Iter: Iterator<uint>> Extendable<uint, Iter> for TrieSet {
+    fn extend(&mut self, iter: &mut Iter) {
+        foreach elem in *iter {
+            self.insert(elem);
+        }
     }
 }
 
@@ -276,7 +261,7 @@ impl<T> TrieNode<T> {
 
 impl<T> TrieNode<T> {
     fn each<'a>(&'a self, f: &fn(&uint, &'a T) -> bool) -> bool {
-        for uint::range(0, self.children.len()) |idx| {
+        foreach idx in range(0u, self.children.len()) {
             match self.children[idx] {
                 Internal(ref x) => if !x.each(|i,t| f(i,t)) { return false },
                 External(k, ref v) => if !f(&k, v) { return false },
@@ -298,7 +283,7 @@ impl<T> TrieNode<T> {
     }
 
     fn mutate_values<'a>(&'a mut self, f: &fn(&uint, &mut T) -> bool) -> bool {
-        for self.children.mut_iter().advance |child| {
+        foreach child in self.children.mut_iter() {
             match *child {
                 Internal(ref mut x) => if !x.mutate_values(|i,t| f(i,t)) {
                     return false
@@ -394,7 +379,7 @@ pub fn check_integrity<T>(trie: &TrieNode<T>) {
 
     let mut sum = 0;
 
-    for trie.children.iter().advance |x| {
+    foreach x in trie.children.iter() {
         match *x {
           Nothing => (),
           Internal(ref y) => {
@@ -411,7 +396,7 @@ pub fn check_integrity<T>(trie: &TrieNode<T>) {
 #[cfg(test)]
 mod test_map {
     use super::*;
-    use option::{Some, None};
+    use prelude::*;
     use uint;
 
     #[test]
@@ -444,7 +429,7 @@ mod test_map {
             check_integrity(&trie.root);
         }
 
-        for uint::range(0, n) |x| {
+        foreach x in range(0u, n) {
             assert!(trie.contains_key(&x));
             assert!(!trie.insert(x, x + 1));
             check_integrity(&trie.root);
@@ -474,11 +459,12 @@ mod test_map {
         assert!(m.insert(1, 2));
 
         let mut n = 0;
-        for m.each |k, v| {
+        do m.each |k, v| {
             assert_eq!(*k, n);
             assert_eq!(*v, n * 2);
             n += 1;
-        }
+            true
+        };
     }
 
     #[test]
@@ -490,14 +476,16 @@ mod test_map {
         }
 
         let mut n = uint::max_value - 10000;
-        for m.each |k, v| {
-            if n == uint::max_value - 5000 { break }
-            assert!(n < uint::max_value - 5000);
+        do m.each |k, v| {
+            if n == uint::max_value - 5000 { false } else {
+                assert!(n < uint::max_value - 5000);
 
-            assert_eq!(*k, n);
-            assert_eq!(*v, n / 2);
-            n += 1;
-        }
+                assert_eq!(*k, n);
+                assert_eq!(*v, n / 2);
+                n += 1;
+                true
+            }
+        };
     }
 
     #[test]
@@ -511,11 +499,12 @@ mod test_map {
         assert!(m.insert(1, 2));
 
         let mut n = 4;
-        for m.each_reverse |k, v| {
+        do m.each_reverse |k, v| {
             assert_eq!(*k, n);
             assert_eq!(*v, n * 2);
             n -= 1;
-        }
+            true
+        };
     }
 
     #[test]
@@ -527,14 +516,16 @@ mod test_map {
         }
 
         let mut n = uint::max_value - 1;
-        for m.each_reverse |k, v| {
-            if n == uint::max_value - 5000 { break }
-            assert!(n > uint::max_value - 5000);
+        do m.each_reverse |k, v| {
+            if n == uint::max_value - 5000 { false } else {
+                assert!(n > uint::max_value - 5000);
 
-            assert_eq!(*k, n);
-            assert_eq!(*v, n / 2);
-            n -= 1;
-        }
+                assert_eq!(*k, n);
+                assert_eq!(*v, n / 2);
+                n -= 1;
+                true
+            }
+        };
     }
 
     #[test]
@@ -559,7 +550,7 @@ mod test_map {
 
         let map: TrieMap<int> = xs.iter().transform(|&x| x).collect();
 
-        for xs.iter().advance |&(k, v)| {
+        foreach &(k, v) in xs.iter() {
             assert_eq!(map.find(&k), Some(&v));
         }
     }
@@ -568,6 +559,7 @@ mod test_map {
 #[cfg(test)]
 mod test_set {
     use super::*;
+    use prelude::*;
     use uint;
 
     #[test]
@@ -586,10 +578,11 @@ mod test_set {
 
         let mut i = 0;
 
-        for trie.each |x| {
+        do trie.each |x| {
             assert_eq!(expected[i], *x);
             i += 1;
-        }
+            true
+        };
     }
 
     #[test]
@@ -598,7 +591,7 @@ mod test_set {
 
         let set: TrieSet = xs.iter().transform(|&x| x).collect();
 
-        for xs.iter().advance |x| {
+        foreach x in xs.iter() {
             assert!(set.contains(x));
         }
     }

@@ -22,7 +22,8 @@
 #[allow(missing_doc)];
 
 use container::Container;
-use iterator::IteratorUtil;
+use iterator::Iterator;
+use option::{Some, None};
 use rt::io::Writer;
 use str::OwnedStr;
 use to_bytes::IterBytes;
@@ -84,9 +85,10 @@ impl<A:IterBytes> Hash for A {
     #[inline]
     fn hash_keyed(&self, k0: u64, k1: u64) -> u64 {
         let mut s = State::new(k0, k1);
-        for self.iter_bytes(true) |bytes| {
+        do self.iter_bytes(true) |bytes| {
             s.input(bytes);
-        }
+            true
+        };
         s.result_u64()
     }
 }
@@ -94,12 +96,14 @@ impl<A:IterBytes> Hash for A {
 fn hash_keyed_2<A: IterBytes,
                 B: IterBytes>(a: &A, b: &B, k0: u64, k1: u64) -> u64 {
     let mut s = State::new(k0, k1);
-    for a.iter_bytes(true) |bytes| {
+    do a.iter_bytes(true) |bytes| {
         s.input(bytes);
-    }
-    for b.iter_bytes(true) |bytes| {
+        true
+    };
+    do b.iter_bytes(true) |bytes| {
         s.input(bytes);
-    }
+        true
+    };
     s.result_u64()
 }
 
@@ -107,15 +111,18 @@ fn hash_keyed_3<A: IterBytes,
                 B: IterBytes,
                 C: IterBytes>(a: &A, b: &B, c: &C, k0: u64, k1: u64) -> u64 {
     let mut s = State::new(k0, k1);
-    for a.iter_bytes(true) |bytes| {
+    do a.iter_bytes(true) |bytes| {
         s.input(bytes);
-    }
-    for b.iter_bytes(true) |bytes| {
+        true
+    };
+    do b.iter_bytes(true) |bytes| {
         s.input(bytes);
-    }
-    for c.iter_bytes(true) |bytes| {
+        true
+    };
+    do c.iter_bytes(true) |bytes| {
         s.input(bytes);
-    }
+        true
+    };
     s.result_u64()
 }
 
@@ -131,18 +138,22 @@ fn hash_keyed_4<A: IterBytes,
                 k1: u64)
                 -> u64 {
     let mut s = State::new(k0, k1);
-    for a.iter_bytes(true) |bytes| {
+    do a.iter_bytes(true) |bytes| {
         s.input(bytes);
-    }
-    for b.iter_bytes(true) |bytes| {
+        true
+    };
+    do b.iter_bytes(true) |bytes| {
         s.input(bytes);
-    }
-    for c.iter_bytes(true) |bytes| {
+        true
+    };
+    do c.iter_bytes(true) |bytes| {
         s.input(bytes);
-    }
-    for d.iter_bytes(true) |bytes| {
+        true
+    };
+    do d.iter_bytes(true) |bytes| {
         s.input(bytes);
-    }
+        true
+    };
     s.result_u64()
 }
 
@@ -160,21 +171,26 @@ fn hash_keyed_5<A: IterBytes,
                 k1: u64)
                 -> u64 {
     let mut s = State::new(k0, k1);
-    for a.iter_bytes(true) |bytes| {
+    do a.iter_bytes(true) |bytes| {
         s.input(bytes);
-    }
-    for b.iter_bytes(true) |bytes| {
+        true
+    };
+    do b.iter_bytes(true) |bytes| {
         s.input(bytes);
-    }
-    for c.iter_bytes(true) |bytes| {
+        true
+    };
+    do c.iter_bytes(true) |bytes| {
         s.input(bytes);
-    }
-    for d.iter_bytes(true) |bytes| {
+        true
+    };
+    do d.iter_bytes(true) |bytes| {
         s.input(bytes);
-    }
-    for e.iter_bytes(true) |bytes| {
+        true
+    };
+    do e.iter_bytes(true) |bytes| {
         s.input(bytes);
-    }
+        true
+    };
     s.result_u64()
 }
 
@@ -369,7 +385,7 @@ impl Streaming for SipState {
     fn result_str(&mut self) -> ~str {
         let r = self.result_bytes();
         let mut s = ~"";
-        for r.iter().advance |b| {
+        foreach b in r.iter() {
             s.push_str(uint::to_str_radix(*b as uint, 16u));
         }
         s
@@ -471,7 +487,7 @@ mod tests {
 
         fn to_hex_str(r: &[u8, ..8]) -> ~str {
             let mut s = ~"";
-            for r.iter().advance |b| {
+            foreach b in r.iter() {
                 s.push_str(uint::to_str_radix(*b as uint, 16u));
             }
             s

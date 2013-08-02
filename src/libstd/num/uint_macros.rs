@@ -103,7 +103,7 @@ fn range_step_core(start: $T, stop: $T, step: $T_SIGNED, r: Range, it: &fn($T) -
 /// let nums = [1,2,3,4,5,6,7];
 ///
 /// for uint::range_step(0, nums.len() - 1, 2) |i| {
-///     println(fmt!("%d & %d", nums[i], nums[i+1]));
+///     printfln!("%d & %d", nums[i], nums[i+1]);
 /// }
 /// ~~~
 ///
@@ -123,12 +123,6 @@ pub fn range_step(start: $T, stop: $T, step: $T_SIGNED, it: &fn($T) -> bool) -> 
 ///
 pub fn range_step_inclusive(start: $T, last: $T, step: $T_SIGNED, it: &fn($T) -> bool) -> bool {
     range_step_core(start, last, step, Closed, it)
-}
-
-#[inline]
-/// Iterate over the range [`lo`..`hi`)
-pub fn range(lo: $T, hi: $T, it: &fn($T) -> bool) -> bool {
-    range_step(lo, hi, 1 as $T_SIGNED, it)
 }
 
 #[inline]
@@ -660,9 +654,6 @@ mod tests {
     pub fn test_ranges() {
         let mut l = ~[];
 
-        for range(0,3) |i| {
-            l.push(i);
-        }
         for range_rev(14,11) |i| {
             l.push(i);
         }
@@ -685,8 +676,7 @@ mod tests {
             l.push(i);
         }
 
-        assert_eq!(l, ~[0,1,2,
-                        13,12,11,
+        assert_eq!(l, ~[13,12,11,
                         20,22,24,
                         36,34,32,
                         max_value-2,
@@ -695,9 +685,6 @@ mod tests {
                         min_value+3,min_value+1]);
 
         // None of the `fail`s should execute.
-        for range(0,0) |_i| {
-            fail!("unreachable");
-        }
         for range_rev(0,0) |_i| {
             fail!("unreachable");
         }

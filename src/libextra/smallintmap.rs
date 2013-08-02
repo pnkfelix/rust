@@ -15,10 +15,11 @@
 
 #[allow(missing_doc)];
 
-use std::iterator::{Iterator, IteratorUtil, EnumerateIterator, FilterMapIterator, InvertIterator};
+use std::iterator::{Iterator, IteratorUtil, Enumerate, FilterMap, Invert};
 use std::uint;
 use std::util::replace;
-use std::vec::{VecIterator, VecMutIterator, VecConsumeIterator};
+use std::vec::{VecIterator, VecMutIterator};
+use std::vec;
 
 #[allow(missing_doc)]
 pub struct SmallIntMap<T> {
@@ -29,7 +30,7 @@ impl<V> Container for SmallIntMap<V> {
     /// Return the number of elements in the map
     fn len(&self) -> uint {
         let mut sz = 0;
-        for uint::range(0, self.v.len()) |i| {
+        foreach i in range(0u, self.v.len()) {
             match self.v[i] {
                 Some(_) => sz += 1,
                 None => {}
@@ -37,9 +38,6 @@ impl<V> Container for SmallIntMap<V> {
         }
         sz
     }
-
-    /// Return true if the map contains no elements
-    fn is_empty(&self) -> bool { self.len() == 0 }
 }
 
 impl<V> Mutable for SmallIntMap<V> {
@@ -125,13 +123,13 @@ impl<V> SmallIntMap<V> {
 
     /// Visit all key-value pairs in order
     pub fn each<'a>(&'a self, it: &fn(&uint, &'a V) -> bool) -> bool {
-        for uint::range(0, self.v.len()) |i| {
+        foreach i in range(0u, self.v.len()) {
             match self.v[i] {
               Some(ref elt) => if !it(&i, elt) { return false; },
               None => ()
             }
         }
-        return true;
+        true
     }
 
     /// Visit all keys in order
@@ -146,13 +144,13 @@ impl<V> SmallIntMap<V> {
 
     /// Iterate over the map and mutate the contained values
     pub fn mutate_values(&mut self, it: &fn(&uint, &mut V) -> bool) -> bool {
-        for uint::range(0, self.v.len()) |i| {
+        foreach i in range(0, self.v.len()) {
             match self.v[i] {
               Some(ref mut elt) => if !it(&i, elt) { return false; },
               None => ()
             }
         }
-        return true;
+        true
     }
 
     /// Visit all key-value pairs in reverse order
@@ -206,8 +204,8 @@ impl<V> SmallIntMap<V> {
 
     /// Empties the hash map, moving all values into the specified closure
     pub fn consume(&mut self)
-        -> FilterMapIterator<(uint, Option<V>), (uint, V),
-                EnumerateIterator<Option<V>, VecConsumeIterator<Option<V>>>>
+        -> FilterMap<(uint, Option<V>), (uint, V),
+                Enumerate<vec::ConsumeIterator<Option<V>>>>
     {
         let values = replace(&mut self.v, ~[]);
         values.consume_iter().enumerate().filter_map(|(i, v)| {
@@ -293,8 +291,7 @@ pub struct SmallIntMapIterator<'self, T> {
 
 iterator!(impl SmallIntMapIterator -> (uint, &'self T), get_ref)
 double_ended_iterator!(impl SmallIntMapIterator -> (uint, &'self T), get_ref)
-pub type SmallIntMapRevIterator<'self, T> = InvertIterator<(uint, &'self T),
-                                                           SmallIntMapIterator<'self, T>>;
+pub type SmallIntMapRevIterator<'self, T> = Invert<SmallIntMapIterator<'self, T>>;
 
 pub struct SmallIntMapMutIterator<'self, T> {
     priv front: uint,
@@ -304,8 +301,7 @@ pub struct SmallIntMapMutIterator<'self, T> {
 
 iterator!(impl SmallIntMapMutIterator -> (uint, &'self mut T), get_mut_ref)
 double_ended_iterator!(impl SmallIntMapMutIterator -> (uint, &'self mut T), get_mut_ref)
-pub type SmallIntMapMutRevIterator<'self, T> = InvertIterator<(uint, &'self mut T),
-                                                              SmallIntMapMutIterator<'self, T>>;
+pub type SmallIntMapMutRevIterator<'self, T> = Invert<SmallIntMapMutIterator<'self, T>>;
 
 #[cfg(test)]
 mod test_map {
@@ -451,7 +447,7 @@ mod test_map {
         assert!(m.insert(6, 10));
         assert!(m.insert(10, 11));
 
-        for m.mut_iter().advance |(k, v)| {
+        foreach (k, v) in m.mut_iter() {
             *v += k as int;
         }
 
@@ -493,7 +489,7 @@ mod test_map {
         assert!(m.insert(6, 10));
         assert!(m.insert(10, 11));
 
-        for m.mut_rev_iter().advance |(k, v)| {
+        foreach (k, v) in m.mut_rev_iter() {
             *v += k as int;
         }
 
@@ -511,7 +507,7 @@ mod test_map {
         let mut m = SmallIntMap::new();
         m.insert(1, ~2);
         let mut called = false;
-        for m.consume().advance |(k, v)| {
+        foreach (k, v) in m.consume() {
             assert!(!called);
             called = true;
             assert_eq!(k, 1);

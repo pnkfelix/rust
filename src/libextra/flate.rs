@@ -90,23 +90,23 @@ mod tests {
     fn test_flate_round_trip() {
         let mut r = rand::rng();
         let mut words = ~[];
-        for 20.times {
+        do 20.times {
             let range = r.gen_uint_range(1, 10);
             words.push(r.gen_bytes(range));
         }
-        for 20.times {
-            let mut in = ~[];
-            for 2000.times {
-                in.push_all(r.choose(words));
+        do 20.times {
+            let mut input = ~[];
+            do 2000.times {
+                input.push_all(r.choose(words));
             }
             debug!("de/inflate of %u bytes of random word-sequences",
-                   in.len());
-            let cmp = deflate_bytes(in);
+                   input.len());
+            let cmp = deflate_bytes(input);
             let out = inflate_bytes(cmp);
             debug!("%u bytes deflated to %u (%.1f%% size)",
-                   in.len(), cmp.len(),
-                   100.0 * ((cmp.len() as float) / (in.len() as float)));
-            assert_eq!(in, out);
+                   input.len(), cmp.len(),
+                   100.0 * ((cmp.len() as float) / (input.len() as float)));
+            assert_eq!(input, out);
         }
     }
 }

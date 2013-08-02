@@ -46,28 +46,27 @@ implement `Reader` and `Writer`, where appropriate.
 
 #[allow(missing_doc)];
 
-use result::Result;
-
+use cast;
 use clone::Clone;
 use container::Container;
 use int;
-use libc;
-use libc::{c_int, c_long, c_void, size_t, ssize_t};
+use iterator::Iterator;
 use libc::consts::os::posix88::*;
+use libc::{c_int, c_long, c_void, size_t, ssize_t};
+use libc;
 use num;
-use os;
-use cast;
-use path::Path;
 use ops::Drop;
-use iterator::IteratorUtil;
+use option::{Some, None};
+use os;
+use path::Path;
 use ptr;
-use result;
+use result::{Result, Ok, Err};
+use str::{StrSlice, OwnedStr};
 use str;
-use str::StrSlice;
 use to_str::ToStr;
 use uint;
-use vec;
 use vec::{MutableVector, ImmutableVector, OwnedVector, OwnedCopyableVector, CopyableVector};
+use vec;
 
 #[allow(non_camel_case_types)] // not sure what to do about this
 pub type fd_t = c_int;
@@ -149,6 +148,9 @@ pub trait Reader {
 
     /**
     * Returns a boolean value: are we currently at EOF?
+    *
+    * Note that stream position may be already at the end-of-file point,
+    * but `eof` returns false until an attempt to read at that position.
     *
     * `eof` is conceptually similar to C's `feof` function.
     *
@@ -726,15 +728,21 @@ impl<T:Reader> ReaderUtil for T {
     }
 
     fn each_byte(&self, it: &fn(int) -> bool) -> bool {
-        while !self.eof() {
-            if !it(self.read_byte()) { return false; }
+        loop {
+            match self.read_byte() {
+                -1 => break,
+                ch => if !it(ch) { return false; }
+            }
         }
         return true;
     }
 
     fn each_char(&self, it: &fn(char) -> bool) -> bool {
-        while !self.eof() {
-            if !it(self.read_char()) { return false; }
+        loop {
+            match self.read_char() {
+                eof if eof == (-1 as char) => break,
+                ch => if !it(ch) { return false; }
+            }
         }
         return true;
     }
@@ -762,9 +770,10 @@ impl<T:Reader> ReaderUtil for T {
 
     fn read_lines(&self) -> ~[~str] {
         do vec::build |push| {
-            for self.each_line |line| {
-                push(str::to_owned(line));
-            }
+            do self.each_line |line| {
+                push(line.to_owned());
+                true
+            };
         }
     }
 
@@ -1031,17 +1040,16 @@ pub fn stdin() -> @Reader {
 }
 
 pub fn file_reader(path: &Path) -> Result<@Reader, ~str> {
-    unsafe {
-        let f = os::as_c_charp(path.to_str(), |pathbuf| {
-            os::as_c_charp("r", |modebuf|
-                libc::fopen(pathbuf, modebuf)
-            )
-        });
-        return if f as uint == 0u { result::Err(~"error opening "
-                                                + path.to_str()) }
-        else {
-            result::Ok(FILE_reader(f, true))
+    let f = do path.to_str().as_c_str |pathbuf| {
+        do "r".as_c_str |modebuf| {
+            unsafe { libc::fopen(pathbuf, modebuf as *libc::c_char) }
         }
+    };
+
+    if f as uint == 0u {
+        Err(~"error opening " + path.to_str())
+    } else {
+        Ok(FILE_reader(f, true))
     }
 }
 
@@ -1207,7 +1215,7 @@ impl Writer for fd_t {
             let mut count = 0u;
             do v.as_imm_buf |vbuf, len| {
                 while count < len {
-                    let vb = ptr::offset(vbuf, count) as *c_void;
+                    let vb = ptr::offset(vbuf, count as int) as *c_void;
                     let nout = libc::write(*self, vb, len as size_t);
                     if nout < 0 as ssize_t {
                         error!("error writing buffer");
@@ -1273,7 +1281,7 @@ pub fn mk_file_writer(path: &Path, flags: &[FileFlag])
     fn wb() -> c_int { O_WRONLY as c_int }
 
     let mut fflags: c_int = wb();
-    for flags.iter().advance |f| {
+    foreach f in flags.iter() {
         match *f {
           Append => fflags |= O_APPEND as c_int,
           Create => fflags |= O_CREAT as c_int,
@@ -1282,16 +1290,15 @@ pub fn mk_file_writer(path: &Path, flags: &[FileFlag])
         }
     }
     let fd = unsafe {
-        do os::as_c_charp(path.to_str()) |pathbuf| {
+        do path.to_str().as_c_str |pathbuf| {
             libc::open(pathbuf, fflags,
                        (S_IRUSR | S_IWUSR) as c_int)
         }
     };
     if fd < (0 as c_int) {
-        result::Err(fmt!("error opening %s: %s", path.to_str(),
-                         os::last_os_error()))
+        Err(fmt!("error opening %s: %s", path.to_str(), os::last_os_error()))
     } else {
-        result::Ok(fd_writer(fd, true))
+        Ok(fd_writer(fd, true))
     }
 }
 
@@ -1560,22 +1567,22 @@ impl<T:Writer> WriterUtil for T {
 }
 
 pub fn file_writer(path: &Path, flags: &[FileFlag]) -> Result<@Writer, ~str> {
-    mk_file_writer(path, flags).chain(|w| result::Ok(w))
+    mk_file_writer(path, flags).chain(|w| Ok(w))
 }
 
 
 // FIXME: fileflags // #2004
 pub fn buffered_file_writer(path: &Path) -> Result<@Writer, ~str> {
     unsafe {
-        let f = do os::as_c_charp(path.to_str()) |pathbuf| {
-            do os::as_c_charp("w") |modebuf| {
+        let f = do path.to_str().as_c_str |pathbuf| {
+            do "w".as_c_str |modebuf| {
                 libc::fopen(pathbuf, modebuf)
             }
         };
         return if f as uint == 0u {
-            result::Err(~"error opening " + path.to_str())
+            Err(~"error opening " + path.to_str())
         } else {
-            result::Ok(FILE_writer(f, true))
+            Ok(FILE_writer(f, true))
         }
     }
 }
@@ -1727,21 +1734,21 @@ pub fn seek_in_buf(offset: int, pos: uint, len: uint, whence: SeekStyle) ->
 }
 
 pub fn read_whole_file_str(file: &Path) -> Result<~str, ~str> {
-    result::chain(read_whole_file(file), |bytes| {
+    do read_whole_file(file).chain |bytes| {
         if str::is_utf8(bytes) {
-            result::Ok(str::from_bytes(bytes))
+            Ok(str::from_bytes(bytes))
         } else {
-            result::Err(file.to_str() + " is not UTF-8")
+            Err(file.to_str() + " is not UTF-8")
         }
-    })
+    }
 }
 
 // FIXME (#2004): implement this in a low-level way. Going through the
 // abstractions is pointless.
 pub fn read_whole_file(file: &Path) -> Result<~[u8], ~str> {
-    result::chain(file_reader(file), |rdr| {
-        result::Ok(rdr.read_whole_stream())
-    })
+    do file_reader(file).chain |rdr| {
+        Ok(rdr.read_whole_stream())
+    }
 }
 
 // fsync related
@@ -1836,11 +1843,12 @@ pub mod fsync {
 
 #[cfg(test)]
 mod tests {
+    use prelude::*;
     use i32;
     use io::{BytesWriter, SeekCur, SeekEnd, SeekSet};
     use io;
     use path::Path;
-    use result;
+    use result::{Ok, Err};
     use u64;
     use vec;
 
@@ -1852,15 +1860,38 @@ mod tests {
             ~"A hoopy frood who really knows where his towel is.";
         debug!(frood.clone());
         {
-            let out: @io::Writer =
-                result::unwrap(
-                    io::file_writer(tmpfile, [io::Create, io::Truncate]));
+            let out = io::file_writer(tmpfile, [io::Create, io::Truncate]).unwrap();
             out.write_str(frood);
         }
-        let inp: @io::Reader = result::unwrap(io::file_reader(tmpfile));
+        let inp = io::file_reader(tmpfile).unwrap();
         let frood2: ~str = inp.read_c_str();
         debug!(frood2.clone());
         assert_eq!(frood, frood2);
+    }
+
+    #[test]
+    fn test_each_byte_each_char_file() {
+        // Issue #5056 -- shouldn't include trailing EOF.
+        let path = Path("tmp/lib-io-test-each-byte-each-char-file.tmp");
+
+        {
+            // create empty, enough to reproduce a problem
+            io::file_writer(&path, [io::Create]).unwrap();
+        }
+
+        {
+            let file = io::file_reader(&path).unwrap();
+            do file.each_byte() |_| {
+                fail!("must be empty")
+            };
+        }
+
+        {
+            let file = io::file_reader(&path).unwrap();
+            do file.each_char() |_| {
+                fail!("must be empty")
+            };
+        }
     }
 
     #[test]
@@ -1909,7 +1940,7 @@ mod tests {
                 if len <= ivals.len() {
                     assert_eq!(res.len(), len);
                 }
-                for ivals.iter().zip(res.iter()).advance |(iv, c)| {
+                foreach (iv, c) in ivals.iter().zip(res.iter()) {
                     assert!(*iv == *c as int)
                 }
             }
@@ -1942,10 +1973,10 @@ mod tests {
     #[test]
     fn file_reader_not_exist() {
         match io::file_reader(&Path("not a file")) {
-          result::Err(e) => {
+          Err(e) => {
             assert_eq!(e, ~"error opening not a file");
           }
-          result::Ok(_) => fail!()
+          Ok(_) => fail!()
         }
     }
 
@@ -1983,20 +2014,20 @@ mod tests {
     #[test]
     fn file_writer_bad_name() {
         match io::file_writer(&Path("?/?"), []) {
-          result::Err(e) => {
+          Err(e) => {
             assert!(e.starts_with("error opening"));
           }
-          result::Ok(_) => fail!()
+          Ok(_) => fail!()
         }
     }
 
     #[test]
     fn buffered_file_writer_bad_name() {
         match io::buffered_file_writer(&Path("?/?")) {
-          result::Err(e) => {
+          Err(e) => {
             assert!(e.starts_with("error opening"));
           }
-          result::Ok(_) => fail!()
+          Ok(_) => fail!()
         }
     }
 
@@ -2023,7 +2054,7 @@ mod tests {
         // write the ints to the file
         {
             let file = io::file_writer(&path, [io::Create]).unwrap();
-            for uints.iter().advance |i| {
+            foreach i in uints.iter() {
                 file.write_le_u64(*i);
             }
         }
@@ -2031,7 +2062,7 @@ mod tests {
         // then read them back and check that they are the same
         {
             let file = io::file_reader(&path).unwrap();
-            for uints.iter().advance |i| {
+            foreach i in uints.iter() {
                 assert_eq!(file.read_le_u64(), *i);
             }
         }
@@ -2045,7 +2076,7 @@ mod tests {
         // write the ints to the file
         {
             let file = io::file_writer(&path, [io::Create]).unwrap();
-            for uints.iter().advance |i| {
+            foreach i in uints.iter() {
                 file.write_be_u64(*i);
             }
         }
@@ -2053,7 +2084,7 @@ mod tests {
         // then read them back and check that they are the same
         {
             let file = io::file_reader(&path).unwrap();
-            for uints.iter().advance |i| {
+            foreach i in uints.iter() {
                 assert_eq!(file.read_be_u64(), *i);
             }
         }
@@ -2067,7 +2098,7 @@ mod tests {
         // write the ints to the file
         {
             let file = io::file_writer(&path, [io::Create]).unwrap();
-            for ints.iter().advance |i| {
+            foreach i in ints.iter() {
                 file.write_be_i32(*i);
             }
         }
@@ -2075,7 +2106,7 @@ mod tests {
         // then read them back and check that they are the same
         {
             let file = io::file_reader(&path).unwrap();
-            for ints.iter().advance |i| {
+            foreach i in ints.iter() {
                 // this tests that the sign extension is working
                 // (comparing the values as i32 would not test this)
                 assert_eq!(file.read_be_int_n(4), *i as i64);

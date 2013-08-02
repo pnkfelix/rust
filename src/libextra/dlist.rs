@@ -25,7 +25,7 @@
 use std::cast;
 use std::ptr;
 use std::util;
-use std::iterator::{FromIterator, InvertIterator};
+use std::iterator::{FromIterator, Extendable, Invert};
 
 use container::Deque;
 
@@ -356,7 +356,7 @@ impl<T> DList<T> {
 
     /// Provide a reverse iterator
     #[inline]
-    pub fn rev_iter<'a>(&'a self) -> InvertIterator<&'a T, DListIterator<'a, T>> {
+    pub fn rev_iter<'a>(&'a self) -> Invert<DListIterator<'a, T>> {
         self.iter().invert()
     }
 
@@ -376,8 +376,7 @@ impl<T> DList<T> {
     }
     /// Provide a reverse iterator with mutable references
     #[inline]
-    pub fn mut_rev_iter<'a>(&'a mut self) -> InvertIterator<&'a mut T,
-                                                MutDListIterator<'a, T>> {
+    pub fn mut_rev_iter<'a>(&'a mut self) -> Invert<MutDListIterator<'a, T>> {
         self.mut_iter().invert()
     }
 
@@ -390,7 +389,7 @@ impl<T> DList<T> {
 
     /// Consume the list into an iterator yielding elements by value, in reverse
     #[inline]
-    pub fn consume_rev_iter(self) -> InvertIterator<T, ConsumeIterator<T>> {
+    pub fn consume_rev_iter(self) -> Invert<ConsumeIterator<T>> {
         self.consume_iter().invert()
     }
 }
@@ -542,8 +541,14 @@ impl<A> DoubleEndedIterator<A> for ConsumeIterator<A> {
 impl<A, T: Iterator<A>> FromIterator<A, T> for DList<A> {
     fn from_iterator(iterator: &mut T) -> DList<A> {
         let mut ret = DList::new();
-        for iterator.advance |elt| { ret.push_back(elt); }
+        ret.extend(iterator);
         ret
+    }
+}
+
+impl<A, T: Iterator<A>> Extendable<A, T> for DList<A> {
+    fn extend(&mut self, iterator: &mut T) {
+        foreach elt in *iterator { self.push_back(elt); }
     }
 }
 
@@ -602,7 +607,6 @@ pub fn check_links<T>(list: &DList<T>) {
 mod tests {
     use super::*;
     use std::rand;
-    use std::int;
     use extra::test;
 
     #[test]
@@ -683,7 +687,7 @@ mod tests {
         check_links(&m);
         let sum = v + u;
         assert_eq!(sum.len(), m.len());
-        for sum.consume_iter().advance |elt| {
+        foreach elt in sum.consume_iter() {
             assert_eq!(m.pop_front(), Some(elt))
         }
     }
@@ -707,7 +711,7 @@ mod tests {
         check_links(&m);
         let sum = u + v;
         assert_eq!(sum.len(), m.len());
-        for sum.consume_iter().advance |elt| {
+        foreach elt in sum.consume_iter() {
             assert_eq!(m.pop_front(), Some(elt))
         }
     }
@@ -738,7 +742,7 @@ mod tests {
     #[test]
     fn test_iterator() {
         let m = generate_test();
-        for m.iter().enumerate().advance |(i, elt)| {
+        foreach (i, elt) in m.iter().enumerate() {
             assert_eq!(i as int, *elt);
         }
         let mut n = DList::new();
@@ -786,7 +790,7 @@ mod tests {
     #[test]
     fn test_rev_iter() {
         let m = generate_test();
-        for m.rev_iter().enumerate().advance |(i, elt)| {
+        foreach (i, elt) in m.rev_iter().enumerate() {
             assert_eq!((6 - i) as int, *elt);
         }
         let mut n = DList::new();
@@ -803,7 +807,7 @@ mod tests {
     fn test_mut_iter() {
         let mut m = generate_test();
         let mut len = m.len();
-        for m.mut_iter().enumerate().advance |(i, elt)| {
+        foreach (i, elt) in m.mut_iter().enumerate() {
             assert_eq!(i as int, *elt);
             len -= 1;
         }
@@ -895,7 +899,7 @@ mod tests {
     #[test]
     fn test_mut_rev_iter() {
         let mut m = generate_test();
-        for m.mut_rev_iter().enumerate().advance |(i, elt)| {
+        foreach (i, elt) in m.mut_rev_iter().enumerate() {
             assert_eq!((6-i) as int, *elt);
         }
         let mut n = DList::new();
@@ -928,7 +932,7 @@ mod tests {
 
     #[test]
     fn test_fuzz() {
-        for 25.times {
+        do 25.times {
             fuzz_test(3);
             fuzz_test(16);
             fuzz_test(189);
@@ -939,7 +943,7 @@ mod tests {
     fn fuzz_test(sz: int) {
         let mut m = DList::new::<int>();
         let mut v = ~[];
-        for int::range(0i, sz) |i| {
+        foreach i in range(0, sz) {
             check_links(&m);
             let r: u8 = rand::random();
             match r % 6 {
@@ -965,7 +969,7 @@ mod tests {
         check_links(&m);
 
         let mut i = 0u;
-        for m.consume_iter().zip(v.iter()).advance |(a, &b)| {
+        foreach (a, &b) in m.consume_iter().zip(v.iter()) {
             i += 1;
             assert_eq!(a, b);
         }

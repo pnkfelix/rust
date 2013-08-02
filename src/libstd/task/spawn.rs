@@ -84,20 +84,18 @@ use local_data;
 use task::local_data_priv::{local_get, local_set, OldHandle};
 use task::rt::rust_task;
 use task::rt;
-use task::{Failure, ManualThreads, PlatformThread, SchedOpts, SingleThreaded};
-use task::{Success, TaskOpts, TaskResult, ThreadPerTask};
-use task::{ExistingScheduler, SchedulerHandle};
+use task::{Failure};
+use task::{Success, TaskOpts, TaskResult};
 use task::unkillable;
 use to_bytes::IterBytes;
 use uint;
 use util;
-use unstable::sync::{Exclusive, exclusive};
+use unstable::sync::Exclusive;
 use rt::{OldTaskContext, TaskContext, SchedulerContext, GlobalContext, context};
 use rt::local::Local;
 use rt::task::Task;
 use rt::kill::KillHandle;
 use rt::sched::Scheduler;
-use iterator::IteratorUtil;
 
 #[cfg(test)] use task::default_task_opts;
 #[cfg(test)] use comm;
@@ -357,7 +355,7 @@ impl Drop for Taskgroup {
             // If we are failing, the whole taskgroup needs to die.
             do RuntimeGlue::with_task_handle_and_failing |me, failing| {
                 if failing {
-                    for this.notifier.mut_iter().advance |x| {
+                    foreach x in this.notifier.mut_iter() {
                         x.failed = true;
                     }
                     // Take everybody down with us.
@@ -374,8 +372,9 @@ impl Drop for Taskgroup {
                 // with our own taskgroup, so long as both happen before we die.
                 // We remove ourself from every ancestor we can, so no cleanup; no
                 // break.
-                for each_ancestor(&mut this.ancestors, |_| {}) |ancestor_group| {
+                do each_ancestor(&mut this.ancestors, |_| {}) |ancestor_group| {
                     leave_taskgroup(ancestor_group, &me, false);
+                    true
                 };
             }
         }
@@ -386,7 +385,7 @@ pub fn Taskgroup(tasks: TaskGroupArc,
        ancestors: AncestorList,
        is_main: bool,
        mut notifier: Option<AutoNotify>) -> Taskgroup {
-    for notifier.mut_iter().advance |x| {
+    foreach x in notifier.mut_iter() {
         x.failed = false;
     }
 
@@ -464,13 +463,13 @@ fn kill_taskgroup(state: TaskGroupInner, me: &TaskHandle, is_main: bool) {
         if newstate.is_some() {
             let TaskGroupData { members: members, descendants: descendants } =
                 newstate.unwrap();
-            for members.consume().advance |sibling| {
+            foreach sibling in members.consume() {
                 // Skip self - killing ourself won't do much good.
                 if &sibling != me {
                     RuntimeGlue::kill_task(sibling);
                 }
             }
-            for descendants.consume().advance |child| {
+            foreach child in descendants.consume() {
                 assert!(&child != me);
                 RuntimeGlue::kill_task(child);
             }
@@ -512,7 +511,9 @@ impl RuntimeGlue {
     unsafe fn kill_all_tasks(task: &TaskHandle) {
         match *task {
             OldTask(ptr) => rt::rust_task_kill_all(ptr),
-            NewTask(ref _handle) => rtabort!("unimplemented"), // FIXME(#7544)
+            // FIXME(#7544): Remove the kill_all feature entirely once the
+            // oldsched goes away.
+            NewTask(ref _handle) => rtabort!("can't kill_all in newsched"),
         }
     }
 
@@ -545,7 +546,7 @@ impl RuntimeGlue {
                             // Main task, doing first spawn ever. Lazily initialise here.
                             let mut members = TaskSet::new();
                             members.insert(OldTask(me));
-                            let tasks = exclusive(Some(TaskGroupData {
+                            let tasks = Exclusive::new(Some(TaskGroupData {
                                 members: members,
                                 descendants: TaskSet::new(),
                             }));
@@ -569,11 +570,14 @@ impl RuntimeGlue {
                         let mut members = TaskSet::new();
                         let my_handle = (*me).death.kill_handle.get_ref().clone();
                         members.insert(NewTask(my_handle));
-                        let tasks = exclusive(Some(TaskGroupData {
+                        let tasks = Exclusive::new(Some(TaskGroupData {
                             members: members,
                             descendants: TaskSet::new(),
                         }));
-                        let group = Taskgroup(tasks, AncestorList(None), true, None);
+                        // FIXME(#7544): Remove the is_main flag entirely once
+                        // the newsched goes away. The main taskgroup has no special
+                        // behaviour.
+                        let group = Taskgroup(tasks, AncestorList(None), false, None);
                         (*me).taskgroup = Some(group);
                         (*me).taskgroup.get_ref()
                     }
@@ -596,7 +600,7 @@ fn gen_child_taskgroup(linked: bool, supervised: bool)
             (spawner_group.tasks.clone(), ancestors, spawner_group.is_main)
         } else {
             // Child is in a separate group from spawner.
-            let g = exclusive(Some(TaskGroupData {
+            let g = Exclusive::new(Some(TaskGroupData {
                 members:     TaskSet::new(),
                 descendants: TaskSet::new(),
             }));
@@ -605,7 +609,7 @@ fn gen_child_taskgroup(linked: bool, supervised: bool)
                 assert!(new_generation < uint::max_value);
                 // Child's ancestors start with the spawner.
                 // Build a new node in the ancestor list.
-                AncestorList(Some(exclusive(AncestorNode {
+                AncestorList(Some(Exclusive::new(AncestorNode {
                     generation: new_generation,
                     parent_group: spawner_group.tasks.clone(),
                     ancestors: ancestors,
@@ -649,22 +653,16 @@ fn enlist_many(child: TaskHandle, child_arc: &TaskGroupArc,
 
 pub fn spawn_raw(opts: TaskOpts, f: ~fn()) {
     match context() {
-        OldTaskContext => {
-            spawn_raw_oldsched(opts, f)
-        }
-        TaskContext => {
-            spawn_raw_newsched(opts, f)
-        }
-        SchedulerContext => {
-            fail!("can't spawn from scheduler context")
-        }
-        GlobalContext => {
-            fail!("can't spawn from global context")
-        }
+        OldTaskContext   => spawn_raw_oldsched(opts, f),
+        TaskContext      => spawn_raw_newsched(opts, f),
+        SchedulerContext => fail!("can't spawn from scheduler context"),
+        GlobalContext    => fail!("can't spawn from global context"),
     }
 }
 
 fn spawn_raw_newsched(mut opts: TaskOpts, f: ~fn()) {
+    use rt::sched::*;
+
     let child_data = Cell::new(gen_child_taskgroup(opts.linked, opts.supervised));
     let indestructible = opts.indestructible;
 
@@ -689,26 +687,18 @@ fn spawn_raw_newsched(mut opts: TaskOpts, f: ~fn()) {
         // Should be run after the local-borrowed task is returned.
         if enlist_success {
             if indestructible {
-                unsafe { do unkillable { f() } }
+                do unkillable { f() }
             } else {
                 f()
             }
         }
     };
 
-    let mut task = unsafe {
-        let sched = Local::unsafe_borrow::<Scheduler>();
-        rtdebug!("unsafe borrowed sched");
-
-        if opts.watched {
-            let child_wrapper = Cell::new(child_wrapper);
-            do Local::borrow::<Task, ~Task>() |running_task| {
-                ~running_task.new_child(&mut (*sched).stack_pool, child_wrapper.take())
-            }
-        } else {
-            // An unwatched task is a new root in the exit-code propagation tree
-            ~Task::new_root(&mut (*sched).stack_pool, child_wrapper)
-        }
+    let mut task = if opts.watched {
+        Task::build_child(child_wrapper)
+    } else {
+        // An unwatched task is a new root in the exit-code propagation tree
+        Task::build_root(child_wrapper)
     };
 
     if opts.notify_chan.is_some() {
@@ -722,11 +712,10 @@ fn spawn_raw_newsched(mut opts: TaskOpts, f: ~fn()) {
         task.death.on_exit = Some(on_exit);
     }
 
-    rtdebug!("spawn about to take scheduler");
+    task.name = opts.name.take();
+    rtdebug!("spawn calling run_task");
+    Scheduler::run_task(task);
 
-    let sched = Local::take::<Scheduler>();
-    rtdebug!("took sched in spawn");
-    sched.schedule_task(task);
 }
 
 fn spawn_raw_oldsched(mut opts: TaskOpts, f: ~fn()) {
@@ -742,7 +731,7 @@ fn spawn_raw_oldsched(mut opts: TaskOpts, f: ~fn()) {
             // Create child task.
             let new_task = match opts.sched.mode {
                 DefaultScheduler => rt::new_task(),
-                _ => new_task_in_sched(opts.sched)
+                _ => new_task_in_sched()
             };
             assert!(!new_task.is_null());
             // Getting killed after here would leak the task.
@@ -800,35 +789,9 @@ fn spawn_raw_oldsched(mut opts: TaskOpts, f: ~fn()) {
         return result;
     }
 
-    fn new_task_in_sched(opts: SchedOpts) -> *rust_task {
-        if opts.foreign_stack_size != None {
-            fail!("foreign_stack_size scheduler option unimplemented");
-        }
-
-        let num_threads = match opts.mode {
-            DefaultScheduler
-            | CurrentScheduler
-            | ExistingScheduler(*)
-            | PlatformThread => 0u, /* Won't be used */
-            SingleThreaded => 1u,
-            ThreadPerTask => {
-                fail!("ThreadPerTask scheduling mode unimplemented")
-            }
-            ManualThreads(threads) => {
-                if threads == 0u {
-                    fail!("can not create a scheduler with no threads");
-                }
-                threads
-            }
-        };
-
+    fn new_task_in_sched() -> *rust_task {
         unsafe {
-            let sched_id = match opts.mode {
-                CurrentScheduler => rt::rust_get_sched_id(),
-                ExistingScheduler(SchedulerHandle(id)) => id,
-                PlatformThread => rt::rust_osmain_sched_id(),
-                _ => rt::rust_new_sched(num_threads)
-            };
+            let sched_id = rt::rust_new_sched(1);
             rt::rust_new_task_in_sched(sched_id)
         }
     }

@@ -12,7 +12,6 @@ use codemap::{Pos, span};
 use codemap;
 
 use std::io;
-use std::uint;
 use std::local_data;
 use extra::term;
 
@@ -268,7 +267,7 @@ fn highlight_lines(cm: @codemap::CodeMap,
         elided = true;
     }
     // Print the offending lines
-    for display_lines.iter().advance |line| {
+    foreach line in display_lines.iter() {
         io::stderr().write_str(fmt!("%s:%u ", fm.name, *line + 1u));
         let s = fm.get_line(*line as int) + "\n";
         io::stderr().write_str(s);
@@ -302,11 +301,11 @@ fn highlight_lines(cm: @codemap::CodeMap,
         // Skip is the number of characters we need to skip because they are
         // part of the 'filename:line ' part of the previous line.
         let skip = fm.name.len() + digits + 3u;
-        for skip.times() {
+        do skip.times() {
             s.push_char(' ');
         }
         let orig = fm.get_line(lines.lines[0] as int);
-        for uint::range(0u,left-skip) |pos| {
+        foreach pos in range(0u, left-skip) {
             let curChar = (orig[pos] as char);
             // Whenever a tab occurs on the previous line, we insert one on
             // the error-point-squiggly-line as well (instead of a space).
@@ -323,7 +322,7 @@ fn highlight_lines(cm: @codemap::CodeMap,
         if hi.col != lo.col {
             // the ^ already takes up one space
             let num_squigglies = hi.col.to_uint()-lo.col.to_uint()-1u;
-            for num_squigglies.times() {
+            do num_squigglies.times() {
                 s.push_char('~')
             }
         }
@@ -332,7 +331,7 @@ fn highlight_lines(cm: @codemap::CodeMap,
 }
 
 fn print_macro_backtrace(cm: @codemap::CodeMap, sp: span) {
-    for sp.expn_info.iter().advance |ei| {
+    foreach ei in sp.expn_info.iter() {
         let ss = ei.callee.span.map_default(~"", |span| cm.span_to_str(*span));
         print_diagnostic(ss, note,
                          fmt!("in expansion of %s!", ei.callee.name));

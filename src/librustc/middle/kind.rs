@@ -19,6 +19,7 @@ use util::ppaux::UserString;
 use syntax::ast::*;
 use syntax::attr;
 use syntax::codemap::span;
+use syntax::opt_vec;
 use syntax::print::pprust::expr_to_str;
 use syntax::{visit, ast_util};
 
@@ -54,7 +55,7 @@ pub static try_adding: &'static str = "Try adding a move";
 pub struct Context {
     tcx: ty::ctxt,
     method_map: typeck::method_map,
-    current_item: node_id
+    current_item: NodeId
 }
 
 pub fn check_crate(tcx: ty::ctxt,
@@ -83,7 +84,7 @@ fn check_struct_safe_for_destructor(cx: Context,
     let struct_tpt = ty::lookup_item_type(cx.tcx, struct_did);
     if !struct_tpt.generics.has_type_params() {
         let struct_ty = ty::mk_struct(cx.tcx, struct_did, ty::substs {
-            self_r: None,
+            regions: ty::NonerasedRegions(opt_vec::Empty),
             self_ty: None,
             tps: ~[]
         });
@@ -155,9 +156,9 @@ fn check_item(item: @item, (cx, visitor): (Context, visit::vt<Context>)) {
 }
 
 // Yields the appropriate function to check the kind of closed over
-// variables. `id` is the node_id for some expression that creates the
+// variables. `id` is the NodeId for some expression that creates the
 // closure.
-fn with_appropriate_checker(cx: Context, id: node_id,
+fn with_appropriate_checker(cx: Context, id: NodeId,
                             b: &fn(checker: &fn(Context, @freevar_entry))) {
     fn check_for_uniq(cx: Context, fv: &freevar_entry, bounds: ty::BuiltinBounds) {
         // all captured data must be owned, regardless of whether it is
@@ -229,14 +230,14 @@ fn check_fn(
     decl: &fn_decl,
     body: &Block,
     sp: span,
-    fn_id: node_id,
+    fn_id: NodeId,
     (cx, v): (Context,
               visit::vt<Context>)) {
 
     // Check kinds on free variables:
     do with_appropriate_checker(cx, fn_id) |chk| {
         let r = freevars::get_freevars(cx.tcx, fn_id);
-        for r.iter().advance |fv| {
+        foreach fv in r.iter() {
             chk(cx, *fv);
         }
     }
@@ -254,7 +255,7 @@ pub fn check_expr(e: @expr, (cx, v): (Context, visit::vt<Context>)) {
     };
     {
         let r = cx.tcx.node_type_substs.find(&type_parameter_id);
-        for r.iter().advance |ts| {
+        foreach ts in r.iter() {
             let type_param_defs = match e.node {
               expr_path(_) => {
                 let did = ast_util::def_id_of_def(cx.tcx.def_map.get_copy(&e.id));
@@ -278,7 +279,7 @@ pub fn check_expr(e: @expr, (cx, v): (Context, visit::vt<Context>)) {
                       ts.repr(cx.tcx),
                       type_param_defs.repr(cx.tcx));
             }
-            for ts.iter().zip(type_param_defs.iter()).advance |(&ty, type_param_def)| {
+            foreach (&ty, type_param_def) in ts.iter().zip(type_param_defs.iter()) {
                 check_typaram_bounds(cx, type_parameter_id, e.span, ty, type_param_def)
             }
         }
@@ -316,11 +317,11 @@ fn check_ty(aty: &Ty, (cx, v): (Context, visit::vt<Context>)) {
     match aty.node {
       ty_path(_, _, id) => {
           let r = cx.tcx.node_type_substs.find(&id);
-          for r.iter().advance |ts| {
+          foreach ts in r.iter() {
               let did = ast_util::def_id_of_def(cx.tcx.def_map.get_copy(&id));
               let type_param_defs =
                   ty::lookup_item_type(cx.tcx, did).generics.type_param_defs;
-              for ts.iter().zip(type_param_defs.iter()).advance |(&ty, type_param_def)| {
+              foreach (&ty, type_param_def) in ts.iter().zip(type_param_defs.iter()) {
                   check_typaram_bounds(cx, aty.id, aty.span, ty, type_param_def)
               }
           }
@@ -347,7 +348,7 @@ pub fn check_builtin_bounds(cx: Context, ty: ty::t, bounds: ty::BuiltinBounds,
 }
 
 pub fn check_typaram_bounds(cx: Context,
-                    _type_parameter_id: node_id,
+                    _type_parameter_id: NodeId,
                     sp: span,
                     ty: ty::t,
                     type_param_def: &ty::TypeParameterDef)

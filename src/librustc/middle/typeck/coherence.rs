@@ -38,13 +38,14 @@ use middle::typeck::infer::{new_infer_ctxt, resolve_ivar, resolve_type};
 use middle::typeck::infer;
 use syntax::ast::{Crate, def_id, def_struct, def_ty};
 use syntax::ast::{item, item_enum, item_impl, item_mod, item_struct};
-use syntax::ast::{local_crate, trait_ref, ty_path};
+use syntax::ast::{LOCAL_CRATE, trait_ref, ty_path};
 use syntax::ast;
 use syntax::ast_map::node_item;
 use syntax::ast_map;
 use syntax::ast_util::{def_id_of_def, local_def};
 use syntax::codemap::{span, dummy_sp};
 use syntax::parse;
+use syntax::opt_vec;
 use syntax::visit::{default_simple_visitor, default_visitor};
 use syntax::visit::{mk_simple_visitor, mk_vt, visit_crate, visit_item};
 use syntax::visit::{Visitor, SimpleVisitor};
@@ -53,7 +54,6 @@ use util::ppaux::ty_to_str;
 
 use std::hashmap::{HashMap, HashSet};
 use std::result::Ok;
-use std::uint;
 use std::vec;
 
 pub struct UniversalQuantificationResult {
@@ -113,7 +113,7 @@ pub fn type_is_defined_in_local_crate(original_type: t) -> bool {
             ty_enum(def_id, _) |
             ty_trait(def_id, _, _, _, _) |
             ty_struct(def_id, _) => {
-                if def_id.crate == ast::local_crate {
+                if def_id.crate == ast::LOCAL_CRATE {
                     found_nominal = true;
                 }
             }
@@ -242,7 +242,7 @@ impl CoherenceChecker {
 
         let implementation = self.create_impl_from_item(item);
 
-        for associated_traits.iter().advance |associated_trait| {
+        foreach associated_trait in associated_traits.iter() {
             let trait_ref = ty::node_id_to_trait_ref(
                 self.crate_context.tcx, associated_trait.ref_id);
             debug!("(checking implementation) adding impl for trait '%s', item '%s'",
@@ -289,7 +289,7 @@ impl CoherenceChecker {
         let impl_poly_type = ty::lookup_item_type(tcx, impl_id);
 
         let provided = ty::provided_trait_methods(tcx, trait_ref.def_id);
-        for provided.iter().advance |trait_method| {
+        foreach trait_method in provided.iter() {
             // Synthesize an ID.
             let new_id = parse::next_node_id(tcx.sess.parse_sess);
             let new_did = local_def(new_id);
@@ -408,7 +408,7 @@ impl CoherenceChecker {
     pub fn iter_impls_of_trait(&self, trait_def_id: def_id, f: &fn(@Impl)) {
         match self.crate_context.tcx.trait_impls.find(&trait_def_id) {
             Some(impls) => {
-                for impls.iter().advance |&im| {
+                foreach &im in impls.iter() {
                     f(im);
                 }
             }
@@ -436,16 +436,20 @@ impl CoherenceChecker {
     pub fn universally_quantify_polytype(&self,
                                          polytype: ty_param_bounds_and_ty)
                                          -> UniversalQuantificationResult {
-        let self_region =
-            polytype.generics.region_param.map(
-                |_| self.inference_context.next_region_var(
-                    infer::BoundRegionInCoherence));
+        let regions = match polytype.generics.region_param {
+            None => opt_vec::Empty,
+            Some(_) => {
+                opt_vec::with(
+                    self.inference_context.next_region_var(
+                        infer::BoundRegionInCoherence))
+            }
+        };
 
         let bounds_count = polytype.generics.type_param_defs.len();
         let type_parameters = self.inference_context.next_ty_vars(bounds_count);
 
         let substitutions = substs {
-            self_r: self_region,
+            regions: ty::NonerasedRegions(regions),
             self_ty: None,
             tps: type_parameters
         };
@@ -453,13 +457,9 @@ impl CoherenceChecker {
                              &substitutions,
                              polytype.ty);
 
-        // Get our type parameters back.
-        let substs { self_r: _, self_ty: _, tps: type_parameters } =
-            substitutions;
-
         UniversalQuantificationResult {
             monotype: monotype,
-            type_variables: type_parameters,
+            type_variables: substitutions.tps,
             type_param_defs: polytype.generics.type_param_defs
         }
     }
@@ -512,7 +512,7 @@ impl CoherenceChecker {
                             let trait_def_id =
                                 self.trait_ref_to_trait_def_id(trait_ref);
 
-                            if trait_def_id.crate != local_crate {
+                            if trait_def_id.crate != LOCAL_CRATE {
                                 let session = self.crate_context.tcx.sess;
                                 session.span_err(item.span,
                                                  "cannot provide an extension implementation \
@@ -550,12 +550,12 @@ impl CoherenceChecker {
 
         let mut provided_names = HashSet::new();
         // Implemented methods
-        for uint::range(0, all_methods.len()) |i| {
+        foreach i in range(0u, all_methods.len()) {
             provided_names.insert(all_methods[i].ident);
         }
 
         let r = ty::trait_methods(tcx, trait_did);
-        for r.iter().advance |method| {
+        foreach method in r.iter() {
             debug!("checking for %s", method.ident.repr(tcx));
             if provided_names.contains(&method.ident) { loop; }
 
@@ -574,7 +574,7 @@ impl CoherenceChecker {
             ty_path(_, _, path_id) => {
                 match self.crate_context.tcx.def_map.get_copy(&path_id) {
                     def_ty(def_id) | def_struct(def_id) => {
-                        if def_id.crate != local_crate {
+                        if def_id.crate != LOCAL_CRATE {
                             return false;
                         }
 
@@ -611,11 +611,11 @@ impl CoherenceChecker {
         match item.node {
             item_impl(_, ref trait_refs, _, ref ast_methods) => {
                 let mut methods = ~[];
-                for ast_methods.iter().advance |ast_method| {
+                foreach ast_method in ast_methods.iter() {
                     methods.push(ty::method(tcx, local_def(ast_method.id)));
                 }
 
-                for trait_refs.iter().advance |trait_ref| {
+                foreach trait_ref in trait_refs.iter() {
                     let ty_trait_ref = ty::node_id_to_trait_ref(
                         self.crate_context.tcx,
                         trait_ref.ref_id);
@@ -646,7 +646,7 @@ impl CoherenceChecker {
     }
 
     pub fn span_of_impl(&self, implementation: @Impl) -> span {
-        assert_eq!(implementation.did.crate, local_crate);
+        assert_eq!(implementation.did.crate, LOCAL_CRATE);
         match self.crate_context.tcx.items.find(&implementation.did.node) {
             Some(&node_item(item, _)) => {
                 return item.span;
@@ -697,14 +697,14 @@ impl CoherenceChecker {
         }
 
         // Record all the trait methods.
-        for associated_traits.iter().advance |trait_ref| {
+        foreach trait_ref in associated_traits.iter() {
               self.add_trait_impl(trait_ref.def_id, implementation);
         }
 
         // For any methods that use a default implementation, add them to
         // the map. This is a bit unfortunate.
-        for implementation.methods.iter().advance |method| {
-            for method.provided_source.iter().advance |source| {
+        foreach method in implementation.methods.iter() {
+            foreach source in method.provided_source.iter() {
                 tcx.provided_method_sources.insert(method.def_id, *source);
             }
         }
@@ -766,7 +766,7 @@ impl CoherenceChecker {
             Some(found_impls) => impls = found_impls
         }
 
-        for impls.iter().advance |impl_info| {
+        foreach impl_info in impls.iter() {
             if impl_info.methods.len() < 1 {
                 // We'll error out later. For now, just don't ICE.
                 loop;
@@ -782,7 +782,7 @@ impl CoherenceChecker {
                 }
                 _ => {
                     // Destructors only work on nominal types.
-                    if impl_info.did.crate == ast::local_crate {
+                    if impl_info.did.crate == ast::LOCAL_CRATE {
                         match tcx.items.find(&impl_info.did.node) {
                             Some(&ast_map::node_item(@ref item, _)) => {
                                 tcx.sess.span_err((*item).span,
@@ -845,7 +845,7 @@ pub fn make_substs_for_receiver_types(tcx: ty::ctxt,
     });
 
     return ty::substs {
-        self_r: trait_ref.substs.self_r,
+        regions: trait_ref.substs.regions.clone(),
         self_ty: trait_ref.substs.self_ty,
         tps: combined_tps
     };

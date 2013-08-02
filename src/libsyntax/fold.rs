@@ -36,7 +36,7 @@ pub trait ast_fold {
     fn fold_path(@self, &Path) -> Path;
     fn fold_local(@self, @Local) -> @Local;
     fn map_exprs(@self, @fn(@expr) -> @expr, &[@expr]) -> ~[@expr];
-    fn new_id(@self, node_id) -> node_id;
+    fn new_id(@self, NodeId) -> NodeId;
     fn new_span(@self, span) -> span;
 }
 
@@ -65,7 +65,7 @@ pub struct AstFoldFns {
     fold_path: @fn(&Path, @ast_fold) -> Path,
     fold_local: @fn(@Local, @ast_fold) -> @Local,
     map_exprs: @fn(@fn(@expr) -> @expr, &[@expr]) -> ~[@expr],
-    new_id: @fn(node_id) -> node_id,
+    new_id: @fn(NodeId) -> NodeId,
     new_span: @fn(span) -> span
 }
 
@@ -380,7 +380,7 @@ fn noop_fold_method(m: @method, fld: @ast_fold) -> @method {
 pub fn noop_fold_block(b: &Block, fld: @ast_fold) -> Block {
     let view_items = b.view_items.map(|x| fld.fold_view_item(x));
     let mut stmts = ~[];
-    for b.stmts.iter().advance |stmt| {
+    foreach stmt in b.stmts.iter() {
         match fld.fold_stmt(*stmt) {
             None => {}
             Some(stmt) => stmts.push(stmt)
@@ -559,6 +559,11 @@ pub fn noop_fold_expr(e: &expr_, fld: @ast_fold) -> expr_ {
         expr_while(cond, ref body) => {
             expr_while(fld.fold_expr(cond), fld.fold_block(body))
         }
+        expr_for_loop(pat, iter, ref body) => {
+            expr_for_loop(fld.fold_pat(pat),
+                          fld.fold_expr(iter),
+                          fld.fold_block(body))
+        }
         expr_loop(ref body, opt_ident) => {
             expr_loop(
                 fld.fold_block(body),
@@ -621,7 +626,7 @@ pub fn noop_fold_expr(e: &expr_, fld: @ast_fold) -> expr_ {
         }
         expr_inline_asm(ref a) => {
             expr_inline_asm(inline_asm {
-                inputs: a.inputs.map(|&(c, in)| (c, fld.fold_expr(in))),
+                inputs: a.inputs.map(|&(c, input)| (c, fld.fold_expr(input))),
                 outputs: a.outputs.map(|&(c, out)| (c, fld.fold_expr(out))),
                 .. (*a).clone()
             })
@@ -646,12 +651,10 @@ pub fn noop_fold_ty(t: &ty_, fld: @ast_fold) -> ty_ {
             mutbl: mt.mutbl,
         }
     }
-    fn fold_field(f: ty_field, fld: @ast_fold) -> ty_field {
-        spanned {
-            node: ast::ty_field_ {
-                ident: fld.fold_ident(f.node.ident),
-                mt: fold_mt(&f.node.mt, fld),
-            },
+    fn fold_field(f: TypeField, fld: @ast_fold) -> TypeField {
+        ast::TypeField {
+            ident: fld.fold_ident(f.ident),
+            mt: fold_mt(&f.mt, fld),
             span: fld.new_span(f.span),
         }
     }
@@ -787,7 +790,7 @@ fn noop_map_exprs(f: @fn(@expr) -> @expr, es: &[@expr]) -> ~[@expr] {
     es.map(|x| f(*x))
 }
 
-fn noop_id(i: node_id) -> node_id { return i; }
+fn noop_id(i: NodeId) -> NodeId { return i; }
 
 fn noop_span(sp: span) -> span { return sp; }
 
@@ -924,7 +927,7 @@ impl ast_fold for AstFoldFns {
               -> ~[@expr] {
         (self.map_exprs)(f, e)
     }
-    fn new_id(@self, node_id: ast::node_id) -> node_id {
+    fn new_id(@self, node_id: ast::NodeId) -> NodeId {
         (self.new_id)(node_id)
     }
     fn new_span(@self, span: span) -> span {

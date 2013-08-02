@@ -72,10 +72,10 @@ input, skips the current file and then numbers the remaining lines
 (where the numbers are from the start of each file, rather than the
 total line count).
 
-    let in = FileInput::from_vec(pathify([~"a.txt", ~"b.txt", ~"c.txt"],
+    let input = FileInput::from_vec(pathify([~"a.txt", ~"b.txt", ~"c.txt"],
                                              true));
 
-    for in.each_line |line| {
+    for input.each_line |line| {
         if line.is_empty() {
             break
         }
@@ -85,9 +85,9 @@ total line count).
     io::println("Continue?");
 
     if io::stdin().read_line() == ~"yes" {
-        in.next_file(); // skip!
+        input.next_file(); // skip!
 
-        for in.each_line_state |line, state| {
+        for input.each_line_state |line, state| {
            io::println(fmt!("%u: %s", state.line_num_file,
                                       line))
         }
@@ -419,7 +419,7 @@ mod test {
     fn make_file(path : &Path, contents: &[~str]) {
         let file = io::file_writer(path, [io::Create, io::Truncate]).unwrap();
 
-        for contents.iter().advance |str| {
+        foreach str in contents.iter() {
             file.write_str(*str);
             file.write_char('\n');
         }
@@ -446,13 +446,13 @@ mod test {
             |i| fmt!("tmp/lib-fileinput-test-fileinput-read-byte-%u.tmp", i)), true);
 
         // 3 files containing 0\n, 1\n, and 2\n respectively
-        for filenames.iter().enumerate().advance |(i, filename)| {
+        foreach (i, filename) in filenames.iter().enumerate() {
             make_file(filename.get_ref(), [fmt!("%u", i)]);
         }
 
         let fi = FileInput::from_vec(filenames.clone());
 
-        for "012".iter().enumerate().advance |(line, c)| {
+        foreach (line, c) in "012".iter().enumerate() {
             assert_eq!(fi.read_byte(), c as int);
             assert_eq!(fi.state().line_num, line);
             assert_eq!(fi.state().line_num_file, 0);
@@ -476,7 +476,7 @@ mod test {
             |i| fmt!("tmp/lib-fileinput-test-fileinput-read-%u.tmp", i)), true);
 
         // 3 files containing 1\n, 2\n, and 3\n respectively
-        for filenames.iter().enumerate().advance |(i, filename)| {
+        foreach (i, filename) in filenames.iter().enumerate() {
             make_file(filename.get_ref(), [fmt!("%u", i)]);
         }
 
@@ -496,7 +496,7 @@ mod test {
             3,
             |i| fmt!("tmp/lib-fileinput-test-input-vec-%u.tmp", i)), true);
 
-        for filenames.iter().enumerate().advance |(i, filename)| {
+        foreach (i, filename) in filenames.iter().enumerate() {
             let contents =
                 vec::from_fn(3, |j| fmt!("%u %u", i, j));
             make_file(filename.get_ref(), contents);
@@ -517,7 +517,7 @@ mod test {
             3,
             |i| fmt!("tmp/lib-fileinput-test-input-vec-state-%u.tmp", i)),true);
 
-        for filenames.iter().enumerate().advance |(i, filename)| {
+        foreach (i, filename) in filenames.iter().enumerate() {
             let contents =
                 vec::from_fn(3, |j| fmt!("%u %u", i, j + 1));
             make_file(filename.get_ref(), contents);
@@ -583,35 +583,35 @@ mod test {
             3,
             |i| fmt!("tmp/lib-fileinput-test-next-file-%u.tmp", i)),true);
 
-        for filenames.iter().enumerate().advance |(i, filename)| {
+        foreach (i, filename) in filenames.iter().enumerate() {
             let contents =
                 vec::from_fn(3, |j| fmt!("%u %u", i, j + 1));
             make_file(filename.get_ref(), contents);
         }
 
-        let in = FileInput::from_vec(filenames);
+        let input = FileInput::from_vec(filenames);
 
         // read once from 0
-        assert_eq!(in.read_line(), ~"0 1");
-        in.next_file(); // skip the rest of 1
+        assert_eq!(input.read_line(), ~"0 1");
+        input.next_file(); // skip the rest of 1
 
         // read all lines from 1 (but don't read any from 2),
-        for uint::range(1, 4) |i| {
-            assert_eq!(in.read_line(), fmt!("1 %u", i));
+        foreach i in range(1u, 4) {
+            assert_eq!(input.read_line(), fmt!("1 %u", i));
         }
         // 1 is finished, but 2 hasn't been started yet, so this will
         // just "skip" to the beginning of 2 (Python's fileinput does
         // the same)
-        in.next_file();
+        input.next_file();
 
-        assert_eq!(in.read_line(), ~"2 1");
+        assert_eq!(input.read_line(), ~"2 1");
     }
 
     #[test]
     #[should_fail]
     fn test_input_vec_missing_file() {
         for input_vec(pathify([~"this/file/doesnt/exist"], true)) |line| {
-            io::println(line);
+            println(line);
         }
     }
 }

@@ -549,18 +549,6 @@ start_task(rust_task *target, fn_env_pair *f) {
     target->start(f->f, f->env, NULL);
 }
 
-extern "C" CDECL size_t
-rust_sched_current_nonlazy_threads() {
-    rust_task *task = rust_get_current_task();
-    return task->sched->number_of_threads();
-}
-
-extern "C" CDECL size_t
-rust_sched_threads() {
-    rust_task *task = rust_get_current_task();
-    return task->sched->max_number_of_threads();
-}
-
 // This is called by an intrinsic on the Rust stack and must run
 // entirely in the red zone. Do not call on the C stack.
 extern "C" CDECL MUST_CHECK bool
@@ -751,9 +739,14 @@ rust_raw_thread_start(fn_env_pair *fn) {
 }
 
 extern "C" void
-rust_raw_thread_join_delete(raw_thread *thread) {
+rust_raw_thread_join(raw_thread *thread) {
     assert(thread);
     thread->join();
+}
+
+extern "C" void
+rust_raw_thread_delete(raw_thread *thread) {
+    assert(thread);
     delete thread;
 }
 
@@ -939,12 +932,12 @@ static lock_and_signal change_dir_lock;
 
 extern "C" CDECL void
 rust_take_change_dir_lock() {
-    global_args_lock.lock();
+    change_dir_lock.lock();
 }
 
 extern "C" CDECL void
 rust_drop_change_dir_lock() {
-    global_args_lock.unlock();
+    change_dir_lock.unlock();
 }
 
 //

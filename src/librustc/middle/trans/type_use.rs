@@ -34,7 +34,6 @@ use middle::ty;
 use middle::typeck;
 
 use std::option::{Some, None};
-use std::uint;
 use std::vec;
 use extra::list::{List, Cons, Nil};
 use extra::list;
@@ -72,7 +71,7 @@ pub fn type_uses_for(ccx: @mut CrateContext, fn_id: def_id, n_tps: uint)
       None => ()
     }
 
-    let fn_id_loc = if fn_id.crate == local_crate {
+    let fn_id_loc = if fn_id.crate == LOCAL_CRATE {
         fn_id
     } else {
         inline::maybe_instantiate_inline(ccx, fn_id)
@@ -93,8 +92,8 @@ pub fn type_uses_for(ccx: @mut CrateContext, fn_id: def_id, n_tps: uint)
     let is_default = ty::provided_source(ccx.tcx, fn_id_loc).is_some();
     // We also mark all of the params as used if it is an extern thing
     // that we haven't been able to inline yet.
-    if is_default || fn_id_loc.crate != local_crate {
-        for uint::range(0u, n_tps) |n| { cx.uses[n] |= use_all; }
+    if is_default || fn_id_loc.crate != LOCAL_CRATE {
+        foreach n in range(0u, n_tps) { cx.uses[n] |= use_all; }
         return store_type_uses(cx, fn_id);
     }
 
@@ -118,13 +117,13 @@ pub fn type_uses_for(ccx: @mut CrateContext, fn_id: def_id, n_tps: uint)
         // This will be a static trait method. For now, we just assume
         // it fully depends on all of the type information. (Doing
         // otherwise would require finding the actual implementation).
-        for uint::range(0u, n_tps) |n| { cx.uses[n] |= use_all;}
+        foreach n in range(0u, n_tps) { cx.uses[n] |= use_all;}
         // We need to return early, before the arguments are processed,
         // because of difficulties in the handling of Self.
         return store_type_uses(cx, fn_id);
       }
       ast_map::node_variant(_, _, _) => {
-        for uint::range(0u, n_tps) |n| { cx.uses[n] |= use_repr;}
+        foreach n in range(0u, n_tps) { cx.uses[n] |= use_repr;}
       }
       ast_map::node_foreign_item(i@@foreign_item {
             node: foreign_item_fn(*),
@@ -149,7 +148,7 @@ pub fn type_uses_for(ccx: @mut CrateContext, fn_id: def_id, n_tps: uint)
                     "visit_tydesc"  | "forget" | "frame_address" |
                     "morestack_addr" => 0,
 
-                    "memcpy32" | "memcpy64" | "memmove32" | "memmove64" |
+                    "offset" | "memcpy32" | "memcpy64" | "memmove32" | "memmove64" |
                     "memset32" | "memset64" => use_repr,
 
                     "sqrtf32" | "sqrtf64" | "powif32" | "powif64" |
@@ -173,13 +172,13 @@ pub fn type_uses_for(ccx: @mut CrateContext, fn_id: def_id, n_tps: uint)
                     _ => fail!("unknown intrinsic in type_use")
                 }
             };
-            for uint::range(0u, n_tps) |n| { cx.uses[n] |= flags;}
+            foreach n in range(0u, n_tps) { cx.uses[n] |= flags;}
         }
       }
       ast_map::node_struct_ctor(*) => {
         // Similarly to node_variant, this monomorphized function just
         // uses the representations of all of its type parameters.
-        for uint::range(0, n_tps) |n| { cx.uses[n] |= use_repr; }
+        foreach n in range(0u, n_tps) { cx.uses[n] |= use_repr; }
       }
       _ => {
         ccx.tcx.sess.bug(fmt!("unknown node type in type_use: %s",
@@ -194,7 +193,7 @@ pub fn type_uses_for(ccx: @mut CrateContext, fn_id: def_id, n_tps: uint)
     match ty::get(ty::lookup_item_type(cx.ccx.tcx, fn_id).ty).sty {
         ty::ty_bare_fn(ty::BareFnTy {sig: ref sig, _}) |
         ty::ty_closure(ty::ClosureTy {sig: ref sig, _}) => {
-            for sig.inputs.iter().advance |arg| {
+            foreach arg in sig.inputs.iter() {
                 type_needs(&cx, use_repr, *arg);
             }
         }
@@ -210,7 +209,7 @@ pub fn type_needs(cx: &Context, use_: uint, ty: ty::t) {
         let uses = &*cx.uses;
         uses.len()
     };
-    for uint::range(0, len) |i| {
+    foreach i in range(0u, len) {
         if cx.uses[i] & use_ != use_ {
             type_needs_inner(cx, use_, ty, @Nil);
             return;
@@ -241,8 +240,8 @@ pub fn type_needs_inner(cx: &Context,
                 if list::find(enums_seen, |id| *id == did).is_none() {
                     let seen = @Cons(did, enums_seen);
                     let r = ty::enum_variants(cx.ccx.tcx, did);
-                    for r.iter().advance |v| {
-                        for v.args.iter().advance |aty| {
+                    foreach v in r.iter() {
+                        foreach aty in v.args.iter() {
                             let t = ty::subst(cx.ccx.tcx, &(*substs), *aty);
                             type_needs_inner(cx, use_, t, seen);
                         }
@@ -260,27 +259,26 @@ pub fn type_needs_inner(cx: &Context,
     }
 }
 
-pub fn node_type_needs(cx: &Context, use_: uint, id: node_id) {
+pub fn node_type_needs(cx: &Context, use_: uint, id: NodeId) {
     type_needs(cx, use_, ty::node_id_to_type(cx.ccx.tcx, id));
 }
 
-pub fn mark_for_method_call(cx: &Context, e_id: node_id, callee_id: node_id) {
+pub fn mark_for_method_call(cx: &Context, e_id: NodeId, callee_id: NodeId) {
     let mut opt_static_did = None;
     {
         let r = cx.ccx.maps.method_map.find(&e_id);
-        for r.iter().advance |mth| {
+        foreach mth in r.iter() {
             match mth.origin {
               typeck::method_static(did) => {
                   opt_static_did = Some(did);
               }
               typeck::method_param(typeck::method_param {
-                  param_num: param,
+                  param_num: typeck::param_numbered(param),
                   _
               }) => {
                 cx.uses[param] |= use_tydesc;
               }
-              typeck::method_trait(*) | typeck::method_self(*)
-                  | typeck::method_super(*) => (),
+              _ => (),
             }
         }
     }
@@ -289,12 +287,12 @@ pub fn mark_for_method_call(cx: &Context, e_id: node_id, callee_id: node_id) {
     // above because the recursive call to `type_needs` can trigger
     // inlining and hence can cause `method_map` and
     // `node_type_substs` to be modified.
-    for opt_static_did.iter().advance |&did| {
+    foreach &did in opt_static_did.iter() {
         {
             let r = cx.ccx.tcx.node_type_substs.find_copy(&callee_id);
-            for r.iter().advance |ts| {
+            foreach ts in r.iter() {
                 let type_uses = type_uses_for(cx.ccx, did, ts.len());
-                for type_uses.iter().zip(ts.iter()).advance |(uses, subst)| {
+                foreach (uses, subst) in type_uses.iter().zip(ts.iter()) {
                     type_needs(cx, *uses, *subst)
                 }
             }
@@ -330,10 +328,10 @@ pub fn mark_for_expr(cx: &Context, e: &expr) {
       }
       expr_path(_) | expr_self => {
         let opt_ts = cx.ccx.tcx.node_type_substs.find_copy(&e.id);
-        for opt_ts.iter().advance |ts| {
+        foreach ts in opt_ts.iter() {
             let id = ast_util::def_id_of_def(cx.ccx.tcx.def_map.get_copy(&e.id));
             let uses_for_ts = type_uses_for(cx.ccx, id, ts.len());
-            for uses_for_ts.iter().zip(ts.iter()).advance |(uses, subst)| {
+            foreach (uses, subst) in uses_for_ts.iter().zip(ts.iter()) {
                 type_needs(cx, *uses, *subst)
             }
         }
@@ -342,7 +340,7 @@ pub fn mark_for_expr(cx: &Context, e: &expr) {
           match ty::ty_closure_sigil(ty::expr_ty(cx.ccx.tcx, e)) {
               ast::OwnedSigil => {}
               ast::BorrowedSigil | ast::ManagedSigil => {
-                  for freevars::get_freevars(cx.ccx.tcx, e.id).iter().advance |fv| {
+                  foreach fv in freevars::get_freevars(cx.ccx.tcx, e.id).iter() {
                       let node_id = ast_util::def_id_of_def(fv.def).node;
                       node_type_needs(cx, use_repr, node_id);
                   }
@@ -373,7 +371,7 @@ pub fn mark_for_expr(cx: &Context, e: &expr) {
       }
       expr_call(f, _, _) => {
           let r = ty::ty_fn_args(ty::node_id_to_type(cx.ccx.tcx, f.id));
-          for r.iter().advance |a| {
+          foreach a in r.iter() {
               type_needs(cx, use_repr, *a);
           }
       }
@@ -382,17 +380,17 @@ pub fn mark_for_expr(cx: &Context, e: &expr) {
         type_needs(cx, use_repr, ty::type_autoderef(cx.ccx.tcx, base_ty));
 
         let r = ty::ty_fn_args(ty::node_id_to_type(cx.ccx.tcx, callee_id));
-        for r.iter().advance |a| {
+        foreach a in r.iter() {
             type_needs(cx, use_repr, *a);
         }
         mark_for_method_call(cx, e.id, callee_id);
       }
 
       expr_inline_asm(ref ia) => {
-        for ia.inputs.iter().advance |&(_, in)| {
-          node_type_needs(cx, use_repr, in.id);
+        foreach &(_, input) in ia.inputs.iter() {
+          node_type_needs(cx, use_repr, input.id);
         }
-        for ia.outputs.iter().advance |&(_, out)| {
+        foreach &(_, out) in ia.outputs.iter() {
           node_type_needs(cx, use_repr, out.id);
         }
       }
@@ -402,7 +400,9 @@ pub fn mark_for_expr(cx: &Context, e: &expr) {
       expr_match(*) | expr_block(_) | expr_if(*) | expr_while(*) |
       expr_break(_) | expr_again(_) | expr_unary(*) | expr_lit(_) |
       expr_mac(_) | expr_addr_of(*) | expr_ret(_) | expr_loop(*) |
-      expr_loop_body(_) | expr_do_body(_) => ()
+      expr_loop_body(_) | expr_do_body(_) => (),
+
+      expr_for_loop(*) => fail!("non-desugared expr_for_loop")
     }
 }
 
@@ -422,7 +422,7 @@ pub fn handle_body(cx: &Context, body: &Block) {
         },
         visit_block: |b, (cx, v)| {
             visit::visit_block(b, (cx, v));
-            for b.expr.iter().advance |e| {
+            foreach e in b.expr.iter() {
                 node_type_needs(cx, use_repr, e.id);
             }
         },

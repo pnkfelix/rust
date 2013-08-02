@@ -8,9 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-
-use std::uint;
-
 use digest::Digest;
 
 // BitCounter is a specialized structure intended simply for counting the
@@ -66,34 +63,34 @@ struct Engine512 {
 }
 
 // Convert a [u8] to a u64 in big-endian format
-fn to_u64(in: &[u8]) -> u64 {
-    (in[0] as u64) << 56 |
-    (in[1] as u64) << 48 |
-    (in[2] as u64) << 40 |
-    (in[3] as u64) << 32 |
-    (in[4] as u64) << 24 |
-    (in[5] as u64) << 16 |
-    (in[6] as u64) << 8 |
-    (in[7] as u64)
+fn to_u64(input: &[u8]) -> u64 {
+    (input[0] as u64) << 56 |
+    (input[1] as u64) << 48 |
+    (input[2] as u64) << 40 |
+    (input[3] as u64) << 32 |
+    (input[4] as u64) << 24 |
+    (input[5] as u64) << 16 |
+    (input[6] as u64) << 8 |
+    (input[7] as u64)
 }
 
 // Convert a u64 to a [u8] in big endian format
-fn from_u64(in: u64, out: &mut [u8]) {
-    out[0] = (in >> 56) as u8;
-    out[1] = (in >> 48) as u8;
-    out[2] = (in >> 40) as u8;
-    out[3] = (in >> 32) as u8;
-    out[4] = (in >> 24) as u8;
-    out[5] = (in >> 16) as u8;
-    out[6] = (in >> 8) as u8;
-    out[7] = in as u8;
+fn from_u64(input: u64, out: &mut [u8]) {
+    out[0] = (input >> 56) as u8;
+    out[1] = (input >> 48) as u8;
+    out[2] = (input >> 40) as u8;
+    out[3] = (input >> 32) as u8;
+    out[4] = (input >> 24) as u8;
+    out[5] = (input >> 16) as u8;
+    out[6] = (input >> 8) as u8;
+    out[7] = input as u8;
 }
 
 impl Engine512 {
-    fn input_byte(&mut self, in: u8) {
+    fn input_byte(&mut self, input: u8) {
         assert!(!self.finished)
 
-        self.input_buffer[self.input_buffer_idx] = in;
+        self.input_buffer[self.input_buffer_idx] = input;
         self.input_buffer_idx += 1;
 
         if (self.input_buffer_idx == 8) {
@@ -105,25 +102,25 @@ impl Engine512 {
         self.bit_counter.add_bytes(1);
     }
 
-    fn input_vec(&mut self, in: &[u8]) {
+    fn input_vec(&mut self, input: &[u8]) {
         assert!(!self.finished)
 
         let mut i = 0;
 
-        while i < in.len() && self.input_buffer_idx != 0 {
-            self.input_byte(in[i]);
+        while i < input.len() && self.input_buffer_idx != 0 {
+            self.input_byte(input[i]);
             i += 1;
         }
 
-        while in.len() - i >= 8 {
-            let w = to_u64(in.slice(i, i + 8));
+        while input.len() - i >= 8 {
+            let w = to_u64(input.slice(i, i + 8));
             self.process_word(w);
             self.bit_counter.add_bytes(8);
             i += 8;
         }
 
-        while i < in.len() {
-            self.input_byte(in[i]);
+        while i < input.len() {
+            self.input_byte(input[i]);
             i += 1;
         }
     }
@@ -135,8 +132,8 @@ impl Engine512 {
         self.W_idx = 0;
     }
 
-    fn process_word(&mut self, in: u64) {
-        self.W[self.W_idx] = in;
+    fn process_word(&mut self, input: u64) {
+        self.W[self.W_idx] = input;
         self.W_idx += 1;
         if (self.W_idx == 16) {
             self.W_idx = 0;
@@ -169,7 +166,7 @@ impl Engine512 {
             ((x << 45) | (x >> 19)) ^ ((x << 3) | (x >> 61)) ^ (x >> 6)
         }
 
-        for uint::range(16, 80) |t| {
+        foreach t in range(16u, 80) {
             self.W[t] = sigma1(self.W[t - 2]) + self.W[t - 7] + sigma0(self.W[t - 15]) +
                 self.W[t - 16];
         }
@@ -184,7 +181,7 @@ impl Engine512 {
         let mut h = self.H7;
 
         let mut t = 0;
-        for uint::range(0, 10) |_| {
+        foreach _ in range(0u, 10) {
             h += sum1(e) + ch(e, f, g) + K64[t] + self.W[t];
             d += h;
             h += sum0(a) + maj(a, b, c);
@@ -254,7 +251,7 @@ impl Engine512 {
 
         // add length
         if (self.W_idx > 14) {
-            for uint::range(self.W_idx, 16) |_| {
+            foreach _ in range(self.W_idx, 16) {
                 self.process_word(0);
             }
         }
@@ -356,26 +353,26 @@ struct Engine256 {
 }
 
 // Convert a [u8] to a u32 in big endian format
-fn to_u32(in: &[u8]) -> u32 {
-    (in[0] as u32) << 24 |
-    (in[1] as u32) << 16 |
-    (in[2] as u32) << 8 |
-    (in[3] as u32)
+fn to_u32(input: &[u8]) -> u32 {
+    (input[0] as u32) << 24 |
+    (input[1] as u32) << 16 |
+    (input[2] as u32) << 8 |
+    (input[3] as u32)
 }
 
 // Convert a u32 to a [u8] in big endian format
-fn from_u32(in: u32, out: &mut [u8]) {
-    out[0] = (in >> 24) as u8;
-    out[1] = (in >> 16) as u8;
-    out[2] = (in >> 8) as u8;
-    out[3] = in as u8;
+fn from_u32(input: u32, out: &mut [u8]) {
+    out[0] = (input >> 24) as u8;
+    out[1] = (input >> 16) as u8;
+    out[2] = (input >> 8) as u8;
+    out[3] = input as u8;
 }
 
 impl Engine256 {
-    fn input_byte(&mut self, in: u8) {
+    fn input_byte(&mut self, input: u8) {
         assert!(!self.finished)
 
-        self.input_buffer[self.input_buffer_idx] = in;
+        self.input_buffer[self.input_buffer_idx] = input;
         self.input_buffer_idx += 1;
 
         if (self.input_buffer_idx == 4) {
@@ -387,25 +384,25 @@ impl Engine256 {
         self.length_bytes += 1;
     }
 
-    fn input_vec(&mut self, in: &[u8]) {
+    fn input_vec(&mut self, input: &[u8]) {
         assert!(!self.finished)
 
         let mut i = 0;
 
-        while i < in.len() && self.input_buffer_idx != 0 {
-            self.input_byte(in[i]);
+        while i < input.len() && self.input_buffer_idx != 0 {
+            self.input_byte(input[i]);
             i += 1;
         }
 
-        while in.len() - i >= 4 {
-            let w = to_u32(in.slice(i, i + 4));
+        while input.len() - i >= 4 {
+            let w = to_u32(input.slice(i, i + 4));
             self.process_word(w);
             self.length_bytes += 4;
             i += 4;
         }
 
-        while i < in.len() {
-            self.input_byte(in[i]);
+        while i < input.len() {
+            self.input_byte(input[i]);
             i += 1;
         }
 
@@ -418,8 +415,8 @@ impl Engine256 {
         self.W_idx = 0;
     }
 
-    fn process_word(&mut self, in: u32) {
-        self.W[self.W_idx] = in;
+    fn process_word(&mut self, input: u32) {
+        self.W[self.W_idx] = input;
         self.W_idx += 1;
         if (self.W_idx == 16) {
             self.W_idx = 0;
@@ -452,7 +449,7 @@ impl Engine256 {
             ((x >> 17) | (x << 15)) ^ ((x >> 19) | (x << 13)) ^ (x >> 10)
         }
 
-        for uint::range(16, 64) |t| {
+        foreach t in range(16u, 64) {
             self.W[t] = sigma1(self.W[t - 2]) + self.W[t - 7] + sigma0(self.W[t - 15]) +
                 self.W[t - 16];
         }
@@ -467,7 +464,7 @@ impl Engine256 {
         let mut h = self.H7;
 
         let mut t = 0;
-        for uint::range(0, 8) |_| {
+        foreach _ in range(0u, 8) {
             h += sum1(e) + ch(e, f, g) + K32[t] + self.W[t];
             d += h;
             h += sum0(a) + maj(a, b, c);
@@ -536,7 +533,7 @@ impl Engine256 {
 
         // add length
         if (self.W_idx > 14) {
-            for uint::range(self.W_idx, 16) |_| {
+            foreach _ in range(self.W_idx, 16) {
                 self.process_word(0);
             }
         }
@@ -939,7 +936,7 @@ mod tests {
 
     fn test_hash<D: Digest>(sh: &mut D, tests: &[Test]) {
         // Test that it works when accepting the message all at once
-        for tests.iter().advance() |t| {
+        foreach t in tests.iter() {
             sh.input_str(t.input);
 
             let out_str = sh.result_str();
@@ -949,7 +946,7 @@ mod tests {
         }
 
         // Test that it works when accepting the message in pieces
-        for tests.iter().advance() |t| {
+        foreach t in tests.iter() {
             let len = t.input.len();
             let mut left = len;
             while left > 0u {

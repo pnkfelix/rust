@@ -133,13 +133,13 @@ pub struct param_substs {
     tys: ~[ty::t],
     self_ty: Option<ty::t>,
     vtables: Option<typeck::vtable_res>,
-    self_vtable: Option<typeck::vtable_origin>
+    self_vtables: Option<typeck::vtable_param_res>
 }
 
 impl param_substs {
     pub fn validate(&self) {
-        for self.tys.iter().advance |t| { assert!(!ty::type_needs_infer(*t)); }
-        for self.self_ty.iter().advance |t| { assert!(!ty::type_needs_infer(*t)); }
+        foreach t in self.tys.iter() { assert!(!ty::type_needs_infer(*t)); }
+        foreach t in self.self_ty.iter() { assert!(!ty::type_needs_infer(*t)); }
     }
 }
 
@@ -203,16 +203,16 @@ pub struct FunctionContext {
     has_immediate_return_value: bool,
 
     // Maps arguments to allocas created for them in llallocas.
-    llargs: @mut HashMap<ast::node_id, ValueRef>,
+    llargs: @mut HashMap<ast::NodeId, ValueRef>,
     // Maps the def_ids for local variables to the allocas created for
     // them in llallocas.
-    lllocals: @mut HashMap<ast::node_id, ValueRef>,
+    lllocals: @mut HashMap<ast::NodeId, ValueRef>,
     // Same as above, but for closure upvars
-    llupvars: @mut HashMap<ast::node_id, ValueRef>,
+    llupvars: @mut HashMap<ast::NodeId, ValueRef>,
 
-    // The node_id of the function, or -1 if it doesn't correspond to
+    // The NodeId of the function, or -1 if it doesn't correspond to
     // a user-defined function.
-    id: ast::node_id,
+    id: ast::NodeId,
 
     // If this function is being monomorphized, this contains the type
     // substitutions used.
@@ -361,13 +361,13 @@ pub fn add_clean_temp_mem(bcx: @mut Block, val: ValueRef, t: ty::t) {
 }
 
 pub fn add_clean_temp_mem_in_scope(bcx: @mut Block,
-                                   scope_id: ast::node_id,
+                                   scope_id: ast::NodeId,
                                    val: ValueRef,
                                    t: ty::t) {
     add_clean_temp_mem_in_scope_(bcx, Some(scope_id), val, t);
 }
 
-pub fn add_clean_temp_mem_in_scope_(bcx: @mut Block, scope_id: Option<ast::node_id>,
+pub fn add_clean_temp_mem_in_scope_(bcx: @mut Block, scope_id: Option<ast::NodeId>,
                                     val: ValueRef, t: ty::t) {
     if !ty::type_needs_drop(bcx.tcx(), t) { return; }
     debug!("add_clean_temp_mem(%s, %s, %s)",
@@ -380,7 +380,7 @@ pub fn add_clean_temp_mem_in_scope_(bcx: @mut Block, scope_id: Option<ast::node_
     }
 }
 pub fn add_clean_return_to_mut(bcx: @mut Block,
-                               scope_id: ast::node_id,
+                               scope_id: ast::NodeId,
                                root_key: root_map_key,
                                frozen_val_ref: ValueRef,
                                bits_val_ref: ValueRef,
@@ -437,7 +437,7 @@ pub fn revoke_clean(cx: @mut Block, val: ValueRef) {
                 clean_temp(v, _, _) if v == val => true,
                 _ => false
             });
-        for cleanup_pos.iter().advance |i| {
+        foreach i in cleanup_pos.iter() {
             scope_info.cleanups =
                 vec::append(scope_info.cleanups.slice(0u, *i).to_owned(),
                             scope_info.cleanups.slice(*i + 1u,
@@ -504,8 +504,8 @@ impl get_node_info for Option<@ast::expr> {
 }
 
 pub struct NodeInfo {
-    id: ast::node_id,
-    callee_id: Option<ast::node_id>,
+    id: ast::NodeId,
+    callee_id: Option<ast::NodeId>,
     span: span
 }
 
@@ -563,7 +563,7 @@ impl Block {
         token::ident_to_str(&ident)
     }
 
-    pub fn node_id_to_str(&self, id: ast::node_id) -> ~str {
+    pub fn node_id_to_str(&self, id: ast::NodeId) -> ~str {
         ast_map::node_id_to_str(self.tcx().items, id, self.sess().intr())
     }
 
@@ -579,7 +579,7 @@ impl Block {
         ty::expr_kind(self.tcx(), self.ccx().maps.method_map, e)
     }
 
-    pub fn def(&self, nid: ast::node_id) -> ast::def {
+    pub fn def(&self, nid: ast::NodeId) -> ast::def {
         match self.tcx().def_map.find(&nid) {
             Some(&v) => v,
             None => {
@@ -633,7 +633,7 @@ pub fn val_ty(v: ValueRef) -> Type {
     }
 }
 
-pub fn in_scope_cx(cx: @mut Block, scope_id: Option<ast::node_id>, f: &fn(si: &mut ScopeInfo)) {
+pub fn in_scope_cx(cx: @mut Block, scope_id: Option<ast::NodeId>, f: &fn(si: &mut ScopeInfo)) {
     let mut cur = cx;
     let mut cur_scope = cur.scope;
     loop {
@@ -783,15 +783,6 @@ pub fn C_estr_slice(cx: &mut CrateContext, s: @str) -> ValueRef {
     }
 }
 
-// Returns a Plain Old LLVM String:
-pub fn C_postr(s: &str) -> ValueRef {
-    unsafe {
-        do s.as_c_str |buf| {
-            llvm::LLVMConstStringInContext(base::task_llcx(), buf, s.len() as c_uint, False)
-        }
-    }
-}
-
 pub fn C_zero_byte_arr(size: uint) -> ValueRef {
     unsafe {
         let mut i = 0u;
@@ -839,14 +830,6 @@ pub fn C_bytes(bytes: &[u8]) -> ValueRef {
     }
 }
 
-pub fn C_bytes_plus_null(bytes: &[u8]) -> ValueRef {
-    unsafe {
-        return llvm::LLVMConstStringInContext(base::task_llcx(),
-            cast::transmute(vec::raw::to_ptr(bytes)),
-            bytes.len() as c_uint, False);
-    }
-}
-
 pub fn get_param(fndecl: ValueRef, param: uint) -> ValueRef {
     unsafe {
         llvm::LLVMGetParam(fndecl, param as c_uint)
@@ -864,6 +847,12 @@ pub fn const_get_elt(cx: &CrateContext, v: ValueRef, us: &[c_uint])
                cx.tn.val_to_str(v), us, cx.tn.val_to_str(r));
 
         return r;
+    }
+}
+
+pub fn is_const(v: ValueRef) -> bool {
+    unsafe {
+        llvm::LLVMIsConstant(v) == True
     }
 }
 
@@ -954,7 +943,7 @@ pub fn align_to(cx: @mut Block, off: ValueRef, align: ValueRef) -> ValueRef {
 pub fn path_str(sess: session::Session, p: &[path_elt]) -> ~str {
     let mut r = ~"";
     let mut first = true;
-    for p.iter().advance |e| {
+    foreach e in p.iter() {
         match *e {
             ast_map::path_name(s) | ast_map::path_mod(s) => {
                 if first {
@@ -982,7 +971,7 @@ pub fn monomorphize_type(bcx: @mut Block, t: ty::t) -> ty::t {
     }
 }
 
-pub fn node_id_type(bcx: @mut Block, id: ast::node_id) -> ty::t {
+pub fn node_id_type(bcx: @mut Block, id: ast::NodeId) -> ty::t {
     let tcx = bcx.tcx();
     let t = ty::node_id_to_type(tcx, id);
     monomorphize_type(bcx, t)
@@ -998,7 +987,7 @@ pub fn expr_ty_adjusted(bcx: @mut Block, ex: &ast::expr) -> ty::t {
     monomorphize_type(bcx, t)
 }
 
-pub fn node_id_type_params(bcx: @mut Block, id: ast::node_id) -> ~[ty::t] {
+pub fn node_id_type_params(bcx: @mut Block, id: ast::NodeId) -> ~[ty::t] {
     let tcx = bcx.tcx();
     let params = ty::node_id_to_type_params(tcx, id);
 
@@ -1018,7 +1007,7 @@ pub fn node_id_type_params(bcx: @mut Block, id: ast::node_id) -> ~[ty::t] {
     }
 }
 
-pub fn node_vtables(bcx: @mut Block, id: ast::node_id)
+pub fn node_vtables(bcx: @mut Block, id: ast::NodeId)
                  -> Option<typeck::vtable_res> {
     let raw_vtables = bcx.ccx().maps.vtable_map.find(&id);
     raw_vtables.map(
@@ -1037,13 +1026,24 @@ pub fn resolve_vtables_under_param_substs(tcx: ty::ctxt,
                                           vts: typeck::vtable_res)
     -> typeck::vtable_res {
     @vts.iter().transform(|ds|
-      @ds.iter().transform(
-          |d| resolve_vtable_under_param_substs(tcx,
-                                                param_substs,
-                                                d))
-                          .collect::<~[typeck::vtable_origin]>())
-        .collect::<~[typeck::vtable_param_res]>()
+      resolve_param_vtables_under_param_substs(tcx,
+                                               param_substs,
+                                               *ds))
+        .collect()
 }
+
+pub fn resolve_param_vtables_under_param_substs(
+    tcx: ty::ctxt,
+    param_substs: Option<@param_substs>,
+    ds: typeck::vtable_param_res)
+    -> typeck::vtable_param_res {
+    @ds.iter().transform(
+        |d| resolve_vtable_under_param_substs(tcx,
+                                              param_substs,
+                                              d))
+        .collect()
+}
+
 
 
 // Apply the typaram substitutions in the FunctionContext to a vtable. This should
@@ -1085,36 +1085,31 @@ pub fn resolve_vtable_under_param_substs(tcx: ty::ctxt,
                 }
             }
         }
-        typeck::vtable_self(_trait_id) => {
-            match param_substs {
-                Some(@param_substs
-                     {self_vtable: Some(ref self_vtable), _}) => {
-                    (*self_vtable).clone()
-                }
-                _ => {
-                    tcx.sess.bug(fmt!(
-                        "resolve_vtable_in_fn_ctxt: asked to lookup but \
-                         no self_vtable in the fn_ctxt!"))
-                }
-            }
-        }
     }
 }
 
 pub fn find_vtable(tcx: ty::ctxt,
                    ps: &param_substs,
-                   n_param: uint,
+                   n_param: typeck::param_index,
                    n_bound: uint)
                    -> typeck::vtable_origin {
-    debug!("find_vtable(n_param=%u, n_bound=%u, ps=%s)",
+    debug!("find_vtable(n_param=%?, n_bound=%u, ps=%s)",
            n_param, n_bound, ps.repr(tcx));
 
-    ps.vtables.get()[n_param][n_bound].clone()
+    let param_bounds = match n_param {
+        typeck::param_self => ps.self_vtables.expect("self vtables missing"),
+        typeck::param_numbered(n) => {
+            let tables = ps.vtables
+                .expect("vtables missing where they are needed");
+            tables[n]
+        }
+    };
+    param_bounds[n_bound].clone()
 }
 
 pub fn dummy_substs(tps: ~[ty::t]) -> ty::substs {
     substs {
-        self_r: Some(ty::re_bound(ty::br_self)),
+        regions: ty::ErasedRegions,
         self_ty: None,
         tps: tps
     }

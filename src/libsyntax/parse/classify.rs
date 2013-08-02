@@ -28,6 +28,7 @@ pub fn expr_requires_semi_to_be_stmt(e: @ast::expr) -> bool {
       | ast::expr_block(_)
       | ast::expr_while(*)
       | ast::expr_loop(*)
+      | ast::expr_for_loop(*)
       | ast::expr_call(_, _, ast::DoSugar)
       | ast::expr_call(_, _, ast::ForSugar)
       | ast::expr_method_call(_, _, _, _, _, ast::DoSugar)
@@ -39,7 +40,7 @@ pub fn expr_requires_semi_to_be_stmt(e: @ast::expr) -> bool {
 pub fn expr_is_simple_block(e: @ast::expr) -> bool {
     match e.node {
         ast::expr_block(
-            ast::Block { rules: ast::default_blk, _ }
+            ast::Block { rules: ast::DefaultBlock, _ }
         ) => true,
       _ => false
     }

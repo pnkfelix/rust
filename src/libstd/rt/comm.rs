@@ -12,18 +12,19 @@
 
 use option::*;
 use cast;
-use util;
 use ops::Drop;
 use rt::kill::BlockedTask;
 use kinds::Send;
 use rt::sched::Scheduler;
 use rt::local::Local;
-use unstable::atomics::{AtomicUint, AtomicOption, SeqCst};
+use rt::select::{Select, SelectPort};
+use unstable::atomics::{AtomicUint, AtomicOption, Acquire, Release, SeqCst};
 use unstable::sync::UnsafeAtomicRcBox;
 use util::Void;
 use comm::{GenericChan, GenericSmartChan, GenericPort, Peekable};
 use cell::Cell;
 use clone::Clone;
+use rt::{context, SchedulerContext};
 
 /// A combined refcount / BlockedTask-as-uint pointer.
 ///
@@ -45,23 +46,12 @@ struct Packet<T> {
 
 /// A one-shot channel.
 pub struct ChanOne<T> {
-    // XXX: Hack extra allocation to make by-val self work
-    inner: ~ChanOneHack<T>
-}
-
-
-/// A one-shot port.
-pub struct PortOne<T> {
-    // XXX: Hack extra allocation to make by-val self work
-    inner: ~PortOneHack<T>
-}
-
-pub struct ChanOneHack<T> {
     void_packet: *mut Void,
     suppress_finalize: bool
 }
 
-pub struct PortOneHack<T> {
+/// A one-shot port.
+pub struct PortOne<T> {
     void_packet: *mut Void,
     suppress_finalize: bool
 }
@@ -75,31 +65,38 @@ pub fn oneshot<T: Send>() -> (PortOne<T>, ChanOne<T>) {
     unsafe {
         let packet: *mut Void = cast::transmute(packet);
         let port = PortOne {
-            inner: ~PortOneHack {
-                void_packet: packet,
-                suppress_finalize: false
-            }
+            void_packet: packet,
+            suppress_finalize: false
         };
         let chan = ChanOne {
-            inner: ~ChanOneHack {
-                void_packet: packet,
-                suppress_finalize: false
-            }
+            void_packet: packet,
+            suppress_finalize: false
         };
         return (port, chan);
     }
 }
 
 impl<T> ChanOne<T> {
+    #[inline]
+    fn packet(&self) -> *mut Packet<T> {
+        unsafe {
+            let p: *mut ~Packet<T> = cast::transmute(&self.void_packet);
+            let p: *mut Packet<T> = &mut **p;
+            return p;
+        }
+    }
 
     pub fn send(self, val: T) {
         self.try_send(val);
     }
 
     pub fn try_send(self, val: T) -> bool {
+
+        rtassert!(context() != SchedulerContext);
+
         let mut this = self;
         let mut recvr_active = true;
-        let packet = this.inner.packet();
+        let packet = this.packet();
 
         unsafe {
 
@@ -127,30 +124,34 @@ impl<T> ChanOne<T> {
                         sched.metrics.rendezvous_sends += 1;
                     }
                     // Port has closed. Need to clean up.
-                    let _packet: ~Packet<T> = cast::transmute(this.inner.void_packet);
+                    let _packet: ~Packet<T> = cast::transmute(this.void_packet);
                     recvr_active = false;
                 }
                 task_as_state => {
                     // Port is blocked. Wake it up.
                     let recvr = BlockedTask::cast_from_uint(task_as_state);
                     do recvr.wake().map_consume |woken_task| {
-                        let mut sched = Local::take::<Scheduler>();
-                        rtdebug!("rendezvous send");
-                        sched.metrics.rendezvous_sends += 1;
-                        sched.schedule_task(woken_task);
+                        Scheduler::run_task(woken_task);
                     };
                 }
             }
         }
 
         // Suppress the synchronizing actions in the finalizer. We're done with the packet.
-        this.inner.suppress_finalize = true;
+        this.suppress_finalize = true;
         return recvr_active;
     }
 }
 
-
 impl<T> PortOne<T> {
+    fn packet(&self) -> *mut Packet<T> {
+        unsafe {
+            let p: *mut ~Packet<T> = cast::transmute(&self.void_packet);
+            let p: *mut Packet<T> = &mut **p;
+            return p;
+        }
+    }
+
     pub fn recv(self) -> T {
         match self.try_recv() {
             Some(val) => val,
@@ -162,43 +163,129 @@ impl<T> PortOne<T> {
 
     pub fn try_recv(self) -> Option<T> {
         let mut this = self;
-        let packet = this.inner.packet();
 
-        // XXX: Optimize this to not require the two context switches when data is available
-
-        // Switch to the scheduler to put the ~Task into the Packet state.
-        let sched = Local::take::<Scheduler>();
-        do sched.deschedule_running_task_and_then |sched, task| {
-            unsafe {
-                // Atomically swap the task pointer into the Packet state, issuing
-                // an acquire barrier to prevent reordering of the subsequent read
-                // of the payload. Also issues a release barrier to prevent reordering
-                // of any previous writes to the task structure.
-                let task_as_state = task.cast_to_uint();
-                let oldstate = (*packet).state.swap(task_as_state, SeqCst);
-                match oldstate {
-                    STATE_BOTH => {
-                        // Data has not been sent. Now we're blocked.
-                        rtdebug!("non-rendezvous recv");
-                        sched.metrics.non_rendezvous_recvs += 1;
-                    }
-                    STATE_ONE => {
-                        rtdebug!("rendezvous recv");
-                        sched.metrics.rendezvous_recvs += 1;
-
-                        // Channel is closed. Switch back and check the data.
-                        // NB: We have to drop back into the scheduler event loop here
-                        // instead of switching immediately back or we could end up
-                        // triggering infinite recursion on the scheduler's stack.
-                        let recvr = BlockedTask::cast_from_uint(task_as_state);
-                        sched.enqueue_blocked_task(recvr);
-                    }
-                    _ => util::unreachable()
-                }
+        // Optimistic check. If data was sent already, we don't even need to block.
+        // No release barrier needed here; we're not handing off our task pointer yet.
+        if !this.optimistic_check() {
+            // No data available yet.
+            // Switch to the scheduler to put the ~Task into the Packet state.
+            let sched = Local::take::<Scheduler>();
+            do sched.deschedule_running_task_and_then |sched, task| {
+                this.block_on(sched, task);
             }
         }
 
         // Task resumes.
+        this.recv_ready()
+    }
+}
+
+impl<T> Select for PortOne<T> {
+    #[inline] #[cfg(not(test))]
+    fn optimistic_check(&mut self) -> bool {
+        unsafe { (*self.packet()).state.load(Acquire) == STATE_ONE }
+    }
+
+    #[inline] #[cfg(test)]
+    fn optimistic_check(&mut self) -> bool {
+        // The optimistic check is never necessary for correctness. For testing
+        // purposes, making it randomly return false simulates a racing sender.
+        use rand::{Rand, rng};
+        let mut rng = rng();
+        let actually_check = Rand::rand(&mut rng);
+        if actually_check {
+            unsafe { (*self.packet()).state.load(Acquire) == STATE_ONE }
+        } else {
+            false
+        }
+    }
+
+    fn block_on(&mut self, sched: &mut Scheduler, task: BlockedTask) -> bool {
+        unsafe {
+            // Atomically swap the task pointer into the Packet state, issuing
+            // an acquire barrier to prevent reordering of the subsequent read
+            // of the payload. Also issues a release barrier to prevent
+            // reordering of any previous writes to the task structure.
+            let task_as_state = task.cast_to_uint();
+            let oldstate = (*self.packet()).state.swap(task_as_state, SeqCst);
+            match oldstate {
+                STATE_BOTH => {
+                    // Data has not been sent. Now we're blocked.
+                    rtdebug!("non-rendezvous recv");
+                    sched.metrics.non_rendezvous_recvs += 1;
+                    false
+                }
+                STATE_ONE => {
+                    // Re-record that we are the only owner of the packet.
+                    // Release barrier needed in case the task gets reawoken
+                    // on a different core (this is analogous to writing a
+                    // payload; a barrier in enqueueing the task protects it).
+                    // NB(#8132). This *must* occur before the enqueue below.
+                    // FIXME(#6842, #8130) This is usually only needed for the
+                    // assertion in recv_ready, except in the case of select().
+                    // This won't actually ever have cacheline contention, but
+                    // maybe should be optimized out with a cfg(test) anyway?
+                    (*self.packet()).state.store(STATE_ONE, Release);
+
+                    rtdebug!("rendezvous recv");
+                    sched.metrics.rendezvous_recvs += 1;
+
+                    // Channel is closed. Switch back and check the data.
+                    // NB: We have to drop back into the scheduler event loop here
+                    // instead of switching immediately back or we could end up
+                    // triggering infinite recursion on the scheduler's stack.
+                    let recvr = BlockedTask::cast_from_uint(task_as_state);
+                    sched.enqueue_blocked_task(recvr);
+                    true
+                }
+                _ => rtabort!("can't block_on; a task is already blocked")
+            }
+        }
+    }
+
+    // This is the only select trait function that's not also used in recv.
+    fn unblock_from(&mut self) -> bool {
+        let packet = self.packet();
+        unsafe {
+            // In case the data is available, the acquire barrier here matches
+            // the release barrier the sender used to release the payload.
+            match (*packet).state.load(Acquire) {
+                // Impossible. We removed STATE_BOTH when blocking on it, and
+                // no self-respecting sender would put it back.
+                STATE_BOTH    => rtabort!("refcount already 2 in unblock_from"),
+                // Here, a sender already tried to wake us up. Perhaps they
+                // even succeeded! Data is available.
+                STATE_ONE     => true,
+                // Still registered as blocked. Need to "unblock" the pointer.
+                task_as_state => {
+                    // In the window between the load and the CAS, a sender
+                    // might take the pointer and set the refcount to ONE. If
+                    // that happens, we shouldn't clobber that with BOTH!
+                    // Acquire barrier again for the same reason as above.
+                    match (*packet).state.compare_and_swap(task_as_state, STATE_BOTH,
+                                                           Acquire) {
+                        STATE_BOTH => rtabort!("refcount became 2 in unblock_from"),
+                        STATE_ONE  => true, // Lost the race. Data available.
+                        same_ptr   => {
+                            // We successfully unblocked our task pointer.
+                            assert!(task_as_state == same_ptr);
+                            let handle = BlockedTask::cast_from_uint(task_as_state);
+                            // Because we are already awake, the handle we
+                            // gave to this port shall already be empty.
+                            handle.assert_already_awake();
+                            false
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl<T> SelectPort<T> for PortOne<T> {
+    fn recv_ready(self) -> Option<T> {
+        let mut this = self;
+        let packet = this.packet();
 
         // No further memory barrier is needed here to access the
         // payload. Some scenarios:
@@ -210,14 +297,17 @@ impl<T> PortOne<T> {
         // 3) We encountered STATE_BOTH above and blocked, but the receiving task (this task)
         //    is pinned to some other scheduler, so the sending task had to give us to
         //    a different scheduler for resuming. That send synchronized memory.
-
         unsafe {
-            let payload = util::replace(&mut (*packet).payload, None);
+            // See corresponding store() above in block_on for rationale.
+            // FIXME(#8130) This can happen only in test builds.
+            assert!((*packet).state.load(Acquire) == STATE_ONE);
+
+            let payload = (*packet).payload.take();
 
             // The sender has closed up shop. Drop the packet.
-            let _packet: ~Packet<T> = cast::transmute(this.inner.void_packet);
+            let _packet: ~Packet<T> = cast::transmute(this.void_packet);
             // Suppress the synchronizing actions in the finalizer. We're done with the packet.
-            this.inner.suppress_finalize = true;
+            this.suppress_finalize = true;
             return payload;
         }
     }
@@ -226,19 +316,19 @@ impl<T> PortOne<T> {
 impl<T> Peekable<T> for PortOne<T> {
     fn peek(&self) -> bool {
         unsafe {
-            let packet: *mut Packet<T> = self.inner.packet();
+            let packet: *mut Packet<T> = self.packet();
             let oldstate = (*packet).state.load(SeqCst);
             match oldstate {
                 STATE_BOTH => false,
                 STATE_ONE => (*packet).payload.is_some(),
-                _ => util::unreachable()
+                _ => rtabort!("peeked on a blocked task")
             }
         }
     }
 }
 
 #[unsafe_destructor]
-impl<T> Drop for ChanOneHack<T> {
+impl<T> Drop for ChanOne<T> {
     fn drop(&self) {
         if self.suppress_finalize { return }
 
@@ -257,8 +347,7 @@ impl<T> Drop for ChanOneHack<T> {
                     assert!((*this.packet()).payload.is_none());
                     let recvr = BlockedTask::cast_from_uint(task_as_state);
                     do recvr.wake().map_consume |woken_task| {
-                        let sched = Local::take::<Scheduler>();
-                        sched.schedule_task(woken_task);
+                        Scheduler::run_task(woken_task);
                     };
                 }
             }
@@ -267,7 +356,7 @@ impl<T> Drop for ChanOneHack<T> {
 }
 
 #[unsafe_destructor]
-impl<T> Drop for PortOneHack<T> {
+impl<T> Drop for PortOne<T> {
     fn drop(&self) {
         if self.suppress_finalize { return }
 
@@ -291,26 +380,6 @@ impl<T> Drop for PortOneHack<T> {
                     assert!(recvr.wake().is_none());
                 }
             }
-        }
-    }
-}
-
-impl<T> ChanOneHack<T> {
-    fn packet(&self) -> *mut Packet<T> {
-        unsafe {
-            let p: *mut ~Packet<T> = cast::transmute(&self.void_packet);
-            let p: *mut Packet<T> = &mut **p;
-            return p;
-        }
-    }
-}
-
-impl<T> PortOneHack<T> {
-    fn packet(&self) -> *mut Packet<T> {
-        unsafe {
-            let p: *mut ~Packet<T> = cast::transmute(&self.void_packet);
-            let p: *mut Packet<T> = &mut **p;
-            return p;
         }
     }
 }
@@ -382,6 +451,36 @@ impl<T> GenericPort<T> for Port<T> {
 impl<T> Peekable<T> for Port<T> {
     fn peek(&self) -> bool {
         self.next.with_mut_ref(|p| p.peek())
+    }
+}
+
+impl<T> Select for Port<T> {
+    #[inline]
+    fn optimistic_check(&mut self) -> bool {
+        do self.next.with_mut_ref |pone| { pone.optimistic_check() }
+    }
+
+    #[inline]
+    fn block_on(&mut self, sched: &mut Scheduler, task: BlockedTask) -> bool {
+        let task = Cell::new(task);
+        do self.next.with_mut_ref |pone| { pone.block_on(sched, task.take()) }
+    }
+
+    #[inline]
+    fn unblock_from(&mut self) -> bool {
+        do self.next.with_mut_ref |pone| { pone.unblock_from() }
+    }
+}
+
+impl<T> SelectPort<(T, Port<T>)> for Port<T> {
+    fn recv_ready(self) -> Option<(T, Port<T>)> {
+        match self.next.take().recv_ready() {
+            Some(StreamPayload { val, next }) => {
+                self.next.put_back(next);
+                Some((val, self))
+            }
+            None => None
+        }
     }
 }
 
@@ -644,7 +743,7 @@ mod test {
         do run_in_newsched_task {
             let (port, chan) = oneshot::<~int>();
             let port_cell = Cell::new(port);
-            do spawntask_immediately {
+            do spawntask {
                 assert!(port_cell.take().recv() == ~10);
             }
 
@@ -670,80 +769,87 @@ mod test {
 
     #[test]
     fn oneshot_multi_thread_close_stress() {
-        for stress_factor().times {
+        do stress_factor().times {
             do run_in_newsched_task {
                 let (port, chan) = oneshot::<int>();
                 let port_cell = Cell::new(port);
-                let _thread = do spawntask_thread {
+                let thread = do spawntask_thread {
                     let _p = port_cell.take();
                 };
                 let _chan = chan;
+                thread.join();
             }
         }
     }
 
     #[test]
     fn oneshot_multi_thread_send_close_stress() {
-        for stress_factor().times {
+        do stress_factor().times {
             do run_in_newsched_task {
                 let (port, chan) = oneshot::<int>();
                 let chan_cell = Cell::new(chan);
                 let port_cell = Cell::new(port);
-                let _thread1 = do spawntask_thread {
+                let thread1 = do spawntask_thread {
                     let _p = port_cell.take();
                 };
-                let _thread2 = do spawntask_thread {
+                let thread2 = do spawntask_thread {
                     let c = chan_cell.take();
                     c.send(1);
                 };
+                thread1.join();
+                thread2.join();
             }
         }
     }
 
     #[test]
     fn oneshot_multi_thread_recv_close_stress() {
-        for stress_factor().times {
+        do stress_factor().times {
             do run_in_newsched_task {
                 let (port, chan) = oneshot::<int>();
                 let chan_cell = Cell::new(chan);
                 let port_cell = Cell::new(port);
-                let _thread1 = do spawntask_thread {
+                let thread1 = do spawntask_thread {
                     let port_cell = Cell::new(port_cell.take());
                     let res = do spawntask_try {
                         port_cell.take().recv();
                     };
                     assert!(res.is_err());
                 };
-                let _thread2 = do spawntask_thread {
+                let thread2 = do spawntask_thread {
                     let chan_cell = Cell::new(chan_cell.take());
                     do spawntask {
                         chan_cell.take();
                     }
                 };
+                thread1.join();
+                thread2.join();
             }
         }
     }
 
     #[test]
     fn oneshot_multi_thread_send_recv_stress() {
-        for stress_factor().times {
+        do stress_factor().times {
             do run_in_newsched_task {
                 let (port, chan) = oneshot::<~int>();
                 let chan_cell = Cell::new(chan);
                 let port_cell = Cell::new(port);
-                let _thread1 = do spawntask_thread {
+                let thread1 = do spawntask_thread {
                     chan_cell.take().send(~10);
                 };
-                let _thread2 = do spawntask_thread {
+                let thread2 = do spawntask_thread {
                     assert!(port_cell.take().recv() == ~10);
                 };
+                thread1.join();
+                thread2.join();
             }
         }
     }
 
     #[test]
     fn stream_send_recv_stress() {
-        for stress_factor().times {
+        do stress_factor().times {
             do run_in_mt_newsched_task {
                 let (port, chan) = stream::<~int>();
 
@@ -780,8 +886,8 @@ mod test {
         // Regression test that we don't run out of stack in scheduler context
         do run_in_newsched_task {
             let (port, chan) = stream();
-            for 10000.times { chan.send(()) }
-            for 10000.times { port.recv() }
+            do 10000.times { chan.send(()) }
+            do 10000.times { port.recv() }
         }
     }
 
@@ -791,14 +897,14 @@ mod test {
             let (port, chan) = stream();
             let chan = SharedChan::new(chan);
             let total = stress_factor() + 100;
-            for total.times {
+            do total.times {
                 let chan_clone = chan.clone();
                 do spawntask_random {
                     chan_clone.send(());
                 }
             }
 
-            for total.times {
+            do total.times {
                 port.recv();
             }
         }
@@ -813,7 +919,7 @@ mod test {
             let end_chan = SharedChan::new(end_chan);
             let port = SharedPort::new(port);
             let total = stress_factor() + 100;
-            for total.times {
+            do total.times {
                 let end_chan_clone = end_chan.clone();
                 let port_clone = port.clone();
                 do spawntask_random {
@@ -822,11 +928,11 @@ mod test {
                 }
             }
 
-            for total.times {
+            do total.times {
                 chan.send(());
             }
 
-            for total.times {
+            do total.times {
                 end_port.recv();
             }
         }
@@ -853,7 +959,7 @@ mod test {
             let send_total = 10;
             let recv_total = 20;
             do spawntask_random {
-                for send_total.times {
+                do send_total.times {
                     let chan_clone = chan.clone();
                     do spawntask_random {
                         chan_clone.send(());
@@ -862,7 +968,7 @@ mod test {
             }
             let end_chan_clone = end_chan.clone();
             do spawntask_random {
-                for recv_total.times {
+                do recv_total.times {
                     let port_clone = port.clone();
                     let end_chan_clone = end_chan_clone.clone();
                     do spawntask_random {
@@ -873,7 +979,7 @@ mod test {
             }
 
             let mut recvd = 0;
-            for recv_total.times {
+            do recv_total.times {
                 recvd += if end_port.recv() { 1 } else { 0 };
             }
 
@@ -892,15 +998,15 @@ mod test {
             let pipe = megapipe();
             let total = stress_factor() + 10;
             let mut rng = rand::rng();
-            for total.times {
+            do total.times {
                 let msgs = rng.gen_uint_range(0, 10);
                 let pipe_clone = pipe.clone();
                 let end_chan_clone = end_chan.clone();
                 do spawntask_random {
-                    for msgs.times {
+                    do msgs.times {
                         pipe_clone.send(());
                     }
-                    for msgs.times {
+                    do msgs.times {
                         pipe_clone.recv();
                     }
                 }
@@ -908,10 +1014,9 @@ mod test {
                 end_chan_clone.send(());
             }
 
-            for total.times {
+            do total.times {
                 end_port.recv();
             }
         }
     }
-
 }

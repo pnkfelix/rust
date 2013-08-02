@@ -23,7 +23,6 @@ extern mod extra;
 
 use extra::{time, getopts};
 use std::comm::*;
-use std::int::range;
 use std::io::WriterUtil;
 use std::io;
 use std::os;
@@ -33,22 +32,24 @@ use std::u64;
 use std::uint;
 
 fn fib(n: int) -> int {
-    fn pfib(c: &Chan<int>, n: int) {
+    fn pfib(c: &SharedChan<int>, n: int) {
         if n == 0 {
             c.send(0);
         } else if n <= 2 {
             c.send(1);
         } else {
-            let p = PortSet::new();
-            let ch = p.chan();
+            let (pp, cc) = stream();
+            let cc = SharedChan::new(cc);
+            let ch = cc.clone();
             task::spawn(|| pfib(&ch, n - 1) );
-            let ch = p.chan();
+            let ch = cc.clone();
             task::spawn(|| pfib(&ch, n - 2) );
-            c.send(p.recv() + p.recv());
+            c.send(pp.recv() + pp.recv());
         }
     }
 
     let (p, ch) = stream();
+    let ch = SharedChan::new(ch);
     let _t = task::spawn(|| pfib(&ch, n) );
     p.recv()
 }
@@ -82,14 +83,14 @@ fn stress_task(id: int) {
 
 fn stress(num_tasks: int) {
     let mut results = ~[];
-    for range(0, num_tasks) |i| {
+    foreach i in range(0, num_tasks) {
         let mut builder = task::task();
         builder.future_result(|r| results.push(r));
         do builder.spawn {
             stress_task(i);
         }
     }
-    for results.iter().advance |r| {
+    foreach r in results.iter() {
         r.recv();
     }
 }
@@ -115,8 +116,8 @@ fn main() {
 
         let out = io::stdout();
 
-        for range(1, max + 1) |n| {
-            for range(0, num_trials) |_i| {
+        foreach n in range(1, max + 1) {
+            foreach _ in range(0, num_trials) {
                 let start = time::precise_time_ns();
                 let fibn = fib(n);
                 let stop = time::precise_time_ns();

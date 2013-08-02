@@ -43,7 +43,6 @@ pub mod doc;
 
 pub mod check_loans;
 
-#[path="gather_loans/mod.rs"]
 pub mod gather_loans;
 
 pub mod move_data;
@@ -93,16 +92,16 @@ pub fn check_crate(
 
     if tcx.sess.borrowck_stats() {
         io::println("--- borrowck stats ---");
-        io::println(fmt!("paths requiring guarantees: %u",
-                        bccx.stats.guaranteed_paths));
-        io::println(fmt!("paths requiring loans     : %s",
-                         make_stat(bccx, bccx.stats.loaned_paths_same)));
-        io::println(fmt!("paths requiring imm loans : %s",
-                         make_stat(bccx, bccx.stats.loaned_paths_imm)));
-        io::println(fmt!("stable paths              : %s",
-                         make_stat(bccx, bccx.stats.stable_paths)));
-        io::println(fmt!("paths requiring purity    : %s",
-                         make_stat(bccx, bccx.stats.req_pure_paths)));
+        printfln!("paths requiring guarantees: %u",
+                  bccx.stats.guaranteed_paths);
+        printfln!("paths requiring loans     : %s",
+                  make_stat(bccx, bccx.stats.loaned_paths_same));
+        printfln!("paths requiring imm loans : %s",
+                  make_stat(bccx, bccx.stats.loaned_paths_imm));
+        printfln!("stable paths              : %s",
+                  make_stat(bccx, bccx.stats.stable_paths));
+        printfln!("paths requiring purity    : %s",
+                  make_stat(bccx, bccx.stats.req_pure_paths));
     }
 
     return (bccx.root_map, bccx.write_guard_map);
@@ -118,7 +117,7 @@ fn borrowck_fn(fk: &visit::fn_kind,
                decl: &ast::fn_decl,
                body: &ast::Block,
                sp: span,
-               id: ast::node_id,
+               id: ast::NodeId,
                (this, v): (@BorrowckCtxt,
                            visit::vt<@BorrowckCtxt>)) {
     match fk {
@@ -140,7 +139,7 @@ fn borrowck_fn(fk: &visit::fn_kind,
                                      LoanDataFlowOperator,
                                      id_range,
                                      all_loans.len());
-            for all_loans.iter().enumerate().advance |(loan_idx, loan)| {
+            foreach (loan_idx, loan) in all_loans.iter().enumerate() {
                 loan_dfcx.add_gen(loan.gen_scope, loan_idx);
                 loan_dfcx.add_kill(loan.kill_scope, loan_idx);
             }
@@ -186,7 +185,7 @@ pub struct BorrowStats {
     guaranteed_paths: uint
 }
 
-pub type LoanMap = @mut HashMap<ast::node_id, @Loan>;
+pub type LoanMap = @mut HashMap<ast::NodeId, @Loan>;
 
 // The keys to the root map combine the `id` of the deref expression
 // with the number of types that it is *autodereferenced*. So, for
@@ -213,7 +212,7 @@ pub type LoanMap = @mut HashMap<ast::node_id, @Loan>;
 // auto-slice.
 #[deriving(Eq, IterBytes)]
 pub struct root_map_key {
-    id: ast::node_id,
+    id: ast::NodeId,
     derefs: uint
 }
 
@@ -239,14 +238,14 @@ pub struct Loan {
     cmt: mc::cmt,
     mutbl: ast::mutability,
     restrictions: ~[Restriction],
-    gen_scope: ast::node_id,
-    kill_scope: ast::node_id,
+    gen_scope: ast::NodeId,
+    kill_scope: ast::NodeId,
     span: span,
 }
 
 #[deriving(Eq, IterBytes)]
 pub enum LoanPath {
-    LpVar(ast::node_id),               // `x` in doc.rs
+    LpVar(ast::NodeId),               // `x` in doc.rs
     LpExtend(@LoanPath, mc::MutabilityCategory, LoanPathElem)
 }
 
@@ -257,7 +256,7 @@ pub enum LoanPathElem {
 }
 
 impl LoanPath {
-    pub fn node_id(&self) -> ast::node_id {
+    pub fn node_id(&self) -> ast::NodeId {
         match *self {
             LpVar(local_id) => local_id,
             LpExtend(base, _, _) => base.node_id()
@@ -377,7 +376,7 @@ impl BitAnd<RestrictionSet,RestrictionSet> for RestrictionSet {
 // uncovered after a certain number of auto-derefs.
 
 pub struct RootInfo {
-    scope: ast::node_id,
+    scope: ast::NodeId,
     freeze: Option<DynaFreezeKind> // Some() if we should freeze box at runtime
 }
 
@@ -441,12 +440,12 @@ impl BorrowckCtxt {
         self.tcx.region_maps.is_subregion_of(r_sub, r_sup)
     }
 
-    pub fn is_subscope_of(&self, r_sub: ast::node_id, r_sup: ast::node_id)
+    pub fn is_subscope_of(&self, r_sub: ast::NodeId, r_sup: ast::NodeId)
                           -> bool {
         self.tcx.region_maps.is_subscope_of(r_sub, r_sup)
     }
 
-    pub fn is_move(&self, id: ast::node_id) -> bool {
+    pub fn is_move(&self, id: ast::NodeId) -> bool {
         self.moves_map.contains(&id)
     }
 
@@ -478,7 +477,7 @@ impl BorrowckCtxt {
     }
 
     pub fn cat_def(&self,
-                   id: ast::node_id,
+                   id: ast::NodeId,
                    span: span,
                    ty: ty::t,
                    def: ast::def)
@@ -486,7 +485,7 @@ impl BorrowckCtxt {
         mc::cat_def(self.tcx, self.method_map, id, span, ty, def)
     }
 
-    pub fn cat_discr(&self, cmt: mc::cmt, match_id: ast::node_id) -> mc::cmt {
+    pub fn cat_discr(&self, cmt: mc::cmt, match_id: ast::NodeId) -> mc::cmt {
         @mc::cmt_ {cat:mc::cat_discr(cmt, match_id),
                    mutbl:cmt.mutbl.inherit(),
                    ..*cmt}

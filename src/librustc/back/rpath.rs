@@ -16,7 +16,6 @@ use metadata::filesearch;
 use std::hashmap::HashSet;
 use std::num;
 use std::os;
-use std::uint;
 use std::util;
 use std::vec;
 
@@ -64,7 +63,7 @@ fn get_rpaths(os: session::os,
     debug!("sysroot: %s", sysroot.to_str());
     debug!("output: %s", output.to_str());
     debug!("libs:");
-    for libs.iter().advance |libpath| {
+    foreach libpath in libs.iter() {
         debug!("    %s", libpath.to_str());
     }
     debug!("target_triple: %s", target_triple);
@@ -83,7 +82,7 @@ fn get_rpaths(os: session::os,
 
     fn log_rpaths(desc: &str, rpaths: &[Path]) {
         debug!("%s rpaths:", desc);
-        for rpaths.iter().advance |rpath| {
+        foreach rpath in rpaths.iter() {
             debug!("    %s", rpath.to_str());
         }
     }
@@ -150,7 +149,7 @@ pub fn get_relative_to(abs1: &Path, abs2: &Path) -> Path {
     }
 
     let mut path = ~[];
-    for uint::range(start_idx, len1 - 1) |_i| { path.push(~".."); };
+    foreach _ in range(start_idx, len1 - 1) { path.push(~".."); };
 
     path.push_all(split2.slice(start_idx, len2 - 1));
 
@@ -183,7 +182,7 @@ pub fn get_install_prefix_rpath(target_triple: &str) -> Path {
 pub fn minimize_rpaths(rpaths: &[Path]) -> ~[Path] {
     let mut set = HashSet::new();
     let mut minimized = ~[];
-    for rpaths.iter().advance |rpath| {
+    foreach rpath in rpaths.iter() {
         if set.insert(rpath.to_str()) {
             minimized.push(rpath.clone());
         }

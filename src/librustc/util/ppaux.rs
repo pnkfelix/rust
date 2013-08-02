@@ -30,6 +30,8 @@ use syntax::codemap::span;
 use syntax::parse::token;
 use syntax::print::pprust;
 use syntax::{ast, ast_util};
+use syntax::opt_vec;
+use syntax::opt_vec::OptVec;
 
 /// Produces a string suitable for debugging output.
 pub trait Repr {
@@ -163,7 +165,7 @@ pub fn bound_region_to_str(cx: ctxt,
     }
 }
 
-pub fn re_scope_id_to_str(cx: ctxt, node_id: ast::node_id) -> ~str {
+pub fn re_scope_id_to_str(cx: ctxt, node_id: ast::NodeId) -> ~str {
     match cx.items.find(&node_id) {
       Some(&ast_map::node_block(ref blk)) => {
         fmt!("<block at %s>",
@@ -396,7 +398,7 @@ pub fn ty_to_str(cx: ctxt, typ: t) -> ~str {
     }
 
     // if there is an id, print that instead of the structural type:
-    /*for ty::type_def_id(typ).iter().advance |def_id| {
+    /*foreach def_id in ty::type_def_id(typ).iter() {
         // note that this typedef cannot have type parameters
         return ast_map::path_to_str(ty::item_path(cx, *def_id),
                                     cx.sess.intr());
@@ -451,12 +453,12 @@ pub fn ty_to_str(cx: ctxt, typ: t) -> ~str {
       ty_enum(did, ref substs) | ty_struct(did, ref substs) => {
         let path = ty::item_path(cx, did);
         let base = ast_map::path_to_str(path, cx.sess.intr());
-        parameterized(cx, base, substs.self_r, substs.tps)
+        parameterized(cx, base, &substs.regions, substs.tps)
       }
       ty_trait(did, ref substs, s, mutbl, ref bounds) => {
         let path = ty::item_path(cx, did);
         let base = ast_map::path_to_str(path, cx.sess.intr());
-        let ty = parameterized(cx, base, substs.self_r, substs.tps);
+        let ty = parameterized(cx, base, &substs.regions, substs.tps);
         let bound_sep = if bounds.is_empty() { "" } else { ":" };
         let bound_str = bounds.repr(cx);
         fmt!("%s%s%s%s%s", trait_store_to_str(cx, s), mutability_to_str(mutbl), ty,
@@ -475,18 +477,20 @@ pub fn ty_to_str(cx: ctxt, typ: t) -> ~str {
 
 pub fn parameterized(cx: ctxt,
                      base: &str,
-                     self_r: Option<ty::Region>,
+                     regions: &ty::RegionSubsts,
                      tps: &[ty::t]) -> ~str {
 
     let mut strs = ~[];
-    match self_r {
-        None => (),
-        Some(r) => {
-            strs.push(region_to_str(cx, "", false, r))
+    match *regions {
+        ty::ErasedRegions => { }
+        ty::NonerasedRegions(ref regions) => {
+            foreach &r in regions.iter() {
+                strs.push(region_to_str(cx, "", false, r))
+            }
         }
-    };
+    }
 
-    for tps.iter().advance |t| {
+    foreach t in tps.iter() {
         strs.push(ty_to_str(cx, *t))
     }
 
@@ -534,6 +538,15 @@ impl<'self, T:Repr> Repr for &'self [T] {
     }
 }
 
+impl<T:Repr> Repr for OptVec<T> {
+    fn repr(&self, tcx: ctxt) -> ~str {
+        match *self {
+            opt_vec::Empty => ~"[]",
+            opt_vec::Vec(ref v) => repr_vec(tcx, *v)
+        }
+    }
+}
+
 // This is necessary to handle types like Option<~[T]>, for which
 // autoderef cannot convert the &[T] handler
 impl<T:Repr> Repr for ~[T] {
@@ -557,10 +570,19 @@ impl Repr for ty::t {
 
 impl Repr for ty::substs {
     fn repr(&self, tcx: ctxt) -> ~str {
-        fmt!("substs(self_r=%s, self_ty=%s, tps=%s)",
-             self.self_r.repr(tcx),
+        fmt!("substs(regions=%s, self_ty=%s, tps=%s)",
+             self.regions.repr(tcx),
              self.self_ty.repr(tcx),
              self.tps.repr(tcx))
+    }
+}
+
+impl Repr for ty::RegionSubsts {
+    fn repr(&self, tcx: ctxt) -> ~str {
+        match *self {
+            ty::ErasedRegions => ~"erased",
+            ty::NonerasedRegions(ref regions) => regions.repr(tcx)
+        }
     }
 }
 
@@ -575,7 +597,7 @@ impl Repr for ty::ParamBounds {
                 ty::BoundSized => ~"Sized",
             });
         }
-        for self.trait_bounds.iter().advance |t| {
+        foreach t in self.trait_bounds.iter() {
             res.push(t.repr(tcx));
         }
         res.connect("+")
@@ -621,7 +643,7 @@ impl Repr for ast::def_id {
         // Unfortunately, there seems to be no way to attempt to print
         // a path for a def-id, so I'll just make a best effort for now
         // and otherwise fallback to just printing the crate/node pair
-        if self.crate == ast::local_crate {
+        if self.crate == ast::LOCAL_CRATE {
             match tcx.items.find(&self.node) {
                 Some(&ast_map::node_item(*)) |
                 Some(&ast_map::node_foreign_item(*)) |
@@ -715,10 +737,6 @@ impl Repr for typeck::method_map_entry {
 impl Repr for typeck::method_origin {
     fn repr(&self, tcx: ctxt) -> ~str {
         match self {
-            &typeck::method_super(def_id, n) => {
-                fmt!("method_super(%s, %?)",
-                     def_id.repr(tcx), n)
-            }
             &typeck::method_static(def_id) => {
                 fmt!("method_static(%s)", def_id.repr(tcx))
             }
@@ -727,9 +745,6 @@ impl Repr for typeck::method_origin {
             }
             &typeck::method_trait(def_id, n) => {
                 fmt!("method_trait(%s, %?)", def_id.repr(tcx), n)
-            }
-            &typeck::method_self(def_id, n) => {
-                fmt!("method_self(%s, %?)", def_id.repr(tcx), n)
             }
         }
     }
@@ -830,11 +845,10 @@ impl UserString for ty::TraitRef {
         let base = ast_map::path_to_str(path, tcx.sess.intr());
         if tcx.sess.verbose() && self.substs.self_ty.is_some() {
             let mut all_tps = self.substs.tps.clone();
-            for self.substs.self_ty.iter().advance |&t| { all_tps.push(t); }
-            parameterized(tcx, base, self.substs.self_r, all_tps)
+            foreach &t in self.substs.self_ty.iter() { all_tps.push(t); }
+            parameterized(tcx, base, &self.substs.regions, all_tps)
         } else {
-            parameterized(tcx, base, self.substs.self_r,
-                          self.substs.tps)
+            parameterized(tcx, base, &self.substs.regions, self.substs.tps)
         }
     }
 }

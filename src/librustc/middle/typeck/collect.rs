@@ -107,7 +107,7 @@ impl AstConv for CrateCtxt {
     fn tcx(&self) -> ty::ctxt { self.tcx }
 
     fn get_item_ty(&self, id: ast::def_id) -> ty::ty_param_bounds_and_ty {
-        if id.crate != ast::local_crate {
+        if id.crate != ast::LOCAL_CRATE {
             csearch::get_type(self.tcx, id)
         } else {
             match self.tcx.items.find(&id.node) {
@@ -143,7 +143,7 @@ pub fn get_enum_variant_types(ccx: &CrateCtxt,
     let tcx = ccx.tcx;
 
     // Create a set of parameter types shared among all the variants.
-    for variants.iter().advance |variant| {
+    foreach variant in variants.iter() {
         let region_parameterization =
             RegionParameterization::from_variance_and_generics(rp, generics);
 
@@ -195,7 +195,7 @@ pub fn get_enum_variant_types(ccx: &CrateCtxt,
 }
 
 pub fn ensure_trait_methods(ccx: &CrateCtxt,
-                            trait_id: ast::node_id)
+                            trait_id: ast::NodeId)
 {
     let tcx = ccx.tcx;
     let region_paramd = tcx.region_paramd_items.find(&trait_id).map(|&x| *x);
@@ -208,7 +208,7 @@ pub fn ensure_trait_methods(ccx: &CrateCtxt,
 
             // For each method, construct a suitable ty::Method and
             // store it into the `tcx.methods` table:
-            for ms.iter().advance |m| {
+            foreach m in ms.iter() {
                 let ty_method = @match m {
                     &ast::required(ref m) => {
                         ty_method_of_trait_method(
@@ -248,7 +248,7 @@ pub fn ensure_trait_methods(ccx: &CrateCtxt,
     }
 
     fn make_static_method_ty(ccx: &CrateCtxt,
-                             trait_id: ast::node_id,
+                             trait_id: ast::NodeId,
                              m: &ty::Method,
                              trait_ty_generics: &ty::Generics) {
         // If declaration is
@@ -301,7 +301,7 @@ pub fn ensure_trait_methods(ccx: &CrateCtxt,
         //     Self => D'
         //     D,E,F => E',F',G'
         let substs = substs {
-            self_r: None,
+            regions: ty::NonerasedRegions(opt_vec::Empty),
             self_ty: Some(self_param),
             tps: non_shifted_trait_tps + shifted_method_tps
         };
@@ -352,10 +352,10 @@ pub fn ensure_trait_methods(ccx: &CrateCtxt,
     }
 
     fn ty_method_of_trait_method(this: &CrateCtxt,
-                                 trait_id: ast::node_id,
+                                 trait_id: ast::NodeId,
                                  trait_rp: Option<ty::region_variance>,
                                  trait_generics: &ast::Generics,
-                                 m_id: &ast::node_id,
+                                 m_id: &ast::NodeId,
                                  m_ident: &ast::ident,
                                  m_explicit_self: &ast::explicit_self,
                                  m_generics: &ast::Generics,
@@ -384,7 +384,7 @@ pub fn ensure_trait_methods(ccx: &CrateCtxt,
 }
 
 pub fn ensure_supertraits(ccx: &CrateCtxt,
-                          id: ast::node_id,
+                          id: ast::NodeId,
                           sp: codemap::span,
                           rp: Option<ty::region_variance>,
                           ast_trait_refs: &[ast::trait_ref],
@@ -395,7 +395,7 @@ pub fn ensure_supertraits(ccx: &CrateCtxt,
 
     let self_ty = ty::mk_self(ccx.tcx, local_def(id));
     let mut ty_trait_refs: ~[@ty::TraitRef] = ~[];
-    for ast_trait_refs.iter().advance |ast_trait_ref| {
+    foreach ast_trait_ref in ast_trait_refs.iter() {
         let trait_ref = instantiate_trait_ref(ccx, ast_trait_ref, rp,
                                               generics, self_ty);
 
@@ -494,7 +494,7 @@ pub fn compare_impl_method(tcx: ty::ctxt,
         return;
     }
 
-    for trait_m.generics.type_param_defs.iter().enumerate().advance |(i, trait_param_def)| {
+    foreach (i, trait_param_def) in trait_m.generics.type_param_defs.iter().enumerate() {
         // For each of the corresponding impl ty param's bounds...
         let impl_param_def = &impl_m.generics.type_param_defs[i];
 
@@ -558,10 +558,10 @@ pub fn compare_impl_method(tcx: ty::ctxt,
     // For both the trait and the impl, create an argument to
     // represent the self argument (unless this is a static method).
     // This argument will have the *transformed* self type.
-    for trait_m.transformed_self_ty.iter().advance |&t| {
+    foreach &t in trait_m.transformed_self_ty.iter() {
         trait_fn_args.push(t);
     }
-    for impl_m.transformed_self_ty.iter().advance |&t| {
+    foreach &t in impl_m.transformed_self_ty.iter() {
         impl_fn_args.push(t);
     }
 
@@ -622,7 +622,7 @@ pub fn compare_impl_method(tcx: ty::ctxt,
         let trait_tps = trait_substs.tps.map(
             |t| replace_bound_self(tcx, *t, dummy_self_r));
         let substs = substs {
-            self_r: Some(dummy_self_r),
+            regions: ty::NonerasedRegions(opt_vec::with(dummy_self_r)),
             self_ty: Some(self_ty),
             tps: vec::append(trait_tps, dummy_tps)
         };
@@ -666,7 +666,7 @@ pub fn check_methods_against_trait(ccx: &CrateCtxt,
     let trait_ref = instantiate_trait_ref(ccx, a_trait_ty, rp,
                                           generics, selfty);
 
-    if trait_ref.def_id.crate == ast::local_crate {
+    if trait_ref.def_id.crate == ast::LOCAL_CRATE {
         ensure_trait_methods(ccx, trait_ref.def_id.node);
     }
 
@@ -674,7 +674,7 @@ pub fn check_methods_against_trait(ccx: &CrateCtxt,
     // Trait methods we don't implement must be default methods, but if not
     // we'll catch it in coherence
     let trait_ms = ty::trait_methods(tcx, trait_ref.def_id);
-    for impl_ms.iter().advance |impl_m| {
+    foreach impl_m in impl_ms.iter() {
         match trait_ms.iter().find_(|trait_m| trait_m.ident == impl_m.mty.ident) {
             Some(trait_m) => {
                 let num_impl_tps = generics.ty_params.len();
@@ -716,13 +716,13 @@ pub fn convert_field(ccx: &CrateCtxt,
 
 pub struct ConvertedMethod {
     mty: @ty::Method,
-    id: ast::node_id,
+    id: ast::NodeId,
     span: span,
-    body_id: ast::node_id
+    body_id: ast::NodeId
 }
 
 pub fn convert_methods(ccx: &CrateCtxt,
-                       container_id: ast::node_id,
+                       container_id: ast::NodeId,
                        ms: &[@ast::method],
                        untransformed_rcvr_ty: ty::t,
                        rcvr_ty_generics: &ty::Generics,
@@ -763,7 +763,7 @@ pub fn convert_methods(ccx: &CrateCtxt,
     }).collect();
 
     fn ty_of_method(ccx: &CrateCtxt,
-                    container_id: ast::node_id,
+                    container_id: ast::NodeId,
                     m: &ast::method,
                     rp: Option<ty::region_variance>,
                     untransformed_rcvr_ty: ty::t,
@@ -805,7 +805,7 @@ pub fn ensure_no_ty_param_bounds(ccx: &CrateCtxt,
                                  span: span,
                                  generics: &ast::Generics,
                                  thing: &'static str) {
-    for generics.ty_params.iter().advance |ty_param| {
+    foreach ty_param in generics.ty_params.iter() {
         if ty_param.bounds.len() > 0 {
             ccx.tcx.sess.span_err(
                 span,
@@ -858,7 +858,7 @@ pub fn convert(ccx: &CrateCtxt, it: &ast::item) {
         let cms = convert_methods(ccx, it.id, *ms, selfty,
                                   &i_ty_generics, generics,
                                   parent_visibility);
-        for opt_trait_ref.iter().advance |t| {
+        foreach t in opt_trait_ref.iter() {
             check_methods_against_trait(ccx, generics, rp, selfty, t, cms);
         }
       }
@@ -908,11 +908,11 @@ pub fn convert_struct(ccx: &CrateCtxt,
                       struct_def: &ast::struct_def,
                       generics: &ast::Generics,
                       tpt: ty::ty_param_bounds_and_ty,
-                      id: ast::node_id) {
+                      id: ast::NodeId) {
     let tcx = ccx.tcx;
 
     // Write the type of each of the members
-    for struct_def.fields.iter().advance |f| {
+    foreach f in struct_def.fields.iter() {
        convert_field(ccx, rp, tpt.generics.type_param_defs, *f, generics);
     }
     let (_, substs) = mk_item_substs(ccx, generics, rp, None);
@@ -1002,7 +1002,7 @@ pub fn instantiate_trait_ref(ccx: &CrateCtxt,
 }
 
 fn get_trait_def(ccx: &CrateCtxt, trait_id: ast::def_id) -> @ty::TraitDef {
-    if trait_id.crate != ast::local_crate {
+    if trait_id.crate != ast::LOCAL_CRATE {
         ty::lookup_trait_def(ccx.tcx, trait_id)
     } else {
         match ccx.tcx.items.get(&trait_id.node) {
@@ -1203,7 +1203,7 @@ pub fn ty_generics(ccx: &CrateCtxt,
             builtin_bounds: ty::EmptyBuiltinBounds(),
             trait_bounds: ~[]
         };
-        for ast_bounds.iter().advance |ast_bound| {
+        foreach ast_bound in ast_bounds.iter() {
             match *ast_bound {
                 TraitTyParamBound(ref b) => {
                     let ty = ty::mk_param(ccx.tcx, param_ty.idx, param_ty.def_id);
@@ -1268,6 +1268,8 @@ pub fn mk_item_substs(ccx: &CrateCtxt,
         i += 1u;
         t
     });
-    let self_r = rscope::bound_self_region(rp);
-    (ty_generics, substs {self_r: self_r, self_ty: self_ty, tps: params})
+    let regions = rscope::bound_self_region(rp);
+    (ty_generics, substs {regions: ty::NonerasedRegions(regions),
+                          self_ty: self_ty,
+                          tps: params})
 }

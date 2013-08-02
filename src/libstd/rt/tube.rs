@@ -17,7 +17,6 @@ use option::*;
 use clone::Clone;
 use super::rc::RC;
 use rt::sched::Scheduler;
-use rt::{context, TaskContext, SchedulerContext};
 use rt::kill::BlockedTask;
 use rt::local::Local;
 use vec::OwnedVector;
@@ -44,8 +43,6 @@ impl<T> Tube<T> {
 
     pub fn send(&mut self, val: T) {
         rtdebug!("tube send");
-        assert!(context() == SchedulerContext);
-
         unsafe {
             let state = self.p.unsafe_borrow_mut();
             (*state).buf.push(val);
@@ -61,8 +58,6 @@ impl<T> Tube<T> {
     }
 
     pub fn recv(&mut self) -> T {
-        assert!(context() == TaskContext);
-
         unsafe {
             let state = self.p.unsafe_borrow_mut();
             if !(*state).buf.is_empty() {
@@ -93,13 +88,13 @@ impl<T> Clone for Tube<T> {
 
 #[cfg(test)]
 mod test {
-    use int;
     use cell::Cell;
     use rt::test::*;
     use rt::rtio::EventLoop;
     use rt::sched::Scheduler;
     use rt::local::Local;
     use super::*;
+    use prelude::*;
 
     #[test]
     fn simple_test() {
@@ -171,7 +166,7 @@ mod test {
                 sched.enqueue_blocked_task(task);
             }
 
-            for int::range(0, MAX) |i| {
+            foreach i in range(0, MAX) {
                 let j = tube.recv();
                 assert!(j == i);
             }

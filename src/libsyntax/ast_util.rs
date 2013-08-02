@@ -31,13 +31,13 @@ pub fn path_to_ident(p: &Path) -> ident {
     *p.idents.last()
 }
 
-pub fn local_def(id: node_id) -> def_id {
-    ast::def_id { crate: local_crate, node: id }
+pub fn local_def(id: NodeId) -> def_id {
+    ast::def_id { crate: LOCAL_CRATE, node: id }
 }
 
-pub fn is_local(did: ast::def_id) -> bool { did.crate == local_crate }
+pub fn is_local(did: ast::def_id) -> bool { did.crate == LOCAL_CRATE }
 
-pub fn stmt_id(s: &stmt) -> node_id {
+pub fn stmt_id(s: &stmt) -> NodeId {
     match s.node {
       stmt_decl(_, id) => id,
       stmt_expr(_, id) => id,
@@ -204,14 +204,14 @@ pub fn block_from_expr(e: @expr) -> Block {
 pub fn default_block(
     stmts1: ~[@stmt],
     expr1: Option<@expr>,
-    id1: node_id
+    id1: NodeId
 ) -> Block {
     ast::Block {
         view_items: ~[],
         stmts: stmts1,
         expr: expr1,
         id: id1,
-        rules: default_blk,
+        rules: DefaultBlock,
         span: dummy_sp(),
     }
 }
@@ -224,7 +224,7 @@ pub fn ident_to_path(s: span, i: ident) -> Path {
                  types: ~[] }
 }
 
-pub fn ident_to_pat(id: node_id, s: span, i: ident) -> @pat {
+pub fn ident_to_pat(id: NodeId, s: span, i: ident) -> @pat {
     @ast::pat { id: id,
                 node: pat_ident(bind_infer, ident_to_path(s, i), None),
                 span: s }
@@ -254,13 +254,13 @@ pub fn public_methods(ms: ~[@method]) -> ~[@method] {
     }.collect()
 }
 
-// extract a ty_method from a trait_method. if the trait_method is
-// a default, pull out the useful fields to make a ty_method
-pub fn trait_method_to_ty_method(method: &trait_method) -> ty_method {
+// extract a TypeMethod from a trait_method. if the trait_method is
+// a default, pull out the useful fields to make a TypeMethod
+pub fn trait_method_to_ty_method(method: &trait_method) -> TypeMethod {
     match *method {
         required(ref m) => (*m).clone(),
         provided(ref m) => {
-            ty_method {
+            TypeMethod {
                 ident: m.ident,
                 attrs: m.attrs.clone(),
                 purity: m.purity,
@@ -275,10 +275,10 @@ pub fn trait_method_to_ty_method(method: &trait_method) -> ty_method {
 }
 
 pub fn split_trait_methods(trait_methods: &[trait_method])
-    -> (~[ty_method], ~[@method]) {
+    -> (~[TypeMethod], ~[@method]) {
     let mut reqd = ~[];
     let mut provd = ~[];
-    for trait_methods.iter().advance |trt_method| {
+    foreach trt_method in trait_methods.iter() {
         match *trt_method {
           required(ref tm) => reqd.push((*tm).clone()),
           provided(m) => provd.push(m)
@@ -296,7 +296,7 @@ pub fn struct_field_visibility(field: ast::struct_field) -> visibility {
 
 pub trait inlined_item_utils {
     fn ident(&self) -> ident;
-    fn id(&self) -> ast::node_id;
+    fn id(&self) -> ast::NodeId;
     fn accept<E: Clone>(&self, e: E, v: visit::vt<E>);
 }
 
@@ -309,7 +309,7 @@ impl inlined_item_utils for inlined_item {
         }
     }
 
-    fn id(&self) -> ast::node_id {
+    fn id(&self) -> ast::NodeId {
         match *self {
             ii_item(i) => i.id,
             ii_foreign(i) => i.id,
@@ -367,8 +367,8 @@ pub fn empty_generics() -> Generics {
 
 #[deriving(Encodable, Decodable)]
 pub struct id_range {
-    min: node_id,
-    max: node_id,
+    min: NodeId,
+    max: NodeId,
 }
 
 impl id_range {
@@ -383,18 +383,18 @@ impl id_range {
         self.min >= self.max
     }
 
-    pub fn add(&mut self, id: node_id) {
+    pub fn add(&mut self, id: NodeId) {
         self.min = num::min(self.min, id);
         self.max = num::max(self.max, id + 1);
     }
 }
 
-pub fn id_visitor<T: Clone>(vfn: @fn(node_id, T)) -> visit::vt<T> {
+pub fn id_visitor<T: Clone>(vfn: @fn(NodeId, T)) -> visit::vt<T> {
     let visit_generics: @fn(&Generics, T) = |generics, t| {
-        for generics.ty_params.iter().advance |p| {
+        foreach p in generics.ty_params.iter() {
             vfn(p.id, t.clone());
         }
-        for generics.lifetimes.iter().advance |p| {
+        foreach p in generics.lifetimes.iter() {
             vfn(p.id, t.clone());
         }
     };
@@ -408,13 +408,13 @@ pub fn id_visitor<T: Clone>(vfn: @fn(node_id, T)) -> visit::vt<T> {
             match vi.node {
               view_item_extern_mod(_, _, id) => vfn(id, t.clone()),
               view_item_use(ref vps) => {
-                  for vps.iter().advance |vp| {
+                  foreach vp in vps.iter() {
                       match vp.node {
                           view_path_simple(_, _, id) => vfn(id, t.clone()),
                           view_path_glob(_, id) => vfn(id, t.clone()),
                           view_path_list(_, ref paths, id) => {
                               vfn(id, t.clone());
-                              for paths.iter().advance |p| {
+                              foreach p in paths.iter() {
                                   vfn(p.node.id, t.clone());
                               }
                           }
@@ -434,7 +434,7 @@ pub fn id_visitor<T: Clone>(vfn: @fn(node_id, T)) -> visit::vt<T> {
             vfn(i.id, t.clone());
             match i.node {
               item_enum(ref enum_definition, _) =>
-                for (*enum_definition).variants.iter().advance |v| {
+                foreach v in (*enum_definition).variants.iter() {
                     vfn(v.node.id, t.clone());
                 },
               _ => ()
@@ -462,7 +462,7 @@ pub fn id_visitor<T: Clone>(vfn: @fn(node_id, T)) -> visit::vt<T> {
         visit_expr: |e, (t, vt)| {
             {
                 let r = e.get_callee_id();
-                for r.iter().advance |callee_id| {
+                foreach callee_id in r.iter() {
                     vfn(*callee_id, t.clone());
                 }
             }
@@ -500,7 +500,7 @@ pub fn id_visitor<T: Clone>(vfn: @fn(node_id, T)) -> visit::vt<T> {
                 }
             }
 
-            for d.inputs.iter().advance |arg| {
+            foreach arg in d.inputs.iter() {
                 vfn(arg.id, t.clone())
             }
             visit::visit_fn(fk, d, a, b, id, (t.clone(), vt));
@@ -515,11 +515,11 @@ pub fn id_visitor<T: Clone>(vfn: @fn(node_id, T)) -> visit::vt<T> {
     })
 }
 
-pub fn visit_ids_for_inlined_item(item: &inlined_item, vfn: @fn(node_id)) {
+pub fn visit_ids_for_inlined_item(item: &inlined_item, vfn: @fn(NodeId)) {
     item.accept((), id_visitor(|id, ()| vfn(id)));
 }
 
-pub fn compute_id_range(visit_ids_fn: &fn(@fn(node_id))) -> id_range {
+pub fn compute_id_range(visit_ids_fn: &fn(@fn(NodeId))) -> id_range {
     let result = @mut id_range::max();
     do visit_ids_fn |id| {
         result.add(id);
@@ -581,7 +581,7 @@ impl EachViewItem for ast::Crate {
     }
 }
 
-pub fn view_path_id(p: &view_path) -> node_id {
+pub fn view_path_id(p: &view_path) -> NodeId {
     match p.node {
       view_path_simple(_, _, id) |
       view_path_glob(_, id) |

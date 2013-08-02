@@ -85,6 +85,7 @@ pub fn parse_config(args: ~[~str]) -> config {
     if args[1] == ~"-h" || args[1] == ~"--help" {
         let message = fmt!("Usage: %s [OPTIONS] [TESTNAME...]", argv0);
         println(getopts::groups::usage(message, groups));
+        println("");
         fail!()
     }
 
@@ -97,6 +98,7 @@ pub fn parse_config(args: ~[~str]) -> config {
     if getopts::opt_present(matches, "h") || getopts::opt_present(matches, "help") {
         let message = fmt!("Usage: %s [OPTIONS]  [TESTNAME...]", argv0);
         println(getopts::groups::usage(message, groups));
+        println("");
         fail!()
     }
 
@@ -241,7 +243,7 @@ pub fn make_tests(config: &config) -> ~[test::TestDescAndFn] {
            config.src_base.to_str());
     let mut tests = ~[];
     let dirs = os::list_dir_path(&config.src_base);
-    for dirs.iter().advance |file| {
+    foreach file in dirs.iter() {
         let file = file.clone();
         debug!("inspecting file %s", file.to_str());
         if is_test(config, &file) {
@@ -269,11 +271,11 @@ pub fn is_test(config: &config, testfile: &Path) -> bool {
 
     let mut valid = false;
 
-    for valid_extensions.iter().advance |ext| {
+    foreach ext in valid_extensions.iter() {
         if name.ends_with(*ext) { valid = true; }
     }
 
-    for invalid_prefixes.iter().advance |pre| {
+    foreach pre in invalid_prefixes.iter() {
         if name.starts_with(*pre) { valid = false; }
     }
 

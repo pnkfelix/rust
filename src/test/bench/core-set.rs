@@ -46,11 +46,11 @@ impl Results {
         {
             let mut set = f();
             do timed(&mut self.sequential_ints) {
-                for uint::range(0, num_keys) |i| {
+                foreach i in range(0u, num_keys) {
                     set.insert(i);
                 }
 
-                for uint::range(0, num_keys) |i| {
+                foreach i in range(0u, num_keys) {
                     assert!(set.contains(&i));
                 }
             }
@@ -59,7 +59,7 @@ impl Results {
         {
             let mut set = f();
             do timed(&mut self.random_ints) {
-                for num_keys.times {
+                do num_keys.times {
                     set.insert((rng.next() as uint) % rand_cap);
                 }
             }
@@ -67,12 +67,12 @@ impl Results {
 
         {
             let mut set = f();
-            for uint::range(0, num_keys) |i| {
+            foreach i in range(0u, num_keys) {
                 set.insert(i);
             }
 
             do timed(&mut self.delete_ints) {
-                for uint::range(0, num_keys) |i| {
+                foreach i in range(0u, num_keys) {
                     assert!(set.remove(&i));
                 }
             }
@@ -88,12 +88,12 @@ impl Results {
         {
             let mut set = f();
             do timed(&mut self.sequential_strings) {
-                for uint::range(0, num_keys) |i| {
+                foreach i in range(0u, num_keys) {
                     let s = uint::to_str(i);
                     set.insert(s);
                 }
 
-                for uint::range(0, num_keys) |i| {
+                foreach i in range(0u, num_keys) {
                     let s = uint::to_str(i);
                     assert!(set.contains(&s));
                 }
@@ -103,7 +103,7 @@ impl Results {
         {
             let mut set = f();
             do timed(&mut self.random_strings) {
-                for num_keys.times {
+                do num_keys.times {
                     let s = uint::to_str(rng.next() as uint);
                     set.insert(s);
                 }
@@ -112,11 +112,11 @@ impl Results {
 
         {
             let mut set = f();
-            for uint::range(0, num_keys) |i| {
+            foreach i in range(0u, num_keys) {
                 set.insert(uint::to_str(i));
             }
             do timed(&mut self.delete_strings) {
-                for uint::range(0, num_keys) |i| {
+                foreach i in range(0u, num_keys) {
                     assert!(set.remove(&uint::to_str(i)));
                 }
             }

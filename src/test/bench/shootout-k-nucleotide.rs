@@ -44,7 +44,7 @@ impl Code {
 
     fn pack(string: &str) -> Code {
         let mut code = Code(0u64);
-        for uint::range(0, string.len()) |i| {
+        foreach i in range(0u, string.len()) {
             code = code.push_char(string[i]);
         }
         code
@@ -54,7 +54,7 @@ impl Code {
     fn unpack(&self, frame: i32) -> ~str {
         let mut key = **self;
         let mut result = ~[];
-        for (frame as uint).times {
+        do (frame as uint).times {
             result.push(unpack_symbol((key as u8) & 3));
             key >>= 2;
         }
@@ -82,7 +82,7 @@ struct PrintCallback(&'static str);
 
 impl TableCallback for PrintCallback {
     fn f(&self, entry: &mut Entry) {
-        println(fmt!("%d\t%s", entry.count as int, **self));
+        printfln!("%d\t%s", entry.count as int, **self);
     }
 }
 
@@ -251,7 +251,7 @@ fn generate_frequencies(frequencies: &mut Table,
     let mut code = Code(0);
 
     // Pull first frame.
-    for (frame as uint).times {
+    do (frame as uint).times {
         code = code.push_char(input[0]);
         input = next_char(input);
     }
@@ -279,9 +279,9 @@ fn print_frequencies(frequencies: &Table, frame: i32) {
     }
 
     for vector.each |&(key, count)| {
-        println(fmt!("%s %.3f",
-                     key.unpack(frame),
-                     (count as float * 100.0) / (total_count as float)));
+        printfln!("%s %.3f",
+                  key.unpack(frame),
+                  (count as float * 100.0) / (total_count as float));
     }
 }
 

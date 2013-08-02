@@ -26,7 +26,7 @@ use parse::token::{str_to_ident};
 
 pub fn expand_syntax_ext(cx: @ExtCtxt, sp: span, tts: &[ast::token_tree])
     -> base::MacResult {
-    let args = get_exprs_from_tts(cx, tts);
+    let args = get_exprs_from_tts(cx, sp, tts);
     if args.len() == 0 {
         cx.span_fatal(sp, "fmt! takes at least 1 argument.");
     }
@@ -67,7 +67,7 @@ fn pieces_to_expr(cx: @ExtCtxt, sp: span,
     fn make_rt_conv_expr(cx: @ExtCtxt, sp: span, cnv: &Conv) -> @ast::expr {
         fn make_flags(cx: @ExtCtxt, sp: span, flags: &[Flag]) -> @ast::expr {
             let mut tmp_expr = make_rt_path_expr(cx, sp, "flag_none");
-            for flags.iter().advance |f| {
+            foreach f in flags.iter() {
                 let fstr = match *f {
                   FlagLeftJustify => "flag_left_justify",
                   FlagLeftZeroPad => "flag_left_zero_pad",
@@ -153,7 +153,7 @@ fn pieces_to_expr(cx: @ExtCtxt, sp: span,
           option::None => (),
           _ => cx.span_unimpl(sp, unsupported)
         }
-        for cnv.flags.iter().advance |f| {
+        foreach f in cnv.flags.iter() {
             match *f {
               FlagLeftJustify => (),
               FlagSignAlways => {
@@ -191,6 +191,7 @@ fn pieces_to_expr(cx: @ExtCtxt, sp: span,
             TyChar => ("char", arg),
             TyBits | TyOctal | TyHex(_) | TyInt(Unsigned) => ("uint", arg),
             TyFloat => ("float", arg),
+            TyPointer => ("pointer", arg),
             TyPoly => ("poly", cx.expr_addr_of(sp, arg))
         };
         return make_conv_call(cx, arg.span, name, cnv, actual_arg,
@@ -202,7 +203,7 @@ fn pieces_to_expr(cx: @ExtCtxt, sp: span,
           Some(p) => { debug!("param: %s", p.to_str()); }
           _ => debug!("param: none")
         }
-        for c.flags.iter().advance |f| {
+        foreach f in c.flags.iter() {
             match *f {
               FlagLeftJustify => debug!("flag: left justify"),
               FlagLeftZeroPad => debug!("flag: left zero pad"),
@@ -242,6 +243,7 @@ fn pieces_to_expr(cx: @ExtCtxt, sp: span,
           },
           TyOctal => debug!("type: octal"),
           TyFloat => debug!("type: float"),
+          TyPointer => debug!("type: pointer"),
           TyPoly => debug!("type: poly")
         }
     }
@@ -267,7 +269,7 @@ fn pieces_to_expr(cx: @ExtCtxt, sp: span,
        corresponding function in std::unstable::extfmt. Each function takes a
        buffer to insert data into along with the data being formatted. */
     let npieces = pieces.len();
-    for pieces.consume_iter().enumerate().advance |(i, pc)| {
+    foreach (i, pc) in pieces.consume_iter().enumerate() {
         match pc {
             /* Raw strings get appended via str::push_str */
             PieceString(s) => {

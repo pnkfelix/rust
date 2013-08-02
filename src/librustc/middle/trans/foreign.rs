@@ -32,7 +32,7 @@ use middle::ty;
 use middle::ty::FnSig;
 use util::ppaux::ty_to_str;
 
-use std::uint;
+use std::cell::Cell;
 use std::vec;
 use syntax::codemap::span;
 use syntax::{ast, ast_util};
@@ -107,7 +107,7 @@ fn foreign_signature(ccx: &mut CrateContext, fn_sig: &ty::FnSig)
     }
 }
 
-fn shim_types(ccx: @mut CrateContext, id: ast::node_id) -> ShimTypes {
+fn shim_types(ccx: @mut CrateContext, id: ast::NodeId) -> ShimTypes {
     let fn_sig = match ty::get(ty::node_id_to_type(ccx.tcx, id)).sty {
         ty::ty_bare_fn(ref fn_ty) => fn_ty.sig.clone(),
         _ => ccx.sess.bug("c_arg_and_ret_lltys called on non-function type")
@@ -286,7 +286,7 @@ pub fn trans_foreign_mod(ccx: @mut CrateContext,
         Some(abi) => abi,
     };
 
-    for foreign_mod.items.iter().advance |&foreign_item| {
+    foreach &foreign_item in foreign_mod.items.iter() {
         match foreign_item.node {
             ast::foreign_item_fn(*) => {
                 let id = foreign_item.id;
@@ -337,7 +337,7 @@ pub fn trans_foreign_mod(ccx: @mut CrateContext,
     }
 
     fn build_foreign_fn(ccx: @mut CrateContext,
-                        id: ast::node_id,
+                        id: ast::NodeId,
                         foreign_item: @ast::foreign_item,
                         cc: lib::llvm::CallConv) {
         let llwrapfn = get_item_val(ccx, id);
@@ -498,7 +498,7 @@ pub fn trans_foreign_mod(ccx: @mut CrateContext,
             let _icx = push_ctxt("foreign::wrap::build_args");
             let ccx = bcx.ccx();
             let n = tys.llsig.llarg_tys.len();
-            for uint::range(0, n) |i| {
+            foreach i in range(0u, n) {
                 let arg_i = bcx.fcx.arg_pos(i);
                 let mut llargval = get_param(llwrapfn, arg_i);
 
@@ -512,7 +512,7 @@ pub fn trans_foreign_mod(ccx: @mut CrateContext,
                 store_inbounds(bcx, llargval, llargbundle, [0u, i]);
             }
 
-            for bcx.fcx.llretptr.iter().advance |&retptr| {
+            foreach &retptr in bcx.fcx.llretptr.iter() {
                 store_inbounds(bcx, retptr, llargbundle, [0u, n]);
             }
         }
@@ -522,7 +522,7 @@ pub fn trans_foreign_mod(ccx: @mut CrateContext,
                      llargbundle: ValueRef) {
             let _icx = push_ctxt("foreign::wrap::build_ret");
             let arg_count = shim_types.fn_sig.inputs.len();
-            for bcx.fcx.llretptr.iter().advance |&retptr| {
+            foreach &retptr in bcx.fcx.llretptr.iter() {
                 let llretptr = load_inbounds(bcx, llargbundle, [0, arg_count]);
                 Store(bcx, Load(bcx, llretptr), retptr);
             }
@@ -536,14 +536,14 @@ pub fn trans_intrinsic(ccx: @mut CrateContext,
                        path: ast_map::path,
                        substs: @param_substs,
                        attributes: &[ast::Attribute],
-                       ref_id: Option<ast::node_id>) {
+                       ref_id: Option<ast::NodeId>) {
     debug!("trans_intrinsic(item.ident=%s)", ccx.sess.str_of(item.ident));
 
     fn simple_llvm_intrinsic(bcx: @mut Block, name: &'static str, num_args: uint) {
         assert!(num_args <= 4);
         let mut args = [0 as ValueRef, ..4];
         let first_real_arg = bcx.fcx.arg_pos(0u);
-        for uint::range(0, num_args) |i| {
+        foreach i in range(0u, num_args) {
             args[i] = get_param(bcx.fcx.llfn, first_real_arg + i);
         }
         let llfn = bcx.ccx().intrinsics.get_copy(&name);
@@ -658,6 +658,10 @@ pub fn trans_intrinsic(ccx: @mut CrateContext,
                 AtomicStore(bcx, get_param(decl, first_real_arg + 1u),
                             get_param(decl, first_real_arg),
                             order);
+                RetVoid(bcx);
+            }
+            "fence" => {
+                AtomicFence(bcx, order);
                 RetVoid(bcx);
             }
             op => {
@@ -805,6 +809,9 @@ pub fn trans_intrinsic(ccx: @mut CrateContext,
                             _ => Ret(bcx, BitCast(bcx, llsrcval, llouttype))
                         }
                     }
+                } else if ty::type_is_immediate(ccx.tcx, out_type) {
+                    let llsrcptr = PointerCast(bcx, llsrcval, llouttype.ptr_to());
+                    Ret(bcx, Load(bcx, llsrcptr));
                 } else {
                     // NB: Do not use a Load and Store here. This causes massive
                     // code bloat when `transmute` is used on large structural
@@ -875,6 +882,11 @@ pub fn trans_intrinsic(ccx: @mut CrateContext,
                 bcx.ccx().llmod, "__morestack", llfty);
             let morestack_addr = PointerCast(bcx, morestack_addr, Type::nil().ptr_to());
             Ret(bcx, morestack_addr);
+        }
+        "offset" => {
+            let ptr = get_param(decl, first_real_arg);
+            let offset = get_param(decl, first_real_arg + 1);
+            Ret(bcx, GEP(bcx, ptr, [offset]));
         }
         "memcpy32" => memcpy_intrinsic(bcx, "llvm.memcpy.p0i8.p0i8.i32", substs.tys[0], 32),
         "memcpy64" => memcpy_intrinsic(bcx, "llvm.memcpy.p0i8.p0i8.i64", substs.tys[0], 64),
@@ -967,14 +979,14 @@ pub fn trans_foreign_fn(ccx: @mut CrateContext,
                         decl: &ast::fn_decl,
                         body: &ast::Block,
                         llwrapfn: ValueRef,
-                        id: ast::node_id) {
+                        id: ast::NodeId) {
     let _icx = push_ctxt("foreign::build_foreign_fn");
 
     fn build_rust_fn(ccx: @mut CrateContext,
                      path: &ast_map::path,
                      decl: &ast::fn_decl,
                      body: &ast::Block,
-                     id: ast::node_id)
+                     id: ast::NodeId)
                   -> ValueRef {
         let _icx = push_ctxt("foreign::foreign::build_rust_fn");
         let t = ty::node_id_to_type(ccx.tcx, id);
@@ -1136,24 +1148,15 @@ pub fn trans_foreign_fn(ccx: @mut CrateContext,
 
 pub fn register_foreign_fn(ccx: @mut CrateContext,
                            sp: span,
-                           path: ast_map::path,
-                           node_id: ast::node_id,
-                           attrs: &[ast::Attribute])
+                           sym: ~str,
+                           node_id: ast::NodeId)
                            -> ValueRef {
     let _icx = push_ctxt("foreign::register_foreign_fn");
 
-    let t = ty::node_id_to_type(ccx.tcx, node_id);
+    let sym = Cell::new(sym);
 
     let tys = shim_types(ccx, node_id);
     do tys.fn_ty.decl_fn |fnty| {
-        // XXX(pcwalton): We should not copy the path.
-        register_fn_fuller(ccx,
-                           sp,
-                           path.clone(),
-                           node_id,
-                           attrs,
-                           t,
-                           lib::llvm::CCallConv,
-                           fnty)
+        register_fn_fuller(ccx, sp, sym.take(), node_id, lib::llvm::CCallConv, fnty)
     }
 }

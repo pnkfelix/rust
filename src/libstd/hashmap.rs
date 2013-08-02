@@ -19,7 +19,7 @@ use container::{Container, Mutable, Map, MutableMap, Set, MutableSet};
 use clone::Clone;
 use cmp::{Eq, Equiv};
 use hash::Hash;
-use iterator::{Iterator, IteratorUtil, FromIterator, ChainIterator};
+use iterator::{Iterator, IteratorUtil, FromIterator, Extendable, Chain, range};
 use num;
 use option::{None, Option, Some};
 use rand::RngUtil;
@@ -130,15 +130,17 @@ impl<K:Hash + Eq,V> HashMap<K, V> {
                                 hash: uint,
                                 k: &K)
                              -> SearchResult {
-        for self.bucket_sequence(hash) |i| {
+        let mut ret = TableFull;
+        do self.bucket_sequence(hash) |i| {
             match self.buckets[i] {
-                Some(ref bkt) => if bkt.hash == hash && *k == bkt.key {
-                    return FoundEntry(i);
+                Some(ref bkt) if bkt.hash == hash && *k == bkt.key => {
+                    ret = FoundEntry(i); false
                 },
-                None => return FoundHole(i)
+                None => { ret = FoundHole(i); false }
+                _ => true,
             }
-        }
-        TableFull
+        };
+        ret
     }
 
     #[inline]
@@ -146,17 +148,17 @@ impl<K:Hash + Eq,V> HashMap<K, V> {
                                                   hash: uint,
                                                   k: &Q)
                                                -> SearchResult {
-        for self.bucket_sequence(hash) |i| {
+        let mut ret = TableFull;
+        do self.bucket_sequence(hash) |i| {
             match self.buckets[i] {
-                Some(ref bkt) => {
-                    if bkt.hash == hash && k.equiv(&bkt.key) {
-                        return FoundEntry(i);
-                    }
+                Some(ref bkt) if bkt.hash == hash && k.equiv(&bkt.key) => {
+                    ret = FoundEntry(i); false
                 },
-                None => return FoundHole(i)
+                None => { ret = FoundHole(i); false }
+                _ => true,
             }
-        }
-        TableFull
+        };
+        ret
     }
 
     /// Expand the capacity of the array to the next power of two
@@ -177,7 +179,7 @@ impl<K:Hash + Eq,V> HashMap<K, V> {
 
         self.size = 0;
         // consume_rev_iter is more efficient
-        for old_buckets.consume_rev_iter().advance |bucket| {
+        foreach bucket in old_buckets.consume_rev_iter() {
             self.insert_opt_bucket(bucket);
         }
     }
@@ -272,25 +274,17 @@ impl<K:Hash + Eq,V> HashMap<K, V> {
 
         value
     }
-
-    fn search(&self, hash: uint,
-              op: &fn(x: &Option<Bucket<K, V>>) -> bool) {
-        let _ = self.bucket_sequence(hash, |i| op(&self.buckets[i]));
-    }
 }
 
 impl<K:Hash + Eq,V> Container for HashMap<K, V> {
     /// Return the number of elements in the map
     fn len(&self) -> uint { self.size }
-
-    /// Return true if the map contains no elements
-    fn is_empty(&self) -> bool { self.len() == 0 }
 }
 
 impl<K:Hash + Eq,V> Mutable for HashMap<K, V> {
     /// Clear the map, removing all key-value pairs.
     fn clear(&mut self) {
-        for uint::range(0, self.buckets.len()) |idx| {
+        foreach idx in range(0u, self.buckets.len()) {
             self.buckets[idx] = None;
         }
         self.size = 0;
@@ -323,19 +317,6 @@ impl<K:Hash + Eq,V> MutableMap<K, V> for HashMap<K, V> {
             TableFull | FoundHole(_) => return None
         };
         Some(self.mut_value_for_bucket(idx))
-    }
-
-    /// Insert a key-value pair into the map. An existing value for a
-    /// key is replaced by the new value. Return true if the key did
-    /// not already exist in the map.
-    fn insert(&mut self, k: K, v: V) -> bool {
-        self.swap(k, v).is_none()
-    }
-
-    /// Remove a key-value pair from the map. Return true if the key
-    /// was present in the map, otherwise false.
-    fn remove(&mut self, k: &K) -> bool {
-        self.pop(k).is_some()
     }
 
     /// Insert a key-value pair from the map. If the key already had a value
@@ -534,7 +515,7 @@ impl<K:Hash + Eq,V:Eq> Eq for HashMap<K, V> {
 impl<K:Hash + Eq + Clone,V:Clone> Clone for HashMap<K,V> {
     fn clone(&self) -> HashMap<K,V> {
         let mut new_map = HashMap::with_capacity(self.len());
-        for self.iter().advance |(key, value)| {
+        foreach (key, value) in self.iter() {
             new_map.insert((*key).clone(), (*value).clone());
         }
         new_map
@@ -554,7 +535,7 @@ pub struct HashMapMutIterator<'self, K, V> {
 
 /// HashMap consume iterator
 pub struct HashMapConsumeIterator<K, V> {
-    priv iter: vec::VecConsumeRevIterator<Option<Bucket<K, V>>>,
+    priv iter: vec::ConsumeRevIterator<Option<Bucket<K, V>>>,
 }
 
 /// HashSet iterator
@@ -565,13 +546,13 @@ pub struct HashSetIterator<'self, K> {
 
 /// HashSet consume iterator
 pub struct HashSetConsumeIterator<K> {
-    priv iter: vec::VecConsumeRevIterator<Option<Bucket<K, ()>>>,
+    priv iter: vec::ConsumeRevIterator<Option<Bucket<K, ()>>>,
 }
 
 impl<'self, K, V> Iterator<(&'self K, &'self V)> for HashMapIterator<'self, K, V> {
     #[inline]
     fn next(&mut self) -> Option<(&'self K, &'self V)> {
-        for self.iter.advance |elt| {
+        foreach elt in self.iter {
             match elt {
                 &Some(ref bucket) => return Some((&bucket.key, &bucket.value)),
                 &None => {},
@@ -584,7 +565,7 @@ impl<'self, K, V> Iterator<(&'self K, &'self V)> for HashMapIterator<'self, K, V
 impl<'self, K, V> Iterator<(&'self K, &'self mut V)> for HashMapMutIterator<'self, K, V> {
     #[inline]
     fn next(&mut self) -> Option<(&'self K, &'self mut V)> {
-        for self.iter.advance |elt| {
+        foreach elt in self.iter {
             match elt {
                 &Some(ref mut bucket) => return Some((&bucket.key, &mut bucket.value)),
                 &None => {},
@@ -597,7 +578,7 @@ impl<'self, K, V> Iterator<(&'self K, &'self mut V)> for HashMapMutIterator<'sel
 impl<K, V> Iterator<(K, V)> for HashMapConsumeIterator<K, V> {
     #[inline]
     fn next(&mut self) -> Option<(K, V)> {
-        for self.iter.advance |elt| {
+        foreach elt in self.iter {
             match elt {
                 Some(Bucket {key, value, _}) => return Some((key, value)),
                 None => {},
@@ -610,7 +591,7 @@ impl<K, V> Iterator<(K, V)> for HashMapConsumeIterator<K, V> {
 impl<'self, K> Iterator<&'self K> for HashSetIterator<'self, K> {
     #[inline]
     fn next(&mut self) -> Option<&'self K> {
-        for self.iter.advance |elt| {
+        foreach elt in self.iter {
             match elt {
                 &Some(ref bucket) => return Some(&bucket.key),
                 &None => {},
@@ -623,7 +604,7 @@ impl<'self, K> Iterator<&'self K> for HashSetIterator<'self, K> {
 impl<K> Iterator<K> for HashSetConsumeIterator<K> {
     #[inline]
     fn next(&mut self) -> Option<K> {
-        for self.iter.advance |elt| {
+        foreach elt in self.iter {
             match elt {
                 Some(bucket) => return Some(bucket.key),
                 None => {},
@@ -634,15 +615,19 @@ impl<K> Iterator<K> for HashSetConsumeIterator<K> {
 }
 
 impl<K: Eq + Hash, V, T: Iterator<(K, V)>> FromIterator<(K, V), T> for HashMap<K, V> {
-    pub fn from_iterator(iter: &mut T) -> HashMap<K, V> {
+    fn from_iterator(iter: &mut T) -> HashMap<K, V> {
         let (lower, _) = iter.size_hint();
         let mut map = HashMap::with_capacity(lower);
-
-        for iter.advance |(k, v)| {
-            map.insert(k, v);
-        }
-
+        map.extend(iter);
         map
+    }
+}
+
+impl<K: Eq + Hash, V, T: Iterator<(K, V)>> Extendable<(K, V), T> for HashMap<K, V> {
+    fn extend(&mut self, iter: &mut T) {
+        foreach (k, v) in *iter {
+            self.insert(k, v);
+        }
     }
 }
 
@@ -661,9 +646,6 @@ impl<T:Hash + Eq> Eq for HashSet<T> {
 impl<T:Hash + Eq> Container for HashSet<T> {
     /// Return the number of elements in the set
     fn len(&self) -> uint { self.map.len() }
-
-    /// Return true if the set contains no elements
-    fn is_empty(&self) -> bool { self.map.is_empty() }
 }
 
 impl<T:Hash + Eq> Mutable for HashSet<T> {
@@ -689,28 +671,6 @@ impl<T:Hash + Eq> Set<T> for HashSet<T> {
     /// Return true if the set is a superset of another
     fn is_superset(&self, other: &HashSet<T>) -> bool {
         other.is_subset(self)
-    }
-
-    /// Visit the values representing the difference
-    fn difference(&self, other: &HashSet<T>, f: &fn(&T) -> bool) -> bool {
-        self.difference_iter(other).advance(f)
-    }
-
-    /// Visit the values representing the symmetric difference
-    fn symmetric_difference(&self,
-                            other: &HashSet<T>,
-                            f: &fn(&T) -> bool) -> bool {
-        self.symmetric_difference_iter(other).advance(f)
-    }
-
-    /// Visit the values representing the intersection
-    fn intersection(&self, other: &HashSet<T>, f: &fn(&T) -> bool) -> bool {
-        self.intersection_iter(other).advance(f)
-    }
-
-    /// Visit the values representing the union
-    fn union(&self, other: &HashSet<T>, f: &fn(&T) -> bool) -> bool {
-        self.union_iter(other).advance(f)
     }
 }
 
@@ -770,7 +730,7 @@ impl<T:Hash + Eq> HashSet<T> {
 
     /// Visit the values representing the symmetric difference
     pub fn symmetric_difference_iter<'a>(&'a self, other: &'a HashSet<T>)
-        -> ChainIterator<&'a T, SetAlgebraIter<'a, T>, SetAlgebraIter<'a, T>> {
+        -> Chain<SetAlgebraIter<'a, T>, SetAlgebraIter<'a, T>> {
         self.difference_iter(other).chain_(other.difference_iter(self))
     }
 
@@ -783,22 +743,26 @@ impl<T:Hash + Eq> HashSet<T> {
 
     /// Visit the values representing the union
     pub fn union_iter<'a>(&'a self, other: &'a HashSet<T>)
-        -> ChainIterator<&'a T, HashSetIterator<'a, T>, SetAlgebraIter<'a, T>> {
+        -> Chain<HashSetIterator<'a, T>, SetAlgebraIter<'a, T>> {
         self.iter().chain_(other.difference_iter(self))
     }
 
 }
 
 impl<K: Eq + Hash, T: Iterator<K>> FromIterator<K, T> for HashSet<K> {
-    pub fn from_iterator(iter: &mut T) -> HashSet<K> {
+    fn from_iterator(iter: &mut T) -> HashSet<K> {
         let (lower, _) = iter.size_hint();
         let mut set = HashSet::with_capacity(lower);
-
-        for iter.advance |k| {
-            set.insert(k);
-        }
-
+        set.extend(iter);
         set
+    }
+}
+
+impl<K: Eq + Hash, T: Iterator<K>> Extendable<K, T> for HashSet<K> {
+    fn extend(&mut self, iter: &mut T) {
+        foreach k in *iter {
+            self.insert(k);
+        }
     }
 }
 
@@ -838,10 +802,8 @@ pub type SetAlgebraIter<'self, T> =
 
 #[cfg(test)]
 mod test_map {
-    use container::{Container, Map};
-    use option::{None, Some};
+    use prelude::*;
     use super::*;
-    use uint;
 
     #[test]
     fn test_create_capacity_zero() {
@@ -966,11 +928,11 @@ mod test_map {
     #[test]
     fn test_iterate() {
         let mut m = linear_map_with_capacity(4);
-        for uint::range(0, 32) |i| {
+        foreach i in range(0u, 32) {
             assert!(m.insert(i, i*2));
         }
         let mut observed = 0;
-        for m.iter().advance |(k, v)| {
+        foreach (k, v) in m.iter() {
             assert_eq!(*v, *k * 2);
             observed |= (1 << *k);
         }
@@ -1047,7 +1009,7 @@ mod test_map {
 
         let map: HashMap<int, int> = xs.iter().transform(|&x| x).collect();
 
-        for xs.iter().advance |&(k, v)| {
+        foreach &(k, v) in xs.iter() {
             assert_eq!(map.find(&k), Some(&v));
         }
     }
@@ -1056,9 +1018,9 @@ mod test_map {
 #[cfg(test)]
 mod test_set {
     use super::*;
+    use prelude::*;
     use container::Container;
     use vec::ImmutableEqVector;
-    use uint;
 
     #[test]
     fn test_disjoint() {
@@ -1114,11 +1076,11 @@ mod test_set {
     #[test]
     fn test_iterate() {
         let mut a = HashSet::new();
-        for uint::range(0, 32) |i| {
+        foreach i in range(0u, 32) {
             assert!(a.insert(i));
         }
         let mut observed = 0;
-        for a.iter().advance |k| {
+        foreach k in a.iter() {
             observed |= (1 << *k);
         }
         assert_eq!(observed, 0xFFFF_FFFF);
@@ -1147,7 +1109,7 @@ mod test_set {
 
         let mut i = 0;
         let expected = [3, 5, 11, 77];
-        for a.intersection_iter(&b).advance |x| {
+        foreach x in a.intersection_iter(&b) {
             assert!(expected.contains(x));
             i += 1
         }
@@ -1170,7 +1132,7 @@ mod test_set {
 
         let mut i = 0;
         let expected = [1, 5, 11];
-        for a.difference_iter(&b).advance |x| {
+        foreach x in a.difference_iter(&b) {
             assert!(expected.contains(x));
             i += 1
         }
@@ -1196,7 +1158,7 @@ mod test_set {
 
         let mut i = 0;
         let expected = [-2, 1, 5, 11, 14, 22];
-        for a.symmetric_difference_iter(&b).advance |x| {
+        foreach x in a.symmetric_difference_iter(&b) {
             assert!(expected.contains(x));
             i += 1
         }
@@ -1226,7 +1188,7 @@ mod test_set {
 
         let mut i = 0;
         let expected = [-2, 1, 3, 5, 9, 11, 13, 16, 19, 24];
-        for a.union_iter(&b).advance |x| {
+        foreach x in a.union_iter(&b) {
             assert!(expected.contains(x));
             i += 1
         }
@@ -1239,7 +1201,7 @@ mod test_set {
 
         let set: HashSet<int> = xs.iter().transform(|&x| x).collect();
 
-        for xs.iter().advance |x: &int| {
+        foreach x in xs.iter() {
             assert!(set.contains(x));
         }
     }

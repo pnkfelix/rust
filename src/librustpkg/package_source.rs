@@ -11,14 +11,13 @@
 use target::*;
 use package_id::PkgId;
 use std::path::Path;
-use std::{os, run, str};
+use std::{os, str};
 use context::*;
 use crate::Crate;
 use messages::*;
-use source_control::git_clone;
+use source_control::{git_clone, git_clone_general};
 use path_util::pkgid_src_in_workspace;
 use util::compile_crate;
-use version::{ExactRevision, SemanticVersion, NoVersion};
 
 // An enumeration of the unpacked source of a package workspace.
 // This contains a list of files found in the source workspace.
@@ -102,22 +101,13 @@ impl PkgSrc {
         }
 
         let url = fmt!("https://%s", self.id.remote_path.to_str());
-        let branch_args = match self.id.version {
-                      NoVersion => ~[],
-                      ExactRevision(ref s) => ~[~"--branch", (*s).clone()],
-                      SemanticVersion(ref s) => ~[~"--branch", s.to_str()]
-        };
-
-
-        note(fmt!("Fetching package: git clone %s %s %?", url, local.to_str(), branch_args));
-
-        if run::process_output("git",
-                               ~[~"clone", url.clone(), local.to_str()] + branch_args).status != 0 {
-            note(fmt!("fetching %s failed: can't clone repository", url));
-            None
+        note(fmt!("Fetching package: git clone %s %s [version=%s]",
+                  url, local.to_str(), self.id.version.to_str()));
+        if git_clone_general(url, &local, &self.id.version) {
+            Some(local)
         }
         else {
-            Some(local)
+            None
         }
     }
 
@@ -145,7 +135,7 @@ impl PkgSrc {
             return true;
         }
         else {
-            for self_id.iter().advance |pth| {
+            foreach pth in self_id.iter() {
                 if pth.starts_with("rust_") // because p is already normalized
                     && match p.filestem() {
                            Some(s) => str::eq_slice(s, pth.slice(5, pth.len())),
@@ -159,7 +149,7 @@ impl PkgSrc {
     fn push_crate(cs: &mut ~[Crate], prefix: uint, p: &Path) {
         assert!(p.components.len() > prefix);
         let mut sub = Path("");
-        for p.components.slice(prefix, p.components.len()).iter().advance |c| {
+        foreach c in p.components.slice(prefix, p.components.len()).iter() {
             sub = sub.push(*c);
         }
         debug!("found crate %s", sub.to_str());
@@ -216,7 +206,7 @@ impl PkgSrc {
                     crates: &[Crate],
                     cfgs: &[~str],
                     what: OutputType) {
-        for crates.iter().advance |crate| {
+        foreach crate in crates.iter() {
             let path = &src_dir.push_rel(&crate.file).normalize();
             note(fmt!("build_crates: compiling %s", path.to_str()));
             note(fmt!("build_crates: destination dir is %s", dst_dir.to_str()));

@@ -72,11 +72,12 @@ impl Drop for Arena {
     fn drop(&self) {
         unsafe {
             destroy_chunk(&self.head);
-            for self.chunks.each |chunk| {
+            do self.chunks.each |chunk| {
                 if !chunk.is_pod {
                     destroy_chunk(chunk);
                 }
-            }
+                true
+            };
         }
     }
 }
@@ -116,7 +117,7 @@ unsafe fn destroy_chunk(chunk: &Chunk) {
     let fill = chunk.fill;
 
     while idx < fill {
-        let tydesc_data: *uint = transmute(ptr::offset(buf, idx));
+        let tydesc_data: *uint = transmute(ptr::offset(buf, idx as int));
         let (tydesc, is_done) = un_bitpack_tydesc_ptr(*tydesc_data);
         let (size, align) = ((*tydesc).size, (*tydesc).align);
 
@@ -127,7 +128,7 @@ unsafe fn destroy_chunk(chunk: &Chunk) {
         //debug!("freeing object: idx = %u, size = %u, align = %u, done = %b",
         //       start, size, align, is_done);
         if is_done {
-            ((*tydesc).drop_glue)(ptr::offset(buf, start) as *i8);
+            ((*tydesc).drop_glue)(ptr::offset(buf, start as int) as *i8);
         }
 
         // Find where the next tydesc lives
@@ -176,7 +177,7 @@ impl Arena {
             //debug!("idx = %u, size = %u, align = %u, fill = %u",
             //       start, n_bytes, align, head.fill);
 
-            ptr::offset(vec::raw::to_ptr(this.pod_head.data), start)
+            ptr::offset(vec::raw::to_ptr(this.pod_head.data), start as int)
         }
     }
 
@@ -233,7 +234,7 @@ impl Arena {
             //       start, n_bytes, align, head.fill);
 
             let buf = vec::raw::to_ptr(self.head.data);
-            return (ptr::offset(buf, tydesc_start), ptr::offset(buf, start));
+            return (ptr::offset(buf, tydesc_start as int), ptr::offset(buf, start as int));
         }
     }
 
@@ -276,7 +277,7 @@ impl Arena {
 #[test]
 fn test_arena_destructors() {
     let arena = Arena();
-    for uint::range(0, 10) |i| {
+    foreach i in range(0u, 10) {
         // Arena allocate something with drop glue to make sure it
         // doesn't leak.
         do arena.alloc { @i };
@@ -292,7 +293,7 @@ fn test_arena_destructors() {
 fn test_arena_destructors_fail() {
     let arena = Arena();
     // Put some stuff in the arena.
-    for uint::range(0, 10) |i| {
+    foreach i in range(0u, 10) {
         // Arena allocate something with drop glue to make sure it
         // doesn't leak.
         do arena.alloc { @i };

@@ -28,7 +28,7 @@ use std::rand::RngUtil;
 fn main() {
     let mut rng = rand::rng();
     if rng.gen() { // bool
-        println(fmt!("int: %d, uint: %u", rng.gen(), rng.gen()))
+        printfln!("int: %d, uint: %u", rng.gen(), rng.gen())
     }
 }
 ~~~
@@ -38,7 +38,7 @@ use std::rand;
 
 fn main () {
     let tuple_ptr = rand::random::<~(f64, char)>();
-    println(fmt!("%?", tuple_ptr))
+    printfln!(tuple_ptr)
 }
 ~~~
 */
@@ -48,7 +48,7 @@ use clone::Clone;
 use cmp;
 use container::Container;
 use int;
-use iterator::IteratorUtil;
+use iterator::{Iterator, range};
 use local_data;
 use num;
 use prelude::*;
@@ -301,7 +301,7 @@ pub trait RngUtil {
      *
      * fn main() {
      *     let mut rng = rand::rng();
-     *     println(fmt!("%b",rng.gen_weighted_bool(3)));
+     *     printfln!("%b", rng.gen_weighted_bool(3));
      * }
      * ~~~
      */
@@ -335,7 +335,7 @@ pub trait RngUtil {
      *
      * fn main() {
      *     let mut rng = rand::rng();
-     *     println(fmt!("%?",rng.gen_bytes(8)));
+     *     printfln!(rng.gen_bytes(8));
      * }
      * ~~~
      */
@@ -352,7 +352,7 @@ pub trait RngUtil {
      *
      * fn main() {
      *     let mut rng = rand::rng();
-     *     println(fmt!("%d",rng.choose([1,2,4,8,16,32])));
+     *     printfln!("%d", rng.choose([1,2,4,8,16,32]));
      * }
      * ~~~
      */
@@ -375,7 +375,7 @@ pub trait RngUtil {
      *     let x = [rand::Weighted {weight: 4, item: 'a'},
      *              rand::Weighted {weight: 2, item: 'b'},
      *              rand::Weighted {weight: 2, item: 'c'}];
-     *     println(fmt!("%c",rng.choose_weighted(x)));
+     *     printfln!("%c", rng.choose_weighted(x));
      * }
      * ~~~
      */
@@ -396,7 +396,7 @@ pub trait RngUtil {
      *     let x = [rand::Weighted {weight: 4, item: 'a'},
      *              rand::Weighted {weight: 2, item: 'b'},
      *              rand::Weighted {weight: 2, item: 'c'}];
-     *     println(fmt!("%?",rng.choose_weighted_option(x)));
+     *     printfln!(rng.choose_weighted_option(x));
      * }
      * ~~~
      */
@@ -418,7 +418,7 @@ pub trait RngUtil {
      *     let x = [rand::Weighted {weight: 4, item: 'a'},
      *              rand::Weighted {weight: 2, item: 'b'},
      *              rand::Weighted {weight: 2, item: 'c'}];
-     *     println(fmt!("%?",rng.weighted_vec(x)));
+     *     printfln!(rng.weighted_vec(x));
      * }
      * ~~~
      */
@@ -435,7 +435,7 @@ pub trait RngUtil {
      *
      * fn main() {
      *     let mut rng = rand::rng();
-     *     println(fmt!("%?",rng.shuffle([1,2,3])));
+     *     printfln!(rng.shuffle([1,2,3]));
      * }
      * ~~~
      */
@@ -454,9 +454,9 @@ pub trait RngUtil {
      *     let mut rng = rand::rng();
      *     let mut y = [1,2,3];
      *     rng.shuffle_mut(y);
-     *     println(fmt!("%?",y));
+     *     printfln!(y);
      *     rng.shuffle_mut(y);
-     *     println(fmt!("%?",y));
+     *     printfln!(y);
      * }
      * ~~~
      */
@@ -495,7 +495,7 @@ impl<R: Rng> RngUtil for R {
     fn gen_char_from(&mut self, chars: &str) -> char {
         assert!(!chars.is_empty());
         let mut cs = ~[];
-        for chars.iter().advance |c| { cs.push(c) }
+        foreach c in chars.iter() { cs.push(c) }
         self.choose(cs)
     }
 
@@ -559,7 +559,7 @@ impl<R: Rng> RngUtil for R {
     fn choose_weighted_option<T:Clone>(&mut self, v: &[Weighted<T>])
                                        -> Option<T> {
         let mut total = 0u;
-        for v.iter().advance |item| {
+        foreach item in v.iter() {
             total += item.weight;
         }
         if total == 0u {
@@ -567,7 +567,7 @@ impl<R: Rng> RngUtil for R {
         }
         let chosen = self.gen_uint_range(0u, total);
         let mut so_far = 0u;
-        for v.iter().advance |item| {
+        foreach item in v.iter() {
             so_far += item.weight;
             if so_far > chosen {
                 return Some(item.item.clone());
@@ -582,8 +582,8 @@ impl<R: Rng> RngUtil for R {
      */
     fn weighted_vec<T:Clone>(&mut self, v: &[Weighted<T>]) -> ~[T] {
         let mut r = ~[];
-        for v.iter().advance |item| {
-            for uint::range(0u, item.weight) |_i| {
+        foreach item in v.iter() {
+            foreach _ in range(0u, item.weight) {
                 r.push(item.item.clone());
             }
         }
@@ -696,7 +696,7 @@ impl IsaacRng {
             }}
         );
 
-        for 4.times { mix!(); }
+        do 4.times { mix!(); }
 
         if use_rsl {
             macro_rules! memloop (
@@ -763,7 +763,7 @@ impl IsaacRng {
         );
 
         let r = [(0, MIDPOINT), (MIDPOINT, 0)];
-        for r.iter().advance |&(mr_offset, m2_offset)| {
+        foreach &(mr_offset, m2_offset) in r.iter() {
             for uint::range_step(0, MIDPOINT, 4) |base| {
                 rngstep!(0, 13);
                 rngstep!(1, -6);
@@ -890,7 +890,7 @@ pub fn random<T: Rand>() -> T {
 }
 
 #[cfg(test)]
-mod tests {
+mod test {
     use option::{Option, Some};
     use super::*;
 
@@ -1093,7 +1093,7 @@ mod tests {
         }
 
         // run against several seeds
-        for 10.times {
+        do 10.times {
             unsafe {
                 let seed = super::seed();
                 let rt_rng = do seed.as_imm_buf |p, sz| {
@@ -1101,11 +1101,45 @@ mod tests {
                 };
                 let mut rng = IsaacRng::new_seeded(seed);
 
-                for 10000.times {
+                do 10000.times {
                     assert_eq!(rng.next(), rustrt::rand_next(rt_rng));
                 }
                 rustrt::rand_free(rt_rng);
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod bench {
+    use extra::test::BenchHarness;
+    use rand::*;
+    use sys::size_of;
+
+    #[bench]
+    fn rand_xorshift(bh: &mut BenchHarness) {
+        let mut rng = XorShiftRng::new();
+        do bh.iter {
+            rng.gen::<uint>();
+        }
+        bh.bytes = size_of::<uint>() as u64;
+    }
+
+    #[bench]
+    fn rand_isaac(bh: &mut BenchHarness) {
+        let mut rng = IsaacRng::new();
+        do bh.iter {
+            rng.gen::<uint>();
+        }
+        bh.bytes = size_of::<uint>() as u64;
+    }
+
+    #[bench]
+    fn rand_shuffle_100(bh: &mut BenchHarness) {
+        let mut rng = XorShiftRng::new();
+        let x : &mut[uint] = [1,..100];
+        do bh.iter {
+            rng.shuffle_mut(x);
         }
     }
 }

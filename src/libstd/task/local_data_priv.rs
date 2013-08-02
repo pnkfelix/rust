@@ -15,8 +15,8 @@ use libc;
 use local_data;
 use prelude::*;
 use ptr;
-use sys;
 use task::rt;
+use unstable::raw;
 use util;
 
 use super::rt::rust_task;
@@ -158,7 +158,7 @@ unsafe fn get_local_map(handle: Handle) -> &mut TaskLocalMap {
 }
 
 unsafe fn key_to_key_value<T: 'static>(key: local_data::Key<T>) -> *libc::c_void {
-    let pair: sys::Closure = cast::transmute_copy(&key);
+    let pair: raw::Closure = cast::transmute_copy(&key);
     return pair.code as *libc::c_void;
 }
 
@@ -167,7 +167,7 @@ pub unsafe fn local_pop<T: 'static>(handle: Handle,
     let map = get_local_map(handle);
     let key_value = key_to_key_value(key);
 
-    for map.mut_iter().advance |entry| {
+    foreach entry in map.mut_iter() {
         match *entry {
             Some((k, _, loan)) if k == key_value => {
                 if loan != NoLoan {

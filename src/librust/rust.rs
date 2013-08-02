@@ -60,7 +60,13 @@ struct Command<'self> {
     usage_full: UsageSource<'self>,
 }
 
-static COMMANDS: &'static [Command<'static>] = &[
+static NUM_OF_COMMANDS: uint = 7;
+
+// FIXME(#7617): should just be &'static [Command<'static>]
+// but mac os doesn't seem to like that and tries to loop
+// past the end of COMMANDS in usage thus passing garbage
+// to str::repeat and eventually malloc and crashing.
+static COMMANDS: [Command<'static>, .. NUM_OF_COMMANDS] = [
     Command{
         cmd: "build",
         action: CallMain("rustc", rustc::main),
@@ -132,13 +138,13 @@ fn cmd_help(args: &[~str]) -> ValidUsage {
         match find_cmd(command_string) {
             Some(command) => {
                 match command.action {
-                    CallMain(prog, _) => io::println(fmt!(
+                    CallMain(prog, _) => printfln!(
                         "The %s command is an alias for the %s program.",
-                        command.cmd, prog)),
+                        command.cmd, prog),
                     _       => ()
                 }
                 match command.usage_full {
-                    UsgStr(msg) => io::println(fmt!("%s\n", msg)),
+                    UsgStr(msg) => printfln!("%s\n", msg),
                     UsgCall(f)  => f(),
                 }
                 Valid(0)
@@ -209,10 +215,9 @@ fn usage() {
         \n"
     );
 
-    for COMMANDS.iter().advance |command| {
+    foreach command in COMMANDS.iter() {
         let padding = " ".repeat(INDENT - command.cmd.len());
-        io::println(fmt!("    %s%s%s",
-                         command.cmd, padding, command.usage_line));
+        printfln!("    %s%s%s", command.cmd, padding, command.usage_line);
     }
 
     io::print(
@@ -235,7 +240,7 @@ pub fn main() {
 
     if !args.is_empty() {
         let r = find_cmd(*args.head());
-        for r.iter().advance |command| {
+        foreach command in r.iter() {
             let result = do_command(command, args.tail());
             match result {
                 Valid(exit_code) => unsafe { exit(exit_code.to_i32()) },

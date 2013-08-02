@@ -47,8 +47,8 @@ pub fn check_item(sess: Session,
         check_item_recursion(sess, ast_map, def_map, it);
       }
       item_enum(ref enum_definition, _) => {
-        for (*enum_definition).variants.iter().advance |var| {
-            for var.node.disr_expr.iter().advance |ex| {
+        foreach var in (*enum_definition).variants.iter() {
+            foreach ex in var.node.disr_expr.iter() {
                 (v.visit_expr)(*ex, (true, v));
             }
         }
@@ -160,7 +160,7 @@ pub fn check_expr(sess: Session,
           expr_field(*) |
           expr_index(*) |
           expr_tup(*) |
-          expr_struct(_, _, None) => { }
+          expr_struct(*) => { }
           expr_addr_of(*) => {
                 sess.span_err(
                     e.span,
@@ -200,7 +200,7 @@ struct env {
     sess: Session,
     ast_map: ast_map::map,
     def_map: resolve::DefMap,
-    idstack: @mut ~[node_id]
+    idstack: @mut ~[NodeId]
 }
 
 // Make sure a const item doesn't recursively refer to itself

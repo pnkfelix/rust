@@ -20,22 +20,19 @@ use cast::transmute;
 use char;
 use container::Container;
 use io::{Writer, WriterUtil};
-use iterator::IteratorUtil;
+use iterator::Iterator;
 use libc::c_void;
-use managed;
+use option::{Some, None};
 use ptr;
 use reflect;
 use reflect::{MovePtr, align};
 use str::StrSlice;
 use to_str::ToStr;
-use vec::raw::{VecRepr, SliceRepr};
-use vec;
-use vec::{OwnedVector, UnboxedVecRepr};
+use vec::OwnedVector;
 use unstable::intrinsics::{Opaque, TyDesc, TyVisitor, get_tydesc, visit_tydesc};
+use unstable::raw;
 
 #[cfg(test)] use io;
-
-pub use managed::raw::BoxRepr;
 
 /// Helpers
 
@@ -179,7 +176,7 @@ impl ReprVisitor {
 
     pub fn write_escaped_slice(&self, slice: &str) {
         self.writer.write_char('"');
-        for slice.iter().advance |ch| {
+        foreach ch in slice.iter() {
             self.writer.write_escaped_char(ch);
         }
         self.writer.write_char('"');
@@ -198,11 +195,11 @@ impl ReprVisitor {
 
     pub fn write_vec_range(&self,
                            _mtbl: uint,
-                           ptr: *u8,
+                           ptr: *(),
                            len: uint,
                            inner: *TyDesc)
                            -> bool {
-        let mut p = ptr;
+        let mut p = ptr as *u8;
         let (sz, al) = unsafe { ((*inner).size, (*inner).align) };
         self.writer.write_char('[');
         let mut first = true;
@@ -216,7 +213,7 @@ impl ReprVisitor {
                 self.writer.write_str(", ");
             }
             self.visit_ptr_inner(p as *c_void, inner);
-            p = align(ptr::offset(p, sz) as uint, al) as *u8;
+            p = align(ptr::offset(p, sz as int) as uint, al) as *u8;
             left -= dec;
         }
         self.writer.write_char(']');
@@ -225,7 +222,7 @@ impl ReprVisitor {
 
     pub fn write_unboxed_vec_repr(&self,
                                   mtbl: uint,
-                                  v: &UnboxedVecRepr,
+                                  v: &raw::Vec<()>,
                                   inner: *TyDesc)
                                   -> bool {
         self.write_vec_range(mtbl, ptr::to_unsafe_ptr(&v.data),
@@ -289,7 +286,7 @@ impl TyVisitor for ReprVisitor {
     fn visit_box(&self, mtbl: uint, inner: *TyDesc) -> bool {
         self.writer.write_char('@');
         self.write_mut_qualifier(mtbl);
-        do self.get::<&managed::raw::BoxRepr> |b| {
+        do self.get::<&raw::Box<()>> |b| {
             let p = ptr::to_unsafe_ptr(&b.data) as *c_void;
             self.visit_ptr_inner(p, inner);
         }
@@ -304,7 +301,7 @@ impl TyVisitor for ReprVisitor {
 
     fn visit_uniq_managed(&self, _mtbl: uint, inner: *TyDesc) -> bool {
         self.writer.write_char('~');
-        do self.get::<&managed::raw::BoxRepr> |b| {
+        do self.get::<&raw::Box<()>> |b| {
             let p = ptr::to_unsafe_ptr(&b.data) as *c_void;
             self.visit_ptr_inner(p, inner);
         }
@@ -330,35 +327,35 @@ impl TyVisitor for ReprVisitor {
 
 
     fn visit_unboxed_vec(&self, mtbl: uint, inner: *TyDesc) -> bool {
-        do self.get::<vec::UnboxedVecRepr> |b| {
+        do self.get::<raw::Vec<()>> |b| {
             self.write_unboxed_vec_repr(mtbl, b, inner);
         }
     }
 
     fn visit_evec_box(&self, mtbl: uint, inner: *TyDesc) -> bool {
-        do self.get::<&VecRepr> |b| {
+        do self.get::<&raw::Box<raw::Vec<()>>> |b| {
             self.writer.write_char('@');
             self.write_mut_qualifier(mtbl);
-            self.write_unboxed_vec_repr(mtbl, &b.unboxed, inner);
+            self.write_unboxed_vec_repr(mtbl, &b.data, inner);
         }
     }
 
     fn visit_evec_uniq(&self, mtbl: uint, inner: *TyDesc) -> bool {
-        do self.get::<&UnboxedVecRepr> |b| {
+        do self.get::<&raw::Vec<()>> |b| {
             self.writer.write_char('~');
             self.write_unboxed_vec_repr(mtbl, *b, inner);
         }
     }
 
     fn visit_evec_uniq_managed(&self, mtbl: uint, inner: *TyDesc) -> bool {
-        do self.get::<&VecRepr> |b| {
+        do self.get::<&raw::Box<raw::Vec<()>>> |b| {
             self.writer.write_char('~');
-            self.write_unboxed_vec_repr(mtbl, &b.unboxed, inner);
+            self.write_unboxed_vec_repr(mtbl, &b.data, inner);
         }
     }
 
     fn visit_evec_slice(&self, mtbl: uint, inner: *TyDesc) -> bool {
-        do self.get::<SliceRepr> |s| {
+        do self.get::<raw::Slice<()>> |s| {
             self.writer.write_char('&');
             self.write_vec_range(mtbl, s.data, s.len, inner);
         }
@@ -366,7 +363,7 @@ impl TyVisitor for ReprVisitor {
 
     fn visit_evec_fixed(&self, _n: uint, sz: uint, _align: uint,
                         mtbl: uint, inner: *TyDesc) -> bool {
-        do self.get::<u8> |b| {
+        do self.get::<()> |b| {
             self.write_vec_range(mtbl, ptr::to_unsafe_ptr(b), sz, inner);
         }
     }
@@ -547,9 +544,9 @@ impl TyVisitor for ReprVisitor {
 
     fn visit_opaque_box(&self) -> bool {
         self.writer.write_char('@');
-        do self.get::<&managed::raw::BoxRepr> |b| {
+        do self.get::<&raw::Box<()>> |b| {
             let p = ptr::to_unsafe_ptr(&b.data) as *c_void;
-            self.visit_ptr_inner(p, b.header.type_desc);
+            self.visit_ptr_inner(p, b.type_desc);
         }
     }
 

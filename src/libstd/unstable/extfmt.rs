@@ -77,7 +77,6 @@ debug!("hello, %s!", "world");
 */
 
 use prelude::*;
-use iterator::IteratorUtil;
 
 /*
  * We have a 'ct' (compile-time) module that parses format strings into a
@@ -114,6 +113,7 @@ pub mod ct {
         TyHex(Caseness),
         TyOctal,
         TyFloat,
+        TyPointer,
         TyPoly,
     }
 
@@ -325,6 +325,7 @@ pub mod ct {
             't' => TyBits,
             'o' => TyOctal,
             'f' => TyFloat,
+            'p' => TyPointer,
             '?' => TyPoly,
             _ => err(fmt!("unknown type in conversion: %c", s.char_at(i)))
         };
@@ -434,6 +435,7 @@ pub mod ct {
         assert!(test("t", TyBits));
         assert!(test("x", TyHex(CaseLower)));
         assert!(test("X", TyHex(CaseUpper)));
+        assert!(test("p", TyPointer));
         assert!(test("?", TyPoly));
     }
 
@@ -573,6 +575,10 @@ pub mod rt {
         } else { None };
         pad(cv, s, head, PadFloat, buf);
     }
+    pub fn conv_pointer<T>(cv: Conv, ptr: *T, buf: &mut ~str) {
+        let s = ~"0x" + uint_to_str_prec(ptr as uint, 16, 1u);
+        pad(cv, s, None, PadNozero, buf);
+    }
     pub fn conv_poly<T>(cv: Conv, v: &T, buf: &mut ~str) {
         let s = sys::log_str(v);
         conv_str(cv, s, buf);
@@ -609,7 +615,7 @@ pub mod rt {
         let headsize = match head { Some(_) => 1, _ => 0 };
         let uwidth : uint = match cv.width {
             CountImplied => {
-                for head.iter().advance |&c| {
+                foreach &c in head.iter() {
                     buf.push_char(c);
                 }
                 return buf.push_str(s);
@@ -618,7 +624,7 @@ pub mod rt {
         };
         let strlen = s.char_len() + headsize;
         if uwidth <= strlen {
-            for head.iter().advance |&c| {
+            foreach &c in head.iter() {
                 buf.push_char(c);
             }
             return buf.push_str(s);
@@ -626,11 +632,11 @@ pub mod rt {
         let mut padchar = ' ';
         let diff = uwidth - strlen;
         if have_flag(cv.flags, flag_left_justify) {
-            for head.iter().advance |&c| {
+            foreach &c in head.iter() {
                 buf.push_char(c);
             }
             buf.push_str(s);
-            for diff.times {
+            do diff.times {
                 buf.push_char(padchar);
             }
             return;
@@ -660,7 +666,7 @@ pub mod rt {
         // instead.
 
         if signed && zero_padding {
-            for head.iter().advance |&head| {
+            foreach &head in head.iter() {
                 if head == '+' || head == '-' || head == ' ' {
                     buf.push_char(head);
                     buf.push_str(padstr);
@@ -670,7 +676,7 @@ pub mod rt {
             }
         }
         buf.push_str(padstr);
-        for head.iter().advance |&c| {
+        foreach &c in head.iter() {
             buf.push_char(c);
         }
         buf.push_str(s);

@@ -206,10 +206,10 @@ pub fn encode_form_urlencoded(m: &HashMap<~str, ~[~str]>) -> ~str {
     let mut out = ~"";
     let mut first = true;
 
-    for m.iter().advance |(key, values)| {
+    foreach (key, values) in m.iter() {
         let key = encode_plus(*key);
 
-        for values.iter().advance |value| {
+        foreach value in values.iter() {
             if first {
                 first = false;
             } else {
@@ -331,7 +331,7 @@ fn userinfo_to_str(userinfo: &UserInfo) -> ~str {
 fn query_from_str(rawquery: &str) -> Query {
     let mut query: Query = ~[];
     if !rawquery.is_empty() {
-        for rawquery.split_iter('&').advance |p| {
+        foreach p in rawquery.split_iter('&') {
             let (k, v) = split_char_first(p, '=');
             query.push((decode_component(k), decode_component(v)));
         };
@@ -341,7 +341,7 @@ fn query_from_str(rawquery: &str) -> Query {
 
 pub fn query_to_str(query: &Query) -> ~str {
     let mut strvec = ~[];
-    for query.iter().advance |kv| {
+    foreach kv in query.iter() {
         match kv {
             &(ref k, ref v) => {
                 strvec.push(fmt!("%s=%s",
@@ -356,7 +356,7 @@ pub fn query_to_str(query: &Query) -> ~str {
 
 // returns the scheme and the rest of the url, or a parsing error
 pub fn get_scheme(rawurl: &str) -> Result<(~str, ~str), ~str> {
-    for rawurl.iter().enumerate().advance |(i,c)| {
+    foreach (i,c) in rawurl.iter().enumerate() {
         match c {
           'A' .. 'Z' | 'a' .. 'z' => loop,
           '0' .. '9' | '+' | '-' | '.' => {
@@ -407,7 +407,7 @@ fn get_authority(rawurl: &str) ->
 
     let len = rawurl.len();
     let mut st = Start;
-    let mut in = Digit; // most restricted, start here.
+    let mut input = Digit; // most restricted, start here.
 
     let mut userinfo = None;
     let mut host = ~"";
@@ -418,20 +418,20 @@ fn get_authority(rawurl: &str) ->
     let mut begin = 2;
     let mut end = len;
 
-    for rawurl.iter().enumerate().advance |(i,c)| {
+    foreach (i,c) in rawurl.iter().enumerate() {
         if i < 2 { loop; } // ignore the leading //
 
         // deal with input class first
         match c {
           '0' .. '9' => (),
           'A' .. 'F' | 'a' .. 'f' => {
-            if in == Digit {
-                in = Hex;
+            if input == Digit {
+                input = Hex;
             }
           }
           'G' .. 'Z' | 'g' .. 'z' | '-' | '.' | '_' | '~' | '%' |
           '&' |'\'' | '(' | ')' | '+' | '!' | '*' | ',' | ';' | '=' => {
-            in = Unreserved;
+            input = Unreserved;
           }
           ':' | '@' | '?' | '#' | '/' => {
             // separators, don't change anything
@@ -452,7 +452,7 @@ fn get_authority(rawurl: &str) ->
               }
               PassHostPort => {
                 // multiple colons means ipv6 address.
-                if in == Unreserved {
+                if input == Unreserved {
                     return Err(
                         ~"Illegal characters in IPv6 address.");
                 }
@@ -461,13 +461,13 @@ fn get_authority(rawurl: &str) ->
               InHost => {
                 pos = i;
                 // can't be sure whether this is an ipv6 address or a port
-                if in == Unreserved {
+                if input == Unreserved {
                     return Err(~"Illegal characters in authority.");
                 }
                 st = Ip6Port;
               }
               Ip6Port => {
-                if in == Unreserved {
+                if input == Unreserved {
                     return Err(~"Illegal characters in authority.");
                 }
                 st = Ip6Host;
@@ -483,11 +483,11 @@ fn get_authority(rawurl: &str) ->
                 return Err(~"Invalid ':' in authority.");
               }
             }
-            in = Digit; // reset input class
+            input = Digit; // reset input class
           }
 
           '@' => {
-            in = Digit; // reset input class
+            input = Digit; // reset input class
             colon_count = 0; // reset count
             match st {
               Start => {
@@ -535,7 +535,7 @@ fn get_authority(rawurl: &str) ->
         }
       }
       PassHostPort | Ip6Port => {
-        if in != Digit {
+        if input != Digit {
             return Err(~"Non-digit characters in port.");
         }
         host = rawurl.slice(begin, pos).to_owned();
@@ -545,7 +545,7 @@ fn get_authority(rawurl: &str) ->
         host = rawurl.slice(begin, end).to_owned();
       }
       InPort => {
-        if in != Digit {
+        if input != Digit {
             return Err(~"Non-digit characters in port.");
         }
         port = Some(rawurl.slice(pos+1, end).to_owned());
@@ -563,7 +563,7 @@ fn get_path(rawurl: &str, authority: bool) ->
     Result<(~str, ~str), ~str> {
     let len = rawurl.len();
     let mut end = len;
-    for rawurl.iter().enumerate().advance |(i,c)| {
+    foreach (i,c) in rawurl.iter().enumerate() {
         match c {
           'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '&' |'\'' | '(' | ')' | '.'
           | '@' | ':' | '%' | '/' | '+' | '!' | '*' | ',' | ';' | '='

@@ -32,7 +32,7 @@ use cast;
 use clone::Clone;
 use container::Container;
 use io;
-use iterator::IteratorUtil;
+use iterator::{IteratorUtil, range};
 use libc;
 use libc::{c_char, c_void, c_int, size_t};
 use libc::FILE;
@@ -43,7 +43,6 @@ use prelude::*;
 use ptr;
 use str;
 use to_str;
-use uint;
 use unstable::finally::Finally;
 use vec;
 
@@ -87,13 +86,8 @@ pub fn getcwd() -> Path {
 
 // FIXME: move these to str perhaps? #2620
 
-pub fn as_c_charp<T>(s: &str, f: &fn(*c_char) -> T) -> T {
-    str::as_c_str(s, |b| f(b as *c_char))
-}
-
-pub fn fill_charp_buf(f: &fn(*mut c_char, size_t) -> bool)
-    -> Option<~str> {
-    let mut buf = vec::from_elem(TMPBUF_SZ, 0u8 as c_char);
+pub fn fill_charp_buf(f: &fn(*mut c_char, size_t) -> bool) -> Option<~str> {
+    let mut buf = [0 as c_char, .. TMPBUF_SZ];
     do buf.as_mut_buf |b, sz| {
         if f(b, sz as size_t) {
             unsafe {
@@ -225,7 +219,7 @@ pub fn env() -> ~[(~str,~str)] {
 
         fn env_convert(input: ~[~str]) -> ~[(~str, ~str)] {
             let mut pairs = ~[];
-            for input.iter().advance |p| {
+            foreach p in input.iter() {
                 let vs: ~[&str] = p.splitn_iter('=', 1).collect();
                 debug!("splitting: len: %u",
                     vs.len());
@@ -247,12 +241,11 @@ pub fn env() -> ~[(~str,~str)] {
 pub fn getenv(n: &str) -> Option<~str> {
     unsafe {
         do with_env_lock {
-            let s = str::as_c_str(n, |s| libc::getenv(s));
+            let s = n.as_c_str(|s| libc::getenv(s as *libc::c_char));
             if ptr::null::<u8>() == cast::transmute(s) {
-                None::<~str>
+                None
             } else {
-                let s = cast::transmute(s);
-                Some::<~str>(str::raw::from_buf(s))
+                Some(str::raw::from_buf(cast::transmute(s)))
             }
         }
     }
@@ -281,8 +274,8 @@ pub fn getenv(n: &str) -> Option<~str> {
 pub fn setenv(n: &str, v: &str) {
     unsafe {
         do with_env_lock {
-            do str::as_c_str(n) |nbuf| {
-                do str::as_c_str(v) |vbuf| {
+            do n.to_str().as_c_str |nbuf| {
+                do v.to_str().as_c_str |vbuf| {
                     libc::funcs::posix01::unistd::setenv(nbuf, vbuf, 1);
                 }
             }
@@ -313,7 +306,7 @@ pub fn unsetenv(n: &str) {
     fn _unsetenv(n: &str) {
         unsafe {
             do with_env_lock {
-                do str::as_c_str(n) |nbuf| {
+                do n.to_str().as_c_str |nbuf| {
                     libc::funcs::posix01::unistd::unsetenv(nbuf);
                 }
             }
@@ -335,10 +328,10 @@ pub fn unsetenv(n: &str) {
 }
 
 pub fn fdopen(fd: c_int) -> *FILE {
-    unsafe {
-        return do as_c_charp("r") |modebuf| {
+    do "r".as_c_str |modebuf| {
+        unsafe {
             libc::fdopen(fd, modebuf)
-        };
+        }
     }
 }
 
@@ -395,17 +388,17 @@ pub fn fsync_fd(fd: c_int, _l: io::fsync::Level) -> c_int {
 }
 
 pub struct Pipe {
-    in: c_int,
+    input: c_int,
     out: c_int
 }
 
 #[cfg(unix)]
 pub fn pipe() -> Pipe {
     unsafe {
-        let mut fds = Pipe {in: 0 as c_int,
+        let mut fds = Pipe {input: 0 as c_int,
                             out: 0 as c_int };
-        assert_eq!(libc::pipe(&mut fds.in), (0 as c_int));
-        return Pipe {in: fds.in, out: fds.out};
+        assert_eq!(libc::pipe(&mut fds.input), (0 as c_int));
+        return Pipe {input: fds.input, out: fds.out};
     }
 }
 
@@ -419,14 +412,14 @@ pub fn pipe() -> Pipe {
         // fully understand. Here we explicitly make the pipe non-inheritable,
         // which means to pass it to a subprocess they need to be duplicated
         // first, as in core::run.
-        let mut fds = Pipe {in: 0 as c_int,
+        let mut fds = Pipe {input: 0 as c_int,
                     out: 0 as c_int };
-        let res = libc::pipe(&mut fds.in, 1024 as ::libc::c_uint,
+        let res = libc::pipe(&mut fds.input, 1024 as ::libc::c_uint,
                              (libc::O_BINARY | libc::O_NOINHERIT) as c_int);
         assert_eq!(res, 0 as c_int);
-        assert!((fds.in != -1 as c_int && fds.in != 0 as c_int));
-        assert!((fds.out != -1 as c_int && fds.in != 0 as c_int));
-        return Pipe {in: fds.in, out: fds.out};
+        assert!((fds.input != -1 as c_int && fds.input != 0 as c_int));
+        assert!((fds.out != -1 as c_int && fds.input != 0 as c_int));
+        return Pipe {input: fds.input, out: fds.out};
     }
 }
 
@@ -469,9 +462,9 @@ pub fn self_exe_path() -> Option<Path> {
             use libc::funcs::posix01::unistd::readlink;
 
             let mut path_str = str::with_capacity(TMPBUF_SZ);
-            let len = do str::as_c_str(path_str) |buf| {
+            let len = do path_str.as_c_str |buf| {
                 let buf = buf as *mut c_char;
-                do as_c_charp("/proc/self/exe") |proc_self_buf| {
+                do "/proc/self/exe".as_c_str |proc_self_buf| {
                     readlink(proc_self_buf, buf, TMPBUF_SZ as size_t)
                 }
             };
@@ -602,7 +595,7 @@ pub fn walk_dir(p: &Path, f: &fn(&Path) -> bool) -> bool {
 /// Indicates whether a path represents a directory
 pub fn path_is_dir(p: &Path) -> bool {
     unsafe {
-        do str::as_c_str(p.to_str()) |buf| {
+        do p.to_str().as_c_str |buf| {
             rustrt::rust_path_is_dir(buf) != 0 as c_int
         }
     }
@@ -611,7 +604,7 @@ pub fn path_is_dir(p: &Path) -> bool {
 /// Indicates whether a path exists
 pub fn path_exists(p: &Path) -> bool {
     unsafe {
-        do str::as_c_str(p.to_str()) |buf| {
+        do p.to_str().as_c_str |buf| {
             rustrt::rust_path_exists(buf) != 0 as c_int
         }
     }
@@ -654,9 +647,9 @@ pub fn make_dir(p: &Path, mode: c_int) -> bool {
 
     #[cfg(unix)]
     fn mkdir(p: &Path, mode: c_int) -> bool {
-        unsafe {
-            do as_c_charp(p.to_str()) |c| {
-                libc::mkdir(c, mode as libc::mode_t) == (0 as c_int)
+        do p.to_str().as_c_str |buf| {
+            unsafe {
+                libc::mkdir(buf, mode as libc::mode_t) == (0 as c_int)
             }
         }
     }
@@ -796,7 +789,7 @@ pub fn list_dir_path(p: &Path) -> ~[Path] {
 /// all its contents. Use carefully!
 pub fn remove_dir_recursive(p: &Path) -> bool {
     let mut error_happened = false;
-    for walk_dir(p) |inner| {
+    do walk_dir(p) |inner| {
         if !error_happened {
             if path_is_dir(inner) {
                 if !remove_dir_recursive(inner) {
@@ -809,6 +802,7 @@ pub fn remove_dir_recursive(p: &Path) -> bool {
                 }
             }
         }
+        true
     };
     // Directory should now be empty
     !error_happened && remove_dir(p)
@@ -830,10 +824,10 @@ pub fn remove_dir(p: &Path) -> bool {
 
     #[cfg(unix)]
     fn rmdir(p: &Path) -> bool {
-        unsafe {
-            return do as_c_charp(p.to_str()) |buf| {
+        do p.to_str().as_c_str |buf| {
+            unsafe {
                 libc::rmdir(buf) == (0 as c_int)
-            };
+            }
         }
     }
 }
@@ -855,10 +849,10 @@ pub fn change_dir(p: &Path) -> bool {
 
     #[cfg(unix)]
     fn chdir(p: &Path) -> bool {
-        unsafe {
-            return do as_c_charp(p.to_str()) |buf| {
+        do p.to_str().as_c_str |buf| {
+            unsafe {
                 libc::chdir(buf) == (0 as c_int)
-            };
+            }
         }
     }
 }
@@ -883,8 +877,8 @@ pub fn copy_file(from: &Path, to: &Path) -> bool {
     #[cfg(unix)]
     fn do_copy_file(from: &Path, to: &Path) -> bool {
         unsafe {
-            let istream = do as_c_charp(from.to_str()) |fromp| {
-                do as_c_charp("rb") |modebuf| {
+            let istream = do from.to_str().as_c_str |fromp| {
+                do "rb".as_c_str |modebuf| {
                     libc::fopen(fromp, modebuf)
                 }
             };
@@ -895,8 +889,8 @@ pub fn copy_file(from: &Path, to: &Path) -> bool {
             let from_mode = from.get_mode().expect("copy_file: couldn't get permissions \
                                                     for source file");
 
-            let ostream = do as_c_charp(to.to_str()) |top| {
-                do as_c_charp("w+b") |modebuf| {
+            let ostream = do to.to_str().as_c_str |top| {
+                do "w+b".as_c_str |modebuf| {
                     libc::fopen(top, modebuf)
                 }
             };
@@ -928,7 +922,7 @@ pub fn copy_file(from: &Path, to: &Path) -> bool {
             fclose(ostream);
 
             // Give the new file the old file's permissions
-            if do str::as_c_str(to.to_str()) |to_buf| {
+            if do to.to_str().as_c_str |to_buf| {
                 libc::chmod(to_buf, from_mode as libc::mode_t)
             } != 0 {
                 return false; // should be a condition...
@@ -955,9 +949,9 @@ pub fn remove_file(p: &Path) -> bool {
     #[cfg(unix)]
     fn unlink(p: &Path) -> bool {
         unsafe {
-            return do as_c_charp(p.to_str()) |buf| {
+            do p.to_str().as_c_str |buf| {
                 libc::unlink(buf) == (0 as c_int)
-            };
+            }
         }
     }
 }
@@ -1119,8 +1113,8 @@ pub fn set_exit_status(code: int) {
 
 unsafe fn load_argc_and_argv(argc: c_int, argv: **c_char) -> ~[~str] {
     let mut args = ~[];
-    for uint::range(0, argc as uint) |i| {
-        args.push(str::raw::from_c_str(*argv.offset(i)));
+    foreach i in range(0u, argc as uint) {
+        args.push(str::raw::from_c_str(*argv.offset(i as int)));
     }
     args
 }
@@ -1168,12 +1162,12 @@ pub fn real_args() -> ~[~str] {
     let szArgList = unsafe { CommandLineToArgvW(lpCmdLine, lpArgCount) };
 
     let mut args = ~[];
-    for uint::range(0, nArgs as uint) |i| {
+    foreach i in range(0u, nArgs as uint) {
         unsafe {
             // Determine the length of this argument.
-            let ptr = *szArgList.offset(i);
+            let ptr = *szArgList.offset(i as int);
             let mut len = 0;
-            while *ptr.offset(len) != 0 { len += 1; }
+            while *ptr.offset(len as int) != 0 { len += 1; }
 
             // Push it onto the list.
             args.push(vec::raw::buf_as_slice(ptr, len,
@@ -1294,7 +1288,7 @@ pub fn glob(pattern: &str) -> ~[Path] {
     }
 
     let mut g = default_glob_t();
-    do str::as_c_str(pattern) |c_pattern| {
+    do pattern.as_c_str |c_pattern| {
         unsafe { libc::glob(c_pattern, 0, ptr::null(), &mut g) }
     };
     do(|| {
@@ -1425,7 +1419,7 @@ impl MemoryMap {
         let mut offset: off_t = 0;
         let len = round_up(min_len, page_size()) as size_t;
 
-        for options.iter().advance |&o| {
+        foreach &o in options.iter() {
             match o {
                 MapReadable => { prot |= libc::PROT_READ; },
                 MapWritable => { prot |= libc::PROT_WRITE; },
@@ -1498,7 +1492,7 @@ impl MemoryMap {
         let mut offset: uint = 0;
         let len = round_up(min_len, page_size()) as SIZE_T;
 
-        for options.iter().advance |&o| {
+        foreach &o in options.iter() {
             match o {
                 MapReadable => { readable = true; },
                 MapWritable => { writable = true; },
@@ -1703,7 +1697,7 @@ mod tests {
     use libc;
     use option::Some;
     use option;
-    use os::{as_c_charp, env, getcwd, getenv, make_absolute, real_args};
+    use os::{env, getcwd, getenv, make_absolute, real_args};
     use os::{remove_file, setenv, unsetenv};
     use os;
     use path::Path;
@@ -1794,7 +1788,7 @@ mod tests {
     fn test_env_getenv() {
         let e = env();
         assert!(e.len() > 0u);
-        for e.iter().advance |p| {
+        foreach p in e.iter() {
             let (n, v) = (*p).clone();
             debug!(n.clone());
             let v2 = getenv(n);
@@ -1838,7 +1832,7 @@ mod tests {
         setenv("HOME", "");
         assert!(os::homedir().is_none());
 
-        for oldhome.iter().advance |s| { setenv("HOME", *s) }
+        foreach s in oldhome.iter() { setenv("HOME", *s) }
     }
 
     #[test]
@@ -1886,7 +1880,7 @@ mod tests {
         // Just assuming that we've got some contents in the current directory
         assert!(dirs.len() > 0u);
 
-        for dirs.iter().advance |dir| {
+        foreach dir in dirs.iter() {
             debug!((*dir).clone());
         }
     }
@@ -1937,12 +1931,12 @@ mod tests {
           let tempdir = getcwd(); // would like to use $TMPDIR,
                                   // doesn't seem to work on Linux
           assert!((tempdir.to_str().len() > 0u));
-          let in = tempdir.push("in.txt");
+          let input = tempdir.push("in.txt");
           let out = tempdir.push("out.txt");
 
           /* Write the temp input file */
-            let ostream = do as_c_charp(in.to_str()) |fromp| {
-                do as_c_charp("w+b") |modebuf| {
+            let ostream = do input.to_str().as_c_str |fromp| {
+                do "w+b".as_c_str |modebuf| {
                     libc::fopen(fromp, modebuf)
                 }
           };
@@ -1956,16 +1950,16 @@ mod tests {
                          len as size_t)
           }
           assert_eq!(libc::fclose(ostream), (0u as c_int));
-          let in_mode = in.get_mode();
-          let rs = os::copy_file(&in, &out);
-          if (!os::path_exists(&in)) {
-            fail!("%s doesn't exist", in.to_str());
+          let in_mode = input.get_mode();
+          let rs = os::copy_file(&input, &out);
+          if (!os::path_exists(&input)) {
+            fail!("%s doesn't exist", input.to_str());
           }
           assert!((rs));
-          let rslt = run::process_status("diff", [in.to_str(), out.to_str()]);
+          let rslt = run::process_status("diff", [input.to_str(), out.to_str()]);
           assert_eq!(rslt, 0);
           assert_eq!(out.get_mode(), in_mode);
-          assert!((remove_file(&in)));
+          assert!((remove_file(&input)));
           assert!((remove_file(&out)));
         }
     }
@@ -2020,16 +2014,16 @@ mod tests {
            }
         }
 
-        let p = tmpdir().push("mmap_file.tmp");
+        let path = tmpdir().push("mmap_file.tmp");
         let size = page_size() * 2;
-        remove_file(&p);
+        remove_file(&path);
 
         let fd = unsafe {
-            let fd = do as_c_charp(p.to_str()) |path| {
+            let fd = do path.to_str().as_c_str |path| {
                 open(path, O_CREAT | O_RDWR | O_TRUNC, S_IRUSR | S_IWUSR)
             };
             lseek_(fd, size);
-            do as_c_charp("x") |x| {
+            do "x".as_c_str |x| {
                 assert!(write(fd, x as *c_void, 1) == 1);
             }
             fd

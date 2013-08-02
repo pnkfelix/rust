@@ -87,7 +87,7 @@ fn make_graph(N: uint, edges: ~[(node_id, node_id)]) -> graph {
         HashSet::new()
     };
 
-    for edges.iter().advance |e| {
+    foreach e in edges.iter() {
         match *e {
             (i, j) => {
                 graph[i].insert(j);
@@ -98,7 +98,7 @@ fn make_graph(N: uint, edges: ~[(node_id, node_id)]) -> graph {
 
     do graph.consume_iter().transform |v| {
         let mut vec = ~[];
-        for v.consume().advance |i| {
+        foreach i in v.consume() {
             vec.push(i);
         }
         vec
@@ -119,7 +119,7 @@ fn gen_search_keys(graph: &[~[node_id]], n: uint) -> ~[node_id] {
         }
     }
     let mut vec = ~[];
-    for keys.consume().advance |i| {
+    foreach i in keys.consume() {
         vec.push(i);
     }
     return vec;
@@ -230,7 +230,7 @@ fn bfs2(graph: graph, key: node_id) -> bfs_result {
 }
 
 /// A parallel version of the bfs function.
-fn pbfs(graph: &arc::ARC<graph>, key: node_id) -> bfs_result {
+fn pbfs(graph: &arc::Arc<graph>, key: node_id) -> bfs_result {
     // This works by doing functional updates of a color vector.
 
     let graph_vec = graph.get(); // FIXME #3387 requires this temp
@@ -263,7 +263,7 @@ fn pbfs(graph: &arc::ARC<graph>, key: node_id) -> bfs_result {
         i += 1;
         let old_len = colors.len();
 
-        let color = arc::ARC(colors);
+        let color = arc::Arc::new(colors);
 
         let color_vec = color.get(); // FIXME #3387 requires this temp
         colors = do par::mapi(*color_vec) {
@@ -435,7 +435,7 @@ fn main() {
     let stop = time::precise_time_s();
 
     let mut total_edges = 0;
-    for graph.iter().advance |edges| { total_edges += edges.len(); }
+    foreach edges in graph.iter() { total_edges += edges.len(); }
 
     io::stdout().write_line(fmt!("Generated graph with %? edges in %? seconds.",
                                  total_edges / 2,
@@ -444,7 +444,7 @@ fn main() {
     let mut total_seq = 0.0;
     let mut total_par = 0.0;
 
-    let graph_arc = arc::ARC(graph.clone());
+    let graph_arc = arc::Arc::new(graph.clone());
 
     do gen_search_keys(graph, num_keys).map() |root| {
         io::stdout().write_line("");

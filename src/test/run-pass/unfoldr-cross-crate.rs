@@ -10,7 +10,7 @@
 
 use std::iterator::*;
 
-// UnfoldrIterator had a bug with 'self that mean it didn't work
+// Unfoldr had a bug with 'self that mean it didn't work
 // cross-crate
 
 fn main() {
@@ -24,9 +24,9 @@ fn main() {
         }
     }
 
-    let mut it = UnfoldrIterator::new(0, count);
+    let mut it = Unfoldr::new(0, count);
     let mut i = 0;
-    for it.advance |counted| {
+    foreach counted in it {
         assert_eq!(counted, i);
         i += 1;
     }

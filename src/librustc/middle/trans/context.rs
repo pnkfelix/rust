@@ -28,7 +28,6 @@ use middle::trans::type_::Type;
 
 use std::hash;
 use std::hashmap::{HashMap, HashSet};
-use std::str;
 use std::local_data;
 use syntax::ast;
 
@@ -44,20 +43,20 @@ pub struct CrateContext {
      tn: TypeNames,
      externs: ExternMap,
      intrinsics: HashMap<&'static str, ValueRef>,
-     item_vals: HashMap<ast::node_id, ValueRef>,
+     item_vals: HashMap<ast::NodeId, ValueRef>,
      exp_map2: resolve::ExportMap2,
-     reachable: @mut HashSet<ast::node_id>,
-     item_symbols: HashMap<ast::node_id, ~str>,
+     reachable: @mut HashSet<ast::NodeId>,
+     item_symbols: HashMap<ast::NodeId, ~str>,
      link_meta: LinkMeta,
      enum_sizes: HashMap<ty::t, uint>,
      discrims: HashMap<ast::def_id, ValueRef>,
-     discrim_symbols: HashMap<ast::node_id, @str>,
+     discrim_symbols: HashMap<ast::NodeId, @str>,
      tydescs: HashMap<ty::t, @mut tydesc_info>,
      // Set when running emit_tydescs to enforce that no more tydescs are
      // created.
      finished_tydescs: bool,
      // Track mapping of external ids to local items imported for inlining
-     external: HashMap<ast::def_id, Option<ast::node_id>>,
+     external: HashMap<ast::def_id, Option<ast::NodeId>>,
      // Cache instances of monomorphized functions
      monomorphized: HashMap<mono_id, ValueRef>,
      monomorphizing: HashMap<ast::def_id, uint>,
@@ -79,7 +78,7 @@ pub struct CrateContext {
      const_globals: HashMap<int, ValueRef>,
 
      // Cache of emitted const values
-     const_values: HashMap<ast::node_id, ValueRef>,
+     const_values: HashMap<ast::NodeId, ValueRef>,
 
      // Cache of external const values
      extern_const_values: HashMap<ast::def_id, ValueRef>,
@@ -120,18 +119,16 @@ impl CrateContext {
                maps: astencode::Maps,
                symbol_hasher: hash::State,
                link_meta: LinkMeta,
-               reachable: @mut HashSet<ast::node_id>)
+               reachable: @mut HashSet<ast::NodeId>)
                -> CrateContext {
         unsafe {
             let llcx = llvm::LLVMContextCreate();
             set_task_llcx(llcx);
-            let llmod = str::as_c_str(name, |buf| {
-                llvm::LLVMModuleCreateWithNameInContext(buf, llcx)
-            });
+            let llmod = name.as_c_str(|buf| llvm::LLVMModuleCreateWithNameInContext(buf, llcx));
             let data_layout: &str = sess.targ_cfg.target_strs.data_layout;
             let targ_triple: &str = sess.targ_cfg.target_strs.target_triple;
-            str::as_c_str(data_layout, |buf| llvm::LLVMSetDataLayout(llmod, buf));
-            str::as_c_str(targ_triple, |buf| llvm::LLVMSetTarget(llmod, buf));
+            data_layout.as_c_str(|buf| llvm::LLVMSetDataLayout(llmod, buf));
+            targ_triple.as_c_str(|buf| llvm::LLVMSetTarget(llmod, buf));
             let targ_cfg = sess.targ_cfg;
 
             let td = mk_target_data(sess.targ_cfg.target_strs.data_layout);

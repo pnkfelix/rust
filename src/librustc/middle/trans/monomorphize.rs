@@ -41,8 +41,8 @@ pub fn monomorphic_fn(ccx: @mut CrateContext,
                       fn_id: ast::def_id,
                       real_substs: &ty::substs,
                       vtables: Option<typeck::vtable_res>,
-                      self_vtable: Option<typeck::vtable_origin>,
-                      ref_id: Option<ast::node_id>)
+                      self_vtables: Option<typeck::vtable_param_res>,
+                      ref_id: Option<ast::NodeId>)
     -> (ValueRef, bool)
 {
     debug!("monomorphic_fn(\
@@ -54,7 +54,7 @@ pub fn monomorphic_fn(ccx: @mut CrateContext,
            fn_id.repr(ccx.tcx),
            real_substs.repr(ccx.tcx),
            vtables.repr(ccx.tcx),
-           self_vtable.repr(ccx.tcx),
+           self_vtables.repr(ccx.tcx),
            ref_id);
 
     assert!(real_substs.tps.iter().all(|t| !ty::type_needs_infer(*t)));
@@ -72,11 +72,11 @@ pub fn monomorphic_fn(ccx: @mut CrateContext,
         tys: real_substs.tps.map(|x| do_normalize(x)),
         vtables: vtables,
         self_ty: real_substs.self_ty.map(|x| do_normalize(x)),
-        self_vtable: self_vtable
+        self_vtables: self_vtables
     };
 
-    for real_substs.tps.iter().advance |s| { assert!(!ty::type_has_params(*s)); }
-    for psubsts.tys.iter().advance |s| { assert!(!ty::type_has_params(*s)); }
+    foreach s in real_substs.tps.iter() { assert!(!ty::type_has_params(*s)); }
+    foreach s in psubsts.tys.iter() { assert!(!ty::type_has_params(*s)); }
     let param_uses = type_use::type_uses_for(ccx, fn_id, psubsts.tys.len());
 
 
@@ -371,8 +371,7 @@ pub fn make_mono_id(ccx: @mut CrateContext,
       Some(vts) => {
         debug!("make_mono_id vtables=%s substs=%s",
                vts.repr(ccx.tcx), substs.tys.repr(ccx.tcx));
-        let self_vtables = substs.self_vtable.map(|vtbl| @~[(*vtbl).clone()]);
-        let vts_iter = self_vtables.iter().chain_(vts.iter());
+        let vts_iter = substs.self_vtables.iter().chain_(vts.iter());
         vts_iter.zip(substs_iter).transform(|(vtable, subst)| {
             let v = vtable.map(|vt| meth::vtable_id(ccx, vt));
             (*subst, if !v.is_empty() { Some(@v) } else { None })
