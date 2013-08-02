@@ -433,7 +433,7 @@ pub fn trans_trait_callee(bcx: @mut Block,
                                   explicit_self)
 }
 
-pub fn trans_trait_callee_from_llval(bcx: @mut Block,
+pub fn trans_trait_callee_from_llval(mut bcx: @mut Block,
                                      callee_ty: ty::t,
                                      n_method: uint,
                                      llpair: ValueRef,
@@ -471,20 +471,18 @@ pub fn trans_trait_callee_from_llval(bcx: @mut Block,
             bcx = glue::take_ty(bcx, llbox, callee_ty);
         }
         ast::sty_static => {
-            bcx.tcx().sess.bug(~"shouldn't see static method here");
+            bcx.tcx().sess.bug("shouldn't see static method here");
         }
         ast::sty_value => {
-            bcx.tcx().sess.bug(~"methods with by-value self should not be \
+            bcx.tcx().sess.bug("methods with by-value self should not be \
                                called on objects");
         }
     };
 
     let llscratch = alloca(bcx, val_ty(llbox), "__self");
     Store(bcx, llbox, llscratch);
-    let self_mode = ty::ByRef;
-    let llself = llscratch;
 
-    llself = PointerCast(bcx, llself, Type::opaque_box(ccx).ptr_to());
+    let llself = PointerCast(bcx, llscratch, Type::opaque_box(ccx).ptr_to());
     let scratch = scratch_datum(bcx, ty::mk_opaque_box(bcx.tcx()),
                                 "__trait_callee", false);
     Store(bcx, llself, scratch.val);

@@ -121,7 +121,7 @@ impl Coerce {
                 };
             }
 
-            ty::ty_trait(_, _, ty::RegionTraitStore(*), _) => {
+            ty::ty_trait(_, _, ty::RegionTraitStore(*), _, _) => {
                 return do self.unpack_actual_value(a) |sty_a| {
                     self.coerce_borrowed_object(a, sty_a, b)
                 };
@@ -281,21 +281,21 @@ impl Coerce {
                b.inf_str(self.infcx));
 
         let tcx = self.infcx.tcx;
-        let r_a = self.infcx.next_region_var_nb(self.span);
+        let r_a = self.infcx.next_region_var(Coercion(self.trace));
         let trt_mut;
 
         let a_borrowed = match *sty_a {
-            ty::ty_trait(_, _, ty::RegionTraitStore(_), _) => {
+            ty::ty_trait(_, _, ty::RegionTraitStore(_), _, _) => {
                 return self.subtype(a, b);
             }
-            ty::ty_trait(did, ref substs, _, m) => {
+            ty::ty_trait(did, ref substs, _, m, b) => {
                 trt_mut = m;
                 ty::mk_trait(tcx, did, substs.clone(),
-                             ty::RegionTraitStore(r_a), m)
+                             ty::RegionTraitStore(r_a), m, b)
             }
             _ => {
-                tcx.sess.bug(~"coerce_borrowed_object: \
-                               trait type isn't a ty_trait.");
+                tcx.sess.bug("coerce_borrowed_object: \
+                             trait type isn't a ty_trait.");
             }
         };
 
