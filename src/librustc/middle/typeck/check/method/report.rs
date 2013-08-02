@@ -4,8 +4,6 @@ use middle::typeck::check::method::search::*;
 use middle::typeck::method_origin;
 use middle::typeck::method_param;
 use middle::typeck::method_static;
-use middle::typeck::method_self;
-use middle::typeck::method_super;
 use middle::typeck::method_trait;
 use std::uint;
 use syntax::ast;
@@ -92,7 +90,7 @@ impl<'self> method::LookupContext<'self> {
                 tcx.sess.span_err(
                     self.expr.span,
                     "multiple applicable methods in scope");
-                for uint::range(0, candidates.len()) |idx| {
+                foreach idx in range(0, candidates.len()) {
                     self.report_candidate(idx, &candidates[idx].origin);
                 }
             }
@@ -107,16 +105,14 @@ impl<'self> method::LookupContext<'self> {
             method_param(ref mp) => {
                 self.report_param_candidate(idx, (*mp).trait_id)
             }
-            method_trait(trait_did, _, _) |
-            method_self(trait_did, _) |
-            method_super(trait_did, _) => {
+            method_trait(trait_did, _, _) => {
                 self.report_trait_candidate(idx, trait_did)
             }
         }
     }
 
     fn report_static_candidate(&self, idx: uint, did: ast::def_id) {
-        let span = if did.crate == ast::local_crate {
+        let span = if did.crate == ast::LOCAL_CRATE {
             match self.tcx().items.find(&did.node) {
                 Some(&ast_map::node_method(m, _, _)) => m.span,
                 _ => fail!("report_static_candidate: bad item %?", did)

@@ -28,7 +28,7 @@ pub struct LookupContext<'self> {
     fcx: @mut FnCtxt,
     expr: @ast::expr,
     self_expr: @ast::expr,
-    callee_id: ast::node_id,
+    callee_id: ast::NodeId,
     m_name: ast::ident,
     supplied_tps: &'self [ty::t],
     deref_args: DerefArgs,
@@ -50,15 +50,15 @@ pub fn lookup(
         fcx: @mut FnCtxt,
 
         // In a call `a.b::<X, Y, ...>(...)`:
-        expr: @ast::expr,                   // The expression `a.b(...)`.
-        self_expr: @ast::expr,              // The expression `a`.
-        callee_id: ast::node_id,            /* Where to store `a.b`'s type,
+        expr: @ast::expr,                   /* The expression `a.b(...)`. */
+        self_expr: @ast::expr,              /* The expression `a`. */
+        callee_id: ast::NodeId,             /* Where to store `a.b`'s type,
                                              * also the scope of the call */
-        m_name: ast::ident,                 // The ident `b`.
-        self_ty: ty::t,                     // The type of `a`.
-        supplied_tps: &[ty::t],             // The list of types X, Y, ... .
-        deref_args: DerefArgs,              // Whether we autopointer first.
-        check_traits: CheckTraitsFlag,      // Whether we check traits only.
+        m_name: ast::ident,                 /* The ident `b`. */
+        self_ty: ty::t,                     /* The type of `a`. */
+        supplied_tps: &[ty::t],             /* The list of types X, Y, ... . */
+        deref_args: DerefArgs,              /* Whether we autopointer first. */
+        check_traits: CheckTraitsFlag,      /* Whether we check traits only. */
         autoderef_receiver: AutoderefReceiverFlag)
         -> MethodResult<method_map_entry> {
     let lookupcx = LookupContext {

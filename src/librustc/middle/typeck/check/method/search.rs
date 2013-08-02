@@ -27,8 +27,6 @@ use middle::typeck::method_map_entry;
 use middle::typeck::method_origin;
 use middle::typeck::method_param;
 use middle::typeck::method_static;
-use middle::typeck::method_self;
-use middle::typeck::method_super;
 use middle::typeck::method_trait;
 use middle::subst::Subst;
 use syntax::ast;
@@ -287,7 +285,7 @@ impl<'self> method::LookupContext<'self> {
 
             let adjustment = RcvrAdjustment {
                 autoderefs: rcvr_tys.len() - 1,
-                autoslice: Some(mk_ref(region, mutbl))
+                autoslice: Some((region, mutbl))
             };
             return self.candidates_found(~[slice_rcvr_ty],
                                          candidates,
@@ -393,7 +391,7 @@ impl<'self> method::LookupContext<'self> {
         assert!(!rcvr_tys.is_empty());
         match candidate.method_ty.explicit_self {
             ast::sty_static => {
-                Err(StaticMethodCalled)
+                Error(StaticMethodCalled)
             }
 
             ast::sty_value => {
@@ -404,19 +402,19 @@ impl<'self> method::LookupContext<'self> {
 
             ast::sty_region(_, mutbl) => {
                 self.adjust_for_borrowed_candidate(rcvr_tys.pop(),
-                                                   candidate,
                                                    mutbl,
+                                                   candidate,
                                                    adjustment)
             }
 
-            ast::sty_box(_) => {
+            ast::sty_box(*) => {
                 self.adjust_for_boxed_candidate(rcvr_tys,
                                                 candidate,
                                                 adjustment,
                                                 NotManaged)
             }
 
-            ast::sty_uniq(_) => {
+            ast::sty_uniq => {
                 self.adjust_for_boxed_candidate(rcvr_tys,
                                                 candidate,
                                                 adjustment,
@@ -446,7 +444,7 @@ impl<'self> method::LookupContext<'self> {
                             |&(r, m)| ty::AutoBorrowVec(r, m))
                 };
 
-                self.test_any_candidate(t, candidate, auto_adj)
+                self.evaluate_candidate(t, candidate, auto_adj)
             }
 
             ExistentialType(*) | VectorType(*) | StringType => {
@@ -782,8 +780,7 @@ impl<'self> method::LookupContext<'self> {
          */
 
         match candidate.origin {
-            method_static(*) | method_param(*) |
-            method_self(*) | method_super(*) => {
+            method_static(*) | method_param(*) => {
                 return Ok(()); // not a call to a trait instance
             }
             method_trait(*) => {}
@@ -808,8 +805,7 @@ impl<'self> method::LookupContext<'self> {
          */
 
         let bad = match candidate.origin {
-            method_static(method_id) | method_self(method_id, _)
-                | method_super(method_id, _) => {
+            method_static(method_id) => {
                 self.tcx().destructors.contains(&method_id)
             }
             method_param(method_param { trait_id: trait_id, _ }) |

@@ -9,7 +9,8 @@
 // except according to those terms.
 
 use middle::ty;
-use middle::typeck::{method_param, method_self, method_super, method_trait};
+use middle::typeck::{method_param, method_trait};
+use middle::typeck::{param_numbered, param_self, param_index};
 use middle::typeck::check::method;
 use middle::typeck::check::method::LookupContext;
 use middle::typeck::check::method::search;
@@ -53,20 +54,24 @@ impl<'self> method::LookupContext<'self> {
             }
 
             ty::ty_self(self_did) => {
-                // Call is of the form "self.foo()" and appears in one
-                // of a trait's default method implementations.
-                let substs = ty::substs {
-                    self_r: None,
-                    self_ty: None,
-                    tps: ~[]
-                };
-                self.push_self_bounds(self_did, &substs, out);
+                self.push_self_bounds(self_did, out);
             }
 
             ty::ty_enum(did, _) | ty::ty_struct(did, _) => {
                 self.push_inherent_impls(did, out);
             }
         }
+    }
+
+    pub fn push_self_bounds(&self,
+                            did: ast::def_id,
+                            out: &mut ~[Candidate]) {
+        let tcx = self.tcx();
+
+        let trait_ref = ty::lookup_trait_def(tcx, did).trait_ref;
+        self.push_from_bounds(&[trait_ref],
+                              param_self,
+                              out);
     }
 
     fn push_param_bounds(&self,
@@ -83,7 +88,19 @@ impl<'self> method::LookupContext<'self> {
             }
         };
 
-        for ty::each_bound_trait_and_supertraits(tcx, type_param_def.bounds)
+        self.push_from_bounds(type_param_def.bounds.trait_bounds,
+                              param_numbered(param_ty.idx),
+                              out);
+    }
+
+    pub fn push_from_bounds(&self,
+                            bounds: &[@ty::TraitRef],
+                            param: param_index,
+                            out: &mut ~[Candidate]) {
+        let tcx = self.tcx();
+        let mut next_bound_idx = 0; // count only trait bounds
+
+        for ty::each_bound_trait_and_supertraits(tcx, bounds)
             |bound_trait_ref|
         {
             let this_bound_idx = next_bound_idx;
@@ -91,8 +108,9 @@ impl<'self> method::LookupContext<'self> {
 
             let trait_methods = ty::trait_methods(tcx, bound_trait_ref.def_id);
             let pos = {
-                match trait_methods.iter().position(
-                    |m| m.ident == self.m_name)
+                match trait_methods.iter().position(|m| {
+                    m.explicit_self != ast::sty_static &&
+                        m.ident == self.m_name })
                 {
                     Some(pos) => pos,
                     None => {
@@ -111,81 +129,13 @@ impl<'self> method::LookupContext<'self> {
                     method_param {
                         trait_id: bound_trait_ref.def_id,
                         method_num: pos,
-                        param_num: param_ty.idx,
+                        param_num: param,
                         bound_num: this_bound_idx,
                     })
             };
 
-            debug!("pushing inherent candidate for param: %s", cand.repr(tcx));
+            debug!("pushing inherent candidate for param: %?", cand);
             out.push(cand);
-        }
-    }
-
-    fn push_self_bounds(&self,
-                        did: ast::def_id,
-                        substs: &ty::substs,
-                        out: &mut ~[Candidate]) {
-        struct MethodInfo {
-            method_ty: @ty::Method,
-            trait_def_id: ast::def_id,
-            index: uint
-        }
-
-        let tcx = self.tcx();
-
-        // First, try self methods
-        let mut method_info: Option<MethodInfo> = None;
-        let methods = ty::trait_methods(tcx, did);
-        match methods.iter().position(|m| m.ident == self.m_name) {
-            Some(i) => {
-                method_info = Some(MethodInfo {
-                    method_ty: methods[i],
-                    index: i,
-                    trait_def_id: did
-                });
-            }
-            None => ()
-        }
-
-        // No method found yet? Check each supertrait
-        if method_info.is_none() {
-            for ty::trait_supertraits(tcx, did).iter().advance |trait_ref| {
-                let supertrait_methods =
-                    ty::trait_methods(tcx, trait_ref.def_id);
-                match supertrait_methods.iter().position(
-                    |m| m.ident == self.m_name)
-                {
-                    Some(i) => {
-                        method_info = Some(MethodInfo {
-                            method_ty: supertrait_methods[i],
-                            index: i,
-                            trait_def_id: trait_ref.def_id
-                        });
-                        break;
-                    }
-                    None => ()
-                }
-            }
-        }
-
-        match method_info {
-            Some(ref info) => {
-                // We've found a method -- return it
-                let self_ty = ty::mk_self(self.tcx(), did);
-                let rcvr_substs = ty::substs {self_ty: Some(self_ty),
-                                              ..substs.clone()};
-                let origin = if did == info.trait_def_id {
-                    method_self(info.trait_def_id, info.index)
-                } else {
-                    method_super(info.trait_def_id, info.index)
-                };
-                out.push(Candidate {
-                    rcvr_substs: rcvr_substs,
-                    method_ty: info.method_ty,
-                    origin: origin
-                });
-            }
-            _ => return
         }
     }
 
