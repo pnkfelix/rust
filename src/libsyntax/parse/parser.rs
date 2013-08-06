@@ -3458,7 +3458,8 @@ impl Parser {
 
                             if classify::stmt_ends_with_semi(stmt) {
                                 self.traceinfo(fmt!("expecting semicolon at end of %s",
-                                                    pprust::stmt_to_str(stmt, get_ident_interner())));
+                                                    pprust::stmt_to_str(stmt,
+                                                                        get_ident_interner())));
                                 self.close_stmt_expecting(token::SEMI);
                             }
                         }
