@@ -141,7 +141,7 @@ impl Ctx {
             }
         }
 
-        visit::visit_expr(self as @Visitor<()>, ex, ());
+        visit::visit_expr(self as @mut Visitor, ex);
     }
 
     fn map_fn(@mut self,
@@ -153,18 +153,18 @@ impl Ctx {
         for a in decl.inputs.iter() {
             self.map.insert(a.id, node_arg);
         }
-        visit::visit_fn(self as @Visitor<()>, fk, decl, body, sp, id, ());
+        visit::visit_fn(self as @mut Visitor, fk, decl, body, sp, id);
     }
 
     fn map_stmt(@mut self, stmt: @stmt) {
         self.map.insert(stmt_id(stmt), node_stmt(stmt));
-        visit::visit_stmt(self as @Visitor<()>, stmt, ());
+        visit::visit_stmt(self as @mut Visitor, stmt);
     }
 
     fn map_block(@mut self, b: &Block) {
         // clone is FIXME #2543
         self.map.insert(b.id, node_block((*b).clone()));
-        visit::visit_block(self as @Visitor<()>, b, ());
+        visit::visit_block(self as @mut Visitor, b);
     }
 
     fn map_pat(@mut self, pat: @pat) {
@@ -177,12 +177,14 @@ impl Ctx {
             _ => ()
         }
 
-        visit::visit_pat(self as @Visitor<()>, pat, ());
+        visit::visit_pat(self as @mut Visitor, pat);
     }
 }
 
-impl Visitor<()> for Ctx {
-    fn visit_item(@mut self, i: @item, _: ()) {
+impl Visitor for Ctx {
+    fn env_clone(@mut self) -> @mut Visitor { self as @mut Visitor }
+
+    fn visit_item(@mut self, i: @item) {
         // clone is FIXME #2543
         let item_path = @self.path.clone();
         self.map.insert(i.id, node_item(i, item_path));
@@ -254,20 +256,20 @@ impl Visitor<()> for Ctx {
             }
             _ => self.path.push(path_name(i.ident))
         }
-        visit::visit_item(self as @Visitor<()>, i, ());
+        visit::visit_item(self as @mut Visitor, i);
         self.path.pop();
     }
 
-    fn visit_pat(@mut self, pat: @pat, _: ()) {
+    fn visit_pat(@mut self, pat: @pat) {
         self.map_pat(pat);
-        visit::visit_pat(self as @Visitor<()>, pat, ())
+        visit::visit_pat(self as @mut Visitor, pat)
     }
 
-    fn visit_expr(@mut self, expr: @expr, _: ()) {
+    fn visit_expr(@mut self, expr: @expr) {
         self.map_expr(expr)
     }
 
-    fn visit_stmt(@mut self, stmt: @stmt, _: ()) {
+    fn visit_stmt(@mut self, stmt: @stmt) {
         self.map_stmt(stmt)
     }
 
@@ -276,51 +278,50 @@ impl Visitor<()> for Ctx {
                 function_declaration: &fn_decl,
                 block: &Block,
                 span: span,
-                node_id: NodeId,
-                _: ()) {
+                node_id: NodeId) {
         self.map_fn(function_kind, function_declaration, block, span, node_id)
     }
 
-    fn visit_block(@mut self, block: &Block, _: ()) {
+    fn visit_block(@mut self, block: &Block) {
         self.map_block(block)
     }
 
     // XXX: Methods below can become default methods.
 
-    fn visit_mod(@mut self, module: &_mod, _: span, _: NodeId, _: ()) {
-        visit::visit_mod(self as @Visitor<()>, module, ())
+    fn visit_mod(@mut self, module: &_mod, _: span, _: NodeId) {
+        visit::visit_mod(self as @mut Visitor, module)
     }
 
-    fn visit_view_item(@mut self, view_item: &view_item, _: ()) {
-        visit::visit_view_item(self as @Visitor<()>, view_item, ())
+    fn visit_view_item(@mut self, view_item: &view_item) {
+        visit::visit_view_item(self as @mut Visitor, view_item)
     }
 
-    fn visit_foreign_item(@mut self, foreign_item: @foreign_item, _: ()) {
-        visit::visit_foreign_item(self as @Visitor<()>, foreign_item, ())
+    fn visit_foreign_item(@mut self, foreign_item: @foreign_item) {
+        visit::visit_foreign_item(self as @mut Visitor, foreign_item)
     }
 
-    fn visit_local(@mut self, local: @Local, _: ()) {
-        visit::visit_local(self as @Visitor<()>, local, ())
+    fn visit_local(@mut self, local: @Local) {
+        visit::visit_local(self as @mut Visitor, local)
     }
 
-    fn visit_arm(@mut self, arm: &arm, _: ()) {
-        visit::visit_arm(self as @Visitor<()>, arm, ())
+    fn visit_arm(@mut self, arm: &arm) {
+        visit::visit_arm(self as @mut Visitor, arm)
     }
 
-    fn visit_decl(@mut self, decl: @decl, _: ()) {
-        visit::visit_decl(self as @Visitor<()>, decl, ())
+    fn visit_decl(@mut self, decl: @decl) {
+        visit::visit_decl(self as @mut Visitor, decl)
     }
 
-    fn visit_expr_post(@mut self, _: @expr, _: ()) {
+    fn visit_expr_post(@mut self, _: @expr) {
         // Empty!
     }
 
-    fn visit_ty(@mut self, typ: &Ty, _: ()) {
-        visit::visit_ty(self as @Visitor<()>, typ, ())
+    fn visit_ty(@mut self, typ: &Ty) {
+        visit::visit_ty(self as @mut Visitor, typ)
     }
 
-    fn visit_generics(@mut self, generics: &Generics, _: ()) {
-        visit::visit_generics(self as @Visitor<()>, generics, ())
+    fn visit_generics(@mut self, generics: &Generics) {
+        visit::visit_generics(self as @mut Visitor, generics)
     }
 
     fn visit_fn(@mut self,
@@ -328,41 +329,37 @@ impl Visitor<()> for Ctx {
                 function_declaration: &fn_decl,
                 block: &Block,
                 span: span,
-                node_id: NodeId,
-                _: ()) {
-        visit::visit_fn(self as @Visitor<()>,
+                node_id: NodeId) {
+        visit::visit_fn(self as @mut Visitor,
                         function_kind,
                         function_declaration,
                         block,
                         span,
-                        node_id,
-                        ())
+                        node_id)
     }
 
-    fn visit_ty_method(@mut self, ty_method: &TypeMethod, _: ()) {
-        visit::visit_ty_method(self as @Visitor<()>, ty_method, ())
+    fn visit_ty_method(@mut self, ty_method: &TypeMethod) {
+        visit::visit_ty_method(self as @mut Visitor, ty_method)
     }
 
-    fn visit_trait_method(@mut self, trait_method: &trait_method, _: ()) {
-        visit::visit_trait_method(self as @Visitor<()>, trait_method, ())
+    fn visit_trait_method(@mut self, trait_method: &trait_method) {
+        visit::visit_trait_method(self as @mut Visitor, trait_method)
     }
 
     fn visit_struct_def(@mut self,
                         struct_def: @struct_def,
                         ident: ident,
                         generics: &Generics,
-                        node_id: NodeId,
-                        _: ()) {
-        visit::visit_struct_def(self as @Visitor<()>,
+                        node_id: NodeId) {
+        visit::visit_struct_def(self as @mut Visitor,
                                 struct_def,
                                 ident,
                                 generics,
-                                node_id,
-                                ())
+                                node_id)
     }
 
-    fn visit_struct_field(@mut self, struct_field: @struct_field, _: ()) {
-        visit::visit_struct_field(self as @Visitor<()>, struct_field, ())
+    fn visit_struct_field(@mut self, struct_field: @struct_field) {
+        visit::visit_struct_field(self as @mut Visitor, struct_field)
     }
 }
 
@@ -372,7 +369,7 @@ pub fn map_crate(diag: @span_handler, c: &Crate) -> map {
         path: ~[],
         diag: diag,
     };
-    visit::visit_crate(cx as @Visitor<()>, c, ());
+    visit::visit_crate(cx as @mut Visitor, c);
     cx.map
 }
 
@@ -409,7 +406,7 @@ pub fn map_decoded_item(diag: @span_handler,
     }
 
     // visit the item / method contents and add those to the map:
-    ii.accept((), cx as @Visitor<()>);
+    ii.accept(cx as @mut Visitor);
 }
 
 pub fn node_id_to_str(map: map, id: NodeId, itr: @ident_interner) -> ~str {

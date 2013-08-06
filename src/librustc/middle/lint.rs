@@ -301,7 +301,7 @@ enum AnyVisitor {
     // recursive call can use the original visitor's method, although the
     // recursing visitor supplied to the method is the item stopping visitor.
     OldVisitor(oldvisit::vt<@mut Context>, oldvisit::vt<@mut Context>),
-    NewVisitor(@visit::Visitor<()>),
+    NewVisitor(@mut visit::Visitor),
 }
 
 struct Context {
@@ -465,7 +465,7 @@ impl Context {
         self.visitors.push(OldVisitor(v, item_stopping_visitor(v)));
     }
 
-    fn add_lint(&mut self, v: @visit::Visitor<()>) {
+    fn add_lint(&mut self, v: @mut visit::Visitor) {
         self.visitors.push(NewVisitor(v));
     }
 
@@ -480,7 +480,7 @@ impl Context {
                             (orig.visit_item)(it, (self, stopping));
                         }
                         NewVisitor(new_visitor) => {
-                            new_visitor.visit_item(it, ());
+                            new_visitor.visit_item(it);
                         }
                     }
                 }
@@ -492,7 +492,7 @@ impl Context {
                             oldvisit::visit_crate(c, (self, stopping))
                         }
                         NewVisitor(new_visitor) => {
-                            visit::visit_crate(new_visitor, c, ())
+                            visit::visit_crate(new_visitor, c)
                         }
                     }
                 }
@@ -522,8 +522,7 @@ impl Context {
                                                  &m.decl,
                                                  &m.body,
                                                  m.span,
-                                                 m.id,
-                                                 ())
+                                                 m.id)
                         }
                     }
                 }
@@ -989,7 +988,7 @@ fn lint_unused_mut() -> oldvisit::vt<@mut Context> {
     })
 }
 
-fn lint_session(cx: @mut Context) -> @visit::Visitor<()> {
+fn lint_session(cx: @mut Context) -> @mut visit::Visitor {
     ast_util::id_visitor(|id| {
         match cx.tcx.sess.lints.pop(&id) {
             None => {},
