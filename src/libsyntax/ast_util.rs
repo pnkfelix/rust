@@ -322,7 +322,7 @@ impl inlined_item_utils for inlined_item {
         match *self {
             ii_item(i) => v.visit_item(i),
             ii_foreign(i) => v.visit_foreign_item(i),
-            ii_method(_, _, m) => visit::visit_method_helper(v, m),
+            ii_method(_, _, m) => visit::walk_method_helper(v, m),
         }
     }
 }
@@ -415,7 +415,7 @@ impl Visitor for IdVisitor {
                  span: span,
                  node_id: NodeId) {
         (self.visit_callback)(node_id);
-        visit::visit_mod(self as @mut Visitor, module)
+        visit::walk_mod(self as @mut Visitor, module)
     }
 
     fn visit_view_item(@mut self, view_item: &view_item) {
@@ -440,12 +440,12 @@ impl Visitor for IdVisitor {
                 }
             }
         }
-        visit::visit_view_item(self as @mut Visitor, view_item)
+        visit::walk_view_item(self as @mut Visitor, view_item)
     }
 
     fn visit_foreign_item(@mut self, foreign_item: @foreign_item) {
         (self.visit_callback)(foreign_item.id);
-        visit::visit_foreign_item(self as @mut Visitor, foreign_item)
+        visit::walk_foreign_item(self as @mut Visitor, foreign_item)
     }
 
     fn visit_item(@mut self, item: @item) {
@@ -467,39 +467,39 @@ impl Visitor for IdVisitor {
             _ => {}
         }
 
-        visit::visit_item(self as @mut Visitor, item);
+        visit::walk_item(self as @mut Visitor, item);
 
         self.visited_outermost = false
     }
 
     fn visit_local(@mut self, local: @Local) {
         (self.visit_callback)(local.id);
-        visit::visit_local(self as @mut Visitor, local)
+        visit::walk_local(self as @mut Visitor, local)
     }
 
     fn visit_block(@mut self, block: &Block) {
         (self.visit_callback)(block.id);
-        visit::visit_block(self as @mut Visitor, block)
+        visit::walk_block(self as @mut Visitor, block)
     }
 
     fn visit_stmt(@mut self, statement: @stmt) {
         (self.visit_callback)(ast_util::stmt_id(statement));
-        visit::visit_stmt(self as @mut Visitor, statement)
+        visit::walk_stmt(self as @mut Visitor, statement)
     }
 
     // XXX: Default
     fn visit_arm(@mut self, arm: &arm) {
-        visit::visit_arm(self as @mut Visitor, arm)
+        visit::walk_arm(self as @mut Visitor, arm)
     }
 
     fn visit_pat(@mut self, pattern: @pat) {
         (self.visit_callback)(pattern.id);
-        visit::visit_pat(self as @mut Visitor, pattern)
+        visit::walk_pat(self as @mut Visitor, pattern)
     }
 
     // XXX: Default
     fn visit_decl(@mut self, declaration: @decl) {
-        visit::visit_decl(self as @mut Visitor, declaration)
+        visit::walk_decl(self as @mut Visitor, declaration)
     }
 
     fn visit_expr(@mut self, expression: @expr) {
@@ -510,7 +510,7 @@ impl Visitor for IdVisitor {
             }
         }
         (self.visit_callback)(expression.id);
-        visit::visit_expr(self as @mut Visitor, expression)
+        visit::walk_expr(self as @mut Visitor, expression)
     }
 
     // XXX: Default
@@ -524,12 +524,12 @@ impl Visitor for IdVisitor {
             ty_path(_, _, id) => (self.visit_callback)(id),
             _ => {}
         }
-        visit::visit_ty(self as @mut Visitor, typ)
+        visit::walk_ty(self as @mut Visitor, typ)
     }
 
     fn visit_generics(@mut self, generics: &Generics) {
         self.visit_generics_helper(generics);
-        visit::visit_generics(self as @mut Visitor, generics)
+        visit::walk_generics(self as @mut Visitor, generics)
     }
 
     fn visit_fn(@mut self,
@@ -563,7 +563,7 @@ impl Visitor for IdVisitor {
             (self.visit_callback)(argument.id)
         }
 
-        visit::visit_fn(self as @mut Visitor,
+        visit::walk_fn(self as @mut Visitor,
                         function_kind,
                         function_declaration,
                         block,
@@ -580,12 +580,12 @@ impl Visitor for IdVisitor {
 
     // XXX: Default
     fn visit_ty_method(@mut self, type_method: &TypeMethod) {
-        visit::visit_ty_method(self as @mut Visitor, type_method)
+        visit::walk_ty_method(self as @mut Visitor, type_method)
     }
 
     // XXX: Default
     fn visit_trait_method(@mut self, trait_method: &trait_method) {
-        visit::visit_trait_method(self as @mut Visitor, trait_method)
+        visit::walk_trait_method(self as @mut Visitor, trait_method)
     }
 
     // XXX: Default
@@ -594,7 +594,7 @@ impl Visitor for IdVisitor {
                         identifier: ident,
                         generics: &Generics,
                         node_id: NodeId) {
-        visit::visit_struct_def(self as @mut Visitor,
+        visit::walk_struct_def(self as @mut Visitor,
                                 struct_definition,
                                 identifier,
                                 generics,
@@ -603,7 +603,7 @@ impl Visitor for IdVisitor {
 
     fn visit_struct_field(@mut self, struct_field: @struct_field) {
         (self.visit_callback)(struct_field.node.id);
-        visit::visit_struct_field(self as @mut Visitor, struct_field)
+        visit::walk_struct_field(self as @mut Visitor, struct_field)
     }
 }
 
@@ -756,7 +756,7 @@ impl EachViewItem for ast::Crate {
         let visitor = @mut SimpleVisitorVisitor {
             simple_visitor: data as @SimpleVisitor,
         };
-        visit::visit_crate(visitor as @mut Visitor, self);
+        visit::walk_crate(visitor as @mut Visitor, self);
         true
     }
 }
