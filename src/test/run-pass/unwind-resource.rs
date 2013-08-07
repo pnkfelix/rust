@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// xfail-win32
+// xfail-test
 extern mod extra;
 
 use std::comm::*;
@@ -19,7 +19,7 @@ struct complainer {
 }
 
 impl Drop for complainer {
-    fn finalize(&self) {
+    fn drop(&self) {
         error!("About to send!");
         self.c.send(true);
         error!("Sent!");

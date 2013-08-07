@@ -8,9 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
-
-use core::vec;
 use ast;
 use codemap;
 use ext::base::*;
@@ -18,7 +15,7 @@ use ext::base;
 use print;
 use parse::token::{get_ident_interner};
 
-use core::io;
+use std::io;
 
 pub fn expand_syntax_ext(cx: @ExtCtxt,
                          sp: codemap::span,
@@ -28,7 +25,7 @@ pub fn expand_syntax_ext(cx: @ExtCtxt,
     cx.print_backtrace();
     io::stdout().write_line(
         print::pprust::tt_to_str(
-            ast::tt_delim(vec::to_owned(tt)),
+            &ast::tt_delim(@mut tt.to_owned()),
             get_ident_interner()));
 
     //trivial expression

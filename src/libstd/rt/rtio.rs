@@ -18,28 +18,75 @@ use rt::uv::uvio;
 // XXX: ~object doesn't work currently so these are some placeholder
 // types to use instead
 pub type EventLoopObject = uvio::UvEventLoop;
+pub type RemoteCallbackObject = uvio::UvRemoteCallback;
 pub type IoFactoryObject = uvio::UvIoFactory;
 pub type RtioTcpStreamObject = uvio::UvTcpStream;
 pub type RtioTcpListenerObject = uvio::UvTcpListener;
+pub type RtioUdpSocketObject = uvio::UvUdpSocket;
+pub type RtioTimerObject = uvio::UvTimer;
 
 pub trait EventLoop {
     fn run(&mut self);
     fn callback(&mut self, ~fn());
     fn callback_ms(&mut self, ms: u64, ~fn());
+    fn remote_callback(&mut self, ~fn()) -> ~RemoteCallbackObject;
     /// The asynchronous I/O services. Not all event loops may provide one
     fn io<'a>(&'a mut self) -> Option<&'a mut IoFactoryObject>;
+}
+
+pub trait RemoteCallback {
+    /// Trigger the remote callback. Note that the number of times the callback
+    /// is run is not guaranteed. All that is guaranteed is that, after calling 'fire',
+    /// the callback will be called at least once, but multiple callbacks may be coalesced
+    /// and callbacks may be called more often requested. Destruction also triggers the
+    /// callback.
+    fn fire(&mut self);
 }
 
 pub trait IoFactory {
     fn tcp_connect(&mut self, addr: IpAddr) -> Result<~RtioTcpStreamObject, IoError>;
     fn tcp_bind(&mut self, addr: IpAddr) -> Result<~RtioTcpListenerObject, IoError>;
+    fn udp_bind(&mut self, addr: IpAddr) -> Result<~RtioUdpSocketObject, IoError>;
+    fn timer_init(&mut self) -> Result<~RtioTimerObject, IoError>;
 }
 
-pub trait RtioTcpListener {
+pub trait RtioTcpListener : RtioSocket {
     fn accept(&mut self) -> Result<~RtioTcpStreamObject, IoError>;
+    fn accept_simultaneously(&mut self) -> Result<(), IoError>;
+    fn dont_accept_simultaneously(&mut self) -> Result<(), IoError>;
 }
 
-pub trait RtioTcpStream {
+pub trait RtioTcpStream : RtioSocket {
     fn read(&mut self, buf: &mut [u8]) -> Result<uint, IoError>;
     fn write(&mut self, buf: &[u8]) -> Result<(), IoError>;
+    fn peer_name(&mut self) -> Result<IpAddr, IoError>;
+    fn control_congestion(&mut self) -> Result<(), IoError>;
+    fn nodelay(&mut self) -> Result<(), IoError>;
+    fn keepalive(&mut self, delay_in_seconds: uint) -> Result<(), IoError>;
+    fn letdie(&mut self) -> Result<(), IoError>;
+}
+
+pub trait RtioSocket {
+    fn socket_name(&mut self) -> Result<IpAddr, IoError>;
+}
+
+pub trait RtioUdpSocket : RtioSocket {
+    fn recvfrom(&mut self, buf: &mut [u8]) -> Result<(uint, IpAddr), IoError>;
+    fn sendto(&mut self, buf: &[u8], dst: IpAddr) -> Result<(), IoError>;
+
+    fn join_multicast(&mut self, multi: IpAddr) -> Result<(), IoError>;
+    fn leave_multicast(&mut self, multi: IpAddr) -> Result<(), IoError>;
+
+    fn loop_multicast_locally(&mut self) -> Result<(), IoError>;
+    fn dont_loop_multicast_locally(&mut self) -> Result<(), IoError>;
+
+    fn multicast_time_to_live(&mut self, ttl: int) -> Result<(), IoError>;
+    fn time_to_live(&mut self, ttl: int) -> Result<(), IoError>;
+
+    fn hear_broadcasts(&mut self) -> Result<(), IoError>;
+    fn ignore_broadcasts(&mut self) -> Result<(), IoError>;
+}
+
+pub trait RtioTimer {
+    fn sleep(&self, msecs: u64);
 }

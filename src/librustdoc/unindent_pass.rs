@@ -19,9 +19,9 @@ instances where the string containing the doc comment is opened in the
 middle of a line, and each of the following lines is indented.
 */
 
-use core::prelude::*;
 
-use core::uint;
+use std::num;
+use std::uint;
 use pass::Pass;
 use text_pass;
 
@@ -70,7 +70,7 @@ fn unindent(s: &str) -> ~str {
                     false
                 }
             };
-            uint::min(min_indent, spaces)
+            num::min(min_indent, spaces)
         }
     };
 

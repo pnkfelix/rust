@@ -14,7 +14,7 @@
 fn fail_len(v: ~[int]) -> uint {
     let mut i = 3;
     fail!();
-    for v.each |x| { i += 1u; }
+    foreach x in v.iter() { i += 1u; }
     //~^ ERROR: unreachable statement
     return i;
 }

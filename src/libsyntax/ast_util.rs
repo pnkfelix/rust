@@ -8,37 +8,36 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
-
 use ast::*;
 use ast;
 use ast_util;
-use codemap::{span, spanned};
-use core::cast;
-use core::local_data;
+use codemap::{span, dummy_sp};
 use opt_vec;
 use parse::token;
 use visit;
 
-use core::hashmap::HashMap;
-use core::int;
-use core::option;
-use core::to_bytes;
+use std::hashmap::HashMap;
+use std::int;
+use std::local_data;
+use std::num;
+use std::option;
 
 pub fn path_name_i(idents: &[ident]) -> ~str {
     // FIXME: Bad copies (#2543 -- same for everything else that says "bad")
     idents.map(|i| token::interner_get(i.name)).connect("::")
 }
 
-pub fn path_to_ident(p: @Path) -> ident { copy *p.idents.last() }
-
-pub fn local_def(id: node_id) -> def_id {
-    ast::def_id { crate: local_crate, node: id }
+pub fn path_to_ident(p: &Path) -> ident {
+    *p.idents.last()
 }
 
-pub fn is_local(did: ast::def_id) -> bool { did.crate == local_crate }
+pub fn local_def(id: NodeId) -> def_id {
+    ast::def_id { crate: LOCAL_CRATE, node: id }
+}
 
-pub fn stmt_id(s: &stmt) -> node_id {
+pub fn is_local(did: ast::def_id) -> bool { did.crate == LOCAL_CRATE }
+
+pub fn stmt_id(s: &stmt) -> NodeId {
     match s.node {
       stmt_decl(_, id) => id,
       stmt_expr(_, id) => id,
@@ -59,9 +58,9 @@ pub fn variant_def_ids(d: def) -> Option<(def_id, def_id)> {
 pub fn def_id_of_def(d: def) -> def_id {
     match d {
       def_fn(id, _) | def_static_method(id, _, _) | def_mod(id) |
-      def_foreign_mod(id) | def_const(id) |
+      def_foreign_mod(id) | def_static(id, _) |
       def_variant(_, id) | def_ty(id) | def_ty_param(id, _) |
-      def_use(id) | def_struct(id) | def_trait(id) => {
+      def_use(id) | def_struct(id) | def_trait(id) | def_method(id, _) => {
         id
       }
       def_arg(id, _) | def_local(id, _) | def_self(id, _) | def_self_ty(id)
@@ -138,7 +137,7 @@ pub fn is_shift_binop(b: binop) -> bool {
 pub fn unop_to_str(op: unop) -> ~str {
     match op {
       box(mt) => if mt == m_mutbl { ~"@mut " } else { ~"@" },
-      uniq(mt) => if mt == m_mutbl { ~"~mut " } else { ~"~" },
+      uniq => ~"~",
       deref => ~"*",
       not => ~"!",
       neg => ~"-"
@@ -196,42 +195,36 @@ pub fn is_call_expr(e: @expr) -> bool {
     match e.node { expr_call(*) => true, _ => false }
 }
 
-// This makes def_id hashable
-impl to_bytes::IterBytes for def_id {
-    #[inline]
-    fn iter_bytes(&self, lsb0: bool, f: to_bytes::Cb) -> bool {
-        self.crate.iter_bytes(lsb0, f) && self.node.iter_bytes(lsb0, f)
-    }
-}
-
-pub fn block_from_expr(e: @expr) -> blk {
-    let blk_ = default_block(~[], option::Some::<@expr>(e), e.id);
-    return spanned {node: blk_, span: e.span};
+pub fn block_from_expr(e: @expr) -> Block {
+    let mut blk = default_block(~[], option::Some::<@expr>(e), e.id);
+    blk.span = e.span;
+    return blk;
 }
 
 pub fn default_block(
     stmts1: ~[@stmt],
     expr1: Option<@expr>,
-    id1: node_id
-) -> blk_ {
-    ast::blk_ {
+    id1: NodeId
+) -> Block {
+    ast::Block {
         view_items: ~[],
         stmts: stmts1,
         expr: expr1,
         id: id1,
-        rules: default_blk,
+        rules: DefaultBlock,
+        span: dummy_sp(),
     }
 }
 
-pub fn ident_to_path(s: span, i: ident) -> @Path {
-    @ast::Path { span: s,
+pub fn ident_to_path(s: span, i: ident) -> Path {
+    ast::Path { span: s,
                  global: false,
                  idents: ~[i],
                  rp: None,
                  types: ~[] }
 }
 
-pub fn ident_to_pat(id: node_id, s: span, i: ident) -> @pat {
+pub fn ident_to_pat(id: NodeId, s: span, i: ident) -> @pat {
     @ast::pat { id: id,
                 node: pat_ident(bind_infer, ident_to_path(s, i), None),
                 span: s }
@@ -245,30 +238,34 @@ pub fn is_unguarded(a: &arm) -> bool {
 }
 
 pub fn unguarded_pat(a: &arm) -> Option<~[@pat]> {
-    if is_unguarded(a) { Some(/* FIXME (#2543) */ copy a.pats) } else { None }
+    if is_unguarded(a) {
+        Some(/* FIXME (#2543) */ a.pats.clone())
+    } else {
+        None
+    }
 }
 
 pub fn public_methods(ms: ~[@method]) -> ~[@method] {
-    do ms.filtered |m| {
+    do ms.consume_iter().filter |m| {
         match m.vis {
             public => true,
             _   => false
         }
-    }
+    }.collect()
 }
 
-// extract a ty_method from a trait_method. if the trait_method is
-// a default, pull out the useful fields to make a ty_method
-pub fn trait_method_to_ty_method(method: &trait_method) -> ty_method {
+// extract a TypeMethod from a trait_method. if the trait_method is
+// a default, pull out the useful fields to make a TypeMethod
+pub fn trait_method_to_ty_method(method: &trait_method) -> TypeMethod {
     match *method {
-        required(ref m) => copy *m,
+        required(ref m) => (*m).clone(),
         provided(ref m) => {
-            ty_method {
+            TypeMethod {
                 ident: m.ident,
-                attrs: copy m.attrs,
+                attrs: m.attrs.clone(),
                 purity: m.purity,
-                decl: copy m.decl,
-                generics: copy m.generics,
+                decl: m.decl.clone(),
+                generics: m.generics.clone(),
                 explicit_self: m.explicit_self,
                 id: m.id,
                 span: m.span,
@@ -278,12 +275,12 @@ pub fn trait_method_to_ty_method(method: &trait_method) -> ty_method {
 }
 
 pub fn split_trait_methods(trait_methods: &[trait_method])
-    -> (~[ty_method], ~[@method]) {
+    -> (~[TypeMethod], ~[@method]) {
     let mut reqd = ~[];
     let mut provd = ~[];
-    for trait_methods.each |trt_method| {
+    foreach trt_method in trait_methods.iter() {
         match *trt_method {
-          required(ref tm) => reqd.push(copy *tm),
+          required(ref tm) => reqd.push((*tm).clone()),
           provided(m) => provd.push(m)
         }
     };
@@ -299,32 +296,32 @@ pub fn struct_field_visibility(field: ast::struct_field) -> visibility {
 
 pub trait inlined_item_utils {
     fn ident(&self) -> ident;
-    fn id(&self) -> ast::node_id;
-    fn accept<E: Copy>(&self, e: E, v: visit::vt<E>);
+    fn id(&self) -> ast::NodeId;
+    fn accept<E: Clone>(&self, e: E, v: visit::vt<E>);
 }
 
 impl inlined_item_utils for inlined_item {
     fn ident(&self) -> ident {
         match *self {
-            ii_item(i) => /* FIXME (#2543) */ copy i.ident,
-            ii_foreign(i) => /* FIXME (#2543) */ copy i.ident,
-            ii_method(_, m) => /* FIXME (#2543) */ copy m.ident,
+            ii_item(i) => i.ident,
+            ii_foreign(i) => i.ident,
+            ii_method(_, _, m) => m.ident,
         }
     }
 
-    fn id(&self) -> ast::node_id {
+    fn id(&self) -> ast::NodeId {
         match *self {
             ii_item(i) => i.id,
             ii_foreign(i) => i.id,
-            ii_method(_, m) => m.id,
+            ii_method(_, _, m) => m.id,
         }
     }
 
-    fn accept<E: Copy>(&self, e: E, v: visit::vt<E>) {
+    fn accept<E: Clone>(&self, e: E, v: visit::vt<E>) {
         match *self {
             ii_item(i) => (v.visit_item)(i, (e, v)),
             ii_foreign(i) => (v.visit_foreign_item)(i, (e, v)),
-            ii_method(_, m) => visit::visit_method_helper(m, (e, v)),
+            ii_method(_, _, m) => visit::visit_method_helper(m, (e, v)),
         }
     }
 }
@@ -370,8 +367,8 @@ pub fn empty_generics() -> Generics {
 
 #[deriving(Encodable, Decodable)]
 pub struct id_range {
-    min: node_id,
-    max: node_id,
+    min: NodeId,
+    max: NodeId,
 }
 
 impl id_range {
@@ -386,39 +383,39 @@ impl id_range {
         self.min >= self.max
     }
 
-    pub fn add(&mut self, id: node_id) {
-        self.min = int::min(self.min, id);
-        self.max = int::max(self.max, id + 1);
+    pub fn add(&mut self, id: NodeId) {
+        self.min = num::min(self.min, id);
+        self.max = num::max(self.max, id + 1);
     }
 }
 
-pub fn id_visitor<T: Copy>(vfn: @fn(node_id, T)) -> visit::vt<T> {
+pub fn id_visitor<T: Clone>(vfn: @fn(NodeId, T)) -> visit::vt<T> {
     let visit_generics: @fn(&Generics, T) = |generics, t| {
-        for generics.ty_params.each |p| {
-            vfn(p.id, copy t);
+        foreach p in generics.ty_params.iter() {
+            vfn(p.id, t.clone());
         }
-        for generics.lifetimes.each |p| {
-            vfn(p.id, copy t);
+        foreach p in generics.lifetimes.iter() {
+            vfn(p.id, t.clone());
         }
     };
     visit::mk_vt(@visit::Visitor {
-        visit_mod: |m, sp, id, (t, vt)| {
-            vfn(id, copy t);
+        visit_mod: |m, sp, id, (t, vt): (T, visit::vt<T>)| {
+            vfn(id, t.clone());
             visit::visit_mod(m, sp, id, (t, vt));
         },
 
         visit_view_item: |vi, (t, vt)| {
             match vi.node {
-              view_item_extern_mod(_, _, id) => vfn(id, copy t),
+              view_item_extern_mod(_, _, id) => vfn(id, t.clone()),
               view_item_use(ref vps) => {
-                  for vps.each |vp| {
+                  foreach vp in vps.iter() {
                       match vp.node {
-                          view_path_simple(_, _, id) => vfn(id, copy t),
-                          view_path_glob(_, id) => vfn(id, copy t),
+                          view_path_simple(_, _, id) => vfn(id, t.clone()),
+                          view_path_glob(_, id) => vfn(id, t.clone()),
                           view_path_list(_, ref paths, id) => {
-                              vfn(id, copy t);
-                              for paths.each |p| {
-                                  vfn(p.node.id, copy t);
+                              vfn(id, t.clone());
+                              foreach p in paths.iter() {
+                                  vfn(p.node.id, t.clone());
                               }
                           }
                       }
@@ -429,85 +426,88 @@ pub fn id_visitor<T: Copy>(vfn: @fn(node_id, T)) -> visit::vt<T> {
         },
 
         visit_foreign_item: |ni, (t, vt)| {
-            vfn(ni.id, copy t);
+            vfn(ni.id, t.clone());
             visit::visit_foreign_item(ni, (t, vt));
         },
 
         visit_item: |i, (t, vt)| {
-            vfn(i.id, copy t);
+            vfn(i.id, t.clone());
             match i.node {
               item_enum(ref enum_definition, _) =>
-                for (*enum_definition).variants.each |v| { vfn(v.node.id, copy t); },
+                foreach v in (*enum_definition).variants.iter() {
+                    vfn(v.node.id, t.clone());
+                },
               _ => ()
             }
             visit::visit_item(i, (t, vt));
         },
 
         visit_local: |l, (t, vt)| {
-            vfn(l.node.id, copy t);
+            vfn(l.id, t.clone());
             visit::visit_local(l, (t, vt));
         },
         visit_block: |b, (t, vt)| {
-            vfn(b.node.id, copy t);
+            vfn(b.id, t.clone());
             visit::visit_block(b, (t, vt));
         },
         visit_stmt: |s, (t, vt)| {
-            vfn(ast_util::stmt_id(s), copy t);
+            vfn(ast_util::stmt_id(s), t.clone());
             visit::visit_stmt(s, (t, vt));
         },
         visit_pat: |p, (t, vt)| {
-            vfn(p.id, copy t);
+            vfn(p.id, t.clone());
             visit::visit_pat(p, (t, vt));
         },
 
         visit_expr: |e, (t, vt)| {
             {
                 let r = e.get_callee_id();
-                for r.iter().advance |callee_id| {
-                    vfn(*callee_id, copy t);
+                foreach callee_id in r.iter() {
+                    vfn(*callee_id, t.clone());
                 }
             }
-            vfn(e.id, copy t);
+            vfn(e.id, t.clone());
             visit::visit_expr(e, (t, vt));
         },
 
         visit_ty: |ty, (t, vt)| {
+            vfn(ty.id, t.clone());
             match ty.node {
-              ty_path(_, id) => vfn(id, copy t),
+              ty_path(_, _, id) => vfn(id, t.clone()),
               _ => { /* fall through */ }
             }
             visit::visit_ty(ty, (t, vt));
         },
 
         visit_generics: |generics, (t, vt)| {
-            visit_generics(generics, copy t);
+            visit_generics(generics, t.clone());
             visit::visit_generics(generics, (t, vt));
         },
 
         visit_fn: |fk, d, a, b, id, (t, vt)| {
-            vfn(id, copy t);
+            vfn(id, t.clone());
 
             match *fk {
                 visit::fk_item_fn(_, generics, _, _) => {
-                    visit_generics(generics, copy t);
+                    visit_generics(generics, t.clone());
                 }
                 visit::fk_method(_, generics, m) => {
-                    vfn(m.self_id, copy t);
-                    visit_generics(generics, copy t);
+                    vfn(m.self_id, t.clone());
+                    visit_generics(generics, t.clone());
                 }
                 visit::fk_anon(_) |
                 visit::fk_fn_block => {
                 }
             }
 
-            for d.inputs.each |arg| {
-                vfn(arg.id, copy t)
+            foreach arg in d.inputs.iter() {
+                vfn(arg.id, t.clone())
             }
-            visit::visit_fn(fk, d, a, b, id, (copy t, vt));
+            visit::visit_fn(fk, d, a, b, id, (t.clone(), vt));
         },
 
         visit_struct_field: |f, (t, vt)| {
-            vfn(f.node.id, copy t);
+            vfn(f.node.id, t.clone());
             visit::visit_struct_field(f, (t, vt));
         },
 
@@ -515,11 +515,11 @@ pub fn id_visitor<T: Copy>(vfn: @fn(node_id, T)) -> visit::vt<T> {
     })
 }
 
-pub fn visit_ids_for_inlined_item(item: &inlined_item, vfn: @fn(node_id)) {
+pub fn visit_ids_for_inlined_item(item: &inlined_item, vfn: @fn(NodeId)) {
     item.accept((), id_visitor(|id, ()| vfn(id)));
 }
 
-pub fn compute_id_range(visit_ids_fn: &fn(@fn(node_id))) -> id_range {
+pub fn compute_id_range(visit_ids_fn: &fn(@fn(NodeId))) -> id_range {
     let result = @mut id_range::max();
     do visit_ids_fn |id| {
         result.add(id);
@@ -546,18 +546,18 @@ pub fn walk_pat(pat: @pat, it: &fn(@pat) -> bool) -> bool {
     match pat.node {
         pat_ident(_, _, Some(p)) => walk_pat(p, it),
         pat_struct(_, ref fields, _) => {
-            fields.each(|f| walk_pat(f.pat, it))
+            fields.iter().advance(|f| walk_pat(f.pat, |p| it(p)))
         }
         pat_enum(_, Some(ref s)) | pat_tup(ref s) => {
-            s.each(|&p| walk_pat(p, it))
+            s.iter().advance(|&p| walk_pat(p, |p| it(p)))
         }
         pat_box(s) | pat_uniq(s) | pat_region(s) => {
             walk_pat(s, it)
         }
         pat_vec(ref before, ref slice, ref after) => {
-            before.each(|&p| walk_pat(p, it)) &&
-                slice.iter().advance(|&p| walk_pat(p, it)) &&
-                after.iter().advance(|&p| walk_pat(p, it))
+            before.iter().advance(|&p| walk_pat(p, |p| it(p))) &&
+                slice.iter().advance(|&p| walk_pat(p, |p| it(p))) &&
+                after.iter().advance(|&p| walk_pat(p, |p| it(p)))
         }
         pat_wild | pat_lit(_) | pat_range(_, _) | pat_ident(_, _, _) |
         pat_enum(_, _) => {
@@ -567,11 +567,11 @@ pub fn walk_pat(pat: @pat, it: &fn(@pat) -> bool) -> bool {
 }
 
 pub trait EachViewItem {
-    pub fn each_view_item(&self, f: @fn(@ast::view_item) -> bool) -> bool;
+    pub fn each_view_item(&self, f: @fn(&ast::view_item) -> bool) -> bool;
 }
 
-impl EachViewItem for ast::crate {
-    fn each_view_item(&self, f: @fn(@ast::view_item) -> bool) -> bool {
+impl EachViewItem for ast::Crate {
+    fn each_view_item(&self, f: @fn(&ast::view_item) -> bool) -> bool {
         let broke = @mut false;
         let vtor: visit::vt<()> = visit::mk_simple_visitor(@visit::SimpleVisitor {
             visit_view_item: |vi| { *broke = f(vi); }, ..*visit::default_simple_visitor()
@@ -581,7 +581,7 @@ impl EachViewItem for ast::crate {
     }
 }
 
-pub fn view_path_id(p: @view_path) -> node_id {
+pub fn view_path_id(p: &view_path) -> NodeId {
     match p.node {
       view_path_simple(_, _, id) |
       view_path_glob(_, id) |
@@ -591,7 +591,7 @@ pub fn view_path_id(p: @view_path) -> node_id {
 
 /// Returns true if the given struct def is tuple-like; i.e. that its fields
 /// are unnamed.
-pub fn struct_def_is_tuple_like(struct_def: @ast::struct_def) -> bool {
+pub fn struct_def_is_tuple_like(struct_def: &ast::struct_def) -> bool {
     struct_def.ctor_id.is_some()
 }
 
@@ -619,6 +619,15 @@ pub fn variant_visibility_to_privacy(visibility: visibility,
 pub enum Privacy {
     Private,
     Public
+}
+
+/// Returns true if the given pattern consists solely of an identifier
+/// and false otherwise.
+pub fn pat_is_ident(pat: @ast::pat) -> bool {
+    match pat.node {
+        ast::pat_ident(*) => true,
+        _ => false,
+    }
 }
 
 // HYGIENE FUNCTIONS
@@ -695,18 +704,14 @@ pub fn new_sctable_internal() -> SCTable {
 
 // fetch the SCTable from TLS, create one if it doesn't yet exist.
 pub fn get_sctable() -> @mut SCTable {
-    unsafe {
-        let sctable_key = (cast::transmute::<(uint, uint),
-                           &fn(v: @@mut SCTable)>(
-                               (-4 as uint, 0u)));
-        match local_data::local_data_get(sctable_key) {
-            None => {
-                let new_table = @@mut new_sctable_internal();
-                local_data::local_data_set(sctable_key,new_table);
-                *new_table
-            },
-            Some(intr) => *intr
-        }
+    static sctable_key: local_data::Key<@@mut SCTable> = &local_data::Key;
+    match local_data::get(sctable_key, |k| k.map(|&k| *k)) {
+        None => {
+            let new_table = @@mut new_sctable_internal();
+            local_data::set(sctable_key,new_table);
+            *new_table
+        },
+        Some(intr) => *intr
     }
 }
 
@@ -793,30 +798,30 @@ pub fn getLast(arr: &~[Mrk]) -> uint {
 mod test {
     use ast::*;
     use super::*;
-    use core::io;
+    use std::io;
 
     #[test] fn xorpush_test () {
         let mut s = ~[];
         xorPush(&mut s,14);
-        assert_eq!(copy s,~[14]);
+        assert_eq!(s.clone(),~[14]);
         xorPush(&mut s,14);
-        assert_eq!(copy s,~[]);
+        assert_eq!(s.clone(),~[]);
         xorPush(&mut s,14);
-        assert_eq!(copy s,~[14]);
+        assert_eq!(s.clone(),~[14]);
         xorPush(&mut s,15);
-        assert_eq!(copy s,~[14,15]);
+        assert_eq!(s.clone(),~[14,15]);
         xorPush (&mut s,16);
-        assert_eq!(copy s,~[14,15,16]);
+        assert_eq!(s.clone(),~[14,15,16]);
         xorPush (&mut s,16);
-        assert_eq!(copy s,~[14,15]);
+        assert_eq!(s.clone(),~[14,15]);
         xorPush (&mut s,15);
-        assert_eq!(copy s,~[14]);
+        assert_eq!(s.clone(),~[14]);
     }
 
     // convert a list of uints to an @[ident]
     // (ignores the interner completely)
     fn uints_to_idents (uints: &~[uint]) -> @~[ident] {
-        @uints.map(|u|{ ident {name:*u, ctxt: empty_ctxt} })
+        @uints.map(|u| ident {name:*u, ctxt: empty_ctxt})
     }
 
     fn id (u : uint, s: SyntaxContext) -> ident {
@@ -825,7 +830,7 @@ mod test {
 
     // because of the SCTable, I now need a tidy way of
     // creating syntax objects. Sigh.
-    #[deriving(Eq)]
+    #[deriving(Clone, Eq)]
     enum TestSC {
         M(Mrk),
         R(ident,Name)
@@ -866,7 +871,7 @@ mod test {
         let mut t = new_sctable_internal();
 
         let test_sc = ~[M(3),R(id(101,0),14),M(9)];
-        assert_eq!(unfold_test_sc(copy test_sc,empty_ctxt,&mut t),4);
+        assert_eq!(unfold_test_sc(test_sc.clone(),empty_ctxt,&mut t),4);
         assert_eq!(t.table[2],Mark(9,0));
         assert_eq!(t.table[3],Rename(id(101,0),14,2));
         assert_eq!(t.table[4],Mark(3,3));

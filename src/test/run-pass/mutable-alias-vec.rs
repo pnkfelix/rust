@@ -13,7 +13,9 @@ extern mod extra;
 
 use std::vec;
 
-fn grow(v: &mut ~[int]) { *v += ~[1]; }
+fn grow(v: &mut ~[int]) {
+    v.push(1);
+}
 
 pub fn main() {
     let mut v: ~[int] = ~[];
@@ -21,6 +23,6 @@ pub fn main() {
     grow(&mut v);
     grow(&mut v);
     let len = v.len();
-    debug!(len);
+    info!(len);
     assert_eq!(len, 3 as uint);
 }

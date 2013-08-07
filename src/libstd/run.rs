@@ -12,10 +12,9 @@
 
 #[allow(missing_doc)];
 
-use iterator::IteratorUtil;
 use cast;
+use clone::Clone;
 use comm::{stream, SharedChan, GenericChan, GenericPort};
-use int;
 use io;
 use libc::{pid_t, c_void, c_int};
 use libc;
@@ -23,9 +22,8 @@ use option::{Some, None};
 use os;
 use prelude::*;
 use ptr;
-use str;
 use task;
-use vec;
+use vec::ImmutableVector;
 
 /**
  * A value representing a child process.
@@ -153,7 +151,7 @@ impl Process {
         let (in_pipe, in_fd) = match options.in_fd {
             None => {
                 let pipe = os::pipe();
-                (Some(pipe), pipe.in)
+                (Some(pipe), pipe.input)
             },
             Some(fd) => (None, fd)
         };
@@ -176,17 +174,17 @@ impl Process {
                                    in_fd, out_fd, err_fd);
 
         unsafe {
-            for in_pipe.iter().advance  |pipe| { libc::close(pipe.in); }
-            for out_pipe.iter().advance |pipe| { libc::close(pipe.out); }
-            for err_pipe.iter().advance |pipe| { libc::close(pipe.out); }
+            foreach pipe in in_pipe.iter() { libc::close(pipe.input); }
+            foreach pipe in out_pipe.iter() { libc::close(pipe.out); }
+            foreach pipe in err_pipe.iter() { libc::close(pipe.out); }
         }
 
         Process {
             pid: res.pid,
             handle: res.handle,
             input: in_pipe.map(|pipe| pipe.out),
-            output: out_pipe.map(|pipe| os::fdopen(pipe.in)),
-            error: err_pipe.map(|pipe| os::fdopen(pipe.in)),
+            output: out_pipe.map(|pipe| os::fdopen(pipe.input)),
+            error: err_pipe.map(|pipe| os::fdopen(pipe.input)),
             exit_code: None,
         }
     }
@@ -323,7 +321,7 @@ impl Process {
      * If the child has already been finished then the exit code is returned.
      */
     pub fn finish(&mut self) -> int {
-        for self.exit_code.iter().advance |&code| {
+        foreach &code in self.exit_code.iter() {
             return code;
         }
         self.close_input();
@@ -428,7 +426,7 @@ impl Process {
 }
 
 impl Drop for Process {
-    fn finalize(&self) {
+    fn drop(&self) {
         // FIXME(#4330) Need self by value to get mutability.
         let mut_self: &mut Process = unsafe { cast::transmute(self) };
 
@@ -465,7 +463,6 @@ fn spawn_process_os(prog: &str, args: &[~str],
     use libc::funcs::extra::msvcrt::get_osfhandle;
 
     use sys;
-    use uint;
 
     unsafe {
 
@@ -508,7 +505,7 @@ fn spawn_process_os(prog: &str, args: &[~str],
 
         do with_envp(env) |envp| {
             do with_dirp(dir) |dirp| {
-                do str::as_c_str(cmd) |cmdp| {
+                do cmd.as_c_str |cmdp| {
                     let created = CreateProcessA(ptr::null(), cast::transmute(cmdp),
                                                  ptr::mut_null(), ptr::mut_null(), TRUE,
                                                  0, envp, dirp, &mut si, &mut pi);
@@ -523,7 +520,7 @@ fn spawn_process_os(prog: &str, args: &[~str],
         CloseHandle(si.hStdOutput);
         CloseHandle(si.hStdError);
 
-        for create_err.iter().advance |msg| {
+        foreach msg in create_err.iter() {
             fail!("failure in CreateProcess: %s", *msg);
         }
 
@@ -577,23 +574,20 @@ fn zeroed_process_information() -> libc::types::os::arch::extra::PROCESS_INFORMA
 // FIXME: this is only pub so it can be tested (see issue #4536)
 #[cfg(windows)]
 pub fn make_command_line(prog: &str, args: &[~str]) -> ~str {
-
-    use uint;
-
     let mut cmd = ~"";
     append_arg(&mut cmd, prog);
-    for args.each |arg| {
+    foreach arg in args.iter() {
         cmd.push_char(' ');
         append_arg(&mut cmd, *arg);
     }
     return cmd;
 
     fn append_arg(cmd: &mut ~str, arg: &str) {
-        let quote = arg.iter().any_(|c| c == ' ' || c == '\t');
+        let quote = arg.iter().any(|c| c == ' ' || c == '\t');
         if quote {
             cmd.push_char('"');
         }
-        for uint::range(0, arg.len()) |i| {
+        foreach i in range(0u, arg.len()) {
             append_char_at(cmd, arg, i);
         }
         if quote {
@@ -638,14 +632,15 @@ fn spawn_process_os(prog: &str, args: &[~str],
 
     use libc::funcs::posix88::unistd::{fork, dup2, close, chdir, execvp};
     use libc::funcs::bsd44::getdtablesize;
+    use int;
 
     mod rustrt {
         use libc::c_void;
 
         #[abi = "cdecl"]
-        pub extern {
-            unsafe fn rust_unset_sigprocmask();
-            unsafe fn rust_set_environ(envp: *c_void);
+        extern {
+            pub unsafe fn rust_unset_sigprocmask();
+            pub unsafe fn rust_set_environ(envp: *c_void);
         }
     }
 
@@ -670,7 +665,7 @@ fn spawn_process_os(prog: &str, args: &[~str],
             fail!("failure in dup3(err_fd, 2): %s", os::last_os_error());
         }
         // close all other fds
-        for int::range_rev(getdtablesize() as int - 1, 2) |fd| {
+        for int::range_rev(getdtablesize() as int, 3) |fd| {
             close(fd as c_int);
         }
 
@@ -696,15 +691,15 @@ fn spawn_process_os(prog: &str, args: &[~str],
 #[cfg(unix)]
 fn with_argv<T>(prog: &str, args: &[~str],
                 cb: &fn(**libc::c_char) -> T) -> T {
-    let mut argptrs = ~[str::as_c_str(prog, |b| b)];
+    let mut argptrs = ~[prog.as_c_str(|b| b)];
     let mut tmps = ~[];
-    for args.each |arg| {
-        let t = @copy *arg;
+    foreach arg in args.iter() {
+        let t = @(*arg).clone();
         tmps.push(t);
-        argptrs.push(str::as_c_str(*t, |b| b));
+        argptrs.push(t.as_c_str(|b| b));
     }
     argptrs.push(ptr::null());
-    vec::as_imm_buf(argptrs, |buf, _len| cb(buf))
+    argptrs.as_imm_buf(|buf, _len| cb(buf))
 }
 
 #[cfg(unix)]
@@ -716,14 +711,20 @@ fn with_envp<T>(env: Option<&[(~str, ~str)]>, cb: &fn(*c_void) -> T) -> T {
         let mut tmps = ~[];
         let mut ptrs = ~[];
 
-        for es.each |&(k, v)| {
-            let kv = @fmt!("%s=%s", k, v);
-            tmps.push(kv);
-            ptrs.push(str::as_c_str(*kv, |b| b));
+        foreach pair in es.iter() {
+            // Use of match here is just to workaround limitations
+            // in the stage0 irrefutable pattern impl.
+            match pair {
+                &(ref k, ref v) => {
+                    let kv = @fmt!("%s=%s", *k, *v);
+                    tmps.push(kv);
+                    ptrs.push(kv.as_c_str(|b| b));
+                }
+            }
         }
 
         ptrs.push(ptr::null());
-        vec::as_imm_buf(ptrs, |p, _len|
+        ptrs.as_imm_buf(|p, _len|
             unsafe { cb(::cast::transmute(p)) }
         )
       }
@@ -739,12 +740,12 @@ fn with_envp<T>(env: Option<&[(~str, ~str)]>, cb: &fn(*mut c_void) -> T) -> T {
     match env {
       Some(es) => {
         let mut blk = ~[];
-        for es.each |&(k, v)| {
-            let kv = fmt!("%s=%s", k, v);
-            blk.push_all(kv.as_bytes_with_null_consume());
+        foreach pair in es.iter() {
+            let kv = fmt!("%s=%s", pair.first(), pair.second());
+            blk.push_all(kv.to_bytes_with_null());
         }
         blk.push(0);
-        vec::as_imm_buf(blk, |p, _len|
+        blk.as_imm_buf(|p, _len|
             unsafe { cb(::cast::transmute(p)) }
         )
       }
@@ -755,7 +756,7 @@ fn with_envp<T>(env: Option<&[(~str, ~str)]>, cb: &fn(*mut c_void) -> T) -> T {
 fn with_dirp<T>(d: Option<&Path>,
                 cb: &fn(*libc::c_char) -> T) -> T {
     match d {
-      Some(dir) => str::as_c_str(dir.to_str(), cb),
+      Some(dir) => dir.to_str().as_c_str(cb),
       None => cb(ptr::null())
     }
 }
@@ -944,12 +945,20 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os="android"))]
     fn test_process_status() {
         assert_eq!(run::process_status("false", []), 1);
         assert_eq!(run::process_status("true", []), 0);
     }
+    #[test]
+    #[cfg(target_os="android")]
+    fn test_process_status() {
+        assert_eq!(run::process_status("/system/bin/sh", [~"-c",~"false"]), 1);
+        assert_eq!(run::process_status("/system/bin/sh", [~"-c",~"true"]), 0);
+    }
 
     #[test]
+    #[cfg(not(target_os="android"))]
     fn test_process_output_output() {
 
         let run::ProcessOutput {status, output, error}
@@ -963,14 +972,41 @@ mod tests {
             assert_eq!(error, ~[]);
         }
     }
+    #[test]
+    #[cfg(target_os="android")]
+    fn test_process_output_output() {
+
+        let run::ProcessOutput {status, output, error}
+             = run::process_output("/system/bin/sh", [~"-c",~"echo hello"]);
+        let output_str = str::from_bytes(output);
+
+        assert_eq!(status, 0);
+        assert_eq!(output_str.trim().to_owned(), ~"hello");
+        // FIXME #7224
+        if !running_on_valgrind() {
+            assert_eq!(error, ~[]);
+        }
+    }
 
     #[test]
+    #[cfg(not(target_os="android"))]
     fn test_process_output_error() {
 
         let run::ProcessOutput {status, output, error}
              = run::process_output("mkdir", [~"."]);
 
         assert_eq!(status, 1);
+        assert_eq!(output, ~[]);
+        assert!(!error.is_empty());
+    }
+    #[test]
+    #[cfg(target_os="android")]
+    fn test_process_output_error() {
+
+        let run::ProcessOutput {status, output, error}
+             = run::process_output("/system/bin/mkdir", [~"."]);
+
+        assert_eq!(status, 255);
         assert_eq!(output, ~[]);
         assert!(!error.is_empty());
     }
@@ -985,7 +1021,7 @@ mod tests {
         let mut proc = run::Process::new("cat", [], run::ProcessOptions {
             dir: None,
             env: None,
-            in_fd: Some(pipe_in.in),
+            in_fd: Some(pipe_in.input),
             out_fd: Some(pipe_out.out),
             err_fd: Some(pipe_err.out)
         });
@@ -994,14 +1030,14 @@ mod tests {
         assert!(proc.output_redirected());
         assert!(proc.error_redirected());
 
-        os::close(pipe_in.in);
+        os::close(pipe_in.input);
         os::close(pipe_out.out);
         os::close(pipe_err.out);
 
         let expected = ~"test";
         writeclose(pipe_in.out, expected);
-        let actual = readclose(pipe_out.in);
-        readclose(pipe_err.in);
+        let actual = readclose(pipe_out.input);
+        readclose(pipe_err.input);
         proc.finish();
 
         assert_eq!(expected, actual);
@@ -1024,19 +1060,37 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os="android"))]
     fn test_finish_once() {
         let mut prog = run::Process::new("false", [], run::ProcessOptions::new());
         assert_eq!(prog.finish(), 1);
     }
+    #[test]
+    #[cfg(target_os="android")]
+    fn test_finish_once() {
+        let mut prog = run::Process::new("/system/bin/sh", [~"-c",~"false"],
+                                         run::ProcessOptions::new());
+        assert_eq!(prog.finish(), 1);
+    }
 
     #[test]
+    #[cfg(not(target_os="android"))]
     fn test_finish_twice() {
         let mut prog = run::Process::new("false", [], run::ProcessOptions::new());
         assert_eq!(prog.finish(), 1);
         assert_eq!(prog.finish(), 1);
     }
+    #[test]
+    #[cfg(target_os="android")]
+    fn test_finish_twice() {
+        let mut prog = run::Process::new("/system/bin/sh", [~"-c",~"false"],
+                                         run::ProcessOptions::new());
+        assert_eq!(prog.finish(), 1);
+        assert_eq!(prog.finish(), 1);
+    }
 
     #[test]
+    #[cfg(not(target_os="android"))]
     fn test_finish_with_output_once() {
 
         let mut prog = run::Process::new("echo", [~"hello"], run::ProcessOptions::new());
@@ -1051,8 +1105,26 @@ mod tests {
             assert_eq!(error, ~[]);
         }
     }
+    #[test]
+    #[cfg(target_os="android")]
+    fn test_finish_with_output_once() {
+
+        let mut prog = run::Process::new("/system/bin/sh", [~"-c",~"echo hello"],
+                                         run::ProcessOptions::new());
+        let run::ProcessOutput {status, output, error}
+            = prog.finish_with_output();
+        let output_str = str::from_bytes(output);
+
+        assert_eq!(status, 0);
+        assert_eq!(output_str.trim().to_owned(), ~"hello");
+        // FIXME #7224
+        if !running_on_valgrind() {
+            assert_eq!(error, ~[]);
+        }
+    }
 
     #[test]
+    #[cfg(not(target_os="android"))]
     fn test_finish_with_output_twice() {
 
         let mut prog = run::Process::new("echo", [~"hello"], run::ProcessOptions::new());
@@ -1078,10 +1150,38 @@ mod tests {
             assert_eq!(error, ~[]);
         }
     }
+    #[test]
+    #[cfg(target_os="android")]
+    fn test_finish_with_output_twice() {
+
+        let mut prog = run::Process::new("/system/bin/sh", [~"-c",~"echo hello"],
+                                         run::ProcessOptions::new());
+        let run::ProcessOutput {status, output, error}
+            = prog.finish_with_output();
+
+        let output_str = str::from_bytes(output);
+
+        assert_eq!(status, 0);
+        assert_eq!(output_str.trim().to_owned(), ~"hello");
+        // FIXME #7224
+        if !running_on_valgrind() {
+            assert_eq!(error, ~[]);
+        }
+
+        let run::ProcessOutput {status, output, error}
+            = prog.finish_with_output();
+
+        assert_eq!(status, 0);
+        assert_eq!(output, ~[]);
+        // FIXME #7224
+        if !running_on_valgrind() {
+            assert_eq!(error, ~[]);
+        }
+    }
 
     #[test]
     #[should_fail]
-    #[cfg(not(windows))]
+    #[cfg(not(windows),not(target_os="android"))]
     fn test_finish_with_output_redirected() {
         let mut prog = run::Process::new("echo", [~"hello"], run::ProcessOptions {
             env: None,
@@ -1093,10 +1193,32 @@ mod tests {
         // this should fail because it is not valid to read the output when it was redirected
         prog.finish_with_output();
     }
+    #[test]
+    #[should_fail]
+    #[cfg(not(windows),target_os="android")]
+    fn test_finish_with_output_redirected() {
+        let mut prog = run::Process::new("/system/bin/sh", [~"-c",~"echo hello"],
+                                         run::ProcessOptions {
+            env: None,
+            dir: None,
+            in_fd: Some(0),
+            out_fd: Some(1),
+            err_fd: Some(2)
+        });
+        // this should fail because it is not valid to read the output when it was redirected
+        prog.finish_with_output();
+    }
 
-    #[cfg(unix)]
+    #[cfg(unix,not(target_os="android"))]
     fn run_pwd(dir: Option<&Path>) -> run::Process {
         run::Process::new("pwd", [], run::ProcessOptions {
+            dir: dir,
+            .. run::ProcessOptions::new()
+        })
+    }
+    #[cfg(unix,target_os="android")]
+    fn run_pwd(dir: Option<&Path>) -> run::Process {
+        run::Process::new("/system/bin/sh", [~"-c",~"pwd"], run::ProcessOptions {
             dir: dir,
             .. run::ProcessOptions::new()
         })
@@ -1142,9 +1264,16 @@ mod tests {
         assert_eq!(parent_stat.st_ino, child_stat.st_ino);
     }
 
-    #[cfg(unix)]
+    #[cfg(unix,not(target_os="android"))]
     fn run_env(env: Option<&[(~str, ~str)]>) -> run::Process {
         run::Process::new("env", [], run::ProcessOptions {
+            env: env,
+            .. run::ProcessOptions::new()
+        })
+    }
+    #[cfg(unix,target_os="android")]
+    fn run_env(env: Option<&[(~str, ~str)]>) -> run::Process {
+        run::Process::new("/system/bin/sh", [~"-c",~"set"], run::ProcessOptions {
             env: env,
             .. run::ProcessOptions::new()
         })
@@ -1159,15 +1288,34 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os="android"))]
     fn test_inherit_env() {
         if running_on_valgrind() { return; }
 
         let mut prog = run_env(None);
         let output = str::from_bytes(prog.finish_with_output().output);
 
-        for os::env().each |&(k, v)| {
+        let r = os::env();
+        foreach &(ref k, ref v) in r.iter() {
             // don't check windows magical empty-named variables
-            assert!(k.is_empty() || output.contains(fmt!("%s=%s", k, v)));
+            assert!(k.is_empty() || output.contains(fmt!("%s=%s", *k, *v)));
+        }
+    }
+    #[test]
+    #[cfg(target_os="android")]
+    fn test_inherit_env() {
+        if running_on_valgrind() { return; }
+
+        let mut prog = run_env(None);
+        let output = str::from_bytes(prog.finish_with_output().output);
+
+        let r = os::env();
+        foreach &(k, v) in r.iter() {
+            // don't check android RANDOM variables
+            if k != ~"RANDOM" {
+                assert!(output.contains(fmt!("%s=%s", k, v)) ||
+                        output.contains(fmt!("%s=\'%s\'", k, v)));
+            }
         }
     }
 

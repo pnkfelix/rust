@@ -8,7 +8,7 @@ use std::libc::{STDIN_FILENO, c_int, fdopen, fgets, fileno, fopen, fstat};
 use std::libc::{stat, strlen};
 use std::ptr::null;
 use std::unstable::intrinsics::init;
-use std::vec::{reverse, slice};
+use std::vec::{reverse};
 use extra::sort::quick_sort3;
 
 static LINE_LEN: uint = 80;
@@ -44,7 +44,7 @@ impl Code {
 
     fn pack(string: &str) -> Code {
         let mut code = Code(0u64);
-        for uint::range(0, string.len()) |i| {
+        foreach i in range(0u, string.len()) {
             code = code.push_char(string[i]);
         }
         code
@@ -54,7 +54,7 @@ impl Code {
     fn unpack(&self, frame: i32) -> ~str {
         let mut key = **self;
         let mut result = ~[];
-        for (frame as uint).times {
+        do (frame as uint).times {
             result.push(unpack_symbol((key as u8) & 3));
             key >>= 2;
         }
@@ -82,7 +82,7 @@ struct PrintCallback(&'static str);
 
 impl TableCallback for PrintCallback {
     fn f(&self, entry: &mut Entry) {
-        println(fmt!("%d\t%s", entry.count as int, **self));
+        printfln!("%d\t%s", entry.count as int, **self);
     }
 }
 
@@ -194,7 +194,7 @@ fn unpack_symbol(c: u8) -> u8 {
 
 fn next_char<'a>(mut buf: &'a [u8]) -> &'a [u8] {
     loop {
-        buf = slice(buf, 1, buf.len());
+        buf = buf.slice(1, buf.len());
         if buf.len() == 0 {
             break;
         }
@@ -226,7 +226,7 @@ fn read_stdin() -> ~[u8] {
                 fgets(transmute(&mut window[0]), LINE_LEN as c_int, stdin);
 
                 {
-                    if vec::slice(window, 0, 6) == header {
+                    if window.slice(0, 6) == header {
                         break;
                     }
                 }
@@ -235,9 +235,7 @@ fn read_stdin() -> ~[u8] {
             while fgets(transmute(&mut window[0]),
                         LINE_LEN as c_int,
                         stdin) != null() {
-                window = vec::mut_slice(window,
-                                        strlen(transmute(&window[0])) as uint,
-                                        window.len());
+                window = window.mut_slice(strlen(transmute(&window[0])) as uint, window.len());
             }
         }
 
@@ -253,7 +251,7 @@ fn generate_frequencies(frequencies: &mut Table,
     let mut code = Code(0);
 
     // Pull first frame.
-    for (frame as uint).times {
+    do (frame as uint).times {
         code = code.push_char(input[0]);
         input = next_char(input);
     }
@@ -281,9 +279,9 @@ fn print_frequencies(frequencies: &Table, frame: i32) {
     }
 
     for vector.each |&(key, count)| {
-        println(fmt!("%s %.3f",
-                     key.unpack(frame),
-                     (count as float * 100.0) / (total_count as float)));
+        printfln!("%s %.3f",
+                  key.unpack(frame),
+                  (count as float * 100.0) / (total_count as float));
     }
 }
 

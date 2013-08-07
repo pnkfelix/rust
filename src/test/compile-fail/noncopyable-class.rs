@@ -15,7 +15,7 @@ struct bar {
 }
 
 impl Drop for bar {
-    fn finalize(&self) {}
+    fn drop(&self) {}
 }
 
 fn bar(x:int) -> bar {
@@ -38,6 +38,6 @@ fn foo(i:int) -> foo {
 
 fn main() {
     let x = foo(10);
-    let _y = copy x; //~ ERROR copying a value of non-copyable type
+    let _y = x.clone(); //~ ERROR does not implement any method in scope
     error!(x);
 }

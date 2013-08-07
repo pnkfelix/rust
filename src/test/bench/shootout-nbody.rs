@@ -1,8 +1,5 @@
-use std::f64;
 use std::from_str::FromStr;
 use std::os;
-use std::uint::range;
-use std::vec;
 
 static PI: f64 = 3.141592653589793;
 static SOLAR_MASS: f64 = 4.0 * PI * PI;
@@ -82,15 +79,15 @@ struct Planet {
 
 fn advance(bodies: &mut [Planet, ..N_BODIES], dt: f64, steps: i32) {
     let mut d = [ 0.0, ..3 ];
-    for (steps as uint).times {
-        for range(0, N_BODIES) |i| {
-            for range(i + 1, N_BODIES) |j| {
+    do (steps as uint).times {
+        foreach i in range(0u, N_BODIES) {
+            foreach j in range(i + 1, N_BODIES) {
                 d[0] = bodies[i].x[0] - bodies[j].x[0];
                 d[1] = bodies[i].x[1] - bodies[j].x[1];
                 d[2] = bodies[i].x[2] - bodies[j].x[2];
 
                 let d2 = d[0]*d[0] + d[1]*d[1] + d[2]*d[2];
-                let mag = dt / (d2 * f64::sqrt(d2));
+                let mag = dt / (d2 * d2.sqrt());
 
                 let a_mass = bodies[i].mass;
                 let b_mass = bodies[j].mass;
@@ -104,7 +101,7 @@ fn advance(bodies: &mut [Planet, ..N_BODIES], dt: f64, steps: i32) {
             }
         }
 
-        for bodies.mut_iter().advance |a| {
+        foreach a in bodies.mut_iter() {
             a.x[0] += dt * a.v[0];
             a.x[1] += dt * a.v[1];
             a.x[2] += dt * a.v[2];
@@ -115,16 +112,16 @@ fn advance(bodies: &mut [Planet, ..N_BODIES], dt: f64, steps: i32) {
 fn energy(bodies: &[Planet, ..N_BODIES]) -> f64 {
     let mut e = 0.0;
     let mut d = [ 0.0, ..3 ];
-    for range(0, N_BODIES) |i| {
-        for range(0, 3) |k| {
+    foreach i in range(0u, N_BODIES) {
+        foreach k in range(0u, 3) {
             e += bodies[i].mass * bodies[i].v[k] * bodies[i].v[k] / 2.0;
         }
 
-        for range(i + 1, N_BODIES) |j| {
-            for range(0, 3) |k| {
+        foreach j in range(i + 1, N_BODIES) {
+            foreach k in range(0u, 3) {
                 d[k] = bodies[i].x[k] - bodies[j].x[k];
             }
-            let dist = f64::sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
+            let dist = (d[0]*d[0] + d[1]*d[1] + d[2]*d[2]).sqrt();
             e -= bodies[i].mass * bodies[j].mass / dist;
         }
     }
@@ -132,8 +129,8 @@ fn energy(bodies: &[Planet, ..N_BODIES]) -> f64 {
 }
 
 fn offset_momentum(bodies: &mut [Planet, ..N_BODIES]) {
-    for range(0, N_BODIES) |i| {
-        for range(0, 3) |k| {
+    foreach i in range(0u, N_BODIES) {
+        foreach k in range(0u, 3) {
             bodies[0].v[k] -= bodies[i].v[k] * bodies[i].mass / SOLAR_MASS;
         }
     }
@@ -144,9 +141,9 @@ fn main() {
     let mut bodies = BODIES;
 
     offset_momentum(&mut bodies);
-    println(fmt!("%.9f", energy(&bodies) as float));
+    printfln!("%.9f", energy(&bodies) as float);
 
     advance(&mut bodies, 0.01, n);
 
-    println(fmt!("%.9f", energy(&bodies) as float));
+    printfln!("%.9f", energy(&bodies) as float);
 }

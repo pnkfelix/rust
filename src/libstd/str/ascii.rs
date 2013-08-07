@@ -14,10 +14,10 @@ use to_str::{ToStr,ToStrConsume};
 use str;
 use str::StrSlice;
 use cast;
-use old_iter::BaseIter;
-use iterator::IteratorUtil;
+use iterator::{Iterator, IteratorUtil};
 use vec::{CopyableVector, ImmutableVector, OwnedVector};
 use to_bytes::IterBytes;
+use option::{Some, None};
 
 /// Datatype to hold one ascii character. It wraps a `u8`, with the highest bit always zero.
 #[deriving(Clone, Eq)]
@@ -94,7 +94,7 @@ impl<'self> AsciiCast<&'self[Ascii]> for &'self [u8] {
 
     #[inline]
     fn is_ascii(&self) -> bool {
-        for self.each |b| {
+        foreach b in self.iter() {
             if !b.is_ascii() { return false; }
         }
         true
@@ -116,7 +116,7 @@ impl<'self> AsciiCast<&'self[Ascii]> for &'self str {
 
     #[inline]
     fn is_ascii(&self) -> bool {
-        self.bytes_iter().all(|b| b.is_ascii())
+        self.byte_iter().all(|b| b.is_ascii())
     }
 }
 

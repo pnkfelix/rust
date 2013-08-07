@@ -139,8 +139,11 @@ endif
 
 # version-string calculation
 CFG_GIT_DIR := $(CFG_SRC_DIR).git
-CFG_RELEASE = 0.6
+CFG_RELEASE = 0.8-pre
 CFG_VERSION = $(CFG_RELEASE)
+# windows exe's need numeric versions - don't use anything but
+# numbers and dots here
+CFG_VERSION_WIN = 0.8
 
 ifneq ($(wildcard $(CFG_GIT)),)
 ifneq ($(wildcard $(CFG_GIT_DIR)),)
@@ -232,6 +235,39 @@ LIBRUST_DSYM_GLOB_$(1) :=$(call CFG_LIB_DSYM_GLOB_$(1),rust)
 
 endef
 
+# $(1) is the path for directory to match against
+# $(2) is the glob to use in the match
+# $(3) is filename (usually the target being created) to filter out from match
+#      (i.e. filename is not out-of-date artifact from prior Rust version/build)
+#
+# Note that a common bug is to accidentally construct the glob denoted
+# by $(2) with a space character prefix, which invalidates the
+# construction $(1)$(2).
+define CHECK_FOR_OLD_GLOB_MATCHES_EXCEPT
+  $(Q)MATCHES="$(filter-out %$(3),$(wildcard $(1)/$(2)))"; if [ -n "$$MATCHES" ] ; then echo "Warning: there are previous" \'$(2)\' "libraries:" $$MATCHES; fi
+endef
+
+# Same interface as above, but deletes rather than just listing the files.
+define REMOVE_ALL_OLD_GLOB_MATCHES_EXCEPT
+  $(Q)MATCHES="$(filter-out %$(3),$(wildcard $(1)/$(2)))"; if [ -n "$$MATCHES" ] ; then echo "Warning: removing previous" \'$(2)\' "libraries:" $$MATCHES; rm $$MATCHES ; fi
+endef
+
+# We use a different strategy for LIST_ALL_OLD_GLOB_MATCHES_EXCEPT
+# than in the macros above because it needs the result of running the
+# `ls` command after other rules in the command list have run; the
+# macro-expander for $(wildcard ...) would deliver its results too
+# soon. (This is in contrast to the macros above, which are meant to
+# be run at the outset of a command list in a rule.)
+ifdef VERBOSE
+define LIST_ALL_OLD_GLOB_MATCHES_EXCEPT
+  @echo "Info: now are following matches for" '$(2)' "libraries:"
+  @( cd $(1) && ( ls $(2) 2>/dev/null || true ) | grep -v $(3) || true )
+endef
+else
+define LIST_ALL_OLD_GLOB_MATCHES_EXCEPT
+endef
+endif
+
 $(foreach target,$(CFG_TARGET_TRIPLES),\
   $(eval $(call DEF_LIBS,$(target))))
 
@@ -239,29 +275,29 @@ $(foreach target,$(CFG_TARGET_TRIPLES),\
 # Standard library variables
 ######################################################################
 
-STDLIB_CRATE := $(S)src/libstd/core.rc
+STDLIB_CRATE := $(S)src/libstd/std.rs
 STDLIB_INPUTS := $(wildcard $(addprefix $(S)src/libstd/,        \
-                                           core.rc *.rs */*.rs */*/*rs */*/*/*rs))
+                                           *.rs */*.rs */*/*rs */*/*/*rs))
 
 ######################################################################
 # Extra library variables
 ######################################################################
 
-EXTRALIB_CRATE := $(S)src/libextra/std.rc
+EXTRALIB_CRATE := $(S)src/libextra/extra.rs
 EXTRALIB_INPUTS := $(wildcard $(addprefix $(S)src/libextra/,          \
-                                          std.rc *.rs */*.rs))
+                                          *.rs */*.rs))
 
 ######################################################################
 # rustc crate variables
 ######################################################################
 
-COMPILER_CRATE := $(S)src/librustc/rustc.rc
+COMPILER_CRATE := $(S)src/librustc/rustc.rs
 COMPILER_INPUTS := $(wildcard $(addprefix $(S)src/librustc/,      \
-                           rustc.rc *.rs */*.rs */*/*.rs */*/*/*.rs))
+                           *.rs */*.rs */*/*.rs */*/*/*.rs))
 
-LIBSYNTAX_CRATE := $(S)src/libsyntax/syntax.rc
+LIBSYNTAX_CRATE := $(S)src/libsyntax/syntax.rs
 LIBSYNTAX_INPUTS := $(wildcard $(addprefix $(S)src/libsyntax/, \
-                            syntax.rc *.rs */*.rs */*/*.rs))
+                           *.rs */*.rs */*/*.rs))
 
 DRIVER_CRATE := $(S)src/driver/driver.rs
 
@@ -311,6 +347,7 @@ $(foreach host,$(CFG_HOST_TRIPLES), \
 export CFG_SRC_DIR
 export CFG_BUILD_DIR
 export CFG_VERSION
+export CFG_VERSION_WIN
 export CFG_BUILD_TRIPLE
 export CFG_LLVM_ROOT
 export CFG_ENABLE_MINGW_CROSS
@@ -536,9 +573,18 @@ ALL_TARGET_RULES = $(foreach target,$(CFG_TARGET_TRIPLES), \
 	$(foreach host,$(CFG_HOST_TRIPLES), \
  all-target-$(target)-host-$(host)))
 
-all: $(ALL_TARGET_RULES) $(GENERATED) docs
+all: rustllvm/llvm-auto-clean-stamp \
+     $(ALL_TARGET_RULES) $(GENERATED) docs
 
 endif
+
+# This is used to independently force an LLVM clean rebuild
+# when we changed something not otherwise captured by builtin
+# dependencies. In these cases, commit a change that touches
+# the stamp in the source dir.
+rustllvm/llvm-auto-clean-stamp: $(S)src/rustllvm/llvm-auto-clean-trigger
+	$(Q)$(MAKE) clean-llvm
+	touch $@
 
 
 ######################################################################

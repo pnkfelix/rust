@@ -43,7 +43,7 @@ impl IdleWatcher {
             let mut idle_watcher: IdleWatcher = NativeHandle::from_native_handle(handle);
             let data = idle_watcher.get_watcher_data();
             let cb: &IdleCallback = data.idle_cb.get_ref();
-            let status = status_to_maybe_uv_error(handle, status);
+            let status = status_to_maybe_uv_error(idle_watcher, status);
             (*cb)(idle_watcher, status);
         }
     }
@@ -73,7 +73,7 @@ impl IdleWatcher {
                 let mut idle_watcher: IdleWatcher = NativeHandle::from_native_handle(handle);
                 {
                     let data = idle_watcher.get_watcher_data();
-                    data.close_cb.swap_unwrap()();
+                    data.close_cb.take_unwrap()();
                 }
                 idle_watcher.drop_watcher_data();
                 uvll::idle_delete(handle);
@@ -88,5 +88,67 @@ impl NativeHandle<*uvll::uv_idle_t> for IdleWatcher {
     }
     fn native_handle(&self) -> *uvll::uv_idle_t {
         match self { &IdleWatcher(ptr) => ptr }
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    use rt::uv::Loop;
+    use super::*;
+    use unstable::run_in_bare_thread;
+
+    #[test]
+    #[ignore(reason = "valgrind - loop destroyed before watcher?")]
+    fn idle_new_then_close() {
+        do run_in_bare_thread {
+            let mut loop_ = Loop::new();
+            let idle_watcher = { IdleWatcher::new(&mut loop_) };
+            idle_watcher.close(||());
+        }
+    }
+
+    #[test]
+    fn idle_smoke_test() {
+        do run_in_bare_thread {
+            let mut loop_ = Loop::new();
+            let mut idle_watcher = { IdleWatcher::new(&mut loop_) };
+            let mut count = 10;
+            let count_ptr: *mut int = &mut count;
+            do idle_watcher.start |idle_watcher, status| {
+                let mut idle_watcher = idle_watcher;
+                assert!(status.is_none());
+                if unsafe { *count_ptr == 10 } {
+                    idle_watcher.stop();
+                    idle_watcher.close(||());
+                } else {
+                    unsafe { *count_ptr = *count_ptr + 1; }
+                }
+            }
+            loop_.run();
+            loop_.close();
+            assert_eq!(count, 10);
+        }
+    }
+
+    #[test]
+    fn idle_start_stop_start() {
+        do run_in_bare_thread {
+            let mut loop_ = Loop::new();
+            let mut idle_watcher = { IdleWatcher::new(&mut loop_) };
+            do idle_watcher.start |idle_watcher, status| {
+                let mut idle_watcher = idle_watcher;
+                assert!(status.is_none());
+                idle_watcher.stop();
+                do idle_watcher.start |idle_watcher, status| {
+                    assert!(status.is_none());
+                    let mut idle_watcher = idle_watcher;
+                    idle_watcher.stop();
+                    idle_watcher.close(||());
+                }
+            }
+            loop_.run();
+            loop_.close();
+        }
     }
 }

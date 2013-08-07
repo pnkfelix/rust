@@ -28,7 +28,7 @@ fn ack(m: int, n: int) -> int {
 
 fn main() {
     let args = os::args();
-    let args = if os::getenv(~"RUST_BENCH").is_some() {
+    let args = if os::getenv("RUST_BENCH").is_some() {
         ~[~"", ~"12"]
     } else if args.len() <= 1u {
         ~[~"", ~"8"]
@@ -36,5 +36,5 @@ fn main() {
         args
     };
     let n = int::from_str(args[1]).get();
-    io::println(fmt!("Ack(3,%d): %d\n", n, ack(3, n)));
+    printfln!("Ack(3,%d): %d\n", n, ack(3, n));
 }

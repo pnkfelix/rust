@@ -17,7 +17,7 @@ pub mod icu {
     pub type UChar32 = char;
 
     pub static TRUE : u8 = 1u8;
-    pub static FALSE : u8 = 1u8;
+    pub static FALSE : u8 = 0u8;
 
     pub static UCHAR_ALPHABETIC : UProperty = 0;
     pub static UCHAR_BINARY_START : UProperty = 0; // = UCHAR_ALPHABETIC
@@ -161,15 +161,15 @@ pub mod icu {
     pub mod libicu {
         #[link_name = "icuuc"]
         #[abi = "cdecl"]
-        pub extern {
-            unsafe fn u_hasBinaryProperty(c: UChar32, which: UProperty)
-                                       -> UBool;
-            unsafe fn u_isdigit(c: UChar32) -> UBool;
-            unsafe fn u_islower(c: UChar32) -> UBool;
-            unsafe fn u_isspace(c: UChar32) -> UBool;
-            unsafe fn u_isupper(c: UChar32) -> UBool;
-            unsafe fn u_tolower(c: UChar32) -> UChar32;
-            unsafe fn u_toupper(c: UChar32) -> UChar32;
+        extern {
+            pub unsafe fn u_hasBinaryProperty(c: UChar32, which: UProperty)
+                                              -> UBool;
+            pub unsafe fn u_isdigit(c: UChar32) -> UBool;
+            pub unsafe fn u_islower(c: UChar32) -> UBool;
+            pub unsafe fn u_isspace(c: UChar32) -> UBool;
+            pub unsafe fn u_isupper(c: UChar32) -> UBool;
+            pub unsafe fn u_tolower(c: UChar32) -> UChar32;
+            pub unsafe fn u_toupper(c: UChar32) -> UChar32;
         }
     }
 }

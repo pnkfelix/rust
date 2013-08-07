@@ -8,6 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// xfail-test newsched transition
 // error-pattern:explicit failure
 
 // This time we're testing that the stack limits are restored
@@ -23,7 +24,7 @@ use std::task;
 mod rustrt {
     use std::libc;
 
-    pub extern {
+    extern {
         pub fn rust_get_argc() -> libc::c_int;
     }
 }
@@ -44,7 +45,7 @@ struct and_then_get_big_again {
 }
 
 impl Drop for and_then_get_big_again {
-    fn finalize(&self) {
+    fn drop(&self) {
         fn getbig(i: int) {
             if i != 0 {
                 getbig(i - 1);

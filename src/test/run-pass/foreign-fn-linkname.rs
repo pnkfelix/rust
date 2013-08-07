@@ -17,7 +17,7 @@ use std::vec;
 mod libc {
     #[nolink]
     #[abi = "cdecl"]
-    pub extern {
+    extern {
         #[link_name = "strlen"]
         pub fn my_strlen(str: *u8) -> uint;
     }
@@ -26,7 +26,7 @@ mod libc {
 fn strlen(str: ~str) -> uint {
     unsafe {
         // C string is terminated with a zero
-        let bytes = str.as_bytes_with_null_consume();
+        let bytes = str.to_bytes_with_null();
         return libc::my_strlen(vec::raw::to_ptr(bytes));
     }
 }

@@ -8,21 +8,21 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
 
 use config;
 use doc::ItemUtils;
 use doc;
 
-use core::comm::*;
-use core::comm;
-use core::io;
-use core::result;
-use core::run;
-use core::str;
-use core::task;
+use std::comm::*;
+use std::comm;
+use std::io;
+use std::result;
+use std::run;
+use std::str;
+use std::task;
 use extra::future;
 
+#[deriving(Clone)]
 pub enum WriteInstr {
     Write(~str),
     Done
@@ -91,7 +91,7 @@ fn pandoc_writer(
     page: doc::Page
 ) -> Writer {
     assert!(config.pandoc_cmd.is_some());
-    let pandoc_cmd = copy *config.pandoc_cmd.get_ref();
+    let pandoc_cmd = (*config.pandoc_cmd.get_ref()).clone();
     let filename = make_local_filename(config, page);
 
     let pandoc_args = ~[
@@ -104,7 +104,7 @@ fn pandoc_writer(
     ];
 
     do generic_writer |markdown| {
-        use core::io::WriterUtil;
+        use std::io::WriterUtil;
 
         debug!("pandoc cmd: %s", pandoc_cmd);
         debug!("pandoc args: %s", pandoc_args.connect(" "));
@@ -130,7 +130,7 @@ fn generic_writer(process: ~fn(markdown: ~str)) -> Writer {
         let mut keep_going = true;
         while keep_going {
             match po.recv() {
-              Write(s) => markdown += s,
+              Write(s) => markdown.push_str(s),
               Done => keep_going = false
             }
         }
@@ -159,12 +159,12 @@ pub fn make_filename(
                 config.output_style == config::DocPerMod {
                 ~"index"
             } else {
-                assert!(doc.topmod.name() != ~"");
-                doc.topmod.name()
+                assert!(doc.topmod.name_() != ~"");
+                doc.topmod.name_()
             }
           }
           doc::ItemPage(doc) => {
-            (doc.path() + [doc.name()]).connect("_")
+            (doc.path() + &[doc.name_()]).connect("_")
           }
         }
     };
@@ -177,7 +177,7 @@ pub fn make_filename(
 }
 
 fn write_file(path: &Path, s: ~str) {
-    use core::io::WriterUtil;
+    use std::io::WriterUtil;
 
     match io::file_writer(path, [io::Create, io::Truncate]) {
       result::Ok(writer) => {
@@ -199,7 +199,7 @@ pub fn future_writer_factory(
             let mut future = future;
             writer_ch.send(writer);
             let s = future.get();
-            markdown_ch.send((copy page, s));
+            markdown_ch.send((page.clone(), s));
         }
         writer_po.recv()
     };
@@ -209,12 +209,12 @@ pub fn future_writer_factory(
 
 fn future_writer() -> (Writer, future::Future<~str>) {
     let (port, chan) = comm::stream();
-    let writer: ~fn(instr: WriteInstr) = |instr| chan.send(copy instr);
+    let writer: ~fn(instr: WriteInstr) = |instr| chan.send(instr.clone());
     let future = do future::from_fn || {
         let mut res = ~"";
         loop {
             match port.recv() {
-              Write(s) => res += s,
+              Write(s) => res.push_str(s),
               Done => break
             }
         }
@@ -225,7 +225,6 @@ fn future_writer() -> (Writer, future::Future<~str>) {
 
 #[cfg(test)]
 mod test {
-    use core::prelude::*;
 
     use astsrv;
     use doc;
@@ -236,7 +235,7 @@ mod test {
 
     fn mk_doc(name: ~str, source: ~str) -> doc::Doc {
         do astsrv::from_str(source) |srv| {
-            let doc = extract::from_srv(srv.clone(), copy name);
+            let doc = extract::from_srv(srv.clone(), name.clone());
             let doc = (path_pass::mk_pass().f)(srv.clone(), doc);
             doc
         }
@@ -279,7 +278,8 @@ mod test {
             .. config::default_config(&Path("input/test.rc"))
         };
         let doc = mk_doc(~"", ~"mod a { mod b { } }");
-        let modb = copy doc.cratemod().mods()[0].mods()[0];
+        // hidden __std_macros module at the start.
+        let modb = doc.cratemod().mods()[1].mods()[0].clone();
         let page = doc::ItemPage(doc::ModTag(modb));
         let filename = make_local_filename(&config, page);
         assert_eq!(filename, Path("output/dir/a_b.html"));

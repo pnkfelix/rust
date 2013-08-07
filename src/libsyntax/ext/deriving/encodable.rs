@@ -75,9 +75,7 @@ would yield functions like:
     }
 */
 
-use core::prelude::*;
-
-use ast::{meta_item, item, expr, m_imm, m_mutbl};
+use ast::{MetaItem, item, expr, m_imm, m_mutbl};
 use codemap::span;
 use ext::base::ExtCtxt;
 use ext::build::AstBuilder;
@@ -85,7 +83,7 @@ use ext::deriving::generic::*;
 
 pub fn expand_deriving_encodable(cx: @ExtCtxt,
                                  span: span,
-                                 mitem: @meta_item,
+                                 mitem: @MetaItem,
                                  in_items: ~[@item]) -> ~[@item] {
     let trait_def = TraitDef {
         path: Path::new_(~["extra", "serialize", "Encodable"], None,
@@ -124,7 +122,7 @@ fn encodable_substructure(cx: @ExtCtxt, span: span,
         Struct(ref fields) => {
             let emit_struct_field = cx.ident_of("emit_struct_field");
             let mut stmts = ~[];
-            for fields.eachi |i, f| {
+            foreach (i, f) in fields.iter().enumerate() {
                 let (name, val) = match *f {
                     (Some(id), e, _) => (cx.str_of(id), e),
                     (None, e, _) => (fmt!("_field%u", i).to_managed(), e)
@@ -155,7 +153,7 @@ fn encodable_substructure(cx: @ExtCtxt, span: span,
             let encoder = cx.expr_ident(span, blkarg);
             let emit_variant_arg = cx.ident_of("emit_enum_variant_arg");
             let mut stmts = ~[];
-            for fields.eachi |i, f| {
+            foreach (i, f) in fields.iter().enumerate() {
                 let val = match *f { (_, e, _) => e };
                 let enc = cx.expr_method_call(span, val, encode, ~[blkencoder]);
                 let lambda = cx.lambda_expr_1(span, enc, blkarg);

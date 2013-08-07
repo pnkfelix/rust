@@ -17,22 +17,20 @@ struct r {
 }
 
 impl Drop for r {
-    fn finalize(&self) {
+    fn drop(&self) {
         unsafe {
-            debug!("r's dtor: self = %x, self.v = %x, self.v's value = %x",
+            info!("r's dtor: self = %x, self.v = %x, self.v's value = %x",
               cast::transmute::<*r, uint>(self),
               cast::transmute::<**int, uint>(&(self.v)),
               cast::transmute::<*int, uint>(self.v));
-            let v2: ~int = cast::transmute(self.v);
+            let _v2: ~int = cast::transmute(self.v);
         }
     }
 }
 
 fn r(v: *int) -> r {
-    unsafe {
-        r {
-            v: v
-        }
+    r {
+        v: v
     }
 }
 
@@ -52,28 +50,28 @@ pub fn main() {
         let i2p = cast::transmute_copy(&i2);
         cast::forget(i2);
 
-        let mut x1 = @mut t(Node{
+        let x1 = @mut t(Node{
             next: None,
               r: {
               let rs = r(i1p);
-              debug!("r = %x", cast::transmute::<*r, uint>(&rs));
+              info!("r = %x", cast::transmute::<*r, uint>(&rs));
               rs }
         });
 
-        debug!("x1 = %x, x1.r = %x",
+        info!("x1 = %x, x1.r = %x",
                cast::transmute::<@mut t, uint>(x1),
                cast::transmute::<*r, uint>(&x1.r));
 
-        let mut x2 = @mut t(Node{
+        let x2 = @mut t(Node{
             next: None,
               r: {
               let rs = r(i2p);
-              debug!("r2 = %x", cast::transmute::<*r, uint>(&rs));
+              info!("r2 = %x", cast::transmute::<*r, uint>(&rs));
               rs
                 }
         });
 
-        debug!("x2 = %x, x2.r = %x",
+        info!("x2 = %x, x2.r = %x",
                cast::transmute::<@mut t, uint>(x2),
                cast::transmute::<*r, uint>(&(x2.r)));
 

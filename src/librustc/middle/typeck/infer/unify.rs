@@ -8,7 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
 
 use extra::smallintmap::SmallIntMap;
 
@@ -19,6 +18,7 @@ use middle::typeck::infer::InferCtxt;
 use middle::typeck::infer::to_str::InferStr;
 use syntax::ast;
 
+#[deriving(Clone)]
 pub enum VarValue<V, T> {
     Redirect(V),
     Root(T, uint),
@@ -40,9 +40,31 @@ pub trait UnifyVid<T> {
                                       -> &'v mut ValsAndBindings<Self, T>;
 }
 
-impl InferCtxt {
-    pub fn get<T:Copy, V:Copy+Eq+Vid+UnifyVid<T>>(&mut self, vid: V)
-                                                  -> Node<V, T> {
+pub trait UnifyInferCtxtMethods {
+    fn get<T:Clone,
+           V:Clone + Eq + Vid + UnifyVid<T>>(
+           &mut self,
+           vid: V)
+           -> Node<V, T>;
+    fn set<T:Clone + InferStr,
+           V:Clone + Vid + ToStr + UnifyVid<T>>(
+           &mut self,
+           vid: V,
+           new_v: VarValue<V, T>);
+    fn unify<T:Clone + InferStr,
+             V:Clone + Vid + ToStr + UnifyVid<T>>(
+             &mut self,
+             node_a: &Node<V, T>,
+             node_b: &Node<V, T>)
+             -> (V, uint);
+}
+
+impl UnifyInferCtxtMethods for InferCtxt {
+    fn get<T:Clone,
+           V:Clone + Eq + Vid + UnifyVid<T>>(
+           &mut self,
+           vid: V)
+           -> Node<V, T> {
         /*!
          *
          * Find the root node for `vid`. This uses the standard
@@ -54,14 +76,14 @@ impl InferCtxt {
         let vb = UnifyVid::appropriate_vals_and_bindings(self);
         return helper(tcx, vb, vid);
 
-        fn helper<T:Copy, V:Copy+Eq+Vid>(
+        fn helper<T:Clone, V:Clone+Eq+Vid>(
             tcx: ty::ctxt,
             vb: &mut ValsAndBindings<V,T>,
             vid: V) -> Node<V, T>
         {
             let vid_u = vid.to_uint();
             let var_val = match vb.vals.find(&vid_u) {
-                Some(&ref var_val) => copy *var_val,
+                Some(&ref var_val) => (*var_val).clone(),
                 None => {
                     tcx.sess.bug(fmt!(
                         "failed lookup of vid `%u`", vid_u));
@@ -69,11 +91,11 @@ impl InferCtxt {
             };
             match var_val {
                 Redirect(vid) => {
-                    let node: Node<V,T> = helper(tcx, vb, copy vid);
+                    let node: Node<V,T> = helper(tcx, vb, vid.clone());
                     if node.root != vid {
                         // Path compression
                         vb.vals.insert(vid.to_uint(),
-                                       Redirect(copy node.root));
+                                       Redirect(node.root.clone()));
                     }
                     node
                 }
@@ -84,10 +106,11 @@ impl InferCtxt {
         }
     }
 
-    pub fn set<T:Copy + InferStr,
-               V:Copy + Vid + ToStr + UnifyVid<T>>(&mut self,
-                                                   vid: V,
-                                                   new_v: VarValue<V, T>) {
+    fn set<T:Clone + InferStr,
+           V:Clone + Vid + ToStr + UnifyVid<T>>(
+           &mut self,
+           vid: V,
+           new_v: VarValue<V, T>) {
         /*!
          *
          * Sets the value for `vid` to `new_v`.  `vid` MUST be a root node!
@@ -97,16 +120,17 @@ impl InferCtxt {
                vid.to_str(), new_v.inf_str(self));
 
         let vb = UnifyVid::appropriate_vals_and_bindings(self);
-        let old_v = copy *vb.vals.get(&vid.to_uint());
-        vb.bindings.push((copy vid, old_v));
+        let old_v = (*vb.vals.get(&vid.to_uint())).clone();
+        vb.bindings.push((vid.clone(), old_v));
         vb.vals.insert(vid.to_uint(), new_v);
     }
 
-    pub fn unify<T:Copy + InferStr,
-                 V:Copy + Vid + ToStr + UnifyVid<T>>(&mut self,
-                                                     node_a: &Node<V, T>,
-                                                     node_b: &Node<V, T>)
-                                                     -> (V, uint) {
+    fn unify<T:Clone + InferStr,
+             V:Clone + Vid + ToStr + UnifyVid<T>>(
+             &mut self,
+             node_a: &Node<V, T>,
+             node_b: &Node<V, T>)
+             -> (V, uint) {
         // Rank optimization: if you don't know what it is, check
         // out <http://en.wikipedia.org/wiki/Disjoint-set_data_structure>
 
@@ -118,18 +142,18 @@ impl InferCtxt {
         if node_a.rank > node_b.rank {
             // a has greater rank, so a should become b's parent,
             // i.e., b should redirect to a.
-            self.set(copy node_b.root, Redirect(copy node_a.root));
-            (copy node_a.root, node_a.rank)
+            self.set(node_b.root.clone(), Redirect(node_a.root.clone()));
+            (node_a.root.clone(), node_a.rank)
         } else if node_a.rank < node_b.rank {
             // b has greater rank, so a should redirect to b.
-            self.set(copy node_a.root, Redirect(copy node_b.root));
-            (copy node_b.root, node_b.rank)
+            self.set(node_a.root.clone(), Redirect(node_b.root.clone()));
+            (node_b.root.clone(), node_b.rank)
         } else {
             // If equal, redirect one to the other and increment the
             // other's rank.
             assert_eq!(node_a.rank, node_b.rank);
-            self.set(copy node_b.root, Redirect(copy node_a.root));
-            (copy node_a.root, node_a.rank + 1)
+            self.set(node_b.root.clone(), Redirect(node_a.root.clone()));
+            (node_a.root.clone(), node_a.rank + 1)
         }
     }
 
@@ -155,14 +179,31 @@ pub fn mk_err<T:SimplyUnifiable>(a_is_expected: bool,
     }
 }
 
-impl InferCtxt {
-    pub fn simple_vars<T:Copy+Eq+InferStr+SimplyUnifiable,
-                       V:Copy+Eq+Vid+ToStr+UnifyVid<Option<T>>>(&mut self,
-                                                                a_is_expected:
-                                                                bool,
-                                                                a_id: V,
-                                                                b_id: V)
-                                                                -> ures {
+pub trait InferCtxtMethods {
+    fn simple_vars<T:Clone + Eq + InferStr + SimplyUnifiable,
+                   V:Clone + Eq + Vid + ToStr + UnifyVid<Option<T>>>(
+                   &mut self,
+                   a_is_expected: bool,
+                   a_id: V,
+                   b_id: V)
+                   -> ures;
+    fn simple_var_t<T:Clone + Eq + InferStr + SimplyUnifiable,
+                    V:Clone + Eq + Vid + ToStr + UnifyVid<Option<T>>>(
+                    &mut self,
+                    a_is_expected: bool,
+                    a_id: V,
+                    b: T)
+                    -> ures;
+}
+
+impl InferCtxtMethods for InferCtxt {
+    fn simple_vars<T:Clone + Eq + InferStr + SimplyUnifiable,
+                   V:Clone + Eq + Vid + ToStr + UnifyVid<Option<T>>>(
+                   &mut self,
+                   a_is_expected: bool,
+                   a_id: V,
+                   b_id: V)
+                   -> ures {
         /*!
          *
          * Unifies two simple variables.  Because simple variables do
@@ -172,20 +213,22 @@ impl InferCtxt {
 
         let node_a = self.get(a_id);
         let node_b = self.get(b_id);
-        let a_id = copy node_a.root;
-        let b_id = copy node_b.root;
+        let a_id = node_a.root.clone();
+        let b_id = node_b.root.clone();
 
         if a_id == b_id { return uok(); }
 
         let combined = match (&node_a.possible_types, &node_b.possible_types)
         {
             (&None, &None) => None,
-            (&Some(ref v), &None) | (&None, &Some(ref v)) => Some(copy *v),
+            (&Some(ref v), &None) | (&None, &Some(ref v)) => {
+                Some((*v).clone())
+            }
             (&Some(ref v1), &Some(ref v2)) => {
                 if *v1 != *v2 {
-                    return mk_err(a_is_expected, copy *v1, copy *v2);
+                    return mk_err(a_is_expected, (*v1).clone(), (*v2).clone())
                 }
-                Some(copy *v1)
+                Some((*v1).clone())
             }
         };
 
@@ -194,13 +237,13 @@ impl InferCtxt {
         return uok();
     }
 
-    pub fn simple_var_t<T:Copy+Eq+InferStr+SimplyUnifiable,
-                        V:Copy+Eq+Vid+ToStr+UnifyVid<Option<T>>>(&mut self,
-                                                                 a_is_expected
-                                                                 : bool,
-                                                                 a_id: V,
-                                                                 b: T)
-                                                                 -> ures {
+    fn simple_var_t<T:Clone + Eq + InferStr + SimplyUnifiable,
+                    V:Clone + Eq + Vid + ToStr + UnifyVid<Option<T>>>(
+                    &mut self,
+                    a_is_expected: bool,
+                    a_id: V,
+                    b: T)
+                    -> ures {
         /*!
          *
          * Sets the value of the variable `a_id` to `b`.  Because
@@ -209,7 +252,7 @@ impl InferCtxt {
          * `b`. */
 
         let node_a = self.get(a_id);
-        let a_id = copy node_a.root;
+        let a_id = node_a.root.clone();
 
         match node_a.possible_types {
             None => {
@@ -221,7 +264,7 @@ impl InferCtxt {
                 if *a_t == b {
                     return uok();
                 } else {
-                    return mk_err(a_is_expected, copy *a_t, b);
+                    return mk_err(a_is_expected, (*a_t).clone(), b);
                 }
             }
         }

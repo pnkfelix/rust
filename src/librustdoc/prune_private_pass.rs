@@ -10,7 +10,6 @@
 
 //! Prune things that are private
 
-use core::prelude::*;
 
 use extract;
 use syntax::ast;
@@ -21,7 +20,7 @@ use fold::Fold;
 use fold;
 use pass::Pass;
 
-use core::util;
+use std::util;
 
 pub fn mk_pass() -> Pass {
     Pass {
@@ -62,11 +61,11 @@ fn fold_impl(
                 match item.node {
                     ast::item_impl(_, None, _, ref methods) => {
                         // Associated impls have complex rules for method visibility
-                        strip_priv_methods(copy doc, *methods, item.vis)
+                        strip_priv_methods(doc.clone(), *methods, item.vis)
                     }
                     ast::item_impl(_, Some(_), _ ,_) => {
                         // Trait impls don't
-                        copy doc
+                        doc.clone()
                     }
                     _ => fail!()
                 }
@@ -81,8 +80,8 @@ fn strip_priv_methods(
     methods: &[@ast::method],
     item_vis: ast::visibility
 ) -> doc::ImplDoc {
-    let methods = do (&doc.methods).filtered |method| {
-        let ast_method = do methods.find |m| {
+    let methods = do doc.methods.iter().filter |method| {
+        let ast_method = do methods.iter().find_ |m| {
             extract::to_str(m.ident) == method.name
         };
         assert!(ast_method.is_some());
@@ -92,7 +91,7 @@ fn strip_priv_methods(
             ast::private => false,
             ast::inherited => item_vis == ast::public
         }
-    };
+    }.transform(|x| (*x).clone()).collect();
 
     doc::ImplDoc {
         methods: methods,
@@ -107,9 +106,9 @@ fn fold_mod(
     let doc = fold::default_any_fold_mod(fold, doc);
 
     doc::ModDoc {
-        items: doc.items.filtered(|ItemTag| {
-            match ItemTag {
-                &doc::ImplTag(ref doc) => {
+        items: doc.items.iter().filter(|item_tag| {
+            match item_tag {
+                & &doc::ImplTag(ref doc) => {
                     if doc.trait_types.is_empty() {
                         // This is an associated impl. We have already pruned the
                         // non-visible methods. If there are any left then
@@ -124,10 +123,10 @@ fn fold_mod(
                     }
                 }
                 _ => {
-                    is_visible(fold.ctxt.clone(), ItemTag.item())
+                    is_visible(fold.ctxt.clone(), item_tag.item())
                 }
             }
-        }),
+        }).transform(|x| (*x).clone()).collect(),
         .. doc
     }
 }
@@ -164,7 +163,7 @@ mod test {
     use prune_private_pass::run;
 
     fn mk_doc(source: ~str) -> doc::Doc {
-        do astsrv::from_str(copy source) |srv| {
+        do astsrv::from_str(source.clone()) |srv| {
             let doc = extract::from_srv(srv.clone(), ~"");
             let doc = tystr_pass::run(srv.clone(), doc);
             run(srv.clone(), doc)

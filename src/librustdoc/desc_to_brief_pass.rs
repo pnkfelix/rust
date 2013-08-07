@@ -15,7 +15,6 @@ If the first paragraph of a long description is short enough then it
 is interpreted as the brief description.
 */
 
-use core::prelude::*;
 
 use astsrv;
 use doc::ItemUtils;
@@ -24,7 +23,7 @@ use fold::Fold;
 use fold;
 use pass::Pass;
 
-use core::util;
+use std::util;
 
 pub fn mk_pass() -> Pass {
     Pass {
@@ -50,7 +49,7 @@ fn fold_item(fold: &fold::Fold<()>, doc: doc::ItemDoc) -> doc::ItemDoc {
     let doc = fold::default_seq_fold_item(fold, doc);
 
     doc::ItemDoc {
-        brief: extract(copy doc.desc),
+        brief: extract(doc.desc.clone()),
         .. doc
     }
 }
@@ -60,8 +59,8 @@ fn fold_trait(fold: &fold::Fold<()>, doc: doc::TraitDoc) -> doc::TraitDoc {
 
     doc::TraitDoc {
         methods: doc.methods.map(|doc| doc::MethodDoc {
-            brief: extract(copy doc.desc),
-            .. copy *doc
+            brief: extract(doc.desc.clone()),
+            .. (*doc).clone()
         }),
         .. doc
     }
@@ -72,8 +71,8 @@ fn fold_impl(fold: &fold::Fold<()>, doc: doc::ImplDoc) -> doc::ImplDoc {
 
     doc::ImplDoc {
         methods: doc.methods.map(|doc| doc::MethodDoc {
-            brief: extract(copy doc.desc),
-            .. copy *doc
+            brief: extract(doc.desc.clone()),
+            .. (*doc).clone()
         }),
         .. doc
     }
@@ -84,15 +83,15 @@ pub fn extract(desc: Option<~str>) -> Option<~str> {
         return None
     }
 
-    parse_desc((copy desc).get())
+    parse_desc(desc.clone().get())
 }
 
 fn parse_desc(desc: ~str) -> Option<~str> {
-    static max_brief_len: uint = 120u;
+    static MAX_BRIEF_LEN: uint = 120u;
 
-    match first_sentence(copy desc) {
+    match first_sentence(desc.clone()) {
       Some(first_sentence) => {
-        if first_sentence.len() <= max_brief_len {
+        if first_sentence.len() <= MAX_BRIEF_LEN {
             Some(first_sentence)
         } else {
             None
@@ -142,7 +141,7 @@ fn first_sentence_(s: &str) -> ~str {
 pub fn paragraphs(s: &str) -> ~[~str] {
     let mut whitespace_lines = 0;
     let mut accum = ~"";
-    let paras = do s.any_line_iter().fold(~[]) |paras, line| {
+    let mut paras = do s.any_line_iter().fold(~[]) |paras, line| {
         let mut res = paras;
 
         if line.is_whitespace() {
@@ -167,16 +166,12 @@ pub fn paragraphs(s: &str) -> ~[~str] {
         res
     };
 
-    if !accum.is_empty() {
-        paras + [accum]
-    } else {
-        paras
-    }
+    if !accum.is_empty() { paras.push(accum); }
+    paras
 }
 
 #[cfg(test)]
 mod test {
-    use core::prelude::*;
 
     use astsrv;
     use attr_pass;
@@ -185,7 +180,7 @@ mod test {
     use extract;
 
     fn mk_doc(source: ~str) -> doc::Doc {
-        do astsrv::from_str(copy source) |srv| {
+        do astsrv::from_str(source.clone()) |srv| {
             let doc = extract::from_srv(srv.clone(), ~"");
             let doc = (attr_pass::mk_pass().f)(srv.clone(), doc);
             run(srv.clone(), doc)
@@ -195,7 +190,8 @@ mod test {
     #[test]
     fn should_promote_desc() {
         let doc = mk_doc(~"#[doc = \"desc\"] mod m { }");
-        assert_eq!(doc.cratemod().mods()[0].brief(), Some(~"desc"));
+        // hidden __std_macros module at the start.
+        assert_eq!(doc.cratemod().mods()[1].brief(), Some(~"desc"));
     }
 
     #[test]
@@ -227,7 +223,7 @@ mod test {
     #[test]
     fn should_promote_short_descs() {
         let desc = Some(~"desc");
-        let brief = extract(copy desc);
+        let brief = extract(desc.clone());
         assert_eq!(brief, desc);
     }
 

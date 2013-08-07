@@ -12,7 +12,7 @@
 
 mod rusti {
     #[abi = "rust-intrinsic"]
-    pub extern "rust-intrinsic" {
+    extern "rust-intrinsic" {
         pub fn pref_align_of<T>() -> uint;
         pub fn min_align_of<T>() -> uint;
     }
@@ -60,7 +60,7 @@ mod m {
     pub fn main() {
         unsafe {
             assert_eq!(::rusti::pref_align_of::<u64>(), 8u);
-            assert_eq!(::rusti::min_align_of::<u64>(), 4u);
+            assert_eq!(::rusti::min_align_of::<u64>(), 8u);
         }
     }
 }

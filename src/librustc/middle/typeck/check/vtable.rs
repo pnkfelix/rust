@@ -8,9 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
 
-use middle::resolve::Impl;
 use middle::ty::param_ty;
 use middle::ty;
 use middle::typeck::check::{FnCtxt, impl_self_ty};
@@ -18,16 +16,15 @@ use middle::typeck::check::{structurally_resolved_type};
 use middle::typeck::infer::fixup_err_to_str;
 use middle::typeck::infer::{resolve_and_force_all_but_regions, resolve_type};
 use middle::typeck::infer;
-use middle::typeck::{CrateCtxt, vtable_origin, vtable_param, vtable_res};
-use middle::typeck::vtable_static;
+use middle::typeck::{CrateCtxt, vtable_origin, vtable_res, vtable_param_res};
+use middle::typeck::{vtable_static, vtable_param, impl_res};
+use middle::typeck::{param_numbered, param_self, param_index};
 use middle::subst::Subst;
 use util::common::indenter;
-use util::ppaux::tys_to_str;
 use util::ppaux;
 
-use core::hashmap::HashSet;
-use core::result;
-use core::uint;
+use std::hashmap::HashSet;
+use std::result;
 use syntax::ast;
 use syntax::ast_util;
 use syntax::codemap::span;
@@ -49,13 +46,23 @@ use syntax::visit;
 // *fully* resolved. (We could be less restrictive than that, but it
 // would require much more care, and this seems to work decently in
 // practice.)
+//
+// While resolution on a single type requires the type to be fully
+// resolved, when resolving a substitution against a list of bounds,
+// we do not require all of the types to be resolved in advance.
+// Furthermore, we process substitutions in reverse order, which
+// allows resolution on later parameters to give information on
+// earlier params referenced by the typeclass bounds.
+// It may be better to do something more clever, like processing fully
+// resolved types first.
+
 
 /// Location info records the span and ID of the expression or item that is
 /// responsible for this vtable instantiation. (This may not be an expression
 /// if the vtable instantiation is being performed as part of "deriving".)
 pub struct LocationInfo {
     span: span,
-    id: ast::node_id
+    id: ast::NodeId
 }
 
 /// A vtable context includes an inference context, a crate context, and a
@@ -66,11 +73,11 @@ pub struct VtableContext {
 }
 
 impl VtableContext {
-    pub fn tcx(&const self) -> ty::ctxt { self.ccx.tcx }
+    pub fn tcx(&self) -> ty::ctxt { self.ccx.tcx }
 }
 
 fn has_trait_bounds(type_param_defs: &[ty::TypeParameterDef]) -> bool {
-    type_param_defs.any(
+    type_param_defs.iter().any(
         |type_param_def| !type_param_def.bounds.trait_bounds.is_empty())
 }
 
@@ -87,40 +94,19 @@ fn lookup_vtables(vcx: &VtableContext,
            substs.repr(vcx.tcx()));
     let _i = indenter();
 
-    let tcx = vcx.tcx();
-    let mut result = ~[];
-    let mut i = 0u;
-    for substs.tps.each |ty| {
-        // ty is the value supplied for the type parameter A...
 
-        for ty::each_bound_trait_and_supertraits(
-            tcx, type_param_defs[i].bounds) |trait_ref|
-        {
-            // ...and here trait_ref is each bound that was declared on A,
-            // expressed in terms of the type parameters.
+    // We do this backwards for reasons discussed above.
+    assert_eq!(substs.tps.len(), type_param_defs.len());
+    let mut result =
+        substs.tps.rev_iter()
+        .zip(type_param_defs.rev_iter())
+        .transform(|(ty, def)|
+                   lookup_vtables_for_param(vcx, location_info, Some(substs),
+                                            &*def.bounds, *ty, is_early))
+        .to_owned_vec();
+    result.reverse();
 
-            debug!("about to subst: %s, %s", trait_ref.repr(tcx), substs.repr(tcx));
-
-            // Substitute the values of the type parameters that may
-            // appear in the bound.
-            let trait_ref = (*trait_ref).subst(tcx, substs);
-
-            debug!("after subst: %s", trait_ref.repr(tcx));
-
-            match lookup_vtable(vcx, location_info, *ty, &trait_ref, is_early) {
-                Some(vtable) => result.push(vtable),
-                None => {
-                    vcx.tcx().sess.span_fatal(
-                        location_info.span,
-                        fmt!("failed to find an implementation of \
-                              trait %s for %s",
-                             vcx.infcx.trait_ref_to_str(&trait_ref),
-                             vcx.infcx.ty_to_str(*ty)));
-                }
-            }
-        }
-        i += 1u;
-    }
+    assert_eq!(substs.tps.len(), result.len());
     debug!("lookup_vtables result(\
             location_info=%?, \
             type_param_defs=%s, \
@@ -133,27 +119,64 @@ fn lookup_vtables(vcx: &VtableContext,
     @result
 }
 
-fn fixup_substs(vcx: &VtableContext, location_info: &LocationInfo,
-                id: ast::def_id, substs: ty::substs,
-                is_early: bool) -> Option<ty::substs> {
+fn lookup_vtables_for_param(vcx: &VtableContext,
+                            location_info: &LocationInfo,
+                            // None for substs means the identity
+                            substs: Option<&ty::substs>,
+                            type_param_bounds: &ty::ParamBounds,
+                            ty: ty::t,
+                            is_early: bool) -> vtable_param_res {
     let tcx = vcx.tcx();
-    // use a dummy type just to package up the substs that need fixing up
-    let t = ty::mk_trait(tcx,
-                         id, substs,
-                         ty::RegionTraitStore(ty::re_static),
-                         ast::m_imm);
-    do fixup_ty(vcx, location_info, t, is_early).map |t_f| {
-        match ty::get(*t_f).sty {
-          ty::ty_trait(_, ref substs_f, _, _) => (/*bad*/copy *substs_f),
-          _ => fail!("t_f should be a trait")
+
+    // ty is the value supplied for the type parameter A...
+    let mut param_result = ~[];
+
+    for ty::each_bound_trait_and_supertraits(
+        tcx, type_param_bounds.trait_bounds) |trait_ref|
+    {
+        // ...and here trait_ref is each bound that was declared on A,
+        // expressed in terms of the type parameters.
+
+        // Substitute the values of the type parameters that may
+        // appear in the bound.
+        let trait_ref = substs.map_default(trait_ref, |substs| {
+            debug!("about to subst: %s, %s",
+                   trait_ref.repr(tcx), substs.repr(tcx));
+            trait_ref.subst(tcx, *substs)
+        });
+
+        debug!("after subst: %s", trait_ref.repr(tcx));
+
+        match lookup_vtable(vcx, location_info, ty, trait_ref, is_early) {
+            Some(vtable) => param_result.push(vtable),
+            None => {
+                vcx.tcx().sess.span_fatal(
+                    location_info.span,
+                    fmt!("failed to find an implementation of \
+                          trait %s for %s",
+                         vcx.infcx.trait_ref_to_str(trait_ref),
+                         vcx.infcx.ty_to_str(ty)));
+            }
         }
     }
+
+    debug!("lookup_vtables_for_param result(\
+            location_info=%?, \
+            type_param_bounds=%s, \
+            ty=%s, \
+            result=%s)",
+           location_info,
+           type_param_bounds.repr(vcx.tcx()),
+           ty.repr(vcx.tcx()),
+           param_result.repr(vcx.tcx()));
+
+    return @param_result;
 }
 
 fn relate_trait_refs(vcx: &VtableContext,
                      location_info: &LocationInfo,
-                     act_trait_ref: &ty::TraitRef,
-                     exp_trait_ref: &ty::TraitRef)
+                     act_trait_ref: @ty::TraitRef,
+                     exp_trait_ref: @ty::TraitRef)
 {
     /*!
      *
@@ -162,15 +185,23 @@ fn relate_trait_refs(vcx: &VtableContext,
      * error otherwise.
      */
 
-    match infer::mk_sub_trait_refs(vcx.infcx, false, location_info.span,
-                                   act_trait_ref, exp_trait_ref)
+    match infer::mk_sub_trait_refs(vcx.infcx,
+                                   false,
+                                   infer::RelateTraitRefs(location_info.span),
+                                   act_trait_ref,
+                                   exp_trait_ref)
     {
         result::Ok(()) => {} // Ok.
         result::Err(ref err) => {
+            // There is an error, but we need to do some work to make
+            // the message good.
+            // Resolve any type vars in the trait refs
             let r_act_trait_ref =
                 vcx.infcx.resolve_type_vars_in_trait_ref_if_possible(act_trait_ref);
             let r_exp_trait_ref =
                 vcx.infcx.resolve_type_vars_in_trait_ref_if_possible(exp_trait_ref);
+            // Only print the message if there aren't any previous type errors
+            // inside the types.
             if !ty::trait_ref_contains_error(&r_act_trait_ref) &&
                 !ty::trait_ref_contains_error(&r_exp_trait_ref)
             {
@@ -186,12 +217,11 @@ fn relate_trait_refs(vcx: &VtableContext,
     }
 }
 
-// Look up the vtable to use when treating an item of type `t` as if it has
-// type `trait_ty`
+// Look up the vtable implementing the trait `trait_ref` at type `t`
 fn lookup_vtable(vcx: &VtableContext,
                  location_info: &LocationInfo,
                  ty: ty::t,
-                 trait_ref: &ty::TraitRef,
+                 trait_ref: @ty::TraitRef,
                  is_early: bool)
     -> Option<vtable_origin>
 {
@@ -210,217 +240,247 @@ fn lookup_vtable(vcx: &VtableContext,
             // The type has unconstrained type variables in it, so we can't
             // do early resolution on it. Return some completely bogus vtable
             // information: we aren't storing it anyways.
-            return Some(vtable_param(0, 0));
+            return Some(vtable_param(param_self, 0));
         }
     };
 
-    match ty::get(ty).sty {
+    // If the type is self or a param, we look at the trait/supertrait
+    // bounds to see if they include the trait we are looking for.
+    let vtable_opt = match ty::get(ty).sty {
         ty::ty_param(param_ty {idx: n, def_id: did}) => {
-            let mut n_bound = 0;
             let type_param_def = tcx.ty_param_defs.get(&did.node);
-            for ty::each_bound_trait_and_supertraits(
-                tcx, type_param_def.bounds) |bound_trait_ref|
-            {
-                debug!("checking bounds trait %s", bound_trait_ref.repr(vcx.tcx()));
-
-                if bound_trait_ref.def_id == trait_ref.def_id {
-                    relate_trait_refs(vcx,
-                                      location_info,
-                                      bound_trait_ref,
-                                      trait_ref);
-                    let vtable = vtable_param(n, n_bound);
-                    debug!("found param vtable: %?",
-                           vtable);
-                    return Some(vtable);
-                }
-
-                n_bound += 1;
-            }
+            lookup_vtable_from_bounds(vcx, location_info,
+                                      type_param_def.bounds.trait_bounds,
+                                      param_numbered(n),
+                                      trait_ref)
         }
 
-        _ => {
-            let mut found = ~[];
-
-            let mut impls_seen = HashSet::new();
-
-            match vcx.ccx.coherence_info.extension_methods.find(&trait_ref.def_id) {
-                None => {
-                    // Nothing found. Continue.
-                }
-                Some(implementations) => {
-                    let len = { // FIXME(#5074): stage0 requires it
-                        let implementations: &mut ~[@Impl] = *implementations;
-                        implementations.len()
-                    };
-
-                    // implementations is the list of all impls in scope for
-                    // trait_ref. (Usually, there's just one.)
-                    for uint::range(0, len) |i| {
-                        let im = implementations[i];
-
-                        // im is one specific impl of trait_ref.
-
-                        // First, ensure we haven't processed this impl yet.
-                        if impls_seen.contains(&im.did) {
-                            loop;
-                        }
-                        impls_seen.insert(im.did);
-
-                        // ty::impl_traits gives us the trait im implements,
-                        // if there is one (there's either zero or one).
-                        //
-                        // If foo implements a trait t, and if t is the
-                        // same trait as trait_ref, we need to
-                        // unify it with trait_ref in order to get all
-                        // the ty vars sorted out.
-                        let r = ty::impl_trait_ref(tcx, im.did);
-                        for r.iter().advance |&of_trait_ref| {
-                            if of_trait_ref.def_id != trait_ref.def_id { loop; }
-
-                            // At this point, we know that of_trait_ref is
-                            // the same trait as trait_ref, but
-                            // possibly applied to different substs.
-                            //
-                            // Next, we check whether the "for" ty in
-                            // the impl is compatible with the type
-                            // that we're casting to a trait. That is,
-                            // if im is:
-                            //
-                            // impl<T> self_ty<T>: some_trait<T> { ... }
-                            //
-                            // we check whether self_ty<T> is the type
-                            // of the thing that we're trying to cast
-                            // to some_trait.  If not, then we try the next
-                            // impl.
-                            //
-                            // FIXME(#5781) this should be mk_eqty not mk_subty
-                            let ty::ty_param_substs_and_ty {
-                                substs: substs,
-                                ty: for_ty
-                            } = impl_self_ty(vcx, location_info, im.did);
-                            match infer::mk_subty(vcx.infcx,
-                                                  false,
-                                                  location_info.span,
-                                                  ty,
-                                                  for_ty) {
-                                result::Err(_) => loop,
-                                result::Ok(()) => ()
-                            }
-
-                            // Now, in the previous example, for_ty is
-                            // bound to the type self_ty, and substs
-                            // is bound to [T].
-                            debug!("The self ty is %s and its substs are %s",
-                                   vcx.infcx.ty_to_str(for_ty),
-                                   tys_to_str(vcx.tcx(), substs.tps));
-
-                            // Next, we unify trait_ref -- the type
-                            // that we want to cast to -- with of_trait_ref
-                            // -- the trait that im implements. At
-                            // this point, we require that they be
-                            // unifiable with each other -- that's
-                            // what relate_trait_refs does.
-                            //
-                            // For example, in the above example,
-                            // of_trait_ref would be some_trait<T>, so we
-                            // would be unifying trait_ref<U> (for some
-                            // value of U) with some_trait<T>. This
-                            // would fail if T and U weren't
-                            // compatible.
-
-                            debug!("(checking vtable) @2 relating trait \
-                                    ty %s to of_trait_ref %s",
-                                   vcx.infcx.trait_ref_to_str(trait_ref),
-                                   vcx.infcx.trait_ref_to_str(of_trait_ref));
-
-                            let of_trait_ref =
-                                (*of_trait_ref).subst(tcx, &substs);
-                            relate_trait_refs(
-                                vcx, location_info,
-                                &of_trait_ref, trait_ref);
-
-                            // Recall that trait_ref -- the trait type
-                            // we're casting to -- is the trait with
-                            // id trait_ref.def_id applied to the substs
-                            // trait_ref.substs. Now we extract out the
-                            // types themselves from trait_ref.substs.
-
-                            // Recall that substs is the impl self
-                            // type's list of substitutions. That is,
-                            // if this is an impl of some trait for
-                            // foo<T, U>, then substs is [T,
-                            // U]. substs might contain type
-                            // variables, so we call fixup_substs to
-                            // resolve them.
-
-                            let substs_f = match fixup_substs(vcx,
-                                                              location_info,
-                                                              trait_ref.def_id,
-                                                              substs,
-                                                              is_early) {
-                                Some(ref substs) => (/*bad*/copy *substs),
-                                None => {
-                                    assert!(is_early);
-                                    // Bail out with a bogus answer
-                                    return Some(vtable_param(0, 0));
-                                }
-                            };
-
-                            debug!("The fixed-up substs are %s - \
-                                    they will be unified with the bounds for \
-                                    the target ty, %s",
-                                   tys_to_str(vcx.tcx(), substs_f.tps),
-                                   vcx.infcx.trait_ref_to_str(trait_ref));
-
-                            // Next, we unify the fixed-up
-                            // substitutions for the impl self ty with
-                            // the substitutions from the trait type
-                            // that we're trying to cast
-                            // to. connect_trait_tps requires these
-                            // lists of types to unify pairwise.
-
-                            let im_generics =
-                                ty::lookup_item_type(tcx, im.did).generics;
-                            connect_trait_tps(vcx,
-                                              location_info,
-                                              &substs_f,
-                                              trait_ref,
-                                              im.did);
-                            let subres = lookup_vtables(
-                                vcx, location_info,
-                                *im_generics.type_param_defs, &substs_f,
-                                is_early);
-
-                            // Finally, we register that we found a
-                            // matching impl, and record the def ID of
-                            // the impl as well as the resolved list
-                            // of type substitutions for the target
-                            // trait.
-                            found.push(
-                                vtable_static(im.did,
-                                              /*bad*/copy substs_f.tps,
-                                              subres));
-                        }
-                    }
-                }
-            }
-
-            match found.len() {
-                0 => { /* fallthrough */ }
-                1 => { return Some(/*bad*/copy found[0]); }
-                _ => {
-                    if !is_early {
-                        vcx.tcx().sess.span_err(
-                            location_info.span,
-                            "multiple applicable methods in scope");
-                    }
-                    return Some(/*bad*/copy found[0]);
-                }
-            }
+        ty::ty_self(trait_id) => {
+            let self_trait_ref = ty::lookup_trait_def(tcx, trait_id).trait_ref;
+            lookup_vtable_from_bounds(vcx, location_info,
+                                      &[self_trait_ref],
+                                      param_self,
+                                      trait_ref)
         }
+
+        // Default case just falls through
+        _ => None
+    };
+
+    if vtable_opt.is_some() { return vtable_opt; }
+
+    // If we aren't a self type or param, or it was, but we didn't find it,
+    // do a search.
+    return search_for_vtable(vcx, location_info,
+                             ty, trait_ref, is_early)
+}
+
+// Given a list of bounds on a type, search those bounds to see if any
+// of them are the vtable we are looking for.
+fn lookup_vtable_from_bounds(vcx: &VtableContext,
+                             location_info: &LocationInfo,
+                             bounds: &[@ty::TraitRef],
+                             param: param_index,
+                             trait_ref: @ty::TraitRef)
+    -> Option<vtable_origin> {
+    let tcx = vcx.tcx();
+
+    let mut n_bound = 0;
+    for ty::each_bound_trait_and_supertraits(tcx, bounds) |bound_trait_ref| {
+        debug!("checking bounds trait %s",
+               bound_trait_ref.repr(vcx.tcx()));
+
+        if bound_trait_ref.def_id == trait_ref.def_id {
+            relate_trait_refs(vcx,
+                              location_info,
+                              bound_trait_ref,
+                              trait_ref);
+            let vtable = vtable_param(param, n_bound);
+            debug!("found param vtable: %?",
+                   vtable);
+            return Some(vtable);
+        }
+
+        n_bound += 1;
     }
 
     return None;
+}
+
+fn search_for_vtable(vcx: &VtableContext,
+                     location_info: &LocationInfo,
+                     ty: ty::t,
+                     trait_ref: @ty::TraitRef,
+                     is_early: bool)
+    -> Option<vtable_origin>
+{
+    let tcx = vcx.tcx();
+
+    let mut found = ~[];
+    let mut impls_seen = HashSet::new();
+
+    // XXX: this is a bad way to do this, since we do
+    // pointless allocations.
+    let impls = tcx.trait_impls.find(&trait_ref.def_id)
+        .map_default(@mut ~[], |x| **x);
+    // impls is the list of all impls in scope for trait_ref.
+    foreach im in impls.iter() {
+        // im is one specific impl of trait_ref.
+
+        // First, ensure we haven't processed this impl yet.
+        if impls_seen.contains(&im.did) {
+            loop;
+        }
+        impls_seen.insert(im.did);
+
+        // ty::impl_traits gives us the trait im implements.
+        //
+        // If foo implements a trait t, and if t is the same trait as
+        // trait_ref, we need to unify it with trait_ref in order to
+        // get all the ty vars sorted out.
+        let r = ty::impl_trait_ref(tcx, im.did);
+        let of_trait_ref = r.expect("trait_ref missing on trait impl");
+        if of_trait_ref.def_id != trait_ref.def_id { loop; }
+
+        // At this point, we know that of_trait_ref is the same trait
+        // as trait_ref, but possibly applied to different substs.
+        //
+        // Next, we check whether the "for" ty in the impl is
+        // compatible with the type that we're casting to a
+        // trait. That is, if im is:
+        //
+        // impl<T> some_trait<T> for self_ty<T> { ... }
+        //
+        // we check whether self_ty<T> is the type of the thing that
+        // we're trying to cast to some_trait.  If not, then we try
+        // the next impl.
+        //
+        // XXX: document a bit more what this means
+        //
+        // FIXME(#5781) this should be mk_eqty not mk_subty
+        let ty::ty_param_substs_and_ty {
+            substs: substs,
+            ty: for_ty
+        } = impl_self_ty(vcx, location_info, im.did);
+        match infer::mk_subty(vcx.infcx,
+                              false,
+                              infer::RelateSelfType(
+                                  location_info.span),
+                              ty,
+                              for_ty) {
+            result::Err(_) => loop,
+            result::Ok(()) => ()
+        }
+
+        // Now, in the previous example, for_ty is bound to
+        // the type self_ty, and substs is bound to [T].
+        debug!("The self ty is %s and its substs are %s",
+               vcx.infcx.ty_to_str(for_ty),
+               vcx.infcx.tys_to_str(substs.tps));
+
+        // Next, we unify trait_ref -- the type that we want to cast
+        // to -- with of_trait_ref -- the trait that im implements. At
+        // this point, we require that they be unifiable with each
+        // other -- that's what relate_trait_refs does.
+        //
+        // For example, in the above example, of_trait_ref would be
+        // some_trait<T>, so we would be unifying trait_ref<U> (for
+        // some value of U) with some_trait<T>. This would fail if T
+        // and U weren't compatible.
+
+        debug!("(checking vtable) @2 relating trait \
+                ty %s to of_trait_ref %s",
+               vcx.infcx.trait_ref_to_str(trait_ref),
+               vcx.infcx.trait_ref_to_str(of_trait_ref));
+
+        let of_trait_ref = of_trait_ref.subst(tcx, &substs);
+        relate_trait_refs(vcx, location_info, of_trait_ref, trait_ref);
+
+
+        // Recall that trait_ref -- the trait type we're casting to --
+        // is the trait with id trait_ref.def_id applied to the substs
+        // trait_ref.substs.
+
+        // Resolve any sub bounds. Note that there still may be free
+        // type variables in substs. This might still be OK: the
+        // process of looking up bounds might constrain some of them.
+        let im_generics =
+            ty::lookup_item_type(tcx, im.did).generics;
+        let subres = lookup_vtables(vcx, location_info,
+                                    *im_generics.type_param_defs, &substs,
+                                    is_early);
+
+
+        // substs might contain type variables, so we call
+        // fixup_substs to resolve them.
+        let substs_f = match fixup_substs(vcx,
+                                          location_info,
+                                          trait_ref.def_id,
+                                          substs,
+                                          is_early) {
+            Some(ref substs) => (*substs).clone(),
+            None => {
+                assert!(is_early);
+                // Bail out with a bogus answer
+                return Some(vtable_param(param_self, 0));
+            }
+        };
+
+        debug!("The fixed-up substs are %s - \
+                they will be unified with the bounds for \
+                the target ty, %s",
+               vcx.infcx.tys_to_str(substs_f.tps),
+               vcx.infcx.trait_ref_to_str(trait_ref));
+
+        // Next, we unify the fixed-up substitutions for the impl self
+        // ty with the substitutions from the trait type that we're
+        // trying to cast to. connect_trait_tps requires these lists
+        // of types to unify pairwise.
+        // I am a little confused about this, since it seems to be
+        // very similar to the relate_trait_refs we already do,
+        // but problems crop up if it is removed, so... -sully
+        connect_trait_tps(vcx, location_info, &substs_f, trait_ref, im.did);
+
+        // Finally, we register that we found a matching impl, and
+        // record the def ID of the impl as well as the resolved list
+        // of type substitutions for the target trait.
+        found.push(vtable_static(im.did, substs_f.tps.clone(), subres));
+    }
+
+    match found.len() {
+        0 => { return None }
+        1 => return Some(found[0].clone()),
+        _ => {
+            if !is_early {
+                vcx.tcx().sess.span_err(
+                    location_info.span,
+                    "multiple applicable methods in scope");
+            }
+            return Some(found[0].clone());
+        }
+    }
+}
+
+
+fn fixup_substs(vcx: &VtableContext,
+                location_info: &LocationInfo,
+                id: ast::def_id,
+                substs: ty::substs,
+                is_early: bool)
+                -> Option<ty::substs> {
+    let tcx = vcx.tcx();
+    // use a dummy type just to package up the substs that need fixing up
+    let t = ty::mk_trait(tcx,
+                         id, substs,
+                         ty::RegionTraitStore(ty::re_static),
+                         ast::m_imm,
+                         ty::EmptyBuiltinBounds());
+    do fixup_ty(vcx, location_info, t, is_early).map |t_f| {
+        match ty::get(*t_f).sty {
+          ty::ty_trait(_, ref substs_f, _, _, _) => (*substs_f).clone(),
+          _ => fail!("t_f should be a trait")
+        }
+    }
 }
 
 fn fixup_ty(vcx: &VtableContext,
@@ -446,7 +506,7 @@ fn fixup_ty(vcx: &VtableContext,
 fn connect_trait_tps(vcx: &VtableContext,
                      location_info: &LocationInfo,
                      impl_substs: &ty::substs,
-                     trait_ref: &ty::TraitRef,
+                     trait_ref: @ty::TraitRef,
                      impl_did: ast::def_id)
 {
     let tcx = vcx.tcx();
@@ -457,12 +517,12 @@ fn connect_trait_tps(vcx: &VtableContext,
                                   "connect_trait_tps invoked on a type impl")
     };
 
-    let impl_trait_ref = (*impl_trait_ref).subst(tcx, impl_substs);
-    relate_trait_refs(vcx, location_info, &impl_trait_ref, trait_ref);
+    let impl_trait_ref = impl_trait_ref.subst(tcx, impl_substs);
+    relate_trait_refs(vcx, location_info, impl_trait_ref, trait_ref);
 }
 
 fn insert_vtables(fcx: @mut FnCtxt,
-                  callee_id: ast::node_id,
+                  callee_id: ast::NodeId,
                   vtables: vtable_res) {
     debug!("insert_vtables(callee_id=%d, vtables=%?)",
            callee_id, vtables.repr(fcx.tcx()));
@@ -473,6 +533,12 @@ pub fn location_info_for_expr(expr: @ast::expr) -> LocationInfo {
     LocationInfo {
         span: expr.span,
         id: expr.id
+    }
+}
+pub fn location_info_for_item(item: @ast::item) -> LocationInfo {
+    LocationInfo {
+        span: item.span,
+        id: item.id
     }
 }
 
@@ -539,7 +605,9 @@ pub fn early_resolve_expr(ex: @ast::expr,
           debug!("vtable resolution on expr %s", ex.repr(fcx.tcx()));
           let target_ty = fcx.expr_ty(ex);
           match ty::get(target_ty).sty {
-              ty::ty_trait(target_def_id, ref target_substs, store, target_mutbl) => {
+              // Bounds of type's contents are not checked here, but in kind.rs.
+              ty::ty_trait(target_def_id, ref target_substs, store,
+                           target_mutbl, _bounds) => {
                   fn mutability_allowed(a_mutbl: ast::mutability,
                                         b_mutbl: ast::mutability) -> bool {
                       a_mutbl == b_mutbl ||
@@ -569,11 +637,11 @@ pub fn early_resolve_expr(ex: @ast::expr,
                               ccx: fcx.ccx,
                               infcx: fcx.infcx()
                           };
-                          let target_trait_ref = ty::TraitRef {
+                          let target_trait_ref = @ty::TraitRef {
                               def_id: target_def_id,
                               substs: ty::substs {
-                                  tps: copy target_substs.tps,
-                                  self_r: target_substs.self_r,
+                                  tps: target_substs.tps.clone(),
+                                  regions: target_substs.regions.clone(),
                                   self_ty: Some(mt.ty)
                               }
                           };
@@ -581,7 +649,7 @@ pub fn early_resolve_expr(ex: @ast::expr,
                               lookup_vtable(&vcx,
                                             location_info,
                                             mt.ty,
-                                            &target_trait_ref,
+                                            target_trait_ref,
                                             is_early);
                           match vtable_opt {
                               Some(vtable) => {
@@ -589,7 +657,8 @@ pub fn early_resolve_expr(ex: @ast::expr,
                                   // vtable (that is: "ex has vtable
                                   // <vtable>")
                                   if !is_early {
-                                      insert_vtables(fcx, ex.id, @~[vtable]);
+                                      insert_vtables(fcx, ex.id,
+                                                     @~[@~[vtable]]);
                                   }
                               }
                               None => {
@@ -609,7 +678,8 @@ pub fn early_resolve_expr(ex: @ast::expr,
                                ty::RegionTraitStore(rb)) => {
                                   infer::mk_subr(fcx.infcx(),
                                                  false,
-                                                 ex.span,
+                                                 infer::RelateObjectBound(
+                                                     ex.span),
                                                  rb,
                                                  ra);
                               }
@@ -656,9 +726,53 @@ fn resolve_expr(ex: @ast::expr,
     visit::visit_expr(ex, (fcx, v));
 }
 
+pub fn resolve_impl(ccx: @mut CrateCtxt, impl_item: @ast::item) {
+    let def_id = ast_util::local_def(impl_item.id);
+    match ty::impl_trait_ref(ccx.tcx, def_id) {
+        None => {},
+        Some(trait_ref) => {
+            let infcx = infer::new_infer_ctxt(ccx.tcx);
+            let vcx = VtableContext { ccx: ccx, infcx: infcx };
+            let loc_info = location_info_for_item(impl_item);
+
+            // First, check that the impl implements any trait bounds
+            // on the trait.
+            let trait_def = ty::lookup_trait_def(ccx.tcx, trait_ref.def_id);
+            let vtbls = lookup_vtables(&vcx,
+                                       &loc_info,
+                                       *trait_def.generics.type_param_defs,
+                                       &trait_ref.substs,
+                                       false);
+
+            // Now, locate the vtable for the impl itself. The real
+            // purpose of this is to check for supertrait impls,
+            // but that falls out of doing this.
+            let param_bounds = ty::ParamBounds {
+                builtin_bounds: ty::EmptyBuiltinBounds(),
+                trait_bounds: ~[trait_ref]
+            };
+            let t = ty::node_id_to_type(ccx.tcx, impl_item.id);
+            debug!("=== Doing a self lookup now.");
+            // Right now, we don't have any place to store this.
+            // We will need to make one so we can use this information
+            // for compiling default methods that refer to supertraits.
+            let self_vtable_res =
+                lookup_vtables_for_param(&vcx, &loc_info, None,
+                                         &param_bounds, t, false);
+
+
+            let res = impl_res {
+                trait_vtables: vtbls,
+                self_vtables: self_vtable_res
+            };
+            ccx.tcx.impl_vtables.insert(def_id, res);
+        }
+    }
+}
+
 // Detect points where a trait-bounded type parameter is
 // instantiated, resolve the impls for the parameters.
-pub fn resolve_in_block(fcx: @mut FnCtxt, bl: &ast::blk) {
+pub fn resolve_in_block(fcx: @mut FnCtxt, bl: &ast::Block) {
     visit::visit_block(bl, (fcx, visit::mk_vt(@visit::Visitor {
         visit_expr: resolve_expr,
         visit_item: |_,_| {},

@@ -57,14 +57,14 @@ For more complicated uses (e.g. if one needs to pause iteration and
 resume it later), a `FileInput` instance can be constructed via the
 `from_vec`, `from_vec_raw` and `from_args` functions.
 
-Once created, the `each_line` (from the `core::io::ReaderUtil` trait)
+Once created, the `each_line` (from the `std::io::ReaderUtil` trait)
 and `each_line_state` methods allow one to iterate on the lines; the
 latter provides more information about the position within the
 iteration to the caller.
 
 It is possible (and safe) to skip lines and files using the
 `read_line` and `next_file` methods. Also, `FileInput` implements
-`core::io::Reader`, and the state will be updated correctly while
+`std::io::Reader`, and the state will be updated correctly while
 using any of those methods.
 
 E.g. the following program reads until an empty line, pauses for user
@@ -72,10 +72,10 @@ input, skips the current file and then numbers the remaining lines
 (where the numbers are from the start of each file, rather than the
 total line count).
 
-    let in = FileInput::from_vec(pathify([~"a.txt", ~"b.txt", ~"c.txt"],
+    let input = FileInput::from_vec(pathify([~"a.txt", ~"b.txt", ~"c.txt"],
                                              true));
 
-    for in.each_line |line| {
+    for input.each_line |line| {
         if line.is_empty() {
             break
         }
@@ -85,9 +85,9 @@ total line count).
     io::println("Continue?");
 
     if io::stdin().read_line() == ~"yes" {
-        in.next_file(); // skip!
+        input.next_file(); // skip!
 
-        for in.each_line_state |line, state| {
+        for input.each_line_state |line, state| {
            io::println(fmt!("%u: %s", state.line_num_file,
                                       line))
         }
@@ -96,12 +96,10 @@ total line count).
 
 #[allow(missing_doc)];
 
-use core::prelude::*;
 
-use core::io::ReaderUtil;
-use core::io;
-use core::os;
-use core::vec;
+use std::io::ReaderUtil;
+use std::io;
+use std::os;
 
 /**
 A summary of the internal state of a `FileInput` object. `line_num`
@@ -109,6 +107,7 @@ and `line_num_file` represent the number of lines read in total and in
 the current file respectively. `current_path` is `None` if the current
 file is `stdin`.
 */
+#[deriving(Clone)]
 pub struct FileInputState {
     current_path: Option<Path>,
     line_num: uint,
@@ -225,7 +224,7 @@ impl FileInput {
         let path_option = self.fi.files.shift();
         let file = match path_option {
             None => io::stdin(),
-            Some(ref path) => io::file_reader(path).get()
+            Some(ref path) => io::file_reader(path).unwrap()
         };
 
         self.fi.current_reader = Some(file);
@@ -261,7 +260,7 @@ impl FileInput {
     */
     pub fn each_line_state(&self,
                             f: &fn(&str, FileInputState) -> bool) -> bool {
-         self.each_line(|line| f(line, copy self.fi.state))
+         self.each_line(|line| f(line, self.fi.state.clone()))
     }
 
 
@@ -269,7 +268,7 @@ impl FileInput {
     Retrieve the current `FileInputState` information.
     */
     pub fn state(&self) -> FileInputState {
-        copy self.fi.state
+        self.fi.state.clone()
     }
 }
 
@@ -354,13 +353,13 @@ a literal `-`.
 */
 // XXX: stupid, unclear name
 pub fn pathify(vec: &[~str], stdin_hyphen : bool) -> ~[Option<Path>] {
-    vec::map(vec, |&str : & ~str| {
-        if stdin_hyphen && str == ~"-" {
+    vec.iter().transform(|str| {
+        if stdin_hyphen && "-" == *str {
             None
         } else {
-            Some(Path(str))
+            Some(Path(*str))
         }
-    })
+    }).collect()
 }
 
 /**
@@ -410,19 +409,18 @@ pub fn input_vec_state(files: ~[Option<Path>],
 
 #[cfg(test)]
 mod test {
-    use core::prelude::*;
 
     use super::{FileInput, pathify, input_vec, input_vec_state};
 
-    use core::io;
-    use core::uint;
-    use core::vec;
+    use std::io;
+    use std::uint;
+    use std::vec;
 
     fn make_file(path : &Path, contents: &[~str]) {
-        let file = io::file_writer(path, [io::Create, io::Truncate]).get();
+        let file = io::file_writer(path, [io::Create, io::Truncate]).unwrap();
 
-        for contents.each |&str| {
-            file.write_str(str);
+        foreach str in contents.iter() {
+            file.write_str(*str);
             file.write_char('\n');
         }
     }
@@ -434,7 +432,7 @@ mod test {
         let paths = ~[Some(Path("some/path")),
                       Some(Path("some/other/path"))];
 
-        assert_eq!(pathify(strs, true), copy paths);
+        assert_eq!(pathify(strs, true), paths.clone());
         assert_eq!(pathify(strs, false), paths);
 
         assert_eq!(pathify([~"-"], true), ~[None]);
@@ -448,13 +446,13 @@ mod test {
             |i| fmt!("tmp/lib-fileinput-test-fileinput-read-byte-%u.tmp", i)), true);
 
         // 3 files containing 0\n, 1\n, and 2\n respectively
-        for filenames.eachi |i, &filename| {
+        foreach (i, filename) in filenames.iter().enumerate() {
             make_file(filename.get_ref(), [fmt!("%u", i)]);
         }
 
-        let fi = FileInput::from_vec(copy filenames);
+        let fi = FileInput::from_vec(filenames.clone());
 
-        for "012".iter().enumerate().advance |(line, c)| {
+        foreach (line, c) in "012".iter().enumerate() {
             assert_eq!(fi.read_byte(), c as int);
             assert_eq!(fi.state().line_num, line);
             assert_eq!(fi.state().line_num_file, 0);
@@ -462,7 +460,7 @@ mod test {
             assert_eq!(fi.state().line_num, line + 1);
             assert_eq!(fi.state().line_num_file, 1);
 
-            assert_eq!(copy fi.state().current_path, copy filenames[line]);
+            assert_eq!(fi.state().current_path.clone(), filenames[line].clone());
         }
 
         assert_eq!(fi.read_byte(), -1);
@@ -478,7 +476,7 @@ mod test {
             |i| fmt!("tmp/lib-fileinput-test-fileinput-read-%u.tmp", i)), true);
 
         // 3 files containing 1\n, 2\n, and 3\n respectively
-        for filenames.eachi |i, &filename| {
+        foreach (i, filename) in filenames.iter().enumerate() {
             make_file(filename.get_ref(), [fmt!("%u", i)]);
         }
 
@@ -498,10 +496,11 @@ mod test {
             3,
             |i| fmt!("tmp/lib-fileinput-test-input-vec-%u.tmp", i)), true);
 
-        for filenames.eachi |i, &filename| {
+        foreach (i, filename) in filenames.iter().enumerate() {
             let contents =
                 vec::from_fn(3, |j| fmt!("%u %u", i, j));
             make_file(filename.get_ref(), contents);
+            debug!("contents=%?", contents);
             all_lines.push_all(contents);
         }
 
@@ -518,7 +517,7 @@ mod test {
             3,
             |i| fmt!("tmp/lib-fileinput-test-input-vec-state-%u.tmp", i)),true);
 
-        for filenames.eachi |i, &filename| {
+        foreach (i, filename) in filenames.iter().enumerate() {
             let contents =
                 vec::from_fn(3, |j| fmt!("%u %u", i, j + 1));
             make_file(filename.get_ref(), contents);
@@ -544,13 +543,13 @@ mod test {
         make_file(filenames[2].get_ref(), [~"3", ~"4"]);
 
         let mut count = 0;
-        for input_vec_state(copy filenames) |line, state| {
+        for input_vec_state(filenames.clone()) |line, state| {
             let expected_path = match line {
-                "1" | "2" => copy filenames[0],
-                "3" | "4" => copy filenames[2],
+                "1" | "2" => filenames[0].clone(),
+                "3" | "4" => filenames[2].clone(),
                 _ => fail!("unexpected line")
             };
-            assert_eq!(copy state.current_path, expected_path);
+            assert_eq!(state.current_path.clone(), expected_path);
             count += 1;
         }
         assert_eq!(count, 4);
@@ -563,9 +562,11 @@ mod test {
         let f2 =
             Some(Path("tmp/lib-fileinput-test-no-trailing-newline-2.tmp"));
 
-        let wr = io::file_writer(f1.get_ref(), [io::Create, io::Truncate]).get();
+        let wr = io::file_writer(f1.get_ref(),
+                                 [io::Create, io::Truncate]).unwrap();
         wr.write_str("1\n2");
-        let wr = io::file_writer(f2.get_ref(), [io::Create, io::Truncate]).get();
+        let wr = io::file_writer(f2.get_ref(),
+                                 [io::Create, io::Truncate]).unwrap();
         wr.write_str("3\n4");
 
         let mut lines = ~[];
@@ -582,35 +583,35 @@ mod test {
             3,
             |i| fmt!("tmp/lib-fileinput-test-next-file-%u.tmp", i)),true);
 
-        for filenames.eachi |i, &filename| {
+        foreach (i, filename) in filenames.iter().enumerate() {
             let contents =
                 vec::from_fn(3, |j| fmt!("%u %u", i, j + 1));
-            make_file(&filename.get(), contents);
+            make_file(filename.get_ref(), contents);
         }
 
-        let in = FileInput::from_vec(filenames);
+        let input = FileInput::from_vec(filenames);
 
         // read once from 0
-        assert_eq!(in.read_line(), ~"0 1");
-        in.next_file(); // skip the rest of 1
+        assert_eq!(input.read_line(), ~"0 1");
+        input.next_file(); // skip the rest of 1
 
         // read all lines from 1 (but don't read any from 2),
-        for uint::range(1, 4) |i| {
-            assert_eq!(in.read_line(), fmt!("1 %u", i));
+        foreach i in range(1u, 4) {
+            assert_eq!(input.read_line(), fmt!("1 %u", i));
         }
         // 1 is finished, but 2 hasn't been started yet, so this will
         // just "skip" to the beginning of 2 (Python's fileinput does
         // the same)
-        in.next_file();
+        input.next_file();
 
-        assert_eq!(in.read_line(), ~"2 1");
+        assert_eq!(input.read_line(), ~"2 1");
     }
 
     #[test]
     #[should_fail]
     fn test_input_vec_missing_file() {
         for input_vec(pathify([~"this/file/doesnt/exist"], true)) |line| {
-            io::println(line);
+            println(line);
         }
     }
 }

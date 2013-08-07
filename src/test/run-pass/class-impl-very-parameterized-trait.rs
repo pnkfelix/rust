@@ -11,9 +11,7 @@
 // xfail-fast
 
 use std::cmp;
-use std::container::{Container, Mutable, Map};
 use std::int;
-use std::old_iter::BaseIter;
 use std::uint;
 
 enum cat_type { tuxedo, tabby, tortoiseshell }
@@ -62,33 +60,7 @@ impl<T> Mutable for cat<T> {
 }
 
 impl<T> Map<int, T> for cat<T> {
-    fn each<'a>(&'a self, f: &fn(&int, &'a T) -> bool) -> bool {
-        let mut n = int::abs(self.meows);
-        while n > 0 {
-            if !f(&n, &self.name) { return false; }
-            n -= 1;
-        }
-        return true;
-    }
-
     fn contains_key(&self, k: &int) -> bool { *k <= self.meows }
-
-    fn each_key(&self, f: &fn(v: &int) -> bool) -> bool {
-        self.each(|k, _| f(k))
-    }
-
-    fn each_value<'a>(&'a self, f: &fn(v: &'a T) -> bool) -> bool {
-        self.each(|_, v| f(v))
-    }
-
-    fn mutate_values(&mut self, _f: &fn(&int, &mut T) -> bool) -> bool {
-        fail!("nope")
-    }
-
-    fn insert(&mut self, k: int, _: T) -> bool {
-        self.meows += k;
-        true
-    }
 
     fn find<'a>(&'a self, k: &int) -> Option<&'a T> {
         if *k <= self.meows {
@@ -96,6 +68,13 @@ impl<T> Map<int, T> for cat<T> {
         } else {
             None
         }
+    }
+}
+
+impl<T> MutableMap<int, T> for cat<T> {
+    fn insert(&mut self, k: int, _: T) -> bool {
+        self.meows += k;
+        true
     }
 
     fn find_mut<'a>(&'a mut self, _k: &int) -> Option<&'a mut T> { fail!() }
@@ -138,11 +117,11 @@ impl<T> cat<T> {
 
 pub fn main() {
     let mut nyan: cat<~str> = cat::new(0, 2, ~"nyan");
-    for uint::range(1, 5) |_| { nyan.speak(); }
+    foreach _ in range(1u, 5) { nyan.speak(); }
     assert!(*nyan.find(&1).unwrap() == ~"nyan");
     assert_eq!(nyan.find(&10), None);
     let mut spotty: cat<cat_type> = cat::new(2, 57, tuxedo);
-    for uint::range(0, 6) |_| { spotty.speak(); }
+    foreach _ in range(0u, 6) { spotty.speak(); }
     assert_eq!(spotty.len(), 8);
     assert!((spotty.contains_key(&2)));
     assert_eq!(spotty.get(&3), &tuxedo);

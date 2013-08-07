@@ -162,8 +162,6 @@ StaticEnum(<ast::enum_def of C>, ~[(<ident of C0>, Left(1)),
 
 */
 
-use core::prelude::*;
-
 use ast;
 use ast::{enum_def, expr, ident, Generics, struct_def};
 
@@ -172,8 +170,7 @@ use ext::build::AstBuilder;
 use codemap::{span,respan};
 use opt_vec;
 
-use core::uint;
-use core::vec;
+use std::vec;
 
 pub use self::ty::*;
 mod ty;
@@ -195,7 +192,7 @@ pub struct TraitDef<'self> {
 pub struct MethodDef<'self> {
     /// name of the method
     name: &'self str,
-    /// List of generics, e.g. `R: core::rand::Rng`
+    /// List of generics, e.g. `R: std::rand::Rng`
     generics: LifetimeBounds<'self>,
 
     /// Whether there is a self argument (outer Option) i.e. whether
@@ -283,10 +280,10 @@ pub type EnumNonMatchFunc<'self> =
 impl<'self> TraitDef<'self> {
     pub fn expand(&self, cx: @ExtCtxt,
                   span: span,
-                  _mitem: @ast::meta_item,
+                  _mitem: @ast::MetaItem,
                   in_items: ~[@ast::item]) -> ~[@ast::item] {
         let mut result = ~[];
-        for in_items.each |item| {
+        foreach item in in_items.iter() {
             result.push(*item);
             match item.node {
                 ast::item_struct(struct_def, ref generics) => {
@@ -324,11 +321,11 @@ impl<'self> TraitDef<'self> {
 
         let mut trait_generics = self.generics.to_generics(cx, span, type_ident, generics);
         // Copy the lifetimes
-        for generics.lifetimes.each |l| {
-            trait_generics.lifetimes.push(copy *l)
+        foreach l in generics.lifetimes.iter() {
+            trait_generics.lifetimes.push(*l)
         };
         // Create the type parameters.
-        for generics.ty_params.each |ty_param| {
+        foreach ty_param in generics.ty_params.iter() {
             // I don't think this can be moved out of the loop, since
             // a TyParamBound requires an ast id
             let mut bounds = opt_vec::from(
@@ -337,9 +334,9 @@ impl<'self> TraitDef<'self> {
                     cx.typarambound(p.to_path(cx, span, type_ident, generics))
                 });
             // require the current trait
-            bounds.push(cx.typarambound(trait_path));
+            bounds.push(cx.typarambound(trait_path.clone()));
 
-            trait_generics.ty_params.push(cx.typaram(ty_param.ident, @bounds));
+            trait_generics.ty_params.push(cx.typaram(ty_param.ident, bounds));
         }
 
         // Create the reference to the trait.
@@ -353,17 +350,18 @@ impl<'self> TraitDef<'self> {
         let self_lifetime = if generics.lifetimes.is_empty() {
             None
         } else {
-            Some(@*generics.lifetimes.get(0))
+            Some(*generics.lifetimes.get(0))
         };
 
         // Create the type of `self`.
         let self_type = cx.ty_path(cx.path_all(span, false, ~[ type_ident ], self_lifetime,
-                                               opt_vec::take_vec(self_ty_params)));
+                                               opt_vec::take_vec(self_ty_params)), None);
 
         let doc_attr = cx.attribute(
             span,
             cx.meta_name_value(span,
-                               @"doc", ast::lit_str(@"Automatically derived.")));
+                               @"doc",
+                               ast::lit_str(@"Automatically derived.")));
         cx.item(
             span,
             ::parse::token::special_idents::clownshoes_extensions,
@@ -458,7 +456,7 @@ impl<'self> MethodDef<'self> {
     }
 
     fn get_ret_ty(&self, cx: @ExtCtxt, span: span,
-                     generics: &Generics, type_ident: ident) -> @ast::Ty {
+                     generics: &Generics, type_ident: ident) -> ast::Ty {
         self.ret_ty.to_ty(cx, span, type_ident, generics)
     }
 
@@ -468,7 +466,7 @@ impl<'self> MethodDef<'self> {
 
     fn split_self_nonself_args(&self, cx: @ExtCtxt, span: span,
                              type_ident: ident, generics: &Generics)
-        -> (ast::explicit_self, ~[@expr], ~[@expr], ~[(ident, @ast::Ty)]) {
+        -> (ast::explicit_self, ~[@expr], ~[@expr], ~[(ident, ast::Ty)]) {
 
         let mut self_args = ~[];
         let mut nonself_args = ~[];
@@ -487,7 +485,7 @@ impl<'self> MethodDef<'self> {
             None => respan(span, ast::sty_static),
         };
 
-        for self.args.eachi |i, ty| {
+        foreach (i, ty) in self.args.iter().enumerate() {
             let ast_ty = ty.to_ty(cx, span, type_ident, generics);
             let ident = cx.ident_of(fmt!("__arg_%u", i));
             arg_tys.push((ident, ast_ty));
@@ -516,13 +514,13 @@ impl<'self> MethodDef<'self> {
                      type_ident: ident,
                      generics: &Generics,
                      explicit_self: ast::explicit_self,
-                     arg_types: ~[(ident, @ast::Ty)],
+                     arg_types: ~[(ident, ast::Ty)],
                      body: @expr) -> @ast::method {
         // create the generics that aren't for Self
         let fn_generics = self.generics.to_generics(cx, span, type_ident, generics);
 
-        let args = do arg_types.map |&(id, ty)| {
-            cx.arg(span, id, ty)
+        let args = do arg_types.map |pair| {
+            cx.arg(span, pair.first(), pair.second())
         };
 
         let ret_type = self.get_ret_ty(cx, span, generics, type_ident);
@@ -581,25 +579,25 @@ impl<'self> MethodDef<'self> {
         let mut raw_fields = ~[]; // ~[[fields of self],
                                  // [fields of next Self arg], [etc]]
         let mut patterns = ~[];
-        for uint::range(0, self_args.len()) |i| {
+        foreach i in range(0u, self_args.len()) {
             let (pat, ident_expr) = create_struct_pattern(cx, span,
                                                           type_ident, struct_def,
                                                           fmt!("__self_%u", i), ast::m_imm);
             patterns.push(pat);
             raw_fields.push(ident_expr);
-        };
+        }
 
         // transpose raw_fields
         let fields = match raw_fields {
-            [self_arg, .. rest] => {
-                do self_arg.mapi |i, &(opt_id, field)| {
+            [ref self_arg, .. rest] => {
+                do self_arg.iter().enumerate().transform |(i, &(opt_id, field))| {
                     let other_fields = do rest.map |l| {
                         match &l[i] {
                             &(_, ex) => ex
                         }
                     };
                     (opt_id, field, other_fields)
-                }
+                }.collect()
             }
             [] => { cx.span_bug(span, "No self arguments to non-static \
                                        method in generic `deriving`") }
@@ -616,7 +614,7 @@ impl<'self> MethodDef<'self> {
         // make a series of nested matches, to destructure the
         // structs. This is actually right-to-left, but it shoudn't
         // matter.
-        for self_args.iter().zip(patterns.iter()).advance |(&arg_expr, &pat)| {
+        foreach (&arg_expr, &pat) in self_args.iter().zip(patterns.iter()) {
             body = cx.expr_match(span, arg_expr,
                                  ~[ cx.arm(span, ~[pat], body) ])
         }
@@ -740,16 +738,21 @@ impl<'self> MethodDef<'self> {
 
                     let mut enum_matching_fields = vec::from_elem(self_vec.len(), ~[]);
 
-                    for matches_so_far.tail().each |&(_, _, other_fields)| {
-                        for other_fields.eachi |i, &(_, other_field)| {
-                            enum_matching_fields[i].push(other_field);
+                    foreach triple in matches_so_far.tail().iter() {
+                        match triple {
+                            &(_, _, ref other_fields) => {
+                                foreach (i, pair) in other_fields.iter().enumerate() {
+                                    enum_matching_fields[i].push(pair.second());
+                                }
+                            }
                         }
                     }
                     let field_tuples =
-                        do vec::map_zip(*self_vec,
-                                        enum_matching_fields) |&(id, self_f), &other| {
-                        (id, self_f, other)
-                    };
+                        do self_vec.iter()
+                           .zip(enum_matching_fields.iter())
+                           .transform |(&(id, self_f), other)| {
+                        (id, self_f, (*other).clone())
+                    }.collect();
                     substructure = EnumMatching(variant_index, variant, field_tuples);
                 }
                 None => {
@@ -786,7 +789,9 @@ impl<'self> MethodDef<'self> {
                                                                     current_match_str,
                                                                     ast::m_imm);
 
-                matches_so_far.push((index, /*bad*/ copy *variant, idents));
+                matches_so_far.push((index,
+                                     /*bad*/ (*variant).clone(),
+                                     idents));
                 let arm_expr = self.build_enum_match(cx, span,
                                                      enum_def,
                                                      type_ident,
@@ -809,13 +814,15 @@ impl<'self> MethodDef<'self> {
                 }
             } else {
                 // create an arm matching on each variant
-                for enum_def.variants.eachi |index, variant| {
+                foreach (index, variant) in enum_def.variants.iter().enumerate() {
                     let (pattern, idents) = create_enum_variant_pattern(cx, span,
                                                                        variant,
                                                                        current_match_str,
                                                                        ast::m_imm);
 
-                    matches_so_far.push((index, /*bad*/ copy *variant, idents));
+                    matches_so_far.push((index,
+                                         /*bad*/ (*variant).clone(),
+                                         idents));
                     let new_matching =
                         match matching {
                             _ if match_count == 0 => Some(index),
@@ -870,7 +877,7 @@ fn summarise_struct(cx: @ExtCtxt, span: span,
                     struct_def: &struct_def) -> Either<uint, ~[ident]> {
     let mut named_idents = ~[];
     let mut unnamed_count = 0;
-    for struct_def.fields.each |field| {
+    foreach field in struct_def.fields.iter() {
         match field.node.kind {
             ast::named_field(ident, _) => named_idents.push(ident),
             ast::unnamed_field => unnamed_count += 1,
@@ -890,11 +897,12 @@ fn summarise_struct(cx: @ExtCtxt, span: span,
 
 pub fn create_subpatterns(cx: @ExtCtxt,
                           span: span,
-                          field_paths: ~[@ast::Path],
+                          field_paths: ~[ast::Path],
                           mutbl: ast::mutability)
                    -> ~[@ast::pat] {
-    do field_paths.map |&path| {
-        cx.pat(span, ast::pat_ident(ast::bind_by_ref(mutbl), path, None))
+    do field_paths.map |path| {
+        cx.pat(span,
+               ast::pat_ident(ast::bind_by_ref(mutbl), (*path).clone(), None))
     }
 }
 
@@ -923,7 +931,7 @@ fn create_struct_pattern(cx: @ExtCtxt,
     let mut ident_expr = ~[];
     let mut struct_type = Unknown;
 
-    for struct_def.fields.eachi |i, struct_field| {
+    foreach (i, struct_field) in struct_def.fields.iter().enumerate() {
         let opt_id = match struct_field.node.kind {
             ast::named_field(ident, _) if (struct_type == Unknown ||
                                            struct_type == Record) => {
@@ -941,7 +949,7 @@ fn create_struct_pattern(cx: @ExtCtxt,
         };
         let path = cx.path_ident(span,
                                  cx.ident_of(fmt!("%s_%u", prefix, i)));
-        paths.push(path);
+        paths.push(path.clone());
         ident_expr.push((opt_id, cx.expr_path(path)));
     }
 
@@ -951,7 +959,7 @@ fn create_struct_pattern(cx: @ExtCtxt,
     // must be nonempty to reach here
     let pattern = if struct_type == Record {
         let field_pats = do vec::build |push| {
-            for subpats.iter().zip(ident_expr.iter()).advance |(&pat, &(id, _))| {
+            foreach (&pat, &(id, _)) in subpats.iter().zip(ident_expr.iter()) {
                 // id is guaranteed to be Some
                 push(ast::field_pat { ident: id.get(), pat: pat })
             }
@@ -983,11 +991,11 @@ fn create_enum_variant_pattern(cx: @ExtCtxt,
 
             let mut paths = ~[];
             let mut ident_expr = ~[];
-            for uint::range(0, variant_args.len()) |i| {
+            foreach i in range(0u, variant_args.len()) {
                 let path = cx.path_ident(span,
                                          cx.ident_of(fmt!("%s_%u", prefix, i)));
 
-                paths.push(path);
+                paths.push(path.clone());
                 ident_expr.push((None, cx.expr_path(path)));
             }
 
@@ -1016,7 +1024,8 @@ left-to-right (`true`) or right-to-left (`false`).
 pub fn cs_fold(use_foldl: bool,
                f: &fn(@ExtCtxt, span,
                       old: @expr,
-                      self_f: @expr, other_fs: &[@expr]) -> @expr,
+                      self_f: @expr,
+                      other_fs: &[@expr]) -> @expr,
                base: @expr,
                enum_nonmatch_f: EnumNonMatchFunc,
                cx: @ExtCtxt, span: span,
@@ -1024,11 +1033,13 @@ pub fn cs_fold(use_foldl: bool,
     match *substructure.fields {
         EnumMatching(_, _, ref all_fields) | Struct(ref all_fields) => {
             if use_foldl {
-                do all_fields.iter().fold(base) |old, &(_, self_f, other_fs)| {
+                do all_fields.iter().fold(base) |old, triple| {
+                    let (_, self_f, other_fs) = (*triple).clone();
                     f(cx, span, old, self_f, other_fs)
                 }
             } else {
-                do all_fields.rev_iter().fold(base) |old, &(_, self_f, other_fs)| {
+                do all_fields.rev_iter().fold(base) |old, triple| {
+                    let (_, self_f, other_fs) = (*triple).clone();
                     f(cx, span, old, self_f, other_fs)
                 }
             }
@@ -1060,7 +1071,8 @@ pub fn cs_same_method(f: &fn(@ExtCtxt, span, ~[@expr]) -> @expr,
     match *substructure.fields {
         EnumMatching(_, _, ref all_fields) | Struct(ref all_fields) => {
             // call self_n.method(other_1_n, other_2_n, ...)
-            let called = do all_fields.map |&(_, self_field, other_fields)| {
+            let called = do all_fields.map |triple| {
+                let (_, self_field, other_fields) = (*triple).clone();
                 cx.expr_method_call(span,
                                     self_field,
                                     substructure.method_ident,

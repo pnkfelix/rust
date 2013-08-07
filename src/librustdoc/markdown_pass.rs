@@ -10,7 +10,6 @@
 
 //! Generate markdown from a document tree
 
-use core::prelude::*;
 
 use astsrv;
 use doc::ItemUtils;
@@ -22,9 +21,9 @@ use markdown_writer::WriterFactory;
 use pass::Pass;
 use sort_pass;
 
-use core::cell::Cell;
-use core::str;
-use core::vec;
+use std::cell::Cell;
+use std::str;
+use std::vec;
 use syntax;
 
 pub fn mk_pass(writer_factory: WriterFactory) -> Pass {
@@ -58,7 +57,7 @@ fn run(
     // makes the headers come out nested correctly.
     let sorted_doc = (sort_pass::mk_pass(
         ~"mods last", mods_last
-    ).f)(srv, copy doc);
+    ).f)(srv, doc.clone());
 
     write_markdown(sorted_doc, writer_factory);
 
@@ -78,15 +77,15 @@ pub fn write_markdown(
     // (See #2484, which is closed.)
     do doc.pages.map |page| {
         let ctxt = Ctxt {
-            w: writer_factory(copy *page)
+            w: writer_factory((*page).clone())
         };
         write_page(&ctxt, page)
     };
 }
 
 fn write_page(ctxt: &Ctxt, page: &doc::Page) {
-    write_title(ctxt, copy *page);
-    match copy *page {
+    write_title(ctxt, (*page).clone());
+    match (*page).clone() {
         doc::CratePage(doc) => {
             write_crate(ctxt, doc);
         }
@@ -107,7 +106,7 @@ fn write_title(ctxt: &Ctxt, page: doc::Page) {
 fn make_title(page: doc::Page) -> ~str {
     let item = match page {
         doc::CratePage(CrateDoc) => {
-            doc::ModTag(copy CrateDoc.topmod)
+            doc::ModTag(CrateDoc.topmod.clone())
         }
         doc::ItemPage(ItemTag) => {
             ItemTag
@@ -139,7 +138,7 @@ fn write_header_(ctxt: &Ctxt, lvl: Hlvl, title: ~str) {
 pub fn header_kind(doc: doc::ItemTag) -> ~str {
     match doc {
         doc::ModTag(_) => {
-            if doc.id() == syntax::ast::crate_node_id {
+            if doc.id() == syntax::ast::CRATE_NODE_ID {
                 ~"Crate"
             } else {
                 ~"Module"
@@ -152,7 +151,7 @@ pub fn header_kind(doc: doc::ItemTag) -> ~str {
             ~"Function"
         }
         doc::ConstTag(_) => {
-            ~"Const"
+            ~"Freeze"
         }
         doc::EnumTag(_) => {
             ~"Enum"
@@ -173,9 +172,9 @@ pub fn header_kind(doc: doc::ItemTag) -> ~str {
 }
 
 pub fn header_name(doc: doc::ItemTag) -> ~str {
-    let fullpath = (doc.path() + [doc.name()]).connect("::");
+    let fullpath = (doc.path() + &[doc.name_()]).connect("::");
     match &doc {
-        &doc::ModTag(_) if doc.id() != syntax::ast::crate_node_id => {
+        &doc::ModTag(_) if doc.id() != syntax::ast::CRATE_NODE_ID => {
             fullpath
         }
         &doc::NmodTag(_) => {
@@ -190,18 +189,18 @@ pub fn header_name(doc: doc::ItemTag) -> ~str {
             };
             let self_ty = doc.self_ty.get_ref();
             let mut trait_part = ~"";
-            for doc.trait_types.eachi |i, trait_type| {
+            foreach (i, trait_type) in doc.trait_types.iter().enumerate() {
                 if i == 0 {
-                    trait_part += " of ";
+                    trait_part.push_str(" of ");
                 } else {
-                    trait_part += ", ";
+                    trait_part.push_str(", ");
                 }
-                trait_part += *trait_type;
+                trait_part.push_str(*trait_type);
             }
             fmt!("%s for %s%s", trait_part, *self_ty, bounds)
         }
         _ => {
-            doc.name()
+            doc.name_()
         }
     }
 }
@@ -209,7 +208,7 @@ pub fn header_name(doc: doc::ItemTag) -> ~str {
 pub fn header_text(doc: doc::ItemTag) -> ~str {
     match &doc {
         &doc::ImplTag(ref ImplDoc) => {
-            let header_kind = header_kind(copy doc);
+            let header_kind = header_kind(doc.clone());
             let bounds = if ImplDoc.bounds_str.is_some() {
                 fmt!(" where `%s`", *ImplDoc.bounds_str.get_ref())
             } else {
@@ -228,7 +227,7 @@ pub fn header_text(doc: doc::ItemTag) -> ~str {
         _ => {}
     }
 
-    header_text_(header_kind(copy doc),
+    header_text_(header_kind(doc.clone()),
                  header_name(doc))
 }
 
@@ -240,7 +239,7 @@ fn write_crate(
     ctxt: &Ctxt,
     doc: doc::CrateDoc
 ) {
-    write_top_module(ctxt, copy doc.topmod);
+    write_top_module(ctxt, doc.topmod.clone());
 }
 
 fn write_top_module(
@@ -280,14 +279,14 @@ fn write_desc(
 }
 
 fn write_sections(ctxt: &Ctxt, sections: &[doc::Section]) {
-    for sections.each |section| {
-        write_section(ctxt, copy *section);
+    foreach section in sections.iter() {
+        write_section(ctxt, (*section).clone());
     }
 }
 
 fn write_section(ctxt: &Ctxt, section: doc::Section) {
-    write_header_(ctxt, H4, copy section.header);
-    ctxt.w.put_line(copy section.body);
+    write_header_(ctxt, H4, section.header.clone());
+    ctxt.w.put_line(section.body.clone());
     ctxt.w.put_line(~"");
 }
 
@@ -300,8 +299,8 @@ fn write_mod_contents(
         write_index(ctxt, doc.index.get_ref());
     }
 
-    for doc.items.each |itemTag| {
-        write_item(ctxt, copy *itemTag);
+    foreach itemTag in doc.items.iter() {
+        write_item(ctxt, (*itemTag).clone());
     }
 }
 
@@ -315,7 +314,7 @@ fn write_item_no_header(ctxt: &Ctxt, doc: doc::ItemTag) {
 
 fn write_item_(ctxt: &Ctxt, doc: doc::ItemTag, write_header: bool) {
     if write_header {
-        write_item_header(ctxt, copy doc);
+        write_item_header(ctxt, doc.clone());
     }
 
     match doc {
@@ -350,9 +349,9 @@ fn write_index(ctxt: &Ctxt, index: &doc::Index) {
     ctxt.w.put_line(~"<div class='index'>");
     ctxt.w.put_line(~"");
 
-    for index.entries.each |entry| {
+    foreach entry in index.entries.iter() {
         let header = header_text_(entry.kind, entry.name);
-        let id = copy entry.link;
+        let id = entry.link.clone();
         if entry.brief.is_some() {
             ctxt.w.put_line(fmt!("* [%s](%s) - %s",
                                  header, id, *entry.brief.get_ref()));
@@ -371,9 +370,9 @@ fn write_nmod(ctxt: &Ctxt, doc: doc::NmodDoc) {
         write_index(ctxt, doc.index.get_ref());
     }
 
-    for doc.fns.each |FnDoc| {
-        write_item_header(ctxt, doc::FnTag(copy *FnDoc));
-        write_fn(ctxt, copy *FnDoc);
+    foreach FnDoc in doc.fns.iter() {
+        write_item_header(ctxt, doc::FnTag((*FnDoc).clone()));
+        write_fn(ctxt, (*FnDoc).clone());
     }
 }
 
@@ -381,12 +380,7 @@ fn write_fn(
     ctxt: &Ctxt,
     doc: doc::FnDoc
 ) {
-    write_fnlike(
-        ctxt,
-        copy doc.sig,
-        doc.desc(),
-        doc.sections()
-    );
+    write_fnlike(ctxt, doc.sig.clone(), doc.desc(), doc.sections());
 }
 
 fn write_fnlike(
@@ -419,7 +413,7 @@ fn write_const(
     ctxt: &Ctxt,
     doc: doc::ConstDoc
 ) {
-    write_sig(ctxt, copy doc.sig);
+    write_sig(ctxt, doc.sig.clone());
     write_common(ctxt, doc.desc(), doc.sections());
 }
 
@@ -441,8 +435,8 @@ fn write_variants(
 
     write_header_(ctxt, H4, ~"Variants");
 
-    for docs.each |variant| {
-        write_variant(ctxt, copy *variant);
+    foreach variant in docs.iter() {
+        write_variant(ctxt, (*variant).clone());
     }
 
     ctxt.w.put_line(~"");
@@ -455,7 +449,7 @@ fn write_variant(ctxt: &Ctxt, doc: doc::VariantDoc) {
     // space out list items so they all end up within paragraph elements
     ctxt.w.put_line(~"");
 
-    match copy doc.desc {
+    match doc.desc.clone() {
         Some(desc) => {
             ctxt.w.put_line(list_item_indent(fmt!("* `%s` - %s", *sig, desc)));
         }
@@ -480,19 +474,14 @@ fn write_trait(ctxt: &Ctxt, doc: doc::TraitDoc) {
 }
 
 fn write_methods(ctxt: &Ctxt, docs: &[doc::MethodDoc]) {
-    for docs.each |doc| {
-        write_method(ctxt, copy *doc);
+    foreach doc in docs.iter() {
+        write_method(ctxt, (*doc).clone());
     }
 }
 
 fn write_method(ctxt: &Ctxt, doc: doc::MethodDoc) {
     write_header_(ctxt, H3, header_text_("Method", doc.name));
-    write_fnlike(
-        ctxt,
-        copy doc.sig,
-        copy doc.desc,
-        doc.sections
-    );
+    write_fnlike(ctxt, doc.sig.clone(), doc.desc.clone(), doc.sections);
 }
 
 fn write_impl(ctxt: &Ctxt, doc: doc::ImplDoc) {
@@ -504,7 +493,7 @@ fn write_type(
     ctxt: &Ctxt,
     doc: doc::TyDoc
 ) {
-    write_sig(ctxt, copy doc.sig);
+    write_sig(ctxt, doc.sig.clone());
     write_common(ctxt, doc.desc(), doc.sections());
 }
 
@@ -512,13 +501,12 @@ fn put_struct(
     ctxt: &Ctxt,
     doc: doc::StructDoc
 ) {
-    write_sig(ctxt, copy doc.sig);
+    write_sig(ctxt, doc.sig.clone());
     write_common(ctxt, doc.desc(), doc.sections());
 }
 
 #[cfg(test)]
 mod test {
-    use core::prelude::*;
 
     use astsrv;
     use attr_pass;
@@ -531,6 +519,7 @@ mod test {
     use markdown_writer;
     use path_pass;
     use page_pass;
+    use prune_hidden_pass;
     use sectionalize_pass;
     use trim_pass;
     use tystr_pass;
@@ -559,6 +548,8 @@ mod test {
             debug!("doc (path): %?", doc);
             let doc = (attr_pass::mk_pass().f)(srv.clone(), doc);
             debug!("doc (attr): %?", doc);
+            let doc = (prune_hidden_pass::mk_pass().f)(srv.clone(), doc);
+            debug!("doc (prune_hidden): %?", doc);
             let doc = (desc_to_brief_pass::mk_pass().f)(srv.clone(), doc);
             debug!("doc (desc_to_brief): %?", doc);
             let doc = (unindent_pass::mk_pass().f)(srv.clone(), doc);
@@ -646,7 +637,7 @@ mod test {
         let doc = (page_pass::mk_pass(config::DocPerMod).f)(srv, doc);
         write_markdown(doc, writer_factory);
         // We expect two pages to have been written
-        for 2.times {
+        do 2.times {
             po.recv();
         }
     }
@@ -658,7 +649,7 @@ mod test {
             ~"#[link(name = \"core\")]; mod a { }");
         let doc = (page_pass::mk_pass(config::DocPerMod).f)(srv, doc);
         write_markdown(doc, writer_factory);
-        for 2.times {
+        do 2.times {
             let (page, markdown) = po.recv();
             match page {
                 doc::CratePage(_) => {
@@ -765,7 +756,7 @@ mod test {
                     topmod: doc::ModDoc{
                         items: ~[doc::FnTag(doc::SimpleItemDoc{
                             sig: Some(~"line 1\nline 2"),
-                            .. copy doc.cratemod().fns()[0]
+                            .. (doc.cratemod().fns()[0]).clone()
                         })],
                         .. doc.cratemod()
                     },
@@ -786,7 +777,7 @@ mod test {
     #[test]
     fn should_write_const_header() {
         let markdown = render(~"static a: bool = true;");
-        assert!(markdown.contains("## Const `a`\n\n"));
+        assert!(markdown.contains("## Freeze `a`\n\n"));
     }
 
     #[test]

@@ -9,6 +9,7 @@
 // except according to those terms.
 
 #[doc(hidden)];
+#[allow(non_uppercase_statics)];
 
 /*! Precise garbage collector
 
@@ -38,14 +39,15 @@ with destructors.
 */
 
 use cast;
-use container::{Map, Set};
+use container::{Set, MutableSet};
 use io;
-use libc::{size_t, uintptr_t};
+use libc::{uintptr_t};
 use option::{None, Option, Some};
 use ptr;
 use hashmap::HashSet;
 use stackwalk::walk_stack;
 use sys;
+use unstable::intrinsics::{TyDesc};
 
 pub use stackwalk::Word;
 
@@ -58,17 +60,11 @@ pub struct StackSegment {
 }
 
 pub mod rustrt {
-    use libc::size_t;
     use stackwalk::Word;
     use super::StackSegment;
 
     #[link_name = "rustrt"]
-    pub extern {
-        #[rust_stack]
-        pub unsafe fn rust_call_tydesc_glue(root: *Word,
-                                            tydesc: *Word,
-                                            field: size_t);
-
+    extern {
         #[rust_stack]
         pub unsafe fn rust_gc_metadata() -> *Word;
 
@@ -78,14 +74,14 @@ pub mod rustrt {
 }
 
 unsafe fn bump<T, U>(ptr: *T, count: uint) -> *U {
-    return cast::transmute(ptr::offset(ptr, count));
+    return ptr::offset(ptr, count as int) as *U;
 }
 
 unsafe fn align_to_pointer<T>(ptr: *T) -> *T {
     let align = sys::min_align_of::<*T>();
-    let ptr: uint = cast::transmute(ptr);
+    let ptr = ptr as uint;
     let ptr = (ptr + (align - 1)) & -align;
-    return cast::transmute(ptr);
+    return ptr as *T;
 }
 
 unsafe fn get_safe_point_count() -> uint {
@@ -125,13 +121,13 @@ unsafe fn is_safe_point(pc: *Word) -> Option<SafePoint> {
     return None;
 }
 
-type Visitor<'self> = &'self fn(root: **Word, tydesc: *Word) -> bool;
+type Visitor<'self> = &'self fn(root: **Word, tydesc: *TyDesc);
 
 // Walks the list of roots for the given safe point, and calls visitor
 // on each root.
-unsafe fn _walk_safe_point(fp: *Word, sp: SafePoint, visitor: Visitor) -> bool {
-    let fp_bytes: *u8 = cast::transmute(fp);
-    let sp_meta: *u32 = cast::transmute(sp.sp_meta);
+unsafe fn _walk_safe_point(fp: *Word, sp: SafePoint, visitor: Visitor) {
+    let fp_bytes = fp as *u8;
+    let sp_meta = sp.sp_meta as *u32;
 
     let num_stack_roots = *sp_meta as uint;
     let num_reg_roots = *ptr::offset(sp_meta, 1) as uint;
@@ -139,23 +135,23 @@ unsafe fn _walk_safe_point(fp: *Word, sp: SafePoint, visitor: Visitor) -> bool {
     let stack_roots: *u32 = bump(sp_meta, 2);
     let reg_roots: *u8 = bump(stack_roots, num_stack_roots);
     let addrspaces: *Word = align_to_pointer(bump(reg_roots, num_reg_roots));
-    let tydescs: ***Word = bump(addrspaces, num_stack_roots);
+    let tydescs: ***TyDesc = bump(addrspaces, num_stack_roots);
 
     // Stack roots
     let mut sri = 0;
     while sri < num_stack_roots {
-        if *ptr::offset(addrspaces, sri) >= 1 {
+        if *ptr::offset(addrspaces, sri as int) >= 1 {
             let root =
-                ptr::offset(fp_bytes, *ptr::offset(stack_roots, sri) as Word)
+                ptr::offset(fp_bytes, *ptr::offset(stack_roots, sri as int) as int)
                 as **Word;
-            let tydescpp = ptr::offset(tydescs, sri);
+            let tydescpp = ptr::offset(tydescs, sri as int);
             let tydesc = if ptr::is_not_null(tydescpp) &&
                 ptr::is_not_null(*tydescpp) {
                 **tydescpp
             } else {
                 ptr::null()
             };
-            if !visitor(root, tydesc) { return false; }
+            visitor(root, tydesc);
         }
         sri += 1;
     }
@@ -163,23 +159,22 @@ unsafe fn _walk_safe_point(fp: *Word, sp: SafePoint, visitor: Visitor) -> bool {
     // Register roots
     let mut rri = 0;
     while rri < num_reg_roots {
-        if *ptr::offset(addrspaces, num_stack_roots + rri) == 1 {
+        if *ptr::offset(addrspaces, (num_stack_roots + rri) as int) == 1 {
             // FIXME(#2997): Need to find callee saved registers on the stack.
         }
         rri += 1;
     }
-    return true;
 }
 
-unsafe fn walk_safe_point(fp: *Word, sp: SafePoint, visitor: Visitor) -> bool {
+unsafe fn walk_safe_point(fp: *Word, sp: SafePoint, visitor: Visitor) {
     _walk_safe_point(fp, sp, visitor)
 }
 
 // Is fp contained in segment?
 unsafe fn is_frame_in_segment(fp: *Word, segment: *StackSegment) -> bool {
-    let begin: Word = cast::transmute(segment);
-    let end: Word = cast::transmute((*segment).end);
-    let frame: Word = cast::transmute(fp);
+    let begin = segment as Word;
+    let end = (*segment).end as Word;
+    let frame = fp as Word;
 
     return begin <= frame && frame <= end;
 }
@@ -227,7 +222,7 @@ static need_cleanup:    Memory = exchange_heap | stack;
 
 // Walks stack, searching for roots of the requested type, and passes
 // each root to the visitor.
-unsafe fn _walk_gc_roots(mem: Memory, sentinel: **Word, visitor: Visitor) -> bool {
+unsafe fn _walk_gc_roots(mem: Memory, sentinel: **Word, visitor: Visitor) {
     let mut segment = rustrt::rust_get_stack_segment();
     let mut last_ret: *Word = ptr::null();
     // To avoid collecting memory used by the GC itself, skip stack
@@ -235,7 +230,7 @@ unsafe fn _walk_gc_roots(mem: Memory, sentinel: **Word, visitor: Visitor) -> boo
     // frame is marked by a sentinel, which is a box pointer stored on
     // the stack.
     let mut reached_sentinel = ptr::is_null(sentinel);
-    for walk_stack |frame| {
+    do walk_stack |frame| {
         let pc = last_ret;
         let Segment {segment: next_segment, boundary: boundary} =
             find_segment_for_frame(frame.fp, segment);
@@ -250,55 +245,48 @@ unsafe fn _walk_gc_roots(mem: Memory, sentinel: **Word, visitor: Visitor) -> boo
         // for this second return address is 3 greater than the
         // return address for morestack.
         let ret_offset = if boundary { 4 } else { 1 };
-        last_ret = *ptr::offset(frame.fp, ret_offset) as *Word;
+        last_ret = *ptr::offset(frame.fp, ret_offset as int) as *Word;
 
-        if ptr::is_null(pc) {
-            loop;
-        }
+        if !ptr::is_null(pc) {
 
-        let mut delay_reached_sentinel = reached_sentinel;
-        let sp = is_safe_point(pc);
-        match sp {
-          Some(sp_info) => {
-            for walk_safe_point(frame.fp, sp_info) |root, tydesc| {
-                // Skip roots until we see the sentinel.
-                if !reached_sentinel {
-                    if root == sentinel {
-                        delay_reached_sentinel = true;
-                    }
-                    loop;
-                }
+            let mut delay_reached_sentinel = reached_sentinel;
+            let sp = is_safe_point(pc);
+            match sp {
+                Some(sp_info) => {
+                    do walk_safe_point(frame.fp, sp_info) |root, tydesc| {
+                        // Skip roots until we see the sentinel.
+                        if !reached_sentinel && root == sentinel {
+                            delay_reached_sentinel = true;
+                        }
 
-                // Skip null pointers, which can occur when a
-                // unique pointer has already been freed.
-                if ptr::is_null(*root) {
-                    loop;
-                }
-
-                if ptr::is_null(tydesc) {
-                    // Root is a generic box.
-                    let refcount = **root;
-                    if mem | task_local_heap != 0 && refcount != -1 {
-                        if !visitor(root, tydesc) { return false; }
-                    } else if mem | exchange_heap != 0 && refcount == -1 {
-                        if !visitor(root, tydesc) { return false; }
-                    }
-                } else {
-                    // Root is a non-immediate.
-                    if mem | stack != 0 {
-                        if !visitor(root, tydesc) { return false; }
+                        // Skip null pointers, which can occur when a
+                        // unique pointer has already been freed.
+                        if reached_sentinel && !ptr::is_null(*root) {
+                            if ptr::is_null(tydesc) {
+                                // Root is a generic box.
+                                let refcount = **root;
+                                if mem | task_local_heap != 0 && refcount != -1 {
+                                    visitor(root, tydesc);
+                                } else if mem | exchange_heap != 0 && refcount == -1 {
+                                    visitor(root, tydesc);
+                                }
+                            } else {
+                                // Root is a non-immediate.
+                                if mem | stack != 0 {
+                                    visitor(root, tydesc);
+                                }
+                            }
+                        }
                     }
                 }
+                None => ()
             }
-          }
-          None => ()
+            reached_sentinel = delay_reached_sentinel;
         }
-        reached_sentinel = delay_reached_sentinel;
     }
-    return true;
 }
 
-unsafe fn walk_gc_roots(mem: Memory, sentinel: **Word, visitor: Visitor) -> bool {
+unsafe fn walk_gc_roots(mem: Memory, sentinel: **Word, visitor: Visitor) {
     _walk_gc_roots(mem, sentinel, visitor)
 }
 pub fn gc() {
@@ -308,7 +296,7 @@ pub fn gc() {
             return;
         }
 
-        for walk_gc_roots(task_local_heap, ptr::null()) |_root, _tydesc| {
+        do walk_gc_roots(task_local_heap, ptr::null()) |_root, _tydesc| {
             // FIXME(#2997): Walk roots and mark them.
             io::stdout().write([46]); // .
         }
@@ -353,18 +341,17 @@ pub fn cleanup_stack_for_failure() {
         };
 
         let mut roots = HashSet::new();
-        for walk_gc_roots(need_cleanup, sentinel) |root, tydesc| {
+        do walk_gc_roots(need_cleanup, sentinel) |root, tydesc| {
             // Track roots to avoid double frees.
-            if roots.contains(&*root) {
-                loop;
-            }
-            roots.insert(*root);
+            if !roots.contains(&*root) {
+                roots.insert(*root);
 
-            if ptr::is_null(tydesc) {
-                // FIXME #4420: Destroy this box
-                // FIXME #4330: Destroy this box
-            } else {
-                rustrt::rust_call_tydesc_glue(*root, tydesc, 3 as size_t);
+                if ptr::is_null(tydesc) {
+                    // FIXME #4420: Destroy this box
+                    // FIXME #4330: Destroy this box
+                } else {
+                    ((*tydesc).drop_glue)(*root as *i8);
+                }
             }
         }
     }

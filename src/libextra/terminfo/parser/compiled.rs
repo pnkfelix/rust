@@ -8,13 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[allow(non_uppercase_statics)];
+
 /// ncurses-compatible compiled terminfo format parsing (term(5))
 
-use core::prelude::*;
 
-use core::{vec, int, str};
-use core::io::Reader;
-use core::hashmap::HashMap;
+use std::{vec, str};
+use std::io::Reader;
+use std::hashmap::HashMap;
 use super::super::TermInfo;
 
 // These are the orders ncurses uses in its compiled format (as of 5.9). Not sure if portable.
@@ -221,7 +222,7 @@ pub fn parse(file: @Reader, longnames: bool) -> Result<~TermInfo, ~str> {
 
     let mut bools_map = HashMap::new();
     if bools_bytes != 0 {
-        for int::range(0, bools_bytes) |i| {
+        foreach i in range(0, bools_bytes) {
             let b = file.read_byte();
             if b < 0 {
                 error!("EOF reading bools after %? entries", i);
@@ -242,7 +243,7 @@ pub fn parse(file: @Reader, longnames: bool) -> Result<~TermInfo, ~str> {
 
     let mut numbers_map = HashMap::new();
     if numbers_count != 0 {
-        for int::range(0, numbers_count) |i| {
+        foreach i in range(0, numbers_count) {
             let n = file.read_le_u16();
             if n != 0xFFFF {
                 debug!("%s#%?", nnames[i], n);
@@ -257,7 +258,7 @@ pub fn parse(file: @Reader, longnames: bool) -> Result<~TermInfo, ~str> {
 
     if string_offsets_count != 0 {
         let mut string_offsets = vec::with_capacity(10);
-        for int::range(0, string_offsets_count) |_i| {
+        foreach _ in range(0, string_offsets_count) {
             string_offsets.push(file.read_le_u16());
         }
 
@@ -271,7 +272,7 @@ pub fn parse(file: @Reader, longnames: bool) -> Result<~TermInfo, ~str> {
             return Err(~"error: hit EOF before end of string table");
         }
 
-        for string_offsets.eachi |i, v| {
+        foreach (i, v) in string_offsets.iter().enumerate() {
             let offset = *v;
             if offset == 0xFFFF { // non-entry
                 loop;
@@ -292,12 +293,13 @@ pub fn parse(file: @Reader, longnames: bool) -> Result<~TermInfo, ~str> {
 
 
             // Find the offset of the NUL we want to go to
-            let nulpos = vec::position_between(string_table, offset as uint,
-                                               string_table_bytes as uint, |&b| b == 0);
+            let nulpos = string_table.slice(offset as uint, string_table_bytes as uint)
+                .iter().position(|&b| b == 0);
             match nulpos {
-                Some(x) => {
+                Some(len) => {
                     string_map.insert(name.to_owned(),
-                                      string_table.slice(offset as uint, x).to_owned())
+                                      string_table.slice(offset as uint,
+                                                         offset as uint + len).to_owned())
                 },
                 None => {
                     return Err(~"invalid file: missing NUL in string_table");

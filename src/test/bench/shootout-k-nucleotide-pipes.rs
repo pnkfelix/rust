@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// xfail-pretty (extra blank line is inserted in vec::mapi call)
+// xfail-pretty the `let to_child` line gets an extra newline
 // multi tasking k-nucleotide
 
 extern mod extra;
@@ -34,43 +34,49 @@ fn sort_and_fmt(mm: &HashMap<~[u8], uint>, total: uint) -> ~str {
       return (xx as float) * 100f / (yy as float);
    }
 
-   fn le_by_val<TT:Copy,UU:Copy + Ord>(kv0: &(TT,UU),
-                                         kv1: &(TT,UU)) -> bool {
-      let (_, v0) = copy *kv0;
-      let (_, v1) = copy *kv1;
+   fn le_by_val<TT:Clone,
+                UU:Clone + Ord>(
+                kv0: &(TT,UU),
+                kv1: &(TT,UU))
+                -> bool {
+      let (_, v0) = (*kv0).clone();
+      let (_, v1) = (*kv1).clone();
       return v0 >= v1;
    }
 
-   fn le_by_key<TT:Copy + Ord,UU:Copy>(kv0: &(TT,UU),
-                                         kv1: &(TT,UU)) -> bool {
-      let (k0, _) = copy *kv0;
-      let (k1, _) = copy *kv1;
+   fn le_by_key<TT:Clone + Ord,
+                UU:Clone>(
+                kv0: &(TT,UU),
+                kv1: &(TT,UU))
+                -> bool {
+      let (k0, _) = (*kv0).clone();
+      let (k1, _) = (*kv1).clone();
       return k0 <= k1;
    }
 
    // sort by key, then by value
-   fn sortKV<TT:Copy + Ord,UU:Copy + Ord>(orig: ~[(TT,UU)]) -> ~[(TT,UU)] {
+   fn sortKV<TT:Clone + Ord, UU:Clone + Ord>(orig: ~[(TT,UU)]) -> ~[(TT,UU)] {
       return sort::merge_sort(sort::merge_sort(orig, le_by_key), le_by_val);
    }
 
    let mut pairs = ~[];
 
    // map -> [(k,%)]
-   for mm.each |&key, &val| {
-      pairs.push((key, pct(val, total)));
+   foreach (key, &val) in mm.iter() {
+      pairs.push(((*key).clone(), pct(val, total)));
    }
 
    let pairs_sorted = sortKV(pairs);
 
    let mut buffer = ~"";
 
-   for pairs_sorted.each |kv| {
-       let (k,v) = copy *kv;
+   foreach kv in pairs_sorted.iter() {
+       let (k,v) = (*kv).clone();
        unsafe {
            let b = str::raw::from_bytes(k);
            // FIXME: #4318 Instead of to_ascii and to_str_ascii, could use
            // to_ascii_consume and to_str_consume to not do a unnecessary copy.
-           buffer += (fmt!("%s %0.3f\n", b.to_ascii().to_upper().to_str_ascii(), v));
+           buffer.push_str(fmt!("%s %0.3f\n", b.to_ascii().to_upper().to_str_ascii(), v));
        }
    }
 
@@ -90,7 +96,7 @@ fn find(mm: &HashMap<~[u8], uint>, key: ~str) -> uint {
 
 // given a map, increment the counter for a key
 fn update_freq(mm: &mut HashMap<~[u8], uint>, key: &[u8]) {
-    let key = vec::slice(key, 0, key.len()).to_vec();
+    let key = key.to_owned();
     let newval = match mm.pop(&key) {
         Some(v) => v + 1,
         None => 1
@@ -107,16 +113,16 @@ fn windows_with_carry(bb: &[u8], nn: uint,
 
    let len = bb.len();
    while ii < len - (nn - 1u) {
-      it(vec::slice(bb, ii, ii+nn));
+      it(bb.slice(ii, ii+nn));
       ii += 1u;
    }
 
-   return vec::slice(bb, len - (nn - 1u), len).to_vec();
+   return bb.slice(len - (nn - 1u), len).to_owned();
 }
 
 fn make_sequence_processor(sz: uint,
-                           from_parent: &comm::Port<~[u8]>,
-                           to_parent: &comm::Chan<~str>) {
+                           from_parent: &Port<~[u8]>,
+                           to_parent: &Chan<~str>) {
    let mut freqs: HashMap<~[u8], uint> = HashMap::new();
    let mut carry: ~[u8] = ~[];
    let mut total: uint = 0u;
@@ -137,11 +143,11 @@ fn make_sequence_processor(sz: uint,
    let buffer = match sz {
        1u => { sort_and_fmt(&freqs, total) }
        2u => { sort_and_fmt(&freqs, total) }
-       3u => { fmt!("%u\t%s", find(&freqs, ~"GGT"), ~"GGT") }
-       4u => { fmt!("%u\t%s", find(&freqs, ~"GGTA"), ~"GGTA") }
-       6u => { fmt!("%u\t%s", find(&freqs, ~"GGTATT"), ~"GGTATT") }
-      12u => { fmt!("%u\t%s", find(&freqs, ~"GGTATTTTAATT"), ~"GGTATTTTAATT") }
-      18u => { fmt!("%u\t%s", find(&freqs, ~"GGTATTTTAATTTATAGT"), ~"GGTATTTTAATTTATAGT") }
+       3u => { fmt!("%u\t%s", find(&freqs, ~"GGT"), "GGT") }
+       4u => { fmt!("%u\t%s", find(&freqs, ~"GGTA"), "GGTA") }
+       6u => { fmt!("%u\t%s", find(&freqs, ~"GGTATT"), "GGTATT") }
+      12u => { fmt!("%u\t%s", find(&freqs, ~"GGTATTTTAATT"), "GGTATTTTAATT") }
+      18u => { fmt!("%u\t%s", find(&freqs, ~"GGTATTTTAATTTATAGT"), "GGTATTTTAATTTATAGT") }
         _ => { ~"" }
    };
 
@@ -150,27 +156,25 @@ fn make_sequence_processor(sz: uint,
 
 // given a FASTA file on stdin, process sequence THREE
 fn main() {
-    let args = os::args();
-    let rdr = if os::getenv(~"RUST_BENCH").is_some() {
+    let rdr = if os::getenv("RUST_BENCH").is_some() {
        // FIXME: Using this compile-time env variable is a crummy way to
        // get to this massive data set, but include_bin! chokes on it (#2598)
        let path = Path(env!("CFG_SRC_DIR"))
            .push_rel(&Path("src/test/bench/shootout-k-nucleotide.data"));
-       result::get(&io::file_reader(&path))
+       io::file_reader(&path).unwrap()
    } else {
       io::stdin()
    };
 
 
 
-   // initialize each sequence sorter
-   let sizes = ~[1,2,3,4,6,12,18];
-    let streams = vec::map(sizes, |_sz| Some(stream()));
-    let mut streams = streams;
+    // initialize each sequence sorter
+    let sizes = ~[1u,2,3,4,6,12,18];
+    let mut streams = vec::from_fn(sizes.len(), |_| Some(stream::<~str>()));
     let mut from_child = ~[];
-    let to_child   = vec::mapi(sizes, |ii, sz| {
+    let to_child   = do sizes.iter().zip(streams.mut_iter()).transform |(sz, stream_ref)| {
         let sz = *sz;
-        let stream = util::replace(&mut streams[ii], None);
+        let stream = util::replace(stream_ref, None);
         let (from_child_, to_parent_) = stream.unwrap();
 
         from_child.push(from_child_);
@@ -182,7 +186,7 @@ fn main() {
         };
 
         to_child
-    });
+    }.collect::<~[Chan<~[u8]>]>();
 
 
    // latch stores true after we've started
@@ -198,7 +202,7 @@ fn main() {
 
          // start processing if this is the one
          ('>', false) => {
-            match line.slice_from(1).find_str(~"THREE") {
+            match line.slice_from(1).find_str("THREE") {
                option::Some(_) => { proc_mode = true; }
                option::None    => { }
             }
@@ -211,8 +215,8 @@ fn main() {
          (_, true) => {
             let line_bytes = line.as_bytes();
 
-           for sizes.eachi |ii, _sz| {
-               let mut lb = line_bytes.to_owned();
+           foreach (ii, _sz) in sizes.iter().enumerate() {
+               let lb = line_bytes.to_owned();
                to_child[ii].send(lb);
             }
          }
@@ -223,12 +227,12 @@ fn main() {
    }
 
    // finish...
-    for sizes.eachi |ii, _sz| {
+    foreach (ii, _sz) in sizes.iter().enumerate() {
       to_child[ii].send(~[]);
    }
 
    // now fetch and print result messages
-    for sizes.eachi |ii, _sz| {
+    foreach (ii, _sz) in sizes.iter().enumerate() {
       io::println(from_child[ii].recv());
    }
 }

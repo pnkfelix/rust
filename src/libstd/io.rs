@@ -46,26 +46,27 @@ implement `Reader` and `Writer`, where appropriate.
 
 #[allow(missing_doc)];
 
-use result::Result;
-
+use cast;
+use clone::Clone;
 use container::Container;
 use int;
-use libc;
-use libc::{c_int, c_long, c_void, size_t, ssize_t};
+use iterator::Iterator;
 use libc::consts::os::posix88::*;
-use os;
-use cast;
-use path::Path;
+use libc::{c_int, c_long, c_void, size_t, ssize_t};
+use libc;
+use num;
 use ops::Drop;
-use old_iter::{BaseIter, CopyableIter};
+use option::{Some, None};
+use os;
+use path::Path;
 use ptr;
-use result;
+use result::{Result, Ok, Err};
+use str::{StrSlice, OwnedStr};
 use str;
-use str::StrSlice;
 use to_str::ToStr;
 use uint;
+use vec::{MutableVector, ImmutableVector, OwnedVector, OwnedCopyableVector, CopyableVector};
 use vec;
-use vec::{OwnedVector, OwnedCopyableVector};
 
 #[allow(non_camel_case_types)] // not sure what to do about this
 pub type fd_t = c_int;
@@ -75,10 +76,10 @@ pub mod rustrt {
 
     #[abi = "cdecl"]
     #[link_name = "rustrt"]
-    pub extern {
-        unsafe fn rust_get_stdin() -> *libc::FILE;
-        unsafe fn rust_get_stdout() -> *libc::FILE;
-        unsafe fn rust_get_stderr() -> *libc::FILE;
+    extern {
+        pub unsafe fn rust_get_stdin() -> *libc::FILE;
+        pub unsafe fn rust_get_stdout() -> *libc::FILE;
+        pub unsafe fn rust_get_stderr() -> *libc::FILE;
     }
 }
 
@@ -147,6 +148,9 @@ pub trait Reader {
 
     /**
     * Returns a boolean value: are we currently at EOF?
+    *
+    * Note that stream position may be already at the end-of-file point,
+    * but `eof` returns false until an attempt to read at that position.
     *
     * `eof` is conceptually similar to C's `feof` function.
     *
@@ -698,7 +702,7 @@ impl<T:Reader> ReaderUtil for T {
             // over-read by reading 1-byte per char needed
             nbread = if ncreq > nbreq { ncreq } else { nbreq };
             if nbread > 0 {
-                bytes = vec::slice(bytes, offset, bytes.len()).to_vec();
+                bytes = bytes.slice(offset, bytes.len()).to_owned();
             }
         }
         chars
@@ -724,15 +728,21 @@ impl<T:Reader> ReaderUtil for T {
     }
 
     fn each_byte(&self, it: &fn(int) -> bool) -> bool {
-        while !self.eof() {
-            if !it(self.read_byte()) { return false; }
+        loop {
+            match self.read_byte() {
+                -1 => break,
+                ch => if !it(ch) { return false; }
+            }
         }
         return true;
     }
 
     fn each_char(&self, it: &fn(char) -> bool) -> bool {
-        while !self.eof() {
-            if !it(self.read_char()) { return false; }
+        loop {
+            match self.read_char() {
+                eof if eof == (-1 as char) => break,
+                ch => if !it(ch) { return false; }
+            }
         }
         return true;
     }
@@ -760,9 +770,10 @@ impl<T:Reader> ReaderUtil for T {
 
     fn read_lines(&self) -> ~[~str] {
         do vec::build |push| {
-            for self.each_line |line| {
-                push(str::to_owned(line));
-            }
+            do self.each_line |line| {
+                push(line.to_owned());
+                true
+            };
         }
     }
 
@@ -771,7 +782,9 @@ impl<T:Reader> ReaderUtil for T {
     fn read_le_uint_n(&self, nbytes: uint) -> u64 {
         assert!(nbytes > 0 && nbytes <= 8);
 
-        let mut (val, pos, i) = (0u64, 0, nbytes);
+        let mut val = 0u64;
+        let mut pos = 0;
+        let mut i = nbytes;
         while i > 0 {
             val += (self.read_u8() as u64) << pos;
             pos += 8;
@@ -787,7 +800,8 @@ impl<T:Reader> ReaderUtil for T {
     fn read_be_uint_n(&self, nbytes: uint) -> u64 {
         assert!(nbytes > 0 && nbytes <= 8);
 
-        let mut (val, i) = (0u64, nbytes);
+        let mut val = 0u64;
+        let mut i = nbytes;
         while i > 0 {
             i -= 1;
             val += (self.read_u8() as u64) << i * 8;
@@ -914,7 +928,7 @@ fn convert_whence(whence: SeekStyle) -> i32 {
 impl Reader for *libc::FILE {
     fn read(&self, bytes: &mut [u8], len: uint) -> uint {
         unsafe {
-            do vec::as_mut_buf(bytes) |buf_p, buf_len| {
+            do bytes.as_mut_buf |buf_p, buf_len| {
                 assert!(buf_len >= len);
 
                 let count = libc::fread(buf_p as *mut c_void, 1u as size_t,
@@ -989,7 +1003,7 @@ impl FILERes {
 }
 
 impl Drop for FILERes {
-    fn finalize(&self) {
+    fn drop(&self) {
         unsafe {
             libc::fclose(self.f);
         }
@@ -1026,32 +1040,33 @@ pub fn stdin() -> @Reader {
 }
 
 pub fn file_reader(path: &Path) -> Result<@Reader, ~str> {
-    unsafe {
-        let f = os::as_c_charp(path.to_str(), |pathbuf| {
-            os::as_c_charp("r", |modebuf|
-                libc::fopen(pathbuf, modebuf)
-            )
-        });
-        return if f as uint == 0u { result::Err(~"error opening "
-                                                + path.to_str()) }
-        else {
-            result::Ok(FILE_reader(f, true))
+    let f = do path.to_str().as_c_str |pathbuf| {
+        do "r".as_c_str |modebuf| {
+            unsafe { libc::fopen(pathbuf, modebuf as *libc::c_char) }
         }
+    };
+
+    if f as uint == 0u {
+        Err(~"error opening " + path.to_str())
+    } else {
+        Ok(FILE_reader(f, true))
     }
 }
 
 
 // Byte readers
-pub struct BytesReader<'self> {
-    bytes: &'self [u8],
+pub struct BytesReader {
+    // FIXME(#5723) see other FIXME below
+    // FIXME(#7268) this should also be parameterized over <'self>
+    bytes: &'static [u8],
     pos: @mut uint
 }
 
-impl<'self> Reader for BytesReader<'self> {
+impl Reader for BytesReader {
     fn read(&self, bytes: &mut [u8], len: uint) -> uint {
-        let count = uint::min(len, self.bytes.len() - *self.pos);
+        let count = num::min(len, self.bytes.len() - *self.pos);
 
-        let view = vec::slice(self.bytes, *self.pos, self.bytes.len());
+        let view = self.bytes.slice(*self.pos, self.bytes.len());
         vec::bytes::copy_memory(bytes, view, count);
 
         *self.pos += count;
@@ -1084,6 +1099,10 @@ impl<'self> Reader for BytesReader<'self> {
 }
 
 pub fn with_bytes_reader<T>(bytes: &[u8], f: &fn(@Reader) -> T) -> T {
+    // XXX XXX XXX this is glaringly unsound
+    // FIXME(#5723) Use a &Reader for the callback's argument. Should be:
+    // fn with_bytes_reader<'r, T>(bytes: &'r [u8], f: &fn(&'r Reader) -> T) -> T
+    let bytes: &'static [u8] = unsafe { cast::transmute(bytes) };
     f(@BytesReader {
         bytes: bytes,
         pos: @mut 0
@@ -1091,6 +1110,7 @@ pub fn with_bytes_reader<T>(bytes: &[u8], f: &fn(@Reader) -> T) -> T {
 }
 
 pub fn with_str_reader<T>(s: &str, f: &fn(@Reader) -> T) -> T {
+    // FIXME(#5723): As above.
     with_bytes_reader(s.as_bytes(), f)
 }
 
@@ -1142,7 +1162,7 @@ impl<W:Writer,C> Writer for Wrapper<W, C> {
 impl Writer for *libc::FILE {
     fn write(&self, v: &[u8]) {
         unsafe {
-            do vec::as_const_buf(v) |vbuf, len| {
+            do v.as_imm_buf |vbuf, len| {
                 let nout = libc::fwrite(vbuf as *c_void,
                                         1,
                                         len as size_t,
@@ -1193,9 +1213,9 @@ impl Writer for fd_t {
     fn write(&self, v: &[u8]) {
         unsafe {
             let mut count = 0u;
-            do vec::as_const_buf(v) |vbuf, len| {
+            do v.as_imm_buf |vbuf, len| {
                 while count < len {
-                    let vb = ptr::const_offset(vbuf, count) as *c_void;
+                    let vb = ptr::offset(vbuf, count as int) as *c_void;
                     let nout = libc::write(*self, vb, len as size_t);
                     if nout < 0 as ssize_t {
                         error!("error writing buffer");
@@ -1234,7 +1254,7 @@ impl FdRes {
 }
 
 impl Drop for FdRes {
-    fn finalize(&self) {
+    fn drop(&self) {
         unsafe {
             libc::close(self.fd);
         }
@@ -1261,7 +1281,7 @@ pub fn mk_file_writer(path: &Path, flags: &[FileFlag])
     fn wb() -> c_int { O_WRONLY as c_int }
 
     let mut fflags: c_int = wb();
-    for flags.each |f| {
+    foreach f in flags.iter() {
         match *f {
           Append => fflags |= O_APPEND as c_int,
           Create => fflags |= O_CREAT as c_int,
@@ -1270,16 +1290,15 @@ pub fn mk_file_writer(path: &Path, flags: &[FileFlag])
         }
     }
     let fd = unsafe {
-        do os::as_c_charp(path.to_str()) |pathbuf| {
+        do path.to_str().as_c_str |pathbuf| {
             libc::open(pathbuf, fflags,
                        (S_IRUSR | S_IWUSR) as c_int)
         }
     };
     if fd < (0 as c_int) {
-        result::Err(fmt!("error opening %s: %s", path.to_str(),
-                         os::last_os_error()))
+        Err(fmt!("error opening %s: %s", path.to_str(), os::last_os_error()))
     } else {
-        result::Ok(fd_writer(fd, true))
+        Ok(fd_writer(fd, true))
     }
 }
 
@@ -1547,24 +1566,23 @@ impl<T:Writer> WriterUtil for T {
 
 }
 
-#[allow(non_implicitly_copyable_typarams)]
 pub fn file_writer(path: &Path, flags: &[FileFlag]) -> Result<@Writer, ~str> {
-    mk_file_writer(path, flags).chain(|w| result::Ok(w))
+    mk_file_writer(path, flags).chain(|w| Ok(w))
 }
 
 
 // FIXME: fileflags // #2004
 pub fn buffered_file_writer(path: &Path) -> Result<@Writer, ~str> {
     unsafe {
-        let f = do os::as_c_charp(path.to_str()) |pathbuf| {
-            do os::as_c_charp("w") |modebuf| {
+        let f = do path.to_str().as_c_str |pathbuf| {
+            do "w".as_c_str |modebuf| {
                 libc::fopen(pathbuf, modebuf)
             }
         };
         return if f as uint == 0u {
-            result::Err(~"error opening " + path.to_str())
+            Err(~"error opening " + path.to_str())
         } else {
-            result::Ok(FILE_writer(f, true))
+            Ok(FILE_writer(f, true))
         }
     }
 }
@@ -1650,15 +1668,13 @@ impl Writer for BytesWriter {
         let v_len = v.len();
 
         let bytes = &mut *self.bytes;
-        let count = uint::max(bytes.len(), *self.pos + v_len);
-        vec::reserve(bytes, count);
+        let count = num::max(bytes.len(), *self.pos + v_len);
+        bytes.reserve(count);
 
         unsafe {
-            // Silly stage0 borrow check workaround...
-            let casted: &mut ~[u8] = cast::transmute_copy(&bytes);
-            vec::raw::set_len(casted, count);
+            vec::raw::set_len(bytes, count);
 
-            let view = vec::mut_slice(*bytes, *self.pos, count);
+            let view = bytes.mut_slice(*self.pos, count);
             vec::bytes::copy_memory(view, v, v_len);
         }
 
@@ -1688,7 +1704,7 @@ pub fn with_bytes_writer(f: &fn(@Writer)) -> ~[u8] {
     let wr = @BytesWriter::new();
     f(wr as @Writer);
     let @BytesWriter { bytes, _ } = wr;
-    copy *bytes
+    (*bytes).clone()
 }
 
 pub fn with_str_writer(f: &fn(@Writer)) -> ~str {
@@ -1717,31 +1733,28 @@ pub fn seek_in_buf(offset: int, pos: uint, len: uint, whence: SeekStyle) ->
     return bpos as uint;
 }
 
-#[allow(non_implicitly_copyable_typarams)]
 pub fn read_whole_file_str(file: &Path) -> Result<~str, ~str> {
-    result::chain(read_whole_file(file), |bytes| {
+    do read_whole_file(file).chain |bytes| {
         if str::is_utf8(bytes) {
-            result::Ok(str::from_bytes(bytes))
+            Ok(str::from_bytes(bytes))
         } else {
-            result::Err(file.to_str() + " is not UTF-8")
+            Err(file.to_str() + " is not UTF-8")
         }
-    })
+    }
 }
 
 // FIXME (#2004): implement this in a low-level way. Going through the
 // abstractions is pointless.
-#[allow(non_implicitly_copyable_typarams)]
 pub fn read_whole_file(file: &Path) -> Result<~[u8], ~str> {
-    result::chain(file_reader(file), |rdr| {
-        result::Ok(rdr.read_whole_stream())
-    })
+    do file_reader(file).chain |rdr| {
+        Ok(rdr.read_whole_stream())
+    }
 }
 
 // fsync related
 
 pub mod fsync {
     use io::{FILERes, FdRes, fd_t};
-    use kinds::Copy;
     use libc;
     use ops::Drop;
     use option::{None, Option, Some};
@@ -1766,21 +1779,20 @@ pub mod fsync {
         arg: Arg<t>,
     }
 
-    impl <t: Copy> Res<t> {
+    impl <t> Res<t> {
         pub fn new(arg: Arg<t>) -> Res<t> {
             Res { arg: arg }
         }
     }
 
     #[unsafe_destructor]
-    impl<T:Copy> Drop for Res<T> {
-        fn finalize(&self) {
+    impl<T> Drop for Res<T> {
+        fn drop(&self) {
             match self.arg.opt_level {
                 None => (),
                 Some(level) => {
                   // fail hard if not succesful
-                  assert!(((self.arg.fsync_fn)(copy self.arg.val, level)
-                    != -1));
+                  assert!(((self.arg.fsync_fn)(&self.arg.val, level) != -1));
                 }
             }
         }
@@ -1789,7 +1801,7 @@ pub mod fsync {
     pub struct Arg<t> {
         val: t,
         opt_level: Option<Level>,
-        fsync_fn: @fn(f: t, Level) -> int,
+        fsync_fn: @fn(f: &t, Level) -> int,
     }
 
     // fsync file after executing blk
@@ -1801,7 +1813,7 @@ pub mod fsync {
             val: file.f, opt_level: opt_level,
             fsync_fn: |file, l| {
                 unsafe {
-                    os::fsync_fd(libc::fileno(file), l) as int
+                    os::fsync_fd(libc::fileno(*file), l) as int
                 }
             }
         }));
@@ -1812,7 +1824,7 @@ pub mod fsync {
                        blk: &fn(v: Res<fd_t>)) {
         blk(Res::new(Arg {
             val: fd.fd, opt_level: opt_level,
-            fsync_fn: |fd, l| os::fsync_fd(fd, l) as int
+            fsync_fn: |fd, l| os::fsync_fd(*fd, l) as int
         }));
     }
 
@@ -1824,18 +1836,19 @@ pub mod fsync {
                     blk: &fn(v: Res<@FSyncable>)) {
         blk(Res::new(Arg {
             val: o, opt_level: opt_level,
-            fsync_fn: |o, l| o.fsync(l)
+            fsync_fn: |o, l| (*o).fsync(l)
         }));
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use prelude::*;
     use i32;
     use io::{BytesWriter, SeekCur, SeekEnd, SeekSet};
     use io;
     use path::Path;
-    use result;
+    use result::{Ok, Err};
     use u64;
     use vec;
 
@@ -1845,17 +1858,40 @@ mod tests {
         debug!(tmpfile);
         let frood: ~str =
             ~"A hoopy frood who really knows where his towel is.";
-        debug!(copy frood);
+        debug!(frood.clone());
         {
-            let out: @io::Writer =
-                result::get(
-                    &io::file_writer(tmpfile, [io::Create, io::Truncate]));
+            let out = io::file_writer(tmpfile, [io::Create, io::Truncate]).unwrap();
             out.write_str(frood);
         }
-        let inp: @io::Reader = result::get(&io::file_reader(tmpfile));
+        let inp = io::file_reader(tmpfile).unwrap();
         let frood2: ~str = inp.read_c_str();
-        debug!(copy frood2);
+        debug!(frood2.clone());
         assert_eq!(frood, frood2);
+    }
+
+    #[test]
+    fn test_each_byte_each_char_file() {
+        // Issue #5056 -- shouldn't include trailing EOF.
+        let path = Path("tmp/lib-io-test-each-byte-each-char-file.tmp");
+
+        {
+            // create empty, enough to reproduce a problem
+            io::file_writer(&path, [io::Create]).unwrap();
+        }
+
+        {
+            let file = io::file_reader(&path).unwrap();
+            do file.each_byte() |_| {
+                fail!("must be empty")
+            };
+        }
+
+        {
+            let file = io::file_reader(&path).unwrap();
+            do file.each_char() |_| {
+                fail!("must be empty")
+            };
+        }
     }
 
     #[test]
@@ -1904,8 +1940,9 @@ mod tests {
                 if len <= ivals.len() {
                     assert_eq!(res.len(), len);
                 }
-                assert!(vec::slice(ivals, 0u, res.len()) ==
-                             vec::map(res, |x| *x as int));
+                foreach (iv, c) in ivals.iter().zip(res.iter()) {
+                    assert!(*iv == *c as int)
+                }
             }
         }
         let mut i = 0;
@@ -1936,10 +1973,10 @@ mod tests {
     #[test]
     fn file_reader_not_exist() {
         match io::file_reader(&Path("not a file")) {
-          result::Err(e) => {
+          Err(e) => {
             assert_eq!(e, ~"error opening not a file");
           }
-          result::Ok(_) => fail!()
+          Ok(_) => fail!()
         }
     }
 
@@ -1949,10 +1986,10 @@ mod tests {
     fn test_read_buffer_too_small() {
         let path = &Path("tmp/lib-io-test-read-buffer-too-small.tmp");
         // ensure the file exists
-        io::file_writer(path, [io::Create]).get();
+        io::file_writer(path, [io::Create]).unwrap();
 
-        let file = io::file_reader(path).get();
-        let mut buf = vec::from_elem(5, 0);
+        let file = io::file_reader(path).unwrap();
+        let mut buf = vec::from_elem(5, 0u8);
         file.read(buf, 6); // this should fail because buf is too small
     }
 
@@ -1960,37 +1997,37 @@ mod tests {
     fn test_read_buffer_big_enough() {
         let path = &Path("tmp/lib-io-test-read-buffer-big-enough.tmp");
         // ensure the file exists
-        io::file_writer(path, [io::Create]).get();
+        io::file_writer(path, [io::Create]).unwrap();
 
-        let file = io::file_reader(path).get();
-        let mut buf = vec::from_elem(5, 0);
+        let file = io::file_reader(path).unwrap();
+        let mut buf = vec::from_elem(5, 0u8);
         file.read(buf, 4); // this should succeed because buf is big enough
     }
 
     #[test]
     fn test_write_empty() {
         let file = io::file_writer(&Path("tmp/lib-io-test-write-empty.tmp"),
-                                   [io::Create]).get();
+                                   [io::Create]).unwrap();
         file.write([]);
     }
 
     #[test]
     fn file_writer_bad_name() {
         match io::file_writer(&Path("?/?"), []) {
-          result::Err(e) => {
+          Err(e) => {
             assert!(e.starts_with("error opening"));
           }
-          result::Ok(_) => fail!()
+          Ok(_) => fail!()
         }
     }
 
     #[test]
     fn buffered_file_writer_bad_name() {
         match io::buffered_file_writer(&Path("?/?")) {
-          result::Err(e) => {
+          Err(e) => {
             assert!(e.starts_with("error opening"));
           }
-          result::Ok(_) => fail!()
+          Ok(_) => fail!()
         }
     }
 
@@ -2016,16 +2053,16 @@ mod tests {
 
         // write the ints to the file
         {
-            let file = io::file_writer(&path, [io::Create]).get();
-            for uints.each |i| {
+            let file = io::file_writer(&path, [io::Create]).unwrap();
+            foreach i in uints.iter() {
                 file.write_le_u64(*i);
             }
         }
 
         // then read them back and check that they are the same
         {
-            let file = io::file_reader(&path).get();
-            for uints.each |i| {
+            let file = io::file_reader(&path).unwrap();
+            foreach i in uints.iter() {
                 assert_eq!(file.read_le_u64(), *i);
             }
         }
@@ -2038,16 +2075,16 @@ mod tests {
 
         // write the ints to the file
         {
-            let file = io::file_writer(&path, [io::Create]).get();
-            for uints.each |i| {
+            let file = io::file_writer(&path, [io::Create]).unwrap();
+            foreach i in uints.iter() {
                 file.write_be_u64(*i);
             }
         }
 
         // then read them back and check that they are the same
         {
-            let file = io::file_reader(&path).get();
-            for uints.each |i| {
+            let file = io::file_reader(&path).unwrap();
+            foreach i in uints.iter() {
                 assert_eq!(file.read_be_u64(), *i);
             }
         }
@@ -2060,16 +2097,16 @@ mod tests {
 
         // write the ints to the file
         {
-            let file = io::file_writer(&path, [io::Create]).get();
-            for ints.each |i| {
+            let file = io::file_writer(&path, [io::Create]).unwrap();
+            foreach i in ints.iter() {
                 file.write_be_i32(*i);
             }
         }
 
         // then read them back and check that they are the same
         {
-            let file = io::file_reader(&path).get();
-            for ints.each |i| {
+            let file = io::file_reader(&path).unwrap();
+            foreach i in ints.iter() {
                 // this tests that the sign extension is working
                 // (comparing the values as i32 would not test this)
                 assert_eq!(file.read_be_int_n(4), *i as i64);
@@ -2084,12 +2121,12 @@ mod tests {
         let buf = ~[0x41, 0x02, 0x00, 0x00];
 
         {
-            let file = io::file_writer(&path, [io::Create]).get();
+            let file = io::file_writer(&path, [io::Create]).unwrap();
             file.write(buf);
         }
 
         {
-            let file = io::file_reader(&path).get();
+            let file = io::file_reader(&path).unwrap();
             let f = file.read_be_f32();
             assert_eq!(f, 8.1250);
         }
@@ -2101,13 +2138,13 @@ mod tests {
         let f:f32 = 8.1250;
 
         {
-            let file = io::file_writer(&path, [io::Create]).get();
+            let file = io::file_writer(&path, [io::Create]).unwrap();
             file.write_be_f32(f);
             file.write_le_f32(f);
         }
 
         {
-            let file = io::file_reader(&path).get();
+            let file = io::file_reader(&path).unwrap();
             assert_eq!(file.read_be_f32(), 8.1250);
             assert_eq!(file.read_le_f32(), 8.1250);
         }

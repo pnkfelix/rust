@@ -10,15 +10,14 @@
 
 // xfail-fast
 
-use std::bool;
 use std::int;
 use std::libc::c_void;
 use std::ptr;
 use std::sys;
-use std::vec::UnboxedVecRepr;
-use intrinsic::{TyDesc, get_tydesc, visit_tydesc, TyVisitor, Opaque};
+use std::unstable::intrinsics::{TyDesc, get_tydesc, visit_tydesc, TyVisitor, Opaque};
+use std::unstable::raw::Vec;
 
-#[doc = "High-level interfaces to `intrinsic::visit_ty` reflection system."]
+#[doc = "High-level interfaces to `std::unstable::intrinsics::visit_ty` reflection system."]
 
 /// Trait for visitor that wishes to reflect on data.
 trait movable_ptr {
@@ -182,13 +181,6 @@ impl<V:TyVisitor + movable_ptr> TyVisitor for ptr_visit_adaptor<V> {
         true
     }
 
-    fn visit_str(&self) -> bool {
-        self.align_to::<~str>();
-        if ! self.inner.visit_str() { return false; }
-        self.bump_past::<~str>();
-        true
-    }
-
     fn visit_estr_box(&self) -> bool {
         self.align_to::<@str>();
         if ! self.inner.visit_estr_box() { return false; }
@@ -233,6 +225,13 @@ impl<V:TyVisitor + movable_ptr> TyVisitor for ptr_visit_adaptor<V> {
         true
     }
 
+    fn visit_uniq_managed(&self, mtbl: uint, inner: *TyDesc) -> bool {
+        self.align_to::<~u8>();
+        if ! self.inner.visit_uniq_managed(mtbl, inner) { return false; }
+        self.bump_past::<~u8>();
+        true
+    }
+
     fn visit_ptr(&self, mtbl: uint, inner: *TyDesc) -> bool {
         self.align_to::<*u8>();
         if ! self.inner.visit_ptr(mtbl, inner) { return false; }
@@ -248,7 +247,7 @@ impl<V:TyVisitor + movable_ptr> TyVisitor for ptr_visit_adaptor<V> {
     }
 
     fn visit_unboxed_vec(&self, mtbl: uint, inner: *TyDesc) -> bool {
-        self.align_to::<UnboxedVecRepr>();
+        self.align_to::<Vec<()>>();
         // FIXME (#3732): Inner really has to move its own pointers on this one.
         // or else possibly we could have some weird interface wherein we
         // read-off a word from inner's pointers, but the read-word has to
@@ -275,6 +274,13 @@ impl<V:TyVisitor + movable_ptr> TyVisitor for ptr_visit_adaptor<V> {
         self.align_to::<~[u8]>();
         if ! self.inner.visit_evec_uniq(mtbl, inner) { return false; }
         self.bump_past::<~[u8]>();
+        true
+    }
+
+    fn visit_evec_uniq_managed(&self, mtbl: uint, inner: *TyDesc) -> bool {
+        self.align_to::<~[@u8]>();
+        if ! self.inner.visit_evec_uniq_managed(mtbl, inner) { return false; }
+        self.bump_past::<~[@u8]>();
         true
     }
 
@@ -486,9 +492,9 @@ struct Stuff {
 }
 
 impl my_visitor {
-    pub fn get<T:Copy>(&self, f: &fn(T)) {
+    pub fn get<T:Clone>(&self, f: &fn(T)) {
         unsafe {
-            f(copy *(self.ptr1 as *T));
+            f((*(self.ptr1 as *T)).clone());
         }
     }
 
@@ -543,7 +549,6 @@ impl TyVisitor for my_visitor {
     fn visit_f64(&self) -> bool { true }
 
     fn visit_char(&self) -> bool { true }
-    fn visit_str(&self) -> bool { true }
 
     fn visit_estr_box(&self) -> bool { true }
     fn visit_estr_uniq(&self) -> bool { true }
@@ -553,6 +558,7 @@ impl TyVisitor for my_visitor {
 
     fn visit_box(&self, _mtbl: uint, _inner: *TyDesc) -> bool { true }
     fn visit_uniq(&self, _mtbl: uint, _inner: *TyDesc) -> bool { true }
+    fn visit_uniq_managed(&self, _mtbl: uint, _inner: *TyDesc) -> bool { true }
     fn visit_ptr(&self, _mtbl: uint, _inner: *TyDesc) -> bool { true }
     fn visit_rptr(&self, _mtbl: uint, _inner: *TyDesc) -> bool { true }
 
@@ -560,6 +566,7 @@ impl TyVisitor for my_visitor {
     fn visit_unboxed_vec(&self, _mtbl: uint, _inner: *TyDesc) -> bool { true }
     fn visit_evec_box(&self, _mtbl: uint, _inner: *TyDesc) -> bool { true }
     fn visit_evec_uniq(&self, _mtbl: uint, _inner: *TyDesc) -> bool { true }
+    fn visit_evec_uniq_managed(&self, _mtbl: uint, _inner: *TyDesc) -> bool { true }
     fn visit_evec_slice(&self, _mtbl: uint, _inner: *TyDesc) -> bool { true }
     fn visit_evec_fixed(&self, _n: uint, _sz: uint, _align: uint,
                         _mtbl: uint, _inner: *TyDesc) -> bool { true }
@@ -637,7 +644,9 @@ impl TyVisitor for my_visitor {
 }
 
 fn get_tydesc_for<T>(_t: T) -> *TyDesc {
-    get_tydesc::<T>()
+    unsafe {
+        get_tydesc::<T>()
+    }
 }
 
 struct Triple { x: int, y: int, z: int }
@@ -651,17 +660,17 @@ pub fn main() {
                                        vals: ~[]});
         let v = ptr_visit_adaptor(Inner {inner: u});
         let td = get_tydesc_for(r);
-        unsafe { error!("tydesc sz: %u, align: %u",
-                        (*td).size, (*td).align); }
+        error!("tydesc sz: %u, align: %u",
+               (*td).size, (*td).align);
         let v = @v as @TyVisitor;
         visit_tydesc(td, v);
 
-        for (u.vals.clone()).each |s| {
-            println(fmt!("val: %s", *s));
+        let r = u.vals.clone();
+        foreach s in r.iter() {
+            printfln!("val: %s", *s);
         }
         error!("%?", u.vals.clone());
-        assert!(u.vals == ~[
-            ~"1", ~"2", ~"3", ~"true", ~"false", ~"5", ~"4", ~"3", ~"12"
-        ]);
+        assert_eq!(u.vals.clone(),
+                   ~[ ~"1", ~"2", ~"3", ~"true", ~"false", ~"5", ~"4", ~"3", ~"12"]);
     }
- }
+}

@@ -61,24 +61,28 @@
  * avoid combining it with other lines and making matters even worse.
  */
 
-use core::prelude::*;
+use std::io;
+use std::vec;
 
-use core::io;
-use core::vec;
+#[deriving(Clone, Eq)]
+pub enum breaks {
+    consistent,
+    inconsistent,
+}
 
-#[deriving(Eq)]
-pub enum breaks { consistent, inconsistent, }
-
+#[deriving(Clone)]
 pub struct break_t {
     offset: int,
     blank_space: int
 }
 
+#[deriving(Clone)]
 pub struct begin_t {
     offset: int,
     breaks: breaks
 }
 
+#[deriving(Clone)]
 pub enum token {
     STRING(@str, int),
     BREAK(break_t),
@@ -124,12 +128,14 @@ pub fn buf_str(toks: ~[token], szs: ~[int], left: uint, right: uint,
     let mut s = ~"[";
     while i != right && L != 0u {
         L -= 1u;
-        if i != left { s += ", "; }
-        s += fmt!("%d=%s", szs[i], tok_str(toks[i]));
+        if i != left {
+            s.push_str(", ");
+        }
+        s.push_str(fmt!("%d=%s", szs[i], tok_str(toks[i])));
         i += 1u;
         i %= n;
     }
-    s += "]";
+    s.push_char(']');
     return s;
 }
 
@@ -424,7 +430,7 @@ impl Printer {
     pub fn check_stack(&mut self, k: int) {
         if !self.scan_stack_empty {
             let x = self.scan_top();
-            match copy self.token[x] {
+            match self.token[x] {
               BEGIN(_) => {
                 if k > 0 {
                     self.size[self.scan_pop()] = self.size[x] +
@@ -476,11 +482,11 @@ impl Printer {
     pub fn print(&mut self, x: token, L: int) {
         debug!("print %s %d (remaining line space=%d)", tok_str(x), L,
                self.space);
-        debug!("%s", buf_str(copy self.token,
-                           copy self.size,
-                           self.left,
-                           self.right,
-                           6u));
+        debug!("%s", buf_str(self.token.clone(),
+                             self.size.clone(),
+                             self.left,
+                             self.right,
+                             6));
         match x {
           BEGIN(b) => {
             if L > self.space {

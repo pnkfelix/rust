@@ -11,16 +11,15 @@
 // FIXME #3921. This is unsafe because linenoise uses global mutable
 // state without mutexes.
 
-use core::prelude::*;
 
-use core::libc::{c_char, c_int};
-use core::local_data;
-use core::str;
+use std::libc::{c_char, c_int};
+use std::local_data;
+use std::str;
 
 pub mod rustrt {
-    use core::libc::{c_char, c_int};
+    use std::libc::{c_char, c_int};
 
-    pub extern {
+    extern {
         pub unsafe fn linenoise(prompt: *c_char) -> *c_char;
         pub unsafe fn linenoiseHistoryAdd(line: *c_char) -> c_int;
         pub unsafe fn linenoiseHistorySetMaxLen(len: c_int) -> c_int;
@@ -33,7 +32,7 @@ pub mod rustrt {
 
 /// Add a line to history
 pub unsafe fn add_history(line: &str) -> bool {
-    do str::as_c_str(line) |buf| {
+    do line.as_c_str |buf| {
         rustrt::linenoiseHistoryAdd(buf) == 1 as c_int
     }
 }
@@ -45,21 +44,21 @@ pub unsafe fn set_history_max_len(len: int) -> bool {
 
 /// Save line history to a file
 pub unsafe fn save_history(file: &str) -> bool {
-    do str::as_c_str(file) |buf| {
+    do file.as_c_str |buf| {
         rustrt::linenoiseHistorySave(buf) == 1 as c_int
     }
 }
 
 /// Load line history from a file
 pub unsafe fn load_history(file: &str) -> bool {
-    do str::as_c_str(file) |buf| {
+    do file.as_c_str |buf| {
         rustrt::linenoiseHistoryLoad(buf) == 1 as c_int
     }
 }
 
 /// Print out a prompt and then wait for input and return it
 pub unsafe fn read(prompt: &str) -> Option<~str> {
-    do str::as_c_str(prompt) |buf| {
+    do prompt.as_c_str |buf| {
         let line = rustrt::linenoise(buf);
 
         if line.is_null() { None }
@@ -67,24 +66,25 @@ pub unsafe fn read(prompt: &str) -> Option<~str> {
     }
 }
 
-pub type CompletionCb<'self> = @fn(~str, &'self fn(~str));
+pub type CompletionCb = @fn(~str, @fn(~str));
 
-fn complete_key(_v: @CompletionCb) {}
+static complete_key: local_data::Key<@CompletionCb> = &local_data::Key;
 
 /// Bind to the main completion callback
 pub unsafe fn complete(cb: CompletionCb) {
-    local_data::local_data_set(complete_key, @(cb));
+    local_data::set(complete_key, @cb);
 
     extern fn callback(line: *c_char, completions: *()) {
-        unsafe {
-            let cb = *local_data::local_data_get(complete_key)
-                .get();
+        do local_data::get(complete_key) |cb| {
+            let cb = **cb.unwrap();
 
-            do cb(str::raw::from_c_str(line)) |suggestion| {
-                do str::as_c_str(suggestion) |buf| {
-                    rustrt::linenoiseAddCompletion(completions, buf);
+            unsafe {
+                do cb(str::raw::from_c_str(line)) |suggestion| {
+                    do suggestion.as_c_str |buf| {
+                        rustrt::linenoiseAddCompletion(completions, buf);
+                    }
                 }
-            }
+}
         }
     }
 

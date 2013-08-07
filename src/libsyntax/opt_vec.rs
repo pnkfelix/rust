@@ -9,19 +9,15 @@
 // except according to those terms.
 
 /*!
- *
  * Defines a type OptVec<T> that can be used in place of ~[T].
  * OptVec avoids the need for allocation for empty vectors.
  * OptVec implements the iterable interface as well as
  * other useful things like `push()` and `len()`.
  */
 
-use core::prelude::*;
+use std::vec::{VecIterator};
 
-use core::old_iter;
-use core::old_iter::BaseIter;
-
-#[deriving(Encodable, Decodable)]
+#[deriving(Clone, Encodable, Decodable, IterBytes)]
 pub enum OptVec<T> {
     Empty,
     Vec(~[T])
@@ -61,6 +57,13 @@ impl<T> OptVec<T> {
         }
     }
 
+    fn map_consume<U>(self, op: &fn(T) -> U) -> OptVec<U> {
+        match self {
+            Empty => Empty,
+            Vec(v) => Vec(v.consume_iter().transform(op).collect())
+        }
+    }
+
     fn get<'a>(&'a self, i: uint) -> &'a T {
         match *self {
             Empty => fail!("Invalid index %u", i),
@@ -78,6 +81,28 @@ impl<T> OptVec<T> {
             Vec(ref v) => v.len()
         }
     }
+
+    #[inline]
+    fn iter<'r>(&'r self) -> OptVecIterator<'r, T> {
+        match *self {
+            Empty => OptVecIterator{iter: None},
+            Vec(ref v) => OptVecIterator{iter: Some(v.iter())}
+        }
+    }
+
+    #[inline]
+    fn map_to_vec<B>(&self, op: &fn(&T) -> B) -> ~[B] {
+        self.iter().transform(op).collect()
+    }
+
+    fn mapi_to_vec<B>(&self, op: &fn(uint, &T) -> B) -> ~[B] {
+        let mut index = 0;
+        self.map_to_vec(|a| {
+            let i = index;
+            index += 1;
+            op(i, a)
+        })
+    }
 }
 
 pub fn take_vec<T>(v: OptVec<T>) -> ~[T] {
@@ -87,7 +112,7 @@ pub fn take_vec<T>(v: OptVec<T>) -> ~[T] {
     }
 }
 
-impl<T:Copy> OptVec<T> {
+impl<T:Clone> OptVec<T> {
     fn prepend(&self, t: T) -> OptVec<T> {
         let mut v0 = ~[t];
         match *self {
@@ -95,22 +120,6 @@ impl<T:Copy> OptVec<T> {
             Vec(ref v1) => { v0.push_all(*v1); }
         }
         return Vec(v0);
-    }
-
-    fn push_all<I: BaseIter<T>>(&mut self, from: &I) {
-        for from.each |e| {
-            self.push(copy *e);
-        }
-    }
-
-    #[inline]
-    fn mapi_to_vec<B>(&self, op: &fn(uint, &T) -> B) -> ~[B] {
-        let mut index = 0;
-        old_iter::map_to_vec(self, |a| {
-            let i = index;
-            index += 1;
-            op(i, a)
-        })
     }
 }
 
@@ -131,68 +140,24 @@ impl<A:Eq> Eq for OptVec<A> {
     }
 }
 
-impl<A> BaseIter<A> for OptVec<A> {
-    fn each(&self, blk: &fn(v: &A) -> bool) -> bool {
-        match *self {
-            Empty => true,
-            Vec(ref v) => v.each(blk)
+pub struct OptVecIterator<'self, T> {
+    priv iter: Option<VecIterator<'self, T>>
+}
+
+impl<'self, T> Iterator<&'self T> for OptVecIterator<'self, T> {
+    #[inline]
+    fn next(&mut self) -> Option<&'self T> {
+        match self.iter {
+            Some(ref mut x) => x.next(),
+            None => None
         }
     }
 
-    fn size_hint(&self) -> Option<uint> {
-        Some(self.len())
-    }
-}
-
-impl<A> old_iter::ExtendedIter<A> for OptVec<A> {
     #[inline]
-    fn eachi(&self, blk: &fn(v: uint, v: &A) -> bool) -> bool {
-        old_iter::eachi(self, blk)
-    }
-    #[inline]
-    fn all(&self, blk: &fn(&A) -> bool) -> bool {
-        old_iter::all(self, blk)
-    }
-    #[inline]
-    fn any(&self, blk: &fn(&A) -> bool) -> bool {
-        old_iter::any(self, blk)
-    }
-    #[inline]
-    fn foldl<B>(&self, b0: B, blk: &fn(&B, &A) -> B) -> B {
-        old_iter::foldl(self, b0, blk)
-    }
-    #[inline]
-    fn position(&self, f: &fn(&A) -> bool) -> Option<uint> {
-        old_iter::position(self, f)
-    }
-    #[inline]
-    fn map_to_vec<B>(&self, op: &fn(&A) -> B) -> ~[B] {
-        old_iter::map_to_vec(self, op)
-    }
-    #[inline]
-    fn flat_map_to_vec<B,IB:BaseIter<B>>(&self, op: &fn(&A) -> IB)
-        -> ~[B] {
-        old_iter::flat_map_to_vec(self, op)
-    }
-
-}
-
-impl<A: Eq> old_iter::EqIter<A> for OptVec<A> {
-    #[inline]
-    fn contains(&self, x: &A) -> bool { old_iter::contains(self, x) }
-    #[inline]
-    fn count(&self, x: &A) -> uint { old_iter::count(self, x) }
-}
-
-impl<A: Copy> old_iter::CopyableIter<A> for OptVec<A> {
-    #[inline]
-    fn filter_to_vec(&self, pred: &fn(&A) -> bool) -> ~[A] {
-        old_iter::filter_to_vec(self, pred)
-    }
-    #[inline]
-    fn to_vec(&self) -> ~[A] { old_iter::to_vec(self) }
-    #[inline]
-    fn find(&self, f: &fn(&A) -> bool) -> Option<A> {
-        old_iter::find(self, f)
+    fn size_hint(&self) -> (uint, Option<uint>) {
+        match self.iter {
+            Some(ref x) => x.size_hint(),
+            None => (0, Some(0))
+        }
     }
 }

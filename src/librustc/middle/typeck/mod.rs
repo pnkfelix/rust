@@ -48,7 +48,6 @@ independently:
 
 */
 
-use core::prelude::*;
 
 use driver::session;
 
@@ -58,8 +57,8 @@ use util::common::time;
 use util::ppaux::Repr;
 use util::ppaux;
 
-use core::hashmap::HashMap;
-use core::result;
+use std::hashmap::HashMap;
+use std::result;
 use extra::list::List;
 use extra::list;
 use syntax::codemap::span;
@@ -67,23 +66,21 @@ use syntax::print::pprust::*;
 use syntax::{ast, ast_map, abi};
 use syntax::opt_vec;
 
-#[path = "check/mod.rs"]
 pub mod check;
 pub mod rscope;
 pub mod astconv;
-#[path = "infer/mod.rs"]
 pub mod infer;
 pub mod collect;
 pub mod coherence;
 
-#[deriving(Encodable, Decodable)]
-pub enum method_origin {
-    // supertrait method invoked on "self" inside a default method
-    // first field is supertrait ID;
-    // second field is method index (relative to the *supertrait*
-    // method list)
-    method_super(ast::def_id, uint),
+#[deriving(Clone, Encodable, Decodable, Eq, Ord)]
+pub enum param_index {
+    param_numbered(uint),
+    param_self
+}
 
+#[deriving(Clone, Encodable, Decodable)]
+pub enum method_origin {
     // fully statically resolved method
     method_static(ast::def_id),
 
@@ -93,14 +90,11 @@ pub enum method_origin {
     // method invoked on a trait instance
     method_trait(ast::def_id, uint),
 
-    // method invoked on "self" inside a default method
-    method_self(ast::def_id, uint)
-
 }
 
 // details for a method invoked with a receiver whose type is a type parameter
 // with a bounded trait.
-#[deriving(Encodable, Decodable)]
+#[deriving(Clone, Encodable, Decodable)]
 pub struct method_param {
     // the trait containing the method to be invoked
     trait_id: ast::def_id,
@@ -110,12 +104,13 @@ pub struct method_param {
 
     // index of the type parameter (from those that are in scope) that is
     // the type of the receiver
-    param_num: uint,
+    param_num: param_index,
 
     // index of the bound for this type parameter which specifies the trait
     bound_num: uint,
 }
 
+#[deriving(Clone)]
 pub struct method_map_entry {
     // the type of the self parameter, which is not reflected in the fn type
     // (FIXME #3446)
@@ -133,11 +128,13 @@ pub struct method_map_entry {
 
 // maps from an expression id that corresponds to a method call to the details
 // of the method to be invoked
-pub type method_map = @mut HashMap<ast::node_id, method_map_entry>;
+pub type method_map = @mut HashMap<ast::NodeId, method_map_entry>;
 
+pub type vtable_param_res = @~[vtable_origin];
 // Resolutions for bounds of all parameters, left to right, for a given path.
-pub type vtable_res = @~[vtable_origin];
+pub type vtable_res = @~[vtable_param_res];
 
+#[deriving(Clone)]
 pub enum vtable_origin {
     /*
       Statically known vtable. def_id gives the class or impl item
@@ -151,10 +148,10 @@ pub enum vtable_origin {
       fn foo<T:quux,baz,bar>(a: T) -- a's vtable would have a
       vtable_param origin
 
-      The first uint is the param number (identifying T in the example),
+      The first argument is the param index (identifying T in the example),
       and the second is the bound number (identifying baz)
      */
-    vtable_param(uint, uint)
+    vtable_param(param_index, uint),
 }
 
 impl Repr for vtable_origin {
@@ -175,43 +172,64 @@ impl Repr for vtable_origin {
     }
 }
 
-pub type vtable_map = @mut HashMap<ast::node_id, vtable_res>;
+pub type vtable_map = @mut HashMap<ast::NodeId, vtable_res>;
+
+
+// Information about the vtable resolutions for for a trait impl.
+// Mostly the information is important for implementing default
+// methods.
+#[deriving(Clone)]
+pub struct impl_res {
+    // resolutions for any bounded params on the trait definition
+    trait_vtables: vtable_res,
+    // resolutions for the trait /itself/ (and for supertraits)
+    self_vtables: vtable_param_res
+}
+
+impl Repr for impl_res {
+    fn repr(&self, tcx: ty::ctxt) -> ~str {
+        fmt!("impl_res {trait_vtables=%s, self_vtables=%s}",
+             self.trait_vtables.repr(tcx),
+             self.self_vtables.repr(tcx))
+    }
+}
+
+pub type impl_vtable_map = @mut HashMap<ast::def_id, impl_res>;
 
 pub struct CrateCtxt {
     // A mapping from method call sites to traits that have that method.
     trait_map: resolve::TraitMap,
     method_map: method_map,
     vtable_map: vtable_map,
-    coherence_info: @coherence::CoherenceInfo,
     tcx: ty::ctxt
 }
 
 // Functions that write types into the node type table
-pub fn write_ty_to_tcx(tcx: ty::ctxt, node_id: ast::node_id, ty: ty::t) {
+pub fn write_ty_to_tcx(tcx: ty::ctxt, node_id: ast::NodeId, ty: ty::t) {
     debug!("write_ty_to_tcx(%d, %s)", node_id, ppaux::ty_to_str(tcx, ty));
     assert!(!ty::type_needs_infer(ty));
     tcx.node_types.insert(node_id as uint, ty);
 }
 pub fn write_substs_to_tcx(tcx: ty::ctxt,
-                           node_id: ast::node_id,
+                           node_id: ast::NodeId,
                            substs: ~[ty::t]) {
     if substs.len() > 0u {
         debug!("write_substs_to_tcx(%d, %?)", node_id,
                substs.map(|t| ppaux::ty_to_str(tcx, *t)));
-        assert!(substs.all(|t| !ty::type_needs_infer(*t)));
+        assert!(substs.iter().all(|t| !ty::type_needs_infer(*t)));
         tcx.node_type_substs.insert(node_id, substs);
     }
 }
 pub fn write_tpt_to_tcx(tcx: ty::ctxt,
-                        node_id: ast::node_id,
+                        node_id: ast::NodeId,
                         tpt: &ty::ty_param_substs_and_ty) {
     write_ty_to_tcx(tcx, node_id, tpt.ty);
     if !tpt.substs.tps.is_empty() {
-        write_substs_to_tcx(tcx, node_id, copy tpt.substs.tps);
+        write_substs_to_tcx(tcx, node_id, tpt.substs.tps.clone());
     }
 }
 
-pub fn lookup_def_tcx(tcx: ty::ctxt, sp: span, id: ast::node_id) -> ast::def {
+pub fn lookup_def_tcx(tcx: ty::ctxt, sp: span, id: ast::NodeId) -> ast::def {
     match tcx.def_map.find(&id) {
       Some(&x) => x,
       _ => {
@@ -220,7 +238,7 @@ pub fn lookup_def_tcx(tcx: ty::ctxt, sp: span, id: ast::node_id) -> ast::def {
     }
 }
 
-pub fn lookup_def_ccx(ccx: @mut CrateCtxt, sp: span, id: ast::node_id)
+pub fn lookup_def_ccx(ccx: &CrateCtxt, sp: span, id: ast::NodeId)
                    -> ast::def {
     lookup_def_tcx(ccx.tcx, sp, id)
 }
@@ -255,7 +273,7 @@ pub fn require_same_types(
       }
     }
 
-    match infer::mk_eqty(l_infcx, t1_is_expected, span, t1, t2) {
+    match infer::mk_eqty(l_infcx, t1_is_expected, infer::Misc(span), t1, t2) {
         result::Ok(()) => true,
         result::Err(ref terr) => {
             l_tcx.sess.span_err(span, msg() + ": " +
@@ -276,11 +294,11 @@ trait get_and_find_region {
 }
 
 impl get_and_find_region for isr_alist {
-    fn get(&self, br: ty::bound_region) -> ty::Region {
+    pub fn get(&self, br: ty::bound_region) -> ty::Region {
         self.find(br).get()
     }
 
-    fn find(&self, br: ty::bound_region) -> Option<ty::Region> {
+    pub fn find(&self, br: ty::bound_region) -> Option<ty::Region> {
         for list::each(*self) |isr| {
             let (isr_br, isr_r) = *isr;
             if isr_br == br { return Some(isr_r); }
@@ -289,13 +307,13 @@ impl get_and_find_region for isr_alist {
     }
 }
 
-fn check_main_fn_ty(ccx: @mut CrateCtxt,
-                    main_id: ast::node_id,
+fn check_main_fn_ty(ccx: &CrateCtxt,
+                    main_id: ast::NodeId,
                     main_span: span) {
     let tcx = ccx.tcx;
     let main_t = ty::node_id_to_type(tcx, main_id);
     match ty::get(main_t).sty {
-        ty::ty_bare_fn(ref fn_ty) => {
+        ty::ty_bare_fn(*) => {
             match tcx.items.find(&main_id) {
                 Some(&ast_map::node_item(it,_)) => {
                     match it.node {
@@ -311,16 +329,19 @@ fn check_main_fn_ty(ccx: @mut CrateCtxt,
                 }
                 _ => ()
             }
-            let mut ok = ty::type_is_nil(fn_ty.sig.output);
-            let num_args = fn_ty.sig.inputs.len();
-            ok &= num_args == 0u;
-            if !ok {
-                tcx.sess.span_err(
-                    main_span,
-                    fmt!("Wrong type in main function: found `%s`, \
-                          expected `fn() -> ()`",
-                         ppaux::ty_to_str(tcx, main_t)));
-            }
+            let se_ty = ty::mk_bare_fn(tcx, ty::BareFnTy {
+                purity: ast::impure_fn,
+                abis: abi::AbiSet::Rust(),
+                sig: ty::FnSig {
+                    bound_lifetime_names: opt_vec::Empty,
+                    inputs: ~[],
+                    output: ty::mk_nil()
+                }
+            });
+
+            require_same_types(tcx, None, false, main_span, main_t, se_ty,
+                || fmt!("main function expects type: `%s`",
+                        ppaux::ty_to_str(ccx.tcx, se_ty)));
         }
         _ => {
             tcx.sess.span_bug(main_span,
@@ -330,8 +351,8 @@ fn check_main_fn_ty(ccx: @mut CrateCtxt,
     }
 }
 
-fn check_start_fn_ty(ccx: @mut CrateCtxt,
-                     start_id: ast::node_id,
+fn check_start_fn_ty(ccx: &CrateCtxt,
+                     start_id: ast::NodeId,
                      start_span: span) {
     let tcx = ccx.tcx;
     let start_t = ty::node_id_to_type(tcx, start_id);
@@ -379,7 +400,7 @@ fn check_start_fn_ty(ccx: @mut CrateCtxt,
     }
 }
 
-fn check_for_entry_fn(ccx: @mut CrateCtxt) {
+fn check_for_entry_fn(ccx: &CrateCtxt) {
     let tcx = ccx.tcx;
     if !*tcx.sess.building_library {
         match *tcx.sess.entry_fn {
@@ -395,14 +416,13 @@ fn check_for_entry_fn(ccx: @mut CrateCtxt) {
 
 pub fn check_crate(tcx: ty::ctxt,
                    trait_map: resolve::TraitMap,
-                   crate: @ast::crate)
+                   crate: &ast::Crate)
                 -> (method_map, vtable_map) {
     let time_passes = tcx.sess.time_passes();
     let ccx = @mut CrateCtxt {
         trait_map: trait_map,
         method_map: @mut HashMap::new(),
         vtable_map: @mut HashMap::new(),
-        coherence_info: @coherence::CoherenceInfo(),
         tcx: tcx
     };
 

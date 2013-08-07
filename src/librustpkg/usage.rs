@@ -8,13 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::io;
+use std::io;
 
 pub fn general() {
     io::println("Usage: rustpkg [options] <cmd> [args..]
 
 Where <cmd> is one of:
-    build, clean, do, info, install, prefer, test, uninstall, unprefer
+    build, clean, do, info, install, list, prefer, test, uninstall, unprefer
 
 Options:
 
@@ -23,10 +23,11 @@ Options:
 }
 
 pub fn build() {
-    io::println("rustpkg [options..] build
+    io::println("rustpkg [options..] build [package-ID]
 
-Build all targets described in the package script in the current
-directory.
+Build the given package ID if specified. With no package ID argument,
+build the package in the current directory. In that case, the current
+directory must be a direct child of an `src` directory in a workspace.
 
 Options:
     -c, --cfg      Pass a cfg flag to the package script");
@@ -55,21 +56,24 @@ Options:
     -j, --json      Output the result as JSON");
 }
 
-pub fn install() {
-    io::println("rustpkg [options..] install [url] [target]
+pub fn list() {
+    io::println("rustpkg list
 
-Install a package from a URL by Git or cURL (FTP, HTTP, etc.).
-If target is provided, Git will checkout the branch or tag before
-continuing. If the URL is a TAR file (with or without compression),
-extract it before installing. If a URL isn't provided, the package will
-be built and installed from the current directory (which is
-functionally the same as `rustpkg build` and installing the result).
+List all installed packages.");
+}
+
+pub fn install() {
+    io::println("rustpkg [options..] install [package-ID]
+
+Install the given package ID if specified. With no package ID
+argument, install the package in the current directory.
+In that case, the current directory must be a direct child of a
+`src` directory in a workspace.
 
 Examples:
     rustpkg install
-    rustpkg install git://github.com/mozilla/servo.git
-    rustpkg install git://github.com/mozilla/servo.git v0.1.2
-    rustpkg install http://rust-lang.org/servo-0.1.2.tar.gz
+    rustpkg install github.com/mozilla/servo
+    rustpkg install github.com/mozilla/servo#0.1.2
 
 Options:
     -c, --cfg      Pass a cfg flag to the package script");

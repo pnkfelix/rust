@@ -86,10 +86,9 @@ bounded and unbounded protocols allows for less code duplication.
 
 use container::Container;
 use cast::{forget, transmute, transmute_copy, transmute_mut};
-use cast;
 use either::{Either, Left, Right};
-use iterator::IteratorUtil;
-use kinds::Owned;
+use iterator::{Iterator, IteratorUtil};
+use kinds::Send;
 use libc;
 use ops::Drop;
 use option::{None, Option, Some};
@@ -178,7 +177,7 @@ impl PacketHeader {
         transmute_copy(&self.buffer)
     }
 
-    pub fn set_buffer<T:Owned>(&mut self, b: ~Buffer<T>) {
+    pub fn set_buffer<T:Send>(&mut self, b: ~Buffer<T>) {
         unsafe {
             self.buffer = transmute_copy(&b);
         }
@@ -194,13 +193,13 @@ pub trait HasBuffer {
     fn set_buffer(&mut self, b: *libc::c_void);
 }
 
-impl<T:Owned> HasBuffer for Packet<T> {
+impl<T:Send> HasBuffer for Packet<T> {
     fn set_buffer(&mut self, b: *libc::c_void) {
         self.header.buffer = b;
     }
 }
 
-pub fn mk_packet<T:Owned>() -> Packet<T> {
+pub fn mk_packet<T:Send>() -> Packet<T> {
     Packet {
         header: PacketHeader(),
         payload: None,
@@ -231,7 +230,7 @@ pub fn packet<T>() -> *mut Packet<T> {
     p
 }
 
-pub fn entangle_buffer<T:Owned,Tstart:Owned>(
+pub fn entangle_buffer<T:Send,Tstart:Send>(
     mut buffer: ~Buffer<T>,
     init: &fn(*libc::c_void, x: &mut T) -> *mut Packet<Tstart>)
     -> (RecvPacketBuffered<Tstart, T>, SendPacketBuffered<Tstart, T>) {
@@ -257,20 +256,21 @@ pub mod rustrt {
     use libc;
     use super::rust_task;
 
-    pub extern {
+    extern {
         #[rust_stack]
-        unsafe fn rust_get_task() -> *rust_task;
+        pub unsafe fn rust_get_task() -> *rust_task;
         #[rust_stack]
-        unsafe fn rust_task_ref(task: *rust_task);
-        unsafe fn rust_task_deref(task: *rust_task);
+        pub unsafe fn rust_task_ref(task: *rust_task);
+        pub unsafe fn rust_task_deref(task: *rust_task);
 
         #[rust_stack]
-        unsafe fn task_clear_event_reject(task: *rust_task);
+        pub unsafe fn task_clear_event_reject(task: *rust_task);
 
-        unsafe fn task_wait_event(this: *rust_task,
-                                  killed: &mut *libc::c_void)
-                               -> bool;
-        unsafe fn task_signal_event(target: *rust_task, event: *libc::c_void);
+        pub unsafe fn task_wait_event(this: *rust_task,
+                                      killed: &mut *libc::c_void)
+                                   -> bool;
+        pub unsafe fn task_signal_event(target: *rust_task,
+                                        event: *libc::c_void);
     }
 }
 
@@ -310,7 +310,7 @@ struct BufferResource<T> {
 
 #[unsafe_destructor]
 impl<T> Drop for BufferResource<T> {
-    fn finalize(&self) {
+    fn drop(&self) {
         unsafe {
             // FIXME(#4330) Need self by value to get mutability.
             let this: &mut BufferResource<T> = transmute_mut(self);
@@ -397,7 +397,7 @@ pub fn send<T,Tbuffer>(mut p: SendPacketBuffered<T,Tbuffer>,
 Fails if the sender closes the connection.
 
 */
-pub fn recv<T:Owned,Tbuffer:Owned>(
+pub fn recv<T:Send,Tbuffer:Send>(
     p: RecvPacketBuffered<T, Tbuffer>) -> T {
     try_recv(p).expect("connection closed")
 }
@@ -408,7 +408,7 @@ Returns `None` if the sender has closed the connection without sending
 a message, or `Some(T)` if a message was received.
 
 */
-pub fn try_recv<T:Owned,Tbuffer:Owned>(mut p: RecvPacketBuffered<T, Tbuffer>)
+pub fn try_recv<T:Send,Tbuffer:Send>(mut p: RecvPacketBuffered<T, Tbuffer>)
                                        -> Option<T> {
     let p_ = p.unwrap();
     let p = unsafe { &mut *p_ };
@@ -428,11 +428,11 @@ pub fn try_recv<T:Owned,Tbuffer:Owned>(mut p: RecvPacketBuffered<T, Tbuffer>)
     }
 }
 
-fn try_recv_<T:Owned>(p: &mut Packet<T>) -> Option<T> {
+fn try_recv_<T:Send>(p: &mut Packet<T>) -> Option<T> {
     // optimistic path
     match p.header.state {
       Full => {
-        let payload = replace(&mut p.payload, None);
+        let payload = p.payload.take();
         p.header.state = Empty;
         return Some(payload.unwrap())
       },
@@ -477,13 +477,13 @@ fn try_recv_<T:Owned>(p: &mut Packet<T>) -> Option<T> {
                 // sometimes blocking the thing we are waiting on.
                 task::yield();
             }
-            debug!("woke up, p.state = %?", copy p.header.state);
+            debug!("woke up, p.state = %?", p.header.state);
           }
           Blocked => if first {
             fail!("blocking on already blocked packet")
           },
           Full => {
-            let payload = replace(&mut p.payload, None);
+            let payload = p.payload.take();
             let old_task = swap_task(&mut p.header.blocked_task, ptr::null());
             if !old_task.is_null() {
                 unsafe {
@@ -512,7 +512,7 @@ fn try_recv_<T:Owned>(p: &mut Packet<T>) -> Option<T> {
 }
 
 /// Returns true if messages are available.
-pub fn peek<T:Owned,Tb:Owned>(p: &mut RecvPacketBuffered<T, Tb>) -> bool {
+pub fn peek<T:Send,Tb:Send>(p: &mut RecvPacketBuffered<T, Tb>) -> bool {
     unsafe {
         match (*p.header()).state {
             Empty | Terminated => false,
@@ -522,7 +522,7 @@ pub fn peek<T:Owned,Tb:Owned>(p: &mut RecvPacketBuffered<T, Tb>) -> bool {
     }
 }
 
-fn sender_terminate<T:Owned>(p: *mut Packet<T>) {
+fn sender_terminate<T:Send>(p: *mut Packet<T>) {
     let p = unsafe {
         &mut *p
     };
@@ -554,7 +554,7 @@ fn sender_terminate<T:Owned>(p: *mut Packet<T>) {
     }
 }
 
-fn receiver_terminate<T:Owned>(p: *mut Packet<T>) {
+fn receiver_terminate<T:Send>(p: *mut Packet<T>) {
     let p = unsafe {
         &mut *p
     };
@@ -600,7 +600,7 @@ pub fn wait_many<T: Selectable>(pkts: &mut [T]) -> uint {
 
     let mut data_avail = false;
     let mut ready_packet = pkts.len();
-    for pkts.mut_iter().enumerate().advance |(i, p)| {
+    foreach (i, p) in pkts.mut_iter().enumerate() {
         unsafe {
             let p = &mut *p.header();
             let old = p.mark_blocked(this);
@@ -622,7 +622,7 @@ pub fn wait_many<T: Selectable>(pkts: &mut [T]) -> uint {
         let event = wait_event(this) as *PacketHeader;
 
         let mut pos = None;
-        for pkts.mut_iter().enumerate().advance |(i, p)| {
+        foreach (i, p) in pkts.mut_iter().enumerate() {
             if p.header() == event {
                 pos = Some(i);
                 break;
@@ -640,7 +640,7 @@ pub fn wait_many<T: Selectable>(pkts: &mut [T]) -> uint {
 
     debug!("%?", &mut pkts[ready_packet]);
 
-    for pkts.mut_iter().advance |p| {
+    foreach p in pkts.mut_iter() {
         unsafe {
             (*p.header()).unblock()
         }
@@ -672,13 +672,12 @@ pub struct SendPacketBuffered<T, Tbuffer> {
 }
 
 #[unsafe_destructor]
-impl<T:Owned,Tbuffer:Owned> Drop for SendPacketBuffered<T,Tbuffer> {
-    fn finalize(&self) {
+impl<T:Send,Tbuffer:Send> Drop for SendPacketBuffered<T,Tbuffer> {
+    fn drop(&self) {
         unsafe {
             let this: &mut SendPacketBuffered<T,Tbuffer> = transmute(self);
             if this.p != None {
-                let p = replace(&mut this.p, None);
-                sender_terminate(p.unwrap())
+                sender_terminate(this.p.take_unwrap());
             }
         }
     }
@@ -696,7 +695,7 @@ pub fn SendPacketBuffered<T,Tbuffer>(p: *mut Packet<T>)
 
 impl<T,Tbuffer> SendPacketBuffered<T,Tbuffer> {
     pub fn unwrap(&mut self) -> *mut Packet<T> {
-        replace(&mut self.p, None).unwrap()
+        self.p.take_unwrap()
     }
 
     pub fn header(&mut self) -> *mut PacketHeader {
@@ -712,7 +711,7 @@ impl<T,Tbuffer> SendPacketBuffered<T,Tbuffer> {
 
     pub fn reuse_buffer(&mut self) -> BufferResource<Tbuffer> {
         //error!("send reuse_buffer");
-        replace(&mut self.buffer, None).unwrap()
+        self.buffer.take_unwrap()
     }
 }
 
@@ -730,29 +729,28 @@ pub struct RecvPacketBuffered<T, Tbuffer> {
 }
 
 #[unsafe_destructor]
-impl<T:Owned,Tbuffer:Owned> Drop for RecvPacketBuffered<T,Tbuffer> {
-    fn finalize(&self) {
+impl<T:Send,Tbuffer:Send> Drop for RecvPacketBuffered<T,Tbuffer> {
+    fn drop(&self) {
         unsafe {
             let this: &mut RecvPacketBuffered<T,Tbuffer> = transmute(self);
             if this.p != None {
-                let p = replace(&mut this.p, None);
-                receiver_terminate(p.unwrap())
+                receiver_terminate(this.p.take_unwrap())
             }
         }
     }
 }
 
-impl<T:Owned,Tbuffer:Owned> RecvPacketBuffered<T, Tbuffer> {
+impl<T:Send,Tbuffer:Send> RecvPacketBuffered<T, Tbuffer> {
     pub fn unwrap(&mut self) -> *mut Packet<T> {
-        replace(&mut self.p, None).unwrap()
+        self.p.take_unwrap()
     }
 
     pub fn reuse_buffer(&mut self) -> BufferResource<Tbuffer> {
-        replace(&mut self.buffer, None).unwrap()
+        self.buffer.take_unwrap()
     }
 }
 
-impl<T:Owned,Tbuffer:Owned> Selectable for RecvPacketBuffered<T, Tbuffer> {
+impl<T:Send,Tbuffer:Send> Selectable for RecvPacketBuffered<T, Tbuffer> {
     fn header(&mut self) -> *mut PacketHeader {
         match self.p {
             Some(packet) => unsafe {
@@ -808,7 +806,7 @@ Sometimes messages will be available on both endpoints at once. In
 this case, `select2` may return either `left` or `right`.
 
 */
-pub fn select2<A:Owned,Ab:Owned,B:Owned,Bb:Owned>(
+pub fn select2<A:Send,Ab:Send,B:Send,Bb:Send>(
     mut a: RecvPacketBuffered<A, Ab>,
     mut b: RecvPacketBuffered<B, Bb>)
     -> Either<(Option<A>, RecvPacketBuffered<B, Bb>),
@@ -848,12 +846,12 @@ pub fn select2i<A:Selectable,B:Selectable>(a: &mut A, b: &mut B)
 
 /// Waits on a set of endpoints. Returns a message, its index, and a
 /// list of the remaining endpoints.
-pub fn select<T:Owned,Tb:Owned>(mut endpoints: ~[RecvPacketBuffered<T, Tb>])
+pub fn select<T:Send,Tb:Send>(mut endpoints: ~[RecvPacketBuffered<T, Tb>])
                                 -> (uint,
                                     Option<T>,
                                     ~[RecvPacketBuffered<T, Tb>]) {
     let mut endpoint_headers = ~[];
-    for endpoints.mut_iter().advance |endpoint| {
+    foreach endpoint in endpoints.mut_iter() {
         endpoint_headers.push(endpoint.header());
     }
 

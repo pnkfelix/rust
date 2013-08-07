@@ -12,37 +12,38 @@
 
 extern mod extra;
 
-use std::comm::Chan;
+use std::comm::SharedChan;
 use std::comm;
 use std::task;
 
-pub fn main() { debug!("===== WITHOUT THREADS ====="); test00(); }
+pub fn main() { info!("===== WITHOUT THREADS ====="); test00(); }
 
-fn test00_start(ch: &Chan<int>, message: int, count: int) {
-    debug!("Starting test00_start");
+fn test00_start(ch: &SharedChan<int>, message: int, count: int) {
+    info!("Starting test00_start");
     let mut i: int = 0;
     while i < count {
-        debug!("Sending Message");
+        info!("Sending Message");
         ch.send(message + 0);
         i = i + 1;
     }
-    debug!("Ending test00_start");
+    info!("Ending test00_start");
 }
 
 fn test00() {
     let number_of_tasks: int = 16;
     let number_of_messages: int = 4;
 
-    debug!("Creating tasks");
+    info!("Creating tasks");
 
-    let po = comm::PortSet::new();
+    let (po, ch) = comm::stream();
+    let ch = comm::SharedChan::new(ch);
 
     let mut i: int = 0;
 
     // Create and spawn tasks...
     let mut results = ~[];
     while i < number_of_tasks {
-        let ch = po.chan();
+        let ch = ch.clone();
         let mut builder = task::task();
         builder.future_result(|r| results.push(r));
         builder.spawn({
@@ -54,7 +55,7 @@ fn test00() {
 
     // Read from spawned tasks...
     let mut sum = 0;
-    for results.each |r| {
+    foreach r in results.iter() {
         i = 0;
         while i < number_of_messages {
             let value = po.recv();
@@ -64,9 +65,9 @@ fn test00() {
     }
 
     // Join spawned tasks...
-    for results.each |r| { r.recv(); }
+    foreach r in results.iter() { r.recv(); }
 
-    debug!("Completed: Final number is: ");
+    info!("Completed: Final number is: ");
     error!(sum);
     // assert (sum == (((number_of_tasks * (number_of_tasks - 1)) / 2) *
     //       number_of_messages));

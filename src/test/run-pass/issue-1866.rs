@@ -8,11 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// xfail-test
+// xfail-test FIXME #1866
 mod a {
     pub type rust_task = uint;
     pub mod rustrt {
-        pub extern {
+        use super::rust_task;
+        extern {
             pub fn rust_task_is_unwinding(rt: *rust_task) -> bool;
         }
     }
@@ -21,7 +22,8 @@ mod a {
 mod b {
     pub type rust_task = bool;
     pub mod rustrt {
-        pub extern {
+        use super::rust_task;
+        extern {
             pub fn rust_task_is_unwinding(rt: *rust_task) -> bool;
         }
     }

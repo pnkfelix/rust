@@ -11,12 +11,11 @@
 // A pass that annotates for each loops and functions with the free
 // variables that they contain.
 
-use core::prelude::*;
 
 use middle::resolve;
 use middle::ty;
 
-use core::hashmap::HashMap;
+use std::hashmap::HashMap;
 use syntax::codemap::span;
 use syntax::{ast, ast_util, visit};
 
@@ -28,14 +27,14 @@ pub struct freevar_entry {
     span: span     //< First span where it is accessed (there can be multiple)
 }
 pub type freevar_info = @~[@freevar_entry];
-pub type freevar_map = @mut HashMap<ast::node_id, freevar_info>;
+pub type freevar_map = @mut HashMap<ast::NodeId, freevar_info>;
 
 // Searches through part of the AST for all references to locals or
 // upvars in this frame and returns the list of definition IDs thus found.
 // Since we want to be able to collect upvars in some arbitrary piece
 // of the AST, we take a walker function that we invoke with a visitor
 // in order to start the search.
-fn collect_freevars(def_map: resolve::DefMap, blk: &ast::blk)
+fn collect_freevars(def_map: resolve::DefMap, blk: &ast::Block)
     -> freevar_info {
     let seen = @mut HashMap::new();
     let refs = @mut ~[];
@@ -80,7 +79,7 @@ fn collect_freevars(def_map: resolve::DefMap, blk: &ast::blk)
                                           visit_expr: walk_expr,
                                           .. *visit::default_visitor()});
     (v.visit_block)(blk, (1, v));
-    return @/*bad*/copy *refs;
+    return @(*refs).clone();
 }
 
 // Build a map from every function and for-each body to a set of the
@@ -88,15 +87,15 @@ fn collect_freevars(def_map: resolve::DefMap, blk: &ast::blk)
 // efficient as it fully recomputes the free variables at every
 // node of interest rather than building up the free variables in
 // one pass. This could be improved upon if it turns out to matter.
-pub fn annotate_freevars(def_map: resolve::DefMap, crate: @ast::crate) ->
+pub fn annotate_freevars(def_map: resolve::DefMap, crate: &ast::Crate) ->
    freevar_map {
     let freevars = @mut HashMap::new();
 
     let walk_fn: @fn(&visit::fn_kind,
                      &ast::fn_decl,
-                     &ast::blk,
+                     &ast::Block,
                      span,
-                     ast::node_id) = |_, _, blk, _, nid| {
+                     ast::NodeId) = |_, _, blk, _, nid| {
         let vars = collect_freevars(def_map, blk);
         freevars.insert(nid, vars);
     };
@@ -110,13 +109,13 @@ pub fn annotate_freevars(def_map: resolve::DefMap, crate: @ast::crate) ->
     return freevars;
 }
 
-pub fn get_freevars(tcx: ty::ctxt, fid: ast::node_id) -> freevar_info {
+pub fn get_freevars(tcx: ty::ctxt, fid: ast::NodeId) -> freevar_info {
     match tcx.freevars.find(&fid) {
       None => fail!("get_freevars: %d has no freevars", fid),
       Some(&d) => return d
     }
 }
 
-pub fn has_freevars(tcx: ty::ctxt, fid: ast::node_id) -> bool {
+pub fn has_freevars(tcx: ty::ctxt, fid: ast::NodeId) -> bool {
     !get_freevars(tcx, fid).is_empty()
 }

@@ -8,7 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
 
 use back::rpath;
 use driver::session::Session;
@@ -19,26 +18,29 @@ use lib;
 use metadata::common::LinkMeta;
 use metadata::{encoder, csearch, cstore};
 use middle::trans::context::CrateContext;
+use middle::trans::common::gensym_name;
 use middle::ty;
 use util::ppaux;
 
-use core::char;
-use core::hash::Streaming;
-use core::hash;
-use core::libc::{c_int, c_uint};
-use core::os::consts::{macos, freebsd, linux, android, win32};
-use core::os;
-use core::ptr;
-use core::rt::io::Writer;
-use core::run;
-use core::str;
-use core::vec;
+use std::char;
+use std::hash::Streaming;
+use std::hash;
+use std::libc::{c_int, c_uint};
+use std::os::consts::{macos, freebsd, linux, android, win32};
+use std::os;
+use std::ptr;
+use std::rt::io::Writer;
+use std::run;
+use std::str;
+use std::vec;
 use syntax::ast;
 use syntax::ast_map::{path, path_mod, path_name};
 use syntax::attr;
+use syntax::attr::{AttrMetaMethods};
 use syntax::print::pprust;
+use syntax::parse::token;
 
-#[deriving(Eq)]
+#[deriving(Clone, Eq)]
 pub enum output_type {
     output_type_none,
     output_type_bitcode,
@@ -74,9 +76,9 @@ pub fn WriteOutputFile(sess: Session,
         OptLevel: c_int,
         EnableSegmentedStacks: bool) {
     unsafe {
-        do str::as_c_str(Triple) |Triple| {
-            do str::as_c_str(Feature) |Feature| {
-                do str::as_c_str(Output) |Output| {
+        do Triple.as_c_str |Triple| {
+            do Feature.as_c_str |Feature| {
+                do Output.as_c_str |Output| {
                     let result = llvm::LLVMRustWriteOutputFile(
                             PM,
                             M,
@@ -96,19 +98,33 @@ pub fn WriteOutputFile(sess: Session,
 }
 
 pub mod jit {
-    use core::prelude::*;
 
     use back::link::llvm_err;
     use driver::session::Session;
     use lib::llvm::llvm;
-    use lib::llvm::{ModuleRef, ContextRef};
+    use lib::llvm::{ModuleRef, ContextRef, ExecutionEngineRef};
     use metadata::cstore;
 
-    use core::cast;
-    use core::ptr;
-    use core::str;
-    use core::sys;
-    use core::unstable::intrinsics;
+    use std::cast;
+    use std::local_data;
+    use std::unstable::intrinsics;
+
+    struct LLVMJITData {
+        ee: ExecutionEngineRef,
+        llcx: ContextRef
+    }
+
+    pub trait Engine {}
+    impl Engine for LLVMJITData {}
+
+    impl Drop for LLVMJITData {
+        fn drop(&self) {
+            unsafe {
+                llvm::LLVMDisposeExecutionEngine(self.ee);
+                llvm::LLVMContextDispose(self.llcx);
+            }
+        }
+    }
 
     pub fn exec(sess: Session,
                 c: ContextRef,
@@ -124,19 +140,18 @@ pub mod jit {
             // incase the user wants to use an older extra library.
 
             let cstore = sess.cstore;
-            for cstore::get_used_crate_files(cstore).each |cratepath| {
+            let r = cstore::get_used_crate_files(cstore);
+            foreach cratepath in r.iter() {
                 let path = cratepath.to_str();
 
                 debug!("linking: %s", path);
 
-                let _: () = str::as_c_str(
-                    path,
-                    |buf_t| {
-                        if !llvm::LLVMRustLoadCrate(manager, buf_t) {
-                            llvm_err(sess, ~"Could not link");
-                        }
-                        debug!("linked: %s", path);
-                    });
+                do path.as_c_str |buf_t| {
+                    if !llvm::LLVMRustLoadCrate(manager, buf_t) {
+                        llvm_err(sess, ~"Could not link");
+                    }
+                    debug!("linked: %s", path);
+                }
             }
 
             // We custom-build a JIT execution engine via some rust wrappers
@@ -150,7 +165,7 @@ pub mod jit {
             // Next, we need to get a handle on the _rust_main function by
             // looking up it's corresponding ValueRef and then requesting that
             // the execution engine compiles the function.
-            let fun = do str::as_c_str("_rust_main") |entry| {
+            let fun = do "_rust_main".as_c_str |entry| {
                 llvm::LLVMGetNamedFunction(m, entry)
             };
             if fun.is_null() {
@@ -164,24 +179,42 @@ pub mod jit {
             // closure
             let code = llvm::LLVMGetPointerToGlobal(ee, fun);
             assert!(!code.is_null());
-            let closure = sys::Closure {
-                code: code,
-                env: ptr::null()
-            };
-            let func: &fn() = cast::transmute(closure);
+            let func: extern "Rust" fn() = cast::transmute(code);
             func();
 
-            // Sadly, there currently is no interface to re-use this execution
-            // engine, so it's disposed of here along with the context to
-            // prevent leaks.
-            llvm::LLVMDisposeExecutionEngine(ee);
-            llvm::LLVMContextDispose(c);
+            // Currently there is no method of re-using the executing engine
+            // from LLVM in another call to the JIT. While this kinda defeats
+            // the purpose of having a JIT in the first place, there isn't
+            // actually much code currently which would re-use data between
+            // different invocations of this. Additionally, the compilation
+            // model currently isn't designed to support this scenario.
+            //
+            // We can't destroy the engine/context immediately here, however,
+            // because of annihilation. The JIT code contains drop glue for any
+            // types defined in the crate we just ran, and if any of those boxes
+            // are going to be dropped during annihilation, the drop glue must
+            // be run. Hence, we need to transfer ownership of this jit engine
+            // to the caller of this function. To be convenient for now, we
+            // shove it into TLS and have someone else remove it later on.
+            let data = ~LLVMJITData { ee: ee, llcx: c };
+            set_engine(data as ~Engine);
         }
+    }
+
+    // The stage1 compiler won't work, but that doesn't really matter. TLS
+    // changed only very recently to allow storage of owned values.
+    static engine_key: local_data::Key<~Engine> = &local_data::Key;
+
+    fn set_engine(engine: ~Engine) {
+        local_data::set(engine_key, engine)
+    }
+
+    pub fn consume_engine() -> Option<~Engine> {
+        local_data::pop(engine_key)
     }
 }
 
 pub mod write {
-    use core::prelude::*;
 
     use back::link::jit;
     use back::link::{WriteOutputFile, output_type};
@@ -197,17 +230,16 @@ pub mod write {
 
     use back::passes;
 
-    use core::libc::{c_int, c_uint};
-    use core::path::Path;
-    use core::run;
-    use core::str;
+    use std::libc::{c_int, c_uint};
+    use std::path::Path;
+    use std::run;
+    use std::str;
 
     pub fn is_object_or_assembly_or_exe(ot: output_type) -> bool {
-        if ot == output_type_assembly || ot == output_type_object ||
-               ot == output_type_exe {
-            return true;
+        match ot {
+            output_type_assembly | output_type_object | output_type_exe => true,
+            _ => false
         }
-        return false;
     }
 
     pub fn run_passes(sess: Session,
@@ -231,16 +263,16 @@ pub mod write {
                   output_type_bitcode => {
                     if opts.optimize != session::No {
                         let filename = output.with_filetype("no-opt.bc");
-                        str::as_c_str(filename.to_str(), |buf| {
-                            llvm::LLVMWriteBitcodeToFile(llmod, buf)
-                        });
+                        do filename.to_str().as_c_str |buf| {
+                            llvm::LLVMWriteBitcodeToFile(llmod, buf);
+                        }
                     }
                   }
                   _ => {
                     let filename = output.with_filetype("bc");
-                    str::as_c_str(filename.to_str(), |buf| {
-                        llvm::LLVMWriteBitcodeToFile(llmod, buf)
-                    });
+                    do filename.to_str().as_c_str |buf| {
+                        llvm::LLVMWriteBitcodeToFile(llmod, buf);
+                    }
                   }
                 }
             }
@@ -252,7 +284,7 @@ pub mod write {
             }
 
             let passes = if sess.opts.custom_passes.len() > 0 {
-                copy sess.opts.custom_passes
+                sess.opts.custom_passes.clone()
             } else {
                 if sess.lint_llvm() {
                     mpm.add_pass_from_name("lint");
@@ -290,20 +322,20 @@ pub mod write {
                   session::Aggressive => LLVMOptAggressive
                 };
 
-                let FileType;
-                if output_type == output_type_object ||
-                       output_type == output_type_exe {
-                   FileType = lib::llvm::ObjectFile;
-                } else { FileType = lib::llvm::AssemblyFile; }
+                let FileType = match output_type {
+                    output_type_object | output_type_exe => lib::llvm::ObjectFile,
+                    _ => lib::llvm::AssemblyFile
+                };
+
                 // Write optimized bitcode if --save-temps was on.
 
                 if opts.save_temps {
                     // Always output the bitcode file with --save-temps
 
                     let filename = output.with_filetype("opt.bc");
-                    str::as_c_str(filename.to_str(), |buf| {
+                    do filename.to_str().as_c_str |buf| {
                         llvm::LLVMWriteBitcodeToFile(llmod, buf)
-                    });
+                    };
                     // Save the assembly file if -S is used
                     if output_type == output_type_assembly {
                         WriteOutputFile(
@@ -359,13 +391,15 @@ pub mod write {
 
             if output_type == output_type_llvm_assembly {
                 // Given options "-S --emit-llvm": output LLVM assembly
-                str::as_c_str(output.to_str(), |buf_o| {
-                    llvm::LLVMRustAddPrintModulePass(pm.llpm, llmod, buf_o)});
+                do output.to_str().as_c_str |buf_o| {
+                    llvm::LLVMRustAddPrintModulePass(pm.llpm, llmod, buf_o);
+                }
             } else {
                 // If only a bitcode file is asked for by using the
                 // '--emit-llvm' flag, then output it here
-                str::as_c_str(output.to_str(),
-                            |buf| llvm::LLVMWriteBitcodeToFile(llmod, buf) );
+                do output.to_str().as_c_str |buf| {
+                    llvm::LLVMWriteBitcodeToFile(llmod, buf);
+                }
             }
 
             llvm::LLVMDisposeModule(llmod);
@@ -384,11 +418,11 @@ pub mod write {
                             (--android-cross-path)")
             }
         };
-        let mut cc_args = ~[];
-        cc_args.push(~"-c");
-        cc_args.push(~"-o");
-        cc_args.push(object.to_str());
-        cc_args.push(assembly.to_str());
+
+        let cc_args = ~[
+            ~"-c",
+            ~"-o", object.to_str(),
+            assembly.to_str()];
 
         let prog = run::process_output(cc_prog, cc_args);
 
@@ -456,37 +490,29 @@ pub mod write {
  */
 
 pub fn build_link_meta(sess: Session,
-                       c: &ast::crate,
+                       c: &ast::Crate,
                        output: &Path,
                        symbol_hasher: &mut hash::State)
                        -> LinkMeta {
     struct ProvidedMetas {
         name: Option<@str>,
         vers: Option<@str>,
-        cmh_items: ~[@ast::meta_item]
+        cmh_items: ~[@ast::MetaItem]
     }
 
-    fn provided_link_metas(sess: Session, c: &ast::crate) ->
+    fn provided_link_metas(sess: Session, c: &ast::Crate) ->
        ProvidedMetas {
         let mut name = None;
         let mut vers = None;
         let mut cmh_items = ~[];
-        let linkage_metas = attr::find_linkage_metas(c.node.attrs);
+        let linkage_metas = attr::find_linkage_metas(c.attrs);
         attr::require_unique_names(sess.diagnostic(), linkage_metas);
-        for linkage_metas.each |meta| {
-            if "name" == attr::get_meta_item_name(*meta) {
-                match attr::get_meta_item_value_str(*meta) {
-                  // Changing attr would avoid the need for the copy
-                  // here
-                  Some(v) => { name = Some(v); }
-                  None => cmh_items.push(*meta)
-                }
-            } else if "vers" == attr::get_meta_item_name(*meta) {
-                match attr::get_meta_item_value_str(*meta) {
-                  Some(v) => { vers = Some(v); }
-                  None => cmh_items.push(*meta)
-                }
-            } else { cmh_items.push(*meta); }
+        foreach meta in linkage_metas.iter() {
+            match meta.name_str_pair() {
+                Some((n, value)) if "name" == n => name = Some(value),
+                Some((n, value)) if "vers" == n => vers = Some(value),
+                _ => cmh_items.push(*meta)
+            }
         }
 
         ProvidedMetas {
@@ -498,7 +524,7 @@ pub fn build_link_meta(sess: Session,
 
     // This calculates CMH as defined above
     fn crate_meta_extras_hash(symbol_hasher: &mut hash::State,
-                              cmh_items: ~[@ast::meta_item],
+                              cmh_items: ~[@ast::MetaItem],
                               dep_hashes: ~[@str]) -> @str {
         fn len_and_str(s: &str) -> ~str {
             fmt!("%u_%s", s.len(), s)
@@ -510,18 +536,18 @@ pub fn build_link_meta(sess: Session,
 
         let cmh_items = attr::sort_meta_items(cmh_items);
 
-        fn hash(symbol_hasher: &mut hash::State, m: &@ast::meta_item) {
+        fn hash(symbol_hasher: &mut hash::State, m: &@ast::MetaItem) {
             match m.node {
-              ast::meta_name_value(key, value) => {
+              ast::MetaNameValue(key, value) => {
                 write_string(symbol_hasher, len_and_str(key));
                 write_string(symbol_hasher, len_and_str_lit(value));
               }
-              ast::meta_word(name) => {
+              ast::MetaWord(name) => {
                 write_string(symbol_hasher, len_and_str(name));
               }
-              ast::meta_list(name, ref mis) => {
+              ast::MetaList(name, ref mis) => {
                 write_string(symbol_hasher, len_and_str(name));
-                for mis.each |m_| {
+                foreach m_ in mis.iter() {
                     hash(symbol_hasher, m_);
                 }
               }
@@ -529,15 +555,15 @@ pub fn build_link_meta(sess: Session,
         }
 
         symbol_hasher.reset();
-        for cmh_items.each |m| {
+        foreach m in cmh_items.iter() {
             hash(symbol_hasher, m);
         }
 
-        for dep_hashes.each |dh| {
+        foreach dh in dep_hashes.iter() {
             write_string(symbol_hasher, len_and_str(*dh));
         }
 
-    // tjc: allocation is unfortunate; need to change core::hash
+    // tjc: allocation is unfortunate; need to change std::hash
         return truncated_hash_result(symbol_hasher).to_managed();
     }
 
@@ -548,32 +574,32 @@ pub fn build_link_meta(sess: Session,
     }
 
     fn crate_meta_name(sess: Session, output: &Path, opt_name: Option<@str>)
-                    -> @str {
-        return match opt_name {
-              Some(v) => v,
-              None => {
+        -> @str {
+        match opt_name {
+            Some(v) => v,
+            None => {
                 // to_managed could go away if there was a version of
                 // filestem that returned an @str
                 let name = session::expect(sess,
-                                  output.filestem(),
-                                  || fmt!("output file name `%s` doesn't\
-                                           appear to have a stem",
-                                          output.to_str())).to_managed();
+                                           output.filestem(),
+                                           || fmt!("output file name `%s` doesn't\
+                                                    appear to have a stem",
+                                                   output.to_str())).to_managed();
                 warn_missing(sess, "name", name);
                 name
-              }
-            };
+            }
+        }
     }
 
     fn crate_meta_vers(sess: Session, opt_vers: Option<@str>) -> @str {
-        return match opt_vers {
-              Some(v) => v,
-              None => {
+        match opt_vers {
+            Some(v) => v,
+            None => {
                 let vers = @"0.0";
                 warn_missing(sess, "vers", vers);
                 vers
-              }
-            };
+            }
+        }
     }
 
     let ProvidedMetas {
@@ -618,7 +644,7 @@ pub fn symbol_hash(tcx: ty::ctxt,
     let mut hash = truncated_hash_result(symbol_hasher);
     // Prefix with _ so that it never blends into adjacent digits
     hash.unshift_char('_');
-    // tjc: allocation is unfortunate; need to change core::hash
+    // tjc: allocation is unfortunate; need to change std::hash
     hash.to_managed()
 }
 
@@ -639,18 +665,18 @@ pub fn get_symbol_hash(ccx: &mut CrateContext, t: ty::t) -> @str {
 // gas accepts the following characters in symbols: a-z, A-Z, 0-9, ., _, $
 pub fn sanitize(s: &str) -> ~str {
     let mut result = ~"";
-    for s.iter().advance |c| {
+    foreach c in s.iter() {
         match c {
             // Escape these with $ sequences
-            '@' => result += "$SP$",
-            '~' => result += "$UP$",
-            '*' => result += "$RP$",
-            '&' => result += "$BP$",
-            '<' => result += "$LT$",
-            '>' => result += "$GT$",
-            '(' => result += "$LP$",
-            ')' => result += "$RP$",
-            ',' => result += "$C$",
+            '@' => result.push_str("$SP$"),
+            '~' => result.push_str("$UP$"),
+            '*' => result.push_str("$RP$"),
+            '&' => result.push_str("$BP$"),
+            '<' => result.push_str("$LT$"),
+            '>' => result.push_str("$GT$"),
+            '(' => result.push_str("$LP$"),
+            ')' => result.push_str("$RP$"),
+            ',' => result.push_str("$C$"),
 
             // '.' doesn't occur in types and functions, so reuse it
             // for ':'
@@ -663,9 +689,10 @@ pub fn sanitize(s: &str) -> ~str {
             | '_' => result.push_char(c),
 
             _ => {
-                if c > 'z' && char::is_XID_continue(c) {
-                    result.push_char(c);
-                }
+                let mut tstr = ~"";
+                do char::escape_unicode(c) |c| { tstr.push_char(c); }
+                result.push_char('$');
+                result.push_str(tstr.slice_from(1));
             }
         }
     }
@@ -685,13 +712,15 @@ pub fn mangle(sess: Session, ss: path) -> ~str {
 
     let mut n = ~"_ZN"; // Begin name-sequence.
 
-    for ss.each |s| {
-        match *s { path_name(s) | path_mod(s) => {
-          let sani = sanitize(sess.str_of(s));
-          n += fmt!("%u%s", sani.len(), sani);
-        } }
+    foreach s in ss.iter() {
+        match *s {
+            path_name(s) | path_mod(s) => {
+                let sani = sanitize(sess.str_of(s));
+                n.push_str(fmt!("%u%s", sani.len(), sani));
+            }
+        }
     }
-    n += "E"; // End name-sequence.
+    n.push_char('E'); // End name-sequence.
     n
 }
 
@@ -699,10 +728,10 @@ pub fn exported_name(sess: Session,
                      path: path,
                      hash: &str,
                      vers: &str) -> ~str {
-    return mangle(sess,
-            vec::append_one(
-            vec::append_one(path, path_name(sess.ident_of(hash))),
-            path_name(sess.ident_of(vers))));
+    mangle(sess,
+           vec::append_one(
+               vec::append_one(path, path_name(sess.ident_of(hash))),
+               path_name(sess.ident_of(vers))))
 }
 
 pub fn mangle_exported_name(ccx: &mut CrateContext,
@@ -733,22 +762,22 @@ pub fn mangle_internal_name_by_type_and_seq(ccx: &mut CrateContext,
     return mangle(ccx.sess,
         ~[path_name(ccx.sess.ident_of(s)),
           path_name(ccx.sess.ident_of(hash)),
-          path_name((ccx.names)(name))]);
+          path_name(gensym_name(name))]);
 }
 
 pub fn mangle_internal_name_by_path_and_seq(ccx: &mut CrateContext,
-                                            path: path,
+                                            mut path: path,
                                             flav: &str) -> ~str {
-    return mangle(ccx.sess,
-                  vec::append_one(path, path_name((ccx.names)(flav))));
+    path.push(path_name(gensym_name(flav)));
+    mangle(ccx.sess, path)
 }
 
 pub fn mangle_internal_name_by_path(ccx: &mut CrateContext, path: path) -> ~str {
-    return mangle(ccx.sess, path);
+    mangle(ccx.sess, path)
 }
 
-pub fn mangle_internal_name_by_seq(ccx: &mut CrateContext, flav: &str) -> ~str {
-    return fmt!("%s_%u", flav, (ccx.names)(flav).name);
+pub fn mangle_internal_name_by_seq(_ccx: &mut CrateContext, flav: &str) -> ~str {
+    return fmt!("%s_%u", flav, token::gensym(flav));
 }
 
 
@@ -775,9 +804,9 @@ pub fn link_binary(sess: Session,
     // For win32, there is no cc command,
     // so we add a condition to make it use gcc.
     let cc_prog: ~str = match sess.opts.linker {
-        Some(ref linker) => copy *linker,
-        None => {
-            if sess.targ_cfg.os == session::os_android {
+        Some(ref linker) => linker.to_str(),
+        None => match sess.targ_cfg.os {
+            session::os_android =>
                 match &sess.opts.android_cross_path {
                     &Some(ref path) => {
                         fmt!("%s/bin/arm-linux-androideabi-gcc", *path)
@@ -786,12 +815,9 @@ pub fn link_binary(sess: Session,
                         sess.fatal("need Android NDK path for linking \
                                     (--android-cross-path)")
                     }
-                }
-            } else if sess.targ_cfg.os == session::os_win32 {
-                ~"gcc"
-            } else {
-                ~"cc"
-            }
+                },
+            session::os_win32 => ~"gcc",
+            _ => ~"cc"
         }
     };
     // The invocations of cc share some flags across platforms
@@ -806,7 +832,7 @@ pub fn link_binary(sess: Session,
 
         out_filename.dir_path().push(long_libname)
     } else {
-        /*bad*/copy *out_filename
+        out_filename.clone()
     };
 
     debug!("output: %s", output.to_str());
@@ -857,7 +883,7 @@ pub fn link_args(sess: Session,
         let long_libname = output_dll_filename(sess.targ_cfg.os, lm);
         out_filename.dir_path().push(long_libname)
     } else {
-        /*bad*/copy *out_filename
+        out_filename.clone()
     };
 
     // The default library location, we need this to find the runtime.
@@ -866,22 +892,20 @@ pub fn link_args(sess: Session,
 
     let mut args = vec::append(~[stage], sess.targ_cfg.target_strs.cc_args);
 
-    args.push(~"-o");
-    args.push(output.to_str());
-    args.push(obj_filename.to_str());
+    args.push_all([
+        ~"-o", output.to_str(),
+        obj_filename.to_str()]);
 
-    let lib_cmd;
-    let os = sess.targ_cfg.os;
-    if os == session::os_macos {
-        lib_cmd = ~"-dynamiclib";
-    } else {
-        lib_cmd = ~"-shared";
-    }
+    let lib_cmd = match sess.targ_cfg.os {
+        session::os_macos => ~"-dynamiclib",
+        _ => ~"-shared"
+    };
 
     // # Crate linking
 
     let cstore = sess.cstore;
-    for cstore::get_used_crate_files(cstore).each |cratepath| {
+    let r = cstore::get_used_crate_files(cstore);
+    foreach cratepath in r.iter() {
         if cratepath.filetype() == Some(~".rlib") {
             args.push(cratepath.to_str());
             loop;
@@ -893,12 +917,12 @@ pub fn link_args(sess: Session,
     }
 
     let ula = cstore::get_used_link_args(cstore);
-    for ula.each |arg| { args.push(arg.to_owned()); }
+    foreach arg in ula.iter() { args.push(arg.to_owned()); }
 
     // Add all the link args for external crates.
     do cstore::iter_crate_data(cstore) |crate_num, _| {
         let link_args = csearch::get_link_args_for_crate(cstore, crate_num);
-        do vec::consume(link_args) |_, link_arg| {
+        foreach link_arg in link_args.consume_iter() {
             args.push(link_arg);
         }
     }
@@ -911,13 +935,13 @@ pub fn link_args(sess: Session,
     // to be found at compile time so it is still entirely up to outside
     // forces to make sure that library can be found at runtime.
 
-    for sess.opts.addl_lib_search_paths.each |path| {
+    foreach path in sess.opts.addl_lib_search_paths.iter() {
         args.push(~"-L" + path.to_str());
     }
 
     // The names of the extern libraries
     let used_libs = cstore::get_used_libraries(cstore);
-    for used_libs.each |l| { args.push(~"-l" + *l); }
+    foreach l in used_libs.iter() { args.push(~"-l" + *l); }
 
     if *sess.building_library {
         args.push(lib_cmd);

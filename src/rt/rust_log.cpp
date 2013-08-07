@@ -43,11 +43,15 @@ log_console_on() {
  * overridden by the environment.
  */
 void
-log_console_off(rust_env *env) {
+log_console_off() {
     scoped_lock with(_log_lock);
-    if (env->logspec == NULL) {
-        _log_to_console = false;
-    }
+    _log_to_console = false;
+}
+
+bool
+should_log_console() {
+    scoped_lock with(_log_lock);
+    return _log_to_console;
 }
 
 rust_log::rust_log(rust_sched_loop *sched_loop) :
@@ -230,7 +234,9 @@ static void update_entry(const mod_entry* entry, void *cookie) {
         }
     }
     *entry->state = level;
-    (*args->n_matches)++;
+    if (longest_match > 0) {
+        (*args->n_matches)++;
+    }
 }
 
 void update_module_map(const mod_entry* map, log_directive* dirs,
@@ -314,11 +320,10 @@ void update_log_settings(void* crate_map, char* settings) {
                      n_dirs, &n_matches);
 
     if (n_matches < n_dirs) {
-        // NB: Android compiler is complaining about format specifiers here
-        // and I don't understand why
-        /*printf("warning: got %" PRIdPTR " RUST_LOG specs, "
-               "enabled %" PRIdPTR " flags.",
-               (uintptr_t)n_dirs, (uintptr_t)n_matches);*/
+        fprintf(stderr, "warning: got %lu RUST_LOG specs but only matched %lu of them.\n"
+                "You may have mistyped a RUST_LOG spec.\n"
+                "Use RUST_LOG=::help to see the list of crates and modules.\n",
+                (unsigned long)n_dirs, (unsigned long)n_matches);
     }
 
     free(buffer);

@@ -44,7 +44,7 @@
  *    }
  *
  *    fn print_usage(program: &str, _opts: &[Opt]) {
- *        println(fmt!("Usage: %s [options]", program));
+ *        printfln!("Usage: %s [options]", program);
  *        println("-o\t\tOutput");
  *        println("-h --help\tUsage");
  *    }
@@ -52,7 +52,7 @@
  *    fn main() {
  *        let args = os::args();
  *
- *        let program = copy args[0];
+ *        let program = args[0].clone();
  *
  *        let opts = ~[
  *            optopt("o"),
@@ -69,7 +69,7 @@
  *        }
  *        let output = opt_maybe_str(&matches, "o");
  *        let input: &str = if !matches.free.is_empty() {
- *            copy matches.free[0]
+ *            matches.free[0].clone()
  *        } else {
  *            print_usage(program, opts);
  *            return;
@@ -81,29 +81,36 @@
 
 #[allow(missing_doc)];
 
-use core::prelude::*;
 
-use core::cmp::Eq;
-use core::result::{Err, Ok};
-use core::result;
-use core::option::{Some, None};
-use core::str;
-use core::vec;
+use std::cmp::Eq;
+use std::result::{Err, Ok};
+use std::result;
+use std::option::{Some, None};
+use std::str;
+use std::vec;
 
-#[deriving(Eq)]
+#[deriving(Clone, Eq)]
 pub enum Name {
     Long(~str),
     Short(char),
 }
 
-#[deriving(Eq)]
-pub enum HasArg { Yes, No, Maybe, }
+#[deriving(Clone, Eq)]
+pub enum HasArg {
+    Yes,
+    No,
+    Maybe,
+}
 
-#[deriving(Eq)]
-pub enum Occur { Req, Optional, Multi, }
+#[deriving(Clone, Eq)]
+pub enum Occur {
+    Req,
+    Optional,
+    Multi,
+}
 
 /// A description of a possible option
-#[deriving(Eq)]
+#[deriving(Clone, Eq)]
 pub struct Opt {
     name: Name,
     hasarg: HasArg,
@@ -133,7 +140,9 @@ pub fn optflag(name: &str) -> Opt {
     return Opt {name: mkname(name), hasarg: No, occur: Optional};
 }
 
-/// Create an option that is optional and does not take an argument
+/** Create an option that is optional, does not take an argument,
+  * and may occur multiple times.
+  */
 pub fn optflagmulti(name: &str) -> Opt {
     return Opt {name: mkname(name), hasarg: No, occur: Multi};
 }
@@ -151,14 +160,17 @@ pub fn optmulti(name: &str) -> Opt {
     return Opt {name: mkname(name), hasarg: Yes, occur: Multi};
 }
 
-#[deriving(Eq)]
-enum Optval { Val(~str), Given, }
+#[deriving(Clone, Eq)]
+enum Optval {
+    Val(~str),
+    Given,
+}
 
 /**
  * The result of checking command line arguments. Contains a vector
  * of matches and a vector of free strings.
  */
-#[deriving(Eq)]
+#[deriving(Clone, Eq)]
 pub struct Matches {
     opts: ~[Opt],
     vals: ~[~[Optval]],
@@ -172,19 +184,19 @@ fn is_arg(arg: &str) -> bool {
 fn name_str(nm: &Name) -> ~str {
     return match *nm {
       Short(ch) => str::from_char(ch),
-      Long(ref s) => copy *s
+      Long(ref s) => (*s).clone()
     };
 }
 
 fn find_opt(opts: &[Opt], nm: Name) -> Option<uint> {
-    vec::position(opts, |opt| opt.name == nm)
+    opts.iter().position(|opt| opt.name == nm)
 }
 
 /**
  * The type returned when the command line does not conform to the
  * expected format. Pass this value to <fail_str> to get an error message.
  */
-#[deriving(Eq)]
+#[deriving(Clone, Eq)]
 pub enum Fail_ {
     ArgumentMissing(~str),
     UnrecognizedOption(~str),
@@ -235,13 +247,13 @@ pub fn getopts(args: &[~str], opts: &[Opt]) -> Result {
     let l = args.len();
     let mut i = 0;
     while i < l {
-        let cur = copy args[i];
+        let cur = args[i].clone();
         let curlen = cur.len();
         if !is_arg(cur) {
             free.push(cur);
         } else if cur == ~"--" {
             let mut j = i + 1;
-            while j < l { free.push(copy args[j]); j += 1; }
+            while j < l { free.push(args[j].clone()); j += 1; }
             break;
         } else {
             let mut names;
@@ -271,7 +283,7 @@ pub fn getopts(args: &[~str], opts: &[Opt]) -> Result {
                        interpreted correctly
                     */
 
-                    match find_opt(opts, copy opt) {
+                    match find_opt(opts, opt.clone()) {
                       Some(id) => last_valid_opt_id = Some(id),
                       None => {
                         let arg_follows =
@@ -295,9 +307,9 @@ pub fn getopts(args: &[~str], opts: &[Opt]) -> Result {
                 }
             }
             let mut name_pos = 0;
-            for names.each() |nm| {
+            foreach nm in names.iter() {
                 name_pos += 1;
-                let optid = match find_opt(opts, copy *nm) {
+                let optid = match find_opt(opts, (*nm).clone()) {
                   Some(id) => id,
                   None => return Err(UnrecognizedOption(name_str(nm)))
                 };
@@ -310,18 +322,18 @@ pub fn getopts(args: &[~str], opts: &[Opt]) -> Result {
                   }
                   Maybe => {
                     if !i_arg.is_none() {
-                        vals[optid].push(Val((copy i_arg).get()));
+                        vals[optid].push(Val((i_arg.clone()).get()));
                     } else if name_pos < names.len() ||
                                   i + 1 == l || is_arg(args[i + 1]) {
                         vals[optid].push(Given);
-                    } else { i += 1; vals[optid].push(Val(copy args[i])); }
+                    } else { i += 1; vals[optid].push(Val(args[i].clone())); }
                   }
                   Yes => {
                     if !i_arg.is_none() {
-                        vals[optid].push(Val((copy i_arg).get()));
+                        vals[optid].push(Val(i_arg.clone().get()));
                     } else if i + 1 == l {
                         return Err(ArgumentMissing(name_str(nm)));
-                    } else { i += 1; vals[optid].push(Val(copy args[i])); }
+                    } else { i += 1; vals[optid].push(Val(args[i].clone())); }
                   }
                 }
             }
@@ -344,14 +356,14 @@ pub fn getopts(args: &[~str], opts: &[Opt]) -> Result {
         }
         i += 1;
     }
-    return Ok(Matches {opts: vec::to_owned(opts),
+    return Ok(Matches {opts: opts.to_owned(),
                vals: vals,
                free: free});
 }
 
 fn opt_vals(mm: &Matches, nm: &str) -> ~[Optval] {
     return match find_opt(mm.opts, mkname(nm)) {
-      Some(id) => copy mm.vals[id],
+      Some(id) => mm.vals[id].clone(),
       None => {
         error!("No option '%s' defined", nm);
         fail!()
@@ -359,7 +371,14 @@ fn opt_vals(mm: &Matches, nm: &str) -> ~[Optval] {
     };
 }
 
-fn opt_val(mm: &Matches, nm: &str) -> Optval { copy opt_vals(mm, nm)[0] }
+fn opt_val(mm: &Matches, nm: &str) -> Option<Optval> {
+    let vals = opt_vals(mm, nm);
+    if (vals.is_empty()) {
+        None
+    } else {
+        Some(opt_vals(mm, nm)[0].clone())
+    }
+}
 
 /// Returns true if an option was matched
 pub fn opt_present(mm: &Matches, nm: &str) -> bool {
@@ -373,7 +392,7 @@ pub fn opt_count(mm: &Matches, nm: &str) -> uint {
 
 /// Returns true if any of several options were matched
 pub fn opts_present(mm: &Matches, names: &[~str]) -> bool {
-    for names.each |nm| {
+    foreach nm in names.iter() {
         match find_opt(mm.opts, mkname(*nm)) {
             Some(id) if !mm.vals[id].is_empty() => return true,
             _ => (),
@@ -390,7 +409,10 @@ pub fn opts_present(mm: &Matches, names: &[~str]) -> bool {
  * argument
  */
 pub fn opt_str(mm: &Matches, nm: &str) -> ~str {
-    return match opt_val(mm, nm) { Val(s) => s, _ => fail!() };
+    return match opt_val(mm, nm) {
+        Some(Val(s)) => s,
+        _ => fail!()
+    };
 }
 
 /**
@@ -400,9 +422,9 @@ pub fn opt_str(mm: &Matches, nm: &str) -> ~str {
  * option took an argument
  */
 pub fn opts_str(mm: &Matches, names: &[~str]) -> ~str {
-    for names.each |nm| {
+    foreach nm in names.iter() {
         match opt_val(mm, *nm) {
-          Val(ref s) => return copy *s,
+          Some(Val(ref s)) => return (*s).clone(),
           _ => ()
         }
     }
@@ -418,10 +440,11 @@ pub fn opts_str(mm: &Matches, names: &[~str]) -> ~str {
  */
 pub fn opt_strs(mm: &Matches, nm: &str) -> ~[~str] {
     let mut acc: ~[~str] = ~[];
-    for vec::each(opt_vals(mm, nm)) |v| {
-        match *v { Val(ref s) => acc.push(copy *s), _ => () }
+    let r = opt_vals(mm, nm);
+    foreach v in r.iter() {
+        match *v { Val(ref s) => acc.push((*s).clone()), _ => () }
     }
-    return acc;
+    acc
 }
 
 /// Returns the string argument supplied to a matching option or none
@@ -429,7 +452,7 @@ pub fn opt_maybe_str(mm: &Matches, nm: &str) -> Option<~str> {
     let vals = opt_vals(mm, nm);
     if vals.is_empty() { return None::<~str>; }
     return match vals[0] {
-        Val(ref s) => Some(copy *s),
+        Val(ref s) => Some((*s).clone()),
         _ => None
     };
 }
@@ -445,8 +468,8 @@ pub fn opt_maybe_str(mm: &Matches, nm: &str) -> Option<~str> {
 pub fn opt_default(mm: &Matches, nm: &str, def: &str) -> Option<~str> {
     let vals = opt_vals(mm, nm);
     if vals.is_empty() { return None::<~str>; }
-    return match vals[0] { Val(ref s) => Some::<~str>(copy *s),
-                           _      => Some::<~str>(str::to_owned(def)) }
+    return match vals[0] { Val(ref s) => Some::<~str>((*s).clone()),
+                           _      => Some::<~str>(def.to_owned()) }
 }
 
 #[deriving(Eq)]
@@ -465,13 +488,12 @@ pub mod groups {
     use getopts::{HasArg, Long, Maybe, Multi, No, Occur, Opt, Optional, Req};
     use getopts::{Short, Yes};
 
-    use core::str;
-    use core::vec;
+    use std::vec;
 
     /** one group of options, e.g., both -h and --help, along with
      * their shared description and properties
      */
-    #[deriving(Eq)]
+    #[deriving(Clone, Eq)]
     pub struct OptGroup {
         short_name: ~str,
         long_name: ~str,
@@ -486,10 +508,10 @@ pub mod groups {
                   desc: &str, hint: &str) -> OptGroup {
         let len = short_name.len();
         assert!(len == 1 || len == 0);
-        return OptGroup { short_name: str::to_owned(short_name),
-                long_name: str::to_owned(long_name),
-                hint: str::to_owned(hint),
-                desc: str::to_owned(desc),
+        return OptGroup { short_name: short_name.to_owned(),
+                long_name: long_name.to_owned(),
+                hint: hint.to_owned(),
+                desc: desc.to_owned(),
                 hasarg: Yes,
                 occur: Req};
     }
@@ -499,10 +521,10 @@ pub mod groups {
                   desc: &str, hint: &str) -> OptGroup {
         let len = short_name.len();
         assert!(len == 1 || len == 0);
-        return OptGroup {short_name: str::to_owned(short_name),
-                long_name: str::to_owned(long_name),
-                hint: str::to_owned(hint),
-                desc: str::to_owned(desc),
+        return OptGroup {short_name: short_name.to_owned(),
+                long_name: long_name.to_owned(),
+                hint: hint.to_owned(),
+                desc: desc.to_owned(),
                 hasarg: Yes,
                 occur: Optional};
     }
@@ -512,10 +534,10 @@ pub mod groups {
                    desc: &str) -> OptGroup {
         let len = short_name.len();
         assert!(len == 1 || len == 0);
-        return OptGroup {short_name: str::to_owned(short_name),
-                long_name: str::to_owned(long_name),
+        return OptGroup {short_name: short_name.to_owned(),
+                long_name: long_name.to_owned(),
                 hint: ~"",
-                desc: str::to_owned(desc),
+                desc: desc.to_owned(),
                 hasarg: No,
                 occur: Optional};
     }
@@ -525,10 +547,10 @@ pub mod groups {
                       desc: &str, hint: &str) -> OptGroup {
         let len = short_name.len();
         assert!(len == 1 || len == 0);
-        return OptGroup {short_name: str::to_owned(short_name),
-                long_name: str::to_owned(long_name),
-                hint: str::to_owned(hint),
-                desc: str::to_owned(desc),
+        return OptGroup {short_name: short_name.to_owned(),
+                long_name: long_name.to_owned(),
+                hint: hint.to_owned(),
+                desc: desc.to_owned(),
                 hasarg: Maybe,
                 occur: Optional};
     }
@@ -541,10 +563,10 @@ pub mod groups {
                     desc: &str, hint: &str) -> OptGroup {
         let len = short_name.len();
         assert!(len == 1 || len == 0);
-        return OptGroup {short_name: str::to_owned(short_name),
-                long_name: str::to_owned(long_name),
-                hint: str::to_owned(hint),
-                desc: str::to_owned(desc),
+        return OptGroup {short_name: short_name.to_owned(),
+                long_name: long_name.to_owned(),
+                hint: hint.to_owned(),
+                desc: desc.to_owned(),
                 hasarg: Yes,
                 occur: Multi};
     }
@@ -556,7 +578,7 @@ pub mod groups {
                      long_name: long_name,
                      hasarg: hasarg,
                      occur: occur,
-                     _} = copy *lopt;
+                     _} = (*lopt).clone();
 
         match (short_name.len(), long_name.len()) {
            (0,0) => fail!("this long-format option was given no name"),
@@ -592,71 +614,183 @@ pub mod groups {
      */
     pub fn usage(brief: &str, opts: &[OptGroup]) -> ~str {
 
-        let desc_sep = ~"\n" + " ".repeat(24);
+        let desc_sep = "\n" + " ".repeat(24);
 
-        let rows = vec::map(opts, |optref| {
+        let mut rows = opts.iter().transform(|optref| {
             let OptGroup{short_name: short_name,
                          long_name: long_name,
                          hint: hint,
                          desc: desc,
                          hasarg: hasarg,
-                         _} = copy *optref;
+                         _} = (*optref).clone();
 
             let mut row = " ".repeat(4);
 
             // short option
-            row += match short_name.len() {
-                0 => ~"",
-                1 => ~"-" + short_name + " ",
+            match short_name.len() {
+                0 => {}
+                1 => {
+                    row.push_char('-');
+                    row.push_str(short_name);
+                    row.push_char(' ');
+                }
                 _ => fail!("the short name should only be 1 ascii char long"),
-            };
+            }
 
             // long option
-            row += match long_name.len() {
-                0 => ~"",
-                _ => ~"--" + long_name + " ",
-            };
+            match long_name.len() {
+                0 => {}
+                _ => {
+                    row.push_str("--");
+                    row.push_str(long_name);
+                    row.push_char(' ');
+                }
+            }
 
             // arg
-            row += match hasarg {
-                No    => ~"",
-                Yes   => hint,
-                Maybe => ~"[" + hint + "]",
-            };
+            match hasarg {
+                No => {}
+                Yes => row.push_str(hint),
+                Maybe => {
+                    row.push_char('[');
+                    row.push_str(hint);
+                    row.push_char(']');
+                }
+            }
 
             // FIXME: #5516
             // here we just need to indent the start of the description
             let rowlen = row.len();
-            row += if rowlen < 24 {
-                " ".repeat(24 - rowlen)
+            if rowlen < 24 {
+                do (24 - rowlen).times {
+                    row.push_char(' ')
+                }
             } else {
-                copy desc_sep
-            };
+                row.push_str(desc_sep)
+            }
 
             // Normalize desc to contain words separated by one space character
             let mut desc_normalized_whitespace = ~"";
-            for desc.word_iter().advance |word| {
+            foreach word in desc.word_iter() {
                 desc_normalized_whitespace.push_str(word);
                 desc_normalized_whitespace.push_char(' ');
             }
 
             // FIXME: #5516
             let mut desc_rows = ~[];
-            for str::each_split_within(desc_normalized_whitespace, 54) |substr| {
+            do each_split_within(desc_normalized_whitespace, 54) |substr| {
                 desc_rows.push(substr.to_owned());
-            }
+                true
+            };
 
             // FIXME: #5516
             // wrapped description
-            row += desc_rows.connect(desc_sep);
+            row.push_str(desc_rows.connect(desc_sep));
 
             row
         });
 
-        return str::to_owned(brief) +
+        return brief.to_owned() +
                "\n\nOptions:\n" +
-               rows.connect("\n") +
-               "\n\n";
+               rows.collect::<~[~str]>().connect("\n") +
+               "\n";
+    }
+
+    /** Splits a string into substrings with possibly internal whitespace,
+     *  each of them at most `lim` bytes long. The substrings have leading and trailing
+     *  whitespace removed, and are only cut at whitespace boundaries.
+     *
+     *  Note: Function was moved here from `std::str` because this module is the only place that
+     *  uses it, and because it was to specific for a general string function.
+     *
+     *  #Failure:
+     *
+     *  Fails during iteration if the string contains a non-whitespace
+     *  sequence longer than the limit.
+     */
+    priv fn each_split_within<'a>(ss: &'a str,
+                                lim: uint,
+                                it: &fn(&'a str) -> bool) -> bool {
+        // Just for fun, let's write this as an state machine:
+
+        enum SplitWithinState {
+            A,  // leading whitespace, initial state
+            B,  // words
+            C,  // internal and trailing whitespace
+        }
+        enum Whitespace {
+            Ws, // current char is whitespace
+            Cr  // current char is not whitespace
+        }
+        enum LengthLimit {
+            UnderLim, // current char makes current substring still fit in limit
+            OverLim   // current char makes current substring no longer fit in limit
+        }
+
+        let mut slice_start = 0;
+        let mut last_start = 0;
+        let mut last_end = 0;
+        let mut state = A;
+        let mut fake_i = ss.len();
+        let mut lim = lim;
+
+        let mut cont = true;
+        let slice: &fn() = || { cont = it(ss.slice(slice_start, last_end)) };
+
+        // if the limit is larger than the string, lower it to save cycles
+        if (lim >= fake_i) {
+            lim = fake_i;
+        }
+
+        let machine: &fn((uint, char)) -> bool = |(i, c)| {
+            let whitespace = if ::std::char::is_whitespace(c) { Ws }       else { Cr };
+            let limit      = if (i - slice_start + 1) <= lim  { UnderLim } else { OverLim };
+
+            state = match (state, whitespace, limit) {
+                (A, Ws, _)        => { A }
+                (A, Cr, _)        => { slice_start = i; last_start = i; B }
+
+                (B, Cr, UnderLim) => { B }
+                (B, Cr, OverLim)  if (i - last_start + 1) > lim
+                                => fail!("word starting with %? longer than limit!",
+                                        ss.slice(last_start, i + 1)),
+                (B, Cr, OverLim)  => { slice(); slice_start = last_start; B }
+                (B, Ws, UnderLim) => { last_end = i; C }
+                (B, Ws, OverLim)  => { last_end = i; slice(); A }
+
+                (C, Cr, UnderLim) => { last_start = i; B }
+                (C, Cr, OverLim)  => { slice(); slice_start = i; last_start = i; last_end = i; B }
+                (C, Ws, OverLim)  => { slice(); A }
+                (C, Ws, UnderLim) => { C }
+            };
+
+            cont
+        };
+
+        ss.iter().enumerate().advance(|x| machine(x));
+
+        // Let the automaton 'run out' by supplying trailing whitespace
+        while cont && match state { B | C => true, A => false } {
+            machine((fake_i, ' '));
+            fake_i += 1;
+        }
+        return cont;
+    }
+
+    #[test]
+    priv fn test_split_within() {
+        fn t(s: &str, i: uint, u: &[~str]) {
+            let mut v = ~[];
+            do each_split_within(s, i) |s| { v.push(s.to_owned()); true };
+            assert!(v.iter().zip(u.iter()).all(|(a,b)| a == b));
+        }
+        t("", 0, []);
+        t("", 15, []);
+        t("hello", 15, [~"hello"]);
+        t("\nMary had a little lamb\nLittle lamb\n", 15,
+            [~"Mary had a", ~"little lamb", ~"Little lamb"]);
+        t("\nMary had a little lamb\nLittle lamb\n", ::std::uint::max_value,
+            [~"Mary had a little lamb\nLittle lamb"]);
     }
 } // end groups module
 
@@ -666,8 +800,8 @@ mod tests {
     use getopts::groups::OptGroup;
     use getopts::*;
 
-    use core::result::{Err, Ok};
-    use core::result;
+    use std::result::{Err, Ok};
+    use std::result;
 
     fn check_fail_type(f: Fail_, ft: FailType) {
         match f {
@@ -902,7 +1036,7 @@ mod tests {
         let rs = getopts(args, opts);
         match rs {
           Err(f) => {
-            error!(fail_str(copy f));
+            error!(fail_str(f.clone()));
             check_fail_type(f, UnexpectedArgument_);
           }
           _ => fail!()
@@ -1197,24 +1331,41 @@ mod tests {
 
     #[test]
     fn test_multi() {
-        let args = ~[~"-e", ~"foo", ~"--encrypt", ~"foo"];
         let opts = ~[optopt("e"), optopt("encrypt"), optopt("f")];
-        let matches = &match getopts(args, opts) {
+
+        let args_single = ~[~"-e", ~"foo"];
+        let matches_single = &match getopts(args_single, opts) {
           result::Ok(m) => m,
           result::Err(_) => fail!()
         };
-        assert!(opts_present(matches, [~"e"]));
-        assert!(opts_present(matches, [~"encrypt"]));
-        assert!(opts_present(matches, [~"encrypt", ~"e"]));
-        assert!(opts_present(matches, [~"e", ~"encrypt"]));
-        assert!(!opts_present(matches, [~"f"]));
-        assert!(!opts_present(matches, [~"thing"]));
-        assert!(!opts_present(matches, []));
+        assert!(opts_present(matches_single, [~"e"]));
+        assert!(opts_present(matches_single, [~"encrypt", ~"e"]));
+        assert!(opts_present(matches_single, [~"e", ~"encrypt"]));
+        assert!(!opts_present(matches_single, [~"encrypt"]));
+        assert!(!opts_present(matches_single, [~"thing"]));
+        assert!(!opts_present(matches_single, []));
 
-        assert_eq!(opts_str(matches, [~"e"]), ~"foo");
-        assert_eq!(opts_str(matches, [~"encrypt"]), ~"foo");
-        assert_eq!(opts_str(matches, [~"e", ~"encrypt"]), ~"foo");
-        assert_eq!(opts_str(matches, [~"encrypt", ~"e"]), ~"foo");
+        assert_eq!(opts_str(matches_single, [~"e"]), ~"foo");
+        assert_eq!(opts_str(matches_single, [~"e", ~"encrypt"]), ~"foo");
+        assert_eq!(opts_str(matches_single, [~"encrypt", ~"e"]), ~"foo");
+
+        let args_both = ~[~"-e", ~"foo", ~"--encrypt", ~"foo"];
+        let matches_both = &match getopts(args_both, opts) {
+          result::Ok(m) => m,
+          result::Err(_) => fail!()
+        };
+        assert!(opts_present(matches_both, [~"e"]));
+        assert!(opts_present(matches_both, [~"encrypt"]));
+        assert!(opts_present(matches_both, [~"encrypt", ~"e"]));
+        assert!(opts_present(matches_both, [~"e", ~"encrypt"]));
+        assert!(!opts_present(matches_both, [~"f"]));
+        assert!(!opts_present(matches_both, [~"thing"]));
+        assert!(!opts_present(matches_both, []));
+
+        assert_eq!(opts_str(matches_both, [~"e"]), ~"foo");
+        assert_eq!(opts_str(matches_both, [~"encrypt"]), ~"foo");
+        assert_eq!(opts_str(matches_both, [~"e", ~"encrypt"]), ~"foo");
+        assert_eq!(opts_str(matches_both, [~"encrypt", ~"e"]), ~"foo");
     }
 
     #[test]
@@ -1342,7 +1493,6 @@ Options:
     -k --kiwi           Desc
     -p [VAL]            Desc
     -l VAL              Desc
-
 ";
 
         let generated_usage = groups::usage("Usage: fruits", optgroups);
@@ -1371,7 +1521,6 @@ Options:
     -k --kiwi           This is a long description which won't be wrapped..+..
     -a --apple          This is a long description which _will_ be
                         wrapped..+..
-
 ";
 
         let usage = groups::usage("Usage: fruits", optgroups);

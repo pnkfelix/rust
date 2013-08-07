@@ -19,7 +19,10 @@ pub trait Container {
     fn len(&self) -> uint;
 
     /// Return true if the container contains no elements
-    fn is_empty(&self) -> bool;
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// A trait to represent mutable containers
@@ -30,36 +33,30 @@ pub trait Mutable: Container {
 
 /// A map is a key-value store where values may be looked up by their keys. This
 /// trait provides basic operations to operate on these stores.
-pub trait Map<K, V>: Mutable {
+pub trait Map<K, V>: Container {
     /// Return true if the map contains a value for the specified key
     fn contains_key(&self, key: &K) -> bool;
 
-    /// Visits all keys and values
-    fn each<'a>(&'a self, f: &fn(&K, &'a V) -> bool) -> bool;
-
-    /// Visit all keys
-    fn each_key(&self, f: &fn(&K) -> bool) -> bool;
-
-    /// Visit all values
-    fn each_value<'a>(&'a self, f: &fn(&'a V) -> bool) -> bool;
-
-    /// Iterate over the map and mutate the contained values
-    fn mutate_values(&mut self, f: &fn(&K, &mut V) -> bool) -> bool;
-
     /// Return a reference to the value corresponding to the key
     fn find<'a>(&'a self, key: &K) -> Option<&'a V>;
+}
 
-    /// Return a mutable reference to the value corresponding to the key
-    fn find_mut<'a>(&'a mut self, key: &K) -> Option<&'a mut V>;
-
+/// This trait provides basic operations to modify the contents of a map.
+pub trait MutableMap<K, V>: Map<K, V> + Mutable {
     /// Insert a key-value pair into the map. An existing value for a
     /// key is replaced by the new value. Return true if the key did
     /// not already exist in the map.
-    fn insert(&mut self, key: K, value: V) -> bool;
+    #[inline]
+    fn insert(&mut self, key: K, value: V) -> bool {
+        self.swap(key, value).is_none()
+    }
 
     /// Remove a key-value pair from the map. Return true if the key
     /// was present in the map, otherwise false.
-    fn remove(&mut self, key: &K) -> bool;
+    #[inline]
+    fn remove(&mut self, key: &K) -> bool {
+        self.pop(key).is_some()
+    }
 
     /// Insert a key-value pair from the map. If the key already had a value
     /// present in the map, that value is returned. Otherwise None is returned.
@@ -68,22 +65,17 @@ pub trait Map<K, V>: Mutable {
     /// Removes a key from the map, returning the value at the key if the key
     /// was previously in the map.
     fn pop(&mut self, k: &K) -> Option<V>;
+
+    /// Return a mutable reference to the value corresponding to the key
+    fn find_mut<'a>(&'a mut self, key: &K) -> Option<&'a mut V>;
 }
 
 /// A set is a group of objects which are each distinct from one another. This
-/// trait represents actions which can be performed on sets to manipulate and
-/// iterate over them.
-pub trait Set<T>: Mutable {
+/// trait represents actions which can be performed on sets to iterate over
+/// them.
+pub trait Set<T>: Container {
     /// Return true if the set contains a value
     fn contains(&self, value: &T) -> bool;
-
-    /// Add a value to the set. Return true if the value was not already
-    /// present in the set.
-    fn insert(&mut self, value: T) -> bool;
-
-    /// Remove a value from the set. Return true if the value was
-    /// present in the set.
-    fn remove(&mut self, value: &T) -> bool;
 
     /// Return true if the set has no elements in common with `other`.
     /// This is equivalent to checking for an empty intersection.
@@ -95,15 +87,17 @@ pub trait Set<T>: Mutable {
     /// Return true if the set is a superset of another
     fn is_superset(&self, other: &Self) -> bool;
 
-    /// Visit the values representing the difference
-    fn difference(&self, other: &Self, f: &fn(&T) -> bool) -> bool;
+    // FIXME #8154: Add difference, sym. difference, intersection and union iterators
+}
 
-    /// Visit the values representing the symmetric difference
-    fn symmetric_difference(&self, other: &Self, f: &fn(&T) -> bool) -> bool;
+/// This trait represents actions which can be performed on sets to mutate
+/// them.
+pub trait MutableSet<T>: Set<T> + Mutable {
+    /// Add a value to the set. Return true if the value was not already
+    /// present in the set.
+    fn insert(&mut self, value: T) -> bool;
 
-    /// Visit the values representing the intersection
-    fn intersection(&self, other: &Self, f: &fn(&T) -> bool) -> bool;
-
-    /// Visit the values representing the union
-    fn union(&self, other: &Self, f: &fn(&T) -> bool) -> bool;
+    /// Remove a value from the set. Return true if the value was
+    /// present in the set.
+    fn remove(&mut self, value: &T) -> bool;
 }

@@ -1,4 +1,13 @@
-use std::f64;
+// Copyright 2012-2013 The Rust Project Developers. See the COPYRIGHT
+// file at the top-level directory of this distribution and at
+// http://rust-lang.org/COPYRIGHT.
+//
+// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 use std::from_str::FromStr;
 use std::os;
 use std::vec;
@@ -10,16 +19,16 @@ fn A(i: i32, j: i32) -> i32 {
 
 fn dot(v: &[f64], u: &[f64]) -> f64 {
     let mut sum = 0.0;
-    for v.eachi |i, &v_i| {
+    foreach (i, &v_i) in v.iter().enumerate() {
         sum += v_i * u[i];
     }
     sum
 }
 
 fn mult_Av(v: &mut [f64], out: &mut [f64]) {
-    for out.mut_iter().enumerate().advance |(i, out_i)| {
+    foreach (i, out_i) in out.mut_iter().enumerate() {
         let mut sum = 0.0;
-        for v.mut_iter().enumerate().advance |(j, &v_j)| {
+        foreach (j, &v_j) in v.mut_iter().enumerate() {
             sum += v_j / (A(i as i32, j as i32) as f64);
         }
         *out_i = sum;
@@ -27,9 +36,9 @@ fn mult_Av(v: &mut [f64], out: &mut [f64]) {
 }
 
 fn mult_Atv(v: &mut [f64], out: &mut [f64]) {
-    for out.mut_iter().enumerate().advance |(i, out_i)| {
+    foreach (i, out_i) in out.mut_iter().enumerate() {
         let mut sum = 0.0;
-        for v.mut_iter().enumerate().advance |(j, &v_j)| {
+        foreach (j, &v_j) in v.mut_iter().enumerate() {
             sum += v_j / (A(j as i32, i as i32) as f64);
         }
         *out_i = sum;
@@ -47,10 +56,10 @@ fn main() {
     let mut u = vec::from_elem(n, 1f64);
     let mut v = u.clone();
     let mut tmp = u.clone();
-    for 8.times {
+    do 8.times {
         mult_AtAv(u, v, tmp);
         mult_AtAv(v, u, tmp);
     }
 
-    println(fmt!("%.9f", f64::sqrt(dot(u,v) / dot(v,v)) as float));
+    printfln!("%.9f", (dot(u,v) / dot(v,v)).sqrt() as float);
 }

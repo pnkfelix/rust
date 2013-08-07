@@ -8,7 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
 
 use back::link;
 use back::target_strs;
@@ -19,7 +18,7 @@ use metadata::filesearch;
 use metadata;
 use middle::lint;
 
-use syntax::ast::node_id;
+use syntax::ast::NodeId;
 use syntax::ast::{int_ty, uint_ty, float_ty};
 use syntax::codemap::span;
 use syntax::diagnostic;
@@ -29,12 +28,17 @@ use syntax::abi;
 use syntax::parse::token;
 use syntax;
 
-use core::hashmap::HashMap;
+use std::hashmap::HashMap;
 
 #[deriving(Eq)]
 pub enum os { os_win32, os_macos, os_linux, os_android, os_freebsd, }
 
-pub enum crate_type { bin_crate, lib_crate, unknown_crate, }
+#[deriving(Clone)]
+pub enum crate_type {
+    bin_crate,
+    lib_crate,
+    unknown_crate,
+}
 
 pub struct config {
     os: os,
@@ -45,32 +49,33 @@ pub struct config {
     float_type: float_ty
 }
 
-pub static verbose: uint = 1 << 0;
-pub static time_passes: uint = 1 << 1;
-pub static count_llvm_insns: uint = 1 << 2;
-pub static time_llvm_passes: uint = 1 << 3;
-pub static trans_stats: uint = 1 << 4;
-pub static asm_comments: uint = 1 << 5;
-pub static no_verify: uint = 1 << 6;
-pub static trace: uint = 1 << 7;
-pub static coherence: uint = 1 << 8;
-pub static borrowck_stats: uint = 1 << 9;
-pub static borrowck_note_pure: uint = 1 << 10;
-pub static borrowck_note_loan: uint = 1 << 11;
-pub static no_landing_pads: uint = 1 << 12;
-pub static debug_llvm: uint = 1 << 13;
-pub static count_type_sizes: uint = 1 << 14;
-pub static meta_stats: uint = 1 << 15;
-pub static no_opt: uint = 1 << 16;
+pub static verbose:                 uint = 1 <<  0;
+pub static time_passes:             uint = 1 <<  1;
+pub static count_llvm_insns:        uint = 1 <<  2;
+pub static time_llvm_passes:        uint = 1 <<  3;
+pub static trans_stats:             uint = 1 <<  4;
+pub static asm_comments:            uint = 1 <<  5;
+pub static no_verify:               uint = 1 <<  6;
+pub static trace:                   uint = 1 <<  7;
+pub static coherence:               uint = 1 <<  8;
+pub static borrowck_stats:          uint = 1 <<  9;
+pub static borrowck_note_pure:      uint = 1 << 10;
+pub static borrowck_note_loan:      uint = 1 << 11;
+pub static no_landing_pads:         uint = 1 << 12;
+pub static debug_llvm:              uint = 1 << 13;
+pub static count_type_sizes:        uint = 1 << 14;
+pub static meta_stats:              uint = 1 << 15;
+pub static no_opt:                  uint = 1 << 16;
 pub static no_monomorphic_collapse: uint = 1 << 17;
-pub static gc: uint = 1 << 18;
-pub static jit: uint = 1 << 19;
-pub static debug_info: uint = 1 << 20;
-pub static extra_debug_info: uint = 1 << 21;
-pub static statik: uint = 1 << 22;
-pub static print_link_args: uint = 1 << 23;
-pub static no_debug_borrows: uint = 1 << 24;
-pub static lint_llvm : uint = 1 << 25;
+pub static gc:                      uint = 1 << 18;
+pub static jit:                     uint = 1 << 19;
+pub static debug_info:              uint = 1 << 20;
+pub static extra_debug_info:        uint = 1 << 21;
+pub static statik:                  uint = 1 << 22;
+pub static print_link_args:         uint = 1 << 23;
+pub static no_debug_borrows:        uint = 1 << 24;
+pub static lint_llvm:               uint = 1 << 25;
+pub static once_fns:                uint = 1 << 26;
 
 pub fn debugging_opts_map() -> ~[(~str, ~str, uint)] {
     ~[(~"verbose", ~"in general, enable more debug printouts", verbose),
@@ -112,10 +117,13 @@ pub fn debugging_opts_map() -> ~[(~str, ~str, uint)] {
      (~"lint-llvm",
       ~"Run the LLVM lint pass on the pre-optimization IR",
       lint_llvm),
+     (~"once-fns",
+      ~"Allow 'once fn' closures to deinitialize captured variables",
+      once_fns),
     ]
 }
 
-#[deriving(Eq)]
+#[deriving(Clone, Eq)]
 pub enum OptLevel {
     No, // -O0
     Less, // -O1
@@ -123,6 +131,7 @@ pub enum OptLevel {
     Aggressive // -O3
 }
 
+#[deriving(Clone)]
 pub struct options {
     // The crate config requested for the session, which may be combined
     // with additional crate configurations during the compile process
@@ -149,7 +158,7 @@ pub struct options {
     // items to the crate config, and during parsing the entire crate config
     // will be added to the crate AST node.  This should not be used for
     // anything except building the full crate config prior to parsing.
-    cfg: ast::crate_cfg,
+    cfg: ast::CrateConfig,
     binary: @str,
     test: bool,
     parse_only: bool,
@@ -180,13 +189,13 @@ pub struct Session_ {
     parse_sess: @mut ParseSess,
     codemap: @codemap::CodeMap,
     // For a library crate, this is always none
-    entry_fn: @mut Option<(node_id, codemap::span)>,
+    entry_fn: @mut Option<(NodeId, codemap::span)>,
     entry_type: @mut Option<EntryFnType>,
     span_diagnostic: @mut diagnostic::span_handler,
     filesearch: @filesearch::FileSearch,
     building_library: @mut bool,
     working_dir: Path,
-    lints: @mut HashMap<ast::node_id, ~[(lint::lint, codemap::span, ~str)]>,
+    lints: @mut HashMap<ast::NodeId, ~[(lint::lint, codemap::span, ~str)]>,
 }
 
 pub type Session = @Session_;
@@ -239,7 +248,7 @@ impl Session_ {
     }
     pub fn add_lint(@self,
                     lint: lint::lint,
-                    id: ast::node_id,
+                    id: ast::NodeId,
                     sp: span,
                     msg: ~str) {
         match self.lints.find_mut(&id) {
@@ -248,7 +257,7 @@ impl Session_ {
         }
         self.lints.insert(id, ~[(lint, sp, msg)]);
     }
-    pub fn next_node_id(@self) -> ast::node_id {
+    pub fn next_node_id(@self) -> ast::NodeId {
         return syntax::parse::next_node_id(self.parse_sess);
     }
     pub fn diagnostic(@self) -> @mut diagnostic::span_handler {
@@ -293,6 +302,7 @@ impl Session_ {
     pub fn debug_borrows(@self) -> bool {
         self.opts.optimize == No && !self.debugging_opt(no_debug_borrows)
     }
+    pub fn once_fns(@self) -> bool { self.debugging_opt(once_fns) }
 
     // pointless function, now...
     pub fn str_of(@self, id: ast::ident) -> @str {
@@ -341,15 +351,13 @@ pub fn basic_options() -> @options {
 }
 
 // Seems out of place, but it uses session, so I'm putting it here
-pub fn expect<T:Copy>(sess: Session,
-                       opt: Option<T>,
-                       msg: &fn() -> ~str)
-                    -> T {
+pub fn expect<T:Clone>(sess: Session, opt: Option<T>, msg: &fn() -> ~str)
+                       -> T {
     diagnostic::expect(sess.diagnostic(), opt, msg)
 }
 
 pub fn building_library(req_crate_type: crate_type,
-                        crate: @ast::crate,
+                        crate: &ast::Crate,
                         testing: bool) -> bool {
     match req_crate_type {
       bin_crate => false,
@@ -359,9 +367,9 @@ pub fn building_library(req_crate_type: crate_type,
             false
         } else {
             match syntax::attr::first_attr_value_str_by_name(
-                crate.node.attrs,
+                crate.attrs,
                 "crate_type") {
-              Some(s) if "lib" == s => true,
+              Some(s) => "lib" == s,
               _ => false
             }
         }
@@ -387,29 +395,27 @@ mod test {
     use driver::session::{unknown_crate};
 
     use syntax::ast;
+    use syntax::attr;
     use syntax::codemap;
 
-    fn make_crate_type_attr(t: @str) -> ast::attribute {
-        codemap::respan(codemap::dummy_sp(), ast::attribute_ {
-            style: ast::attr_outer,
-            value: @codemap::respan(codemap::dummy_sp(),
-                ast::meta_name_value(
-                    @"crate_type",
-                    codemap::respan(codemap::dummy_sp(),
-                                     ast::lit_str(t)))),
-            is_sugared_doc: false
-        })
+    fn make_crate_type_attr(t: @str) -> ast::Attribute {
+        attr::mk_attr(attr::mk_name_value_item_str(@"crate_type", t))
     }
 
-    fn make_crate(with_bin: bool, with_lib: bool) -> @ast::crate {
+    fn make_crate(with_bin: bool, with_lib: bool) -> @ast::Crate {
         let mut attrs = ~[];
-        if with_bin { attrs += [make_crate_type_attr(@"bin")]; }
-        if with_lib { attrs += [make_crate_type_attr(@"lib")]; }
-        @codemap::respan(codemap::dummy_sp(), ast::crate_ {
+        if with_bin {
+            attrs.push(make_crate_type_attr(@"bin"));
+        }
+        if with_lib {
+            attrs.push(make_crate_type_attr(@"lib"));
+        }
+        @ast::Crate {
             module: ast::_mod { view_items: ~[], items: ~[] },
             attrs: attrs,
-            config: ~[]
-        })
+            config: ~[],
+            span: codemap::dummy_sp(),
+        }
     }
 
     #[test]

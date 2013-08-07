@@ -13,11 +13,9 @@ The compiler code necessary for #[deriving(Decodable)]. See
 encodable.rs for more.
 */
 
-use core::prelude::*;
-use core::vec;
-use core::uint;
+use std::vec;
 
-use ast::{meta_item, item, expr, m_mutbl};
+use ast::{MetaItem, item, expr, m_mutbl};
 use codemap::span;
 use ext::base::ExtCtxt;
 use ext::build::AstBuilder;
@@ -25,7 +23,7 @@ use ext::deriving::generic::*;
 
 pub fn expand_deriving_decodable(cx: @ExtCtxt,
                                  span: span,
-                                 mitem: @meta_item,
+                                 mitem: @MetaItem,
                                  in_items: ~[@item]) -> ~[@item] {
     let trait_def = TraitDef {
         path: Path::new_(~["extra", "serialize", "Decodable"], None,
@@ -85,16 +83,16 @@ fn decodable_substructure(cx: @ExtCtxt, span: span,
                         cx.expr_ident(span, substr.type_ident)
                     } else {
                         let mut fields = vec::with_capacity(n);
-                        for uint::range(0, n) |i| {
+                        foreach i in range(0, n) {
                             fields.push(getarg(fmt!("_field%u", i).to_managed(), i));
                         }
                         cx.expr_call_ident(span, substr.type_ident, fields)
                     }
                 }
                 Right(ref fields) => {
-                    let fields = do fields.mapi |i, f| {
+                    let fields = do fields.iter().enumerate().transform |(i, f)| {
                         cx.field_imm(span, *f, getarg(cx.str_of(*f), i))
-                    };
+                    }.collect();
                     cx.expr_struct_ident(span, substr.type_ident, fields)
                 }
             };
@@ -111,7 +109,7 @@ fn decodable_substructure(cx: @ExtCtxt, span: span,
             let mut variants = ~[];
             let rvariant_arg = cx.ident_of("read_enum_variant_arg");
 
-            for fields.eachi |i, f| {
+            foreach (i, f) in fields.iter().enumerate() {
                 let (name, parts) = match *f { (i, ref p) => (i, p) };
                 variants.push(cx.expr_str(span, cx.str_of(name)));
 
@@ -127,16 +125,16 @@ fn decodable_substructure(cx: @ExtCtxt, span: span,
                             cx.expr_ident(span, name)
                         } else {
                             let mut fields = vec::with_capacity(n);
-                            for uint::range(0, n) |i| {
+                            foreach i in range(0u, n) {
                                 fields.push(getarg(i));
                             }
                             cx.expr_call_ident(span, name, fields)
                         }
                     }
                     Right(ref fields) => {
-                        let fields = do fields.mapi |i, f| {
+                        let fields = do fields.iter().enumerate().transform |(i, f)| {
                             cx.field_imm(span, *f, getarg(i))
-                        };
+                        }.collect();
                         cx.expr_struct_ident(span, name, fields)
                     }
                 };

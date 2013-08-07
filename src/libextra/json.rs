@@ -14,24 +14,23 @@
 #[forbid(non_camel_case_types)];
 #[allow(missing_doc)];
 
-//! json serialization
+//! json parsing and serialization
 
-use core::prelude::*;
-
-use core::char;
-use core::float;
-use core::hashmap::HashMap;
-use core::io::{WriterUtil, ReaderUtil};
-use core::io;
-use core::str;
-use core::to_str;
-use core::vec;
+use std::iterator;
+use std::float;
+use std::hashmap::HashMap;
+use std::io::WriterUtil;
+use std::io;
+use std::str;
+use std::to_str;
 
 use serialize::Encodable;
 use serialize;
 use sort::Sort;
+use treemap::TreeMap;
 
 /// Represents a json value
+#[deriving(Clone, Eq)]
 pub enum Json {
     Number(float),
     String(~str),
@@ -42,7 +41,7 @@ pub enum Json {
 }
 
 pub type List = ~[Json];
-pub type Object = HashMap<~str, Json>;
+pub type Object = TreeMap<~str, Json>;
 
 #[deriving(Eq)]
 /// If an error occurs while parsing some JSON, this is the structure which is
@@ -58,27 +57,29 @@ pub struct Error {
 
 fn escape_str(s: &str) -> ~str {
     let mut escaped = ~"\"";
-    for s.iter().advance |c| {
+    foreach c in s.iter() {
         match c {
-          '"' => escaped += "\\\"",
-          '\\' => escaped += "\\\\",
-          '\x08' => escaped += "\\b",
-          '\x0c' => escaped += "\\f",
-          '\n' => escaped += "\\n",
-          '\r' => escaped += "\\r",
-          '\t' => escaped += "\\t",
-          _ => escaped += str::from_char(c)
+          '"' => escaped.push_str("\\\""),
+          '\\' => escaped.push_str("\\\\"),
+          '\x08' => escaped.push_str("\\b"),
+          '\x0c' => escaped.push_str("\\f"),
+          '\n' => escaped.push_str("\\n"),
+          '\r' => escaped.push_str("\\r"),
+          '\t' => escaped.push_str("\\t"),
+          _ => escaped.push_char(c),
         }
     };
 
-    escaped += "\"";
+    escaped.push_char('"');
 
     escaped
 }
 
 fn spaces(n: uint) -> ~str {
     let mut ss = ~"";
-    for n.times { ss.push_str(" "); }
+    do n.times {
+        ss.push_str(" ");
+    }
     return ss;
 }
 
@@ -481,25 +482,26 @@ pub fn to_pretty_str(json: &Json) -> ~str {
     io::with_str_writer(|wr| to_pretty_writer(wr, json))
 }
 
-#[allow(missing_doc)]
-pub struct Parser {
-    priv rdr: @io::Reader,
+pub struct Parser<T> {
+    priv rdr: ~T,
     priv ch: char,
     priv line: uint,
     priv col: uint,
 }
 
-/// Decode a json value from an io::reader
-pub fn Parser(rdr: @io::Reader) -> Parser {
-    Parser {
+/// Decode a json value from an Iterator<char>
+pub fn Parser<T : iterator::Iterator<char>>(rdr: ~T) -> Parser<T> {
+    let mut p = Parser {
         rdr: rdr,
-        ch: rdr.read_char(),
+        ch: 0 as char,
         line: 1,
-        col: 1,
-    }
+        col: 0,
+    };
+    p.bump();
+    p
 }
 
-impl Parser {
+impl<T: iterator::Iterator<char>> Parser<T> {
     pub fn parse(&mut self) -> Result<Json, Error> {
         match self.parse_value() {
           Ok(value) => {
@@ -517,11 +519,14 @@ impl Parser {
     }
 }
 
-impl Parser {
+impl<T : iterator::Iterator<char>> Parser<T> {
     fn eof(&self) -> bool { self.ch == -1 as char }
 
     fn bump(&mut self) {
-        self.ch = self.rdr.read_char();
+        match self.rdr.next() {
+            Some(ch) => self.ch = ch,
+            None() => self.ch = -1 as char,
+        }
 
         if self.ch == '\n' {
             self.line += 1u;
@@ -562,7 +567,10 @@ impl Parser {
     }
 
     fn parse_whitespace(&mut self) {
-        while char::is_whitespace(self.ch) { self.bump(); }
+        while self.ch == ' ' ||
+              self.ch == '\n' ||
+              self.ch == '\t' ||
+              self.ch == '\r' { self.bump(); }
     }
 
     fn parse_ident(&mut self, ident: &str, value: Json) -> Result<Json, Error> {
@@ -706,8 +714,11 @@ impl Parser {
         let mut escape = false;
         let mut res = ~"";
 
-        while !self.eof() {
+        loop {
             self.bump();
+            if self.eof() {
+                return self.error(~"EOF while parsing string");
+            }
 
             if (escape) {
                 match self.ch {
@@ -762,8 +773,6 @@ impl Parser {
                 res.push_char(self.ch);
             }
         }
-
-        self.error(~"EOF while parsing string")
     }
 
     fn parse_list(&mut self) -> Result<Json, Error> {
@@ -800,7 +809,7 @@ impl Parser {
         self.bump();
         self.parse_whitespace();
 
-        let mut values = ~HashMap::new();
+        let mut values = ~TreeMap::new();
 
         if self.ch == '}' {
           self.bump();
@@ -849,15 +858,15 @@ impl Parser {
 
 /// Decodes a json value from an @io::Reader
 pub fn from_reader(rdr: @io::Reader) -> Result<Json, Error> {
-    let mut parser = Parser(rdr);
+    let s = str::from_bytes(rdr.read_whole_stream());
+    let mut parser = Parser(~s.iter());
     parser.parse()
 }
 
 /// Decodes a json value from a string
 pub fn from_str(s: &str) -> Result<Json, Error> {
-    do io::with_str_reader(s) |rdr| {
-        from_reader(rdr)
-    }
+    let mut parser = Parser(~s.iter());
+    parser.parse()
 }
 
 /// A structure to decode JSON to values in rust.
@@ -914,7 +923,7 @@ impl serialize::Decoder for Decoder {
     fn read_char(&mut self) -> char {
         let mut v = ~[];
         let s = self.read_str();
-        for s.iter().advance |c| { v.push(c) }
+        foreach c in s.iter() { v.push(c) }
         if v.len() != 1 { fail!("string must have one character") }
         v[0]
     }
@@ -940,7 +949,7 @@ impl serialize::Decoder for Decoder {
         let name = match self.stack.pop() {
             String(s) => s,
             List(list) => {
-                do vec::consume_reverse(list) |_i, v| {
+                foreach v in list.consume_rev_iter() {
                     self.stack.push(v);
                 }
                 match self.stack.pop() {
@@ -950,7 +959,7 @@ impl serialize::Decoder for Decoder {
             }
             ref json => fail!("invalid variant: %?", *json),
         };
-        let idx = match vec::position(names, |n| str::eq_slice(*n, name)) {
+        let idx = match names.iter().position(|n| str::eq_slice(*n, name)) {
             Some(idx) => idx,
             None => fail!("Unknown variant name: %?", name),
         };
@@ -1058,7 +1067,7 @@ impl serialize::Decoder for Decoder {
         let len = match self.stack.pop() {
             List(list) => {
                 let len = list.len();
-                do vec::consume_reverse(list) |_i, v| {
+                foreach v in list.consume_rev_iter() {
                     self.stack.push(v);
                 }
                 len
@@ -1077,9 +1086,8 @@ impl serialize::Decoder for Decoder {
         debug!("read_map()");
         let len = match self.stack.pop() {
             Object(obj) => {
-                let mut obj = obj;
                 let len = obj.len();
-                do obj.consume |key, value| {
+                foreach (key, value) in obj.consume_iter() {
                     self.stack.push(value);
                     self.stack.push(String(key));
                 }
@@ -1103,43 +1111,6 @@ impl serialize::Decoder for Decoder {
         debug!("read_map_elt_val(idx=%u)", idx);
         f(self)
     }
-}
-
-impl Eq for Json {
-    fn eq(&self, other: &Json) -> bool {
-        match (self) {
-            &Number(f0) =>
-                match other { &Number(f1) => f0 == f1, _ => false },
-            &String(ref s0) =>
-                match other { &String(ref s1) => s0 == s1, _ => false },
-            &Boolean(b0) =>
-                match other { &Boolean(b1) => b0 == b1, _ => false },
-            &Null =>
-                match other { &Null => true, _ => false },
-            &List(ref v0) =>
-                match other { &List(ref v1) => v0 == v1, _ => false },
-            &Object(ref d0) => {
-                match other {
-                    &Object(ref d1) => {
-                        if d0.len() == d1.len() {
-                            let mut equal = true;
-                            for d0.each |k, v0| {
-                                match d1.find(k) {
-                                    Some(v1) if v0 == v1 => { },
-                                    _ => { equal = false; break }
-                                }
-                            };
-                            equal
-                        } else {
-                            false
-                        }
-                    }
-                    _ => false
-                }
-            }
-        }
-    }
-    fn ne(&self, other: &Json) -> bool { !self.eq(other) }
 }
 
 /// Test if two json values are less than one another
@@ -1186,13 +1157,13 @@ impl Ord for Json {
                         let mut d1_flat = ~[];
 
                         // FIXME #4430: this is horribly inefficient...
-                        for d0.each |k, v| {
-                             d0_flat.push((@copy *k, @copy *v));
+                        foreach (k, v) in d0.iter() {
+                             d0_flat.push((@(*k).clone(), @(*v).clone()));
                         }
                         d0_flat.qsort();
 
-                        for d1.each |k, v| {
-                            d1_flat.push((@copy *k, @copy *v));
+                        foreach (k, v) in d1.iter() {
+                            d1_flat.push((@(*k).clone(), @(*v).clone()));
                         }
                         d1_flat.qsort();
 
@@ -1218,13 +1189,13 @@ impl Ord for Json {
 }
 
 /// A trait for converting values to JSON
-trait ToJson {
+pub trait ToJson {
     /// Converts the value of `self` to an instance of JSON
     fn to_json(&self) -> Json;
 }
 
 impl ToJson for Json {
-    fn to_json(&self) -> Json { copy *self }
+    fn to_json(&self) -> Json { (*self).clone() }
 }
 
 impl ToJson for @Json {
@@ -1292,11 +1263,11 @@ impl ToJson for bool {
 }
 
 impl ToJson for ~str {
-    fn to_json(&self) -> Json { String(copy *self) }
+    fn to_json(&self) -> Json { String((*self).clone()) }
 }
 
 impl ToJson for @~str {
-    fn to_json(&self) -> Json { String(copy **self) }
+    fn to_json(&self) -> Json { String((**self).clone()) }
 }
 
 impl<A:ToJson,B:ToJson> ToJson for (A, B) {
@@ -1323,11 +1294,21 @@ impl<A:ToJson> ToJson for ~[A] {
     fn to_json(&self) -> Json { List(self.map(|elt| elt.to_json())) }
 }
 
-impl<A:ToJson + Copy> ToJson for HashMap<~str, A> {
+impl<A:ToJson> ToJson for TreeMap<~str, A> {
     fn to_json(&self) -> Json {
-        let mut d = HashMap::new();
-        for self.each |key, value| {
-            d.insert(copy *key, value.to_json());
+        let mut d = TreeMap::new();
+        foreach (key, value) in self.iter() {
+            d.insert((*key).clone(), value.to_json());
+        }
+        Object(~d)
+    }
+}
+
+impl<A:ToJson> ToJson for HashMap<~str, A> {
+    fn to_json(&self) -> Json {
+        let mut d = TreeMap::new();
+        foreach (key, value) in self.iter() {
+            d.insert((*key).clone(), value.to_json());
         }
         Object(~d)
     }
@@ -1354,15 +1335,13 @@ impl to_str::ToStr for Error {
 
 #[cfg(test)]
 mod tests {
-    use core::prelude::*;
 
     use super::*;
 
-    use core::hashmap::HashMap;
-    use core::io;
-    use core::result;
+    use std::io;
 
-    use std::serialize::Decodable;
+    use serialize::Decodable;
+    use treemap::TreeMap;
 
     #[deriving(Eq, Encodable, Decodable)]
     enum Animal {
@@ -1383,11 +1362,11 @@ mod tests {
     }
 
     fn mk_object(items: &[(~str, Json)]) -> Json {
-        let mut d = ~HashMap::new();
+        let mut d = ~TreeMap::new();
 
-        for items.each |item| {
+        foreach item in items.iter() {
             match *item {
-                (ref key, ref value) => { d.insert(copy *key, copy *value); },
+                (ref key, ref value) => { d.insert((*key).clone(), (*value).clone()); },
             }
         };
 
@@ -1532,8 +1511,8 @@ mod tests {
 
         // We can't compare the strings directly because the object fields be
         // printed in a different order.
-        assert_eq!(copy a, from_str(to_str(&a)).unwrap());
-        assert_eq!(copy a, from_str(to_pretty_str(&a)).unwrap());
+        assert_eq!(a.clone(), from_str(to_str(&a)).unwrap());
+        assert_eq!(a.clone(), from_str(to_pretty_str(&a)).unwrap());
     }
 
     #[test]
@@ -1887,27 +1866,26 @@ mod tests {
                 col: 8u,
                 msg: @~"EOF while parsing object"}));
 
-        assert_eq!(result::unwrap(from_str("{}")), mk_object([]));
-        assert_eq!(result::unwrap(from_str("{\"a\": 3}")),
+        assert_eq!(from_str("{}").unwrap(), mk_object([]));
+        assert_eq!(from_str("{\"a\": 3}").unwrap(),
                   mk_object([(~"a", Number(3.0f))]));
 
-        assert_eq!(result::unwrap(from_str(
-                      "{ \"a\": null, \"b\" : true }")),
+        assert_eq!(from_str(
+                      "{ \"a\": null, \"b\" : true }").unwrap(),
                   mk_object([
                       (~"a", Null),
                       (~"b", Boolean(true))]));
-        assert_eq!(result::unwrap(
-                      from_str("\n{ \"a\": null, \"b\" : true }\n")),
+        assert_eq!(from_str("\n{ \"a\": null, \"b\" : true }\n").unwrap(),
                   mk_object([
                       (~"a", Null),
                       (~"b", Boolean(true))]));
-        assert_eq!(result::unwrap(from_str(
-                      "{\"a\" : 1.0 ,\"b\": [ true ]}")),
+        assert_eq!(from_str(
+                      "{\"a\" : 1.0 ,\"b\": [ true ]}").unwrap(),
                   mk_object([
                       (~"a", Number(1.0)),
                       (~"b", List(~[Boolean(true)]))
                   ]));
-        assert_eq!(result::unwrap(from_str(
+        assert_eq!(from_str(
                       ~"{" +
                           "\"a\": 1.0, " +
                           "\"b\": [" +
@@ -1915,7 +1893,7 @@ mod tests {
                               "\"foo\\nbar\", " +
                               "{ \"c\": {\"d\": null} } " +
                           "]" +
-                      "}")),
+                      "}").unwrap(),
                   mk_object([
                       (~"a", Number(1.0f)),
                       (~"b", List(~[
@@ -1974,7 +1952,7 @@ mod tests {
     fn test_decode_map() {
         let s = ~"{\"a\": \"Dog\", \"b\": [\"Frog\", \"Henry\", 349]}";
         let mut decoder = Decoder(from_str(s).unwrap());
-        let mut map: HashMap<~str, Animal> = Decodable::decode(&mut decoder);
+        let mut map: TreeMap<~str, Animal> = Decodable::decode(&mut decoder);
 
         assert_eq!(map.pop(&~"a"), Some(Dog));
         assert_eq!(map.pop(&~"b"), Some(Frog(~"Henry", 349)));

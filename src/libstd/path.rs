@@ -16,17 +16,16 @@ Cross-platform file path handling
 
 #[allow(missing_doc)];
 
+use clone::Clone;
 use container::Container;
 use cmp::Eq;
-use iterator::IteratorUtil;
+use iterator::{Iterator, IteratorUtil};
 use libc;
 use option::{None, Option, Some};
-use str;
-use str::{Str, StrSlice, StrVector};
+use str::{OwnedStr, Str, StrSlice, StrVector};
 use to_str::ToStr;
 use ascii::{AsciiCast, AsciiStr};
-use old_iter::BaseIter;
-use vec::OwnedVector;
+use vec::{OwnedVector, ImmutableVector};
 
 #[cfg(windows)]
 pub use Path = self::WindowsPath;
@@ -122,13 +121,15 @@ pub trait GenericPath {
 
     /// Returns `true` if `self` is an absolute path.
     fn is_absolute(&self) -> bool;
+
+    /// True if `self` is an ancestor of `other`. See `test_is_ancestor_of` for examples
+    fn is_ancestor_of(&self, (&Self)) -> bool;
 }
 
 #[cfg(target_os = "linux")]
 #[cfg(target_os = "android")]
 mod stat {
     #[cfg(target_arch = "x86")]
-    #[cfg(target_arch = "arm")]
     pub mod arch {
         use libc;
 
@@ -154,6 +155,35 @@ mod stat {
                 st_ctime_nsec: 0,
                 __unused4: 0,
                 __unused5: 0,
+            }
+        }
+    }
+
+    #[cfg(target_arch = "arm")]
+    pub mod arch {
+        use libc;
+
+        pub fn default_stat() -> libc::stat {
+            libc::stat {
+                st_dev: 0,
+                __pad0: [0, ..4],
+                __st_ino: 0,
+                st_mode: 0,
+                st_nlink: 0,
+                st_uid: 0,
+                st_gid: 0,
+                st_rdev: 0,
+                __pad3: [0, ..4],
+                st_size: 0,
+                st_blksize: 0,
+                st_blocks: 0,
+                st_atime: 0,
+                st_atime_nsec: 0,
+                st_mtime: 0,
+                st_mtime_nsec: 0,
+                st_ctime: 0,
+                st_ctime_nsec: 0,
+                st_ino: 0
             }
         }
     }
@@ -308,29 +338,14 @@ mod stat {
     }
 }
 
-
-impl Path {
+#[cfg(target_os = "win32")]
+impl WindowsPath {
     pub fn stat(&self) -> Option<libc::stat> {
-        unsafe {
-             do str::as_c_str(self.to_str()) |buf| {
-                let mut st = stat::arch::default_stat();
-                match libc::stat(buf, &mut st) {
-                    0 => Some(st),
-                    _ => None,
-                }
-            }
-        }
-    }
-
-    #[cfg(unix)]
-    pub fn lstat(&self) -> Option<libc::stat> {
-        unsafe {
-            do str::as_c_str(self.to_str()) |buf| {
-                let mut st = stat::arch::default_stat();
-                match libc::lstat(buf, &mut st) {
-                    0 => Some(st),
-                    _ => None,
-                }
+        do self.to_str().as_c_str |buf| {
+            let mut st = stat::arch::default_stat();
+            match unsafe { libc::stat(buf, &mut st) } {
+                0 => Some(st),
+                _ => None,
             }
         }
     }
@@ -357,10 +372,53 @@ impl Path {
     }
 }
 
+#[cfg(not(target_os = "win32"))]
+impl PosixPath {
+    pub fn stat(&self) -> Option<libc::stat> {
+        do self.to_str().as_c_str |buf| {
+            let mut st = stat::arch::default_stat();
+            match unsafe { libc::stat(buf as *libc::c_char, &mut st) } {
+                0 => Some(st),
+                _ => None,
+            }
+        }
+    }
+
+    pub fn exists(&self) -> bool {
+        match self.stat() {
+            None => false,
+            Some(_) => true,
+        }
+    }
+
+    pub fn get_size(&self) -> Option<i64> {
+        match self.stat() {
+            None => None,
+            Some(ref st) => Some(st.st_size as i64),
+        }
+    }
+
+    pub fn get_mode(&self) -> Option<uint> {
+        match self.stat() {
+            None => None,
+            Some(ref st) => Some(st.st_mode as uint),
+        }
+    }
+
+    /// Execute a function on p as well as all of its ancestors
+    pub fn each_parent(&self, f: &fn(&Path)) {
+        if !self.components.is_empty() {
+            f(self);
+            self.pop().each_parent(f);
+        }
+    }
+
+}
+
 #[cfg(target_os = "freebsd")]
 #[cfg(target_os = "linux")]
 #[cfg(target_os = "macos")]
-impl Path {
+impl PosixPath {
     pub fn get_atime(&self) -> Option<(i64, int)> {
         match self.stat() {
             None => None,
@@ -392,9 +450,22 @@ impl Path {
     }
 }
 
+#[cfg(unix)]
+impl PosixPath {
+    pub fn lstat(&self) -> Option<libc::stat> {
+        do self.to_str().as_c_str |buf| {
+            let mut st = stat::arch::default_stat();
+            match unsafe { libc::lstat(buf, &mut st) } {
+                0 => Some(st),
+                _ => None,
+            }
+        }
+    }
+}
+
 #[cfg(target_os = "freebsd")]
 #[cfg(target_os = "macos")]
-impl Path {
+impl PosixPath {
     pub fn get_birthtime(&self) -> Option<(i64, int)> {
         match self.stat() {
             None => None,
@@ -407,7 +478,7 @@ impl Path {
 }
 
 #[cfg(target_os = "win32")]
-impl Path {
+impl WindowsPath {
     pub fn get_atime(&self) -> Option<(i64, int)> {
         match self.stat() {
             None => None,
@@ -434,13 +505,21 @@ impl Path {
             }
         }
     }
+
+    /// Execute a function on p as well as all of its ancestors
+    pub fn each_parent(&self, f: &fn(&Path)) {
+        if !self.components.is_empty() {
+            f(self);
+            self.pop().each_parent(f);
+        }
+    }
 }
 
 impl ToStr for PosixPath {
     fn to_str(&self) -> ~str {
         let mut s = ~"";
         if self.is_absolute {
-            s += "/";
+            s.push_str("/");
         }
         s + self.components.connect("/")
     }
@@ -471,7 +550,7 @@ impl GenericPath for PosixPath {
     fn filename(&self) -> Option<~str> {
         match self.components.len() {
             0 => None,
-            n => Some(copy self.components[n - 1]),
+            n => Some(self.components[n - 1].clone()),
         }
     }
 
@@ -481,7 +560,7 @@ impl GenericPath for PosixPath {
             Some(ref f) => {
                 match f.rfind('.') {
                     Some(p) => Some(f.slice_to(p).to_owned()),
-                    None => Some(copy *f),
+                    None => Some((*f).clone()),
                 }
             }
         }
@@ -508,7 +587,7 @@ impl GenericPath for PosixPath {
     }
 
     fn with_filename(&self, f: &str) -> PosixPath {
-        assert!(! f.iter().all(windows::is_sep));
+        assert!(!f.iter().all(posix::is_sep));
         self.dir_path().push(f)
     }
 
@@ -521,7 +600,7 @@ impl GenericPath for PosixPath {
 
     fn with_filetype(&self, t: &str) -> PosixPath {
         match (t.len(), self.filestem()) {
-            (0, None)        => copy *self,
+            (0, None)        => (*self).clone(),
             (0, Some(ref s)) => self.with_filename(*s),
             (_, None)        => self.with_filename(fmt!(".%s", t)),
             (_, Some(ref s)) => self.with_filename(fmt!("%s.%s", *s, t)),
@@ -530,7 +609,7 @@ impl GenericPath for PosixPath {
 
     fn dir_path(&self) -> PosixPath {
         match self.components.len() {
-            0 => copy *self,
+            0 => (*self).clone(),
             _ => self.pop(),
         }
     }
@@ -538,7 +617,7 @@ impl GenericPath for PosixPath {
     fn file_path(&self) -> PosixPath {
         let cs = match self.filename() {
           None => ~[],
-          Some(ref f) => ~[copy *f]
+          Some(ref f) => ~[(*f).clone()]
         };
         PosixPath {
             is_absolute: false,
@@ -555,7 +634,7 @@ impl GenericPath for PosixPath {
         if other.is_absolute {
             PosixPath {
                 is_absolute: true,
-                components: copy other.components,
+                components: other.components.clone(),
             }
         } else {
             self.push_rel(other)
@@ -567,9 +646,9 @@ impl GenericPath for PosixPath {
     }
 
     fn push_many<S: Str>(&self, cs: &[S]) -> PosixPath {
-        let mut v = copy self.components;
-        for cs.each |e| {
-            for e.as_slice().split_iter(windows::is_sep).advance |s| {
+        let mut v = self.components.clone();
+        foreach e in cs.iter() {
+            foreach s in e.as_slice().split_iter(posix::is_sep) {
                 if !s.is_empty() {
                     v.push(s.to_owned())
                 }
@@ -582,17 +661,20 @@ impl GenericPath for PosixPath {
     }
 
     fn push(&self, s: &str) -> PosixPath {
-        let mut v = copy self.components;
-        for s.split_iter(windows::is_sep).advance |s| {
+        let mut v = self.components.clone();
+        foreach s in s.split_iter(posix::is_sep) {
             if !s.is_empty() {
                 v.push(s.to_owned())
             }
         }
-        PosixPath { components: v, ..copy *self }
+        PosixPath {
+            components: v,
+            ..(*self).clone()
+        }
     }
 
     fn pop(&self) -> PosixPath {
-        let mut cs = copy self.components;
+        let mut cs = self.components.clone();
         if cs.len() != 0 {
             cs.pop();
         }
@@ -612,6 +694,15 @@ impl GenericPath for PosixPath {
     fn is_absolute(&self) -> bool {
         self.is_absolute
     }
+
+    fn is_ancestor_of(&self, other: &PosixPath) -> bool {
+        debug!("%s / %s %? %?", self.to_str(), other.to_str(), self.is_absolute,
+               self.components.len());
+        self == other ||
+            (!other.components.is_empty() && !(self.components.is_empty() && !self.is_absolute) &&
+             self.is_ancestor_of(&other.pop()))
+    }
+
 }
 
 
@@ -619,15 +710,21 @@ impl ToStr for WindowsPath {
     fn to_str(&self) -> ~str {
         let mut s = ~"";
         match self.host {
-          Some(ref h) => { s += "\\\\"; s += *h; }
+          Some(ref h) => {
+            s.push_str("\\\\");
+            s.push_str(*h);
+          }
           None => { }
         }
         match self.device {
-          Some(ref d) => { s += *d; s += ":"; }
+          Some(ref d) => {
+            s.push_str(*d);
+            s.push_str(":");
+          }
           None => { }
         }
         if self.is_absolute {
-            s += "\\";
+            s.push_str("\\");
         }
         s + self.components.connect("\\")
     }
@@ -646,13 +743,13 @@ impl GenericPath for WindowsPath {
         ) {
             (Some((ref d, ref r)), _) => {
                 host = None;
-                device = Some(copy *d);
-                rest = copy *r;
+                device = Some((*d).clone());
+                rest = (*r).clone();
             }
             (None, Some((ref h, ref r))) => {
-                host = Some(copy *h);
+                host = Some((*h).clone());
                 device = None;
-                rest = copy *r;
+                rest = (*r).clone();
             }
             (None, None) => {
                 host = None;
@@ -685,7 +782,7 @@ impl GenericPath for WindowsPath {
     fn filename(&self) -> Option<~str> {
         match self.components.len() {
             0 => None,
-            n => Some(copy self.components[n - 1]),
+            n => Some(self.components[n - 1].clone()),
         }
     }
 
@@ -695,7 +792,7 @@ impl GenericPath for WindowsPath {
             Some(ref f) => {
                 match f.rfind('.') {
                     Some(p) => Some(f.slice_to(p).to_owned()),
-                    None => Some(copy *f),
+                    None => Some((*f).clone()),
                 }
             }
         }
@@ -735,7 +832,7 @@ impl GenericPath for WindowsPath {
 
     fn with_filetype(&self, t: &str) -> WindowsPath {
         match (t.len(), self.filestem()) {
-            (0, None)        => copy *self,
+            (0, None)        => (*self).clone(),
             (0, Some(ref s)) => self.with_filename(*s),
             (_, None)        => self.with_filename(fmt!(".%s", t)),
             (_, Some(ref s)) => self.with_filename(fmt!("%s.%s", *s, t)),
@@ -744,7 +841,7 @@ impl GenericPath for WindowsPath {
 
     fn dir_path(&self) -> WindowsPath {
         match self.components.len() {
-            0 => copy *self,
+            0 => (*self).clone(),
             _ => self.pop(),
         }
     }
@@ -756,7 +853,7 @@ impl GenericPath for WindowsPath {
             is_absolute: false,
             components: match self.filename() {
                 None => ~[],
-                Some(ref f) => ~[copy *f],
+                Some(ref f) => ~[(*f).clone()],
             }
         }
     }
@@ -776,10 +873,10 @@ impl GenericPath for WindowsPath {
         match other.host {
             Some(ref host) => {
                 return WindowsPath {
-                    host: Some(copy *host),
-                    device: copy other.device,
+                    host: Some((*host).clone()),
+                    device: other.device.clone(),
                     is_absolute: true,
-                    components: copy other.components,
+                    components: other.components.clone(),
                 };
             }
             _ => {}
@@ -790,9 +887,9 @@ impl GenericPath for WindowsPath {
             Some(ref device) => {
                 return WindowsPath {
                     host: None,
-                    device: Some(copy *device),
+                    device: Some((*device).clone()),
                     is_absolute: true,
-                    components: copy other.components,
+                    components: other.components.clone(),
                 };
             }
             _ => {}
@@ -801,10 +898,10 @@ impl GenericPath for WindowsPath {
         /* fallback: host and device of lhs win, but the
            whole path of the right */
         WindowsPath {
-            host: copy self.host,
-            device: copy self.device,
+            host: self.host.clone(),
+            device: self.device.clone(),
             is_absolute: self.is_absolute || other.is_absolute,
-            components: copy other.components,
+            components: other.components.clone(),
         }
     }
 
@@ -824,9 +921,9 @@ impl GenericPath for WindowsPath {
     }
 
     fn push_many<S: Str>(&self, cs: &[S]) -> WindowsPath {
-        let mut v = copy self.components;
-        for cs.each |e| {
-            for e.as_slice().split_iter(windows::is_sep).advance |s| {
+        let mut v = self.components.clone();
+        foreach e in cs.iter() {
+            foreach s in e.as_slice().split_iter(windows::is_sep) {
                 if !s.is_empty() {
                     v.push(s.to_owned())
                 }
@@ -834,31 +931,31 @@ impl GenericPath for WindowsPath {
         }
         // tedious, but as-is, we can't use ..self
         WindowsPath {
-            host: copy self.host,
-            device: copy self.device,
+            host: self.host.clone(),
+            device: self.device.clone(),
             is_absolute: self.is_absolute,
             components: v
         }
     }
 
     fn push(&self, s: &str) -> WindowsPath {
-        let mut v = copy self.components;
-        for s.split_iter(windows::is_sep).advance |s| {
+        let mut v = self.components.clone();
+        foreach s in s.split_iter(windows::is_sep) {
             if !s.is_empty() {
                 v.push(s.to_owned())
             }
         }
-        WindowsPath { components: v, ..copy *self }
+        WindowsPath { components: v, ..(*self).clone() }
     }
 
     fn pop(&self) -> WindowsPath {
-        let mut cs = copy self.components;
+        let mut cs = self.components.clone();
         if cs.len() != 0 {
             cs.pop();
         }
         WindowsPath {
-            host: copy self.host,
-            device: copy self.device,
+            host: self.host.clone(),
+            device: self.device.clone(),
             is_absolute: self.is_absolute,
             components: cs,
         }
@@ -866,7 +963,7 @@ impl GenericPath for WindowsPath {
 
     fn normalize(&self) -> WindowsPath {
         WindowsPath {
-            host: copy self.host,
+            host: self.host.clone(),
             device: match self.device {
                 None => None,
 
@@ -882,24 +979,39 @@ impl GenericPath for WindowsPath {
     fn is_absolute(&self) -> bool {
         self.is_absolute
     }
-}
 
+    fn is_ancestor_of(&self, other: &WindowsPath) -> bool {
+        self == other ||
+            (!other.components.is_empty() && !(self.components.is_empty() && !self.is_absolute) &&
+             self.is_ancestor_of(&other.pop()))
+    }
+}
 
 pub fn normalize(components: &[~str]) -> ~[~str] {
     let mut cs = ~[];
-    for components.each |c| {
+    foreach c in components.iter() {
         if *c == ~"." && components.len() > 1 { loop; }
         if *c == ~"" { loop; }
         if *c == ~".." && cs.len() != 0 {
             cs.pop();
             loop;
         }
-        cs.push(copy *c);
+        cs.push((*c).clone());
     }
     cs
 }
 
-// Various windows helpers, and tests for the impl.
+// Various posix helpers.
+pub mod posix {
+
+    #[inline]
+    pub fn is_sep(u: char) -> bool {
+        u == '/'
+    }
+
+}
+
+// Various windows helpers.
 pub mod windows {
     use libc;
     use option::{None, Option, Some};
@@ -1035,6 +1147,14 @@ mod tests {
             .with_filestem("librustc")),
           "/usr/bin/rust/lib/librustc.so");
 
+    }
+
+    #[test]
+    fn test_posix_push_with_backslash() {
+        let a = PosixPath("/aaa/bbb");
+        let b = a.push("x\\y"); // \ is not a file separator for posix paths
+        assert_eq!(a.components.len(), 2);
+        assert_eq!(b.components.len(), 3);
     }
 
     #[test]
@@ -1198,4 +1318,27 @@ mod tests {
         assert_eq!(WindowsPath("C:\\COM1.TXT").is_restricted(), true);
         assert_eq!(WindowsPath("c:\\prn.exe").is_restricted(), true);
     }
+
+    #[test]
+    fn test_is_ancestor_of() {
+        assert!(&PosixPath("/a/b").is_ancestor_of(&PosixPath("/a/b/c/d")));
+        assert!(!&PosixPath("/a/b/c/d").is_ancestor_of(&PosixPath("/a/b")));
+        assert!(!&PosixPath("/a/b").is_ancestor_of(&PosixPath("/c/d")));
+        assert!(&PosixPath("/a/b").is_ancestor_of(&PosixPath("/a/b/c/d")));
+        assert!(&PosixPath("/").is_ancestor_of(&PosixPath("/a/b/c")));
+        assert!(!&PosixPath("/").is_ancestor_of(&PosixPath("")));
+        assert!(!&PosixPath("/a/b/c").is_ancestor_of(&PosixPath("")));
+        assert!(!&PosixPath("").is_ancestor_of(&PosixPath("/a/b/c")));
+
+        assert!(&WindowsPath("C:\\a\\b").is_ancestor_of(&WindowsPath("C:\\a\\b\\c\\d")));
+        assert!(!&WindowsPath("C:\\a\\b\\c\\d").is_ancestor_of(&WindowsPath("C:\\a\\b")));
+        assert!(!&WindowsPath("C:\\a\\b").is_ancestor_of(&WindowsPath("C:\\c\\d")));
+        assert!(&WindowsPath("C:\\a\\b").is_ancestor_of(&WindowsPath("C:\\a\\b\\c\\d")));
+        assert!(&WindowsPath("C:\\").is_ancestor_of(&WindowsPath("C:\\a\\b\\c")));
+        assert!(!&WindowsPath("C:\\").is_ancestor_of(&WindowsPath("")));
+        assert!(!&WindowsPath("C:\\a\\b\\c").is_ancestor_of(&WindowsPath("")));
+        assert!(!&WindowsPath("").is_ancestor_of(&WindowsPath("C:\\a\\b\\c")));
+
+    }
+
 }

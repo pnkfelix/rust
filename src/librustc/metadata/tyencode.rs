@@ -10,15 +10,14 @@
 
 // Type encoding
 
-use core::prelude::*;
 
 use middle::ty::param_ty;
 use middle::ty;
 
-use core::hashmap::HashMap;
-use core::io::WriterUtil;
-use core::io;
-use core::uint;
+use std::hashmap::HashMap;
+use std::io::WriterUtil;
+use std::io;
+use std::uint;
 use syntax::abi::AbiSet;
 use syntax::ast;
 use syntax::ast::*;
@@ -31,7 +30,6 @@ pub struct ctxt {
     ds: @fn(def_id) -> ~str,
     // The type context.
     tcx: ty::ctxt,
-    reachable: @fn(node_id) -> bool,
     abbrevs: abbrev_ctxt
 }
 
@@ -63,7 +61,7 @@ pub fn enc_ty(w: @io::Writer, cx: @ctxt, t: ty::t) {
             Some(&s) => s,
             None => {
                 let s = do io::with_str_writer |wr| {
-                    enc_sty(wr, cx, /*bad*/copy ty::get(t).sty);
+                    enc_sty(wr, cx, &ty::get(t).sty);
                 }.to_managed();
                 cx.tcx.short_names_cache.insert(t, s);
                 s
@@ -77,7 +75,7 @@ pub fn enc_ty(w: @io::Writer, cx: @ctxt, t: ty::t) {
               None => {}
           }
           let pos = w.tell();
-          enc_sty(w, cx, /*bad*/copy ty::get(t).sty);
+          enc_sty(w, cx, &ty::get(t).sty);
           let end = w.tell();
           let len = end - pos;
           fn estimate_sz(u: uint) -> uint {
@@ -122,11 +120,26 @@ fn enc_opt<T>(w: @io::Writer, t: Option<T>, enc_f: &fn(T)) {
 }
 
 fn enc_substs(w: @io::Writer, cx: @ctxt, substs: &ty::substs) {
-    do enc_opt(w, substs.self_r) |r| { enc_region(w, cx, r) }
+    enc_region_substs(w, cx, &substs.regions);
     do enc_opt(w, substs.self_ty) |t| { enc_ty(w, cx, t) }
     w.write_char('[');
-    for substs.tps.each |t| { enc_ty(w, cx, *t); }
+    foreach t in substs.tps.iter() { enc_ty(w, cx, *t); }
     w.write_char(']');
+}
+
+fn enc_region_substs(w: @io::Writer, cx: @ctxt, substs: &ty::RegionSubsts) {
+    match *substs {
+        ty::ErasedRegions => {
+            w.write_char('e');
+        }
+        ty::NonerasedRegions(ref regions) => {
+            w.write_char('n');
+            foreach &r in regions.iter() {
+                enc_region(w, cx, r);
+            }
+            w.write_char('.');
+        }
+    }
 }
 
 fn enc_region(w: @io::Writer, cx: @ctxt, r: ty::Region) {
@@ -223,8 +236,8 @@ pub fn enc_trait_store(w: @io::Writer, cx: @ctxt, s: ty::TraitStore) {
     }
 }
 
-fn enc_sty(w: @io::Writer, cx: @ctxt, st: ty::sty) {
-    match st {
+fn enc_sty(w: @io::Writer, cx: @ctxt, st: &ty::sty) {
+    match *st {
       ty::ty_nil => w.write_char('n'),
       ty::ty_bot => w.write_char('z'),
       ty::ty_bool => w.write_char('b'),
@@ -261,18 +274,21 @@ fn enc_sty(w: @io::Writer, cx: @ctxt, st: ty::sty) {
         enc_substs(w, cx, substs);
         w.write_char(']');
       }
-      ty::ty_trait(def, ref substs, store, mt) => {
+      ty::ty_trait(def, ref substs, store, mt, bounds) => {
         w.write_str(&"x[");
         w.write_str((cx.ds)(def));
         w.write_char('|');
         enc_substs(w, cx, substs);
         enc_trait_store(w, cx, store);
         enc_mutability(w, mt);
+        let bounds = ty::ParamBounds {builtin_bounds: bounds,
+                                      trait_bounds: ~[]};
+        enc_bounds(w, cx, &bounds);
         w.write_char(']');
       }
-      ty::ty_tup(ts) => {
+      ty::ty_tup(ref ts) => {
         w.write_str(&"T[");
-        for ts.each |t| { enc_ty(w, cx, *t); }
+        foreach t in ts.iter() { enc_ty(w, cx, *t); }
         w.write_char(']');
       }
       ty::ty_box(mt) => { w.write_char('@'); enc_mt(w, cx, mt); }
@@ -347,7 +363,6 @@ fn enc_sigil(w: @io::Writer, sigil: Sigil) {
 
 fn enc_purity(w: @io::Writer, p: purity) {
     match p {
-      pure_fn => w.write_char('p'),
       impure_fn => w.write_char('i'),
       unsafe_fn => w.write_char('u'),
       extern_fn => w.write_char('c')
@@ -389,7 +404,7 @@ fn enc_closure_ty(w: @io::Writer, cx: @ctxt, ft: &ty::ClosureTy) {
 
 fn enc_fn_sig(w: @io::Writer, cx: @ctxt, fsig: &ty::FnSig) {
     w.write_char('[');
-    for fsig.inputs.each |ty| {
+    foreach ty in fsig.inputs.iter() {
         enc_ty(w, cx, *ty);
     }
     w.write_char(']');
@@ -399,15 +414,14 @@ fn enc_fn_sig(w: @io::Writer, cx: @ctxt, fsig: &ty::FnSig) {
 fn enc_bounds(w: @io::Writer, cx: @ctxt, bs: &ty::ParamBounds) {
     for bs.builtin_bounds.each |bound| {
         match bound {
-            ty::BoundOwned => w.write_char('S'),
-            ty::BoundCopy => w.write_char('C'),
-            ty::BoundConst => w.write_char('K'),
+            ty::BoundSend => w.write_char('S'),
+            ty::BoundFreeze => w.write_char('K'),
             ty::BoundStatic => w.write_char('O'),
             ty::BoundSized => w.write_char('Z'),
         }
     }
 
-    for bs.trait_bounds.each |&tp| {
+    foreach &tp in bs.trait_bounds.iter() {
         w.write_char('I');
         enc_trait_ref(w, cx, tp);
     }
@@ -416,6 +430,8 @@ fn enc_bounds(w: @io::Writer, cx: @ctxt, bs: &ty::ParamBounds) {
 }
 
 pub fn enc_type_param_def(w: @io::Writer, cx: @ctxt, v: &ty::TypeParameterDef) {
+    w.write_str(cx.tcx.sess.str_of(v.ident));
+    w.write_char(':');
     w.write_str((cx.ds)(v.def_id));
     w.write_char('|');
     enc_bounds(w, cx, v.bounds);

@@ -1,6 +1,5 @@
 use std::cast::transmute;
 use std::from_str::FromStr;
-use std::i32::range;
 use std::libc::{STDOUT_FILENO, c_int, fdopen, fputc};
 use std::os;
 
@@ -15,19 +14,22 @@ fn main() {
         let mut byte_acc: i8 = 0;
         let mut bit_num: i32 = 0;
 
-        println(fmt!("P4\n%d %d", w as int, h as int));
+        printfln!("P4\n%d %d", w as int, h as int);
 
         let mode = "w";
         let stdout = fdopen(STDOUT_FILENO as c_int, transmute(&mode[0]));
 
-        for range(0, h) |y| {
+        foreach y in range(0i32, h) {
             let y = y as f64;
-            for range(0, w) |x| {
-                let mut (Zr, Zi, Tr, Ti) = (0f64, 0f64, 0f64, 0f64);
+            foreach x in range(0i32, w) {
+                let mut Zr = 0f64;
+                let mut Zi = 0f64;
+                let mut Tr = 0f64;
+                let mut Ti = 0f64;
                 let Cr = 2.0 * (x as f64) / (w as f64) - 1.5;
                 let Ci = 2.0 * (y as f64) / (h as f64) - 1.0;
 
-                for ITER.times {
+                foreach _ in range(0i32, ITER as i32) {
                     if Tr + Ti > LIMIT * LIMIT {
                         break;
                     }

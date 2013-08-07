@@ -11,7 +11,6 @@
 //! This module implements the check that the lifetime of a borrow
 //! does not exceed the lifetime of the value being borrowed.
 
-use core::prelude::*;
 
 use middle::borrowck::*;
 use mc = middle::mem_categorization;
@@ -22,8 +21,8 @@ use syntax::codemap::span;
 use util::ppaux::{note_and_explain_region};
 
 pub fn guarantee_lifetime(bccx: @BorrowckCtxt,
-                          item_scope_id: ast::node_id,
-                          root_scope_id: ast::node_id,
+                          item_scope_id: ast::NodeId,
+                          root_scope_id: ast::NodeId,
                           span: span,
                           cmt: mc::cmt,
                           loan_region: ty::Region,
@@ -47,11 +46,11 @@ struct GuaranteeLifetimeContext {
     bccx: @BorrowckCtxt,
 
     // the node id of the function body for the enclosing item
-    item_scope_id: ast::node_id,
+    item_scope_id: ast::NodeId,
 
     // the node id of the innermost loop / function body; this is the
     // longest scope for which we can root managed boxes
-    root_scope_id: ast::node_id,
+    root_scope_id: ast::NodeId,
 
     span: span,
     loan_region: ty::Region,
@@ -64,11 +63,11 @@ impl GuaranteeLifetimeContext {
         self.bccx.tcx
     }
 
-    fn check(&self, cmt: mc::cmt, discr_scope: Option<ast::node_id>) {
+    fn check(&self, cmt: mc::cmt, discr_scope: Option<ast::NodeId>) {
         //! Main routine. Walks down `cmt` until we find the "guarantor".
 
         match cmt.cat {
-            mc::cat_rvalue |
+            mc::cat_rvalue(*) |
             mc::cat_implicit_self |
             mc::cat_copied_upvar(*) |                  // L-Local
             mc::cat_local(*) |                         // L-Local
@@ -109,7 +108,7 @@ impl GuaranteeLifetimeContext {
             }
 
             mc::cat_downcast(base) |
-            mc::cat_deref(base, _, mc::uniq_ptr(*)) |  // L-Deref-Owned
+            mc::cat_deref(base, _, mc::uniq_ptr(*)) |  // L-Deref-Send
             mc::cat_interior(base, _) => {             // L-Field
                 self.check(base, discr_scope)
             }
@@ -180,7 +179,7 @@ impl GuaranteeLifetimeContext {
         //! lvalue.
 
         cmt.mutbl.is_immutable() || match cmt.guarantor().cat {
-            mc::cat_rvalue => true,
+            mc::cat_rvalue(*) => true,
             _ => false
         }
     }
@@ -190,7 +189,7 @@ impl GuaranteeLifetimeContext {
                   cmt_base: mc::cmt,
                   derefs: uint,
                   ptr_mutbl: ast::mutability,
-                  discr_scope: Option<ast::node_id>) {
+                  discr_scope: Option<ast::NodeId>) {
         debug!("check_root(cmt_deref=%s, cmt_base=%s, derefs=%?, ptr_mutbl=%?, \
                 discr_scope=%?)",
                cmt_deref.repr(self.tcx()),
@@ -300,7 +299,7 @@ impl GuaranteeLifetimeContext {
             mc::cat_arg(id) => {
                 self.bccx.moved_variables_set.contains(&id)
             }
-            mc::cat_rvalue |
+            mc::cat_rvalue(*) |
             mc::cat_static_item |
             mc::cat_implicit_self |
             mc::cat_copied_upvar(*) |
@@ -326,8 +325,8 @@ impl GuaranteeLifetimeContext {
         // See the SCOPE(LV) function in doc.rs
 
         match cmt.cat {
-            mc::cat_rvalue => {
-                ty::re_scope(self.bccx.tcx.region_maps.cleanup_scope(cmt.id))
+            mc::cat_rvalue(cleanup_scope_id) => {
+                ty::re_scope(cleanup_scope_id)
             }
             mc::cat_implicit_self |
             mc::cat_copied_upvar(_) => {

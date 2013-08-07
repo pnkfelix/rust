@@ -12,60 +12,25 @@
 
 #[allow(missing_doc)];
 
-use option::{Some, None};
 use cast;
 use gc;
 use io;
 use libc;
-use libc::{c_void, c_char, size_t};
+use libc::{c_char, size_t};
 use repr;
+use str::StrSlice;
 use str;
 use unstable::intrinsics;
-
-pub type FreeGlue<'self> = &'self fn(*TypeDesc, *c_void);
-
-// Corresponds to runtime type_desc type
-pub struct TypeDesc {
-    size: uint,
-    align: uint,
-    take_glue: uint,
-    drop_glue: uint,
-    free_glue: uint
-    // Remaining fields not listed
-}
-
-/// The representation of a Rust closure
-pub struct Closure {
-    code: *(),
-    env: *(),
-}
 
 pub mod rustrt {
     use libc::{c_char, size_t};
 
-    pub extern {
+    extern {
         #[rust_stack]
-        unsafe fn rust_upcall_fail(expr: *c_char,
-                                   file: *c_char,
-                                   line: size_t);
+        pub unsafe fn rust_upcall_fail(expr: *c_char,
+                                       file: *c_char,
+                                       line: size_t);
     }
-}
-
-/**
- * Returns a pointer to a type descriptor.
- *
- * Useful for calling certain function in the Rust runtime or otherwise
- * performing dark magick.
- */
-#[inline]
-pub fn get_type_desc<T>() -> *TypeDesc {
-    unsafe { intrinsics::get_tydesc::<T>() as *TypeDesc }
-}
-
-/// Returns a pointer to a type descriptor.
-#[inline]
-pub fn get_type_desc_val<T>(_val: &T) -> *TypeDesc {
-    get_type_desc::<T>()
 }
 
 /// Returns the size of a type
@@ -152,13 +117,9 @@ pub trait FailWithCause {
 
 impl FailWithCause for ~str {
     fn fail_with(cause: ~str, file: &'static str, line: uint) -> ! {
-        do str::as_buf(cause) |msg_buf, _msg_len| {
-            do str::as_buf(file) |file_buf, _file_len| {
-                unsafe {
-                    let msg_buf = cast::transmute(msg_buf);
-                    let file_buf = cast::transmute(file_buf);
-                    begin_unwind_(msg_buf, file_buf, line as libc::size_t)
-                }
+        do cause.as_c_str |msg_buf| {
+            do file.as_c_str |file_buf| {
+                begin_unwind_(msg_buf, file_buf, line as libc::size_t)
             }
         }
     }
@@ -166,13 +127,9 @@ impl FailWithCause for ~str {
 
 impl FailWithCause for &'static str {
     fn fail_with(cause: &'static str, file: &'static str, line: uint) -> ! {
-        do str::as_buf(cause) |msg_buf, _msg_len| {
-            do str::as_buf(file) |file_buf, _file_len| {
-                unsafe {
-                    let msg_buf = cast::transmute(msg_buf);
-                    let file_buf = cast::transmute(file_buf);
-                    begin_unwind_(msg_buf, file_buf, line as libc::size_t)
-                }
+        do cause.as_c_str |msg_buf| {
+            do file.as_c_str |file_buf| {
+                begin_unwind_(msg_buf, file_buf, line as libc::size_t)
             }
         }
     }
@@ -180,10 +137,13 @@ impl FailWithCause for &'static str {
 
 // FIXME #4427: Temporary until rt::rt_fail_ goes away
 pub fn begin_unwind_(msg: *c_char, file: *c_char, line: size_t) -> ! {
-    use option::Option;
+    use either::Left;
+    use option::{Some, None};
     use rt::{context, OldTaskContext, TaskContext};
-    use rt::task::{Task, Unwinder};
+    use rt::task::Task;
     use rt::local::Local;
+    use rt::logging::Logger;
+    use str::Str;
 
     let context = context();
     match context {
@@ -200,24 +160,35 @@ pub fn begin_unwind_(msg: *c_char, file: *c_char, line: size_t) -> ! {
                 let msg = str::raw::from_c_str(msg);
                 let file = str::raw::from_c_str(file);
 
-                let outmsg = fmt!("%s at line %i of file %s", msg, line as int, file);
-
                 // XXX: Logging doesn't work correctly in non-task context because it
                 // invokes the local heap
                 if context == TaskContext {
-                    error!(outmsg);
+                    // XXX: Logging doesn't work here - the check to call the log
+                    // function never passes - so calling the log function directly.
+                    do Local::borrow::<Task, ()> |task| {
+                        let msg = match task.name {
+                            Some(ref name) =>
+                                fmt!("task '%s' failed at '%s', %s:%i",
+                                     name.as_slice(), msg, file, line as int),
+                            None =>
+                                fmt!("task <unnamed> failed at '%s', %s:%i",
+                                     msg, file, line as int)
+                        };
+
+                        task.logger.log(Left(msg));
+                    }
                 } else {
-                    rtdebug!("%s", outmsg);
+                    rterrln!("failed in non-task context at '%s', %s:%i",
+                             msg, file, line as int);
                 }
 
                 gc::cleanup_stack_for_failure();
 
                 let task = Local::unsafe_borrow::<Task>();
-                let unwinder: &mut Option<Unwinder> = &mut (*task).unwinder;
-                match *unwinder {
-                    Some(ref mut unwinder) => unwinder.begin_unwind(),
-                    None => abort!("failure without unwinder. aborting process")
+                if (*task).unwinder.unwinding {
+                    rtabort!("unwinding again");
                 }
+                (*task).unwinder.begin_unwind();
             }
         }
     }
@@ -308,6 +279,7 @@ mod tests {
 
     #[test]
     fn synthesize_closure() {
+        use unstable::raw::Closure;
         unsafe {
             let x = 10;
             let f: &fn(int) -> int = |y| x + y;

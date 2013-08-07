@@ -8,81 +8,36 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
 
 use lib::llvm::llvm;
 use lib::llvm::{CallConv, AtomicBinOp, AtomicOrdering, AsmDialect};
-use lib::llvm::{Opcode, IntPredicate, RealPredicate, False};
-use lib::llvm::{ValueRef, TypeRef, BasicBlockRef, BuilderRef, ModuleRef};
+use lib::llvm::{Opcode, IntPredicate, RealPredicate};
+use lib::llvm::{ValueRef, BasicBlockRef};
 use lib;
 use middle::trans::common::*;
-use middle::trans::machine::llalign_of_min;
 use syntax::codemap::span;
 
-use core::cast;
-use core::hashmap::HashMap;
-use core::libc::{c_uint, c_ulonglong, c_char};
-use core::str;
-use core::vec;
+use middle::trans::builder::Builder;
+use middle::trans::type_::Type;
 
-pub fn terminate(cx: block, _: &str) {
+use std::cast;
+use std::libc::{c_uint, c_ulonglong, c_char};
+
+pub fn terminate(cx: @mut Block, _: &str) {
     cx.terminated = true;
 }
 
-pub fn check_not_terminated(cx: block) {
+pub fn check_not_terminated(cx: @mut Block) {
     if cx.terminated {
         fail!("already terminated!");
     }
 }
 
-pub fn B(cx: block) -> BuilderRef {
-    unsafe {
-        let b = cx.fcx.ccx.builder.B;
-        llvm::LLVMPositionBuilderAtEnd(b, cx.llbb);
-        return b;
-    }
+pub fn B(cx: @mut Block) -> Builder {
+    let b = cx.fcx.ccx.builder();
+    b.position_at_end(cx.llbb);
+    b
 }
-
-pub fn count_insn(cx: block, category: &str) {
-    if cx.ccx().sess.count_llvm_insns() {
-
-        let h = &mut cx.ccx().stats.llvm_insns;
-        let v : &[~str] = cx.ccx().stats.llvm_insn_ctxt;
-
-        // Build version of path with cycles removed.
-
-        // Pass 1: scan table mapping str -> rightmost pos.
-        let mut mm = HashMap::new();
-        let len = v.len();
-        let mut i = 0u;
-        while i < len {
-            mm.insert(copy v[i], i);
-            i += 1u;
-        }
-
-        // Pass 2: concat strings for each elt, skipping
-        // forwards over any cycles by advancing to rightmost
-        // occurrence of each element in path.
-        let mut s = ~".";
-        i = 0u;
-        while i < len {
-            i = *mm.get(&v[i]);
-            s += "/";
-            s += v[i];
-            i += 1u;
-        }
-
-        s += "/";
-        s += category;
-
-        let n = match h.find(&s) {
-          Some(&n) => n,
-          _ => 0u
-        };
-        h.insert(s, n+1u);
-    }
-}
-
 
 // The difference between a block being unreachable and being terminated is
 // somewhat obscure, and has to do with error checking. When a block is
@@ -92,65 +47,48 @@ pub fn count_insn(cx: block, category: &str) {
 // for (fail/break/return statements, call to diverging functions, etc), and
 // further instructions to the block should simply be ignored.
 
-pub fn RetVoid(cx: block) {
-    unsafe {
-        if cx.unreachable { return; }
-        check_not_terminated(cx);
-        terminate(cx, "RetVoid");
-        count_insn(cx, "retvoid");
-        llvm::LLVMBuildRetVoid(B(cx));
-    }
+pub fn RetVoid(cx: @mut Block) {
+    if cx.unreachable { return; }
+    check_not_terminated(cx);
+    terminate(cx, "RetVoid");
+    B(cx).ret_void();
 }
 
-pub fn Ret(cx: block, V: ValueRef) {
-    unsafe {
-        if cx.unreachable { return; }
-        check_not_terminated(cx);
-        terminate(cx, "Ret");
-        count_insn(cx, "ret");
-        llvm::LLVMBuildRet(B(cx), V);
-    }
+pub fn Ret(cx: @mut Block, V: ValueRef) {
+    if cx.unreachable { return; }
+    check_not_terminated(cx);
+    terminate(cx, "Ret");
+    B(cx).ret(V);
 }
 
-pub fn AggregateRet(cx: block, RetVals: &[ValueRef]) {
+pub fn AggregateRet(cx: @mut Block, RetVals: &[ValueRef]) {
     if cx.unreachable { return; }
     check_not_terminated(cx);
     terminate(cx, "AggregateRet");
-    unsafe {
-        llvm::LLVMBuildAggregateRet(B(cx), vec::raw::to_ptr(RetVals),
-                                    RetVals.len() as c_uint);
-    }
+    B(cx).aggregate_ret(RetVals);
 }
 
-pub fn Br(cx: block, Dest: BasicBlockRef) {
-    unsafe {
-        if cx.unreachable { return; }
-        check_not_terminated(cx);
-        terminate(cx, "Br");
-        count_insn(cx, "br");
-        llvm::LLVMBuildBr(B(cx), Dest);
-    }
+pub fn Br(cx: @mut Block, Dest: BasicBlockRef) {
+    if cx.unreachable { return; }
+    check_not_terminated(cx);
+    terminate(cx, "Br");
+    B(cx).br(Dest);
 }
 
-pub fn CondBr(cx: block, If: ValueRef, Then: BasicBlockRef,
+pub fn CondBr(cx: @mut Block, If: ValueRef, Then: BasicBlockRef,
               Else: BasicBlockRef) {
-    unsafe {
-        if cx.unreachable { return; }
-        check_not_terminated(cx);
-        terminate(cx, "CondBr");
-        count_insn(cx, "condbr");
-        llvm::LLVMBuildCondBr(B(cx), If, Then, Else);
-    }
+    if cx.unreachable { return; }
+    check_not_terminated(cx);
+    terminate(cx, "CondBr");
+    B(cx).cond_br(If, Then, Else);
 }
 
-pub fn Switch(cx: block, V: ValueRef, Else: BasicBlockRef, NumCases: uint)
+pub fn Switch(cx: @mut Block, V: ValueRef, Else: BasicBlockRef, NumCases: uint)
     -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(V); }
-        check_not_terminated(cx);
-        terminate(cx, "Switch");
-        return llvm::LLVMBuildSwitch(B(cx), V, Else, NumCases as c_uint);
-    }
+    if cx.unreachable { return _Undef(V); }
+    check_not_terminated(cx);
+    terminate(cx, "Switch");
+    B(cx).switch(V, Else, NumCases)
 }
 
 pub fn AddCase(S: ValueRef, OnVal: ValueRef, Dest: BasicBlockRef) {
@@ -160,695 +98,511 @@ pub fn AddCase(S: ValueRef, OnVal: ValueRef, Dest: BasicBlockRef) {
     }
 }
 
-pub fn IndirectBr(cx: block, Addr: ValueRef, NumDests: uint) {
-    unsafe {
-        if cx.unreachable { return; }
-        check_not_terminated(cx);
-        terminate(cx, "IndirectBr");
-        count_insn(cx, "indirectbr");
-        llvm::LLVMBuildIndirectBr(B(cx), Addr, NumDests as c_uint);
-    }
+pub fn IndirectBr(cx: @mut Block, Addr: ValueRef, NumDests: uint) {
+    if cx.unreachable { return; }
+    check_not_terminated(cx);
+    terminate(cx, "IndirectBr");
+    B(cx).indirect_br(Addr, NumDests);
 }
 
-// This is a really awful way to get a zero-length c-string, but better (and a
-// lot more efficient) than doing str::as_c_str("", ...) every time.
-pub fn noname() -> *c_char {
-    unsafe {
-        static cnull: uint = 0u;
-        return cast::transmute(&cnull);
-    }
-}
-
-pub fn Invoke(cx: block,
+pub fn Invoke(cx: @mut Block,
               Fn: ValueRef,
               Args: &[ValueRef],
               Then: BasicBlockRef,
               Catch: BasicBlockRef)
            -> ValueRef {
     if cx.unreachable {
-        return C_null(T_i8());
+        return C_null(Type::i8());
     }
     check_not_terminated(cx);
     terminate(cx, "Invoke");
     debug!("Invoke(%s with arguments (%s))",
-           val_str(cx.ccx().tn, Fn),
-           Args.map(|a| val_str(cx.ccx().tn, *a).to_owned()).connect(", "));
-    unsafe {
-        count_insn(cx, "invoke");
-        llvm::LLVMBuildInvoke(B(cx),
-                              Fn,
-                              vec::raw::to_ptr(Args),
-                              Args.len() as c_uint,
-                              Then,
-                              Catch,
-                              noname())
-    }
+           cx.val_to_str(Fn),
+           Args.map(|a| cx.val_to_str(*a)).connect(", "));
+    B(cx).invoke(Fn, Args, Then, Catch)
 }
 
-pub fn FastInvoke(cx: block, Fn: ValueRef, Args: &[ValueRef],
+pub fn FastInvoke(cx: @mut Block, Fn: ValueRef, Args: &[ValueRef],
                   Then: BasicBlockRef, Catch: BasicBlockRef) {
     if cx.unreachable { return; }
     check_not_terminated(cx);
     terminate(cx, "FastInvoke");
-    unsafe {
-        count_insn(cx, "fastinvoke");
-        let v = llvm::LLVMBuildInvoke(B(cx), Fn, vec::raw::to_ptr(Args),
-                                      Args.len() as c_uint,
-                                      Then, Catch, noname());
-        lib::llvm::SetInstructionCallConv(v, lib::llvm::FastCallConv);
-    }
+    B(cx).fast_invoke(Fn, Args, Then, Catch);
 }
 
-pub fn Unreachable(cx: block) {
-    unsafe {
-        if cx.unreachable { return; }
-        cx.unreachable = true;
-        if !cx.terminated {
-            count_insn(cx, "unreachable");
-            llvm::LLVMBuildUnreachable(B(cx));
-        }
+pub fn Unreachable(cx: @mut Block) {
+    if cx.unreachable { return; }
+    cx.unreachable = true;
+    if !cx.terminated {
+        B(cx).unreachable();
     }
 }
 
 pub fn _Undef(val: ValueRef) -> ValueRef {
     unsafe {
-        return llvm::LLVMGetUndef(val_ty(val));
+        return llvm::LLVMGetUndef(val_ty(val).to_ref());
     }
 }
 
 /* Arithmetic */
-pub fn Add(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "add");
-        return llvm::LLVMBuildAdd(B(cx), LHS, RHS, noname());
-    }
+pub fn Add(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).add(LHS, RHS)
 }
 
-pub fn NSWAdd(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "nswadd");
-        return llvm::LLVMBuildNSWAdd(B(cx), LHS, RHS, noname());
-    }
+pub fn NSWAdd(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).nswadd(LHS, RHS)
 }
 
-pub fn NUWAdd(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "nuwadd");
-        return llvm::LLVMBuildNUWAdd(B(cx), LHS, RHS, noname());
-    }
+pub fn NUWAdd(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).nuwadd(LHS, RHS)
 }
 
-pub fn FAdd(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "fadd");
-        return llvm::LLVMBuildFAdd(B(cx), LHS, RHS, noname());
-    }
+pub fn FAdd(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).fadd(LHS, RHS)
 }
 
-pub fn Sub(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "sub");
-        return llvm::LLVMBuildSub(B(cx), LHS, RHS, noname());
-    }
+pub fn Sub(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).sub(LHS, RHS)
 }
 
-pub fn NSWSub(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "nwsub");
-        return llvm::LLVMBuildNSWSub(B(cx), LHS, RHS, noname());
-    }
+pub fn NSWSub(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).nswsub(LHS, RHS)
 }
 
-pub fn NUWSub(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "nuwsub");
-        return llvm::LLVMBuildNUWSub(B(cx), LHS, RHS, noname());
-    }
+pub fn NUWSub(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).nuwsub(LHS, RHS)
 }
 
-pub fn FSub(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "sub");
-        return llvm::LLVMBuildFSub(B(cx), LHS, RHS, noname());
-    }
+pub fn FSub(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).fsub(LHS, RHS)
 }
 
-pub fn Mul(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "mul");
-        return llvm::LLVMBuildMul(B(cx), LHS, RHS, noname());
-    }
+pub fn Mul(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).mul(LHS, RHS)
 }
 
-pub fn NSWMul(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "nswmul");
-        return llvm::LLVMBuildNSWMul(B(cx), LHS, RHS, noname());
-    }
+pub fn NSWMul(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).nswmul(LHS, RHS)
 }
 
-pub fn NUWMul(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "nuwmul");
-        return llvm::LLVMBuildNUWMul(B(cx), LHS, RHS, noname());
-    }
+pub fn NUWMul(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).nuwmul(LHS, RHS)
 }
 
-pub fn FMul(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "fmul");
-        return llvm::LLVMBuildFMul(B(cx), LHS, RHS, noname());
-    }
+pub fn FMul(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).fmul(LHS, RHS)
 }
 
-pub fn UDiv(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "udiv");
-        return llvm::LLVMBuildUDiv(B(cx), LHS, RHS, noname());
-    }
+pub fn UDiv(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).udiv(LHS, RHS)
 }
 
-pub fn SDiv(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "sdiv");
-        return llvm::LLVMBuildSDiv(B(cx), LHS, RHS, noname());
-    }
+pub fn SDiv(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).sdiv(LHS, RHS)
 }
 
-pub fn ExactSDiv(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "extractsdiv");
-        return llvm::LLVMBuildExactSDiv(B(cx), LHS, RHS, noname());
-    }
+pub fn ExactSDiv(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).exactsdiv(LHS, RHS)
 }
 
-pub fn FDiv(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "fdiv");
-        return llvm::LLVMBuildFDiv(B(cx), LHS, RHS, noname());
-    }
+pub fn FDiv(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).fdiv(LHS, RHS)
 }
 
-pub fn URem(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "urem");
-        return llvm::LLVMBuildURem(B(cx), LHS, RHS, noname());
-    }
+pub fn URem(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).urem(LHS, RHS)
 }
 
-pub fn SRem(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "srem");
-        return llvm::LLVMBuildSRem(B(cx), LHS, RHS, noname());
-    }
+pub fn SRem(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).srem(LHS, RHS)
 }
 
-pub fn FRem(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "frem");
-        return llvm::LLVMBuildFRem(B(cx), LHS, RHS, noname());
-    }
+pub fn FRem(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).frem(LHS, RHS)
 }
 
-pub fn Shl(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "shl");
-        return llvm::LLVMBuildShl(B(cx), LHS, RHS, noname());
-    }
+pub fn Shl(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).shl(LHS, RHS)
 }
 
-pub fn LShr(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "lshr");
-        return llvm::LLVMBuildLShr(B(cx), LHS, RHS, noname());
-    }
+pub fn LShr(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).lshr(LHS, RHS)
 }
 
-pub fn AShr(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "ashr");
-        return llvm::LLVMBuildAShr(B(cx), LHS, RHS, noname());
-    }
+pub fn AShr(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).ashr(LHS, RHS)
 }
 
-pub fn And(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "and");
-        return llvm::LLVMBuildAnd(B(cx), LHS, RHS, noname());
-    }
+pub fn And(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).and(LHS, RHS)
 }
 
-pub fn Or(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "or");
-        return llvm::LLVMBuildOr(B(cx), LHS, RHS, noname());
-    }
+pub fn Or(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).or(LHS, RHS)
 }
 
-pub fn Xor(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "xor");
-        return llvm::LLVMBuildXor(B(cx), LHS, RHS, noname());
-    }
+pub fn Xor(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).xor(LHS, RHS)
 }
 
-pub fn BinOp(cx: block, Op: Opcode, LHS: ValueRef, RHS: ValueRef)
+pub fn BinOp(cx: @mut Block, Op: Opcode, LHS: ValueRef, RHS: ValueRef)
           -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(LHS); }
-        count_insn(cx, "binop");
-        return llvm::LLVMBuildBinOp(B(cx), Op, LHS, RHS, noname());
-    }
+    if cx.unreachable { return _Undef(LHS); }
+    B(cx).binop(Op, LHS, RHS)
 }
 
-pub fn Neg(cx: block, V: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(V); }
-        count_insn(cx, "neg");
-        return llvm::LLVMBuildNeg(B(cx), V, noname());
-    }
+pub fn Neg(cx: @mut Block, V: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(V); }
+    B(cx).neg(V)
 }
 
-pub fn NSWNeg(cx: block, V: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(V); }
-        count_insn(cx, "nswneg");
-        return llvm::LLVMBuildNSWNeg(B(cx), V, noname());
-    }
+pub fn NSWNeg(cx: @mut Block, V: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(V); }
+    B(cx).nswneg(V)
 }
 
-pub fn NUWNeg(cx: block, V: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(V); }
-        count_insn(cx, "nuwneg");
-        return llvm::LLVMBuildNUWNeg(B(cx), V, noname());
-    }
+pub fn NUWNeg(cx: @mut Block, V: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(V); }
+    B(cx).nuwneg(V)
 }
-pub fn FNeg(cx: block, V: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(V); }
-        count_insn(cx, "fneg");
-        return llvm::LLVMBuildFNeg(B(cx), V, noname());
-    }
+pub fn FNeg(cx: @mut Block, V: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(V); }
+    B(cx).fneg(V)
 }
 
-pub fn Not(cx: block, V: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return _Undef(V); }
-        count_insn(cx, "not");
-        return llvm::LLVMBuildNot(B(cx), V, noname());
-    }
+pub fn Not(cx: @mut Block, V: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(V); }
+    B(cx).not(V)
 }
 
 /* Memory */
-pub fn Malloc(cx: block, Ty: TypeRef) -> ValueRef {
+pub fn Malloc(cx: @mut Block, Ty: Type) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(T_ptr(T_i8())); }
-        count_insn(cx, "malloc");
-        return llvm::LLVMBuildMalloc(B(cx), Ty, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(Type::i8p().to_ref()); }
+        B(cx).malloc(Ty)
     }
 }
 
-pub fn ArrayMalloc(cx: block, Ty: TypeRef, Val: ValueRef) -> ValueRef {
+pub fn ArrayMalloc(cx: @mut Block, Ty: Type, Val: ValueRef) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(T_ptr(T_i8())); }
-        count_insn(cx, "arraymalloc");
-        return llvm::LLVMBuildArrayMalloc(B(cx), Ty, Val, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(Type::i8p().to_ref()); }
+        B(cx).array_malloc(Ty, Val)
     }
 }
 
-pub fn Alloca(cx: block, Ty: TypeRef) -> ValueRef {
+pub fn Alloca(cx: @mut Block, Ty: Type, name: &str) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(T_ptr(Ty)); }
-        count_insn(cx, "alloca");
-        return llvm::LLVMBuildAlloca(B(cx), Ty, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(Ty.ptr_to().to_ref()); }
+        let b = cx.fcx.ccx.builder();
+        b.position_before(cx.fcx.alloca_insert_pt.get());
+        b.alloca(Ty, name)
     }
 }
 
-pub fn ArrayAlloca(cx: block, Ty: TypeRef, Val: ValueRef) -> ValueRef {
+pub fn ArrayAlloca(cx: @mut Block, Ty: Type, Val: ValueRef) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(T_ptr(Ty)); }
-        count_insn(cx, "arrayalloca");
-        return llvm::LLVMBuildArrayAlloca(B(cx), Ty, Val, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(Ty.ptr_to().to_ref()); }
+        let b = cx.fcx.ccx.builder();
+        b.position_before(cx.fcx.alloca_insert_pt.get());
+        b.array_alloca(Ty, Val)
     }
 }
 
-pub fn Free(cx: block, PointerVal: ValueRef) {
-    unsafe {
-        if cx.unreachable { return; }
-        count_insn(cx, "free");
-        llvm::LLVMBuildFree(B(cx), PointerVal);
-    }
+pub fn Free(cx: @mut Block, PointerVal: ValueRef) {
+    if cx.unreachable { return; }
+    B(cx).free(PointerVal)
 }
 
-pub fn Load(cx: block, PointerVal: ValueRef) -> ValueRef {
+pub fn Load(cx: @mut Block, PointerVal: ValueRef) -> ValueRef {
     unsafe {
         let ccx = cx.fcx.ccx;
         if cx.unreachable {
             let ty = val_ty(PointerVal);
-            let eltty = if llvm::LLVMGetTypeKind(ty) == lib::llvm::Array {
-                llvm::LLVMGetElementType(ty) } else { ccx.int_type };
-            return llvm::LLVMGetUndef(eltty);
+            let eltty = if ty.kind() == lib::llvm::Array {
+                ty.element_type()
+            } else {
+                ccx.int_type
+            };
+            return llvm::LLVMGetUndef(eltty.to_ref());
         }
-        count_insn(cx, "load");
-        return llvm::LLVMBuildLoad(B(cx), PointerVal, noname());
+        B(cx).load(PointerVal)
     }
 }
 
-pub fn AtomicLoad(cx: block, PointerVal: ValueRef, order: AtomicOrdering) -> ValueRef {
+pub fn AtomicLoad(cx: @mut Block, PointerVal: ValueRef, order: AtomicOrdering) -> ValueRef {
     unsafe {
         let ccx = cx.fcx.ccx;
         if cx.unreachable {
-            return llvm::LLVMGetUndef(ccx.int_type);
+            return llvm::LLVMGetUndef(ccx.int_type.to_ref());
         }
-        count_insn(cx, "load.atomic");
-        let align = llalign_of_min(ccx, ccx.int_type);
-        return llvm::LLVMBuildAtomicLoad(B(cx), PointerVal, noname(), order, align as c_uint);
+        B(cx).atomic_load(PointerVal, order)
     }
 }
 
 
-pub fn LoadRangeAssert(cx: block, PointerVal: ValueRef, lo: c_ulonglong,
+pub fn LoadRangeAssert(cx: @mut Block, PointerVal: ValueRef, lo: c_ulonglong,
                        hi: c_ulonglong, signed: lib::llvm::Bool) -> ValueRef {
-    let value = Load(cx, PointerVal);
-
-    unsafe {
-        let t = llvm::LLVMGetElementType(llvm::LLVMTypeOf(PointerVal));
-        let min = llvm::LLVMConstInt(t, lo, signed);
-        let max = llvm::LLVMConstInt(t, hi, signed);
-
-        do vec::as_imm_buf([min, max]) |ptr, len| {
-            llvm::LLVMSetMetadata(value, lib::llvm::MD_range as c_uint,
-                                  llvm::LLVMMDNodeInContext(cx.fcx.ccx.llcx,
-                                                            ptr, len as c_uint));
+    if cx.unreachable {
+        let ccx = cx.fcx.ccx;
+        let ty = val_ty(PointerVal);
+        let eltty = if ty.kind() == lib::llvm::Array {
+            ty.element_type()
+        } else {
+            ccx.int_type
+        };
+        unsafe {
+            llvm::LLVMGetUndef(eltty.to_ref())
         }
-    }
-
-    value
-}
-
-pub fn Store(cx: block, Val: ValueRef, Ptr: ValueRef) {
-    unsafe {
-        if cx.unreachable { return; }
-        debug!("Store %s -> %s",
-               val_str(cx.ccx().tn, Val),
-               val_str(cx.ccx().tn, Ptr));
-        count_insn(cx, "store");
-        llvm::LLVMBuildStore(B(cx), Val, Ptr);
+    } else {
+        B(cx).load_range_assert(PointerVal, lo, hi, signed)
     }
 }
 
-pub fn AtomicStore(cx: block, Val: ValueRef, Ptr: ValueRef, order: AtomicOrdering) {
-    unsafe {
-        if cx.unreachable { return; }
-        debug!("Store %s -> %s",
-               val_str(cx.ccx().tn, Val),
-               val_str(cx.ccx().tn, Ptr));
-        count_insn(cx, "store.atomic");
-        let align = llalign_of_min(cx.ccx(), cx.ccx().int_type);
-        llvm::LLVMBuildAtomicStore(B(cx), Val, Ptr, order, align as c_uint);
-    }
+pub fn Store(cx: @mut Block, Val: ValueRef, Ptr: ValueRef) {
+    if cx.unreachable { return; }
+    B(cx).store(Val, Ptr)
 }
 
-pub fn GEP(cx: block, Pointer: ValueRef, Indices: &[ValueRef]) -> ValueRef {
+pub fn AtomicStore(cx: @mut Block, Val: ValueRef, Ptr: ValueRef, order: AtomicOrdering) {
+    if cx.unreachable { return; }
+    B(cx).atomic_store(Val, Ptr, order)
+}
+
+pub fn GEP(cx: @mut Block, Pointer: ValueRef, Indices: &[ValueRef]) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(T_ptr(T_nil())); }
-        count_insn(cx, "gep");
-        return llvm::LLVMBuildGEP(B(cx), Pointer, vec::raw::to_ptr(Indices),
-                                   Indices.len() as c_uint, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(Type::nil().ptr_to().to_ref()); }
+        B(cx).gep(Pointer, Indices)
     }
 }
 
 // Simple wrapper around GEP that takes an array of ints and wraps them
 // in C_i32()
-//
-// FIXME #6571: Use a small-vector optimization to avoid allocations here.
-pub fn GEPi(cx: block, base: ValueRef, ixs: &[uint]) -> ValueRef {
-    let v = do vec::map(ixs) |i| { C_i32(*i as i32) };
-    count_insn(cx, "gepi");
-    return InBoundsGEP(cx, base, v);
-}
-
-pub fn InBoundsGEP(cx: block, Pointer: ValueRef, Indices: &[ValueRef]) ->
-   ValueRef {
+#[inline]
+pub fn GEPi(cx: @mut Block, base: ValueRef, ixs: &[uint]) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(T_ptr(T_nil())); }
-        unsafe {
-            count_insn(cx, "inboundsgep");
-        return llvm::LLVMBuildInBoundsGEP(B(cx), Pointer,
-                                           vec::raw::to_ptr(Indices),
-                                           Indices.len() as c_uint,
-                                           noname());
-        }
+        if cx.unreachable { return llvm::LLVMGetUndef(Type::nil().ptr_to().to_ref()); }
+        B(cx).gepi(base, ixs)
     }
 }
 
-pub fn StructGEP(cx: block, Pointer: ValueRef, Idx: uint) -> ValueRef {
+pub fn InBoundsGEP(cx: @mut Block, Pointer: ValueRef, Indices: &[ValueRef]) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(T_ptr(T_nil())); }
-        count_insn(cx, "structgep");
-        return llvm::LLVMBuildStructGEP(B(cx),
-                                        Pointer,
-                                        Idx as c_uint,
-                                        noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(Type::nil().ptr_to().to_ref()); }
+        B(cx).inbounds_gep(Pointer, Indices)
     }
 }
 
-pub fn GlobalString(cx: block, _Str: *c_char) -> ValueRef {
+pub fn StructGEP(cx: @mut Block, Pointer: ValueRef, Idx: uint) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(T_ptr(T_i8())); }
-        count_insn(cx, "globalstring");
-        return llvm::LLVMBuildGlobalString(B(cx), _Str, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(Type::nil().ptr_to().to_ref()); }
+        B(cx).struct_gep(Pointer, Idx)
     }
 }
 
-pub fn GlobalStringPtr(cx: block, _Str: *c_char) -> ValueRef {
+pub fn GlobalString(cx: @mut Block, _Str: *c_char) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(T_ptr(T_i8())); }
-        count_insn(cx, "globalstringptr");
-        return llvm::LLVMBuildGlobalStringPtr(B(cx), _Str, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(Type::i8p().to_ref()); }
+        B(cx).global_string(_Str)
+    }
+}
+
+pub fn GlobalStringPtr(cx: @mut Block, _Str: *c_char) -> ValueRef {
+    unsafe {
+        if cx.unreachable { return llvm::LLVMGetUndef(Type::i8p().to_ref()); }
+        B(cx).global_string_ptr(_Str)
     }
 }
 
 /* Casts */
-pub fn Trunc(cx: block, Val: ValueRef, DestTy: TypeRef) -> ValueRef {
+pub fn Trunc(cx: @mut Block, Val: ValueRef, DestTy: Type) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(DestTy); }
-        count_insn(cx, "trunc");
-        return llvm::LLVMBuildTrunc(B(cx), Val, DestTy, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(DestTy.to_ref()); }
+        B(cx).trunc(Val, DestTy)
     }
 }
 
-pub fn ZExt(cx: block, Val: ValueRef, DestTy: TypeRef) -> ValueRef {
+pub fn ZExt(cx: @mut Block, Val: ValueRef, DestTy: Type) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(DestTy); }
-        count_insn(cx, "zext");
-        return llvm::LLVMBuildZExt(B(cx), Val, DestTy, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(DestTy.to_ref()); }
+        B(cx).zext(Val, DestTy)
     }
 }
 
-pub fn SExt(cx: block, Val: ValueRef, DestTy: TypeRef) -> ValueRef {
+pub fn SExt(cx: @mut Block, Val: ValueRef, DestTy: Type) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(DestTy); }
-        count_insn(cx, "sext");
-        return llvm::LLVMBuildSExt(B(cx), Val, DestTy, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(DestTy.to_ref()); }
+        B(cx).sext(Val, DestTy)
     }
 }
 
-pub fn FPToUI(cx: block, Val: ValueRef, DestTy: TypeRef) -> ValueRef {
+pub fn FPToUI(cx: @mut Block, Val: ValueRef, DestTy: Type) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(DestTy); }
-        count_insn(cx, "fptoui");
-        return llvm::LLVMBuildFPToUI(B(cx), Val, DestTy, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(DestTy.to_ref()); }
+        B(cx).fptoui(Val, DestTy)
     }
 }
 
-pub fn FPToSI(cx: block, Val: ValueRef, DestTy: TypeRef) -> ValueRef {
+pub fn FPToSI(cx: @mut Block, Val: ValueRef, DestTy: Type) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(DestTy); }
-        count_insn(cx, "fptosi");
-        return llvm::LLVMBuildFPToSI(B(cx), Val, DestTy, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(DestTy.to_ref()); }
+        B(cx).fptosi(Val, DestTy)
     }
 }
 
-pub fn UIToFP(cx: block, Val: ValueRef, DestTy: TypeRef) -> ValueRef {
+pub fn UIToFP(cx: @mut Block, Val: ValueRef, DestTy: Type) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(DestTy); }
-        count_insn(cx, "uitofp");
-        return llvm::LLVMBuildUIToFP(B(cx), Val, DestTy, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(DestTy.to_ref()); }
+        B(cx).uitofp(Val, DestTy)
     }
 }
 
-pub fn SIToFP(cx: block, Val: ValueRef, DestTy: TypeRef) -> ValueRef {
+pub fn SIToFP(cx: @mut Block, Val: ValueRef, DestTy: Type) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(DestTy); }
-        count_insn(cx, "sitofp");
-        return llvm::LLVMBuildSIToFP(B(cx), Val, DestTy, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(DestTy.to_ref()); }
+        B(cx).sitofp(Val, DestTy)
     }
 }
 
-pub fn FPTrunc(cx: block, Val: ValueRef, DestTy: TypeRef) -> ValueRef {
+pub fn FPTrunc(cx: @mut Block, Val: ValueRef, DestTy: Type) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(DestTy); }
-        count_insn(cx, "fptrunc");
-        return llvm::LLVMBuildFPTrunc(B(cx), Val, DestTy, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(DestTy.to_ref()); }
+        B(cx).fptrunc(Val, DestTy)
     }
 }
 
-pub fn FPExt(cx: block, Val: ValueRef, DestTy: TypeRef) -> ValueRef {
+pub fn FPExt(cx: @mut Block, Val: ValueRef, DestTy: Type) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(DestTy); }
-        count_insn(cx, "fpext");
-        return llvm::LLVMBuildFPExt(B(cx), Val, DestTy, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(DestTy.to_ref()); }
+        B(cx).fpext(Val, DestTy)
     }
 }
 
-pub fn PtrToInt(cx: block, Val: ValueRef, DestTy: TypeRef) -> ValueRef {
+pub fn PtrToInt(cx: @mut Block, Val: ValueRef, DestTy: Type) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(DestTy); }
-        count_insn(cx, "ptrtoint");
-        return llvm::LLVMBuildPtrToInt(B(cx), Val, DestTy, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(DestTy.to_ref()); }
+        B(cx).ptrtoint(Val, DestTy)
     }
 }
 
-pub fn IntToPtr(cx: block, Val: ValueRef, DestTy: TypeRef) -> ValueRef {
+pub fn IntToPtr(cx: @mut Block, Val: ValueRef, DestTy: Type) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(DestTy); }
-        count_insn(cx, "inttoptr");
-        return llvm::LLVMBuildIntToPtr(B(cx), Val, DestTy, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(DestTy.to_ref()); }
+        B(cx).inttoptr(Val, DestTy)
     }
 }
 
-pub fn BitCast(cx: block, Val: ValueRef, DestTy: TypeRef) -> ValueRef {
+pub fn BitCast(cx: @mut Block, Val: ValueRef, DestTy: Type) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(DestTy); }
-        count_insn(cx, "bitcast");
-        return llvm::LLVMBuildBitCast(B(cx), Val, DestTy, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(DestTy.to_ref()); }
+        B(cx).bitcast(Val, DestTy)
     }
 }
 
-pub fn ZExtOrBitCast(cx: block, Val: ValueRef, DestTy: TypeRef) -> ValueRef {
+pub fn ZExtOrBitCast(cx: @mut Block, Val: ValueRef, DestTy: Type) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(DestTy); }
-        count_insn(cx, "zextorbitcast");
-        return llvm::LLVMBuildZExtOrBitCast(B(cx), Val, DestTy, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(DestTy.to_ref()); }
+        B(cx).zext_or_bitcast(Val, DestTy)
     }
 }
 
-pub fn SExtOrBitCast(cx: block, Val: ValueRef, DestTy: TypeRef) -> ValueRef {
+pub fn SExtOrBitCast(cx: @mut Block, Val: ValueRef, DestTy: Type) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(DestTy); }
-        count_insn(cx, "sextorbitcast");
-        return llvm::LLVMBuildSExtOrBitCast(B(cx), Val, DestTy, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(DestTy.to_ref()); }
+        B(cx).sext_or_bitcast(Val, DestTy)
     }
 }
 
-pub fn TruncOrBitCast(cx: block, Val: ValueRef, DestTy: TypeRef) -> ValueRef {
+pub fn TruncOrBitCast(cx: @mut Block, Val: ValueRef, DestTy: Type) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(DestTy); }
-        count_insn(cx, "truncorbitcast");
-        return llvm::LLVMBuildTruncOrBitCast(B(cx), Val, DestTy, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(DestTy.to_ref()); }
+        B(cx).trunc_or_bitcast(Val, DestTy)
     }
 }
 
-pub fn Cast(cx: block, Op: Opcode, Val: ValueRef, DestTy: TypeRef, _: *u8)
+pub fn Cast(cx: @mut Block, Op: Opcode, Val: ValueRef, DestTy: Type, _: *u8)
      -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(DestTy); }
-        count_insn(cx, "cast");
-        return llvm::LLVMBuildCast(B(cx), Op, Val, DestTy, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(DestTy.to_ref()); }
+        B(cx).cast(Op, Val, DestTy)
     }
 }
 
-pub fn PointerCast(cx: block, Val: ValueRef, DestTy: TypeRef) -> ValueRef {
+pub fn PointerCast(cx: @mut Block, Val: ValueRef, DestTy: Type) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(DestTy); }
-        count_insn(cx, "pointercast");
-        return llvm::LLVMBuildPointerCast(B(cx), Val, DestTy, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(DestTy.to_ref()); }
+        B(cx).pointercast(Val, DestTy)
     }
 }
 
-pub fn IntCast(cx: block, Val: ValueRef, DestTy: TypeRef) -> ValueRef {
+pub fn IntCast(cx: @mut Block, Val: ValueRef, DestTy: Type) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(DestTy); }
-        count_insn(cx, "intcast");
-        return llvm::LLVMBuildIntCast(B(cx), Val, DestTy, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(DestTy.to_ref()); }
+        B(cx).intcast(Val, DestTy)
     }
 }
 
-pub fn FPCast(cx: block, Val: ValueRef, DestTy: TypeRef) -> ValueRef {
+pub fn FPCast(cx: @mut Block, Val: ValueRef, DestTy: Type) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(DestTy); }
-        count_insn(cx, "fpcast");
-        return llvm::LLVMBuildFPCast(B(cx), Val, DestTy, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(DestTy.to_ref()); }
+        B(cx).fpcast(Val, DestTy)
     }
 }
 
 
 /* Comparisons */
-pub fn ICmp(cx: block, Op: IntPredicate, LHS: ValueRef, RHS: ValueRef)
+pub fn ICmp(cx: @mut Block, Op: IntPredicate, LHS: ValueRef, RHS: ValueRef)
      -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(T_i1()); }
-        count_insn(cx, "icmp");
-        return llvm::LLVMBuildICmp(B(cx), Op as c_uint, LHS, RHS, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(Type::i1().to_ref()); }
+        B(cx).icmp(Op, LHS, RHS)
     }
 }
 
-pub fn FCmp(cx: block, Op: RealPredicate, LHS: ValueRef, RHS: ValueRef)
+pub fn FCmp(cx: @mut Block, Op: RealPredicate, LHS: ValueRef, RHS: ValueRef)
      -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(T_i1()); }
-        count_insn(cx, "fcmp");
-        return llvm::LLVMBuildFCmp(B(cx), Op as c_uint, LHS, RHS, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(Type::i1().to_ref()); }
+        B(cx).fcmp(Op, LHS, RHS)
     }
 }
 
 /* Miscellaneous instructions */
-pub fn EmptyPhi(cx: block, Ty: TypeRef) -> ValueRef {
+pub fn EmptyPhi(cx: @mut Block, Ty: Type) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(Ty); }
-        count_insn(cx, "emptyphi");
-        return llvm::LLVMBuildPhi(B(cx), Ty, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(Ty.to_ref()); }
+        B(cx).empty_phi(Ty)
     }
 }
 
-pub fn Phi(cx: block, Ty: TypeRef, vals: &[ValueRef], bbs: &[BasicBlockRef])
-    -> ValueRef {
+pub fn Phi(cx: @mut Block, Ty: Type, vals: &[ValueRef], bbs: &[BasicBlockRef]) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(Ty); }
-        assert_eq!(vals.len(), bbs.len());
-        let phi = EmptyPhi(cx, Ty);
-        count_insn(cx, "addincoming");
-        llvm::LLVMAddIncoming(phi, vec::raw::to_ptr(vals),
-                              vec::raw::to_ptr(bbs),
-                              vals.len() as c_uint);
-        return phi;
+        if cx.unreachable { return llvm::LLVMGetUndef(Ty.to_ref()); }
+        B(cx).phi(Ty, vals, bbs)
     }
 }
 
@@ -861,264 +615,162 @@ pub fn AddIncomingToPhi(phi: ValueRef, val: ValueRef, bb: BasicBlockRef) {
     }
 }
 
-pub fn _UndefReturn(cx: block, Fn: ValueRef) -> ValueRef {
+pub fn _UndefReturn(cx: @mut Block, Fn: ValueRef) -> ValueRef {
     unsafe {
         let ccx = cx.fcx.ccx;
         let ty = val_ty(Fn);
-        let retty = if llvm::LLVMGetTypeKind(ty) == lib::llvm::Integer {
-            llvm::LLVMGetReturnType(ty) } else { ccx.int_type };
-            count_insn(cx, "");
-        return llvm::LLVMGetUndef(retty);
+        let retty = if ty.kind() == lib::llvm::Integer {
+            ty.return_type()
+        } else {
+            ccx.int_type
+        };
+        B(cx).count_insn("ret_undef");
+        llvm::LLVMGetUndef(retty.to_ref())
     }
 }
 
-pub fn add_span_comment(bcx: block, sp: span, text: &str) {
-    let ccx = bcx.ccx();
-    if ccx.sess.asm_comments() {
-        let s = fmt!("%s (%s)", text, ccx.sess.codemap.span_to_str(sp));
-        debug!("%s", copy s);
-        add_comment(bcx, s);
-    }
+pub fn add_span_comment(cx: @mut Block, sp: span, text: &str) {
+    B(cx).add_span_comment(sp, text)
 }
 
-pub fn add_comment(bcx: block, text: &str) {
-    unsafe {
-        let ccx = bcx.ccx();
-        if ccx.sess.asm_comments() {
-            let sanitized = text.replace("$", "");
-            let comment_text = ~"# " +
-                sanitized.replace("\n", "\n\t# ");
-            let asm = str::as_c_str(comment_text, |c| {
-                str::as_c_str("", |e| {
-                    count_insn(bcx, "inlineasm");
-                    llvm::LLVMConstInlineAsm(T_fn([], T_void()), c, e,
-                                             False, False)
-                })
-            });
-            Call(bcx, asm, []);
-        }
-    }
+pub fn add_comment(cx: @mut Block, text: &str) {
+    B(cx).add_comment(text)
 }
 
-pub fn InlineAsmCall(cx: block, asm: *c_char, cons: *c_char,
-                     inputs: &[ValueRef], output: TypeRef,
+pub fn InlineAsmCall(cx: @mut Block, asm: *c_char, cons: *c_char,
+                     inputs: &[ValueRef], output: Type,
                      volatile: bool, alignstack: bool,
                      dia: AsmDialect) -> ValueRef {
-    unsafe {
-        count_insn(cx, "inlineasm");
-
-        let volatile = if volatile { lib::llvm::True }
-                       else        { lib::llvm::False };
-        let alignstack = if alignstack { lib::llvm::True }
-                         else          { lib::llvm::False };
-
-        let argtys = do inputs.map |v| {
-            debug!("Asm Input Type: %?", val_str(cx.ccx().tn, *v));
-            val_ty(*v)
-        };
-
-        debug!("Asm Output Type: %?", ty_str(cx.ccx().tn, output));
-        let llfty = T_fn(argtys, output);
-        let v = llvm::LLVMInlineAsm(llfty, asm, cons, volatile,
-                                    alignstack, dia as c_uint);
-
-        Call(cx, v, inputs)
-    }
+    B(cx).inline_asm_call(asm, cons, inputs, output, volatile, alignstack, dia)
 }
 
-pub fn Call(cx: block, Fn: ValueRef, Args: &[ValueRef]) -> ValueRef {
+pub fn Call(cx: @mut Block, Fn: ValueRef, Args: &[ValueRef]) -> ValueRef {
     if cx.unreachable { return _UndefReturn(cx, Fn); }
-    unsafe {
-        count_insn(cx, "call");
-
-        debug!("Call(Fn=%s, Args=%?)",
-               val_str(cx.ccx().tn, Fn),
-               Args.map(|arg| val_str(cx.ccx().tn, *arg)));
-
-        do vec::as_imm_buf(Args) |ptr, len| {
-            llvm::LLVMBuildCall(B(cx), Fn, ptr, len as c_uint, noname())
-        }
-    }
+    B(cx).call(Fn, Args)
 }
 
-pub fn FastCall(cx: block, Fn: ValueRef, Args: &[ValueRef]) -> ValueRef {
+pub fn FastCall(cx: @mut Block, Fn: ValueRef, Args: &[ValueRef]) -> ValueRef {
     if cx.unreachable { return _UndefReturn(cx, Fn); }
-    unsafe {
-        count_insn(cx, "fastcall");
-        let v = llvm::LLVMBuildCall(B(cx), Fn, vec::raw::to_ptr(Args),
-                                    Args.len() as c_uint, noname());
-        lib::llvm::SetInstructionCallConv(v, lib::llvm::FastCallConv);
-        return v;
-    }
+    B(cx).call(Fn, Args)
 }
 
-pub fn CallWithConv(cx: block, Fn: ValueRef, Args: &[ValueRef],
+pub fn CallWithConv(cx: @mut Block, Fn: ValueRef, Args: &[ValueRef],
                     Conv: CallConv) -> ValueRef {
     if cx.unreachable { return _UndefReturn(cx, Fn); }
+    B(cx).call_with_conv(Fn, Args, Conv)
+}
+
+pub fn AtomicFence(cx: @mut Block, order: AtomicOrdering) {
+    if cx.unreachable { return; }
+    B(cx).atomic_fence(order)
+}
+
+pub fn Select(cx: @mut Block, If: ValueRef, Then: ValueRef, Else: ValueRef) -> ValueRef {
+    if cx.unreachable { return _Undef(Then); }
+    B(cx).select(If, Then, Else)
+}
+
+pub fn VAArg(cx: @mut Block, list: ValueRef, Ty: Type) -> ValueRef {
     unsafe {
-        count_insn(cx, "callwithconv");
-        let v = llvm::LLVMBuildCall(B(cx), Fn, vec::raw::to_ptr(Args),
-                                    Args.len() as c_uint, noname());
-        lib::llvm::SetInstructionCallConv(v, Conv);
-        return v;
+        if cx.unreachable { return llvm::LLVMGetUndef(Ty.to_ref()); }
+        B(cx).va_arg(list, Ty)
     }
 }
 
-pub fn Select(cx: block, If: ValueRef, Then: ValueRef, Else: ValueRef) ->
-   ValueRef {
+pub fn ExtractElement(cx: @mut Block, VecVal: ValueRef, Index: ValueRef) -> ValueRef {
     unsafe {
-        if cx.unreachable { return _Undef(Then); }
-        count_insn(cx, "select");
-        return llvm::LLVMBuildSelect(B(cx), If, Then, Else, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(Type::nil().to_ref()); }
+        B(cx).extract_element(VecVal, Index)
     }
 }
 
-pub fn VAArg(cx: block, list: ValueRef, Ty: TypeRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(Ty); }
-        count_insn(cx, "vaarg");
-        return llvm::LLVMBuildVAArg(B(cx), list, Ty, noname());
-    }
-}
-
-pub fn ExtractElement(cx: block, VecVal: ValueRef, Index: ValueRef) ->
-   ValueRef {
-    unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(T_nil()); }
-        count_insn(cx, "extractelement");
-        return llvm::LLVMBuildExtractElement(B(cx), VecVal, Index, noname());
-    }
-}
-
-pub fn InsertElement(cx: block, VecVal: ValueRef, EltVal: ValueRef,
+pub fn InsertElement(cx: @mut Block, VecVal: ValueRef, EltVal: ValueRef,
                      Index: ValueRef) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(T_nil()); }
-        count_insn(cx, "insertelement");
-        llvm::LLVMBuildInsertElement(B(cx), VecVal, EltVal, Index, noname())
+        if cx.unreachable { return llvm::LLVMGetUndef(Type::nil().to_ref()); }
+        B(cx).insert_element(VecVal, EltVal, Index)
     }
 }
 
-pub fn ShuffleVector(cx: block, V1: ValueRef, V2: ValueRef,
+pub fn ShuffleVector(cx: @mut Block, V1: ValueRef, V2: ValueRef,
                      Mask: ValueRef) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(T_nil()); }
-        count_insn(cx, "shufflevector");
-        llvm::LLVMBuildShuffleVector(B(cx), V1, V2, Mask, noname())
+        if cx.unreachable { return llvm::LLVMGetUndef(Type::nil().to_ref()); }
+        B(cx).shuffle_vector(V1, V2, Mask)
     }
 }
 
-pub fn VectorSplat(cx: block, NumElts: uint, EltVal: ValueRef) -> ValueRef {
+pub fn VectorSplat(cx: @mut Block, NumElts: uint, EltVal: ValueRef) -> ValueRef {
     unsafe {
-        let Undef = llvm::LLVMGetUndef(T_vector(val_ty(EltVal), NumElts));
-        let VecVal = InsertElement(cx, Undef, EltVal, C_i32(0));
-        ShuffleVector(cx, VecVal, Undef, C_null(T_vector(T_i32(), NumElts)))
+        if cx.unreachable { return llvm::LLVMGetUndef(Type::nil().to_ref()); }
+        B(cx).vector_splat(NumElts, EltVal)
     }
 }
 
-pub fn ExtractValue(cx: block, AggVal: ValueRef, Index: uint) -> ValueRef {
+pub fn ExtractValue(cx: @mut Block, AggVal: ValueRef, Index: uint) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(T_nil()); }
-        count_insn(cx, "extractvalue");
-        return llvm::LLVMBuildExtractValue(
-            B(cx), AggVal, Index as c_uint, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(Type::nil().to_ref()); }
+        B(cx).extract_value(AggVal, Index)
     }
 }
 
-pub fn InsertValue(cx: block, AggVal: ValueRef, EltVal: ValueRef,
-                   Index: uint) {
+pub fn InsertValue(cx: @mut Block, AggVal: ValueRef, EltVal: ValueRef, Index: uint) {
+    if cx.unreachable { return; }
+    B(cx).insert_value(AggVal, EltVal, Index)
+}
+
+pub fn IsNull(cx: @mut Block, Val: ValueRef) -> ValueRef {
     unsafe {
-        if cx.unreachable { return; }
-        count_insn(cx, "insertvalue");
-        llvm::LLVMBuildInsertValue(B(cx), AggVal, EltVal, Index as c_uint,
-                                   noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(Type::i1().to_ref()); }
+        B(cx).is_null(Val)
     }
 }
 
-pub fn IsNull(cx: block, Val: ValueRef) -> ValueRef {
+pub fn IsNotNull(cx: @mut Block, Val: ValueRef) -> ValueRef {
     unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(T_i1()); }
-        count_insn(cx, "isnull");
-        return llvm::LLVMBuildIsNull(B(cx), Val, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(Type::i1().to_ref()); }
+        B(cx).is_not_null(Val)
     }
 }
 
-pub fn IsNotNull(cx: block, Val: ValueRef) -> ValueRef {
-    unsafe {
-        if cx.unreachable { return llvm::LLVMGetUndef(T_i1()); }
-        count_insn(cx, "isnotnull");
-        return llvm::LLVMBuildIsNotNull(B(cx), Val, noname());
-    }
-}
-
-pub fn PtrDiff(cx: block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
+pub fn PtrDiff(cx: @mut Block, LHS: ValueRef, RHS: ValueRef) -> ValueRef {
     unsafe {
         let ccx = cx.fcx.ccx;
-        if cx.unreachable { return llvm::LLVMGetUndef(ccx.int_type); }
-        count_insn(cx, "ptrdiff");
-        return llvm::LLVMBuildPtrDiff(B(cx), LHS, RHS, noname());
+        if cx.unreachable { return llvm::LLVMGetUndef(ccx.int_type.to_ref()); }
+        B(cx).ptrdiff(LHS, RHS)
     }
 }
 
-pub fn Trap(cx: block) {
-    unsafe {
-        if cx.unreachable { return; }
-        let b = B(cx);
-        let BB: BasicBlockRef = llvm::LLVMGetInsertBlock(b);
-        let FN: ValueRef = llvm::LLVMGetBasicBlockParent(BB);
-        let M: ModuleRef = llvm::LLVMGetGlobalParent(FN);
-        let T: ValueRef = str::as_c_str("llvm.trap", |buf| {
-            llvm::LLVMGetNamedFunction(M, buf)
-        });
-        assert!((T as int != 0));
-        let Args: ~[ValueRef] = ~[];
-        unsafe {
-            count_insn(cx, "trap");
-            llvm::LLVMBuildCall(b, T, vec::raw::to_ptr(Args),
-                                Args.len() as c_uint, noname());
-        }
-    }
+pub fn Trap(cx: @mut Block) {
+    if cx.unreachable { return; }
+    B(cx).trap();
 }
 
-pub fn LandingPad(cx: block, Ty: TypeRef, PersFn: ValueRef,
+pub fn LandingPad(cx: @mut Block, Ty: Type, PersFn: ValueRef,
                   NumClauses: uint) -> ValueRef {
-    unsafe {
-        check_not_terminated(cx);
-        assert!(!cx.unreachable);
-        count_insn(cx, "landingpad");
-        return llvm::LLVMBuildLandingPad(B(cx), Ty, PersFn,
-                                      NumClauses as c_uint, noname());
-    }
+    check_not_terminated(cx);
+    assert!(!cx.unreachable);
+    B(cx).landing_pad(Ty, PersFn, NumClauses)
 }
 
-pub fn SetCleanup(cx: block, LandingPad: ValueRef) {
-    unsafe {
-        count_insn(cx, "setcleanup");
-        llvm::LLVMSetCleanup(LandingPad, lib::llvm::True);
-    }
+pub fn SetCleanup(cx: @mut Block, LandingPad: ValueRef) {
+    B(cx).set_cleanup(LandingPad)
 }
 
-pub fn Resume(cx: block, Exn: ValueRef) -> ValueRef {
-    unsafe {
-        check_not_terminated(cx);
-        terminate(cx, "Resume");
-        count_insn(cx, "resume");
-        return llvm::LLVMBuildResume(B(cx), Exn);
-    }
+pub fn Resume(cx: @mut Block, Exn: ValueRef) -> ValueRef {
+    check_not_terminated(cx);
+    terminate(cx, "Resume");
+    B(cx).resume(Exn)
 }
 
 // Atomic Operations
-pub fn AtomicCmpXchg(cx: block, dst: ValueRef,
+pub fn AtomicCmpXchg(cx: @mut Block, dst: ValueRef,
                      cmp: ValueRef, src: ValueRef,
                      order: AtomicOrdering) -> ValueRef {
-    unsafe {
-        llvm::LLVMBuildAtomicCmpXchg(B(cx), dst, cmp, src, order)
-    }
+    B(cx).atomic_cmpxchg(dst, cmp, src, order)
 }
-pub fn AtomicRMW(cx: block, op: AtomicBinOp,
+pub fn AtomicRMW(cx: @mut Block, op: AtomicBinOp,
                  dst: ValueRef, src: ValueRef,
                  order: AtomicOrdering) -> ValueRef {
-    unsafe {
-        llvm::LLVMBuildAtomicRMW(B(cx), op, dst, src, order)
-    }
+    B(cx).atomic_rmw(op, dst, src, order)
 }

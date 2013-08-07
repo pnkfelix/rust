@@ -16,14 +16,14 @@
 use option::*;
 use clone::Clone;
 use super::rc::RC;
-use rt::sched::{Scheduler, Coroutine};
-use rt::{context, TaskContext, SchedulerContext};
+use rt::sched::Scheduler;
+use rt::kill::BlockedTask;
 use rt::local::Local;
 use vec::OwnedVector;
 use container::Container;
 
 struct TubeState<T> {
-    blocked_task: Option<~Coroutine>,
+    blocked_task: Option<BlockedTask>,
     buf: ~[T]
 }
 
@@ -43,8 +43,6 @@ impl<T> Tube<T> {
 
     pub fn send(&mut self, val: T) {
         rtdebug!("tube send");
-        assert!(context() == SchedulerContext);
-
         unsafe {
             let state = self.p.unsafe_borrow_mut();
             (*state).buf.push(val);
@@ -52,16 +50,14 @@ impl<T> Tube<T> {
             if (*state).blocked_task.is_some() {
                 // There's a waiting task. Wake it up
                 rtdebug!("waking blocked tube");
-                let task = (*state).blocked_task.swap_unwrap();
+                let task = (*state).blocked_task.take_unwrap();
                 let sched = Local::take::<Scheduler>();
-                sched.resume_task_immediately(task);
+                sched.resume_blocked_task_immediately(task);
             }
         }
     }
 
     pub fn recv(&mut self) -> T {
-        assert!(context() == TaskContext);
-
         unsafe {
             let state = self.p.unsafe_borrow_mut();
             if !(*state).buf.is_empty() {
@@ -72,7 +68,7 @@ impl<T> Tube<T> {
                 assert!(self.p.refcount() > 1); // There better be somebody to wake us up
                 assert!((*state).blocked_task.is_none());
                 let sched = Local::take::<Scheduler>();
-                do sched.deschedule_running_task_and_then |task| {
+                do sched.deschedule_running_task_and_then |_, task| {
                     (*state).blocked_task = Some(task);
                 }
                 rtdebug!("waking after tube recv");
@@ -92,13 +88,13 @@ impl<T> Clone for Tube<T> {
 
 #[cfg(test)]
 mod test {
-    use int;
     use cell::Cell;
     use rt::test::*;
     use rt::rtio::EventLoop;
     use rt::sched::Scheduler;
     use rt::local::Local;
     use super::*;
+    use prelude::*;
 
     #[test]
     fn simple_test() {
@@ -107,11 +103,10 @@ mod test {
             let tube_clone = tube.clone();
             let tube_clone_cell = Cell::new(tube_clone);
             let sched = Local::take::<Scheduler>();
-            do sched.deschedule_running_task_and_then |task| {
+            do sched.deschedule_running_task_and_then |sched, task| {
                 let mut tube_clone = tube_clone_cell.take();
                 tube_clone.send(1);
-                let sched = Local::take::<Scheduler>();
-                sched.resume_task_immediately(task);
+                sched.enqueue_blocked_task(task);
             }
 
             assert!(tube.recv() == 1);
@@ -123,21 +118,17 @@ mod test {
         do run_in_newsched_task {
             let mut tube: Tube<int> = Tube::new();
             let tube_clone = tube.clone();
-            let tube_clone = Cell::new(Cell::new(Cell::new(tube_clone)));
+            let tube_clone = Cell::new(tube_clone);
             let sched = Local::take::<Scheduler>();
-            do sched.deschedule_running_task_and_then |task| {
-                let tube_clone = tube_clone.take();
-                do Local::borrow::<Scheduler> |sched| {
-                    let tube_clone = tube_clone.take();
-                    do sched.event_loop.callback {
-                        let mut tube_clone = tube_clone.take();
-                        // The task should be blocked on this now and
-                        // sending will wake it up.
-                        tube_clone.send(1);
-                    }
+            do sched.deschedule_running_task_and_then |sched, task| {
+                let tube_clone = Cell::new(tube_clone.take());
+                do sched.event_loop.callback {
+                    let mut tube_clone = tube_clone.take();
+                    // The task should be blocked on this now and
+                    // sending will wake it up.
+                    tube_clone.send(1);
                 }
-                let sched = Local::take::<Scheduler>();
-                sched.resume_task_immediately(task);
+                sched.enqueue_blocked_task(task);
             }
 
             assert!(tube.recv() == 1);
@@ -153,14 +144,14 @@ mod test {
             let tube_clone = tube.clone();
             let tube_clone = Cell::new(tube_clone);
             let sched = Local::take::<Scheduler>();
-            do sched.deschedule_running_task_and_then |task| {
+            do sched.deschedule_running_task_and_then |sched, task| {
                 callback_send(tube_clone.take(), 0);
 
                 fn callback_send(tube: Tube<int>, i: int) {
                     if i == 100 { return; }
 
                     let tube = Cell::new(Cell::new(tube));
-                    do Local::borrow::<Scheduler> |sched| {
+                    do Local::borrow::<Scheduler, ()> |sched| {
                         let tube = tube.take();
                         do sched.event_loop.callback {
                             let mut tube = tube.take();
@@ -172,11 +163,10 @@ mod test {
                     }
                 }
 
-                let sched = Local::take::<Scheduler>();
-                sched.resume_task_immediately(task);
+                sched.enqueue_blocked_task(task);
             }
 
-            for int::range(0, MAX) |i| {
+            foreach i in range(0, MAX) {
                 let j = tube.recv();
                 assert!(j == i);
             }

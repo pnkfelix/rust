@@ -11,15 +11,15 @@
 // xfail-fast
 
 fn p_foo<T>(pinned: T) { }
-fn s_foo<T:Copy>(shared: T) { }
-fn u_foo<T:Owned>(unique: T) { }
+fn s_foo<T>(shared: T) { }
+fn u_foo<T:Send>(unique: T) { }
 
 struct r {
   i: int,
 }
 
 impl Drop for r {
-    fn finalize(&self) {}
+    fn drop(&self) {}
 }
 
 fn r(i:int) -> r {

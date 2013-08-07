@@ -8,12 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
-
 use ast;
 use codemap;
-use codemap::{Pos, ExpandedFrom, span};
-use codemap::{CallInfo, NameAndSpan};
+use codemap::{Pos, span};
+use codemap::{ExpnInfo, NameAndSpan};
 use ext::base::*;
 use ext::base;
 use ext::build::AstBuilder;
@@ -21,9 +19,8 @@ use parse;
 use parse::token::{get_ident_interner};
 use print::pprust;
 
-use core::io;
-use core::result;
-use core::vec;
+use std::io;
+use std::result;
 
 // These macros all relate to the file system; they either return
 // the column/row/filename of the expression, or they include
@@ -108,9 +105,7 @@ pub fn expand_include_bin(cx: @ExtCtxt, sp: span, tts: &[ast::token_tree])
     let file = get_single_str_from_tts(cx, sp, tts, "include_bin!");
     match io::read_whole_file(&res_rel_file(cx, sp, &Path(file))) {
       result::Ok(src) => {
-        let u8_exprs = vec::map(src, |char| {
-            cx.expr_u8(sp, *char)
-        });
+        let u8_exprs: ~[@ast::expr] = src.iter().transform(|char| cx.expr_u8(sp, *char)).collect();
         base::MRExpr(cx.expr_vec(sp, u8_exprs))
       }
       result::Err(ref e) => {
@@ -122,14 +117,14 @@ pub fn expand_include_bin(cx: @ExtCtxt, sp: span, tts: &[ast::token_tree])
 // recur along an ExpnInfo chain to find the original expression
 fn topmost_expn_info(expn_info: @codemap::ExpnInfo) -> @codemap::ExpnInfo {
     match *expn_info {
-        ExpandedFrom(CallInfo { call_site: ref call_site, _ }) => {
+        ExpnInfo { call_site: ref call_site, _ } => {
             match call_site.expn_info {
                 Some(next_expn_info) => {
                     match *next_expn_info {
-                        ExpandedFrom(CallInfo {
+                        ExpnInfo {
                             callee: NameAndSpan { name: ref name, _ },
                             _
-                        }) => {
+                        } => {
                             // Don't recurse into file using "include!"
                             if "include" == *name  {
                                 expn_info
@@ -153,6 +148,6 @@ fn res_rel_file(cx: @ExtCtxt, sp: codemap::span, arg: &Path) -> Path {
         let cu = Path(cx.codemap().span_to_filename(sp));
         cu.dir_path().push_many(arg.components)
     } else {
-        copy *arg
+        (*arg).clone()
     }
 }

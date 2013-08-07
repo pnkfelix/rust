@@ -10,9 +10,9 @@
 
 // Type substitutions.
 
-use core::prelude::*;
 
 use middle::ty;
+use syntax::opt_vec::OptVec;
 use util::ppaux::Repr;
 
 ///////////////////////////////////////////////////////////////////////////
@@ -80,7 +80,13 @@ impl<T:Subst> Subst for ~[T] {
     }
 }
 
-impl<T:Subst> Subst for @T {
+impl<T:Subst> Subst for OptVec<T> {
+    fn subst(&self, tcx: ty::ctxt, substs: &ty::substs) -> OptVec<T> {
+        self.map(|t| t.subst(tcx, substs))
+    }
+}
+
+impl<T:Subst + 'static> Subst for @T {
     fn subst(&self, tcx: ty::ctxt, substs: &ty::substs) -> @T {
         match self {
             &@ref t => @t.subst(tcx, substs)
@@ -106,9 +112,22 @@ impl Subst for ty::TraitRef {
 impl Subst for ty::substs {
     fn subst(&self, tcx: ty::ctxt, substs: &ty::substs) -> ty::substs {
         ty::substs {
-            self_r: self.self_r.subst(tcx, substs),
+            regions: self.regions.subst(tcx, substs),
             self_ty: self.self_ty.map(|typ| typ.subst(tcx, substs)),
             tps: self.tps.map(|typ| typ.subst(tcx, substs))
+        }
+    }
+}
+
+impl Subst for ty::RegionSubsts {
+    fn subst(&self, tcx: ty::ctxt, substs: &ty::substs) -> ty::RegionSubsts {
+        match *self {
+            ty::ErasedRegions => {
+                ty::ErasedRegions
+            }
+            ty::NonerasedRegions(ref regions) => {
+                ty::NonerasedRegions(regions.subst(tcx, substs))
+            }
         }
     }
 }
@@ -131,6 +150,7 @@ impl Subst for ty::ParamBounds {
 impl Subst for ty::TypeParameterDef {
     fn subst(&self, tcx: ty::ctxt, substs: &ty::substs) -> ty::TypeParameterDef {
         ty::TypeParameterDef {
+            ident: self.ident,
             def_id: self.def_id,
             bounds: self.bounds.subst(tcx, substs)
         }
@@ -158,15 +178,18 @@ impl Subst for ty::Region {
         // will most likely disappear.
         match self {
             &ty::re_bound(ty::br_self) => {
-                match substs.self_r {
-                    None => {
-                        tcx.sess.bug(
-                            fmt!("ty::Region#subst(): \
-                                  Reference to self region when \
-                                  given substs with no self region: %s",
-                                 substs.repr(tcx)));
+                match substs.regions {
+                    ty::ErasedRegions => ty::re_static,
+                    ty::NonerasedRegions(ref regions) => {
+                        if regions.len() != 1 {
+                            tcx.sess.bug(
+                                fmt!("ty::Region#subst(): \
+                                      Reference to self region when \
+                                      given substs with no self region: %s",
+                                     substs.repr(tcx)));
+                        }
+                        *regions.get(0)
                     }
-                    Some(self_r) => self_r
                 }
             }
             _ => *self

@@ -10,7 +10,6 @@
 
 //! Records the full path to items
 
-use core::prelude::*;
 
 use astsrv;
 use doc::ItemUtils;
@@ -39,12 +38,11 @@ impl Clone for Ctxt {
     fn clone(&self) -> Ctxt {
         Ctxt {
             srv: self.srv.clone(),
-            path: @mut copy *self.path
+            path: @mut (*self.path).clone()
         }
     }
 }
 
-#[allow(non_implicitly_copyable_typarams)]
 fn run(srv: astsrv::Srv, doc: doc::Doc) -> doc::Doc {
     let ctxt = Ctxt {
         srv: srv,
@@ -62,32 +60,31 @@ fn run(srv: astsrv::Srv, doc: doc::Doc) -> doc::Doc {
 
 fn fold_item(fold: &fold::Fold<Ctxt>, doc: doc::ItemDoc) -> doc::ItemDoc {
     doc::ItemDoc {
-        path: copy *fold.ctxt.path,
+        path: (*fold.ctxt.path).clone(),
         .. doc
     }
 }
 
-#[allow(non_implicitly_copyable_typarams)]
 fn fold_mod(fold: &fold::Fold<Ctxt>, doc: doc::ModDoc) -> doc::ModDoc {
-    let is_topmod = doc.id() == ast::crate_node_id;
+    let is_topmod = doc.id() == ast::CRATE_NODE_ID;
 
-    if !is_topmod { fold.ctxt.path.push(doc.name()); }
+    if !is_topmod { fold.ctxt.path.push(doc.name_()); }
     let doc = fold::default_any_fold_mod(fold, doc);
     if !is_topmod { fold.ctxt.path.pop(); }
 
     doc::ModDoc {
-        item: (fold.fold_item)(fold, copy doc.item),
+        item: (fold.fold_item)(fold, doc.item.clone()),
         .. doc
     }
 }
 
 fn fold_nmod(fold: &fold::Fold<Ctxt>, doc: doc::NmodDoc) -> doc::NmodDoc {
-    fold.ctxt.path.push(doc.name());
+    fold.ctxt.path.push(doc.name_());
     let doc = fold::default_seq_fold_nmod(fold, doc);
     fold.ctxt.path.pop();
 
     doc::NmodDoc {
-        item: (fold.fold_item)(fold, copy doc.item),
+        item: (fold.fold_item)(fold, doc.item.clone()),
         .. doc
     }
 }
@@ -98,10 +95,11 @@ fn should_record_mod_paths() {
     do astsrv::from_str(source) |srv| {
         let doc = extract::from_srv(srv.clone(), ~"");
         let doc = run(srv.clone(), doc);
-        assert!(doc.cratemod().mods()[0].mods()[0].mods()[0].path()
-            == ~[~"a", ~"b"]);
-        assert!(doc.cratemod().mods()[0].mods()[1].mods()[0].path()
-            == ~[~"a", ~"d"]);
+        // hidden __std_macros module at the start.
+        assert_eq!(doc.cratemod().mods()[1].mods()[0].mods()[0].path(),
+                   ~[~"a", ~"b"]);
+        assert_eq!(doc.cratemod().mods()[1].mods()[1].mods()[0].path(),
+                   ~[~"a", ~"d"]);
     }
 }
 
@@ -111,6 +109,7 @@ fn should_record_fn_paths() {
     do astsrv::from_str(source) |srv| {
         let doc = extract::from_srv(srv.clone(), ~"");
         let doc = run(srv.clone(), doc);
-        assert_eq!(doc.cratemod().mods()[0].fns()[0].path(), ~[~"a"]);
+        // hidden __std_macros module at the start.
+        assert_eq!(doc.cratemod().mods()[1].fns()[0].path(), ~[~"a"]);
     }
 }

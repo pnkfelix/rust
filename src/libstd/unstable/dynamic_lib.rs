@@ -15,7 +15,6 @@ Dynamic library facilities.
 A simple wrapper over the platforms dynamic library facilities
 
 */
-use ptr;
 use cast;
 use path;
 use libc;
@@ -26,7 +25,7 @@ use result::*;
 pub struct DynamicLibrary { priv handle: *libc::c_void }
 
 impl Drop for DynamicLibrary {
-    fn finalize(&self) {
+    fn drop(&self) {
         match do dl::check_for_errors_in {
             unsafe {
                 dl::close(self.handle)
@@ -106,7 +105,7 @@ mod dl {
     use path;
     use ptr;
     use str;
-    use task;
+    use unstable::sync::atomically;
     use result::*;
 
     pub unsafe fn open_external(filename: &path::Path) -> *libc::c_void {
@@ -121,7 +120,7 @@ mod dl {
 
     pub fn check_for_errors_in<T>(f: &fn()->T) -> Result<T, ~str> {
         unsafe {
-            do task::atomically {
+            do atomically {
                 let _old_error = dlerror();
 
                 let result = f();
@@ -165,8 +164,7 @@ mod dl {
     use libc;
     use path;
     use ptr;
-    use str;
-    use task;
+    use unstable::sync::atomically;
     use result::*;
 
     pub unsafe fn open_external(filename: &path::Path) -> *libc::c_void {
@@ -176,14 +174,14 @@ mod dl {
     }
 
     pub unsafe fn open_internal() -> *libc::c_void {
-        let mut handle = ptr::null();
+        let handle = ptr::null();
         GetModuleHandleExW(0 as libc::DWORD, ptr::null(), &handle as **libc::c_void);
         handle
     }
 
     pub fn check_for_errors_in<T>(f: &fn()->T) -> Result<T, ~str> {
         unsafe {
-            do task::atomically {
+            do atomically {
                 SetLastError(0);
 
                 let result = f();

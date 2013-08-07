@@ -17,7 +17,7 @@ use std::task;
 mod rustrt {
     use std::libc;
 
-    pub extern {
+    extern {
         pub fn rust_dbg_call(cb: *u8, data: libc::uintptr_t)
                              -> libc::uintptr_t;
     }
@@ -39,7 +39,7 @@ fn count(n: uint) -> uint {
 }
 
 pub fn main() {
-    for 100u.times {
+    do 100u.times {
         do task::spawn {
             assert_eq!(count(5u), 16u);
         };

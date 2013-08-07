@@ -10,11 +10,11 @@
 
 trait repeat<A> { fn get(&self) -> A; }
 
-impl<A:Copy> repeat<A> for @A {
+impl<A:Clone> repeat<A> for @A {
     fn get(&self) -> A { **self }
 }
 
-fn repeater<A:Copy>(v: @A) -> @repeat<A> {
+fn repeater<A:Clone>(v: @A) -> @repeat<A> {
     // Note: owned kind is not necessary as A appears in the trait type
     @v as @repeat<A> // No
 }
@@ -23,13 +23,13 @@ fn main() {
     // Error results because the type of is inferred to be
     // @repeat<&'blk int> where blk is the lifetime of the block below.
 
-    let y = { //~ ERROR reference is not valid
+    let y = { //~ ERROR lifetime of variable does not enclose its declaration
         let x: &'blk int = &3;
         repeater(@x)
     };
-    assert!(3 == *(y.get())); //~ ERROR dereference of reference outside its lifetime
-    //~^ ERROR reference is not valid outside of its lifetime
-    //~^^ ERROR reference is not valid outside of its lifetime
-    //~^^^ ERROR reference is not valid outside of its lifetime
+    assert!(3 == *(y.get()));
+    //~^ ERROR dereference of reference outside its lifetime
+    //~^^ ERROR automatically borrowed pointer is not valid at the time of borrow
+    //~^^^ ERROR lifetime of return value does not outlive the function call
     //~^^^^ ERROR cannot infer an appropriate lifetime
 }

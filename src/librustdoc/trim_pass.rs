@@ -28,19 +28,21 @@ mod test {
     use attr_pass;
     use doc;
     use extract;
+    use prune_hidden_pass;
     use trim_pass::mk_pass;
 
     fn mk_doc(source: ~str) -> doc::Doc {
-        do astsrv::from_str(copy source) |srv| {
+        do astsrv::from_str(source.clone()) |srv| {
             let doc = extract::from_srv(srv.clone(), ~"");
             let doc = (attr_pass::mk_pass().f)(srv.clone(), doc);
+            let doc = (prune_hidden_pass::mk_pass().f)(srv.clone(), doc);
             (mk_pass().f)(srv.clone(), doc)
         }
     }
 
     #[test]
     fn should_trim_text() {
-        use core::option::Some;
+        use std::option::Some;
 
         let doc = mk_doc(~"#[doc = \" desc \"] \
                                  mod m {

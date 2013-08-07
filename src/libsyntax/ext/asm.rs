@@ -12,9 +12,6 @@
  * Inline assembly support.
  */
 
-use core::prelude::*;
-
-use core::vec;
 use ast;
 use codemap::span;
 use ext::base;
@@ -44,7 +41,7 @@ pub fn expand_asm(cx: @ExtCtxt, sp: span, tts: &[ast::token_tree])
                -> base::MacResult {
     let p = parse::new_parser_from_tts(cx.parse_sess(),
                                        cx.cfg(),
-                                       vec::to_owned(tts));
+                                       tts.to_owned());
 
     let mut asm = @"";
     let mut outputs = ~[];
@@ -98,10 +95,10 @@ pub fn expand_asm(cx: @ExtCtxt, sp: span, tts: &[ast::token_tree])
 
                     let constraint = p.parse_str();
                     p.expect(&token::LPAREN);
-                    let in = p.parse_expr();
+                    let input = p.parse_expr();
                     p.expect(&token::RPAREN);
 
-                    inputs.push((constraint, in));
+                    inputs.push((constraint, input));
                 }
             }
             Clobbers => {

@@ -14,13 +14,14 @@ The `ToStr` trait for converting to strings
 
 */
 
+use option::{Some, None};
 use str::OwnedStr;
 use hashmap::HashMap;
 use hashmap::HashSet;
-use container::Map;
 use hash::Hash;
+use iterator::Iterator;
 use cmp::Eq;
-use old_iter::BaseIter;
+use vec::ImmutableVector;
 
 /// A generic trait for converting a value to a string
 pub trait ToStr {
@@ -50,11 +51,12 @@ impl<A:ToStr> ToStr for (A,) {
     }
 }
 
-impl<A:ToStr+Hash+Eq, B:ToStr+Hash+Eq> ToStr for HashMap<A, B> {
+impl<A:ToStr+Hash+Eq, B:ToStr> ToStr for HashMap<A, B> {
     #[inline]
     fn to_str(&self) -> ~str {
-        let mut (acc, first) = (~"{", true);
-        for self.each |key, value| {
+        let mut acc = ~"{";
+        let mut first = true;
+        foreach (key, value) in self.iter() {
             if first {
                 first = false;
             }
@@ -73,8 +75,9 @@ impl<A:ToStr+Hash+Eq, B:ToStr+Hash+Eq> ToStr for HashMap<A, B> {
 impl<A:ToStr+Hash+Eq> ToStr for HashSet<A> {
     #[inline]
     fn to_str(&self) -> ~str {
-        let mut (acc, first) = (~"{", true);
-        for self.each |element| {
+        let mut acc = ~"{";
+        let mut first = true;
+        foreach element in self.iter() {
             if first {
                 first = false;
             }
@@ -121,8 +124,9 @@ impl<A:ToStr,B:ToStr,C:ToStr> ToStr for (A, B, C) {
 impl<'self,A:ToStr> ToStr for &'self [A] {
     #[inline]
     fn to_str(&self) -> ~str {
-        let mut (acc, first) = (~"[", true);
-        for self.each |elt| {
+        let mut acc = ~"[";
+        let mut first = true;
+        foreach elt in self.iter() {
             if first {
                 first = false;
             }
@@ -139,8 +143,9 @@ impl<'self,A:ToStr> ToStr for &'self [A] {
 impl<A:ToStr> ToStr for ~[A] {
     #[inline]
     fn to_str(&self) -> ~str {
-        let mut (acc, first) = (~"[", true);
-        for self.each |elt| {
+        let mut acc = ~"[";
+        let mut first = true;
+        foreach elt in self.iter() {
             if first {
                 first = false;
             }
@@ -157,8 +162,9 @@ impl<A:ToStr> ToStr for ~[A] {
 impl<A:ToStr> ToStr for @[A] {
     #[inline]
     fn to_str(&self) -> ~str {
-        let mut (acc, first) = (~"[", true);
-        for self.each |elt| {
+        let mut acc = ~"[";
+        let mut first = true;
+        foreach elt in self.iter() {
             if first {
                 first = false;
             }
@@ -173,11 +179,12 @@ impl<A:ToStr> ToStr for @[A] {
 }
 
 #[cfg(test)]
-#[allow(non_implicitly_copyable_typarams)]
 mod tests {
     use hashmap::HashMap;
     use hashmap::HashSet;
-    use container::Set;
+    use container::{MutableSet, MutableMap};
+    use super::*;
+
     #[test]
     fn test_simple_types() {
         assert_eq!(1i.to_str(), ~"1");
@@ -208,17 +215,27 @@ mod tests {
                ~"[[], [1], [1, 1]]");
     }
 
+    struct StructWithToStrWithoutEqOrHash {
+        value: int
+    }
+
+    impl ToStr for StructWithToStrWithoutEqOrHash {
+        fn to_str(&self) -> ~str {
+            fmt!("s%d", self.value)
+        }
+    }
+
     #[test]
     fn test_hashmap() {
-        let mut table: HashMap<int, int> = HashMap::new();
-        let empty: HashMap<int, int> = HashMap::new();
+        let mut table: HashMap<int, StructWithToStrWithoutEqOrHash> = HashMap::new();
+        let empty: HashMap<int, StructWithToStrWithoutEqOrHash> = HashMap::new();
 
-        table.insert(3, 4);
-        table.insert(1, 2);
+        table.insert(3, StructWithToStrWithoutEqOrHash { value: 4 });
+        table.insert(1, StructWithToStrWithoutEqOrHash { value: 2 });
 
         let table_str = table.to_str();
 
-        assert!(table_str == ~"{1: 2, 3: 4}" || table_str == ~"{3: 4, 1: 2}");
+        assert!(table_str == ~"{1: s2, 3: s4}" || table_str == ~"{3: s4, 1: s2}");
         assert_eq!(empty.to_str(), ~"{}");
     }
 

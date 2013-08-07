@@ -8,7 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
 
 use metadata::encoder;
 use middle::ty::{ReSkolemized, ReVar};
@@ -31,9 +30,8 @@ use syntax::codemap::span;
 use syntax::parse::token;
 use syntax::print::pprust;
 use syntax::{ast, ast_util};
-
-use core::str;
-use core::vec;
+use syntax::opt_vec;
+use syntax::opt_vec::OptVec;
 
 /// Produces a string suitable for debugging output.
 pub trait Repr {
@@ -112,7 +110,7 @@ pub fn explain_region_and_span(cx: ctxt, region: ty::Region)
                                idx + 1),
           br_fresh(_) => fmt!("an anonymous lifetime defined on"),
           _ => fmt!("the lifetime %s as defined on",
-                    bound_region_to_str(cx, fr.bound_region))
+                    bound_region_ptr_to_str(cx, fr.bound_region))
         };
 
         match cx.items.find(&fr.scope_id) {
@@ -147,26 +145,27 @@ pub fn explain_region_and_span(cx: ctxt, region: ty::Region)
     }
 }
 
-pub fn bound_region_to_str(cx: ctxt, br: bound_region) -> ~str {
-    bound_region_to_str_space(cx, "&", br)
+pub fn bound_region_ptr_to_str(cx: ctxt, br: bound_region) -> ~str {
+    bound_region_to_str(cx, "&", true, br)
 }
 
-pub fn bound_region_to_str_space(cx: ctxt,
-                                 prefix: &str,
-                                 br: bound_region)
-                              -> ~str {
-    if cx.sess.verbose() { return fmt!("%s%? ", prefix, br); }
+pub fn bound_region_to_str(cx: ctxt,
+                           prefix: &str, space: bool,
+                           br: bound_region) -> ~str {
+    let space_str = if space { " " } else { "" };
+
+    if cx.sess.verbose() { return fmt!("%s%?%s", prefix, br, space_str); }
 
     match br {
-      br_named(id)         => fmt!("%s'%s ", prefix, cx.sess.str_of(id)),
-      br_self              => fmt!("%s'self ", prefix),
+      br_named(id)         => fmt!("%s'%s%s", prefix, cx.sess.str_of(id), space_str),
+      br_self              => fmt!("%s'self%s", prefix, space_str),
       br_anon(_)           => prefix.to_str(),
       br_fresh(_)          => prefix.to_str(),
-      br_cap_avoid(_, br)  => bound_region_to_str_space(cx, prefix, *br)
+      br_cap_avoid(_, br)  => bound_region_to_str(cx, prefix, space, *br)
     }
 }
 
-pub fn re_scope_id_to_str(cx: ctxt, node_id: ast::node_id) -> ~str {
+pub fn re_scope_id_to_str(cx: ctxt, node_id: ast::NodeId) -> ~str {
     match cx.items.find(&node_id) {
       Some(&ast_map::node_block(ref blk)) => {
         fmt!("<block at %s>",
@@ -208,13 +207,15 @@ pub fn re_scope_id_to_str(cx: ctxt, node_id: ast::node_id) -> ~str {
 // In general, if you are giving a region error message,
 // you should use `explain_region()` or, better yet,
 // `note_and_explain_region()`
-pub fn region_to_str(cx: ctxt, region: Region) -> ~str {
-    region_to_str_space(cx, "&", region)
+pub fn region_ptr_to_str(cx: ctxt, region: Region) -> ~str {
+    region_to_str(cx, "&", true, region)
 }
 
-pub fn region_to_str_space(cx: ctxt, prefix: &str, region: Region) -> ~str {
+pub fn region_to_str(cx: ctxt, prefix: &str, space: bool, region: Region) -> ~str {
+    let space_str = if space { " " } else { "" };
+
     if cx.sess.verbose() {
-        return fmt!("%s%? ", prefix, region);
+        return fmt!("%s%?%s", prefix, region, space_str);
     }
 
     // These printouts are concise.  They do not contain all the information
@@ -223,14 +224,14 @@ pub fn region_to_str_space(cx: ctxt, prefix: &str, region: Region) -> ~str {
     // `explain_region()` or `note_and_explain_region()`.
     match region {
         re_scope(_) => prefix.to_str(),
-        re_bound(br) => bound_region_to_str_space(cx, prefix, br),
-        re_free(ref fr) => bound_region_to_str_space(cx, prefix, fr.bound_region),
+        re_bound(br) => bound_region_to_str(cx, prefix, space, br),
+        re_free(ref fr) => bound_region_to_str(cx, prefix, space, fr.bound_region),
         re_infer(ReSkolemized(_, br)) => {
-            bound_region_to_str_space(cx, prefix, br)
+            bound_region_to_str(cx, prefix, space, br)
         }
         re_infer(ReVar(_)) => prefix.to_str(),
-        re_static => fmt!("%s'static ", prefix),
-        re_empty => fmt!("%s'<empty> ", prefix)
+        re_static => fmt!("%s'static%s", prefix, space_str),
+        re_empty => fmt!("%s'<empty>%s", prefix, space_str)
     }
 }
 
@@ -256,7 +257,7 @@ pub fn vstore_to_str(cx: ctxt, vs: ty::vstore) -> ~str {
       ty::vstore_fixed(n) => fmt!("%u", n),
       ty::vstore_uniq => ~"~",
       ty::vstore_box => ~"@",
-      ty::vstore_slice(r) => region_to_str_space(cx, "&", r)
+      ty::vstore_slice(r) => region_ptr_to_str(cx, r)
     }
 }
 
@@ -264,7 +265,7 @@ pub fn trait_store_to_str(cx: ctxt, s: ty::TraitStore) -> ~str {
     match s {
       ty::UniqTraitStore => ~"~",
       ty::BoxTraitStore => ~"@",
-      ty::RegionTraitStore(r) => region_to_str_space(cx, "&", r)
+      ty::RegionTraitStore(r) => region_ptr_to_str(cx, r)
     }
 }
 
@@ -340,7 +341,7 @@ pub fn ty_to_str(cx: ctxt, typ: t) -> ~str {
             (ast::OwnedSigil, ty::re_static) => {}
 
             (_, region) => {
-                s.push_str(region_to_str_space(cx, "", region));
+                s.push_str(region_to_str(cx, "", true, region));
             }
         }
 
@@ -361,6 +362,11 @@ pub fn ty_to_str(cx: ctxt, typ: t) -> ~str {
         };
 
         s.push_str("fn");
+
+        if !cty.bounds.is_empty() {
+            s.push_str(":");
+        }
+        s.push_str(cty.bounds.repr(cx));
 
         push_sig_to_str(cx, &mut s, &cty.sig);
 
@@ -392,7 +398,7 @@ pub fn ty_to_str(cx: ctxt, typ: t) -> ~str {
     }
 
     // if there is an id, print that instead of the structural type:
-    /*for ty::type_def_id(typ).each |def_id| {
+    /*foreach def_id in ty::type_def_id(typ).iter() {
         // note that this typedef cannot have type parameters
         return ast_map::path_to_str(ty::item_path(cx, *def_id),
                                     cx.sess.intr());
@@ -414,7 +420,7 @@ pub fn ty_to_str(cx: ctxt, typ: t) -> ~str {
       ty_uniq(ref tm) => ~"~" + mt_to_str(cx, tm),
       ty_ptr(ref tm) => ~"*" + mt_to_str(cx, tm),
       ty_rptr(r, ref tm) => {
-        region_to_str_space(cx, "&", r) + mt_to_str(cx, tm)
+        region_ptr_to_str(cx, r) + mt_to_str(cx, tm)
       }
       ty_unboxed_vec(ref tm) => { fmt!("unboxed_vec<%s>", mt_to_str(cx, tm)) }
       ty_type => ~"type",
@@ -431,55 +437,67 @@ pub fn ty_to_str(cx: ctxt, typ: t) -> ~str {
       ty_infer(infer_ty) => infer_ty.to_str(),
       ty_err => ~"[type error]",
       ty_param(param_ty {idx: id, def_id: did}) => {
-          if cx.sess.verbose() {
-              fmt!("'%s:%?",
-                   str::from_bytes([('a' as u8) + (id as u8)]),
-                   did)
-          } else {
-              fmt!("'%s",
-                   str::from_bytes([('a' as u8) + (id as u8)]))
-          }
+          let param_def = cx.ty_param_defs.find(&did.node);
+          let ident = match param_def {
+              Some(def) => {
+                  cx.sess.str_of(def.ident).to_owned()
+              }
+              None => {
+                  // This should not happen...
+                  fmt!("BUG[%?]", id)
+              }
+          };
+          if !cx.sess.verbose() { ident } else { fmt!("%s:%?", ident, did) }
       }
       ty_self(*) => ~"Self",
       ty_enum(did, ref substs) | ty_struct(did, ref substs) => {
         let path = ty::item_path(cx, did);
         let base = ast_map::path_to_str(path, cx.sess.intr());
-        parameterized(cx, base, substs.self_r, substs.tps)
+        parameterized(cx, base, &substs.regions, substs.tps)
       }
-      ty_trait(did, ref substs, s, mutbl) => {
+      ty_trait(did, ref substs, s, mutbl, ref bounds) => {
         let path = ty::item_path(cx, did);
         let base = ast_map::path_to_str(path, cx.sess.intr());
-        let ty = parameterized(cx, base, substs.self_r, substs.tps);
-        fmt!("%s%s%s", trait_store_to_str(cx, s), mutability_to_str(mutbl), ty)
+        let ty = parameterized(cx, base, &substs.regions, substs.tps);
+        let bound_sep = if bounds.is_empty() { "" } else { ":" };
+        let bound_str = bounds.repr(cx);
+        fmt!("%s%s%s%s%s", trait_store_to_str(cx, s), mutability_to_str(mutbl), ty,
+                           bound_sep, bound_str)
       }
       ty_evec(ref mt, vs) => {
         vstore_ty_to_str(cx, mt, vs)
       }
       ty_estr(vs) => fmt!("%s%s", vstore_to_str(cx, vs), "str"),
       ty_opaque_box => ~"@?",
-      ty_opaque_closure_ptr(ast::BorrowedSigil) => ~"closure&",
-      ty_opaque_closure_ptr(ast::ManagedSigil) => ~"closure@",
-      ty_opaque_closure_ptr(ast::OwnedSigil) => ~"closure~",
+      ty_opaque_closure_ptr(ast::BorrowedSigil) => ~"&closure",
+      ty_opaque_closure_ptr(ast::ManagedSigil) => ~"@closure",
+      ty_opaque_closure_ptr(ast::OwnedSigil) => ~"~closure",
     }
 }
 
 pub fn parameterized(cx: ctxt,
                      base: &str,
-                     self_r: Option<ty::Region>,
+                     regions: &ty::RegionSubsts,
                      tps: &[ty::t]) -> ~str {
 
-    let r_str = match self_r {
-      None => ~"",
-      Some(r) => {
-        fmt!("/%s", region_to_str(cx, r))
-      }
-    };
+    let mut strs = ~[];
+    match *regions {
+        ty::ErasedRegions => { }
+        ty::NonerasedRegions(ref regions) => {
+            foreach &r in regions.iter() {
+                strs.push(region_to_str(cx, "", false, r))
+            }
+        }
+    }
 
-    if tps.len() > 0u {
-        let strs = vec::map(tps, |t| ty_to_str(cx, *t));
-        fmt!("%s%s<%s>", base, r_str, strs.connect(","))
+    foreach t in tps.iter() {
+        strs.push(ty_to_str(cx, *t))
+    }
+
+    if strs.len() > 0u {
+        fmt!("%s<%s>", base, strs.connect(","))
     } else {
-        fmt!("%s%s", base, r_str)
+        fmt!("%s", base)
     }
 }
 
@@ -498,9 +516,6 @@ impl<T:Repr> Repr for Option<T> {
     }
 }
 
-/*
-Annoyingly, these conflict with @ast::expr.
-
 impl<T:Repr> Repr for @T {
     fn repr(&self, tcx: ctxt) -> ~str {
         (&**self).repr(tcx)
@@ -512,7 +527,6 @@ impl<T:Repr> Repr for ~T {
         (&**self).repr(tcx)
     }
 }
-*/
 
 fn repr_vec<T:Repr>(tcx: ctxt, v: &[T]) -> ~str {
     fmt!("[%s]", v.map(|t| t.repr(tcx)).connect(","))
@@ -524,11 +538,20 @@ impl<'self, T:Repr> Repr for &'self [T] {
     }
 }
 
-// This is necessary to handle types like Option<@~[T]>, for which
-// autoderef cannot convert the &[T] handler
-impl<T:Repr> Repr for @~[T] {
+impl<T:Repr> Repr for OptVec<T> {
     fn repr(&self, tcx: ctxt) -> ~str {
-        repr_vec(tcx, **self)
+        match *self {
+            opt_vec::Empty => ~"[]",
+            opt_vec::Vec(ref v) => repr_vec(tcx, *v)
+        }
+    }
+}
+
+// This is necessary to handle types like Option<~[T]>, for which
+// autoderef cannot convert the &[T] handler
+impl<T:Repr> Repr for ~[T] {
+    fn repr(&self, tcx: ctxt) -> ~str {
+        repr_vec(tcx, *self)
     }
 }
 
@@ -547,10 +570,19 @@ impl Repr for ty::t {
 
 impl Repr for ty::substs {
     fn repr(&self, tcx: ctxt) -> ~str {
-        fmt!("substs(self_r=%s, self_ty=%s, tps=%s)",
-             self.self_r.repr(tcx),
+        fmt!("substs(regions=%s, self_ty=%s, tps=%s)",
+             self.regions.repr(tcx),
              self.self_ty.repr(tcx),
              self.tps.repr(tcx))
+    }
+}
+
+impl Repr for ty::RegionSubsts {
+    fn repr(&self, tcx: ctxt) -> ~str {
+        match *self {
+            ty::ErasedRegions => ~"erased",
+            ty::NonerasedRegions(ref regions) => regions.repr(tcx)
+        }
     }
 }
 
@@ -559,14 +591,13 @@ impl Repr for ty::ParamBounds {
         let mut res = ~[];
         for self.builtin_bounds.each |b| {
             res.push(match b {
-                ty::BoundCopy => ~"Copy",
                 ty::BoundStatic => ~"'static",
-                ty::BoundOwned => ~"Owned",
-                ty::BoundConst => ~"Const",
+                ty::BoundSend => ~"Send",
+                ty::BoundFreeze => ~"Freeze",
                 ty::BoundSized => ~"Sized",
             });
         }
-        for self.trait_bounds.each |t| {
+        foreach t in self.trait_bounds.iter() {
             res.push(t.repr(tcx));
         }
         res.connect("+")
@@ -579,25 +610,31 @@ impl Repr for ty::TraitRef {
     }
 }
 
-impl Repr for @ast::expr {
+impl Repr for ast::expr {
     fn repr(&self, tcx: ctxt) -> ~str {
         fmt!("expr(%d: %s)",
              self.id,
-             pprust::expr_to_str(*self, tcx.sess.intr()))
+             pprust::expr_to_str(self, tcx.sess.intr()))
     }
 }
 
-impl Repr for @ast::pat {
+impl Repr for ast::pat {
     fn repr(&self, tcx: ctxt) -> ~str {
         fmt!("pat(%d: %s)",
              self.id,
-             pprust::pat_to_str(*self, tcx.sess.intr()))
+             pprust::pat_to_str(self, tcx.sess.intr()))
+    }
+}
+
+impl Repr for ty::bound_region {
+    fn repr(&self, tcx: ctxt) -> ~str {
+        bound_region_ptr_to_str(tcx, *self)
     }
 }
 
 impl Repr for ty::Region {
     fn repr(&self, tcx: ctxt) -> ~str {
-        region_to_str(tcx, *self)
+        region_to_str(tcx, "", false, *self)
     }
 }
 
@@ -606,7 +643,7 @@ impl Repr for ast::def_id {
         // Unfortunately, there seems to be no way to attempt to print
         // a path for a def-id, so I'll just make a best effort for now
         // and otherwise fallback to just printing the crate/node pair
-        if self.crate == ast::local_crate {
+        if self.crate == ast::LOCAL_CRATE {
             match tcx.items.find(&self.node) {
                 Some(&ast_map::node_item(*)) |
                 Some(&ast_map::node_foreign_item(*)) |
@@ -700,10 +737,6 @@ impl Repr for typeck::method_map_entry {
 impl Repr for typeck::method_origin {
     fn repr(&self, tcx: ctxt) -> ~str {
         match self {
-            &typeck::method_super(def_id, n) => {
-                fmt!("method_super(%s, %?)",
-                     def_id.repr(tcx), n)
-            }
             &typeck::method_static(def_id) => {
                 fmt!("method_static(%s)", def_id.repr(tcx))
             }
@@ -712,9 +745,6 @@ impl Repr for typeck::method_origin {
             }
             &typeck::method_trait(def_id, n) => {
                 fmt!("method_trait(%s, %?)", def_id.repr(tcx), n)
-            }
-            &typeck::method_self(def_id, n) => {
-                fmt!("method_self(%s, %?)", def_id.repr(tcx), n)
             }
         }
     }
@@ -727,6 +757,12 @@ impl Repr for typeck::method_param {
              self.method_num,
              self.param_num,
              self.bound_num)
+    }
+}
+
+impl Repr for ty::RegionVid {
+    fn repr(&self, _tcx: ctxt) -> ~str {
+        fmt!("%?", *self)
     }
 }
 
@@ -764,10 +800,9 @@ impl Repr for ty::BuiltinBound {
 impl UserString for ty::BuiltinBound {
     fn user_string(&self, _tcx: ctxt) -> ~str {
         match *self {
-            ty::BoundCopy => ~"Copy",
             ty::BoundStatic => ~"'static",
-            ty::BoundOwned => ~"Owned",
-            ty::BoundConst => ~"Const",
+            ty::BoundSend => ~"Send",
+            ty::BoundFreeze => ~"Freeze",
             ty::BoundSized => ~"Sized",
         }
     }
@@ -776,6 +811,19 @@ impl UserString for ty::BuiltinBound {
 impl Repr for ty::BuiltinBounds {
     fn repr(&self, tcx: ctxt) -> ~str {
         self.user_string(tcx)
+    }
+}
+
+impl Repr for span {
+    fn repr(&self, tcx: ctxt) -> ~str {
+        tcx.sess.codemap.span_to_str(*self)
+    }
+}
+
+impl<A:UserString> UserString for @A {
+    fn user_string(&self, tcx: ctxt) -> ~str {
+        let this: &A = &**self;
+        this.user_string(tcx)
     }
 }
 
@@ -796,12 +844,11 @@ impl UserString for ty::TraitRef {
         let path = ty::item_path(tcx, self.def_id);
         let base = ast_map::path_to_str(path, tcx.sess.intr());
         if tcx.sess.verbose() && self.substs.self_ty.is_some() {
-            let mut all_tps = copy self.substs.tps;
-            for self.substs.self_ty.iter().advance |&t| { all_tps.push(t); }
-            parameterized(tcx, base, self.substs.self_r, all_tps)
+            let mut all_tps = self.substs.tps.clone();
+            foreach &t in self.substs.self_ty.iter() { all_tps.push(t); }
+            parameterized(tcx, base, &self.substs.regions, all_tps)
         } else {
-            parameterized(tcx, base, self.substs.self_r,
-                          self.substs.tps)
+            parameterized(tcx, base, &self.substs.regions, self.substs.tps)
         }
     }
 }

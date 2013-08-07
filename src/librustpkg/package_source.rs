@@ -10,15 +10,14 @@
 
 use target::*;
 use package_id::PkgId;
-use core::path::Path;
-use core::option::*;
-use core::{os, run, str, vec};
+use std::path::Path;
+use std::{os, str};
 use context::*;
 use crate::Crate;
 use messages::*;
+use source_control::{git_clone, git_clone_general};
 use path_util::pkgid_src_in_workspace;
 use util::compile_crate;
-use version::{ExactRevision, SemanticVersion, NoVersion};
 
 // An enumeration of the unpacked source of a package workspace.
 // This contains a list of files found in the source workspace.
@@ -41,9 +40,9 @@ impl PkgSrc {
     pub fn new(src_dir: &Path, dst_dir: &Path,
                   id: &PkgId) -> PkgSrc {
         PkgSrc {
-            root: copy *src_dir,
-            dst_dir: copy *dst_dir,
-            id: copy *id,
+            root: (*src_dir).clone(),
+            dst_dir: (*dst_dir).clone(),
+            id: (*id).clone(),
             libs: ~[],
             mains: ~[],
             tests: ~[],
@@ -60,26 +59,27 @@ impl PkgSrc {
         let dir;
         let dirs = pkgid_src_in_workspace(&self.id, &self.root);
         debug!("Checking dirs: %?", dirs);
-        let path = dirs.find(|d| os::path_exists(d));
+        let path = dirs.iter().find_(|&d| os::path_exists(d));
         match path {
-            Some(d) => dir = d,
+            Some(d) => dir = (*d).clone(),
             None => dir = match self.fetch_git() {
-                None => cond.raise((copy self.id, ~"supplied path for package dir does not \
+                None => cond.raise((self.id.clone(), ~"supplied path for package dir does not \
                                       exist, and couldn't interpret it as a URL fragment")),
                 Some(d) => d
             }
         }
         if !os::path_is_dir(&dir) {
-            cond.raise((copy self.id, ~"supplied path for package dir is a \
+            cond.raise((self.id.clone(), ~"supplied path for package dir is a \
                                         non-directory"));
         }
 
         dir
     }
 
-    /// Try interpreting self's package id as a remote package, and try
+    /// Try interpreting self's package id as a git repository, and try
     /// fetching it and caching it in a local directory. Return the cached directory
-    /// if this was successful, None otherwise
+    /// if this was successful, None otherwise. Similarly, if the package id
+    /// refers to a git repo on the local version, also check it out.
     /// (right now we only support git)
     pub fn fetch_git(&self) -> Option<Path> {
 
@@ -88,23 +88,26 @@ impl PkgSrc {
         // Git can't clone into a non-empty directory
         os::remove_dir_recursive(&local);
 
+        debug!("Checking whether %s exists locally. Cwd = %s, does it? %?",
+               self.id.local_path.to_str(),
+               os::getcwd().to_str(),
+               os::path_exists(&*self.id.local_path));
+
+        if os::path_exists(&*self.id.local_path) {
+            debug!("%s exists locally! Cloning it into %s",
+                   self.id.local_path.to_str(), local.to_str());
+            git_clone(&*self.id.local_path, &local, &self.id.version);
+            return Some(local);
+        }
+
         let url = fmt!("https://%s", self.id.remote_path.to_str());
-        let branch_args = match self.id.version {
-                      NoVersion => ~[],
-                      ExactRevision(ref s) => ~[~"--branch", copy *s],
-                      SemanticVersion(ref s) => ~[~"--branch", s.to_str()]
-        };
-
-
-        note(fmt!("Fetching package: git clone %s %s %?", url, local.to_str(), branch_args));
-
-        if run::process_output("git",
-                               ~[~"clone", copy url, local.to_str()] + branch_args).status != 0 {
-            note(fmt!("fetching %s failed: can't clone repository", url));
-            None
+        note(fmt!("Fetching package: git clone %s %s [version=%s]",
+                  url, local.to_str(), self.id.version.to_str()));
+        if git_clone_general(url, &local, &self.id.version) {
+            Some(local)
         }
         else {
-            Some(local)
+            None
         }
     }
 
@@ -132,7 +135,7 @@ impl PkgSrc {
             return true;
         }
         else {
-            for self_id.iter().advance |pth| {
+            foreach pth in self_id.iter() {
                 if pth.starts_with("rust_") // because p is already normalized
                     && match p.filestem() {
                            Some(s) => str::eq_slice(s, pth.slice(5, pth.len())),
@@ -146,8 +149,7 @@ impl PkgSrc {
     fn push_crate(cs: &mut ~[Crate], prefix: uint, p: &Path) {
         assert!(p.components.len() > prefix);
         let mut sub = Path("");
-        for vec::slice(p.components, prefix,
-                       p.components.len()).each |c| {
+        foreach c in p.components.slice(prefix, p.components.len()).iter() {
             sub = sub.push(*c);
         }
         debug!("found crate %s", sub.to_str());
@@ -187,7 +189,7 @@ impl PkgSrc {
             note("Couldn't infer any crates to build.\n\
                          Try naming a crate `main.rs`, `lib.rs`, \
                          `test.rs`, or `bench.rs`.");
-            cond.raise(copy self.id);
+            cond.raise(self.id.clone());
         }
 
         debug!("found %u libs, %u mains, %u tests, %u benchs",
@@ -204,7 +206,7 @@ impl PkgSrc {
                     crates: &[Crate],
                     cfgs: &[~str],
                     what: OutputType) {
-        for crates.each |&crate| {
+        foreach crate in crates.iter() {
             let path = &src_dir.push_rel(&crate.file).normalize();
             note(fmt!("build_crates: compiling %s", path.to_str()));
             note(fmt!("build_crates: destination dir is %s", dst_dir.to_str()));

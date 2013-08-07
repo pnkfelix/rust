@@ -11,29 +11,59 @@
 //! Unsafe pointer utility functions
 
 use cast;
+use clone::Clone;
 use option::{Option, Some, None};
+#[cfg(stage0)]
 use sys;
 use unstable::intrinsics;
+use util::swap;
+
+#[cfg(not(test))] use ops::{Add,Sub};
+#[cfg(not(test))] use num::Int;
 
 #[cfg(not(test))] use cmp::{Eq, Ord};
 use uint;
 
 /// Calculate the offset from a pointer
 #[inline]
-pub fn offset<T>(ptr: *T, count: uint) -> *T {
-    (ptr as uint + count * sys::size_of::<T>()) as *T
+#[cfg(stage0)]
+pub fn offset<T>(ptr: *T, count: int) -> *T {
+    (ptr as uint + (count as uint) * sys::size_of::<T>()) as *T
 }
 
 /// Calculate the offset from a const pointer
 #[inline]
-pub fn const_offset<T>(ptr: *const T, count: uint) -> *const T {
-    (ptr as uint + count * sys::size_of::<T>()) as *T
+#[cfg(stage0)]
+pub fn const_offset<T>(ptr: *const T, count: int) -> *const T {
+    (ptr as uint + (count as uint) * sys::size_of::<T>()) as *T
 }
 
 /// Calculate the offset from a mut pointer
 #[inline]
-pub fn mut_offset<T>(ptr: *mut T, count: uint) -> *mut T {
-    (ptr as uint + count * sys::size_of::<T>()) as *mut T
+#[cfg(stage0)]
+pub fn mut_offset<T>(ptr: *mut T, count: int) -> *mut T {
+    (ptr as uint + (count as uint) * sys::size_of::<T>()) as *mut T
+}
+
+/// Calculate the offset from a pointer
+#[inline]
+#[cfg(not(stage0))]
+pub fn offset<T>(ptr: *T, count: int) -> *T {
+    unsafe { intrinsics::offset(ptr, count) }
+}
+
+/// Calculate the offset from a const pointer
+#[inline]
+#[cfg(not(stage0))]
+pub fn const_offset<T>(ptr: *const T, count: int) -> *const T {
+    unsafe { intrinsics::offset(ptr as *T, count) }
+}
+
+/// Calculate the offset from a mut pointer
+#[inline]
+#[cfg(not(stage0))]
+pub fn mut_offset<T>(ptr: *mut T, count: int) -> *mut T {
+    unsafe { intrinsics::offset(ptr as *T, count) as *mut T }
 }
 
 /// Return the offset of the first null pointer in `buf`.
@@ -42,12 +72,18 @@ pub unsafe fn buf_len<T>(buf: **T) -> uint {
     position(buf, |i| *i == null())
 }
 
+impl<T> Clone for *T {
+    fn clone(&self) -> *T {
+        *self
+    }
+}
+
 /// Return the first offset `i` such that `f(buf[i]) == true`.
 #[inline]
 pub unsafe fn position<T>(buf: *T, f: &fn(&T) -> bool) -> uint {
     let mut i = 0;
     loop {
-        if f(&(*offset(buf, i))) { return i; }
+        if f(&(*offset(buf, i as int))) { return i; }
         else { i += 1; }
     }
 }
@@ -75,11 +111,9 @@ pub fn is_not_null<T>(ptr: *const T) -> bool { !is_null(ptr) }
  * and destination may overlap.
  */
 #[inline]
-#[cfg(target_word_size = "32", stage0)]
+#[cfg(target_word_size = "32")]
 pub unsafe fn copy_memory<T>(dst: *mut T, src: *const T, count: uint) {
-    use unstable::intrinsics::memmove32;
-    let n = count * sys::size_of::<T>();
-    memmove32(dst as *mut u8, src as *u8, n as u32);
+    intrinsics::memmove32(dst, src as *T, count as u32);
 }
 
 /**
@@ -89,37 +123,9 @@ pub unsafe fn copy_memory<T>(dst: *mut T, src: *const T, count: uint) {
  * and destination may overlap.
  */
 #[inline]
-#[cfg(target_word_size = "32", not(stage0))]
+#[cfg(target_word_size = "64")]
 pub unsafe fn copy_memory<T>(dst: *mut T, src: *const T, count: uint) {
-    use unstable::intrinsics::memmove32;
-    memmove32(dst, src as *T, count as u32);
-}
-
-/**
- * Copies data from one location to another.
- *
- * Copies `count` elements (not bytes) from `src` to `dst`. The source
- * and destination may overlap.
- */
-#[inline]
-#[cfg(target_word_size = "64", stage0)]
-pub unsafe fn copy_memory<T>(dst: *mut T, src: *const T, count: uint) {
-    use unstable::intrinsics::memmove64;
-    let n = count * sys::size_of::<T>();
-    memmove64(dst as *mut u8, src as *u8, n as u64);
-}
-
-/**
- * Copies data from one location to another.
- *
- * Copies `count` elements (not bytes) from `src` to `dst`. The source
- * and destination may overlap.
- */
-#[inline]
-#[cfg(target_word_size = "64", not(stage0))]
-pub unsafe fn copy_memory<T>(dst: *mut T, src: *const T, count: uint) {
-    use unstable::intrinsics::memmove64;
-    memmove64(dst, src as *T, count as u64);
+    intrinsics::memmove64(dst, src as *T, count as u64);
 }
 
 /**
@@ -129,11 +135,9 @@ pub unsafe fn copy_memory<T>(dst: *mut T, src: *const T, count: uint) {
  * and destination may *not* overlap.
  */
 #[inline]
-#[cfg(target_word_size = "32", stage0)]
+#[cfg(target_word_size = "32")]
 pub unsafe fn copy_nonoverlapping_memory<T>(dst: *mut T, src: *const T, count: uint) {
-    use unstable::intrinsics::memmove32;
-    let n = count * sys::size_of::<T>();
-    memmove32(dst as *mut u8, src as *u8, n as u32);
+    intrinsics::memcpy32(dst, src as *T, count as u32);
 }
 
 /**
@@ -143,37 +147,9 @@ pub unsafe fn copy_nonoverlapping_memory<T>(dst: *mut T, src: *const T, count: u
  * and destination may *not* overlap.
  */
 #[inline]
-#[cfg(target_word_size = "32", not(stage0))]
+#[cfg(target_word_size = "64")]
 pub unsafe fn copy_nonoverlapping_memory<T>(dst: *mut T, src: *const T, count: uint) {
-    use unstable::intrinsics::memcpy32;
-    memcpy32(dst, src as *T, count as u32);
-}
-
-/**
- * Copies data from one location to another.
- *
- * Copies `count` elements (not bytes) from `src` to `dst`. The source
- * and destination may *not* overlap.
- */
-#[inline]
-#[cfg(target_word_size = "64", stage0)]
-pub unsafe fn copy_nonoverlapping_memory<T>(dst: *mut T, src: *const T, count: uint) {
-    use unstable::intrinsics::memmove64;
-    let n = count * sys::size_of::<T>();
-    memmove64(dst as *mut u8, src as *u8, n as u64);
-}
-
-/**
- * Copies data from one location to another.
- *
- * Copies `count` elements (not bytes) from `src` to `dst`. The source
- * and destination may *not* overlap.
- */
-#[inline]
-#[cfg(target_word_size = "64", not(stage0))]
-pub unsafe fn copy_nonoverlapping_memory<T>(dst: *mut T, src: *const T, count: uint) {
-    use unstable::intrinsics::memcpy64;
-    memcpy64(dst, src as *T, count as u64);
+    intrinsics::memcpy64(dst, src as *T, count as u64);
 }
 
 /**
@@ -181,10 +157,9 @@ pub unsafe fn copy_nonoverlapping_memory<T>(dst: *mut T, src: *const T, count: u
  * bytes of memory starting at `dst` to `c`.
  */
 #[inline]
-#[cfg(target_word_size = "32", not(stage0))]
+#[cfg(target_word_size = "32")]
 pub unsafe fn set_memory<T>(dst: *mut T, c: u8, count: uint) {
-    use unstable::intrinsics::memset32;
-    memset32(dst, c, count as u32);
+    intrinsics::memset32(dst, c, count as u32);
 }
 
 /**
@@ -192,10 +167,17 @@ pub unsafe fn set_memory<T>(dst: *mut T, c: u8, count: uint) {
  * bytes of memory starting at `dst` to `c`.
  */
 #[inline]
-#[cfg(target_word_size = "64", not(stage0))]
+#[cfg(target_word_size = "64")]
 pub unsafe fn set_memory<T>(dst: *mut T, c: u8, count: uint) {
-    use unstable::intrinsics::memset64;
-    memset64(dst, c, count as u64);
+    intrinsics::memset64(dst, c, count as u64);
+}
+
+/**
+ * Zeroes out `count * size_of::<T>` bytes of memory at `dst`
+ */
+#[inline]
+pub unsafe fn zero_memory<T>(dst: *mut T, count: uint) {
+    set_memory(dst, 0, count);
 }
 
 /**
@@ -209,9 +191,9 @@ pub unsafe fn swap_ptr<T>(x: *mut T, y: *mut T) {
     let t: *mut T = &mut tmp;
 
     // Perform the swap
-    copy_memory(t, x, 1);
-    copy_memory(x, y, 1);
-    copy_memory(y, t, 1);
+    copy_nonoverlapping_memory(t, x, 1);
+    copy_memory(x, y, 1); // `x` and `y` may overlap
+    copy_nonoverlapping_memory(y, t, 1);
 
     // y and t now point to the same thing, but we need to completely forget `tmp`
     // because it's no longer relevant.
@@ -224,8 +206,33 @@ pub unsafe fn swap_ptr<T>(x: *mut T, y: *mut T) {
  */
 #[inline]
 pub unsafe fn replace_ptr<T>(dest: *mut T, mut src: T) -> T {
-    swap_ptr(dest, &mut src);
+    swap(cast::transmute(dest), &mut src); // cannot overlap
     src
+}
+
+/**
+ * Reads the value from `*src` and returns it. Does not copy `*src`.
+ */
+#[inline(always)]
+pub unsafe fn read_ptr<T>(src: *mut T) -> T {
+    let mut tmp: T = intrinsics::uninit();
+    copy_nonoverlapping_memory(&mut tmp, src, 1);
+    tmp
+}
+
+/**
+ * Reads the value from `*src` and nulls it out.
+ * This currently prevents destructors from executing.
+ */
+#[inline(always)]
+pub unsafe fn read_and_zero_ptr<T>(dest: *mut T) -> T {
+    // Copy the data out from `dest`:
+    let tmp = read_ptr(dest);
+
+    // Now zero out `dest`:
+    zero_memory(dest, 1);
+
+    tmp
 }
 
 /// Transform a region pointer - &T - to an unsafe pointer - *T.
@@ -260,7 +267,7 @@ pub unsafe fn array_each_with_len<T>(arr: **T, len: uint, cb: &fn(*T)) {
     }
     //let start_ptr = *arr;
     uint::iterate(0, len, |e| {
-        let n = offset(arr, e);
+        let n = offset(arr, e as int);
         cb(*n);
         true
     });
@@ -288,21 +295,21 @@ pub unsafe fn array_each<T>(arr: **T, cb: &fn(*T)) {
 
 #[allow(missing_doc)]
 pub trait RawPtr<T> {
-    fn is_null(&const self) -> bool;
-    fn is_not_null(&const self) -> bool;
-    unsafe fn to_option(&const self) -> Option<&T>;
-    fn offset(&self, count: uint) -> Self;
+    fn is_null(&self) -> bool;
+    fn is_not_null(&self) -> bool;
+    unsafe fn to_option(&self) -> Option<&T>;
+    fn offset(&self, count: int) -> Self;
 }
 
 /// Extension methods for immutable pointers
 impl<T> RawPtr<T> for *T {
     /// Returns true if the pointer is equal to the null pointer.
     #[inline]
-    fn is_null(&const self) -> bool { is_null(*self) }
+    fn is_null(&self) -> bool { is_null(*self) }
 
     /// Returns true if the pointer is not equal to the null pointer.
     #[inline]
-    fn is_not_null(&const self) -> bool { is_not_null(*self) }
+    fn is_not_null(&self) -> bool { is_not_null(*self) }
 
     ///
     /// Returns `None` if the pointer is null, or else returns the value wrapped
@@ -315,7 +322,7 @@ impl<T> RawPtr<T> for *T {
     /// be pointing to invalid memory.
     ///
     #[inline]
-    unsafe fn to_option(&const self) -> Option<&T> {
+    unsafe fn to_option(&self) -> Option<&T> {
         if self.is_null() { None } else {
             Some(cast::transmute(*self))
         }
@@ -323,18 +330,18 @@ impl<T> RawPtr<T> for *T {
 
     /// Calculates the offset from a pointer.
     #[inline]
-    fn offset(&self, count: uint) -> *T { offset(*self, count) }
+    fn offset(&self, count: int) -> *T { offset(*self, count) }
 }
 
 /// Extension methods for mutable pointers
 impl<T> RawPtr<T> for *mut T {
     /// Returns true if the pointer is equal to the null pointer.
     #[inline]
-    fn is_null(&const self) -> bool { is_null(*self) }
+    fn is_null(&self) -> bool { is_null(*self) }
 
     /// Returns true if the pointer is not equal to the null pointer.
     #[inline]
-    fn is_not_null(&const self) -> bool { is_not_null(*self) }
+    fn is_not_null(&self) -> bool { is_not_null(*self) }
 
     ///
     /// Returns `None` if the pointer is null, or else returns the value wrapped
@@ -347,7 +354,7 @@ impl<T> RawPtr<T> for *mut T {
     /// be pointing to invalid memory.
     ///
     #[inline]
-    unsafe fn to_option(&const self) -> Option<&T> {
+    unsafe fn to_option(&self) -> Option<&T> {
         if self.is_null() { None } else {
             Some(cast::transmute(*self))
         }
@@ -355,7 +362,7 @@ impl<T> RawPtr<T> for *mut T {
 
     /// Calculates the offset from a mutable pointer.
     #[inline]
-    fn offset(&self, count: uint) -> *mut T { mut_offset(*self, count) }
+    fn offset(&self, count: int) -> *mut T { mut_offset(*self, count) }
 }
 
 // Equality for pointers
@@ -387,6 +394,46 @@ impl<T> Ord for *const T {
     #[inline]
     fn gt(&self, other: &*const T) -> bool {
         (*self as uint) > (*other as uint)
+    }
+}
+
+#[cfg(not(test))]
+impl<T, I: Int> Add<I, *T> for *T {
+    /// Add an integer value to a pointer to get an offset pointer.
+    /// Is calculated according to the size of the type pointed to.
+    #[inline]
+    pub fn add(&self, rhs: &I) -> *T {
+        self.offset(rhs.to_int() as int)
+    }
+}
+
+#[cfg(not(test))]
+impl<T, I: Int> Sub<I, *T> for *T {
+    /// Subtract an integer value from a pointer to get an offset pointer.
+    /// Is calculated according to the size of the type pointed to.
+    #[inline]
+    pub fn sub(&self, rhs: &I) -> *T {
+        self.offset(-rhs.to_int() as int)
+    }
+}
+
+#[cfg(not(test))]
+impl<T, I: Int> Add<I, *mut T> for *mut T {
+    /// Add an integer value to a pointer to get an offset pointer.
+    /// Is calculated according to the size of the type pointed to.
+    #[inline]
+    pub fn add(&self, rhs: &I) -> *mut T {
+        self.offset(rhs.to_int() as int)
+    }
+}
+
+#[cfg(not(test))]
+impl<T, I: Int> Sub<I, *mut T> for *mut T {
+    /// Subtract an integer value from a pointer to get an offset pointer.
+    /// Is calculated according to the size of the type pointed to.
+    #[inline]
+    pub fn sub(&self, rhs: &I) -> *mut T {
+        self.offset(-rhs.to_int() as int)
     }
 }
 
@@ -423,14 +470,14 @@ pub mod ptr_tests {
             let v0 = ~[32000u16, 32001u16, 32002u16];
             let mut v1 = ~[0u16, 0u16, 0u16];
 
-            copy_memory(mut_offset(vec::raw::to_mut_ptr(v1), 1u),
-                        offset(vec::raw::to_ptr(v0), 1u), 1u);
+            copy_memory(mut_offset(vec::raw::to_mut_ptr(v1), 1),
+                        offset(vec::raw::to_ptr(v0), 1), 1);
             assert!((v1[0] == 0u16 && v1[1] == 32001u16 && v1[2] == 0u16));
             copy_memory(vec::raw::to_mut_ptr(v1),
-                        offset(vec::raw::to_ptr(v0), 2u), 1u);
+                        offset(vec::raw::to_ptr(v0), 2), 1);
             assert!((v1[0] == 32002u16 && v1[1] == 32001u16 &&
                      v1[2] == 0u16));
-            copy_memory(mut_offset(vec::raw::to_mut_ptr(v1), 2u),
+            copy_memory(mut_offset(vec::raw::to_mut_ptr(v1), 2),
                         vec::raw::to_ptr(v0), 1u);
             assert!((v1[0] == 32002u16 && v1[1] == 32001u16 &&
                      v1[2] == 32000u16));
@@ -439,17 +486,13 @@ pub mod ptr_tests {
 
     #[test]
     fn test_position() {
-        use str::as_c_str;
         use libc::c_char;
 
         let s = ~"hello";
         unsafe {
-            assert!(2u == as_c_str(s, |p| position(p,
-                                                   |c| *c == 'l' as c_char)));
-            assert!(4u == as_c_str(s, |p| position(p,
-                                                   |c| *c == 'o' as c_char)));
-            assert!(5u == as_c_str(s, |p| position(p,
-                                                   |c| *c == 0 as c_char)));
+            assert!(2u == s.as_c_str(|p| position(p, |c| *c == 'l' as c_char)));
+            assert!(4u == s.as_c_str(|p| position(p, |c| *c == 'o' as c_char)));
+            assert!(5u == s.as_c_str(|p| position(p, |c| *c == 0 as c_char)));
         }
     }
 
@@ -458,11 +501,11 @@ pub mod ptr_tests {
         let s0 = ~"hello";
         let s1 = ~"there";
         let s2 = ~"thing";
-        do str::as_c_str(s0) |p0| {
-            do str::as_c_str(s1) |p1| {
-                do str::as_c_str(s2) |p2| {
+        do s0.as_c_str |p0| {
+            do s1.as_c_str |p1| {
+                do s2.as_c_str |p2| {
                     let v = ~[p0, p1, p2, null()];
-                    do vec::as_imm_buf(v) |vp, len| {
+                    do v.as_imm_buf |vp, len| {
                         assert_eq!(unsafe { buf_len(vp) }, 3u);
                         assert_eq!(len, 4u);
                     }
@@ -477,7 +520,7 @@ pub mod ptr_tests {
         assert!(p.is_null());
         assert!(!p.is_not_null());
 
-        let q = offset(p, 1u);
+        let q = offset(p, 1);
         assert!(!q.is_null());
         assert!(q.is_not_null());
 
@@ -485,7 +528,7 @@ pub mod ptr_tests {
         assert!(mp.is_null());
         assert!(!mp.is_not_null());
 
-        let mq = mp.offset(1u);
+        let mq = mp.offset(1);
         assert!(!mq.is_null());
         assert!(mq.is_not_null());
     }
@@ -504,6 +547,60 @@ pub mod ptr_tests {
 
             let q: *mut int = &mut 2;
             assert_eq!(q.to_option().unwrap(), &2);
+        }
+    }
+
+    #[test]
+    fn test_ptr_addition() {
+        use vec::raw::*;
+
+        unsafe {
+            let xs = ~[5, ..16];
+            let mut ptr = to_ptr(xs);
+            let end = ptr + 16;
+
+            while ptr < end {
+                assert_eq!(*ptr, 5);
+                ptr = ptr + 1u;
+            }
+
+            let mut xs_mut = xs.clone();
+            let mut m_ptr = to_mut_ptr(xs_mut);
+            let m_end = m_ptr + 16i16;
+
+            while m_ptr < m_end {
+                *m_ptr += 5;
+                m_ptr = m_ptr + 1u8;
+            }
+
+            assert_eq!(xs_mut, ~[10, ..16]);
+        }
+    }
+
+    #[test]
+    fn test_ptr_subtraction() {
+        use vec::raw::*;
+
+        unsafe {
+            let xs = ~[0,1,2,3,4,5,6,7,8,9];
+            let mut idx = 9i8;
+            let ptr = to_ptr(xs);
+
+            while idx >= 0i8 {
+                assert_eq!(*(ptr + idx), idx as int);
+                idx = idx - 1i8;
+            }
+
+            let mut xs_mut = xs.clone();
+            let m_start = to_mut_ptr(xs_mut);
+            let mut m_ptr = m_start + 9u32;
+
+            while m_ptr >= m_start {
+                *m_ptr += *m_ptr;
+                m_ptr = m_ptr - 1i8;
+            }
+
+            assert_eq!(xs_mut, ~[0,2,4,6,8,10,12,14,16,18]);
         }
     }
 
@@ -527,7 +624,7 @@ pub mod ptr_tests {
             array_each_with_len(arr_ptr, arr.len(),
                                 |e| {
                                          let actual = str::raw::from_c_str(e);
-                                         let expected = copy expected_arr[ctr];
+                                         let expected = expected_arr[ctr].clone();
                                          debug!(
                                              "test_ptr_array_each e: %s, a: %s",
                                              expected, actual);
@@ -559,7 +656,7 @@ pub mod ptr_tests {
             let mut iteration_count = 0;
             array_each(arr_ptr, |e| {
                 let actual = str::raw::from_c_str(e);
-                let expected = copy expected_arr[ctr];
+                let expected = expected_arr[ctr].clone();
                 debug!(
                     "test_ptr_array_each e: %s, a: %s",
                     expected, actual);
@@ -592,7 +689,6 @@ pub mod ptr_tests {
     }
 
     #[test]
-    #[cfg(not(stage0))]
     fn test_set_memory() {
         let mut xs = [0u8, ..20];
         let ptr = vec::raw::to_mut_ptr(xs);

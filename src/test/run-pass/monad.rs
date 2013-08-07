@@ -13,13 +13,15 @@
 use std::int;
 
 trait vec_monad<A> {
-    fn bind<B:Copy>(&self, f: &fn(&A) -> ~[B]) -> ~[B];
+    fn bind<B>(&self, f: &fn(&A) -> ~[B]) -> ~[B];
 }
 
 impl<A> vec_monad<A> for ~[A] {
-    fn bind<B:Copy>(&self, f: &fn(&A) -> ~[B]) -> ~[B] {
+    fn bind<B>(&self, f: &fn(&A) -> ~[B]) -> ~[B] {
         let mut r = ~[];
-        for self.each |elt| { r += f(elt); }
+        foreach elt in self.iter() {
+            r.push_all_move(f(elt));
+        }
         r
     }
 }

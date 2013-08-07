@@ -16,8 +16,8 @@ mod rustrt1 {
 
     #[abi = "cdecl"]
     #[link_name = "rustrt"]
-    pub extern {
-        pub fn rust_get_argc() -> libc::c_int;
+    extern {
+        fn rust_get_test_int() -> libc::intptr_t;
     }
 }
 
@@ -26,14 +26,14 @@ mod rustrt2 {
 
     #[abi = "cdecl"]
     #[link_name = "rustrt"]
-    pub extern {
-        pub fn rust_get_argc() -> libc::c_int;
+    extern {
+        fn rust_get_test_int() -> libc::intptr_t;
     }
 }
 
 pub fn main() {
     unsafe {
-        rustrt1::rust_get_argc();
-        rustrt2::rust_get_argc();
+        rustrt1::rust_get_test_int();
+        rustrt2::rust_get_test_int();
     }
 }

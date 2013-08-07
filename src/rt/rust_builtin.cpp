@@ -68,18 +68,10 @@ rust_env_pairs() {
 }
 #endif
 
-extern "C" CDECL void
-vec_reserve_shared_actual(type_desc* ty, rust_vec_box** vp,
-                          size_t n_elts) {
+extern "C" CDECL void *
+rust_local_realloc(rust_opaque_box *ptr, size_t size) {
     rust_task *task = rust_get_current_task();
-    reserve_vec_exact_shared(task, vp, n_elts * ty->size);
-}
-
-// This is completely misnamed.
-extern "C" CDECL void
-vec_reserve_shared(type_desc* ty, rust_vec_box** vp,
-                   size_t n_elts) {
-    reserve_vec_exact(vp, n_elts * ty->size);
+    return task->boxed.realloc(ptr, size);
 }
 
 extern "C" CDECL size_t
@@ -94,15 +86,10 @@ rand_gen_seed(uint8_t* dest, size_t size) {
 
 extern "C" CDECL void *
 rand_new_seeded(uint8_t* seed, size_t seed_size) {
-    rust_task *task = rust_get_current_task();
-    rust_rng *rng = (rust_rng *) task->malloc(sizeof(rust_rng),
-                                              "rand_new_seeded");
-    if (!rng) {
-        task->fail();
-        return NULL;
-    }
-    char *env_seed = task->kernel->env->rust_seed;
-    rng_init(rng, env_seed, seed, seed_size);
+    assert(seed != NULL);
+    rust_rng *rng = (rust_rng *) malloc(sizeof(rust_rng));
+    assert(rng != NULL && "rng alloc failed");
+    rng_init(rng, NULL, seed, seed_size);
     return rng;
 }
 
@@ -113,8 +100,7 @@ rand_next(rust_rng *rng) {
 
 extern "C" CDECL void
 rand_free(rust_rng *rng) {
-    rust_task *task = rust_get_current_task();
-    task->free(rng);
+    free(rng);
 }
 
 
@@ -154,91 +140,14 @@ debug_abi_2(floats f) {
     return ff;
 }
 
-/* Debug builtins for std::dbg. */
+extern "C" int
+debug_static_mut;
 
-static void
-debug_tydesc_helper(type_desc *t)
-{
-    rust_task *task = rust_get_current_task();
-    LOG(task, stdlib, "  size %" PRIdPTR ", align %" PRIdPTR,
-        t->size, t->align);
-}
+int debug_static_mut = 3;
 
-extern "C" CDECL void
-debug_tydesc(type_desc *t) {
-    rust_task *task = rust_get_current_task();
-    LOG(task, stdlib, "debug_tydesc");
-    debug_tydesc_helper(t);
-}
-
-extern "C" CDECL void
-debug_opaque(type_desc *t, uint8_t *front) {
-    rust_task *task = rust_get_current_task();
-    LOG(task, stdlib, "debug_opaque");
-    debug_tydesc_helper(t);
-    // Account for alignment. `front` may not indeed be the
-    // front byte of the passed-in argument
-    if (((uintptr_t)front % t->align) != 0) {
-        front = (uint8_t *)align_to((uintptr_t)front, (size_t)t->align);
-    }
-    for (uintptr_t i = 0; i < t->size; ++front, ++i) {
-        LOG(task, stdlib, "  byte %" PRIdPTR ": 0x%" PRIx8, i, *front);
-    }
-}
-
-extern "C" CDECL void
-debug_box(type_desc *t, rust_opaque_box *box) {
-    rust_task *task = rust_get_current_task();
-    LOG(task, stdlib, "debug_box(0x%" PRIxPTR ")", box);
-    debug_tydesc_helper(t);
-    LOG(task, stdlib, "  refcount %" PRIdPTR,
-        box->ref_count - 1);  // -1 because we ref'ed for this call
-    uint8_t *data = (uint8_t *)box_body(box);
-    for (uintptr_t i = 0; i < t->size; ++i) {
-        LOG(task, stdlib, "  byte %" PRIdPTR ": 0x%" PRIx8, i, data[i]);
-    }
-}
-
-struct rust_tag {
-    uintptr_t discriminant;
-    uint8_t variant[];
-};
-
-extern "C" CDECL void
-debug_tag(type_desc *t, rust_tag *tag) {
-    rust_task *task = rust_get_current_task();
-
-    LOG(task, stdlib, "debug_tag");
-    debug_tydesc_helper(t);
-    LOG(task, stdlib, "  discriminant %" PRIdPTR, tag->discriminant);
-
-    for (uintptr_t i = 0; i < t->size - sizeof(tag->discriminant); ++i)
-        LOG(task, stdlib, "  byte %" PRIdPTR ": 0x%" PRIx8, i,
-            tag->variant[i]);
-}
-
-extern "C" CDECL void
-debug_fn(type_desc *t, fn_env_pair *fn) {
-    rust_task *task = rust_get_current_task();
-    LOG(task, stdlib, "debug_fn");
-    debug_tydesc_helper(t);
-    LOG(task, stdlib, " fn at 0x%" PRIxPTR, fn->f);
-    LOG(task, stdlib, "  env at 0x%" PRIxPTR, fn->env);
-    if (fn->env) {
-        LOG(task, stdlib, "    refcount %" PRIdPTR, fn->env->ref_count);
-    }
-}
-
-extern "C" CDECL void *
-debug_ptrcast(type_desc *from_ty,
-              type_desc *to_ty,
-              void *ptr) {
-    rust_task *task = rust_get_current_task();
-    LOG(task, stdlib, "debug_ptrcast from");
-    debug_tydesc_helper(from_ty);
-    LOG(task, stdlib, "to");
-    debug_tydesc_helper(to_ty);
-    return ptr;
+extern "C" void
+debug_static_mut_check_four() {
+    assert(debug_static_mut == 4);
 }
 
 extern "C" CDECL void *
@@ -394,9 +303,9 @@ void tm_to_rust_tm(tm* in_tm, rust_tm* out_tm, int32_t gmtoff,
     if (zone != NULL) {
         size_t size = strlen(zone);
         reserve_vec_exact(&out_tm->tm_zone, size + 1);
-        memcpy(out_tm->tm_zone->body.data, zone, size);
-        out_tm->tm_zone->body.fill = size + 1;
-        out_tm->tm_zone->body.data[size] = '\0';
+        memcpy(out_tm->tm_zone->data, zone, size);
+        out_tm->tm_zone->fill = size + 1;
+        out_tm->tm_zone->data[size] = '\0';
     }
 }
 
@@ -480,12 +389,6 @@ rust_get_sched_id() {
     return task->sched->get_id();
 }
 
-extern "C" CDECL uintptr_t
-rust_num_threads() {
-    rust_task *task = rust_get_current_task();
-    return task->kernel->env->num_sched_threads;
-}
-
 extern "C" CDECL int
 rust_get_argc() {
     rust_task *task = rust_get_current_task();
@@ -559,18 +462,6 @@ start_task(rust_task *target, fn_env_pair *f) {
     target->start(f->f, f->env, NULL);
 }
 
-extern "C" CDECL size_t
-rust_sched_current_nonlazy_threads() {
-    rust_task *task = rust_get_current_task();
-    return task->sched->number_of_threads();
-}
-
-extern "C" CDECL size_t
-rust_sched_threads() {
-    rust_task *task = rust_get_current_task();
-    return task->sched->max_number_of_threads();
-}
-
 // This is called by an intrinsic on the Rust stack and must run
 // entirely in the red zone. Do not call on the C stack.
 extern "C" CDECL MUST_CHECK bool
@@ -591,17 +482,18 @@ rust_log_console_on() {
     log_console_on();
 }
 
-extern void log_console_off(rust_env *env);
+extern void log_console_off();
 
 extern "C" CDECL void
 rust_log_console_off() {
-    rust_task *task = rust_get_current_task();
-    log_console_off(task->kernel->env);
+    log_console_off();
 }
 
-extern "C" CDECL void
-rust_dbg_breakpoint() {
-    BREAKPOINT_AWESOME;
+extern bool should_log_console();
+
+extern "C" CDECL uintptr_t
+rust_should_log_console() {
+    return (uintptr_t)should_log_console();
 }
 
 extern "C" CDECL rust_sched_id
@@ -669,14 +561,10 @@ rust_unlock_little_lock(lock_and_signal *lock) {
     lock->unlock();
 }
 
-// set/get/atexit task_local_data can run on the rust stack for speed.
-extern "C" void *
+// get/atexit task_local_data can run on the rust stack for speed.
+extern "C" void **
 rust_get_task_local_data(rust_task *task) {
-    return task->task_local_data;
-}
-extern "C" void
-rust_set_task_local_data(rust_task *task, void *data) {
-    task->task_local_data = data;
+    return &task->task_local_data;
 }
 extern "C" void
 rust_task_local_data_atexit(rust_task *task, void (*cleanup_fn)(void *data)) {
@@ -729,22 +617,6 @@ rust_task_deref(rust_task *task) {
     task->deref();
 }
 
-// Must call on rust stack.
-extern "C" CDECL void
-rust_call_tydesc_glue(void *root, size_t *tydesc, size_t glue_index) {
-#ifdef _RUST_STAGE0
-    void (*glue_fn)(void *, void *, void *, void *) =
-        (void (*)(void *, void *, void *, void *))tydesc[glue_index];
-    if (glue_fn)
-        glue_fn(0, 0, 0, root);
-#else
-    void (*glue_fn)(void *, void *, void *) =
-        (void (*)(void *, void *, void *))tydesc[glue_index];
-    if (glue_fn)
-        glue_fn(0, 0, root);
-#endif
-}
-
 // Don't run on the Rust stack!
 extern "C" void
 rust_log_str(uint32_t level, const char *str, size_t size) {
@@ -762,11 +634,7 @@ public:
 
     virtual void run() {
         record_sp_limit(0);
-#ifdef _RUST_STAGE0
-        fn.f(NULL, fn.env, NULL);
-#else
         fn.f(fn.env, NULL);
-#endif
     }
 };
 
@@ -779,34 +647,15 @@ rust_raw_thread_start(fn_env_pair *fn) {
 }
 
 extern "C" void
-rust_raw_thread_join_delete(raw_thread *thread) {
+rust_raw_thread_join(raw_thread *thread) {
     assert(thread);
     thread->join();
+}
+
+extern "C" void
+rust_raw_thread_delete(raw_thread *thread) {
+    assert(thread);
     delete thread;
-}
-
-extern "C" void
-rust_register_exit_function(spawn_fn runner, fn_env_pair *f) {
-    rust_task *task = rust_get_current_task();
-    task->kernel->register_exit_function(runner, f);
-}
-
-extern "C" void *
-rust_get_global_data_ptr() {
-    rust_task *task = rust_get_current_task();
-    return &task->kernel->global_data;
-}
-
-extern "C" void
-rust_inc_kernel_live_count() {
-    rust_task *task = rust_get_current_task();
-    task->kernel->inc_live_count();
-}
-
-extern "C" void
-rust_dec_kernel_live_count() {
-    rust_task *task = rust_get_current_task();
-    task->kernel->dec_live_count();
 }
 
 #ifndef _WIN32
@@ -889,6 +738,12 @@ rust_delete_memory_region(memory_region *region) {
 }
 
 extern "C" CDECL boxed_region*
+rust_current_boxed_region() {
+    rust_task *task = rust_get_current_task();
+    return &task->boxed;
+}
+
+extern "C" CDECL boxed_region*
 rust_new_boxed_region(memory_region *region,
                       uintptr_t poison_on_free) {
     return new boxed_region(region, poison_on_free);
@@ -902,6 +757,11 @@ rust_delete_boxed_region(boxed_region *region) {
 extern "C" CDECL rust_opaque_box*
 rust_boxed_region_malloc(boxed_region *region, type_desc *td, size_t size) {
     return region->malloc(td, size);
+}
+
+extern "C" CDECL rust_opaque_box*
+rust_boxed_region_realloc(boxed_region *region, rust_opaque_box *ptr, size_t size) {
+    return region->realloc(ptr, size);
 }
 
 extern "C" CDECL void
@@ -934,6 +794,58 @@ rust_begin_unwind(uintptr_t token) {
 extern "C" CDECL uintptr_t
 rust_running_on_valgrind() {
     return RUNNING_ON_VALGRIND;
+}
+
+extern int get_num_cpus();
+
+extern "C" CDECL uintptr_t
+rust_get_num_cpus() {
+    return get_num_cpus();
+}
+
+static lock_and_signal global_args_lock;
+static uintptr_t global_args_ptr = 0;
+
+extern "C" CDECL void
+rust_take_global_args_lock() {
+    global_args_lock.lock();
+}
+
+extern "C" CDECL void
+rust_drop_global_args_lock() {
+    global_args_lock.unlock();
+}
+
+extern "C" CDECL uintptr_t*
+rust_get_global_args_ptr() {
+    return &global_args_ptr;
+}
+
+static lock_and_signal exit_status_lock;
+static uintptr_t exit_status = 0;
+
+extern "C" CDECL void
+rust_set_exit_status_newrt(uintptr_t code) {
+    scoped_lock with(exit_status_lock);
+    exit_status = code;
+}
+
+extern "C" CDECL uintptr_t
+rust_get_exit_status_newrt() {
+    scoped_lock with(exit_status_lock);
+    return exit_status;
+}
+
+static lock_and_signal change_dir_lock;
+
+extern "C" CDECL void
+rust_take_change_dir_lock() {
+    change_dir_lock.lock();
+}
+
+extern "C" CDECL void
+rust_drop_change_dir_lock() {
+    change_dir_lock.unlock();
 }
 
 //

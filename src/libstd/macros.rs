@@ -10,44 +10,41 @@
 
 #[macro_escape];
 
-// Some basic logging
-macro_rules! rtdebug_ (
+macro_rules! rterrln (
     ($( $arg:expr),+) => ( {
-        dumb_println(fmt!( $($arg),+ ));
-
-        fn dumb_println(s: &str) {
-            use io::WriterUtil;
-            let dbg = ::libc::STDERR_FILENO as ::io::fd_t;
-            dbg.write_str(s);
-            dbg.write_str("\n");
-        }
-
+        ::rt::util::dumb_println(fmt!( $($arg),+ ));
     } )
 )
 
-// An alternate version with no output, for turning off logging
+// Some basic logging
+macro_rules! rtdebug_ (
+    ($( $arg:expr),+) => ( {
+        rterrln!( $($arg),+ )
+    } )
+)
+
+// An alternate version with no output, for turning off logging. An
+// earlier attempt that did not call the fmt! macro was insufficient,
+// as a case of the "let bind each variable" approach eventually
+// failed without an error message describing the invocation site.
 macro_rules! rtdebug (
-    ($( $arg:expr),+) => ( $(let _ = $arg)*; )
+    ($( $arg:expr),+) => ( {
+        let _x = fmt!( $($arg),+ );
+    })
 )
 
 macro_rules! rtassert (
     ( $arg:expr ) => ( {
         if !$arg {
-            abort!("assertion failed: %s", stringify!($arg));
+            rtabort!("assertion failed: %s", stringify!($arg));
         }
     } )
 )
 
-macro_rules! abort(
+
+macro_rules! rtabort(
     ($( $msg:expr),+) => ( {
-        rtdebug!($($msg),+);
-
-        do_abort();
-
-        // NB: This is in a fn to avoid putting the `unsafe` block in a macro,
-        // which causes spurious 'unnecessary unsafe block' warnings.
-        fn do_abort() -> ! {
-            unsafe { ::libc::abort(); }
-        }
+        ::rt::util::abort(fmt!($($msg),+));
     } )
 )
+

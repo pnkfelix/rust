@@ -32,7 +32,7 @@ fn grandchild_group(num_tasks: uint) {
     let (po, ch) = stream();
     let ch = SharedChan::new(ch);
 
-    for num_tasks.times {
+    do num_tasks.times {
         let ch = ch.clone();
         do task::spawn { // linked
             ch.send(());
@@ -41,7 +41,7 @@ fn grandchild_group(num_tasks: uint) {
         }
     }
     error!("Grandchild group getting started");
-    for num_tasks.times {
+    do num_tasks.times {
         // Make sure all above children are fully spawned; i.e., enlisted in
         // their ancestor groups.
         po.recv();
@@ -63,12 +63,12 @@ fn spawn_supervised_blocking(myname: &str, f: ~fn()) {
 
 fn main() {
     let args = os::args();
-    let args = if os::getenv(~"RUST_BENCH").is_some() {
+    let args = if os::getenv("RUST_BENCH").is_some() {
         ~[~"", ~"100000"]
     } else if args.len() <= 1u {
         ~[~"", ~"100"]
     } else {
-        copy args
+        args.clone()
     };
 
     let num_tasks = uint::from_str(args[1]).get();

@@ -10,13 +10,11 @@
 
 //! Converts the Rust AST to the rustdoc document model
 
-use core::prelude::*;
 
 use astsrv;
 use doc::ItemUtils;
 use doc;
 
-use core::vec;
 use syntax::ast;
 use syntax::parse::token::{ident_interner, ident_to_str};
 use syntax::parse::token;
@@ -41,12 +39,12 @@ pub fn from_srv(
     //! Use the AST service to create a document tree
 
     do astsrv::exec(srv) |ctxt| {
-        extract(ctxt.ast, copy default_name)
+        extract(ctxt.ast, default_name.clone())
     }
 }
 
 pub fn extract(
-    crate: @ast::crate,
+    crate: @ast::Crate,
     default_name: ~str
 ) -> doc::Doc {
     doc::Doc {
@@ -59,14 +57,14 @@ pub fn extract(
 }
 
 fn top_moddoc_from_crate(
-    crate: @ast::crate,
+    crate: @ast::Crate,
     default_name: ~str
 ) -> doc::ModDoc {
-    moddoc_from_mod(mk_itemdoc(ast::crate_node_id, default_name),
-                    copy crate.node.module)
+    moddoc_from_mod(mk_itemdoc(ast::CRATE_NODE_ID, default_name),
+                    crate.module.clone())
 }
 
-fn mk_itemdoc(id: ast::node_id, name: ~str) -> doc::ItemDoc {
+fn mk_itemdoc(id: ast::NodeId, name: ~str) -> doc::ItemDoc {
     doc::ItemDoc {
         id: id,
         name: name,
@@ -84,9 +82,9 @@ fn moddoc_from_mod(
 ) -> doc::ModDoc {
     doc::ModDoc {
         item: itemdoc,
-        items: do vec::filter_mapped(module_.items) |item| {
+        items: do module_.items.iter().filter_map |item| {
             let ItemDoc = mk_itemdoc(item.id, to_str(item.ident));
-            match copy item.node {
+            match item.node.clone() {
               ast::item_mod(m) => {
                 Some(doc::ModTag(
                     moddoc_from_mod(ItemDoc, m)
@@ -102,14 +100,14 @@ fn moddoc_from_mod(
                     fndoc_from_fn(ItemDoc)
                 ))
               }
-              ast::item_const(_, _) => {
+              ast::item_static(*) => {
                 Some(doc::ConstTag(
                     constdoc_from_const(ItemDoc)
                 ))
               }
               ast::item_enum(enum_definition, _) => {
                 Some(doc::EnumTag(
-                    enumdoc_from_enum(ItemDoc, copy enum_definition.variants)
+                    enumdoc_from_enum(ItemDoc, enum_definition.variants.clone())
                 ))
               }
               ast::item_trait(_, _, methods) => {
@@ -134,7 +132,7 @@ fn moddoc_from_mod(
               }
               _ => None
             }
-        },
+        }.collect(),
         index: None
     }
 }
@@ -144,13 +142,13 @@ fn nmoddoc_from_mod(
     module_: ast::foreign_mod
 ) -> doc::NmodDoc {
     let mut fns = ~[];
-    for module_.items.each |item| {
+    foreach item in module_.items.iter() {
         let ItemDoc = mk_itemdoc(item.id, to_str(item.ident));
         match item.node {
           ast::foreign_item_fn(*) => {
             fns.push(fndoc_from_fn(ItemDoc));
           }
-          ast::foreign_item_const(*) => {} // XXX: Not implemented.
+          ast::foreign_item_static(*) => {} // XXX: Not implemented.
         }
     }
     doc::NmodDoc {
@@ -187,7 +185,7 @@ fn enumdoc_from_enum(
 fn variantdocs_from_variants(
     variants: ~[ast::variant]
 ) -> ~[doc::VariantDoc] {
-    vec::map(variants, variantdoc_from_variant)
+    variants.iter().transform(variantdoc_from_variant).collect()
 }
 
 fn variantdoc_from_variant(variant: &ast::variant) -> doc::VariantDoc {
@@ -204,8 +202,8 @@ fn traitdoc_from_trait(
 ) -> doc::TraitDoc {
     doc::TraitDoc {
         item: itemdoc,
-        methods: do vec::map(methods) |method| {
-            match copy *method {
+        methods: do methods.iter().transform |method| {
+            match (*method).clone() {
               ast::required(ty_m) => {
                 doc::MethodDoc {
                     name: to_str(ty_m.ident),
@@ -227,7 +225,7 @@ fn traitdoc_from_trait(
                 }
               }
             }
-        }
+        }.collect()
     }
 }
 
@@ -240,7 +238,7 @@ fn impldoc_from_impl(
         bounds_str: None,
         trait_types: ~[],
         self_ty: None,
-        methods: do vec::map(methods) |method| {
+        methods: do methods.iter().transform |method| {
             doc::MethodDoc {
                 name: to_str(method.ident),
                 brief: None,
@@ -249,7 +247,7 @@ fn impldoc_from_impl(
                 sig: None,
                 implementation: doc::Provided,
             }
-        }
+        }.collect()
     }
 }
 
@@ -300,21 +298,21 @@ mod test {
     #[test]
     fn extract_mods() {
         let doc = mk_doc(@"mod a { mod b { } mod c { } }");
-        assert!(doc.cratemod().mods()[0].name() == ~"a");
-        assert!(doc.cratemod().mods()[0].mods()[0].name() == ~"b");
-        assert!(doc.cratemod().mods()[0].mods()[1].name() == ~"c");
+        assert!(doc.cratemod().mods()[0].name_() == ~"a");
+        assert!(doc.cratemod().mods()[0].mods()[0].name_() == ~"b");
+        assert!(doc.cratemod().mods()[0].mods()[1].name_() == ~"c");
     }
 
     #[test]
     fn extract_fns_from_foreign_mods() {
         let doc = mk_doc(@"extern { fn a(); }");
-        assert!(doc.cratemod().nmods()[0].fns[0].name() == ~"a");
+        assert!(doc.cratemod().nmods()[0].fns[0].name_() == ~"a");
     }
 
     #[test]
     fn extract_mods_deep() {
         let doc = mk_doc(@"mod a { mod b { mod c { } } }");
-        assert!(doc.cratemod().mods()[0].mods()[0].mods()[0].name() ==
+        assert!(doc.cratemod().mods()[0].mods()[0].mods()[0].name_() ==
             ~"c");
     }
 
@@ -330,8 +328,8 @@ mod test {
             @"fn a() { } \
               mod b { fn c() {
              } }");
-        assert!(doc.cratemod().fns()[0].name() == ~"a");
-        assert!(doc.cratemod().mods()[0].fns()[0].name() == ~"c");
+        assert!(doc.cratemod().fns()[0].name_() == ~"a");
+        assert!(doc.cratemod().mods()[0].fns()[0].name_() == ~"c");
     }
 
     #[test]
@@ -345,7 +343,7 @@ mod test {
         let source = @"";
         let ast = parse::from_str(source);
         let doc = extract(ast, ~"burp");
-        assert!(doc.cratemod().name() == ~"burp");
+        assert!(doc.cratemod().name_() == ~"burp");
     }
 
     #[test]
@@ -353,7 +351,7 @@ mod test {
         let source = ~"";
         do astsrv::from_str(source) |srv| {
             let doc = from_srv(srv, ~"name");
-            assert!(doc.cratemod().name() == ~"name");
+            assert!(doc.cratemod().name_() == ~"name");
         }
     }
 
@@ -361,14 +359,14 @@ mod test {
     fn should_extract_const_name_and_id() {
         let doc = mk_doc(@"static a: int = 0;");
         assert!(doc.cratemod().consts()[0].id() != 0);
-        assert!(doc.cratemod().consts()[0].name() == ~"a");
+        assert!(doc.cratemod().consts()[0].name_() == ~"a");
     }
 
     #[test]
     fn should_extract_enums() {
         let doc = mk_doc(@"enum e { v }");
         assert!(doc.cratemod().enums()[0].id() != 0);
-        assert!(doc.cratemod().enums()[0].name() == ~"e");
+        assert!(doc.cratemod().enums()[0].name_() == ~"e");
     }
 
     #[test]
@@ -380,7 +378,7 @@ mod test {
     #[test]
     fn should_extract_traits() {
         let doc = mk_doc(@"trait i { fn f(); }");
-        assert!(doc.cratemod().traits()[0].name() == ~"i");
+        assert!(doc.cratemod().traits()[0].name_() == ~"i");
     }
 
     #[test]
@@ -398,13 +396,13 @@ mod test {
     #[test]
     fn should_extract_tys() {
         let doc = mk_doc(@"type a = int;");
-        assert!(doc.cratemod().types()[0].name() == ~"a");
+        assert!(doc.cratemod().types()[0].name_() == ~"a");
     }
 
     #[test]
     fn should_extract_structs() {
         let doc = mk_doc(@"struct Foo { field: () }");
-        assert!(doc.cratemod().structs()[0].name() == ~"Foo");
+        assert!(doc.cratemod().structs()[0].name_() == ~"Foo");
     }
 
     #[test]

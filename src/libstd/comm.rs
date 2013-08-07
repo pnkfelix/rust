@@ -14,16 +14,11 @@ Message passing
 
 #[allow(missing_doc)];
 
-use cast::{transmute, transmute_mut};
-use container::Container;
+use cast::transmute;
 use either::{Either, Left, Right};
-use kinds::Owned;
-use option::{Option, Some, None};
-use uint;
-use vec;
-use vec::OwnedVector;
-use util::replace;
-use unstable::sync::{Exclusive, exclusive};
+use kinds::Send;
+use option::{Option, Some};
+use unstable::sync::Exclusive;
 use rtcomm = rt::comm;
 use rt;
 
@@ -78,7 +73,7 @@ pub struct Port<T> {
 These allow sending or receiving an unlimited number of messages.
 
 */
-pub fn stream<T:Owned>() -> (Port<T>, Chan<T>) {
+pub fn stream<T:Send>() -> (Port<T>, Chan<T>) {
     let (port, chan) = match rt::context() {
         rt::OldTaskContext => match pipesy::stream() {
             (p, c) => (Left(p), Left(c))
@@ -92,7 +87,7 @@ pub fn stream<T:Owned>() -> (Port<T>, Chan<T>) {
     return (port, chan);
 }
 
-impl<T: Owned> GenericChan<T> for Chan<T> {
+impl<T: Send> GenericChan<T> for Chan<T> {
     fn send(&self, x: T) {
         match self.inner {
             Left(ref chan) => chan.send(x),
@@ -101,7 +96,7 @@ impl<T: Owned> GenericChan<T> for Chan<T> {
     }
 }
 
-impl<T: Owned> GenericSmartChan<T> for Chan<T> {
+impl<T: Send> GenericSmartChan<T> for Chan<T> {
     fn try_send(&self, x: T) -> bool {
         match self.inner {
             Left(ref chan) => chan.try_send(x),
@@ -110,7 +105,7 @@ impl<T: Owned> GenericSmartChan<T> for Chan<T> {
     }
 }
 
-impl<T: Owned> GenericPort<T> for Port<T> {
+impl<T: Send> GenericPort<T> for Port<T> {
     fn recv(&self) -> T {
         match self.inner {
             Left(ref port) => port.recv(),
@@ -126,7 +121,7 @@ impl<T: Owned> GenericPort<T> for Port<T> {
     }
 }
 
-impl<T: Owned> Peekable<T> for Port<T> {
+impl<T: Send> Peekable<T> for Port<T> {
     fn peek(&self) -> bool {
         match self.inner {
             Left(ref port) => port.peek(),
@@ -135,7 +130,7 @@ impl<T: Owned> Peekable<T> for Port<T> {
     }
 }
 
-impl<T: Owned> Selectable for Port<T> {
+impl<T: Send> Selectable for Port<T> {
     fn header(&mut self) -> *mut PacketHeader {
         match self.inner {
             Left(ref mut port) => port.header(),
@@ -144,125 +139,58 @@ impl<T: Owned> Selectable for Port<T> {
     }
 }
 
-/// Treat many ports as one.
-#[unsafe_mut_field(ports)]
-pub struct PortSet<T> {
-    ports: ~[pipesy::Port<T>],
-}
-
-impl<T: Owned> PortSet<T> {
-    pub fn new() -> PortSet<T> {
-        PortSet {
-            ports: ~[]
-        }
-    }
-
-    pub fn add(&self, port: Port<T>) {
-        let Port { inner } = port;
-        let port = match inner {
-            Left(p) => p,
-            Right(_) => fail!("PortSet not implemented")
-        };
-        unsafe {
-            let self_ports = transmute_mut(&self.ports);
-            self_ports.push(port)
-        }
-    }
-
-    pub fn chan(&self) -> Chan<T> {
-        let (po, ch) = stream();
-        self.add(po);
-        ch
-    }
-}
-
-impl<T:Owned> GenericPort<T> for PortSet<T> {
-    fn try_recv(&self) -> Option<T> {
-        unsafe {
-            let self_ports = transmute_mut(&self.ports);
-            let mut result = None;
-            // we have to swap the ports array so we aren't borrowing
-            // aliasable mutable memory.
-            let mut ports = replace(self_ports, ~[]);
-            while result.is_none() && ports.len() > 0 {
-                let i = wait_many(ports);
-                match ports[i].try_recv() {
-                    Some(m) => {
-                        result = Some(m);
-                    }
-                    None => {
-                        // Remove this port.
-                        let _ = ports.swap_remove(i);
-                    }
-                }
-            }
-            *self_ports = ports;
-            result
-        }
-    }
-    fn recv(&self) -> T {
-        self.try_recv().expect("port_set: endpoints closed")
-    }
-}
-
-impl<T: Owned> Peekable<T> for PortSet<T> {
-    fn peek(&self) -> bool {
-        // It'd be nice to use self.port.each, but that version isn't
-        // pure.
-        for uint::range(0, self.ports.len()) |i| {
-            let port: &pipesy::Port<T> = &self.ports[i];
-            if port.peek() {
-                return true;
-            }
-        }
-        false
-    }
-}
-
 /// A channel that can be shared between many senders.
 pub struct SharedChan<T> {
-    ch: Exclusive<pipesy::Chan<T>>
+    inner: Either<Exclusive<pipesy::Chan<T>>, rtcomm::SharedChan<T>>
 }
 
-impl<T: Owned> SharedChan<T> {
+impl<T: Send> SharedChan<T> {
     /// Converts a `chan` into a `shared_chan`.
     pub fn new(c: Chan<T>) -> SharedChan<T> {
         let Chan { inner } = c;
         let c = match inner {
-            Left(c) => c,
-            Right(_) => fail!("SharedChan not implemented")
+            Left(c) => Left(Exclusive::new(c)),
+            Right(c) => Right(rtcomm::SharedChan::new(c))
         };
-        SharedChan { ch: exclusive(c) }
+        SharedChan { inner: c }
     }
 }
 
-impl<T: Owned> GenericChan<T> for SharedChan<T> {
+impl<T: Send> GenericChan<T> for SharedChan<T> {
     fn send(&self, x: T) {
-        unsafe {
-            let mut xx = Some(x);
-            do self.ch.with_imm |chan| {
-                let x = replace(&mut xx, None);
-                chan.send(x.unwrap())
+        match self.inner {
+            Left(ref chan) => {
+                unsafe {
+                    let mut xx = Some(x);
+                    do chan.with_imm |chan| {
+                        chan.send(xx.take_unwrap())
+                    }
+                }
             }
+            Right(ref chan) => chan.send(x)
         }
     }
 }
 
-impl<T: Owned> GenericSmartChan<T> for SharedChan<T> {
+impl<T: Send> GenericSmartChan<T> for SharedChan<T> {
     fn try_send(&self, x: T) -> bool {
-        unsafe {
-            let mut xx = Some(x);
-            do self.ch.with_imm |chan| {
-                let x = replace(&mut xx, None);
-                chan.try_send(x.unwrap())
+        match self.inner {
+            Left(ref chan) => {
+                unsafe {
+                    let mut xx = Some(x);
+                    do chan.with_imm |chan| {
+                        chan.try_send(xx.take_unwrap())
+                    }
+                }
             }
+            Right(ref chan) => chan.try_send(x)
         }
     }
 }
 
-impl<T: Owned> ::clone::Clone for SharedChan<T> {
+impl<T: Send> ::clone::Clone for SharedChan<T> {
     fn clone(&self) -> SharedChan<T> {
-        SharedChan { ch: self.ch.clone() }
+        SharedChan { inner: self.inner.clone() }
     }
 }
 
@@ -274,7 +202,7 @@ pub struct ChanOne<T> {
     inner: Either<pipesy::ChanOne<T>, rtcomm::ChanOne<T>>
 }
 
-pub fn oneshot<T: Owned>() -> (PortOne<T>, ChanOne<T>) {
+pub fn oneshot<T: Send>() -> (PortOne<T>, ChanOne<T>) {
     let (port, chan) = match rt::context() {
         rt::OldTaskContext => match pipesy::oneshot() {
             (p, c) => (Left(p), Left(c)),
@@ -288,7 +216,7 @@ pub fn oneshot<T: Owned>() -> (PortOne<T>, ChanOne<T>) {
     return (port, chan);
 }
 
-impl<T: Owned> PortOne<T> {
+impl<T: Send> PortOne<T> {
     pub fn recv(self) -> T {
         let PortOne { inner } = self;
         match inner {
@@ -306,7 +234,7 @@ impl<T: Owned> PortOne<T> {
     }
 }
 
-impl<T: Owned> ChanOne<T> {
+impl<T: Send> ChanOne<T> {
     pub fn send(self, data: T) {
         let ChanOne { inner } = self;
         match inner {
@@ -324,7 +252,7 @@ impl<T: Owned> ChanOne<T> {
     }
 }
 
-pub fn recv_one<T: Owned>(port: PortOne<T>) -> T {
+pub fn recv_one<T: Send>(port: PortOne<T>) -> T {
     let PortOne { inner } = port;
     match inner {
         Left(p) => pipesy::recv_one(p),
@@ -332,7 +260,7 @@ pub fn recv_one<T: Owned>(port: PortOne<T>) -> T {
     }
 }
 
-pub fn try_recv_one<T: Owned>(port: PortOne<T>) -> Option<T> {
+pub fn try_recv_one<T: Send>(port: PortOne<T>) -> Option<T> {
     let PortOne { inner } = port;
     match inner {
         Left(p) => pipesy::try_recv_one(p),
@@ -340,7 +268,7 @@ pub fn try_recv_one<T: Owned>(port: PortOne<T>) -> Option<T> {
     }
 }
 
-pub fn send_one<T: Owned>(chan: ChanOne<T>, data: T) {
+pub fn send_one<T: Send>(chan: ChanOne<T>, data: T) {
     let ChanOne { inner } = chan;
     match inner {
         Left(c) => pipesy::send_one(c, data),
@@ -348,7 +276,7 @@ pub fn send_one<T: Owned>(chan: ChanOne<T>, data: T) {
     }
 }
 
-pub fn try_send_one<T: Owned>(chan: ChanOne<T>, data: T) -> bool {
+pub fn try_send_one<T: Send>(chan: ChanOne<T>, data: T) -> bool {
     let ChanOne { inner } = chan;
     match inner {
         Left(c) => pipesy::try_send_one(c, data),
@@ -358,34 +286,33 @@ pub fn try_send_one<T: Owned>(chan: ChanOne<T>, data: T) -> bool {
 
 mod pipesy {
 
-    use kinds::Owned;
+    use kinds::Send;
     use option::{Option, Some, None};
     use pipes::{recv, try_recv, peek, PacketHeader};
     use super::{GenericChan, GenericSmartChan, GenericPort, Peekable, Selectable};
     use cast::transmute_mut;
-    use util::replace;
 
     /*proto! oneshot (
-        Oneshot:send<T:Owned> {
+        Oneshot:send<T:Send> {
             send(T) -> !
         }
     )*/
 
     #[allow(non_camel_case_types)]
     pub mod oneshot {
-        priv use core::kinds::Owned;
+        priv use std::kinds::Send;
         use ptr::to_mut_unsafe_ptr;
 
-        pub fn init<T: Owned>() -> (server::Oneshot<T>, client::Oneshot<T>) {
-            pub use core::pipes::HasBuffer;
+        pub fn init<T: Send>() -> (server::Oneshot<T>, client::Oneshot<T>) {
+            pub use std::pipes::HasBuffer;
 
-            let buffer = ~::core::pipes::Buffer {
-                header: ::core::pipes::BufferHeader(),
+            let buffer = ~::std::pipes::Buffer {
+                header: ::std::pipes::BufferHeader(),
                 data: __Buffer {
-                    Oneshot: ::core::pipes::mk_packet::<Oneshot<T>>()
+                    Oneshot: ::std::pipes::mk_packet::<Oneshot<T>>()
                 },
             };
-            do ::core::pipes::entangle_buffer(buffer) |buffer, data| {
+            do ::std::pipes::entangle_buffer(buffer) |buffer, data| {
                 data.Oneshot.set_buffer(buffer);
                 to_mut_unsafe_ptr(&mut data.Oneshot)
             }
@@ -394,38 +321,38 @@ mod pipesy {
         pub enum Oneshot<T> { pub send(T), }
         #[allow(non_camel_case_types)]
         pub struct __Buffer<T> {
-            Oneshot: ::core::pipes::Packet<Oneshot<T>>,
+            Oneshot: ::std::pipes::Packet<Oneshot<T>>,
         }
 
         #[allow(non_camel_case_types)]
         pub mod client {
 
-            priv use core::kinds::Owned;
+            priv use std::kinds::Send;
 
             #[allow(non_camel_case_types)]
-            pub fn try_send<T: Owned>(pipe: Oneshot<T>, x_0: T) ->
-                ::core::option::Option<()> {
+            pub fn try_send<T: Send>(pipe: Oneshot<T>, x_0: T) ->
+                ::std::option::Option<()> {
                 {
                     use super::send;
                     let message = send(x_0);
-                    if ::core::pipes::send(pipe, message) {
-                        ::core::pipes::rt::make_some(())
-                    } else { ::core::pipes::rt::make_none() }
+                    if ::std::pipes::send(pipe, message) {
+                        ::std::pipes::rt::make_some(())
+                    } else { ::std::pipes::rt::make_none() }
                 }
             }
 
             #[allow(non_camel_case_types)]
-            pub fn send<T: Owned>(pipe: Oneshot<T>, x_0: T) {
+            pub fn send<T: Send>(pipe: Oneshot<T>, x_0: T) {
                 {
                     use super::send;
                     let message = send(x_0);
-                    ::core::pipes::send(pipe, message);
+                    ::std::pipes::send(pipe, message);
                 }
             }
 
             #[allow(non_camel_case_types)]
             pub type Oneshot<T> =
-                ::core::pipes::SendPacketBuffered<super::Oneshot<T>,
+                ::std::pipes::SendPacketBuffered<super::Oneshot<T>,
             super::__Buffer<T>>;
         }
 
@@ -433,7 +360,7 @@ mod pipesy {
         pub mod server {
             #[allow(non_camel_case_types)]
             pub type Oneshot<T> =
-                ::core::pipes::RecvPacketBuffered<super::Oneshot<T>,
+                ::std::pipes::RecvPacketBuffered<super::Oneshot<T>,
             super::__Buffer<T>>;
         }
     }
@@ -465,12 +392,12 @@ mod pipesy {
     }
 
     /// Initialiase a (send-endpoint, recv-endpoint) oneshot pipe pair.
-    pub fn oneshot<T: Owned>() -> (PortOne<T>, ChanOne<T>) {
+    pub fn oneshot<T: Send>() -> (PortOne<T>, ChanOne<T>) {
         let (port, chan) = oneshot::init();
         (PortOne::new(port), ChanOne::new(chan))
     }
 
-    impl<T: Owned> PortOne<T> {
+    impl<T: Send> PortOne<T> {
         pub fn recv(self) -> T { recv_one(self) }
         pub fn try_recv(self) -> Option<T> { try_recv_one(self) }
         pub fn unwrap(self) -> oneshot::server::Oneshot<T> {
@@ -480,7 +407,7 @@ mod pipesy {
         }
     }
 
-    impl<T: Owned> ChanOne<T> {
+    impl<T: Send> ChanOne<T> {
         pub fn send(self, data: T) { send_one(self, data) }
         pub fn try_send(self, data: T) -> bool { try_send_one(self, data) }
         pub fn unwrap(self) -> oneshot::client::Oneshot<T> {
@@ -494,7 +421,7 @@ mod pipesy {
     * Receive a message from a oneshot pipe, failing if the connection was
     * closed.
     */
-    pub fn recv_one<T: Owned>(port: PortOne<T>) -> T {
+    pub fn recv_one<T: Send>(port: PortOne<T>) -> T {
         match port {
             PortOne { contents: port } => {
                 let oneshot::send(message) = recv(port);
@@ -504,7 +431,7 @@ mod pipesy {
     }
 
     /// Receive a message from a oneshot pipe unless the connection was closed.
-    pub fn try_recv_one<T: Owned> (port: PortOne<T>) -> Option<T> {
+    pub fn try_recv_one<T: Send> (port: PortOne<T>) -> Option<T> {
         match port {
             PortOne { contents: port } => {
                 let message = try_recv(port);
@@ -520,7 +447,7 @@ mod pipesy {
     }
 
     /// Send a message on a oneshot pipe, failing if the connection was closed.
-    pub fn send_one<T: Owned>(chan: ChanOne<T>, data: T) {
+    pub fn send_one<T: Send>(chan: ChanOne<T>, data: T) {
         match chan {
             ChanOne { contents: chan } => oneshot::client::send(chan, data),
         }
@@ -530,7 +457,7 @@ mod pipesy {
     * Send a message on a oneshot pipe, or return false if the connection was
     * closed.
     */
-    pub fn try_send_one<T: Owned>(chan: ChanOne<T>, data: T) -> bool {
+    pub fn try_send_one<T: Send>(chan: ChanOne<T>, data: T) -> bool {
         match chan {
             ChanOne { contents: chan } => {
                 oneshot::client::try_send(chan, data).is_some()
@@ -541,18 +468,18 @@ mod pipesy {
     // Streams - Make pipes a little easier in general.
 
     /*proto! streamp (
-        Open:send<T: Owned> {
+        Open:send<T: Send> {
             data(T) -> Open<T>
         }
     )*/
 
     #[allow(non_camel_case_types)]
     pub mod streamp {
-        priv use core::kinds::Owned;
+        priv use std::kinds::Send;
 
-        pub fn init<T: Owned>() -> (server::Open<T>, client::Open<T>) {
-            pub use core::pipes::HasBuffer;
-            ::core::pipes::entangle()
+        pub fn init<T: Send>() -> (server::Open<T>, client::Open<T>) {
+            pub use std::pipes::HasBuffer;
+            ::std::pipes::entangle()
         }
 
         #[allow(non_camel_case_types)]
@@ -560,40 +487,40 @@ mod pipesy {
 
         #[allow(non_camel_case_types)]
         pub mod client {
-            priv use core::kinds::Owned;
+            priv use std::kinds::Send;
 
             #[allow(non_camel_case_types)]
-            pub fn try_data<T: Owned>(pipe: Open<T>, x_0: T) ->
-                ::core::option::Option<Open<T>> {
+            pub fn try_data<T: Send>(pipe: Open<T>, x_0: T) ->
+                ::std::option::Option<Open<T>> {
                 {
                     use super::data;
-                    let (s, c) = ::core::pipes::entangle();
+                    let (s, c) = ::std::pipes::entangle();
                     let message = data(x_0, s);
-                    if ::core::pipes::send(pipe, message) {
-                        ::core::pipes::rt::make_some(c)
-                    } else { ::core::pipes::rt::make_none() }
+                    if ::std::pipes::send(pipe, message) {
+                        ::std::pipes::rt::make_some(c)
+                    } else { ::std::pipes::rt::make_none() }
                 }
             }
 
             #[allow(non_camel_case_types)]
-            pub fn data<T: Owned>(pipe: Open<T>, x_0: T) -> Open<T> {
+            pub fn data<T: Send>(pipe: Open<T>, x_0: T) -> Open<T> {
                 {
                     use super::data;
-                    let (s, c) = ::core::pipes::entangle();
+                    let (s, c) = ::std::pipes::entangle();
                     let message = data(x_0, s);
-                    ::core::pipes::send(pipe, message);
+                    ::std::pipes::send(pipe, message);
                     c
                 }
             }
 
             #[allow(non_camel_case_types)]
-            pub type Open<T> = ::core::pipes::SendPacket<super::Open<T>>;
+            pub type Open<T> = ::std::pipes::SendPacket<super::Open<T>>;
         }
 
         #[allow(non_camel_case_types)]
         pub mod server {
             #[allow(non_camel_case_types)]
-            pub type Open<T> = ::core::pipes::RecvPacket<super::Open<T>>;
+            pub type Open<T> = ::std::pipes::RecvPacket<super::Open<T>>;
         }
     }
 
@@ -614,7 +541,7 @@ mod pipesy {
     These allow sending or receiving an unlimited number of messages.
 
     */
-    pub fn stream<T:Owned>() -> (Port<T>, Chan<T>) {
+    pub fn stream<T:Send>() -> (Port<T>, Chan<T>) {
         let (s, c) = streamp::init();
 
         (Port {
@@ -624,24 +551,22 @@ mod pipesy {
         })
     }
 
-    impl<T: Owned> GenericChan<T> for Chan<T> {
+    impl<T: Send> GenericChan<T> for Chan<T> {
         #[inline]
         fn send(&self, x: T) {
             unsafe {
                 let self_endp = transmute_mut(&self.endp);
-                let endp = replace(self_endp, None);
-                *self_endp = Some(streamp::client::data(endp.unwrap(), x))
+                *self_endp = Some(streamp::client::data(self_endp.take_unwrap(), x))
             }
         }
     }
 
-    impl<T: Owned> GenericSmartChan<T> for Chan<T> {
+    impl<T: Send> GenericSmartChan<T> for Chan<T> {
         #[inline]
         fn try_send(&self, x: T) -> bool {
             unsafe {
                 let self_endp = transmute_mut(&self.endp);
-                let endp = replace(self_endp, None);
-                match streamp::client::try_data(endp.unwrap(), x) {
+                match streamp::client::try_data(self_endp.take_unwrap(), x) {
                     Some(next) => {
                         *self_endp = Some(next);
                         true
@@ -652,12 +577,12 @@ mod pipesy {
         }
     }
 
-    impl<T: Owned> GenericPort<T> for Port<T> {
+    impl<T: Send> GenericPort<T> for Port<T> {
         #[inline]
         fn recv(&self) -> T {
             unsafe {
                 let self_endp = transmute_mut(&self.endp);
-                let endp = replace(self_endp, None);
+                let endp = self_endp.take();
                 let streamp::data(x, endp) = recv(endp.unwrap());
                 *self_endp = Some(endp);
                 x
@@ -668,7 +593,7 @@ mod pipesy {
         fn try_recv(&self) -> Option<T> {
             unsafe {
                 let self_endp = transmute_mut(&self.endp);
-                let endp = replace(self_endp, None);
+                let endp = self_endp.take();
                 match try_recv(endp.unwrap()) {
                     Some(streamp::data(x, endp)) => {
                         *self_endp = Some(endp);
@@ -680,12 +605,12 @@ mod pipesy {
         }
     }
 
-    impl<T: Owned> Peekable<T> for Port<T> {
+    impl<T: Send> Peekable<T> for Port<T> {
         #[inline]
         fn peek(&self) -> bool {
             unsafe {
                 let self_endp = transmute_mut(&self.endp);
-                let mut endp = replace(self_endp, None);
+                let mut endp = self_endp.take();
                 let peek = match endp {
                     Some(ref mut endp) => peek(endp),
                     None => fail!("peeking empty stream")
@@ -696,7 +621,7 @@ mod pipesy {
         }
     }
 
-    impl<T: Owned> Selectable for Port<T> {
+    impl<T: Send> Selectable for Port<T> {
         fn header(&mut self) -> *mut PacketHeader {
             match self.endp {
                 Some(ref mut endp) => endp.header(),
@@ -724,15 +649,15 @@ pub fn select2i<A:Selectable, B:Selectable>(a: &mut A, b: &mut B)
 }
 
 /// Receive a message from one of two endpoints.
-pub trait Select2<T: Owned, U: Owned> {
+pub trait Select2<T: Send, U: Send> {
     /// Receive a message or return `None` if a connection closes.
     fn try_select(&mut self) -> Either<Option<T>, Option<U>>;
     /// Receive a message or fail if a connection closes.
     fn select(&mut self) -> Either<T, U>;
 }
 
-impl<T:Owned,
-     U:Owned,
+impl<T:Send,
+     U:Send,
      Left:Selectable + GenericPort<T>,
      Right:Selectable + GenericPort<U>>
      Select2<T, U>

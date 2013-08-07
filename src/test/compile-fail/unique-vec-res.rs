@@ -14,7 +14,7 @@ struct r {
 
 #[unsafe_destructor]
 impl Drop for r {
-    fn finalize(&self) {
+    fn drop(&self) {
         unsafe {
             *(self.i) = *(self.i) + 1;
         }
@@ -29,9 +29,8 @@ fn main() {
     let i2 = @mut 1;
     let r1 = ~[~r { i: i1 }];
     let r2 = ~[~r { i: i2 }];
-    f(copy r1, copy r2);
-    //~^ ERROR copying a value of non-copyable type
-    //~^^ ERROR copying a value of non-copyable type
-    debug!((r2, *i1));
-    debug!((r1, *i2));
+    f(r1.clone(), r2.clone());
+    //~^ ERROR failed to find an implementation of
+    info!((r2, *i1));
+    info!((r1, *i2));
 }

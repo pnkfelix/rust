@@ -8,12 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
 
-use core::option;
-use core::os;
-use core::result;
-use core::str;
+use std::option;
+use std::os;
+use std::result;
 
 // A module for searching for libraries
 // FIXME (#2658): I'm not happy how this module turned out. Should
@@ -22,8 +20,11 @@ use core::str;
 pub type pick<'self, T> = &'self fn(path: &Path) -> Option<T>;
 
 pub fn pick_file(file: Path, path: &Path) -> Option<Path> {
-    if path.file_path() == file { option::Some(copy *path) }
-    else { option::None }
+    if path.file_path() == file {
+        option::Some((*path).clone())
+    } else {
+        option::None
+    }
 }
 
 pub trait FileSearch {
@@ -48,7 +49,7 @@ pub fn mk_filesearch(maybe_sysroot: &Option<@Path>,
             debug!("filesearch: searching additional lib search paths [%?]",
                    self.addl_lib_search_paths.len());
             // a little weird
-            self.addl_lib_search_paths.each(f);
+            self.addl_lib_search_paths.iter().advance(|path| f(path));
 
             debug!("filesearch: searching target lib path");
             if !f(&make_target_lib_path(self.sysroot,
@@ -81,17 +82,18 @@ pub fn mk_filesearch(maybe_sysroot: &Option<@Path>,
     @FileSearchImpl {
         sysroot: sysroot,
         addl_lib_search_paths: addl_lib_search_paths,
-        target_triple: str::to_owned(target_triple)
+        target_triple: target_triple.to_owned()
     } as @FileSearch
 }
 
-pub fn search<T:Copy>(filesearch: @FileSearch, pick: pick<T>) -> Option<T> {
+pub fn search<T>(filesearch: @FileSearch, pick: pick<T>) -> Option<T> {
     let mut rslt = None;
     for filesearch.for_each_lib_search_path() |lib_search_path| {
         debug!("searching %s", lib_search_path.to_str());
-        for os::list_dir_path(lib_search_path).each |path| {
+        let r = os::list_dir_path(lib_search_path);
+        foreach path in r.iter() {
             debug!("testing %s", path.to_str());
-            let maybe_picked = pick(*path);
+            let maybe_picked = pick(path);
             if maybe_picked.is_some() {
                 debug!("picked %s", path.to_str());
                 rslt = maybe_picked;
@@ -107,7 +109,7 @@ pub fn search<T:Copy>(filesearch: @FileSearch, pick: pick<T>) -> Option<T> {
 
 pub fn relative_target_lib_path(target_triple: &str) -> Path {
     Path(libdir()).push_many([~"rustc",
-                              str::to_owned(target_triple),
+                              target_triple.to_owned(),
                               libdir()])
 }
 
@@ -145,7 +147,7 @@ pub fn get_rustpkg_root() -> Result<Path, ~str> {
 }
 
 pub fn get_rustpkg_root_nearest() -> Result<Path, ~str> {
-    do result::chain(get_rustpkg_root()) |p| {
+    do get_rustpkg_root().chain |p| {
         let cwd = os::getcwd();
         let cwd_rustpkg = cwd.push(".rustpkg");
         let rustpkg_is_non_root_file =
@@ -171,13 +173,13 @@ pub fn get_rustpkg_root_nearest() -> Result<Path, ~str> {
 }
 
 fn get_rustpkg_lib_path() -> Result<Path, ~str> {
-    do result::chain(get_rustpkg_root()) |p| {
+    do get_rustpkg_root().chain |p| {
         result::Ok(p.push(libdir()))
     }
 }
 
 fn get_rustpkg_lib_path_nearest() -> Result<Path, ~str> {
-    do result::chain(get_rustpkg_root_nearest()) |p| {
+    do get_rustpkg_root_nearest().chain |p| {
         result::Ok(p.push(libdir()))
     }
 }

@@ -8,20 +8,18 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
-
 use ast;
-use ast::{meta_item, item, expr, ident};
+use ast::{MetaItem, item, expr, ident};
 use codemap::span;
 use ext::base::ExtCtxt;
 use ext::build::{AstBuilder, Duplicate};
 use ext::deriving::generic::*;
 
-use core::vec;
+use std::vec;
 
 pub fn expand_deriving_rand(cx: @ExtCtxt,
                             span: span,
-                            mitem: @meta_item,
+                            mitem: @MetaItem,
                             in_items: ~[@item])
     -> ~[@item] {
     let trait_def = TraitDef {
@@ -63,7 +61,7 @@ fn rand_substructure(cx: @ExtCtxt, span: span, substr: &Substructure) -> @expr {
     ];
     let rand_call = || {
         cx.expr_call_global(span,
-                            copy rand_ident,
+                            rand_ident.clone(),
                             ~[ rng[0].duplicate(cx) ])
     };
 
@@ -81,7 +79,11 @@ fn rand_substructure(cx: @ExtCtxt, span: span, substr: &Substructure) -> @expr {
             // need to specify the uint-ness of the random number
             let uint_ty = cx.ty_ident(span, cx.ident_of("uint"));
             let r_ty = cx.ty_ident(span, cx.ident_of("R"));
-            let rand_name = cx.path_all(span, true, copy rand_ident, None, ~[ uint_ty, r_ty ]);
+            let rand_name = cx.path_all(span,
+                                        true,
+                                        rand_ident.clone(),
+                                        None,
+                                        ~[ uint_ty, r_ty ]);
             let rand_name = cx.expr_path(rand_name);
 
             // ::std::rand::Rand::rand::<uint>(rng)
@@ -93,7 +95,7 @@ fn rand_substructure(cx: @ExtCtxt, span: span, substr: &Substructure) -> @expr {
             let rand_variant = cx.expr_binary(span, ast::rem,
                                               rv_call, variant_count);
 
-            let mut arms = do variants.mapi |i, id_sum| {
+            let mut arms = do variants.iter().enumerate().transform |(i, id_sum)| {
                 let i_expr = cx.expr_uint(span, i);
                 let pat = cx.pat_lit(span, i_expr);
 
@@ -101,10 +103,10 @@ fn rand_substructure(cx: @ExtCtxt, span: span, substr: &Substructure) -> @expr {
                     (ident, ref summary) => {
                         cx.arm(span,
                                ~[ pat ],
-                               rand_thing(cx, span, ident, summary, rand_call))
+                               rand_thing(cx, span, ident, summary, || rand_call()))
                     }
                 }
-            };
+            }.collect::<~[ast::arm]>();
 
             // _ => {} at the end. Should never occur
             arms.push(cx.arm_unreachable(span));

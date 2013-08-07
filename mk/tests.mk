@@ -15,7 +15,7 @@
 
 # The names of crates that must be tested
 TEST_TARGET_CRATES = std extra
-TEST_HOST_CRATES = syntax rustc rustdoc rusti rust rustpkg
+TEST_HOST_CRATES = syntax rustc rustdoc rust rustpkg rusti
 TEST_CRATES = $(TEST_TARGET_CRATES) $(TEST_HOST_CRATES)
 
 # Markdown files under doc/ that should have their code extracted and run
@@ -34,9 +34,16 @@ ifdef CHECK_XFAILS
   TESTARGS += --ignored
 endif
 
+TEST_BENCH = --bench
+
 # Arguments to the cfail/rfail/rpass/bench tests
 ifdef CFG_VALGRIND
   CTEST_RUNTOOL = --runtool "$(CFG_VALGRIND)"
+  TEST_BENCH =
+endif
+
+ifdef NO_BENCH
+  TEST_BENCH =
 endif
 
 # Arguments to the perf tests
@@ -59,6 +66,21 @@ endif
 
 TEST_LOG_FILE=tmp/check-stage$(1)-T-$(2)-H-$(3)-$(4).log
 TEST_OK_FILE=tmp/check-stage$(1)-T-$(2)-H-$(3)-$(4).ok
+
+TEST_RATCHET_FILE=tmp/check-stage$(1)-T-$(2)-H-$(3)-$(4)-metrics.json
+TEST_RATCHET_NOISE_PERCENT=10.0
+
+# Whether to ratchet or merely save benchmarks
+ifdef CFG_RATCHET_BENCH
+CRATE_TEST_BENCH_ARGS=\
+  --test $(TEST_BENCH) \
+  --ratchet-metrics $(call TEST_RATCHET_FILE,$(1),$(2),$(3),$(4)) \
+  --ratchet-noise-percent $(TEST_RATCHET_NOISE_PERCENT)
+else
+CRATE_TEST_BENCH_ARGS=\
+  --test $(TEST_BENCH) \
+  --save-metrics $(call TEST_RATCHET_FILE,$(1),$(2),$(3),$(4))
+endif
 
 define DEF_TARGET_COMMANDS
 
@@ -122,9 +144,7 @@ CFG_ADB_TEST_DIR=/data/tmp
 $(info check: android device test dir $(CFG_ADB_TEST_DIR) ready \
  $(shell adb remount 1>/dev/null) \
  $(shell adb shell mkdir $(CFG_ADB_TEST_DIR) 1>/dev/null) \
- $(shell adb shell rm $(CFG_ADB_TEST_DIR)/*.so 1>/dev/null) \
- $(shell adb shell rm $(CFG_ADB_TEST_DIR)/*-arm-linux-androideabi 1>/dev/null) \
- $(shell adb shell rm $(CFG_ADB_TEST_DIR)/*-arm-linux-androideabi.* 1>/dev/null) \
+ $(shell adb shell rm -rf $(CFG_ADB_TEST_DIR)/* 1>/dev/null) \
  $(shell adb push $(S)src/etc/adb_run_wrapper.sh $(CFG_ADB_TEST_DIR) 1>/dev/null) \
  $(shell adb push $(CFG_ANDROID_CROSS_PATH)/arm-linux-androideabi/lib/armv7-a/libgnustl_shared.so \
                   $(CFG_ADB_TEST_DIR) 1>/dev/null) \
@@ -159,6 +179,7 @@ check-test: cleantestlibs cleantmptestlogs all check-stage2-rfail
 
 check-lite: cleantestlibs cleantmptestlogs \
 	check-stage2-std check-stage2-extra check-stage2-rpass \
+	check-stage2-rustpkg check-stage2-rusti \
 	check-stage2-rfail check-stage2-cfail
 	$(Q)$(CFG_PYTHON) $(S)src/etc/check-summary.py tmp/*.log
 
@@ -194,25 +215,20 @@ else
 ALL_CS := $(wildcard $(S)src/rt/*.cpp \
                      $(S)src/rt/*/*.cpp \
                      $(S)src/rt/*/*/*.cpp \
-                     $(S)srcrustllvm/*.cpp)
-ALL_CS := $(filter-out $(S)src/rt/bigint/bigint_ext.cpp \
-                       $(S)src/rt/bigint/bigint_int.cpp \
-                       $(S)src/rt/miniz.cpp \
+                     $(S)src/rustllvm/*.cpp)
+ALL_CS := $(filter-out $(S)src/rt/miniz.cpp \
                        $(S)src/rt/linenoise/linenoise.c \
                        $(S)src/rt/linenoise/utf8.c \
 	,$(ALL_CS))
 ALL_HS := $(wildcard $(S)src/rt/*.h \
                      $(S)src/rt/*/*.h \
                      $(S)src/rt/*/*/*.h \
-                     $(S)srcrustllvm/*.h)
+                     $(S)src/rustllvm/*.h)
 ALL_HS := $(filter-out $(S)src/rt/vg/valgrind.h \
                        $(S)src/rt/vg/memcheck.h \
-                       $(S)src/rt/uthash/uthash.h \
-                       $(S)src/rt/uthash/utlist.h \
                        $(S)src/rt/msvc/typeof.h \
                        $(S)src/rt/msvc/stdint.h \
                        $(S)src/rt/msvc/inttypes.h \
-                       $(S)src/rt/bigint/bigint.h \
                        $(S)src/rt/linenoise/linenoise.h \
                        $(S)src/rt/linenoise/utf8.h \
 	,$(ALL_HS))
@@ -247,6 +263,7 @@ check-stage$(1)-T-$(2)-H-$(3)-exec:     				\
         check-stage$(1)-T-$(2)-H-$(3)-crates-exec                      \
 	check-stage$(1)-T-$(2)-H-$(3)-bench-exec			\
 	check-stage$(1)-T-$(2)-H-$(3)-debuginfo-exec \
+	check-stage$(1)-T-$(2)-H-$(3)-codegen-exec \
 	check-stage$(1)-T-$(2)-H-$(3)-doc-exec \
 	check-stage$(1)-T-$(2)-H-$(3)-pretty-exec
 
@@ -294,7 +311,8 @@ define TEST_RUNNER
 # If NO_REBUILD is set then break the dependencies on extra so we can
 # test crates without rebuilding std and extra first
 ifeq ($(NO_REBUILD),)
-STDTESTDEP_$(1)_$(2)_$(3) = $$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_EXTRALIB_$(2))
+STDTESTDEP_$(1)_$(2)_$(3) = $$(SREQ$(1)_T_$(2)_H_$(3)) \
+                            $$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_EXTRALIB_$(2))
 else
 STDTESTDEP_$(1)_$(2)_$(3) =
 endif
@@ -320,6 +338,7 @@ $(3)/stage$(1)/test/syntaxtest-$(2)$$(X_$(2)):			\
 $(3)/stage$(1)/test/rustctest-$(2)$$(X_$(2)): CFG_COMPILER_TRIPLE = $(2)
 $(3)/stage$(1)/test/rustctest-$(2)$$(X_$(2)):					\
 		$$(COMPILER_CRATE) $$(COMPILER_INPUTS) \
+		$$(SREQ$(1)_T_$(2)_H_$(3)) \
 		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_RUSTLLVM_$(2)) \
                 $$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBSYNTAX_$(2))
 	@$$(call E, compile_and_link: $$@)
@@ -327,24 +346,28 @@ $(3)/stage$(1)/test/rustctest-$(2)$$(X_$(2)):					\
 
 $(3)/stage$(1)/test/rustpkgtest-$(2)$$(X_$(2)):					\
 		$$(RUSTPKG_LIB) $$(RUSTPKG_INPUTS)		\
+		$$(SREQ$(1)_T_$(2)_H_$(3)) \
 		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBRUSTC_$(2))
 	@$$(call E, compile_and_link: $$@)
 	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< --test
 
 $(3)/stage$(1)/test/rustitest-$(2)$$(X_$(2)):					\
 		$$(RUSTI_LIB) $$(RUSTI_INPUTS)		\
+		$$(SREQ$(1)_T_$(2)_H_$(3)) \
 		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBRUSTC_$(2))
 	@$$(call E, compile_and_link: $$@)
 	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< --test
 
 $(3)/stage$(1)/test/rusttest-$(2)$$(X_$(2)):					\
 		$$(RUST_LIB) $$(RUST_INPUTS)		\
+		$$(SREQ$(1)_T_$(2)_H_$(3)) \
 		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBRUSTC_$(2))
 	@$$(call E, compile_and_link: $$@)
 	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< --test
 
 $(3)/stage$(1)/test/rustdoctest-$(2)$$(X_$(2)):					\
 		$$(RUSTDOC_LIB) $$(RUSTDOC_INPUTS)		\
+		$$(SREQ$(1)_T_$(2)_H_$(3)) \
 		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(CFG_LIBRUSTC_$(2))
 	@$$(call E, compile_and_link: $$@)
 	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< --test
@@ -359,11 +382,14 @@ $(foreach host,$(CFG_HOST_TRIPLES), \
 define DEF_TEST_CRATE_RULES
 check-stage$(1)-T-$(2)-H-$(3)-$(4)-exec: $$(call TEST_OK_FILE,$(1),$(2),$(3),$(4))
 
+check-stage$(1)-T-$(2)-H-$(3)-$(4)-exec: $$(call TEST_OK_FILE,$(1),$(2),$(3),$(4))
+
 $$(call TEST_OK_FILE,$(1),$(2),$(3),$(4)): \
 		$(3)/stage$(1)/test/$(4)test-$(2)$$(X_$(2))
 	@$$(call E, run: $$<)
 	$$(Q)$$(call CFG_RUN_TEST_$(2),$$<,$(2),$(3)) $$(TESTARGS)	\
 	--logfile $$(call TEST_LOG_FILE,$(1),$(2),$(3),$(4)) \
+	$$(call CRATE_TEST_BENCH_ARGS,$(1),$(2),$(3),$(4)) \
 	&& touch $$@
 endef
 
@@ -431,6 +457,8 @@ CFAIL_RS := $(wildcard $(S)src/test/compile-fail/*.rs)
 BENCH_RS := $(wildcard $(S)src/test/bench/*.rs)
 PRETTY_RS := $(wildcard $(S)src/test/pretty/*.rs)
 DEBUGINFO_RS := $(wildcard $(S)src/test/debug-info/*.rs)
+CODEGEN_RS := $(wildcard $(S)src/test/codegen/*.rs)
+CODEGEN_CC := $(wildcard $(S)src/test/codegen/*.cc)
 
 # perf tests are the same as bench tests only they run under
 # a performance monitor.
@@ -444,6 +472,7 @@ BENCH_TESTS := $(BENCH_RS)
 PERF_TESTS := $(PERF_RS)
 PRETTY_TESTS := $(PRETTY_RS)
 DEBUGINFO_TESTS := $(DEBUGINFO_RS)
+CODEGEN_TESTS := $(CODEGEN_RS) $(CODEGEN_CC)
 
 CTEST_SRC_BASE_rpass = run-pass
 CTEST_BUILD_BASE_rpass = run-pass
@@ -480,8 +509,17 @@ CTEST_BUILD_BASE_debuginfo = debug-info
 CTEST_MODE_debuginfo = debug-info
 CTEST_RUNTOOL_debuginfo = $(CTEST_RUNTOOL)
 
+CTEST_SRC_BASE_codegen = codegen
+CTEST_BUILD_BASE_codegen = codegen
+CTEST_MODE_codegen = codegen
+CTEST_RUNTOOL_codegen = $(CTEST_RUNTOOL)
+
 ifeq ($(CFG_GDB),)
 CTEST_DISABLE_debuginfo = "no gdb found"
+endif
+
+ifeq ($(CFG_CLANG),)
+CTEST_DISABLE_codegen = "no clang found"
 endif
 
 ifeq ($(CFG_OSTYPE),apple-darwin)
@@ -504,16 +542,22 @@ TEST_SREQ$(1)_T_$(2)_H_$(3) = \
 
 # Rules for the cfail/rfail/rpass/bench/perf test runner
 
+# The tests select when to use debug configuration on their own;
+# remove directive, if present, from CFG_RUSTC_FLAGS (issue #7898).
+CTEST_RUSTC_FLAGS = $$(subst --cfg debug,,$$(CFG_RUSTC_FLAGS))
+
 CTEST_COMMON_ARGS$(1)-T-$(2)-H-$(3) :=						\
 		--compile-lib-path $$(HLIB$(1)_H_$(3))				\
         --run-lib-path $$(TLIB$(1)_T_$(2)_H_$(3))			\
         --rustc-path $$(HBIN$(1)_H_$(3))/rustc$$(X_$(3))			\
+        --clang-path $(if $(CFG_CLANG),$(CFG_CLANG),clang) \
+        --llvm-bin-path $(CFG_LLVM_INST_DIR_$(CFG_BUILD_TRIPLE))/bin \
         --aux-base $$(S)src/test/auxiliary/                 \
         --stage-id stage$(1)-$(2)							\
         --target $(2)                                       \
         --adb-path=$(CFG_ADB)                          \
         --adb-test-dir=$(CFG_ADB_TEST_DIR)                  \
-        --rustcflags "$(RUSTC_FLAGS_$(2)) $$(CFG_RUSTC_FLAGS) --target=$(2)" \
+        --rustcflags "$(RUSTC_FLAGS_$(2)) $$(CTEST_RUSTC_FLAGS) --target=$(2)" \
         $$(CTEST_TESTARGS)
 
 CTEST_DEPS_rpass_$(1)-T-$(2)-H-$(3) = $$(RPASS_TESTS)
@@ -523,6 +567,7 @@ CTEST_DEPS_cfail_$(1)-T-$(2)-H-$(3) = $$(CFAIL_TESTS)
 CTEST_DEPS_bench_$(1)-T-$(2)-H-$(3) = $$(BENCH_TESTS)
 CTEST_DEPS_perf_$(1)-T-$(2)-H-$(3) = $$(PERF_TESTS)
 CTEST_DEPS_debuginfo_$(1)-T-$(2)-H-$(3) = $$(DEBUGINFO_TESTS)
+CTEST_DEPS_codegen_$(1)-T-$(2)-H-$(3) = $$(CODEGEN_TESTS)
 
 endef
 
@@ -537,6 +582,7 @@ CTEST_ARGS$(1)-T-$(2)-H-$(3)-$(4) := \
         $$(CTEST_COMMON_ARGS$(1)-T-$(2)-H-$(3))	\
         --src-base $$(S)src/test/$$(CTEST_SRC_BASE_$(4))/ \
         --build-base $(3)/test/$$(CTEST_BUILD_BASE_$(4))/ \
+        --ratchet-metrics $(call TEST_RATCHET_FILE,$(1),$(2),$(3),$(4)) \
         --mode $$(CTEST_MODE_$(4)) \
 	$$(CTEST_RUNTOOL_$(4))
 
@@ -566,7 +612,7 @@ endif
 
 endef
 
-CTEST_NAMES = rpass rpass-full rfail cfail bench perf debuginfo
+CTEST_NAMES = rpass rpass-full rfail cfail bench perf debuginfo codegen
 
 $(foreach host,$(CFG_HOST_TRIPLES), \
  $(eval $(foreach target,$(CFG_TARGET_TRIPLES), \
@@ -675,6 +721,7 @@ TEST_GROUPS = \
 	bench \
 	perf \
 	debuginfo \
+	codegen \
 	doc \
 	$(foreach docname,$(DOC_TEST_NAMES),doc-$(docname)) \
 	pretty \

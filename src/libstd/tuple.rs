@@ -12,12 +12,14 @@
 
 #[allow(missing_doc)];
 
-use kinds::Copy;
+use clone::Clone;
 use vec;
+use vec::ImmutableVector;
+use iterator::IteratorUtil;
 
 pub use self::inner::*;
 
-/// Method extensions to pairs where both types satisfy the `Copy` bound
+/// Method extensions to pairs where both types satisfy the `Clone` bound
 pub trait CopyableTuple<T, U> {
     /// Return the first element of self
     fn first(&self) -> T;
@@ -27,12 +29,12 @@ pub trait CopyableTuple<T, U> {
     fn swap(&self) -> (U, T);
 }
 
-impl<T:Copy,U:Copy> CopyableTuple<T, U> for (T, U) {
+impl<T:Clone,U:Clone> CopyableTuple<T, U> for (T, U) {
     /// Return the first element of self
     #[inline]
     fn first(&self) -> T {
         match *self {
-            (ref t, _) => copy *t,
+            (ref t, _) => (*t).clone(),
         }
     }
 
@@ -40,21 +42,21 @@ impl<T:Copy,U:Copy> CopyableTuple<T, U> for (T, U) {
     #[inline]
     fn second(&self) -> U {
         match *self {
-            (_, ref u) => copy *u,
+            (_, ref u) => (*u).clone(),
         }
     }
 
     /// Return the results of swapping the two elements of self
     #[inline]
     fn swap(&self) -> (U, T) {
-        match copy *self {
+        match (*self).clone() {
             (t, u) => (u, t),
         }
     }
 }
 
 /// Method extensions for pairs where the types don't necessarily satisfy the
-/// `Copy` bound
+/// `Clone` bound
 pub trait ImmutableTuple<T, U> {
     /// Return a reference to the first element of self
     fn first_ref<'a>(&'a self) -> &'a T;
@@ -82,7 +84,11 @@ pub trait ExtendedTupleOps<A,B> {
     fn map<C>(&self, f: &fn(a: &A, b: &B) -> C) -> ~[C];
 }
 
-impl<'self,A:Copy,B:Copy> ExtendedTupleOps<A,B> for (&'self [A], &'self [B]) {
+impl<'self,
+     A:Clone,
+     B:Clone>
+     ExtendedTupleOps<A,B> for
+     (&'self [A], &'self [B]) {
     #[inline]
     fn zip(&self) -> ~[(A, B)] {
         match *self {
@@ -96,13 +102,13 @@ impl<'self,A:Copy,B:Copy> ExtendedTupleOps<A,B> for (&'self [A], &'self [B]) {
     fn map<C>(&self, f: &fn(a: &A, b: &B) -> C) -> ~[C] {
         match *self {
             (ref a, ref b) => {
-                vec::map_zip(*a, *b, f)
+                a.iter().zip(b.iter()).transform(|(aa, bb)| f(aa, bb)).collect()
             }
         }
     }
 }
 
-impl<A:Copy,B:Copy> ExtendedTupleOps<A,B> for (~[A], ~[B]) {
+impl<A:Clone, B:Clone> ExtendedTupleOps<A,B> for (~[A], ~[B]) {
     #[inline]
     fn zip(&self) -> ~[(A, B)] {
         match *self {
@@ -116,7 +122,7 @@ impl<A:Copy,B:Copy> ExtendedTupleOps<A,B> for (~[A], ~[B]) {
     fn map<C>(&self, f: &fn(a: &A, b: &B) -> C) -> ~[C] {
         match *self {
             (ref a, ref b) => {
-                vec::map_zip(*a, *b, f)
+                a.iter().zip(b.iter()).transform(|(aa, bb)| f(aa, bb)).collect()
             }
         }
     }
@@ -378,7 +384,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(non_implicitly_copyable_typarams)]
     fn test_tuple() {
         assert_eq!((948, 4039.48).first(), 948);
         assert_eq!((34.5, ~"foo").second(), ~"foo");

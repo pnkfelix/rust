@@ -12,7 +12,6 @@
 
 #[allow(missing_doc)];
 
-use local_data::{local_data_pop, local_data_set};
 use local_data;
 use prelude::*;
 
@@ -24,16 +23,16 @@ pub struct Handler<T, U> {
     prev: Option<@Handler<T, U>>,
 }
 
-pub struct Condition<'self, T, U> {
+pub struct Condition<T, U> {
     name: &'static str,
-    key: local_data::LocalDataKey<'self, Handler<T, U>>
+    key: local_data::Key<@Handler<T, U>>
 }
 
-impl<'self, T, U> Condition<'self, T, U> {
-    pub fn trap(&'self self, h: &'self fn(T) -> U) -> Trap<'self, T, U> {
+impl<T, U> Condition<T, U> {
+    pub fn trap<'a>(&'a self, h: &'a fn(T) -> U) -> Trap<'a, T, U> {
         unsafe {
             let p : *RustClosure = ::cast::transmute(&h);
-            let prev = local_data::local_data_get(self.key);
+            let prev = local_data::get(self.key, |k| k.map(|&x| *x));
             let h = @Handler { handle: *p, prev: prev };
             Trap { cond: self, handler: h }
         }
@@ -41,12 +40,12 @@ impl<'self, T, U> Condition<'self, T, U> {
 
     pub fn raise(&self, t: T) -> U {
         let msg = fmt!("Unhandled condition: %s: %?", self.name, t);
-        self.raise_default(t, || fail!(copy msg))
+        self.raise_default(t, || fail!(msg.clone()))
     }
 
     pub fn raise_default(&self, t: T, default: &fn() -> U) -> U {
         unsafe {
-            match local_data_pop(self.key) {
+            match local_data::pop(self.key) {
                 None => {
                     debug!("Condition.raise: found no handler");
                     default()
@@ -55,12 +54,12 @@ impl<'self, T, U> Condition<'self, T, U> {
                     debug!("Condition.raise: found handler");
                     match handler.prev {
                         None => {}
-                        Some(hp) => local_data_set(self.key, hp)
+                        Some(hp) => local_data::set(self.key, hp)
                     }
                     let handle : &fn(T) -> U =
                         ::cast::transmute(handler.handle);
                     let u = handle(t);
-                    local_data_set(self.key, handler);
+                    local_data::set(self.key, handler);
                     u
                 }
             }
@@ -69,37 +68,33 @@ impl<'self, T, U> Condition<'self, T, U> {
 }
 
 struct Trap<'self, T, U> {
-    cond: &'self Condition<'self, T, U>,
+    cond: &'self Condition<T, U>,
     handler: @Handler<T, U>
 }
 
 impl<'self, T, U> Trap<'self, T, U> {
-    pub fn in<V>(&self, inner: &'self fn() -> V) -> V {
-        unsafe {
-            let _g = Guard { cond: self.cond };
-            debug!("Trap: pushing handler to TLS");
-            local_data_set(self.cond.key, self.handler);
-            inner()
-        }
+    pub fn inside<V>(&self, inner: &'self fn() -> V) -> V {
+        let _g = Guard { cond: self.cond };
+        debug!("Trap: pushing handler to TLS");
+        local_data::set(self.cond.key, self.handler);
+        inner()
     }
 }
 
 struct Guard<'self, T, U> {
-    cond: &'self Condition<'self, T, U>
+    cond: &'self Condition<T, U>
 }
 
 #[unsafe_destructor]
 impl<'self, T, U> Drop for Guard<'self, T, U> {
-    fn finalize(&self) {
-        unsafe {
-            debug!("Guard: popping handler from TLS");
-            let curr = local_data_pop(self.cond.key);
-            match curr {
+    fn drop(&self) {
+        debug!("Guard: popping handler from TLS");
+        let curr = local_data::pop(self.cond.key);
+        match curr {
+            None => {}
+            Some(h) => match h.prev {
                 None => {}
-                Some(h) => match h.prev {
-                    None => {}
-                    Some(hp) => local_data_set(self.cond.key, hp)
-                }
+                Some(hp) => local_data::set(self.cond.key, hp)
             }
         }
     }
@@ -124,7 +119,7 @@ mod test {
             debug!("nested_trap_test_inner: in handler");
             inner_trapped = true;
             0
-        }).in {
+        }).inside {
             debug!("nested_trap_test_inner: in protected block");
             trouble(1);
         }
@@ -139,7 +134,7 @@ mod test {
         do sadness::cond.trap(|_j| {
             debug!("nested_trap_test_outer: in handler");
             outer_trapped = true; 0
-        }).in {
+        }).inside {
             debug!("nested_guard_test_outer: in protected block");
             nested_trap_test_inner();
             trouble(1);
@@ -157,7 +152,7 @@ mod test {
             let i = 10;
             debug!("nested_reraise_trap_test_inner: handler re-raising");
             sadness::cond.raise(i)
-        }).in {
+        }).inside {
             debug!("nested_reraise_trap_test_inner: in protected block");
             trouble(1);
         }
@@ -172,7 +167,7 @@ mod test {
         do sadness::cond.trap(|_j| {
             debug!("nested_reraise_trap_test_outer: in handler");
             outer_trapped = true; 0
-        }).in {
+        }).inside {
             debug!("nested_reraise_trap_test_outer: in protected block");
             nested_reraise_trap_test_inner();
         }
@@ -187,7 +182,7 @@ mod test {
         do sadness::cond.trap(|j| {
             debug!("test_default: in handler");
             sadness::cond.raise_default(j, || { trapped=true; 5 })
-        }).in {
+        }).inside {
             debug!("test_default: in protected block");
             trouble(1);
         }
@@ -210,7 +205,7 @@ mod test {
                 do sadness::cond.trap(|_| {
                     trapped = true;
                     0
-                }).in {
+                }).inside {
                     sadness::cond.raise(0);
                 }
                 assert!(trapped);

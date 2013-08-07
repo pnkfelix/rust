@@ -16,11 +16,10 @@ Runtime type reflection
 
 #[allow(missing_doc)];
 
-use intrinsic::{TyDesc, TyVisitor};
-use intrinsic::Opaque;
+use unstable::intrinsics::{Opaque, TyDesc, TyVisitor};
 use libc::c_void;
 use sys;
-use vec;
+use unstable::raw;
 
 /**
  * Trait for visitor that wishes to reflect on data. To use this, create a
@@ -195,13 +194,6 @@ impl<V:TyVisitor + MovePtr> TyVisitor for MovePtrAdaptor<V> {
         true
     }
 
-    fn visit_str(&self) -> bool {
-        self.align_to::<~str>();
-        if ! self.inner.visit_str() { return false; }
-        self.bump_past::<~str>();
-        true
-    }
-
     fn visit_estr_box(&self) -> bool {
         self.align_to::<@str>();
         if ! self.inner.visit_estr_box() { return false; }
@@ -246,6 +238,13 @@ impl<V:TyVisitor + MovePtr> TyVisitor for MovePtrAdaptor<V> {
         true
     }
 
+    fn visit_uniq_managed(&self, mtbl: uint, inner: *TyDesc) -> bool {
+        self.align_to::<~u8>();
+        if ! self.inner.visit_uniq_managed(mtbl, inner) { return false; }
+        self.bump_past::<~u8>();
+        true
+    }
+
     fn visit_ptr(&self, mtbl: uint, inner: *TyDesc) -> bool {
         self.align_to::<*u8>();
         if ! self.inner.visit_ptr(mtbl, inner) { return false; }
@@ -261,7 +260,7 @@ impl<V:TyVisitor + MovePtr> TyVisitor for MovePtrAdaptor<V> {
     }
 
     fn visit_unboxed_vec(&self, mtbl: uint, inner: *TyDesc) -> bool {
-        self.align_to::<vec::UnboxedVecRepr>();
+        self.align_to::<raw::Vec<()>>();
         if ! self.inner.visit_vec(mtbl, inner) { return false; }
         true
     }
@@ -284,6 +283,13 @@ impl<V:TyVisitor + MovePtr> TyVisitor for MovePtrAdaptor<V> {
         self.align_to::<~[u8]>();
         if ! self.inner.visit_evec_uniq(mtbl, inner) { return false; }
         self.bump_past::<~[u8]>();
+        true
+    }
+
+    fn visit_evec_uniq_managed(&self, mtbl: uint, inner: *TyDesc) -> bool {
+        self.align_to::<~[@u8]>();
+        if ! self.inner.visit_evec_uniq_managed(mtbl, inner) { return false; }
+        self.bump_past::<~[@u8]>();
         true
     }
 

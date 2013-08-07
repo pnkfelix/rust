@@ -12,7 +12,6 @@
 
 extern mod extra;
 
-use extra::sort;
 use std::cell::Cell;
 use std::comm::*;
 use std::io;
@@ -20,14 +19,13 @@ use std::option;
 use std::os;
 use std::task;
 use std::uint;
-use std::vec;
 
 fn print_complements() {
-    let all = ~[Blue, Red, Yellow];
-    for vec::each(all) |aa| {
-        for vec::each(all) |bb| {
-            io::println(show_color(*aa) + " + " + show_color(*bb) +
-                " -> " + show_color(transform(*aa, *bb)));
+    let all = [Blue, Red, Yellow];
+    foreach aa in all.iter() {
+        foreach bb in all.iter() {
+            println(show_color(*aa) + " + " + show_color(*bb) +
+                    " -> " + show_color(transform(*aa, *bb)));
         }
     }
 }
@@ -49,9 +47,9 @@ fn show_color(cc: color) -> ~str {
 
 fn show_color_list(set: ~[color]) -> ~str {
     let mut out = ~"";
-    for vec::eachi(set) |_ii, col| {
-        out += " ";
-        out += show_color(*col);
+    foreach col in set.iter() {
+        out.push_char(' ');
+        out.push_str(show_color(*col));
     }
     return out;
 }
@@ -85,7 +83,7 @@ fn show_number(nn: uint) -> ~str {
         out = show_digit(dig) + " " + out;
     }
 
-    return out;
+    return ~" " + out;
 }
 
 fn transform(aa: color, bb: color) -> color {
@@ -152,7 +150,7 @@ fn rendezvous(nn: uint, set: ~[color]) {
 
     // these channels will allow us to talk to each creature by 'name'/index
     let to_creature: ~[Chan<Option<CreatureInfo>>] =
-        vec::mapi(set, |ii, col| {
+        set.iter().enumerate().transform(|(ii, col)| {
             // create each creature as a listener with a port, and
             // give us a channel to talk to each
             let ii = ii;
@@ -166,12 +164,12 @@ fn rendezvous(nn: uint, set: ~[color]) {
                          to_rendezvous_log.clone());
             }
             to_creature
-        });
+        }).collect();
 
     let mut creatures_met = 0;
 
     // set up meetings...
-    for nn.times {
+    do nn.times {
         let fst_creature: CreatureInfo = from_creatures.recv();
         let snd_creature: CreatureInfo = from_creatures.recv();
 
@@ -182,13 +180,13 @@ fn rendezvous(nn: uint, set: ~[color]) {
     }
 
     // tell each creature to stop
-    for vec::eachi(to_creature) |_ii, to_one| {
+    foreach to_one in to_creature.iter() {
         to_one.send(None);
     }
 
     // save each creature's meeting stats
     let mut report = ~[];
-    for vec::each(to_creature) |_to_one| {
+    foreach _to_one in to_creature.iter() {
         report.push(from_creatures_log.recv());
     }
 
@@ -196,7 +194,7 @@ fn rendezvous(nn: uint, set: ~[color]) {
     io::println(show_color_list(set));
 
     // print each creature's stats
-    for vec::each(report) |rep| {
+    foreach rep in report.iter() {
         io::println(*rep);
     }
 
@@ -206,7 +204,7 @@ fn rendezvous(nn: uint, set: ~[color]) {
 
 fn main() {
     let args = os::args();
-    let args = if os::getenv(~"RUST_BENCH").is_some() {
+    let args = if os::getenv("RUST_BENCH").is_some() {
         ~[~"", ~"200000"]
     } else if args.len() <= 1u {
         ~[~"", ~"600"]
@@ -217,10 +215,10 @@ fn main() {
     let nn = uint::from_str(args[1]).get();
 
     print_complements();
-    io::println(~"");
+    io::println("");
 
     rendezvous(nn, ~[Blue, Red, Yellow]);
-    io::println(~"");
+    io::println("");
 
     rendezvous(nn,
         ~[Blue, Red, Yellow, Red, Yellow, Blue, Red, Yellow, Red, Blue]);

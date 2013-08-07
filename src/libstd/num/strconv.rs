@@ -10,19 +10,18 @@
 
 #[allow(missing_doc)];
 
+use clone::Clone;
 use container::Container;
-use core::cmp::{Ord, Eq};
+use std::cmp::{Ord, Eq};
 use ops::{Add, Sub, Mul, Div, Rem, Neg};
 use option::{None, Option, Some};
 use char;
-use str;
 use str::{StrSlice};
-use kinds::Copy;
-use vec;
-use vec::{CopyableVector, ImmutableVector};
+use str;
+use vec::{CopyableVector, ImmutableVector, MutableVector};
 use vec::OwnedVector;
-use num::{NumCast, Zero, One, cast, pow_with_uint};
-use f64;
+use num::{NumCast, Zero, One, cast, pow_with_uint, Integer};
+use num::{Round, Float, FPNaN, FPInfinite};
 
 pub enum ExponentFormat {
     ExpNone,
@@ -40,35 +39,6 @@ pub enum SignFormat {
     SignNone,
     SignNeg,
     SignAll
-}
-
-#[inline]
-fn is_NaN<T:Eq>(num: &T) -> bool {
-    *num != *num
-}
-
-#[inline]
-fn is_inf<T:Eq+NumStrConv>(num: &T) -> bool {
-    match NumStrConv::inf() {
-        None    => false,
-        Some(n) => *num == n
-    }
-}
-
-#[inline]
-fn is_neg_inf<T:Eq+NumStrConv>(num: &T) -> bool {
-    match NumStrConv::neg_inf() {
-        None    => false,
-        Some(n) => *num == n
-    }
-}
-
-#[inline]
-fn is_neg_zero<T:Eq+One+Zero+NumStrConv+Div<T,T>>(num: &T) -> bool {
-    let _0: T = Zero::zero();
-    let _1: T = One::one();
-
-    *num == _0 && is_neg_inf(&(_1 / *num))
 }
 
 pub trait NumStrConv {
@@ -93,16 +63,9 @@ macro_rules! impl_NumStrConv_Floating (($t:ty) => (
         fn neg_zero() -> Option<$t> { Some(-0.0      ) }
 
         #[inline]
-        fn round_to_zero(&self) -> $t {
-            ( if *self < 0.0 { f64::ceil(*self as f64)  }
-              else           { f64::floor(*self as f64) }
-            ) as $t
-        }
-
+        fn round_to_zero(&self) -> $t { self.trunc() }
         #[inline]
-        fn fractional_part(&self) -> $t {
-            *self - self.round_to_zero()
-        }
+        fn fractional_part(&self) -> $t { self.fract() }
     }
 ))
 
@@ -138,12 +101,93 @@ impl_NumStrConv_Integer!(u64)
 
 
 // Special value strings as [u8] consts.
-static inf_buf:          [u8, ..3] = ['i' as u8, 'n' as u8, 'f' as u8];
-static positive_inf_buf: [u8, ..4] = ['+' as u8, 'i' as u8, 'n' as u8,
+static INF_BUF:          [u8, ..3] = ['i' as u8, 'n' as u8, 'f' as u8];
+static POS_INF_BUF: [u8, ..4] = ['+' as u8, 'i' as u8, 'n' as u8,
                                       'f' as u8];
-static negative_inf_buf: [u8, ..4] = ['-' as u8, 'i' as u8, 'n' as u8,
+static NEG_INF_BUF: [u8, ..4] = ['-' as u8, 'i' as u8, 'n' as u8,
                                       'f' as u8];
-static nan_buf:          [u8, ..3] = ['N' as u8, 'a' as u8, 'N' as u8];
+static NAN_BUF:          [u8, ..3] = ['N' as u8, 'a' as u8, 'N' as u8];
+
+/**
+ * Converts an integral number to its string representation as a byte vector.
+ * This is meant to be a common base implementation for all integral string
+ * conversion functions like `to_str()` or `to_str_radix()`.
+ *
+ * # Arguments
+ * - `num`           - The number to convert. Accepts any number that
+ *                     implements the numeric traits.
+ * - `radix`         - Base to use. Accepts only the values 2-36.
+ * - `sign`          - How to emit the sign. Options are:
+ *     - `SignNone`: No sign at all. Basically emits `abs(num)`.
+ *     - `SignNeg`:  Only `-` on negative values.
+ *     - `SignAll`:  Both `+` on positive, and `-` on negative numbers.
+ * - `f`             - a callback which will be invoked for each ascii character
+ *                     which composes the string representation of this integer
+ *
+ * # Return value
+ * A tuple containing the byte vector, and a boolean flag indicating
+ * whether it represents a special value like `inf`, `-inf`, `NaN` or not.
+ * It returns a tuple because there can be ambiguity between a special value
+ * and a number representation at higher bases.
+ *
+ * # Failure
+ * - Fails if `radix` < 2 or `radix` > 36.
+ */
+pub fn int_to_str_bytes_common<T:NumCast+Zero+Eq+Ord+Integer+
+                                 Div<T,T>+Neg<T>+Rem<T,T>+Mul<T,T>>(
+        num: T, radix: uint, sign: SignFormat, f: &fn(u8)) {
+    assert!(2 <= radix && radix <= 36);
+
+    let _0: T = Zero::zero();
+
+    let neg = num < _0;
+    let radix_gen: T = cast(radix);
+
+    let mut deccum = num;
+    // This is just for integral types, the largest of which is a u64. The
+    // smallest base that we can have is 2, so the most number of digits we're
+    // ever going to have is 64
+    let mut buf = [0u8, ..64];
+    let mut cur = 0;
+
+    // Loop at least once to make sure at least a `0` gets emitted.
+    loop {
+        // Calculate the absolute value of each digit instead of only
+        // doing it once for the whole number because a
+        // representable negative number doesn't necessary have an
+        // representable additive inverse of the same type
+        // (See twos complement). But we assume that for the
+        // numbers [-35 .. 0] we always have [0 .. 35].
+        let current_digit_signed = deccum % radix_gen;
+        let current_digit = if current_digit_signed < _0 {
+            -current_digit_signed
+        } else {
+            current_digit_signed
+        };
+        buf[cur] = match current_digit.to_u8() {
+            i @ 0..9 => '0' as u8 + i,
+            i        => 'a' as u8 + (i - 10),
+        };
+        cur += 1;
+
+        deccum = deccum / radix_gen;
+        // No more digits to calculate for the non-fractional part -> break
+        if deccum == _0 { break; }
+    }
+
+    // Decide what sign to put in front
+    match sign {
+        SignNeg | SignAll if neg => { f('-' as u8); }
+        SignAll => { f('+' as u8); }
+        _ => ()
+    }
+
+    // We built the number in reverse order, so un-reverse it here
+    while cur > 0 {
+        cur -= 1;
+        f(buf[cur]);
+    }
+}
 
 /**
  * Converts a number to its string representation as a byte vector.
@@ -176,44 +220,39 @@ static nan_buf:          [u8, ..3] = ['N' as u8, 'a' as u8, 'N' as u8];
  * # Failure
  * - Fails if `radix` < 2 or `radix` > 36.
  */
-pub fn to_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+NumStrConv+Copy+
+pub fn float_to_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+Float+Round+
                                   Div<T,T>+Neg<T>+Rem<T,T>+Mul<T,T>>(
-        num: &T, radix: uint, negative_zero: bool,
+        num: T, radix: uint, negative_zero: bool,
         sign: SignFormat, digits: SignificantDigits) -> (~[u8], bool) {
-    if (radix as int) < 2 {
-        fail!("to_str_bytes_common: radix %? to low, must lie in the range [2, 36]", radix);
-    } else if radix as int > 36 {
-        fail!("to_str_bytes_common: radix %? to high, must lie in the range [2, 36]", radix);
-    }
+    assert!(2 <= radix && radix <= 36);
 
     let _0: T = Zero::zero();
     let _1: T = One::one();
 
-    if is_NaN(num) {
-        return ("NaN".as_bytes().to_owned(), true);
-    }
-    else if is_inf(num){
-        return match sign {
-            SignAll => ("+inf".as_bytes().to_owned(), true),
-            _       => ("inf".as_bytes().to_owned(), true)
+    match num.classify() {
+        FPNaN => { return ("NaN".as_bytes().to_owned(), true); }
+        FPInfinite if num > _0 => {
+            return match sign {
+                SignAll => ("+inf".as_bytes().to_owned(), true),
+                _       => ("inf".as_bytes().to_owned(), true)
+            };
         }
-    }
-    else if is_neg_inf(num) {
-        return match sign {
-            SignNone => ("inf".as_bytes().to_owned(), true),
-            _        => ("-inf".as_bytes().to_owned(), true),
+        FPInfinite if num < _0 => {
+            return match sign {
+                SignNone => ("inf".as_bytes().to_owned(), true),
+                _        => ("-inf".as_bytes().to_owned(), true),
+            };
         }
+        _ => {}
     }
 
-    let neg = *num < _0 || (negative_zero && is_neg_zero(num));
+    let neg = num < _0 || (negative_zero && _1 / num == Float::neg_infinity());
     let mut buf: ~[u8] = ~[];
     let radix_gen: T   = cast(radix as int);
 
-    let mut deccum;
-
     // First emit the non-fractional part, looping at least once to make
     // sure at least a `0` gets emitted.
-    deccum = num.round_to_zero();
+    let mut deccum = num.trunc();
     loop {
         // Calculate the absolute value of each digit instead of only
         // doing it once for the whole number because a
@@ -221,16 +260,11 @@ pub fn to_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+NumStrConv+Copy+
         // representable additive inverse of the same type
         // (See twos complement). But we assume that for the
         // numbers [-35 .. 0] we always have [0 .. 35].
-        let current_digit_signed = deccum % radix_gen;
-        let current_digit = if current_digit_signed < _0 {
-            -current_digit_signed
-        } else {
-            current_digit_signed
-        };
+        let current_digit = (deccum % radix_gen).abs();
 
         // Decrease the deccumulator one digit at a time
         deccum = deccum / radix_gen;
-        deccum = deccum.round_to_zero();
+        deccum = deccum.trunc();
 
         buf.push(char::from_digit(current_digit.to_int() as uint, radix)
              .unwrap() as u8);
@@ -257,7 +291,7 @@ pub fn to_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+NumStrConv+Copy+
         _ => ()
     }
 
-    vec::reverse(buf);
+    buf.reverse();
 
     // Remember start of the fractional digits.
     // Points one beyond end of buf if none get generated,
@@ -265,7 +299,7 @@ pub fn to_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+NumStrConv+Copy+
     let start_fractional_digits = buf.len();
 
     // Now emit the fractional part, if any
-    deccum = num.fractional_part();
+    deccum = num.fract();
     if deccum != _0 || (limit_digits && exact && digit_count > 0) {
         buf.push('.' as u8);
         let mut dig = 0u;
@@ -286,18 +320,13 @@ pub fn to_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+NumStrConv+Copy+
 
             // Calculate the absolute value of each digit.
             // See note in first loop.
-            let current_digit_signed = deccum.round_to_zero();
-            let current_digit = if current_digit_signed < _0 {
-                -current_digit_signed
-            } else {
-                current_digit_signed
-            };
+            let current_digit = deccum.trunc().abs();
 
             buf.push(char::from_digit(
                 current_digit.to_int() as uint, radix).unwrap() as u8);
 
             // Decrease the deccumulator one fractional digit at a time
-            deccum = deccum.fractional_part();
+            deccum = deccum.fract();
             dig += 1u;
         }
 
@@ -382,11 +411,11 @@ pub fn to_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+NumStrConv+Copy+
  * `to_str_bytes_common()`, for details see there.
  */
 #[inline]
-pub fn to_str_common<T:NumCast+Zero+One+Eq+Ord+NumStrConv+Copy+
-                            Div<T,T>+Neg<T>+Rem<T,T>+Mul<T,T>>(
-        num: &T, radix: uint, negative_zero: bool,
+pub fn float_to_str_common<T:NumCast+Zero+One+Eq+Ord+NumStrConv+Float+Round+
+                             Div<T,T>+Neg<T>+Rem<T,T>+Mul<T,T>>(
+        num: T, radix: uint, negative_zero: bool,
         sign: SignFormat, digits: SignificantDigits) -> (~str, bool) {
-    let (bytes, special) = to_str_bytes_common(num, radix,
+    let (bytes, special) = float_to_str_bytes_common(num, radix,
                                negative_zero, sign, digits);
     (str::from_bytes(bytes), special)
 }
@@ -436,9 +465,9 @@ priv static DIGIT_E_RADIX: uint = ('e' as uint) - ('a' as uint) + 11u;
  * - Fails if `radix` > 18 and `special == true` due to conflict
  *   between digit and lowest first character in `inf` and `NaN`, the `'i'`.
  */
-pub fn from_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+Copy+Div<T,T>+
+pub fn from_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+Div<T,T>+
                                     Mul<T,T>+Sub<T,T>+Neg<T>+Add<T,T>+
-                                    NumStrConv>(
+                                    NumStrConv+Clone>(
         buf: &[u8], radix: uint, negative: bool, fractional: bool,
         special: bool, exponent: ExponentFormat, empty_zero: bool,
         ignore_underscores: bool
@@ -477,15 +506,15 @@ pub fn from_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+Copy+Div<T,T>+
     }
 
     if special {
-        if buf == inf_buf || buf == positive_inf_buf {
+        if buf == INF_BUF || buf == POS_INF_BUF {
             return NumStrConv::inf();
-        } else if buf == negative_inf_buf {
+        } else if buf == NEG_INF_BUF {
             if negative {
                 return NumStrConv::neg_inf();
             } else {
                 return None;
             }
-        } else if buf == nan_buf {
+        } else if buf == NAN_BUF {
             return NumStrConv::NaN();
         }
     }
@@ -499,8 +528,8 @@ pub fn from_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+Copy+Div<T,T>+
 
     // Initialize accumulator with signed zero for floating point parsing to
     // work
-    let mut accum      = if accum_positive { copy _0 } else { -_1 * _0};
-    let mut last_accum = copy accum; // Necessary to detect overflow
+    let mut accum      = if accum_positive { _0.clone() } else { -_1 * _0};
+    let mut last_accum = accum.clone(); // Necessary to detect overflow
     let mut i          = start;
     let mut exp_found  = false;
 
@@ -511,7 +540,7 @@ pub fn from_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+Copy+Div<T,T>+
         match char::to_digit(c, radix) {
             Some(digit) => {
                 // shift accum one digit left
-                accum = accum * copy radix_gen;
+                accum = accum * radix_gen.clone();
 
                 // add/subtract current digit depending on sign
                 if accum_positive {
@@ -526,7 +555,7 @@ pub fn from_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+Copy+Div<T,T>+
                     if accum_positive && accum <= last_accum { return None; }
                     if !accum_positive && accum >= last_accum { return None; }
                 }
-                last_accum = copy accum;
+                last_accum = accum.clone();
             }
             None => match c {
                 '_' if ignore_underscores => {}
@@ -548,7 +577,7 @@ pub fn from_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+Copy+Div<T,T>+
     // Parse fractional part of number
     // Skip if already reached start of exponent
     if !exp_found {
-        let mut power = copy _1;
+        let mut power = _1.clone();
 
         while i < len {
             let c = buf[i] as char;
@@ -570,7 +599,7 @@ pub fn from_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+Copy+Div<T,T>+
                     // Detect overflow by comparing to last value
                     if accum_positive && accum < last_accum { return None; }
                     if !accum_positive && accum > last_accum { return None; }
-                    last_accum = copy accum;
+                    last_accum = accum.clone();
                 }
                 None => match c {
                     '_' if ignore_underscores => {}
@@ -596,7 +625,7 @@ pub fn from_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+Copy+Div<T,T>+
         }
     }
 
-    let mut multiplier = copy _1;
+    let mut multiplier = _1.clone();
 
     if exp_found {
         let c = buf[i] as char;
@@ -633,8 +662,8 @@ pub fn from_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+Copy+Div<T,T>+
  * `from_str_bytes_common()`, for details see there.
  */
 #[inline]
-pub fn from_str_common<T:NumCast+Zero+One+Eq+Ord+Copy+Div<T,T>+Mul<T,T>+
-                              Sub<T,T>+Neg<T>+Add<T,T>+NumStrConv>(
+pub fn from_str_common<T:NumCast+Zero+One+Eq+Ord+Div<T,T>+Mul<T,T>+
+                              Sub<T,T>+Neg<T>+Add<T,T>+NumStrConv+Clone>(
         buf: &str, radix: uint, negative: bool, fractional: bool,
         special: bool, exponent: ExponentFormat, empty_zero: bool,
         ignore_underscores: bool
@@ -672,5 +701,29 @@ mod test {
         let n : Option<u8> = from_str_common("111111111", 2, false, false, false,
                                              ExpNone, false, false);
         assert_eq!(n, None);
+    }
+}
+
+#[cfg(test)]
+mod bench {
+    use extra::test::BenchHarness;
+    use rand::{XorShiftRng,RngUtil};
+    use uint;
+    use float;
+
+    #[bench]
+    fn uint_to_str_rand(bh: &mut BenchHarness) {
+        let mut rng = XorShiftRng::new();
+        do bh.iter {
+            uint::to_str(rng.gen());
+        }
+    }
+
+    #[bench]
+    fn float_to_str_rand(bh: &mut BenchHarness) {
+        let mut rng = XorShiftRng::new();
+        do bh.iter {
+            float::to_str(rng.gen());
+        }
     }
 }

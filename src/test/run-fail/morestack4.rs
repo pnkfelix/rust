@@ -8,6 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// xfail-test newsched transition
 // error-pattern:explicit failure
 
 // Just testing unwinding
@@ -30,7 +31,7 @@ struct and_then_get_big_again {
 }
 
 impl Drop for and_then_get_big_again {
-    fn finalize(&self) {}
+    fn drop(&self) {}
 }
 
 fn and_then_get_big_again(x:int) -> and_then_get_big_again {

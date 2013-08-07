@@ -14,18 +14,32 @@
 extern mod std;
 
 use extra::semver;
-use core::prelude::*;
-use core::{char, os, result, run, str};
+use std::{char, os, result, run, str};
 use package_path::RemotePath;
 use extra::tempfile::mkdtemp;
 
-#[deriving(Eq)]
+#[deriving(Clone)]
 pub enum Version {
     ExactRevision(~str), // Should look like a m.n.(...).x
     SemanticVersion(semver::Version),
+    Tagged(~str), // String that can't be parsed as a version.
+                  // Requirements get interpreted exactly
     NoVersion // user didn't specify a version -- prints as 0.1
 }
 
+impl Eq for Version {
+    fn eq(&self, other: &Version) -> bool {
+        match (self, other) {
+            (&ExactRevision(ref s1), &ExactRevision(ref s2)) => *s1 == *s2,
+            (&SemanticVersion(ref v1), &SemanticVersion(ref v2)) => *v1 == *v2,
+            (&NoVersion, _) => true,
+            _ => false
+        }
+    }
+    fn ne(&self, other: &Version) -> bool {
+        !self.eq(other)
+    }
+}
 
 impl Ord for Version {
     fn lt(&self, other: &Version) -> bool {
@@ -64,7 +78,7 @@ impl Ord for Version {
 impl ToStr for Version {
     fn to_str(&self) -> ~str {
         match *self {
-            ExactRevision(ref n) => fmt!("%s", n.to_str()),
+            ExactRevision(ref n) | Tagged(ref n) => fmt!("%s", n.to_str()),
             SemanticVersion(ref v) => fmt!("%s", v.to_str()),
             NoVersion => ~"0.1"
         }
@@ -78,6 +92,29 @@ pub fn parse_vers(vers: ~str) -> result::Result<semver::Version, ~str> {
     }
 }
 
+/// If `local_path` is a git repo, and the most recent tag in that repo denotes a version,
+/// return it; otherwise, `None`
+pub fn try_getting_local_version(local_path: &Path) -> Option<Version> {
+    debug!("in try_getting_local_version");
+    let outp = run::process_output("git",
+                                   [fmt!("--git-dir=%s", local_path.push(".git").to_str()),
+                                    ~"tag", ~"-l"]);
+
+    debug!("git --git-dir=%s tag -l ~~~> %?", local_path.push(".git").to_str(), outp.status);
+
+    if outp.status != 0 {
+        return None;
+    }
+
+    let mut output = None;
+    let output_text = str::from_bytes(outp.output);
+    foreach l in output_text.line_iter() {
+        if !l.is_whitespace() {
+            output = Some(l);
+        }
+    }
+    output.chain(try_parsing_version)
+}
 
 /// If `remote_path` refers to a git repo that can be downloaded,
 /// and the most recent tag in that repo denotes a version, return it;
@@ -105,7 +142,7 @@ pub fn try_getting_version(remote_path: &RemotePath) -> Option<Version> {
                                             ~"tag", ~"-l"]);
             let output_text = str::from_bytes(outp.output);
             debug!("Full output: ( %s ) [%?]", output_text, outp.status);
-            for output_text.line_iter().advance |l| {
+            foreach l in output_text.line_iter() {
                 debug!("A line of output: %s", l);
                 if !l.is_whitespace() {
                     output = Some(l);
@@ -135,7 +172,7 @@ fn try_parsing_version(s: &str) -> Option<Version> {
     let s = s.trim();
     debug!("Attempting to parse: %s", s);
     let mut parse_state = Start;
-    for s.iter().advance |c| {
+    foreach c in s.iter() {
         if char::is_digit(c) {
             parse_state = SawDigit;
         }
@@ -155,7 +192,7 @@ fn try_parsing_version(s: &str) -> Option<Version> {
 /// Just an approximation
 fn is_url_like(p: &RemotePath) -> bool {
     let str = p.to_str();
-    str.split_iter('/').count() > 2
+    str.split_iter('/').len_() > 2
 }
 
 /// If s is of the form foo#bar, where bar is a valid version
@@ -167,10 +204,10 @@ pub fn split_version<'a>(s: &'a str) -> Option<(&'a str, Version)> {
 
 pub fn split_version_general<'a>(s: &'a str, sep: char) -> Option<(&'a str, Version)> {
     // reject strings with multiple '#'s
-    for s.split_iter(sep).advance |st| {
+    foreach st in s.split_iter(sep) {
         debug!("whole = %s part = %s", s, st);
     }
-    if s.split_iter(sep).count() > 2 {
+    if s.split_iter(sep).len_() > 2 {
         return None;
     }
     match s.rfind(sep) {

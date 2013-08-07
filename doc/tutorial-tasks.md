@@ -50,7 +50,7 @@ concurrency at this writing:
 * [`std::pipes`] - The underlying messaging infrastructure,
 * [`extra::comm`] - Additional messaging types based on `std::pipes`,
 * [`extra::sync`] - More exotic synchronization tools, including locks,
-* [`extra::arc`] - The ARC (atomically reference counted) type,
+* [`extra::arc`] - The Arc (atomically reference counted) type,
   for safely sharing immutable data,
 * [`extra::future`] - A type representing values that may be computed concurrently and retrieved at a later time.
 
@@ -120,9 +120,8 @@ should interleave the output in vaguely random order.
 ~~~
 # use std::io::print;
 # use std::task::spawn;
-# use std::int;
 
-for int::range(0, 20) |child_task_number| {
+foreach child_task_number in range(0, 20) {
     do spawn {
        print(fmt!("I am child number %d\n", child_task_number));
     }
@@ -237,12 +236,11 @@ Instead we can use a `SharedChan`, a type that allows a single
 ~~~
 # use std::task::spawn;
 # use std::comm::{stream, SharedChan};
-# use std::uint;
 
 let (port, chan) = stream();
 let chan = SharedChan::new(chan);
 
-for uint::range(0, 3) |init_val| {
+foreach init_val in range(0u, 3) {
     // Create a new channel handle to distribute to the child task
     let child_chan = chan.clone();
     do spawn {
@@ -283,7 +281,7 @@ let ports = do vec::from_fn(3) |init_val| {
 };
 
 // Wait on each port, accumulating the results
-let result = ports.foldl(0, |accum, port| *accum + port.recv() );
+let result = ports.iter().fold(0, |accum, port| accum + port.recv() );
 # fn some_expensive_computation(_i: uint) -> int { 42 }
 ~~~
 
@@ -314,10 +312,9 @@ Here is another example showing how futures allow you to background computations
 be distributed on the available cores.
 ~~~
 # use std::vec;
-# use std::uint;
 fn partial_sum(start: uint) -> f64 {
     let mut local_sum = 0f64;
-    for uint::range(start*100000, (start+1)*100000) |num| {
+    foreach num in range(start*100000, (start+1)*100000) {
         local_sum += (num as f64 + 1.0).pow(&-2.0);
     }
     local_sum
@@ -327,31 +324,30 @@ fn main() {
     let mut futures = vec::from_fn(1000, |ind| do extra::future::spawn { partial_sum(ind) });
 
     let mut final_res = 0f64;
-    for futures.mut_iter().advance |ft|  {
+    foreach ft in futures.mut_iter()  {
         final_res += ft.get();
     }
     println(fmt!("π^2/6 is not far from : %?", final_res));
 }
 ~~~
 
-## Sharing immutable data without copy: ARC
+## Sharing immutable data without copy: Arc
 
 To share immutable data between tasks, a first approach would be to only use pipes as we have seen
 previously. A copy of the data to share would then be made for each task. In some cases, this would
 add up to a significant amount of wasted memory and would require copying the same data more than
 necessary.
 
-To tackle this issue, one can use an Atomically Reference Counted wrapper (`ARC`) as implemented in
-the `extra` library of Rust. With an ARC, the data will no longer be copied for each task. The ARC
+To tackle this issue, one can use an Atomically Reference Counted wrapper (`Arc`) as implemented in
+the `extra` library of Rust. With an Arc, the data will no longer be copied for each task. The Arc
 acts as a reference to the shared data and only this reference is shared and cloned.
 
-Here is a small example showing how to use ARCs. We wish to run concurrently several computations on
+Here is a small example showing how to use Arcs. We wish to run concurrently several computations on
 a single large vector of floats. Each task needs the full vector to perform its duty.
 ~~~
 # use std::vec;
-# use std::uint;
 # use std::rand;
-use extra::arc::ARC;
+use extra::arc::Arc;
 
 fn pnorm(nums: &~[float], p: uint) -> float {
     nums.iter().fold(0.0, |a,b| a+(*b).pow(&(p as float)) ).pow(&(1f / (p as float)))
@@ -361,14 +357,14 @@ fn main() {
     let numbers = vec::from_fn(1000000, |_| rand::random::<float>());
     println(fmt!("Inf-norm = %?",  *numbers.iter().max().unwrap()));
 
-    let numbers_arc = ARC(numbers);
+    let numbers_arc = Arc::new(numbers);
 
-    for uint::range(1,10) |num| {
+    foreach num in range(1u, 10) {
         let (port, chan)  = stream();
         chan.send(numbers_arc.clone());
 
         do spawn {
-            let local_arc : ARC<~[float]> = port.recv();
+            let local_arc : Arc<~[float]> = port.recv();
             let task_numbers = local_arc.get();
             println(fmt!("%u-norm = %?", num, pnorm(task_numbers, num)));
         }
@@ -377,22 +373,22 @@ fn main() {
 ~~~
 
 The function `pnorm` performs a simple computation on the vector (it computes the sum of its items
-at the power given as argument and takes the inverse power of this value). The ARC on the vector is
+at the power given as argument and takes the inverse power of this value). The Arc on the vector is
 created by the line
 ~~~
-# use extra::arc::ARC;
+# use extra::arc::Arc;
 # use std::vec;
 # use std::rand;
 # let numbers = vec::from_fn(1000000, |_| rand::random::<float>());
-let numbers_arc=ARC(numbers);
+let numbers_arc=Arc::new(numbers);
 ~~~
 and a clone of it is sent to each task
 ~~~
-# use extra::arc::ARC;
+# use extra::arc::Arc;
 # use std::vec;
 # use std::rand;
 # let numbers=vec::from_fn(1000000, |_| rand::random::<float>());
-# let numbers_arc = ARC(numbers);
+# let numbers_arc = Arc::new(numbers);
 # let (port, chan)  = stream();
 chan.send(numbers_arc.clone());
 ~~~
@@ -400,19 +396,19 @@ copying only the wrapper and not its contents.
 
 Each task recovers the underlying data by
 ~~~
-# use extra::arc::ARC;
+# use extra::arc::Arc;
 # use std::vec;
 # use std::rand;
 # let numbers=vec::from_fn(1000000, |_| rand::random::<float>());
-# let numbers_arc=ARC(numbers);
+# let numbers_arc=Arc::new(numbers);
 # let (port, chan)  = stream();
 # chan.send(numbers_arc.clone());
-# let local_arc : ARC<~[float]> = port.recv();
+# let local_arc : Arc<~[float]> = port.recv();
 let task_numbers = local_arc.get();
 ~~~
 and can use it as if it were local.
 
-The `arc` module also implements ARCs around mutable data that are not covered here.
+The `arc` module also implements Arcs around mutable data that are not covered here.
 
 # Handling task failure
 
@@ -481,7 +477,7 @@ an `Error` result.
 TODO: Need discussion of `future_result` in order to make failure
 modes useful.
 
-But not all failure is created equal. In some cases you might need to
+But not all failures are created equal. In some cases you might need to
 abort the entire program (perhaps you're writing an assert which, if
 it trips, indicates an unrecoverable logic error); in other cases you
 might want to contain the failure at a certain boundary (perhaps a
@@ -548,7 +544,7 @@ an intermediate generation has already exited:
 ~~~
 # use std::task;
 # fn sleep_forever() { loop { task::yield() } }
-# fn wait_for_a_while() { for 1000.times { task::yield() } }
+# fn wait_for_a_while() { do 1000.times { task::yield() } }
 # do task::try::<int> {
 do task::spawn_supervised {
     do task::spawn_supervised {
@@ -567,7 +563,7 @@ other at all, using `task::spawn_unlinked` for _isolated failure_.
 ~~~
 # use std::task;
 # fn random() -> uint { 100 }
-# fn sleep_for(i: uint) { for i.times { task::yield() } }
+# fn sleep_for(i: uint) { do i.times { task::yield() } }
 # do task::try::<()> {
 let (time1, time2) = (random(), random());
 do task::spawn_unlinked {

@@ -24,7 +24,7 @@ use syntax::print::*;
 
 
 trait fake_ext_ctxt {
-    fn cfg() -> ast::crate_cfg;
+    fn cfg() -> ast::CrateConfig;
     fn parse_sess() -> parse::parse_sess;
     fn call_site() -> span;
     fn ident_of(st: &str) -> ast::ident;
@@ -33,7 +33,7 @@ trait fake_ext_ctxt {
 type fake_session = parse::parse_sess;
 
 impl fake_ext_ctxt for fake_session {
-    fn cfg() -> ast::crate_cfg { ~[] }
+    fn cfg() -> ast::CrateConfig { ~[] }
     fn parse_sess() -> parse::parse_sess { self }
     fn call_site() -> span {
         codemap::span {
@@ -68,7 +68,7 @@ fn main() {
     check_pp(ext_cx, *stmt, pprust::print_stmt, ~"let x = 20;");
 
     let pat = quote_pat!(Some(_));
-    check_pp(ext_cx, pat, pprust::print_refutable_pat, ~"Some(_)");
+    check_pp(ext_cx, pat, pprust::print_pat, ~"Some(_)");
 
 }
 

@@ -1,6 +1,6 @@
 # xfail-license
 
-import re, os, sys, glob, tarfile, shutil, subprocess, tempfile
+import re, os, sys, glob, tarfile, shutil, subprocess, tempfile, distutils.spawn
 
 try:
   import hashlib
@@ -132,7 +132,13 @@ def local_rev_committer_date():
 def get_url_to_file(u,f):
     # no security issue, just to stop partial download leaving a stale file
     tmpf = f + '.tmp'
-    returncode = subprocess.call(["curl", "-o", tmpf, u])
+
+    returncode = -1
+    if distutils.spawn.find_executable("curl"):
+        returncode = subprocess.call(["curl", "-o", tmpf, u])
+    elif distutils.spawn.find_executable("wget"):
+        returncode = subprocess.call(["wget", "-O", tmpf, u])
+
     if returncode != 0:
         os.unlink(tmpf)
         raise
@@ -150,7 +156,7 @@ def hash_file(x):
     return scrub(h.hexdigest())
 
 
-def make_snapshot(stage, triple, flag):
+def make_snapshot(stage, triple):
     kernel = get_kernel(triple)
     platform = get_platform(triple)
     rev = local_rev_short_sha()
@@ -183,34 +189,5 @@ Please make a clean build." % "\n  ".join(matches))
     file1 = full_snapshot_name(date, rev, platform, h)
 
     shutil.move(file0, file1)
-
-    if flag == "install":
-      # FIXME (#2664): this is an ugly quick hack; pls make it better
-      path  = file1
-      comps = path.split("-")
-      parts = { 'year': comps[2], \
-                'month': comps[3], \
-                'date': comps[4], \
-                'check': comps[5], \
-                'plat': comps[6], \
-                'arch': comps[7], \
-                'sha': comps[8].split(".")[0] }
-
-      shutil.move(path, "dl/" + path)
-      shutil.move('src/snapshots.txt', 'src/snapshots-old.txt')
-
-      newf = open('src/snapshots.txt', 'w')
-      newf.write("T %(year)s-%(month)s-%(date)s %(check)s\n" % parts)
-      newf.write("  %(plat)s-%(arch)s %(sha)s\n\n" % parts)
-
-      oldf = open('src/snapshots-old.txt', 'r')
-      for line in oldf:
-        newf.write(line)
-      oldf.close()
-
-      newf.close()
-
-      os.remove('src/snapshots-old.txt')
-
 
     return file1

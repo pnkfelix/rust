@@ -8,8 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
-
 use ast;
 use codemap::{BytePos, CharPos, CodeMap, Pos};
 use diagnostic;
@@ -20,11 +18,11 @@ use parse::lexer;
 use parse::token;
 use parse::token::{get_ident_interner};
 
-use core::io;
-use core::str;
-use core::uint;
+use std::io;
+use std::str;
+use std::uint;
 
-#[deriving(Eq)]
+#[deriving(Clone, Eq)]
 pub enum cmnt_style {
     isolated, // No code on either side of each line of the comment
     trailing, // Code exists to the left of the comment
@@ -32,6 +30,7 @@ pub enum cmnt_style {
     blank_line, // Just a manual blank line "\n\n", for layout
 }
 
+#[deriving(Clone)]
 pub struct cmnt {
     style: cmnt_style,
     lines: ~[~str],
@@ -45,12 +44,12 @@ pub fn is_doc_comment(s: &str) -> bool {
     s.starts_with("/*!")
 }
 
-pub fn doc_comment_style(comment: &str) -> ast::attr_style {
+pub fn doc_comment_style(comment: &str) -> ast::AttrStyle {
     assert!(is_doc_comment(comment));
     if comment.starts_with("//!") || comment.starts_with("/*!") {
-        ast::attr_inner
+        ast::AttrInner
     } else {
-        ast::attr_outer
+        ast::AttrOuter
     }
 }
 
@@ -74,8 +73,8 @@ pub fn strip_doc_comment_decoration(comment: &str) -> ~str {
         let mut i = uint::max_value;
         let mut can_trim = true;
         let mut first = true;
-        for lines.iter().advance |line| {
-            for line.iter().enumerate().advance |(j, c)| {
+        foreach line in lines.iter() {
+            foreach (j, c) in line.iter().enumerate() {
                 if j > i || !"* \t".contains_char(c) {
                     can_trim = false;
                     break;
@@ -256,7 +255,7 @@ fn read_block_comment(rdr: @mut StringReader,
             bump(rdr);
         }
         if !is_eof(rdr) {
-            curr_line += "*/";
+            curr_line.push_str("*/");
             bump(rdr);
             bump(rdr);
         }
@@ -280,13 +279,13 @@ fn read_block_comment(rdr: @mut StringReader,
                 if rdr.curr == '/' && nextch(rdr) == '*' {
                     bump(rdr);
                     bump(rdr);
-                    curr_line += "*";
+                    curr_line.push_char('*');
                     level += 1;
                 } else {
                     if rdr.curr == '*' && nextch(rdr) == '/' {
                         bump(rdr);
                         bump(rdr);
-                        curr_line += "/";
+                        curr_line.push_char('/');
                         level -= 1;
                     } else { bump(rdr); }
                 }
@@ -326,6 +325,7 @@ fn consume_comment(rdr: @mut StringReader,
     debug!("<<< consume comment");
 }
 
+#[deriving(Clone)]
 pub struct lit {
     lit: ~str,
     pos: BytePos

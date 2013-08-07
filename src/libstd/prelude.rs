@@ -29,7 +29,8 @@ Rust's prelude has three main parts:
 
 // Reexported core operators
 pub use either::{Either, Left, Right};
-pub use kinds::{Const, Copy, Owned, Sized};
+pub use kinds::Sized;
+pub use kinds::{Freeze, Send};
 pub use ops::{Add, Sub, Mul, Div, Rem, Neg, Not};
 pub use ops::{BitAnd, BitOr, BitXor};
 pub use ops::{Drop};
@@ -39,17 +40,17 @@ pub use result::{Result, Ok, Err};
 
 // Reexported functions
 pub use io::{print, println};
+pub use iterator::range;
 
 // Reexported types and traits
 pub use clone::{Clone, DeepClone};
 pub use cmp::{Eq, ApproxEq, Ord, TotalEq, TotalOrd, Ordering, Less, Equal, Greater, Equiv};
 pub use char::Char;
-pub use container::{Container, Mutable, Map, Set};
+pub use container::{Container, Mutable, Map, MutableMap, Set, MutableSet};
 pub use hash::Hash;
-pub use old_iter::{BaseIter, ReverseIter, ExtendedIter, EqIter};
-pub use old_iter::CopyableIter;
-pub use iter::{Times, FromIter};
-pub use iterator::{Iterator, IteratorUtil, OrdIterator};
+pub use iter::Times;
+pub use iterator::{Iterator, IteratorUtil, DoubleEndedIterator, DoubleEndedIteratorUtil};
+pub use iterator::{ClonableIterator, OrdIterator};
 pub use num::{Num, NumCast};
 pub use num::{Orderable, Signed, Unsigned, Round};
 pub use num::{Algebraic, Trigonometric, Exponential, Hyperbolic};
@@ -62,7 +63,7 @@ pub use path::PosixPath;
 pub use path::WindowsPath;
 pub use ptr::RawPtr;
 pub use ascii::{Ascii, AsciiCast, OwnedAsciiCast, AsciiStr, ToBytesConsume};
-pub use str::{Str, StrVector, StrSlice, OwnedStr, StrUtil, NullTerminatedStr};
+pub use str::{Str, StrVector, StrSlice, OwnedStr, NullTerminatedStr};
 pub use from_str::{FromStr};
 pub use to_bytes::IterBytes;
 pub use to_str::{ToStr, ToStrConsume};
@@ -73,9 +74,9 @@ pub use tuple::{CloneableTuple10, CloneableTuple11, CloneableTuple12};
 pub use tuple::{ImmutableTuple2, ImmutableTuple3, ImmutableTuple4, ImmutableTuple5};
 pub use tuple::{ImmutableTuple6, ImmutableTuple7, ImmutableTuple8, ImmutableTuple9};
 pub use tuple::{ImmutableTuple10, ImmutableTuple11, ImmutableTuple12};
-pub use vec::{VectorVector, CopyableVector, ImmutableVector};
-pub use vec::{ImmutableEqVector, ImmutableCopyableVector};
-pub use vec::{OwnedVector, OwnedCopyableVector, MutableVector};
+pub use vec::{Vector, VectorVector, CopyableVector, ImmutableVector};
+pub use vec::{ImmutableEqVector, ImmutableTotalOrdVector, ImmutableCopyableVector};
+pub use vec::{OwnedVector, OwnedCopyableVector,OwnedEqVector, MutableVector};
 pub use io::{Reader, ReaderUtil, Writer, WriterUtil};
 
 // Reexported runtime types

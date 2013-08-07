@@ -10,7 +10,7 @@
 
 // Useful conditions
 
-pub use core::path::Path;
+pub use std::path::Path;
 pub use package_id::PkgId;
 
 condition! {
@@ -31,4 +31,8 @@ condition! {
 
 condition! {
     bad_pkg_id: (super::Path, ~str) -> super::PkgId;
+}
+
+condition! {
+    no_rust_path: (~str) -> super::Path;
 }

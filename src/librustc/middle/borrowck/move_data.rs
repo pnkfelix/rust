@@ -15,10 +15,9 @@ comments in the section "Moves and initialization" and in `doc.rs`.
 
 */
 
-use core::prelude::*;
 
-use core::hashmap::{HashMap, HashSet};
-use core::uint;
+use std::hashmap::{HashMap, HashSet};
+use std::uint;
 use middle::borrowck::*;
 use middle::dataflow::DataFlowContext;
 use middle::dataflow::DataFlowOperator;
@@ -50,7 +49,7 @@ pub struct MoveData {
     /// assigned dataflow bits, but we track them because they still
     /// kill move bits.
     path_assignments: ~[Assignment],
-    assignee_ids: HashSet<ast::node_id>,
+    assignee_ids: HashSet<ast::NodeId>,
 }
 
 pub struct FlowedMoveData {
@@ -71,6 +70,12 @@ pub struct FlowedMoveData {
 /// Index into `MoveData.paths`, used like a pointer
 #[deriving(Eq)]
 pub struct MovePathIndex(uint);
+
+impl Clone for MovePathIndex {
+    fn clone(&self) -> MovePathIndex {
+        MovePathIndex(**self)
+    }
+}
 
 static InvalidMovePathIndex: MovePathIndex =
     MovePathIndex(uint::max_value);
@@ -113,7 +118,7 @@ pub struct Move {
     path: MovePathIndex,
 
     /// id of node that is doing the move.
-    id: ast::node_id,
+    id: ast::NodeId,
 
     /// Kind of move, for error messages.
     kind: MoveKind,
@@ -127,16 +132,34 @@ pub struct Assignment {
     path: MovePathIndex,
 
     /// id where assignment occurs
-    id: ast::node_id,
+    id: ast::NodeId,
 
     /// span of node where assignment occurs
     span: span,
 }
 
 pub struct MoveDataFlowOperator;
+
+/// XXX(pcwalton): Should just be #[deriving(Clone)], but that doesn't work
+/// yet on unit structs.
+impl Clone for MoveDataFlowOperator {
+    fn clone(&self) -> MoveDataFlowOperator {
+        MoveDataFlowOperator
+    }
+}
+
 pub type MoveDataFlow = DataFlowContext<MoveDataFlowOperator>;
 
 pub struct AssignDataFlowOperator;
+
+/// XXX(pcwalton): Should just be #[deriving(Clone)], but that doesn't work
+/// yet on unit structs.
+impl Clone for AssignDataFlowOperator {
+    fn clone(&self) -> AssignDataFlowOperator {
+        AssignDataFlowOperator
+    }
+}
+
 pub type AssignDataFlow = DataFlowContext<AssignDataFlowOperator>;
 
 impl MoveData {
@@ -273,7 +296,7 @@ impl MoveData {
     pub fn add_move(&mut self,
                     tcx: ty::ctxt,
                     lp: @LoanPath,
-                    id: ast::node_id,
+                    id: ast::NodeId,
                     kind: MoveKind) {
         /*!
          * Adds a new move entry for a move of `lp` that occurs at
@@ -302,9 +325,9 @@ impl MoveData {
     pub fn add_assignment(&mut self,
                           tcx: ty::ctxt,
                           lp: @LoanPath,
-                          assign_id: ast::node_id,
+                          assign_id: ast::NodeId,
                           span: span,
-                          assignee_id: ast::node_id) {
+                          assignee_id: ast::NodeId) {
         /*!
          * Adds a new record for an assignment to `lp` that occurs at
          * location `id` with the given `span`.
@@ -348,22 +371,22 @@ impl MoveData {
          * killed by scoping. See `doc.rs` for more details.
          */
 
-        for self.moves.eachi |i, move| {
+        foreach (i, move) in self.moves.iter().enumerate() {
             dfcx_moves.add_gen(move.id, i);
         }
 
-        for self.var_assignments.eachi |i, assignment| {
+        foreach (i, assignment) in self.var_assignments.iter().enumerate() {
             dfcx_assign.add_gen(assignment.id, i);
             self.kill_moves(assignment.path, assignment.id, dfcx_moves);
         }
 
-        for self.path_assignments.each |assignment| {
+        foreach assignment in self.path_assignments.iter() {
             self.kill_moves(assignment.path, assignment.id, dfcx_moves);
         }
 
         // Kill all moves related to a variable `x` when it goes out
         // of scope:
-        for self.paths.each |path| {
+        foreach path in self.paths.iter() {
             match *path.loan_path {
                 LpVar(id) => {
                     let kill_id = tcx.region_maps.encl_scope(id);
@@ -375,7 +398,7 @@ impl MoveData {
         }
 
         // Kill all assignments when the variable goes out of scope:
-        for self.var_assignments.eachi |assignment_index, assignment| {
+        foreach (assignment_index, assignment) in self.var_assignments.iter().enumerate() {
             match *self.path(assignment.path).loan_path {
                 LpVar(id) => {
                     let kill_id = tcx.region_maps.encl_scope(id);
@@ -411,7 +434,7 @@ impl MoveData {
 
         let mut p = self.path(index).first_child;
         while p != InvalidMovePathIndex {
-            if !self.each_extending_path(p, f) {
+            if !self.each_extending_path(p, |x| f(x)) {
                 return false;
             }
             p = self.path(p).next_sibling;
@@ -437,7 +460,7 @@ impl MoveData {
 
     fn kill_moves(&self,
                   path: MovePathIndex,
-                  kill_id: ast::node_id,
+                  kill_id: ast::NodeId,
                   dfcx_moves: &mut MoveDataFlow) {
         for self.each_applicable_move(path) |move_index| {
             dfcx_moves.add_kill(kill_id, *move_index);
@@ -450,7 +473,7 @@ impl FlowedMoveData {
                tcx: ty::ctxt,
                method_map: typeck::method_map,
                id_range: ast_util::id_range,
-               body: &ast::blk)
+               body: &ast::Block)
                -> FlowedMoveData
     {
         let mut dfcx_moves =
@@ -475,8 +498,26 @@ impl FlowedMoveData {
         }
     }
 
+    pub fn each_path_moved_by(&self,
+                              id: ast::NodeId,
+                              f: &fn(&Move, @LoanPath) -> bool)
+                              -> bool {
+        /*!
+         * Iterates through each path moved by `id`
+         */
+
+        for self.dfcx_moves.each_gen_bit_frozen(id) |index| {
+            let move = &self.move_data.moves[index];
+            let moved_path = move.path;
+            if !f(move, self.move_data.path(moved_path).loan_path) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     pub fn each_move_of(&self,
-                        id: ast::node_id,
+                        id: ast::NodeId,
                         loan_path: @LoanPath,
                         f: &fn(&Move, @LoanPath) -> bool)
                         -> bool {
@@ -507,7 +548,7 @@ impl FlowedMoveData {
         for self.dfcx_moves.each_bit_on_entry_frozen(id) |index| {
             let move = &self.move_data.moves[index];
             let moved_path = move.path;
-            if base_indices.contains(&moved_path) {
+            if base_indices.iter().any(|x| x == &moved_path) {
                 // Scenario 1 or 2: `loan_path` or some base path of
                 // `loan_path` was moved.
                 if !f(move, self.move_data.path(moved_path).loan_path) {
@@ -516,7 +557,7 @@ impl FlowedMoveData {
                 loop;
             }
 
-            for opt_loan_path_index.iter().advance |&loan_path_index| {
+            foreach &loan_path_index in opt_loan_path_index.iter() {
                 for self.move_data.each_base_path(moved_path) |p| {
                     if p == loan_path_index {
                         // Scenario 3: some extension of `loan_path`
@@ -532,15 +573,15 @@ impl FlowedMoveData {
     }
 
     pub fn is_assignee(&self,
-                       id: ast::node_id)
+                       id: ast::NodeId)
                        -> bool {
         //! True if `id` is the id of the LHS of an assignment
 
-        self.move_data.assignee_ids.contains(&id)
+        self.move_data.assignee_ids.iter().any(|x| x == &id)
     }
 
     pub fn each_assignment_of(&self,
-                              id: ast::node_id,
+                              id: ast::NodeId,
                               loan_path: @LoanPath,
                               f: &fn(&Assignment) -> bool)
                               -> bool {

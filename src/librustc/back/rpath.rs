@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2013 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,23 +8,19 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
 
 use driver::session;
 use metadata::cstore;
 use metadata::filesearch;
 
-use core::hashmap::HashSet;
-use core::os;
-use core::uint;
-use core::util;
-use core::vec;
+use std::hashmap::HashSet;
+use std::num;
+use std::os;
+use std::util;
+use std::vec;
 
 fn not_win32(os: session::os) -> bool {
-  match os {
-      session::os_win32 => false,
-      _ => true
-  }
+  os != session::os_win32
 }
 
 pub fn get_rpath_flags(sess: session::Session, out_filename: &Path)
@@ -56,7 +52,7 @@ fn get_sysroot_absolute_rt_lib(sess: session::Session) -> Path {
 }
 
 pub fn rpaths_to_flags(rpaths: &[Path]) -> ~[~str] {
-    vec::map(rpaths, |rpath| fmt!("-Wl,-rpath,%s",rpath.to_str()))
+    rpaths.iter().transform(|rpath| fmt!("-Wl,-rpath,%s",rpath.to_str())).collect()
 }
 
 fn get_rpaths(os: session::os,
@@ -67,7 +63,7 @@ fn get_rpaths(os: session::os,
     debug!("sysroot: %s", sysroot.to_str());
     debug!("output: %s", output.to_str());
     debug!("libs:");
-    for libs.each |libpath| {
+    foreach libpath in libs.iter() {
         debug!("    %s", libpath.to_str());
     }
     debug!("target_triple: %s", target_triple);
@@ -86,7 +82,7 @@ fn get_rpaths(os: session::os,
 
     fn log_rpaths(desc: &str, rpaths: &[Path]) {
         debug!("%s rpaths:", desc);
-        for rpaths.each |rpath| {
+        foreach rpath in rpaths.iter() {
             debug!("    %s", rpath.to_str());
         }
     }
@@ -107,22 +103,20 @@ fn get_rpaths(os: session::os,
 fn get_rpaths_relative_to_output(os: session::os,
                                  output: &Path,
                                  libs: &[Path]) -> ~[Path] {
-    vec::map(libs, |a| {
-        get_rpath_relative_to_output(os, output, a)
-    })
+    libs.iter().transform(|a| get_rpath_relative_to_output(os, output, a)).collect()
 }
 
 pub fn get_rpath_relative_to_output(os: session::os,
                                     output: &Path,
                                     lib: &Path)
                                  -> Path {
-    use core::os;
+    use std::os;
 
     assert!(not_win32(os));
 
     // Mac doesn't appear to support $ORIGIN
     let prefix = match os {
-        session::os_android |session::os_linux | session::os_freebsd
+        session::os_android | session::os_linux | session::os_freebsd
                           => "$ORIGIN",
         session::os_macos => "@executable_path",
         session::os_win32 => util::unreachable()
@@ -147,7 +141,7 @@ pub fn get_relative_to(abs1: &Path, abs2: &Path) -> Path {
     assert!(len1 > 0);
     assert!(len2 > 0);
 
-    let max_common_path = uint::min(len1, len2) - 1;
+    let max_common_path = num::min(len1, len2) - 1;
     let mut start_idx = 0;
     while start_idx < max_common_path
         && split1[start_idx] == split2[start_idx] {
@@ -155,38 +149,25 @@ pub fn get_relative_to(abs1: &Path, abs2: &Path) -> Path {
     }
 
     let mut path = ~[];
-    for uint::range(start_idx, len1 - 1) |_i| { path.push(~".."); };
+    foreach _ in range(start_idx, len1 - 1) { path.push(~".."); };
 
-    path.push_all(vec::slice(split2, start_idx, len2 - 1));
+    path.push_all(split2.slice(start_idx, len2 - 1));
 
-    if !path.is_empty() {
-        return Path("").push_many(path);
+    return if !path.is_empty() {
+        Path("").push_many(path)
     } else {
-        return Path(".");
+        Path(".")
     }
 }
 
 fn get_absolute_rpaths(libs: &[Path]) -> ~[Path] {
-    vec::map(libs, |a| get_absolute_rpath(a) )
+    libs.iter().transform(|a| get_absolute_rpath(a)).collect()
 }
 
 pub fn get_absolute_rpath(lib: &Path) -> Path {
     os::make_absolute(lib).dir_path()
 }
 
-#[cfg(stage0)]
-pub fn get_install_prefix_rpath(target_triple: &str) -> Path {
-    let install_prefix = env!("CFG_PREFIX");
-
-    if install_prefix.is_empty() {
-        fail!("rustc compiled without CFG_PREFIX environment variable");
-    }
-
-    let tlib = filesearch::relative_target_lib_path(target_triple);
-    os::make_absolute(&Path(install_prefix).push_rel(&tlib))
-}
-
-#[cfg(not(stage0))]
 pub fn get_install_prefix_rpath(target_triple: &str) -> Path {
     let install_prefix = env!("CFG_PREFIX");
 
@@ -201,9 +182,9 @@ pub fn get_install_prefix_rpath(target_triple: &str) -> Path {
 pub fn minimize_rpaths(rpaths: &[Path]) -> ~[Path] {
     let mut set = HashSet::new();
     let mut minimized = ~[];
-    for rpaths.each |rpath| {
+    foreach rpath in rpaths.iter() {
         if set.insert(rpath.to_str()) {
-            minimized.push(copy *rpath);
+            minimized.push(rpath.clone());
         }
     }
     minimized
@@ -211,8 +192,7 @@ pub fn minimize_rpaths(rpaths: &[Path]) -> ~[Path] {
 
 #[cfg(unix, test)]
 mod test {
-    use core::prelude::*;
-    use core::os;
+    use std::os;
 
     // FIXME(#2119): the outer attribute should be #[cfg(unix, test)], then
     // these redundant #[cfg(test)] blocks can be removed

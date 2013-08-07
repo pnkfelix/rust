@@ -10,7 +10,7 @@
 struct A { x: uint }
 
 impl Drop for A {
-    fn finalize(&self) {}
+    fn drop(&self) {}
 }
 
 fn main() {
@@ -18,7 +18,7 @@ fn main() {
 
     match a {
         A { x : ref x } => {
-            debug!("%?", x)
+            info!("%?", x)
         }
     }
 }

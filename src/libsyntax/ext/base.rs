@@ -8,21 +8,17 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
-
-use core::vec;
 use ast;
 use ast::Name;
 use codemap;
-use codemap::{CodeMap, span, ExpnInfo, ExpandedFrom};
-use codemap::CallInfo;
+use codemap::{CodeMap, span, ExpnInfo};
 use diagnostic::span_handler;
 use ext;
 use parse;
 use parse::token;
 use parse::token::{ident_to_str, intern, str_to_ident};
 
-use core::hashmap::HashMap;
+use std::hashmap::HashMap;
 
 // new-style macro! tt code:
 //
@@ -40,7 +36,7 @@ pub struct MacroDef {
 
 pub type ItemDecorator = @fn(@ExtCtxt,
                              span,
-                             @ast::meta_item,
+                             @ast::MetaItem,
                              ~[@ast::item])
                           -> ~[@ast::item];
 
@@ -85,8 +81,8 @@ pub enum SyntaxExtension {
     // An IdentTT is a macro that has an
     // identifier in between the name of the
     // macro and the argument. Currently,
-    // the only examples of this are
-    // macro_rules! and proto!
+    // the only examples of this is
+    // macro_rules!
 
     // perhaps macro_rules! will lose its odd special identifier argument,
     // and this can go away also
@@ -201,10 +197,10 @@ pub fn syntax_expander_table() -> SyntaxEnv {
     syntax_expanders.insert(intern(&"module_path"),
                             builtin_normal_tt(
                                 ext::source_util::expand_mod));
-    syntax_expanders.insert(intern(&"proto"),
-                            builtin_item_tt(ext::pipes::expand_proto));
     syntax_expanders.insert(intern(&"asm"),
                             builtin_normal_tt(ext::asm::expand_asm));
+    syntax_expanders.insert(intern(&"cfg"),
+                            builtin_normal_tt(ext::cfg::expand_cfg));
     syntax_expanders.insert(
         intern(&"trace_macros"),
         builtin_normal_tt(ext::trace_macros::expand_trace_macros));
@@ -216,7 +212,7 @@ pub fn syntax_expander_table() -> SyntaxEnv {
 // -> expn_info of their expansion context stored into their span.
 pub struct ExtCtxt {
     parse_sess: @mut parse::ParseSess,
-    cfg: ast::crate_cfg,
+    cfg: ast::CrateConfig,
     backtrace: @mut Option<@ExpnInfo>,
 
     // These two @mut's should really not be here,
@@ -229,7 +225,7 @@ pub struct ExtCtxt {
 }
 
 impl ExtCtxt {
-    pub fn new(parse_sess: @mut parse::ParseSess, cfg: ast::crate_cfg)
+    pub fn new(parse_sess: @mut parse::ParseSess, cfg: ast::CrateConfig)
                -> @ExtCtxt {
         @ExtCtxt {
             parse_sess: parse_sess,
@@ -242,10 +238,10 @@ impl ExtCtxt {
 
     pub fn codemap(&self) -> @CodeMap { self.parse_sess.cm }
     pub fn parse_sess(&self) -> @mut parse::ParseSess { self.parse_sess }
-    pub fn cfg(&self) -> ast::crate_cfg { copy self.cfg }
+    pub fn cfg(&self) -> ast::CrateConfig { self.cfg.clone() }
     pub fn call_site(&self) -> span {
         match *self.backtrace {
-            Some(@ExpandedFrom(CallInfo {call_site: cs, _})) => cs,
+            Some(@ExpnInfo {call_site: cs, _}) => cs,
             None => self.bug("missing top span")
         }
     }
@@ -253,24 +249,22 @@ impl ExtCtxt {
     pub fn backtrace(&self) -> Option<@ExpnInfo> { *self.backtrace }
     pub fn mod_push(&self, i: ast::ident) { self.mod_path.push(i); }
     pub fn mod_pop(&self) { self.mod_path.pop(); }
-    pub fn mod_path(&self) -> ~[ast::ident] { copy *self.mod_path }
+    pub fn mod_path(&self) -> ~[ast::ident] { (*self.mod_path).clone() }
     pub fn bt_push(&self, ei: codemap::ExpnInfo) {
         match ei {
-            ExpandedFrom(CallInfo {call_site: cs, callee: ref callee}) => {
+            ExpnInfo {call_site: cs, callee: ref callee} => {
                 *self.backtrace =
-                    Some(@ExpandedFrom(CallInfo {
+                    Some(@ExpnInfo {
                         call_site: span {lo: cs.lo, hi: cs.hi,
                                          expn_info: *self.backtrace},
-                        callee: copy *callee}));
+                        callee: *callee});
             }
         }
     }
     pub fn bt_pop(&self) {
         match *self.backtrace {
-            Some(@ExpandedFrom(
-                CallInfo {
-                    call_site: span {expn_info: prev, _}, _
-                })) => {
+            Some(@ExpnInfo {
+                call_site: span {expn_info: prev, _}, _}) => {
                 *self.backtrace = prev
             }
             _ => self.bug("tried to pop without a push")
@@ -300,7 +294,7 @@ impl ExtCtxt {
         self.print_backtrace();
         self.parse_sess.span_diagnostic.handler().bug(msg);
     }
-    pub fn next_id(&self) -> ast::node_id {
+    pub fn next_id(&self) -> ast::NodeId {
         parse::next_node_id(self.parse_sess)
     }
     pub fn trace_macros(&self) -> bool {
@@ -331,7 +325,7 @@ pub fn expr_to_ident(cx: @ExtCtxt,
                      expr: @ast::expr,
                      err_msg: &str) -> ast::ident {
     match expr.node {
-      ast::expr_path(p) => {
+      ast::expr_path(ref p) => {
         if p.types.len() > 0u || p.idents.len() != 1u {
             cx.span_fatal(expr.span, err_msg);
         }
@@ -363,15 +357,16 @@ pub fn get_single_str_from_tts(cx: @ExtCtxt,
     }
 }
 
-pub fn get_exprs_from_tts(cx: @ExtCtxt, tts: &[ast::token_tree])
-                       -> ~[@ast::expr] {
+pub fn get_exprs_from_tts(cx: @ExtCtxt,
+                          sp: span,
+                          tts: &[ast::token_tree]) -> ~[@ast::expr] {
     let p = parse::new_parser_from_tts(cx.parse_sess(),
                                        cx.cfg(),
-                                       vec::to_owned(tts));
+                                       tts.to_owned());
     let mut es = ~[];
     while *p.token != token::EOF {
-        if es.len() != 0 {
-            p.eat(&token::COMMA);
+        if es.len() != 0 && !p.eat(&token::COMMA) {
+            cx.span_fatal(sp, "expected token: `,`");
         }
         es.push(p.parse_expr());
     }
@@ -420,8 +415,7 @@ pub enum MapChain<K,V> {
 
 
 // get the map from an env frame
-impl <K: Eq + Hash + IterBytes ,V: Copy> MapChain<K,V>{
-
+impl <K: Eq + Hash + IterBytes + 'static, V: 'static> MapChain<K,V>{
     // Constructor. I don't think we need a zero-arg one.
     fn new(init: ~HashMap<K,@V>) -> @mut MapChain<K,V> {
         @mut BaseMapChain(init)
@@ -511,7 +505,7 @@ impl <K: Eq + Hash + IterBytes ,V: Copy> MapChain<K,V>{
                 }
             },
             ConsMapChain (~ref mut map, rest) => {
-                if satisfies_pred(map,&n,pred) {
+                if satisfies_pred(map,&n,|v|pred(v)) {
                     map.insert(key,ext);
                 } else {
                     rest.insert_into_frame(key,ext,n,pred)
@@ -535,7 +529,7 @@ fn satisfies_pred<K : Eq + Hash + IterBytes,V>(map : &mut HashMap<K,V>,
 #[cfg(test)]
 mod test {
     use super::MapChain;
-    use core::hashmap::HashMap;
+    use std::hashmap::HashMap;
 
     #[test] fn testenv () {
         let mut a = HashMap::new();

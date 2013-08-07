@@ -1,5 +1,3 @@
-// xfail-test
-// Reason: ICE with explicit self
 
 // Copyright 2012 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
@@ -16,7 +14,6 @@ trait Positioned {
   fn X(&self) -> int;
 }
 
-#[allow(default_methods)]
 trait Movable: Positioned {
   fn translate(&mut self, dx: int) {
     let x = self.X();

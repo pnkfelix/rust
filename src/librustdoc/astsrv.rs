@@ -17,13 +17,12 @@ query AST-related information, shielding the rest of Rustdoc from its
 non-sendableness.
 */
 
-use core::prelude::*;
 
 use parse;
 
-use core::cell::Cell;
-use core::comm::{stream, SharedChan, Port};
-use core::task;
+use std::cell::Cell;
+use std::comm::{stream, SharedChan, Port};
+use std::task;
 use rustc::driver::driver;
 use rustc::driver::session::Session;
 use rustc::driver::session::{basic_options, options};
@@ -33,13 +32,13 @@ use syntax::ast_map;
 use syntax;
 
 pub struct Ctxt {
-    ast: @ast::crate,
+    ast: @ast::Crate,
     ast_map: ast_map::map
 }
 
 type SrvOwner<'self,T> = &'self fn(srv: Srv) -> T;
 pub type CtxtHandler<T> = ~fn(ctxt: Ctxt) -> T;
-type Parser = ~fn(Session, s: @str) -> @ast::crate;
+type Parser = ~fn(Session, s: @str) -> @ast::Crate;
 
 enum Msg {
     HandleRequest(~fn(Ctxt)),
@@ -52,11 +51,11 @@ pub struct Srv {
 }
 
 pub fn from_str<T>(source: ~str, owner: SrvOwner<T>) -> T {
-    run(owner, copy source, parse::from_str_sess)
+    run(owner, source.clone(), parse::from_str_sess)
 }
 
 pub fn from_file<T>(file: ~str, owner: SrvOwner<T>) -> T {
-    run(owner, copy file, |sess, f| parse::from_file_sess(sess, &Path(f)))
+    run(owner, file.clone(), |sess, f| parse::from_file_sess(sess, &Path(f)))
 }
 
 fn run<T>(owner: SrvOwner<T>, source: ~str, parse: Parser) -> T {
@@ -99,7 +98,7 @@ fn act(po: &Port<Msg>, source: @str, parse: Parser) {
     }
 }
 
-pub fn exec<T:Owned>(
+pub fn exec<T:Send>(
     srv: Srv,
     f: ~fn(ctxt: Ctxt) -> T
 ) -> T {
@@ -110,13 +109,17 @@ pub fn exec<T:Owned>(
 }
 
 fn build_ctxt(sess: Session,
-              ast: @ast::crate) -> Ctxt {
+              ast: @ast::Crate) -> Ctxt {
 
     use rustc::front::config;
 
+    let ast = syntax::ext::expand::inject_std_macros(sess.parse_sess,
+                                                     sess.opts.cfg.clone(),
+                                                     ast);
     let ast = config::strip_unconfigured_items(ast);
     let ast = syntax::ext::expand::expand_crate(sess.parse_sess,
-                                                copy sess.opts.cfg, ast);
+                                                sess.opts.cfg.clone(),
+                                                ast);
     let ast = front::test::modify_for_testing(sess, ast);
     let ast_map = ast_map::map_crate(sess.diagnostic(), ast);
 
@@ -139,7 +142,8 @@ fn should_prune_unconfigured_items() {
     let source = ~"#[cfg(shut_up_and_leave_me_alone)]fn a() { }";
     do from_str(source) |srv| {
         do exec(srv) |ctxt| {
-            assert!(ctxt.ast.node.module.items.is_empty());
+            // one item: the __std_macros secret module
+            assert_eq!(ctxt.ast.module.items.len(), 1);
         }
     }
 }

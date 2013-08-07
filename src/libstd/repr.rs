@@ -19,25 +19,20 @@ More runtime type reflection
 use cast::transmute;
 use char;
 use container::Container;
-use intrinsic;
-use intrinsic::{TyDesc, TyVisitor, visit_tydesc};
-use intrinsic::Opaque;
 use io::{Writer, WriterUtil};
-use iterator::IteratorUtil;
+use iterator::Iterator;
 use libc::c_void;
-use managed;
+use option::{Some, None};
 use ptr;
 use reflect;
 use reflect::{MovePtr, align};
 use str::StrSlice;
 use to_str::ToStr;
-use vec::raw::{VecRepr, SliceRepr};
-use vec;
-use vec::{OwnedVector, UnboxedVecRepr};
+use vec::OwnedVector;
+use unstable::intrinsics::{Opaque, TyDesc, TyVisitor, get_tydesc, visit_tydesc};
+use unstable::raw;
 
 #[cfg(test)] use io;
-
-pub use managed::raw::BoxRepr;
 
 /// Helpers
 
@@ -56,9 +51,9 @@ impl EscapedCharWriter for @Writer {
             '"' => self.write_str("\\\""),
             '\x20'..'\x7e' => self.write_char(ch),
             _ => {
-                // FIXME #4423: This is inefficient because it requires a
-                // malloc.
-                self.write_str(char::escape_unicode(ch))
+                do char::escape_unicode(ch) |c| {
+                    self.write_char(c);
+                }
             }
         }
     }
@@ -80,65 +75,35 @@ impl Repr for bool {
     }
 }
 
-impl Repr for int {
-    fn write_repr(&self, writer: @Writer) { writer.write_int(*self); }
-}
-impl Repr for i8 {
-    fn write_repr(&self, writer: @Writer) { writer.write_int(*self as int); }
-}
-impl Repr for i16 {
-    fn write_repr(&self, writer: @Writer) { writer.write_int(*self as int); }
-}
-impl Repr for i32 {
-    fn write_repr(&self, writer: @Writer) { writer.write_int(*self as int); }
-}
-impl Repr for i64 {
-    // FIXME #4424: This can lose precision.
-    fn write_repr(&self, writer: @Writer) { writer.write_int(*self as int); }
-}
-
-impl Repr for uint {
-    fn write_repr(&self, writer: @Writer) { writer.write_uint(*self); }
-}
-impl Repr for u8 {
+macro_rules! int_repr(($ty:ident) => (impl Repr for $ty {
     fn write_repr(&self, writer: @Writer) {
-        writer.write_uint(*self as uint);
+        do ::$ty::to_str_bytes(*self, 10u) |bits| {
+            writer.write(bits);
+        }
     }
-}
-impl Repr for u16 {
-    fn write_repr(&self, writer: @Writer) {
-        writer.write_uint(*self as uint);
-    }
-}
-impl Repr for u32 {
-    fn write_repr(&self, writer: @Writer) {
-        writer.write_uint(*self as uint);
-    }
-}
-impl Repr for u64 {
-    // FIXME #4424: This can lose precision.
-    fn write_repr(&self, writer: @Writer) {
-        writer.write_uint(*self as uint);
-    }
-}
+}))
 
-impl Repr for float {
-    // FIXME #4423: This mallocs.
-    fn write_repr(&self, writer: @Writer) { writer.write_str(self.to_str()); }
-}
-impl Repr for f32 {
-    // FIXME #4423 This mallocs.
-    fn write_repr(&self, writer: @Writer) { writer.write_str(self.to_str()); }
-}
-impl Repr for f64 {
-    // FIXME #4423: This mallocs.
-    fn write_repr(&self, writer: @Writer) { writer.write_str(self.to_str()); }
-}
+int_repr!(int)
+int_repr!(i8)
+int_repr!(i16)
+int_repr!(i32)
+int_repr!(i64)
+int_repr!(uint)
+int_repr!(u8)
+int_repr!(u16)
+int_repr!(u32)
+int_repr!(u64)
 
-impl Repr for char {
-    fn write_repr(&self, writer: @Writer) { writer.write_char(*self); }
-}
+macro_rules! num_repr(($ty:ident) => (impl Repr for $ty {
+    fn write_repr(&self, writer: @Writer) {
+        let s = self.to_str();
+        writer.write(s.as_bytes());
+    }
+}))
 
+num_repr!(float)
+num_repr!(f32)
+num_repr!(f64)
 
 // New implementation using reflect::MovePtr
 
@@ -211,7 +176,7 @@ impl ReprVisitor {
 
     pub fn write_escaped_slice(&self, slice: &str) {
         self.writer.write_char('"');
-        for slice.iter().advance |ch| {
+        foreach ch in slice.iter() {
             self.writer.write_escaped_char(ch);
         }
         self.writer.write_char('"');
@@ -229,25 +194,27 @@ impl ReprVisitor {
     }
 
     pub fn write_vec_range(&self,
-                           mtbl: uint,
-                           ptr: *u8,
+                           _mtbl: uint,
+                           ptr: *(),
                            len: uint,
                            inner: *TyDesc)
                            -> bool {
-        let mut p = ptr;
-        let end = ptr::offset(p, len);
+        let mut p = ptr as *u8;
         let (sz, al) = unsafe { ((*inner).size, (*inner).align) };
         self.writer.write_char('[');
         let mut first = true;
-        while (p as uint) < (end as uint) {
+        let mut left = len;
+        // unit structs have 0 size, and don't loop forever.
+        let dec = if sz == 0 {1} else {sz};
+        while left > 0 {
             if first {
                 first = false;
             } else {
                 self.writer.write_str(", ");
             }
-            self.write_mut_qualifier(mtbl);
             self.visit_ptr_inner(p as *c_void, inner);
-            p = align(ptr::offset(p, sz) as uint, al) as *u8;
+            p = align(ptr::offset(p, sz as int) as uint, al) as *u8;
+            left -= dec;
         }
         self.writer.write_char(']');
         true
@@ -255,7 +222,7 @@ impl ReprVisitor {
 
     pub fn write_unboxed_vec_repr(&self,
                                   mtbl: uint,
-                                  v: &UnboxedVecRepr,
+                                  v: &raw::Vec<()>,
                                   inner: *TyDesc)
                                   -> bool {
         self.write_vec_range(mtbl, ptr::to_unsafe_ptr(&v.data),
@@ -294,9 +261,6 @@ impl TyVisitor for ReprVisitor {
         }
     }
 
-    // Type no longer exists, vestigial function.
-    fn visit_str(&self) -> bool { fail!(); }
-
     fn visit_estr_box(&self) -> bool {
         do self.get::<@str> |s| {
             self.writer.write_char('@');
@@ -322,16 +286,22 @@ impl TyVisitor for ReprVisitor {
     fn visit_box(&self, mtbl: uint, inner: *TyDesc) -> bool {
         self.writer.write_char('@');
         self.write_mut_qualifier(mtbl);
-        do self.get::<&managed::raw::BoxRepr> |b| {
+        do self.get::<&raw::Box<()>> |b| {
             let p = ptr::to_unsafe_ptr(&b.data) as *c_void;
             self.visit_ptr_inner(p, inner);
         }
     }
 
-    fn visit_uniq(&self, mtbl: uint, inner: *TyDesc) -> bool {
+    fn visit_uniq(&self, _mtbl: uint, inner: *TyDesc) -> bool {
         self.writer.write_char('~');
-        self.write_mut_qualifier(mtbl);
-        do self.get::<&managed::raw::BoxRepr> |b| {
+        do self.get::<*c_void> |b| {
+            self.visit_ptr_inner(*b, inner);
+        }
+    }
+
+    fn visit_uniq_managed(&self, _mtbl: uint, inner: *TyDesc) -> bool {
+        self.writer.write_char('~');
+        do self.get::<&raw::Box<()>> |b| {
             let p = ptr::to_unsafe_ptr(&b.data) as *c_void;
             self.visit_ptr_inner(p, inner);
         }
@@ -357,27 +327,35 @@ impl TyVisitor for ReprVisitor {
 
 
     fn visit_unboxed_vec(&self, mtbl: uint, inner: *TyDesc) -> bool {
-        do self.get::<vec::UnboxedVecRepr> |b| {
+        do self.get::<raw::Vec<()>> |b| {
             self.write_unboxed_vec_repr(mtbl, b, inner);
         }
     }
 
     fn visit_evec_box(&self, mtbl: uint, inner: *TyDesc) -> bool {
-        do self.get::<&VecRepr> |b| {
+        do self.get::<&raw::Box<raw::Vec<()>>> |b| {
             self.writer.write_char('@');
-            self.write_unboxed_vec_repr(mtbl, &b.unboxed, inner);
+            self.write_mut_qualifier(mtbl);
+            self.write_unboxed_vec_repr(mtbl, &b.data, inner);
         }
     }
 
     fn visit_evec_uniq(&self, mtbl: uint, inner: *TyDesc) -> bool {
-        do self.get::<&VecRepr> |b| {
+        do self.get::<&raw::Vec<()>> |b| {
             self.writer.write_char('~');
-            self.write_unboxed_vec_repr(mtbl, &b.unboxed, inner);
+            self.write_unboxed_vec_repr(mtbl, *b, inner);
+        }
+    }
+
+    fn visit_evec_uniq_managed(&self, mtbl: uint, inner: *TyDesc) -> bool {
+        do self.get::<&raw::Box<raw::Vec<()>>> |b| {
+            self.writer.write_char('~');
+            self.write_unboxed_vec_repr(mtbl, &b.data, inner);
         }
     }
 
     fn visit_evec_slice(&self, mtbl: uint, inner: *TyDesc) -> bool {
-        do self.get::<SliceRepr> |s| {
+        do self.get::<raw::Slice<()>> |s| {
             self.writer.write_char('&');
             self.write_vec_range(mtbl, s.data, s.len, inner);
         }
@@ -385,7 +363,7 @@ impl TyVisitor for ReprVisitor {
 
     fn visit_evec_fixed(&self, _n: uint, sz: uint, _align: uint,
                         mtbl: uint, inner: *TyDesc) -> bool {
-        do self.get::<u8> |b| {
+        do self.get::<()> |b| {
             self.write_vec_range(mtbl, ptr::to_unsafe_ptr(b), sz, inner);
         }
     }
@@ -566,9 +544,9 @@ impl TyVisitor for ReprVisitor {
 
     fn visit_opaque_box(&self) -> bool {
         self.writer.write_char('@');
-        do self.get::<&managed::raw::BoxRepr> |b| {
+        do self.get::<&raw::Box<()>> |b| {
             let p = ptr::to_unsafe_ptr(&b.data) as *c_void;
-            self.visit_ptr_inner(p, b.header.type_desc);
+            self.visit_ptr_inner(p, b.type_desc);
         }
     }
 
@@ -581,7 +559,7 @@ impl TyVisitor for ReprVisitor {
 pub fn write_repr<T>(writer: @Writer, object: &T) {
     unsafe {
         let ptr = ptr::to_unsafe_ptr(object) as *c_void;
-        let tydesc = intrinsic::get_tydesc::<T>();
+        let tydesc = get_tydesc::<T>();
         let u = ReprVisitor(ptr, writer);
         let v = reflect::MovePtrAdaptor(u);
         visit_tydesc(tydesc, @v as @TyVisitor)
@@ -611,13 +589,14 @@ fn test_repr() {
     exact_test(&(@"hello"), "@\"hello\"");
     exact_test(&(~"he\u10f3llo"), "~\"he\\u10f3llo\"");
 
-    // FIXME #4210: the mut fields are a bit off here.
     exact_test(&(@10), "@10");
-    exact_test(&(@mut 10), "@10");
+    exact_test(&(@mut 10), "@10"); // FIXME: #4210: incorrect
+    exact_test(&((@mut 10, 2)), "(@mut 10, 2)");
     exact_test(&(~10), "~10");
     exact_test(&(&10), "&10");
     let mut x = 10;
     exact_test(&(&mut x), "&mut 10");
+    exact_test(&(@mut [1, 2]), "@mut [1, 2]");
 
     exact_test(&(1,), "(1,)");
     exact_test(&(@[1,2,3,4,5,6,7,8]),
@@ -644,4 +623,7 @@ fn test_repr() {
                "(10, ~\"hello\")");
     exact_test(&(10_u64, ~"hello"),
                "(10, ~\"hello\")");
+
+    struct Foo;
+    exact_test(&(~[Foo, Foo, Foo]), "~[{}, {}, {}]");
 }

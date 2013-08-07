@@ -33,6 +33,8 @@ struct Lots {
     g: (f32, char),
     h: ~[util::NonCopyable],
     i: @mut (int, int),
+    j: bool,
+    k: (),
 }
 
 fn main() {

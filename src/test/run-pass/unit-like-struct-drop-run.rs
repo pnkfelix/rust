@@ -10,13 +10,14 @@
 
 // Make sure the destructor is run for unit-like structs.
 // xfail-fast
+// xfail-win32 #7999
 
 use std::task;
 
 struct Foo;
 
 impl Drop for Foo {
-    fn finalize(&self) {
+    fn drop(&self) {
         fail!("This failure should happen.");
     }
 }

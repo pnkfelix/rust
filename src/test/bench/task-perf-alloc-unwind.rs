@@ -22,7 +22,7 @@ enum UniqueList {
 }
 
 fn main() {
-    let (repeat, depth) = if os::getenv(~"RUST_BENCH").is_some() {
+    let (repeat, depth) = if os::getenv("RUST_BENCH").is_some() {
         (50, 1000)
     } else {
         (10, 10)
@@ -32,12 +32,12 @@ fn main() {
 }
 
 fn run(repeat: int, depth: int) {
-    for (repeat as uint).times {
-        debug!("starting %.4f", precise_time_s());
+    do (repeat as uint).times {
+        info!("starting %.4f", precise_time_s());
         do task::try {
             recurse_or_fail(depth, None)
         };
-        debug!("stopping %.4f", precise_time_s());
+        info!("stopping %.4f", precise_time_s());
     }
 }
 
@@ -60,7 +60,7 @@ struct r {
 
 #[unsafe_destructor]
 impl Drop for r {
-    fn finalize(&self) {}
+    fn drop(&self) {}
 }
 
 fn r(l: @nillist) -> r {
@@ -71,7 +71,7 @@ fn r(l: @nillist) -> r {
 
 fn recurse_or_fail(depth: int, st: Option<State>) {
     if depth == 0 {
-        debug!("unwinding %.4f", precise_time_s());
+        info!("unwinding %.4f", precise_time_s());
         fail!();
     } else {
         let depth = depth - 1;
@@ -96,7 +96,7 @@ fn recurse_or_fail(depth: int, st: Option<State>) {
                 fn_box: || @Cons((), fn_box()),
                 tuple: (@Cons((), st.tuple.first()),
                         ~Cons((), @*st.tuple.second())),
-                vec: st.vec + [@Cons((), *st.vec.last())],
+                vec: st.vec + &[@Cons((), *st.vec.last())],
                 res: r(@Cons((), st.res._l))
             }
           }

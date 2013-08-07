@@ -19,9 +19,12 @@ A quick summary:
 Implementations of the following traits:
 
 * `FromStr`
+* `ToStr`
+* `Not`
 * `Ord`
 * `TotalOrd`
 * `Eq`
+* `Zero`
 
 ## Various functions to compare `bool`s
 
@@ -34,11 +37,13 @@ Finally, some inquries into the nature of truth: `is_true` and `is_false`.
 
 */
 
-#[cfg(not(test))]
-use cmp::{Eq, Ord, TotalOrd, Ordering};
 use option::{None, Option, Some};
 use from_str::FromStr;
 use to_str::ToStr;
+
+#[cfg(not(test))] use cmp::{Eq, Ord, TotalOrd, Ordering};
+#[cfg(not(test))] use ops::Not;
+#[cfg(not(test))] use num::Zero;
 
 /**
 * Negation of a boolean value.
@@ -122,6 +127,7 @@ pub fn xor(a: bool, b: bool) -> bool { (a && !b) || (!a && b) }
 * ~~~ {.rust}
 * rusti> std::bool::implies(true, true)
 * true
+* ~~~
 *
 * ~~~ {.rust}
 * rusti> std::bool::implies(true, false)
@@ -253,6 +259,27 @@ pub fn all_values(blk: &fn(v: bool)) {
 #[inline]
 pub fn to_bit(v: bool) -> u8 { if v { 1u8 } else { 0u8 } }
 
+/**
+* The logical complement of a boolean value.
+*
+* # Examples
+*
+* ~~~rust
+* rusti> !true
+* false
+* ~~~
+*
+* ~~~rust
+* rusti> !false
+* true
+* ~~~
+*/
+#[cfg(not(test))]
+impl Not<bool> for bool {
+    #[inline]
+    fn not(&self) -> bool { !*self }
+}
+
 #[cfg(not(test))]
 impl Ord for bool {
     #[inline]
@@ -302,6 +329,12 @@ impl Eq for bool {
     fn eq(&self, other: &bool) -> bool { (*self) == (*other) }
     #[inline]
     fn ne(&self, other: &bool) -> bool { (*self) != (*other) }
+}
+
+#[cfg(not(test))]
+impl Zero for bool {
+    fn zero() -> bool { false }
+    fn is_zero(&self) -> bool { *self == false }
 }
 
 #[cfg(test)]

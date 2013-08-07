@@ -9,15 +9,15 @@
 // except according to those terms.
 
 struct r {
-  b:bool,
+  b: bool,
 }
 
 impl Drop for r {
-    fn finalize(&self) {}
+    fn drop(&self) {}
 }
 
 fn main() {
     let i = ~r { b: true };
-    let _j = copy i; //~ ERROR copying a value of non-copyable type
-    debug!(i);
+    let _j = i.clone(); //~ ERROR failed to find an implementation
+    info!(i);
 }

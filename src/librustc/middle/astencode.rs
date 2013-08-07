@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2013 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,7 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
 
 use c = metadata::common;
 use cstore = metadata::cstore;
@@ -24,8 +23,7 @@ use middle::{ty, typeck, moves};
 use middle;
 use util::ppaux::ty_to_str;
 
-use core::at_vec;
-use core::uint;
+use std::at_vec;
 use extra::ebml::reader;
 use extra::ebml;
 use extra::serialize;
@@ -43,7 +41,7 @@ use syntax::parse::token;
 use syntax;
 use writer = extra::ebml::writer;
 
-use core::cast;
+use std::cast;
 
 #[cfg(test)] use syntax::parse;
 #[cfg(test)] use syntax::print::pprust;
@@ -54,7 +52,6 @@ pub struct Maps {
     method_map: middle::typeck::method_map,
     vtable_map: middle::typeck::vtable_map,
     write_guard_map: middle::borrowck::write_guard_map,
-    moves_map: middle::moves::MovesMap,
     capture_map: middle::moves::CaptureMap,
 }
 
@@ -108,7 +105,7 @@ pub fn encode_inlined_item(ecx: &e::EncodeContext,
 pub fn decode_inlined_item(cdata: @cstore::crate_metadata,
                            tcx: ty::ctxt,
                            maps: Maps,
-                           path: ast_map::path,
+                           path: &[ast_map::path_elt],
                            par_doc: ebml::Doc)
                         -> Option<ast::inlined_item> {
     let dcx = @DecodeContext {
@@ -136,7 +133,9 @@ pub fn decode_inlined_item(cdata: @cstore::crate_metadata,
                ast_map::path_to_str(path, token::get_ident_interner()),
                tcx.sess.str_of(ii.ident()));
         ast_map::map_decoded_item(tcx.sess.diagnostic(),
-                                  dcx.tcx.items, path, &ii);
+                                  dcx.tcx.items,
+                                  path.to_owned(),
+                                  &ii);
         decode_side_tables(xcx, ast_doc);
         match ii {
           ast::ii_item(i) => {
@@ -165,7 +164,7 @@ fn reserve_id_range(sess: Session,
 }
 
 impl ExtendedDecodeContext {
-    pub fn tr_id(&self, id: ast::node_id) -> ast::node_id {
+    pub fn tr_id(&self, id: ast::NodeId) -> ast::NodeId {
         /*!
          * Translates an internal id, meaning a node id that is known
          * to refer to some part of the item currently being inlined,
@@ -212,8 +211,8 @@ impl ExtendedDecodeContext {
          * refer to the current crate and to the new, inlined node-id.
          */
 
-        assert_eq!(did.crate, ast::local_crate);
-        ast::def_id { crate: ast::local_crate, node: self.tr_id(did.node) }
+        assert_eq!(did.crate, ast::LOCAL_CRATE);
+        ast::def_id { crate: ast::LOCAL_CRATE, node: self.tr_id(did.node) }
     }
     pub fn tr_span(&self, _span: span) -> span {
         codemap::dummy_sp() // FIXME (#1972): handle span properly
@@ -250,12 +249,20 @@ impl<S:serialize::Encoder> def_id_encoder_helpers for S {
 
 trait def_id_decoder_helpers {
     fn read_def_id(&mut self, xcx: @ExtendedDecodeContext) -> ast::def_id;
+    fn read_def_id_noxcx(&mut self,
+                         cdata: @cstore::crate_metadata) -> ast::def_id;
 }
 
 impl<D:serialize::Decoder> def_id_decoder_helpers for D {
     fn read_def_id(&mut self, xcx: @ExtendedDecodeContext) -> ast::def_id {
         let did: ast::def_id = Decodable::decode(self);
         did.tr(xcx)
+    }
+
+    fn read_def_id_noxcx(&mut self,
+                         cdata: @cstore::crate_metadata) -> ast::def_id {
+        let did: ast::def_id = Decodable::decode(self);
+        decoder::translate_def_id(cdata, did)
     }
 }
 
@@ -291,43 +298,40 @@ fn encode_ast(ebml_w: &mut writer::Encoder, item: ast::inlined_item) {
 // nested items, as otherwise it would get confused when translating
 // inlined items.
 fn simplify_ast(ii: &ast::inlined_item) -> ast::inlined_item {
-    fn drop_nested_items(blk: &ast::blk_, fld: @fold::ast_fold) -> ast::blk_ {
-        let stmts_sans_items = do blk.stmts.filtered |stmt| {
+    fn drop_nested_items(blk: &ast::Block, fld: @fold::ast_fold) -> ast::Block {
+        let stmts_sans_items = do blk.stmts.iter().filter_map |stmt| {
             match stmt.node {
               ast::stmt_expr(_, _) | ast::stmt_semi(_, _) |
-              ast::stmt_decl(@codemap::spanned { node: ast::decl_local(_),
-                                             span: _}, _) => true,
-              ast::stmt_decl(@codemap::spanned { node: ast::decl_item(_),
-                                             span: _}, _) => false,
+              ast::stmt_decl(@codemap::spanned { node: ast::decl_local(_), span: _}, _)
+                => Some(*stmt),
+              ast::stmt_decl(@codemap::spanned { node: ast::decl_item(_), span: _}, _)
+                => None,
               ast::stmt_mac(*) => fail!("unexpanded macro in astencode")
             }
-        };
-        let blk_sans_items = ast::blk_ {
+        }.collect();
+        let blk_sans_items = ast::Block {
             view_items: ~[], // I don't know if we need the view_items here,
                              // but it doesn't break tests!
             stmts: stmts_sans_items,
             expr: blk.expr,
             id: blk.id,
-            rules: blk.rules
+            rules: blk.rules,
+            span: blk.span,
         };
         fold::noop_fold_block(&blk_sans_items, fld)
     }
 
     let fld = fold::make_fold(@fold::AstFoldFns {
-        fold_block: fold::wrap(drop_nested_items),
+        fold_block: drop_nested_items,
         .. *fold::default_ast_fold()
     });
 
     match *ii {
-      ast::ii_item(i) => {
-        ast::ii_item(fld.fold_item(i).get()) //hack: we're not dropping items
-      }
-      ast::ii_method(d, m) => {
-        ast::ii_method(d, fld.fold_method(m))
-      }
-      ast::ii_foreign(i) => {
-        ast::ii_foreign(fld.fold_foreign_item(i))
-      }
+        //hack: we're not dropping items
+        ast::ii_item(i) => ast::ii_item(fld.fold_item(i).get()),
+        ast::ii_method(d, is_provided, m) =>
+          ast::ii_method(d, is_provided, fld.fold_method(m)),
+        ast::ii_foreign(i) => ast::ii_foreign(fld.fold_foreign_item(i))
     }
 }
 
@@ -346,16 +350,11 @@ fn renumber_ast(xcx: @ExtendedDecodeContext, ii: ast::inlined_item)
     });
 
     match ii {
-      ast::ii_item(i) => {
-        ast::ii_item(fld.fold_item(i).get())
-      }
-      ast::ii_method(d, m) => {
-        ast::ii_method(xcx.tr_def_id(d), fld.fold_method(m))
-      }
-      ast::ii_foreign(i) => {
-        ast::ii_foreign(fld.fold_foreign_item(i))
-      }
-     }
+        ast::ii_item(i) => ast::ii_item(fld.fold_item(i).get()),
+        ast::ii_method(d, is_provided, m) =>
+          ast::ii_method(xcx.tr_def_id(d), is_provided, fld.fold_method(m)),
+        ast::ii_foreign(i) => ast::ii_foreign(fld.fold_foreign_item(i)),
+    }
 }
 
 // ______________________________________________________________________
@@ -374,22 +373,25 @@ fn decode_def(xcx: @ExtendedDecodeContext, doc: ebml::Doc) -> ast::def {
 impl tr for ast::def {
     fn tr(&self, xcx: @ExtendedDecodeContext) -> ast::def {
         match *self {
-          ast::def_fn(did, p) => { ast::def_fn(did.tr(xcx), p) }
+          ast::def_fn(did, p) => ast::def_fn(did.tr(xcx), p),
           ast::def_static_method(did, did2_opt, p) => {
             ast::def_static_method(did.tr(xcx),
                                    did2_opt.map(|did2| did2.tr(xcx)),
                                    p)
           }
+          ast::def_method(did0, did1) => {
+            ast::def_method(did0.tr(xcx), did1.map(|did1| did1.tr(xcx)))
+          }
           ast::def_self_ty(nid) => { ast::def_self_ty(xcx.tr_id(nid)) }
           ast::def_self(nid, i) => { ast::def_self(xcx.tr_id(nid), i) }
           ast::def_mod(did) => { ast::def_mod(did.tr(xcx)) }
           ast::def_foreign_mod(did) => { ast::def_foreign_mod(did.tr(xcx)) }
-          ast::def_const(did) => { ast::def_const(did.tr(xcx)) }
+          ast::def_static(did, m) => { ast::def_static(did.tr(xcx), m) }
           ast::def_arg(nid, b) => { ast::def_arg(xcx.tr_id(nid), b) }
           ast::def_local(nid, b) => { ast::def_local(xcx.tr_id(nid), b) }
           ast::def_variant(e_did, v_did) => {
             ast::def_variant(e_did.tr(xcx), v_did.tr(xcx))
-          }
+          },
           ast::def_trait(did) => ast::def_trait(did.tr(xcx)),
           ast::def_ty(did) => ast::def_ty(did.tr(xcx)),
           ast::def_prim_ty(p) => ast::def_prim_ty(p),
@@ -402,9 +404,7 @@ impl tr for ast::def {
                            xcx.tr_id(nid2),
                            xcx.tr_id(nid3))
           }
-          ast::def_struct(did) => {
-            ast::def_struct(did.tr(xcx))
-          }
+          ast::def_struct(did) => ast::def_struct(did.tr(xcx)),
           ast::def_region(nid) => ast::def_region(xcx.tr_id(nid)),
           ast::def_typaram_binder(nid) => {
             ast::def_typaram_binder(xcx.tr_id(nid))
@@ -419,12 +419,9 @@ impl tr for ast::def {
 
 impl tr for ty::AutoAdjustment {
     fn tr(&self, xcx: @ExtendedDecodeContext) -> ty::AutoAdjustment {
-        match self {
-            &ty::AutoAddEnv(r, s) => {
-                ty::AutoAddEnv(r.tr(xcx), s)
-            }
-
-            &ty::AutoDerefRef(ref adr) => {
+        match *self {
+            ty::AutoAddEnv(r, s) => ty::AutoAddEnv(r.tr(xcx), s),
+            ty::AutoDerefRef(ref adr) => {
                 ty::AutoDerefRef(ty::AutoDerefRef {
                     autoderefs: adr.autoderefs,
                     autoref: adr.autoref.map(|ar| ar.tr(xcx)),
@@ -592,12 +589,6 @@ impl tr for method_origin {
           typeck::method_trait(did, m) => {
               typeck::method_trait(did.tr(xcx), m)
           }
-          typeck::method_self(did, m) => {
-              typeck::method_self(did.tr(xcx), m)
-          }
-          typeck::method_super(trait_did, m) => {
-              typeck::method_super(trait_did.tr(xcx), m)
-          }
         }
     }
 }
@@ -605,19 +596,28 @@ impl tr for method_origin {
 // ______________________________________________________________________
 // Encoding and decoding vtable_res
 
-fn encode_vtable_res(ecx: &e::EncodeContext,
+pub fn encode_vtable_res(ecx: &e::EncodeContext,
                      ebml_w: &mut writer::Encoder,
                      dr: typeck::vtable_res) {
     // can't autogenerate this code because automatic code of
     // ty::t doesn't work, and there is no way (atm) to have
     // hand-written encoding routines combine with auto-generated
     // ones.  perhaps we should fix this.
-    do ebml_w.emit_from_vec(*dr) |ebml_w, vtable_origin| {
+    do ebml_w.emit_from_vec(*dr) |ebml_w, param_tables| {
+        encode_vtable_param_res(ecx, ebml_w, *param_tables);
+    }
+}
+
+pub fn encode_vtable_param_res(ecx: &e::EncodeContext,
+                     ebml_w: &mut writer::Encoder,
+                     param_tables: typeck::vtable_param_res) {
+    do ebml_w.emit_from_vec(*param_tables) |ebml_w, vtable_origin| {
         encode_vtable_origin(ecx, ebml_w, vtable_origin)
     }
 }
 
-fn encode_vtable_origin(ecx: &e::EncodeContext,
+
+pub fn encode_vtable_origin(ecx: &e::EncodeContext,
                         ebml_w: &mut writer::Encoder,
                         vtable_origin: &typeck::vtable_origin) {
     do ebml_w.emit_enum("vtable_origin") |ebml_w| {
@@ -628,7 +628,7 @@ fn encode_vtable_origin(ecx: &e::EncodeContext,
                     ebml_w.emit_def_id(def_id)
                 }
                 do ebml_w.emit_enum_variant_arg(1u) |ebml_w| {
-                    ebml_w.emit_tys(ecx, /*bad*/copy *tys);
+                    ebml_w.emit_tys(ecx, *tys);
                 }
                 do ebml_w.emit_enum_variant_arg(2u) |ebml_w| {
                     encode_vtable_res(ecx, ebml_w, vtable_res);
@@ -638,7 +638,7 @@ fn encode_vtable_origin(ecx: &e::EncodeContext,
           typeck::vtable_param(pn, bn) => {
             do ebml_w.emit_enum_variant("vtable_param", 1u, 2u) |ebml_w| {
                 do ebml_w.emit_enum_variant_arg(0u) |ebml_w| {
-                    ebml_w.emit_uint(pn);
+                    pn.encode(ebml_w);
                 }
                 do ebml_w.emit_enum_variant_arg(1u) |ebml_w| {
                     ebml_w.emit_uint(bn);
@@ -649,42 +649,59 @@ fn encode_vtable_origin(ecx: &e::EncodeContext,
     }
 }
 
-trait vtable_decoder_helpers {
-    fn read_vtable_res(&mut self, xcx: @ExtendedDecodeContext)
+pub trait vtable_decoder_helpers {
+    fn read_vtable_res(&mut self,
+                       tcx: ty::ctxt, cdata: @cstore::crate_metadata)
                       -> typeck::vtable_res;
-    fn read_vtable_origin(&mut self, xcx: @ExtendedDecodeContext)
+    fn read_vtable_param_res(&mut self,
+                       tcx: ty::ctxt, cdata: @cstore::crate_metadata)
+                      -> typeck::vtable_param_res;
+    fn read_vtable_origin(&mut self,
+                          tcx: ty::ctxt, cdata: @cstore::crate_metadata)
                           -> typeck::vtable_origin;
 }
 
 impl vtable_decoder_helpers for reader::Decoder {
-    fn read_vtable_res(&mut self, xcx: @ExtendedDecodeContext)
+    fn read_vtable_res(&mut self,
+                       tcx: ty::ctxt, cdata: @cstore::crate_metadata)
                       -> typeck::vtable_res {
-        @self.read_to_vec(|this| this.read_vtable_origin(xcx))
+        @self.read_to_vec(|this|
+                          this.read_vtable_param_res(tcx, cdata))
     }
 
-    fn read_vtable_origin(&mut self, xcx: @ExtendedDecodeContext)
+    fn read_vtable_param_res(&mut self,
+                             tcx: ty::ctxt, cdata: @cstore::crate_metadata)
+                      -> typeck::vtable_param_res {
+        @self.read_to_vec(|this|
+                          this.read_vtable_origin(tcx, cdata))
+    }
+
+    fn read_vtable_origin(&mut self,
+                          tcx: ty::ctxt, cdata: @cstore::crate_metadata)
         -> typeck::vtable_origin {
         do self.read_enum("vtable_origin") |this| {
-            do this.read_enum_variant(["vtable_static", "vtable_param"])
+            do this.read_enum_variant(["vtable_static",
+                                       "vtable_param",
+                                       "vtable_self"])
                     |this, i| {
                 match i {
                   0 => {
                     typeck::vtable_static(
                         do this.read_enum_variant_arg(0u) |this| {
-                            this.read_def_id(xcx)
+                            this.read_def_id_noxcx(cdata)
                         },
                         do this.read_enum_variant_arg(1u) |this| {
-                            this.read_tys(xcx)
+                            this.read_tys_noxcx(tcx, cdata)
                         },
                         do this.read_enum_variant_arg(2u) |this| {
-                            this.read_vtable_res(xcx)
+                            this.read_vtable_res(tcx, cdata)
                         }
                     )
                   }
                   1 => {
                     typeck::vtable_param(
                         do this.read_enum_variant_arg(0u) |this| {
-                            this.read_uint()
+                            Decodable::decode(this)
                         },
                         do this.read_enum_variant_arg(1u) |this| {
                             this.read_uint()
@@ -708,12 +725,12 @@ trait get_ty_str_ctxt {
 
 impl<'self> get_ty_str_ctxt for e::EncodeContext<'self> {
     fn ty_str_ctxt(&self) -> @tyencode::ctxt {
-        let r = self.reachable;
-        @tyencode::ctxt {diag: self.tcx.sess.diagnostic(),
-                         ds: e::def_to_str,
-                         tcx: self.tcx,
-                         reachable: |a| r.contains(&a),
-                         abbrevs: tyencode::ac_use_abbrevs(self.type_abbrevs)}
+        @tyencode::ctxt {
+            diag: self.tcx.sess.diagnostic(),
+            ds: e::def_to_str,
+            tcx: self.tcx,
+            abbrevs: tyencode::ac_use_abbrevs(self.type_abbrevs)
+        }
     }
 }
 
@@ -784,7 +801,7 @@ impl ebml_writer_helpers for writer::Encoder {
 
 trait write_tag_and_id {
     fn tag(&mut self, tag_id: c::astencode_tag, f: &fn(&mut Self));
-    fn id(&mut self, id: ast::node_id);
+    fn id(&mut self, id: ast::NodeId);
 }
 
 impl write_tag_and_id for writer::Encoder {
@@ -796,7 +813,7 @@ impl write_tag_and_id for writer::Encoder {
         self.end_tag();
     }
 
-    fn id(&mut self, id: ast::node_id) {
+    fn id(&mut self, id: ast::NodeId) {
         self.wr_tagged_u64(c::tag_table_id as uint, id as u64)
     }
 }
@@ -806,7 +823,7 @@ fn encode_side_tables_for_ii(ecx: &e::EncodeContext,
                              ebml_w: &mut writer::Encoder,
                              ii: &ast::inlined_item) {
     ebml_w.start_tag(c::tag_table as uint);
-    let new_ebml_w = copy *ebml_w;
+    let new_ebml_w = (*ebml_w).clone();
 
     // Because the ast visitor uses @fn, I can't pass in
     // ecx directly, but /I/ know that it'll be fine since
@@ -815,11 +832,11 @@ fn encode_side_tables_for_ii(ecx: &e::EncodeContext,
     let ecx_ptr : *() = unsafe { cast::transmute(ecx) };
     ast_util::visit_ids_for_inlined_item(
         ii,
-        |id: ast::node_id| {
+        |id: ast::NodeId| {
             // Note: this will cause a copy of ebml_w, which is bad as
             // it is mutable. But I believe it's harmless since we generate
             // balanced EBML.
-            let mut new_ebml_w = copy new_ebml_w;
+            let mut new_ebml_w = new_ebml_w.clone();
             // See above
             let ecx : &e::EncodeContext = unsafe { cast::transmute(ecx_ptr) };
             encode_side_tables_for_id(ecx, maps, &mut new_ebml_w, id)
@@ -830,14 +847,14 @@ fn encode_side_tables_for_ii(ecx: &e::EncodeContext,
 fn encode_side_tables_for_id(ecx: &e::EncodeContext,
                              maps: Maps,
                              ebml_w: &mut writer::Encoder,
-                             id: ast::node_id) {
+                             id: ast::NodeId) {
     let tcx = ecx.tcx;
 
     debug!("Encoding side tables for id %d", id);
 
     {
         let r = tcx.def_map.find(&id);
-        for r.iter().advance |def| {
+        foreach def in r.iter() {
             do ebml_w.tag(c::tag_table_def) |ebml_w| {
                 ebml_w.id(id);
                 do ebml_w.tag(c::tag_table_val) |ebml_w| {
@@ -849,7 +866,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
 
     {
         let r = tcx.node_types.find(&(id as uint));
-        for r.iter().advance |&ty| {
+        foreach &ty in r.iter() {
             do ebml_w.tag(c::tag_table_node_type) |ebml_w| {
                 ebml_w.id(id);
                 do ebml_w.tag(c::tag_table_val) |ebml_w| {
@@ -861,7 +878,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
 
     {
         let r = tcx.node_type_substs.find(&id);
-        for r.iter().advance |tys| {
+        foreach tys in r.iter() {
             do ebml_w.tag(c::tag_table_node_type_subst) |ebml_w| {
                 ebml_w.id(id);
                 do ebml_w.tag(c::tag_table_val) |ebml_w| {
@@ -873,7 +890,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
 
     {
         let r = tcx.freevars.find(&id);
-        for r.iter().advance |&fv| {
+        foreach &fv in r.iter() {
             do ebml_w.tag(c::tag_table_freevars) |ebml_w| {
                 ebml_w.id(id);
                 do ebml_w.tag(c::tag_table_val) |ebml_w| {
@@ -885,10 +902,10 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
         }
     }
 
-    let lid = ast::def_id { crate: ast::local_crate, node: id };
+    let lid = ast::def_id { crate: ast::LOCAL_CRATE, node: id };
     {
         let r = tcx.tcache.find(&lid);
-        for r.iter().advance |&tpbt| {
+        foreach &tpbt in r.iter() {
             do ebml_w.tag(c::tag_table_tcache) |ebml_w| {
                 ebml_w.id(id);
                 do ebml_w.tag(c::tag_table_val) |ebml_w| {
@@ -900,7 +917,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
 
     {
         let r = tcx.ty_param_defs.find(&id);
-        for r.iter().advance |&type_param_def| {
+        foreach &type_param_def in r.iter() {
             do ebml_w.tag(c::tag_table_param_defs) |ebml_w| {
                 ebml_w.id(id);
                 do ebml_w.tag(c::tag_table_val) |ebml_w| {
@@ -912,7 +929,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
 
     {
         let r = maps.method_map.find(&id);
-        for r.iter().advance |&mme| {
+        foreach &mme in r.iter() {
             do ebml_w.tag(c::tag_table_method_map) |ebml_w| {
                 ebml_w.id(id);
                 do ebml_w.tag(c::tag_table_val) |ebml_w| {
@@ -924,7 +941,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
 
     {
         let r = maps.vtable_map.find(&id);
-        for r.iter().advance |&dr| {
+        foreach &dr in r.iter() {
             do ebml_w.tag(c::tag_table_vtable_map) |ebml_w| {
                 ebml_w.id(id);
                 do ebml_w.tag(c::tag_table_val) |ebml_w| {
@@ -936,7 +953,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
 
     {
         let r = tcx.adjustments.find(&id);
-        for r.iter().advance |adj| {
+        foreach adj in r.iter() {
             do ebml_w.tag(c::tag_table_adjustments) |ebml_w| {
                 ebml_w.id(id);
                 do ebml_w.tag(c::tag_table_val) |ebml_w| {
@@ -946,15 +963,9 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
         }
     }
 
-    if maps.moves_map.contains(&id) {
-        do ebml_w.tag(c::tag_table_moves_map) |ebml_w| {
-            ebml_w.id(id);
-        }
-    }
-
     {
         let r = maps.capture_map.find(&id);
-        for r.iter().advance |&cap_vars| {
+        foreach &cap_vars in r.iter() {
             do ebml_w.tag(c::tag_table_capture_map) |ebml_w| {
                 ebml_w.id(id);
                 do ebml_w.tag(c::tag_table_val) |ebml_w| {
@@ -991,9 +1002,35 @@ trait ebml_decoder_decoder_helpers {
                       source: DefIdSource,
                       did: ast::def_id)
                       -> ast::def_id;
+
+    // Versions of the type reading functions that don't need the full
+    // ExtendedDecodeContext.
+    fn read_ty_noxcx(&mut self,
+                     tcx: ty::ctxt, cdata: @cstore::crate_metadata) -> ty::t;
+    fn read_tys_noxcx(&mut self,
+                      tcx: ty::ctxt,
+                      cdata: @cstore::crate_metadata) -> ~[ty::t];
 }
 
 impl ebml_decoder_decoder_helpers for reader::Decoder {
+    fn read_ty_noxcx(&mut self,
+                     tcx: ty::ctxt, cdata: @cstore::crate_metadata) -> ty::t {
+        do self.read_opaque |_, doc| {
+            tydecode::parse_ty_data(
+                *doc.data,
+                cdata.cnum,
+                doc.start,
+                tcx,
+                |_, id| decoder::translate_def_id(cdata, id))
+        }
+    }
+
+    fn read_tys_noxcx(&mut self,
+                      tcx: ty::ctxt,
+                      cdata: @cstore::crate_metadata) -> ~[ty::t] {
+        self.read_to_vec(|this| this.read_ty_noxcx(tcx, cdata) )
+    }
+
     fn read_ty(&mut self, xcx: @ExtendedDecodeContext) -> ty::t {
         // Note: regions types embed local node ids.  In principle, we
         // should translate these node ids into the new decode
@@ -1017,7 +1054,7 @@ impl ebml_decoder_decoder_helpers for reader::Decoder {
 
         fn type_string(doc: ebml::Doc) -> ~str {
             let mut str = ~"";
-            for uint::range(doc.start, doc.end) |i| {
+            foreach i in range(doc.start, doc.end) {
                 str.push_char(doc.data[i] as char);
             }
             str
@@ -1110,55 +1147,73 @@ fn decode_side_tables(xcx: @ExtendedDecodeContext,
                 found for id %d (orig %d)",
                tag, id, id0);
 
-        if tag == (c::tag_table_moves_map as uint) {
-            dcx.maps.moves_map.insert(id);
-        } else {
-            let val_doc = entry_doc.get(c::tag_table_val as uint);
-            let mut val_dsr = reader::Decoder(val_doc);
-            let val_dsr = &mut val_dsr;
-            if tag == (c::tag_table_def as uint) {
-                let def = decode_def(xcx, val_doc);
-                dcx.tcx.def_map.insert(id, def);
-            } else if tag == (c::tag_table_node_type as uint) {
-                let ty = val_dsr.read_ty(xcx);
-                debug!("inserting ty for node %?: %s",
-                       id, ty_to_str(dcx.tcx, ty));
-                dcx.tcx.node_types.insert(id as uint, ty);
-            } else if tag == (c::tag_table_node_type_subst as uint) {
-                let tys = val_dsr.read_tys(xcx);
-                dcx.tcx.node_type_substs.insert(id, tys);
-            } else if tag == (c::tag_table_freevars as uint) {
-                let fv_info = @val_dsr.read_to_vec(|val_dsr| {
-                    @val_dsr.read_freevar_entry(xcx)
-                });
-                dcx.tcx.freevars.insert(id, fv_info);
-            } else if tag == (c::tag_table_tcache as uint) {
-                let tpbt = val_dsr.read_ty_param_bounds_and_ty(xcx);
-                let lid = ast::def_id { crate: ast::local_crate, node: id };
-                dcx.tcx.tcache.insert(lid, tpbt);
-            } else if tag == (c::tag_table_param_defs as uint) {
-                let bounds = val_dsr.read_type_param_def(xcx);
-                dcx.tcx.ty_param_defs.insert(id, bounds);
-            } else if tag == (c::tag_table_method_map as uint) {
-                dcx.maps.method_map.insert(
-                    id,
-                    val_dsr.read_method_map_entry(xcx));
-            } else if tag == (c::tag_table_vtable_map as uint) {
-                dcx.maps.vtable_map.insert(id,
-                                           val_dsr.read_vtable_res(xcx));
-            } else if tag == (c::tag_table_adjustments as uint) {
-                let adj: @ty::AutoAdjustment = @Decodable::decode(val_dsr);
-                adj.tr(xcx);
-                dcx.tcx.adjustments.insert(id, adj);
-            } else if tag == (c::tag_table_capture_map as uint) {
-                let cvars =
-                    at_vec::to_managed_consume(
-                        val_dsr.read_to_vec(
-                            |val_dsr| val_dsr.read_capture_var(xcx)));
-                dcx.maps.capture_map.insert(id, cvars);
-            } else {
+        match c::astencode_tag::from_uint(tag) {
+            None => {
                 xcx.dcx.tcx.sess.bug(
                     fmt!("unknown tag found in side tables: %x", tag));
+            }
+            Some(value) => {
+                let val_doc = entry_doc.get(c::tag_table_val as uint);
+                let mut val_dsr = reader::Decoder(val_doc);
+                let val_dsr = &mut val_dsr;
+
+                match value {
+                    c::tag_table_def => {
+                        let def = decode_def(xcx, val_doc);
+                        dcx.tcx.def_map.insert(id, def);
+                    }
+                    c::tag_table_node_type => {
+                        let ty = val_dsr.read_ty(xcx);
+                        debug!("inserting ty for node %?: %s",
+                               id, ty_to_str(dcx.tcx, ty));
+                        dcx.tcx.node_types.insert(id as uint, ty);
+                    }
+                    c::tag_table_node_type_subst => {
+                        let tys = val_dsr.read_tys(xcx);
+                        dcx.tcx.node_type_substs.insert(id, tys);
+                    }
+                    c::tag_table_freevars => {
+                        let fv_info = @val_dsr.read_to_vec(|val_dsr| {
+                            @val_dsr.read_freevar_entry(xcx)
+                        });
+                        dcx.tcx.freevars.insert(id, fv_info);
+                    }
+                    c::tag_table_tcache => {
+                        let tpbt = val_dsr.read_ty_param_bounds_and_ty(xcx);
+                        let lid = ast::def_id { crate: ast::LOCAL_CRATE, node: id };
+                        dcx.tcx.tcache.insert(lid, tpbt);
+                    }
+                    c::tag_table_param_defs => {
+                        let bounds = val_dsr.read_type_param_def(xcx);
+                        dcx.tcx.ty_param_defs.insert(id, bounds);
+                    }
+                    c::tag_table_method_map => {
+                        dcx.maps.method_map.insert(
+                            id,
+                            val_dsr.read_method_map_entry(xcx));
+                    }
+                    c::tag_table_vtable_map => {
+                        dcx.maps.vtable_map.insert(
+                            id,
+                            val_dsr.read_vtable_res(xcx.dcx.tcx, xcx.dcx.cdata));
+                    }
+                    c::tag_table_adjustments => {
+                        let adj: @ty::AutoAdjustment = @Decodable::decode(val_dsr);
+                        adj.tr(xcx);
+                        dcx.tcx.adjustments.insert(id, adj);
+                    }
+                    c::tag_table_capture_map => {
+                        let cvars =
+                            at_vec::to_managed_consume(
+                                val_dsr.read_to_vec(
+                                    |val_dsr| val_dsr.read_capture_var(xcx)));
+                        dcx.maps.capture_map.insert(id, cvars);
+                    }
+                    _ => {
+                        xcx.dcx.tcx.sess.bug(
+                            fmt!("unknown tag found in side tables: %x", tag));
+                    }
+                }
             }
         }
 
@@ -1185,7 +1240,7 @@ fn decode_item_ast(par_doc: ebml::Doc) -> @ast::item {
 
 #[cfg(test)]
 trait fake_ext_ctxt {
-    fn cfg(&self) -> ast::crate_cfg;
+    fn cfg(&self) -> ast::CrateConfig;
     fn parse_sess(&self) -> @mut parse::ParseSess;
     fn call_site(&self) -> span;
     fn ident_of(&self, st: &str) -> ast::ident;
@@ -1196,7 +1251,7 @@ type fake_session = @mut parse::ParseSess;
 
 #[cfg(test)]
 impl fake_ext_ctxt for fake_session {
-    fn cfg(&self) -> ast::crate_cfg { ~[] }
+    fn cfg(&self) -> ast::CrateConfig { ~[] }
     fn parse_sess(&self) -> @mut parse::ParseSess { *self }
     fn call_site(&self) -> span {
         codemap::span {
@@ -1217,7 +1272,7 @@ fn mk_ctxt() -> @fake_ext_ctxt {
 
 #[cfg(test)]
 fn roundtrip(in_item: Option<@ast::item>) {
-    use core::io;
+    use std::io;
 
     let in_item = in_item.get();
     let bytes = do io::with_bytes_writer |wr| {
@@ -1261,14 +1316,14 @@ fn test_more() {
 fn test_simplification() {
     let ext_cx = mk_ctxt();
     let item_in = ast::ii_item(quote_item!(
-        fn new_int_alist<B:Copy>() -> alist<int, B> {
+        fn new_int_alist<B>() -> alist<int, B> {
             fn eq_int(a: int, b: int) -> bool { a == b }
             return alist {eq_fn: eq_int, data: ~[]};
         }
     ).get());
     let item_out = simplify_ast(&item_in);
     let item_exp = ast::ii_item(quote_item!(
-        fn new_int_alist<B:Copy>() -> alist<int, B> {
+        fn new_int_alist<B>() -> alist<int, B> {
             return alist {eq_fn: eq_int, data: ~[]};
         }
     ).get());

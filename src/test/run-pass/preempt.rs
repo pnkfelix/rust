@@ -11,24 +11,31 @@
 // xfail-test
 // This checks that preemption works.
 
-fn starve_main(alive: chan<int>) {
-    debug!("signalling main");
-    alive.recv(1);
-    debug!("starving main");
-    let i: int = 0;
+// note: halfway done porting to modern rust
+extern mod extra;
+
+use std::comm;
+use extra::comm;
+
+fn starve_main(alive: Port<int>) {
+    info!("signalling main");
+    alive.recv();
+    info!("starving main");
+    let mut i: int = 0;
     loop { i += 1; }
 }
 
 pub fn main() {
-    let alive: port<int> = port();
-    debug!("main started");
-    let s: task = do task::spawn {
-        starve_main(chan(alive));
+    let (port, chan) = stream();
+
+    info!("main started");
+    do spawn {
+        starve_main(port);
     };
-    let i: int;
-    debug!("main waiting for alive signal");
-    alive.send(i);
-    debug!("main got alive signal");
-    while i < 50 { debug!("main iterated"); i += 1; }
-    debug!("main completed");
+    let mut i: int = 0;
+    info!("main waiting for alive signal");
+    chan.send(i);
+    info!("main got alive signal");
+    while i < 50 { info!("main iterated"); i += 1; }
+    info!("main completed");
 }

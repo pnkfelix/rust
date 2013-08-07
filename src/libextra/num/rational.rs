@@ -10,11 +10,10 @@
 
 //! Rational numbers
 
-use core::prelude::*;
 
-use core::cmp;
-use core::from_str::FromStr;
-use core::num::{Zero,One,ToStrRadix,FromStrRadix,Round};
+use std::cmp;
+use std::from_str::FromStr;
+use std::num::{Zero,One,ToStrRadix,FromStrRadix,Round};
 use super::bigint::BigInt;
 
 /// Represents the ratio between 2 numbers.
@@ -110,6 +109,25 @@ cmp_impl!(impl Eq, eq, ne)
 cmp_impl!(impl TotalEq, equals)
 cmp_impl!(impl Ord, lt, gt, le, ge)
 cmp_impl!(impl TotalOrd, cmp -> cmp::Ordering)
+
+impl<T: Clone + Integer + Ord> Orderable for Ratio<T> {
+    #[inline]
+    fn min(&self, other: &Ratio<T>) -> Ratio<T> {
+        if *self < *other { self.clone() } else { other.clone() }
+    }
+
+    #[inline]
+    fn max(&self, other: &Ratio<T>) -> Ratio<T> {
+        if *self > *other { self.clone() } else { other.clone() }
+    }
+
+    #[inline]
+    fn clamp(&self, mn: &Ratio<T>, mx: &Ratio<T>) -> Ratio<T> {
+        if *self > *mx { mx.clone()} else
+        if *self < *mn { mn.clone() } else { self.clone() }
+    }
+}
+
 
 /* Arithmetic */
 // a/b * c/d = (a*c)/(b*d)
@@ -277,11 +295,10 @@ impl<T: FromStrRadix + Clone + Integer + Ord>
 
 #[cfg(test)]
 mod test {
-    use core::prelude::*;
 
     use super::*;
-    use core::num::{Zero,One,FromStrRadix,IntConvertible};
-    use core::from_str::FromStr;
+    use std::num::{Zero,One,FromStrRadix,IntConvertible};
+    use std::from_str::FromStr;
 
     pub static _0 : Rational = Ratio { numer: 0, denom: 1};
     pub static _1 : Rational = Ratio { numer: 1, denom: 1};
@@ -482,7 +499,8 @@ mod test {
             assert_eq!(FromStr::from_str::<Rational>(s), None);
         }
 
-        for ["0 /1", "abc", "", "1/", "--1/2","3/2/1"].each |&s| {
+        let xs = ["0 /1", "abc", "", "1/", "--1/2","3/2/1"];
+        foreach &s in xs.iter() {
             test(s);
         }
     }
@@ -521,7 +539,8 @@ mod test {
             assert_eq!(FromStrRadix::from_str_radix::<Rational>(s, 3), None);
         }
 
-        for ["0 /1", "abc", "", "1/", "--1/2","3/2/1", "3/2"].each |&s| {
+        let xs = ["0 /1", "abc", "", "1/", "--1/2","3/2/1", "3/2"];
+        foreach &s in xs.iter() {
             test(s);
         }
     }

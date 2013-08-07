@@ -22,15 +22,12 @@ extern mod extra;
 
 use std::comm::{Port, Chan, SharedChan};
 use std::comm;
-use std::io::{Writer, WriterUtil};
 use std::io;
 use std::os;
 use std::task;
-use std::ptr;
 use std::uint;
-use std::vec;
 
-fn move_out<T>(x: T) {}
+fn move_out<T>(_x: T) {}
 
 enum request {
     get_count,
@@ -38,12 +35,12 @@ enum request {
     stop
 }
 
-fn server(requests: &Port<request>, responses: &comm::Chan<uint>) {
+fn server(requests: &Port<request>, responses: &Chan<uint>) {
     let mut count = 0u;
     let mut done = false;
     while !done {
         match requests.try_recv() {
-          Some(get_count) => { responses.send(copy count); }
+          Some(get_count) => { responses.send(count.clone()); }
           Some(bytes(b)) => {
             //error!("server: received %? bytes", b);
             count += b;
@@ -67,12 +64,12 @@ fn run(args: &[~str]) {
     let num_bytes = 100;
     let start = extra::time::precise_time_s();
     let mut worker_results = ~[];
-    for uint::range(0, workers) |_i| {
+    foreach _ in range(0u, workers) {
         let to_child = to_child.clone();
         let mut builder = task::task();
         builder.future_result(|r| worker_results.push(r));
         do builder.spawn {
-            for uint::range(0, size / workers) |_i| {
+            foreach _ in range(0u, size / workers) {
                 //error!("worker %?: sending %? bytes", i, num_bytes);
                 to_child.send(bytes(num_bytes));
             }
@@ -83,7 +80,7 @@ fn run(args: &[~str]) {
         server(&from_parent, &to_parent);
     }
 
-    for vec::each(worker_results) |r| {
+    foreach r in worker_results.iter() {
         r.recv();
     }
 
@@ -102,14 +99,14 @@ fn run(args: &[~str]) {
 
 fn main() {
     let args = os::args();
-    let args = if os::getenv(~"RUST_BENCH").is_some() {
+    let args = if os::getenv("RUST_BENCH").is_some() {
         ~[~"", ~"1000000", ~"10000"]
     } else if args.len() <= 1u {
         ~[~"", ~"10000", ~"4"]
     } else {
-        copy args
+        args.clone()
     };
 
-    debug!("%?", args);
+    info!("%?", args);
     run(args);
 }

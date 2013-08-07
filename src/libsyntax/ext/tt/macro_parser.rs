@@ -10,8 +10,6 @@
 
 // Earley-like parser for macros.
 
-use core::prelude::*;
-
 use ast;
 use ast::{matcher, match_tok, match_seq, match_nonterminal, ident};
 use codemap::{BytePos, mk_sp};
@@ -22,9 +20,8 @@ use parse::parser::Parser;
 use parse::token::{Token, EOF, to_str, nonterminal, get_ident_interner, ident_to_str};
 use parse::token;
 
-use core::hashmap::HashMap;
-use core::uint;
-use core::vec;
+use std::hashmap::HashMap;
+use std::vec;
 
 /* This is an Earley-like parser, without support for in-grammar nonterminals,
 only by calling out to the main rust parser for named nonterminals (which it
@@ -98,6 +95,7 @@ eof: [a $( a )* a b ·]
 /* to avoid costly uniqueness checks, we require that `match_seq` always has a
 nonempty body. */
 
+#[deriving(Clone)]
 pub enum matcher_pos_up { /* to break a circularity */
     matcher_pos_up(Option<~MatcherPos>)
 }
@@ -109,6 +107,7 @@ pub fn is_some(mpu: &matcher_pos_up) -> bool {
     }
 }
 
+#[deriving(Clone)]
 pub struct MatcherPos {
     elts: ~[ast::matcher], // maybe should be <'>? Need to understand regions.
     sep: Option<Token>,
@@ -121,7 +120,7 @@ pub struct MatcherPos {
 
 pub fn copy_up(mpu: &matcher_pos_up) -> ~MatcherPos {
     match *mpu {
-      matcher_pos_up(Some(ref mp)) => copy (*mp),
+      matcher_pos_up(Some(ref mp)) => (*mp).clone(),
       _ => fail!()
     }
 }
@@ -138,7 +137,7 @@ pub fn count_names(ms: &[matcher]) -> uint {
 pub fn initial_matcher_pos(ms: ~[matcher], sep: Option<Token>, lo: BytePos)
                         -> ~MatcherPos {
     let mut match_idx_hi = 0u;
-    for ms.each |elt| {
+    foreach elt in ms.iter() {
         match elt.node {
           match_tok(_) => (),
           match_seq(_,_,_,_,hi) => {
@@ -195,7 +194,7 @@ pub fn nameize(p_s: @mut ParseSess, ms: &[matcher], res: &[@named_match])
         match *m {
           codemap::spanned {node: match_tok(_), _} => (),
           codemap::spanned {node: match_seq(ref more_ms, _, _, _, _), _} => {
-            for more_ms.each |next_m| {
+            foreach next_m in more_ms.iter() {
                 n_rec(p_s, next_m, res, ret_val)
             };
           }
@@ -211,8 +210,8 @@ pub fn nameize(p_s: @mut ParseSess, ms: &[matcher], res: &[@named_match])
         }
     }
     let mut ret_val = HashMap::new();
-    for ms.each |m| { n_rec(p_s, m, res, &mut ret_val) }
-    return ret_val;
+    foreach m in ms.iter() { n_rec(p_s, m, res, &mut ret_val) }
+    ret_val
 }
 
 pub enum parse_result {
@@ -223,7 +222,7 @@ pub enum parse_result {
 
 pub fn parse_or_else(
     sess: @mut ParseSess,
-    cfg: ast::crate_cfg,
+    cfg: ast::CrateConfig,
     rdr: @mut reader,
     ms: ~[matcher]
 ) -> HashMap<ident, @named_match> {
@@ -236,7 +235,7 @@ pub fn parse_or_else(
 
 pub fn parse(
     sess: @mut ParseSess,
-    cfg: ast::crate_cfg,
+    cfg: ast::CrateConfig,
     rdr: @mut reader,
     ms: &[matcher]
 ) -> parse_result {
@@ -280,8 +279,8 @@ pub fn parse(
                         // most of the time.
 
                         // Only touch the binders we have actually bound
-                        for uint::range(ei.match_lo, ei.match_hi) |idx| {
-                            let sub = copy ei.matches[idx];
+                        foreach idx in range(ei.match_lo, ei.match_hi) {
+                            let sub = ei.matches[idx].clone();
                             new_pos.matches[idx]
                                 .push(@matched_seq(sub,
                                                    mk_sp(ei.sp_lo,
@@ -295,10 +294,10 @@ pub fn parse(
                     // can we go around again?
 
                     // the *_t vars are workarounds for the lack of unary move
-                    match copy ei.sep {
+                    match ei.sep {
                       Some(ref t) if idx == len => { // we need a separator
                         if tok == (*t) { //pass the separator
-                            let mut ei_t = ei;
+                            let mut ei_t = ei.clone();
                             ei_t.idx += 1;
                             next_eis.push(ei_t);
                         }
@@ -313,27 +312,26 @@ pub fn parse(
                     eof_eis.push(ei);
                 }
             } else {
-                match copy ei.elts[idx].node {
+                match ei.elts[idx].node.clone() {
                   /* need to descend into sequence */
                   match_seq(ref matchers, ref sep, zero_ok,
                             match_idx_lo, match_idx_hi) => {
                     if zero_ok {
-                        let mut new_ei = copy ei;
+                        let mut new_ei = ei.clone();
                         new_ei.idx += 1u;
                         //we specifically matched zero repeats.
-                        for uint::range(match_idx_lo, match_idx_hi) |idx| {
+                        foreach idx in range(match_idx_lo, match_idx_hi) {
                             new_ei.matches[idx].push(@matched_seq(~[], sp));
                         }
 
                         cur_eis.push(new_ei);
                     }
 
-                    let matches = vec::map(ei.matches, // fresh, same size:
-                                           |_m| ~[]);
+                    let matches = vec::from_elem(ei.matches.len(), ~[]);
                     let ei_t = ei;
                     cur_eis.push(~MatcherPos {
-                        elts: copy *matchers,
-                        sep: copy *sep,
+                        elts: (*matchers).clone(),
+                        sep: (*sep).clone(),
                         idx: 0u,
                         up: matcher_pos_up(Some(ei_t)),
                         matches: matches,
@@ -343,7 +341,7 @@ pub fn parse(
                   }
                   match_nonterminal(_,_,_) => { bb_eis.push(ei) }
                   match_tok(ref t) => {
-                    let mut ei_t = ei;
+                    let mut ei_t = ei.clone();
                     if (*t) == tok {
                         ei_t.idx += 1;
                         next_eis.push(ei_t);
@@ -357,7 +355,7 @@ pub fn parse(
         if tok == EOF {
             if eof_eis.len() == 1u {
                 let mut v = ~[];
-                for eof_eis[0u].matches.mut_iter().advance |dv| {
+                foreach dv in eof_eis[0u].matches.mut_iter() {
                     v.push(dv.pop());
                 }
                 return success(nameize(sess, ms, v));
@@ -391,7 +389,7 @@ pub fn parse(
                 }
                 rdr.next_token();
             } else /* bb_eis.len() == 1 */ {
-                let rust_parser = Parser(sess, copy cfg, rdr.dup());
+                let rust_parser = Parser(sess, cfg.clone(), rdr.dup());
 
                 let mut ei = bb_eis.pop();
                 match ei.elts[ei.idx].node {
@@ -404,7 +402,7 @@ pub fn parse(
                 }
                 cur_eis.push(ei);
 
-                for rust_parser.tokens_consumed.times() || {
+                do rust_parser.tokens_consumed.times() || {
                     rdr.next_token();
                 }
             }
@@ -429,7 +427,7 @@ pub fn parse_nt(p: &Parser, name: &str) -> nonterminal {
       "ident" => match *p.token {
         token::IDENT(sn,b) => { p.bump(); token::nt_ident(sn,b) }
         _ => p.fatal(~"expected ident, found "
-                     + token::to_str(get_ident_interner(), &copy *p.token))
+                     + token::to_str(get_ident_interner(), p.token))
       },
       "path" => token::nt_path(p.parse_path_with_tps(false)),
       "tt" => {

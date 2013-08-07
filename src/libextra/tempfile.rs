@@ -10,17 +10,16 @@
 
 //! Temporary files and directories
 
-use core::prelude::*;
 
-use core::os;
-use core::rand::RngUtil;
-use core::rand;
+use std::os;
+use std::rand::RngUtil;
+use std::rand;
 
 /// Attempts to make a temporary directory inside of `tmpdir` whose name will
 /// have the suffix `suffix`. If no directory can be created, None is returned.
 pub fn mkdtemp(tmpdir: &Path, suffix: &str) -> Option<Path> {
     let mut r = rand::rng();
-    for 1000.times {
+    foreach _ in range(0u, 1000) {
         let p = tmpdir.push(r.gen_str(16) + suffix);
         if os::make_dir(&p, 0x1c0) { // 700
             return Some(p);
@@ -31,11 +30,10 @@ pub fn mkdtemp(tmpdir: &Path, suffix: &str) -> Option<Path> {
 
 #[cfg(test)]
 mod tests {
-    use core::prelude::*;
 
     use tempfile::mkdtemp;
 
-    use core::os;
+    use std::os;
 
     #[test]
     fn test_mkdtemp() {
@@ -44,16 +42,17 @@ mod tests {
         assert!(p.to_str().ends_with("foobar"));
     }
 
-    // Ideally these would be in core::os but then core would need
+    // Ideally these would be in std::os but then core would need
     // to depend on std
     #[test]
     fn recursive_mkdir_rel() {
-        use core::libc::consts::os::posix88::{S_IRUSR, S_IWUSR, S_IXUSR};
-        use core::os;
+        use std::libc::consts::os::posix88::{S_IRUSR, S_IWUSR, S_IXUSR};
+        use std::os;
+        use std::unstable::change_dir_locked;
 
         let root = mkdtemp(&os::tmpdir(), "recursive_mkdir_rel").
             expect("recursive_mkdir_rel");
-        assert!(do os::change_dir_locked(&root) {
+        assert!(do change_dir_locked(&root) {
             let path = Path("frob");
             debug!("recursive_mkdir_rel: Making: %s in cwd %s [%?]", path.to_str(),
                    os::getcwd().to_str(),
@@ -67,8 +66,8 @@ mod tests {
 
     #[test]
     fn recursive_mkdir_dot() {
-        use core::libc::consts::os::posix88::{S_IRUSR, S_IWUSR, S_IXUSR};
-        use core::os;
+        use std::libc::consts::os::posix88::{S_IRUSR, S_IWUSR, S_IXUSR};
+        use std::os;
 
         let dot = Path(".");
         assert!(os::mkdir_recursive(&dot,  (S_IRUSR | S_IWUSR | S_IXUSR) as i32));
@@ -78,12 +77,13 @@ mod tests {
 
     #[test]
     fn recursive_mkdir_rel_2() {
-        use core::libc::consts::os::posix88::{S_IRUSR, S_IWUSR, S_IXUSR};
-        use core::os;
+        use std::libc::consts::os::posix88::{S_IRUSR, S_IWUSR, S_IXUSR};
+        use std::os;
+        use std::unstable::change_dir_locked;
 
         let root = mkdtemp(&os::tmpdir(), "recursive_mkdir_rel_2").
             expect("recursive_mkdir_rel_2");
-        assert!(do os::change_dir_locked(&root) {
+        assert!(do change_dir_locked(&root) {
             let path = Path("./frob/baz");
             debug!("recursive_mkdir_rel_2: Making: %s in cwd %s [%?]", path.to_str(),
                    os::getcwd().to_str(), os::path_exists(&path));
@@ -102,8 +102,8 @@ mod tests {
     // Ideally this would be in core, but needs mkdtemp
     #[test]
     pub fn test_rmdir_recursive_ok() {
-        use core::libc::consts::os::posix88::{S_IRUSR, S_IWUSR, S_IXUSR};
-        use core::os;
+        use std::libc::consts::os::posix88::{S_IRUSR, S_IWUSR, S_IXUSR};
+        use std::os;
 
         let rwx = (S_IRUSR | S_IWUSR | S_IXUSR) as i32;
 

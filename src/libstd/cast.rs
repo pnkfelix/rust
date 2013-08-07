@@ -14,21 +14,7 @@ use sys;
 use unstable::intrinsics;
 
 /// Casts the value at `src` to U. The two types must have the same length.
-#[cfg(stage0)]
-pub unsafe fn transmute_copy<T, U>(src: &T) -> U {
-    let mut dest: U = intrinsics::uninit();
-    {
-        let dest_ptr: *mut u8 = transmute(&mut dest);
-        let src_ptr: *u8 = transmute(src);
-        intrinsics::memmove64(dest_ptr,
-                              src_ptr,
-                              sys::size_of::<U>() as u64);
-    }
-    dest
-}
-
-/// Casts the value at `src` to U. The two types must have the same length.
-#[cfg(target_word_size = "32", not(stage0))]
+#[cfg(target_word_size = "32")]
 #[inline]
 pub unsafe fn transmute_copy<T, U>(src: &T) -> U {
     let mut dest: U = intrinsics::uninit();
@@ -39,7 +25,7 @@ pub unsafe fn transmute_copy<T, U>(src: &T) -> U {
 }
 
 /// Casts the value at `src` to U. The two types must have the same length.
-#[cfg(target_word_size = "64", not(stage0))]
+#[cfg(target_word_size = "64")]
 #[inline]
 pub unsafe fn transmute_copy<T, U>(src: &T) -> U {
     let mut dest: U = intrinsics::uninit();
@@ -47,6 +33,14 @@ pub unsafe fn transmute_copy<T, U>(src: &T) -> U {
     let src_ptr: *u8 = transmute(src);
     intrinsics::memcpy64(dest_ptr, src_ptr, sys::size_of::<U>() as u64);
     dest
+}
+
+/**
+ * Forces a copy of a value, even if that value is considered noncopyable.
+ */
+#[inline]
+pub unsafe fn unsafe_copy<T>(thing: &T) -> T {
+    transmute_copy(thing)
 }
 
 /**
@@ -139,6 +133,7 @@ pub unsafe fn copy_lifetime_vec<'a,S,T>(_ptr: &'a [S], ptr: &T) -> &'a T {
 #[cfg(test)]
 mod tests {
     use cast::{bump_box_refcount, transmute};
+    use unstable::raw;
 
     #[test]
     fn test_transmute_copy() {
@@ -162,10 +157,9 @@ mod tests {
 
     #[test]
     fn test_transmute() {
-        use managed::raw::BoxRepr;
         unsafe {
             let x = @100u8;
-            let x: *BoxRepr = transmute(x);
+            let x: *raw::Box<u8> = transmute(x);
             assert!((*x).data == 100);
             let _x: @int = transmute(x);
         }

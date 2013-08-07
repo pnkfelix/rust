@@ -10,7 +10,7 @@
 
 fn test_stack_assign() {
     let s: ~str = ~"a";
-    debug!(s.clone());
+    info!(s.clone());
     let t: ~str = ~"a";
     assert!(s == t);
     let u: ~str = ~"b";
@@ -27,7 +27,7 @@ fn test_heap_assign() {
     assert!((s != u));
 }
 
-fn test_heap_log() { let s = ~"a big ol' string"; debug!(s); }
+fn test_heap_log() { let s = ~"a big ol' string"; info!(s); }
 
 fn test_stack_add() {
     assert_eq!(~"a" + ~"b", ~"ab");
@@ -44,19 +44,19 @@ fn test_heap_add() {
 
 fn test_append() {
     let mut s = ~"";
-    s += ~"a";
+    s.push_str(~"a");
     assert_eq!(s, ~"a");
 
     let mut s = ~"a";
-    s += ~"b";
-    debug!(s.clone());
+    s.push_str(~"b");
+    info!(s.clone());
     assert_eq!(s, ~"ab");
 
     let mut s = ~"c";
-    s += ~"offee";
+    s.push_str(~"offee");
     assert!(s == ~"coffee");
 
-    s += ~"&tea";
+    s.push_str(~"&tea");
     assert!(s == ~"coffee&tea");
 }
 

@@ -23,34 +23,33 @@ extern mod extra;
 
 use extra::{time, getopts};
 use std::comm::*;
-use std::int::range;
 use std::io::WriterUtil;
 use std::io;
 use std::os;
 use std::result::{Ok, Err};
-use std::str;
 use std::task;
 use std::u64;
 use std::uint;
-use std::vec;
 
 fn fib(n: int) -> int {
-    fn pfib(c: &Chan<int>, n: int) {
+    fn pfib(c: &SharedChan<int>, n: int) {
         if n == 0 {
             c.send(0);
         } else if n <= 2 {
             c.send(1);
         } else {
-            let p = PortSet::new();
-            let ch = p.chan();
+            let (pp, cc) = stream();
+            let cc = SharedChan::new(cc);
+            let ch = cc.clone();
             task::spawn(|| pfib(&ch, n - 1) );
-            let ch = p.chan();
+            let ch = cc.clone();
             task::spawn(|| pfib(&ch, n - 2) );
-            c.send(p.recv() + p.recv());
+            c.send(pp.recv() + pp.recv());
         }
     }
 
     let (p, ch) = stream();
+    let ch = SharedChan::new(ch);
     let _t = task::spawn(|| pfib(&ch, n) );
     p.recv()
 }
@@ -60,13 +59,13 @@ struct Config {
 }
 
 fn parse_opts(argv: ~[~str]) -> Config {
-    let opts = ~[getopts::optflag(~"stress")];
+    let opts = ~[getopts::optflag("stress")];
 
-    let opt_args = vec::slice(argv, 1, argv.len());
+    let opt_args = argv.slice(1, argv.len());
 
     match getopts::getopts(opt_args, opts) {
       Ok(ref m) => {
-          return Config {stress: getopts::opt_present(m, ~"stress")}
+          return Config {stress: getopts::opt_present(m, "stress")}
       }
       Err(_) => { fail!(); }
     }
@@ -84,21 +83,21 @@ fn stress_task(id: int) {
 
 fn stress(num_tasks: int) {
     let mut results = ~[];
-    for range(0, num_tasks) |i| {
+    foreach i in range(0, num_tasks) {
         let mut builder = task::task();
         builder.future_result(|r| results.push(r));
         do builder.spawn {
             stress_task(i);
         }
     }
-    for results.each |r| {
+    foreach r in results.iter() {
         r.recv();
     }
 }
 
 fn main() {
     let args = os::args();
-    let args = if os::getenv(~"RUST_BENCH").is_some() {
+    let args = if os::getenv("RUST_BENCH").is_some() {
         ~[~"", ~"20"]
     } else if args.len() <= 1u {
         ~[~"", ~"8"]
@@ -106,7 +105,7 @@ fn main() {
         args
     };
 
-    let opts = parse_opts(copy args);
+    let opts = parse_opts(args.clone());
 
     if opts.stress {
         stress(2);
@@ -117,8 +116,8 @@ fn main() {
 
         let out = io::stdout();
 
-        for range(1, max + 1) |n| {
-            for range(0, num_trials) |_i| {
+        foreach n in range(1, max + 1) {
+            foreach _ in range(0, num_trials) {
                 let start = time::precise_time_ns();
                 let fibn = fib(n);
                 let stop = time::precise_time_ns();

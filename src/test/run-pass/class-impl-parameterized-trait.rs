@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// xfail-test
+// xfail-test FIXME #7307
 // xfail-fast
 
 extern mod extra;
@@ -58,7 +58,7 @@ class cat : map<int, bool> {
   fn find(&&k:int) -> Option<bool> { Some(self.get(k)) }
   fn remove(&&k:int) -> Option<bool> { self.meows -= k; Some(true) }
   fn each(f: &fn(&&int, &&bool) -> bool) {
-    let mut n = int::abs(self.meows);
+    let mut n = num::abs(self.meows);
     while n > 0 {
         if !f(n, true) { break; }
         n -= 1;
@@ -75,7 +75,7 @@ class cat : map<int, bool> {
 
 pub fn main() {
   let nyan : cat = cat(0, 2, "nyan");
-  for uint::range(1u, 5u) |_i| { nyan.speak(); }
+  foreach _ in range(1u, 5u) { nyan.speak(); }
   // cat returns true if uint input is greater than
   // the number of meows so far
   assert!((nyan.get(1)));

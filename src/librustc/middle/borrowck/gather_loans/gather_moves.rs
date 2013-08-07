@@ -12,7 +12,6 @@
  * Computes moves.
  */
 
-use core::prelude::*;
 use mc = middle::mem_categorization;
 use middle::borrowck::*;
 use middle::borrowck::move_data::*;
@@ -25,9 +24,9 @@ use util::ppaux::{UserString};
 
 pub fn gather_decl(bccx: @BorrowckCtxt,
                    move_data: &mut MoveData,
-                   decl_id: ast::node_id,
+                   decl_id: ast::NodeId,
                    _decl_span: span,
-                   var_id: ast::node_id) {
+                   var_id: ast::NodeId) {
     let loan_path = @LpVar(var_id);
     move_data.add_move(bccx.tcx, loan_path, decl_id, Declared);
 }
@@ -50,7 +49,7 @@ pub fn gather_move_from_pat(bccx: @BorrowckCtxt,
 
 fn gather_move_from_expr_or_pat(bccx: @BorrowckCtxt,
                                 move_data: &mut MoveData,
-                                move_id: ast::node_id,
+                                move_id: ast::NodeId,
                                 move_kind: MoveKind,
                                 cmt: mc::cmt) {
     if !check_is_legal_to_move_from(bccx, cmt, cmt) {
@@ -71,7 +70,7 @@ pub fn gather_captures(bccx: @BorrowckCtxt,
                        move_data: &mut MoveData,
                        closure_expr: @ast::expr) {
     let captured_vars = bccx.capture_map.get(&closure_expr.id);
-    for captured_vars.each |captured_var| {
+    foreach captured_var in captured_vars.iter() {
         match captured_var.mode {
             moves::CapMove => {
                 let fvar_id = ast_util::def_id_of_def(captured_var.def).node;
@@ -86,10 +85,10 @@ pub fn gather_captures(bccx: @BorrowckCtxt,
 
 pub fn gather_assignment(bccx: @BorrowckCtxt,
                          move_data: &mut MoveData,
-                         assignment_id: ast::node_id,
+                         assignment_id: ast::NodeId,
                          assignment_span: span,
                          assignee_loan_path: @LoanPath,
-                         assignee_id: ast::node_id) {
+                         assignee_id: ast::NodeId) {
     move_data.add_assignment(bccx.tcx,
                              assignee_loan_path,
                              assignment_id,
@@ -101,9 +100,7 @@ fn check_is_legal_to_move_from(bccx: @BorrowckCtxt,
                                cmt0: mc::cmt,
                                cmt: mc::cmt) -> bool {
     match cmt.cat {
-        mc::cat_stack_upvar(*) |
         mc::cat_implicit_self(*) |
-        mc::cat_copied_upvar(*) |
         mc::cat_deref(_, _, mc::region_ptr(*)) |
         mc::cat_deref(_, _, mc::gc_ptr(*)) |
         mc::cat_deref(_, _, mc::unsafe_ptr(*)) => {
@@ -112,6 +109,27 @@ fn check_is_legal_to_move_from(bccx: @BorrowckCtxt,
                 fmt!("cannot move out of %s",
                      bccx.cmt_to_str(cmt)));
             false
+        }
+
+        // These are separate from the above cases for a better error message.
+        mc::cat_stack_upvar(*) |
+        mc::cat_copied_upvar(mc::CopiedUpvar { onceness: ast::Many, _ }) => {
+            let once_hint = if bccx.tcx.sess.once_fns() {
+                " (unless the destination closure type is `once fn')"
+            } else {
+                ""
+            };
+            bccx.span_err(
+                cmt0.span,
+                fmt!("cannot move out of %s%s", bccx.cmt_to_str(cmt), once_hint));
+            false
+        }
+
+        // Can move out of captured upvars only if the destination closure
+        // type is 'once'. 1-shot stack closures emit the copied_upvar form
+        // (see mem_categorization.rs).
+        mc::cat_copied_upvar(mc::CopiedUpvar { onceness: ast::Once, _ }) => {
+            true
         }
 
         // It seems strange to allow a move out of a static item,

@@ -8,10 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
-
 use ast;
-use ast::{meta_item, item, expr};
+use ast::{MetaItem, item, expr};
 use codemap::span;
 use ext::base::ExtCtxt;
 use ext::build::AstBuilder;
@@ -19,7 +17,7 @@ use ext::deriving::generic::*;
 
 pub fn expand_deriving_ord(cx: @ExtCtxt,
                            span: span,
-                           mitem: @meta_item,
+                           mitem: @MetaItem,
                            in_items: ~[@item]) -> ~[@item] {
     macro_rules! md (
         ($name:expr, $op:expr, $equal:expr) => {

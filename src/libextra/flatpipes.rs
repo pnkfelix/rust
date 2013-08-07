@@ -29,12 +29,12 @@ This example sends boxed integers across tasks using serialization.
 let (port, chan) = serial::pipe_stream();
 
 do task::spawn || {
-    for int::range(0, 10) |i| {
+    foreach i in range(0, 10) {
         chan.send(@i)
     }
 }
 
-for int::range(0, 10) |i| {
+foreach i in range(0, 10) {
     assert @i == port.recv()
 }
 ~~~
@@ -49,14 +49,12 @@ block the scheduler thread, so will their pipes.
 
 #[allow(missing_doc)];
 
-use core::prelude::*;
 
 // The basic send/recv interface FlatChan and PortChan will implement
-use core::io;
-use core::comm::GenericChan;
-use core::comm::GenericPort;
-use core::sys::size_of;
-use core::vec;
+use std::io;
+use std::comm::GenericChan;
+use std::comm::GenericPort;
+use std::sys::size_of;
 
 /**
 A FlatPort, consisting of a `BytePort` that receives byte vectors,
@@ -95,9 +93,9 @@ pub mod serial {
     use flatpipes::bytepipes::{PipeBytePort, PipeByteChan};
     use flatpipes::{FlatPort, FlatChan};
 
-    use core::io::{Reader, Writer};
-    use core::comm::{Port, Chan};
-    use core::comm;
+    use std::io::{Reader, Writer};
+    use std::comm::{Port, Chan};
+    use std::comm;
 
     pub type ReaderPort<T, R> = FlatPort<
         T, DeserializingUnflattener<DefaultDecoder, T>,
@@ -166,22 +164,21 @@ Constructors for flat pipes that send POD types using memcpy.
 
 # Safety Note
 
-This module is currently unsafe because it uses `Copy Owned` as a type
-parameter bounds meaning POD (plain old data), but `Copy Owned` and
+This module is currently unsafe because it uses `Clone + Send` as a type
+parameter bounds meaning POD (plain old data), but `Clone + Send` and
 POD are not equivelant.
 
 */
 pub mod pod {
-    use core::prelude::*;
 
     use flatpipes::flatteners::{PodUnflattener, PodFlattener};
     use flatpipes::bytepipes::{ReaderBytePort, WriterByteChan};
     use flatpipes::bytepipes::{PipeBytePort, PipeByteChan};
     use flatpipes::{FlatPort, FlatChan};
 
-    use core::io::{Reader, Writer};
-    use core::comm::{Port, Chan};
-    use core::comm;
+    use std::io::{Reader, Writer};
+    use std::comm::{Port, Chan};
+    use std::comm;
 
     pub type ReaderPort<T, R> =
         FlatPort<T, PodUnflattener<T>, ReaderBytePort<R>>;
@@ -191,7 +188,7 @@ pub mod pod {
     pub type PipeChan<T> = FlatChan<T, PodFlattener<T>, PipeByteChan>;
 
     /// Create a `FlatPort` from a `Reader`
-    pub fn reader_port<T:Copy + Owned,R:Reader>(
+    pub fn reader_port<T:Clone + Send,R:Reader>(
         reader: R
     ) -> ReaderPort<T, R> {
         let unflat: PodUnflattener<T> = PodUnflattener::new();
@@ -200,7 +197,7 @@ pub mod pod {
     }
 
     /// Create a `FlatChan` from a `Writer`
-    pub fn writer_chan<T:Copy + Owned,W:Writer>(
+    pub fn writer_chan<T:Clone + Send,W:Writer>(
         writer: W
     ) -> WriterChan<T, W> {
         let flat: PodFlattener<T> = PodFlattener::new();
@@ -209,21 +206,21 @@ pub mod pod {
     }
 
     /// Create a `FlatPort` from a `Port<~[u8]>`
-    pub fn pipe_port<T:Copy + Owned>(port: Port<~[u8]>) -> PipePort<T> {
+    pub fn pipe_port<T:Clone + Send>(port: Port<~[u8]>) -> PipePort<T> {
         let unflat: PodUnflattener<T> = PodUnflattener::new();
         let byte_port = PipeBytePort::new(port);
         FlatPort::new(unflat, byte_port)
     }
 
     /// Create a `FlatChan` from a `Chan<~[u8]>`
-    pub fn pipe_chan<T:Copy + Owned>(chan: Chan<~[u8]>) -> PipeChan<T> {
+    pub fn pipe_chan<T:Clone + Send>(chan: Chan<~[u8]>) -> PipeChan<T> {
         let flat: PodFlattener<T> = PodFlattener::new();
         let byte_chan = PipeByteChan::new(chan);
         FlatChan::new(flat, byte_chan)
     }
 
     /// Create a pair of `FlatChan` and `FlatPort`, backed by pipes
-    pub fn pipe_stream<T:Copy + Owned>() -> (PipePort<T>, PipeChan<T>) {
+    pub fn pipe_stream<T:Clone + Send>() -> (PipePort<T>, PipeChan<T>) {
         let (port, chan) = comm::stream();
         return (pipe_port(port), pipe_chan(chan));
     }
@@ -276,7 +273,7 @@ impl<T,U:Unflattener<T>,P:BytePort> GenericPort<T> for FlatPort<T, U, P> {
             }
         };
 
-        if vec::eq(command, CONTINUE) {
+        if CONTINUE.as_slice() == command {
             let msg_len = match self.byte_port.try_recv(size_of::<u64>()) {
                 Some(bytes) => {
                     io::u64_from_be_bytes(bytes, 0, size_of::<u64>())
@@ -307,11 +304,11 @@ impl<T,U:Unflattener<T>,P:BytePort> GenericPort<T> for FlatPort<T, U, P> {
 
 impl<T,F:Flattener<T>,C:ByteChan> GenericChan<T> for FlatChan<T, F, C> {
     fn send(&self, val: T) {
-        self.byte_chan.send(CONTINUE.to_vec());
+        self.byte_chan.send(CONTINUE.to_owned());
         let bytes = self.flattener.flatten(val);
         let len = bytes.len() as u64;
         do io::u64_to_be_bytes(len, size_of::<u64>()) |len_bytes| {
-            self.byte_chan.send(len_bytes.to_vec());
+            self.byte_chan.send(len_bytes.to_owned());
         }
         self.byte_chan.send(bytes);
     }
@@ -337,7 +334,6 @@ impl<T,F:Flattener<T>,C:ByteChan> FlatChan<T, F, C> {
 
 
 pub mod flatteners {
-    use core::prelude::*;
 
     use ebml;
     use flatpipes::{Flattener, Unflattener};
@@ -345,14 +341,14 @@ pub mod flatteners {
     use json;
     use serialize::{Encoder, Decoder, Encodable, Decodable};
 
-    use core::cast;
-    use core::io::{Writer, Reader, ReaderUtil};
-    use core::io;
-    use core::ptr;
-    use core::sys::size_of;
-    use core::vec;
+    use std::cast;
+    use std::io::{Writer, Reader, ReaderUtil};
+    use std::io;
+    use std::ptr;
+    use std::sys::size_of;
+    use std::vec;
 
-    // FIXME #4074: Copy + Owned != POD
+    // FIXME #4074: Clone + Send != POD
     pub struct PodUnflattener<T> {
         bogus: ()
     }
@@ -361,17 +357,17 @@ pub mod flatteners {
         bogus: ()
     }
 
-    impl<T:Copy + Owned> Unflattener<T> for PodUnflattener<T> {
+    impl<T:Clone + Send> Unflattener<T> for PodUnflattener<T> {
         fn unflatten(&self, buf: ~[u8]) -> T {
             assert!(size_of::<T>() != 0);
             assert_eq!(size_of::<T>(), buf.len());
             let addr_of_init: &u8 = unsafe { &*vec::raw::to_ptr(buf) };
             let addr_of_value: &T = unsafe { cast::transmute(addr_of_init) };
-            copy *addr_of_value
+            (*addr_of_value).clone()
         }
     }
 
-    impl<T:Copy + Owned> Flattener<T> for PodFlattener<T> {
+    impl<T:Clone + Send> Flattener<T> for PodFlattener<T> {
         fn flatten(&self, val: T) -> ~[u8] {
             assert!(size_of::<T>() != 0);
             let val: *T = ptr::to_unsafe_ptr(&val);
@@ -380,7 +376,7 @@ pub mod flatteners {
         }
     }
 
-    impl<T:Copy + Owned> PodUnflattener<T> {
+    impl<T:Clone + Send> PodUnflattener<T> {
         pub fn new() -> PodUnflattener<T> {
             PodUnflattener {
                 bogus: ()
@@ -388,7 +384,7 @@ pub mod flatteners {
         }
     }
 
-    impl<T:Copy + Owned> PodFlattener<T> {
+    impl<T:Clone + Send> PodFlattener<T> {
         pub fn new() -> PodFlattener<T> {
             PodFlattener {
                 bogus: ()
@@ -450,7 +446,7 @@ pub mod flatteners {
                               T: Decodable<D>>(
                               buf: &[u8])
                               -> T {
-        let buf = vec::to_owned(buf);
+        let buf = buf.to_owned();
         let buf_reader = @BufReader::new(buf);
         let reader = buf_reader as @Reader;
         let mut deser: D = FromReader::from_reader(reader);
@@ -509,14 +505,12 @@ pub mod flatteners {
 }
 
 pub mod bytepipes {
-    use core::prelude::*;
 
     use flatpipes::{ByteChan, BytePort};
 
-    use core::comm::{Port, Chan};
-    use core::comm;
-    use core::io::{Writer, Reader, ReaderUtil};
-    use core::vec;
+    use std::comm::{Port, Chan};
+    use std::comm;
+    use std::io::{Writer, Reader, ReaderUtil};
 
     pub struct ReaderBytePort<R> {
         reader: R
@@ -584,12 +578,12 @@ pub mod bytepipes {
     impl BytePort for PipeBytePort {
         fn try_recv(&self, count: uint) -> Option<~[u8]> {
             if self.buf.len() >= count {
-                let mut bytes = ::core::util::replace(&mut *self.buf, ~[]);
+                let mut bytes = ::std::util::replace(&mut *self.buf, ~[]);
                 *self.buf = bytes.slice(count, bytes.len()).to_owned();
                 bytes.truncate(count);
                 return Some(bytes);
             } else if !self.buf.is_empty() {
-                let mut bytes = ::core::util::replace(&mut *self.buf, ~[]);
+                let mut bytes = ::std::util::replace(&mut *self.buf, ~[]);
                 assert!(count > bytes.len());
                 match self.try_recv(count - bytes.len()) {
                     Some(rest) => {
@@ -638,7 +632,6 @@ pub mod bytepipes {
 
 #[cfg(test)]
 mod test {
-    use core::prelude::*;
 
     use flatpipes::{Flattener, Unflattener};
     use flatpipes::bytepipes::*;
@@ -646,13 +639,11 @@ mod test {
     use flatpipes::serial;
     use io_util::BufReader;
     use flatpipes::{BytePort, FlatChan, FlatPort};
-    use net::tcp::TcpSocketBuf;
 
-    use core::comm;
-    use core::int;
-    use core::io::BytesWriter;
-    use core::result;
-    use core::task;
+    use std::comm;
+    use std::io::BytesWriter;
+    use std::result;
+    use std::task;
 
     #[test]
     #[ignore(reason = "ebml failure")]
@@ -662,7 +653,7 @@ mod test {
 
         chan.send(10);
 
-        let bytes = copy *chan.byte_chan.writer.bytes;
+        let bytes = (*chan.byte_chan.writer.bytes).clone();
 
         let reader = BufReader::new(bytes);
         let port = serial::reader_port(reader);
@@ -677,12 +668,12 @@ mod test {
         let (port, chan) = serial::pipe_stream();
 
         do task::spawn || {
-            for int::range(0, 10) |i| {
+            foreach i in range(0, 10) {
                 chan.send(i)
             }
         }
 
-        for int::range(0, 10) |i| {
+        foreach i in range(0, 10) {
             assert!(i == port.recv())
         }
     }
@@ -693,12 +684,12 @@ mod test {
         let (port, chan) = serial::pipe_stream();
 
         do task::spawn || {
-            for int::range(0, 10) |i| {
+            foreach i in range(0, 10) {
                 chan.send(@i)
             }
         }
 
-        for int::range(0, 10) |i| {
+        foreach i in range(0, 10) {
             assert!(@i == port.recv())
         }
     }
@@ -710,7 +701,7 @@ mod test {
 
         chan.send(10);
 
-        let bytes = copy *chan.byte_chan.writer.bytes;
+        let bytes = (*chan.byte_chan.writer.bytes).clone();
 
         let reader = BufReader::new(bytes);
         let port = pod::reader_port(reader);
@@ -724,18 +715,19 @@ mod test {
         let (port, chan) = pod::pipe_stream();
 
         do task::spawn || {
-            for int::range(0, 10) |i| {
+            foreach i in range(0, 10) {
                 chan.send(i)
             }
         }
 
-        for int::range(0, 10) |i| {
+        foreach i in range(0, 10) {
             assert!(i == port.recv())
         }
     }
 
     // FIXME #2064: Networking doesn't work on x86
-    #[test]
+    // XXX Broken until networking support is added back
+    /*#[test]
     #[cfg(target_arch = "x86_64")]
     fn test_pod_tcp_stream() {
         fn reader_port(buf: TcpSocketBuf
@@ -752,6 +744,7 @@ mod test {
     #[test]
     #[cfg(target_arch = "x86_64")]
     fn test_serializing_tcp_stream() {
+        // XXX Broken until networking support is added back
         fn reader_port(buf: TcpSocketBuf
                       ) -> serial::ReaderPort<int, TcpSocketBuf> {
             serial::reader_port(buf)
@@ -773,7 +766,7 @@ mod test {
         writer_chan: WriterChanFactory<F>,
         port: uint) {
 
-        use core::cell::Cell;
+        use std::cell::Cell;
         use net::ip;
         use net::tcp;
         use uv;
@@ -792,13 +785,13 @@ mod test {
         let accept_chan = Cell::new(accept_chan);
 
         // The server task
-        let addr = copy addr0;
+        let addr = addr0.clone();
         do task::spawn || {
             let iotask = &uv::global_loop::get();
             let begin_connect_chan = begin_connect_chan.take();
             let accept_chan = accept_chan.take();
             let listen_res = do tcp::listen(
-                copy addr, port, 128, iotask, |_kill_ch| {
+                addr.clone(), port, 128, iotask, |_kill_ch| {
                     // Tell the sender to initiate the connection
                     debug!("listening");
                     begin_connect_chan.send(())
@@ -818,14 +811,14 @@ mod test {
         }
 
         // Client task
-        let addr = copy addr0;
+        let addr = addr0.clone();
         do task::spawn || {
             // Wait for the server to start listening
             begin_connect_port.recv();
 
             debug!("connecting");
             let iotask = &uv::global_loop::get();
-            let connect_result = tcp::connect(copy addr, port, iotask);
+            let connect_result = tcp::connect(addr.clone(), port, iotask);
             assert!(connect_result.is_ok());
             let sock = result::unwrap(connect_result);
             let socket_buf: tcp::TcpSocketBuf = tcp::socket_buf(sock);
@@ -833,7 +826,7 @@ mod test {
             // TcpSocketBuf is a Writer!
             let chan = writer_chan(socket_buf);
 
-            for int::range(0, 10) |i| {
+            foreach i in range(0, 10) {
                 debug!("sending %?", i);
                 chan.send(i)
             }
@@ -856,7 +849,7 @@ mod test {
             // TcpSocketBuf is a Reader!
             let port = reader_port(socket_buf);
 
-            for int::range(0, 10) |i| {
+            foreach i in range(0, 10) {
                 let j = port.recv();
                 debug!("received %?", j);
                 assert_eq!(i, j);
@@ -867,22 +860,21 @@ mod test {
         }
 
         finish_port.recv();
-    }
+    }*/
 
     // Tests that the different backends behave the same when the
     // binary streaming protocol is broken
     mod broken_protocol {
-        use core::prelude::*;
 
         use flatpipes::{BytePort, FlatPort};
         use flatpipes::flatteners::PodUnflattener;
         use flatpipes::pod;
         use io_util::BufReader;
 
-        use core::comm;
-        use core::io;
-        use core::sys;
-        use core::task;
+        use std::comm;
+        use std::io;
+        use std::sys;
+        use std::task;
 
         type PortLoader<P> =
             ~fn(~[u8]) -> FlatPort<int, PodUnflattener<int>, P>;
@@ -938,7 +930,7 @@ mod test {
         fn test_try_recv_none3<P:BytePort>(loader: PortLoader<P>) {
             static CONTINUE: [u8, ..4] = [0xAA, 0xBB, 0xCC, 0xDD];
             // The control word is followed by garbage
-            let bytes = CONTINUE.to_vec() + [0];
+            let bytes = CONTINUE.to_owned() + &[0u8];
             let port = loader(bytes);
             let res: Option<int> = port.try_recv();
             assert!(res.is_none());
@@ -960,9 +952,9 @@ mod test {
                 // then undeserializable garbage
                 let len_bytes = do io::u64_to_be_bytes(
                     1, sys::size_of::<u64>()) |len_bytes| {
-                    len_bytes.to_vec()
+                    len_bytes.to_owned()
                 };
-                let bytes = CONTINUE.to_vec() + len_bytes + [0, 0, 0, 0];
+                let bytes = CONTINUE.to_owned() + len_bytes + &[0u8, 0, 0, 0];
 
                 let port = loader(bytes);
 

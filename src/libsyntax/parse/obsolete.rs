@@ -17,22 +17,19 @@ Obsolete syntax that becomes too hard to parse can be
 removed.
 */
 
-use core::prelude::*;
-
-use ast::{expr, expr_lit, lit_nil, attribute};
+use ast::{expr, expr_lit, lit_nil, Attribute};
 use ast;
 use codemap::{span, respan};
 use parse::parser::Parser;
 use parse::token::{keywords, Token};
 use parse::token;
 
-use core::str;
-use core::to_bytes;
+use std::str;
+use std::to_bytes;
 
 /// The specific types of unsupported syntax
 #[deriving(Eq)]
 pub enum ObsoleteSyntax {
-    ObsoleteLowerCaseKindBounds,
     ObsoleteLet,
     ObsoleteFieldTerminator,
     ObsoleteStructCtor,
@@ -46,7 +43,6 @@ pub enum ObsoleteSyntax {
     ObsoleteUnsafeBlock,
     ObsoleteUnenforcedBound,
     ObsoleteImplSyntax,
-    ObsoleteTraitBoundSeparator,
     ObsoleteMutOwnedPointer,
     ObsoleteMutVector,
     ObsoleteImplVisibility,
@@ -65,6 +61,8 @@ pub enum ObsoleteSyntax {
     ObsoleteFixedLengthVectorType,
     ObsoleteNamedExternModule,
     ObsoleteMultipleLocalDecl,
+    ObsoleteMutWithMultipleBindings,
+    ObsoleteExternVisibility,
 }
 
 impl to_bytes::IterBytes for ObsoleteSyntax {
@@ -74,16 +72,29 @@ impl to_bytes::IterBytes for ObsoleteSyntax {
     }
 }
 
-impl Parser {
+pub trait ParserObsoleteMethods {
+    /// Reports an obsolete syntax non-fatal error.
+    fn obsolete(&self, sp: span, kind: ObsoleteSyntax);
+    // Reports an obsolete syntax non-fatal error, and returns
+    // a placeholder expression
+    fn obsolete_expr(&self, sp: span, kind: ObsoleteSyntax) -> @expr;
+    fn report(&self,
+              sp: span,
+              kind: ObsoleteSyntax,
+              kind_str: &str,
+              desc: &str);
+    fn token_is_obsolete_ident(&self, ident: &str, token: &Token) -> bool;
+    fn is_obsolete_ident(&self, ident: &str) -> bool;
+    fn eat_obsolete_ident(&self, ident: &str) -> bool;
+    fn try_parse_obsolete_struct_ctor(&self) -> bool;
+    fn try_parse_obsolete_with(&self) -> bool;
+    fn try_parse_obsolete_priv_section(&self, attrs: &[Attribute]) -> bool;
+}
+
+impl ParserObsoleteMethods for Parser {
     /// Reports an obsolete syntax non-fatal error.
     pub fn obsolete(&self, sp: span, kind: ObsoleteSyntax) {
         let (kind_str, desc) = match kind {
-            ObsoleteLowerCaseKindBounds => (
-                "lower-case kind bounds",
-                "the `send`, `copy`, `const`, and `owned` \
-                 kinds are represented as traits now, and \
-                 should be camel cased"
-            ),
             ObsoleteLet => (
                 "`let` in field declaration",
                 "declare fields as `field: Type`"
@@ -128,7 +139,7 @@ impl Parser {
             ),
             ObsoleteSwap => (
                 "swap",
-                "Use core::util::{swap, replace} instead"
+                "Use std::util::{swap, replace} instead"
             ),
             ObsoleteUnsafeBlock => (
                 "non-standalone unsafe block",
@@ -142,10 +153,6 @@ impl Parser {
             ObsoleteImplSyntax => (
                 "colon-separated impl syntax",
                 "write `impl Trait for Type`"
-            ),
-            ObsoleteTraitBoundSeparator => (
-                "space-separated trait bounds",
-                "write `+` between trait bounds"
             ),
             ObsoleteMutOwnedPointer => (
                 "const or mutable owned pointer",
@@ -230,6 +237,16 @@ impl Parser {
                 "instead of e.g. `let a = 1, b = 2`, write \
                  `let (a, b) = (1, 2)`."
             ),
+            ObsoleteMutWithMultipleBindings => (
+                "`mut` with multiple bindings",
+                "use multiple local declarations instead of e.g. `let mut \
+                 (x, y) = ...`."
+            ),
+            ObsoleteExternVisibility => (
+                "`pub extern` or `priv extern`",
+                "place the `pub` or `priv` on the individual external items \
+                 instead"
+            )
         };
 
         self.report(sp, kind, kind_str, desc);
@@ -291,8 +308,8 @@ impl Parser {
 
     pub fn try_parse_obsolete_with(&self) -> bool {
         if *self.token == token::COMMA
-            && self.token_is_obsolete_ident("with",
-                                            &self.look_ahead(1u)) {
+            && self.look_ahead(1,
+                               |t| self.token_is_obsolete_ident("with", t)) {
             self.bump();
         }
         if self.eat_obsolete_ident("with") {
@@ -304,10 +321,11 @@ impl Parser {
         }
     }
 
-    pub fn try_parse_obsolete_priv_section(&self, attrs: &[attribute])
+    pub fn try_parse_obsolete_priv_section(&self, attrs: &[Attribute])
                                            -> bool {
-        if self.is_keyword(keywords::Priv) && self.look_ahead(1) == token::LBRACE {
-            self.obsolete(copy *self.span, ObsoletePrivSection);
+        if self.is_keyword(keywords::Priv) &&
+                self.look_ahead(1, |t| *t == token::LBRACE) {
+            self.obsolete(*self.span, ObsoletePrivSection);
             self.eat_keyword(keywords::Priv);
             self.bump();
             while *self.token != token::RBRACE {

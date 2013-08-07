@@ -8,12 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+//! A concurrent queue that supports multiple producers and a
+//! single consumer.
+
 use container::Container;
-use kinds::Owned;
+use kinds::Send;
 use vec::OwnedVector;
 use cell::Cell;
 use option::*;
-use unstable::sync::{Exclusive, exclusive};
+use unstable::sync::Exclusive;
 use clone::Clone;
 
 pub struct MessageQueue<T> {
@@ -21,10 +24,10 @@ pub struct MessageQueue<T> {
     priv queue: ~Exclusive<~[T]>
 }
 
-impl<T: Owned> MessageQueue<T> {
+impl<T: Send> MessageQueue<T> {
     pub fn new() -> MessageQueue<T> {
         MessageQueue {
-            queue: ~exclusive(~[])
+            queue: ~Exclusive::new(~[])
         }
     }
 

@@ -14,7 +14,7 @@ use std::sys;
 
 mod rusti {
     #[abi = "rust-intrinsic"]
-    pub extern "rust-intrinsic" {
+    extern "rust-intrinsic" {
         pub fn pref_align_of<T>() -> uint;
         pub fn min_align_of<T>() -> uint;
     }
@@ -63,8 +63,8 @@ mod m {
 mod m {
     #[cfg(target_arch = "arm")]
     pub mod m {
-        pub fn align() -> uint { 4u }
-        pub fn size() -> uint { 12u }
+        pub fn align() -> uint { 8u }
+        pub fn size() -> uint { 16u }
     }
 }
 
@@ -75,9 +75,9 @@ pub fn main() {
         // Send it through the shape code
         let y = fmt!("%?", x);
 
-        debug!("align inner = %?", rusti::min_align_of::<Inner>());
-        debug!("size outer = %?", sys::size_of::<Outer>());
-        debug!("y = %s", y);
+        info!("align inner = %?", rusti::min_align_of::<Inner>());
+        info!("size outer = %?", sys::size_of::<Outer>());
+        info!("y = %s", y);
 
         // per clang/gcc the alignment of `Inner` is 4 on x86.
         assert_eq!(rusti::min_align_of::<Inner>(), m::m::align());

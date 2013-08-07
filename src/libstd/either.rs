@@ -12,14 +12,16 @@
 
 #[allow(missing_doc)];
 
+use option::{Some, None};
+use clone::Clone;
 use container::Container;
 use cmp::Eq;
-use kinds::Copy;
-use old_iter::BaseIter;
+use iterator::Iterator;
 use result::Result;
 use result;
+use str::StrSlice;
 use vec;
-use vec::OwnedVector;
+use vec::{OwnedVector, ImmutableVector};
 
 /// The either type
 #[deriving(Clone, Eq)]
@@ -43,11 +45,11 @@ pub fn either<T, U, V>(f_left: &fn(&T) -> V,
 }
 
 /// Extracts from a vector of either all the left values
-pub fn lefts<T:Copy,U>(eithers: &[Either<T, U>]) -> ~[T] {
+pub fn lefts<T:Clone,U>(eithers: &[Either<T, U>]) -> ~[T] {
     do vec::build_sized(eithers.len()) |push| {
-        for eithers.each |elt| {
+        foreach elt in eithers.iter() {
             match *elt {
-                Left(ref l) => { push(copy *l); }
+                Left(ref l) => { push((*l).clone()); }
                 _ => { /* fallthrough */ }
             }
         }
@@ -55,11 +57,11 @@ pub fn lefts<T:Copy,U>(eithers: &[Either<T, U>]) -> ~[T] {
 }
 
 /// Extracts from a vector of either all the right values
-pub fn rights<T, U: Copy>(eithers: &[Either<T, U>]) -> ~[U] {
+pub fn rights<T, U: Clone>(eithers: &[Either<T, U>]) -> ~[U] {
     do vec::build_sized(eithers.len()) |push| {
-        for eithers.each |elt| {
+        foreach elt in eithers.iter() {
             match *elt {
-                Right(ref r) => { push(copy *r); }
+                Right(ref r) => { push((*r).clone()); }
                 _ => { /* fallthrough */ }
             }
         }
@@ -73,7 +75,7 @@ pub fn rights<T, U: Copy>(eithers: &[Either<T, U>]) -> ~[U] {
 pub fn partition<T, U>(eithers: ~[Either<T, U>]) -> (~[T], ~[U]) {
     let mut lefts: ~[T] = ~[];
     let mut rights: ~[U] = ~[];
-    do vec::consume(eithers) |_i, elt| {
+    foreach elt in eithers.consume_iter() {
         match elt {
             Left(l) => lefts.push(l),
             Right(r) => rights.push(r)
@@ -121,22 +123,35 @@ pub fn is_right<T, U>(eith: &Either<T, U>) -> bool {
     }
 }
 
+/// Retrieves the value in the left branch.
+/// Fails with a specified reason if the either is Right.
+#[inline]
+pub fn expect_left<T,U>(eith: Either<T,U>, reason: &str) -> T {
+    match eith {
+        Left(x) => x,
+        Right(_) => fail!(reason.to_owned())
+    }
+}
+
 /// Retrieves the value in the left branch. Fails if the either is Right.
 #[inline]
 pub fn unwrap_left<T,U>(eith: Either<T,U>) -> T {
+    expect_left(eith, "either::unwrap_left Right")
+}
+
+/// Retrieves the value in the right branch.
+/// Fails with a specified reason if the either is Left.
+#[inline]
+pub fn expect_right<T,U>(eith: Either<T,U>, reason: &str) -> U {
     match eith {
-        Left(x) => x,
-        Right(_) => fail!("either::unwrap_left Right")
+        Right(x) => x,
+        Left(_) => fail!(reason.to_owned())
     }
 }
 
 /// Retrieves the value in the right branch. Fails if the either is Left.
-#[inline]
 pub fn unwrap_right<T,U>(eith: Either<T,U>) -> U {
-    match eith {
-        Right(x) => x,
-        Left(_) => fail!("either::unwrap_right Left")
-    }
+    expect_right(eith, "either::unwrap_right Left")
 }
 
 impl<T, U> Either<T, U> {
@@ -158,7 +173,13 @@ impl<T, U> Either<T, U> {
     pub fn is_right(&self) -> bool { is_right(self) }
 
     #[inline]
+    pub fn expect_left(self, reason: &str) -> T { expect_left(self, reason) }
+
+    #[inline]
     pub fn unwrap_left(self) -> T { unwrap_left(self) }
+
+    #[inline]
+    pub fn expect_right(self, reason: &str) -> U { expect_right(self, reason) }
 
     #[inline]
     pub fn unwrap_right(self) -> U { unwrap_right(self) }

@@ -8,9 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
-
-use core::vec;
 use ast;
 use codemap::{BytePos, Pos, span};
 use ext::base::ExtCtxt;
@@ -32,8 +29,6 @@ use parse;
 */
 
 pub mod rt {
-    use core::prelude::*;
-
     use ast;
     use ext::base::ExtCtxt;
     use parse;
@@ -50,7 +45,7 @@ pub mod rt {
 
     impl ToTokens for ~[token_tree] {
         pub fn to_tokens(&self, _cx: @ExtCtxt) -> ~[token_tree] {
-            copy *self
+            (*self).clone()
         }
     }
 
@@ -91,13 +86,13 @@ pub mod rt {
         }
     }
 
-    impl ToSource for @ast::Ty {
+    impl ToSource for ast::Ty {
         fn to_source(&self) -> @str {
-            pprust::ty_to_str(*self, get_ident_interner()).to_managed()
+            pprust::ty_to_str(self, get_ident_interner()).to_managed()
         }
     }
 
-    impl<'self> ToSource for &'self [@ast::Ty] {
+    impl<'self> ToSource for &'self [ast::Ty] {
         fn to_source(&self) -> @str {
             self.map(|i| i.to_source()).connect(", ").to_managed()
         }
@@ -115,7 +110,7 @@ pub mod rt {
         }
     }
 
-    impl ToSource for ast::blk {
+    impl ToSource for ast::Block {
         fn to_source(&self) -> @str {
             pprust::block_to_str(self, get_ident_interner()).to_managed()
         }
@@ -219,13 +214,13 @@ pub mod rt {
         }
     }
 
-    impl ToTokens for @ast::Ty {
+    impl ToTokens for ast::Ty {
         fn to_tokens(&self, cx: @ExtCtxt) -> ~[token_tree] {
             cx.parse_tts(self.to_source())
         }
     }
 
-    impl<'self> ToTokens for &'self [@ast::Ty] {
+    impl<'self> ToTokens for &'self [ast::Ty] {
         fn to_tokens(&self, cx: @ExtCtxt) -> ~[token_tree] {
             cx.parse_tts(self.to_source())
         }
@@ -243,7 +238,7 @@ pub mod rt {
         }
     }
 
-    impl ToTokens for ast::blk {
+    impl ToTokens for ast::Block {
         fn to_tokens(&self, cx: @ExtCtxt) -> ~[token_tree] {
             cx.parse_tts(self.to_source())
         }
@@ -610,7 +605,7 @@ fn mk_tt(cx: @ExtCtxt, sp: span, tt: &ast::token_tree)
             ~[cx.stmt_expr(e_push)]
         }
 
-        ast::tt_delim(ref tts) => mk_tts(cx, sp, *tts),
+        ast::tt_delim(ref tts) => mk_tts(cx, sp, **tts),
         ast::tt_seq(*) => fail!("tt_seq in quote!"),
 
         ast::tt_nonterminal(sp, ident) => {
@@ -637,7 +632,7 @@ fn mk_tt(cx: @ExtCtxt, sp: span, tt: &ast::token_tree)
 fn mk_tts(cx: @ExtCtxt, sp: span, tts: &[ast::token_tree])
     -> ~[@ast::stmt] {
     let mut ss = ~[];
-    for tts.each |tt| {
+    foreach tt in tts.iter() {
         ss.push_all_move(mk_tt(cx, sp, tt));
     }
     ss
@@ -656,7 +651,7 @@ fn expand_tts(cx: @ExtCtxt,
     let p = parse::new_parser_from_tts(
         cx.parse_sess(),
         cx.cfg(),
-        vec::to_owned(tts)
+        tts.to_owned()
     );
     *p.quote_depth += 1u;
     let tts = p.parse_all_token_trees();
@@ -688,7 +683,7 @@ fn expand_tts(cx: @ExtCtxt,
     // the site the string literal occurred, which was in a source file
     // _other_ than the one the user has control over. For example, an
     // error in a quote from the protocol compiler, invoked in user code
-    // using proto! for example, will be attributed to the pipec.rs file in
+    // using macro_rules! for example, will be attributed to the macro_rules.rs file in
     // libsyntax, which the user might not even have source to (unless they
     // happen to have a compiler on hand). Over all, the phase distinction
     // just makes quotes "hard to attribute". Possibly this could be fixed

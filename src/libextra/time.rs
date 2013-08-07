@@ -10,12 +10,11 @@
 
 #[allow(missing_doc)];
 
-use core::prelude::*;
 
-use core::i32;
-use core::int;
-use core::io;
-use core::str;
+use std::int;
+use std::io;
+use std::num;
+use std::str;
 
 static NSEC_PER_SEC: i32 = 1_000_000_000_i32;
 
@@ -23,7 +22,7 @@ pub mod rustrt {
     use super::Tm;
 
     #[abi = "cdecl"]
-    pub extern {
+    extern {
         pub unsafe fn get_time(sec: &mut i64, nsec: &mut i32);
 
         pub unsafe fn precise_time_ns(ns: &mut u64);
@@ -250,7 +249,7 @@ impl Tm {
         } else {
             let s = self.strftime("%Y-%m-%dT%H:%M:%S");
             let sign = if self.tm_gmtoff > 0_i32 { '+' } else { '-' };
-            let mut m = i32::abs(self.tm_gmtoff) / 60_i32;
+            let mut m = num::abs(self.tm_gmtoff) / 60_i32;
             let h = m / 60_i32;
             m -= h * 60_i32;
             s + fmt!("%c%02d:%02d", sign, h as int, m as int)
@@ -261,7 +260,7 @@ impl Tm {
 priv fn do_strptime(s: &str, format: &str) -> Result<Tm, ~str> {
     fn match_str(s: &str, pos: uint, needle: &str) -> bool {
         let mut i = pos;
-        for needle.bytes_iter().advance |ch| {
+        foreach ch in needle.byte_iter() {
             if s[i] != ch {
                 return false;
             }
@@ -275,7 +274,7 @@ priv fn do_strptime(s: &str, format: &str) -> Result<Tm, ~str> {
         let mut i = 0u;
         let len = strs.len();
         while i < len {
-            match strs[i] { // can't use let due to stage0 bugs
+            match strs[i] { // can't use let due to let-pattern bugs
                 (ref needle, value) => {
                     if match_str(ss, pos, *needle) {
                         return Some((value, pos + needle.len()));
@@ -684,7 +683,7 @@ priv fn do_strptime(s: &str, format: &str) -> Result<Tm, ~str> {
                 tm_yday: tm.tm_yday,
                 tm_isdst: tm.tm_isdst,
                 tm_gmtoff: tm.tm_gmtoff,
-                tm_zone: copy tm.tm_zone,
+                tm_zone: tm.tm_zone.clone(),
                 tm_nsec: tm.tm_nsec,
             })
         } else { result }
@@ -830,10 +829,10 @@ priv fn do_strftime(format: &str, tm: &Tm) -> ~str {
           //'x' {}
           'Y' => int::to_str(tm.tm_year as int + 1900),
           'y' => fmt!("%02d", (tm.tm_year as int + 1900) % 100),
-          'Z' => copy tm.tm_zone,
+          'Z' => tm.tm_zone.clone(),
           'z' => {
             let sign = if tm.tm_gmtoff > 0_i32 { '+' } else { '-' };
-            let mut m = i32::abs(tm.tm_gmtoff) / 60_i32;
+            let mut m = num::abs(tm.tm_gmtoff) / 60_i32;
             let h = m / 60_i32;
             m -= h * 60_i32;
             fmt!("%c%02d%02d", sign, h as int, m as int)
@@ -849,7 +848,7 @@ priv fn do_strftime(format: &str, tm: &Tm) -> ~str {
     do io::with_str_reader(format) |rdr| {
         while !rdr.eof() {
             match rdr.read_char() {
-                '%' => buf += parse_type(rdr.read_char(), tm),
+                '%' => buf.push_str(parse_type(rdr.read_char(), tm)),
                 ch => buf.push_char(ch)
             }
         }
@@ -862,27 +861,25 @@ priv fn do_strftime(format: &str, tm: &Tm) -> ~str {
 mod tests {
     use time::*;
 
-    use core::float;
-    use core::os;
-    use core::result;
-    use core::result::{Err, Ok};
-    use core::str;
+    use std::float;
+    use std::os;
+    use std::result::{Err, Ok};
 
     fn test_get_time() {
-        static some_recent_date: i64 = 1325376000i64; // 2012-01-01T00:00:00Z
-        static some_future_date: i64 = 1577836800i64; // 2020-01-01T00:00:00Z
+        static SOME_RECENT_DATE: i64 = 1325376000i64; // 2012-01-01T00:00:00Z
+        static SOME_FUTURE_DATE: i64 = 1577836800i64; // 2020-01-01T00:00:00Z
 
         let tv1 = get_time();
         debug!("tv1=%? sec + %? nsec", tv1.sec as uint, tv1.nsec as uint);
 
-        assert!(tv1.sec > some_recent_date);
+        assert!(tv1.sec > SOME_RECENT_DATE);
         assert!(tv1.nsec < 1000000000i32);
 
         let tv2 = get_time();
         debug!("tv2=%? sec + %? nsec", tv2.sec as uint, tv2.nsec as uint);
 
         assert!(tv2.sec >= tv1.sec);
-        assert!(tv2.sec < some_future_date);
+        assert!(tv2.sec < SOME_FUTURE_DATE);
         assert!(tv2.nsec < 1000000000i32);
         if tv2.sec == tv1.sec {
             assert!(tv2.nsec >= tv1.nsec);
@@ -1028,12 +1025,12 @@ mod tests {
 
         fn test(s: &str, format: &str) -> bool {
             match strptime(s, format) {
-              Ok(ref tm) => tm.strftime(format) == str::to_owned(s),
+              Ok(ref tm) => tm.strftime(format) == s.to_owned(),
               Err(e) => fail!(e)
             }
         }
 
-        for [
+        let days = [
             ~"Sunday",
             ~"Monday",
             ~"Tuesday",
@@ -1041,11 +1038,12 @@ mod tests {
             ~"Thursday",
             ~"Friday",
             ~"Saturday"
-        ].each |day| {
+        ];
+        foreach day in days.iter() {
             assert!(test(*day, "%A"));
         }
 
-        for [
+        let days = [
             ~"Sun",
             ~"Mon",
             ~"Tue",
@@ -1053,11 +1051,12 @@ mod tests {
             ~"Thu",
             ~"Fri",
             ~"Sat"
-        ].each |day| {
+        ];
+        foreach day in days.iter() {
             assert!(test(*day, "%a"));
         }
 
-        for [
+        let months = [
             ~"January",
             ~"February",
             ~"March",
@@ -1070,11 +1069,12 @@ mod tests {
             ~"October",
             ~"November",
             ~"December"
-        ].each |day| {
+        ];
+        foreach day in months.iter() {
             assert!(test(*day, "%B"));
         }
 
-        for [
+        let months = [
             ~"Jan",
             ~"Feb",
             ~"Mar",
@@ -1087,7 +1087,8 @@ mod tests {
             ~"Oct",
             ~"Nov",
             ~"Dec"
-        ].each |day| {
+        ];
+        foreach day in months.iter() {
             assert!(test(*day, "%b"));
         }
 
@@ -1129,15 +1130,18 @@ mod tests {
         assert!(test("6", "%w"));
         assert!(test("2009", "%Y"));
         assert!(test("09", "%y"));
-        assert!(result::unwrap(strptime("UTC", "%Z")).tm_zone ==
+        assert!(strptime("UTC", "%Z").unwrap().tm_zone ==
             ~"UTC");
-        assert!(result::unwrap(strptime("PST", "%Z")).tm_zone ==
+        assert!(strptime("PST", "%Z").unwrap().tm_zone ==
             ~"");
-        assert!(result::unwrap(strptime("-0000", "%z")).tm_gmtoff ==
+        assert!(strptime("-0000", "%z").unwrap().tm_gmtoff ==
             0);
-        assert!(result::unwrap(strptime("-0800", "%z")).tm_gmtoff ==
+        assert!(strptime("-0800", "%z").unwrap().tm_gmtoff ==
             0);
         assert!(test("%", "%%"));
+
+        // Test for #7256
+        assert_eq!(strptime("360", "%Y-%m-%d"), Err(~"Invalid year"))
     }
 
     fn test_ctime() {

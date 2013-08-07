@@ -23,9 +23,9 @@ fn foo<T>(y: Option<T>) {
           None::<T> => x = 17,
           _ => x = 42
         }
-        rs += ~[x];
+        rs.push(x);
     }
     return;
 }
 
-pub fn main() { debug!("hello"); foo::<int>(Some::<int>(5)); }
+pub fn main() { info!("hello"); foo::<int>(Some::<int>(5)); }

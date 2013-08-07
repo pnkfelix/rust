@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2013 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,19 +8,18 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
 
-use core::cell::Cell;
-use core::os;
-use core::result::Result;
-use core::result;
-use core::run::ProcessOutput;
-use core::run;
-use core::vec;
+use std::cell::Cell;
+use std::os;
+use std::result::Result;
+use std::result;
+use std::run::ProcessOutput;
+use std::run;
+use std::vec;
 use extra::getopts;
 
 /// The type of document to output
-#[deriving(Eq)]
+#[deriving(Clone, Eq)]
 pub enum OutputFormat {
     /// Markdown
     pub Markdown,
@@ -29,7 +28,7 @@ pub enum OutputFormat {
 }
 
 /// How to organize the output
-#[deriving(Eq)]
+#[deriving(Clone, Eq)]
 pub enum OutputStyle {
     /// All in a single document
     pub DocPerCrate,
@@ -38,16 +37,13 @@ pub enum OutputStyle {
 }
 
 /// The configuration for a rustdoc session
+#[deriving(Clone)]
 pub struct Config {
     input_crate: Path,
     output_dir: Path,
     output_format: OutputFormat,
     output_style: OutputStyle,
     pandoc_cmd: Option<~str>
-}
-
-impl Clone for Config {
-    fn clone(&self) -> Config { copy *self }
 }
 
 fn opt_output_dir() -> ~str { ~"output-dir" }
@@ -59,32 +55,33 @@ fn opt_help() -> ~str { ~"h" }
 fn opts() -> ~[(getopts::Opt, ~str)] {
     ~[
         (getopts::optopt(opt_output_dir()),
-         ~"--output-dir <val>     put documents here"),
+         ~"--output-dir <val>     Put documents here (default: .)"),
         (getopts::optopt(opt_output_format()),
-         ~"--output-format <val>  either 'markdown' or 'html'"),
+         ~"--output-format <val>  'markdown' or 'html' (default)"),
         (getopts::optopt(opt_output_style()),
-         ~"--output-style <val>   either 'doc-per-crate' or 'doc-per-mod'"),
+         ~"--output-style <val>   'doc-per-crate' or 'doc-per-mod' (default)"),
         (getopts::optopt(opt_pandoc_cmd()),
-         ~"--pandoc-cmd <val>     the command for running pandoc"),
+         ~"--pandoc-cmd <val>     Command for running pandoc"),
         (getopts::optflag(opt_help()),
-         ~"-h                     print help")
+         ~"-h, --help             Print help")
     ]
 }
 
 pub fn usage() {
-    use core::io::println;
+    use std::io::println;
 
     println("Usage: rustdoc [options] <cratefile>\n");
     println("Options:\n");
-    for opts().each |opt| {
-        println(fmt!("    %s", opt.second()));
+    let r = opts();
+    foreach opt in r.iter() {
+        printfln!("    %s", opt.second());
     }
     println("");
 }
 
 pub fn default_config(input_crate: &Path) -> Config {
     Config {
-        input_crate: copy *input_crate,
+        input_crate: (*input_crate).clone(),
         output_dir: Path("."),
         output_format: PandocHtml,
         output_style: DocPerMod,
@@ -141,52 +138,46 @@ fn config_from_opts(
 
     let config = default_config(input_crate);
     let result = result::Ok(config);
-    let result = do result::chain(result) |config| {
+    let result = do result.chain |config| {
         let output_dir = getopts::opt_maybe_str(matches, opt_output_dir());
         let output_dir = output_dir.map(|s| Path(*s));
         result::Ok(Config {
-            output_dir: output_dir.get_or_default(copy config.output_dir),
+            output_dir: output_dir.get_or_default(config.output_dir.clone()),
             .. config
         })
     };
-    let result = do result::chain(result) |config| {
-        let output_format = getopts::opt_maybe_str(
-            matches, opt_output_format());
-        do output_format.map_default(result::Ok(copy config))
-            |output_format| {
-            do result::chain(parse_output_format(*output_format))
-                |output_format| {
-
+    let result = do result.chain |config| {
+        let output_format = getopts::opt_maybe_str(matches, opt_output_format());
+        do output_format.map_default(result::Ok(config.clone())) |output_format| {
+            do parse_output_format(*output_format).chain |output_format| {
                 result::Ok(Config {
                     output_format: output_format,
-                    .. copy config
+                    .. config.clone()
                 })
             }
         }
     };
-    let result = do result::chain(result) |config| {
+    let result = do result.chain |config| {
         let output_style =
             getopts::opt_maybe_str(matches, opt_output_style());
-        do output_style.map_default(result::Ok(copy config))
-            |output_style| {
-            do result::chain(parse_output_style(*output_style))
-                |output_style| {
+        do output_style.map_default(result::Ok(config.clone())) |output_style| {
+            do parse_output_style(*output_style).chain |output_style| {
                 result::Ok(Config {
                     output_style: output_style,
-                    .. copy config
+                    .. config.clone()
                 })
             }
         }
     };
     let process_output = Cell::new(process_output);
-    let result = do result::chain(result) |config| {
+    let result = do result.chain |config| {
         let pandoc_cmd = getopts::opt_maybe_str(matches, opt_pandoc_cmd());
         let pandoc_cmd = maybe_find_pandoc(
             &config, pandoc_cmd, process_output.take());
-        do result::chain(pandoc_cmd) |pandoc_cmd| {
+        do pandoc_cmd.chain |pandoc_cmd| {
             result::Ok(Config {
                 pandoc_cmd: pandoc_cmd,
-                .. copy config
+                .. config.clone()
             })
         }
     };
@@ -230,26 +221,24 @@ pub fn maybe_find_pandoc(
       }
     };
 
-    let pandoc = do vec::find(possible_pandocs) |pandoc| {
+    let pandoc = do possible_pandocs.iter().find_ |&pandoc| {
         let output = process_output(*pandoc, [~"--version"]);
         debug!("testing pandoc cmd %s: %?", *pandoc, output);
         output.status == 0
     };
 
-    if pandoc.is_some() {
-        result::Ok(pandoc)
-    } else {
-        result::Err(~"couldn't find pandoc")
+    match pandoc {
+        Some(x) => Ok(Some((*x).clone())), // ugly, shouldn't be doubly wrapped
+        None => Err(~"couldn't find pandoc")
     }
 }
 
 #[cfg(test)]
 mod test {
-    use core::prelude::*;
 
     use config::*;
-    use core::result;
-    use core::run::ProcessOutput;
+    use std::result;
+    use std::run::ProcessOutput;
 
     fn parse_config(args: &[~str]) -> Result<Config, ~str> {
         parse_config_(args, mock_process_output)

@@ -8,9 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
-
-use core::vec;
 use ast::{ident, matcher_, matcher, match_tok, match_nonterminal, match_seq};
 use ast::{tt_delim};
 use ast;
@@ -26,8 +23,6 @@ use parse::token::{get_ident_interner, special_idents, gensym_ident, ident_to_st
 use parse::token::{FAT_ARROW, SEMI, nt_matchers, nt_tt};
 use print;
 
-use core::io;
-
 pub fn add_new_extension(cx: @ExtCtxt,
                          sp: span,
                          name: ident,
@@ -35,7 +30,10 @@ pub fn add_new_extension(cx: @ExtCtxt,
                       -> base::MacResult {
     // these spans won't matter, anyways
     fn ms(m: matcher_) -> matcher {
-        spanned { node: copy m, span: dummy_sp() }
+        spanned {
+            node: m.clone(),
+            span: dummy_sp()
+        }
     }
 
     let lhs_nm =  gensym_ident("lhs");
@@ -57,7 +55,8 @@ pub fn add_new_extension(cx: @ExtCtxt,
 
     // Parse the macro_rules! invocation (`none` is for no interpolations):
     let arg_reader = new_tt_reader(cx.parse_sess().span_diagnostic,
-                                   None, copy arg);
+                                   None,
+                                   arg.clone());
     let argument_map = parse_or_else(cx.parse_sess(),
                                      cx.cfg(),
                                      arg_reader as @mut reader,
@@ -65,12 +64,12 @@ pub fn add_new_extension(cx: @ExtCtxt,
 
     // Extract the arguments:
     let lhses = match *argument_map.get(&lhs_nm) {
-        @matched_seq(ref s, _) => /* FIXME (#2543) */ @copy *s,
+        @matched_seq(ref s, _) => /* FIXME (#2543) */ @(*s).clone(),
         _ => cx.span_bug(sp, "wrong-structured lhs")
     };
 
     let rhses = match *argument_map.get(&rhs_nm) {
-      @matched_seq(ref s, _) => /* FIXME (#2543) */ @copy *s,
+      @matched_seq(ref s, _) => /* FIXME (#2543) */ @(*s).clone(),
       _ => cx.span_bug(sp, "wrong-structured rhs")
     };
 
@@ -81,11 +80,11 @@ pub fn add_new_extension(cx: @ExtCtxt,
     -> MacResult {
 
         if cx.trace_macros() {
-            io::println(fmt!("%s! { %s }",
-                             cx.str_of(name),
-                             print::pprust::tt_to_str(
-                                 ast::tt_delim(vec::to_owned(arg)),
-                                 get_ident_interner())));
+            printfln!("%s! { %s }",
+                      cx.str_of(name),
+                      print::pprust::tt_to_str(
+                          &ast::tt_delim(@mut arg.to_owned()),
+                          get_ident_interner()));
         }
 
         // Which arm's failure should we report? (the one furthest along)
@@ -94,14 +93,14 @@ pub fn add_new_extension(cx: @ExtCtxt,
 
         let s_d = cx.parse_sess().span_diagnostic;
 
-        for lhses.eachi |i, lhs| { // try each arm's matchers
+        foreach (i, lhs) in lhses.iter().enumerate() { // try each arm's matchers
             match *lhs {
               @matched_nonterminal(nt_matchers(ref mtcs)) => {
                 // `none` is because we're not interpolating
                 let arg_rdr = new_tt_reader(
                     s_d,
                     None,
-                    vec::to_owned(arg)
+                    arg.to_owned()
                 ) as @mut reader;
                 match parse(cx.parse_sess(), cx.cfg(), arg_rdr, *mtcs) {
                   success(named_matches) => {
@@ -134,7 +133,7 @@ pub fn add_new_extension(cx: @ExtCtxt,
                   }
                   failure(sp, ref msg) => if sp.lo >= best_fail_spot.lo {
                     best_fail_spot = sp;
-                    best_fail_msg = copy *msg;
+                    best_fail_msg = (*msg).clone();
                   },
                   error(sp, ref msg) => cx.span_fatal(sp, (*msg))
                 }

@@ -18,13 +18,17 @@ struct Rec<A> {
     rec: Option<@mut RecEnum<A>>
 }
 
-fn make_cycle<A:Copy>(a: A) {
+fn make_cycle<A:'static>(a: A) {
     let g: @mut RecEnum<A> = @mut RecEnum(Rec {val: a, rec: None});
     g.rec = Some(g);
 }
 
-fn f<A:Owned + Copy,B:Owned + Copy>(a: A, b: B) -> @fn() -> (A, B) {
-    let result: @fn() -> (A, B) = || (copy a, copy b);
+fn f<A:Send + Clone + 'static,
+     B:Send + Clone + 'static>(
+     a: A,
+     b: B)
+     -> @fn() -> (A, B) {
+    let result: @fn() -> (A, B) = || (a.clone(), b.clone());
     result
 }
 
@@ -34,7 +38,7 @@ pub fn main() {
     let z = f(~x, y);
     make_cycle(z);
     let (a, b) = z();
-    debug!("a=%u b=%u", *a as uint, b as uint);
+    info!("a=%u b=%u", *a as uint, b as uint);
     assert_eq!(*a, x);
     assert_eq!(b, y);
 }

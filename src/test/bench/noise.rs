@@ -1,6 +1,5 @@
 // Perlin noise benchmark from https://gist.github.com/1170424
 
-use std::f32;
 use std::float;
 use std::int;
 use std::rand::{Rng, RngUtil};
@@ -20,8 +19,8 @@ fn smooth(v: f32) -> f32 { v * v * (3.0 - 2.0 * v) }
 fn random_gradient<R:Rng>(r: &mut R) -> Vec2 {
     let v = 2.0 * float::consts::pi * r.gen();
     Vec2 {
-        x: float::cos(v) as f32,
-        y: float::sin(v) as f32,
+        x: v.cos() as f32,
+        y: v.sin() as f32,
     }
 }
 
@@ -39,11 +38,11 @@ impl Noise2DContext {
     pub fn new() -> Noise2DContext {
         let mut r = rand::rng();
         let mut rgradients = [ Vec2 { x: 0.0, y: 0.0 }, ..256 ];
-        for int::range(0, 256) |i| {
+        foreach i in range(0, 256) {
             rgradients[i] = random_gradient(&mut r);
         }
         let mut permutations = [ 0, ..256 ];
-        for int::range(0, 256) |i| {
+        foreach i in range(0, 256) {
             permutations[i] = i;
         }
         r.shuffle_mut(permutations);
@@ -66,8 +65,8 @@ impl Noise2DContext {
                          origins: &mut [Vec2, ..4],
                          x: f32,
                          y: f32) {
-        let x0f = f32::floor(x);
-        let y0f = f32::floor(y);
+        let x0f = x.floor();
+        let y0f = y.floor();
         let x0 = x0f as int;
         let y0 = y0f as int;
         let x1 = x0 + 1;
@@ -106,9 +105,9 @@ fn main() {
     let symbols = [" ", "░", "▒", "▓", "█", "█"];
     let mut pixels = [0f32, ..256*256];
     let n2d = ~Noise2DContext::new();
-    for 100.times {
-        for int::range(0, 256) |y| {
-            for int::range(0, 256) |x| {
+    do 100.times {
+        foreach y in range(0, 256) {
+            foreach x in range(0, 256) {
                 let v = n2d.get(
                     x as f32 * 0.1f32,
                     y as f32 * 0.1f32
@@ -118,10 +117,10 @@ fn main() {
         };
     };
 
-    /*for int::range(0, 256) |y| {
-        for int::range(0, 256) |x| {
-            io::print(symbols[pixels[y*256+x] / 0.2f32 as int]);
+    foreach y in range(0, 256) {
+        foreach x in range(0, 256) {
+            print(symbols[pixels[y*256+x] / 0.2f32 as int]);
         }
-        io::println("");
-    }*/
+        println("");
+    }
 }

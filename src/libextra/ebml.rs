@@ -10,7 +10,8 @@
 
 #[allow(missing_doc)];
 
-use core::prelude::*;
+
+use std::str;
 
 // Simple Extensible Binary Markup Language (ebml) reader and writer on a
 // cursor model. See the specification here:
@@ -28,10 +29,25 @@ struct EbmlState {
     data_pos: uint,
 }
 
+#[deriving(Clone)]
 pub struct Doc {
     data: @~[u8],
     start: uint,
     end: uint,
+}
+
+impl Doc {
+    pub fn get(&self, tag: uint) -> Doc {
+        reader::get_doc(*self, tag)
+    }
+
+    pub fn as_str_slice<'a>(&'a self) -> &'a str {
+        str::from_bytes_slice(self.data.slice(self.start, self.end))
+    }
+
+    pub fn as_str(&self) -> ~str {
+        self.as_str_slice().to_owned()
+    }
 }
 
 pub struct TaggedDoc {
@@ -78,30 +94,20 @@ pub mod reader {
 
     use serialize;
 
-    use core::prelude::*;
-    use core::cast::transmute;
-    use core::int;
-    use core::io;
-    use core::ptr::offset;
-    use core::str;
-    use core::unstable::intrinsics::bswap32;
-    use core::vec;
+    use std::cast::transmute;
+    use std::int;
+    use std::io;
+    use std::option::{None, Option, Some};
+
+    #[cfg(target_arch = "x86")]
+    #[cfg(target_arch = "x86_64")]
+    use std::ptr::offset;
+
+    #[cfg(target_arch = "x86")]
+    #[cfg(target_arch = "x86_64")]
+    use std::unstable::intrinsics::bswap32;
 
     // ebml reading
-
-    impl Doc {
-        pub fn get(&self, tag: uint) -> Doc {
-            get_doc(*self, tag)
-        }
-
-        pub fn as_str_slice<'a>(&'a self) -> &'a str {
-            str::from_bytes_slice(self.data.slice(self.start, self.end))
-        }
-
-        pub fn as_str(&self) -> ~str {
-            self.as_str_slice().to_owned()
-        }
-    }
 
     struct Res {
         val: uint,
@@ -144,7 +150,7 @@ pub mod reader {
 
         unsafe {
             let (ptr, _): (*u8, uint) = transmute(data);
-            let ptr = offset(ptr, start);
+            let ptr = offset(ptr, start as int);
             let ptr: *i32 = transmute(ptr);
             let val = bswap32(*ptr);
             let val: u32 = transmute(val);
@@ -248,7 +254,7 @@ pub mod reader {
     }
 
     pub fn with_doc_data<T>(d: Doc, f: &fn(x: &[u8]) -> T) -> T {
-        f(vec::slice(*d.data, d.start, d.end))
+        f(d.data.slice(d.start, d.end))
     }
 
 
@@ -313,8 +319,12 @@ pub mod reader {
             let TaggedDoc { tag: r_tag, doc: r_doc } =
                 doc_at(self.parent.data, self.pos);
             debug!("self.parent=%?-%? self.pos=%? r_tag=%? r_doc=%?-%?",
-                   copy self.parent.start, copy self.parent.end,
-                   copy self.pos, r_tag, r_doc.start, r_doc.end);
+                   self.parent.start,
+                   self.parent.end,
+                   self.pos,
+                   r_tag,
+                   r_doc.start,
+                   r_doc.end);
             if r_tag != (exp_tag as uint) {
                 fail!("expected EBML doc with tag %? but found tag %?", exp_tag, r_tag);
             }
@@ -372,7 +382,7 @@ pub mod reader {
         fn read_u8 (&mut self) -> u8  { doc_as_u8 (self.next_doc(EsU8 )) }
         fn read_uint(&mut self) -> uint {
             let v = doc_as_u64(self.next_doc(EsUint));
-            if v > (::core::uint::max_value as u64) {
+            if v > (::std::uint::max_value as u64) {
                 fail!("uint %? too large for this architecture", v);
             }
             v as uint
@@ -605,13 +615,23 @@ pub mod reader {
 pub mod writer {
     use super::*;
 
-    use core::cast;
-    use core::io;
+    use std::cast;
+    use std::clone::Clone;
+    use std::io;
 
     // ebml writing
     pub struct Encoder {
         writer: @io::Writer,
         priv size_positions: ~[uint],
+    }
+
+    impl Clone for Encoder {
+        fn clone(&self) -> Encoder {
+            Encoder {
+                writer: self.writer,
+                size_positions: self.size_positions.clone(),
+            }
+        }
     }
 
     fn write_sized_vuint(w: @io::Writer, n: uint, size: uint) {
@@ -743,7 +763,7 @@ pub mod writer {
 
     // Set to true to generate more debugging in EBML code.
     // Totally lame approach.
-    static debug: bool = true;
+    static DEBUG: bool = true;
 
     impl Encoder {
         // used internally to emit things like the vector length and so on
@@ -759,7 +779,7 @@ pub mod writer {
             // efficiency.  When debugging, though, we can emit such
             // labels and then they will be checked by decoder to
             // try and check failures more quickly.
-            if debug { self.wr_tagged_str(EsLabel as uint, label) }
+            if DEBUG { self.wr_tagged_str(EsLabel as uint, label) }
         }
     }
 
@@ -951,8 +971,8 @@ mod tests {
     use serialize::Encodable;
     use serialize;
 
-    use core::io;
-    use core::option::{None, Option, Some};
+    use std::io;
+    use std::option::{None, Option, Some};
 
     #[test]
     fn test_option_int() {

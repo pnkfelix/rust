@@ -44,12 +44,12 @@ impl StackSegment {
 
     /// Point one word beyond the high end of the allocated stack
     pub fn end(&self) -> *uint {
-        vec::raw::to_ptr(self.buf).offset(self.buf.len()) as *uint
+        vec::raw::to_ptr(self.buf).offset(self.buf.len() as int) as *uint
     }
 }
 
 impl Drop for StackSegment {
-    fn finalize(&self) {
+    fn drop(&self) {
         unsafe {
             // XXX: Using the FFI to call a C macro. Slow
             rust_valgrind_stack_deregister(self.valgrind_id);

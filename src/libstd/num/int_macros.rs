@@ -14,9 +14,12 @@
 
 macro_rules! int_module (($T:ty, $bits:expr) => (mod generated {
 
+#[allow(non_uppercase_statics)];
+
 use num::{ToStrRadix, FromStrRadix};
 use num::{Zero, One, strconv};
 use prelude::*;
+use str;
 
 pub use cmp::{min, max};
 
@@ -26,84 +29,38 @@ pub static bytes : uint = ($bits / 8);
 pub static min_value: $T = (-1 as $T) << (bits - 1);
 pub static max_value: $T = min_value - 1 as $T;
 
-/// Calculates the sum of two numbers
-#[inline]
-pub fn add(x: $T, y: $T) -> $T { x + y }
-/// Subtracts the second number from the first
-#[inline]
-pub fn sub(x: $T, y: $T) -> $T { x - y }
-/// Multiplies two numbers together
-#[inline]
-pub fn mul(x: $T, y: $T) -> $T { x * y }
-/// Divides the first argument by the second argument (using integer division)
-/// Divides the first argument by the second argument (using integer division)
-#[inline]
-pub fn div(x: $T, y: $T) -> $T { x / y }
+enum Range { Closed, HalfOpen }
 
-///
-/// Returns the remainder of y / x.
-///
-/// # Examples
-/// ~~~
-/// assert!(int::rem(5 / 2) == 1);
-/// ~~~
-///
-/// When faced with negative numbers, the result copies the sign of the
-/// dividend.
-///
-/// ~~~
-/// assert!(int::rem(2 / -3) ==  2);
-/// ~~~
-///
-/// ~~~
-/// assert!(int::rem(-2 / 3) ==  -2);
-/// ~~~
-///
-///
 #[inline]
-pub fn rem(x: $T, y: $T) -> $T { x % y }
-
-/// Returns true iff `x < y`
-#[inline]
-pub fn lt(x: $T, y: $T) -> bool { x < y }
-/// Returns true iff `x <= y`
-#[inline]
-pub fn le(x: $T, y: $T) -> bool { x <= y }
-/// Returns true iff `x == y`
-#[inline]
-pub fn eq(x: $T, y: $T) -> bool { x == y }
-/// Returns true iff `x != y`
-#[inline]
-pub fn ne(x: $T, y: $T) -> bool { x != y }
-/// Returns true iff `x >= y`
-#[inline]
-pub fn ge(x: $T, y: $T) -> bool { x >= y }
-/// Returns true iff `x > y`
-#[inline]
-pub fn gt(x: $T, y: $T) -> bool { x > y }
-
 ///
-/// Iterate over the range [`lo`..`hi`)
+/// Iterate through a range with a given step value.
 ///
-/// # Arguments
+/// Let `term` denote the closed interval `[stop-step,stop]` if `r` is Closed;
+/// otherwise `term` denotes the half-open interval `[stop-step,stop)`.
+/// Iterates through the range `[x_0, x_1, ..., x_n]` where
+/// `x_j == start + step*j`, and `x_n` lies in the interval `term`.
 ///
-/// * `lo` - lower bound, inclusive
-/// * `hi` - higher bound, exclusive
+/// If no such nonnegative integer `n` exists, then the iteration range
+/// is empty.
 ///
-/// # Examples
-/// ~~~
-/// let mut sum = 0;
-/// for int::range(1, 5) |i| {
-///     sum += i;
-/// }
-/// assert!(sum == 10);
-/// ~~~
-///
-#[inline]
-pub fn range_step(start: $T, stop: $T, step: $T, it: &fn($T) -> bool) -> bool {
+fn range_step_core(start: $T, stop: $T, step: $T, r: Range, it: &fn($T) -> bool) -> bool {
     let mut i = start;
     if step == 0 {
         fail!(~"range_step called with step == 0");
+    } else if step == (1 as $T) { // elide bounds check to tighten loop
+        while i < stop {
+            if !it(i) { return false; }
+            // no need for overflow check;
+            // cannot have i + 1 > max_value because i < stop <= max_value
+            i += (1 as $T);
+        }
+    } else if step == (-1 as $T) { // elide bounds check to tighten loop
+        while i > stop {
+            if !it(i) { return false; }
+            // no need for underflow check;
+            // cannot have i - 1 < min_value because i > stop >= min_value
+            i -= (1 as $T);
+        }
     } else if step > 0 { // ascending
         while i < stop {
             if !it(i) { return false; }
@@ -119,30 +76,61 @@ pub fn range_step(start: $T, stop: $T, step: $T, it: &fn($T) -> bool) -> bool {
             i += step;
         }
     }
-    return true;
+    match r {
+        HalfOpen => return true,
+        Closed => return (i != stop || it(i))
+    }
 }
 
 #[inline]
-/// Iterate over the range [`lo`..`hi`)
-pub fn range(lo: $T, hi: $T, it: &fn($T) -> bool) -> bool {
-    range_step(lo, hi, 1 as $T, it)
+///
+/// Iterate through the range [`start`..`stop`) with a given step value.
+///
+/// Iterates through the range `[x_0, x_1, ..., x_n]` where
+/// * `x_i == start + step*i`, and
+/// * `n` is the greatest nonnegative integer such that `x_n < stop`
+///
+/// (If no such `n` exists, then the iteration range is empty.)
+///
+/// # Arguments
+///
+/// * `start` - lower bound, inclusive
+/// * `stop` - higher bound, exclusive
+///
+/// # Examples
+/// ~~~
+/// let mut sum = 0;
+/// for int::range(1, 5) |i| {
+///     sum += i;
+/// }
+/// assert!(sum == 10);
+/// ~~~
+///
+pub fn range_step(start: $T, stop: $T, step: $T, it: &fn($T) -> bool) -> bool {
+    range_step_core(start, stop, step, HalfOpen, it)
 }
 
 #[inline]
-/// Iterate over the range [`hi`..`lo`)
+///
+/// Iterate through a range with a given step value.
+///
+/// Iterates through the range `[x_0, x_1, ..., x_n]` where
+/// `x_i == start + step*i` and `x_n <= last < step + x_n`.
+///
+/// (If no such nonnegative integer `n` exists, then the iteration
+///  range is empty.)
+///
+pub fn range_step_inclusive(start: $T, last: $T, step: $T, it: &fn($T) -> bool) -> bool {
+    range_step_core(start, last, step, Closed, it)
+}
+
+
+#[inline]
+/// Iterate over the range (`hi`..`lo`]
 pub fn range_rev(hi: $T, lo: $T, it: &fn($T) -> bool) -> bool {
-    range_step(hi, lo, -1 as $T, it)
+    if hi == min_value { return true; }
+    range_step_inclusive(hi-1, lo, -1 as $T, it)
 }
-
-/// Computes the bitwise complement
-#[inline]
-pub fn compl(i: $T) -> $T {
-    -1 as $T ^ i
-}
-
-/// Computes the absolute value
-#[inline]
-pub fn abs(i: $T) -> $T { i.abs() }
 
 impl Num for $T {}
 
@@ -400,7 +388,8 @@ impl Integer for $T {
     #[inline]
     fn gcd(&self, other: &$T) -> $T {
         // Use Euclid's algorithm
-        let mut (m, n) = (*self, *other);
+        let mut m = *self;
+        let mut n = *other;
         while m != 0 {
             let temp = m;
             m = n % temp;
@@ -528,25 +517,33 @@ impl FromStrRadix for $T {
 /// Convert to a string as a byte slice in a given base.
 #[inline]
 pub fn to_str_bytes<U>(n: $T, radix: uint, f: &fn(v: &[u8]) -> U) -> U {
-    let (buf, _) = strconv::to_str_bytes_common(&n, radix, false,
-                            strconv::SignNeg, strconv::DigAll);
-    f(buf)
+    // The radix can be as low as 2, so we need at least 64 characters for a
+    // base 2 number, and then we need another for a possible '-' character.
+    let mut buf = [0u8, ..65];
+    let mut cur = 0;
+    do strconv::int_to_str_bytes_common(n, radix, strconv::SignNeg) |i| {
+        buf[cur] = i;
+        cur += 1;
+    }
+    f(buf.slice(0, cur))
 }
 
 /// Convert to a string in base 10.
 #[inline]
 pub fn to_str(num: $T) -> ~str {
-    let (buf, _) = strconv::to_str_common(&num, 10u, false,
-                                      strconv::SignNeg, strconv::DigAll);
-    buf
+    to_str_radix(num, 10u)
 }
 
 /// Convert to a string in a given base.
 #[inline]
 pub fn to_str_radix(num: $T, radix: uint) -> ~str {
-    let (buf, _) = strconv::to_str_common(&num, radix, false,
-                                      strconv::SignNeg, strconv::DigAll);
-    buf
+    let mut buf: ~[u8] = ~[];
+    do strconv::int_to_str_bytes_common(num, radix, strconv::SignNeg) |i| {
+        buf.push(i);
+    }
+    // We know we generated valid utf-8, so we don't need to go through that
+    // check.
+    unsafe { str::raw::from_bytes_owned(buf) }
 }
 
 impl ToStr for $T {
@@ -892,10 +889,7 @@ mod tests {
     fn test_ranges() {
         let mut l = ~[];
 
-        for range(0,3) |i| {
-            l.push(i);
-        }
-        for range_rev(13,10) |i| {
+        for range_rev(14,11) |i| {
             l.push(i);
         }
         for range_step(20,26,2) |i| {
@@ -916,8 +910,7 @@ mod tests {
         for range_step(min_value + 3, min_value, -2) |i| {
             l.push(i);
         }
-        assert_eq!(l, ~[0,1,2,
-                        13,12,11,
+        assert_eq!(l, ~[13,12,11,
                         20,22,24,
                         36,34,32,
                         max_value-2,
@@ -926,9 +919,6 @@ mod tests {
                         min_value+3,min_value+1]);
 
         // None of the `fail`s should execute.
-        for range(10,0) |_i| {
-            fail!(~"unreachable");
-        }
         for range_rev(0,10) |_i| {
             fail!(~"unreachable");
         }

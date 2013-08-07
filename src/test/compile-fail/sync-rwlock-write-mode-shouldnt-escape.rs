@@ -8,11 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// error-pattern: reference is not valid outside of its lifetime
+// error-pattern: lifetime of variable does not enclose its declaration
 extern mod extra;
 use extra::sync;
 fn main() {
-    let x = ~sync::RWlock();
+    let x = ~sync::RWLock::new();
     let mut y = None;
     do x.write_downgrade |write_mode| {
         y = Some(write_mode);

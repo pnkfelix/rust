@@ -8,11 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
 
 use back::link;
 use lib;
 use lib::llvm::*;
+use middle::lang_items::{FailFnLangItem, FailBoundsCheckFnLangItem};
+use middle::lang_items::LogTypeFnLangItem;
 use middle::trans::base::*;
 use middle::trans::build::*;
 use middle::trans::callee;
@@ -24,25 +25,22 @@ use middle::ty;
 use util::common::indenter;
 use util::ppaux;
 
-use core::str;
-use core::vec;
+use middle::trans::type_::Type;
+
 use syntax::ast;
 use syntax::ast::ident;
 use syntax::ast_map::path_mod;
 use syntax::ast_util;
 use syntax::codemap::span;
 
-pub fn trans_block(bcx: block, b: &ast::blk, dest: expr::Dest) -> block {
-    let _icx = bcx.insn_ctxt("trans_block");
+pub fn trans_block(bcx: @mut Block, b: &ast::Block, dest: expr::Dest) -> @mut Block {
+    let _icx = push_ctxt("trans_block");
     let mut bcx = bcx;
-    do block_locals(b) |local| {
-        bcx = alloc_local(bcx, local);
-    };
-    for b.node.stmts.each |s| {
+    foreach s in b.stmts.iter() {
         debuginfo::update_source_pos(bcx, b.span);
         bcx = trans_stmt(bcx, *s);
     }
-    match b.node.expr {
+    match b.expr {
         Some(e) => {
             debuginfo::update_source_pos(bcx, e.span);
             bcx = expr::trans_into(bcx, e, dest);
@@ -54,29 +52,48 @@ pub fn trans_block(bcx: block, b: &ast::blk, dest: expr::Dest) -> block {
     return bcx;
 }
 
-pub fn trans_if(bcx: block,
+pub fn trans_if(bcx: @mut Block,
             cond: @ast::expr,
-            thn: &ast::blk,
+            thn: &ast::Block,
             els: Option<@ast::expr>,
             dest: expr::Dest)
-         -> block {
+         -> @mut Block {
     debug!("trans_if(bcx=%s, cond=%s, thn=%?, dest=%s)",
-           bcx.to_str(), bcx.expr_to_str(cond), thn.node.id,
+           bcx.to_str(), bcx.expr_to_str(cond), thn.id,
            dest.to_str(bcx.ccx()));
     let _indenter = indenter();
 
-    let _icx = bcx.insn_ctxt("trans_if");
+    let _icx = push_ctxt("trans_if");
+
     let Result {bcx, val: cond_val} =
         expr::trans_to_datum(bcx, cond).to_result();
 
-    let then_bcx_in = scope_block(bcx, thn.info(), "then");
-    let else_bcx_in = scope_block(bcx, els.info(), "else");
-
     let cond_val = bool_to_i1(bcx, cond_val);
-    CondBr(bcx, cond_val, then_bcx_in.llbb, else_bcx_in.llbb);
 
-    debug!("then_bcx_in=%s, else_bcx_in=%s",
-           then_bcx_in.to_str(), else_bcx_in.to_str());
+    // Drop branches that are known to be impossible
+    if is_const(cond_val) && !is_undef(cond_val) {
+        if const_to_uint(cond_val) == 1 {
+            // if true { .. } [else { .. }]
+            return do with_scope(bcx, thn.info(), "if_true_then") |bcx| {
+                let bcx_out = trans_block(bcx, thn, dest);
+                trans_block_cleanups(bcx_out, block_cleanups(bcx))
+            }
+        } else {
+            match els {
+                // if false { .. } else { .. }
+                Some(elexpr) => {
+                    return do with_scope(bcx, elexpr.info(), "if_false_then") |bcx| {
+                        let bcx_out = trans_if_else(bcx, elexpr, dest);
+                        trans_block_cleanups(bcx_out, block_cleanups(bcx))
+                    }
+                }
+                // if false { .. }
+                None => return bcx,
+            }
+        }
+    }
+
+    let then_bcx_in = scope_block(bcx, thn.info(), "then");
 
     let then_bcx_out = trans_block(then_bcx_in, thn, dest);
     let then_bcx_out = trans_block_cleanups(then_bcx_out,
@@ -86,32 +103,48 @@ pub fn trans_if(bcx: block,
     // because trans_expr will create another scope block
     // context for the block, but we've already got the
     // 'else' context
-    let else_bcx_out = match els {
+    let (else_bcx_in, next_bcx) = match els {
       Some(elexpr) => {
-        match elexpr.node {
-          ast::expr_if(_, _, _) => {
-            let elseif_blk = ast_util::block_from_expr(elexpr);
-            trans_block(else_bcx_in, &elseif_blk, dest)
-          }
-          ast::expr_block(ref blk) => {
-            trans_block(else_bcx_in, blk, dest)
-          }
-          // would be nice to have a constraint on ifs
-          _ => bcx.tcx().sess.bug("strange alternative in if")
-        }
+          let else_bcx_in = scope_block(bcx, elexpr.info(), "else");
+          let else_bcx_out = trans_if_else(else_bcx_in, elexpr, dest);
+          (else_bcx_in, join_blocks(bcx, [then_bcx_out, else_bcx_out]))
       }
-      _ => else_bcx_in
-    };
-    let else_bcx_out = trans_block_cleanups(else_bcx_out,
-                                            block_cleanups(else_bcx_in));
-    return join_blocks(bcx, [then_bcx_out, else_bcx_out]);
+      _ => {
+          let next_bcx = sub_block(bcx, "next");
+          Br(then_bcx_out, next_bcx.llbb);
 
+          (next_bcx, next_bcx)
+      }
+    };
+
+    debug!("then_bcx_in=%s, else_bcx_in=%s",
+           then_bcx_in.to_str(), else_bcx_in.to_str());
+
+    CondBr(bcx, cond_val, then_bcx_in.llbb, else_bcx_in.llbb);
+    return next_bcx;
+
+    // trans `else [ if { .. } ... | { .. } ]`
+    fn trans_if_else(else_bcx_in: @mut Block, elexpr: @ast::expr,
+                     dest: expr::Dest) -> @mut Block {
+        let else_bcx_out = match elexpr.node {
+            ast::expr_if(_, _, _) => {
+                let elseif_blk = ast_util::block_from_expr(elexpr);
+                trans_block(else_bcx_in, &elseif_blk, dest)
+            }
+            ast::expr_block(ref blk) => {
+                trans_block(else_bcx_in, blk, dest)
+            }
+            // would be nice to have a constraint on ifs
+            _ => else_bcx_in.tcx().sess.bug("strange alternative in if")
+        };
+        trans_block_cleanups(else_bcx_out, block_cleanups(else_bcx_in))
+    }
 }
 
-pub fn join_blocks(parent_bcx: block, in_cxs: &[block]) -> block {
+pub fn join_blocks(parent_bcx: @mut Block, in_cxs: &[@mut Block]) -> @mut Block {
     let out = sub_block(parent_bcx, "join");
     let mut reachable = false;
-    for in_cxs.each |bcx| {
+    foreach bcx in in_cxs.iter() {
         if !bcx.unreachable {
             Br(*bcx, out.llbb);
             reachable = true;
@@ -123,8 +156,8 @@ pub fn join_blocks(parent_bcx: block, in_cxs: &[block]) -> block {
     return out;
 }
 
-pub fn trans_while(bcx: block, cond: @ast::expr, body: &ast::blk) -> block {
-    let _icx = bcx.insn_ctxt("trans_while");
+pub fn trans_while(bcx: @mut Block, cond: @ast::expr, body: &ast::Block) -> @mut Block {
+    let _icx = push_ctxt("trans_while");
     let next_bcx = sub_block(bcx, "while next");
 
     //            bcx
@@ -162,11 +195,11 @@ pub fn trans_while(bcx: block, cond: @ast::expr, body: &ast::blk) -> block {
     return next_bcx;
 }
 
-pub fn trans_loop(bcx:block,
-                  body: &ast::blk,
+pub fn trans_loop(bcx:@mut Block,
+                  body: &ast::Block,
                   opt_label: Option<ident>)
-               -> block {
-    let _icx = bcx.insn_ctxt("trans_loop");
+               -> @mut Block {
+    let _icx = push_ctxt("trans_loop");
     let next_bcx = sub_block(bcx, "next");
     let body_bcx_in = loop_scope_block(bcx, next_bcx, opt_label, "`loop`",
                                        body.info());
@@ -176,11 +209,11 @@ pub fn trans_loop(bcx:block,
     return next_bcx;
 }
 
-pub fn trans_log(log_ex: @ast::expr,
+pub fn trans_log(log_ex: &ast::expr,
                  lvl: @ast::expr,
-                 bcx: block,
-                 e: @ast::expr) -> block {
-    let _icx = bcx.insn_ctxt("trans_log");
+                 bcx: @mut Block,
+                 e: @ast::expr) -> @mut Block {
+    let _icx = push_ctxt("trans_log");
     let ccx = bcx.ccx();
     let mut bcx = bcx;
     if ty::type_is_bot(expr_ty(bcx, lvl)) {
@@ -189,9 +222,13 @@ pub fn trans_log(log_ex: @ast::expr,
 
     let (modpath, modname) = {
         let path = &mut bcx.fcx.path;
-        let modpath = vec::append(
-            ~[path_mod(ccx.sess.ident_of(ccx.link_meta.name))],
-            path.filtered(|e| match *e { path_mod(_) => true, _ => false }));
+        let mut modpath = ~[path_mod(ccx.sess.ident_of(ccx.link_meta.name))];
+        foreach e in path.iter() {
+            match *e {
+                path_mod(_) => { modpath.push(*e) }
+                _ => {}
+            }
+        }
         let modname = path_str(ccx.sess, modpath);
         (modpath, modname)
     };
@@ -203,11 +240,11 @@ pub fn trans_log(log_ex: @ast::expr,
             ccx, modpath, "loglevel");
         let global;
         unsafe {
-            global = str::as_c_str(s, |buf| {
-                llvm::LLVMAddGlobal(ccx.llmod, T_i32(), buf)
-            });
+            global = do s.as_c_str |buf| {
+                llvm::LLVMAddGlobal(ccx.llmod, Type::i32().to_ref(), buf)
+            };
             llvm::LLVMSetGlobalConstant(global, False);
-            llvm::LLVMSetInitializer(global, C_null(T_i32()));
+            llvm::LLVMSetInitializer(global, C_null(Type::i32()));
             lib::llvm::SetLinkage(global, lib::llvm::InternalLinkage);
         }
         ccx.module_data.insert(modname, global);
@@ -230,7 +267,7 @@ pub fn trans_log(log_ex: @ast::expr,
 
             // Call the polymorphic log function
             let val = val_datum.to_ref_llval(bcx);
-            let did = bcx.tcx().lang_items.log_type_fn();
+            let did = langcall(bcx, Some(e.span), "", LogTypeFnLangItem);
             let bcx = callee::trans_lang_call_with_type_params(
                 bcx, did, [level, val], [val_datum.ty], expr::Ignore);
             bcx
@@ -238,97 +275,105 @@ pub fn trans_log(log_ex: @ast::expr,
     }
 }
 
-pub fn trans_break_cont(bcx: block,
+pub fn trans_break_cont(bcx: @mut Block,
                         opt_label: Option<ident>,
                         to_end: bool)
-                     -> block {
-    let _icx = bcx.insn_ctxt("trans_break_cont");
+                     -> @mut Block {
+    let _icx = push_ctxt("trans_break_cont");
     // Locate closest loop block, outputting cleanup as we go.
     let mut unwind = bcx;
+    let mut cur_scope = unwind.scope;
     let mut target;
     loop {
-        match unwind.kind {
-          block_scope(@scope_info {
-            loop_break: Some(brk),
-            loop_label: l,
-            _
-          }) => {
-              // If we're looking for a labeled loop, check the label...
-              target = if to_end {
-                  brk
-              } else {
-                  unwind
-              };
-              match opt_label {
-                  Some(desired) => match l {
-                      Some(actual) if actual == desired => break,
-                      // If it doesn't match the one we want,
-                      // don't break
-                      _ => ()
-                  },
-                  None => break
-              }
-          }
-          _ => ()
+        cur_scope = match cur_scope {
+            Some(@ScopeInfo {
+                loop_break: Some(brk),
+                loop_label: l,
+                parent,
+                _
+            }) => {
+                // If we're looking for a labeled loop, check the label...
+                target = if to_end {
+                    brk
+                } else {
+                    unwind
+                };
+                match opt_label {
+                    Some(desired) => match l {
+                        Some(actual) if actual == desired => break,
+                        // If it doesn't match the one we want,
+                        // don't break
+                        _ => parent,
+                    },
+                    None => break,
+                }
+            }
+            Some(inf) => inf.parent,
+            None => {
+                unwind = match unwind.parent {
+                    Some(bcx) => bcx,
+                        // This is a return from a loop body block
+                        None => {
+                            Store(bcx, C_bool(!to_end), bcx.fcx.llretptr.get());
+                            cleanup_and_leave(bcx, None, Some(bcx.fcx.get_llreturn()));
+                            Unreachable(bcx);
+                            return bcx;
+                        }
+                };
+                unwind.scope
+            }
         }
-        unwind = match unwind.parent {
-          Some(bcx) => bcx,
-          // This is a return from a loop body block
-          None => {
-            Store(bcx, C_bool(!to_end), bcx.fcx.llretptr.get());
-            cleanup_and_leave(bcx, None, Some(bcx.fcx.llreturn));
-            Unreachable(bcx);
-            return bcx;
-          }
-        };
     }
     cleanup_and_Br(bcx, unwind, target.llbb);
     Unreachable(bcx);
     return bcx;
 }
 
-pub fn trans_break(bcx: block, label_opt: Option<ident>) -> block {
+pub fn trans_break(bcx: @mut Block, label_opt: Option<ident>) -> @mut Block {
     return trans_break_cont(bcx, label_opt, true);
 }
 
-pub fn trans_cont(bcx: block, label_opt: Option<ident>) -> block {
+pub fn trans_cont(bcx: @mut Block, label_opt: Option<ident>) -> @mut Block {
     return trans_break_cont(bcx, label_opt, false);
 }
 
-pub fn trans_ret(bcx: block, e: Option<@ast::expr>) -> block {
-    let _icx = bcx.insn_ctxt("trans_ret");
+pub fn trans_ret(bcx: @mut Block, e: Option<@ast::expr>) -> @mut Block {
+    let _icx = push_ctxt("trans_ret");
     let mut bcx = bcx;
-    let retptr = match copy bcx.fcx.loop_ret {
+    let dest = match bcx.fcx.loop_ret {
       Some((flagptr, retptr)) => {
         // This is a loop body return. Must set continue flag (our retptr)
         // to false, return flag to true, and then store the value in the
         // parent's retptr.
         Store(bcx, C_bool(true), flagptr);
         Store(bcx, C_bool(false), bcx.fcx.llretptr.get());
-        match e {
+        expr::SaveIn(match e {
           Some(x) => PointerCast(bcx, retptr,
-                                 T_ptr(type_of(bcx.ccx(), expr_ty(bcx, x)))),
+                                 type_of(bcx.ccx(), expr_ty(bcx, x)).ptr_to()),
           None => retptr
-        }
+        })
       }
-      None => bcx.fcx.llretptr.get()
+      None => match bcx.fcx.llretptr {
+        None => expr::Ignore,
+        Some(retptr) => expr::SaveIn(retptr),
+      }
     };
     match e {
       Some(x) => {
-        bcx = expr::trans_into(bcx, x, expr::SaveIn(retptr));
+        bcx = expr::trans_into(bcx, x, dest);
       }
       _ => ()
     }
-    cleanup_and_leave(bcx, None, Some(bcx.fcx.llreturn));
+    cleanup_and_leave(bcx, None, Some(bcx.fcx.get_llreturn()));
     Unreachable(bcx);
     return bcx;
 }
 
-pub fn trans_fail_expr(bcx: block,
+pub fn trans_fail_expr(bcx: @mut Block,
                        sp_opt: Option<span>,
                        fail_expr: Option<@ast::expr>)
-                    -> block {
-    let _icx = bcx.insn_ctxt("trans_fail_expr");
+                    -> @mut Block {
+    let _icx = push_ctxt("trans_fail_expr");
     let mut bcx = bcx;
     match fail_expr {
         Some(arg_expr) => {
@@ -352,20 +397,20 @@ pub fn trans_fail_expr(bcx: block,
     }
 }
 
-pub fn trans_fail(bcx: block,
+pub fn trans_fail(bcx: @mut Block,
                   sp_opt: Option<span>,
                   fail_str: @str)
-               -> block {
-    let _icx = bcx.insn_ctxt("trans_fail");
+               -> @mut Block {
+    let _icx = push_ctxt("trans_fail");
     let V_fail_str = C_cstr(bcx.ccx(), fail_str);
     return trans_fail_value(bcx, sp_opt, V_fail_str);
 }
 
-fn trans_fail_value(bcx: block,
+fn trans_fail_value(bcx: @mut Block,
                     sp_opt: Option<span>,
                     V_fail_str: ValueRef)
-                 -> block {
-    let _icx = bcx.insn_ctxt("trans_fail_value");
+                 -> @mut Block {
+    let _icx = push_ctxt("trans_fail_value");
     let ccx = bcx.ccx();
     let (V_filename, V_line) = match sp_opt {
       Some(sp) => {
@@ -378,22 +423,22 @@ fn trans_fail_value(bcx: block,
         (C_cstr(bcx.ccx(), @"<runtime>"), 0)
       }
     };
-    let V_str = PointerCast(bcx, V_fail_str, T_ptr(T_i8()));
-    let V_filename = PointerCast(bcx, V_filename, T_ptr(T_i8()));
+    let V_str = PointerCast(bcx, V_fail_str, Type::i8p());
+    let V_filename = PointerCast(bcx, V_filename, Type::i8p());
     let args = ~[V_str, V_filename, C_int(ccx, V_line)];
-    let bcx = callee::trans_lang_call(
-        bcx, bcx.tcx().lang_items.fail_fn(), args, expr::Ignore);
+    let did = langcall(bcx, sp_opt, "", FailFnLangItem);
+    let bcx = callee::trans_lang_call(bcx, did, args, Some(expr::Ignore)).bcx;
     Unreachable(bcx);
     return bcx;
 }
 
-pub fn trans_fail_bounds_check(bcx: block, sp: span,
-                               index: ValueRef, len: ValueRef) -> block {
-    let _icx = bcx.insn_ctxt("trans_fail_bounds_check");
+pub fn trans_fail_bounds_check(bcx: @mut Block, sp: span,
+                               index: ValueRef, len: ValueRef) -> @mut Block {
+    let _icx = push_ctxt("trans_fail_bounds_check");
     let (filename, line) = filename_and_line_num_from_span(bcx, sp);
     let args = ~[filename, line, index, len];
-    let bcx = callee::trans_lang_call(
-        bcx, bcx.tcx().lang_items.fail_bounds_check_fn(), args, expr::Ignore);
+    let did = langcall(bcx, Some(sp), "", FailBoundsCheckFnLangItem);
+    let bcx = callee::trans_lang_call(bcx, did, args, Some(expr::Ignore)).bcx;
     Unreachable(bcx);
     return bcx;
 }

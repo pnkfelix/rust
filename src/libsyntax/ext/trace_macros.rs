@@ -8,9 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::prelude::*;
-
-use core::vec;
 use ast;
 use codemap::span;
 use ext::base::ExtCtxt;
@@ -25,17 +22,11 @@ pub fn expand_trace_macros(cx: @ExtCtxt,
                         -> base::MacResult {
     let sess = cx.parse_sess();
     let cfg = cx.cfg();
-    let tt_rdr = new_tt_reader(
-        copy cx.parse_sess().span_diagnostic,
-        None,
-        vec::to_owned(tt)
-    );
+    let tt_rdr = new_tt_reader(cx.parse_sess().span_diagnostic,
+                               None,
+                               tt.to_owned());
     let rdr = tt_rdr as @mut reader;
-    let rust_parser = Parser(
-        sess,
-        copy cfg,
-        rdr.dup()
-    );
+    let rust_parser = Parser(sess, cfg.clone(), rdr.dup());
 
     if rust_parser.is_keyword(keywords::True) {
         cx.set_trace_macros(true);

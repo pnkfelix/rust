@@ -13,10 +13,11 @@
 #include <malloc.h>
 #endif
 
+#include "uv.h"
+
 #include "rust_globals.h"
 #include "rust_task.h"
 #include "rust_log.h"
-#include "uv.h"
 
 // extern fn pointers
 typedef void (*extern_async_op_cb)(uv_loop_t* loop, void* data,
@@ -281,16 +282,119 @@ rust_uv_tcp_bind6
 
 extern "C" int
 rust_uv_tcp_getpeername
-(uv_tcp_t* handle, sockaddr_in* name) {
+(uv_tcp_t* handle, sockaddr_storage* name) {
+    // sockaddr_storage is big enough to hold either
+    // sockaddr_in or sockaddr_in6
     int namelen = sizeof(sockaddr_in);
     return uv_tcp_getpeername(handle, (sockaddr*)name, &namelen);
 }
 
 extern "C" int
-rust_uv_tcp_getpeername6
-(uv_tcp_t* handle, sockaddr_in6* name) {
-    int namelen = sizeof(sockaddr_in6);
-    return uv_tcp_getpeername(handle, (sockaddr*)name, &namelen);
+rust_uv_tcp_getsockname
+(uv_tcp_t* handle, sockaddr_storage* name) {
+    // sockaddr_storage is big enough to hold either
+    // sockaddr_in or sockaddr_in6
+    int namelen = sizeof(sockaddr_storage);
+    return uv_tcp_getsockname(handle, (sockaddr*)name, &namelen);
+}
+
+extern "C" int
+rust_uv_tcp_nodelay
+(uv_tcp_t* handle, int enable) {
+    return uv_tcp_nodelay(handle, enable);
+}
+
+extern "C" int
+rust_uv_tcp_keepalive
+(uv_tcp_t* handle, int enable, unsigned int delay) {
+    return uv_tcp_keepalive(handle, enable, delay);
+}
+
+extern "C" int
+rust_uv_tcp_simultaneous_accepts
+(uv_tcp_t* handle, int enable) {
+    return uv_tcp_simultaneous_accepts(handle, enable);
+}
+
+extern "C" int
+rust_uv_udp_init(uv_loop_t* loop, uv_udp_t* handle) {
+    return uv_udp_init(loop, handle);
+}
+
+extern "C" int
+rust_uv_udp_bind(uv_udp_t* server, sockaddr_in* addr_ptr, unsigned flags) {
+    return uv_udp_bind(server, *addr_ptr, flags);
+}
+
+extern "C" int
+rust_uv_udp_bind6(uv_udp_t* server, sockaddr_in6* addr_ptr, unsigned flags) {
+    return uv_udp_bind6(server, *addr_ptr, flags);
+}
+
+extern "C" int
+rust_uv_udp_send(uv_udp_send_t* req, uv_udp_t* handle, uv_buf_t* buf_in,
+                 int buf_cnt, sockaddr_in* addr_ptr, uv_udp_send_cb cb) {
+    return uv_udp_send(req, handle, buf_in, buf_cnt, *addr_ptr, cb);
+}
+
+extern "C" int
+rust_uv_udp_send6(uv_udp_send_t* req, uv_udp_t* handle, uv_buf_t* buf_in,
+                  int buf_cnt, sockaddr_in6* addr_ptr, uv_udp_send_cb cb) {
+    return uv_udp_send6(req, handle, buf_in, buf_cnt, *addr_ptr, cb);
+}
+
+extern "C" int
+rust_uv_udp_recv_start(uv_udp_t* server, uv_alloc_cb on_alloc, uv_udp_recv_cb on_read) {
+    return uv_udp_recv_start(server, on_alloc, on_read);
+}
+
+extern "C" int
+rust_uv_udp_recv_stop(uv_udp_t* server) {
+    return uv_udp_recv_stop(server);
+}
+
+extern "C" uv_udp_t*
+rust_uv_get_udp_handle_from_send_req(uv_udp_send_t* send_req) {
+    return send_req->handle;
+}
+
+extern "C" int
+rust_uv_udp_getsockname
+(uv_udp_t* handle, sockaddr_storage* name) {
+    // sockaddr_storage is big enough to hold either
+    // sockaddr_in or sockaddr_in6
+    int namelen = sizeof(sockaddr_storage);
+    return uv_udp_getsockname(handle, (sockaddr*)name, &namelen);
+}
+
+extern "C" int
+rust_uv_udp_set_membership
+(uv_udp_t* handle, const char* m_addr, const char* i_addr, uv_membership membership) {
+    return uv_udp_set_membership(handle, m_addr, i_addr, membership);
+}
+
+extern "C" int
+rust_uv_udp_set_multicast_loop
+(uv_udp_t* handle, int on) {
+    return uv_udp_set_multicast_loop(handle, on);
+}
+
+extern "C" int
+rust_uv_udp_set_multicast_ttl
+(uv_udp_t* handle, int ttl) {
+    return uv_udp_set_multicast_ttl(handle, ttl);
+}
+
+extern "C" int
+rust_uv_udp_set_ttl
+(uv_udp_t* handle, int ttl) {
+    return uv_udp_set_ttl(handle, ttl);
+}
+
+extern "C" int
+rust_uv_udp_set_broadcast
+(uv_udp_t* handle, int on) {
+    return uv_udp_set_broadcast(handle, on);
 }
 
 extern "C" int
@@ -496,6 +600,17 @@ rust_uv_ip6_addrp(const char* ip, int port) {
   return addrp;
 }
 
+extern "C" struct sockaddr_storage *
+rust_uv_malloc_sockaddr_storage() {
+    struct sockaddr_storage *ss = (sockaddr_storage *)malloc(sizeof(struct sockaddr_storage));
+    return ss;
+}
+
+extern "C" void
+rust_uv_free_sockaddr_storage(struct sockaddr_storage *ss) {
+    free(ss);
+}
+
 extern "C" void
 rust_uv_free_ip4_addr(sockaddr_in *addrp) {
   free(addrp);
@@ -545,10 +660,22 @@ extern "C" void
 rust_uv_freeaddrinfo(addrinfo* res) {
     uv_freeaddrinfo(res);
 }
+
+extern "C" int
+rust_uv_is_ipv4_sockaddr(sockaddr* addr) {
+    return addr->sa_family == AF_INET;
+}
+
+extern "C" int
+rust_uv_is_ipv6_sockaddr(sockaddr* addr) {
+    return addr->sa_family == AF_INET6;
+}
+
 extern "C" bool
 rust_uv_is_ipv4_addrinfo(addrinfo* input) {
     return input->ai_family == AF_INET;
 }
+
 extern "C" bool
 rust_uv_is_ipv6_addrinfo(addrinfo* input) {
     return input->ai_family == AF_INET6;
