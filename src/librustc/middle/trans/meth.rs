@@ -163,7 +163,6 @@ pub fn trans_method_callee(bcx: @mut Block,
                     llfn: callee_fn.llfn,
                     llself: val,
                     temp_cleanup: temp_cleanups.head_opt().map(|&v| *v),
-                    self_ty: node_id_type(bcx, this.id),
                     self_mode: mentry.self_mode,
                 })
             }
@@ -190,8 +189,7 @@ pub fn trans_method_callee(bcx: @mut Block,
             trans_trait_callee(bcx,
                                callee_id,
                                off,
-                               this,
-                               mentry.explicit_self)
+                               this)
         }
     }
 }
@@ -339,7 +337,6 @@ pub fn trans_monomorphized_callee(bcx: @mut Block,
                   llfn: llfn_val,
                   llself: llself_val,
                   temp_cleanup: temp_cleanups.head_opt().map(|&v| *v),
-                  self_ty: node_id_type(bcx, base.id),
                   self_mode: mentry.self_mode,
               })
           }
@@ -404,18 +401,16 @@ pub fn combine_impl_and_methods_tps(bcx: @mut Block,
 pub fn trans_trait_callee(bcx: @mut Block,
                           callee_id: ast::NodeId,
                           n_method: uint,
-                          self_expr: @ast::expr,
-                          explicit_self: ast::explicit_self_)
+                          self_expr: @ast::expr)
                           -> Callee {
-    //!
-    //
-    // Create a method callee where the method is coming from a trait
-    // object (e.g., @Trait type).  In this case, we must pull the fn
-    // pointer out of the vtable that is packaged up with the
-    // @/~/&Trait object.  @/~/&Traits are represented as a pair, so
-    // we first evaluate the self expression (expected a by-ref
-    // result) and then extract the self data and vtable out of the
-    // pair.
+    /*!
+     * Create a method callee where the method is coming from a trait
+     * object (e.g., @Trait type).  In this case, we must pull the fn
+     * pointer out of the vtable that is packaged up with the object.
+     * Objects are represented as a pair, so we first evaluate the self
+     * expression and then extract the self data and vtable out of the
+     * pair.
+     */
 
     let _icx = push_ctxt("impl::trans_trait_callee");
     let mut bcx = bcx;
@@ -428,82 +423,55 @@ pub fn trans_trait_callee(bcx: @mut Block,
     trans_trait_callee_from_llval(bcx,
                                   callee_ty,
                                   n_method,
-                                  llpair,
-                                  explicit_self)
+                                  llpair)
 }
 
-pub fn trans_trait_callee_from_llval(mut bcx: @mut Block,
+pub fn trans_trait_callee_from_llval(bcx: @mut Block,
                                      callee_ty: ty::t,
                                      n_method: uint,
-                                     llpair: ValueRef,
-                                     explicit_self: ast::explicit_self_)
+                                     llpair: ValueRef)
                                   -> Callee {
-    //!
-    //
-    // Same as `trans_trait_callee()` above, except that it is given
-    // a by-ref pointer to the @Trait pair.
+    /*!
+     * Same as `trans_trait_callee()` above, except that it is given
+     * a by-ref pointer to the object pair.
+     */
 
     let _icx = push_ctxt("impl::trans_trait_callee");
     let ccx = bcx.ccx();
-
-    // Load the vtable from the @Trait pair
-    debug!("(translating trait callee) loading vtable from pair %s",
-           bcx.val_to_str(llpair));
-    let llvtable = Load(bcx,
-                      PointerCast(bcx,
-                                  GEPi(bcx, llpair,
-                                       [0u, abi::trt_field_vtable]),
-                                  Type::vtable().ptr_to().ptr_to()));
 
     // Load the box from the @Trait pair and GEP over the box header if
     // necessary:
     debug!("(translating trait callee) loading second index from pair");
     let llboxptr = GEPi(bcx, llpair, [0u, abi::trt_field_box]);
     let llbox = Load(bcx, llboxptr);
+    let llself = PointerCast(bcx, llbox, Type::opaque_box(ccx).ptr_to());
 
-    // Handle and enforce the method's `self` type.
-    match explicit_self {
-        ast::sty_region(*) | ast::sty_uniq(*) => {
-        }
-        ast::sty_box(*) => {
-            // Bump the reference count on the box.
-            bcx = glue::take_ty(bcx, llbox, callee_ty);
-        }
-        ast::sty_static => {
-            bcx.tcx().sess.bug("shouldn't see static method here");
-        }
-        ast::sty_value => {
-            bcx.tcx().sess.bug("methods with by-value self should not be \
-                               called on objects");
-        }
-    };
-
-    let llscratch = alloca(bcx, val_ty(llbox), "__trait_callee");
-    Store(bcx, llbox, llscratch);
-    let llself = PointerCast(bcx, llscratch, Type::opaque_box(ccx).ptr_to());
-    let scratch = scratch_datum(bcx, ty::mk_opaque_box(bcx.tcx()),
-                                "__trait_callee", false);
-    Store(bcx, llself, scratch.val);
-    scratch.add_clean(bcx);
+    // Arrange a temporary cleanup for the object in case something
+    // should go wrong before the method is actually *invoked*.
+    add_clean_temp_mem(bcx, llpair, callee_ty);
 
     // Load the function from the vtable and cast it to the expected type.
     debug!("(translating trait callee) loading method");
     let llcallee_ty = type_of_fn_from_ty(ccx, callee_ty);
-
-    // Plus one in order to skip past the type descriptor.
+    let llvtable = Load(bcx,
+                        PointerCast(bcx,
+                                    GEPi(bcx, llpair,
+                                         [0u, abi::trt_field_vtable]),
+                                    Type::vtable().ptr_to().ptr_to()));
     let mptr = Load(bcx, GEPi(bcx, llvtable, [0u, n_method + 1]));
-
     let mptr = PointerCast(bcx, mptr, llcallee_ty.ptr_to());
 
     return Callee {
         bcx: bcx,
         data: Method(MethodData {
             llfn: mptr,
-            llself: scratch.to_value_llval(bcx),
-            temp_cleanup: Some(scratch.val),
-            self_ty: scratch.ty,
+            llself: llself,
+            temp_cleanup: Some(llpair),
+
+                // We know that the func declaration is &self, ~self,
+                // or @self, and such functions are always by-copy
+                // (right now, at least).
             self_mode: ty::ByCopy,
-            /* XXX: Some(llbox) */
         })
     };
 }
