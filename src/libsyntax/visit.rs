@@ -89,25 +89,63 @@ pub trait Visitor<E> {
 }
 
 impl<E> Visitor<E> for @mut Visitor<E> {
-    fn visit_mod(&mut self, a:&_mod, b:span, c:NodeId, e:E) { (*self).visit_mod(a, b, c, e) }
-    fn visit_view_item(&mut self, a:&view_item, e:E) { (*self).visit_view_item(a, e) }
-    fn visit_foreign_item(&mut self, a:@foreign_item, e:E) { (*self).visit_foreign_item(a, e) }
-    fn visit_item(&mut self, a:@item, e:E) { (*self).visit_item(a, e) }
-    fn visit_local(&mut self, a:@Local, e:E) { (*self).visit_local(a, e) }
-    fn visit_block(&mut self, a:&Block, e:E) { (*self).visit_block(a, e) }
-    fn visit_stmt(&mut self, a:@stmt, e:E) { (*self).visit_stmt(a, e) }
-    fn visit_arm(&mut self, a:&arm, e:E) { (*self).visit_arm(a, e) }
-    fn visit_pat(&mut self, a:@pat, e:E) { (*self).visit_pat(a, e) }
-    fn visit_decl(&mut self, a:@decl, e:E) { (*self).visit_decl(a, e) }
-    fn visit_expr(&mut self, a:@expr, e:E) { (*self).visit_expr(a, e) }
-    fn visit_expr_post(&mut self, a:@expr, e:E) { (*self).visit_expr_post(a, e) }
-    fn visit_ty(&mut self, a:&Ty, e:E) { (*self).visit_ty(a, e) }
-    fn visit_generics(&mut self, a:&Generics, e:E) { (*self).visit_generics(a, e) }
-    fn visit_fn(&mut self, a:&fn_kind, b:&fn_decl, c:&Block, d:span, f:NodeId, e:E) { (*self).visit_fn(a, b, c, d, f, e) }
-    fn visit_ty_method(&mut self, a:&TypeMethod, e:E) { (*self).visit_ty_method(a, e) }
-    fn visit_trait_method(&mut self, a:&trait_method, e:E) { (*self).visit_trait_method(a, e) }
-    fn visit_struct_def(&mut self, a:@struct_def, b:ident, c:&Generics, d:NodeId, e:E) { (*self).visit_struct_def(a, b, c, d, e) }
-    fn visit_struct_field(&mut self, a:@struct_field, e:E) { (*self).visit_struct_field(a, e) }
+    fn visit_mod(&mut self, a:&_mod, b:span, c:NodeId, e:E) {
+        (*self).visit_mod(a, b, c, e)
+    }
+    fn visit_view_item(&mut self, a:&view_item, e:E) {
+        (*self).visit_view_item(a, e)
+    }
+    fn visit_foreign_item(&mut self, a:@foreign_item, e:E) {
+        (*self).visit_foreign_item(a, e)
+    }
+    fn visit_item(&mut self, a:@item, e:E) {
+        (*self).visit_item(a, e)
+    }
+    fn visit_local(&mut self, a:@Local, e:E) {
+        (*self).visit_local(a, e)
+    }
+    fn visit_block(&mut self, a:&Block, e:E) {
+        (*self).visit_block(a, e)
+    }
+    fn visit_stmt(&mut self, a:@stmt, e:E) {
+        (*self).visit_stmt(a, e)
+    }
+    fn visit_arm(&mut self, a:&arm, e:E) {
+        (*self).visit_arm(a, e)
+    }
+    fn visit_pat(&mut self, a:@pat, e:E) {
+        (*self).visit_pat(a, e)
+    }
+    fn visit_decl(&mut self, a:@decl, e:E) {
+        (*self).visit_decl(a, e)
+    }
+    fn visit_expr(&mut self, a:@expr, e:E) {
+        (*self).visit_expr(a, e)
+    }
+    fn visit_expr_post(&mut self, a:@expr, e:E) {
+        (*self).visit_expr_post(a, e)
+    }
+    fn visit_ty(&mut self, a:&Ty, e:E) {
+        (*self).visit_ty(a, e)
+    }
+    fn visit_generics(&mut self, a:&Generics, e:E) {
+        (*self).visit_generics(a, e)
+    }
+    fn visit_fn(&mut self, a:&fn_kind, b:&fn_decl, c:&Block, d:span, f:NodeId, e:E) {
+        (*self).visit_fn(a, b, c, d, f, e)
+    }
+    fn visit_ty_method(&mut self, a:&TypeMethod, e:E) {
+        (*self).visit_ty_method(a, e)
+    }
+    fn visit_trait_method(&mut self, a:&trait_method, e:E) {
+        (*self).visit_trait_method(a, e)
+    }
+    fn visit_struct_def(&mut self, a:@struct_def, b:ident, c:&Generics, d:NodeId, e:E) {
+        (*self).visit_struct_def(a, b, c, d, e)
+    }
+    fn visit_struct_field(&mut self, a:@struct_field, e:E) {
+        (*self).visit_struct_field(a, e)
+    }
 }
 
 pub fn walk_crate<E:Clone, V:Visitor<E>>(visitor: &mut V, crate: &Crate, env: E) {
