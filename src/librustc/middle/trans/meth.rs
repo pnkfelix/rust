@@ -470,10 +470,10 @@ pub fn trans_trait_callee_from_llval(mut bcx: @mut Block,
             bcx = glue::take_ty(bcx, llbox, callee_ty);
         }
         ast::sty_static => {
-            bcx.tcx().sess.bug(~"shouldn't see static method here");
+            bcx.tcx().sess.bug("shouldn't see static method here");
         }
         ast::sty_value => {
-            bcx.tcx().sess.bug(~"methods with by-value self should not be \
+            bcx.tcx().sess.bug("methods with by-value self should not be \
                                called on objects");
         }
     };

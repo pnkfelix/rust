@@ -998,7 +998,7 @@ impl<'self> LookupContext<'self> {
             }
             ast::sty_region(*) | ast::sty_box(*) | ast::sty_uniq(*) => {
                 let transformed_self_ty =
-                    candidate.method_ty.transformed_self_ty.get();
+                    candidate.method_ty.transformed_self_ty.clone().unwrap();
                 match ty::get(transformed_self_ty).sty {
                     ty::ty_rptr(r, mt) => { // must be sty_region
                         ty::mk_trait(self.tcx(), trait_def_id,
