@@ -386,10 +386,10 @@ impl Parser {
         } else if inedible.contains(self.token) {
             // leave it in the input
         } else {
+            let expected = vec::append(edible.to_owned(), inedible);
             self.fatal(
-                fmt!("expected one of `%s` or `%s` but found `%s`",
-                     tokens_to_str(self, edible),
-                     tokens_to_str(self, inedible),
+                fmt!("expected one of `%s` but found `%s`",
+                     tokens_to_str(self, expected),
                      self.this_token_to_str())
             )
         }
@@ -399,8 +399,8 @@ impl Parser {
     // If input has unexpected `{ }`, signal error and then recover.
     // Does not consume any expected token.
     pub fn check_for_erroneous_unit_struct_expecting(&self, expected: &[token::Token]) {
-        if !expected.contains(&token::LBRACE) &&
-            *self.token == token::LBRACE &&
+        if *self.token == token::LBRACE &&
+            expected.iter().all(|t| *t != token::LBRACE) &&
             self.look_ahead(1, |t| *t == token::RBRACE) {
 
             self.span_err(*self.last_span,
