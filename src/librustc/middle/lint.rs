@@ -492,7 +492,7 @@ impl Context {
                             oldvisit::visit_crate(c, (self, stopping))
                         }
                         NewVisitor(new_visitor) => {
-                            visit::visit_crate(new_visitor, c, ())
+                            visit::walk_crate(new_visitor, c, ())
                         }
                     }
                 }
