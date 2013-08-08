@@ -62,7 +62,6 @@ use ast_util::{as_prec, operator_prec};
 use ast_util;
 use codemap::{span, BytePos, spanned, mk_sp};
 use codemap;
-use print::pprust;
 use parse::attr::parser_attr;
 use parse::classify;
 use parse::common::{SeqSep, seq_sep_none};
@@ -375,6 +374,9 @@ impl Parser {
         }
     }
 
+    // Expect next token to be edible or inedible token.  If edible,
+    // then consume it; if inedible, then return without consuming
+    // anything.  Signal a fatal error if next token is unexpected.
     pub fn expect_one_of(&self, edible: &[token::Token], inedible: &[token::Token]) {
         fn tokens_to_str(p:&Parser, tokens: &[token::Token]) -> ~str {
             tokens.iter().fold(~"", |b,a| b + p.token_to_str(a))
@@ -393,8 +395,11 @@ impl Parser {
         }
     }
 
-    pub fn check_for_erroneous_unit_struct_expecting(&self, t: &[token::Token]) {
-        if !t.contains(&token::LBRACE) &&
+    // Just parsed an expression and next token should be in `expected`.
+    // If input has unexpected `{ }`, signal error and then recover.
+    // Does not consume any expected token.
+    pub fn check_for_erroneous_unit_struct_expecting(&self, expected: &[token::Token]) {
+        if !expected.contains(&token::LBRACE) &&
             *self.token == token::LBRACE &&
             self.look_ahead(1, |t| *t == token::RBRACE) {
 
@@ -405,16 +410,20 @@ impl Parser {
         }
     }
 
-    pub fn close_expr(&self, e: @expr, edible: &[token::Token], inedible: &[token::Token]) {
+    // Commit to parsing a complete expression `e`, which expects to be
+    // followed by some token from the set edible + inedible.  Check
+    // for recoverable input errors, discarding erroneous characters.
+    pub fn commit_expr(&self, e: @expr, edible: &[token::Token], inedible: &[token::Token]) {
+        let _e = e; // unused, but future checks might want to inspect `e`.
         self.check_for_erroneous_unit_struct_expecting(vec::append(edible.to_owned(), inedible));
         self.expect_one_of(edible, inedible)
     }
 
-    pub fn close_expr_expecting(&self, e: @expr, edible: token::Token) {
-        self.close_expr(e, &[edible], &[])
+    pub fn commit_expr_expecting(&self, e: @expr, edible: token::Token) {
+        self.commit_expr(e, &[edible], &[])
     }
 
-    pub fn close_stmt_expecting(&self, t: token::Token) {
+    pub fn commit_stmt_expecting(&self, t: token::Token) {
         self.check_for_erroneous_unit_struct_expecting(&[t.clone()]);
         self.expect(&t)
     }
@@ -1638,19 +1647,19 @@ impl Parser {
                 return self.mk_expr(lo, hi, expr_lit(lit));
             }
             let mut es = ~[self.parse_expr()];
-            self.close_expr(*es.last(), &[], &[token::COMMA, token::RPAREN]);
+            self.commit_expr(*es.last(), &[], &[token::COMMA, token::RPAREN]);
             while *self.token == token::COMMA {
                 self.bump();
                 if *self.token != token::RPAREN {
                     es.push(self.parse_expr());
-                    self.close_expr(*es.last(), &[], &[token::COMMA, token::RPAREN]);
+                    self.commit_expr(*es.last(), &[], &[token::COMMA, token::RPAREN]);
                 }
                 else {
                     trailing_comma = true;
                 }
             }
             hi = self.span.hi;
-            self.close_expr_expecting(*es.last(), token::RPAREN);
+            self.commit_expr_expecting(*es.last(), token::RPAREN);
 
             return if es.len() == 1 && !trailing_comma {
                 self.mk_expr(lo, self.span.hi, expr_paren(es[0]))
@@ -1790,7 +1799,7 @@ impl Parser {
                             break;
                         }
 
-                        self.close_expr(fields.last().expr, &[token::COMMA], &[token::RBRACE]);
+                        self.commit_expr(fields.last().expr, &[token::COMMA], &[token::RBRACE]);
 
                         if self.eat(&token::DOTDOT) {
                             base = Some(self.parse_expr());
@@ -1805,7 +1814,7 @@ impl Parser {
                     }
 
                     hi = pth.span.hi;
-                    self.close_expr_expecting(fields.last().expr, token::RBRACE);
+                    self.commit_expr_expecting(fields.last().expr, token::RBRACE);
                     ex = expr_struct(pth, fields, base);
                     return self.mk_expr(lo, hi, ex);
                 }
@@ -1899,7 +1908,7 @@ impl Parser {
                 self.bump();
                 let ix = self.parse_expr();
                 hi = ix.span.hi;
-                self.close_expr_expecting(ix, token::RBRACKET);
+                self.commit_expr_expecting(ix, token::RBRACKET);
                 e = self.mk_expr(lo, hi, self.mk_index(e, ix));
               }
 
@@ -2508,7 +2517,7 @@ impl Parser {
     fn parse_match_expr(&self) -> @expr {
         let lo = self.last_span.lo;
         let discriminant = self.parse_expr();
-        self.close_expr_expecting(discriminant, token::LBRACE);
+        self.commit_expr_expecting(discriminant, token::LBRACE);
         let mut arms: ~[arm] = ~[];
         while *self.token != token::RBRACE {
             let pats = self.parse_pats();
@@ -2524,7 +2533,7 @@ impl Parser {
                 && *self.token != token::RBRACE;
 
             if require_comma {
-                self.close_expr(expr, &[token::COMMA], &[token::RBRACE]);
+                self.commit_expr(expr, &[token::COMMA], &[token::RBRACE]);
             } else {
                 self.eat(&token::COMMA);
             }
@@ -3290,7 +3299,7 @@ impl Parser {
                             stmts.push(stmt);
 
                             if classify::stmt_ends_with_semi(stmt) {
-                                self.close_stmt_expecting(token::SEMI);
+                                self.commit_stmt_expecting(token::SEMI);
                             }
                         }
                     }
@@ -3985,7 +3994,7 @@ impl Parser {
         let ty = self.parse_ty(false);
         self.expect(&token::EQ);
         let e = self.parse_expr();
-        self.close_expr_expecting(e, token::SEMI);
+        self.commit_expr_expecting(e, token::SEMI);
         (id, item_static(ty, m, e), None)
     }
 
