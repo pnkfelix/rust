@@ -29,7 +29,7 @@ use syntax::ast;
 use syntax::ast_util;
 use syntax::codemap::span;
 use syntax::print::pprust::expr_to_str;
-use syntax::visit;
+use syntax::oldvisit;
 
 // vtable resolution looks for places where trait bounds are
 // substituted in and figures out which vtable is used. There is some
@@ -131,7 +131,7 @@ fn lookup_vtables_for_param(vcx: &VtableContext,
     // ty is the value supplied for the type parameter A...
     let mut param_result = ~[];
 
-    for ty::each_bound_trait_and_supertraits(
+    do ty::each_bound_trait_and_supertraits(
         tcx, type_param_bounds.trait_bounds) |trait_ref|
     {
         // ...and here trait_ref is each bound that was declared on A,
@@ -158,7 +158,8 @@ fn lookup_vtables_for_param(vcx: &VtableContext,
                          vcx.infcx.ty_to_str(ty)));
             }
         }
-    }
+        true
+    };
 
     debug!("lookup_vtables_for_param result(\
             location_info=%?, \
@@ -286,7 +287,8 @@ fn lookup_vtable_from_bounds(vcx: &VtableContext,
     let tcx = vcx.tcx();
 
     let mut n_bound = 0;
-    for ty::each_bound_trait_and_supertraits(tcx, bounds) |bound_trait_ref| {
+    let mut ret = None;
+    do ty::each_bound_trait_and_supertraits(tcx, bounds) |bound_trait_ref| {
         debug!("checking bounds trait %s",
                bound_trait_ref.repr(vcx.tcx()));
 
@@ -298,13 +300,14 @@ fn lookup_vtable_from_bounds(vcx: &VtableContext,
             let vtable = vtable_param(param, n_bound);
             debug!("found param vtable: %?",
                    vtable);
-            return Some(vtable);
+            ret = Some(vtable);
+            false
+        } else {
+            n_bound += 1;
+            true
         }
-
-        n_bound += 1;
-    }
-
-    return None;
+    };
+    ret
 }
 
 fn search_for_vtable(vcx: &VtableContext,
@@ -324,7 +327,7 @@ fn search_for_vtable(vcx: &VtableContext,
     let impls = tcx.trait_impls.find(&trait_ref.def_id)
         .map_default(@mut ~[], |x| **x);
     // impls is the list of all impls in scope for trait_ref.
-    foreach im in impls.iter() {
+    for im in impls.iter() {
         // im is one specific impl of trait_ref.
 
         // First, ensure we haven't processed this impl yet.
@@ -552,7 +555,7 @@ pub fn early_resolve_expr(ex: @ast::expr,
     let cx = fcx.ccx;
     match ex.node {
       ast::expr_path(*) => {
-        for fcx.opt_node_ty_substs(ex.id) |substs| {
+        do fcx.opt_node_ty_substs(ex.id) |substs| {
             debug!("vtable resolution on parameter bounds for expr %s",
                    ex.repr(fcx.tcx()));
             let def = cx.tcx.def_map.get_copy(&ex.id);
@@ -571,7 +574,8 @@ pub fn early_resolve_expr(ex: @ast::expr,
                     insert_vtables(fcx, ex.id, vtbls);
                 }
             }
-        }
+            true
+        };
       }
 
       ast::expr_paren(e) => {
@@ -721,9 +725,9 @@ pub fn early_resolve_expr(ex: @ast::expr,
 
 fn resolve_expr(ex: @ast::expr,
                 (fcx, v): (@mut FnCtxt,
-                           visit::vt<@mut FnCtxt>)) {
+                           oldvisit::vt<@mut FnCtxt>)) {
     early_resolve_expr(ex, fcx, false);
-    visit::visit_expr(ex, (fcx, v));
+    oldvisit::visit_expr(ex, (fcx, v));
 }
 
 pub fn resolve_impl(ccx: @mut CrateCtxt, impl_item: @ast::item) {
@@ -773,9 +777,9 @@ pub fn resolve_impl(ccx: @mut CrateCtxt, impl_item: @ast::item) {
 // Detect points where a trait-bounded type parameter is
 // instantiated, resolve the impls for the parameters.
 pub fn resolve_in_block(fcx: @mut FnCtxt, bl: &ast::Block) {
-    visit::visit_block(bl, (fcx, visit::mk_vt(@visit::Visitor {
+    oldvisit::visit_block(bl, (fcx, oldvisit::mk_vt(@oldvisit::Visitor {
         visit_expr: resolve_expr,
         visit_item: |_,_| {},
-        .. *visit::default_visitor()
+        .. *oldvisit::default_visitor()
     })));
 }

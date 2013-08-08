@@ -75,8 +75,8 @@ pub fn monomorphic_fn(ccx: @mut CrateContext,
         self_vtables: self_vtables
     };
 
-    foreach s in real_substs.tps.iter() { assert!(!ty::type_has_params(*s)); }
-    foreach s in psubsts.tys.iter() { assert!(!ty::type_has_params(*s)); }
+    for s in real_substs.tps.iter() { assert!(!ty::type_has_params(*s)); }
+    for s in psubsts.tys.iter() { assert!(!ty::type_has_params(*s)); }
     let param_uses = type_use::type_uses_for(ccx, fn_id, psubsts.tys.len());
 
 
@@ -180,7 +180,7 @@ pub fn monomorphic_fn(ccx: @mut CrateContext,
             let idx = psubsts.tys.len() - num_method_ty_params;
             let substs =
                 (psubsts.tys.slice(0, idx) +
-                 &[psubsts.self_ty.get()] +
+                 &[psubsts.self_ty.unwrap()] +
                  psubsts.tys.tailn(idx));
             debug!("static default: changed substitution to %s",
                    substs.repr(ccx.tcx));
@@ -245,7 +245,7 @@ pub fn monomorphic_fn(ccx: @mut CrateContext,
       }
       ast_map::node_variant(ref v, enum_item, _) => {
         let tvs = ty::enum_variants(ccx.tcx, local_def(enum_item.id));
-        let this_tv = *tvs.iter().find_(|tv| { tv.id.node == fn_id.node}).get();
+        let this_tv = *tvs.iter().find_(|tv| { tv.id.node == fn_id.node}).unwrap();
         let d = mk_lldecl();
         set_inline_hint(d);
         match v.node.kind {

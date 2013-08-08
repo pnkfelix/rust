@@ -69,13 +69,24 @@ fn get_fn_sig(srv: astsrv::Srv, fn_id: doc::AstId) -> Option<~str> {
             ast_map::node_item(@ast::item {
                 ident: ident,
                 node: ast::item_fn(ref decl, purity, _, ref tys, _), _
-            }, _) |
+            }, _) => {
+                Some(pprust::fun_to_str(decl,
+                                        purity,
+                                        ident,
+                                        None,
+                                        tys,
+                                        token::get_ident_interner()))
+            }
             ast_map::node_foreign_item(@ast::foreign_item {
                 ident: ident,
-                node: ast::foreign_item_fn(ref decl, purity, ref tys), _
+                node: ast::foreign_item_fn(ref decl, ref tys), _
             }, _, _, _) => {
-                Some(pprust::fun_to_str(decl, purity, ident, None, tys,
-                                       token::get_ident_interner()))
+                Some(pprust::fun_to_str(decl,
+                                        ast::impure_fn,
+                                        ident,
+                                        None,
+                                        tys,
+                                        token::get_ident_interner()))
             }
             _ => fail!("get_fn_sig: fn_id not bound to a fn item")
         }
@@ -124,7 +135,7 @@ fn fold_enum(
                             let ast_variant =
                                 (*do enum_definition.variants.iter().find_ |v| {
                                 to_str(v.node.name) == variant.name
-                            }.get()).clone();
+                            }.unwrap()).clone();
 
                             pprust::variant_to_str(
                                 &ast_variant, extract::interner())
@@ -432,7 +443,7 @@ mod test {
     #[test]
     fn should_add_struct_defs() {
         let doc = mk_doc(~"struct S { field: () }");
-        assert!(doc.cratemod().structs()[0].sig.get().contains(
+        assert!(doc.cratemod().structs()[0].sig.unwrap().contains(
             "struct S {"));
     }
 
@@ -440,6 +451,6 @@ mod test {
     fn should_not_serialize_struct_attrs() {
         // All we care about are the fields
         let doc = mk_doc(~"#[wut] struct S { field: () }");
-        assert!(!doc.cratemod().structs()[0].sig.get().contains("wut"));
+        assert!(!doc.cratemod().structs()[0].sig.unwrap().contains("wut"));
     }
 }

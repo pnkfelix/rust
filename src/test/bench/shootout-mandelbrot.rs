@@ -9,7 +9,7 @@ static LIMIT: f64 = 2.0;
 #[fixed_stack_segment]
 fn main() {
     unsafe {
-        let w: i32 = FromStr::from_str(os::args()[1]).get();
+        let w: i32 = FromStr::from_str(os::args()[1]).unwrap();
         let h = w;
         let mut byte_acc: i8 = 0;
         let mut bit_num: i32 = 0;
@@ -19,9 +19,9 @@ fn main() {
         let mode = "w";
         let stdout = fdopen(STDOUT_FILENO as c_int, transmute(&mode[0]));
 
-        foreach y in range(0i32, h) {
+        for y in range(0i32, h) {
             let y = y as f64;
-            foreach x in range(0i32, w) {
+            for x in range(0i32, w) {
                 let mut Zr = 0f64;
                 let mut Zi = 0f64;
                 let mut Tr = 0f64;
@@ -29,7 +29,7 @@ fn main() {
                 let Cr = 2.0 * (x as f64) / (w as f64) - 1.5;
                 let Ci = 2.0 * (y as f64) / (h as f64) - 1.0;
 
-                foreach _ in range(0i32, ITER as i32) {
+                for _ in range(0i32, ITER as i32) {
                     if Tr + Ti > LIMIT * LIMIT {
                         break;
                     }

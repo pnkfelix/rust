@@ -14,19 +14,13 @@ Message passing
 
 #[allow(missing_doc)];
 
-use cast::transmute;
 use either::{Either, Left, Right};
 use kinds::Send;
 use option::{Option, Some};
 use unstable::sync::Exclusive;
+pub use rt::comm::SendDeferred;
 use rtcomm = rt::comm;
 use rt;
-
-use pipes::{wait_many, PacketHeader};
-
-// FIXME #5160: Making this public exposes some plumbing from
-// pipes. Needs some refactoring
-pub use pipes::Selectable;
 
 /// A trait for things that can send multiple messages.
 pub trait GenericChan<T> {
@@ -105,6 +99,21 @@ impl<T: Send> GenericSmartChan<T> for Chan<T> {
     }
 }
 
+impl<T: Send> SendDeferred<T> for Chan<T> {
+    fn send_deferred(&self, x: T) {
+        match self.inner {
+            Left(ref chan) => chan.send(x),
+            Right(ref chan) => chan.send_deferred(x)
+        }
+    }
+    fn try_send_deferred(&self, x: T) -> bool {
+        match self.inner {
+            Left(ref chan) => chan.try_send(x),
+            Right(ref chan) => chan.try_send_deferred(x)
+        }
+    }
+}
+
 impl<T: Send> GenericPort<T> for Port<T> {
     fn recv(&self) -> T {
         match self.inner {
@@ -126,15 +135,6 @@ impl<T: Send> Peekable<T> for Port<T> {
         match self.inner {
             Left(ref port) => port.peek(),
             Right(ref port) => port.peek()
-        }
-    }
-}
-
-impl<T: Send> Selectable for Port<T> {
-    fn header(&mut self) -> *mut PacketHeader {
-        match self.inner {
-            Left(ref mut port) => port.header(),
-            Right(_) => fail!("can't select on newsched ports")
         }
     }
 }
@@ -250,6 +250,20 @@ impl<T: Send> ChanOne<T> {
             Right(p) => p.try_send(data)
         }
     }
+    pub fn send_deferred(self, data: T) {
+        let ChanOne { inner } = self;
+        match inner {
+            Left(p) => p.send(data),
+            Right(p) => p.send_deferred(data)
+        }
+    }
+    pub fn try_send_deferred(self, data: T) -> bool {
+        let ChanOne { inner } = self;
+        match inner {
+            Left(p) => p.try_send(data),
+            Right(p) => p.try_send_deferred(data)
+        }
+    }
 }
 
 pub fn recv_one<T: Send>(port: PortOne<T>) -> T {
@@ -288,8 +302,8 @@ mod pipesy {
 
     use kinds::Send;
     use option::{Option, Some, None};
-    use pipes::{recv, try_recv, peek, PacketHeader};
-    use super::{GenericChan, GenericSmartChan, GenericPort, Peekable, Selectable};
+    use pipes::{recv, try_recv, peek};
+    use super::{GenericChan, GenericSmartChan, GenericPort, Peekable};
     use cast::transmute_mut;
 
     /*proto! oneshot (
@@ -621,102 +635,12 @@ mod pipesy {
         }
     }
 
-    impl<T: Send> Selectable for Port<T> {
-        fn header(&mut self) -> *mut PacketHeader {
-            match self.endp {
-                Some(ref mut endp) => endp.header(),
-                None => fail!("peeking empty stream")
-            }
-    }
-}
-
-}
-
-/// Returns the index of an endpoint that is ready to receive.
-pub fn selecti<T: Selectable>(endpoints: &mut [T]) -> uint {
-    wait_many(endpoints)
-}
-
-/// Returns 0 or 1 depending on which endpoint is ready to receive
-pub fn select2i<A:Selectable, B:Selectable>(a: &mut A, b: &mut B)
-                                            -> Either<(), ()> {
-    let mut endpoints = [ a.header(), b.header() ];
-    match wait_many(endpoints) {
-        0 => Left(()),
-        1 => Right(()),
-        _ => fail!("wait returned unexpected index"),
-    }
-}
-
-/// Receive a message from one of two endpoints.
-pub trait Select2<T: Send, U: Send> {
-    /// Receive a message or return `None` if a connection closes.
-    fn try_select(&mut self) -> Either<Option<T>, Option<U>>;
-    /// Receive a message or fail if a connection closes.
-    fn select(&mut self) -> Either<T, U>;
-}
-
-impl<T:Send,
-     U:Send,
-     Left:Selectable + GenericPort<T>,
-     Right:Selectable + GenericPort<U>>
-     Select2<T, U>
-     for (Left, Right) {
-    fn select(&mut self) -> Either<T, U> {
-        // XXX: Bad borrow check workaround.
-        unsafe {
-            let this: &(Left, Right) = transmute(self);
-            match *this {
-                (ref lp, ref rp) => {
-                    let lp: &mut Left = transmute(lp);
-                    let rp: &mut Right = transmute(rp);
-                    match select2i(lp, rp) {
-                        Left(()) => Left(lp.recv()),
-                        Right(()) => Right(rp.recv()),
-                    }
-                }
-            }
-        }
-    }
-
-    fn try_select(&mut self) -> Either<Option<T>, Option<U>> {
-        // XXX: Bad borrow check workaround.
-        unsafe {
-            let this: &(Left, Right) = transmute(self);
-            match *this {
-                (ref lp, ref rp) => {
-                    let lp: &mut Left = transmute(lp);
-                    let rp: &mut Right = transmute(rp);
-                    match select2i(lp, rp) {
-                        Left(()) => Left (lp.try_recv()),
-                        Right(()) => Right(rp.try_recv()),
-                    }
-                }
-            }
-        }
-    }
 }
 
 #[cfg(test)]
 mod test {
     use either::Right;
     use super::{Chan, Port, oneshot, stream};
-
-    #[test]
-    fn test_select2() {
-        let (p1, c1) = stream();
-        let (p2, c2) = stream();
-
-        c1.send(~"abc");
-
-        let mut tuple = (p1, p2);
-        match tuple.select() {
-            Right(_) => fail!(),
-            _ => (),
-        }
-
-        c2.send(123);
-    }
 
     #[test]
     fn test_oneshot() {

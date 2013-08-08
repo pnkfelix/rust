@@ -67,6 +67,8 @@ pub mod dlist;
 pub mod treemap;
 
 // Crypto
+#[path="crypto/cryptoutil.rs"]
+mod cryptoutil;
 #[path="crypto/digest.rs"]
 pub mod digest;
 #[path="crypto/sha1.rs"]
@@ -89,6 +91,7 @@ pub mod par;
 pub mod base64;
 pub mod rl;
 pub mod workcache;
+pub mod enum_set;
 #[path="num/bigint.rs"]
 pub mod bigint;
 #[path="num/rational.rs"]
@@ -99,6 +102,7 @@ pub mod stats;
 pub mod semver;
 pub mod fileinput;
 pub mod flate;
+pub mod hex;
 
 #[cfg(unicode)]
 mod unicode;

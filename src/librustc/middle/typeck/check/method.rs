@@ -327,12 +327,12 @@ impl<'self> LookupContext<'self> {
         // candidates.
         let trait_map: &mut resolve::TraitMap = &mut self.fcx.ccx.trait_map;
         let opt_applicable_traits = trait_map.find(&self.expr.id);
-        foreach applicable_traits in opt_applicable_traits.iter() {
-            foreach trait_did in applicable_traits.iter() {
+        for applicable_traits in opt_applicable_traits.iter() {
+            for trait_did in applicable_traits.iter() {
                 // Look for explicit implementations.
                 let opt_impl_infos = self.tcx().trait_impls.find(trait_did);
-                foreach impl_infos in opt_impl_infos.iter() {
-                    foreach impl_info in impl_infos.iter() {
+                for impl_infos in opt_impl_infos.iter() {
+                    for impl_info in impl_infos.iter() {
                         self.push_candidates_from_impl(
                             self.extension_candidates, *impl_info);
 
@@ -426,51 +426,49 @@ impl<'self> LookupContext<'self> {
         let tcx = self.tcx();
         let mut next_bound_idx = 0; // count only trait bounds
 
-        for ty::each_bound_trait_and_supertraits(tcx, bounds)
-            |bound_trait_ref|
-        {
+        do ty::each_bound_trait_and_supertraits(tcx, bounds) |bound_trait_ref| {
             let this_bound_idx = next_bound_idx;
             next_bound_idx += 1;
 
             let trait_methods = ty::trait_methods(tcx, bound_trait_ref.def_id);
-            let pos = {
-                match trait_methods.iter().position(|m| {
-                    m.explicit_self != ast::sty_static &&
-                        m.ident == self.m_name })
-                {
-                    Some(pos) => pos,
-                    None => {
-                        debug!("trait doesn't contain method: %?",
-                               bound_trait_ref.def_id);
-                        loop; // check next trait or bound
-                    }
+            match trait_methods.iter().position(|m| {
+                m.explicit_self != ast::sty_static &&
+                m.ident == self.m_name })
+            {
+                Some(pos) => {
+                    let method = trait_methods[pos];
+
+                    let cand = Candidate {
+                        rcvr_match_condition: RcvrMatchesIfSubtype(self_ty),
+                        rcvr_substs: bound_trait_ref.substs.clone(),
+                        method_ty: method,
+                        origin: method_param(
+                                             method_param {
+                                trait_id: bound_trait_ref.def_id,
+                                method_num: pos,
+                                param_num: param,
+                                bound_num: this_bound_idx,
+                            })
+                    };
+
+                    debug!("pushing inherent candidate for param: %?", cand);
+                    self.inherent_candidates.push(cand);
                 }
-            };
-            let method = trait_methods[pos];
-
-            let cand = Candidate {
-                rcvr_match_condition: RcvrMatchesIfSubtype(self_ty),
-                rcvr_substs: bound_trait_ref.substs.clone(),
-                method_ty: method,
-                origin: method_param(
-                    method_param {
-                        trait_id: bound_trait_ref.def_id,
-                        method_num: pos,
-                        param_num: param,
-                        bound_num: this_bound_idx,
-                    })
-            };
-
-            debug!("pushing inherent candidate for param: %?", cand);
-            self.inherent_candidates.push(cand);
-        }
+                None => {
+                    debug!("trait doesn't contain method: %?",
+                    bound_trait_ref.def_id);
+                    // check next trait or bound
+                }
+            }
+            true
+        };
     }
 
 
     pub fn push_inherent_impl_candidates_for_type(&self, did: def_id) {
         let opt_impl_infos = self.tcx().inherent_impls.find(&did);
-        foreach impl_infos in opt_impl_infos.iter() {
-            foreach impl_info in impl_infos.iter() {
+        for impl_infos in opt_impl_infos.iter() {
+            for impl_info in impl_infos.iter() {
                 self.push_candidates_from_impl(
                     self.inherent_candidates, *impl_info);
             }
@@ -729,7 +727,7 @@ impl<'self> LookupContext<'self> {
         let region =
             self.infcx().next_region_var(
                 infer::Autoref(self.expr.span));
-        foreach mutbl in mutbls.iter() {
+        for mutbl in mutbls.iter() {
             let autoref_ty = mk_autoref_ty(*mutbl, region);
             match self.search_for_method(autoref_ty) {
                 None => {}
@@ -793,7 +791,7 @@ impl<'self> LookupContext<'self> {
             self.tcx().sess.span_err(
                 self.expr.span,
                 "multiple applicable methods in scope");
-            foreach idx in range(0u, relevant_candidates.len()) {
+            for idx in range(0u, relevant_candidates.len()) {
                 self.report_candidate(idx, &relevant_candidates[idx].origin);
             }
         }
@@ -869,7 +867,7 @@ impl<'self> LookupContext<'self> {
                     trait_def_id, candidate)
             }
             _ => {
-                let t = candidate.method_ty.transformed_self_ty.get();
+                let t = candidate.method_ty.transformed_self_ty.unwrap();
                 ty::subst(tcx, &candidate.rcvr_substs, t)
             }
         };
@@ -928,7 +926,7 @@ impl<'self> LookupContext<'self> {
                 tcx, @Nil, Some(transformed_self_ty), &bare_fn_ty.sig,
                 |br| self.fcx.infcx().next_region_var(
                     infer::BoundRegionInFnCall(self.expr.span, br)));
-        let transformed_self_ty = opt_transformed_self_ty.get();
+        let transformed_self_ty = opt_transformed_self_ty.unwrap();
         let fty = ty::mk_bare_fn(tcx, ty::BareFnTy {
             sig: fn_sig,
             purity: bare_fn_ty.purity,

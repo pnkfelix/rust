@@ -335,7 +335,7 @@ pub fn phase_5_run_llvm_passes(sess: Session,
                                outputs: &OutputFilenames) {
 
     // NB: Android hack
-    if sess.targ_cfg.arch == abi::Arm &&
+    if sess.targ_cfg.os == session::os_android &&
         (sess.opts.output_type == link::output_type_object ||
          sess.opts.output_type == link::output_type_exe) {
         let output_type = link::output_type_assembly;
@@ -408,11 +408,10 @@ pub fn stop_after_phase_5(sess: Session) -> bool {
 #[fixed_stack_segment]
 pub fn compile_input(sess: Session, cfg: ast::CrateConfig, input: &input,
                      outdir: &Option<Path>, output: &Option<Path>) {
-    let outputs = build_output_filenames(input, outdir, output, [], sess);
     // We need nested scopes here, because the intermediate results can keep
     // large chunks of memory alive and we want to free them as soon as
     // possible to keep the peak memory usage low
-    let trans = {
+    let (outputs, trans) = {
         let expanded_crate = {
             let crate = phase_1_parse_input(sess, cfg.clone(), input);
             if stop_after_phase_1(sess) { return; }
@@ -420,7 +419,10 @@ pub fn compile_input(sess: Session, cfg: ast::CrateConfig, input: &input,
         };
         let analysis = phase_3_run_analysis_passes(sess, expanded_crate);
         if stop_after_phase_3(sess) { return; }
-        phase_4_translate_to_llvm(sess, expanded_crate, &analysis, outputs)
+        let outputs = build_output_filenames(input, outdir, output, [], sess);
+        let trans = phase_4_translate_to_llvm(sess, expanded_crate,
+                                              &analysis, outputs);
+        (outputs, trans)
     };
     phase_5_run_llvm_passes(sess, &trans, outputs);
     if stop_after_phase_5(sess) { return; }
@@ -508,7 +510,7 @@ pub fn pretty_print_input(sess: Session, cfg: ast::CrateConfig, input: &input,
 }
 
 pub fn get_os(triple: &str) -> Option<session::os> {
-    foreach &(name, os) in os_names.iter() {
+    for &(name, os) in os_names.iter() {
         if triple.contains(name) { return Some(os) }
     }
     None
@@ -522,7 +524,7 @@ static os_names : &'static [(&'static str, session::os)] = &'static [
     ("freebsd", session::os_freebsd)];
 
 pub fn get_arch(triple: &str) -> Option<abi::Architecture> {
-    foreach &(arch, abi) in architecture_abis.iter() {
+    for &(arch, abi) in architecture_abis.iter() {
         if triple.contains(arch) { return Some(abi) }
     }
     None
@@ -611,7 +613,7 @@ pub fn build_session_options(binary: @str,
                        lint::deny, lint::forbid];
     let mut lint_opts = ~[];
     let lint_dict = lint::get_lint_dict();
-    foreach level in lint_levels.iter() {
+    for level in lint_levels.iter() {
         let level_name = lint::level_to_str(*level);
 
         // FIXME: #4318 Instead of to_ascii and to_str_ascii, could use
@@ -620,7 +622,7 @@ pub fn build_session_options(binary: @str,
         let level_short = level_short.to_ascii().to_upper().to_str_ascii();
         let flags = vec::append(getopts::opt_strs(matches, level_short),
                                 getopts::opt_strs(matches, level_name));
-        foreach lint_name in flags.iter() {
+        for lint_name in flags.iter() {
             let lint_name = lint_name.replace("-", "_");
             match lint_dict.find_equiv(&lint_name) {
               None => {
@@ -637,9 +639,9 @@ pub fn build_session_options(binary: @str,
     let mut debugging_opts = 0u;
     let debug_flags = getopts::opt_strs(matches, "Z");
     let debug_map = session::debugging_opts_map();
-    foreach debug_flag in debug_flags.iter() {
+    for debug_flag in debug_flags.iter() {
         let mut this_bit = 0u;
-        foreach tuple in debug_map.iter() {
+        for tuple in debug_map.iter() {
             let (name, bit) = match *tuple { (ref a, _, b) => (a, b) };
             if name == debug_flag { this_bit = bit; break; }
         }
@@ -922,7 +924,7 @@ pub fn build_output_filenames(input: &input,
           };
 
           let mut stem = match *input {
-              file_input(ref ifile) => (*ifile).filestem().get().to_managed(),
+              file_input(ref ifile) => (*ifile).filestem().unwrap().to_managed(),
               str_input(_) => @"rust_out"
           };
 
@@ -957,10 +959,7 @@ pub fn build_output_filenames(input: &input,
         };
 
         if *sess.building_library {
-            // FIXME (#2401): We might want to warn here; we're actually not
-            // going to respect the user's choice of library name when it
-            // comes time to link, we'll be linking to
-            // lib<basename>-<hash>-<version>.so no matter what.
+            sess.warn("ignoring specified output filename for library.");
         }
 
         if *odir != None {

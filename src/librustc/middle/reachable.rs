@@ -15,8 +15,6 @@
 // makes all other generics or inline functions that it references
 // reachable as well.
 
-use std::iterator::IteratorUtil;
-
 use middle::ty;
 use middle::typeck;
 
@@ -26,8 +24,8 @@ use syntax::ast_map;
 use syntax::ast_util::def_id_of_def;
 use syntax::attr;
 use syntax::parse::token;
-use syntax::visit::Visitor;
-use syntax::visit;
+use syntax::oldvisit::Visitor;
+use syntax::oldvisit;
 
 // Returns true if the given set of attributes contains the `#[inline]`
 // attribute.
@@ -113,9 +111,9 @@ impl ReachableContext {
     fn mark_public_symbols(&self, crate: @Crate) {
         let reachable_symbols = self.reachable_symbols;
         let worklist = self.worklist;
-        let visitor = visit::mk_vt(@Visitor {
+        let visitor = oldvisit::mk_vt(@Visitor {
             visit_item: |item, (privacy_context, visitor):
-                    (PrivacyContext, visit::vt<PrivacyContext>)| {
+                    (PrivacyContext, oldvisit::vt<PrivacyContext>)| {
                 match item.node {
                     item_fn(*) => {
                         if privacy_context == PublicContext {
@@ -136,7 +134,7 @@ impl ReachableContext {
                     }
                     item_enum(ref enum_def, _) => {
                         if privacy_context == PublicContext {
-                            foreach variant in enum_def.variants.iter() {
+                            for variant in enum_def.variants.iter() {
                                 reachable_symbols.insert(variant.node.id);
                             }
                         }
@@ -155,7 +153,7 @@ impl ReachableContext {
                         };
 
                         // Mark all public methods as reachable.
-                        foreach &method in methods.iter() {
+                        for &method in methods.iter() {
                             if should_be_considered_public(method) {
                                 reachable_symbols.insert(method.id);
                             }
@@ -164,7 +162,7 @@ impl ReachableContext {
                         if generics_require_inlining(generics) {
                             // If the impl itself has generics, add all public
                             // symbols to the worklist.
-                            foreach &method in methods.iter() {
+                            for &method in methods.iter() {
                                 if should_be_considered_public(method) {
                                     worklist.push(method.id)
                                 }
@@ -172,7 +170,7 @@ impl ReachableContext {
                         } else {
                             // Otherwise, add only public methods that have
                             // generics to the worklist.
-                            foreach method in methods.iter() {
+                            for method in methods.iter() {
                                 let generics = &method.generics;
                                 let attrs = &method.attrs;
                                 if generics_require_inlining(generics) ||
@@ -186,7 +184,7 @@ impl ReachableContext {
                     item_trait(_, _, ref trait_methods) => {
                         // Mark all provided methods as reachable.
                         if privacy_context == PublicContext {
-                            foreach trait_method in trait_methods.iter() {
+                            for trait_method in trait_methods.iter() {
                                 match *trait_method {
                                     provided(method) => {
                                         reachable_symbols.insert(method.id);
@@ -201,15 +199,15 @@ impl ReachableContext {
                 }
 
                 if item.vis == public && privacy_context == PublicContext {
-                    visit::visit_item(item, (PublicContext, visitor))
+                    oldvisit::visit_item(item, (PublicContext, visitor))
                 } else {
-                    visit::visit_item(item, (PrivateContext, visitor))
+                    oldvisit::visit_item(item, (PrivateContext, visitor))
                 }
             },
-            .. *visit::default_visitor()
+            .. *oldvisit::default_visitor()
         });
 
-        visit::visit_crate(crate, (PublicContext, visitor))
+        oldvisit::visit_crate(crate, (PublicContext, visitor))
     }
 
     // Returns true if the given def ID represents a local item that is
@@ -271,10 +269,10 @@ impl ReachableContext {
     }
 
     // Helper function to set up a visitor for `propagate()` below.
-    fn init_visitor(&self) -> visit::vt<()> {
+    fn init_visitor(&self) -> oldvisit::vt<()> {
         let (worklist, method_map) = (self.worklist, self.method_map);
         let (tcx, reachable_symbols) = (self.tcx, self.reachable_symbols);
-        visit::mk_vt(@visit::Visitor {
+        oldvisit::mk_vt(@oldvisit::Visitor {
             visit_expr: |expr, (_, visitor)| {
                 match expr.node {
                     expr_path(_) => {
@@ -319,9 +317,9 @@ impl ReachableContext {
                     _ => {}
                 }
 
-                visit::visit_expr(expr, ((), visitor))
+                oldvisit::visit_expr(expr, ((), visitor))
             },
-            ..*visit::default_visitor()
+            ..*oldvisit::default_visitor()
         })
     }
 
@@ -344,7 +342,7 @@ impl ReachableContext {
                 Some(&ast_map::node_item(item, _)) => {
                     match item.node {
                         item_fn(_, _, _, _, ref search_block) => {
-                            visit::visit_block(search_block, ((), visitor))
+                            oldvisit::visit_block(search_block, ((), visitor))
                         }
                         _ => {
                             self.tcx.sess.span_bug(item.span,
@@ -361,12 +359,12 @@ impl ReachableContext {
                                                     worklist?!")
                         }
                         provided(ref method) => {
-                            visit::visit_block(&method.body, ((), visitor))
+                            oldvisit::visit_block(&method.body, ((), visitor))
                         }
                     }
                 }
                 Some(&ast_map::node_method(ref method, _, _)) => {
-                    visit::visit_block(&method.body, ((), visitor))
+                    oldvisit::visit_block(&method.body, ((), visitor))
                 }
                 Some(_) => {
                     let ident_interner = token::get_ident_interner();
@@ -392,8 +390,7 @@ impl ReachableContext {
     // this properly would result in the necessity of computing *type*
     // reachability, which might result in a compile time loss.
     fn mark_destructors_reachable(&self) {
-        for self.tcx.destructor_for_type.iter().advance
-                |(_, destructor_def_id)| {
+        for (_, destructor_def_id) in self.tcx.destructor_for_type.iter() {
             if destructor_def_id.crate == LOCAL_CRATE {
                 self.reachable_symbols.insert(destructor_def_id.node);
             }

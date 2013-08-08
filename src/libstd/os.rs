@@ -61,11 +61,11 @@ pub mod rustrt {
     use libc;
 
     extern {
-        pub unsafe fn rust_get_argc() -> c_int;
-        pub unsafe fn rust_get_argv() -> **c_char;
-        pub unsafe fn rust_path_is_dir(path: *libc::c_char) -> c_int;
-        pub unsafe fn rust_path_exists(path: *libc::c_char) -> c_int;
-        pub unsafe fn rust_set_exit_status(code: libc::intptr_t);
+        pub fn rust_get_argc() -> c_int;
+        pub fn rust_get_argv() -> **c_char;
+        pub fn rust_path_is_dir(path: *libc::c_char) -> c_int;
+        pub fn rust_path_exists(path: *libc::c_char) -> c_int;
+        pub fn rust_set_exit_status(code: libc::intptr_t);
     }
 }
 
@@ -201,7 +201,7 @@ pub fn env() -> ~[(~str,~str)] {
         #[cfg(unix)]
         unsafe fn get_env_pairs() -> ~[~str] {
             extern {
-                unsafe fn rust_env_pairs() -> **libc::c_char;
+                fn rust_env_pairs() -> **libc::c_char;
             }
             let environ = rust_env_pairs();
             if (environ as uint == 0) {
@@ -219,7 +219,7 @@ pub fn env() -> ~[(~str,~str)] {
 
         fn env_convert(input: ~[~str]) -> ~[(~str, ~str)] {
             let mut pairs = ~[];
-            foreach p in input.iter() {
+            for p in input.iter() {
                 let vs: ~[&str] = p.splitn_iter('=', 1).collect();
                 debug!("splitting: len: %u",
                     vs.len());
@@ -571,7 +571,7 @@ pub fn tmpdir() -> Path {
 
     #[cfg(unix)]
     fn lookup() -> Path {
-        getenv_nonempty("TMPDIR").get_or_default(Path("/tmp"))
+        getenv_nonempty("TMPDIR").unwrap_or_default(Path("/tmp"))
     }
 
     #[cfg(windows)]
@@ -579,7 +579,7 @@ pub fn tmpdir() -> Path {
         getenv_nonempty("TMP").or(
             getenv_nonempty("TEMP").or(
                 getenv_nonempty("USERPROFILE").or(
-                   getenv_nonempty("WINDIR")))).get_or_default(Path("C:\\Windows"))
+                   getenv_nonempty("WINDIR")))).unwrap_or_default(Path("C:\\Windows"))
     }
 }
 
@@ -694,7 +694,7 @@ pub fn list_dir(p: &Path) -> ~[~str] {
             use libc::{dirent_t};
             use libc::{opendir, readdir, closedir};
             extern {
-                unsafe fn rust_list_dir_val(ptr: *dirent_t) -> *libc::c_char;
+                fn rust_list_dir_val(ptr: *dirent_t) -> *libc::c_char;
             }
             let input = p.to_str();
             let mut strings = ~[];
@@ -735,9 +735,8 @@ pub fn list_dir(p: &Path) -> ~[~str] {
 
             #[nolink]
             extern {
-                unsafe fn rust_list_dir_wfd_size() -> libc::size_t;
-                unsafe fn rust_list_dir_wfd_fp_buf(wfd: *libc::c_void)
-                    -> *u16;
+                fn rust_list_dir_wfd_size() -> libc::size_t;
+                fn rust_list_dir_wfd_fp_buf(wfd: *libc::c_void) -> *u16;
             }
             fn star(p: &Path) -> Path { p.push("*") }
             do as_utf16_p(star(p).to_str()) |path_ptr| {
@@ -964,7 +963,7 @@ pub fn errno() -> int {
     fn errno_location() -> *c_int {
         #[nolink]
         extern {
-            unsafe fn __error() -> *c_int;
+            fn __error() -> *c_int;
         }
         unsafe {
             __error()
@@ -976,7 +975,7 @@ pub fn errno() -> int {
     fn errno_location() -> *c_int {
         #[nolink]
         extern {
-            unsafe fn __errno_location() -> *c_int;
+            fn __errno_location() -> *c_int;
         }
         unsafe {
             __errno_location()
@@ -996,7 +995,7 @@ pub fn errno() -> uint {
     #[link_name = "kernel32"]
     #[abi = "stdcall"]
     extern "stdcall" {
-        unsafe fn GetLastError() -> DWORD;
+        fn GetLastError() -> DWORD;
     }
 
     unsafe {
@@ -1011,11 +1010,12 @@ pub fn last_os_error() -> ~str {
         #[cfg(target_os = "macos")]
         #[cfg(target_os = "android")]
         #[cfg(target_os = "freebsd")]
-        fn strerror_r(errnum: c_int, buf: *mut c_char, buflen: size_t) -> c_int {
+        fn strerror_r(errnum: c_int, buf: *mut c_char, buflen: size_t)
+                      -> c_int {
             #[nolink]
             extern {
-                unsafe fn strerror_r(errnum: c_int, buf: *mut c_char,
-                                     buflen: size_t) -> c_int;
+                fn strerror_r(errnum: c_int, buf: *mut c_char, buflen: size_t)
+                              -> c_int;
             }
             unsafe {
                 strerror_r(errnum, buf, buflen)
@@ -1029,8 +1029,10 @@ pub fn last_os_error() -> ~str {
         fn strerror_r(errnum: c_int, buf: *mut c_char, buflen: size_t) -> c_int {
             #[nolink]
             extern {
-                unsafe fn __xpg_strerror_r(errnum: c_int, buf: *mut c_char,
-                                           buflen: size_t) -> c_int;
+                fn __xpg_strerror_r(errnum: c_int,
+                                    buf: *mut c_char,
+                                    buflen: size_t)
+                                    -> c_int;
             }
             unsafe {
                 __xpg_strerror_r(errnum, buf, buflen)
@@ -1058,10 +1060,14 @@ pub fn last_os_error() -> ~str {
         #[link_name = "kernel32"]
         #[abi = "stdcall"]
         extern "stdcall" {
-            unsafe fn FormatMessageA(flags: DWORD, lpSrc: LPVOID,
-                                     msgId: DWORD, langId: DWORD,
-                                     buf: LPSTR, nsize: DWORD,
-                                     args: *c_void) -> DWORD;
+            fn FormatMessageA(flags: DWORD,
+                              lpSrc: LPVOID,
+                              msgId: DWORD,
+                              langId: DWORD,
+                              buf: LPSTR,
+                              nsize: DWORD,
+                              args: *c_void)
+                              -> DWORD;
         }
 
         static FORMAT_MESSAGE_FROM_SYSTEM: DWORD = 0x00001000;
@@ -1113,7 +1119,7 @@ pub fn set_exit_status(code: int) {
 
 unsafe fn load_argc_and_argv(argc: c_int, argv: **c_char) -> ~[~str] {
     let mut args = ~[];
-    foreach i in range(0u, argc as uint) {
+    for i in range(0u, argc as uint) {
         args.push(str::raw::from_c_str(*argv.offset(i as int)));
     }
     args
@@ -1162,7 +1168,7 @@ pub fn real_args() -> ~[~str] {
     let szArgList = unsafe { CommandLineToArgvW(lpCmdLine, lpArgCount) };
 
     let mut args = ~[];
-    foreach i in range(0u, nArgs as uint) {
+    for i in range(0u, nArgs as uint) {
         unsafe {
             // Determine the length of this argument.
             let ptr = *szArgList.offset(i as int);
@@ -1419,7 +1425,7 @@ impl MemoryMap {
         let mut offset: off_t = 0;
         let len = round_up(min_len, page_size()) as size_t;
 
-        foreach &o in options.iter() {
+        for &o in options.iter() {
             match o {
                 MapReadable => { prot |= libc::PROT_READ; },
                 MapWritable => { prot |= libc::PROT_WRITE; },
@@ -1492,7 +1498,7 @@ impl MemoryMap {
         let mut offset: uint = 0;
         let len = round_up(min_len, page_size()) as SIZE_T;
 
-        foreach &o in options.iter() {
+        for &o in options.iter() {
             match o {
                 MapReadable => { readable = true; },
                 MapWritable => { writable = true; },
@@ -1776,7 +1782,7 @@ mod tests {
     fn test_self_exe_path() {
         let path = os::self_exe_path();
         assert!(path.is_some());
-        let path = path.get();
+        let path = path.unwrap();
         debug!(path.clone());
 
         // Hard to test this function
@@ -1788,7 +1794,7 @@ mod tests {
     fn test_env_getenv() {
         let e = env();
         assert!(e.len() > 0u);
-        foreach p in e.iter() {
+        for p in e.iter() {
             let (n, v) = (*p).clone();
             debug!(n.clone());
             let v2 = getenv(n);
@@ -1832,7 +1838,7 @@ mod tests {
         setenv("HOME", "");
         assert!(os::homedir().is_none());
 
-        foreach s in oldhome.iter() { setenv("HOME", *s) }
+        for s in oldhome.iter() { setenv("HOME", *s) }
     }
 
     #[test]
@@ -1880,7 +1886,7 @@ mod tests {
         // Just assuming that we've got some contents in the current directory
         assert!(dirs.len() > 0u);
 
-        foreach dir in dirs.iter() {
+        for dir in dirs.iter() {
             debug!((*dir).clone());
         }
     }

@@ -223,7 +223,7 @@ fn noop_fold_foreign_item(ni: @foreign_item, fld: @ast_fold)
         attrs: ni.attrs.map(|x| fold_attribute(*x)),
         node:
             match ni.node {
-                foreign_item_fn(ref fdec, purity, ref generics) => {
+                foreign_item_fn(ref fdec, ref generics) => {
                     foreign_item_fn(
                         ast::fn_decl {
                             inputs: fdec.inputs.map(|a|
@@ -231,7 +231,6 @@ fn noop_fold_foreign_item(ni: @foreign_item, fld: @ast_fold)
                             output: fld.fold_ty(&fdec.output),
                             cf: fdec.cf,
                         },
-                        purity,
                         fold_generics(generics, fld))
                 }
                 foreign_item_static(ref t, m) => {
@@ -380,7 +379,7 @@ fn noop_fold_method(m: @method, fld: @ast_fold) -> @method {
 pub fn noop_fold_block(b: &Block, fld: @ast_fold) -> Block {
     let view_items = b.view_items.map(|x| fld.fold_view_item(x));
     let mut stmts = ~[];
-    foreach stmt in b.stmts.iter() {
+    for stmt in b.stmts.iter() {
         match fld.fold_stmt(*stmt) {
             None => {}
             Some(stmt) => stmts.push(stmt)
@@ -542,7 +541,6 @@ pub fn noop_fold_expr(e: &expr_, fld: @ast_fold) -> expr_ {
                 fld.fold_expr(ohs)
             )
         }
-        expr_loop_body(f) => expr_loop_body(fld.fold_expr(f)),
         expr_do_body(f) => expr_do_body(fld.fold_expr(f)),
         expr_lit(_) => (*e).clone(),
         expr_cast(expr, ref ty) => {

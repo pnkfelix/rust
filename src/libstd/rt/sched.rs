@@ -39,14 +39,14 @@ use cell::Cell;
 pub struct Scheduler {
     /// A queue of available work. Under a work-stealing policy there
     /// is one per Scheduler.
-    priv work_queue: WorkQueue<~Task>,
+    work_queue: WorkQueue<~Task>,
     /// The queue of incoming messages from other schedulers.
     /// These are enqueued by SchedHandles after which a remote callback
     /// is triggered to handle the message.
     priv message_queue: MessageQueue<SchedMessage>,
     /// A shared list of sleeping schedulers. We'll use this to wake
     /// up schedulers when pushing work onto the work queue.
-    priv sleeper_list: SleeperList,
+    sleeper_list: SleeperList,
     /// Indicates that we have previously pushed a handle onto the
     /// SleeperList but have not yet received the Wake message.
     /// Being `true` does not necessarily mean that the scheduler is
@@ -158,6 +158,9 @@ impl Scheduler {
         // scheduler. Grab it out of TLS - performing the scheduler
         // action will have given it away.
         let sched = Local::take::<Scheduler>();
+
+        rtdebug!("starting scheduler %u", sched.sched_id());
+
         sched.run();
 
         // Now that we are done with the scheduler, clean up the
@@ -166,6 +169,13 @@ impl Scheduler {
         // task.run() on the scheduler task we never get through all
         // the cleanup code it runs.
         let mut stask = Local::take::<Task>();
+
+        rtdebug!("stopping scheduler %u", stask.sched.get_ref().sched_id());
+
+        // Should not have any messages
+        let message = stask.sched.get_mut_ref().message_queue.pop();
+        assert!(message.is_none());
+
         stask.destroyed = true;
     }
 
@@ -329,19 +339,24 @@ impl Scheduler {
         let mut this = self;
         match this.message_queue.pop() {
             Some(PinnedTask(task)) => {
+                this.event_loop.callback(Scheduler::run_sched_once);
                 let mut task = task;
                 task.give_home(Sched(this.make_handle()));
                 this.resume_task_immediately(task);
                 return None;
             }
             Some(TaskFromFriend(task)) => {
+                this.event_loop.callback(Scheduler::run_sched_once);
+                rtdebug!("got a task from a friend. lovely!");
                 return this.sched_schedule_task(task);
             }
             Some(Wake) => {
+                this.event_loop.callback(Scheduler::run_sched_once);
                 this.sleepy = false;
                 return Some(this);
             }
             Some(Shutdown) => {
+                this.event_loop.callback(Scheduler::run_sched_once);
                 if this.sleepy {
                     // There may be an outstanding handle on the
                     // sleeper list.  Pop them all to make sure that's
@@ -389,6 +404,7 @@ impl Scheduler {
     /// Take a non-homed task we aren't allowed to run here and send
     /// it to the designated friend scheduler to execute.
     fn send_to_friend(&mut self, task: ~Task) {
+        rtdebug!("sending a task to friend");
         match self.friend_handle {
             Some(ref mut handle) => {
                 handle.send(TaskFromFriend(task));
@@ -420,12 +436,14 @@ impl Scheduler {
                             Scheduler::send_task_home(task);
                             return Some(this);
                         } else {
+                            this.event_loop.callback(Scheduler::run_sched_once);
                             task.give_home(Sched(home_handle));
                             this.resume_task_immediately(task);
                             return None;
                         }
                     }
                     AnySched if this.run_anything => {
+                        this.event_loop.callback(Scheduler::run_sched_once);
                         task.give_home(AnySched);
                         this.resume_task_immediately(task);
                         return None;
@@ -484,7 +502,7 @@ impl Scheduler {
             return None;
         } else if !homed && !this.run_anything {
             // the task isn't homed, but it can't be run here
-            this.enqueue_task(task);
+            this.send_to_friend(task);
             return Some(this);
         } else {
             // task isn't home, so don't run it here, send it home
@@ -533,6 +551,10 @@ impl Scheduler {
 
         // The current task is grabbed from TLS, not taken as an input.
         let current_task: ~Task = Local::take::<Task>();
+
+        // Check that the task is not in an atomically() section (e.g.,
+        // holding a pthread mutex, which could deadlock the scheduler).
+        current_task.death.assert_may_sleep();
 
         // These transmutes do something fishy with a closure.
         let f_fake_region = unsafe {
@@ -594,7 +616,7 @@ impl Scheduler {
 
             // Must happen after running the cleanup job (of course).
             let task = Local::unsafe_borrow::<Task>();
-            (*task).death.check_killed();
+            (*task).death.check_killed((*task).unwinder.unwinding);
         }
     }
 
@@ -751,7 +773,7 @@ mod test {
         let mut task_run_count = 0;
         let task_run_count_ptr: *mut uint = &mut task_run_count;
         do run_in_newsched_task || {
-            foreach _ in range(0u, total) {
+            for _ in range(0u, total) {
                 do spawntask || {
                     unsafe { *task_run_count_ptr = *task_run_count_ptr + 1};
                 }
@@ -950,7 +972,7 @@ mod test {
     #[test]
     fn test_stress_schedule_task_states() {
         let n = stress_factor() * 120;
-        foreach _ in range(0, n as int) {
+        for _ in range(0, n as int) {
             test_schedule_home_states();
         }
     }

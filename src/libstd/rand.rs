@@ -252,8 +252,8 @@ pub mod rustrt {
     use libc::size_t;
 
     extern {
-        pub unsafe fn rand_seed_size() -> size_t;
-        pub unsafe fn rand_gen_seed(buf: *mut u8, sz: size_t);
+        pub fn rand_seed_size() -> size_t;
+        pub fn rand_gen_seed(buf: *mut u8, sz: size_t);
     }
 }
 
@@ -495,7 +495,7 @@ impl<R: Rng> RngUtil for R {
     fn gen_char_from(&mut self, chars: &str) -> char {
         assert!(!chars.is_empty());
         let mut cs = ~[];
-        foreach c in chars.iter() { cs.push(c) }
+        for c in chars.iter() { cs.push(c) }
         self.choose(cs)
     }
 
@@ -533,7 +533,7 @@ impl<R: Rng> RngUtil for R {
 
     /// Choose an item randomly, failing if values is empty
     fn choose<T:Clone>(&mut self, values: &[T]) -> T {
-        self.choose_option(values).get()
+        self.choose_option(values).unwrap()
     }
 
     /// Choose Some(item) randomly, returning None if values is empty
@@ -549,7 +549,7 @@ impl<R: Rng> RngUtil for R {
      * the weights is 0
      */
     fn choose_weighted<T:Clone>(&mut self, v: &[Weighted<T>]) -> T {
-        self.choose_weighted_option(v).get()
+        self.choose_weighted_option(v).unwrap()
     }
 
     /**
@@ -559,7 +559,7 @@ impl<R: Rng> RngUtil for R {
     fn choose_weighted_option<T:Clone>(&mut self, v: &[Weighted<T>])
                                        -> Option<T> {
         let mut total = 0u;
-        foreach item in v.iter() {
+        for item in v.iter() {
             total += item.weight;
         }
         if total == 0u {
@@ -567,7 +567,7 @@ impl<R: Rng> RngUtil for R {
         }
         let chosen = self.gen_uint_range(0u, total);
         let mut so_far = 0u;
-        foreach item in v.iter() {
+        for item in v.iter() {
             so_far += item.weight;
             if so_far > chosen {
                 return Some(item.item.clone());
@@ -582,8 +582,8 @@ impl<R: Rng> RngUtil for R {
      */
     fn weighted_vec<T:Clone>(&mut self, v: &[Weighted<T>]) -> ~[T] {
         let mut r = ~[];
-        foreach item in v.iter() {
-            foreach _ in range(0u, item.weight) {
+        for item in v.iter() {
+            for _ in range(0u, item.weight) {
                 r.push(item.item.clone());
             }
         }
@@ -701,7 +701,7 @@ impl IsaacRng {
         if use_rsl {
             macro_rules! memloop (
                 ($arr:expr) => {{
-                    for u32::range_step(0, RAND_SIZE, 8) |i| {
+                    do u32::range_step(0, RAND_SIZE, 8) |i| {
                         a+=$arr[i  ]; b+=$arr[i+1];
                         c+=$arr[i+2]; d+=$arr[i+3];
                         e+=$arr[i+4]; f+=$arr[i+5];
@@ -711,20 +711,22 @@ impl IsaacRng {
                         self.mem[i+2]=c; self.mem[i+3]=d;
                         self.mem[i+4]=e; self.mem[i+5]=f;
                         self.mem[i+6]=g; self.mem[i+7]=h;
-                    }
+                        true
+                    };
                 }}
             );
 
             memloop!(self.rsl);
             memloop!(self.mem);
         } else {
-            for u32::range_step(0, RAND_SIZE, 8) |i| {
+            do u32::range_step(0, RAND_SIZE, 8) |i| {
                 mix!();
                 self.mem[i  ]=a; self.mem[i+1]=b;
                 self.mem[i+2]=c; self.mem[i+3]=d;
                 self.mem[i+4]=e; self.mem[i+5]=f;
                 self.mem[i+6]=g; self.mem[i+7]=h;
-            }
+                true
+            };
         }
 
         self.isaac();
@@ -763,13 +765,14 @@ impl IsaacRng {
         );
 
         let r = [(0, MIDPOINT), (MIDPOINT, 0)];
-        foreach &(mr_offset, m2_offset) in r.iter() {
-            for uint::range_step(0, MIDPOINT, 4) |base| {
+        for &(mr_offset, m2_offset) in r.iter() {
+            do uint::range_step(0, MIDPOINT, 4) |base| {
                 rngstep!(0, 13);
                 rngstep!(1, -6);
                 rngstep!(2, 2);
                 rngstep!(3, -16);
-            }
+                true
+            };
         }
 
         self.a = a;
@@ -1085,10 +1088,9 @@ mod test {
             pub enum rust_rng {}
 
             extern {
-                pub unsafe fn rand_new_seeded(buf: *u8, sz: size_t)
-                                              -> *rust_rng;
-                pub unsafe fn rand_next(rng: *rust_rng) -> u32;
-                pub unsafe fn rand_free(rng: *rust_rng);
+                pub fn rand_new_seeded(buf: *u8, sz: size_t) -> *rust_rng;
+                pub fn rand_next(rng: *rust_rng) -> u32;
+                pub fn rand_free(rng: *rust_rng);
             }
         }
 

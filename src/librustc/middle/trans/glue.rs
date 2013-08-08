@@ -311,7 +311,7 @@ pub fn call_tydesc_glue_full(bcx: @mut Block,
     let llrawptr = if static_ti.is_none() || static_glue_fn.is_none() {
         PointerCast(bcx, v, Type::i8p())
     } else {
-        let ty = static_ti.get().ty;
+        let ty = static_ti.unwrap().ty;
         let simpl = simplified_glue_type(ccx.tcx, field, ty);
         if simpl != ty {
             PointerCast(bcx, v, type_of(ccx, simpl).ptr_to())
@@ -426,7 +426,7 @@ pub fn trans_struct_drop_flag(bcx: @mut Block, t: ty::t, v0: ValueRef, dtor_did:
 
         // Drop the fields
         let field_tys = ty::struct_fields(bcx.tcx(), class_did, substs);
-        foreach (i, fld) in field_tys.iter().enumerate() {
+        for (i, fld) in field_tys.iter().enumerate() {
             let llfld_a = adt::trans_field_ptr(bcx, repr, v0, 0, i);
             bcx = drop_ty(bcx, llfld_a, fld.mt.ty);
         }
@@ -461,7 +461,7 @@ pub fn trans_struct_drop(mut bcx: @mut Block, t: ty::t, v0: ValueRef, dtor_did: 
 
     // Drop the fields
     let field_tys = ty::struct_fields(bcx.tcx(), class_did, substs);
-    foreach (i, fld) in field_tys.iter().enumerate() {
+    for (i, fld) in field_tys.iter().enumerate() {
         let llfld_a = adt::trans_field_ptr(bcx, repr, v0, 0, i);
         bcx = drop_ty(bcx, llfld_a, fld.mt.ty);
     }
@@ -708,7 +708,7 @@ pub fn make_generic_glue_inner(ccx: @mut CrateContext,
     // llfn is expected be declared to take a parameter of the appropriate
     // type, so we don't need to explicitly cast the function parameter.
 
-    let bcx = fcx.entry_bcx.get();
+    let bcx = fcx.entry_bcx.unwrap();
     let rawptr0_arg = fcx.arg_pos(0u);
     let llrawptr0 = unsafe { llvm::LLVMGetParam(llfn, rawptr0_arg as c_uint) };
     let bcx = helper(bcx, llrawptr0, t);
@@ -736,7 +736,7 @@ pub fn emit_tydescs(ccx: &mut CrateContext) {
     ccx.finished_tydescs = true;
     let glue_fn_ty = Type::generic_glue_fn(ccx).ptr_to();
     let tyds = &mut ccx.tydescs;
-    for tyds.each_value |&val| {
+    for (_, &val) in tyds.iter() {
         let ti = val;
 
         // Each of the glue functions needs to be cast to a generic type

@@ -328,7 +328,7 @@ fn simplify_ast(ii: &ast::inlined_item) -> ast::inlined_item {
 
     match *ii {
         //hack: we're not dropping items
-        ast::ii_item(i) => ast::ii_item(fld.fold_item(i).get()),
+        ast::ii_item(i) => ast::ii_item(fld.fold_item(i).unwrap()),
         ast::ii_method(d, is_provided, m) =>
           ast::ii_method(d, is_provided, fld.fold_method(m)),
         ast::ii_foreign(i) => ast::ii_foreign(fld.fold_foreign_item(i))
@@ -350,7 +350,7 @@ fn renumber_ast(xcx: @ExtendedDecodeContext, ii: ast::inlined_item)
     });
 
     match ii {
-        ast::ii_item(i) => ast::ii_item(fld.fold_item(i).get()),
+        ast::ii_item(i) => ast::ii_item(fld.fold_item(i).unwrap()),
         ast::ii_method(d, is_provided, m) =>
           ast::ii_method(xcx.tr_def_id(d), is_provided, fld.fold_method(m)),
         ast::ii_foreign(i) => ast::ii_foreign(fld.fold_foreign_item(i)),
@@ -854,7 +854,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
 
     {
         let r = tcx.def_map.find(&id);
-        foreach def in r.iter() {
+        for def in r.iter() {
             do ebml_w.tag(c::tag_table_def) |ebml_w| {
                 ebml_w.id(id);
                 do ebml_w.tag(c::tag_table_val) |ebml_w| {
@@ -866,7 +866,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
 
     {
         let r = tcx.node_types.find(&(id as uint));
-        foreach &ty in r.iter() {
+        for &ty in r.iter() {
             do ebml_w.tag(c::tag_table_node_type) |ebml_w| {
                 ebml_w.id(id);
                 do ebml_w.tag(c::tag_table_val) |ebml_w| {
@@ -878,7 +878,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
 
     {
         let r = tcx.node_type_substs.find(&id);
-        foreach tys in r.iter() {
+        for tys in r.iter() {
             do ebml_w.tag(c::tag_table_node_type_subst) |ebml_w| {
                 ebml_w.id(id);
                 do ebml_w.tag(c::tag_table_val) |ebml_w| {
@@ -890,7 +890,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
 
     {
         let r = tcx.freevars.find(&id);
-        foreach &fv in r.iter() {
+        for &fv in r.iter() {
             do ebml_w.tag(c::tag_table_freevars) |ebml_w| {
                 ebml_w.id(id);
                 do ebml_w.tag(c::tag_table_val) |ebml_w| {
@@ -905,7 +905,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
     let lid = ast::def_id { crate: ast::LOCAL_CRATE, node: id };
     {
         let r = tcx.tcache.find(&lid);
-        foreach &tpbt in r.iter() {
+        for &tpbt in r.iter() {
             do ebml_w.tag(c::tag_table_tcache) |ebml_w| {
                 ebml_w.id(id);
                 do ebml_w.tag(c::tag_table_val) |ebml_w| {
@@ -917,7 +917,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
 
     {
         let r = tcx.ty_param_defs.find(&id);
-        foreach &type_param_def in r.iter() {
+        for &type_param_def in r.iter() {
             do ebml_w.tag(c::tag_table_param_defs) |ebml_w| {
                 ebml_w.id(id);
                 do ebml_w.tag(c::tag_table_val) |ebml_w| {
@@ -929,7 +929,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
 
     {
         let r = maps.method_map.find(&id);
-        foreach &mme in r.iter() {
+        for &mme in r.iter() {
             do ebml_w.tag(c::tag_table_method_map) |ebml_w| {
                 ebml_w.id(id);
                 do ebml_w.tag(c::tag_table_val) |ebml_w| {
@@ -941,7 +941,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
 
     {
         let r = maps.vtable_map.find(&id);
-        foreach &dr in r.iter() {
+        for &dr in r.iter() {
             do ebml_w.tag(c::tag_table_vtable_map) |ebml_w| {
                 ebml_w.id(id);
                 do ebml_w.tag(c::tag_table_val) |ebml_w| {
@@ -953,7 +953,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
 
     {
         let r = tcx.adjustments.find(&id);
-        foreach adj in r.iter() {
+        for adj in r.iter() {
             do ebml_w.tag(c::tag_table_adjustments) |ebml_w| {
                 ebml_w.id(id);
                 do ebml_w.tag(c::tag_table_val) |ebml_w| {
@@ -965,7 +965,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
 
     {
         let r = maps.capture_map.find(&id);
-        foreach &cap_vars in r.iter() {
+        for &cap_vars in r.iter() {
             do ebml_w.tag(c::tag_table_capture_map) |ebml_w| {
                 ebml_w.id(id);
                 do ebml_w.tag(c::tag_table_val) |ebml_w| {
@@ -1054,7 +1054,7 @@ impl ebml_decoder_decoder_helpers for reader::Decoder {
 
         fn type_string(doc: ebml::Doc) -> ~str {
             let mut str = ~"";
-            foreach i in range(doc.start, doc.end) {
+            for i in range(doc.start, doc.end) {
                 str.push_char(doc.data[i] as char);
             }
             str
@@ -1139,7 +1139,7 @@ fn decode_side_tables(xcx: @ExtendedDecodeContext,
                       ast_doc: ebml::Doc) {
     let dcx = xcx.dcx;
     let tbl_doc = ast_doc.get(c::tag_table as uint);
-    for reader::docs(tbl_doc) |tag, entry_doc| {
+    do reader::docs(tbl_doc) |tag, entry_doc| {
         let id0 = entry_doc.get(c::tag_table_id as uint).as_int();
         let id = xcx.tr_id(id0);
 
@@ -1218,7 +1218,8 @@ fn decode_side_tables(xcx: @ExtendedDecodeContext,
         }
 
         debug!(">< Side table doc loaded");
-    }
+        true
+    };
 }
 
 // ______________________________________________________________________
@@ -1274,7 +1275,7 @@ fn mk_ctxt() -> @fake_ext_ctxt {
 fn roundtrip(in_item: Option<@ast::item>) {
     use std::io;
 
-    let in_item = in_item.get();
+    let in_item = in_item.unwrap();
     let bytes = do io::with_bytes_writer |wr| {
         let mut ebml_w = writer::Encoder(wr);
         encode_item_ast(&mut ebml_w, in_item);
@@ -1320,13 +1321,13 @@ fn test_simplification() {
             fn eq_int(a: int, b: int) -> bool { a == b }
             return alist {eq_fn: eq_int, data: ~[]};
         }
-    ).get());
+    ).unwrap());
     let item_out = simplify_ast(&item_in);
     let item_exp = ast::ii_item(quote_item!(
         fn new_int_alist<B>() -> alist<int, B> {
             return alist {eq_fn: eq_int, data: ~[]};
         }
-    ).get());
+    ).unwrap());
     match (item_out, item_exp) {
       (ast::ii_item(item_out), ast::ii_item(item_exp)) => {
         assert!(pprust::item_to_str(item_out,

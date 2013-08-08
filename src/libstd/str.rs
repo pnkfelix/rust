@@ -58,7 +58,7 @@ pub fn from_bytes(vv: &[u8]) -> ~str {
     use str::not_utf8::cond;
 
     if !is_utf8(vv) {
-        let first_bad_byte = *vv.iter().find_(|&b| !is_utf8([*b])).get();
+        let first_bad_byte = *vv.iter().find_(|&b| !is_utf8([*b])).unwrap();
         cond.raise(fmt!("from_bytes: input is not UTF-8; first bad byte is %u",
                         first_bad_byte as uint))
     } else {
@@ -75,7 +75,7 @@ pub fn from_bytes_owned(vv: ~[u8]) -> ~str {
     use str::not_utf8::cond;
 
     if !is_utf8(vv) {
-        let first_bad_byte = *vv.iter().find_(|&b| !is_utf8([*b])).get();
+        let first_bad_byte = *vv.iter().find_(|&b| !is_utf8([*b])).unwrap();
         cond.raise(fmt!("from_bytes: input is not UTF-8; first bad byte is %u",
                         first_bad_byte as uint))
     } else {
@@ -149,7 +149,7 @@ pub fn from_char(ch: char) -> ~str {
 pub fn from_chars(chs: &[char]) -> ~str {
     let mut buf = ~"";
     buf.reserve(chs.len());
-    foreach ch in chs.iter() {
+    for ch in chs.iter() {
         buf.push_char(*ch)
     }
     buf
@@ -178,7 +178,7 @@ impl<'self, S: Str> StrVector for &'self [S] {
         unsafe {
             do s.as_mut_buf |buf, _| {
                 let mut buf = buf;
-                foreach ss in self.iter() {
+                for ss in self.iter() {
                     do ss.as_slice().as_imm_buf |ssbuf, sslen| {
                         let sslen = sslen - 1;
                         ptr::copy_memory(buf, ssbuf, sslen);
@@ -211,7 +211,7 @@ impl<'self, S: Str> StrVector for &'self [S] {
                 do sep.as_imm_buf |sepbuf, seplen| {
                     let seplen = seplen - 1;
                     let mut buf = cast::transmute_mut_unsafe(buf);
-                    foreach ss in self.iter() {
+                    for ss in self.iter() {
                         do ss.as_slice().as_imm_buf |ssbuf, sslen| {
                             let sslen = sslen - 1;
                             if first {
@@ -486,7 +486,7 @@ impl<'self> Iterator<&'self str> for StrSplitIterator<'self> {
 pub fn replace(s: &str, from: &str, to: &str) -> ~str {
     let mut result = ~"";
     let mut last_end = 0;
-    foreach (start, end) in s.matches_index_iter(from) {
+    for (start, end) in s.matches_index_iter(from) {
         result.push_str(unsafe{raw::slice_bytes(s, last_end, start)});
         result.push_str(to);
         last_end = end;
@@ -556,7 +556,7 @@ Section: Searching
 // Utility used by various searching functions
 fn match_at<'a,'b>(haystack: &'a str, needle: &'b str, at: uint) -> bool {
     let mut i = at;
-    foreach c in needle.byte_iter() { if haystack[i] != c { return false; } i += 1u; }
+    for c in needle.byte_iter() { if haystack[i] != c { return false; } i += 1u; }
     return true;
 }
 
@@ -564,51 +564,63 @@ fn match_at<'a,'b>(haystack: &'a str, needle: &'b str, at: uint) -> bool {
 Section: Misc
 */
 
-// Return the initial codepoint accumulator for the first byte.
-// The first byte is special, only want bottom 5 bits for width 2, 4 bits
-// for width 3, and 3 bits for width 4
-macro_rules! utf8_first_byte(
-    ($byte:expr, $width:expr) => (($byte & (0x7F >> $width)) as uint)
-)
-
-// return the value of $ch updated with continuation byte $byte
-macro_rules! utf8_acc_cont_byte(
-    ($ch:expr, $byte:expr) => (($ch << 6) | ($byte & 63u8) as uint)
-)
-
 /// Determines if a vector of bytes contains valid UTF-8
 pub fn is_utf8(v: &[u8]) -> bool {
     let mut i = 0u;
     let total = v.len();
+    fn unsafe_get(xs: &[u8], i: uint) -> u8 {
+        unsafe { *xs.unsafe_ref(i) }
+    }
     while i < total {
-        if v[i] < 128u8 {
+        let v_i = unsafe_get(v, i);
+        if v_i < 128u8 {
             i += 1u;
         } else {
-            let w = utf8_char_width(v[i]);
+            let w = utf8_char_width(v_i);
             if w == 0u { return false; }
 
             let nexti = i + w;
             if nexti > total { return false; }
-            // 1. Make sure the correct number of continuation bytes are present
-            // 2. Check codepoint ranges (deny overlong encodings)
-            //    2-byte encoding is for codepoints  \u0080 to  \u07ff
-            //    3-byte encoding is for codepoints  \u0800 to  \uffff
-            //    4-byte encoding is for codepoints \u10000 to \u10ffff
 
-            //    2-byte encodings are correct if the width and continuation match up
-            if v[i + 1] & 192u8 != TAG_CONT_U8 { return false; }
-            if w > 2 {
-                let mut ch;
-                ch = utf8_first_byte!(v[i], w);
-                ch = utf8_acc_cont_byte!(ch, v[i + 1]);
-                if v[i + 2] & 192u8 != TAG_CONT_U8 { return false; }
-                ch = utf8_acc_cont_byte!(ch, v[i + 2]);
-                if w == 3 && ch < MAX_TWO_B { return false; }
-                if w > 3 {
-                    if v[i + 3] & 192u8 != TAG_CONT_U8 { return false; }
-                    ch = utf8_acc_cont_byte!(ch, v[i + 3]);
-                    if ch < MAX_THREE_B || ch >= MAX_UNICODE { return false; }
-                }
+            // 2-byte encoding is for codepoints  \u0080 to  \u07ff
+            //        first  C2 80        last DF BF
+            // 3-byte encoding is for codepoints  \u0800 to  \uffff
+            //        first  E0 A0 80     last EF BF BF
+            // 4-byte encoding is for codepoints \u10000 to \u10ffff
+            //        first  F0 90 80 80  last F4 8F BF BF
+            //
+            // Use the UTF-8 syntax from the RFC
+            //
+            // https://tools.ietf.org/html/rfc3629
+            // UTF8-1      = %x00-7F
+            // UTF8-2      = %xC2-DF UTF8-tail
+            // UTF8-3      = %xE0 %xA0-BF UTF8-tail / %xE1-EC 2( UTF8-tail ) /
+            //               %xED %x80-9F UTF8-tail / %xEE-EF 2( UTF8-tail )
+            // UTF8-4      = %xF0 %x90-BF 2( UTF8-tail ) / %xF1-F3 3( UTF8-tail ) /
+            //               %xF4 %x80-8F 2( UTF8-tail )
+            // UTF8-tail   = %x80-BF
+            // --
+            // This code allows surrogate pairs: \uD800 to \uDFFF -> ED A0 80 to ED BF BF
+            match w {
+                2 => if unsafe_get(v, i + 1) & 192u8 != TAG_CONT_U8 {
+                    return false
+                },
+                3 => match (v_i,
+                            unsafe_get(v, i + 1),
+                            unsafe_get(v, i + 2) & 192u8) {
+                    (0xE0        , 0xA0 .. 0xBF, TAG_CONT_U8) => (),
+                    (0xE1 .. 0xEF, 0x80 .. 0xBF, TAG_CONT_U8) => (),
+                    _ => return false,
+                },
+                _ => match (v_i,
+                            unsafe_get(v, i + 1),
+                            unsafe_get(v, i + 2) & 192u8,
+                            unsafe_get(v, i + 3) & 192u8) {
+                    (0xF0        , 0x90 .. 0xBF, TAG_CONT_U8, TAG_CONT_U8) => (),
+                    (0xF1 .. 0xF3, 0x80 .. 0xBF, TAG_CONT_U8, TAG_CONT_U8) => (),
+                    (0xF4        , 0x80 .. 0x8F, TAG_CONT_U8, TAG_CONT_U8) => (),
+                    _ => return false,
+                },
             }
 
             i = nexti;
@@ -756,6 +768,18 @@ pub struct CharRange {
     next: uint
 }
 
+// Return the initial codepoint accumulator for the first byte.
+// The first byte is special, only want bottom 5 bits for width 2, 4 bits
+// for width 3, and 3 bits for width 4
+macro_rules! utf8_first_byte(
+    ($byte:expr, $width:expr) => (($byte & (0x7F >> $width)) as uint)
+)
+
+// return the value of $ch updated with continuation byte $byte
+macro_rules! utf8_acc_cont_byte(
+    ($ch:expr, $byte:expr) => (($ch << 6) | ($byte & 63u8) as uint)
+)
+
 // UTF-8 tags and ranges
 priv static TAG_CONT_U8: u8 = 128u8;
 priv static TAG_CONT: uint = 128u;
@@ -861,7 +885,7 @@ pub mod raw {
     /// If begin is greater than end.
     /// If end is greater than the length of the string.
     #[inline]
-    pub unsafe fn slice_bytes(s: &str, begin: uint, end: uint) -> &str {
+    pub unsafe fn slice_bytes<'a>(s: &'a str, begin: uint, end: uint) -> &'a str {
         do s.as_imm_buf |sbuf, n| {
              assert!((begin <= end));
              assert!((end <= n));
@@ -878,7 +902,7 @@ pub mod raw {
         let new_len = s.len() + 1;
         s.reserve_at_least(new_len);
         do s.as_mut_buf |buf, len| {
-            *ptr::mut_offset(buf, len as int) = b;
+            *ptr::mut_offset(buf, (len-1) as int) = b;
         }
         set_len(&mut *s, new_len);
     }
@@ -887,7 +911,7 @@ pub mod raw {
     unsafe fn push_bytes(s: &mut ~str, bytes: &[u8]) {
         let new_len = s.len() + bytes.len();
         s.reserve_at_least(new_len);
-        foreach byte in bytes.iter() { push_byte(&mut *s, *byte); }
+        for byte in bytes.iter() { push_byte(&mut *s, *byte); }
     }
 
     /// Removes the last byte from a string and returns it. (Not UTF-8 safe).
@@ -953,7 +977,7 @@ pub mod traits {
     impl<'self> TotalOrd for &'self str {
         #[inline]
         fn cmp(&self, other: & &'self str) -> Ordering {
-            foreach (s_b, o_b) in self.byte_iter().zip(other.byte_iter()) {
+            for (s_b, o_b) in self.byte_iter().zip(other.byte_iter()) {
                 match s_b.cmp(&o_b) {
                     Greater => return Greater,
                     Less => return Less,
@@ -1079,11 +1103,17 @@ pub mod traits {}
 pub trait Str {
     /// Work with `self` as a slice.
     fn as_slice<'a>(&'a self) -> &'a str;
+
+    /// Convert `self` into a ~str.
+    fn into_owned(self) -> ~str;
 }
 
 impl<'self> Str for &'self str {
     #[inline]
     fn as_slice<'a>(&'a self) -> &'a str { *self }
+
+    #[inline]
+    fn into_owned(self) -> ~str { self.to_owned() }
 }
 
 impl<'self> Str for ~str {
@@ -1091,6 +1121,9 @@ impl<'self> Str for ~str {
     fn as_slice<'a>(&'a self) -> &'a str {
         let s: &'a str = *self; s
     }
+
+    #[inline]
+    fn into_owned(self) -> ~str { self }
 }
 
 impl<'self> Str for @str {
@@ -1098,6 +1131,9 @@ impl<'self> Str for @str {
     fn as_slice<'a>(&'a self) -> &'a str {
         let s: &'a str = *self; s
     }
+
+    #[inline]
+    fn into_owned(self) -> ~str { self.to_owned() }
 }
 
 impl<'self> Container for &'self str {
@@ -1455,7 +1491,7 @@ impl<'self> StrSlice<'self> for &'self str {
     fn escape_default(&self) -> ~str {
         let mut out: ~str = ~"";
         out.reserve_at_least(self.len());
-        foreach c in self.iter() {
+        for c in self.iter() {
             do c.escape_default |c| {
                 out.push_char(c);
             }
@@ -1467,7 +1503,7 @@ impl<'self> StrSlice<'self> for &'self str {
     fn escape_unicode(&self) -> ~str {
         let mut out: ~str = ~"";
         out.reserve_at_least(self.len());
-        foreach c in self.iter() {
+        for c in self.iter() {
             do c.escape_unicode |c| {
                 out.push_char(c);
             }
@@ -1569,7 +1605,7 @@ impl<'self> StrSlice<'self> for &'self str {
     pub fn replace(&self, from: &str, to: &str) -> ~str {
         let mut result = ~"";
         let mut last_end = 0;
-        foreach (start, end) in self.matches_index_iter(from) {
+        for (start, end) in self.matches_index_iter(from) {
             result.push_str(unsafe{raw::slice_bytes(*self, last_end, start)});
             result.push_str(to);
             last_end = end;
@@ -1607,7 +1643,7 @@ impl<'self> StrSlice<'self> for &'self str {
     /// Converts to a vector of `u16` encoded as UTF-16.
     fn to_utf16(&self) -> ~[u16] {
         let mut u = ~[];
-        foreach ch in self.iter() {
+        for ch in self.iter() {
             // Arithmetic with u32 literals is easier on the eyes than chars.
             let mut ch = ch as u32;
 
@@ -1760,12 +1796,12 @@ impl<'self> StrSlice<'self> for &'self str {
     /// or `None` if there is no match
     fn find<C: CharEq>(&self, search: C) -> Option<uint> {
         if search.only_ascii() {
-            foreach (i, b) in self.byte_iter().enumerate() {
+            for (i, b) in self.byte_iter().enumerate() {
                 if search.matches(b as char) { return Some(i) }
             }
         } else {
             let mut index = 0;
-            foreach c in self.iter() {
+            for c in self.iter() {
                 if search.matches(c) { return Some(index); }
                 index += c.len_utf8_bytes();
             }
@@ -1783,12 +1819,12 @@ impl<'self> StrSlice<'self> for &'self str {
     fn rfind<C: CharEq>(&self, search: C) -> Option<uint> {
         let mut index = self.len();
         if search.only_ascii() {
-            foreach b in self.byte_rev_iter() {
+            for b in self.byte_rev_iter() {
                 index -= 1;
                 if search.matches(b as char) { return Some(index); }
             }
         } else {
-            foreach c in self.rev_iter() {
+            for c in self.rev_iter() {
                 index -= c.len_utf8_bytes();
                 if search.matches(c) { return Some(index); }
             }
@@ -1857,7 +1893,7 @@ impl<'self> StrSlice<'self> for &'self str {
     /// Apply a function to each character.
     fn map_chars(&self, ff: &fn(char) -> char) -> ~str {
         let mut result = with_capacity(self.len());
-        foreach cc in self.iter() {
+        for cc in self.iter() {
             result.push_char(ff(cc));
         }
         result
@@ -1873,12 +1909,12 @@ impl<'self> StrSlice<'self> for &'self str {
 
         let mut dcol = vec::from_fn(tlen + 1, |x| x);
 
-        foreach (i, sc) in self.iter().enumerate() {
+        for (i, sc) in self.iter().enumerate() {
 
             let mut current = i;
             dcol[0] = current + 1;
 
-            foreach (j, tc) in t.iter().enumerate() {
+            for (j, tc) in t.iter().enumerate() {
 
                 let next = dcol[j + 1];
 
@@ -1905,7 +1941,7 @@ impl<'self> StrSlice<'self> for &'self str {
     /// ~~~ {.rust}
     /// let string = "a\nb\nc";
     /// let mut lines = ~[];
-    /// foreach line in string.line_iter() { lines.push(line) }
+    /// for line in string.line_iter() { lines.push(line) }
     ///
     /// assert!(string.subslice_offset(lines[0]) == 0); // &"a"
     /// assert!(string.subslice_offset(lines[1]) == 2); // &"b"
@@ -2240,7 +2276,7 @@ impl<T: Iterator<char>> Extendable<char, T> for ~str {
         let (lower, _) = iterator.size_hint();
         let reserve = lower + self.len();
         self.reserve_at_least(reserve);
-        foreach ch in *iterator {
+        for ch in *iterator {
             self.push_char(ch)
         }
     }
@@ -2790,6 +2826,13 @@ mod tests {
     }
 
     #[test]
+    fn test_push_byte() {
+        let mut s = ~"ABC";
+        unsafe{raw::push_byte(&mut s, 'D' as u8)};
+        assert_eq!(s, ~"ABCD");
+    }
+
+    #[test]
     fn test_shift_byte() {
         let mut s = ~"ABC";
         let b = unsafe{raw::shift_byte(&mut s)};
@@ -2833,13 +2876,21 @@ mod tests {
     }
 
     #[test]
-    fn test_is_utf8_deny_overlong() {
+    fn test_is_utf8() {
         assert!(!is_utf8([0xc0, 0x80]));
         assert!(!is_utf8([0xc0, 0xae]));
         assert!(!is_utf8([0xe0, 0x80, 0x80]));
         assert!(!is_utf8([0xe0, 0x80, 0xaf]));
         assert!(!is_utf8([0xe0, 0x81, 0x81]));
         assert!(!is_utf8([0xf0, 0x82, 0x82, 0xac]));
+        assert!(!is_utf8([0xf4, 0x90, 0x80, 0x80]));
+
+        assert!(is_utf8([0xC2, 0x80]));
+        assert!(is_utf8([0xDF, 0xBF]));
+        assert!(is_utf8([0xE0, 0xA0, 0x80]));
+        assert!(is_utf8([0xEF, 0xBF, 0xBF]));
+        assert!(is_utf8([0xF0, 0x90, 0x80, 0x80]));
+        assert!(is_utf8([0xF4, 0x8F, 0xBF, 0xBF]));
     }
 
 
@@ -3056,7 +3107,7 @@ mod tests {
 
         let string = "a\nb\nc";
         let mut lines = ~[];
-        foreach line in string.line_iter() { lines.push(line) }
+        for line in string.line_iter() { lines.push(line) }
         assert_eq!(string.subslice_offset(lines[0]), 0);
         assert_eq!(string.subslice_offset(lines[1]), 2);
         assert_eq!(string.subslice_offset(lines[2]), 4);
@@ -3160,7 +3211,7 @@ mod tests {
                 0xd801_u16, 0xdc95_u16, 0xd801_u16, 0xdc86_u16,
                 0x000a_u16 ]) ];
 
-        foreach p in pairs.iter() {
+        for p in pairs.iter() {
             let (s, u) = (*p).clone();
             assert!(s.to_utf16() == u);
             assert!(from_utf16(u) == s);
@@ -3174,7 +3225,7 @@ mod tests {
         let s = ~"ศไทย中华Việt Nam";
         let v = ~['ศ','ไ','ท','ย','中','华','V','i','ệ','t',' ','N','a','m'];
         let mut pos = 0;
-        foreach ch in v.iter() {
+        for ch in v.iter() {
             assert!(s.char_at(pos) == *ch);
             pos += from_char(*ch).len();
         }
@@ -3185,7 +3236,7 @@ mod tests {
         let s = ~"ศไทย中华Việt Nam";
         let v = ~['ศ','ไ','ท','ย','中','华','V','i','ệ','t',' ','N','a','m'];
         let mut pos = s.len();
-        foreach ch in v.rev_iter() {
+        for ch in v.rev_iter() {
             assert!(s.char_at_reverse(pos) == *ch);
             pos -= from_char(*ch).len();
         }
@@ -3277,7 +3328,7 @@ mod tests {
         let mut pos = 0;
         let mut it = s.iter();
 
-        foreach c in it {
+        for c in it {
             assert_eq!(c, v[pos]);
             pos += 1;
         }
@@ -3293,7 +3344,7 @@ mod tests {
         let mut pos = 0;
         let mut it = s.rev_iter();
 
-        foreach c in it {
+        for c in it {
             assert_eq!(c, v[pos]);
             pos += 1;
         }
@@ -3310,7 +3361,7 @@ mod tests {
         ];
         let mut pos = 0;
 
-        foreach b in s.byte_iter() {
+        for b in s.byte_iter() {
             assert_eq!(b, v[pos]);
             pos += 1;
         }
@@ -3326,7 +3377,7 @@ mod tests {
         ];
         let mut pos = v.len();
 
-        foreach b in s.byte_rev_iter() {
+        for b in s.byte_rev_iter() {
             pos -= 1;
             assert_eq!(b, v[pos]);
         }
@@ -3342,7 +3393,7 @@ mod tests {
         let mut pos = 0;
         let mut it = s.char_offset_iter();
 
-        foreach c in it {
+        for c in it {
             assert_eq!(c, (p[pos], v[pos]));
             pos += 1;
         }
@@ -3360,7 +3411,7 @@ mod tests {
         let mut pos = 0;
         let mut it = s.char_offset_rev_iter();
 
-        foreach c in it {
+        for c in it {
             assert_eq!(c, (p[pos], v[pos]));
             pos += 1;
         }

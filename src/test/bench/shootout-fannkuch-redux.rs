@@ -28,7 +28,7 @@ fn fannkuch_redux(n: i32) -> i32 {
                 r -= 1;
             }
 
-            foreach (perm_i, perm1_i) in perm.mut_iter().zip(perm1.iter()) {
+            for (perm_i, perm1_i) in perm.mut_iter().zip(perm1.iter()) {
                 *perm_i = *perm1_i;
             }
 
@@ -41,7 +41,7 @@ fn fannkuch_redux(n: i32) -> i32 {
                 }
 
                 let k2 = (k+1) >> 1;
-                foreach i in range(0i32, k2) {
+                for i in range(0i32, k2) {
                     let (perm_i, perm_k_i) = {
                         (perm.unsafe_get(i as uint),
                             perm.unsafe_get((k-i) as uint))
@@ -91,6 +91,6 @@ fn fannkuch_redux(n: i32) -> i32 {
 
 #[fixed_stack_segment]
 fn main() {
-    let n: i32 = FromStr::from_str(os::args()[1]).get();
+    let n: i32 = FromStr::from_str(os::args()[1]).unwrap();
     printfln!("Pfannkuchen(%d) = %d", n as int, fannkuch_redux(n) as int);
 }

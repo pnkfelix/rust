@@ -21,9 +21,9 @@ fn main() {
         args
     };
 
-    let n = uint::from_str(args[1]).get();
+    let n = uint::from_str(args[1]).unwrap();
 
-    foreach i in range(0u, n) {
+    for i in range(0u, n) {
         let x = uint::to_str(i);
         info!(x);
     }

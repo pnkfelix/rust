@@ -18,6 +18,7 @@ use syntax::opt_vec::OptVec;
 use syntax::opt_vec;
 use syntax::parse::token::special_idents;
 
+#[deriving(ToStr)]
 pub struct RegionError {
     msg: ~str,
     replacement: ty::Region
@@ -58,7 +59,7 @@ impl RegionParamNames {
     }
 
     fn has_ident(&self, ident: ast::ident) -> bool {
-        foreach region_param_name in self.iter() {
+        for region_param_name in self.iter() {
             if *region_param_name == ident {
                 return true;
             }
@@ -76,7 +77,7 @@ impl RegionParamNames {
                             opt_vec::Vec(new_lifetimes.map(|lt| lt.ident)));
                     }
                     opt_vec::Vec(ref mut existing_lifetimes) => {
-                        foreach new_lifetime in new_lifetimes.iter() {
+                        for new_lifetime in new_lifetimes.iter() {
                             existing_lifetimes.push(new_lifetime.ident);
                         }
                     }

@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2013 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -44,12 +44,12 @@ use syntax::ast_map::node_item;
 use syntax::ast_map;
 use syntax::ast_util::{def_id_of_def, local_def};
 use syntax::codemap::{span, dummy_sp};
-use syntax::parse;
 use syntax::opt_vec;
-use syntax::visit::{default_simple_visitor, default_visitor};
-use syntax::visit::{mk_simple_visitor, mk_vt, visit_crate, visit_item};
-use syntax::visit::{Visitor, SimpleVisitor};
-use syntax::visit::{visit_mod};
+use syntax::oldvisit::{default_simple_visitor, default_visitor};
+use syntax::oldvisit::{mk_simple_visitor, mk_vt, visit_crate, visit_item};
+use syntax::oldvisit::{Visitor, SimpleVisitor};
+use syntax::oldvisit::{visit_mod};
+use syntax::parse;
 use util::ppaux::ty_to_str;
 
 use std::hashmap::{HashMap, HashSet};
@@ -242,7 +242,7 @@ impl CoherenceChecker {
 
         let implementation = self.create_impl_from_item(item);
 
-        foreach associated_trait in associated_traits.iter() {
+        for associated_trait in associated_traits.iter() {
             let trait_ref = ty::node_id_to_trait_ref(
                 self.crate_context.tcx, associated_trait.ref_id);
             debug!("(checking implementation) adding impl for trait '%s', item '%s'",
@@ -289,7 +289,7 @@ impl CoherenceChecker {
         let impl_poly_type = ty::lookup_item_type(tcx, impl_id);
 
         let provided = ty::provided_trait_methods(tcx, trait_ref.def_id);
-        foreach trait_method in provided.iter() {
+        for trait_method in provided.iter() {
             // Synthesize an ID.
             let new_id = parse::next_node_id(tcx.sess.parse_sess);
             let new_did = local_def(new_id);
@@ -371,9 +371,10 @@ impl CoherenceChecker {
     }
 
     pub fn check_implementation_coherence(&self) {
-        for self.crate_context.tcx.trait_impls.each_key |&trait_id| {
+        do self.crate_context.tcx.trait_impls.each_key |&trait_id| {
             self.check_implementation_coherence_of(trait_id);
-        }
+            true
+        };
     }
 
     pub fn check_implementation_coherence_of(&self, trait_def_id: def_id) {
@@ -395,8 +396,11 @@ impl CoherenceChecker {
 
                     if self.polytypes_unify(polytype_a, polytype_b) {
                         let session = self.crate_context.tcx.sess;
-                        session.span_err(self.span_of_impl(implementation_b),
-                                         "conflicting implementations for a trait");
+                        session.span_err(
+                            self.span_of_impl(implementation_b),
+                            fmt!("conflicting implementations for trait `%s`",
+                                 ty::item_path_str(self.crate_context.tcx,
+                                                   trait_def_id)));
                         session.span_note(self.span_of_impl(implementation_a),
                                           "note conflicting implementation here");
                     }
@@ -408,7 +412,7 @@ impl CoherenceChecker {
     pub fn iter_impls_of_trait(&self, trait_def_id: def_id, f: &fn(@Impl)) {
         match self.crate_context.tcx.trait_impls.find(&trait_def_id) {
             Some(impls) => {
-                foreach &im in impls.iter() {
+                for &im in impls.iter() {
                     f(im);
                 }
             }
@@ -550,12 +554,12 @@ impl CoherenceChecker {
 
         let mut provided_names = HashSet::new();
         // Implemented methods
-        foreach i in range(0u, all_methods.len()) {
+        for i in range(0u, all_methods.len()) {
             provided_names.insert(all_methods[i].ident);
         }
 
         let r = ty::trait_methods(tcx, trait_did);
-        foreach method in r.iter() {
+        for method in r.iter() {
             debug!("checking for %s", method.ident.repr(tcx));
             if provided_names.contains(&method.ident) { loop; }
 
@@ -611,11 +615,11 @@ impl CoherenceChecker {
         match item.node {
             item_impl(_, ref trait_refs, _, ref ast_methods) => {
                 let mut methods = ~[];
-                foreach ast_method in ast_methods.iter() {
+                for ast_method in ast_methods.iter() {
                     methods.push(ty::method(tcx, local_def(ast_method.id)));
                 }
 
-                foreach trait_ref in trait_refs.iter() {
+                for trait_ref in trait_refs.iter() {
                     let ty_trait_ref = ty::node_id_to_trait_ref(
                         self.crate_context.tcx,
                         trait_ref.ref_id);
@@ -697,14 +701,14 @@ impl CoherenceChecker {
         }
 
         // Record all the trait methods.
-        foreach trait_ref in associated_traits.iter() {
+        for trait_ref in associated_traits.iter() {
               self.add_trait_impl(trait_ref.def_id, implementation);
         }
 
         // For any methods that use a default implementation, add them to
         // the map. This is a bit unfortunate.
-        foreach method in implementation.methods.iter() {
-            foreach source in method.provided_source.iter() {
+        for method in implementation.methods.iter() {
+            for source in method.provided_source.iter() {
                 tcx.provided_method_sources.insert(method.def_id, *source);
             }
         }
@@ -738,14 +742,15 @@ impl CoherenceChecker {
 
         let crate_store = self.crate_context.tcx.sess.cstore;
         do iter_crate_data(crate_store) |crate_number, _crate_metadata| {
-            for each_path(crate_store, crate_number) |_, def_like, _| {
+            do each_path(crate_store, crate_number) |_, def_like, _| {
                 match def_like {
                     dl_impl(def_id) => {
                         self.add_external_impl(&mut impls_seen, def_id)
                     }
-                    dl_def(_) | dl_field => loop,   // Skip this.
+                    dl_def(_) | dl_field => (),   // Skip this.
                 }
-            }
+                true
+            };
         }
     }
 
@@ -766,7 +771,7 @@ impl CoherenceChecker {
             Some(found_impls) => impls = found_impls
         }
 
-        foreach impl_info in impls.iter() {
+        for impl_info in impls.iter() {
             if impl_info.methods.len() < 1 {
                 // We'll error out later. For now, just don't ICE.
                 loop;

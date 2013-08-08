@@ -135,7 +135,7 @@ impl PkgSrc {
             return true;
         }
         else {
-            foreach pth in self_id.iter() {
+            for pth in self_id.iter() {
                 if pth.starts_with("rust_") // because p is already normalized
                     && match p.filestem() {
                            Some(s) => str::eq_slice(s, pth.slice(5, pth.len())),
@@ -149,7 +149,7 @@ impl PkgSrc {
     fn push_crate(cs: &mut ~[Crate], prefix: uint, p: &Path) {
         assert!(p.components.len() > prefix);
         let mut sub = Path("");
-        foreach c in p.components.slice(prefix, p.components.len()).iter() {
+        for c in p.components.slice(prefix, p.components.len()).iter() {
             sub = sub.push(*c);
         }
         debug!("found crate %s", sub.to_str());
@@ -165,7 +165,7 @@ impl PkgSrc {
         debug!("Called check_dir, I'm in %s", dir.to_str());
         let prefix = dir.components.len();
         debug!("Matching against %?", self.id.local_path.filestem());
-        for os::walk_dir(&dir) |pth| {
+        do os::walk_dir(&dir) |pth| {
             match pth.filename() {
                 Some(~"lib.rs") => PkgSrc::push_crate(&mut self.libs,
                                                       prefix,
@@ -181,7 +181,8 @@ impl PkgSrc {
                                                         pth),
                 _ => ()
             }
-        }
+            true
+        };
 
         if self.libs.is_empty() && self.mains.is_empty()
             && self.tests.is_empty() && self.benchs.is_empty() {
@@ -206,7 +207,7 @@ impl PkgSrc {
                     crates: &[Crate],
                     cfgs: &[~str],
                     what: OutputType) {
-        foreach crate in crates.iter() {
+        for crate in crates.iter() {
             let path = &src_dir.push_rel(&crate.file).normalize();
             note(fmt!("build_crates: compiling %s", path.to_str()));
             note(fmt!("build_crates: destination dir is %s", dst_dir.to_str()));

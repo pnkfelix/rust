@@ -280,9 +280,13 @@ pub fn vstore_ty_to_str(cx: ctxt, mt: &mt, vs: ty::vstore) -> ~str {
     }
 }
 
+pub fn vec_map_to_str<T>(ts: &[T], f: &fn(t: &T) -> ~str) -> ~str {
+    let tstrs = ts.map(f);
+    fmt!("[%s]", tstrs.connect(", "))
+}
+
 pub fn tys_to_str(cx: ctxt, ts: &[t]) -> ~str {
-    let tstrs = ts.map(|t| ty_to_str(cx, *t));
-    fmt!("(%s)", tstrs.connect(", "))
+    vec_map_to_str(ts, |t| ty_to_str(cx, *t))
 }
 
 pub fn fn_sig_to_str(cx: ctxt, typ: &ty::FnSig) -> ~str {
@@ -398,7 +402,7 @@ pub fn ty_to_str(cx: ctxt, typ: t) -> ~str {
     }
 
     // if there is an id, print that instead of the structural type:
-    /*foreach def_id in ty::type_def_id(typ).iter() {
+    /*for def_id in ty::type_def_id(typ).iter() {
         // note that this typedef cannot have type parameters
         return ast_map::path_to_str(ty::item_path(cx, *def_id),
                                     cx.sess.intr());
@@ -484,13 +488,13 @@ pub fn parameterized(cx: ctxt,
     match *regions {
         ty::ErasedRegions => { }
         ty::NonerasedRegions(ref regions) => {
-            foreach &r in regions.iter() {
+            for &r in regions.iter() {
                 strs.push(region_to_str(cx, "", false, r))
             }
         }
     }
 
-    foreach t in tps.iter() {
+    for t in tps.iter() {
         strs.push(ty_to_str(cx, *t))
     }
 
@@ -529,7 +533,7 @@ impl<T:Repr> Repr for ~T {
 }
 
 fn repr_vec<T:Repr>(tcx: ctxt, v: &[T]) -> ~str {
-    fmt!("[%s]", v.map(|t| t.repr(tcx)).connect(","))
+    vec_map_to_str(v, |t| t.repr(tcx))
 }
 
 impl<'self, T:Repr> Repr for &'self [T] {
@@ -589,7 +593,7 @@ impl Repr for ty::RegionSubsts {
 impl Repr for ty::ParamBounds {
     fn repr(&self, tcx: ctxt) -> ~str {
         let mut res = ~[];
-        for self.builtin_bounds.each |b| {
+        for b in self.builtin_bounds.iter() {
             res.push(match b {
                 ty::BoundStatic => ~"'static",
                 ty::BoundSend => ~"Send",
@@ -597,7 +601,7 @@ impl Repr for ty::ParamBounds {
                 ty::BoundSized => ~"Sized",
             });
         }
-        foreach t in self.trait_bounds.iter() {
+        for t in self.trait_bounds.iter() {
             res.push(t.repr(tcx));
         }
         res.connect("+")
@@ -831,7 +835,7 @@ impl UserString for ty::BuiltinBounds {
     fn user_string(&self, tcx: ctxt) -> ~str {
         if self.is_empty() { ~"<no-bounds>" } else {
             let mut result = ~[];
-            for self.each |bb| {
+            for bb in self.iter() {
                 result.push(bb.user_string(tcx));
             }
             result.connect("+")
@@ -845,7 +849,7 @@ impl UserString for ty::TraitRef {
         let base = ast_map::path_to_str(path, tcx.sess.intr());
         if tcx.sess.verbose() && self.substs.self_ty.is_some() {
             let mut all_tps = self.substs.tps.clone();
-            foreach &t in self.substs.self_ty.iter() { all_tps.push(t); }
+            for &t in self.substs.self_ty.iter() { all_tps.push(t); }
             parameterized(tcx, base, &self.substs.regions, all_tps)
         } else {
             parameterized(tcx, base, &self.substs.regions, self.substs.tps)

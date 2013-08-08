@@ -19,16 +19,16 @@ fn A(i: i32, j: i32) -> i32 {
 
 fn dot(v: &[f64], u: &[f64]) -> f64 {
     let mut sum = 0.0;
-    foreach (i, &v_i) in v.iter().enumerate() {
+    for (i, &v_i) in v.iter().enumerate() {
         sum += v_i * u[i];
     }
     sum
 }
 
 fn mult_Av(v: &mut [f64], out: &mut [f64]) {
-    foreach (i, out_i) in out.mut_iter().enumerate() {
+    for (i, out_i) in out.mut_iter().enumerate() {
         let mut sum = 0.0;
-        foreach (j, &v_j) in v.mut_iter().enumerate() {
+        for (j, &v_j) in v.mut_iter().enumerate() {
             sum += v_j / (A(i as i32, j as i32) as f64);
         }
         *out_i = sum;
@@ -36,9 +36,9 @@ fn mult_Av(v: &mut [f64], out: &mut [f64]) {
 }
 
 fn mult_Atv(v: &mut [f64], out: &mut [f64]) {
-    foreach (i, out_i) in out.mut_iter().enumerate() {
+    for (i, out_i) in out.mut_iter().enumerate() {
         let mut sum = 0.0;
-        foreach (j, &v_j) in v.mut_iter().enumerate() {
+        for (j, &v_j) in v.mut_iter().enumerate() {
             sum += v_j / (A(j as i32, i as i32) as f64);
         }
         *out_i = sum;
@@ -52,7 +52,7 @@ fn mult_AtAv(v: &mut [f64], out: &mut [f64], tmp: &mut [f64]) {
 
 #[fixed_stack_segment]
 fn main() {
-    let n: uint = FromStr::from_str(os::args()[1]).get();
+    let n: uint = FromStr::from_str(os::args()[1]).unwrap();
     let mut u = vec::from_elem(n, 1f64);
     let mut v = u.clone();
     let mut tmp = u.clone();

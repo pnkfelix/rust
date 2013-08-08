@@ -11,7 +11,7 @@
 use abi;
 use abi::AbiSet;
 use ast::{Sigil, BorrowedSigil, ManagedSigil, OwnedSigil};
-use ast::{CallSugar, NoSugar, DoSugar, ForSugar};
+use ast::{CallSugar, NoSugar, DoSugar};
 use ast::{TyBareFn, TyClosure};
 use ast::{RegionTyParamBound, TraitTyParamBound};
 use ast::{provided, public, purity};
@@ -24,7 +24,7 @@ use ast::{expr, expr_, expr_addr_of, expr_match, expr_again};
 use ast::{expr_assign, expr_assign_op, expr_binary, expr_block};
 use ast::{expr_break, expr_call, expr_cast, expr_do_body};
 use ast::{expr_field, expr_fn_block, expr_if, expr_index};
-use ast::{expr_lit, expr_log, expr_loop, expr_loop_body, expr_mac};
+use ast::{expr_lit, expr_log, expr_loop, expr_mac};
 use ast::{expr_method_call, expr_paren, expr_path, expr_repeat};
 use ast::{expr_ret, expr_self, expr_struct, expr_tup, expr_unary};
 use ast::{expr_vec, expr_vstore, expr_vstore_mut_box};
@@ -84,7 +84,8 @@ use parse::obsolete::{ObsoletePurity, ObsoleteStaticMethod};
 use parse::obsolete::{ObsoleteConstItem, ObsoleteFixedLengthVectorType};
 use parse::obsolete::{ObsoleteNamedExternModule, ObsoleteMultipleLocalDecl};
 use parse::obsolete::{ObsoleteMutWithMultipleBindings};
-use parse::obsolete::{ObsoleteExternVisibility, ParserObsoleteMethods};
+use parse::obsolete::{ObsoleteExternVisibility, ObsoleteUnsafeExternFn};
+use parse::obsolete::{ParserObsoleteMethods};
 use parse::token::{can_begin_expr, get_ident_interner, ident_to_str, is_ident};
 use parse::token::{is_ident_or_path};
 use parse::token::{is_plain_ident, INTERPOLATED, keywords, special_idents};
@@ -690,7 +691,7 @@ impl Parser {
         */
 
         let opt_abis = self.parse_opt_abis();
-        let abis = opt_abis.get_or_default(AbiSet::Rust());
+        let abis = opt_abis.unwrap_or_default(AbiSet::Rust());
         let purity = self.parse_unsafety();
         self.expect_keyword(keywords::Fn);
         let (decl, lifetimes) = self.parse_ty_fn_decl();
@@ -1622,11 +1623,8 @@ impl Parser {
             hi = self.span.hi;
         } else if self.eat_keyword(keywords::If) {
             return self.parse_if_expr();
-        } else if self.eat_keyword(keywords::ForEach) {
-            return self.parse_for_expr();
         } else if self.eat_keyword(keywords::For) {
-            return self.parse_sugary_call_expr(lo, ~"for", ForSugar,
-                                               expr_loop_body);
+            return self.parse_for_expr();
         } else if self.eat_keyword(keywords::Do) {
             return self.parse_sugary_call_expr(lo, ~"do", DoSugar,
                                                expr_do_body);
@@ -2325,9 +2323,9 @@ impl Parser {
         }
     }
 
-    // parse a 'foreach' .. 'in' expression ('foreach' token already eaten)
+    // parse a 'for' .. 'in' expression ('for' token already eaten)
     pub fn parse_for_expr(&self) -> @expr {
-        // Parse: `foreach <src_pat> in <src_expr> <src_loop_block>`
+        // Parse: `for <src_pat> in <src_expr> <src_loop_block>`
 
         let lo = self.last_span.lo;
         let pat = self.parse_pat();
@@ -3150,7 +3148,7 @@ impl Parser {
         } = self.parse_items_and_view_items(first_item_attrs,
                                             false, false);
 
-        foreach item in items.iter() {
+        for item in items.iter() {
             let decl = @spanned(item.span.lo, item.span.hi, decl_item(*item));
             stmts.push(@spanned(item.span.lo, item.span.hi,
                                 stmt_decl(decl, self.get_id())));
@@ -3328,7 +3326,7 @@ impl Parser {
         let ident = self.parse_ident();
         let opt_bounds = self.parse_optional_ty_param_bounds();
         // For typarams we don't care about the difference b/w "<T>" and "<T:>".
-        let bounds = opt_bounds.get_or_default(opt_vec::Empty);
+        let bounds = opt_bounds.unwrap_or_default(opt_vec::Empty);
         ast::TyParam { ident: ident, id: self.get_id(), bounds: bounds }
     }
 
@@ -3755,7 +3753,7 @@ impl Parser {
             fields = ~[];
             while *self.token != token::RBRACE {
                 let r = self.parse_struct_decl_field();
-                foreach struct_field in r.iter() {
+                for struct_field in r.iter() {
                     fields.push(*struct_field)
                 }
             }
@@ -4038,7 +4036,7 @@ impl Parser {
             Some(i) => {
                 let stack = &self.sess.included_mod_stack;
                 let mut err = ~"circular modules: ";
-                foreach p in stack.slice(i, stack.len()).iter() {
+                for p in stack.slice(i, stack.len()).iter() {
                     err.push_str(p.to_str());
                     err.push_str(" -> ");
                 }
@@ -4066,14 +4064,20 @@ impl Parser {
     fn parse_item_foreign_fn(&self,  attrs: ~[Attribute]) -> @foreign_item {
         let lo = self.span.lo;
         let vis = self.parse_visibility();
+
+        // Parse obsolete purity.
         let purity = self.parse_fn_purity();
+        if purity != impure_fn {
+            self.obsolete(*self.last_span, ObsoleteUnsafeExternFn);
+        }
+
         let (ident, generics) = self.parse_fn_header();
         let decl = self.parse_fn_decl();
         let hi = self.span.hi;
         self.expect(&token::SEMI);
         @ast::foreign_item { ident: ident,
                              attrs: attrs,
-                             node: foreign_item_fn(decl, purity, generics),
+                             node: foreign_item_fn(decl, generics),
                              id: self.get_id(),
                              span: mk_sp(lo, hi),
                              vis: vis }
@@ -4192,7 +4196,7 @@ impl Parser {
                 self.obsolete(*self.last_span, ObsoleteExternVisibility);
             }
 
-            let abis = opt_abis.get_or_default(AbiSet::C());
+            let abis = opt_abis.unwrap_or_default(AbiSet::C());
 
             let (inner, next) = self.parse_inner_attrs_and_next();
             let m = self.parse_foreign_mod_items(sort, abis, next);
@@ -4246,7 +4250,7 @@ impl Parser {
         let mut fields: ~[@struct_field] = ~[];
         while *self.token != token::RBRACE {
             let r = self.parse_struct_decl_field();
-            foreach struct_field in r.iter() {
+            for struct_field in r.iter() {
                 fields.push(*struct_field);
             }
         }
@@ -4286,7 +4290,7 @@ impl Parser {
                     seq_sep_trailing_disallowed(token::COMMA),
                     |p| p.parse_ty(false)
                 );
-                foreach ty in arg_tys.consume_iter() {
+                for ty in arg_tys.consume_iter() {
                     args.push(ast::variant_arg {
                         ty: ty,
                         id: self.get_id(),
@@ -4395,7 +4399,7 @@ impl Parser {
                 self.bump();
                 let the_string = ident_to_str(&s);
                 let mut abis = AbiSet::empty();
-                foreach word in the_string.word_iter() {
+                for word in the_string.word_iter() {
                     match abi::lookup(word) {
                         Some(abi) => {
                             if abis.contains(abi) {
@@ -4459,7 +4463,7 @@ impl Parser {
 
             if self.eat_keyword(keywords::Fn) {
                 // EXTERN FUNCTION ITEM
-                let abis = opt_abis.get_or_default(AbiSet::C());
+                let abis = opt_abis.unwrap_or_default(AbiSet::C());
                 let (ident, item_, extra_attrs) =
                     self.parse_item_fn(extern_fn, abis);
                 return iovi_item(self.mk_item(lo, self.last_span.hi, ident,

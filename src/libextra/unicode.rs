@@ -8,7 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[forbid(deprecated_mode)];
 #[allow(missing_doc)];
 
 pub mod icu {
@@ -159,29 +158,35 @@ pub mod icu {
     pub static UCHAR_INVALID_CODE : UProperty = -1;
 
     pub mod libicu {
-        #[link_name = "icuuc"]
+        use unicode::icu::*;
+
+        // #[link_name = "icuuc"]
+        #[link_args = "-licuuc"]
         #[abi = "cdecl"]
         extern {
-            pub unsafe fn u_hasBinaryProperty(c: UChar32, which: UProperty)
-                                              -> UBool;
-            pub unsafe fn u_isdigit(c: UChar32) -> UBool;
-            pub unsafe fn u_islower(c: UChar32) -> UBool;
-            pub unsafe fn u_isspace(c: UChar32) -> UBool;
-            pub unsafe fn u_isupper(c: UChar32) -> UBool;
-            pub unsafe fn u_tolower(c: UChar32) -> UChar32;
-            pub unsafe fn u_toupper(c: UChar32) -> UChar32;
+            pub fn u_hasBinaryProperty(c: UChar32, which: UProperty) -> UBool;
+            pub fn u_isdigit(c: UChar32) -> UBool;
+            pub fn u_islower(c: UChar32) -> UBool;
+            pub fn u_isspace(c: UChar32) -> UBool;
+            pub fn u_isupper(c: UChar32) -> UBool;
+            pub fn u_tolower(c: UChar32) -> UChar32;
+            pub fn u_toupper(c: UChar32) -> UChar32;
         }
     }
 }
 
 pub fn is_XID_start(c: char) -> bool {
-    return icu::libicu::u_hasBinaryProperty(c, icu::UCHAR_XID_START)
-        == icu::TRUE;
+    unsafe {
+        return icu::libicu::u_hasBinaryProperty(c, icu::UCHAR_XID_START)
+            == icu::TRUE;
+    }
 }
 
 pub fn is_XID_continue(c: char) -> bool {
-    return icu::libicu::u_hasBinaryProperty(c, icu::UCHAR_XID_START)
-        == icu::TRUE;
+    unsafe {
+        return icu::libicu::u_hasBinaryProperty(c, icu::UCHAR_XID_START)
+            == icu::TRUE;
+    }
 }
 
 /*
@@ -190,7 +195,9 @@ Function: is_digit
 Returns true if a character is a digit.
 */
 pub fn is_digit(c: char) -> bool {
-    return icu::libicu::u_isdigit(c) == icu::TRUE;
+    unsafe {
+        return icu::libicu::u_isdigit(c) == icu::TRUE;
+    }
 }
 
 /*
@@ -199,7 +206,9 @@ Function: is_lower
 Returns true if a character is a lowercase letter.
 */
 pub fn is_lower(c: char) -> bool {
-    return icu::libicu::u_islower(c) == icu::TRUE;
+    unsafe {
+        return icu::libicu::u_islower(c) == icu::TRUE;
+    }
 }
 
 /*
@@ -208,7 +217,9 @@ Function: is_space
 Returns true if a character is space.
 */
 pub fn is_space(c: char) -> bool {
-    return icu::libicu::u_isspace(c) == icu::TRUE;
+    unsafe {
+        return icu::libicu::u_isspace(c) == icu::TRUE;
+    }
 }
 
 /*
@@ -217,33 +228,36 @@ Function: is_upper
 Returns true if a character is an uppercase letter.
 */
 pub fn is_upper(c: char) -> bool {
-    return icu::libicu::u_isupper(c) == icu::TRUE;
+    unsafe {
+        return icu::libicu::u_isupper(c) == icu::TRUE;
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use unicode::*;
 
     #[test]
     fn test_is_digit() {
-        assert!((unicode::icu::is_digit('0')));
-        assert!((!unicode::icu::is_digit('m')));
+        assert!((is_digit('0')));
+        assert!((!is_digit('m')));
     }
 
     #[test]
     fn test_is_lower() {
-        assert!((unicode::icu::is_lower('m')));
-        assert!((!unicode::icu::is_lower('M')));
+        assert!((is_lower('m')));
+        assert!((!is_lower('M')));
     }
 
     #[test]
     fn test_is_space() {
-        assert!((unicode::icu::is_space(' ')));
-        assert!((!unicode::icu::is_space('m')));
+        assert!((is_space(' ')));
+        assert!((!is_space('m')));
     }
 
     #[test]
     fn test_is_upper() {
-        assert!((unicode::icu::is_upper('M')));
-        assert!((!unicode::icu::is_upper('m')));
+        assert!((is_upper('M')));
+        assert!((!is_upper('m')));
     }
 }

@@ -8,13 +8,17 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// error-pattern: conflicting implementations for trait `Foo`
+trait Foo {
+}
 
-#[forbid(deprecated_for_loop)];
+impl Foo for int {
 
-fn f(_: &fn() -> bool) -> bool {
-    true
+}
+
+impl<A> Foo for A {
+
 }
 
 fn main() {
-    for f {} //~ ERROR `for` is deprecated
 }

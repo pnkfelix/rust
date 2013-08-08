@@ -13,7 +13,7 @@
 
 use std::cmp;
 use std::iterator::RandomAccessIterator;
-use std::iterator::{Invert, Enumerate};
+use std::iterator::{Invert, Enumerate, Repeat, Map, Zip};
 use std::num;
 use std::ops;
 use std::uint;
@@ -145,7 +145,7 @@ impl BigBitv {
         let len = b.storage.len();
         assert_eq!(self.storage.len(), len);
         let mut changed = false;
-        foreach i in range(0, len) {
+        for i in range(0, len) {
             let mask = big_mask(nbits, i);
             let w0 = self.storage[i] & mask;
             let w1 = b.storage[i] & mask;
@@ -206,13 +206,13 @@ impl BigBitv {
     #[inline]
     pub fn equals(&self, b: &BigBitv, nbits: uint) -> bool {
         let len = b.storage.len();
-        for uint::iterate(0, len) |i| {
+        for i in range(0, len) {
             let mask = big_mask(nbits, i);
             if mask & self.storage[i] != mask & b.storage[i] {
                 return false;
             }
         }
-        return true;
+        true
     }
 }
 
@@ -358,7 +358,7 @@ impl Bitv {
     pub fn clear(&mut self) {
         match self.rep {
           Small(ref mut b) => b.clear(),
-          Big(ref mut s) => for s.each_storage() |w| { *w = 0u }
+          Big(ref mut s) => { do s.each_storage() |w| { *w = 0u; true }; }
         }
     }
 
@@ -367,7 +367,8 @@ impl Bitv {
     pub fn set_all(&mut self) {
       match self.rep {
         Small(ref mut b) => b.set_all(),
-        Big(ref mut s) => for s.each_storage() |w| { *w = !0u } }
+        Big(ref mut s) => { do s.each_storage() |w| { *w = !0u; true }; }
+      }
     }
 
     /// Invert all bits
@@ -375,7 +376,8 @@ impl Bitv {
     pub fn negate(&mut self) {
       match self.rep {
         Small(ref mut b) => b.negate(),
-        Big(ref mut s) => for s.each_storage() |w| { *w = !*w } }
+        Big(ref mut s) => { do s.each_storage() |w| { *w = !*w; true }; }
+      }
     }
 
     /**
@@ -398,7 +400,7 @@ impl Bitv {
       match self.rep {
         Small(ref b) => b.is_true(self.nbits),
         _ => {
-          foreach i in self.iter() { if !i { return false; } }
+          for i in self.iter() { if !i { return false; } }
           true
         }
       }
@@ -419,7 +421,7 @@ impl Bitv {
       match self.rep {
         Small(ref b) => b.is_false(self.nbits),
         Big(_) => {
-          foreach i in self.iter() { if i { return false; } }
+          for i in self.iter() { if i { return false; } }
           true
         }
       }
@@ -483,7 +485,7 @@ impl Bitv {
      */
      pub fn to_str(&self) -> ~str {
         let mut rs = ~"";
-        foreach i in self.iter() {
+        for i in self.iter() {
             if i {
                 rs.push_char('1');
             } else {
@@ -541,7 +543,7 @@ pub fn from_bools(bools: &[bool]) -> Bitv {
  */
 pub fn from_fn(len: uint, f: &fn(index: uint) -> bool) -> Bitv {
     let mut bitv = Bitv::new(len, false);
-    foreach i in range(0u, len) {
+    for i in range(0u, len) {
         bitv.set(i, f(i));
     }
     bitv
@@ -558,7 +560,7 @@ fn iterate_bits(base: uint, bits: uint, f: &fn(uint) -> bool) -> bool {
     if bits == 0 {
         return true;
     }
-    foreach i in range(0u, uint::bits) {
+    for i in range(0u, uint::bits) {
         if bits & (1 << i) != 0 {
             if !f(base + i) {
                 return false;
@@ -673,7 +675,7 @@ impl BitvSet {
     fn other_op(&mut self, other: &BitvSet, f: &fn(uint, uint) -> uint) {
         fn nbits(mut w: uint) -> uint {
             let mut bits = 0;
-            foreach _ in range(0u, uint::bits) {
+            for _ in range(0u, uint::bits) {
                 if w == 0 {
                     break;
                 }
@@ -685,7 +687,7 @@ impl BitvSet {
         if self.capacity() < other.capacity() {
             self.bitv.storage.grow(other.capacity() / uint::bits, &0);
         }
-        foreach (i, &w) in other.bitv.storage.iter().enumerate() {
+        for (i, &w) in other.bitv.storage.iter().enumerate() {
             let old = self.bitv.storage[i];
             let new = f(old, w);
             self.bitv.storage[i] = new;
@@ -718,11 +720,11 @@ impl BitvSet {
     }
 
     pub fn difference(&self, other: &BitvSet, f: &fn(&uint) -> bool) -> bool {
-        for self.common_iter(other).advance |(i, w1, w2)| {
+        for (i, w1, w2) in self.common_iter(other) {
             if !iterate_bits(i, w1 & !w2, |b| f(&b)) {
-                return false;
+                return false
             }
-        }
+        };
         /* everything we have that they don't also shows up */
         self.outlier_iter(other).advance(|(mine, i, w)|
             !mine || iterate_bits(i, w, |b| f(&b))
@@ -731,11 +733,11 @@ impl BitvSet {
 
     pub fn symmetric_difference(&self, other: &BitvSet,
                             f: &fn(&uint) -> bool) -> bool {
-        for self.common_iter(other).advance |(i, w1, w2)| {
+        for (i, w1, w2) in self.common_iter(other) {
             if !iterate_bits(i, w1 ^ w2, |b| f(&b)) {
-                return false;
+                return false
             }
-        }
+        };
         self.outlier_iter(other).advance(|(_, i, w)| iterate_bits(i, w, |b| f(&b)))
     }
 
@@ -744,11 +746,11 @@ impl BitvSet {
     }
 
     pub fn union(&self, other: &BitvSet, f: &fn(&uint) -> bool) -> bool {
-        for self.common_iter(other).advance |(i, w1, w2)| {
+        for (i, w1, w2) in self.common_iter(other) {
             if !iterate_bits(i, w1 | w2, |b| f(&b)) {
-                return false;
+                return false
             }
-        }
+        };
         self.outlier_iter(other).advance(|(_, i, w)| iterate_bits(i, w, |b| f(&b)))
     }
 }
@@ -758,12 +760,12 @@ impl cmp::Eq for BitvSet {
         if self.size != other.size {
             return false;
         }
-        for self.common_iter(other).advance |(_, w1, w2)| {
+        for (_, w1, w2) in self.common_iter(other) {
             if w1 != w2 {
                 return false;
             }
         }
-        for self.outlier_iter(other).advance |(_, _, w)| {
+        for (_, _, w) in self.outlier_iter(other) {
             if w != 0 {
                 return false;
             }
@@ -798,7 +800,7 @@ impl Set<uint> for BitvSet {
     }
 
     fn is_subset(&self, other: &BitvSet) -> bool {
-        for self.common_iter(other).advance |(_, w1, w2)| {
+        for (_, w1, w2) in self.common_iter(other) {
             if w1 & w2 != w1 {
                 return false;
             }
@@ -806,7 +808,7 @@ impl Set<uint> for BitvSet {
         /* If anything is not ours, then everything is not ours so we're
            definitely a subset in that case. Otherwise if there's any stray
            ones that 'other' doesn't have, we're not a subset. */
-        for self.outlier_iter(other).advance |(mine, _, w)| {
+        for (mine, _, w) in self.outlier_iter(other) {
             if !mine {
                 return true;
             } else if w != 0 {
@@ -861,13 +863,12 @@ impl BitvSet {
     /// w1, w2) where the bit location is the number of bits offset so far,
     /// and w1/w2 are the words coming from the two vectors self, other.
     fn common_iter<'a>(&'a self, other: &'a BitvSet)
-        -> MapE<(uint,&uint),(uint,uint,uint), &'a ~[uint],Enumerate<vec::VecIterator<'a,uint>>> {
-        let min = num::min(self.bitv.storage.len(),
-                            other.bitv.storage.len());
-        MapE{iter: self.bitv.storage.slice(0, min).iter().enumerate(),
-             env: &other.bitv.storage,
-             f: |(i, &w): (uint, &uint), o_store| (i * uint::bits, w, o_store[i])
-        }
+        -> Map<'static, ((uint, &'a uint), &'a ~[uint]), (uint, uint, uint),
+               Zip<Enumerate<vec::VecIterator<'a, uint>>, Repeat<&'a ~[uint]>>> {
+        let min = num::min(self.bitv.storage.len(), other.bitv.storage.len());
+        self.bitv.storage.slice(0, min).iter().enumerate()
+            .zip(Repeat::new(&other.bitv.storage))
+            .transform(|((i, &w), o_store)| (i * uint::bits, w, o_store[i]))
     }
 
     /// Visits each word in self or other that extends beyond the other. This
@@ -878,44 +879,20 @@ impl BitvSet {
     /// is true if the word comes from 'self', and false if it comes from
     /// 'other'.
     fn outlier_iter<'a>(&'a self, other: &'a BitvSet)
-        -> MapE<(uint, &uint),(bool, uint, uint), uint, Enumerate<vec::VecIterator<'a, uint>>> {
-        let len1 = self.bitv.storage.len();
-        let len2 = other.bitv.storage.len();
-        let min = num::min(len1, len2);
+        -> Map<'static, ((uint, &'a uint), uint), (bool, uint, uint),
+               Zip<Enumerate<vec::VecIterator<'a, uint>>, Repeat<uint>>> {
+        let slen = self.bitv.storage.len();
+        let olen = other.bitv.storage.len();
 
-        if min < len1 {
-            MapE{iter: self.bitv.storage.slice(min, len1).iter().enumerate(),
-                 env: min,
-                 f: |(i, &w): (uint, &uint), min| (true, (i + min) * uint::bits, w)
-            }
+        if olen < slen {
+            self.bitv.storage.slice_from(olen).iter().enumerate()
+                .zip(Repeat::new(olen))
+                .transform(|((i, &w), min)| (true, (i + min) * uint::bits, w))
         } else {
-            MapE{iter: other.bitv.storage.slice(min, len2).iter().enumerate(),
-                 env: min,
-                 f: |(i, &w): (uint, &uint), min| (false, (i + min) * uint::bits, w)
-            }
+            other.bitv.storage.slice_from(slen).iter().enumerate()
+                .zip(Repeat::new(slen))
+                .transform(|((i, &w), min)| (false, (i + min) * uint::bits, w))
         }
-    }
-}
-
-/// Like iterator::Map with explicit env capture
-struct MapE<A, B, Env, I> {
-    priv env: Env,
-    priv f: &'static fn(A, Env) -> B,
-    priv iter: I,
-}
-
-impl<'self, A, B, Env: Clone, I: Iterator<A>> Iterator<B> for MapE<A, B, Env, I> {
-    #[inline]
-    fn next(&mut self) -> Option<B> {
-        match self.iter.next() {
-            Some(elt) => Some((self.f)(elt, self.env.clone())),
-            None => None
-        }
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (uint, Option<uint>) {
-        self.iter.size_hint()
     }
 }
 
@@ -1282,12 +1259,12 @@ mod tests {
     #[test]
     fn test_equal_sneaky_big() {
         let mut a = bitv::Bitv::new(100, false);
-        foreach i in range(0u, 100) {
+        for i in range(0u, 100) {
             a.set(i, true);
         }
 
         let mut b = bitv::Bitv::new(100, true);
-        foreach i in range(0u, 100) {
+        for i in range(0u, 100) {
             b.set(i, true);
         }
 
@@ -1330,7 +1307,7 @@ mod tests {
         let bools = [true, false, true, true];
         let bitv = from_bools(bools);
 
-        foreach (act, &ex) in bitv.iter().zip(bools.iter()) {
+        for (act, &ex) in bitv.iter().zip(bools.iter()) {
             assert_eq!(ex, act);
         }
     }
@@ -1635,9 +1612,9 @@ mod tests {
     fn bench_btv_small_iter(b: &mut BenchHarness) {
         let bitv = Bitv::new(uint::bits, false);
         do b.iter {
-            let mut sum = 0;
-            foreach pres in bitv.iter() {
-                sum += pres as uint;
+            let mut _sum = 0;
+            for pres in bitv.iter() {
+                _sum += pres as uint;
             }
         }
     }
@@ -1646,9 +1623,9 @@ mod tests {
     fn bench_bitv_big_iter(b: &mut BenchHarness) {
         let bitv = Bitv::new(BENCH_BITS, false);
         do b.iter {
-            let mut sum = 0;
-            foreach pres in bitv.iter() {
-                sum += pres as uint;
+            let mut _sum = 0;
+            for pres in bitv.iter() {
+                _sum += pres as uint;
             }
         }
     }
@@ -1658,9 +1635,9 @@ mod tests {
         let bitv = BitvSet::from_bitv(from_fn(BENCH_BITS,
                                               |idx| {idx % 3 == 0}));
         do b.iter {
-            let mut sum = 0;
-            foreach idx in bitv.iter() {
-                sum += idx;
+            let mut _sum = 0;
+            for idx in bitv.iter() {
+                _sum += idx;
             }
         }
     }

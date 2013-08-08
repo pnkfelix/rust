@@ -219,7 +219,7 @@ impl Combine for Glb {
             let mut a_r = None;
             let mut b_r = None;
             let mut only_new_vars = true;
-            foreach r in tainted.iter() {
+            for r in tainted.iter() {
                 if is_var_in_set(a_vars, *r) {
                     if a_r.is_some() {
                         return fresh_bound_variable(this);
@@ -253,7 +253,7 @@ impl Combine for Glb {
 
             if a_r.is_some() && b_r.is_some() && only_new_vars {
                 // Related to exactly one bound variable from each fn:
-                return rev_lookup(this, a_isr, a_r.get());
+                return rev_lookup(this, a_isr, a_r.unwrap());
             } else if a_r.is_none() && b_r.is_none() {
                 // Not related to bound variables from either fn:
                 return r0;
@@ -267,16 +267,23 @@ impl Combine for Glb {
                       a_isr: isr_alist,
                       r: ty::Region) -> ty::Region
         {
-            for list::each(a_isr) |pair| {
+            let mut ret = None;
+            do list::each(a_isr) |pair| {
                 let (a_br, a_r) = *pair;
                 if a_r == r {
-                    return ty::re_bound(a_br);
+                    ret = Some(ty::re_bound(a_br));
+                    false
+                } else {
+                    true
                 }
-            }
+            };
 
-            this.infcx.tcx.sess.span_bug(
-                this.trace.origin.span(),
-                fmt!("could not find original bound region for %?", r));
+            match ret {
+                Some(x) => x,
+                None => this.infcx.tcx.sess.span_bug(
+                            this.trace.origin.span(),
+                            fmt!("could not find original bound region for %?", r))
+            }
         }
 
         fn fresh_bound_variable(this: &Glb) -> ty::Region {

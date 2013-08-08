@@ -42,7 +42,7 @@ impl FnType {
         let fnty = Type::func(atys, &rty);
         let llfn = decl(fnty);
 
-        foreach (i, a) in self.attrs.iter().enumerate() {
+        for (i, a) in self.attrs.iter().enumerate() {
             match *a {
                 option::Some(attr) => {
                     unsafe {
@@ -92,7 +92,7 @@ impl FnType {
 
     pub fn build_shim_ret(&self, bcx: @mut Block, arg_tys: &[Type], ret_def: bool,
                           llargbundle: ValueRef, llretval: ValueRef) {
-        foreach (i, a) in self.attrs.iter().enumerate() {
+        for (i, a) in self.attrs.iter().enumerate() {
             match *a {
                 option::Some(attr) => {
                     unsafe {
@@ -169,7 +169,7 @@ impl FnType {
             } else {
                 Load(bcx, llretval)
             };
-            let llretptr = BitCast(bcx, bcx.fcx.llretptr.get(), self.ret_ty.ty.ptr_to());
+            let llretptr = BitCast(bcx, bcx.fcx.llretptr.unwrap(), self.ret_ty.ty.ptr_to());
             Store(bcx, llretval, llretptr);
         }
     }

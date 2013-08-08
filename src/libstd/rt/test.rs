@@ -16,7 +16,7 @@ use clone::Clone;
 use container::Container;
 use iterator::{Iterator, range};
 use vec::{OwnedVector, MutableVector};
-use super::io::net::ip::{IpAddr, Ipv4, Ipv6};
+use super::io::net::ip::{SocketAddr, Ipv4Addr, Ipv6Addr};
 use rt::sched::Scheduler;
 use unstable::run_in_bare_thread;
 use rt::thread::Thread;
@@ -63,6 +63,81 @@ pub fn run_in_newsched_task_core(f: ~fn()) {
     sched.bootstrap(task);
 }
 
+#[cfg(target_os="macos")]
+#[allow(non_camel_case_types)]
+mod darwin_fd_limit {
+    /*!
+     * darwin_fd_limit exists to work around an issue where launchctl on Mac OS X defaults the
+     * rlimit maxfiles to 256/unlimited. The default soft limit of 256 ends up being far too low
+     * for our multithreaded scheduler testing, depending on the number of cores available.
+     *
+     * This fixes issue #7772.
+     */
+
+    use libc;
+    type rlim_t = libc::uint64_t;
+    struct rlimit {
+        rlim_cur: rlim_t,
+        rlim_max: rlim_t
+    }
+    #[nolink]
+    extern {
+        // name probably doesn't need to be mut, but the C function doesn't specify const
+        fn sysctl(name: *mut libc::c_int, namelen: libc::c_uint,
+                  oldp: *mut libc::c_void, oldlenp: *mut libc::size_t,
+                  newp: *mut libc::c_void, newlen: libc::size_t) -> libc::c_int;
+        fn getrlimit(resource: libc::c_int, rlp: *mut rlimit) -> libc::c_int;
+        fn setrlimit(resource: libc::c_int, rlp: *rlimit) -> libc::c_int;
+    }
+    static CTL_KERN: libc::c_int = 1;
+    static KERN_MAXFILESPERPROC: libc::c_int = 29;
+    static RLIMIT_NOFILE: libc::c_int = 8;
+
+    pub unsafe fn raise_fd_limit() {
+        // The strategy here is to fetch the current resource limits, read the kern.maxfilesperproc
+        // sysctl value, and bump the soft resource limit for maxfiles up to the sysctl value.
+        use ptr::{to_unsafe_ptr, to_mut_unsafe_ptr, mut_null};
+        use sys::size_of_val;
+        use os::last_os_error;
+
+        // Fetch the kern.maxfilesperproc value
+        let mut mib: [libc::c_int, ..2] = [CTL_KERN, KERN_MAXFILESPERPROC];
+        let mut maxfiles: libc::c_int = 0;
+        let mut size: libc::size_t = size_of_val(&maxfiles) as libc::size_t;
+        if sysctl(to_mut_unsafe_ptr(&mut mib[0]), 2,
+                  to_mut_unsafe_ptr(&mut maxfiles) as *mut libc::c_void,
+                  to_mut_unsafe_ptr(&mut size),
+                  mut_null(), 0) != 0 {
+            let err = last_os_error();
+            error!("raise_fd_limit: error calling sysctl: %s", err);
+            return;
+        }
+
+        // Fetch the current resource limits
+        let mut rlim = rlimit{rlim_cur: 0, rlim_max: 0};
+        if getrlimit(RLIMIT_NOFILE, to_mut_unsafe_ptr(&mut rlim)) != 0 {
+            let err = last_os_error();
+            error!("raise_fd_limit: error calling getrlimit: %s", err);
+            return;
+        }
+
+        // Bump the soft limit to the smaller of kern.maxfilesperproc and the hard limit
+        rlim.rlim_cur = ::cmp::min(maxfiles as rlim_t, rlim.rlim_max);
+
+        // Set our newly-increased resource limit
+        if setrlimit(RLIMIT_NOFILE, to_unsafe_ptr(&rlim)) != 0 {
+            let err = last_os_error();
+            error!("raise_fd_limit: error calling setrlimit: %s", err);
+            return;
+        }
+    }
+}
+
+#[cfg(not(target_os="macos"))]
+mod darwin_fd_limit {
+    pub unsafe fn raise_fd_limit() {}
+}
+
 /// Create more than one scheduler and run a function in a task
 /// in one of the schedulers. The schedulers will stay alive
 /// until the function `f` returns.
@@ -70,17 +145,21 @@ pub fn run_in_mt_newsched_task(f: ~fn()) {
     use os;
     use from_str::FromStr;
     use rt::sched::Shutdown;
+    use rt::util;
+
+    // Bump the fd limit on OS X. See darwin_fd_limit for an explanation.
+    unsafe { darwin_fd_limit::raise_fd_limit() }
 
     let f = Cell::new(f);
 
     do run_in_bare_thread {
         let nthreads = match os::getenv("RUST_RT_TEST_THREADS") {
-            Some(nstr) => FromStr::from_str(nstr).get(),
+            Some(nstr) => FromStr::from_str(nstr).unwrap(),
             None => {
-                // A reasonable number of threads for testing
-                // multithreading. NB: It's easy to exhaust OS X's
-                // low maximum fd limit by setting this too high (#7772)
-                4
+                // Using more threads than cores in test code
+                // to force the OS to preempt them frequently.
+                // Assuming that this help stress test concurrent types.
+                util::num_cpus() * 2
             }
         };
 
@@ -90,7 +169,7 @@ pub fn run_in_mt_newsched_task(f: ~fn()) {
         let mut handles = ~[];
         let mut scheds = ~[];
 
-        foreach _ in range(0u, nthreads) {
+        for _ in range(0u, nthreads) {
             let loop_ = ~UvEventLoop::new();
             let mut sched = ~Scheduler::new(loop_,
                                             work_queue.clone(),
@@ -105,7 +184,7 @@ pub fn run_in_mt_newsched_task(f: ~fn()) {
         let on_exit: ~fn(bool) = |exit_status| {
             let mut handles = handles.take();
             // Tell schedulers to exit
-            foreach handle in handles.mut_iter() {
+            for handle in handles.mut_iter() {
                 handle.send(Shutdown);
             }
 
@@ -144,7 +223,7 @@ pub fn run_in_mt_newsched_task(f: ~fn()) {
         }
 
         // Wait for schedulers
-        foreach thread in threads.consume_iter() {
+        for thread in threads.consume_iter() {
             thread.join();
         }
     }
@@ -227,13 +306,13 @@ pub fn next_test_port() -> u16 {
 }
 
 /// Get a unique IPv4 localhost:port pair starting at 9600
-pub fn next_test_ip4() -> IpAddr {
-    Ipv4(127, 0, 0, 1, next_test_port())
+pub fn next_test_ip4() -> SocketAddr {
+    SocketAddr { ip: Ipv4Addr(127, 0, 0, 1), port: next_test_port() }
 }
 
 /// Get a unique IPv6 localhost:port pair starting at 9600
-pub fn next_test_ip6() -> IpAddr {
-    Ipv6(0, 0, 0, 0, 0, 0, 0, 1, next_test_port())
+pub fn next_test_ip6() -> SocketAddr {
+    SocketAddr { ip: Ipv6Addr(0, 0, 0, 0, 0, 0, 0, 1), port: next_test_port() }
 }
 
 /*
@@ -267,7 +346,7 @@ fn base_port() -> uint {
 
     let mut final_base = base;
 
-    foreach &(dir, base) in bases.iter() {
+    for &(dir, base) in bases.iter() {
         if path.contains(dir) {
             final_base = base;
             break;
@@ -283,7 +362,7 @@ pub fn stress_factor() -> uint {
     use os::getenv;
 
     match getenv("RUST_RT_STRESS") {
-        Some(val) => uint::from_str(val).get(),
+        Some(val) => uint::from_str(val).unwrap(),
         None => 1
     }
 }

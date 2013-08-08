@@ -363,22 +363,29 @@ impl CodeMap {
         let lo = self.lookup_char_pos(sp.lo);
         let hi = self.lookup_char_pos(sp.hi);
         let mut lines = ~[];
-        foreach i in range(lo.line - 1u, hi.line as uint) {
+        for i in range(lo.line - 1u, hi.line as uint) {
             lines.push(i);
         };
         return @FileLines {file: lo.file, lines: lines};
     }
 
-    pub fn span_to_snippet(&self, sp: span) -> ~str {
+    pub fn span_to_snippet(&self, sp: span) -> Option<~str> {
         let begin = self.lookup_byte_offset(sp.lo);
         let end = self.lookup_byte_offset(sp.hi);
-        assert_eq!(begin.fm.start_pos, end.fm.start_pos);
-        return begin.fm.src.slice(
-                          begin.pos.to_uint(), end.pos.to_uint()).to_owned();
+
+        // FIXME #8256: this used to be an assert but whatever precondition
+        // it's testing isn't true for all spans in the AST, so to allow the
+        // caller to not have to fail (and it can't catch it since the CodeMap
+        // isn't sendable), return None
+        if begin.fm.start_pos != end.fm.start_pos {
+            None
+        } else {
+            Some(begin.fm.src.slice( begin.pos.to_uint(), end.pos.to_uint()).to_owned())
+        }
     }
 
     pub fn get_filemap(&self, filename: &str) -> @FileMap {
-        foreach fm in self.files.iter() { if filename == fm.name { return *fm; } }
+        for fm in self.files.iter() { if filename == fm.name { return *fm; } }
         //XXjdm the following triggers a mismatched type bug
         //      (or expected function, found _|_)
         fail!(); // ("asking for " + filename + " which we don't know about");
@@ -464,7 +471,7 @@ impl CodeMap {
         // The number of extra bytes due to multibyte chars in the FileMap
         let mut total_extra_bytes = 0;
 
-        foreach mbc in map.multibyte_chars.iter() {
+        for mbc in map.multibyte_chars.iter() {
             debug!("codemap: %?-byte char at %?", mbc.bytes, mbc.pos);
             if mbc.pos < bpos {
                 total_extra_bytes += mbc.bytes;

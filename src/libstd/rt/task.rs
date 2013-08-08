@@ -27,6 +27,7 @@ use super::local_heap::LocalHeap;
 use rt::sched::{Scheduler, SchedHandle};
 use rt::stack::{StackSegment, StackPool};
 use rt::context::Context;
+use unstable::finally::Finally;
 use task::spawn::Taskgroup;
 use cell::Cell;
 
@@ -211,7 +212,40 @@ impl Task {
 
     pub fn run(&mut self, f: &fn()) {
         rtdebug!("run called on task: %u", borrow::to_uint(self));
-        self.unwinder.try(f);
+
+        // The only try/catch block in the world. Attempt to run the task's
+        // client-specified code and catch any failures.
+        do self.unwinder.try {
+
+            // Run the task main function, then do some cleanup.
+            do f.finally {
+
+                // Destroy task-local storage. This may run user dtors.
+                match self.storage {
+                    LocalStorage(ptr, Some(ref dtor)) => {
+                        (*dtor)(ptr)
+                    }
+                    _ => ()
+                }
+
+                // FIXME #8302: Dear diary. I'm so tired and confused.
+                // There's some interaction in rustc between the box
+                // annihilator and the TLS dtor by which TLS is
+                // accessed from annihilated box dtors *after* TLS is
+                // destroyed. Somehow setting TLS back to null, as the
+                // old runtime did, makes this work, but I don't currently
+                // understand how. I would expect that, if the annihilator
+                // reinvokes TLS while TLS is uninitialized, that
+                // TLS would be reinitialized but never destroyed,
+                // but somehow this works. I have no idea what's going
+                // on but this seems to make things magically work. FML.
+                self.storage = LocalStorage(ptr::null(), None);
+
+                // Destroy remaining boxes. Also may run user dtors.
+                unsafe { cleanup::annihilate(); }
+            }
+        }
+
         // FIXME(#7544): We pass the taskgroup into death so that it can be
         // dropped while the unkillable counter is set. This should not be
         // necessary except for an extraneous clone() in task/spawn.rs that
@@ -219,32 +253,6 @@ impl Task {
         // signal since we're outside of the unwinder's try() scope.
         // { let _ = self.taskgroup.take(); }
         self.death.collect_failure(!self.unwinder.unwinding, self.taskgroup.take());
-        self.destroy();
-    }
-
-    /// must be called manually before finalization to clean up
-    /// thread-local resources. Some of the routines here expect
-    /// Task to be available recursively so this must be
-    /// called unsafely, without removing Task from
-    /// thread-local-storage.
-    fn destroy(&mut self) {
-
-        rtdebug!("DESTROYING TASK: %u", borrow::to_uint(self));
-
-        do Local::borrow::<Task, ()> |task| {
-            assert!(borrow::ref_eq(task, self));
-        }
-
-        match self.storage {
-            LocalStorage(ptr, Some(ref dtor)) => {
-                (*dtor)(ptr)
-            }
-            _ => ()
-        }
-
-        // Destroy remaining boxes
-        unsafe { cleanup::annihilate(); }
-
         self.destroyed = true;
     }
 
@@ -308,7 +316,7 @@ impl Task {
 impl Drop for Task {
     fn drop(&self) {
         rtdebug!("called drop for a task: %u", borrow::to_uint(self));
-        assert!(self.destroyed)
+        rtassert!(self.destroyed)
     }
 }
 
@@ -318,7 +326,7 @@ impl Drop for Task {
 impl Coroutine {
 
     pub fn new(stack_pool: &mut StackPool, start: ~fn()) -> Coroutine {
-        static MIN_STACK_SIZE: uint = 2000000; // XXX: Too much stack
+        static MIN_STACK_SIZE: uint = 3000000; // XXX: Too much stack
 
         let start = Coroutine::build_start_wrapper(start);
         let mut stack = stack_pool.take_segment(MIN_STACK_SIZE);
@@ -457,10 +465,10 @@ mod test {
         do run_in_newsched_task() {
             static key: local_data::Key<@~str> = &local_data::Key;
             local_data::set(key, @~"data");
-            assert!(*local_data::get(key, |k| k.map(|&k| *k)).get() == ~"data");
+            assert!(*local_data::get(key, |k| k.map(|&k| *k)).unwrap() == ~"data");
             static key2: local_data::Key<@~str> = &local_data::Key;
             local_data::set(key2, @~"data");
-            assert!(*local_data::get(key2, |k| k.map(|&k| *k)).get() == ~"data");
+            assert!(*local_data::get(key2, |k| k.map(|&k| *k)).unwrap() == ~"data");
         }
     }
 

@@ -655,6 +655,47 @@ pub unsafe fn rekillable<U>(f: &fn() -> U) -> U {
     }
 }
 
+#[test] #[ignore(cfg(windows))]
+fn test_kill_unkillable_task() {
+    use rt::test::*;
+
+    // Attempt to test that when a kill signal is received at the start of an
+    // unkillable section, 'unkillable' unwinds correctly. This is actually
+    // quite a difficult race to expose, as the kill has to happen on a second
+    // CPU, *after* the spawner is already switched-back-to (and passes the
+    // killed check at the start of its timeslice). As far as I know, it's not
+    // possible to make this race deterministic, or even more likely to happen.
+    do run_in_newsched_task {
+        do task::try {
+            do task::spawn {
+                fail!();
+            }
+            do task::unkillable { }
+        };
+    }
+}
+
+#[test] #[ignore(cfg(windows))]
+fn test_kill_rekillable_task() {
+    use rt::test::*;
+
+    // Tests that when a kill signal is received, 'rekillable' and
+    // 'unkillable' unwind correctly in conjunction with each other.
+    do run_in_newsched_task {
+        do task::try {
+            do task::unkillable {
+                unsafe {
+                    do task::rekillable {
+                        do task::spawn {
+                            fail!();
+                        }
+                    }
+                }
+            }
+        };
+    }
+}
+
 #[test] #[should_fail] #[ignore(cfg(windows))]
 fn test_cant_dup_task_builder() {
     let mut builder = task();
@@ -885,7 +926,7 @@ fn test_named_task() {
         t.name(~"ada lovelace");
         do t.spawn {
             do with_task_name |name| {
-                assert!(name.get() == "ada lovelace");
+                assert!(name.unwrap() == "ada lovelace");
             }
         }
     }
@@ -971,16 +1012,29 @@ fn test_try_fail() {
     }
 }
 
+#[cfg(test)]
+fn get_sched_id() -> int {
+    if context() == OldTaskContext {
+        unsafe {
+            rt::rust_get_sched_id() as int
+        }
+    } else {
+        do Local::borrow::<::rt::sched::Scheduler, int> |sched| {
+            sched.sched_id() as int
+        }
+    }
+}
+
 #[test]
 fn test_spawn_sched() {
     let (po, ch) = stream::<()>();
     let ch = SharedChan::new(ch);
 
     fn f(i: int, ch: SharedChan<()>) {
-        let parent_sched_id = unsafe { rt::rust_get_sched_id() };
+        let parent_sched_id = get_sched_id();
 
         do spawn_sched(SingleThreaded) {
-            let child_sched_id = unsafe { rt::rust_get_sched_id() };
+            let child_sched_id = get_sched_id();
             assert!(parent_sched_id != child_sched_id);
 
             if (i == 0) {
@@ -1000,15 +1054,15 @@ fn test_spawn_sched_childs_on_default_sched() {
     let (po, ch) = stream();
 
     // Assuming tests run on the default scheduler
-    let default_id = unsafe { rt::rust_get_sched_id() };
+    let default_id = get_sched_id();
 
     let ch = Cell::new(ch);
     do spawn_sched(SingleThreaded) {
-        let parent_sched_id = unsafe { rt::rust_get_sched_id() };
+        let parent_sched_id = get_sched_id();
         let ch = Cell::new(ch.take());
         do spawn {
             let ch = ch.take();
-            let child_sched_id = unsafe { rt::rust_get_sched_id() };
+            let child_sched_id = get_sched_id();
             assert!(parent_sched_id != child_sched_id);
             assert_eq!(child_sched_id, default_id);
             ch.send(());
@@ -1024,12 +1078,12 @@ mod testrt {
 
     #[nolink]
     extern {
-        pub unsafe fn rust_dbg_lock_create() -> *libc::c_void;
-        pub unsafe fn rust_dbg_lock_destroy(lock: *libc::c_void);
-        pub unsafe fn rust_dbg_lock_lock(lock: *libc::c_void);
-        pub unsafe fn rust_dbg_lock_unlock(lock: *libc::c_void);
-        pub unsafe fn rust_dbg_lock_wait(lock: *libc::c_void);
-        pub unsafe fn rust_dbg_lock_signal(lock: *libc::c_void);
+        pub fn rust_dbg_lock_create() -> *libc::c_void;
+        pub fn rust_dbg_lock_destroy(lock: *libc::c_void);
+        pub fn rust_dbg_lock_lock(lock: *libc::c_void);
+        pub fn rust_dbg_lock_unlock(lock: *libc::c_void);
+        pub fn rust_dbg_lock_wait(lock: *libc::c_void);
+        pub fn rust_dbg_lock_signal(lock: *libc::c_void);
     }
 }
 

@@ -24,7 +24,7 @@ use extra::serialize::{Encodable, Decodable, Encoder, Decoder};
 // table) and a SyntaxContext to track renaming and
 // macro expansion per Flatt et al., "Macros
 // That Work Together"
-#[deriving(Clone, Eq, IterBytes)]
+#[deriving(Clone, Eq, IterBytes, ToStr)]
 pub struct ident { name: Name, ctxt: SyntaxContext }
 
 /// Construct an identifier with the given name and an empty context:
@@ -121,7 +121,7 @@ pub type CrateNum = int;
 
 pub type NodeId = int;
 
-#[deriving(Clone, Eq, Encodable, Decodable, IterBytes)]
+#[deriving(Clone, Eq, Encodable, Decodable, IterBytes, ToStr)]
 pub struct def_id {
     crate: CrateNum,
     node: NodeId,
@@ -472,11 +472,6 @@ pub enum expr_ {
     expr_loop(Block, Option<ident>),
     expr_match(@expr, ~[arm]),
     expr_fn_block(fn_decl, Block),
-    // Inner expr is always an expr_fn_block. We need the wrapping node to
-    // easily type this (a function returning nil on the inside but bool on
-    // the outside).
-    expr_loop_body(@expr),
-    // Like expr_loop_body but for 'do' blocks
     expr_do_body(@expr),
     expr_block(Block),
 
@@ -1077,7 +1072,7 @@ pub struct foreign_item {
 
 #[deriving(Eq, Encodable, Decodable,IterBytes)]
 pub enum foreign_item_ {
-    foreign_item_fn(fn_decl, purity, Generics),
+    foreign_item_fn(fn_decl, Generics),
     foreign_item_static(Ty, /* is_mutbl */ bool),
 }
 

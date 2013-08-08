@@ -25,11 +25,13 @@ use std::u32;
 use std::u64;
 use std::u8;
 use extra::smallintmap::SmallIntMap;
+use syntax::ast_map;
 use syntax::attr;
 use syntax::attr::AttrMetaMethods;
 use syntax::codemap::span;
 use syntax::codemap;
-use syntax::{ast, visit, ast_util};
+use syntax::parse::token;
+use syntax::{ast, oldvisit, ast_util, visit};
 
 /**
  * A 'lint' check is a kind of miscellaneous constraint that a user _might_
@@ -53,13 +55,13 @@ use syntax::{ast, visit, ast_util};
  * lint attributes.
  *
  * At each node of the ast which can modify lint attributes, all known lint
- * passes are also applied.  Each lint pass is a visit::vt<()> structure. These
- * visitors are constructed via the lint_*() functions below. There are also
- * some lint checks which operate directly on ast nodes (such as @ast::item),
- * and those are organized as check_item_*(). Each visitor added to the lint
- * context is modified to stop once it reaches a node which could alter the lint
- * levels. This means that everything is looked at once and only once by every
- * lint pass.
+ * passes are also applied.  Each lint pass is an oldvisit::vt<()> structure.
+ * The visitors are constructed via the lint_*() functions below. There are
+ * also some lint checks which operate directly on ast nodes (such as
+ * @ast::item), and those are organized as check_item_*(). Each visitor added
+ * to the lint context is modified to stop once it reaches a node which could
+ * alter the lint levels. This means that everything is looked at once and
+ * only once by every lint pass.
  *
  * With this all in place, to add a new lint warning, all you need to do is to
  * either invoke `add_lint` on the session at the appropriate time, or write a
@@ -74,7 +76,6 @@ pub enum lint {
     unused_imports,
     unnecessary_qualification,
     while_true,
-    deprecated_for_loop,
     path_statement,
     unrecognized_lint,
     non_camel_case_types,
@@ -164,13 +165,6 @@ static lint_table: &'static [(&'static str, LintSpec)] = &[
         lint: while_true,
         desc: "suggest using loop { } instead of while(true) { }",
         default: warn
-     }),
-
-    ("deprecated_for_loop",
-     LintSpec {
-         lint: deprecated_for_loop,
-         desc: "recommend using `foreach` or `do` instead of `for`",
-         default: allow
      }),
 
     ("path_statement",
@@ -292,10 +286,22 @@ static lint_table: &'static [(&'static str, LintSpec)] = &[
  */
 pub fn get_lint_dict() -> LintDict {
     let mut map = HashMap::new();
-    foreach &(k, v) in lint_table.iter() {
+    for &(k, v) in lint_table.iter() {
         map.insert(k, v);
     }
     return map;
+}
+
+enum AnyVisitor {
+    // This is a pair so every visitor can visit every node. When a lint pass
+    // is registered, another visitor is created which stops at all items
+    // which can alter the attributes of the ast. This "item stopping visitor"
+    // is the second element of the pair, while the original visitor is the
+    // first element. This means that when visiting a node, the original
+    // recursive call can use the original visitor's method, although the
+    // recursing visitor supplied to the method is the item stopping visitor.
+    OldVisitor(oldvisit::vt<@mut Context>, oldvisit::vt<@mut Context>),
+    NewVisitor(@visit::Visitor<()>),
 }
 
 struct Context {
@@ -321,15 +327,7 @@ struct Context {
     // Others operate directly on @ast::item structures (or similar). Finally,
     // others still are added to the Session object via `add_lint`, and these
     // are all passed with the lint_session visitor.
-    //
-    // This is a pair so every visitor can visit every node. When a lint pass is
-    // registered, another visitor is created which stops at all items which can
-    // alter the attributes of the ast. This "item stopping visitor" is the
-    // second element of the pair, while the original visitor is the first
-    // element. This means that when visiting a node, the original recursive
-    // call can used the original visitor's method, although the recursing
-    // visitor supplied to the method is the item stopping visitor.
-    visitors: ~[(visit::vt<@mut Context>, visit::vt<@mut Context>)],
+    visitors: ~[AnyVisitor],
 }
 
 impl Context {
@@ -356,7 +354,7 @@ impl Context {
     }
 
     fn lint_to_str(&self, lint: lint) -> &'static str {
-        foreach (k, v) in self.dict.iter() {
+        for (k, v) in self.dict.iter() {
             if v.lint == lint {
                 return *k;
             }
@@ -392,7 +390,7 @@ impl Context {
             allow => fail!(),
         }
 
-        foreach &span in note.iter() {
+        for &span in note.iter() {
             self.tcx.sess.span_note(span, "lint level defined here");
         }
     }
@@ -408,35 +406,33 @@ impl Context {
         // of what we changed so we can roll everything back after invoking the
         // specified closure
         let mut pushed = 0u;
-        for each_lint(self.tcx.sess, attrs) |meta, level, lintname| {
-            let lint = match self.dict.find_equiv(&lintname) {
-              None => {
-                self.span_lint(
-                    unrecognized_lint,
-                    meta.span,
-                    fmt!("unknown `%s` attribute: `%s`",
-                         level_to_str(level), lintname));
-                loop
-              }
-              Some(lint) => { lint.lint }
-            };
-
-            let now = self.get_level(lint);
-            if now == forbid && level != forbid {
-                self.tcx.sess.span_err(meta.span,
-                    fmt!("%s(%s) overruled by outer forbid(%s)",
-                         level_to_str(level),
-                         lintname, lintname));
-                loop;
+        do each_lint(self.tcx.sess, attrs) |meta, level, lintname| {
+            match self.dict.find_equiv(&lintname) {
+                None => {
+                    self.span_lint(
+                        unrecognized_lint,
+                        meta.span,
+                        fmt!("unknown `%s` attribute: `%s`",
+                        level_to_str(level), lintname));
+                }
+                Some(lint) => {
+                    let lint = lint.lint;
+                    let now = self.get_level(lint);
+                    if now == forbid && level != forbid {
+                        self.tcx.sess.span_err(meta.span,
+                        fmt!("%s(%s) overruled by outer forbid(%s)",
+                        level_to_str(level),
+                        lintname, lintname));
+                    } else if now != level {
+                        let src = self.get_source(lint);
+                        self.lint_stack.push((lint, now, src));
+                        pushed += 1;
+                        self.set_level(lint, level, Node(meta.span));
+                    }
+                }
             }
-
-            if now != level {
-                let src = self.get_source(lint);
-                self.lint_stack.push((lint, now, src));
-                pushed += 1;
-                self.set_level(lint, level, Node(meta.span));
-            }
-        }
+            true
+        };
 
         // detect doc(hidden)
         let mut doc_hidden = do attrs.iter().any |attr| {
@@ -465,8 +461,12 @@ impl Context {
         }
     }
 
-    fn add_lint(&mut self, v: visit::vt<@mut Context>) {
-        self.visitors.push((v, item_stopping_visitor(v)));
+    fn add_oldvisit_lint(&mut self, v: oldvisit::vt<@mut Context>) {
+        self.visitors.push(OldVisitor(v, item_stopping_visitor(v)));
+    }
+
+    fn add_lint(&mut self, v: @visit::Visitor<()>) {
+        self.visitors.push(NewVisitor(v));
     }
 
     fn process(@mut self, n: AttributedNode) {
@@ -474,23 +474,58 @@ impl Context {
         // pair instead of just one visitor.
         match n {
             Item(it) => {
-                foreach &(orig, stopping) in self.visitors.iter() {
-                    (orig.visit_item)(it, (self, stopping));
+                for visitor in self.visitors.iter() {
+                    match *visitor {
+                        OldVisitor(orig, stopping) => {
+                            (orig.visit_item)(it, (self, stopping));
+                        }
+                        NewVisitor(new_visitor) => {
+                            new_visitor.visit_item(it, ());
+                        }
+                    }
                 }
             }
             Crate(c) => {
-                foreach &(_, stopping) in self.visitors.iter() {
-                    visit::visit_crate(c, (self, stopping));
+                for visitor in self.visitors.iter() {
+                    match *visitor {
+                        OldVisitor(_, stopping) => {
+                            oldvisit::visit_crate(c, (self, stopping))
+                        }
+                        NewVisitor(new_visitor) => {
+                            visit::visit_crate(new_visitor, c, ())
+                        }
+                    }
                 }
             }
-            // Can't use visit::visit_method_helper because the
+            // Can't use oldvisit::visit_method_helper because the
             // item_stopping_visitor has overridden visit_fn(&fk_method(... ))
             // to be a no-op, so manually invoke visit_fn.
             Method(m) => {
-                let fk = visit::fk_method(m.ident, &m.generics, m);
-                foreach &(orig, stopping) in self.visitors.iter() {
-                    (orig.visit_fn)(&fk, &m.decl, &m.body, m.span, m.id,
-                                    (self, stopping));
+                for visitor in self.visitors.iter() {
+                    match *visitor {
+                        OldVisitor(orig, stopping) => {
+                            let fk = oldvisit::fk_method(m.ident,
+                                                         &m.generics,
+                                                         m);
+                            (orig.visit_fn)(&fk,
+                                            &m.decl,
+                                            &m.body,
+                                            m.span,
+                                            m.id,
+                                            (self, stopping));
+                        }
+                        NewVisitor(new_visitor) => {
+                            let fk = visit::fk_method(m.ident,
+                                                      &m.generics,
+                                                      m);
+                            new_visitor.visit_fn(&fk,
+                                                 &m.decl,
+                                                 &m.body,
+                                                 m.span,
+                                                 m.id,
+                                                 ())
+                        }
+                    }
                 }
             }
         }
@@ -501,9 +536,9 @@ pub fn each_lint(sess: session::Session,
                  attrs: &[ast::Attribute],
                  f: &fn(@ast::MetaItem, level, @str) -> bool) -> bool {
     let xs = [allow, warn, deny, forbid];
-    foreach &level in xs.iter() {
+    for &level in xs.iter() {
         let level_name = level_to_str(level);
-        foreach attr in attrs.iter().filter(|m| level_name == m.name()) {
+        for attr in attrs.iter().filter(|m| level_name == m.name()) {
             let meta = attr.node.value;
             let metas = match meta.node {
                 ast::MetaList(_, ref metas) => metas,
@@ -512,7 +547,7 @@ pub fn each_lint(sess: session::Session,
                     loop;
                 }
             };
-            foreach meta in metas.iter() {
+            for meta in metas.iter() {
                 match meta.node {
                     ast::MetaWord(lintname) => {
                         if !f(*meta, level, lintname) {
@@ -533,21 +568,22 @@ pub fn each_lint(sess: session::Session,
 // This is used to make the simple visitors used for the lint passes
 // not traverse into subitems, since that is handled by the outer
 // lint visitor.
-fn item_stopping_visitor<E>(outer: visit::vt<E>) -> visit::vt<E> {
-    visit::mk_vt(@visit::Visitor {
+fn item_stopping_visitor<E>(outer: oldvisit::vt<E>) -> oldvisit::vt<E> {
+    oldvisit::mk_vt(@oldvisit::Visitor {
         visit_item: |_i, (_e, _v)| { },
         visit_fn: |fk, fd, b, s, id, (e, v)| {
             match *fk {
-                visit::fk_method(*) => {}
+                oldvisit::fk_method(*) => {}
                 _ => (outer.visit_fn)(fk, fd, b, s, id, (e, v))
             }
         },
     .. **outer})
 }
 
-fn lint_while_true() -> visit::vt<@mut Context> {
-    visit::mk_vt(@visit::Visitor {
-        visit_expr: |e, (cx, vt): (@mut Context, visit::vt<@mut Context>)| {
+fn lint_while_true() -> oldvisit::vt<@mut Context> {
+    oldvisit::mk_vt(@oldvisit::Visitor {
+        visit_expr: |e,
+                     (cx, vt): (@mut Context, oldvisit::vt<@mut Context>)| {
             match e.node {
                 ast::expr_while(cond, _) => {
                     match cond.node {
@@ -563,31 +599,13 @@ fn lint_while_true() -> visit::vt<@mut Context> {
                 }
                 _ => ()
             }
-            visit::visit_expr(e, (cx, vt));
+            oldvisit::visit_expr(e, (cx, vt));
         },
-        .. *visit::default_visitor()
+        .. *oldvisit::default_visitor()
     })
 }
 
-fn lint_deprecated_for_loop() -> visit::vt<@mut Context> {
-    visit::mk_vt(@visit::Visitor {
-        visit_expr: |e, (cx, vt): (@mut Context, visit::vt<@mut Context>)| {
-            match e.node {
-                ast::expr_call(_, _, ast::ForSugar) |
-                ast::expr_method_call(_, _, _, _, _, ast::ForSugar) => {
-                    cx.span_lint(deprecated_for_loop, e.span,
-                                "`for` is deprecated; use `foreach <pat> in \
-                                 <iterator>` or `do`")
-                }
-                _ => {}
-            }
-            visit::visit_expr(e, (cx, vt));
-        },
-        .. *visit::default_visitor()
-    })
-}
-
-fn lint_type_limits() -> visit::vt<@mut Context> {
+fn lint_type_limits() -> oldvisit::vt<@mut Context> {
     fn is_valid<T:cmp::Ord>(binop: ast::binop, v: T,
             min: T, max: T) -> bool {
         match binop {
@@ -689,8 +707,9 @@ fn lint_type_limits() -> visit::vt<@mut Context> {
         }
     }
 
-    visit::mk_vt(@visit::Visitor {
-        visit_expr: |e, (cx, vt): (@mut Context, visit::vt<@mut Context>)| {
+    oldvisit::mk_vt(@oldvisit::Visitor {
+        visit_expr: |e,
+                     (cx, vt): (@mut Context, oldvisit::vt<@mut Context>)| {
             match e.node {
                 ast::expr_binary(_, ref binop, l, r) => {
                     if is_comparison(*binop)
@@ -701,10 +720,10 @@ fn lint_type_limits() -> visit::vt<@mut Context> {
                 }
                 _ => ()
             }
-            visit::visit_expr(e, (cx, vt));
+            oldvisit::visit_expr(e, (cx, vt));
         },
 
-        .. *visit::default_visitor()
+        .. *oldvisit::default_visitor()
     })
 }
 
@@ -732,7 +751,7 @@ fn check_item_ctypes(cx: &Context, it: &ast::item) {
     }
 
     fn check_foreign_fn(cx: &Context, decl: &ast::fn_decl) {
-        foreach input in decl.inputs.iter() {
+        for input in decl.inputs.iter() {
             check_ty(cx, &input.ty);
         }
         check_ty(cx, &decl.output)
@@ -740,9 +759,9 @@ fn check_item_ctypes(cx: &Context, it: &ast::item) {
 
     match it.node {
       ast::item_foreign_mod(ref nmod) if !nmod.abis.is_intrinsic() => {
-        foreach ni in nmod.items.iter() {
+        for ni in nmod.items.iter() {
             match ni.node {
-                ast::foreign_item_fn(ref decl, _, _) => {
+                ast::foreign_item_fn(ref decl, _) => {
                     check_foreign_fn(cx, decl);
                 }
                 ast::foreign_item_static(ref t, _) => { check_ty(cx, t); }
@@ -782,7 +801,7 @@ fn check_type_for_lint(cx: &Context, lint: lint, span: span, ty: ty::t) {
 
 fn check_type(cx: &Context, span: span, ty: ty::t) {
     let xs = [managed_heap_memory, owned_heap_memory, heap_memory];
-    foreach lint in xs.iter() {
+    for lint in xs.iter() {
         check_type_for_lint(cx, *lint, span, ty);
     }
 }
@@ -801,7 +820,7 @@ fn check_item_heap(cx: &Context, it: &ast::item) {
     // If it's a struct, we also have to check the fields' types
     match it.node {
         ast::item_struct(struct_def, _) => {
-            foreach struct_field in struct_def.fields.iter() {
+            for struct_field in struct_def.fields.iter() {
                 check_type(cx, struct_field.span,
                            ty::node_id_to_type(cx.tcx,
                                                struct_field.node.id));
@@ -811,20 +830,22 @@ fn check_item_heap(cx: &Context, it: &ast::item) {
     }
 }
 
-fn lint_heap() -> visit::vt<@mut Context> {
-    visit::mk_vt(@visit::Visitor {
-        visit_expr: |e, (cx, vt): (@mut Context, visit::vt<@mut Context>)| {
+fn lint_heap() -> oldvisit::vt<@mut Context> {
+    oldvisit::mk_vt(@oldvisit::Visitor {
+        visit_expr: |e,
+                     (cx, vt): (@mut Context, oldvisit::vt<@mut Context>)| {
             let ty = ty::expr_ty(cx.tcx, e);
             check_type(cx, e.span, ty);
-            visit::visit_expr(e, (cx, vt));
+            oldvisit::visit_expr(e, (cx, vt));
         },
-        .. *visit::default_visitor()
+        .. *oldvisit::default_visitor()
     })
 }
 
-fn lint_path_statement() -> visit::vt<@mut Context> {
-    visit::mk_vt(@visit::Visitor {
-        visit_stmt: |s, (cx, vt): (@mut Context, visit::vt<@mut Context>)| {
+fn lint_path_statement() -> oldvisit::vt<@mut Context> {
+    oldvisit::mk_vt(@oldvisit::Visitor {
+        visit_stmt: |s,
+                     (cx, vt): (@mut Context, oldvisit::vt<@mut Context>)| {
             match s.node {
                 ast::stmt_semi(
                     @ast::expr { node: ast::expr_path(_), _ },
@@ -835,9 +856,9 @@ fn lint_path_statement() -> visit::vt<@mut Context> {
                 }
                 _ => ()
             }
-            visit::visit_stmt(s, (cx, vt));
+            oldvisit::visit_stmt(s, (cx, vt));
         },
-        .. *visit::default_visitor()
+        .. *oldvisit::default_visitor()
     })
 }
 
@@ -871,7 +892,7 @@ fn check_item_non_camel_case_types(cx: &Context, it: &ast::item) {
         }
         ast::item_enum(ref enum_definition, _) => {
             check_case(cx, "type", it.ident, it.span);
-            foreach variant in enum_definition.variants.iter() {
+            for variant in enum_definition.variants.iter() {
                 check_case(cx, "variant", variant.node.name, variant.span);
             }
         }
@@ -896,9 +917,10 @@ fn check_item_non_uppercase_statics(cx: &Context, it: &ast::item) {
     }
 }
 
-fn lint_unused_unsafe() -> visit::vt<@mut Context> {
-    visit::mk_vt(@visit::Visitor {
-        visit_expr: |e, (cx, vt): (@mut Context, visit::vt<@mut Context>)| {
+fn lint_unused_unsafe() -> oldvisit::vt<@mut Context> {
+    oldvisit::mk_vt(@oldvisit::Visitor {
+        visit_expr: |e,
+                     (cx, vt): (@mut Context, oldvisit::vt<@mut Context>)| {
             match e.node {
                 ast::expr_block(ref blk) if blk.rules == ast::UnsafeBlock => {
                     if !cx.tcx.used_unsafe.contains(&blk.id) {
@@ -908,13 +930,13 @@ fn lint_unused_unsafe() -> visit::vt<@mut Context> {
                 }
                 _ => ()
             }
-            visit::visit_expr(e, (cx, vt));
+            oldvisit::visit_expr(e, (cx, vt));
         },
-        .. *visit::default_visitor()
+        .. *oldvisit::default_visitor()
     })
 }
 
-fn lint_unused_mut() -> visit::vt<@mut Context> {
+fn lint_unused_mut() -> oldvisit::vt<@mut Context> {
     fn check_pat(cx: &Context, p: @ast::pat) {
         let mut used = false;
         let mut bindings = 0;
@@ -933,53 +955,54 @@ fn lint_unused_mut() -> visit::vt<@mut Context> {
     }
 
     fn visit_fn_decl(cx: &Context, fd: &ast::fn_decl) {
-        foreach arg in fd.inputs.iter() {
+        for arg in fd.inputs.iter() {
             if arg.is_mutbl {
                 check_pat(cx, arg.pat);
             }
         }
     }
 
-    visit::mk_vt(@visit::Visitor {
-        visit_local: |l, (cx, vt): (@mut Context, visit::vt<@mut Context>)| {
+    oldvisit::mk_vt(@oldvisit::Visitor {
+        visit_local: |l,
+                      (cx, vt): (@mut Context, oldvisit::vt<@mut Context>)| {
             if l.is_mutbl {
                 check_pat(cx, l.pat);
             }
-            visit::visit_local(l, (cx, vt));
+            oldvisit::visit_local(l, (cx, vt));
         },
         visit_fn: |a, fd, b, c, d, (cx, vt)| {
             visit_fn_decl(cx, fd);
-            visit::visit_fn(a, fd, b, c, d, (cx, vt));
+            oldvisit::visit_fn(a, fd, b, c, d, (cx, vt));
         },
         visit_ty_method: |tm, (cx, vt)| {
             visit_fn_decl(cx, &tm.decl);
-            visit::visit_ty_method(tm, (cx, vt));
+            oldvisit::visit_ty_method(tm, (cx, vt));
         },
         visit_trait_method: |tm, (cx, vt)| {
             match *tm {
                 ast::required(ref tm) => visit_fn_decl(cx, &tm.decl),
                 ast::provided(m) => visit_fn_decl(cx, &m.decl)
             }
-            visit::visit_trait_method(tm, (cx, vt));
+            oldvisit::visit_trait_method(tm, (cx, vt));
         },
-        .. *visit::default_visitor()
+        .. *oldvisit::default_visitor()
     })
 }
 
-fn lint_session() -> visit::vt<@mut Context> {
-    ast_util::id_visitor(|id, cx: @mut Context| {
+fn lint_session(cx: @mut Context) -> @visit::Visitor<()> {
+    ast_util::id_visitor(|id| {
         match cx.tcx.sess.lints.pop(&id) {
             None => {},
             Some(l) => {
-                foreach (lint, span, msg) in l.consume_iter() {
+                for (lint, span, msg) in l.consume_iter() {
                     cx.span_lint(lint, span, msg)
                 }
             }
         }
-    })
+    }, false)
 }
 
-fn lint_unnecessary_allocations() -> visit::vt<@mut Context> {
+fn lint_unnecessary_allocations() -> oldvisit::vt<@mut Context> {
     // Warn if string and vector literals with sigils are immediately borrowed.
     // Those can have the sigil removed.
     fn check(cx: &Context, e: &ast::expr) {
@@ -1009,18 +1032,21 @@ fn lint_unnecessary_allocations() -> visit::vt<@mut Context> {
         }
     }
 
-    visit::mk_vt(@visit::Visitor {
-        visit_expr: |e, (cx, vt): (@mut Context, visit::vt<@mut Context>)| {
+    oldvisit::mk_vt(@oldvisit::Visitor {
+        visit_expr: |e,
+                     (cx, vt): (@mut Context, oldvisit::vt<@mut Context>)| {
             check(cx, e);
-            visit::visit_expr(e, (cx, vt));
+            oldvisit::visit_expr(e, (cx, vt));
         },
-        .. *visit::default_visitor()
+        .. *oldvisit::default_visitor()
     })
 }
 
-fn lint_missing_doc() -> visit::vt<@mut Context> {
-    fn check_attrs(cx: @mut Context, attrs: &[ast::Attribute],
-                   sp: span, msg: &str) {
+fn lint_missing_doc() -> oldvisit::vt<@mut Context> {
+    fn check_attrs(cx: @mut Context,
+                   attrs: &[ast::Attribute],
+                   sp: span,
+                   msg: &str) {
         // If we're building a test harness, then warning about documentation is
         // probably not really relevant right now
         if cx.tcx.sess.opts.test { return }
@@ -1033,20 +1059,20 @@ fn lint_missing_doc() -> visit::vt<@mut Context> {
         cx.span_lint(missing_doc, sp, msg);
     }
 
-    visit::mk_vt(@visit::Visitor {
+    oldvisit::mk_vt(@oldvisit::Visitor {
         visit_ty_method: |m, (cx, vt)| {
             // All ty_method objects are linted about because they're part of a
             // trait (no visibility)
             check_attrs(cx, m.attrs, m.span,
                         "missing documentation for a method");
-            visit::visit_ty_method(m, (cx, vt));
+            oldvisit::visit_ty_method(m, (cx, vt));
         },
 
         visit_fn: |fk, d, b, sp, id, (cx, vt)| {
             // Only warn about explicitly public methods. Soon implicit
             // public-ness will hopefully be going away.
             match *fk {
-                visit::fk_method(_, _, m) if m.vis == ast::public => {
+                oldvisit::fk_method(_, _, m) if m.vis == ast::public => {
                     // If we're in a trait implementation, no need to duplicate
                     // documentation
                     if !cx.in_trait_impl {
@@ -1057,7 +1083,7 @@ fn lint_missing_doc() -> visit::vt<@mut Context> {
 
                 _ => {}
             }
-            visit::visit_fn(fk, d, b, sp, id, (cx, vt));
+            oldvisit::visit_fn(fk, d, b, sp, id, (cx, vt));
         },
 
         visit_item: |it, (cx, vt)| {
@@ -1068,7 +1094,7 @@ fn lint_missing_doc() -> visit::vt<@mut Context> {
                 ast::item_struct(sdef, _) if it.vis == ast::public => {
                     check_attrs(cx, it.attrs, it.span,
                                 "missing documentation for a struct");
-                    foreach field in sdef.fields.iter() {
+                    for field in sdef.fields.iter() {
                         match field.node.kind {
                             ast::named_field(_, vis) if vis != ast::private => {
                                 check_attrs(cx, field.node.attrs, field.span,
@@ -1092,10 +1118,10 @@ fn lint_missing_doc() -> visit::vt<@mut Context> {
                 _ => {}
             };
 
-            visit::visit_item(it, (cx, vt));
+            oldvisit::visit_item(it, (cx, vt));
         },
 
-        .. *visit::default_visitor()
+        .. *oldvisit::default_visitor()
     })
 }
 
@@ -1111,33 +1137,34 @@ pub fn check_crate(tcx: ty::ctxt, crate: @ast::Crate) {
     };
 
     // Install defaults.
-    for cx.dict.each_value |spec| {
+    for (_, spec) in cx.dict.iter() {
         cx.set_level(spec.lint, spec.default, Default);
     }
 
     // Install command-line options, overriding defaults.
-    foreach &(lint, level) in tcx.sess.opts.lint_opts.iter() {
+    for &(lint, level) in tcx.sess.opts.lint_opts.iter() {
         cx.set_level(lint, level, CommandLine);
     }
 
     // Register each of the lint passes with the context
-    cx.add_lint(lint_while_true());
-    cx.add_lint(lint_deprecated_for_loop());
-    cx.add_lint(lint_path_statement());
-    cx.add_lint(lint_heap());
-    cx.add_lint(lint_type_limits());
-    cx.add_lint(lint_unused_unsafe());
-    cx.add_lint(lint_unused_mut());
-    cx.add_lint(lint_session());
-    cx.add_lint(lint_unnecessary_allocations());
-    cx.add_lint(lint_missing_doc());
+    cx.add_oldvisit_lint(lint_while_true());
+    cx.add_oldvisit_lint(lint_path_statement());
+    cx.add_oldvisit_lint(lint_heap());
+    cx.add_oldvisit_lint(lint_type_limits());
+    cx.add_oldvisit_lint(lint_unused_unsafe());
+    cx.add_oldvisit_lint(lint_unused_mut());
+    cx.add_oldvisit_lint(lint_unnecessary_allocations());
+    cx.add_oldvisit_lint(lint_missing_doc());
+    cx.add_lint(lint_session(cx));
 
     // Actually perform the lint checks (iterating the ast)
     do cx.with_lint_attrs(crate.attrs) {
         cx.process(Crate(crate));
 
-        visit::visit_crate(crate, (cx, visit::mk_vt(@visit::Visitor {
-            visit_item: |it, (cx, vt): (@mut Context, visit::vt<@mut Context>)| {
+        oldvisit::visit_crate(crate, (cx, oldvisit::mk_vt(@oldvisit::Visitor {
+            visit_item: |it,
+                         (cx, vt):
+                            (@mut Context, oldvisit::vt<@mut Context>)| {
                 do cx.with_lint_attrs(it.attrs) {
                     match it.node {
                         ast::item_impl(_, Some(*), _, _) => {
@@ -1151,35 +1178,51 @@ pub fn check_crate(tcx: ty::ctxt, crate: @ast::Crate) {
                     check_item_heap(cx, it);
 
                     cx.process(Item(it));
-                    visit::visit_item(it, (cx, vt));
+                    oldvisit::visit_item(it, (cx, vt));
                     cx.in_trait_impl = false;
                 }
             },
             visit_fn: |fk, decl, body, span, id, (cx, vt)| {
                 match *fk {
-                    visit::fk_method(_, _, m) => {
+                    oldvisit::fk_method(_, _, m) => {
                         do cx.with_lint_attrs(m.attrs) {
                             cx.process(Method(m));
-                            visit::visit_fn(fk, decl, body, span, id, (cx, vt));
+                            oldvisit::visit_fn(fk,
+                                               decl,
+                                               body,
+                                               span,
+                                               id,
+                                               (cx, vt));
                         }
                     }
                     _ => {
-                        visit::visit_fn(fk, decl, body, span, id, (cx, vt));
+                        oldvisit::visit_fn(fk,
+                                           decl,
+                                           body,
+                                           span,
+                                           id,
+                                           (cx, vt));
                     }
                 }
             },
-            .. *visit::default_visitor()
+            .. *oldvisit::default_visitor()
         })));
     }
 
     // If we missed any lints added to the session, then there's a bug somewhere
     // in the iteration code.
-    foreach (_, v) in tcx.sess.lints.iter() {
-        foreach t in v.iter() {
+    for (id, v) in tcx.sess.lints.iter() {
+        for t in v.iter() {
             match *t {
                 (lint, span, ref msg) =>
-                    tcx.sess.span_bug(span, fmt!("unprocessed lint %?: %s",
-                                                 lint, *msg))
+                    tcx.sess.span_bug(span, fmt!("unprocessed lint %? at %s: \
+                                                  %s",
+                                                 lint,
+                                                 ast_map::node_id_to_str(
+                                                 tcx.items,
+                                                 *id,
+                                                 token::get_ident_interner()),
+                                                 *msg))
             }
         }
     }

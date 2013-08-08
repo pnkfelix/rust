@@ -102,7 +102,7 @@ impl<'self> PkgScript<'self> {
     debug!("pkgscript parse: %?", os::self_exe_path());
         let options = @session::options {
             binary: binary,
-            maybe_sysroot: Some(@os::self_exe_path().get().pop()),
+            maybe_sysroot: Some(@os::self_exe_path().unwrap().pop()),
             crate_type: session::bin_crate,
             .. (*session::basic_options()).clone()
         };
@@ -206,11 +206,12 @@ impl CtxMethods for Ctx {
                     // The package id is presumed to be the first command-line
                     // argument
                     let pkgid = PkgId::new(args[0].clone(), &os::getcwd());
-                    for each_pkg_parent_workspace(&pkgid) |workspace| {
+                    do each_pkg_parent_workspace(&pkgid) |workspace| {
                         debug!("found pkg %s in workspace %s, trying to build",
                                pkgid.to_str(), workspace.to_str());
                         self.build(workspace, &pkgid);
-                    }
+                        true
+                    };
                 }
             }
             "clean" => {
@@ -264,17 +265,19 @@ impl CtxMethods for Ctx {
                         self.install(&rp[0], &pkgid);
                     }
                     else {
-                        for each_pkg_parent_workspace(&pkgid) |workspace| {
+                        do each_pkg_parent_workspace(&pkgid) |workspace| {
                             self.install(workspace, &pkgid);
-                        }
+                            true
+                        };
                     }
                 }
             }
             "list" => {
                 io::println("Installed packages:");
-                for installed_packages::list_installed_packages |pkg_id| {
-                    io::println(pkg_id.local_path.to_str());
-                }
+                do installed_packages::list_installed_packages |pkg_id| {
+                    println(pkg_id.local_path.to_str());
+                    true
+                };
             }
             "prefer" => {
                 if args.len() < 1 {
@@ -299,11 +302,12 @@ impl CtxMethods for Ctx {
                 else {
                     let rp = rust_path();
                     assert!(!rp.is_empty());
-                    for each_pkg_parent_workspace(&pkgid) |workspace| {
+                    do each_pkg_parent_workspace(&pkgid) |workspace| {
                         path_util::uninstall_package_from(workspace, &pkgid);
                         note(fmt!("Uninstalled package %s (was installed in %s)",
                                   pkgid.to_str(), workspace.to_str()));
-                    }
+                        true
+                    };
                 }
             }
             "unprefer" => {
@@ -430,14 +434,14 @@ impl CtxMethods for Ctx {
                target_exec.to_str(), target_lib,
                maybe_executable, maybe_library);
 
-        foreach exec in maybe_executable.iter() {
+        for exec in maybe_executable.iter() {
             debug!("Copying: %s -> %s", exec.to_str(), target_exec.to_str());
             if !(os::mkdir_recursive(&target_exec.dir_path(), U_RWX) &&
                  os::copy_file(exec, &target_exec)) {
                 cond.raise(((*exec).clone(), target_exec.clone()));
             }
         }
-        foreach lib in maybe_library.iter() {
+        for lib in maybe_library.iter() {
             let target_lib = target_lib.clone().expect(fmt!("I built %s but apparently \
                                                 didn't install it!", lib.to_str()));
             debug!("Copying: %s -> %s", lib.to_str(), target_lib.to_str());
@@ -531,7 +535,7 @@ pub fn main() {
  * in is the working directory.
  */
 pub fn work_dir() -> Path {
-    os::self_exe_path().get()
+    os::self_exe_path().unwrap()
 }
 
 /**

@@ -11,12 +11,13 @@
 
 use driver::session;
 use driver::session::Session;
-use syntax::parse::token::special_idents;
 use syntax::ast::{Crate, NodeId, item, item_fn};
+use syntax::ast_map;
 use syntax::attr;
 use syntax::codemap::span;
-use syntax::visit::{default_visitor, mk_vt, vt, Visitor, visit_crate, visit_item};
-use syntax::ast_map;
+use syntax::oldvisit::{default_visitor, mk_vt, vt, Visitor, visit_crate};
+use syntax::oldvisit::{visit_item};
+use syntax::parse::token::special_idents;
 use std::util;
 
 struct EntryContext {
@@ -47,6 +48,12 @@ pub fn find_entry_point(session: Session, crate: &Crate, ast_map: ast_map::map) 
         session.targ_cfg.os != session::os_android {
         // No need to find a main function
         return;
+    }
+
+    // If the user wants no main function at all, then stop here.
+    if attr::contains_name(crate.attrs, "no_main") {
+        *session.entry_type = Some(session::EntryNone);
+        return
     }
 
     let ctxt = @mut EntryContext {
@@ -137,7 +144,7 @@ fn configure_main(ctxt: @mut EntryContext) {
                                    but you have one or more functions named 'main' that are not \
                                    defined at the crate level. Either move the definition or \
                                    attach the `#[main]` attribute to override this behavior.");
-                foreach &(_, span) in this.non_main_fns.iter() {
+                for &(_, span) in this.non_main_fns.iter() {
                     this.session.span_note(span, "here is a function named 'main'");
                 }
             }

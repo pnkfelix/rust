@@ -56,8 +56,8 @@ impl Sudoku {
     }
 
     pub fn equal(&self, other: &Sudoku) -> bool {
-        foreach row in range(0u8, 9u8) {
-            foreach col in range(0u8, 9u8) {
+        for row in range(0u8, 9u8) {
+            for col in range(0u8, 9u8) {
                 if self.grid[row][col] != other.grid[row][col] {
                     return false;
                 }
@@ -75,9 +75,9 @@ impl Sudoku {
             let comps: ~[&str] = line.trim().split_iter(',').collect();
 
             if comps.len() == 3u {
-                let row     = uint::from_str(comps[0]).get() as u8;
-                let col     = uint::from_str(comps[1]).get() as u8;
-                g[row][col] = uint::from_str(comps[2]).get() as u8;
+                let row     = uint::from_str(comps[0]).unwrap() as u8;
+                let col     = uint::from_str(comps[1]).unwrap() as u8;
+                g[row][col] = uint::from_str(comps[2]).unwrap() as u8;
             }
             else {
                 fail!("Invalid sudoku file");
@@ -87,9 +87,9 @@ impl Sudoku {
     }
 
     pub fn write(&self, writer: @io::Writer) {
-        foreach row in range(0u8, 9u8) {
+        for row in range(0u8, 9u8) {
             writer.write_str(fmt!("%u", self.grid[row][0] as uint));
-            foreach col in range(1u8, 9u8) {
+            for col in range(1u8, 9u8) {
                 writer.write_str(fmt!(" %u", self.grid[row][col] as uint));
             }
             writer.write_char('\n');
@@ -99,8 +99,8 @@ impl Sudoku {
     // solve sudoku grid
     pub fn solve(&mut self) {
         let mut work: ~[(u8, u8)] = ~[]; /* queue of uncolored fields */
-        foreach row in range(0u8, 9u8) {
-            foreach col in range(0u8, 9u8) {
+        for row in range(0u8, 9u8) {
+            for col in range(0u8, 9u8) {
                 let color = self.grid[row][col];
                 if color == 0u8 {
                     work.push((row, col));
@@ -143,7 +143,7 @@ impl Sudoku {
 
     // find colors available in neighbourhood of (row, col)
     fn drop_colors(&mut self, avail: &mut Colors, row: u8, col: u8) {
-        foreach idx in range(0u8, 9u8) {
+        for idx in range(0u8, 9u8) {
             avail.remove(self.grid[idx][col]); /* check same column fields */
             avail.remove(self.grid[row][idx]); /* check same row fields */
         }
@@ -151,8 +151,8 @@ impl Sudoku {
         // check same block fields
         let row0 = (row / 3u8) * 3u8;
         let col0 = (col / 3u8) * 3u8;
-        foreach alt_row in range(row0, row0 + 3u8) {
-            foreach alt_col in range(col0, col0 + 3u8) {
+        for alt_row in range(row0, row0 + 3u8) {
+            for alt_col in range(col0, col0 + 3u8) {
                 avail.remove(self.grid[alt_row][alt_col]);
             }
         }

@@ -129,7 +129,7 @@ use syntax::opt_vec;
 use syntax::parse::token;
 use syntax::parse::token::special_idents;
 use syntax::print::pprust;
-use syntax::visit;
+use syntax::oldvisit;
 use syntax;
 
 pub mod _match;
@@ -170,10 +170,6 @@ pub struct inherited {
 
 #[deriving(Clone)]
 pub enum FnKind {
-    // This is a for-closure.  The ty::t is the return type of the
-    // enclosing function.
-    ForLoop(ty::t),
-
     // A do-closure.
     DoBlock,
 
@@ -230,8 +226,6 @@ pub struct FnCtxt {
     err_count_on_creation: uint,
 
     ret_ty: ty::t,
-    // Used by loop bodies that return from the outer function
-    indirect_ret_ty: Option<ty::t>,
     ps: PurityState,
 
     // Sometimes we generate region pointers where the precise region
@@ -283,7 +277,6 @@ pub fn blank_fn_ctxt(ccx: @mut CrateCtxt,
     @mut FnCtxt {
         err_count_on_creation: ccx.tcx.sess.err_count(),
         ret_ty: rty,
-        indirect_ret_ty: None,
         ps: PurityState::function(ast::impure_fn, 0),
         region_lb: region_bnd,
         in_scope_regions: @Nil,
@@ -304,11 +297,11 @@ impl ExprTyProvider for FnCtxt {
 }
 
 pub fn check_item_types(ccx: @mut CrateCtxt, crate: &ast::Crate) {
-    let visit = visit::mk_simple_visitor(@visit::SimpleVisitor {
+    let visit = oldvisit::mk_simple_visitor(@oldvisit::SimpleVisitor {
         visit_item: |a| check_item(ccx, a),
-        .. *visit::default_simple_visitor()
+        .. *oldvisit::default_simple_visitor()
     });
-    visit::visit_crate(crate, ((), visit));
+    oldvisit::visit_crate(crate, ((), visit));
 }
 
 pub fn check_bare_fn(ccx: @mut CrateCtxt,
@@ -372,7 +365,7 @@ pub fn check_fn(ccx: @mut CrateCtxt,
                                                  bound_region: br}));
         let opt_self_info =
             opt_self_info.map(
-                |si| SelfInfo {self_ty: opt_self_ty.get(), ..*si});
+                |si| SelfInfo {self_ty: opt_self_ty.unwrap(), ..*si});
         (isr, opt_self_info, fn_sig)
     };
 
@@ -390,17 +383,9 @@ pub fn check_fn(ccx: @mut CrateCtxt,
     // Create the function context.  This is either derived from scratch or,
     // in the case of function expressions, based on the outer context.
     let fcx: @mut FnCtxt = {
-        // In a for-loop, you have an 'indirect return' because return
-        // does not return out of the directly enclosing fn
-        let indirect_ret_ty = match fn_kind {
-            ForLoop(t) => Some(t),
-            DoBlock | Vanilla => None
-        };
-
         @mut FnCtxt {
             err_count_on_creation: err_count_on_creation,
             ret_ty: ret_ty,
-            indirect_ret_ty: indirect_ret_ty,
             ps: PurityState::function(purity, id),
             region_lb: body.id,
             in_scope_regions: isr,
@@ -428,10 +413,10 @@ pub fn check_fn(ccx: @mut CrateCtxt,
       None => ()
     }
 
-    foreach self_info in opt_self_info.iter() {
+    for self_info in opt_self_info.iter() {
         fcx.write_ty(self_info.self_id, self_info.self_ty);
     }
-    foreach (input, arg) in decl.inputs.iter().zip(arg_tys.iter()) {
+    for (input, arg) in decl.inputs.iter().zip(arg_tys.iter()) {
         fcx.write_ty(input.id, *arg);
     }
 
@@ -460,7 +445,7 @@ pub fn check_fn(ccx: @mut CrateCtxt,
         };
 
         // Add the self parameter
-        foreach self_info in opt_self_info.iter() {
+        for self_info in opt_self_info.iter() {
             assign(self_info.self_id, Some(self_info.self_ty));
             debug!("self is assigned to %s",
                    fcx.infcx().ty_to_str(
@@ -468,7 +453,7 @@ pub fn check_fn(ccx: @mut CrateCtxt,
         }
 
         // Add formal parameters.
-        foreach (arg_ty, input) in arg_tys.iter().zip(decl.inputs.iter()) {
+        for (arg_ty, input) in arg_tys.iter().zip(decl.inputs.iter()) {
             // Create type variables for each argument.
             do pat_util::pat_bindings(tcx.def_map, input.pat)
                     |_bm, pat_id, _sp, _path| {
@@ -484,7 +469,7 @@ pub fn check_fn(ccx: @mut CrateCtxt,
         }
 
         // Add explicitly-declared locals.
-        let visit_local: @fn(@ast::Local, ((), visit::vt<()>)) =
+        let visit_local: @fn(@ast::Local, ((), oldvisit::vt<()>)) =
                 |local, (e, v)| {
             let o_ty = match local.ty.node {
               ast::ty_infer => None,
@@ -495,11 +480,11 @@ pub fn check_fn(ccx: @mut CrateCtxt,
                    fcx.pat_to_str(local.pat),
                    fcx.infcx().ty_to_str(
                        fcx.inh.locals.get_copy(&local.id)));
-            visit::visit_local(local, (e, v));
+            oldvisit::visit_local(local, (e, v));
         };
 
         // Add pattern bindings.
-        let visit_pat: @fn(@ast::pat, ((), visit::vt<()>)) = |p, (e, v)| {
+        let visit_pat: @fn(@ast::pat, ((), oldvisit::vt<()>)) = |p, (e, v)| {
             match p.node {
               ast::pat_ident(_, ref path, _)
                   if pat_util::pat_is_binding(fcx.ccx.tcx.def_map, p) => {
@@ -511,32 +496,36 @@ pub fn check_fn(ccx: @mut CrateCtxt,
               }
               _ => {}
             }
-            visit::visit_pat(p, (e, v));
+            oldvisit::visit_pat(p, (e, v));
         };
 
-        let visit_block: @fn(&ast::Block, ((), visit::vt<()>)) = |b, (e, v)| {
+        let visit_block:
+                @fn(&ast::Block, ((), oldvisit::vt<()>)) = |b, (e, v)| {
             // non-obvious: the `blk` variable maps to region lb, so
             // we have to keep this up-to-date.  This
             // is... unfortunate.  It'd be nice to not need this.
             do fcx.with_region_lb(b.id) {
-                visit::visit_block(b, (e, v));
+                oldvisit::visit_block(b, (e, v));
             }
         };
 
         // Don't descend into fns and items
-        fn visit_fn(_fk: &visit::fn_kind, _decl: &ast::fn_decl,
-                    _body: &ast::Block, _sp: span,
-                    _id: ast::NodeId, (_t,_v): ((), visit::vt<()>)) {
+        fn visit_fn(_fk: &oldvisit::fn_kind,
+                    _decl: &ast::fn_decl,
+                    _body: &ast::Block,
+                    _sp: span,
+                    _id: ast::NodeId,
+                    (_t,_v): ((), oldvisit::vt<()>)) {
         }
-        fn visit_item(_i: @ast::item, (_e,_v): ((), visit::vt<()>)) { }
+        fn visit_item(_i: @ast::item, (_e,_v): ((), oldvisit::vt<()>)) { }
 
-        let visit = visit::mk_vt(
-            @visit::Visitor {visit_local: visit_local,
+        let visit = oldvisit::mk_vt(
+            @oldvisit::Visitor {visit_local: visit_local,
                              visit_pat: visit_pat,
                              visit_fn: visit_fn,
                              visit_item: visit_item,
                              visit_block: visit_block,
-                             ..*visit::default_visitor()});
+                             ..*oldvisit::default_visitor()});
 
         (visit.visit_block)(body, ((), visit));
     }
@@ -566,7 +555,7 @@ pub fn check_no_duplicate_fields(tcx: ty::ctxt,
                                  fields: ~[(ast::ident, span)]) {
     let mut field_names = HashMap::new();
 
-    foreach p in fields.iter() {
+    for p in fields.iter() {
         let (id, sp) = *p;
         let orig_sp = field_names.find(&id).map_consume(|x| *x);
         match orig_sp {
@@ -615,13 +604,13 @@ pub fn check_item(ccx: @mut CrateCtxt, it: @ast::item) {
         let rp = ccx.tcx.region_paramd_items.find(&it.id).map_consume(|x| *x);
         debug!("item_impl %s with id %d rp %?",
                ccx.tcx.sess.str_of(it.ident), it.id, rp);
-        foreach m in ms.iter() {
+        for m in ms.iter() {
             check_method(ccx, *m);
         }
         vtable::resolve_impl(ccx, it);
       }
       ast::item_trait(_, _, ref trait_methods) => {
-        foreach trait_method in (*trait_methods).iter() {
+        for trait_method in (*trait_methods).iter() {
             match *trait_method {
               required(*) => {
                 // Nothing to do, since required methods don't have
@@ -642,11 +631,11 @@ pub fn check_item(ccx: @mut CrateCtxt, it: @ast::item) {
       }
       ast::item_foreign_mod(ref m) => {
         if m.abis.is_intrinsic() {
-            foreach item in m.items.iter() {
+            for item in m.items.iter() {
                 check_intrinsic_type(ccx, *item);
             }
         } else {
-            foreach item in m.items.iter() {
+            for item in m.items.iter() {
                 let tpt = ty::lookup_item_type(ccx.tcx, local_def(item.id));
                 if tpt.generics.has_type_params() {
                     ccx.tcx.sess.span_err(
@@ -954,11 +943,6 @@ impl FnCtxt {
             return;
         }
         match self.fn_kind {
-            ForLoop(_) if !ty::type_is_bool(e) && !ty::type_is_nil(a) =>
-                    self.tcx().sess.span_err(sp, fmt!("A for-loop body must \
-                        return (), but it returns %s here. \
-                        Perhaps you meant to write a `do`-block?",
-                                            ppaux::ty_to_str(self.tcx(), a))),
             DoBlock if ty::type_is_bool(e) && ty::type_is_nil(a) =>
                 // If we expected bool and got ()...
                     self.tcx().sess.span_err(sp, fmt!("Do-block body must \
@@ -1257,7 +1241,7 @@ pub fn check_expr_with_unifier(fcx: @mut FnCtxt,
         // of arguments when we typecheck the functions. This isn't really the
         // right way to do this.
         let xs = [false, true];
-        foreach check_blocks in xs.iter() {
+        for check_blocks in xs.iter() {
             let check_blocks = *check_blocks;
             debug!("check_blocks=%b", check_blocks);
 
@@ -1268,9 +1252,9 @@ pub fn check_expr_with_unifier(fcx: @mut FnCtxt,
                 vtable::early_resolve_expr(callee_expr, fcx, true);
             }
 
-            foreach (i, arg) in args.iter().enumerate() {
+            for (i, arg) in args.iter().enumerate() {
                 let is_block = match arg.node {
-                    ast::expr_fn_block(*) | ast::expr_loop_body(*) |
+                    ast::expr_fn_block(*) |
                     ast::expr_do_body(*) => true,
                     _ => false
                 };
@@ -1883,14 +1867,14 @@ pub fn check_expr_with_unifier(fcx: @mut FnCtxt,
 
         let mut class_field_map = HashMap::new();
         let mut fields_found = 0;
-        foreach field in field_types.iter() {
+        for field in field_types.iter() {
             class_field_map.insert(field.ident, (field.id, false));
         }
 
         let mut error_happened = false;
 
         // Typecheck each field.
-        foreach field in ast_fields.iter() {
+        for field in ast_fields.iter() {
             let mut expected_field_type = ty::mk_err();
 
             let pair = class_field_map.find(&field.ident).
@@ -1936,7 +1920,7 @@ pub fn check_expr_with_unifier(fcx: @mut FnCtxt,
             assert!(fields_found <= field_types.len());
             if fields_found < field_types.len() {
                 let mut missing_fields = ~[];
-                foreach class_field in field_types.iter() {
+                for class_field in field_types.iter() {
                     let name = class_field.ident;
                     let (_, seen) = *class_field_map.get(&name);
                     if !seen {
@@ -2122,121 +2106,6 @@ pub fn check_expr_with_unifier(fcx: @mut FnCtxt,
         fcx.write_ty(id, enum_type);
     }
 
-    fn check_loop_body(fcx: @mut FnCtxt,
-                       expr: @ast::expr,
-                       expected: Option<ty::t>,
-                       loop_body: @ast::expr) {
-        // a loop body is the special argument to a `for` loop.  We know that
-        // there will be an expected type in this context because it can only
-        // appear in the context of a call, so we get the expected type of the
-        // parameter. The catch here is that we need to validate two things:
-        // 1. a closure that returns a bool is expected
-        // 2. the closure that was given returns unit
-        let tcx = fcx.tcx();
-        let mut err_happened = false;
-        let expected_sty = unpack_expected(fcx,
-                                           expected,
-                                           |x| Some((*x).clone()));
-        let inner_ty = match expected_sty {
-            Some(ty::ty_closure(ref fty)) => {
-                match fcx.mk_subty(false, infer::Misc(expr.span),
-                                   fty.sig.output, ty::mk_bool()) {
-                    result::Ok(_) => {
-                        ty::mk_closure(tcx, ty::ClosureTy {
-                            sig: FnSig {
-                                output: ty::mk_nil(),
-                                ..fty.sig.clone()
-                            },
-                            ..(*fty).clone()
-                        })
-                    }
-                    result::Err(_) => {
-                        fcx.type_error_message(
-                            expr.span,
-                            |actual| {
-                                let did_you_mean = {
-                                    if ty::type_is_nil(fty.sig.output) {
-                                        "\nDid you mean to use \
-                                             `do` instead of `for`?"
-                                     } else {
-                                         ""
-                                     }
-                                };
-                                fmt!("A `for` loop iterator should expect a \
-                                      closure that returns `bool`. This \
-                                      iterator expects a closure that \
-                                      returns `%s`.%s",
-                                     actual, did_you_mean)
-                            },
-                            fty.sig.output,
-                            None);
-                        err_happened = true;
-                        fcx.write_error(expr.id);
-                        ty::mk_err()
-                    }
-                }
-            }
-            _ => {
-                match expected {
-                    Some(expected_t) => {
-                        fcx.type_error_message(
-                            expr.span,
-                            |actual| {
-                                fmt!("last argument in `for` call \
-                                      has non-closure type: %s",
-                                     actual)
-                            },
-                            expected_t, None);
-                        let err_ty = ty::mk_err();
-                        fcx.write_error(expr.id);
-                        err_happened = true;
-                        err_ty
-                    }
-                    None => fcx.tcx().sess.impossible_case(
-                        expr.span,
-                        "loop body must have an expected type")
-                }
-            }
-        };
-
-        match loop_body.node {
-            ast::expr_fn_block(ref decl, ref body) => {
-                // If an error occurred, we pretend this isn't a for
-                // loop, so as to assign types to all nodes while also
-                // propagating ty_err throughout so as to suppress
-                // derived errors. If we passed in ForLoop in the
-                // error case, we'd potentially emit a spurious error
-                // message because of the indirect_ret_ty.
-                let fn_kind = if err_happened {
-                    Vanilla
-                } else {
-                    let indirect_ret_ty =
-                        fcx.indirect_ret_ty.get_or_default(fcx.ret_ty);
-                    ForLoop(indirect_ret_ty)
-                };
-                check_expr_fn(fcx, loop_body, None,
-                              decl, body, fn_kind, Some(inner_ty));
-                demand::suptype(fcx, loop_body.span,
-                                inner_ty, fcx.expr_ty(loop_body));
-            }
-            ref n => {
-                fail!("check_loop_body expected expr_fn_block, not %?", n)
-            }
-        }
-
-        let block_ty = structurally_resolved_type(
-            fcx, expr.span, fcx.node_ty(loop_body.id));
-        if err_happened {
-            fcx.write_error(expr.id);
-            fcx.write_error(loop_body.id);
-        } else {
-            let loop_body_ty =
-                ty::replace_closure_return_type(
-                    tcx, block_ty, ty::mk_bool());
-            fcx.write_ty(expr.id, loop_body_ty);
-        }
-    }
-
     let tcx = fcx.ccx.tcx;
     let id = expr.id;
     match expr.node {
@@ -2258,7 +2127,7 @@ pub fn check_expr_with_unifier(fcx: @mut FnCtxt,
                 _ => mutability = mutbl
             }
             let t: ty::t = fcx.infcx().next_ty_var();
-            foreach e in args.iter() {
+            for e in args.iter() {
                 check_expr_has_type(fcx, *e, t);
                 let arg_t = fcx.expr_ty(*e);
                 if ty::type_is_error(arg_t) {
@@ -2478,10 +2347,10 @@ pub fn check_expr_with_unifier(fcx: @mut FnCtxt,
         fcx.write_ty(id, ty_param_bounds_and_ty.ty);
       }
       ast::expr_inline_asm(ref ia) => {
-          foreach &(_, input) in ia.inputs.iter() {
+          for &(_, input) in ia.inputs.iter() {
               check_expr(fcx, input);
           }
-          foreach &(_, out) in ia.outputs.iter() {
+          for &(_, out) in ia.outputs.iter() {
               check_expr(fcx, out);
           }
           fcx.write_nil(id);
@@ -2490,9 +2359,7 @@ pub fn check_expr_with_unifier(fcx: @mut FnCtxt,
       ast::expr_break(_) => { fcx.write_bot(id); }
       ast::expr_again(_) => { fcx.write_bot(id); }
       ast::expr_ret(expr_opt) => {
-        let ret_ty = match fcx.indirect_ret_ty {
-          Some(t) =>  t, None => fcx.ret_ty
-        };
+        let ret_ty = fcx.ret_ty;
         match expr_opt {
           None => match fcx.mk_eqty(false, infer::Misc(expr.span),
                                     ret_ty, ty::mk_nil()) {
@@ -2577,15 +2444,12 @@ pub fn check_expr_with_unifier(fcx: @mut FnCtxt,
         check_expr_fn(fcx, expr, None,
                       decl, body, Vanilla, expected);
       }
-      ast::expr_loop_body(loop_body) => {
-          check_loop_body(fcx, expr, expected, loop_body);
-      }
       ast::expr_do_body(b) => {
         let expected_sty = unpack_expected(fcx,
                                            expected,
                                            |x| Some((*x).clone()));
         let inner_ty = match expected_sty {
-            Some(ty::ty_closure(_)) => expected.get(),
+            Some(ty::ty_closure(_)) => expected.unwrap(),
             _ => match expected {
                 Some(expected_t) => {
                     fcx.type_error_message(expr.span, |actual| {
@@ -2746,13 +2610,8 @@ pub fn check_expr_with_unifier(fcx: @mut FnCtxt,
       }
       ast::expr_vec(ref args, mutbl) => {
         let t: ty::t = fcx.infcx().next_ty_var();
-        let mut arg_is_bot = false;
-        let mut arg_is_err = false;
-        foreach e in args.iter() {
+        for e in args.iter() {
             check_expr_has_type(fcx, *e, t);
-            let arg_t = fcx.expr_ty(*e);
-            arg_is_bot |= ty::type_is_bot(arg_t);
-            arg_is_err |= ty::type_is_error(arg_t);
         }
         let typ = ty::mk_evec(tcx, ty::mt {ty: t, mutbl: mutbl},
                               ty::vstore_fixed(args.len()));
@@ -3009,7 +2868,7 @@ pub fn check_block_with_expected(fcx: @mut FnCtxt,
         let mut last_was_bot = false;
         let mut any_bot = false;
         let mut any_err = false;
-        foreach s in blk.stmts.iter() {
+        for s in blk.stmts.iter() {
             check_stmt(fcx, *s);
             let s_id = ast_util::stmt_id(*s);
             let s_ty = fcx.node_ty(s_id);
@@ -3148,7 +3007,7 @@ pub fn check_enum_variants(ccx: @mut CrateCtxt,
         let mut disr_vals: ~[uint] = ~[];
         let mut prev_disr_val: Option<uint> = None;
 
-        foreach v in vs.iter() {
+        for v in vs.iter() {
 
             // If the discriminant value is specified explicitly in the enum check whether the
             // initialization expression is valid, otherwise use the last value plus one.
@@ -3476,7 +3335,7 @@ pub fn check_bounds_are_used(ccx: @mut CrateCtxt,
             true
         });
 
-    foreach (i, b) in tps_used.iter().enumerate() {
+    for (i, b) in tps_used.iter().enumerate() {
         if !*b {
             ccx.tcx.sess.span_err(
                 span, fmt!("type parameter `%s` is unused",

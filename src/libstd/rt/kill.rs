@@ -193,6 +193,10 @@ impl BlockedTask {
 
     /// Create a blocked task, unless the task was already killed.
     pub fn try_block(mut task: ~Task) -> Either<~Task, BlockedTask> {
+        // NB: As an optimization, we could give a free pass to being unkillable
+        // to tasks whose taskgroups haven't been initialized yet, but that
+        // introduces complications with select() and with the test cases below,
+        // and it's not clear the uncommon performance boost is worth it.
         if task.death.unkillable > 0 {
             Right(Unkillable(task))
         } else {
@@ -205,11 +209,10 @@ impl BlockedTask {
                 let flag_arc = match task.death.spare_kill_flag.take() {
                     Some(spare_flag) => spare_flag,
                     None => {
-                        // FIXME(#7544): Uncomment this when terminate_current_task
-                        // stops being *terrible*. That's the only place that violates
-                        // the assumption of "becoming unkillable will fail if the
-                        // task was killed".
-                        // rtassert!(task.unwinder.unwinding);
+                        // A task that kills us won't have a spare kill flag to
+                        // give back to us, so we restore it ourselves here. This
+                        // situation should only arise when we're already failing.
+                        rtassert!(task.unwinder.unwinding);
                         (*task.death.kill_handle.get_ref().get()).killed.clone()
                     }
                 };
@@ -530,13 +533,13 @@ impl Death {
 
     /// Fails if a kill signal was received.
     #[inline]
-    pub fn check_killed(&self) {
+    pub fn check_killed(&self, already_failing: bool) {
         match self.kill_handle {
             Some(ref kill_handle) =>
                 // The task may be both unkillable and killed if it does some
                 // synchronization during unwinding or cleanup (for example,
                 // sending on a notify port). In that case failing won't help.
-                if self.unkillable == 0 && kill_handle.killed() {
+                if self.unkillable == 0 && (!already_failing) && kill_handle.killed() {
                     fail!(KILLED_MSG);
                 },
             // This may happen during task death (see comments in collect_failure).
@@ -548,11 +551,12 @@ impl Death {
     /// All calls must be paired with a subsequent call to allow_kill.
     #[inline]
     pub fn inhibit_kill(&mut self, already_failing: bool) {
-        if self.unkillable == 0 {
+        self.unkillable += 1;
+        // May fail, hence must happen *after* incrementing the counter
+        if self.unkillable == 1 {
             rtassert!(self.kill_handle.is_some());
             self.kill_handle.get_mut_ref().inhibit_kill(already_failing);
         }
-        self.unkillable += 1;
     }
 
     /// Exit a possibly-nested unkillable section of code.

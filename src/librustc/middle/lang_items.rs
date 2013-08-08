@@ -26,8 +26,8 @@ use metadata::cstore::iter_crate_data;
 use syntax::ast::{Crate, def_id, MetaItem};
 use syntax::ast_util::local_def;
 use syntax::attr::AttrMetaMethods;
-use syntax::visit::{default_simple_visitor, mk_simple_visitor, SimpleVisitor};
-use syntax::visit::visit_crate;
+use syntax::oldvisit::{default_simple_visitor, mk_simple_visitor};
+use syntax::oldvisit::{SimpleVisitor, visit_crate};
 
 use std::hashmap::HashMap;
 
@@ -412,7 +412,7 @@ impl<'self> LanguageItemCollector<'self> {
         let this: *mut LanguageItemCollector = &mut *self;
         visit_crate(self.crate, ((), mk_simple_visitor(@SimpleVisitor {
             visit_item: |item| {
-                foreach attribute in item.attrs.iter() {
+                for attribute in item.attrs.iter() {
                     unsafe {
                         (*this).match_and_collect_meta_item(
                             local_def(item.id),
@@ -428,11 +428,12 @@ impl<'self> LanguageItemCollector<'self> {
     pub fn collect_external_language_items(&mut self) {
         let crate_store = self.session.cstore;
         do iter_crate_data(crate_store) |crate_number, _crate_metadata| {
-            for each_lang_item(crate_store, crate_number)
+            do each_lang_item(crate_store, crate_number)
                     |node_id, item_index| {
                 let def_id = def_id { crate: crate_number, node: node_id };
                 self.collect_item(item_index, def_id);
-            }
+                true
+            };
         }
     }
 

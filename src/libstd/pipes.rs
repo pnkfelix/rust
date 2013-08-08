@@ -258,19 +258,17 @@ pub mod rustrt {
 
     extern {
         #[rust_stack]
-        pub unsafe fn rust_get_task() -> *rust_task;
+        pub fn rust_get_task() -> *rust_task;
         #[rust_stack]
-        pub unsafe fn rust_task_ref(task: *rust_task);
-        pub unsafe fn rust_task_deref(task: *rust_task);
+        pub fn rust_task_ref(task: *rust_task);
+        pub fn rust_task_deref(task: *rust_task);
 
         #[rust_stack]
-        pub unsafe fn task_clear_event_reject(task: *rust_task);
+        pub fn task_clear_event_reject(task: *rust_task);
 
-        pub unsafe fn task_wait_event(this: *rust_task,
-                                      killed: &mut *libc::c_void)
-                                   -> bool;
-        pub unsafe fn task_signal_event(target: *rust_task,
-                                        event: *libc::c_void);
+        pub fn task_wait_event(this: *rust_task, killed: &mut *libc::c_void)
+                               -> bool;
+        pub fn task_signal_event(target: *rust_task, event: *libc::c_void);
     }
 }
 
@@ -600,7 +598,7 @@ pub fn wait_many<T: Selectable>(pkts: &mut [T]) -> uint {
 
     let mut data_avail = false;
     let mut ready_packet = pkts.len();
-    foreach (i, p) in pkts.mut_iter().enumerate() {
+    for (i, p) in pkts.mut_iter().enumerate() {
         unsafe {
             let p = &mut *p.header();
             let old = p.mark_blocked(this);
@@ -622,7 +620,7 @@ pub fn wait_many<T: Selectable>(pkts: &mut [T]) -> uint {
         let event = wait_event(this) as *PacketHeader;
 
         let mut pos = None;
-        foreach (i, p) in pkts.mut_iter().enumerate() {
+        for (i, p) in pkts.mut_iter().enumerate() {
             if p.header() == event {
                 pos = Some(i);
                 break;
@@ -640,7 +638,7 @@ pub fn wait_many<T: Selectable>(pkts: &mut [T]) -> uint {
 
     debug!("%?", &mut pkts[ready_packet]);
 
-    foreach p in pkts.mut_iter() {
+    for p in pkts.mut_iter() {
         unsafe {
             (*p.header()).unblock()
         }
@@ -851,7 +849,7 @@ pub fn select<T:Send,Tb:Send>(mut endpoints: ~[RecvPacketBuffered<T, Tb>])
                                     Option<T>,
                                     ~[RecvPacketBuffered<T, Tb>]) {
     let mut endpoint_headers = ~[];
-    foreach endpoint in endpoints.mut_iter() {
+    for endpoint in endpoints.mut_iter() {
         endpoint_headers.push(endpoint.header());
     }
 
@@ -869,48 +867,4 @@ pub mod rt {
     // compiler because their names are changing
     pub fn make_some<T>(val: T) -> Option<T> { Some(val) }
     pub fn make_none<T>() -> Option<T> { None }
-}
-
-#[cfg(test)]
-mod test {
-    use either::Right;
-    use comm::{Chan, Port, oneshot, recv_one, stream, Select2,
-               GenericChan, Peekable};
-
-    #[test]
-    fn test_select2() {
-        let (p1, c1) = stream();
-        let (p2, c2) = stream();
-
-        c1.send(~"abc");
-
-        let mut tuple = (p1, p2);
-        match tuple.select() {
-            Right(_) => fail!(),
-            _ => (),
-        }
-
-        c2.send(123);
-    }
-
-    #[test]
-    fn test_oneshot() {
-        let (p, c) = oneshot();
-
-        c.send(());
-
-        recv_one(p)
-    }
-
-    #[test]
-    fn test_peek_terminated() {
-        let (port, chan): (Port<int>, Chan<int>) = stream();
-
-        {
-            // Destroy the channel
-            let _chan = chan;
-        }
-
-        assert!(!port.peek());
-    }
 }

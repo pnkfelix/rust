@@ -46,11 +46,11 @@ impl Results {
         {
             let mut set = f();
             do timed(&mut self.sequential_ints) {
-                foreach i in range(0u, num_keys) {
+                for i in range(0u, num_keys) {
                     set.insert(i);
                 }
 
-                foreach i in range(0u, num_keys) {
+                for i in range(0u, num_keys) {
                     assert!(set.contains(&i));
                 }
             }
@@ -67,12 +67,12 @@ impl Results {
 
         {
             let mut set = f();
-            foreach i in range(0u, num_keys) {
+            for i in range(0u, num_keys) {
                 set.insert(i);
             }
 
             do timed(&mut self.delete_ints) {
-                foreach i in range(0u, num_keys) {
+                for i in range(0u, num_keys) {
                     assert!(set.remove(&i));
                 }
             }
@@ -88,12 +88,12 @@ impl Results {
         {
             let mut set = f();
             do timed(&mut self.sequential_strings) {
-                foreach i in range(0u, num_keys) {
+                for i in range(0u, num_keys) {
                     let s = uint::to_str(i);
                     set.insert(s);
                 }
 
-                foreach i in range(0u, num_keys) {
+                for i in range(0u, num_keys) {
                     let s = uint::to_str(i);
                     assert!(set.contains(&s));
                 }
@@ -112,11 +112,11 @@ impl Results {
 
         {
             let mut set = f();
-            foreach i in range(0u, num_keys) {
+            for i in range(0u, num_keys) {
                 set.insert(uint::to_str(i));
             }
             do timed(&mut self.delete_strings) {
-                foreach i in range(0u, num_keys) {
+                for i in range(0u, num_keys) {
                     assert!(set.remove(&uint::to_str(i)));
                 }
             }
@@ -159,7 +159,7 @@ fn main() {
     let args = os::args();
     let num_keys = {
         if args.len() == 2 {
-            uint::from_str(args[1]).get()
+            uint::from_str(args[1]).unwrap()
         } else {
             100 // woefully inadequate for any real measurement
         }

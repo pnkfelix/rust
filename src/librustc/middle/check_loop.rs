@@ -12,7 +12,7 @@
 use middle::ty;
 
 use syntax::ast::*;
-use syntax::visit;
+use syntax::oldvisit;
 
 #[deriving(Clone)]
 pub struct Context {
@@ -21,16 +21,16 @@ pub struct Context {
 }
 
 pub fn check_crate(tcx: ty::ctxt, crate: &Crate) {
-    visit::visit_crate(crate,
-                       (Context { in_loop: false, can_ret: true },
-                       visit::mk_vt(@visit::Visitor {
+    oldvisit::visit_crate(crate,
+                          (Context { in_loop: false, can_ret: true },
+                          oldvisit::mk_vt(@oldvisit::Visitor {
         visit_item: |i, (_cx, v)| {
-            visit::visit_item(i, (Context {
+            oldvisit::visit_item(i, (Context {
                                     in_loop: false,
                                     can_ret: true
                                  }, v));
         },
-        visit_expr: |e: @expr, (cx, v): (Context, visit::vt<Context>)| {
+        visit_expr: |e: @expr, (cx, v): (Context, oldvisit::vt<Context>)| {
             match e.node {
               expr_while(e, ref b) => {
                 (v.visit_expr)(e, (cx, v));
@@ -45,14 +45,6 @@ pub fn check_crate(tcx: ty::ctxt, crate: &Crate) {
                                          can_ret: false
                                       }, v));
               }
-              expr_loop_body(@expr {node: expr_fn_block(_, ref b), _}) => {
-                let sigil = ty::ty_closure_sigil(ty::expr_ty(tcx, e));
-                let blk = (sigil == BorrowedSigil);
-                (v.visit_block)(b, (Context {
-                                         in_loop: true,
-                                         can_ret: blk
-                                     }, v));
-              }
               expr_break(_) => {
                 if !cx.in_loop {
                     tcx.sess.span_err(e.span, "`break` outside of loop");
@@ -60,18 +52,18 @@ pub fn check_crate(tcx: ty::ctxt, crate: &Crate) {
               }
               expr_again(_) => {
                 if !cx.in_loop {
-                    tcx.sess.span_err(e.span, "`again` outside of loop");
+                    tcx.sess.span_err(e.span, "`loop` outside of loop");
                 }
               }
               expr_ret(oe) => {
                 if !cx.can_ret {
                     tcx.sess.span_err(e.span, "`return` in block function");
                 }
-                visit::visit_expr_opt(oe, (cx, v));
+                oldvisit::visit_expr_opt(oe, (cx, v));
               }
-              _ => visit::visit_expr(e, (cx, v))
+              _ => oldvisit::visit_expr(e, (cx, v))
             }
         },
-        .. *visit::default_visitor()
+        .. *oldvisit::default_visitor()
     })));
 }

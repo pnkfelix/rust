@@ -43,7 +43,7 @@ use syntax::ast::{ManagedSigil, OwnedSigil, BorrowedSigil};
 use syntax::ast::{def_arg, def_binding, def_local, def_self, def_upvar};
 use syntax::ast;
 use syntax::codemap::span;
-use syntax::visit;
+use syntax::oldvisit;
 
 pub struct Rcx {
     fcx: @mut FnCtxt,
@@ -53,7 +53,7 @@ pub struct Rcx {
     repeating_scope: ast::NodeId,
 }
 
-pub type rvt = visit::vt<@mut Rcx>;
+pub type rvt = oldvisit::vt<@mut Rcx>;
 
 fn encl_region_of_def(fcx: @mut FnCtxt, def: ast::def) -> ty::Region {
     let tcx = fcx.tcx();
@@ -171,15 +171,17 @@ fn regionck_visitor() -> rvt {
     // addressed by deferring the construction of the region
     // hierarchy, and in particular the relationships between free
     // regions, until regionck, as described in #3238.
-    visit::mk_vt(@visit::Visitor {visit_item: visit_item,
-                                  visit_expr: visit_expr,
+    oldvisit::mk_vt(@oldvisit::Visitor {
+        visit_item: visit_item,
+        visit_expr: visit_expr,
 
-                                  //visit_pat: visit_pat, // (*) see above
-                                  visit_arm: visit_arm,
-                                  visit_local: visit_local,
+        //visit_pat: visit_pat, // (*) see above
+        visit_arm: visit_arm,
+        visit_local: visit_local,
 
-                                  visit_block: visit_block,
-                                  .. *visit::default_visitor()})
+        visit_block: visit_block,
+        .. *oldvisit::default_visitor()
+    })
 }
 
 fn visit_item(_item: @ast::item, (_rcx, _v): (@mut Rcx, rvt)) {
@@ -188,22 +190,22 @@ fn visit_item(_item: @ast::item, (_rcx, _v): (@mut Rcx, rvt)) {
 
 fn visit_block(b: &ast::Block, (rcx, v): (@mut Rcx, rvt)) {
     rcx.fcx.tcx().region_maps.record_cleanup_scope(b.id);
-    visit::visit_block(b, (rcx, v));
+    oldvisit::visit_block(b, (rcx, v));
 }
 
 fn visit_arm(arm: &ast::arm, (rcx, v): (@mut Rcx, rvt)) {
     // see above
-    foreach &p in arm.pats.iter() {
+    for &p in arm.pats.iter() {
         constrain_bindings_in_pat(p, rcx);
     }
 
-    visit::visit_arm(arm, (rcx, v));
+    oldvisit::visit_arm(arm, (rcx, v));
 }
 
 fn visit_local(l: @ast::Local, (rcx, v): (@mut Rcx, rvt)) {
     // see above
     constrain_bindings_in_pat(l.pat, rcx);
-    visit::visit_local(l, (rcx, v));
+    oldvisit::visit_local(l, (rcx, v));
 }
 
 fn constrain_bindings_in_pat(pat: @ast::pat, rcx: @mut Rcx) {
@@ -279,8 +281,8 @@ fn visit_expr(expr: @ast::expr, (rcx, v): (@mut Rcx, rvt)) {
         }
         ast::expr_match(_, ref arms) => {
             tcx.region_maps.record_cleanup_scope(expr.id);
-            foreach arm in arms.iter() {
-                foreach guard in arm.guard.iter() {
+            for arm in arms.iter() {
+                for guard in arm.guard.iter() {
                     tcx.region_maps.record_cleanup_scope(guard.id);
                 }
             }
@@ -298,7 +300,7 @@ fn visit_expr(expr: @ast::expr, (rcx, v): (@mut Rcx, rvt)) {
     // Check any autoderefs or autorefs that appear.
     {
         let r = rcx.fcx.inh.adjustments.find(&expr.id);
-        foreach &adjustment in r.iter() {
+        for &adjustment in r.iter() {
             debug!("adjustment=%?", adjustment);
             match *adjustment {
                 @ty::AutoDerefRef(
@@ -306,7 +308,7 @@ fn visit_expr(expr: @ast::expr, (rcx, v): (@mut Rcx, rvt)) {
                 {
                     let expr_ty = rcx.resolve_node_type(expr.id);
                     constrain_derefs(rcx, expr, autoderefs, expr_ty);
-                    foreach autoref in opt_autoref.iter() {
+                    for autoref in opt_autoref.iter() {
                         guarantor::for_autoref(rcx, expr, autoderefs, autoref);
 
                         // Require that the resulting region encompasses
@@ -328,13 +330,13 @@ fn visit_expr(expr: @ast::expr, (rcx, v): (@mut Rcx, rvt)) {
             constrain_callee(rcx, callee.id, expr, callee);
             constrain_call(rcx, callee.id, expr, None, *args, false);
 
-            visit::visit_expr(expr, (rcx, v));
+            oldvisit::visit_expr(expr, (rcx, v));
         }
 
         ast::expr_method_call(callee_id, arg0, _, _, ref args, _) => {
             constrain_call(rcx, callee_id, expr, Some(arg0), *args, false);
 
-            visit::visit_expr(expr, (rcx, v));
+            oldvisit::visit_expr(expr, (rcx, v));
         }
 
         ast::expr_index(callee_id, lhs, rhs) |
@@ -346,14 +348,14 @@ fn visit_expr(expr: @ast::expr, (rcx, v): (@mut Rcx, rvt)) {
             // should be converted to an adjustment!
             constrain_call(rcx, callee_id, expr, Some(lhs), [rhs], true);
 
-            visit::visit_expr(expr, (rcx, v));
+            oldvisit::visit_expr(expr, (rcx, v));
         }
 
         ast::expr_unary(callee_id, _, lhs) if has_method_map => {
             // As above.
             constrain_call(rcx, callee_id, expr, Some(lhs), [], true);
 
-            visit::visit_expr(expr, (rcx, v));
+            oldvisit::visit_expr(expr, (rcx, v));
         }
 
         ast::expr_unary(_, ast::deref, base) => {
@@ -361,7 +363,7 @@ fn visit_expr(expr: @ast::expr, (rcx, v): (@mut Rcx, rvt)) {
             let base_ty = rcx.resolve_node_type(base.id);
             constrain_derefs(rcx, expr, 1, base_ty);
 
-            visit::visit_expr(expr, (rcx, v));
+            oldvisit::visit_expr(expr, (rcx, v));
         }
 
         ast::expr_index(_, vec_expr, _) => {
@@ -369,7 +371,7 @@ fn visit_expr(expr: @ast::expr, (rcx, v): (@mut Rcx, rvt)) {
             let vec_type = rcx.resolve_expr_type_adjusted(vec_expr);
             constrain_index(rcx, expr, vec_type);
 
-            visit::visit_expr(expr, (rcx, v));
+            oldvisit::visit_expr(expr, (rcx, v));
         }
 
         ast::expr_cast(source, _) => {
@@ -399,7 +401,7 @@ fn visit_expr(expr: @ast::expr, (rcx, v): (@mut Rcx, rvt)) {
                 _ => ()
             }
 
-            visit::visit_expr(expr, (rcx, v));
+            oldvisit::visit_expr(expr, (rcx, v));
         }
 
         ast::expr_addr_of(_, base) => {
@@ -415,17 +417,13 @@ fn visit_expr(expr: @ast::expr, (rcx, v): (@mut Rcx, rvt)) {
             let ty0 = rcx.resolve_node_type(expr.id);
             constrain_regions_in_type(rcx, ty::re_scope(expr.id),
                                       infer::AddrOf(expr.span), ty0);
-            visit::visit_expr(expr, (rcx, v));
+            oldvisit::visit_expr(expr, (rcx, v));
         }
 
         ast::expr_match(discr, ref arms) => {
             guarantor::for_match(rcx, discr, *arms);
 
-            visit::visit_expr(expr, (rcx, v));
-        }
-
-        ast::expr_loop_body(subexpr) => {
-            check_expr_fn_block(rcx, subexpr, v, true);
+            oldvisit::visit_expr(expr, (rcx, v));
         }
 
         ast::expr_fn_block(*) => {
@@ -434,7 +432,7 @@ fn visit_expr(expr: @ast::expr, (rcx, v): (@mut Rcx, rvt)) {
 
         ast::expr_loop(ref body, _) => {
             let repeating_scope = rcx.set_repeating_scope(body.id);
-            visit::visit_expr(expr, (rcx, v));
+            oldvisit::visit_expr(expr, (rcx, v));
             rcx.set_repeating_scope(repeating_scope);
         }
 
@@ -449,7 +447,7 @@ fn visit_expr(expr: @ast::expr, (rcx, v): (@mut Rcx, rvt)) {
         }
 
         _ => {
-            visit::visit_expr(expr, (rcx, v));
+            oldvisit::visit_expr(expr, (rcx, v));
         }
     }
 }
@@ -486,7 +484,7 @@ fn check_expr_fn_block(rcx: @mut Rcx,
             }
 
             let repeating_scope = rcx.set_repeating_scope(body.id);
-            visit::visit_expr(expr, (rcx, v));
+            oldvisit::visit_expr(expr, (rcx, v));
             rcx.set_repeating_scope(repeating_scope);
         }
 
@@ -554,7 +552,7 @@ fn constrain_call(rcx: @mut Rcx,
     let callee_scope = call_expr.id;
     let callee_region = ty::re_scope(callee_scope);
 
-    foreach &arg_expr in arg_exprs.iter() {
+    for &arg_expr in arg_exprs.iter() {
         // ensure that any regions appearing in the argument type are
         // valid for at least the lifetime of the function:
         constrain_regions_in_type_of_node(
@@ -571,7 +569,7 @@ fn constrain_call(rcx: @mut Rcx,
     }
 
     // as loop above, but for receiver
-    foreach &r in receiver.iter() {
+    for &r in receiver.iter() {
         constrain_regions_in_type_of_node(
             rcx, r.id, callee_region, infer::CallRcvr(r.span));
         if implicitly_ref_args {
@@ -599,7 +597,7 @@ fn constrain_derefs(rcx: @mut Rcx,
      */
     let tcx = rcx.fcx.tcx();
     let r_deref_expr = ty::re_scope(deref_expr.id);
-    foreach i in range(0u, derefs) {
+    for i in range(0u, derefs) {
         debug!("constrain_derefs(deref_expr=?, derefd_ty=%s, derefs=%?/%?",
                rcx.fcx.infcx().ty_to_str(derefd_ty),
                i, derefs);
@@ -667,7 +665,7 @@ fn constrain_free_variables(rcx: @mut Rcx,
     let tcx = rcx.fcx.ccx.tcx;
     debug!("constrain_free_variables(%s, %s)",
            region.repr(tcx), expr.repr(tcx));
-    foreach freevar in get_freevars(tcx, expr.id).iter() {
+    for freevar in get_freevars(tcx, expr.id).iter() {
         debug!("freevar def is %?", freevar.def);
         let def = freevar.def;
         let en_region = encl_region_of_def(rcx.fcx, def);
@@ -832,8 +830,8 @@ pub mod guarantor {
         debug!("regionck::for_match()");
         let discr_guarantor = guarantor(rcx, discr);
         debug!("discr_guarantor=%s", discr_guarantor.repr(rcx.tcx()));
-        foreach arm in arms.iter() {
-            foreach pat in arm.pats.iter() {
+        for arm in arms.iter() {
+            for pat in arm.pats.iter() {
                 link_ref_bindings_in_pat(rcx, *pat, discr_guarantor);
             }
         }
@@ -884,7 +882,7 @@ pub mod guarantor {
             sub_region: ty::Region,
             sup_region: Option<ty::Region>)
         {
-            foreach r in sup_region.iter() {
+            for r in sup_region.iter() {
                 rcx.fcx.mk_subr(true, infer::Reborrow(expr.span),
                                 sub_region, *r);
             }
@@ -907,7 +905,7 @@ pub mod guarantor {
         debug!("guarantor::for_by_ref(expr=%?, callee_scope=%?) category=%?",
                expr.id, callee_scope, expr_cat);
         let minimum_lifetime = ty::re_scope(callee_scope);
-        foreach guarantor in expr_cat.guarantor.iter() {
+        for guarantor in expr_cat.guarantor.iter() {
             mk_subregion_due_to_derefence(rcx, expr.span,
                                           minimum_lifetime, *guarantor);
         }
@@ -1030,7 +1028,6 @@ pub mod guarantor {
             ast::expr_if(*) |
             ast::expr_match(*) |
             ast::expr_fn_block(*) |
-            ast::expr_loop_body(*) |
             ast::expr_do_body(*) |
             ast::expr_block(*) |
             ast::expr_repeat(*) |
@@ -1131,7 +1128,7 @@ pub mod guarantor {
             return ct;
         }
 
-        foreach _ in range(0u, autoderefs) {
+        for _ in range(0u, autoderefs) {
             ct.cat.guarantor = guarantor_of_deref(&ct.cat);
 
             match ty::deref(tcx, ct.ty, true) {
@@ -1214,12 +1211,12 @@ pub mod guarantor {
             ast::pat_ident(ast::bind_by_ref(_), _, opt_p) => {
                 link(rcx, pat.span, pat.id, guarantor);
 
-                foreach p in opt_p.iter() {
+                for p in opt_p.iter() {
                     link_ref_bindings_in_pat(rcx, *p, guarantor);
                 }
             }
             ast::pat_ident(_, _, opt_p) => {
-                foreach p in opt_p.iter() {
+                for p in opt_p.iter() {
                     link_ref_bindings_in_pat(rcx, *p, guarantor);
                 }
             }
@@ -1228,7 +1225,7 @@ pub mod guarantor {
                 link_ref_bindings_in_pats(rcx, pats, guarantor);
             }
             ast::pat_struct(_, ref fpats, _) => {
-                foreach fpat in fpats.iter() {
+                for fpat in fpats.iter() {
                     link_ref_bindings_in_pat(rcx, fpat.pat, guarantor);
                 }
             }
@@ -1258,7 +1255,7 @@ pub mod guarantor {
                 };
 
                 link_ref_bindings_in_pats(rcx, before, guarantor1);
-                foreach &p in slice.iter() {
+                for &p in slice.iter() {
                     link_ref_bindings_in_pat(rcx, p, guarantor);
                 }
                 link_ref_bindings_in_pats(rcx, after, guarantor1);
@@ -1269,7 +1266,7 @@ pub mod guarantor {
     fn link_ref_bindings_in_pats(rcx: @mut Rcx,
                                  pats: &~[@ast::pat],
                                  guarantor: Option<ty::Region>) {
-        foreach pat in pats.iter() {
+        for pat in pats.iter() {
             link_ref_bindings_in_pat(rcx, *pat, guarantor);
         }
     }

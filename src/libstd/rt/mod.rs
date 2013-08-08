@@ -303,7 +303,7 @@ fn run_(main: ~fn(), use_main_sched: bool) -> int {
     let on_exit: ~fn(bool) = |exit_success| {
 
         let mut handles = handles.take();
-        foreach handle in handles.mut_iter() {
+        for handle in handles.mut_iter() {
             handle.send(Shutdown);
         }
 
@@ -365,7 +365,7 @@ fn run_(main: ~fn(), use_main_sched: bool) -> int {
 
         rtdebug!("about to create the main scheduler task");
 
-        let mut main_sched = main_sched.get();
+        let mut main_sched = main_sched.unwrap();
 
         let home = Sched(main_sched.make_handle());
         let mut main_task = ~Task::new_root_homed(&mut main_sched.stack_pool,
@@ -379,7 +379,7 @@ fn run_(main: ~fn(), use_main_sched: bool) -> int {
     rtdebug!("waiting for threads");
 
     // Wait for schedulers
-    foreach thread in threads.consume_iter() {
+    for thread in threads.consume_iter() {
         thread.join();
     }
 
@@ -430,15 +430,5 @@ pub fn context() -> RuntimeContext {
     extern {
         #[rust_stack]
         pub fn rust_try_get_task() -> *rust_task;
-    }
-}
-
-#[test]
-fn test_context() {
-    use unstable::run_in_bare_thread;
-
-    assert_eq!(context(), OldTaskContext);
-    do run_in_bare_thread {
-        assert_eq!(context(), GlobalContext);
     }
 }

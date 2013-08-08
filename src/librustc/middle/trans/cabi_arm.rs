@@ -107,9 +107,9 @@ fn classify_arg_ty(ty: Type) -> (LLVMType, Option<Attribute>) {
     let align = ty_align(ty);
     let size = ty_size(ty);
     let llty = if align <= 4 {
-        Type::array(&Type::i32(), (size + 3) / 4 as u64)
+        Type::array(&Type::i32(), ((size + 3) / 4) as u64)
     } else {
-        Type::array(&Type::i64(), (size + 7) / 8 as u64)
+        Type::array(&Type::i64(), ((size + 7) / 8) as u64)
     };
     (LLVMType { cast: true, ty: llty }, None)
 }
@@ -133,7 +133,7 @@ impl ABIInfo for ARM_ABIInfo {
                     ret_def: bool) -> FnType {
         let mut arg_tys = ~[];
         let mut attrs = ~[];
-        foreach &aty in atys.iter() {
+        for &aty in atys.iter() {
             let (ty, attr) = classify_arg_ty(aty);
             arg_tys.push(ty);
             attrs.push(attr);

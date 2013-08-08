@@ -8,9 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::task;
+// no-reformat
+// Testing various forms of `do` with empty arg lists
 
-fn main() {
-    for task::spawn { return true; } //~ ERROR A `for` loop iterator should expect a closure that
-                                     //~^ ERROR expected `for` closure to return `bool`
+fn f(f: &fn() -> bool) -> bool {
+    true
+}
+
+pub fn main() {
+    do f() || { true };
+    do f() { true };
+    do f || { true };
+    do f { true };
 }

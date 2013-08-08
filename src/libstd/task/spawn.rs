@@ -78,13 +78,13 @@ use cast::transmute;
 use cast;
 use cell::Cell;
 use container::MutableMap;
-use comm::{Chan, GenericChan};
+use comm::{Chan, GenericChan, oneshot};
 use hashmap::{HashSet, HashSetConsumeIterator};
 use local_data;
 use task::local_data_priv::{local_get, local_set, OldHandle};
 use task::rt::rust_task;
 use task::rt;
-use task::{Failure};
+use task::{Failure, SingleThreaded};
 use task::{Success, TaskOpts, TaskResult};
 use task::unkillable;
 use to_bytes::IterBytes;
@@ -93,9 +93,11 @@ use util;
 use unstable::sync::Exclusive;
 use rt::{OldTaskContext, TaskContext, SchedulerContext, GlobalContext, context};
 use rt::local::Local;
-use rt::task::Task;
+use rt::task::{Task, Sched};
 use rt::kill::KillHandle;
 use rt::sched::Scheduler;
+use rt::uv::uvio::UvEventLoop;
+use rt::thread::Thread;
 
 #[cfg(test)] use task::default_task_opts;
 #[cfg(test)] use comm;
@@ -297,7 +299,7 @@ fn each_ancestor(list:        &mut AncestorList,
                         // safe to skip it. This will leave our TaskHandle
                         // hanging around in the group even after it's freed,
                         // but that's ok because, by virtue of the group being
-                        // dead, nobody will ever kill-all (foreach) over it.)
+                        // dead, nobody will ever kill-all (for) over it.)
                         if nobe_is_dead { true } else { forward_blk(tg_opt) }
                     };
                 /*##########################################################*
@@ -355,7 +357,7 @@ impl Drop for Taskgroup {
             // If we are failing, the whole taskgroup needs to die.
             do RuntimeGlue::with_task_handle_and_failing |me, failing| {
                 if failing {
-                    foreach x in this.notifier.mut_iter() {
+                    for x in this.notifier.mut_iter() {
                         x.failed = true;
                     }
                     // Take everybody down with us.
@@ -385,7 +387,7 @@ pub fn Taskgroup(tasks: TaskGroupArc,
        ancestors: AncestorList,
        is_main: bool,
        mut notifier: Option<AutoNotify>) -> Taskgroup {
-    foreach x in notifier.mut_iter() {
+    for x in notifier.mut_iter() {
         x.failed = false;
     }
 
@@ -463,13 +465,13 @@ fn kill_taskgroup(state: TaskGroupInner, me: &TaskHandle, is_main: bool) {
         if newstate.is_some() {
             let TaskGroupData { members: members, descendants: descendants } =
                 newstate.unwrap();
-            foreach sibling in members.consume() {
+            for sibling in members.consume() {
                 // Skip self - killing ourself won't do much good.
                 if &sibling != me {
                     RuntimeGlue::kill_task(sibling);
                 }
             }
-            foreach child in descendants.consume() {
+            for child in descendants.consume() {
                 assert!(&child != me);
                 RuntimeGlue::kill_task(child);
             }
@@ -566,7 +568,8 @@ impl RuntimeGlue {
                 let me = Local::unsafe_borrow::<Task>();
                 blk(match (*me).taskgroup {
                     None => {
-                        // Main task, doing first spawn ever. Lazily initialize.
+                        // First task in its (unlinked/unsupervised) taskgroup.
+                        // Lazily initialize.
                         let mut members = TaskSet::new();
                         let my_handle = (*me).death.kill_handle.get_ref().clone();
                         members.insert(NewTask(my_handle));
@@ -589,37 +592,46 @@ impl RuntimeGlue {
     }
 }
 
+// Returns 'None' in the case where the child's TG should be lazily initialized.
 fn gen_child_taskgroup(linked: bool, supervised: bool)
-    -> (TaskGroupArc, AncestorList, bool) {
-    do RuntimeGlue::with_my_taskgroup |spawner_group| {
-        let ancestors = AncestorList(spawner_group.ancestors.map(|x| x.clone()));
-        if linked {
-            // Child is in the same group as spawner.
-            // Child's ancestors are spawner's ancestors.
-            // Propagate main-ness.
-            (spawner_group.tasks.clone(), ancestors, spawner_group.is_main)
-        } else {
-            // Child is in a separate group from spawner.
-            let g = Exclusive::new(Some(TaskGroupData {
-                members:     TaskSet::new(),
-                descendants: TaskSet::new(),
-            }));
-            let a = if supervised {
-                let new_generation = incr_generation(&ancestors);
-                assert!(new_generation < uint::max_value);
-                // Child's ancestors start with the spawner.
-                // Build a new node in the ancestor list.
-                AncestorList(Some(Exclusive::new(AncestorNode {
-                    generation: new_generation,
-                    parent_group: spawner_group.tasks.clone(),
-                    ancestors: ancestors,
-                })))
+    -> Option<(TaskGroupArc, AncestorList, bool)> {
+    // FIXME(#7544): Not safe to lazily initialize in the old runtime. Remove
+    // this context check once 'spawn_raw_oldsched' is gone.
+    if context() == OldTaskContext || linked || supervised {
+        // with_my_taskgroup will lazily initialize the parent's taskgroup if
+        // it doesn't yet exist. We don't want to call it in the unlinked case.
+        do RuntimeGlue::with_my_taskgroup |spawner_group| {
+            let ancestors = AncestorList(spawner_group.ancestors.map(|x| x.clone()));
+            if linked {
+                // Child is in the same group as spawner.
+                // Child's ancestors are spawner's ancestors.
+                // Propagate main-ness.
+                Some((spawner_group.tasks.clone(), ancestors, spawner_group.is_main))
             } else {
-                // Child has no ancestors.
-                AncestorList(None)
-            };
-            (g, a, false)
+                // Child is in a separate group from spawner.
+                let g = Exclusive::new(Some(TaskGroupData {
+                    members:     TaskSet::new(),
+                    descendants: TaskSet::new(),
+                }));
+                let a = if supervised {
+                    let new_generation = incr_generation(&ancestors);
+                    assert!(new_generation < uint::max_value);
+                    // Child's ancestors start with the spawner.
+                    // Build a new node in the ancestor list.
+                    AncestorList(Some(Exclusive::new(AncestorNode {
+                        generation: new_generation,
+                        parent_group: spawner_group.tasks.clone(),
+                        ancestors: ancestors,
+                    })))
+                } else {
+                    // Child has no ancestors.
+                    AncestorList(None)
+                };
+                Some((g, a, false))
+            }
         }
+    } else {
+        None
     }
 }
 
@@ -668,20 +680,24 @@ fn spawn_raw_newsched(mut opts: TaskOpts, f: ~fn()) {
 
     let child_wrapper: ~fn() = || {
         // Child task runs this code.
-        let child_data = Cell::new(child_data.take()); // :(
-        let enlist_success = do Local::borrow::<Task, bool> |me| {
-            let (child_tg, ancestors, is_main) = child_data.take();
-            let mut ancestors = ancestors;
-            // FIXME(#7544): Optimize out the xadd in this clone, somehow.
-            let handle = me.death.kill_handle.get_ref().clone();
-            // Atomically try to get into all of our taskgroups.
-            if enlist_many(NewTask(handle), &child_tg, &mut ancestors) {
-                // Got in. We can run the provided child body, and can also run
-                // the taskgroup's exit-time-destructor afterward.
-                me.taskgroup = Some(Taskgroup(child_tg, ancestors, is_main, None));
-                true
-            } else {
-                false
+
+        // If child data is 'None', the enlist is vacuously successful.
+        let enlist_success = do child_data.take().map_consume_default(true) |child_data| {
+            let child_data = Cell::new(child_data); // :(
+            do Local::borrow::<Task, bool> |me| {
+                let (child_tg, ancestors, is_main) = child_data.take();
+                let mut ancestors = ancestors;
+                // FIXME(#7544): Optimize out the xadd in this clone, somehow.
+                let handle = me.death.kill_handle.get_ref().clone();
+                // Atomically try to get into all of our taskgroups.
+                if enlist_many(NewTask(handle), &child_tg, &mut ancestors) {
+                    // Got in. We can run the provided child body, and can also run
+                    // the taskgroup's exit-time-destructor afterward.
+                    me.taskgroup = Some(Taskgroup(child_tg, ancestors, is_main, None));
+                    true
+                } else {
+                    false
+                }
             }
         };
         // Should be run after the local-borrowed task is returned.
@@ -694,11 +710,81 @@ fn spawn_raw_newsched(mut opts: TaskOpts, f: ~fn()) {
         }
     };
 
-    let mut task = if opts.watched {
-        Task::build_child(child_wrapper)
-    } else {
-        // An unwatched task is a new root in the exit-code propagation tree
-        Task::build_root(child_wrapper)
+    let mut task = unsafe {
+        if opts.sched.mode != SingleThreaded {
+            if opts.watched {
+                Task::build_child(child_wrapper)
+            } else {
+                Task::build_root(child_wrapper)
+            }
+        } else {
+            // Creating a 1:1 task:thread ...
+            let sched = Local::unsafe_borrow::<Scheduler>();
+            let sched_handle = (*sched).make_handle();
+
+            // Create a new scheduler to hold the new task
+            let new_loop = ~UvEventLoop::new();
+            let mut new_sched = ~Scheduler::new_special(new_loop,
+                                                        (*sched).work_queue.clone(),
+                                                        (*sched).sleeper_list.clone(),
+                                                        false,
+                                                        Some(sched_handle));
+            let mut new_sched_handle = new_sched.make_handle();
+
+            // Allow the scheduler to exit when the pinned task exits
+            new_sched_handle.send(Shutdown);
+
+            // Pin the new task to the new scheduler
+            let new_task = if opts.watched {
+                Task::build_homed_child(child_wrapper, Sched(new_sched_handle))
+            } else {
+                Task::build_homed_root(child_wrapper, Sched(new_sched_handle))
+            };
+
+            // Create a task that will later be used to join with the new scheduler
+            // thread when it is ready to terminate
+            let (thread_port, thread_chan) = oneshot();
+            let thread_port_cell = Cell::new(thread_port);
+            let join_task = do Task::build_child() {
+                rtdebug!("running join task");
+                let thread_port = thread_port_cell.take();
+                let thread: Thread = thread_port.recv();
+                thread.join();
+            };
+
+            // Put the scheduler into another thread
+            let new_sched_cell = Cell::new(new_sched);
+            let orig_sched_handle_cell = Cell::new((*sched).make_handle());
+            let join_task_cell = Cell::new(join_task);
+
+            let thread = do Thread::start {
+                let mut new_sched = new_sched_cell.take();
+                let mut orig_sched_handle = orig_sched_handle_cell.take();
+                let join_task = join_task_cell.take();
+
+                let bootstrap_task = ~do Task::new_root(&mut new_sched.stack_pool) || {
+                    rtdebug!("bootstrapping a 1:1 scheduler");
+                };
+                new_sched.bootstrap(bootstrap_task);
+
+                rtdebug!("enqueing join_task");
+                // Now tell the original scheduler to join with this thread
+                // by scheduling a thread-joining task on the original scheduler
+                orig_sched_handle.send(TaskFromFriend(join_task));
+
+                // NB: We can't simply send a message from here to another task
+                // because this code isn't running in a task and message passing doesn't
+                // work outside of tasks. Hence we're sending a scheduler message
+                // to execute a new task directly to a scheduler.
+            };
+
+            // Give the thread handle to the join task
+            thread_chan.send(thread);
+
+            // When this task is enqueued on the current scheduler it will then get
+            // forwarded to the scheduler to which it is pinned
+            new_task
+        }
     };
 
     if opts.notify_chan.is_some() {
@@ -721,7 +807,7 @@ fn spawn_raw_newsched(mut opts: TaskOpts, f: ~fn()) {
 fn spawn_raw_oldsched(mut opts: TaskOpts, f: ~fn()) {
 
     let (child_tg, ancestors, is_main) =
-        gen_child_taskgroup(opts.linked, opts.supervised);
+        gen_child_taskgroup(opts.linked, opts.supervised).expect("old runtime needs TG");
 
     unsafe {
         let child_data = Cell::new((child_tg, ancestors, f));

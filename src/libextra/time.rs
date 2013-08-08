@@ -23,16 +23,13 @@ pub mod rustrt {
 
     #[abi = "cdecl"]
     extern {
-        pub unsafe fn get_time(sec: &mut i64, nsec: &mut i32);
-
-        pub unsafe fn precise_time_ns(ns: &mut u64);
-
-        pub unsafe fn rust_tzset();
-
-        pub unsafe fn rust_gmtime(sec: i64, nsec: i32, result: &mut Tm);
-        pub unsafe fn rust_localtime(sec: i64, nsec: i32, result: &mut Tm);
-        pub unsafe fn rust_timegm(tm: &Tm) -> i64;
-        pub unsafe fn rust_mktime(tm: &Tm) -> i64;
+        pub fn get_time(sec: &mut i64, nsec: &mut i32);
+        pub fn precise_time_ns(ns: &mut u64);
+        pub fn rust_tzset();
+        pub fn rust_gmtime(sec: i64, nsec: i32, result: &mut Tm);
+        pub fn rust_localtime(sec: i64, nsec: i32, result: &mut Tm);
+        pub fn rust_timegm(tm: &Tm) -> i64;
+        pub fn rust_mktime(tm: &Tm) -> i64;
     }
 }
 
@@ -260,7 +257,7 @@ impl Tm {
 priv fn do_strptime(s: &str, format: &str) -> Result<Tm, ~str> {
     fn match_str(s: &str, pos: uint, needle: &str) -> bool {
         let mut i = pos;
-        foreach ch in needle.byte_iter() {
+        for ch in needle.byte_iter() {
             if s[i] != ch {
                 return false;
             }
@@ -1039,7 +1036,7 @@ mod tests {
             ~"Friday",
             ~"Saturday"
         ];
-        foreach day in days.iter() {
+        for day in days.iter() {
             assert!(test(*day, "%A"));
         }
 
@@ -1052,7 +1049,7 @@ mod tests {
             ~"Fri",
             ~"Sat"
         ];
-        foreach day in days.iter() {
+        for day in days.iter() {
             assert!(test(*day, "%a"));
         }
 
@@ -1070,7 +1067,7 @@ mod tests {
             ~"November",
             ~"December"
         ];
-        foreach day in months.iter() {
+        for day in months.iter() {
             assert!(test(*day, "%B"));
         }
 
@@ -1088,7 +1085,7 @@ mod tests {
             ~"Nov",
             ~"Dec"
         ];
-        foreach day in months.iter() {
+        for day in months.iter() {
             assert!(test(*day, "%b"));
         }
 

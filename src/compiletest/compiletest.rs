@@ -11,7 +11,6 @@
 #[crate_type = "bin"];
 
 #[allow(non_camel_case_types)];
-#[allow(unrecognized_lint)]; // NOTE: remove after snapshot
 #[deny(warnings)];
 
 extern mod extra;
@@ -131,7 +130,7 @@ pub fn parse_config(args: ~[~str]) -> config {
         ratchet_noise_percent:
             getopts::opt_maybe_str(matches,
                                    "ratchet-noise-percent").map(|s|
-                                                                f64::from_str(*s).get()),
+                                                                f64::from_str(*s).unwrap()),
         runtool: getopts::opt_maybe_str(matches, "runtool"),
         rustcflags: getopts::opt_maybe_str(matches, "rustcflags"),
         jit: getopts::opt_present(matches, "jit"),
@@ -243,7 +242,7 @@ pub fn make_tests(config: &config) -> ~[test::TestDescAndFn] {
            config.src_base.to_str());
     let mut tests = ~[];
     let dirs = os::list_dir_path(&config.src_base);
-    foreach file in dirs.iter() {
+    for file in dirs.iter() {
         let file = file.clone();
         debug!("inspecting file %s", file.to_str());
         if is_test(config, &file) {
@@ -267,15 +266,15 @@ pub fn is_test(config: &config, testfile: &Path) -> bool {
           _ => ~[~".rc", ~".rs"]
         };
     let invalid_prefixes = ~[~".", ~"#", ~"~"];
-    let name = testfile.filename().get();
+    let name = testfile.filename().unwrap();
 
     let mut valid = false;
 
-    foreach ext in valid_extensions.iter() {
+    for ext in valid_extensions.iter() {
         if name.ends_with(*ext) { valid = true; }
     }
 
-    foreach pre in invalid_prefixes.iter() {
+    for pre in invalid_prefixes.iter() {
         if name.starts_with(*pre) { valid = false; }
     }
 
@@ -300,7 +299,7 @@ pub fn make_test_name(config: &config, testfile: &Path) -> test::TestName {
     fn shorten(path: &Path) -> ~str {
         let filename = path.filename();
         let dir = path.pop().filename();
-        fmt!("%s/%s", dir.get_or_default(~""), filename.get_or_default(~""))
+        fmt!("%s/%s", dir.unwrap_or_default(~""), filename.unwrap_or_default(~""))
     }
 
     test::DynTestName(fmt!("[%s] %s",
