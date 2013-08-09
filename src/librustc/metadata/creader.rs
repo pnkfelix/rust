@@ -24,7 +24,6 @@ use syntax::codemap::{span, dummy_sp};
 use syntax::diagnostic::span_handler;
 use syntax::parse::token;
 use syntax::parse::token::ident_interner;
-use syntax::oldvisit;
 use syntax::visit;
 
 // Traverses an AST, reading all the information about use'd crates and extern
@@ -47,14 +46,6 @@ pub fn read_crates(diag: @span_handler,
         intr: intr
     };
     visit_crate(e, crate);
-/*
-    let v =
-        oldvisit::mk_simple_visitor(@oldvisit::SimpleVisitor {
-            visit_view_item: |a| my_visit_view_item(e, a),
-            visit_item: |a| my_visit_item(e, a),
-            .. *oldvisit::default_simple_visitor()});
-    oldvisit::visit_crate(crate, ((), v));
-*/
     visit::walk_crate(e, crate, ());
     dump_crates(*e.crate_cache);
     warn_if_multiple_versions(e, diag, *e.crate_cache);
