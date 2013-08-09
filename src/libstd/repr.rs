@@ -141,6 +141,97 @@ impl MovePtr for ReprVisitor {
     }
 }
 
+#[cfg(stage0)]
+impl ReprVisitor {
+    // Various helpers for the TyVisitor impl
+
+    #[inline]
+    pub fn get<T>(&self, f: &fn(&T)) -> bool {
+        unsafe {
+            f(transmute::<*c_void,&T>(*self.ptr));
+        }
+        true
+    }
+
+    #[inline]
+    pub fn visit_inner(&self, inner: *TyDesc) -> bool {
+        self.visit_ptr_inner(*self.ptr, inner)
+    }
+
+    #[inline]
+    pub fn visit_ptr_inner(&self, ptr: *c_void, inner: *TyDesc) -> bool {
+        unsafe {
+            let u = ReprVisitor(ptr, self.writer);
+            let v = reflect::MovePtrAdaptor(u);
+            visit_tydesc(inner, @v as @TyVisitor);
+            true
+        }
+    }
+
+    #[inline]
+    pub fn write<T:Repr>(&self) -> bool {
+        do self.get |v:&T| {
+            v.write_repr(self.writer);
+        }
+    }
+
+    pub fn write_escaped_slice(&self, slice: &str) {
+        self.writer.write_char('"');
+        for ch in slice.iter() {
+            self.writer.write_escaped_char(ch);
+        }
+        self.writer.write_char('"');
+    }
+
+    pub fn write_mut_qualifier(&self, mtbl: uint) {
+        if mtbl == 0 {
+            self.writer.write_str("mut ");
+        } else if mtbl == 1 {
+            // skip, this is ast::m_imm
+        } else {
+            assert_eq!(mtbl, 2);
+            self.writer.write_str("const ");
+        }
+    }
+
+    pub fn write_vec_range(&self,
+                           _mtbl: uint,
+                           ptr: *(),
+                           len: uint,
+                           inner: *TyDesc)
+                           -> bool {
+        let mut p = ptr as *u8;
+        let (sz, al) = unsafe { ((*inner).size, (*inner).align) };
+        self.writer.write_char('[');
+        let mut first = true;
+        let mut left = len;
+        // unit structs have 0 size, and don't loop forever.
+        let dec = if sz == 0 {1} else {sz};
+        while left > 0 {
+            if first {
+                first = false;
+            } else {
+                self.writer.write_str(", ");
+            }
+            self.visit_ptr_inner(p as *c_void, inner);
+            p = align(ptr::offset(p, sz as int) as uint, al) as *u8;
+            left -= dec;
+        }
+        self.writer.write_char(']');
+        true
+    }
+
+    pub fn write_unboxed_vec_repr(&self,
+                                  mtbl: uint,
+                                  v: &raw::Vec<()>,
+                                  inner: *TyDesc)
+                                  -> bool {
+        self.write_vec_range(mtbl, ptr::to_unsafe_ptr(&v.data),
+                             v.fill, inner)
+    }
+}
+
+#[cfg(not(stage0))]
 impl ReprVisitor {
     // Various helpers for the TyVisitor impl
 
@@ -556,6 +647,7 @@ impl TyVisitor for ReprVisitor {
     fn visit_closure_ptr(&self, _ck: uint) -> bool { true }
 }
 
+#[cfg(stage0)]
 pub fn write_repr<T>(writer: @Writer, object: &T) {
     unsafe {
         let ptr = ptr::to_unsafe_ptr(object) as *c_void;
@@ -563,6 +655,17 @@ pub fn write_repr<T>(writer: @Writer, object: &T) {
         let u = ReprVisitor(ptr, writer);
         let v = reflect::MovePtrAdaptor(u);
         visit_tydesc(tydesc, @v as @TyVisitor)
+    }
+}
+
+#[cfg(not(stage0))]
+pub fn write_repr<T>(writer: @Writer, object: &T) {
+    unsafe {
+        let ptr = ptr::to_unsafe_ptr(object) as *c_void;
+        let tydesc = get_tydesc::<T>();
+        let u = ReprVisitor(ptr, writer);
+        let v = reflect::MovePtrAdaptor(u);
+        visit_tydesc(tydesc, &v as &TyVisitor)
     }
 }
 
