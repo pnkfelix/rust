@@ -44,7 +44,8 @@ pub fn read_crates(diag: @span_handler,
         statik: statik,
         crate_cache: @mut ~[],
         next_crate_num: 1,
-        intr: intr
+        intr: intr,
+        trace_depth: @mut 0,
     };
     visit_crate(e, crate);
     let v =
@@ -123,71 +124,124 @@ struct Env {
     statik: bool,
     crate_cache: @mut ~[cache_entry],
     next_crate_num: ast::CrateNum,
-    intr: @ident_interner
+    intr: @ident_interner,
+    trace_depth: @mut int,
+}
+
+struct Tracing { depth: @mut int, msg: ~str }
+
+#[unsafe_destructor]
+impl Drop for Tracing {
+    fn drop(&self) {
+        let i = *self.depth;
+        let u = if i < 0 { fail!("p went negative"); } else { i as uint };
+        debug!("%s", "<".repeat(u) + self.msg);
+        *self.depth -= 1;
+    }
+}
+
+macro_rules! tracing {
+    ($p:expr, $msg:expr) => { let _t = $p.tracing($msg.to_owned()) }
+}
+
+impl Env {
+    fn tracing(&self, msg: ~str) -> ~Tracing {
+        *self.trace_depth += 1;
+        let i = *self.trace_depth;
+        let u = if i < 0 { fail!("v went negative"); } else { i as uint };
+        debug!("%s", ">".repeat(u) + msg);
+        ~Tracing{ depth: self.trace_depth, msg: msg }
+    }
+
+    fn traceinfo(&self, msg: ~str) {
+        let i = *self.trace_depth;
+        let u = if i < 0 { fail!("v went negative"); } else { i as uint };
+        debug!(" %s", "|".repeat(u) + msg);
+    }
 }
 
 impl visit::Visitor<()> for Env {
     fn visit_view_item(&mut self, i:&ast::view_item, _:()) {
+        tracing!(self, "visit_view_item");
         my_visit_view_item(self, i)
     }
     fn visit_item(&mut self, i:@ast::item, _:()) {
+        tracing!(self, "visit_item");
         my_visit_item(self, i)
     }
 
     fn visit_mod(&mut self, m:&ast::_mod, _:span, _:ast::NodeId, e:()) {
+        tracing!(self, "visit_mod");
         visit::walk_mod(self, m, e)
     }
     fn visit_foreign_item(&mut self, f:@ast::foreign_item, e:()) {
+        tracing!(self, "visit_foreign_item");
         visit::walk_foreign_item(self, f, e)
     }
     fn visit_local(&mut self, l:@ast::Local, e:()) {
+        tracing!(self, "visit_local");
         visit::walk_local(self, l, e)
     }
     fn visit_block(&mut self, b:&ast::Block, e:()) {
+        tracing!(self, "visit_block");
         visit::walk_block(self, b, e)
     }
     fn visit_stmt(&mut self, s:@ast::stmt, e:()) {
+        tracing!(self, "visit_stmt");
         visit::walk_stmt(self, s, e)
     }
     fn visit_arm(&mut self, a:&ast::arm, e:()) {
+        tracing!(self, "visit_arm");
         visit::walk_arm(self, a, e)
     }
     fn visit_pat(&mut self, p:@ast::pat, e:()) {
+        tracing!(self, "visit_pat");
         visit::walk_pat(self, p, e)
     }
     fn visit_decl(&mut self, d:@ast::decl, e:()) {
+        tracing!(self, "visit_decl");
         visit::walk_decl(self, d, e)
     }
     fn visit_expr(&mut self, e_:@ast::expr, e:()) {
+        tracing!(self, "visit_expr");
         visit::walk_expr(self, e_, e)
     }
     fn visit_expr_post(&mut self, _:@ast::expr, _:()) {
+        tracing!(self, "visit_expr_post");
         /* no op */
     }
     fn visit_ty(&mut self, t:&ast::Ty, e:()) {
+        tracing!(self, "visit_ty");
         visit::skip_ty(self, t, e)
     }
     fn visit_generics(&mut self, g:&ast::Generics, e:()) {
+        tracing!(self, "visit_generics");
         visit::walk_generics(self, g, e)
     }
     fn visit_fn(&mut self, fk:&visit::fn_kind, fd:&ast::fn_decl, b:&ast::Block, s: span, n: ast::NodeId, e:()) {
+        tracing!(self, "visit_fn");
         visit::walk_fn(self, fk, fd, b, s, n , e)
     }
     fn visit_ty_method(&mut self, t: &ast::TypeMethod, e:()) {
+        tracing!(self, "visit_ty_method");
         visit::walk_ty_method(self, t, e)
     }
     fn visit_trait_method(&mut self, t: &ast::trait_method, e:()) {
+        tracing!(self, "visit_trait_method");
         visit::walk_trait_method(self, t, e)
     }
     fn visit_struct_def(&mut self, s: @ast::struct_def, i: ast::ident, g: &ast::Generics, n: ast::NodeId, e:()) {
+        tracing!(self, "visit_struct_def");
         visit::walk_struct_def(self, s, i, g, n, e)
     }
     fn visit_struct_field(&mut self, s: @ast::struct_field, e:()) {
+        tracing!(self, "visit_struct_field");
         visit::walk_struct_field(self, s, e)
     }
 }
 
 fn visit_crate(e: &Env, c: &ast::Crate) {
+    tracing!(e, "visit_crate");
     let cstore = e.cstore;
 
     for a in c.attrs.iter().filter(|m| "link_args" == m.name()) {
@@ -201,6 +255,7 @@ fn visit_crate(e: &Env, c: &ast::Crate) {
 }
 
 fn my_visit_view_item(e: &mut Env, i: &ast::view_item) {
+    tracing!(e, "my_visit_view_item");
     match i.node {
       ast::view_item_extern_mod(ident, ref meta_items, id) => {
         debug!("resolving extern mod stmt. ident: %?, meta: %?",
@@ -217,6 +272,7 @@ fn my_visit_view_item(e: &mut Env, i: &ast::view_item) {
 }
 
 fn my_visit_item(e: &Env, i: @ast::item) {
+    tracing!(e, "my_visit_item");
     match i.node {
       ast::item_foreign_mod(ref fm) => {
         if fm.abis.is_rust() || fm.abis.is_intrinsic() {
