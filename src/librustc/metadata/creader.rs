@@ -24,7 +24,6 @@ use syntax::codemap::{span, dummy_sp};
 use syntax::diagnostic::span_handler;
 use syntax::parse::token;
 use syntax::parse::token::ident_interner;
-use syntax::oldvisit;
 use syntax::visit;
 
 // Traverses an AST, reading all the information about use'd crates and extern
@@ -48,15 +47,7 @@ pub fn read_crates(diag: @span_handler,
         trace_depth: @mut 0,
     };
     visit_crate(e, crate);
-    let v =
-        oldvisit::mk_simple_visitor(@oldvisit::SimpleVisitor {
-            visit_view_item: |a| my_visit_view_item(e, a),
-            visit_item: |a| my_visit_item(e, a),
-            .. *oldvisit::default_simple_visitor()});
-    oldvisit::visit_crate(crate, ((), v));
-/*
     visit::walk_crate(e, crate, ());
-*/
     dump_crates(*e.crate_cache);
     warn_if_multiple_versions(e, diag, *e.crate_cache);
 }
@@ -161,15 +152,17 @@ impl Env {
 }
 
 impl visit::Visitor<()> for Env {
-    fn visit_view_item(&mut self, i:&ast::view_item, _:()) {
+    fn visit_view_item(&mut self, i:&ast::view_item, e:()) {
         tracing!(self, "visit_view_item");
-        my_visit_view_item(self, i)
+        my_visit_view_item(self, i);
+        visit::walk_view_item(self, i, e);
     }
-    fn visit_item(&mut self, i:@ast::item, _:()) {
+    fn visit_item(&mut self, i:@ast::item, e:()) {
         tracing!(self, "visit_item");
-        my_visit_item(self, i)
+        my_visit_item(self, i);
+        visit::walk_item(self, i, e);
     }
-
+/*
     fn visit_mod(&mut self, m:&ast::_mod, _:span, _:ast::NodeId, e:()) {
         tracing!(self, "visit_mod");
         visit::walk_mod(self, m, e)
@@ -208,7 +201,7 @@ impl visit::Visitor<()> for Env {
     }
     fn visit_expr_post(&mut self, _:@ast::expr, _:()) {
         tracing!(self, "visit_expr_post");
-        /* no op */
+        // no op
     }
     fn visit_ty(&mut self, t:&ast::Ty, e:()) {
         tracing!(self, "visit_ty");
@@ -238,6 +231,7 @@ impl visit::Visitor<()> for Env {
         tracing!(self, "visit_struct_field");
         visit::walk_struct_field(self, s, e)
     }
+*/
 }
 
 fn visit_crate(e: &Env, c: &ast::Crate) {
