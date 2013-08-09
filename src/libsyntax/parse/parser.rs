@@ -281,6 +281,7 @@ pub fn Parser(sess: @mut ParseSess,
         token: @mut tok0.tok,
         span: @mut span,
         last_span: @mut span,
+        last_token: @mut None,
         buffer: @mut ([
             placeholder.clone(),
             placeholder.clone(),
@@ -307,6 +308,8 @@ pub struct Parser {
     span: @mut span,
     // the span of the prior token:
     last_span: @mut span,
+    // the previous token or None (only stashed sometimes).
+    last_token: @mut Option<~token::Token>,
     buffer: @mut [TokenAndSpan, ..4],
     buffer_start: @mut int,
     buffer_end: @mut int,
@@ -379,7 +382,10 @@ impl Parser {
     // anything.  Signal a fatal error if next token is unexpected.
     pub fn expect_one_of(&self, edible: &[token::Token], inedible: &[token::Token]) {
         fn tokens_to_str(p:&Parser, tokens: &[token::Token]) -> ~str {
-            tokens.iter().fold(~"", |b,a| b + p.token_to_str(a))
+            let mut i = tokens.iter();
+            // This might be a sign we need a connect method on Iterator.
+            let b = i.next().map_default(~"", |t| p.token_to_str(*t));
+            i.fold(b, |b,a| b + " " + p.token_to_str(a))
         }
         if edible.contains(self.token) {
             self.bump();
@@ -399,28 +405,37 @@ impl Parser {
         }
     }
 
-    // Just parsed an expression and next token should be in `expected`.
-    // If input has unexpected `{ }`, signal error and then recover.
-    // Does not consume any expected token.
-    pub fn check_for_erroneous_unit_struct_expecting(&self, expected: &[token::Token]) {
-        if *self.token == token::LBRACE &&
-            expected.iter().all(|t| *t != token::LBRACE) &&
-            self.look_ahead(1, |t| *t == token::RBRACE) {
-
-            self.span_err(*self.last_span,
-                          fmt!("Unit-like struct construction is written with no trailing `{ }`"));
+    // Check for erroneous `ident { }`; if matches, signal error and
+    // recover (without consuming any expected input token).  Returns
+    // true if and only if input was consumed for recovery.
+    pub fn check_for_erroneous_unit_struct_expecting(&self, expected: &[token::Token]) -> bool {
+        if *self.token == token::LBRACE
+            && expected.iter().all(|t| *t != token::LBRACE)
+            && self.look_ahead(1, |t| *t == token::RBRACE) {
+            // matched; signal non-fatal error and recover.
+            self.span_err(*self.span,
+                          "Unit-like struct construction is written with no trailing `{ }`");
             self.eat(&token::LBRACE);
             self.eat(&token::RBRACE);
+            true
+        } else {
+            false
         }
     }
 
-    // Commit to parsing a complete expression `e`, which expects to be
-    // followed by some token from the set edible + inedible.  Check
-    // for recoverable input errors, discarding erroneous characters.
+    // Commit to parsing a complete expression `e` expected to be
+    // followed by some token from the set edible + inedible.  Recover
+    // from anticipated input errors, discarding erroneous characters.
     pub fn commit_expr(&self, e: @expr, edible: &[token::Token], inedible: &[token::Token]) {
         debug!("commit_expr %?", e);
-        let _e = e; // unused, but future checks might want to inspect `e`.
-        self.check_for_erroneous_unit_struct_expecting(vec::append(edible.to_owned(), inedible));
+        match e.node {
+            expr_path(*) => {
+                // might be unit-struct construction; check for recoverableinput error.
+                let expected = vec::append(edible.to_owned(), inedible);
+                self.check_for_erroneous_unit_struct_expecting(expected);
+            }
+            _ => {}
+        }
         self.expect_one_of(edible, inedible)
     }
 
@@ -434,7 +449,10 @@ impl Parser {
     pub fn commit_stmt(&self, s: @stmt, edible: &[token::Token], inedible: &[token::Token]) {
         debug!("commit_stmt %?", s);
         let _s = s; // unused, but future checks might want to inspect `s`.
-        self.check_for_erroneous_unit_struct_expecting(vec::append(edible.to_owned(), inedible));
+        if self.last_token.map_default(false, |t|is_ident_or_path(*t)) {
+            let expected = vec::append(edible.to_owned(), inedible);
+            self.check_for_erroneous_unit_struct_expecting(expected);
+        }
         self.expect_one_of(edible, inedible)
     }
 
@@ -644,6 +662,12 @@ impl Parser {
     // advance the parser by one token
     pub fn bump(&self) {
         *self.last_span = *self.span;
+        // Stash token for error recovery (sometimes; clone is not necessarily cheap).
+        *self.last_token = if is_ident_or_path(self.token) {
+            Some(~(*self.token).clone())
+        } else {
+            None
+        };
         let next = if *self.buffer_start == *self.buffer_end {
             self.reader.next_token()
         } else {
