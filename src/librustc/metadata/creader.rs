@@ -128,10 +128,12 @@ struct Env {
 
 impl visit::Visitor<()> for Env {
     fn visit_view_item(&mut self, i:&ast::view_item, _:()) {
-        my_visit_view_item(self, i)
+        my_visit_view_item(self, i);
+        visit::walk_view_item(self, i, e);
     }
     fn visit_item(&mut self, i:@ast::item, _:()) {
-        my_visit_item(self, i)
+        my_visit_item(self, i);
+        visit::walk_item(self, i, e);
     }
 
     fn visit_mod(&mut self, m:&ast::_mod, _:span, _:ast::NodeId, e:()) {
