@@ -67,7 +67,7 @@ pub fn generics_of_fn(fk: &fn_kind) -> Generics {
 }
 
 pub trait Visitor<E:Clone> {
-    fn visit_mod(&mut self, m:&_mod, s:span, n:NodeId, e:E) { walk_mod(self, m, e) }
+    fn visit_mod(&mut self, m:&_mod, _s:span, _n:NodeId, e:E) { walk_mod(self, m, e) }
     fn visit_view_item(&mut self, i:&view_item, e:E) { walk_view_item(self, i, e) }
     fn visit_foreign_item(&mut self, i:@foreign_item, e:E) { walk_foreign_item(self, i, e) }
     fn visit_item(&mut self, i:@item, e:E) { walk_item(self, i, e) }
@@ -78,8 +78,8 @@ pub trait Visitor<E:Clone> {
     fn visit_pat(&mut self, p:@pat, e:E) { walk_pat(self, p, e) }
     fn visit_decl(&mut self, d:@decl, e:E) { walk_decl(self, d, e) }
     fn visit_expr(&mut self, ex:@expr, e:E) { walk_expr(self, ex, e) }
-    fn visit_expr_post(&mut self, ex:@expr, e:E) { }
-    fn visit_ty(&mut self, t:&Ty, e:E) { }
+    fn visit_expr_post(&mut self, _ex:@expr, _e:E) { }
+    fn visit_ty(&mut self, _t:&Ty, _e:E) { }
     fn visit_generics(&mut self, g:&Generics, e:E) { walk_generics(self, g, e) }
     fn visit_fn(&mut self, fk:&fn_kind, fd:&fn_decl, b:&Block, s:span, n:NodeId, e:E) {
         walk_fn(self, fk, fd, b, s, n , e)
