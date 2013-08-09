@@ -163,7 +163,8 @@ impl visit::Visitor<()> for Env {
     fn visit_generics(&mut self, g:&ast::Generics, e:()) {
         visit::walk_generics(self, g, e)
     }
-    fn visit_fn(&mut self, fk:&visit::fn_kind, fd:&ast::fn_decl, b:&ast::Block, s: span, n: ast::NodeId, e:()) {
+    fn visit_fn(&mut self, fk:&visit::fn_kind, fd:&ast::fn_decl,
+                b:&ast::Block, s: span, n: ast::NodeId, e:()) {
         visit::walk_fn(self, fk, fd, b, s, n , e)
     }
     fn visit_ty_method(&mut self, t: &ast::TypeMethod, e:()) {
@@ -172,7 +173,8 @@ impl visit::Visitor<()> for Env {
     fn visit_trait_method(&mut self, t: &ast::trait_method, e:()) {
         visit::walk_trait_method(self, t, e)
     }
-    fn visit_struct_def(&mut self, s: @ast::struct_def, i: ast::ident, g: &ast::Generics, n: ast::NodeId, e:()) {
+    fn visit_struct_def(&mut self, s: @ast::struct_def, i: ast::ident,
+                        g: &ast::Generics, n: ast::NodeId, e:()) {
         visit::walk_struct_def(self, s, i, g, n, e)
     }
     fn visit_struct_field(&mut self, s: @ast::struct_field, e:()) {
