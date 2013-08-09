@@ -387,10 +387,14 @@ impl Parser {
             // leave it in the input
         } else {
             let expected = vec::append(edible.to_owned(), inedible);
+            let expect = tokens_to_str(self, expected);
+            let actual = self.this_token_to_str();
             self.fatal(
-                fmt!("expected one of `%s` but found `%s`",
-                     tokens_to_str(self, expected),
-                     self.this_token_to_str())
+                if expected.len() != 1 {
+                    fmt!("expected one of `%s` but found `%s`", expect, actual)
+                } else {
+                    fmt!("expected `%s` but found `%s`", expect, actual)
+                }
             )
         }
     }
@@ -414,6 +418,7 @@ impl Parser {
     // followed by some token from the set edible + inedible.  Check
     // for recoverable input errors, discarding erroneous characters.
     pub fn commit_expr(&self, e: @expr, edible: &[token::Token], inedible: &[token::Token]) {
+        debug!("commit_expr %?", e);
         let _e = e; // unused, but future checks might want to inspect `e`.
         self.check_for_erroneous_unit_struct_expecting(vec::append(edible.to_owned(), inedible));
         self.expect_one_of(edible, inedible)
@@ -423,9 +428,18 @@ impl Parser {
         self.commit_expr(e, &[edible], &[])
     }
 
-    pub fn commit_stmt_expecting(&self, t: token::Token) {
-        self.check_for_erroneous_unit_struct_expecting(&[t.clone()]);
-        self.expect(&t)
+    // Commit to parsing a complete statement `s`, which expects to be
+    // followed by some token from the set edible + inedible.  Check
+    // for recoverable input errors, discarding erroneous characters.
+    pub fn commit_stmt(&self, s: @stmt, edible: &[token::Token], inedible: &[token::Token]) {
+        debug!("commit_stmt %?", s);
+        let _s = s; // unused, but future checks might want to inspect `s`.
+        self.check_for_erroneous_unit_struct_expecting(vec::append(edible.to_owned(), inedible));
+        self.expect_one_of(edible, inedible)
+    }
+
+    pub fn commit_stmt_expecting(&self, s: @stmt, edible: token::Token) {
+        self.commit_stmt(s, &[edible], &[])
     }
 
     pub fn parse_ident(&self) -> ast::ident {
@@ -3233,36 +3247,25 @@ impl Parser {
                     match stmt.node {
                         stmt_expr(e, stmt_id) => {
                             // expression without semicolon
-                            let has_semi;
-                            match *self.token {
-                                token::SEMI => {
-                                    has_semi = true;
-                                }
-                                token::RBRACE => {
-                                    has_semi = false;
-                                    expr = Some(e);
-                                }
-                                ref t => {
-                                    has_semi = false;
-                                    if classify::stmt_ends_with_semi(stmt) {
-                                        self.fatal(
-                                            fmt!(
-                                                "expected `;` or `}` after \
-                                                 expression but found `%s`",
-                                                self.token_to_str(t)
-                                            )
-                                        );
-                                    }
-                                    stmts.push(stmt);
-                                }
+                            if classify::stmt_ends_with_semi(stmt) {
+                                // Just check for errors and recover; do not eat semicolon yet.
+                                self.commit_stmt(stmt, &[], &[token::SEMI, token::RBRACE]);
                             }
 
-                            if has_semi {
-                                self.bump();
-                                stmts.push(@codemap::spanned {
-                                    node: stmt_semi(e, stmt_id),
-                                    span: stmt.span,
-                                });
+                            match *self.token {
+                                token::SEMI => {
+                                    self.bump();
+                                    stmts.push(@codemap::spanned {
+                                        node: stmt_semi(e, stmt_id),
+                                        span: stmt.span,
+                                    });
+                                }
+                                token::RBRACE => {
+                                    expr = Some(e);
+                                }
+                                _ => {
+                                    stmts.push(stmt);
+                                }
                             }
                         }
                         stmt_mac(ref m, _) => {
@@ -3299,7 +3302,7 @@ impl Parser {
                             stmts.push(stmt);
 
                             if classify::stmt_ends_with_semi(stmt) {
-                                self.commit_stmt_expecting(token::SEMI);
+                                self.commit_stmt_expecting(stmt, token::SEMI);
                             }
                         }
                     }
