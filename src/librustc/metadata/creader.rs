@@ -211,7 +211,8 @@ impl visit::Visitor<()> for Env {
         tracing!(self, "visit_generics");
         visit::walk_generics(self, g, e)
     }
-    fn visit_fn(&mut self, fk:&visit::fn_kind, fd:&ast::fn_decl, b:&ast::Block, s: span, n: ast::NodeId, e:()) {
+    fn visit_fn(&mut self, fk:&visit::fn_kind, fd:&ast::fn_decl,
+                b:&ast::Block, s: span, n: ast::NodeId, e:()) {
         tracing!(self, "visit_fn");
         visit::walk_fn(self, fk, fd, b, s, n , e)
     }
@@ -223,7 +224,8 @@ impl visit::Visitor<()> for Env {
         tracing!(self, "visit_trait_method");
         visit::walk_trait_method(self, t, e)
     }
-    fn visit_struct_def(&mut self, s: @ast::struct_def, i: ast::ident, g: &ast::Generics, n: ast::NodeId, e:()) {
+    fn visit_struct_def(&mut self, s: @ast::struct_def, i: ast::ident,
+                        g: &ast::Generics, n: ast::NodeId, e:()) {
         tracing!(self, "visit_struct_def");
         visit::walk_struct_def(self, s, i, g, n, e)
     }
