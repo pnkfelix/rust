@@ -339,9 +339,30 @@ pub fn trans_to_datum(bcx: @mut Block, expr: @ast::expr) -> DatumBlock {
             }
         };
         let target_data = match source_store {
-            ty::BoxTraitStore(*) |
-            ty::UniqTraitStore(*) => {
+            ty::BoxTraitStore(*) => {
                 GEPi(bcx, source_data, [0u, abi::box_field_body])
+            }
+            ty::UniqTraitStore(*) => {
+                // For a ~T box, there may or may not be a header,
+                // depending on whether the type T references managed
+                // boxes. However, since we do not *know* the type T
+                // for objects, this presents a hurdle. Our solution is
+                // to load the "borrow offset" from the type descriptor;
+                // this value will either be 0 or sizeof(BoxHeader), depending
+                // on the type T.
+                let llopaque =
+                    PointerCast(bcx, source_data, Type::opaque().ptr_to());
+                let lltydesc_ptr_ptr =
+                    PointerCast(bcx, vtable,
+                                bcx.ccx().tydesc_type.ptr_to().ptr_to());
+                let lltydesc_ptr =
+                    Load(bcx, lltydesc_ptr_ptr);
+                let borrow_offset_ptr =
+                    GEPi(bcx, lltydesc_ptr,
+                         [0, abi::tydesc_field_borrow_offset]);
+                let borrow_offset =
+                    Load(bcx, borrow_offset_ptr);
+                InBoundsGEP(bcx, llopaque, [borrow_offset])
             }
             ty::RegionTraitStore(*) => {
                 source_data

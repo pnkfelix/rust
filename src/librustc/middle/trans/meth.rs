@@ -415,21 +415,27 @@ pub fn trans_trait_callee(bcx: @mut Block,
     let _icx = push_ctxt("impl::trans_trait_callee");
     let mut bcx = bcx;
 
-    let self_datum = unpack_datum!(bcx,
-        expr::trans_to_datum(bcx, self_expr));
-    let llpair = self_datum.to_ref_llval(bcx);
+    let self_ty = expr_ty_adjusted(bcx, self_expr);
+    let self_scratch = scratch_datum(bcx, self_ty, "__trait_callee", false);
+    bcx = expr::trans_into(bcx, self_expr, expr::SaveIn(self_scratch.val));
+
+    // Arrange a temporary cleanup for the object in case something
+    // should go wrong before the method is actually *invoked*.
+    self_scratch.add_clean(bcx);
 
     let callee_ty = node_id_type(bcx, callee_id);
     trans_trait_callee_from_llval(bcx,
                                   callee_ty,
                                   n_method,
-                                  llpair)
+                                  self_scratch.val,
+                                  Some(self_scratch.val))
 }
 
 pub fn trans_trait_callee_from_llval(bcx: @mut Block,
                                      callee_ty: ty::t,
                                      n_method: uint,
-                                     llpair: ValueRef)
+                                     llpair: ValueRef,
+                                     temp_cleanup: Option<ValueRef>)
                                   -> Callee {
     /*!
      * Same as `trans_trait_callee()` above, except that it is given
@@ -439,16 +445,11 @@ pub fn trans_trait_callee_from_llval(bcx: @mut Block,
     let _icx = push_ctxt("impl::trans_trait_callee");
     let ccx = bcx.ccx();
 
-    // Load the box from the @Trait pair and GEP over the box header if
-    // necessary:
+    // Load the data pointer from the object.
     debug!("(translating trait callee) loading second index from pair");
     let llboxptr = GEPi(bcx, llpair, [0u, abi::trt_field_box]);
     let llbox = Load(bcx, llboxptr);
     let llself = PointerCast(bcx, llbox, Type::opaque_box(ccx).ptr_to());
-
-    // Arrange a temporary cleanup for the object in case something
-    // should go wrong before the method is actually *invoked*.
-    add_clean_temp_mem(bcx, llpair, callee_ty);
 
     // Load the function from the vtable and cast it to the expected type.
     debug!("(translating trait callee) loading method");
@@ -466,7 +467,7 @@ pub fn trans_trait_callee_from_llval(bcx: @mut Block,
         data: Method(MethodData {
             llfn: mptr,
             llself: llself,
-            temp_cleanup: Some(llpair),
+            temp_cleanup: temp_cleanup,
 
                 // We know that the func declaration is &self, ~self,
                 // or @self, and such functions are always by-copy

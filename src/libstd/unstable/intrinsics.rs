@@ -38,7 +38,7 @@ pub use realstd::unstable::intrinsics::{TyDesc, Opaque, TyVisitor};
 
 pub type GlueFn = extern "Rust" fn(*i8);
 
-// NB: this has to be kept in sync with the Rust ABI.
+// NB: this has to be kept in sync with `type_desc` in `rt`
 #[lang="ty_desc"]
 #[cfg(not(test))]
 pub struct TyDesc {
@@ -48,6 +48,7 @@ pub struct TyDesc {
     drop_glue: GlueFn,
     free_glue: GlueFn,
     visit_glue: GlueFn,
+    borrow_offset: uint,
 }
 
 #[lang="opaque"]

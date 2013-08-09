@@ -105,7 +105,8 @@ impl Reflector {
             |bcx| meth::trans_trait_callee_from_llval(bcx,
                                                       mth_ty,
                                                       mth_idx,
-                                                      v),
+                                                      v,
+                                                      None),
             ArgVals(args), None, DontAutorefArg));
         let result = bool_to_i1(bcx, result);
         let next_bcx = sub_block(bcx, "next");
