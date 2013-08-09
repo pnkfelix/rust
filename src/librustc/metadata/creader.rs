@@ -126,7 +126,7 @@ impl visit::Visitor<()> for Env {
         my_visit_item(self, i);
         visit::walk_item(self, i, e);
     }
-
+/*
     fn visit_mod(&mut self, m:&ast::_mod, _:span, _:ast::NodeId, e:()) {
         visit::walk_mod(self, m, e)
     }
@@ -155,7 +155,7 @@ impl visit::Visitor<()> for Env {
         visit::walk_expr(self, e_, e)
     }
     fn visit_expr_post(&mut self, _:@ast::expr, _:()) {
-        /* no op */
+        // no op
     }
     fn visit_ty(&mut self, t:&ast::Ty, e:()) {
         visit::skip_ty(self, t, e)
@@ -178,6 +178,7 @@ impl visit::Visitor<()> for Env {
     fn visit_struct_field(&mut self, s: @ast::struct_field, e:()) {
         visit::walk_struct_field(self, s, e)
     }
+*/
 }
 
 fn visit_crate(e: &Env, c: &ast::Crate) {
