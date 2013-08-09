@@ -25,6 +25,7 @@ use syntax::diagnostic::span_handler;
 use syntax::parse::token;
 use syntax::parse::token::ident_interner;
 use syntax::oldvisit;
+use syntax::visit;
 
 // Traverses an AST, reading all the information about use'd crates and extern
 // libraries necessary for later resolving, typechecking, linking, etc.
@@ -45,13 +46,16 @@ pub fn read_crates(diag: @span_handler,
         next_crate_num: 1,
         intr: intr
     };
+    visit_crate(e, crate);
+/*
     let v =
         oldvisit::mk_simple_visitor(@oldvisit::SimpleVisitor {
-            visit_view_item: |a| visit_view_item(e, a),
-            visit_item: |a| visit_item(e, a),
+            visit_view_item: |a| my_visit_view_item(e, a),
+            visit_item: |a| my_visit_item(e, a),
             .. *oldvisit::default_simple_visitor()});
-    visit_crate(e, crate);
     oldvisit::visit_crate(crate, ((), v));
+*/
+    visit::walk_crate(e, crate, ());
     dump_crates(*e.crate_cache);
     warn_if_multiple_versions(e, diag, *e.crate_cache);
 }
@@ -122,6 +126,69 @@ struct Env {
     intr: @ident_interner
 }
 
+impl visit::Visitor<()> for Env {
+    fn visit_view_item(&mut self, i:&ast::view_item, e:()) {
+        my_visit_view_item(self, i);
+        visit::walk_view_item(self, i, e);
+    }
+    fn visit_item(&mut self, i:@ast::item, e:()) {
+        my_visit_item(self, i);
+        visit::walk_item(self, i, e);
+    }
+
+    fn visit_mod(&mut self, m:&ast::_mod, _:span, _:ast::NodeId, e:()) {
+        visit::walk_mod(self, m, e)
+    }
+    fn visit_foreign_item(&mut self, f:@ast::foreign_item, e:()) {
+        visit::walk_foreign_item(self, f, e)
+    }
+    fn visit_local(&mut self, l:@ast::Local, e:()) {
+        visit::walk_local(self, l, e)
+    }
+    fn visit_block(&mut self, b:&ast::Block, e:()) {
+        visit::walk_block(self, b, e)
+    }
+    fn visit_stmt(&mut self, s:@ast::stmt, e:()) {
+        visit::walk_stmt(self, s, e)
+    }
+    fn visit_arm(&mut self, a:&ast::arm, e:()) {
+        visit::walk_arm(self, a, e)
+    }
+    fn visit_pat(&mut self, p:@ast::pat, e:()) {
+        visit::walk_pat(self, p, e)
+    }
+    fn visit_decl(&mut self, d:@ast::decl, e:()) {
+        visit::walk_decl(self, d, e)
+    }
+    fn visit_expr(&mut self, e_:@ast::expr, e:()) {
+        visit::walk_expr(self, e_, e)
+    }
+    fn visit_expr_post(&mut self, _:@ast::expr, _:()) {
+        /* no op */
+    }
+    fn visit_ty(&mut self, t:&ast::Ty, e:()) {
+        visit::skip_ty(self, t, e)
+    }
+    fn visit_generics(&mut self, g:&ast::Generics, e:()) {
+        visit::walk_generics(self, g, e)
+    }
+    fn visit_fn(&mut self, fk:&visit::fn_kind, fd:&ast::fn_decl, b:&ast::Block, s: span, n: ast::NodeId, e:()) {
+        visit::walk_fn(self, fk, fd, b, s, n , e)
+    }
+    fn visit_ty_method(&mut self, t: &ast::TypeMethod, e:()) {
+        visit::walk_ty_method(self, t, e)
+    }
+    fn visit_trait_method(&mut self, t: &ast::trait_method, e:()) {
+        visit::walk_trait_method(self, t, e)
+    }
+    fn visit_struct_def(&mut self, s: @ast::struct_def, i: ast::ident, g: &ast::Generics, n: ast::NodeId, e:()) {
+        visit::walk_struct_def(self, s, i, g, n, e)
+    }
+    fn visit_struct_field(&mut self, s: @ast::struct_field, e:()) {
+        visit::walk_struct_field(self, s, e)
+    }
+}
+
 fn visit_crate(e: &Env, c: &ast::Crate) {
     let cstore = e.cstore;
 
@@ -135,7 +202,7 @@ fn visit_crate(e: &Env, c: &ast::Crate) {
     }
 }
 
-fn visit_view_item(e: @mut Env, i: &ast::view_item) {
+fn my_visit_view_item(e: &mut Env, i: &ast::view_item) {
     match i.node {
       ast::view_item_extern_mod(ident, ref meta_items, id) => {
         debug!("resolving extern mod stmt. ident: %?, meta: %?",
@@ -151,7 +218,7 @@ fn visit_view_item(e: @mut Env, i: &ast::view_item) {
     }
 }
 
-fn visit_item(e: &Env, i: @ast::item) {
+fn my_visit_item(e: &Env, i: @ast::item) {
     match i.node {
       ast::item_foreign_mod(ref fm) => {
         if fm.abis.is_rust() || fm.abis.is_intrinsic() {
@@ -232,7 +299,7 @@ fn existing_match(e: &Env, metas: &[@ast::MetaItem], hash: &str)
     return None;
 }
 
-fn resolve_crate(e: @mut Env,
+fn resolve_crate(e: &mut Env,
                  ident: ast::ident,
                  metas: ~[@ast::MetaItem],
                  hash: @str,
@@ -300,7 +367,7 @@ fn resolve_crate(e: @mut Env,
 }
 
 // Go through the crate metadata and load any crates that it references
-fn resolve_crate_deps(e: @mut Env, cdata: @~[u8]) -> cstore::cnum_map {
+fn resolve_crate_deps(e: &mut Env, cdata: @~[u8]) -> cstore::cnum_map {
     debug!("resolving deps of external crate");
     // The map from crate numbers in the crate we're resolving to local crate
     // numbers
