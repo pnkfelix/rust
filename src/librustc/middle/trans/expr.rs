@@ -326,8 +326,6 @@ pub fn trans_to_datum(bcx: @mut Block, expr: @ast::expr) -> DatumBlock {
 
         // Load the data for the source, which is either an @T,
         // ~T, or &T, depending on source_obj_ty.
-        //
-        // FIXME Rewrite to use datums so as to account for write guards.
         let source_data_ptr = GEPi(bcx, source_llval, [0u, abi::trt_field_box]);
         let source_data = Load(bcx, source_data_ptr); // always a ptr
         let (source_store, source_mutbl) = match ty::get(source_datum.ty).sty {
