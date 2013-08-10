@@ -224,7 +224,7 @@ pub fn trans_to_datum(bcx: @mut Block, expr: @ast::expr) -> DatumBlock {
                 }
                 Some(AutoBorrowObj(*)) => {
                     unpack_datum!(bcx, auto_borrow_obj(
-                        bcx, expr, datum))
+                        bcx, adj.autoderefs, expr, datum))
                 }
             };
         }
@@ -302,7 +302,8 @@ pub fn trans_to_datum(bcx: @mut Block, expr: @ast::expr) -> DatumBlock {
         auto_ref(bcx, datum)
     }
 
-    fn auto_borrow_obj(bcx: @mut Block,
+    fn auto_borrow_obj(mut bcx: @mut Block,
+                       autoderefs: uint,
                        expr: @ast::expr,
                        source_datum: Datum) -> DatumBlock {
         let tcx = bcx.tcx();
@@ -329,8 +330,8 @@ pub fn trans_to_datum(bcx: @mut Block, expr: @ast::expr) -> DatumBlock {
         // FIXME Rewrite to use datums so as to account for write guards.
         let source_data_ptr = GEPi(bcx, source_llval, [0u, abi::trt_field_box]);
         let source_data = Load(bcx, source_data_ptr); // always a ptr
-        let source_store = match ty::get(source_datum.ty).sty {
-            ty::ty_trait(_, _, s, _, _) => s,
+        let (source_store, source_mutbl) = match ty::get(source_datum.ty).sty {
+            ty::ty_trait(_, _, s, m, _) => (s, m),
             _ => {
                 bcx.sess().span_bug(
                     expr.span,
@@ -340,7 +341,28 @@ pub fn trans_to_datum(bcx: @mut Block, expr: @ast::expr) -> DatumBlock {
         };
         let target_data = match source_store {
             ty::BoxTraitStore(*) => {
-                GEPi(bcx, source_data, [0u, abi::box_field_body])
+                // For deref of @T or @mut T, create a dummy datum and
+                // use the datum's deref method. This is more work
+                // than just calling GEPi ourselves, but it ensures
+                // that any write guards will be appropriate
+                // processed.  Note that we don't know the type T, so
+                // just substitute `i8`-- it doesn't really matter for
+                // our purposes right now.
+                let source_ty =
+                    ty::mk_box(tcx,
+                               ty::mt {
+                                   ty: ty::mk_i8(),
+                                   mutbl: source_mutbl});
+                let source_datum =
+                    Datum {val: source_data,
+                           ty: source_ty,
+                           mode: ByValue};
+                let derefd_datum =
+                    unpack_datum!(bcx,
+                                  source_datum.deref(bcx,
+                                                     expr,
+                                                     autoderefs));
+                derefd_datum.to_rptr(bcx).to_value_llval(bcx)
             }
             ty::UniqTraitStore(*) => {
                 // For a ~T box, there may or may not be a header,
