@@ -49,10 +49,10 @@
            (let ((level (rust-paren-level)))
              (cond
               ;; A function return type is 1 level indented
-              ((looking-at "->") (* default-tab-width (+ level 1)))
+              ((looking-at "->") (* tab-width (+ level 1)))
 
               ;; A closing brace is 1 level unindended
-              ((looking-at "}") (* default-tab-width (- level 1)))
+              ((looking-at "}") (* tab-width (- level 1)))
 
               ;; If we're in any other token-tree / sexp, then:
               ;;  - [ or ( means line up with the opening token
@@ -70,18 +70,18 @@
                      (goto-char pt)
                      (back-to-indentation)
                      (if (looking-at "\\<else\\>")
-                         (* default-tab-width (+ 1 level))
+                         (* tab-width (+ 1 level))
                        (progn
                          (goto-char pt)
                          (beginning-of-line)
                          (rust-rewind-irrelevant)
                          (end-of-line)
                          (if (looking-back "[{};,]")
-                             (* default-tab-width level)
+                             (* tab-width level)
                            (back-to-indentation)
                            (if (looking-at "#")
-                               (* default-tab-width level)
-                             (* default-tab-width (+ 1 level))))))))))
+                               (* tab-width level)
+                             (* tab-width (+ 1 level))))))))))
 
               ;; Otherwise we're in a column-zero definition
               (t 0))))))
