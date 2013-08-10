@@ -8,8 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use c_str::ToCStr;
 use cast::transmute;
-use libc::{c_char, c_void, size_t, STDERR_FILENO};
+use libc::{c_char, size_t, STDERR_FILENO};
 use io;
 use io::{Writer, WriterUtil};
 use option::{Option, None, Some};
@@ -19,9 +20,6 @@ use str::{OwnedStr, StrSlice};
 use sys;
 use unstable::raw;
 use vec::ImmutableVector;
-
-#[allow(non_camel_case_types)]
-type rust_task = c_void;
 
 pub static FROZEN_BIT: uint = 1 << (uint::bits - 1);
 pub static MUT_BIT: uint = 1 << (uint::bits - 2);
@@ -35,34 +33,12 @@ struct BorrowRecord {
 }
 
 fn try_take_task_borrow_list() -> Option<~[BorrowRecord]> {
-    unsafe {
-        let cur_task: *rust_task = rust_try_get_task();
-        if cur_task.is_not_null() {
-            let ptr = rust_take_task_borrow_list(cur_task);
-            if ptr.is_null() {
-                None
-            } else {
-                let v: ~[BorrowRecord] = transmute(ptr);
-                Some(v)
-            }
-        } else {
-            None
-        }
-    }
+    // XXX
+    None
 }
 
-fn swap_task_borrow_list(f: &fn(~[BorrowRecord]) -> ~[BorrowRecord]) {
-    unsafe {
-        let cur_task: *rust_task = rust_try_get_task();
-        if cur_task.is_not_null() {
-            let mut borrow_list: ~[BorrowRecord] = {
-                let ptr = rust_take_task_borrow_list(cur_task);
-                if ptr.is_null() { ~[] } else { transmute(ptr) }
-            };
-            borrow_list = f(borrow_list);
-            rust_set_task_borrow_list(cur_task, transmute(borrow_list));
-        }
-    }
+fn swap_task_borrow_list(_f: &fn(~[BorrowRecord]) -> ~[BorrowRecord]) {
+    // XXX
 }
 
 pub unsafe fn clear_task_borrow_list() {
@@ -76,8 +52,8 @@ unsafe fn fail_borrowed(box: *mut raw::Box<()>, file: *c_char, line: size_t) {
     match try_take_task_borrow_list() {
         None => { // not recording borrows
             let msg = "borrowed";
-            do msg.as_c_str |msg_p| {
-                sys::begin_unwind_(msg_p as *c_char, file, line);
+            do msg.to_c_str().with_ref |msg_p| {
+                sys::begin_unwind_(msg_p, file, line);
             }
         }
         Some(borrow_list) => { // recording borrows
@@ -92,8 +68,8 @@ unsafe fn fail_borrowed(box: *mut raw::Box<()>, file: *c_char, line: size_t) {
                     sep = " and at ";
                 }
             }
-            do msg.as_c_str |msg_p| {
-                sys::begin_unwind_(msg_p as *c_char, file, line)
+            do msg.to_c_str().with_ref |msg_p| {
+                sys::begin_unwind_(msg_p, file, line)
             }
         }
     }
@@ -113,7 +89,8 @@ unsafe fn debug_borrow<T>(tag: &'static str,
     //! A useful debugging function that prints a pointer + tag + newline
     //! without allocating memory.
 
-    if ENABLE_DEBUG && ::rt::env::get().debug_borrow {
+    // XXX
+    if false {
         debug_borrow_slow(tag, p, old_bits, new_bits, filename, line);
     }
 
@@ -231,8 +208,8 @@ pub unsafe fn unrecord_borrow(a: *u8, old_ref_count: uint,
             let br = borrow_list.pop();
             if br.box != a || br.file != file || br.line != line {
                 let err = fmt!("wrong borrow found, br=%?", br);
-                do err.as_c_str |msg_p| {
-                    sys::begin_unwind_(msg_p as *c_char, file, line)
+                do err.to_c_str().with_ref |msg_p| {
+                    sys::begin_unwind_(msg_p, file, line)
                 }
             }
             borrow_list
@@ -268,16 +245,4 @@ pub unsafe fn check_not_borrowed(a: *u8,
     if (ref_count & FROZEN_BIT) != 0 {
         fail_borrowed(a, file, line);
     }
-}
-
-
-extern {
-    #[rust_stack]
-    pub fn rust_take_task_borrow_list(task: *rust_task) -> *c_void;
-
-    #[rust_stack]
-    pub fn rust_set_task_borrow_list(task: *rust_task, map: *c_void);
-
-    #[rust_stack]
-    pub fn rust_try_get_task() -> *rust_task;
 }

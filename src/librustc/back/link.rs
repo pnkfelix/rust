@@ -16,12 +16,13 @@ use lib::llvm::llvm;
 use lib::llvm::ModuleRef;
 use lib;
 use metadata::common::LinkMeta;
-use metadata::{encoder, csearch, cstore};
+use metadata::{encoder, csearch, cstore, filesearch};
 use middle::trans::context::CrateContext;
 use middle::trans::common::gensym_name;
 use middle::ty;
 use util::ppaux;
 
+use std::c_str::ToCStr;
 use std::char;
 use std::hash::Streaming;
 use std::hash;
@@ -76,9 +77,9 @@ pub fn WriteOutputFile(sess: Session,
         OptLevel: c_int,
         EnableSegmentedStacks: bool) {
     unsafe {
-        do Triple.as_c_str |Triple| {
-            do Feature.as_c_str |Feature| {
-                do Output.as_c_str |Output| {
+        do Triple.to_c_str().with_ref |Triple| {
+            do Feature.to_c_str().with_ref |Feature| {
+                do Output.to_c_str().with_ref |Output| {
                     let result = llvm::LLVMRustWriteOutputFile(
                             PM,
                             M,
@@ -105,6 +106,7 @@ pub mod jit {
     use lib::llvm::{ModuleRef, ContextRef, ExecutionEngineRef};
     use metadata::cstore;
 
+    use std::c_str::ToCStr;
     use std::cast;
     use std::local_data;
     use std::unstable::intrinsics;
@@ -146,7 +148,7 @@ pub mod jit {
 
                 debug!("linking: %s", path);
 
-                do path.as_c_str |buf_t| {
+                do path.to_c_str().with_ref |buf_t| {
                     if !llvm::LLVMRustLoadCrate(manager, buf_t) {
                         llvm_err(sess, ~"Could not link");
                     }
@@ -165,7 +167,7 @@ pub mod jit {
             // Next, we need to get a handle on the _rust_main function by
             // looking up it's corresponding ValueRef and then requesting that
             // the execution engine compiles the function.
-            let fun = do "_rust_main".as_c_str |entry| {
+            let fun = do "_rust_main".to_c_str().with_ref |entry| {
                 llvm::LLVMGetNamedFunction(m, entry)
             };
             if fun.is_null() {
@@ -230,6 +232,7 @@ pub mod write {
 
     use back::passes;
 
+    use std::c_str::ToCStr;
     use std::libc::{c_int, c_uint};
     use std::path::Path;
     use std::run;
@@ -263,14 +266,14 @@ pub mod write {
                   output_type_bitcode => {
                     if opts.optimize != session::No {
                         let filename = output.with_filetype("no-opt.bc");
-                        do filename.to_str().as_c_str |buf| {
+                        do filename.to_c_str().with_ref |buf| {
                             llvm::LLVMWriteBitcodeToFile(llmod, buf);
                         }
                     }
                   }
                   _ => {
                     let filename = output.with_filetype("bc");
-                    do filename.to_str().as_c_str |buf| {
+                    do filename.to_c_str().with_ref |buf| {
                         llvm::LLVMWriteBitcodeToFile(llmod, buf);
                     }
                   }
@@ -333,7 +336,7 @@ pub mod write {
                     // Always output the bitcode file with --save-temps
 
                     let filename = output.with_filetype("opt.bc");
-                    do filename.to_str().as_c_str |buf| {
+                    do filename.to_c_str().with_ref |buf| {
                         llvm::LLVMWriteBitcodeToFile(llmod, buf)
                     };
                     // Save the assembly file if -S is used
@@ -391,13 +394,13 @@ pub mod write {
 
             if output_type == output_type_llvm_assembly {
                 // Given options "-S --emit-llvm": output LLVM assembly
-                do output.to_str().as_c_str |buf_o| {
+                do output.to_c_str().with_ref |buf_o| {
                     llvm::LLVMRustAddPrintModulePass(pm.llpm, llmod, buf_o);
                 }
             } else {
                 // If only a bitcode file is asked for by using the
                 // '--emit-llvm' flag, then output it here
-                do output.to_str().as_c_str |buf| {
+                do output.to_c_str().with_ref |buf| {
                     llvm::LLVMWriteBitcodeToFile(llmod, buf);
                 }
             }
@@ -497,6 +500,7 @@ pub fn build_link_meta(sess: Session,
     struct ProvidedMetas {
         name: Option<@str>,
         vers: Option<@str>,
+        pkg_id: Option<@str>,
         cmh_items: ~[@ast::MetaItem]
     }
 
@@ -504,6 +508,7 @@ pub fn build_link_meta(sess: Session,
        ProvidedMetas {
         let mut name = None;
         let mut vers = None;
+        let mut pkg_id = None;
         let mut cmh_items = ~[];
         let linkage_metas = attr::find_linkage_metas(c.attrs);
         attr::require_unique_names(sess.diagnostic(), linkage_metas);
@@ -511,6 +516,7 @@ pub fn build_link_meta(sess: Session,
             match meta.name_str_pair() {
                 Some((n, value)) if "name" == n => name = Some(value),
                 Some((n, value)) if "vers" == n => vers = Some(value),
+                Some((n, value)) if "package_id" == n => pkg_id = Some(value),
                 _ => cmh_items.push(*meta)
             }
         }
@@ -518,6 +524,7 @@ pub fn build_link_meta(sess: Session,
         ProvidedMetas {
             name: name,
             vers: vers,
+            pkg_id: pkg_id,
             cmh_items: cmh_items
         }
     }
@@ -525,7 +532,8 @@ pub fn build_link_meta(sess: Session,
     // This calculates CMH as defined above
     fn crate_meta_extras_hash(symbol_hasher: &mut hash::State,
                               cmh_items: ~[@ast::MetaItem],
-                              dep_hashes: ~[@str]) -> @str {
+                              dep_hashes: ~[@str],
+                              pkg_id: Option<@str>) -> @str {
         fn len_and_str(s: &str) -> ~str {
             fmt!("%u_%s", s.len(), s)
         }
@@ -563,7 +571,10 @@ pub fn build_link_meta(sess: Session,
             write_string(symbol_hasher, len_and_str(*dh));
         }
 
-    // tjc: allocation is unfortunate; need to change std::hash
+        for p in pkg_id.iter() {
+            write_string(symbol_hasher, len_and_str(*p));
+        }
+
         return truncated_hash_result(symbol_hasher).to_managed();
     }
 
@@ -605,6 +616,7 @@ pub fn build_link_meta(sess: Session,
     let ProvidedMetas {
         name: opt_name,
         vers: opt_vers,
+        pkg_id: opt_pkg_id,
         cmh_items: cmh_items
     } = provided_link_metas(sess, c);
     let name = crate_meta_name(sess, output, opt_name);
@@ -612,11 +624,12 @@ pub fn build_link_meta(sess: Session,
     let dep_hashes = cstore::get_dep_hashes(sess.cstore);
     let extras_hash =
         crate_meta_extras_hash(symbol_hasher, cmh_items,
-                               dep_hashes);
+                               dep_hashes, opt_pkg_id);
 
     LinkMeta {
         name: name,
         vers: vers,
+        package_id: opt_pkg_id,
         extras_hash: extras_hash
     }
 }
@@ -936,6 +949,11 @@ pub fn link_args(sess: Session,
     // forces to make sure that library can be found at runtime.
 
     for path in sess.opts.addl_lib_search_paths.iter() {
+        args.push(~"-L" + path.to_str());
+    }
+
+    let rustpath = filesearch::rust_path();
+    for path in rustpath.iter() {
         args.push(~"-L" + path.to_str());
     }
 

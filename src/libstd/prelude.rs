@@ -43,12 +43,14 @@ pub use io::{print, println};
 pub use iterator::range;
 
 // Reexported types and traits
+pub use c_str::ToCStr;
 pub use clone::{Clone, DeepClone};
 pub use cmp::{Eq, ApproxEq, Ord, TotalEq, TotalOrd, Ordering, Less, Equal, Greater, Equiv};
 pub use char::Char;
 pub use container::{Container, Mutable, Map, MutableMap, Set, MutableSet};
 pub use hash::Hash;
 pub use iter::Times;
+pub use iterator::Extendable;
 pub use iterator::{Iterator, IteratorUtil, DoubleEndedIterator, DoubleEndedIteratorUtil};
 pub use iterator::{ClonableIterator, OrdIterator};
 pub use num::{Num, NumCast};
@@ -63,8 +65,8 @@ pub use path::PosixPath;
 pub use path::WindowsPath;
 pub use ptr::RawPtr;
 pub use ascii::{Ascii, AsciiCast, OwnedAsciiCast, AsciiStr, ToBytesConsume};
-pub use str::{Str, StrVector, StrSlice, OwnedStr, NullTerminatedStr};
-pub use from_str::{FromStr};
+pub use str::{Str, StrVector, StrSlice, OwnedStr};
+pub use from_str::FromStr;
 pub use to_bytes::IterBytes;
 pub use to_str::{ToStr, ToStrConsume};
 pub use tuple::{CopyableTuple, ImmutableTuple, ExtendedTupleOps};

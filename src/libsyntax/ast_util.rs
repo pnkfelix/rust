@@ -419,7 +419,7 @@ impl Visitor<()> for IdVisitor {
 
     fn visit_view_item(@mut self, view_item: &view_item, env: ()) {
         match view_item.node {
-            view_item_extern_mod(_, _, node_id) => {
+            view_item_extern_mod(_, _, _, node_id) => {
                 (self.visit_callback)(node_id)
             }
             view_item_use(ref view_paths) => {
@@ -888,7 +888,7 @@ pub fn new_sctable_internal() -> SCTable {
 // fetch the SCTable from TLS, create one if it doesn't yet exist.
 pub fn get_sctable() -> @mut SCTable {
     static sctable_key: local_data::Key<@@mut SCTable> = &local_data::Key;
-    match local_data::get(sctable_key, |k| k.map(|&k| *k)) {
+    match local_data::get(sctable_key, |k| k.map_move(|k| *k)) {
         None => {
             let new_table = @@mut new_sctable_internal();
             local_data::set(sctable_key,new_table);

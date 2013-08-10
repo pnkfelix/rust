@@ -32,6 +32,7 @@ use util::ppaux::Repr;
 
 use middle::trans::type_::Type;
 
+use std::c_str::ToCStr;
 use std::vec;
 use syntax::ast_map::{path, path_mod, path_name};
 use syntax::ast_util;
@@ -162,7 +163,7 @@ pub fn trans_method_callee(bcx: @mut Block,
                 data: Method(MethodData {
                     llfn: callee_fn.llfn,
                     llself: val,
-                    temp_cleanup: temp_cleanups.head_opt().map(|&v| *v),
+                    temp_cleanup: temp_cleanups.head_opt().map_move(|v| *v),
                     self_mode: mentry.self_mode,
                 })
             }
@@ -336,7 +337,7 @@ pub fn trans_monomorphized_callee(bcx: @mut Block,
               data: Method(MethodData {
                   llfn: llfn_val,
                   llself: llself_val,
-                  temp_cleanup: temp_cleanups.head_opt().map(|&v| *v),
+                  temp_cleanup: temp_cleanups.head_opt().map_move(|v| *v),
                   self_mode: mentry.self_mode,
               })
           }
@@ -536,7 +537,7 @@ pub fn make_vtable(ccx: &mut CrateContext,
 
         let tbl = C_struct(components);
         let vtable = ccx.sess.str_of(gensym_name("vtable"));
-        let vt_gvar = do vtable.as_c_str |buf| {
+        let vt_gvar = do vtable.to_c_str().with_ref |buf| {
             llvm::LLVMAddGlobal(ccx.llmod, val_ty(tbl).to_ref(), buf)
         };
         llvm::LLVMSetInitializer(vt_gvar, tbl);

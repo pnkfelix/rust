@@ -272,6 +272,7 @@ pub trait RawPtr<T> {
     fn is_not_null(&self) -> bool;
     unsafe fn to_option(&self) -> Option<&T>;
     fn offset(&self, count: int) -> Self;
+    unsafe fn offset_inbounds(self, count: int) -> Self;
 }
 
 /// Extension methods for immutable pointers
@@ -304,6 +305,22 @@ impl<T> RawPtr<T> for *T {
     /// Calculates the offset from a pointer.
     #[inline]
     fn offset(&self, count: int) -> *T { offset(*self, count) }
+
+    /// Calculates the offset from a pointer. The offset *must* be in-bounds of
+    /// the object, or one-byte-past-the-end.
+    #[inline]
+    #[cfg(stage0)]
+    unsafe fn offset_inbounds(self, count: int) -> *T {
+        intrinsics::offset(self, count)
+    }
+
+    /// Calculates the offset from a pointer. The offset *must* be in-bounds of
+    /// the object, or one-byte-past-the-end.
+    #[inline]
+    #[cfg(not(stage0))]
+    unsafe fn offset_inbounds(self, count: int) -> *T {
+        intrinsics::offset_inbounds(self, count)
+    }
 }
 
 /// Extension methods for mutable pointers
@@ -336,6 +353,30 @@ impl<T> RawPtr<T> for *mut T {
     /// Calculates the offset from a mutable pointer.
     #[inline]
     fn offset(&self, count: int) -> *mut T { mut_offset(*self, count) }
+
+    /// Calculates the offset from a pointer. The offset *must* be in-bounds of
+    /// the object, or one-byte-past-the-end. An arithmetic overflow is also
+    /// undefined behaviour.
+    ///
+    /// This method should be preferred over `offset` when the guarantee can be
+    /// satisfied, to enable better optimization.
+    #[inline]
+    #[cfg(stage0)]
+    unsafe fn offset_inbounds(self, count: int) -> *mut T {
+        intrinsics::offset(self as *T, count) as *mut T
+    }
+
+    /// Calculates the offset from a pointer. The offset *must* be in-bounds of
+    /// the object, or one-byte-past-the-end. An arithmetic overflow is also
+    /// undefined behaviour.
+    ///
+    /// This method should be preferred over `offset` when the guarantee can be
+    /// satisfied, to enable better optimization.
+    #[inline]
+    #[cfg(not(stage0))]
+    unsafe fn offset_inbounds(self, count: int) -> *mut T {
+        intrinsics::offset_inbounds(self as *T, count) as *mut T
+    }
 }
 
 // Equality for pointers
@@ -415,6 +456,7 @@ pub mod ptr_tests {
     use super::*;
     use prelude::*;
 
+    use c_str::ToCStr;
     use cast;
     use libc;
     use str;
@@ -461,22 +503,20 @@ pub mod ptr_tests {
     fn test_position() {
         use libc::c_char;
 
-        let s = ~"hello";
-        unsafe {
-            assert!(2u == s.as_c_str(|p| position(p, |c| *c == 'l' as c_char)));
-            assert!(4u == s.as_c_str(|p| position(p, |c| *c == 'o' as c_char)));
-            assert!(5u == s.as_c_str(|p| position(p, |c| *c == 0 as c_char)));
+        do "hello".to_c_str().with_ref |p| {
+            unsafe {
+                assert!(2u == position(p, |c| *c == 'l' as c_char));
+                assert!(4u == position(p, |c| *c == 'o' as c_char));
+                assert!(5u == position(p, |c| *c == 0 as c_char));
+            }
         }
     }
 
     #[test]
     fn test_buf_len() {
-        let s0 = ~"hello";
-        let s1 = ~"there";
-        let s2 = ~"thing";
-        do s0.as_c_str |p0| {
-            do s1.as_c_str |p1| {
-                do s2.as_c_str |p2| {
+        do "hello".to_c_str().with_ref |p0| {
+            do "there".to_c_str().with_ref |p1| {
+                do "thing".to_c_str().with_ref |p2| {
                     let v = ~[p0, p1, p2, null()];
                     do v.as_imm_buf |vp, len| {
                         assert_eq!(unsafe { buf_len(vp) }, 3u);
@@ -580,66 +620,75 @@ pub mod ptr_tests {
     #[test]
     fn test_ptr_array_each_with_len() {
         unsafe {
-            let one = ~"oneOne";
-            let two = ~"twoTwo";
-            let three = ~"threeThree";
-            let arr: ~[*i8] = ~[
-                ::cast::transmute(&one[0]),
-                ::cast::transmute(&two[0]),
-                ::cast::transmute(&three[0]),
+            let one = "oneOne".to_c_str();
+            let two = "twoTwo".to_c_str();
+            let three = "threeThree".to_c_str();
+            let arr = ~[
+                one.with_ref(|buf| buf),
+                two.with_ref(|buf| buf),
+                three.with_ref(|buf| buf),
             ];
             let expected_arr = [
                 one, two, three
             ];
-            let arr_ptr = &arr[0];
-            let mut ctr = 0;
-            let mut iteration_count = 0;
-            array_each_with_len(arr_ptr, arr.len(),
-                                |e| {
-                                         let actual = str::raw::from_c_str(e);
-                                         let expected = expected_arr[ctr].clone();
-                                         debug!(
-                                             "test_ptr_array_each e: %s, a: %s",
-                                             expected, actual);
-                                         assert_eq!(actual, expected);
-                                         ctr += 1;
-                                         iteration_count += 1;
-                                     });
-            assert_eq!(iteration_count, 3u);
+
+            do arr.as_imm_buf |arr_ptr, arr_len| {
+                let mut ctr = 0;
+                let mut iteration_count = 0;
+                do array_each_with_len(arr_ptr, arr_len) |e| {
+                     let actual = str::raw::from_c_str(e);
+                     let expected = do expected_arr[ctr].with_ref |buf| {
+                         str::raw::from_c_str(buf)
+                     };
+                     debug!(
+                         "test_ptr_array_each_with_len e: %s, a: %s",
+                         expected, actual);
+                     assert_eq!(actual, expected);
+                     ctr += 1;
+                     iteration_count += 1;
+                 }
+                assert_eq!(iteration_count, 3u);
+            }
         }
     }
+
     #[test]
     fn test_ptr_array_each() {
         unsafe {
-            let one = ~"oneOne";
-            let two = ~"twoTwo";
-            let three = ~"threeThree";
-            let arr: ~[*i8] = ~[
-                ::cast::transmute(&one[0]),
-                ::cast::transmute(&two[0]),
-                ::cast::transmute(&three[0]),
+            let one = "oneOne".to_c_str();
+            let two = "twoTwo".to_c_str();
+            let three = "threeThree".to_c_str();
+            let arr = ~[
+                one.with_ref(|buf| buf),
+                two.with_ref(|buf| buf),
+                three.with_ref(|buf| buf),
                 // fake a null terminator
-                0 as *i8
+                null(),
             ];
             let expected_arr = [
                 one, two, three
             ];
-            let arr_ptr = &arr[0];
-            let mut ctr = 0;
-            let mut iteration_count = 0;
-            array_each(arr_ptr, |e| {
-                let actual = str::raw::from_c_str(e);
-                let expected = expected_arr[ctr].clone();
-                debug!(
-                    "test_ptr_array_each e: %s, a: %s",
-                    expected, actual);
-                assert_eq!(actual, expected);
-                ctr += 1;
-                iteration_count += 1;
-            });
-            assert_eq!(iteration_count, 3);
+
+            do arr.as_imm_buf |arr_ptr, arr_len| {
+                let mut ctr = 0;
+                let mut iteration_count = 0;
+                do array_each(arr_ptr) |e| {
+                     let actual = str::raw::from_c_str(e);
+                     let expected = do expected_arr[ctr].with_ref |buf| {
+                         str::raw::from_c_str(buf)
+                     };
+                     debug!(
+                         "test_ptr_array_each e: %s, a: %s",
+                         expected, actual);
+                     assert_eq!(actual, expected);
+                     ctr += 1;
+                     iteration_count += 1;
+                 }
+                assert_eq!(iteration_count, 3);
+            }
         }
     }
+
     #[test]
     #[should_fail]
     #[ignore(cfg(windows))]

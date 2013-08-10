@@ -85,7 +85,7 @@ use parse::obsolete::{ObsoleteConstItem, ObsoleteFixedLengthVectorType};
 use parse::obsolete::{ObsoleteNamedExternModule, ObsoleteMultipleLocalDecl};
 use parse::obsolete::{ObsoleteMutWithMultipleBindings};
 use parse::obsolete::{ObsoleteExternVisibility, ObsoleteUnsafeExternFn};
-use parse::obsolete::{ParserObsoleteMethods};
+use parse::obsolete::{ParserObsoleteMethods, ObsoletePrivVisibility};
 use parse::token::{can_begin_expr, get_ident_interner, ident_to_str, is_ident};
 use parse::token::{is_ident_or_path};
 use parse::token::{is_plain_ident, INTERPOLATED, keywords, special_idents};
@@ -814,7 +814,7 @@ impl Parser {
             let attrs = p.parse_outer_attributes();
             let lo = p.span.lo;
 
-            let vis = p.parse_visibility();
+            let vis = p.parse_non_priv_visibility();
             let pur = p.parse_fn_purity();
             // NB: at the moment, trait methods are public by default; this
             // could change.
@@ -1313,7 +1313,7 @@ impl Parser {
 
         // If the path might have bounds on it, they should be parsed before
         // the parameters, e.g. module::TraitName:B1+B2<T>
-        before_tps.map_consume(|callback| callback());
+        before_tps.map_move(|callback| callback());
 
         // Parse the (obsolete) trailing region parameter, if any, which will
         // be written "foo/&x"
@@ -3608,7 +3608,7 @@ impl Parser {
         let attrs = self.parse_outer_attributes();
         let lo = self.span.lo;
 
-        let visa = self.parse_visibility();
+        let visa = self.parse_non_priv_visibility();
         let pur = self.parse_fn_purity();
         let ident = self.parse_ident();
         let generics = self.parse_generics();
@@ -3871,6 +3871,18 @@ impl Parser {
         else { inherited }
     }
 
+    // parse visibility, but emits an obsolete error if it's private
+    fn parse_non_priv_visibility(&self) -> visibility {
+        match self.parse_visibility() {
+            public => public,
+            inherited => inherited,
+            private => {
+                self.obsolete(*self.last_span, ObsoletePrivVisibility);
+                inherited
+            }
+        }
+    }
+
     fn parse_staticness(&self) -> bool {
         if self.eat_keyword(keywords::Static) {
             self.obsolete(*self.last_span, ObsoleteStaticMethod);
@@ -4063,7 +4075,7 @@ impl Parser {
     // parse a function declaration from a foreign module
     fn parse_item_foreign_fn(&self,  attrs: ~[Attribute]) -> @foreign_item {
         let lo = self.span.lo;
-        let vis = self.parse_visibility();
+        let vis = self.parse_non_priv_visibility();
 
         // Parse obsolete purity.
         let purity = self.parse_fn_purity();
@@ -4169,8 +4181,16 @@ impl Parser {
                                  self.this_token_to_str()));
         }
 
-        let (sort, ident) = match *self.token {
-            token::IDENT(*) => (ast::named, self.parse_ident()),
+        let (sort, maybe_path, ident) = match *self.token {
+            token::IDENT(*) => {
+                let the_ident = self.parse_ident();
+                let path = if *self.token == token::EQ {
+                    self.bump();
+                    Some(self.parse_str())
+                }
+                else { None };
+                (ast::named, path, the_ident)
+            }
             _ => {
                 if must_be_named_mod {
                     self.span_fatal(*self.span,
@@ -4179,7 +4199,7 @@ impl Parser {
                                          self.this_token_to_str()));
                 }
 
-                (ast::anonymous,
+                (ast::anonymous, None,
                  special_idents::clownshoes_foreign_mod)
             }
         };
@@ -4218,7 +4238,7 @@ impl Parser {
         let metadata = self.parse_optional_meta();
         self.expect(&token::SEMI);
         iovi_view_item(ast::view_item {
-            node: view_item_extern_mod(ident, metadata, self.get_id()),
+            node: view_item_extern_mod(ident, maybe_path, metadata, self.get_id()),
             attrs: attrs,
             vis: visibility,
             span: mk_sp(lo, self.last_span.hi)
@@ -4443,7 +4463,7 @@ impl Parser {
         maybe_whole!(iovi self, nt_item);
         let lo = self.span.lo;
 
-        let visibility = self.parse_visibility();
+        let visibility = self.parse_non_priv_visibility();
 
         // must be a view item:
         if self.eat_keyword(keywords::Use) {
@@ -4575,7 +4595,7 @@ impl Parser {
         maybe_whole!(iovi self, nt_item);
         let lo = self.span.lo;
 
-        let visibility = self.parse_visibility();
+        let visibility = self.parse_non_priv_visibility();
 
         if (self.is_keyword(keywords::Const) || self.is_keyword(keywords::Static)) {
             // FOREIGN CONST ITEM
@@ -4800,8 +4820,13 @@ impl Parser {
         } else if self.eat_keyword(keywords::Extern) {
             self.expect_keyword(keywords::Mod);
             let ident = self.parse_ident();
+            let path = if *self.token == token::EQ {
+                self.bump();
+                Some(self.parse_str())
+            }
+            else { None };
             let metadata = self.parse_optional_meta();
-            view_item_extern_mod(ident, metadata, self.get_id())
+            view_item_extern_mod(ident, path, metadata, self.get_id())
         } else {
             self.bug("expected view item");
         };

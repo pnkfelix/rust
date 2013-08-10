@@ -8,9 +8,19 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Just a test that new-style extern mods parse
+enum E {
+    Foo{f : int},
+    Bar
+}
 
-// xfail-test FIXME #6407
-extern mod test = "github.com/catamorphism/test-pkg";
-
-fn main() {}
+pub fn main() {
+    let e = Foo{f: 1};
+    match e {
+        Foo{_} => (),
+        _ => fail!(),
+    }
+    match e {
+        Foo{f: _f} => (),
+        _ => fail!(),
+    }
+}

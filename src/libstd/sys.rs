@@ -12,23 +12,14 @@
 
 #[allow(missing_doc)];
 
+use c_str::ToCStr;
 use cast;
 use io;
 use libc;
 use libc::{c_char, size_t};
 use repr;
-use str::StrSlice;
 use str;
 use unstable::intrinsics;
-
-pub mod rustrt {
-    use libc::{c_char, size_t};
-
-    extern {
-        #[rust_stack]
-        pub fn rust_upcall_fail(expr: *c_char, file: *c_char, line: size_t);
-    }
-}
 
 /// Returns the size of a type
 #[inline]
@@ -114,8 +105,8 @@ pub trait FailWithCause {
 
 impl FailWithCause for ~str {
     fn fail_with(cause: ~str, file: &'static str, line: uint) -> ! {
-        do cause.as_c_str |msg_buf| {
-            do file.as_c_str |file_buf| {
+        do cause.to_c_str().with_ref |msg_buf| {
+            do file.to_c_str().with_ref |file_buf| {
                 begin_unwind_(msg_buf, file_buf, line as libc::size_t)
             }
         }
@@ -124,8 +115,8 @@ impl FailWithCause for ~str {
 
 impl FailWithCause for &'static str {
     fn fail_with(cause: &'static str, file: &'static str, line: uint) -> ! {
-        do cause.as_c_str |msg_buf| {
-            do file.as_c_str |file_buf| {
+        do cause.to_c_str().with_ref |msg_buf| {
+            do file.to_c_str().with_ref |file_buf| {
                 begin_unwind_(msg_buf, file_buf, line as libc::size_t)
             }
         }
@@ -136,55 +127,44 @@ impl FailWithCause for &'static str {
 pub fn begin_unwind_(msg: *c_char, file: *c_char, line: size_t) -> ! {
     use either::Left;
     use option::{Some, None};
-    use rt::{context, OldTaskContext, TaskContext};
+    use rt::in_green_task_context;
     use rt::task::Task;
     use rt::local::Local;
     use rt::logging::Logger;
     use str::Str;
 
-    let context = context();
-    match context {
-        OldTaskContext => {
-            unsafe {
-                rustrt::rust_upcall_fail(msg, file, line);
-                cast::transmute(())
+    unsafe {
+        // XXX: Bad re-allocations. fail! needs some refactoring
+        let msg = str::raw::from_c_str(msg);
+        let file = str::raw::from_c_str(file);
+
+        // XXX: Logging doesn't work correctly in non-task context because it
+        // invokes the local heap
+        if in_green_task_context() {
+            // XXX: Logging doesn't work here - the check to call the log
+            // function never passes - so calling the log function directly.
+            do Local::borrow::<Task, ()> |task| {
+                let msg = match task.name {
+                    Some(ref name) =>
+                    fmt!("task '%s' failed at '%s', %s:%i",
+                         name.as_slice(), msg, file, line as int),
+                    None =>
+                    fmt!("task <unnamed> failed at '%s', %s:%i",
+                         msg, file, line as int)
+                };
+
+                task.logger.log(Left(msg));
             }
+        } else {
+            rterrln!("failed in non-task context at '%s', %s:%i",
+                     msg, file, line as int);
         }
-        _ => {
-            unsafe {
-                // XXX: Bad re-allocations. fail! needs some refactoring
-                let msg = str::raw::from_c_str(msg);
-                let file = str::raw::from_c_str(file);
 
-                // XXX: Logging doesn't work correctly in non-task context because it
-                // invokes the local heap
-                if context == TaskContext {
-                    // XXX: Logging doesn't work here - the check to call the log
-                    // function never passes - so calling the log function directly.
-                    do Local::borrow::<Task, ()> |task| {
-                        let msg = match task.name {
-                            Some(ref name) =>
-                                fmt!("task '%s' failed at '%s', %s:%i",
-                                     name.as_slice(), msg, file, line as int),
-                            None =>
-                                fmt!("task <unnamed> failed at '%s', %s:%i",
-                                     msg, file, line as int)
-                        };
-
-                        task.logger.log(Left(msg));
-                    }
-                } else {
-                    rterrln!("failed in non-task context at '%s', %s:%i",
-                             msg, file, line as int);
-                }
-
-                let task = Local::unsafe_borrow::<Task>();
-                if (*task).unwinder.unwinding {
-                    rtabort!("unwinding again");
-                }
-                (*task).unwinder.begin_unwind();
-            }
+        let task = Local::unsafe_borrow::<Task>();
+        if (*task).unwinder.unwinding {
+            rtabort!("unwinding again");
         }
+        (*task).unwinder.begin_unwind();
     }
 }
 

@@ -10,40 +10,27 @@
 
 //! Runtime environment settings
 
-use libc::{size_t, c_char, c_int};
+use from_str::FromStr;
+use option::{Some, None};
+use os;
 
-pub struct Environment {
-    /// The number of threads to use by default
-    num_sched_threads: size_t,
-    /// The minimum size of a stack segment
-    min_stack_size: size_t,
-    /// The maximum amount of total stack per task before aborting
-    max_stack_size: size_t,
-    /// The default logging configuration
-    logspec: *c_char,
-    /// Record and report detailed information about memory leaks
-    detailed_leaks: bool,
-    /// Seed the random number generator
-    rust_seed: *c_char,
-    /// Poison allocations on free
-    poison_on_free: bool,
-    /// The argc value passed to main
-    argc: c_int,
-    /// The argv value passed to main
-    argv: **c_char,
-    /// Print GC debugging info (true if env var RUST_DEBUG_MEM is set)
-    debug_mem: bool,
-    /// Print GC debugging info (true if env var RUST_DEBUG_BORROW is set)
-    debug_borrow: bool,
+// Note that these are all accessed without any synchronization.
+// They are expected to be initialized once then left alone.
+
+static mut MIN_STACK: uint = 2000000;
+
+pub fn init() {
+    unsafe {
+        match os::getenv("RUST_MIN_STACK") {
+            Some(s) => match FromStr::from_str(s) {
+                Some(i) => MIN_STACK = i,
+                None => ()
+            },
+            None => ()
+        }
+    }
 }
 
-/// Get the global environment settings
-/// # Safety Note
-/// This will abort the process if run outside of task context
-pub fn get() -> &Environment {
-    unsafe { rust_get_rt_env() }
-}
-
-extern {
-    fn rust_get_rt_env() -> &Environment;
+pub fn min_stack() -> uint {
+    unsafe { MIN_STACK }
 }

@@ -164,19 +164,20 @@ pub mod trie;
 
 pub mod task;
 pub mod comm;
-pub mod pipes;
 pub mod local_data;
 
 
 /* Runtime and platform support */
 
 pub mod libc;
+pub mod c_str;
 pub mod os;
 pub mod path;
 pub mod rand;
 pub mod run;
 pub mod sys;
 pub mod cast;
+pub mod fmt;
 pub mod repr;
 pub mod cleanup;
 pub mod reflect;
@@ -212,8 +213,9 @@ mod std {
     pub use kinds;
     pub use local_data;
     pub use sys;
-    pub use pipes;
     pub use unstable;
     pub use str;
     pub use os;
+    pub use fmt;
+    pub use to_bytes;
 }

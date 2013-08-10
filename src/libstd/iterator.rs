@@ -18,9 +18,9 @@ implementing the `Iterator` trait.
 */
 
 use cmp;
-use num::{Zero, One, Saturating};
+use num::{Zero, One, Integer, Saturating};
 use option::{Option, Some, None};
-use ops::{Add, Mul};
+use ops::{Add, Mul, Sub};
 use cmp::Ord;
 use clone::Clone;
 use uint;
@@ -313,7 +313,7 @@ pub trait IteratorUtil<A> {
     /// ~~~ {.rust}
     /// let xs = [2u, 3];
     /// let ys = [0u, 1, 0, 1, 2];
-    /// let mut it = xs.iter().flat_map_(|&x| Counter::new(0u, 1).take_(x));
+    /// let mut it = xs.iter().flat_map_(|&x| count(0u, 1).take_(x));
     /// // Check that `it` has the same elements as `ys`
     /// let mut i = 0;
     /// for x: uint in it {
@@ -351,7 +351,7 @@ pub trait IteratorUtil<A> {
     /// ~~~ {.rust}
     /// use std::iterator::Counter;
     ///
-    /// for i in Counter::new(0, 10) {
+    /// for i in count(0, 10) {
     ///     printfln!("%d", i);
     /// }
     /// ~~~
@@ -674,7 +674,7 @@ impl<A, T: Iterator<A>> IteratorUtil<A> for T {
                     Some((y, y_val))
                 }
             }
-        }).map_consume(|(x, _)| x)
+        }).map_move(|(x, _)| x)
     }
 
     #[inline]
@@ -689,7 +689,7 @@ impl<A, T: Iterator<A>> IteratorUtil<A> for T {
                     Some((y, y_val))
                 }
             }
-        }).map_consume(|(x, _)| x)
+        }).map_move(|(x, _)| x)
     }
 }
 
@@ -723,7 +723,7 @@ pub trait MultiplicativeIterator<A> {
     /// use std::iterator::Counter;
     ///
     /// fn factorial(n: uint) -> uint {
-    ///     Counter::new(1u, 1).take_while(|&i| i <= n).product()
+    ///     count(1u, 1).take_while(|&i| i <= n).product()
     /// }
     /// assert!(factorial(0) == 1);
     /// assert!(factorial(1) == 1);
@@ -790,7 +790,7 @@ pub trait ClonableIterator {
     /// # Example
     ///
     /// ~~~ {.rust}
-    /// let a = Counter::new(1,1).take_(1);
+    /// let a = count(1,1).take_(1);
     /// let mut cy = a.cycle();
     /// assert_eq!(cy.next(), Some(1));
     /// assert_eq!(cy.next(), Some(1));
@@ -1300,10 +1300,9 @@ pub struct Take<T> {
 impl<A, T: Iterator<A>> Iterator<A> for Take<T> {
     #[inline]
     fn next(&mut self) -> Option<A> {
-        let next = self.iter.next();
         if self.n != 0 {
             self.n -= 1;
-            next
+            self.iter.next()
         } else {
             None
         }
@@ -1383,7 +1382,7 @@ impl<'self, A, T: Iterator<A>, B, U: Iterator<B>> Iterator<B> for
                     return Some(x)
                 }
             }
-            match self.iter.next().map_consume(|x| (self.f)(x)) {
+            match self.iter.next().map_move(|x| (self.f)(x)) {
                 None => return self.backiter.chain_mut_ref(|it| it.next()),
                 next => self.frontiter = next,
             }
@@ -1415,7 +1414,7 @@ impl<'self,
                     y => return y
                 }
             }
-            match self.iter.next_back().map_consume(|x| (self.f)(x)) {
+            match self.iter.next_back().map_move(|x| (self.f)(x)) {
                 None => return self.frontiter.chain_mut_ref(|it| it.next_back()),
                 next => self.backiter = next,
             }
@@ -1512,12 +1511,10 @@ pub struct Counter<A> {
     step: A
 }
 
-impl<A> Counter<A> {
-    /// Creates a new counter with the specified start/step
-    #[inline]
-    pub fn new(start: A, step: A) -> Counter<A> {
-        Counter{state: start, step: step}
-    }
+/// Creates a new counter with the specified start/step
+#[inline]
+pub fn count<A>(start: A, step: A) -> Counter<A> {
+    Counter{state: start, step: step}
 }
 
 /// A range of numbers from [0, N)
@@ -1534,13 +1531,29 @@ pub fn range<A: Add<A, A> + Ord + Clone + One>(start: A, stop: A) -> Range<A> {
     Range{state: start, stop: stop, one: One::one()}
 }
 
-impl<A: Add<A, A> + Ord + Clone + One> Iterator<A> for Range<A> {
+impl<A: Add<A, A> + Ord + Clone> Iterator<A> for Range<A> {
     #[inline]
     fn next(&mut self) -> Option<A> {
         if self.state < self.stop {
             let result = self.state.clone();
             self.state = self.state + self.one;
             Some(result)
+        } else {
+            None
+        }
+    }
+}
+
+impl<A: Sub<A, A> + Integer + Ord + Clone> DoubleEndedIterator<A> for Range<A> {
+    #[inline]
+    fn next_back(&mut self) -> Option<A> {
+        if self.stop > self.state {
+            // Integer doesn't technically define this rule, but we're going to assume that every
+            // Integer is reachable from every other one by adding or subtracting enough Ones. This
+            // seems like a reasonable-enough rule that every Integer should conform to, even if it
+            // can't be statically checked.
+            self.stop = self.stop - self.one;
+            Some(self.stop.clone())
         } else {
             None
         }
@@ -1604,7 +1617,7 @@ mod tests {
 
     #[test]
     fn test_counter_from_iter() {
-        let mut it = Counter::new(0, 5).take_(10);
+        let mut it = count(0, 5).take_(10);
         let xs: ~[int] = FromIterator::from_iterator(&mut it);
         assert_eq!(xs, ~[0, 5, 10, 15, 20, 25, 30, 35, 40, 45]);
     }
@@ -1622,7 +1635,7 @@ mod tests {
         }
         assert_eq!(i, expected.len());
 
-        let ys = Counter::new(30u, 10).take_(4);
+        let ys = count(30u, 10).take_(4);
         let mut it = xs.iter().transform(|&x| x).chain_(ys);
         let mut i = 0;
         for x in it {
@@ -1634,7 +1647,7 @@ mod tests {
 
     #[test]
     fn test_filter_map() {
-        let mut it = Counter::new(0u, 1u).take_(10)
+        let mut it = count(0u, 1u).take_(10)
             .filter_map(|x| if x.is_even() { Some(x*x) } else { None });
         assert_eq!(it.collect::<~[uint]>(), ~[0*0, 2*2, 4*4, 6*6, 8*8]);
     }
@@ -1723,7 +1736,7 @@ mod tests {
     fn test_iterator_flat_map() {
         let xs = [0u, 3, 6];
         let ys = [0u, 1, 2, 3, 4, 5, 6, 7, 8];
-        let mut it = xs.iter().flat_map_(|&x| Counter::new(x, 1).take_(3));
+        let mut it = xs.iter().flat_map_(|&x| count(x, 1).take_(3));
         let mut i = 0;
         for x in it {
             assert_eq!(x, ys[i]);
@@ -1770,13 +1783,13 @@ mod tests {
     #[test]
     fn test_cycle() {
         let cycle_len = 3;
-        let it = Counter::new(0u, 1).take_(cycle_len).cycle();
+        let it = count(0u, 1).take_(cycle_len).cycle();
         assert_eq!(it.size_hint(), (uint::max_value, None));
         for (i, x) in it.take_(100).enumerate() {
             assert_eq!(i % cycle_len, x);
         }
 
-        let mut it = Counter::new(0u, 1).take_(0).cycle();
+        let mut it = count(0u, 1).take_(0).cycle();
         assert_eq!(it.size_hint(), (0, Some(0)));
         assert_eq!(it.next(), None);
     }
@@ -1838,7 +1851,7 @@ mod tests {
 
     #[test]
     fn test_iterator_size_hint() {
-        let c = Counter::new(0, 1);
+        let c = count(0, 1);
         let v = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
         let v2 = &[10, 11, 12];
         let vi = v.iter();
@@ -2123,5 +2136,18 @@ mod tests {
         let empty: &[int] = [];
         check_randacc_iter(xs.iter().cycle().take_(27), 27);
         check_randacc_iter(empty.iter().cycle(), 0);
+    }
+
+    #[test]
+    fn test_double_ended_range() {
+        assert_eq!(range(11i, 14).invert().collect::<~[int]>(), ~[13i, 12, 11]);
+        for _ in range(10i, 0).invert() {
+            fail!("unreachable");
+        }
+
+        assert_eq!(range(11u, 14).invert().collect::<~[uint]>(), ~[13u, 12, 11]);
+        for _ in range(10u, 0).invert() {
+            fail!("unreachable");
+        }
     }
 }

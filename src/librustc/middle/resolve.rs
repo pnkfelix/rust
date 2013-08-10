@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2013 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -13,7 +13,7 @@ use driver::session::Session;
 use metadata::csearch::{each_path, get_trait_method_def_ids};
 use metadata::csearch::get_method_name_and_explicit_self;
 use metadata::csearch::get_static_methods_if_impl;
-use metadata::csearch::get_type_name_if_impl;
+use metadata::csearch::{get_type_name_if_impl, get_struct_fields};
 use metadata::cstore::find_extern_mod_stmt_cnum;
 use metadata::decoder::{def_like, dl_def, dl_field, dl_impl};
 use middle::lang_items::LanguageItems;
@@ -1487,9 +1487,10 @@ impl Resolver {
                 }
             }
 
-            view_item_extern_mod(name, _, node_id) => {
+            view_item_extern_mod(name, _, _, node_id) => {
+                // n.b. we don't need to look at the path option here, because cstore already did
                 match find_extern_mod_stmt_cnum(self.session.cstore,
-                                                node_id) {
+                                                        node_id) {
                     Some(crate_id) => {
                         let def_id = def_id { crate: crate_id, node: 0 };
                         let parent_link = ModuleParentLink
@@ -1700,9 +1701,12 @@ impl Resolver {
           }
           def_struct(def_id) => {
             debug!("(building reduced graph for external \
-                    crate) building type %s",
+                    crate) building type and value for %s",
                    final_ident);
             child_name_bindings.define_type(privacy, def, dummy_sp());
+            if get_struct_fields(self.session.cstore, def_id).len() == 0 {
+                child_name_bindings.define_value(privacy, def, dummy_sp());
+            }
             self.structs.insert(def_id);
           }
           def_method(*) => {
@@ -3358,7 +3362,7 @@ impl Resolver {
                   // item, it's ok
                   match def {
                     def_ty_param(did, _)
-                        if self.def_map.find(&did.node).map_consume(|x| *x)
+                        if self.def_map.find(&did.node).map_move(|x| *x)
                             == Some(def_typaram_binder(item_id)) => {
                       // ok
                     }
@@ -4991,7 +4995,9 @@ impl Resolver {
                             if self.structs.contains(&class_id) => {
                         self.record_def(expr.id, definition);
                     }
-                    _ => {
+                    result => {
+                        debug!("(resolving expression) didn't find struct \
+                                def: %?", result);
                         self.session.span_err(
                             path.span,
                             fmt!("`%s` does not name a structure",

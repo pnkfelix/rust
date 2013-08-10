@@ -596,14 +596,14 @@ mod tests {
             let (c,p) = (Cell::new(c), Cell::new(p));
             do task::spawn || {
                 // wait until parent gets in
-                comm::recv_one(p.take());
+                p.take().recv();
                 do arc2.access_cond |state, cond| {
                     *state = true;
                     cond.signal();
                 }
             }
             do arc.access_cond |state, cond| {
-                comm::send_one(c.take(), ());
+                c.take().send(());
                 assert!(!*state);
                 while !*state {
                     cond.wait();
@@ -611,6 +611,7 @@ mod tests {
             }
         }
     }
+
     #[test] #[should_fail] #[ignore(cfg(windows))]
     fn test_arc_condvar_poison() {
         unsafe {
@@ -846,22 +847,16 @@ mod tests {
                 }
                 assert_eq!(*state, 42);
                 *state = 31337;
-                // FIXME: #7372: hits type inference bug with iterators
                 // send to other readers
-                for i in range(0u, reader_convos.len()) {
-                    match reader_convos[i] {
-                        (ref rc, _) => rc.send(()),
-                    }
+                for &(ref rc, _) in reader_convos.iter() {
+                    rc.send(())
                 }
             }
             let read_mode = arc.downgrade(write_mode);
             do (&read_mode).read |state| {
-                // FIXME: #7372: hits type inference bug with iterators
                 // complete handshake with other readers
-                for i in range(0u, reader_convos.len()) {
-                    match reader_convos[i] {
-                        (_, ref rp) => rp.recv(),
-                    }
+                for &(_, ref rp) in reader_convos.iter() {
+                    rp.recv()
                 }
                 wc1.send(()); // tell writer to try again
                 assert_eq!(*state, 31337);

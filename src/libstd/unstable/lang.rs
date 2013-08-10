@@ -10,34 +10,14 @@
 
 //! Runtime calls emitted by the compiler.
 
+use c_str::ToCStr;
 use cast::transmute;
-use libc::{c_char, c_uchar, c_void, size_t, uintptr_t, c_int};
+use libc::{c_char, c_uchar, c_void, size_t, uintptr_t};
 use str;
 use sys;
-use rt::{context, OldTaskContext};
 use rt::task::Task;
 use rt::local::Local;
 use rt::borrowck;
-
-#[allow(non_camel_case_types)]
-pub type rust_task = c_void;
-
-pub mod rustrt {
-    use unstable::lang::rust_task;
-    use libc::{c_char, uintptr_t};
-
-    extern {
-        #[rust_stack]
-        pub fn rust_upcall_malloc(td: *c_char, size: uintptr_t) -> *c_char;
-        #[rust_stack]
-        pub fn rust_upcall_free(ptr: *c_char);
-        #[fast_ffi]
-        pub fn rust_upcall_malloc_noswitch(td: *c_char, size: uintptr_t)
-                                           -> *c_char;
-        #[rust_stack]
-        pub fn rust_try_get_task() -> *rust_task;
-    }
-}
 
 #[lang="fail_"]
 pub fn fail_(expr: *c_char, file: *c_char, line: size_t) -> ! {
@@ -49,25 +29,21 @@ pub fn fail_bounds_check(file: *c_char, line: size_t,
                          index: size_t, len: size_t) {
     let msg = fmt!("index out of bounds: the len is %d but the index is %d",
                     len as int, index as int);
-    do msg.as_c_str |buf| {
+    do msg.to_c_str().with_ref |buf| {
         fail_(buf, file, line);
     }
 }
 
 #[lang="malloc"]
 pub unsafe fn local_malloc(td: *c_char, size: uintptr_t) -> *c_char {
-    match context() {
-        OldTaskContext => {
-            return rustrt::rust_upcall_malloc_noswitch(td, size);
-        }
-        _ => {
-            let mut alloc = ::ptr::null();
-            do Local::borrow::<Task,()> |task| {
-                alloc = task.heap.alloc(td as *c_void, size as uint) as *c_char;
-            }
-            return alloc;
-        }
+    let mut alloc = ::ptr::null();
+    do Local::borrow::<Task,()> |task| {
+        rtdebug!("task pointer: %x, heap pointer: %x",
+                 ::borrow::to_uint(task),
+                 ::borrow::to_uint(&task.heap));
+        alloc = task.heap.alloc(td as *c_void, size as uint) as *c_char;
     }
+    return alloc;
 }
 
 // NB: Calls to free CANNOT be allowed to fail, as throwing an exception from
@@ -132,23 +108,11 @@ pub unsafe fn annihilate() {
 pub fn start(main: *u8, argc: int, argv: **c_char,
              crate_map: *u8) -> int {
     use rt;
-    use os;
 
     unsafe {
-        let use_old_rt = os::getenv("RUST_NEWRT").is_none();
-        if use_old_rt {
-            return rust_start(main as *c_void, argc as c_int, argv,
-                              crate_map as *c_void) as int;
-        } else {
-            return do rt::start(argc, argv as **u8, crate_map) {
-                let main: extern "Rust" fn() = transmute(main);
-                main();
-            };
-        }
-    }
-
-    extern {
-        fn rust_start(main: *c_void, argc: c_int, argv: **c_char,
-                      crate_map: *c_void) -> c_int;
+        return do rt::start(argc, argv as **u8, crate_map) {
+            let main: extern "Rust" fn() = transmute(main);
+            main();
+        };
     }
 }

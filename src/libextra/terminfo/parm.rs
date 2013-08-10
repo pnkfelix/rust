@@ -430,7 +430,7 @@ pub fn expand(cap: &[u8], params: &[Param], vars: &mut Variables)
 }
 
 #[deriving(Eq)]
-priv struct Flags {
+struct Flags {
     width: uint,
     precision: uint,
     alternate: bool,
@@ -440,13 +440,13 @@ priv struct Flags {
 }
 
 impl Flags {
-    priv fn new() -> Flags {
+    fn new() -> Flags {
         Flags{ width: 0, precision: 0, alternate: false,
                left: false, sign: false, space: false }
     }
 }
 
-priv enum FormatOp {
+enum FormatOp {
     FormatDigit,
     FormatOctal,
     FormatHex,
@@ -455,7 +455,7 @@ priv enum FormatOp {
 }
 
 impl FormatOp {
-    priv fn from_char(c: char) -> FormatOp {
+    fn from_char(c: char) -> FormatOp {
         match c {
             'd' => FormatDigit,
             'o' => FormatOctal,
@@ -465,7 +465,7 @@ impl FormatOp {
             _ => fail!("bad FormatOp char")
         }
     }
-    priv fn to_char(self) -> char {
+    fn to_char(self) -> char {
         match self {
             FormatDigit => 'd',
             FormatOctal => 'o',
@@ -476,7 +476,8 @@ impl FormatOp {
     }
 }
 
-priv fn format(val: Param, op: FormatOp, flags: Flags) -> Result<~[u8],~str> {
+#[cfg(stage0)]
+fn format(val: Param, op: FormatOp, flags: Flags) -> Result<~[u8],~str> {
     let mut s = match val {
         Number(d) => {
             match op {
@@ -545,8 +546,103 @@ priv fn format(val: Param, op: FormatOp, flags: Flags) -> Result<~[u8],~str> {
         String(s) => {
             match op {
                 FormatString => {
-                    let mut s = s.to_bytes_with_null();
-                    s.pop(); // remove the null
+                    let mut s = s.as_bytes().to_owned();
+                    if flags.precision > 0 && flags.precision < s.len() {
+                        s.truncate(flags.precision);
+                    }
+                    s
+                }
+                _ => {
+                    return Err(fmt!("non-string on stack with %%%c", op.to_char()))
+                }
+            }
+        }
+    };
+    if flags.width > s.len() {
+        let n = flags.width - s.len();
+        if flags.left {
+            s.grow(n, &(' ' as u8));
+        } else {
+            let mut s_ = vec::with_capacity(flags.width);
+            s_.grow(n, &(' ' as u8));
+            s_.push_all_move(s);
+            s = s_;
+        }
+    }
+    Ok(s)
+}
+
+#[cfg(not(stage0))]
+fn format(val: Param, op: FormatOp, flags: Flags) -> Result<~[u8],~str> {
+    let mut s = match val {
+        Number(d) => {
+            match op {
+                FormatString => {
+                    return Err(~"non-number on stack with %s")
+                }
+                _ => {
+                    let radix = match op {
+                        FormatDigit => 10,
+                        FormatOctal => 8,
+                        FormatHex|FormatHEX => 16,
+                        FormatString => util::unreachable()
+                    };
+                    let mut s = ~[];
+                    match op {
+                        FormatDigit => {
+                            let sign = if flags.sign { SignAll } else { SignNeg };
+                            do int_to_str_bytes_common(d, radix, sign) |c| {
+                                s.push(c);
+                            }
+                        }
+                        _ => {
+                            do int_to_str_bytes_common(d as uint, radix, SignNone) |c| {
+                                s.push(c);
+                            }
+                        }
+                    };
+                    if flags.precision > s.len() {
+                        let mut s_ = vec::with_capacity(flags.precision);
+                        let n = flags.precision - s.len();
+                        s_.grow(n, &('0' as u8));
+                        s_.push_all_move(s);
+                        s = s_;
+                    }
+                    assert!(!s.is_empty(), "string conversion produced empty result");
+                    match op {
+                        FormatDigit => {
+                            if flags.space && !(s[0] == '-' as u8 || s[0] == '+' as u8) {
+                                s.unshift(' ' as u8);
+                            }
+                        }
+                        FormatOctal => {
+                            if flags.alternate && s[0] != '0' as u8 {
+                                s.unshift('0' as u8);
+                            }
+                        }
+                        FormatHex => {
+                            if flags.alternate {
+                                let s_ = util::replace(&mut s, ~['0' as u8, 'x' as u8]);
+                                s.push_all_move(s_);
+                            }
+                        }
+                        FormatHEX => {
+                            s = s.into_ascii().to_upper().into_bytes();
+                            if flags.alternate {
+                                let s_ = util::replace(&mut s, ~['0' as u8, 'X' as u8]);
+                                s.push_all_move(s_);
+                            }
+                        }
+                        FormatString => util::unreachable()
+                    }
+                    s
+                }
+            }
+        }
+        String(s) => {
+            match op {
+                FormatString => {
+                    let mut s = s.as_bytes().to_owned();
                     if flags.precision > 0 && flags.precision < s.len() {
                         s.truncate(flags.precision);
                     }

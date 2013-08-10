@@ -19,6 +19,7 @@
 use std::borrow;
 use std::comm;
 use std::comm::SendDeferred;
+use std::comm::{GenericPort, Peekable};
 use std::task;
 use std::unstable::sync::{Exclusive, UnsafeAtomicRcBox};
 use std::unstable::atomics;
@@ -111,7 +112,7 @@ impl<Q:Send> Sem<Q> {
             /* do 1000.times { task::yield(); } */
             // Need to wait outside the exclusive.
             if waiter_nobe.is_some() {
-                let _ = comm::recv_one(waiter_nobe.unwrap());
+                let _ = waiter_nobe.unwrap().recv();
             }
         }
     }
@@ -235,7 +236,7 @@ impl<'self> Condvar<'self> {
                 do (|| {
                     unsafe {
                         do task::rekillable {
-                            let _ = comm::recv_one(WaitEnd.take_unwrap());
+                            let _ = WaitEnd.take_unwrap().recv();
                         }
                     }
                 }).finally {
@@ -935,6 +936,7 @@ mod tests {
         // child task must have finished by the time try returns
         do m.lock { }
     }
+    #[ignore(reason = "linked failure")]
     #[test] #[ignore(cfg(windows))]
     fn test_mutex_killed_cond() {
         // Getting killed during cond wait must not corrupt the mutex while
@@ -961,6 +963,7 @@ mod tests {
             assert!(!woken);
         }
     }
+    #[ignore(reason = "linked failure")]
     #[test] #[ignore(cfg(windows))]
     fn test_mutex_killed_broadcast() {
         use std::unstable::finally::Finally;

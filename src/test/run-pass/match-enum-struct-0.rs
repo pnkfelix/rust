@@ -8,14 +8,17 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-fn main() {
-    let _ = (~"foo").as_bytes_with_null();
-    let _ = (@"foo").as_bytes_with_null();
+// regression test for issue #5625
 
-    // a plain static slice is null terminated, but such a slice can
-    // be sliced shorter (i.e. become non-null terminated) and still
-    // have the static lifetime
-    let foo: &'static str = "foo";
-    let _ = foo.as_bytes_with_null();
-     //~^ ERROR does not implement any method in scope named `as_bytes_with_null`
+enum E {
+    Foo{f : int},
+    Bar
+}
+
+pub fn main() {
+    let e = Bar;
+    match e {
+        Foo{f: _f} => fail!(),
+        _ => (),
+    }
 }

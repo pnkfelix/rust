@@ -18,7 +18,7 @@ use arc::{Arc,RWArc};
 use treemap::TreeMap;
 
 use std::cell::Cell;
-use std::comm::{PortOne, oneshot, send_one, recv_one};
+use std::comm::{PortOne, oneshot};
 use std::either::{Either, Left, Right};
 use std::io;
 use std::run;
@@ -221,7 +221,7 @@ fn digest<T:Encodable<json::Encoder>>(t: &T) -> ~str {
 fn digest_file(path: &Path) -> ~str {
     let mut sha = ~Sha1::new();
     let s = io::read_whole_file_str(path);
-    (*sha).input_str(*s.get_ref());
+    (*sha).input_str(s.unwrap());
     (*sha).result_str()
 }
 
@@ -331,7 +331,7 @@ impl<'self> Prep<'self> {
                     };
                     let chan = chan.take();
                     let v = blk(&exe);
-                    send_one(chan, (exe, v));
+                    chan.send((exe, v));
                 }
                 Right(port)
             }
@@ -355,7 +355,7 @@ impl<'self, T:Send +
             None => fail!(),
             Some(Left(v)) => v,
             Some(Right(port)) => {
-                let (exe, v) = recv_one(port);
+                let (exe, v) = port.recv();
                 let s = json_encode(&v);
                 do prep.ctxt.db.write |db| {
                     db.cache(prep.fn_name,
@@ -378,7 +378,7 @@ fn test() {
     let pth = Path("foo.c");
     {
         let r = io::file_writer(&pth, [io::Create]);
-        r.get_ref().write_str("int main() { return 0; }");
+        r.unwrap().write_str("int main() { return 0; }");
     }
 
     let cx = Context::new(RWArc::new(Database::new(Path("db.json"))),

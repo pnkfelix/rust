@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// xfail-test reading from os::args()[1] - bogus!
+
 use std::from_str::FromStr;
 use std::os;
 use std::vec;
@@ -56,7 +58,7 @@ fn main() {
     let mut u = vec::from_elem(n, 1f64);
     let mut v = u.clone();
     let mut tmp = u.clone();
-    do 8.times {
+    for _ in range(0, 8u) {
         mult_AtAv(u, v, tmp);
         mult_AtAv(v, u, tmp);
     }

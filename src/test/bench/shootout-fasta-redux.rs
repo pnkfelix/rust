@@ -1,3 +1,5 @@
+// xfail-test reading from os::args()[1] - bogus!
+
 use std::cast::transmute;
 use std::from_str::FromStr;
 use std::libc::{FILE, STDOUT_FILENO, c_int, fdopen, fputc, fputs, fwrite, size_t};
@@ -164,7 +166,7 @@ impl RandomFasta {
             let chars_left = n % LINE_LEN;
             let mut buf = [0, ..LINE_LEN + 1];
 
-            do lines.times {
+            for _ in range(0, lines) {
                 for i in range(0u, LINE_LEN) {
                     buf[i] = self.nextc();
                 }

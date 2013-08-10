@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2013 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -578,6 +578,7 @@ pub fn build_target_config(sopts: @session::options,
     return target_cfg;
 }
 
+#[cfg(stage0)]
 pub fn host_triple() -> ~str {
     // Get the host triple out of the build environment. This ensures that our
     // idea of the host triple is the same as for the set of libraries we've
@@ -593,6 +594,19 @@ pub fn host_triple() -> ~str {
         } else {
             fail!("rustc built without CFG_COMPILER_TRIPLE")
         };
+}
+
+#[cfg(not(stage0))]
+pub fn host_triple() -> ~str {
+    // Get the host triple out of the build environment. This ensures that our
+    // idea of the host triple is the same as for the set of libraries we've
+    // actually built.  We can't just take LLVM's host triple because they
+    // normalize all ix86 architectures to i386.
+    //
+    // Instead of grabbing the host triple (for the current host), we grab (at
+    // compile time) the target triple that this rustc is built with and
+    // calling that (at runtime) the host triple.
+    (env!("CFG_COMPILER_TRIPLE")).to_owned()
 }
 
 pub fn build_session_options(binary: @str,
@@ -669,8 +683,7 @@ pub fn build_session_options(binary: @str,
         } else if opt_present(matches, "emit-llvm") {
             link::output_type_bitcode
         } else { link::output_type_exe };
-    let sysroot_opt = getopts::opt_maybe_str(matches, "sysroot");
-    let sysroot_opt = sysroot_opt.map(|m| @Path(*m));
+    let sysroot_opt = getopts::opt_maybe_str(matches, "sysroot").map_move(|m| @Path(m));
     let target_opt = getopts::opt_maybe_str(matches, "target");
     let target_feature_opt = getopts::opt_maybe_str(matches, "target-feature");
     let save_temps = getopts::opt_present(matches, "save-temps");
@@ -822,7 +835,8 @@ pub fn optgroups() -> ~[getopts::groups::OptGroup] {
   optmulti("", "cfg", "Configure the compilation
                           environment", "SPEC"),
   optflag("",  "emit-llvm",
-                        "Produce an LLVM bitcode file"),
+                        "Produce an LLVM assembly file if used with -S option;
+                         produce an LLVM bitcode file otherwise"),
   optflag("h", "help","Display this message"),
   optmulti("L", "",   "Add a directory to the library search path",
                               "PATH"),

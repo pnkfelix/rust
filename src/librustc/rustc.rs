@@ -117,10 +117,21 @@ mod std {
 }
 */
 
+#[cfg(stage0)]
 pub fn version(argv0: &str) {
     let mut vers = ~"unknown version";
     let env_vers = env!("CFG_VERSION");
     if env_vers.len() != 0 { vers = env_vers.to_owned(); }
+    printfln!("%s %s", argv0, vers);
+    printfln!("host: %s", host_triple());
+}
+
+#[cfg(not(stage0))]
+pub fn version(argv0: &str) {
+    let vers = match option_env!("CFG_VERSION") {
+        Some(vers) => vers,
+        None => "unknown version"
+    };
     printfln!("%s %s", argv0, vers);
     printfln!("host: %s", host_triple());
 }
@@ -136,7 +147,7 @@ Additional help:
 
 pub fn describe_warnings() {
     use extra::sort::Sort;
-    printfln!("
+    println("
 Available lint options:
     -W <foo>           Warn about <foo>
     -A <foo>           Allow <foo>
@@ -157,7 +168,7 @@ Available lint options:
     fn padded(max: uint, s: &str) -> ~str {
         str::from_bytes(vec::from_elem(max - s.len(), ' ' as u8)) + s
     }
-    printfln!("\nAvailable lint checks:\n");
+    println("\nAvailable lint checks:\n");
     printfln!("    %s  %7.7s  %s",
               padded(max_key, "name"), "default", "meaning");
     printfln!("    %s  %7.7s  %s\n",
@@ -173,7 +184,7 @@ Available lint options:
 }
 
 pub fn describe_debug_flags() {
-    printfln!("\nAvailable debug options:\n");
+    println("\nAvailable debug options:\n");
     let r = session::debugging_opts_map();
     for tuple in r.iter() {
         match *tuple {
@@ -249,13 +260,12 @@ pub fn run_compiler(args: &~[~str], demitter: diagnostic::Emitter) {
 
     let sopts = build_session_options(binary, matches, demitter);
     let sess = build_session(sopts, demitter);
-    let odir = getopts::opt_maybe_str(matches, "out-dir");
-    let odir = odir.map(|o| Path(*o));
-    let ofile = getopts::opt_maybe_str(matches, "o");
-    let ofile = ofile.map(|o| Path(*o));
+    let odir = getopts::opt_maybe_str(matches, "out-dir").map_move(|o| Path(o));
+    let ofile = getopts::opt_maybe_str(matches, "o").map_move(|o| Path(o));
     let cfg = build_configuration(sess, binary, &input);
-    let pretty = getopts::opt_default(matches, "pretty", "normal").map(
-                    |a| parse_pretty(sess, *a));
+    let pretty = do getopts::opt_default(matches, "pretty", "normal").map_move |a| {
+        parse_pretty(sess, a)
+    };
     match pretty {
       Some::<pp_mode>(ppm) => {
         pretty_print_input(sess, cfg, &input, ppm);
@@ -299,10 +309,18 @@ bug and need to present an error.
 */
 pub fn monitor(f: ~fn(diagnostic::Emitter)) {
     use std::comm::*;
+
+    // XXX: This is a hack for newsched since it doesn't support split stacks.
+    // rustc needs a lot of stack!
+    static STACK_SIZE: uint = 6000000;
+
     let (p, ch) = stream();
     let ch = SharedChan::new(ch);
     let ch_capture = ch.clone();
-    match do task::try || {
+    let mut task_builder = task::task();
+    task_builder.supervised();
+    task_builder.opts.stack_size = Some(STACK_SIZE);
+    match do task_builder.try {
         let ch = ch_capture.clone();
         let ch_capture = ch.clone();
         // The 'diagnostics emitter'. Every error, warning, etc. should

@@ -148,7 +148,8 @@ pub fn type_uses_for(ccx: @mut CrateContext, fn_id: def_id, n_tps: uint)
                     "visit_tydesc"  | "forget" | "frame_address" |
                     "morestack_addr" => 0,
 
-                    "offset" | "memcpy32" | "memcpy64" | "memmove32" | "memmove64" |
+                    "offset" | "offset_inbounds" |
+                    "memcpy32" | "memcpy64" | "memmove32" | "memmove64" |
                     "memset32" | "memset64" => use_repr,
 
                     "sqrtf32" | "sqrtf64" | "powif32" | "powif64" |
@@ -205,15 +206,8 @@ pub fn type_uses_for(ccx: @mut CrateContext, fn_id: def_id, n_tps: uint)
 
 pub fn type_needs(cx: &Context, use_: uint, ty: ty::t) {
     // Optimization -- don't descend type if all params already have this use
-    let len = {
-        let uses = &*cx.uses;
-        uses.len()
-    };
-    for i in range(0u, len) {
-        if cx.uses[i] & use_ != use_ {
-            type_needs_inner(cx, use_, ty, @Nil);
-            return;
-        }
+    if cx.uses.iter().any(|&elt| elt & use_ != use_) {
+        type_needs_inner(cx, use_, ty, @Nil);
     }
 }
 
