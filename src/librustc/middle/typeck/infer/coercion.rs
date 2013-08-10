@@ -294,8 +294,7 @@ impl Coerce {
                              ty::RegionTraitStore(r_a), m, b)
             }
             _ => {
-                tcx.sess.bug("coerce_borrowed_object: \
-                             trait type isn't a ty_trait.");
+                return self.subtype(a, b);
             }
         };
 

@@ -563,7 +563,6 @@ impl<'self> LookupContext<'self> {
                              autoderefs: uint)
                              -> (ty::t, ty::AutoAdjustment) {
         /*!
-         *
          * In the event that we are invoking a method with a receiver
          * of a borrowed type like `&T`, `&mut T`, or `&mut [T]`,
          * we will "reborrow" the receiver implicitly.  For example, if
@@ -605,6 +604,17 @@ impl<'self> LookupContext<'self> {
                  ty::AutoDerefRef(ty::AutoDerefRef {
                      autoderefs: autoderefs,
                      autoref: Some(ty::AutoBorrowVec(region, self_mt.mutbl))}))
+            }
+            ty_trait(did, ref substs, ty::RegionTraitStore(_), mutbl, bounds) => {
+                let region =
+                    self.infcx().next_region_var(
+                        infer::Autoref(self.expr.span));
+                (ty::mk_trait(tcx, did, substs.clone(),
+                              ty::RegionTraitStore(region),
+                              mutbl, bounds),
+                 ty::AutoDerefRef(ty::AutoDerefRef {
+                     autoderefs: autoderefs,
+                     autoref: Some(ty::AutoBorrowObj(region, mutbl))}))
             }
             _ => {
                 (self_ty,
