@@ -76,6 +76,7 @@ use std::local_data;
 use extra::time;
 use extra::sort;
 use syntax::ast::ident;
+use syntax::ast::provided;
 use syntax::ast_map::{path, path_elt_to_str, path_name};
 use syntax::ast_util::{local_def};
 use syntax::attr;
@@ -2232,6 +2233,7 @@ pub fn register_fn_llvmty(ccx: @mut CrateContext,
                           cc: lib::llvm::CallConv,
                           fn_ty: Type)
                           -> ValueRef {
+    debug!("register_fn_llvmty item %d", node_id);
     debug!("register_fn_fuller creating fn for item %d with path %s",
            node_id,
            ast_map::path_to_str(item_path(ccx, &node_id), token::get_ident_interner()));
@@ -2386,11 +2388,18 @@ pub fn fill_fn_pair(bcx: @mut Block, pair: ValueRef, llfn: ValueRef,
 }
 
 pub fn item_path(ccx: &CrateContext, id: &ast::NodeId) -> path {
-    match ccx.tcx.items.get_copy(id) {
+    let x = ccx.tcx.items.get_copy(id);
+    match x {
         ast_map::node_item(i, p) =>
             vec::append((*p).clone(), [path_name(i.ident)]),
+        ast_map::node_trait_method(@provided(m), _def_id, p) =>
+            vec::append((*p).clone(), [path_name(m.ident)]),
+        ast_map::node_method(m, _def_id, p) =>
+            vec::append((*p).clone(), [path_name(m.ident)]),
+        ast_map::node_variant(v, i, p) =>
+            vec::append((*p).clone(), [path_name(v.node.name)]),
         // separate map for paths?
-        _ => fail!("item_path")
+        _ => fail!("item_path: %?", x)
     }
 }
 
@@ -2439,6 +2448,7 @@ pub fn get_item_val(ccx: @mut CrateContext, id: ast::NodeId) -> ValueRef {
 
                         ast::item_fn(_, purity, _, _, _) => {
                             let llfn = if purity != ast::extern_fn {
+                                debug!("register_fn from node_item/item_fn");
                                 register_fn(ccx, i.span, sym, i.id, ty)
                             } else {
                                 foreign::register_foreign_fn(ccx, i.span, sym, i.id)
@@ -2489,6 +2499,7 @@ pub fn get_item_val(ccx: @mut CrateContext, id: ast::NodeId) -> ValueRef {
                             let path = vec::append((*pth).clone(), [path_name(ni.ident)]);
                             let sym = exported_name(ccx, path, ty, ni.attrs);
 
+                            debug!("register_fn from node_foreign_item");
                             register_fn(ccx, ni.span, sym, ni.id, ty)
                         }
                         ast::foreign_item_static(*) => {
@@ -2517,6 +2528,7 @@ pub fn get_item_val(ccx: @mut CrateContext, id: ast::NodeId) -> ValueRef {
 
                             llfn = match enm.node {
                                 ast::item_enum(_, _) => {
+                                    debug!("register_fn from node_variant/tuple_variant_kind/item_enum");
                                     register_fn(ccx, (*v).span, sym, id, ty)
                                 }
                                 _ => fail!("node_variant, shouldn't happen")
@@ -2541,6 +2553,7 @@ pub fn get_item_val(ccx: @mut CrateContext, id: ast::NodeId) -> ValueRef {
                             let ty = ty::node_id_to_type(ccx.tcx, ctor_id);
                             let sym = exported_name(ccx, (*struct_path).clone(), ty,
                                                     struct_item.attrs);
+                            debug!("register_fn from node_struct_ctor");
                             let llfn = register_fn(ccx, struct_item.span,
                                                    sym, ctor_id, ty);
                             set_inline_hint(llfn);
@@ -2577,6 +2590,7 @@ pub fn register_method(ccx: @mut CrateContext,
 
     let sym = exported_name(ccx, path, mty, m.attrs);
 
+    debug!("register_fn from register_method");
     let llfn = register_fn(ccx, m.span, sym, id, mty);
     set_inline_hint_if_appr(m.attrs, llfn);
     llfn
