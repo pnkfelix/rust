@@ -3821,9 +3821,9 @@ pub fn substd_enum_variants(cx: ctxt,
                             id: ast::def_id,
                             substs: &substs)
                          -> ~[@VariantInfo] {
-    do enum_variants(cx, id).iter().transform |variant_info| {
+    do enum_variants(cx, id).iter().map |variant_info| {
         let substd_args = variant_info.args.iter()
-            .transform(|aty| subst(cx, substs, *aty)).collect();
+            .map(|aty| subst(cx, substs, *aty)).collect();
 
         let substd_ctor_ty = subst(cx, substs, variant_info.ctor_ty);
 
@@ -3965,7 +3965,7 @@ pub fn enum_variants(cx: ctxt, id: ast::def_id) -> @~[@VariantInfo] {
                     _
                 }, _) => {
             let mut last_discriminant: Option<uint> = None;
-            @enum_definition.variants.iter().transform(|variant| {
+            @enum_definition.variants.iter().map(|variant| {
 
                 let mut discriminant = match last_discriminant {
                     Some(val) => val + 1,
@@ -4147,7 +4147,7 @@ pub fn lookup_struct_field(cx: ctxt,
                            field_id: ast::def_id)
                         -> field_ty {
     let r = lookup_struct_fields(cx, parent);
-    match r.iter().find_(
+    match r.iter().find(
                  |f| f.id.node == field_id.node) {
         Some(t) => *t,
         None => cx.sess.bug("struct ID not found in parent's fields")
