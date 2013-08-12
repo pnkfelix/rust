@@ -67,25 +67,66 @@ pub fn generics_of_fn(fk: &fn_kind) -> Generics {
 }
 
 pub trait Visitor<E:Clone> {
-    fn visit_mod(@mut self, &_mod, span, NodeId, E);
-    fn visit_view_item(@mut self, &view_item, E);
-    fn visit_foreign_item(@mut self, @foreign_item, E);
-    fn visit_item(@mut self, @item, E);
-    fn visit_local(@mut self, @Local, E);
-    fn visit_block(@mut self, &Block, E);
-    fn visit_stmt(@mut self, @stmt, E);
-    fn visit_arm(@mut self, &arm, E);
-    fn visit_pat(@mut self, @pat, E);
-    fn visit_decl(@mut self, @decl, E);
-    fn visit_expr(@mut self, @expr, E);
-    fn visit_expr_post(@mut self, @expr, E);
-    fn visit_ty(@mut self, &Ty, E);
-    fn visit_generics(@mut self, &Generics, E);
-    fn visit_fn(@mut self, &fn_kind, &fn_decl, &Block, span, NodeId, E);
-    fn visit_ty_method(@mut self, &TypeMethod, E);
-    fn visit_trait_method(@mut self, &trait_method, E);
-    fn visit_struct_def(@mut self, @struct_def, ident, &Generics, NodeId, E);
-    fn visit_struct_field(@mut self, @struct_field, E);
+    // Main visit methods: the hooks you are meant to override
+    // (remembering to put back in calls to walk_* as appropriate).
+
+    fn visit_mod(@mut self, a:&_mod, _b:span, _c:NodeId, env:E) {
+        self.walk_mod(a, env);
+    }
+    fn visit_view_item(@mut self, a:&view_item, env:E) {
+        self.walk_view_item(a, env);
+    }
+    fn visit_foreign_item(@mut self, a:@foreign_item, env:E) {
+        self.walk_foreign_item(a, env);
+    }
+    fn visit_item(@mut self, a:@item, env:E) {
+        self.walk_item(a, env);
+    }
+    fn visit_local(@mut self, a:@Local, env:E) {
+        self.walk_local(a, env);
+    }
+    fn visit_block(@mut self, a:&Block, env:E) {
+        self.walk_block(a, env);
+    }
+    fn visit_stmt(@mut self, a:@stmt, env:E) {
+        self.walk_stmt(a, env);
+    }
+    fn visit_arm(@mut self, a:&arm, env:E) {
+        self.walk_arm(a, env);
+    }
+    fn visit_pat(@mut self, a:@pat, env:E) {
+        self.walk_pat(a, env);
+    }
+    fn visit_decl(@mut self, a:@decl, env:E) {
+        self.walk_decl(a, env);
+    }
+    fn visit_expr(@mut self, a:@expr, env:E) {
+        self.walk_expr(a, env);
+    }
+    fn visit_expr_post(@mut self, _a:@expr, _env:E) {
+        // no-op by default
+    }
+    fn visit_ty(@mut self, a:&Ty, env:E) {
+        self.skip_ty(a, env);
+    }
+    fn visit_generics(@mut self, a:&Generics, env:E) {
+        self.walk_generics(a, env);
+    }
+    fn visit_fn(@mut self, a:&fn_kind, b:&fn_decl, c:&Block, d:span, e:NodeId, env:E) {
+        self.walk_fn(a, b, c, d, e, env);
+    }
+    fn visit_ty_method(@mut self, a:&TypeMethod, env:E) {
+        self.walk_ty_method(a, env);
+    }
+    fn visit_trait_method(@mut self, a:&trait_method, env:E) {
+        self.walk_trait_method(a, env);
+    }
+    fn visit_struct_def(@mut self, a:@struct_def, b:ident, c:&Generics, d:NodeId, env:E) {
+        self.walk_struct_def(a, b, c, d, env);
+    }
+    fn visit_struct_field(@mut self, a:@struct_field, env:E) {
+        self.walk_struct_field(a, env);
+    }
 
 
     // helper methods to do recursive traversal
