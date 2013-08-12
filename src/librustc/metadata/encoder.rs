@@ -39,7 +39,7 @@ use syntax::attr;
 use syntax::attr::AttrMetaMethods;
 use syntax::diagnostic::span_handler;
 use syntax::parse::token::special_idents;
-use syntax::{ast_util, oldvisit};
+use syntax::ast_util;
 use syntax::visit;
 use syntax::parse::token;
 use syntax;
