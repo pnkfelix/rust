@@ -66,7 +66,7 @@ pub fn generics_of_fn(fk: &fn_kind) -> Generics {
     }
 }
 
-pub trait Visitor<E> {
+pub trait Visitor<E:Clone> {
     fn visit_mod(@mut self, &_mod, span, NodeId, E);
     fn visit_view_item(@mut self, &view_item, E);
     fn visit_foreign_item(@mut self, @foreign_item, E);
@@ -86,6 +86,523 @@ pub trait Visitor<E> {
     fn visit_trait_method(@mut self, &trait_method, E);
     fn visit_struct_def(@mut self, @struct_def, ident, &Generics, NodeId, E);
     fn visit_struct_field(@mut self, @struct_field, E);
+
+
+    // helper methods to do recursive traversal
+    pub fn walk_crate(@mut self, crate: &Crate, env: E) {
+        self.visit_mod(&crate.module, crate.span, CRATE_NODE_ID, env)
+    }
+
+    pub fn walk_mod(@mut self, module: &_mod, env: E) {
+        for view_item in module.view_items.iter() {
+            self.visit_view_item(view_item, env.clone())
+        }
+        for item in module.items.iter() {
+            self.visit_item(*item, env.clone())
+        }
+    }
+
+    pub fn walk_view_item(@mut self, _i: &view_item, _env: E) {
+        // Empty!
+    }
+
+    pub fn walk_local(@mut self, local: &Local, env: E) {
+        self.visit_pat(local.pat, env.clone());
+        self.visit_ty(&local.ty, env.clone());
+        match local.init {
+            None => {}
+            Some(initializer) => self.visit_expr(initializer, env),
+        }
+    }
+
+    fn walk_trait_ref(@mut self,
+                       trait_ref: &ast::trait_ref,
+                       env: E) {
+        self.walk_path(&trait_ref.path, env)
+    }
+
+    pub fn walk_item(@mut self, item: &item, env: E) {
+        match item.node {
+            item_static(ref typ, _, expr) => {
+                self.visit_ty(typ, env.clone());
+                self.visit_expr(expr, env);
+            }
+            item_fn(ref declaration, purity, abi, ref generics, ref body) => {
+                self.visit_fn(&fk_item_fn(item.ident, generics, purity, abi),
+                              declaration,
+                              body,
+                              item.span,
+                              item.id,
+                              env)
+            }
+            item_mod(ref module) => {
+                self.visit_mod(module, item.span, item.id, env)
+            }
+            item_foreign_mod(ref foreign_module) => {
+                for view_item in foreign_module.view_items.iter() {
+                    self.visit_view_item(view_item, env.clone())
+                }
+                for foreign_item in foreign_module.items.iter() {
+                    self.visit_foreign_item(*foreign_item, env.clone())
+                }
+            }
+            item_ty(ref typ, ref type_parameters) => {
+                self.visit_ty(typ, env.clone());
+                self.visit_generics(type_parameters, env)
+            }
+            item_enum(ref enum_definition, ref type_parameters) => {
+                self.visit_generics(type_parameters, env.clone());
+                self.walk_enum_def(enum_definition, type_parameters, env)
+            }
+            item_impl(ref type_parameters,
+                      ref trait_references,
+                      ref typ,
+                      ref methods) => {
+                self.visit_generics(type_parameters, env.clone());
+                for trait_reference in trait_references.iter() {
+                    self.walk_trait_ref(trait_reference, env.clone())
+                }
+                self.visit_ty(typ, env.clone());
+                for method in methods.iter() {
+                    self.walk_method_helper(*method, env.clone())
+                }
+            }
+            item_struct(struct_definition, ref generics) => {
+                self.visit_generics(generics, env.clone());
+                self.visit_struct_def(struct_definition,
+                                      item.ident,
+                                      generics,
+                                      item.id,
+                                      env)
+            }
+            item_trait(ref generics, ref trait_paths, ref methods) => {
+                self.visit_generics(generics, env.clone());
+                for trait_path in trait_paths.iter() {
+                    self.walk_path(&trait_path.path, env.clone())
+                }
+                for method in methods.iter() {
+                    self.visit_trait_method(method, env.clone())
+                }
+            }
+            item_mac(ref macro) => self.walk_mac(macro, env),
+        }
+    }
+
+    pub fn walk_enum_def(@mut self,
+                         enum_definition: &ast::enum_def,
+                         generics: &Generics,
+                         env: E) {
+        for variant in enum_definition.variants.iter() {
+            match variant.node.kind {
+                tuple_variant_kind(ref variant_arguments) => {
+                    for variant_argument in variant_arguments.iter() {
+                        self.visit_ty(&variant_argument.ty, env.clone())
+                    }
+                }
+                struct_variant_kind(struct_definition) => {
+                    self.visit_struct_def(struct_definition,
+                                          variant.node.name,
+                                          generics,
+                                          variant.node.id,
+                                          env.clone())
+                }
+            }
+        }
+    }
+
+    pub fn skip_ty(@mut self, _t: &Ty, _env: E) {
+        // Empty!
+    }
+
+    pub fn walk_ty(@mut self, typ: &Ty, env: E) {
+        match typ.node {
+            ty_box(ref mutable_type) | ty_uniq(ref mutable_type) |
+            ty_vec(ref mutable_type) | ty_ptr(ref mutable_type) |
+            ty_rptr(_, ref mutable_type) => {
+                self.visit_ty(mutable_type.ty, env)
+            }
+            ty_tup(ref tuple_element_types) => {
+                for tuple_element_type in tuple_element_types.iter() {
+                    self.visit_ty(tuple_element_type, env.clone())
+                }
+            }
+            ty_closure(ref function_declaration) => {
+                for argument in function_declaration.decl.inputs.iter() {
+                    self.visit_ty(&argument.ty, env.clone())
+                }
+                self.visit_ty(&function_declaration.decl.output, env.clone());
+                for bounds in function_declaration.bounds.iter() {
+                    self.walk_ty_param_bounds(bounds, env.clone())
+                }
+            }
+            ty_bare_fn(ref function_declaration) => {
+                for argument in function_declaration.decl.inputs.iter() {
+                    self.visit_ty(&argument.ty, env.clone())
+                }
+                self.visit_ty(&function_declaration.decl.output, env.clone())
+            }
+            ty_path(ref path, ref bounds, _) => {
+                self.walk_path(path, env.clone());
+                for bounds in bounds.iter() {
+                    self.walk_ty_param_bounds(bounds, env.clone())
+                }
+            }
+            ty_fixed_length_vec(ref mutable_type, expression) => {
+                self.visit_ty(mutable_type.ty, env.clone());
+                self.visit_expr(expression, env)
+            }
+            ty_nil | ty_bot | ty_mac(_) | ty_infer => ()
+        }
+    }
+
+    pub fn walk_path(@mut self, path: &Path, env: E) {
+        for typ in path.types.iter() {
+            self.visit_ty(typ, env.clone())
+        }
+    }
+
+    pub fn walk_pat(@mut self, pattern: &pat, env: E) {
+        match pattern.node {
+            pat_enum(ref path, ref children) => {
+                self.walk_path(path, env.clone());
+                for children in children.iter() {
+                    for child in children.iter() {
+                        self.visit_pat(*child, env.clone())
+                    }
+                }
+            }
+            pat_struct(ref path, ref fields, _) => {
+                self.walk_path(path, env.clone());
+                for field in fields.iter() {
+                    self.visit_pat(field.pat, env.clone())
+                }
+            }
+            pat_tup(ref tuple_elements) => {
+                for tuple_element in tuple_elements.iter() {
+                    self.visit_pat(*tuple_element, env.clone())
+                }
+            }
+            pat_box(subpattern) |
+            pat_uniq(subpattern) |
+            pat_region(subpattern) => {
+                self.visit_pat(subpattern, env)
+            }
+            pat_ident(_, ref path, ref optional_subpattern) => {
+                self.walk_path(path, env.clone());
+                match *optional_subpattern {
+                    None => {}
+                    Some(subpattern) => self.visit_pat(subpattern, env),
+                }
+            }
+            pat_lit(expression) => self.visit_expr(expression, env),
+            pat_range(lower_bound, upper_bound) => {
+                self.visit_expr(lower_bound, env.clone());
+                self.visit_expr(upper_bound, env)
+            }
+            pat_wild => (),
+            pat_vec(ref prepattern, ref slice_pattern, ref postpatterns) => {
+                for prepattern in prepattern.iter() {
+                    self.visit_pat(*prepattern, env.clone())
+                }
+                for slice_pattern in slice_pattern.iter() {
+                    self.visit_pat(*slice_pattern, env.clone())
+                }
+                for postpattern in postpatterns.iter() {
+                    self.visit_pat(*postpattern, env.clone())
+                }
+            }
+        }
+    }
+
+    pub fn walk_foreign_item(@mut self,
+                             foreign_item: &foreign_item,
+                             env: E) {
+        match foreign_item.node {
+            foreign_item_fn(ref function_declaration, ref generics) => {
+                self.walk_fn_decl(function_declaration, env.clone());
+                self.visit_generics(generics, env)
+            }
+            foreign_item_static(ref typ, _) => self.visit_ty(typ, env),
+        }
+    }
+
+    pub fn walk_ty_param_bounds(@mut self,
+                                bounds: &OptVec<TyParamBound>,
+                                env: E) {
+        for bound in bounds.iter() {
+            match *bound {
+                TraitTyParamBound(ref typ) => {
+                    self.walk_trait_ref(typ, env.clone())
+                }
+                RegionTyParamBound => {}
+            }
+        }
+    }
+
+    pub fn walk_generics(@mut self,
+                         generics: &Generics,
+                         env: E) {
+        for type_parameter in generics.ty_params.iter() {
+            self.walk_ty_param_bounds(&type_parameter.bounds, env.clone())
+        }
+    }
+
+    pub fn walk_fn_decl(@mut self,
+                        function_declaration: &fn_decl,
+                        env: E) {
+        for argument in function_declaration.inputs.iter() {
+            self.visit_pat(argument.pat, env.clone());
+            self.visit_ty(&argument.ty, env.clone())
+        }
+        self.visit_ty(&function_declaration.output, env)
+    }
+
+    // Note: there is no visit_method() method in the visitor, instead override
+    // visit_fn() and check for fk_method().  I named this visit_method_helper()
+    // because it is not a default impl of any method, though I doubt that really
+    // clarifies anything. - Niko
+    pub fn walk_method_helper(@mut self,
+                              method: &method,
+                              env: E) {
+        self.visit_fn(&fk_method(method.ident, &method.generics, method),
+                      &method.decl,
+                      &method.body,
+                      method.span,
+                      method.id,
+                      env)
+    }
+
+    pub fn walk_fn(@mut self,
+                   function_kind: &fn_kind,
+                   function_declaration: &fn_decl,
+                   function_body: &Block,
+                   _s: span,
+                   _n: NodeId,
+                   env: E) {
+        self.walk_fn_decl(function_declaration, env.clone());
+        let generics = generics_of_fn(function_kind);
+        self.visit_generics(&generics, env.clone());
+        self.visit_block(function_body, env)
+    }
+
+    pub fn walk_ty_method(@mut self,
+                          method_type: &TypeMethod,
+                          env: E) {
+        for argument_type in method_type.decl.inputs.iter() {
+            self.visit_ty(&argument_type.ty, env.clone())
+        }
+        self.visit_generics(&method_type.generics, env.clone());
+        self.visit_ty(&method_type.decl.output, env.clone())
+    }
+
+    pub fn walk_trait_method(@mut self,
+                             trait_method: &trait_method,
+                             env: E) {
+        match *trait_method {
+            required(ref method_type) => {
+                self.visit_ty_method(method_type, env)
+            }
+            provided(method) => self.walk_method_helper(method, env),
+        }
+    }
+
+    pub fn walk_struct_def(@mut self,
+                           struct_definition: @struct_def,
+                           _i: ast::ident,
+                           _g: &Generics,
+                           _n: NodeId,
+                           env: E) {
+        for field in struct_definition.fields.iter() {
+            self.visit_struct_field(*field, env.clone())
+        }
+    }
+
+    pub fn walk_struct_field(@mut self,
+                             struct_field: &struct_field,
+                             env: E) {
+        self.visit_ty(&struct_field.node.ty, env)
+    }
+
+    pub fn walk_block(@mut self, block: &Block, env: E) {
+        for view_item in block.view_items.iter() {
+            self.visit_view_item(view_item, env.clone())
+        }
+        for statement in block.stmts.iter() {
+            self.visit_stmt(*statement, env.clone())
+        }
+        self.walk_expr_opt(block.expr, env)
+    }
+
+    pub fn walk_stmt(@mut self, statement: &stmt, env: E) {
+        match statement.node {
+            stmt_decl(declaration, _) => self.visit_decl(declaration, env),
+            stmt_expr(expression, _) | stmt_semi(expression, _) => {
+                self.visit_expr(expression, env)
+            }
+            stmt_mac(ref macro, _) => self.walk_mac(macro, env),
+        }
+    }
+
+    pub fn walk_decl(@mut self, declaration: &decl, env: E) {
+        match declaration.node {
+            decl_local(ref local) => self.visit_local(*local, env),
+            decl_item(item) => self.visit_item(item, env),
+        }
+    }
+
+    pub fn walk_expr_opt(@mut self,
+                            optional_expression: Option<@expr>,
+                            env: E) {
+        match optional_expression {
+            None => {}
+            Some(expression) => self.visit_expr(expression, env),
+        }
+    }
+
+    pub fn walk_exprs(@mut self,
+                       expressions: &[@expr],
+                       env: E) {
+        for expression in expressions.iter() {
+            self.visit_expr(*expression, env.clone())
+        }
+    }
+
+    pub fn walk_mac(@mut self, _m: &mac, _env: E) {
+        // Empty!
+    }
+
+    pub fn walk_expr(@mut self, expression: @expr, env: E) {
+        match expression.node {
+            expr_vstore(subexpression, _) => {
+                self.visit_expr(subexpression, env.clone())
+            }
+            expr_vec(ref subexpressions, _) => {
+                self.walk_exprs(*subexpressions, env.clone())
+            }
+            expr_repeat(element, count, _) => {
+                self.visit_expr(element, env.clone());
+                self.visit_expr(count, env.clone())
+            }
+            expr_struct(ref path, ref fields, optional_base) => {
+                self.walk_path(path, env.clone());
+                for field in fields.iter() {
+                    self.visit_expr(field.expr, env.clone())
+                }
+                self.walk_expr_opt(optional_base, env.clone())
+            }
+            expr_tup(ref subexpressions) => {
+                for subexpression in subexpressions.iter() {
+                    self.visit_expr(*subexpression, env.clone())
+                }
+            }
+            expr_call(callee_expression, ref arguments, _) => {
+                for argument in arguments.iter() {
+                    self.visit_expr(*argument, env.clone())
+                }
+                self.visit_expr(callee_expression, env.clone())
+            }
+            expr_method_call(_, callee, _, ref types, ref arguments, _) => {
+                self.walk_exprs(*arguments, env.clone());
+                for typ in types.iter() {
+                    self.visit_ty(typ, env.clone())
+                }
+                self.visit_expr(callee, env.clone())
+            }
+            expr_binary(_, _, left_expression, right_expression) => {
+                self.visit_expr(left_expression, env.clone());
+                self.visit_expr(right_expression, env.clone())
+            }
+            expr_addr_of(_, subexpression) |
+            expr_unary(_, _, subexpression) |
+            expr_do_body(subexpression) => {
+                self.visit_expr(subexpression, env.clone())
+            }
+            expr_lit(_) => {}
+            expr_cast(subexpression, ref typ) => {
+                self.visit_expr(subexpression, env.clone());
+                self.visit_ty(typ, env.clone())
+            }
+            expr_if(head_expression, ref if_block, optional_else) => {
+                self.visit_expr(head_expression, env.clone());
+                self.visit_block(if_block, env.clone());
+                self.walk_expr_opt(optional_else, env.clone())
+            }
+            expr_while(subexpression, ref block) => {
+                self.visit_expr(subexpression, env.clone());
+                self.visit_block(block, env.clone())
+            }
+            expr_for_loop(pattern, subexpression, ref block) => {
+                self.visit_pat(pattern, env.clone());
+                self.visit_expr(subexpression, env.clone());
+                self.visit_block(block, env.clone())
+            }
+            expr_loop(ref block, _) => self.visit_block(block, env.clone()),
+            expr_match(subexpression, ref arms) => {
+                self.visit_expr(subexpression, env.clone());
+                for arm in arms.iter() {
+                    self.visit_arm(arm, env.clone())
+                }
+            }
+            expr_fn_block(ref function_declaration, ref body) => {
+                self.visit_fn(&fk_fn_block,
+                              function_declaration,
+                              body,
+                              expression.span,
+                              expression.id,
+                              env.clone())
+            }
+            expr_block(ref block) => self.visit_block(block, env.clone()),
+            expr_assign(left_hand_expression, right_hand_expression) => {
+                self.visit_expr(right_hand_expression, env.clone());
+                self.visit_expr(left_hand_expression, env.clone())
+            }
+            expr_assign_op(_, _, left_expression, right_expression) => {
+                self.visit_expr(right_expression, env.clone());
+                self.visit_expr(left_expression, env.clone())
+            }
+            expr_field(subexpression, _, ref types) => {
+                self.visit_expr(subexpression, env.clone());
+                for typ in types.iter() {
+                    self.visit_ty(typ, env.clone())
+                }
+            }
+            expr_index(_, main_expression, index_expression) => {
+                self.visit_expr(main_expression, env.clone());
+                self.visit_expr(index_expression, env.clone())
+            }
+            expr_path(ref path) => self.walk_path(path, env.clone()),
+            expr_self | expr_break(_) | expr_again(_) => {}
+            expr_ret(optional_expression) => {
+                self.walk_expr_opt(optional_expression, env.clone())
+            }
+            expr_log(level, subexpression) => {
+                self.visit_expr(level, env.clone());
+                self.visit_expr(subexpression, env.clone());
+            }
+            expr_mac(ref macro) => self.walk_mac(macro, env.clone()),
+            expr_paren(subexpression) => {
+                self.visit_expr(subexpression, env.clone())
+            }
+            expr_inline_asm(ref assembler) => {
+                for &(_, input) in assembler.inputs.iter() {
+                    self.visit_expr(input, env.clone())
+                }
+                for &(_, output) in assembler.outputs.iter() {
+                    self.visit_expr(output, env.clone())
+                }
+            }
+        }
+
+        self.visit_expr_post(expression, env.clone())
+    }
+
+    pub fn walk_arm(@mut self, arm: &arm, env: E) {
+        for pattern in arm.pats.iter() {
+            self.visit_pat(*pattern, env.clone())
+        }
+        self.walk_expr_opt(arm.guard, env.clone());
+        self.visit_block(&arm.body, env)
+    }
 }
 
 pub fn visit_crate<E:Clone>(visitor: @mut Visitor<E>, crate: &Crate, env: E) {
@@ -209,7 +726,7 @@ pub fn visit_enum_def<E:Clone>(visitor: @mut Visitor<E>,
     }
 }
 
-pub fn skip_ty<E>(_: @mut Visitor<E>, _: &Ty, _: E) {
+pub fn skip_ty<E:Clone>(_: @mut Visitor<E>, _: &Ty, _: E) {
     // Empty!
 }
 
@@ -432,7 +949,7 @@ pub fn visit_block<E:Clone>(visitor: @mut Visitor<E>, block: &Block, env: E) {
     visit_expr_opt(visitor, block.expr, env)
 }
 
-pub fn visit_stmt<E>(visitor: @mut Visitor<E>, statement: &stmt, env: E) {
+pub fn visit_stmt<E:Clone>(visitor: @mut Visitor<E>, statement: &stmt, env: E) {
     match statement.node {
         stmt_decl(declaration, _) => visitor.visit_decl(declaration, env),
         stmt_expr(expression, _) | stmt_semi(expression, _) => {
@@ -449,7 +966,7 @@ pub fn visit_decl<E:Clone>(visitor: @mut Visitor<E>, declaration: &decl, env: E)
     }
 }
 
-pub fn visit_expr_opt<E>(visitor: @mut Visitor<E>,
+pub fn visit_expr_opt<E:Clone>(visitor: @mut Visitor<E>,
                          optional_expression: Option<@expr>,
                          env: E) {
     match optional_expression {
@@ -466,7 +983,7 @@ pub fn visit_exprs<E:Clone>(visitor: @mut Visitor<E>,
     }
 }
 
-pub fn visit_mac<E>(_: @mut Visitor<E>, _: &mac, _: E) {
+pub fn visit_mac<E:Clone>(_: @mut Visitor<E>, _: &mac, _: E) {
     // Empty!
 }
 
