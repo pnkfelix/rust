@@ -61,7 +61,8 @@ impl<'self> visit::Visitor<CheckLoanCtxt<'self>> for CheckLoansVisitor {
         visit::walk_pat(self, pat, this);
     }
 
-    fn visit_fn<'a>(&mut self, fk:&visit::fn_kind, fd:&ast::fn_decl, b:&ast::Block, s:span, n:ast::NodeId, this:CheckLoanCtxt<'a>) {
+    fn visit_fn<'a>(&mut self, fk:&visit::fn_kind, fd:&ast::fn_decl,
+                    b:&ast::Block, s:span, n:ast::NodeId, this:CheckLoanCtxt<'a>) {
         check_loans_in_fn_pre(fk, fd, b, s, n, this);
         visit::walk_fn(self, fk, fd, b, s, n, this);
     }
