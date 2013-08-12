@@ -31,7 +31,6 @@ use syntax::ast;
 use syntax::ast_util::id_range;
 use syntax::codemap::span;
 use syntax::print::pprust;
-use syntax::oldvisit;
 use syntax::visit;
 use syntax::visit::Visitor;
 use syntax::ast::{expr, fn_kind, fn_decl, Block, NodeId, stmt, pat, Local};
@@ -130,7 +129,7 @@ fn add_pat_to_id_range(v: &mut GatherLoanVisitor,
 }
 
 fn gather_loans_in_fn(v: &mut GatherLoanVisitor,
-                      fk: &oldvisit::fn_kind,
+                      fk: &fn_kind,
                       decl: &ast::fn_decl,
                       body: &ast::Block,
                       sp: span,
