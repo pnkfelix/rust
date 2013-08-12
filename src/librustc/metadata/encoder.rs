@@ -1189,7 +1189,7 @@ fn encode_info_for_foreign_item(ecx: &EncodeContext,
 fn my_visit_expr(_e:@expr) { }
 
 fn my_visit_item(i:@item, items: ast_map::map, ebml_w:&writer::Encoder,
-                 ecx_ptr:*EncodeContext, index: @mut ~[entry<i64>]) {
+                 ecx_ptr:*int, index: @mut ~[entry<i64>]) {
     match items.get_copy(&i.id) {
         ast_map::node_item(_, pt) => {
             let mut ebml_w = ebml_w.clone();
@@ -1202,7 +1202,7 @@ fn my_visit_item(i:@item, items: ast_map::map, ebml_w:&writer::Encoder,
 }
 
 fn my_visit_foreign_item(ni:@foreign_item, items: ast_map::map, ebml_w:&writer::Encoder,
-                         ecx_ptr:*EncodeContext, index: @mut ~[entry<i64>]) {
+                         ecx_ptr:*int, index: @mut ~[entry<i64>]) {
     match items.get_copy(&ni.id) {
         ast_map::node_foreign_item(_, abi, _, pt) => {
             debug!("writing foreign item %s::%s",
@@ -1226,6 +1226,34 @@ fn my_visit_foreign_item(ni:@foreign_item, items: ast_map::map, ebml_w:&writer::
     }
 }
 
+struct EncodeVisitor {
+    ebml_w_for_visit_item: writer::Encoder,
+    ebml_w_for_visit_foreign_item: writer::Encoder,
+    ecx_ptr:*int,
+    items: ast_map::map,
+    index: @mut ~[entry<i64>],
+}
+
+impl visit::Visitor<()> for EncodeVisitor {
+    fn visit_expr(&mut self, ex:@expr, _:()) { my_visit_expr(ex); }
+    fn visit_item(&mut self, i:@item, _:()) {
+        visit::walk_item(self, i, ());
+        my_visit_item(i,
+                      self.items,
+                      &self.ebml_w_for_visit_item,
+                      self.ecx_ptr,
+                      self.index);
+    }
+    fn visit_foreign_item(&mut self, ni:@foreign_item, _:()) {
+        visit::walk_foreign_item(self, ni, ());
+        my_visit_foreign_item(ni,
+                              self.items,
+                              &self.ebml_w_for_visit_foreign_item,
+                              self.ecx_ptr,
+                              self.index);
+    }
+}
+
 fn encode_info_for_items(ecx: &EncodeContext,
                          ebml_w: &mut writer::Encoder,
                          crate: &Crate)
@@ -1243,8 +1271,16 @@ fn encode_info_for_items(ecx: &EncodeContext,
     let items = ecx.tcx.items;
 
     // See comment in `encode_side_tables_for_ii` in astencode
-    let ecx_ptr : *EncodeContext = unsafe { cast::transmute(ecx) };
+    let ecx_ptr : *int = unsafe { cast::transmute(ecx) };
+    let mut visitor = EncodeVisitor {
+        index: index,
+        items: items,
+        ecx_ptr: ecx_ptr,
+        ebml_w_for_visit_item: (*ebml_w).clone(),
+        ebml_w_for_visit_foreign_item: (*ebml_w).clone(),
+    };
 
+/*
     oldvisit::visit_crate(crate, ((), oldvisit::mk_vt(@oldvisit::Visitor {
         visit_expr: |_e, (_cx, _v)| { my_visit_expr(_e); },
         visit_item: {
@@ -1262,6 +1298,9 @@ fn encode_info_for_items(ecx: &EncodeContext,
         },
         ..*oldvisit::default_visitor()
     })));
+*/
+    visit::walk_crate(&mut visitor, crate, ());
+
     ebml_w.end_tag();
     return /*bad*/(*index).clone();
 }
