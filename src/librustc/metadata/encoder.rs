@@ -40,7 +40,6 @@ use syntax::attr::AttrMetaMethods;
 use syntax::diagnostic::span_handler;
 use syntax::parse::token::special_idents;
 use syntax::ast_util;
-use syntax::oldvisit;
 use syntax::visit;
 use syntax::parse::token;
 use syntax;
@@ -1280,25 +1279,6 @@ fn encode_info_for_items(ecx: &EncodeContext,
         ebml_w_for_visit_foreign_item: (*ebml_w).clone(),
     };
 
-/*
-    oldvisit::visit_crate(crate, ((), oldvisit::mk_vt(@oldvisit::Visitor {
-        visit_expr: |_e, (_cx, _v)| { my_visit_expr(_e); },
-        visit_item: {
-            let ebml_w = (*ebml_w).clone();
-            |i, (cx, v)| {
-                oldvisit::visit_item(i, (cx, v));
-                my_visit_item(i, items, &ebml_w, ecx_ptr, index); }
-        },
-        visit_foreign_item: {
-            let ebml_w = (*ebml_w).clone();
-            |ni, (cx, v)| {
-                oldvisit::visit_foreign_item(ni, (cx, v));
-                my_visit_foreign_item(ni, items, &ebml_w, ecx_ptr, index);
-            }
-        },
-        ..*oldvisit::default_visitor()
-    })));
-*/
     visit::walk_crate(&mut visitor, crate, ());
 
     ebml_w.end_tag();
