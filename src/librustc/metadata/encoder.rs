@@ -40,6 +40,7 @@ use syntax::attr::AttrMetaMethods;
 use syntax::diagnostic::span_handler;
 use syntax::parse::token::special_idents;
 use syntax::{ast_util, oldvisit};
+use syntax::visit;
 use syntax::parse::token;
 use syntax;
 use writer = extra::ebml::writer;
@@ -1184,6 +1185,57 @@ fn encode_info_for_foreign_item(ecx: &EncodeContext,
     ebml_w.end_tag();
 }
 
+struct EncodeVisitor {
+    item_ebml_w: writer::Encoder,
+    foreign_item_ebml_w: writer::Encoder,
+    ecx_ptr: *(),
+    index: @mut ~[entry<i64>],
+    items: ast_map::map,
+}
+
+impl visit::Visitor<()> for EncodeVisitor {
+    fn visit_expr(@mut self, _:@expr, _:()) { }
+    fn visit_item(@mut self, i:@item, env:()) {
+        self.walk_item(i, env);
+        match self.items.get_copy(&i.id) {
+            ast_map::node_item(_, pt) => {
+                let mut ebml_w = self.item_ebml_w.clone();
+                // See above
+                let ecx : &EncodeContext = unsafe { cast::transmute(self.ecx_ptr) };
+                encode_info_for_item(ecx, &mut ebml_w, i, self.index, *pt);
+            }
+            _ => fail!("bad item")
+        }
+    }
+    fn visit_foreign_item(@mut self, ni:@foreign_item, env:()) {
+        self.walk_foreign_item(ni, env);
+        match self.items.get_copy(&ni.id) {
+            ast_map::node_foreign_item(_, abi, _, pt) => {
+                debug!("writing foreign item %s::%s",
+                       ast_map::path_to_str(
+                           *pt,
+                           token::get_ident_interner()),
+                       token::ident_to_str(&ni.ident));
+
+                let mut ebml_w = self.foreign_item_ebml_w.clone();
+                // See above
+                let ecx : &EncodeContext = unsafe { cast::transmute(self.ecx_ptr) };
+                encode_info_for_foreign_item(ecx,
+                                             &mut ebml_w,
+                                             ni,
+                                             self.index,
+                                             pt,
+                                             abi);
+            }
+            // case for separate item and foreign-item tables
+            _ => fail!("bad foreign item")
+        }
+    }
+
+}
+
+
+
 fn encode_info_for_items(ecx: &EncodeContext,
                          ebml_w: &mut writer::Encoder,
                          crate: &Crate)
@@ -1198,57 +1250,19 @@ fn encode_info_for_items(ecx: &EncodeContext,
                         [],
                         syntax::parse::token::special_idents::invalid,
                         public);
-    let items = ecx.tcx.items;
 
     // See comment in `encode_side_tables_for_ii` in astencode
     let ecx_ptr : *() = unsafe { cast::transmute(ecx) };
 
-    oldvisit::visit_crate(crate, ((), oldvisit::mk_vt(@oldvisit::Visitor {
-        visit_expr: |_e, (_cx, _v)| { },
-        visit_item: {
-            let ebml_w = (*ebml_w).clone();
-            |i, (cx, v)| {
-                oldvisit::visit_item(i, (cx, v));
-                match items.get_copy(&i.id) {
-                    ast_map::node_item(_, pt) => {
-                        let mut ebml_w = ebml_w.clone();
-                        // See above
-                        let ecx : &EncodeContext = unsafe { cast::transmute(ecx_ptr) };
-                        encode_info_for_item(ecx, &mut ebml_w, i, index, *pt);
-                    }
-                    _ => fail!("bad item")
-                }
-            }
-        },
-        visit_foreign_item: {
-            let ebml_w = (*ebml_w).clone();
-            |ni, (cx, v)| {
-                oldvisit::visit_foreign_item(ni, (cx, v));
-                match items.get_copy(&ni.id) {
-                    ast_map::node_foreign_item(_, abi, _, pt) => {
-                        debug!("writing foreign item %s::%s",
-                               ast_map::path_to_str(
-                                *pt,
-                                token::get_ident_interner()),
-                                token::ident_to_str(&ni.ident));
+    let v = @mut EncodeVisitor {
+        item_ebml_w:         (*ebml_w).clone(),
+        foreign_item_ebml_w: (*ebml_w).clone(),
+        ecx_ptr:             ecx_ptr,
+        items:               ecx.tcx.items,
+        index:               index,
+    };
 
-                        let mut ebml_w = ebml_w.clone();
-                        // See above
-                        let ecx : &EncodeContext = unsafe { cast::transmute(ecx_ptr) };
-                        encode_info_for_foreign_item(ecx,
-                                                     &mut ebml_w,
-                                                     ni,
-                                                     index,
-                                                     pt,
-                                                     abi);
-                    }
-                    // case for separate item and foreign-item tables
-                    _ => fail!("bad foreign item")
-                }
-            }
-        },
-        ..*oldvisit::default_visitor()
-    })));
+    visit::visit_crate(v as @mut visit::Visitor<()>, crate, ());
     ebml_w.end_tag();
     return /*bad*/(*index).clone();
 }
