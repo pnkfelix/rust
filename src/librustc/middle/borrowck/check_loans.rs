@@ -28,6 +28,7 @@ use syntax::ast;
 use syntax::ast_util;
 use syntax::codemap::span;
 use syntax::visit;
+use syntax::visit::Visitor;
 use syntax::oldvisit;
 use util::ppaux::Repr;
 
@@ -82,15 +83,8 @@ pub fn check_loans(bccx: @BorrowckCtxt,
         reported: @mut HashSet::new(),
     };
 
-    let vt = oldvisit::mk_vt(@oldvisit::Visitor {
-        visit_expr: check_loans_in_expr,
-        visit_local: check_loans_in_local,
-        visit_block: check_loans_in_block,
-        visit_pat: check_loans_in_pat,
-        visit_fn: check_loans_in_fn,
-        .. *oldvisit::default_visitor()
-    });
-    (vt.visit_block)(body, (clcx, vt));
+    let mut v = CheckLoansVisitor;
+    v.visit_block(body, clcx);
 }
 
 enum MoveError {
