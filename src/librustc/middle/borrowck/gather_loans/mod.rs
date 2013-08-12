@@ -83,7 +83,8 @@ impl Visitor<@mut GatherLoanCtxt> for GatherLoanVisitor {
     fn visit_block(@mut self, a:&Block, env:@mut GatherLoanCtxt) {
         gather_loans_in_block(self, a, env);
     }
-    fn visit_fn(@mut self, a:&fn_kind, b:&fn_decl, c:&Block, d:span, e:NodeId, env:@mut GatherLoanCtxt) {
+    fn visit_fn(@mut self, a:&fn_kind, b:&fn_decl, c:&Block, d:span,
+                e:NodeId, env:@mut GatherLoanCtxt) {
         gather_loans_in_fn(self, a, b, c, d, e, env);
     }
     fn visit_stmt(@mut self, a:@stmt, env:@mut GatherLoanCtxt) {
