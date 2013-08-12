@@ -1188,7 +1188,8 @@ fn encode_info_for_foreign_item(ecx: &EncodeContext,
 
 fn my_visit_expr(_e:@expr) { }
 
-fn my_visit_item(i:@item, items: ast_map::map, ebml_w:&writer::Encoder, ecx_ptr:*EncodeContext, index: @mut ~[entry<i64>]) {
+fn my_visit_item(i:@item, items: ast_map::map, ebml_w:&writer::Encoder,
+                 ecx_ptr:*EncodeContext, index: @mut ~[entry<i64>]) {
     match items.get_copy(&i.id) {
         ast_map::node_item(_, pt) => {
             let mut ebml_w = ebml_w.clone();
@@ -1200,7 +1201,8 @@ fn my_visit_item(i:@item, items: ast_map::map, ebml_w:&writer::Encoder, ecx_ptr:
     }
 }
 
-fn my_visit_foreign_item(ni:@foreign_item, items: ast_map::map, ebml_w:&writer::Encoder, ecx_ptr:*EncodeContext, index: @mut ~[entry<i64>]) {
+fn my_visit_foreign_item(ni:@foreign_item, items: ast_map::map, ebml_w:&writer::Encoder,
+                         ecx_ptr:*EncodeContext, index: @mut ~[entry<i64>]) {
     match items.get_copy(&ni.id) {
         ast_map::node_foreign_item(_, abi, _, pt) => {
             debug!("writing foreign item %s::%s",
