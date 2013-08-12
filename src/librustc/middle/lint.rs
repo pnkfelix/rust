@@ -506,7 +506,7 @@ impl Context {
                 for visitor in self.visitors.iter() {
                     match *visitor {
                         OldVisitor(orig, stopping) => {
-                            let fk = oldvisit::fk_method(m.ident,
+                            let fk = ast::fk_method(m.ident,
                                                          &m.generics,
                                                          m);
                             (orig.visit_fn)(&fk,
@@ -517,7 +517,7 @@ impl Context {
                                             (self, stopping));
                         }
                         NewVisitor(new_visitor) => {
-                            let fk = visit::fk_method(m.ident,
+                            let fk = ast::fk_method(m.ident,
                                                       &m.generics,
                                                       m);
                             let mut new_visitor = new_visitor;
@@ -576,7 +576,7 @@ fn item_stopping_visitor<E>(outer: oldvisit::vt<E>) -> oldvisit::vt<E> {
         visit_item: |_i, (_e, _v)| { },
         visit_fn: |fk, fd, b, s, id, (e, v)| {
             match *fk {
-                oldvisit::fk_method(*) => {}
+                ast::fk_method(*) => {}
                 _ => (outer.visit_fn)(fk, fd, b, s, id, (e, v))
             }
         },
@@ -1075,7 +1075,7 @@ fn lint_missing_doc() -> oldvisit::vt<@mut Context> {
             // Only warn about explicitly public methods. Soon implicit
             // public-ness will hopefully be going away.
             match *fk {
-                oldvisit::fk_method(_, _, m) if m.vis == ast::public => {
+                ast::fk_method(_, _, m) if m.vis == ast::public => {
                     // If we're in a trait implementation, no need to duplicate
                     // documentation
                     if !cx.in_trait_impl {
@@ -1187,7 +1187,7 @@ pub fn check_crate(tcx: ty::ctxt, crate: @ast::Crate) {
             },
             visit_fn: |fk, decl, body, span, id, (cx, vt)| {
                 match *fk {
-                    oldvisit::fk_method(_, _, m) => {
+                    ast::fk_method(_, _, m) => {
                         do cx.with_lint_attrs(m.attrs) {
                             cx.process(Method(m));
                             oldvisit::visit_fn(fk,

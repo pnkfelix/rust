@@ -20,7 +20,7 @@ use syntax::ast::{deref, expr_call, expr_inline_asm, expr_method_call};
 use syntax::ast::{expr_unary, unsafe_fn, expr_path};
 use syntax::ast;
 use syntax::codemap::span;
-use syntax::oldvisit::{fk_item_fn, fk_method};
+use syntax::ast::{fk_item_fn, fk_method};
 use syntax::oldvisit;
 
 #[deriving(Eq)]

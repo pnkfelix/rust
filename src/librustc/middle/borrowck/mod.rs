@@ -121,13 +121,13 @@ fn borrowck_fn(fk: &oldvisit::fn_kind,
                (this, v): (@BorrowckCtxt,
                            oldvisit::vt<@BorrowckCtxt>)) {
     match fk {
-        &oldvisit::fk_anon(*) |
-        &oldvisit::fk_fn_block(*) => {
+        &ast::fk_anon(*) |
+        &ast::fk_fn_block(*) => {
             // Closures are checked as part of their containing fn item.
         }
 
-        &oldvisit::fk_item_fn(*) |
-        &oldvisit::fk_method(*) => {
+        &ast::fk_item_fn(*) |
+        &ast::fk_method(*) => {
             debug!("borrowck_fn(id=%?)", id);
 
             // Check the body of fn items.

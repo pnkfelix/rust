@@ -92,6 +92,20 @@ impl<D:Decoder> Decodable<D> for ident {
 /// Function name (not all functions have names)
 pub type fn_ident = Option<ident>;
 
+pub enum fn_kind<'self> {
+    // fn foo() or extern "Abi" fn foo()
+    fk_item_fn(ident, &'self Generics, purity, AbiSet),
+
+    // fn foo(&self)
+    fk_method(ident, &'self Generics, &'self method),
+
+    // @fn(x, y) { ... }
+    fk_anon(Sigil),
+
+    // |x, y| ...
+    fk_fn_block,
+}
+
 #[deriving(Clone, Eq, Encodable, Decodable, IterBytes)]
 pub struct Lifetime {
     id: NodeId,
