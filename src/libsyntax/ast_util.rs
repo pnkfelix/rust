@@ -542,7 +542,7 @@ impl Visitor<()> for IdVisitor {
     }
 
     fn visit_fn(&mut self,
-                function_kind: &visit::fn_kind,
+                function_kind: &fn_kind,
                 function_declaration: &fn_decl,
                 block: &Block,
                 span: span,
@@ -550,8 +550,8 @@ impl Visitor<()> for IdVisitor {
                 env: ()) {
         if !self.pass_through_items {
             match *function_kind {
-                visit::fk_method(*) if self.visited_outermost => return,
-                visit::fk_method(*) => self.visited_outermost = true,
+                fk_method(*) if self.visited_outermost => return,
+                fk_method(*) => self.visited_outermost = true,
                 _ => {}
             }
         }
@@ -559,14 +559,14 @@ impl Visitor<()> for IdVisitor {
         (self.visit_callback)(node_id);
 
         match *function_kind {
-            visit::fk_item_fn(_, generics, _, _) => {
+            fk_item_fn(_, generics, _, _) => {
                 self.visit_generics_helper(generics)
             }
-            visit::fk_method(_, generics, method) => {
+            fk_method(_, generics, method) => {
                 (self.visit_callback)(method.self_id);
                 self.visit_generics_helper(generics)
             }
-            visit::fk_anon(_) | visit::fk_fn_block => {}
+            fk_anon(_) | fk_fn_block => {}
         }
 
         for argument in function_declaration.inputs.iter() {
@@ -583,7 +583,7 @@ impl Visitor<()> for IdVisitor {
 
         if !self.pass_through_items {
             match *function_kind {
-                visit::fk_method(*) => self.visited_outermost = false,
+                fk_method(*) => self.visited_outermost = false,
                 _ => {}
             }
         }
@@ -728,7 +728,7 @@ impl SimpleVisitor for EachViewItemData {
         // XXX: Default method.
     }
     fn visit_fn(&mut self,
-                _: &visit::fn_kind,
+                _: &fn_kind,
                 _: &fn_decl,
                 _: &Block,
                 _: span,

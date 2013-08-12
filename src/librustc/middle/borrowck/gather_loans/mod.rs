@@ -119,12 +119,12 @@ fn gather_loans_in_fn(fk: &oldvisit::fn_kind,
     match fk {
         // Do not visit items here, the outer loop in borrowck/mod
         // will visit them for us in turn.
-        &oldvisit::fk_item_fn(*) | &oldvisit::fk_method(*) => {
+        &ast::fk_item_fn(*) | &ast::fk_method(*) => {
             return;
         }
 
         // Visit closures as part of the containing item.
-        &oldvisit::fk_anon(*) | &oldvisit::fk_fn_block(*) => {
+        &ast::fk_anon(*) | &ast::fk_fn_block(*) => {
             this.push_repeating_id(body.id);
             oldvisit::visit_fn(fk, decl, body, sp, id, (this, v));
             this.pop_repeating_id(body.id);

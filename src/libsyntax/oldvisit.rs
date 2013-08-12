@@ -8,13 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use abi::AbiSet;
 use ast::*;
 use ast;
 use codemap::span;
 use parse;
 use opt_vec;
 use opt_vec::OptVec;
+
+pub use ast::fn_kind;
 
 // Context-passing AST walker. Each overridden visit method has full control
 // over what happens with its node, it can do its own traversal of the node's
@@ -31,20 +32,6 @@ use opt_vec::OptVec;
 // Our typesystem doesn't do circular types, so the visitor record can not
 // hold functions that take visitors. A vt enum is used to break the cycle.
 pub enum vt<E> { mk_vt(visitor<E>), }
-
-pub enum fn_kind<'self> {
-    // fn foo() or extern "Abi" fn foo()
-    fk_item_fn(ident, &'self Generics, purity, AbiSet),
-
-    // fn foo(&self)
-    fk_method(ident, &'self Generics, &'self method),
-
-    // @fn(x, y) { ... }
-    fk_anon(ast::Sigil),
-
-    // |x, y| ...
-    fk_fn_block,
-}
 
 pub fn name_of_fn(fk: &fn_kind) -> ident {
     match *fk {

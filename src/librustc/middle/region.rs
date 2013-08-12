@@ -438,7 +438,7 @@ fn resolve_fn(fk: &oldvisit::fn_kind,
                            var_parent: Some(body.id),
                            ..cx};
     match *fk {
-        oldvisit::fk_method(_, _, method) => {
+        ast::fk_method(_, _, method) => {
             cx.region_maps.record_parent(method.self_id, body.id);
         }
         _ => {}
@@ -448,12 +448,12 @@ fn resolve_fn(fk: &oldvisit::fn_kind,
     // The body of the fn itself is either a root scope (top-level fn)
     // or it continues with the inherited scope (closures).
     let body_cx = match *fk {
-        oldvisit::fk_item_fn(*) |
-        oldvisit::fk_method(*) => {
+        ast::fk_item_fn(*) |
+        ast::fk_method(*) => {
             Context {parent: None, var_parent: None, ..cx}
         }
-        oldvisit::fk_anon(*) |
-        oldvisit::fk_fn_block(*) => {
+        ast::fk_anon(*) |
+        ast::fk_fn_block(*) => {
             cx
         }
     };
