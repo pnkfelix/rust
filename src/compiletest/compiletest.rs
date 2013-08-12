@@ -19,7 +19,7 @@ use std::os;
 use std::f64;
 
 use extra::getopts;
-use extra::getopts::groups::{optopt, optflag, reqopt};
+use extra::getopts::groups::{optopt, optflag, reqopt, optmulti};
 use extra::test;
 
 use common::config;
@@ -49,33 +49,33 @@ pub fn main() {
 pub fn parse_config(args: ~[~str]) -> config {
 
     let groups : ~[getopts::groups::OptGroup] =
-        ~[reqopt("", "compile-lib-path", "path to host shared libraries", "PATH"),
-          reqopt("", "run-lib-path", "path to target shared libraries", "PATH"),
-          reqopt("", "rustc-path", "path to rustc to use for compiling", "PATH"),
-          optopt("", "clang-path", "path to  executable for codegen tests", "PATH"),
-          optopt("", "llvm-bin-path", "path to directory holding llvm binaries", "DIR"),
-          reqopt("", "src-base", "directory to scan for test files", "PATH"),
-          reqopt("", "build-base", "directory to deposit test outputs", "PATH"),
-          reqopt("", "aux-base", "directory to find auxiliary test files", "PATH"),
-          reqopt("", "stage-id", "the target-stage identifier", "stageN-TARGET"),
-          reqopt("", "mode", "which sort of compile tests to run",
-                 "(compile-fail|run-fail|run-pass|pretty|debug-info)"),
-          optflag("", "ignored", "run tests marked as ignored / xfailed"),
-          optopt("", "runtool", "supervisor program to run tests under \
+        ~[reqopt   ("", "compile-lib-path", "path to host shared libraries", "PATH"),
+          reqopt   ("", "run-lib-path", "path to target shared libraries", "PATH"),
+          reqopt   ("", "rustc-path", "path to rustc to use for compiling", "PATH"),
+          optopt   ("", "clang-path", "path to  executable for codegen tests", "PATH"),
+          optopt   ("", "llvm-bin-path", "path to directory holding llvm binaries", "DIR"),
+          optmulti ("", "src-base", "directory to scan for test files", "PATH"),
+          reqopt   ("", "build-base", "directory to deposit test outputs", "PATH"),
+          reqopt   ("", "aux-base", "directory to find auxiliary test files", "PATH"),
+          reqopt   ("", "stage-id", "the target-stage identifier", "stageN-TARGET"),
+          reqopt   ("", "mode", "which sort of compile tests to run",
+                    " (compile-fail|run-fail|run-pass|pretty|debug-info)"),
+          optflag  ("", "ignored", "run tests marked as ignored / xfailed"),
+          optopt   ("", "runtool", "supervisor program to run tests under \
                                  (eg. emulator, valgrind)", "PROGRAM"),
-          optopt("", "rustcflags", "flags to pass to rustc", "FLAGS"),
-          optflag("", "verbose", "run tests verbosely, showing all output"),
-          optopt("", "logfile", "file to log test execution to", "FILE"),
-          optopt("", "save-metrics", "file to save metrics to", "FILE"),
-          optopt("", "ratchet-metrics", "file to ratchet metrics against", "FILE"),
-          optopt("", "ratchet-noise-percent",
-                 "percent change in metrics to consider noise", "N"),
-          optflag("", "jit", "run tests under the JIT"),
-          optflag("", "newrt", "run tests on the new runtime / scheduler"),
-          optopt("", "target", "the target to build for", "TARGET"),
-          optopt("", "adb-path", "path to the android debugger", "PATH"),
-          optopt("", "adb-test-dir", "path to tests for the android debugger", "PATH"),
-          optflag("h", "help", "show this message"),
+          optopt  ("", "rustcflags", "flags to pass to rustc", "FLAGS"),
+          optflag ("", "verbose", "run tests verbosely, showing all output"),
+          optopt  ("", "logfile", "file to log test execution to", "FILE"),
+          optopt  ("", "save-metrics", "file to save metrics to", "FILE"),
+          optopt  ("", "ratchet-metrics", "file to ratchet metrics against", "FILE"),
+          optopt  ("", "ratchet-noise-percent",
+                   "percent change in metrics to consider noise", "N"),
+          optflag ("", "jit", "run tests under the JIT"),
+          optflag ("", "newrt", "run tests on the new runtime / scheduler"),
+          optopt  ("", "target", "the target to build for", "TARGET"),
+          optopt  ("", "adb-path", "path to the android debugger", "PATH"),
+          optopt  ("", "adb-test-dir", "path to tests for the android debugger", "PATH"),
+          optflag ("h", "help", "show this message"),
          ];
 
     assert!(!args.is_empty());
@@ -104,6 +104,8 @@ pub fn parse_config(args: ~[~str]) -> config {
     fn opt_path(m: &getopts::Matches, nm: &str) -> Path {
         Path(getopts::opt_str(m, nm))
     }
+    
+    let src_base = getopts::opt_strs(matches, "src-base");
 
     config {
         compile_lib_path: getopts::opt_str(matches, "compile-lib-path"),
@@ -111,7 +113,7 @@ pub fn parse_config(args: ~[~str]) -> config {
         rustc_path: opt_path(matches, "rustc-path"),
         clang_path: getopts::opt_maybe_str(matches, "clang-path").map_move(|s| Path(s)),
         llvm_bin_path: getopts::opt_maybe_str(matches, "llvm-bin-path").map_move(|s| Path(s)),
-        src_base: opt_path(matches, "src-base"),
+        src_base: src_base.iter().map(|x| Path(x.clone())).collect(),
         build_base: opt_path(matches, "build-base"),
         aux_base: opt_path(matches, "aux-base"),
         stage_id: getopts::opt_str(matches, "stage-id"),
@@ -241,7 +243,7 @@ pub fn make_tests(config: &config) -> ~[test::TestDescAndFn] {
     debug!("making tests from %s",
            config.src_base.to_str());
     let mut tests = ~[];
-    let dirs = os::list_dir_path(&config.src_base);
+    let dirs = config.src_base.iter().flat_map(|x| os::list_dir_path(x).move_iter()).to_owned_vec();
     for file in dirs.iter() {
         let file = file.clone();
         debug!("inspecting file %s", file.to_str());
