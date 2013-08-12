@@ -648,7 +648,7 @@ impl<'self> CheckLoanCtxt<'self> {
     }
 }
 
-fn check_loans_in_fn_pre<'a>(fk: &oldvisit::fn_kind,
+fn check_loans_in_fn_pre<'a>(fk: &ast::fn_kind,
                              _decl: &ast::fn_decl,
                              _body: &ast::Block,
                              sp: span,
@@ -709,7 +709,7 @@ fn check_loans_in_fn_pre<'a>(fk: &oldvisit::fn_kind,
 
 }
 
-fn check_loans_in_fn<'a>(fk: &oldvisit::fn_kind,
+fn check_loans_in_fn<'a>(fk: &ast::fn_kind,
                          decl: &ast::fn_decl,
                          body: &ast::Block,
                          sp: span,
