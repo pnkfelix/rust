@@ -71,7 +71,8 @@ impl EffectCheckVisitor {
 }
 
 impl Visitor<()> for EffectCheckVisitor {
-    fn visit_fn(@mut self, fn_kind:&fn_kind, fn_decl:&fn_decl, block:&Block, span:span, node_id:NodeId, _:()) {
+    fn visit_fn(@mut self, fn_kind:&fn_kind, fn_decl:&fn_decl,
+                block:&Block, span:span, node_id:NodeId, _:()) {
 
             let (is_item_fn, is_unsafe_fn) = match *fn_kind {
                 fk_item_fn(_, _, purity, _) => (true, purity == unsafe_fn),
