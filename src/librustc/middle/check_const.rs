@@ -18,7 +18,6 @@ use util::ppaux;
 use syntax::ast::*;
 use syntax::codemap;
 use syntax::{ast_util, ast_map};
-use syntax::visit;
 use syntax::visit::Visitor;
 
 struct CheckCrateVisitor {
