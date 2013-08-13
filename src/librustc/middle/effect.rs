@@ -20,8 +20,8 @@ use syntax::ast::{deref, expr_call, expr_inline_asm, expr_method_call};
 use syntax::ast::{expr_unary, unsafe_fn, expr_path};
 use syntax::ast;
 use syntax::codemap::span;
-use syntax::oldvisit::{fk_item_fn, fk_method};
-use syntax::oldvisit;
+use syntax::visit::{Visitor,fn_kind,fk_item_fn, fk_method};
+use syntax::ast::{fn_decl,Block,NodeId,expr};
 
 #[deriving(Eq)]
 enum UnsafeContext {
@@ -45,6 +45,121 @@ fn type_is_unsafe_function(ty: ty::t) -> bool {
     }
 }
 
+struct EffectCheckVisitor {
+    tcx: ty::ctxt,
+    context: @mut Context,
+}
+
+impl EffectCheckVisitor {
+
+    fn require_unsafe(&mut self, span: span, description: &str) {
+        match self.context.unsafe_context {
+            SafeContext => {
+                // Report an error.
+                self.tcx.sess.span_err(span,
+                                  fmt!("%s requires unsafe function or block",
+                                       description))
+            }
+            UnsafeBlock(block_id) => {
+                // OK, but record this.
+                debug!("effect: recording unsafe block as used: %?", block_id);
+                let _ = self.tcx.used_unsafe.insert(block_id);
+            }
+            UnsafeFn => {}
+        }
+    }
+}
+
+impl Visitor<()> for EffectCheckVisitor {
+    fn visit_fn(@mut self, fn_kind:&fn_kind, fn_decl:&fn_decl, block:&Block, span:span, node_id:NodeId, _:()) {
+
+            let (is_item_fn, is_unsafe_fn) = match *fn_kind {
+                fk_item_fn(_, _, purity, _) => (true, purity == unsafe_fn),
+                fk_method(_, _, method) => (true, method.purity == unsafe_fn),
+                _ => (false, false),
+            };
+
+            let old_unsafe_context = self.context.unsafe_context;
+            if is_unsafe_fn {
+                self.context.unsafe_context = UnsafeFn
+            } else if is_item_fn {
+                self.context.unsafe_context = SafeContext
+            }
+
+            self.walk_fn(fn_kind,
+                            fn_decl,
+                            block,
+                            span,
+                            node_id,
+                         ());
+
+            self.context.unsafe_context = old_unsafe_context
+    }
+
+    fn visit_block(@mut self, block:&Block, _:()) {
+
+            let old_unsafe_context = self.context.unsafe_context;
+            if block.rules == ast::UnsafeBlock &&
+                    self.context.unsafe_context == SafeContext {
+                self.context.unsafe_context = UnsafeBlock(block.id)
+            }
+
+            self.walk_block(block, ());
+
+            self.context.unsafe_context = old_unsafe_context
+    }
+
+    fn visit_expr(@mut self, expr:@expr, _:()) {
+
+            match expr.node {
+                expr_method_call(callee_id, _, _, _, _, _) => {
+                    let base_type = ty::node_id_to_type(self.tcx, callee_id);
+                    debug!("effect: method call case, base type is %s",
+                           ppaux::ty_to_str(self.tcx, base_type));
+                    if type_is_unsafe_function(base_type) {
+                        self.require_unsafe(expr.span,
+                                       "invocation of unsafe method")
+                    }
+                }
+                expr_call(base, _, _) => {
+                    let base_type = ty::node_id_to_type(self.tcx, base.id);
+                    debug!("effect: call case, base type is %s",
+                           ppaux::ty_to_str(self.tcx, base_type));
+                    if type_is_unsafe_function(base_type) {
+                        self.require_unsafe(expr.span, "call to unsafe function")
+                    }
+                }
+                expr_unary(_, deref, base) => {
+                    let base_type = ty::node_id_to_type(self.tcx, base.id);
+                    debug!("effect: unary case, base type is %s",
+                           ppaux::ty_to_str(self.tcx, base_type));
+                    match ty::get(base_type).sty {
+                        ty_ptr(_) => {
+                            self.require_unsafe(expr.span,
+                                           "dereference of unsafe pointer")
+                        }
+                        _ => {}
+                    }
+                }
+                expr_inline_asm(*) => {
+                    self.require_unsafe(expr.span, "use of inline assembly")
+                }
+                expr_path(*) => {
+                    match ty::resolve_expr(self.tcx, expr) {
+                        ast::def_static(_, true) => {
+                            self.require_unsafe(expr.span, "use of mutable static")
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+
+            self.walk_expr(expr, ());
+        }
+
+}
+
 pub fn check_crate(tcx: ty::ctxt,
                    method_map: method_map,
                    crate: &ast::Crate) {
@@ -53,112 +168,11 @@ pub fn check_crate(tcx: ty::ctxt,
         unsafe_context: SafeContext,
     };
 
-    let require_unsafe: @fn(span: span,
-                            description: &str) = |span, description| {
-        match context.unsafe_context {
-            SafeContext => {
-                // Report an error.
-                tcx.sess.span_err(span,
-                                  fmt!("%s requires unsafe function or block",
-                                       description))
-            }
-            UnsafeBlock(block_id) => {
-                // OK, but record this.
-                debug!("effect: recording unsafe block as used: %?", block_id);
-                let _ = tcx.used_unsafe.insert(block_id);
-            }
-            UnsafeFn => {}
-        }
+
+    let visitor = @mut EffectCheckVisitor {
+        tcx: tcx,
+        context: context,
     };
 
-    let visitor = oldvisit::mk_vt(@oldvisit::Visitor {
-        visit_fn: |fn_kind, fn_decl, block, span, node_id, (_, visitor)| {
-            let (is_item_fn, is_unsafe_fn) = match *fn_kind {
-                fk_item_fn(_, _, purity, _) => (true, purity == unsafe_fn),
-                fk_method(_, _, method) => (true, method.purity == unsafe_fn),
-                _ => (false, false),
-            };
-
-            let old_unsafe_context = context.unsafe_context;
-            if is_unsafe_fn {
-                context.unsafe_context = UnsafeFn
-            } else if is_item_fn {
-                context.unsafe_context = SafeContext
-            }
-
-            oldvisit::visit_fn(fn_kind,
-                            fn_decl,
-                            block,
-                            span,
-                            node_id,
-                            ((),
-                             visitor));
-
-            context.unsafe_context = old_unsafe_context
-        },
-
-        visit_block: |block, (_, visitor)| {
-            let old_unsafe_context = context.unsafe_context;
-            if block.rules == ast::UnsafeBlock &&
-                    context.unsafe_context == SafeContext {
-                context.unsafe_context = UnsafeBlock(block.id)
-            }
-
-            oldvisit::visit_block(block, ((), visitor));
-
-            context.unsafe_context = old_unsafe_context
-        },
-
-        visit_expr: |expr, (_, visitor)| {
-            match expr.node {
-                expr_method_call(callee_id, _, _, _, _, _) => {
-                    let base_type = ty::node_id_to_type(tcx, callee_id);
-                    debug!("effect: method call case, base type is %s",
-                           ppaux::ty_to_str(tcx, base_type));
-                    if type_is_unsafe_function(base_type) {
-                        require_unsafe(expr.span,
-                                       "invocation of unsafe method")
-                    }
-                }
-                expr_call(base, _, _) => {
-                    let base_type = ty::node_id_to_type(tcx, base.id);
-                    debug!("effect: call case, base type is %s",
-                           ppaux::ty_to_str(tcx, base_type));
-                    if type_is_unsafe_function(base_type) {
-                        require_unsafe(expr.span, "call to unsafe function")
-                    }
-                }
-                expr_unary(_, deref, base) => {
-                    let base_type = ty::node_id_to_type(tcx, base.id);
-                    debug!("effect: unary case, base type is %s",
-                           ppaux::ty_to_str(tcx, base_type));
-                    match ty::get(base_type).sty {
-                        ty_ptr(_) => {
-                            require_unsafe(expr.span,
-                                           "dereference of unsafe pointer")
-                        }
-                        _ => {}
-                    }
-                }
-                expr_inline_asm(*) => {
-                    require_unsafe(expr.span, "use of inline assembly")
-                }
-                expr_path(*) => {
-                    match ty::resolve_expr(tcx, expr) {
-                        ast::def_static(_, true) => {
-                            require_unsafe(expr.span, "use of mutable static")
-                        }
-                        _ => {}
-                    }
-                }
-                _ => {}
-            }
-
-            oldvisit::visit_expr(expr, ((), visitor))
-        },
-
-        .. *oldvisit::default_visitor()
-    });
-
-    oldvisit::visit_crate(crate, ((), visitor))
+    visitor.walk_crate(crate, ());
 }
