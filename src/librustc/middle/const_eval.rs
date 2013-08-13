@@ -15,7 +15,6 @@ use middle::ty;
 use middle;
 
 use syntax::{ast, ast_map, ast_util};
-use syntax::visit;
 use syntax::visit::Visitor;
 use syntax::ast::*;
 
