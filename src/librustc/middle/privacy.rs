@@ -290,7 +290,8 @@ impl PrivacyVisitor {
                             match item.node {
                                 item_trait(_, _, ref methods) => {
                                     if method_num >= (*methods).len() {
-                                        self.tcx.sess.span_bug(span, "method number out of range?!");
+                                        self.tcx.sess.span_bug(span,
+                                                               "method number out of range?!");
                                     }
                                     match (*methods)[method_num] {
                                         provided(method)
@@ -317,7 +318,8 @@ impl PrivacyVisitor {
                             self.tcx.sess.span_bug(span, "trait wasn't an item?!");
                         }
                         None => {
-                            self.tcx.sess.span_bug(span, "trait item wasn't found in the AST map?!");
+                            self.tcx.sess.span_bug(span,
+                                                   "trait item wasn't found in the AST map?!");
                         }
                     }
                 } else {

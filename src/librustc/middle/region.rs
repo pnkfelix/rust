@@ -910,7 +910,8 @@ struct DetermineRpVisitor;
 
 impl Visitor<@mut DetermineRpCtxt> for DetermineRpVisitor {
 
-    fn visit_fn(&mut self, fk:&fn_kind, fd:&fn_decl, b:&Block, s:span, n:NodeId, e:@mut DetermineRpCtxt) {
+    fn visit_fn(&mut self, fk:&fn_kind, fd:&fn_decl,
+                b:&Block, s:span, n:NodeId, e:@mut DetermineRpCtxt) {
         determine_rp_in_fn(self, fk, fd, b, s, n, e);
     }
     fn visit_item(&mut self, i:@item, e:@mut DetermineRpCtxt) {
