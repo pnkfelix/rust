@@ -1234,8 +1234,8 @@ impl UnusedMutLintVisitor {
 impl SubitemStoppableVisitor for UnusedMutLintVisitor {
     fn is_running_on_items(&mut self) -> bool { !self.stopping_on_items }
 
-    fn visit_fn_action(&mut self, a:&fn_kind, fd:&fn_decl,
-                       b:&Block, c:span, d:NodeId, cx:@mut Context) {
+    fn visit_fn_action(&mut self, _a:&fn_kind, fd:&fn_decl,
+                       _b:&Block, _c:span, _d:NodeId, cx:@mut Context) {
             self.visit_fn_decl(cx, fd);
     }
 }

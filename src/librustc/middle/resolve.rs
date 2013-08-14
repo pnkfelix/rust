@@ -4005,7 +4005,7 @@ impl Resolver {
 
     pub fn resolve_module(@mut self,
                           module_: &_mod,
-                          span: span,
+                          _span: span,
                           _name: ident,
                           id: NodeId,
                           visitor: &mut ResolveVisitor) {
