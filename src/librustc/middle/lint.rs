@@ -603,6 +603,18 @@ trait SubitemStoppableVisitor : Visitor<@mut Context> {
         // fill in with particular action without recursion if desired
     }
 
+    // The two OVERRIDE methods:
+    //
+    //   OVERRIDE_visit_item
+    //   OVERRIDE_visit_fn
+    //
+    // *must* be included as initial reimplementations of the standard
+    // default behavior of visit_item and visit_fn for every impl of
+    // Visitor, in order to recreate the effect of having two variant
+    // Outer/Inner behaviors of lint visitors.  (See earlier versions
+    // of this module to see what the original encoding was of this
+    // emulated behavior.)
+
     fn OVERRIDE_visit_item(&mut self, i:@item, e:@mut Context) {
         if self.is_running_on_items() {
             self.visit_item_action(i, e);
