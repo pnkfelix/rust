@@ -615,6 +615,14 @@ trait SubitemStoppableVisitor : Visitor<@mut Context> {
         if self.is_running_on_items() {
             self.visit_fn_action(fk, fd, b, s, n, e);
             visit::walk_fn(self, fk, fd, b, s, n, e);
+        } else {
+            match *fk {
+                ast::fk_method(*) => {}
+                _ => {
+                    self.visit_fn_action(fk, fd, b, s, n, e);
+                    visit::walk_fn(self, fk, fd, b, s, n, e);
+                }
+            }
         }
     }
 }
