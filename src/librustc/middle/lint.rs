@@ -748,6 +748,15 @@ fn lint_while_true() -> @mut OuterLint {
 struct TypeLimitsLintVisitor { stopping_on_items: bool }
 
 impl Visitor<@mut Context> for TypeLimitsLintVisitor {
+    fn visit_item(&mut self, i:@item, e:@mut Context) {
+        self.OVERRIDE_visit_item(i, e);
+    }
+
+    fn visit_fn(&mut self, fk:&fn_kind, fd:&fn_decl,
+                b:&Block, s:span, n:NodeId, e:@mut Context) {
+        self.OVERRIDE_visit_fn(fk, fd, b, s, n, e);
+    }
+
     fn visit_expr(&mut self, e:@expr, cx:@mut Context) {
 
             match e.node {
@@ -1183,43 +1192,6 @@ fn lint_unused_unsafe() -> @mut OuterLint {
 
 struct UnusedMutLintVisitor { stopping_on_items: bool }
 
-impl SubitemStoppableVisitor for UnusedMutLintVisitor {
-    fn is_running_on_items(&mut self) -> bool { !self.stopping_on_items }
-
-    fn visit_fn_action(&mut self, a:&fn_kind, fd:&fn_decl,
-                       b:&Block, c:span, d:NodeId, cx:@mut Context) {
-            self.visit_fn_decl(cx, fd);
-            visit::walk_fn(self, a, fd, b, c, d, cx);
-    }
-}
-
-impl Visitor<@mut Context> for UnusedMutLintVisitor {
-
-    fn visit_local(&mut self, l:@Local, cx:@mut Context) {
-            if l.is_mutbl {
-                self.check_pat(cx, l.pat);
-            }
-            visit::walk_local(self, l, cx);
-    }
-
-    fn visit_item(&mut self, i:@item, e:@mut Context) {
-        self.OVERRIDE_visit_item(i, e);
-    }
-
-    fn visit_ty_method(&mut self, tm:&TypeMethod, cx:@mut Context) {
-            self.visit_fn_decl(cx, &tm.decl);
-            visit::walk_ty_method(self, tm, cx);
-    }
-
-    fn visit_trait_method(&mut self, tm:&trait_method, cx:@mut Context) {
-            match *tm {
-                ast::required(ref tm) => self.visit_fn_decl(cx, &tm.decl),
-                ast::provided(m) => self.visit_fn_decl(cx, &m.decl)
-            }
-            visit::walk_trait_method(self, tm, cx);
-    }
-}
-
 impl UnusedMutLintVisitor {
     fn check_pat(&mut self, cx: &Context, p: @ast::pat) {
         let mut used = false;
@@ -1244,6 +1216,47 @@ impl UnusedMutLintVisitor {
                 self.check_pat(cx, arg.pat);
             }
         }
+    }
+}
+
+impl SubitemStoppableVisitor for UnusedMutLintVisitor {
+    fn is_running_on_items(&mut self) -> bool { !self.stopping_on_items }
+
+    fn visit_fn_action(&mut self, a:&fn_kind, fd:&fn_decl,
+                       b:&Block, c:span, d:NodeId, cx:@mut Context) {
+            self.visit_fn_decl(cx, fd);
+    }
+}
+
+impl Visitor<@mut Context> for UnusedMutLintVisitor {
+    fn visit_item(&mut self, i:@item, e:@mut Context) {
+        self.OVERRIDE_visit_item(i, e);
+    }
+
+    fn visit_fn(&mut self, fk:&fn_kind, fd:&fn_decl,
+                b:&Block, s:span, n:NodeId, e:@mut Context) {
+        self.OVERRIDE_visit_fn(fk, fd, b, s, n, e);
+    }
+
+
+    fn visit_local(&mut self, l:@Local, cx:@mut Context) {
+            if l.is_mutbl {
+                self.check_pat(cx, l.pat);
+            }
+            visit::walk_local(self, l, cx);
+    }
+
+    fn visit_ty_method(&mut self, tm:&TypeMethod, cx:@mut Context) {
+            self.visit_fn_decl(cx, &tm.decl);
+            visit::walk_ty_method(self, tm, cx);
+    }
+
+    fn visit_trait_method(&mut self, tm:&trait_method, cx:@mut Context) {
+            match *tm {
+                ast::required(ref tm) => self.visit_fn_decl(cx, &tm.decl),
+                ast::provided(m) => self.visit_fn_decl(cx, &m.decl)
+            }
+            visit::walk_trait_method(self, tm, cx);
     }
 }
 
