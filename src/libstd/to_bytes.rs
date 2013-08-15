@@ -21,6 +21,7 @@ use iterator::Iterator;
 use option::{None, Option, Some};
 use str::StrSlice;
 use vec::ImmutableVector;
+use container::Container;
 
 pub type Cb<'self> = &'self fn(buf: &[u8]) -> bool;
 
@@ -224,7 +225,7 @@ impl IterBytes for f64 {
 impl<'self,A:IterBytes> IterBytes for &'self [A] {
     #[inline]
     fn iter_bytes(&self, lsb0: bool, f: Cb) -> bool {
-        self.iter().advance(|elt| elt.iter_bytes(lsb0, |b| f(b)))
+        self.len().iter_bytes(lsb0, |b| f(b)) && self.iter().advance(|elt| elt.iter_bytes(lsb0, |b| f(b)))
     }
 }
 
@@ -259,39 +260,39 @@ fn borrow<'x,A>(a: &'x [A]) -> &'x [A] {
 impl<A:IterBytes> IterBytes for ~[A] {
     #[inline]
     fn iter_bytes(&self, lsb0: bool, f: Cb) -> bool {
-        borrow(*self).iter_bytes(lsb0, f)
+        self.len().iter_bytes(lsb0, |b| f(b)) && borrow(*self).iter_bytes(lsb0, |b| f(b))
     }
 }
 
 impl<A:IterBytes> IterBytes for @[A] {
     #[inline]
     fn iter_bytes(&self, lsb0: bool, f: Cb) -> bool {
-        borrow(*self).iter_bytes(lsb0, f)
+        self.len().iter_bytes(lsb0, |b| f(b)) && borrow(*self).iter_bytes(lsb0, |b| f(b))
     }
 }
 
 impl<'self> IterBytes for &'self str {
     #[inline]
-    fn iter_bytes(&self, _lsb0: bool, f: Cb) -> bool {
-        f(self.as_bytes())
+    fn iter_bytes(&self, lsb0: bool, f: Cb) -> bool {
+        self.len().iter_bytes(lsb0, |b| f(b)) && f(self.as_bytes())
     }
 }
 
 impl IterBytes for ~str {
     #[inline]
-    fn iter_bytes(&self, _lsb0: bool, f: Cb) -> bool {
+    fn iter_bytes(&self, lsb0: bool, f: Cb) -> bool {
         // this should possibly include the null terminator, but that
         // breaks .find_equiv on hashmaps.
-        f(self.as_bytes())
+        self.len().iter_bytes(lsb0, |b| f(b)) && f(self.as_bytes())
     }
 }
 
 impl IterBytes for @str {
     #[inline]
-    fn iter_bytes(&self, _lsb0: bool, f: Cb) -> bool {
+    fn iter_bytes(&self, lsb0: bool, f: Cb) -> bool {
         // this should possibly include the null terminator, but that
         // breaks .find_equiv on hashmaps.
-        f(self.as_bytes())
+        self.len().iter_bytes(lsb0, |b| f(b)) && f(self.as_bytes())
     }
 }
 
@@ -300,7 +301,7 @@ impl<A:IterBytes> IterBytes for Option<A> {
     fn iter_bytes(&self, lsb0: bool, f: Cb) -> bool {
         match *self {
           Some(ref a) => 0u8.iter_bytes(lsb0, |b| f(b)) && a.iter_bytes(lsb0, |b| f(b)),
-          None => 1u8.iter_bytes(lsb0, f)
+          None => 1u8.iter_bytes(lsb0, |b| f(b))
         }
     }
 }
@@ -308,28 +309,28 @@ impl<A:IterBytes> IterBytes for Option<A> {
 impl<'self,A:IterBytes> IterBytes for &'self A {
     #[inline]
     fn iter_bytes(&self, lsb0: bool, f: Cb) -> bool {
-        (**self).iter_bytes(lsb0, f)
+        (**self).iter_bytes(lsb0, |b| f(b))
     }
 }
 
 impl<A:IterBytes> IterBytes for @A {
     #[inline]
     fn iter_bytes(&self, lsb0: bool, f: Cb) -> bool {
-        (**self).iter_bytes(lsb0, f)
+        (**self).iter_bytes(lsb0, |b| f(b))
     }
 }
 
 impl<A:IterBytes> IterBytes for @mut A {
     #[inline]
     fn iter_bytes(&self, lsb0: bool, f: Cb) -> bool {
-        (**self).iter_bytes(lsb0, f)
+        (**self).iter_bytes(lsb0, |b| f(b))
     }
 }
 
 impl<A:IterBytes> IterBytes for ~A {
     #[inline]
     fn iter_bytes(&self, lsb0: bool, f: Cb) -> bool {
-        (**self).iter_bytes(lsb0, f)
+        (**self).iter_bytes(lsb0, |b| f(b))
     }
 }
 
@@ -338,7 +339,7 @@ impl<A:IterBytes> IterBytes for ~A {
 impl<A> IterBytes for *const A {
     #[inline]
     fn iter_bytes(&self, lsb0: bool, f: Cb) -> bool {
-        (*self as uint).iter_bytes(lsb0, f)
+        (*self as uint).iter_bytes(lsb0, |b| f(b))
     }
 }
 
