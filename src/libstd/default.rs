@@ -13,5 +13,5 @@
 /// A trait that types which have a useful default value should implement.
 pub trait Default {
     /// Return the "default value" for a type.
-    pub fn default() -> Self;
+    fn default() -> Self;
 }
