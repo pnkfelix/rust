@@ -588,8 +588,8 @@ define DEF_RUN_COMPILETEST
 
 CTEST_ARGS$(1)-T-$(2)-H-$(3)-$(4) := \
         $$(CTEST_COMMON_ARGS$(1)-T-$(2)-H-$(3))	\
-		$(foreach base,$$(CTEST_SRC_BASE_$(4)), \
-        	--src-base $$(S)src/test/$(base))/ \
+        $(foreach base,$$(CTEST_SRC_BASE_$(4)), \
+        --src-base $$(S)src/test/$$(base))/ \
         --build-base $(3)/test/$$(CTEST_BUILD_BASE_$(4))/ \
         --ratchet-metrics $(call TEST_RATCHET_FILE,$(1),$(2),$(3),$(4)) \
         --mode $$(CTEST_MODE_$(4)) \
