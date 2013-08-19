@@ -5,28 +5,13 @@
 #[license = "MIT/ASL2"];
 #[crate_type = "bin"];
 
-//#[deny(warnings)];
-
-extern mod syntax;
-extern mod rustc;
-
 extern mod extra;
+extern mod rustdoc_ng;
 
+use rustdoc_ng::*;
 use std::cell::Cell;
+
 use extra::serialize::Encodable;
-
-pub mod core;
-pub mod doctree;
-pub mod clean;
-pub mod visit_ast;
-pub mod fold;
-pub mod plugins;
-mod passes;
-
-pub static SCHEMA_VERSION: &'static str = "0.8.0";
-
-pub static ctxtkey: std::local_data::Key<@core::DocContext> = &std::local_data::Key;
-
 
 fn main() {
     use extra::getopts::*;

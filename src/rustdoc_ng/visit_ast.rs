@@ -1,8 +1,6 @@
 //! Rust AST Visitor. Extracts useful information and massages it into a form
 //! usable for clean
 
-use std::vec;
-
 use syntax::abi::AbiSet;
 use syntax::{ast, ast_map};
 use syntax::codemap::span;

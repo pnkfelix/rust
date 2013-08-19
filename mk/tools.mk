@@ -25,8 +25,8 @@ RUSTDOC_INPUTS := $(wildcard $(S)src/librustdoc/*.rs)
 
 # rustdoc_ng, the next generation documentation tool
 
-RUSTDOCNG_LIB := $(S)src/rustdoc/main.rs
-RUSTDOCNH_INPUTS := $(wilcard $(S)src/rustdoc/*.rs)
+RUSTDOCNG_LIB := $(S)src/rustdoc/lib.rs
+RUSTDOCNG_INPUTS := $(wildcard $(S)src/rustdoc/*.rs)
 
 # Rusti, the JIT REPL
 RUSTI_LIB := $(S)src/librusti/rusti.rs

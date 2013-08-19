@@ -1,5 +1,4 @@
 use std;
-use clean;
 use clean::*;
 use std::iterator::Extendable;
 
