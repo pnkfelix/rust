@@ -46,6 +46,7 @@ use syntax::ast_util::{def_id_of_def, local_def};
 use syntax::codemap::{span, dummy_sp};
 use syntax::opt_vec;
 use syntax::visit;
+use syntax::visit::Visitor;
 use syntax::parse;
 use util::ppaux::ty_to_str;
 
@@ -186,7 +187,7 @@ impl visit::Visitor<()> for CoherenceCheckVisitor {
                     }
                 };
 
-        visit::walk_item(self, item, ());
+        visit::walk_item(self as &mut Visitor<()>, item, ());
     }
 }
 
@@ -198,7 +199,7 @@ impl visit::Visitor<()> for PrivilegedScopeVisitor {
                 match item.node {
                     item_mod(ref module_) => {
                         // Then visit the module items.
-                        visit::walk_mod(self, module_, ());
+                        visit::walk_mod(self as &mut Visitor<()>, module_, ());
                     }
                     item_impl(_, None, ref ast_ty, _) => {
                         if !self.cc.ast_type_is_defined_in_local_crate(ast_ty) {
@@ -231,10 +232,10 @@ impl visit::Visitor<()> for PrivilegedScopeVisitor {
                             }
                         }
 
-                        visit::walk_item(self, item, ());
+                        visit::walk_item(self as &mut Visitor<()>, item, ());
                     }
                     _ => {
-                        visit::walk_item(self, item, ());
+                        visit::walk_item(self as &mut Visitor<()>, item, ());
                     }
                 }
     }
@@ -247,7 +248,7 @@ impl CoherenceChecker {
         // builds up the trait inheritance table.
 
         let mut visitor = CoherenceCheckVisitor { cc: self };
-        visit::walk_crate(&mut visitor, crate, ());
+        visit::walk_crate(&mut visitor as &mut Visitor<()>, crate, ());
 
         // Check that there are no overlapping trait instances
         self.check_implementation_coherence();
@@ -542,7 +543,7 @@ impl CoherenceChecker {
     // Privileged scope checking
     pub fn check_privileged_scopes(self, crate: &Crate) {
         let mut visitor = PrivilegedScopeVisitor{ cc: self };
-        visit::walk_crate(&mut visitor, crate, ());
+        visit::walk_crate(&mut visitor as &mut Visitor<()>, crate, ());
     }
 
     pub fn trait_ref_to_trait_def_id(&self, trait_ref: &trait_ref) -> def_id {

@@ -323,7 +323,7 @@ impl<'self> Visitor<()> for LanguageItemVisitor<'self> {
                     }
                 }
 
-        visit::walk_item(self, item, ());
+        visit::walk_item(self as &mut Visitor<()>, item, ());
     }
 }
 
@@ -440,7 +440,7 @@ impl<'self> LanguageItemCollector<'self> {
     pub fn collect_local_language_items(&mut self) {
         let this: *mut LanguageItemCollector = &mut *self;
         let mut v = LanguageItemVisitor { this: this };
-        visit::walk_crate(&mut v, self.crate, ());
+        visit::walk_crate(&mut v as &mut Visitor<()>, self.crate, ());
     }
 
     pub fn collect_external_language_items(&mut self) {

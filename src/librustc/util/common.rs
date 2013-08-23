@@ -71,7 +71,7 @@ impl Visitor<@mut bool> for LoopQueryVisitor {
           // Skip inner loops, since a break in the inner loop isn't a
           // break inside the outer loop
           ast::expr_loop(*) | ast::expr_while(*) => {}
-          _ => visit::walk_expr(self, e, flag)
+          _ => visit::walk_expr(self as &mut Visitor<@mut bool>, e, flag)
         }
     }
 }
@@ -81,7 +81,7 @@ impl Visitor<@mut bool> for LoopQueryVisitor {
 pub fn loop_query(b: &ast::Block, p: @fn(&ast::expr_) -> bool) -> bool {
     let rs = @mut false;
     let mut v = LoopQueryVisitor { p: p };
-    visit::walk_block(&mut v, b, rs);
+    visit::walk_block(&mut v as &mut Visitor<@mut bool>, b, rs);
     return *rs;
 }
 
@@ -92,7 +92,7 @@ struct BlockQueryVisitor {
 impl Visitor<@mut bool> for BlockQueryVisitor {
     fn visit_expr(&mut self, e:@ast::expr, flag:@mut bool) {
         *flag |= (self.p)(e);
-        visit::walk_expr(self, e, flag)
+        visit::walk_expr(self as &mut Visitor<@mut bool>, e, flag)
     }
 }
 
@@ -101,7 +101,7 @@ impl Visitor<@mut bool> for BlockQueryVisitor {
 pub fn block_query(b: &ast::Block, p: @fn(@ast::expr) -> bool) -> bool {
     let rs = @mut false;
     let mut v = BlockQueryVisitor { p: p };
-    visit::walk_block(&mut v, b, rs);
+    visit::walk_block(&mut v as &mut Visitor<@mut bool>, b, rs);
     return *rs;
 }
 

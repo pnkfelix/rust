@@ -196,7 +196,7 @@ fn visit_item(_v: &mut RegionckVisitor, _item: @ast::item, _rcx: @mut Rcx) {
 
 fn visit_block(v: &mut RegionckVisitor, b: &ast::Block, rcx: @mut Rcx) {
     rcx.fcx.tcx().region_maps.record_cleanup_scope(b.id);
-    visit::walk_block(v, b, rcx);
+    visit::walk_block(v as &mut Visitor<@mut Rcx>, b, rcx);
 }
 
 fn visit_arm(v: &mut RegionckVisitor, arm: &ast::arm, rcx: @mut Rcx) {
@@ -205,13 +205,13 @@ fn visit_arm(v: &mut RegionckVisitor, arm: &ast::arm, rcx: @mut Rcx) {
         constrain_bindings_in_pat(p, rcx);
     }
 
-    visit::walk_arm(v, arm, rcx);
+    visit::walk_arm(v as &mut Visitor<@mut Rcx>, arm, rcx);
 }
 
 fn visit_local(v: &mut RegionckVisitor, l: @ast::Local, rcx: @mut Rcx) {
     // see above
     constrain_bindings_in_pat(l.pat, rcx);
-    visit::walk_local(v, l, rcx);
+    visit::walk_local(v as &mut Visitor<@mut Rcx>, l, rcx);
 }
 
 fn constrain_bindings_in_pat(pat: @ast::pat, rcx: @mut Rcx) {
@@ -336,13 +336,13 @@ fn visit_expr(v: &mut RegionckVisitor, expr: @ast::expr, rcx: @mut Rcx) {
             constrain_callee(rcx, callee.id, expr, callee);
             constrain_call(rcx, callee.id, expr, None, *args, false);
 
-            visit::walk_expr(v, expr, rcx);
+            visit::walk_expr(v as &mut Visitor<@mut Rcx>, expr, rcx);
         }
 
         ast::expr_method_call(callee_id, arg0, _, _, ref args, _) => {
             constrain_call(rcx, callee_id, expr, Some(arg0), *args, false);
 
-            visit::walk_expr(v,expr, rcx);
+            visit::walk_expr(v as &mut Visitor<@mut Rcx>,expr, rcx);
         }
 
         ast::expr_index(callee_id, lhs, rhs) |
@@ -354,14 +354,14 @@ fn visit_expr(v: &mut RegionckVisitor, expr: @ast::expr, rcx: @mut Rcx) {
             // should be converted to an adjustment!
             constrain_call(rcx, callee_id, expr, Some(lhs), [rhs], true);
 
-            visit::walk_expr(v, expr, rcx);
+            visit::walk_expr(v as &mut Visitor<@mut Rcx>, expr, rcx);
         }
 
         ast::expr_unary(callee_id, _, lhs) if has_method_map => {
             // As above.
             constrain_call(rcx, callee_id, expr, Some(lhs), [], true);
 
-            visit::walk_expr(v, expr, rcx);
+            visit::walk_expr(v as &mut Visitor<@mut Rcx>, expr, rcx);
         }
 
         ast::expr_unary(_, ast::deref, base) => {
@@ -369,7 +369,7 @@ fn visit_expr(v: &mut RegionckVisitor, expr: @ast::expr, rcx: @mut Rcx) {
             let base_ty = rcx.resolve_node_type(base.id);
             constrain_derefs(rcx, expr, 1, base_ty);
 
-            visit::walk_expr(v, expr, rcx);
+            visit::walk_expr(v as &mut Visitor<@mut Rcx>, expr, rcx);
         }
 
         ast::expr_index(_, vec_expr, _) => {
@@ -377,7 +377,7 @@ fn visit_expr(v: &mut RegionckVisitor, expr: @ast::expr, rcx: @mut Rcx) {
             let vec_type = rcx.resolve_expr_type_adjusted(vec_expr);
             constrain_index(rcx, expr, vec_type);
 
-            visit::walk_expr(v, expr, rcx);
+            visit::walk_expr(v as &mut Visitor<@mut Rcx>, expr, rcx);
         }
 
         ast::expr_cast(source, _) => {
@@ -407,7 +407,7 @@ fn visit_expr(v: &mut RegionckVisitor, expr: @ast::expr, rcx: @mut Rcx) {
                 _ => ()
             }
 
-            visit::walk_expr(v, expr, rcx);
+            visit::walk_expr(v as &mut Visitor<@mut Rcx>, expr, rcx);
         }
 
         ast::expr_addr_of(_, base) => {
@@ -423,13 +423,13 @@ fn visit_expr(v: &mut RegionckVisitor, expr: @ast::expr, rcx: @mut Rcx) {
             let ty0 = rcx.resolve_node_type(expr.id);
             constrain_regions_in_type(rcx, ty::re_scope(expr.id),
                                       infer::AddrOf(expr.span), ty0);
-            visit::walk_expr(v, expr, rcx);
+            visit::walk_expr(v as &mut Visitor<@mut Rcx>, expr, rcx);
         }
 
         ast::expr_match(discr, ref arms) => {
             guarantor::for_match(rcx, discr, *arms);
 
-            visit::walk_expr(v, expr, rcx);
+            visit::walk_expr(v as &mut Visitor<@mut Rcx>, expr, rcx);
         }
 
         ast::expr_fn_block(*) => {
@@ -438,7 +438,7 @@ fn visit_expr(v: &mut RegionckVisitor, expr: @ast::expr, rcx: @mut Rcx) {
 
         ast::expr_loop(ref body, _) => {
             let repeating_scope = rcx.set_repeating_scope(body.id);
-            visit::walk_expr(v, expr, rcx);
+            visit::walk_expr(v as &mut Visitor<@mut Rcx>, expr, rcx);
             rcx.set_repeating_scope(repeating_scope);
         }
 
@@ -453,7 +453,7 @@ fn visit_expr(v: &mut RegionckVisitor, expr: @ast::expr, rcx: @mut Rcx) {
         }
 
         _ => {
-            visit::walk_expr(v, expr, rcx);
+            visit::walk_expr(v as &mut Visitor<@mut Rcx>, expr, rcx);
         }
     }
 }
@@ -489,7 +489,7 @@ fn check_expr_fn_block(rcx: @mut Rcx,
             }
 
             let repeating_scope = rcx.set_repeating_scope(body.id);
-            visit::walk_expr(v, expr, rcx);
+            visit::walk_expr(v as &mut Visitor<@mut Rcx>, expr, rcx);
             rcx.set_repeating_scope(repeating_scope);
         }
 

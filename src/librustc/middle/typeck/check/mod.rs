@@ -302,13 +302,13 @@ struct CheckItemTypesVisitor { ccx: @mut CrateCtxt }
 impl Visitor<()> for CheckItemTypesVisitor {
     fn visit_item(&mut self, i:@ast::item, _:()) {
         check_item(self.ccx, i);
-        visit::walk_item(self, i, ());
+        visit::walk_item(self as &mut Visitor<()>, i, ());
     }
 }
 
 pub fn check_item_types(ccx: @mut CrateCtxt, crate: &ast::Crate) {
     let mut visit = CheckItemTypesVisitor { ccx: ccx };
-    visit::walk_crate(&mut visit, crate, ());
+    visit::walk_crate(&mut visit as &mut Visitor<()>, crate, ());
 }
 
 pub fn check_bare_fn(ccx: @mut CrateCtxt,
@@ -367,7 +367,7 @@ impl Visitor<()> for GatherLocalsVisitor {
                    self.fcx.pat_to_str(local.pat),
                    self.fcx.infcx().ty_to_str(
                        self.fcx.inh.locals.get_copy(&local.id)));
-            visit::walk_local(self, local, ());
+            visit::walk_local(self as &mut Visitor<()>, local, ());
 
     }
         // Add pattern bindings.
@@ -383,7 +383,7 @@ impl Visitor<()> for GatherLocalsVisitor {
               }
               _ => {}
             }
-            visit::walk_pat(self, p, ());
+            visit::walk_pat(self as &mut Visitor<()>, p, ());
 
     }
 
@@ -392,7 +392,7 @@ impl Visitor<()> for GatherLocalsVisitor {
             // we have to keep this up-to-date.  This
             // is... unfortunate.  It'd be nice to not need this.
             do self.fcx.with_region_lb(b.id) {
-                visit::walk_block(self, b, ());
+                visit::walk_block(&mut *self as &mut Visitor<()>, b, ());
             }
     }
 

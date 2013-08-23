@@ -188,9 +188,9 @@ impl Visitor<PrivacyContext> for ReachableVisitor {
                 }
 
                 if item.vis == public && privacy_context == PublicContext {
-                    visit::walk_item(self, item, PublicContext)
+                    visit::walk_item(self as &mut Visitor<PrivacyContext>, item, PublicContext)
                 } else {
-                    visit::walk_item(self, item, PrivateContext)
+                    visit::walk_item(self as &mut Visitor<PrivacyContext>, item, PrivateContext)
                 }
     }
 
@@ -250,7 +250,7 @@ impl Visitor<()> for MarkSymbolVisitor {
                     _ => {}
                 }
 
-                visit::walk_expr(self, expr, ())
+                visit::walk_expr(self as &mut Visitor<()>, expr, ())
     }
 }
 
@@ -278,7 +278,7 @@ impl ReachableContext {
         };
 
 
-        visit::walk_crate(&mut visitor, crate, PublicContext);
+        visit::walk_crate(&mut visitor as &mut Visitor<PrivacyContext>, crate, PublicContext);
     }
 
     // Returns true if the given def ID represents a local item that is
@@ -371,7 +371,7 @@ impl ReachableContext {
                 Some(&ast_map::node_item(item, _)) => {
                     match item.node {
                         item_fn(_, _, _, _, ref search_block) => {
-                            visit::walk_block(&mut visitor, search_block, ())
+                            visit::walk_block(&mut visitor as &mut Visitor<()>, search_block, ())
                         }
                         _ => {
                             self.tcx.sess.span_bug(item.span,
@@ -388,12 +388,12 @@ impl ReachableContext {
                                                     worklist?!")
                         }
                         provided(ref method) => {
-                            visit::walk_block(&mut visitor, &method.body, ())
+                            visit::walk_block(&mut visitor as &mut Visitor<()>, &method.body, ())
                         }
                     }
                 }
                 Some(&ast_map::node_method(ref method, _, _)) => {
-                    visit::walk_block(&mut visitor, &method.body, ())
+                    visit::walk_block(&mut visitor as &mut Visitor<()>, &method.body, ())
                 }
                 Some(_) => {
                     let ident_interner = token::get_ident_interner();

@@ -280,7 +280,7 @@ impl Visitor<()> for ConstEvalVisitor {
 pub fn process_crate(crate: &ast::Crate,
                      tcx: ty::ctxt) {
     let mut v = ConstEvalVisitor { tcx: tcx };
-    visit::walk_crate(&mut v, crate, ());
+    visit::walk_crate(&mut v as &mut Visitor<()>, crate, ());
     tcx.sess.abort_if_errors();
 }
 

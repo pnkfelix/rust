@@ -341,7 +341,7 @@ impl<'self> Visitor<&'self method_map> for PrivacyVisitor {
 
             let n_added = self.add_privileged_items(the_module.items);
 
-            visit::walk_mod(self, the_module, method_map);
+            visit::walk_mod(&mut *self as &mut Visitor<&'mm method_map>, the_module, method_map);
 
             do n_added.times {
                 ignore(self.privileged_items.pop());
@@ -354,7 +354,7 @@ impl<'self> Visitor<&'self method_map> for PrivacyVisitor {
             // attribute. This is used for the test runner.
             if !attr::contains_name(item.attrs, "!resolve_unexported") {
                 check_sane_privacy(self.tcx, item);
-                visit::walk_item(self, item, method_map);
+                visit::walk_item(self as &mut Visitor<&'mm method_map>, item, method_map);
             }
     }
 
@@ -376,7 +376,7 @@ impl<'self> Visitor<&'self method_map> for PrivacyVisitor {
                 }
             }
 
-            visit::walk_block(self, block, method_map);
+            visit::walk_block(&mut *self as &mut Visitor<&'mm method_map>, block, method_map);
 
             do n_added.times {
                 ignore(self.privileged_items.pop());
@@ -492,7 +492,7 @@ impl<'self> Visitor<&'self method_map> for PrivacyVisitor {
                 _ => {}
             }
 
-            visit::walk_expr(self, expr, method_map);
+            visit::walk_expr(self as &mut Visitor<&'mm method_map>, expr, method_map);
 
     }
 
@@ -543,7 +543,7 @@ impl<'self> Visitor<&'self method_map> for PrivacyVisitor {
                 _ => {}
             }
 
-            visit::walk_pat(self, pattern, method_map);
+            visit::walk_pat(self as &mut Visitor<&'mm method_map>, pattern, method_map);
     }
 }
 
@@ -556,7 +556,7 @@ pub fn check_crate<'mm>(tcx: ty::ctxt,
         tcx: tcx,
         privileged_items: privileged_items,
     };
-    visit::walk_crate(&mut visitor, crate, method_map);
+    visit::walk_crate(&mut visitor as &mut Visitor<&'mm method_map>, crate, method_map);
 }
 
 /// Validates all of the visibility qualifers placed on the item given. This

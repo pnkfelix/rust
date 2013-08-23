@@ -336,13 +336,13 @@ fn resolve_block(visitor: &mut RegionResolutionVisitor,
     let new_cx = Context {var_parent: Some(blk.id),
                           parent: Some(blk.id),
                           ..cx};
-    visit::walk_block(visitor, blk, new_cx);
+    visit::walk_block(visitor as &mut Visitor<Context>, blk, new_cx);
 }
 
 fn resolve_arm(visitor: &mut RegionResolutionVisitor,
                arm: &ast::arm,
                cx: Context) {
-    visit::walk_arm(visitor, arm, cx);
+    visit::walk_arm(visitor as &mut Visitor<Context>, arm, cx);
 }
 
 fn resolve_pat(visitor: &mut RegionResolutionVisitor,
@@ -350,7 +350,7 @@ fn resolve_pat(visitor: &mut RegionResolutionVisitor,
                cx: Context) {
     assert_eq!(cx.var_parent, cx.parent);
     parent_to_expr(cx, pat.id, pat.span);
-    visit::walk_pat(visitor, pat, cx);
+    visit::walk_pat(visitor as &mut Visitor<Context>, pat, cx);
 }
 
 fn resolve_stmt(visitor: &mut RegionResolutionVisitor,
@@ -358,13 +358,13 @@ fn resolve_stmt(visitor: &mut RegionResolutionVisitor,
                 cx: Context) {
     match stmt.node {
         ast::stmt_decl(*) => {
-            visit::walk_stmt(visitor, stmt, cx);
+            visit::walk_stmt(visitor as &mut Visitor<Context>, stmt, cx);
         }
         ast::stmt_expr(_, stmt_id) |
         ast::stmt_semi(_, stmt_id) => {
             parent_to_expr(cx, stmt_id, stmt.span);
             let expr_cx = Context {parent: Some(stmt_id), ..cx};
-            visit::walk_stmt(visitor, stmt, expr_cx);
+            visit::walk_stmt(visitor as &mut Visitor<Context>, stmt, expr_cx);
         }
         ast::stmt_mac(*) => cx.sess.bug("unexpanded macro")
     }
@@ -408,7 +408,7 @@ fn resolve_expr(visitor: &mut RegionResolutionVisitor,
     };
 
 
-    visit::walk_expr(visitor, expr, new_cx);
+    visit::walk_expr(visitor as &mut Visitor<Context>, expr, new_cx);
 }
 
 fn resolve_local(visitor: &mut RegionResolutionVisitor,
@@ -416,7 +416,7 @@ fn resolve_local(visitor: &mut RegionResolutionVisitor,
                  cx: Context) {
     assert_eq!(cx.var_parent, cx.parent);
     parent_to_expr(cx, local.id, local.span);
-    visit::walk_local(visitor, local, cx);
+    visit::walk_local(visitor as &mut Visitor<Context>, local, cx);
 }
 
 fn resolve_item(visitor: &mut RegionResolutionVisitor,
@@ -424,7 +424,7 @@ fn resolve_item(visitor: &mut RegionResolutionVisitor,
                 cx: Context) {
     // Items create a new outer block scope as far as we're concerned.
     let new_cx = Context {var_parent: None, parent: None, ..cx};
-    visit::walk_item(visitor, item, new_cx);
+    visit::walk_item(visitor as &mut Visitor<Context>, item, new_cx);
 }
 
 fn resolve_fn(visitor: &mut RegionResolutionVisitor,
@@ -453,7 +453,7 @@ fn resolve_fn(visitor: &mut RegionResolutionVisitor,
         }
         _ => {}
     }
-    visit::walk_fn_decl(visitor, decl, decl_cx);
+    visit::walk_fn_decl(&mut *visitor as &mut Visitor<Context>, decl, decl_cx);
 
     // The body of the fn itself is either a root scope (top-level fn)
     // or it continues with the inherited scope (closures).
@@ -517,7 +517,7 @@ pub fn resolve_crate(sess: Session,
                       parent: None,
                       var_parent: None};
     let mut visitor = RegionResolutionVisitor;
-    visit::walk_crate(&mut visitor, crate, cx);
+    visit::walk_crate(&mut visitor as &mut Visitor<Context>, crate, cx);
     return region_maps;
 }
 
@@ -736,7 +736,7 @@ fn determine_rp_in_item(visitor: &mut DetermineRpVisitor,
                         item: @ast::item,
                         cx: @mut DetermineRpCtxt) {
     do cx.with(item.id, true) {
-        visit::walk_item(visitor, item, cx);
+        visit::walk_item(&mut *visitor as &mut Visitor<@mut DetermineRpCtxt>, item, cx);
     }
 }
 
@@ -764,7 +764,7 @@ fn determine_rp_in_ty_method(visitor: &mut DetermineRpVisitor,
                              ty_m: &ast::TypeMethod,
                              cx: @mut DetermineRpCtxt) {
     do cx.with(cx.item_id, false) {
-        visit::walk_ty_method(visitor, ty_m, cx);
+        visit::walk_ty_method(&mut *visitor as &mut Visitor<@mut DetermineRpCtxt>, ty_m, cx);
     }
 }
 
@@ -882,7 +882,7 @@ fn determine_rp_in_ty(visitor: &mut DetermineRpVisitor,
       }
 
       _ => {
-        visit::walk_ty(visitor, ty, cx);
+        visit::walk_ty(visitor as &mut Visitor<@mut DetermineRpCtxt>, ty, cx);
       }
     }
 
@@ -903,7 +903,7 @@ fn determine_rp_in_ty(visitor: &mut DetermineRpVisitor,
 fn determine_rp_in_struct_field(visitor: &mut DetermineRpVisitor,
                                 cm: @ast::struct_field,
                                 cx: @mut DetermineRpCtxt) {
-    visit::walk_struct_field(visitor, cm, cx);
+    visit::walk_struct_field(visitor as &mut Visitor<@mut DetermineRpCtxt>, cm, cx);
 }
 
 struct DetermineRpVisitor;
@@ -948,7 +948,7 @@ pub fn determine_rp_in_crate(sess: Session,
 
     // Gather up the base set, worklist and dep_map
     let mut visitor = DetermineRpVisitor;
-    visit::walk_crate(&mut visitor, crate, cx);
+    visit::walk_crate(&mut visitor as &mut Visitor<@mut DetermineRpCtxt>, crate, cx);
 
     // Propagate indirect dependencies
     //

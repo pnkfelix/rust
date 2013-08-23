@@ -26,14 +26,15 @@ struct CheckLoopVisitor {
 }
 
 pub fn check_crate(tcx: ty::ctxt, crate: &Crate) {
-    visit::walk_crate(&mut CheckLoopVisitor { tcx: tcx },
+    let mut ctxt = CheckLoopVisitor { tcx: tcx };
+    visit::walk_crate(&mut ctxt as &mut Visitor<Context>,
                       crate,
                       Context { in_loop: false, can_ret: true });
 }
 
 impl Visitor<Context> for CheckLoopVisitor {
     fn visit_item(&mut self, i:@item, _cx:Context) {
-        visit::walk_item(self, i, Context {
+        visit::walk_item(self as &mut Visitor<Context>, i, Context {
                                     in_loop: false,
                                     can_ret: true
                                   });
@@ -66,9 +67,9 @@ impl Visitor<Context> for CheckLoopVisitor {
                 if !cx.can_ret {
                     self.tcx.sess.span_err(e.span, "`return` in block function");
                 }
-                visit::walk_expr_opt(self, oe, cx);
+                visit::walk_expr_opt(self as &mut Visitor<Context>, oe, cx);
               }
-              _ => visit::walk_expr(self, e, cx)
+              _ => visit::walk_expr(self as &mut Visitor<Context>, e, cx)
             }
 
     }

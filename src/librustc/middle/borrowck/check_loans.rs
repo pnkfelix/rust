@@ -661,7 +661,7 @@ fn check_loans_in_fn<'a>(visitor: &mut CheckLoanVisitor,
         }
     }
 
-    visit::walk_fn(visitor, fk, decl, body, sp, id, this);
+    visit::walk_fn(visitor as &mut Visitor<CheckLoanCtxt<'a>>, fk, decl, body, sp, id, this);
 
     fn check_captured_variables(this: CheckLoanCtxt,
                                 closure_id: ast::NodeId,
@@ -707,13 +707,13 @@ fn check_loans_in_fn<'a>(visitor: &mut CheckLoanVisitor,
 fn check_loans_in_local<'a>(vt: &mut CheckLoanVisitor,
                             local: @ast::Local,
                             this: CheckLoanCtxt<'a>) {
-    visit::walk_local(vt, local, this);
+    visit::walk_local(vt as &mut Visitor<CheckLoanCtxt<'a>>, local, this);
 }
 
 fn check_loans_in_expr<'a>(vt: &mut CheckLoanVisitor,
                            expr: @ast::expr,
                            this: CheckLoanCtxt<'a>) {
-    visit::walk_expr(vt, expr, this);
+    visit::walk_expr(vt as &mut Visitor<CheckLoanCtxt<'a>>, expr, this);
 
     debug!("check_loans_in_expr(expr=%s)",
            expr.repr(this.tcx()));
@@ -770,13 +770,13 @@ fn check_loans_in_pat<'a>(vt: &mut CheckLoanVisitor,
 {
     this.check_for_conflicting_loans(pat.id);
     this.check_move_out_from_id(pat.id, pat.span);
-    visit::walk_pat(vt, pat, this);
+    visit::walk_pat(vt as &mut Visitor<CheckLoanCtxt<'a>>, pat, this);
 }
 
 fn check_loans_in_block<'a>(vt: &mut CheckLoanVisitor,
                             blk: &ast::Block,
                             this: CheckLoanCtxt<'a>)
 {
-    visit::walk_block(vt, blk, this);
+    visit::walk_block(vt as &mut Visitor<CheckLoanCtxt<'a>>, blk, this);
     this.check_for_conflicting_loans(blk.id);
 }

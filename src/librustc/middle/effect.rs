@@ -88,7 +88,7 @@ impl Visitor<()> for EffectCheckVisitor {
                 self.context.unsafe_context = SafeContext
             }
 
-            visit::walk_fn(self,
+            visit::walk_fn(&mut *self as &mut Visitor<()>,
                            fn_kind,
                             fn_decl,
                             block,
@@ -107,7 +107,7 @@ impl Visitor<()> for EffectCheckVisitor {
                 self.context.unsafe_context = UnsafeBlock(block.id)
             }
 
-            visit::walk_block(self, block, ());
+            visit::walk_block(&mut *self as &mut Visitor<()>, block, ());
 
             self.context.unsafe_context = old_unsafe_context
     }
@@ -158,7 +158,7 @@ impl Visitor<()> for EffectCheckVisitor {
                 _ => {}
             }
 
-            visit::walk_expr(self, expr, ());
+            visit::walk_expr(self as &mut Visitor<()>, expr, ());
     }
 }
 
@@ -175,5 +175,5 @@ pub fn check_crate(tcx: ty::ctxt,
         context: context,
     };
 
-    visit::walk_crate(&mut visitor, crate, ());
+    visit::walk_crate(&mut visitor as &mut Visitor<()>, crate, ());
 }

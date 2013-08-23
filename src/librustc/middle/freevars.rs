@@ -48,7 +48,7 @@ impl Visitor<int> for CollectFreevarsVisitor {
 
             match expr.node {
               ast::expr_fn_block(*) => {
-                visit::walk_expr(self, expr, depth + 1)
+                visit::walk_expr(self as &mut Visitor<int>, expr, depth + 1)
               }
               ast::expr_path(*) | ast::expr_self => {
                   let mut i = 0;
@@ -76,7 +76,7 @@ impl Visitor<int> for CollectFreevarsVisitor {
                     }
                   }
               }
-              _ => visit::walk_expr(self, expr, depth)
+              _ => visit::walk_expr(self as &mut Visitor<int>, expr, depth)
             }
     }
 
@@ -113,7 +113,7 @@ impl Visitor<()> for AnnotateFreevarsVisitor {
                 blk:&ast::Block, s:span, nid:ast::NodeId, _:()) {
         let vars = collect_freevars(self.def_map, blk);
         self.freevars.insert(nid, vars);
-        visit::walk_fn(self, fk, fd, blk, s, nid, ());
+        visit::walk_fn(self as &mut Visitor<()>, fk, fd, blk, s, nid, ());
     }
 }
 
@@ -130,7 +130,7 @@ pub fn annotate_freevars(def_map: resolve::DefMap, crate: &ast::Crate) ->
         def_map: def_map,
         freevars: freevars,
     };
-    visit::walk_crate(&mut visitor, crate, ());
+    visit::walk_crate(&mut visitor as &mut Visitor<()>, crate, ());
 
     return freevars;
 }

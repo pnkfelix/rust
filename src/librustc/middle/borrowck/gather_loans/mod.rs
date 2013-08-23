@@ -125,7 +125,7 @@ fn add_pat_to_id_range(v: &mut GatherLoanVisitor,
     // `gather_pat()` method below. Eventually these two should be
     // brought together.
     this.id_range.add(p.id);
-    visit::walk_pat(v, p, this);
+    visit::walk_pat(v as &mut Visitor<@mut GatherLoanCtxt>, p, this);
 }
 
 fn gather_loans_in_fn(v: &mut GatherLoanVisitor,
@@ -145,7 +145,7 @@ fn gather_loans_in_fn(v: &mut GatherLoanVisitor,
         // Visit closures as part of the containing item.
         &visit::fk_anon(*) | &visit::fk_fn_block(*) => {
             this.push_repeating_id(body.id);
-            visit::walk_fn(v, fk, decl, body, sp, id, this);
+            visit::walk_fn(v as &mut Visitor<@mut GatherLoanCtxt>, fk, decl, body, sp, id, this);
             this.pop_repeating_id(body.id);
             this.gather_fn_arg_patterns(decl, body);
         }
@@ -156,7 +156,7 @@ fn gather_loans_in_block(v: &mut GatherLoanVisitor,
                          blk: &ast::Block,
                          this: @mut GatherLoanCtxt) {
     this.id_range.add(blk.id);
-    visit::walk_block(v, blk, this);
+    visit::walk_block(v as &mut Visitor<@mut GatherLoanCtxt>, blk, this);
 }
 
 fn gather_loans_in_local(v: &mut GatherLoanVisitor,
@@ -192,7 +192,7 @@ fn gather_loans_in_local(v: &mut GatherLoanVisitor,
         }
     }
 
-    visit::walk_local(v, local, this);
+    visit::walk_local(v as &mut Visitor<@mut GatherLoanCtxt>, local, this);
 }
 
 
@@ -238,7 +238,7 @@ fn gather_loans_in_expr(v: &mut GatherLoanVisitor,
         // for the lifetime `scope_r` of the resulting ptr:
         let scope_r = ty_region(tcx, ex.span, ty::expr_ty(tcx, ex));
         this.guarantee_valid(ex.id, ex.span, base_cmt, mutbl, scope_r);
-        visit::walk_expr(v, ex, this);
+        visit::walk_expr(v as &mut Visitor<@mut GatherLoanCtxt>, ex, this);
       }
 
       ast::expr_assign(l, _) | ast::expr_assign_op(_, _, l, _) => {
@@ -255,7 +255,7 @@ fn gather_loans_in_expr(v: &mut GatherLoanVisitor,
                   // with moves etc, just ignore.
               }
           }
-          visit::walk_expr(v, ex, this);
+          visit::walk_expr(v as &mut Visitor<@mut GatherLoanCtxt>, ex, this);
       }
 
       ast::expr_match(ex_v, ref arms) => {
@@ -265,7 +265,7 @@ fn gather_loans_in_expr(v: &mut GatherLoanVisitor,
                 this.gather_pat(cmt, *pat, Some((arm.body.id, ex.id)));
             }
         }
-        visit::walk_expr(v, ex, this);
+        visit::walk_expr(v as &mut Visitor<@mut GatherLoanCtxt>, ex, this);
       }
 
       ast::expr_index(_, _, arg) |
@@ -279,7 +279,7 @@ fn gather_loans_in_expr(v: &mut GatherLoanVisitor,
           let scope_r = ty::re_scope(ex.id);
           let arg_cmt = this.bccx.cat_expr(arg);
           this.guarantee_valid(arg.id, arg.span, arg_cmt, m_imm, scope_r);
-          visit::walk_expr(v, ex, this);
+          visit::walk_expr(v as &mut Visitor<@mut GatherLoanCtxt>, ex, this);
       }
 
       // see explanation attached to the `root_ub` field:
@@ -298,17 +298,17 @@ fn gather_loans_in_expr(v: &mut GatherLoanVisitor,
       // see explanation attached to the `root_ub` field:
       ast::expr_loop(ref body, _) => {
           this.push_repeating_id(body.id);
-          visit::walk_expr(v, ex, this);
+          visit::walk_expr(v as &mut Visitor<@mut GatherLoanCtxt>, ex, this);
           this.pop_repeating_id(body.id);
       }
 
       ast::expr_fn_block(*) => {
           gather_moves::gather_captures(this.bccx, this.move_data, ex);
-          visit::walk_expr(v, ex, this);
+          visit::walk_expr(v as &mut Visitor<@mut GatherLoanCtxt>, ex, this);
       }
 
       _ => {
-          visit::walk_expr(v, ex, this);
+          visit::walk_expr(v as &mut Visitor<@mut GatherLoanCtxt>, ex, this);
       }
     }
 }
@@ -799,5 +799,5 @@ fn add_stmt_to_map(v: &mut GatherLoanVisitor,
         }
         _ => ()
     }
-    visit::walk_stmt(v, stmt, this);
+    visit::walk_stmt(v as &mut Visitor<@mut GatherLoanCtxt>, stmt, this);
 }

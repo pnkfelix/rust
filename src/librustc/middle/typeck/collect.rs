@@ -57,6 +57,7 @@ use syntax::codemap::span;
 use syntax::codemap;
 use syntax::print::pprust::{path_to_str, explicit_self_to_str};
 use syntax::visit;
+use syntax::visit::Visitor;
 use syntax::opt_vec::OptVec;
 use syntax::opt_vec;
 use syntax::parse::token::special_idents;
@@ -68,11 +69,11 @@ struct CollectItemTypesVisitor {
 impl visit::Visitor<()> for CollectItemTypesVisitor {
     fn visit_item(&mut self, i:@ast::item, _:()) {
         convert(self.ccx, i);
-        visit::walk_item(self, i, ());
+        visit::walk_item(self as &mut Visitor<()>, i, ());
     }
     fn visit_foreign_item(&mut self, i:@ast::foreign_item, _:()) {
         convert_foreign(self.ccx, i);
-        visit::walk_foreign_item(self, i, ());
+        visit::walk_foreign_item(self as &mut Visitor<()>, i, ());
     }
 }
 
@@ -92,7 +93,7 @@ pub fn collect_item_types(ccx: @mut CrateCtxt, crate: &ast::Crate) {
     }
 
     let mut visitor = CollectItemTypesVisitor{ ccx: ccx };
-    visit::walk_crate(&mut visitor, crate, ());
+    visit::walk_crate(&mut visitor as &mut Visitor<()>, crate, ());
 }
 
 pub trait ToTy {

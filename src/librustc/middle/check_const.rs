@@ -55,7 +55,7 @@ pub fn check_crate(sess: Session,
         method_map: method_map,
         tcx: tcx,
     };
-    visit::walk_crate(&mut v, crate, false);
+    visit::walk_crate(&mut v as &mut Visitor<bool>, crate, false);
     sess.abort_if_errors();
 }
 
@@ -77,7 +77,7 @@ pub fn check_item(v: &mut CheckCrateVisitor,
             }
         }
       }
-      _ => visit::walk_item(v, it, false)
+      _ => visit::walk_item(v as &mut Visitor<bool>, it, false)
     }
 }
 
@@ -101,7 +101,7 @@ pub fn check_pat(v: &mut CheckCrateVisitor, p: @pat, _is_const: bool) {
         if !is_str(a) { v.visit_expr(a, true); }
         if !is_str(b) { v.visit_expr(b, true); }
       }
-      _ => visit::walk_pat(v, p, false)
+      _ => visit::walk_pat(v as &mut Visitor<bool>, p, false)
     }
 }
 
@@ -216,7 +216,7 @@ pub fn check_expr(v: &mut CheckCrateVisitor,
       }
       _ => ()
     }
-    visit::walk_expr(v, e, is_const);
+    visit::walk_expr(v as &mut Visitor<bool>, e, is_const);
 }
 
 #[deriving(Clone)]
@@ -254,7 +254,7 @@ impl Visitor<env> for CheckItemRecursionVisitor {
             env.sess.span_fatal(env.root_it.span, "recursive constant");
         }
         env.idstack.push(it.id);
-        visit::walk_item(self, it, env);
+        visit::walk_item(self as &mut Visitor<env>, it, env);
         env.idstack.pop();
     }
 
@@ -272,6 +272,6 @@ impl Visitor<env> for CheckItemRecursionVisitor {
             },
             _ => ()
         }
-        visit::walk_expr(self, e, env);
+        visit::walk_expr(self as &mut Visitor<env>, e, env);
     }
 }

@@ -73,7 +73,7 @@ pub fn find_entry_point(session: Session, crate: &Crate, ast_map: ast_map::map) 
 
     let mut v = EntryVisitor;
 
-    visit::walk_crate(&mut v, crate, ctxt);
+    visit::walk_crate(&mut v as &mut Visitor<@mut EntryContext>, crate, ctxt);
 
     configure_main(ctxt);
 }
@@ -125,7 +125,7 @@ fn find_item(item: @item, ctxt: @mut EntryContext, visitor: &mut EntryVisitor) {
         _ => ()
     }
 
-    visit::walk_item(visitor, item, ctxt);
+    visit::walk_item(visitor as &mut Visitor<@mut EntryContext>, item, ctxt);
 }
 
 fn configure_main(ctxt: @mut EntryContext) {

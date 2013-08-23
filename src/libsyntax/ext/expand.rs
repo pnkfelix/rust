@@ -548,52 +548,52 @@ impl Visitor<()> for NewNameFinderContext {
                 }
             }
             // use the default traversal for non-pat_idents
-            _ => visit::walk_pat(self, pattern, ())
+            _ => visit::walk_pat(self as &mut Visitor<()>, pattern, ())
         }
     }
 
     // XXX: Methods below can become default methods.
 
     fn visit_mod(&mut self, module: &ast::_mod, _: span, _: NodeId, _: ()) {
-        visit::walk_mod(self, module, ())
+        visit::walk_mod(self as &mut Visitor<()>, module, ())
     }
 
     fn visit_view_item(&mut self, view_item: &ast::view_item, _: ()) {
-        visit::walk_view_item(self, view_item, ())
+        visit::walk_view_item(self as &mut Visitor<()>, view_item, ())
     }
 
     fn visit_item(&mut self, item: @ast::item, _: ()) {
-        visit::walk_item(self, item, ())
+        visit::walk_item(self as &mut Visitor<()>, item, ())
     }
 
     fn visit_foreign_item(&mut self,
                           foreign_item: @ast::foreign_item,
                           _: ()) {
-        visit::walk_foreign_item(self, foreign_item, ())
+        visit::walk_foreign_item(self as &mut Visitor<()>, foreign_item, ())
     }
 
     fn visit_local(&mut self, local: @ast::Local, _: ()) {
-        visit::walk_local(self, local, ())
+        visit::walk_local(self as &mut Visitor<()>, local, ())
     }
 
     fn visit_block(&mut self, block: &ast::Block, _: ()) {
-        visit::walk_block(self, block, ())
+        visit::walk_block(self as &mut Visitor<()>, block, ())
     }
 
     fn visit_stmt(&mut self, stmt: @ast::stmt, _: ()) {
-        visit::walk_stmt(self, stmt, ())
+        visit::walk_stmt(self as &mut Visitor<()>, stmt, ())
     }
 
     fn visit_arm(&mut self, arm: &ast::arm, _: ()) {
-        visit::walk_arm(self, arm, ())
+        visit::walk_arm(self as &mut Visitor<()>, arm, ())
     }
 
     fn visit_decl(&mut self, decl: @ast::decl, _: ()) {
-        visit::walk_decl(self, decl, ())
+        visit::walk_decl(self as &mut Visitor<()>, decl, ())
     }
 
     fn visit_expr(&mut self, expr: @ast::expr, _: ()) {
-        visit::walk_expr(self, expr, ())
+        visit::walk_expr(self as &mut Visitor<()>, expr, ())
     }
 
     fn visit_expr_post(&mut self, _: @ast::expr, _: ()) {
@@ -601,11 +601,11 @@ impl Visitor<()> for NewNameFinderContext {
     }
 
     fn visit_ty(&mut self, typ: &ast::Ty, _: ()) {
-        visit::walk_ty(self, typ, ())
+        visit::walk_ty(self as &mut Visitor<()>, typ, ())
     }
 
     fn visit_generics(&mut self, generics: &ast::Generics, _: ()) {
-        visit::walk_generics(self, generics, ())
+        visit::walk_generics(self as &mut Visitor<()>, generics, ())
     }
 
     fn visit_fn(&mut self,
@@ -615,7 +615,7 @@ impl Visitor<()> for NewNameFinderContext {
                 span: span,
                 node_id: NodeId,
                 _: ()) {
-        visit::walk_fn(self,
+        visit::walk_fn(self as &mut Visitor<()>,
                         function_kind,
                         function_declaration,
                         block,
@@ -625,13 +625,13 @@ impl Visitor<()> for NewNameFinderContext {
     }
 
     fn visit_ty_method(&mut self, ty_method: &ast::TypeMethod, _: ()) {
-        visit::walk_ty_method(self, ty_method, ())
+        visit::walk_ty_method(self as &mut Visitor<()>, ty_method, ())
     }
 
     fn visit_trait_method(&mut self,
                           trait_method: &ast::trait_method,
                           _: ()) {
-        visit::walk_trait_method(self, trait_method, ())
+        visit::walk_trait_method(self as &mut Visitor<()>, trait_method, ())
     }
 
     fn visit_struct_def(&mut self,
@@ -640,7 +640,7 @@ impl Visitor<()> for NewNameFinderContext {
                         generics: &ast::Generics,
                         node_id: NodeId,
                         _: ()) {
-        visit::walk_struct_def(self,
+        visit::walk_struct_def(self as &mut Visitor<()>,
                                 struct_def,
                                 ident,
                                 generics,
@@ -651,7 +651,7 @@ impl Visitor<()> for NewNameFinderContext {
     fn visit_struct_field(&mut self,
                           struct_field: @ast::struct_field,
                           _: ()) {
-        visit::walk_struct_field(self, struct_field, ())
+        visit::walk_struct_field(self as &mut Visitor<()>, struct_field, ())
     }
 }
 

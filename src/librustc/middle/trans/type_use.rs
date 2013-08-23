@@ -422,22 +422,22 @@ struct TypeUseVisitor;
 impl<'self> Visitor<&'self Context> for TypeUseVisitor {
 
     fn visit_expr<'a>(&mut self, e:@expr, cx: &'a Context) {
-            visit::walk_expr(self, e, cx);
+            visit::walk_expr(self as &mut Visitor<&'a Context>, e, cx);
             mark_for_expr(cx, e);
     }
 
     fn visit_local<'a>(&mut self, l:@Local, cx: &'a Context) {
-            visit::walk_local(self, l, cx);
+            visit::walk_local(self as &mut Visitor<&'a Context>, l, cx);
             node_type_needs(cx, use_repr, l.id);
     }
 
     fn visit_pat<'a>(&mut self, p:@pat, cx: &'a Context) {
-            visit::walk_pat(self, p, cx);
+            visit::walk_pat(self as &mut Visitor<&'a Context>, p, cx);
             node_type_needs(cx, use_repr, p.id);
     }
 
     fn visit_block<'a>(&mut self, b:&Block, cx: &'a Context) {
-            visit::walk_block(self, b, cx);
+            visit::walk_block(self as &mut Visitor<&'a Context>, b, cx);
             for e in b.expr.iter() {
                 node_type_needs(cx, use_repr, e.id);
             }

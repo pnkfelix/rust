@@ -98,7 +98,7 @@ pub fn check_crate(
     };
 
     let mut v = BorrowckVisitor;
-    visit::walk_crate(&mut v, crate, bccx);
+    visit::walk_crate(&mut v as &mut Visitor<@BorrowckCtxt>, crate, bccx);
 
     if tcx.sess.borrowck_stats() {
         io::println("--- borrowck stats ---");
@@ -166,7 +166,7 @@ fn borrowck_fn(v: &mut BorrowckVisitor,
         }
     }
 
-    visit::walk_fn(v, fk, decl, body, sp, id, this);
+    visit::walk_fn(v as &mut Visitor<@BorrowckCtxt>, fk, decl, body, sp, id, this);
 }
 
 // ----------------------------------------------------------------------

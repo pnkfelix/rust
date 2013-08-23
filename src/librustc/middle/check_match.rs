@@ -59,7 +59,7 @@ pub fn check_crate(tcx: ty::ctxt,
                               moves_map: moves_map};
     let mut v = CheckMatchVisitor { cx: cx };
 
-    visit::walk_crate(&mut v, crate, ());
+    visit::walk_crate(&mut v as &mut Visitor<()>, crate, ());
 
     tcx.sess.abort_if_errors();
 }
@@ -68,7 +68,7 @@ pub fn check_expr(v: &mut CheckMatchVisitor,
                   cx: @MatchCheckCtxt,
                   ex: @expr,
                   s: ()) {
-    visit::walk_expr(v, ex, s);
+    visit::walk_expr(v as &mut Visitor<()>, ex, s);
     match ex.node {
       expr_match(scrut, ref arms) => {
         // First, check legality of move bindings.
@@ -806,7 +806,7 @@ pub fn check_local(v: &mut CheckMatchVisitor,
                    cx: &MatchCheckCtxt,
                    loc: @Local,
                    s: ()) {
-    visit::walk_local(v, loc, s);
+    visit::walk_local(v as &mut Visitor<()>, loc, s);
     if is_refutable(cx, loc.pat) {
         cx.tcx.sess.span_err(loc.pat.span,
                              "refutable pattern in local binding");
@@ -824,7 +824,7 @@ pub fn check_fn(v: &mut CheckMatchVisitor,
                 sp: span,
                 id: NodeId,
                 s: ()) {
-    visit::walk_fn(v, kind, decl, body, sp, id, s);
+    visit::walk_fn(v as &mut Visitor<()>, kind, decl, body, sp, id, s);
     for input in decl.inputs.iter() {
         if is_refutable(cx, input.pat) {
             cx.tcx.sess.span_err(input.pat.span,

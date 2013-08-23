@@ -570,7 +570,7 @@ impl Visitor<@mut bool> for CalleeTranslationVisitor {
             if !*cx {
                 match e.node {
                   ast::expr_ret(_) => *cx = true,
-                  _ => visit::walk_expr(self, e, cx),
+                  _ => visit::walk_expr(self as &mut Visitor<@mut bool>, e, cx),
                 }
             }
     }
@@ -580,7 +580,7 @@ impl Visitor<@mut bool> for CalleeTranslationVisitor {
 pub fn body_contains_ret(body: &ast::Block) -> bool {
     let cx = @mut false;
     let mut v = CalleeTranslationVisitor;
-    visit::walk_block(&mut v, body, cx);
+    visit::walk_block(&mut v as &mut Visitor<@mut bool>, body, cx);
     *cx
 }
 

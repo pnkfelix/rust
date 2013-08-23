@@ -40,6 +40,7 @@ use syntax::diagnostic::span_handler;
 use syntax::parse::token::special_idents;
 use syntax::ast_util;
 use syntax::visit;
+use syntax::visit::Visitor;
 use syntax::parse::token;
 use syntax;
 use writer = extra::ebml::writer;
@@ -1229,7 +1230,7 @@ struct EncodeVisitor {
 impl visit::Visitor<()> for EncodeVisitor {
     fn visit_expr(&mut self, ex:@expr, _:()) { my_visit_expr(ex); }
     fn visit_item(&mut self, i:@item, _:()) {
-        visit::walk_item(self, i, ());
+        visit::walk_item(&mut *self as &mut Visitor<()>, i, ()); // FIXME
         my_visit_item(i,
                       self.items,
                       &self.ebml_w_for_visit_item,
@@ -1237,7 +1238,7 @@ impl visit::Visitor<()> for EncodeVisitor {
                       self.index);
     }
     fn visit_foreign_item(&mut self, ni:@foreign_item, _:()) {
-        visit::walk_foreign_item(self, ni, ());
+        visit::walk_foreign_item(&mut *self as &mut Visitor<()>, ni, ()); // FIXME
         my_visit_foreign_item(ni,
                               self.items,
                               &self.ebml_w_for_visit_foreign_item,
@@ -1272,7 +1273,7 @@ fn encode_info_for_items(ecx: &EncodeContext,
         ebml_w_for_visit_foreign_item: (*ebml_w).clone(),
     };
 
-    visit::walk_crate(&mut visitor, crate, ());
+    visit::walk_crate(&mut visitor as &mut Visitor<()>, crate, ());
 
     ebml_w.end_tag();
     return /*bad*/(*index).clone();

@@ -326,14 +326,14 @@ trait InnerLint {
 
 impl<V:Visitor<@mut Context>> InnerLint for V {
     fn descend_item(@mut self, i:&ast::item, e:@mut Context) {
-        visit::walk_item(self, i, e);
+        visit::walk_item(&mut *self as &mut Visitor<@mut Context>, i, e);
     }
     fn descend_crate(@mut self, crate: &ast::Crate, env: @mut Context) {
-        visit::walk_crate(self, crate, env);
+        visit::walk_crate(&mut *self as &mut Visitor<@mut Context>, crate, env);
     }
     fn descend_fn(@mut self, fk: &visit::fn_kind, fd: &ast::fn_decl, fb: &ast::Block,
                   sp: span, id: ast::NodeId, env: @mut Context) {
-        visit::walk_fn(self, fk, fd, fb, sp, id, env);
+        visit::walk_fn(&mut *self as &mut Visitor<@mut Context>, fk, fd, fb, sp, id, env);
     }
 }
 
@@ -542,7 +542,7 @@ impl Context {
                         }
                         NewVisitor(new_visitor) => {
                             let mut new_visitor = new_visitor;
-                            visit::walk_crate(&mut new_visitor, c, ())
+                            visit::walk_crate(&mut new_visitor as &mut Visitor<()>, c, ())
                         }
                     }
                 }
@@ -636,7 +636,7 @@ trait SubitemStoppableVisitor : Visitor<@mut Context> {
     fn OVERRIDE_visit_item(&mut self, i:@ast::item, e:@mut Context) {
         if self.is_running_on_items() {
             self.visit_item_action(i, e);
-            visit::walk_item(self, i, e);
+            visit::walk_item(self as &mut Visitor<@mut Context>, i, e);
         }
     }
 
@@ -644,13 +644,13 @@ trait SubitemStoppableVisitor : Visitor<@mut Context> {
                 b:&ast::Block, s:span, n:ast::NodeId, e:@mut Context) {
         if self.is_running_on_items() {
             self.visit_fn_action(fk, fd, b, s, n, e);
-            visit::walk_fn(self, fk, fd, b, s, n, e);
+            visit::walk_fn(self as &mut Visitor<@mut Context>, fk, fd, b, s, n, e);
         } else {
             match *fk {
                 visit::fk_method(*) => {}
                 _ => {
                     self.visit_fn_action(fk, fd, b, s, n, e);
-                    visit::walk_fn(self, fk, fd, b, s, n, e);
+                    visit::walk_fn(self as &mut Visitor<@mut Context>, fk, fd, b, s, n, e);
                 }
             }
         }
@@ -691,7 +691,7 @@ impl Visitor<@mut Context> for WhileTrueLintVisitor {
                 }
                 _ => ()
             }
-            visit::walk_expr(self, e, cx);
+            visit::walk_expr(self as &mut Visitor<@mut Context>, e, cx);
     }
 }
 
@@ -850,7 +850,7 @@ impl Visitor<@mut Context> for TypeLimitsLintVisitor {
                 }
                 _ => ()
             }
-            visit::walk_expr(self, e, cx);
+            visit::walk_expr(self as &mut Visitor<@mut Context>, e, cx);
     }
 }
 
@@ -982,7 +982,7 @@ impl Visitor<@mut Context> for HeapLintVisitor {
     fn visit_expr(&mut self, e:@ast::expr, cx:@mut Context) {
             let ty = ty::expr_ty(cx.tcx, e);
             check_type(cx, e.span, ty);
-            visit::walk_expr(self, e, cx);
+            visit::walk_expr(self as &mut Visitor<@mut Context>, e, cx);
     }
 }
 
@@ -1021,7 +1021,7 @@ impl Visitor<@mut Context> for PathStatementLintVisitor {
                 }
                 _ => ()
             }
-            visit::walk_stmt(self, s, cx);
+            visit::walk_stmt(self as &mut Visitor<@mut Context>, s, cx);
 
     }
 }
@@ -1114,7 +1114,7 @@ impl Visitor<@mut Context> for UnusedUnsafeLintVisitor {
                 }
                 _ => ()
             }
-            visit::walk_expr(self, e, cx);
+            visit::walk_expr(self as &mut Visitor<@mut Context>, e, cx);
     }
 }
 
@@ -1177,12 +1177,12 @@ impl Visitor<@mut Context> for UnusedMutLintVisitor {
             if l.is_mutbl {
                 self.check_pat(cx, l.pat);
             }
-            visit::walk_local(self, l, cx);
+            visit::walk_local(self as &mut Visitor<@mut Context>, l, cx);
     }
 
     fn visit_ty_method(&mut self, tm:&ast::TypeMethod, cx:@mut Context) {
             self.visit_fn_decl(cx, &tm.decl);
-            visit::walk_ty_method(self, tm, cx);
+            visit::walk_ty_method(self as &mut Visitor<@mut Context>, tm, cx);
     }
 
     fn visit_trait_method(&mut self, tm:&ast::trait_method, cx:@mut Context) {
@@ -1190,7 +1190,7 @@ impl Visitor<@mut Context> for UnusedMutLintVisitor {
                 ast::required(ref tm) => self.visit_fn_decl(cx, &tm.decl),
                 ast::provided(m) => self.visit_fn_decl(cx, &m.decl)
             }
-            visit::walk_trait_method(self, tm, cx);
+            visit::walk_trait_method(self as &mut Visitor<@mut Context>, tm, cx);
     }
 }
 
@@ -1231,7 +1231,7 @@ impl Visitor<@mut Context> for UnnecessaryAllocationLintVisitor {
 
     fn visit_expr(&mut self, e:@ast::expr, cx:@mut Context) {
             self.check(cx, e);
-            visit::walk_expr(self, e, cx);
+            visit::walk_expr(self as &mut Visitor<@mut Context>, e, cx);
     }
 }
 
@@ -1308,7 +1308,7 @@ impl Visitor<@mut Context> for MissingDocLintVisitor {
             // trait (no visibility)
             self.check_attrs(cx, m.attrs, m.span,
                         "missing documentation for a method");
-            visit::walk_ty_method(self, m, cx);
+            visit::walk_ty_method(self as &mut Visitor<@mut Context>, m, cx);
     }
 }
 
@@ -1394,7 +1394,7 @@ impl Visitor<@mut Context> for LintCheckVisitor {
                     check_item_heap(cx, it);
 
                     cx.process(Item(it));
-                    visit::walk_item(self, it, cx);
+                    visit::walk_item(&mut *self as &mut Visitor<@mut Context>, it, cx);
                     cx.in_trait_impl = false;
                 }
     }
@@ -1406,7 +1406,7 @@ impl Visitor<@mut Context> for LintCheckVisitor {
                     visit::fk_method(_, _, m) => {
                         do cx.with_lint_attrs(m.attrs) {
                             cx.process(Method(m));
-                            visit::walk_fn(self,
+                            visit::walk_fn(&mut *self as &mut Visitor<@mut Context>,
                                                fk,
                                                decl,
                                                body,
@@ -1416,7 +1416,7 @@ impl Visitor<@mut Context> for LintCheckVisitor {
                         }
                     }
                     _ => {
-                        visit::walk_fn(self,
+                        visit::walk_fn(self as &mut Visitor<@mut Context>,
                                            fk,
                                            decl,
                                            body,
@@ -1466,7 +1466,7 @@ pub fn check_crate(tcx: ty::ctxt, crate: @ast::Crate) {
 
         let mut visitor = LintCheckVisitor;
 
-        visit::walk_crate(&mut visitor, crate, cx);
+        visit::walk_crate(&mut visitor as &mut Visitor<@mut Context>, crate, cx);
     }
 
     // If we missed any lints added to the session, then there's a bug somewhere

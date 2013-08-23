@@ -86,7 +86,7 @@ pub fn check_crate(tcx: ty::ctxt,
         current_item: -1
     };
     let mut visit = KindAnalysisVisitor;
-    visit::walk_crate(&mut visit, crate, ctx);
+    visit::walk_crate(&mut visit as &mut Visitor<Context>, crate, ctx);
     tcx.sess.abort_if_errors();
 }
 
@@ -167,7 +167,7 @@ fn check_item(visitor: &mut KindAnalysisVisitor, item: @item, cx: Context) {
     }
 
     let cx = Context { current_item: item.id, ..cx };
-    visit::walk_item(visitor, item, cx);
+    visit::walk_item(visitor as &mut Visitor<Context>, item, cx);
 }
 
 // Yields the appropriate function to check the kind of closed over
@@ -257,7 +257,7 @@ fn check_fn(
         }
     }
 
-    visit::walk_fn(v, fk, decl, body, sp, fn_id, cx);
+    visit::walk_fn(v as &mut Visitor<Context>, fk, decl, body, sp, fn_id, cx);
 }
 
 pub fn check_expr(v: &mut KindAnalysisVisitor, e: @expr, cx: Context) {
@@ -325,7 +325,7 @@ pub fn check_expr(v: &mut KindAnalysisVisitor, e: @expr, cx: Context) {
         }
         _ => {}
     }
-    visit::walk_expr(v, e, cx);
+    visit::walk_expr(v as &mut Visitor<Context>, e, cx);
 }
 
 fn check_ty(v: &mut KindAnalysisVisitor, aty: &Ty, cx: Context) {
@@ -343,7 +343,7 @@ fn check_ty(v: &mut KindAnalysisVisitor, aty: &Ty, cx: Context) {
       }
       _ => {}
     }
-    visit::walk_ty(v, aty, cx);
+    visit::walk_ty(v as &mut Visitor<Context>, aty, cx);
 }
 
 // Calls "any_missing" if any bounds were missing.
