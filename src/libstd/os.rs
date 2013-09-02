@@ -417,6 +417,11 @@ pub fn fsync_fd(fd: c_int, _l: io::fsync::Level) -> c_int {
     }
 }
 
+condition! {
+    // handler receives returned c_int and errno() value at that time.
+    pub pipe_error: (::libc::c_int, int) -> super::Pipe;
+}
+
 pub struct Pipe {
     input: c_int,
     out: c_int
@@ -428,11 +433,28 @@ pub fn pipe() -> Pipe {
     unsafe {
         let mut fds = Pipe {input: 0 as c_int,
                             out: 0 as c_int };
-        assert_eq!(libc::pipe(&mut fds.input), (0 as c_int));
+        let res = libc::pipe(&mut fds.input);
+        if (res != 0 as c_int) {
+            return pipe_error::cond.raise((res, errno()));
+        }
         return Pipe {input: fds.input, out: fds.out};
     }
 }
 
+// fn sample_handling_code () {
+//     do pipe_error::cond.trap(|(_res, errno)| {
+//         match errno as c_int {
+//             libc::EFAULT => fail!("filedes buffer in invalid area of process's address space"),
+//             libc::EMFILE | libc::ENFILE
+//                          => ... attempt fault recovery and return a Pipe, or ...
+//                             ... fail!("too many descriptors/open files"),
+//              => fail!("the system file table is full"),
+//             _            => fail!("pipe invocation failed, %s", last_os_error()),
+//         }
+//     }).inside {
+//         ... pipe() ...
+//     }
+// }
 
 
 #[cfg(windows)]
@@ -448,7 +470,9 @@ pub fn pipe() -> Pipe {
                     out: 0 as c_int };
         let res = libc::pipe(&mut fds.input, 1024 as ::libc::c_uint,
                              (libc::O_BINARY | libc::O_NOINHERIT) as c_int);
-        assert_eq!(res, 0 as c_int);
+        if (res != 0 as c_int) {
+            return pipe_error::cond.raise((res, errno()));
+        }
         assert!((fds.input != -1 as c_int && fds.input != 0 as c_int));
         assert!((fds.out != -1 as c_int && fds.input != 0 as c_int));
         return Pipe {input: fds.input, out: fds.out};
