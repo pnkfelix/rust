@@ -381,19 +381,19 @@ impl Scheduler {
             None => {
                 // Our naive stealing, try kinda hard.
                 rtdebug!("scheduler trying to steal");
-                let len = self.work_queues.len();
-                return self.try_steals(len/2);
+                return self.try_steals();
             }
         }
     }
 
-    // With no backoff try stealing n times from the queues the
-    // scheduler knows about. This naive implementation can steal from
-    // our own queue or from other special schedulers.
-    fn try_steals(&mut self, n: uint) -> Option<~Task> {
-        for _ in range(0, n) {
-            let index = self.rng.gen_uint_range(0, self.work_queues.len());
-            let work_queues = &mut self.work_queues;
+    // Try stealing from all queues the scheduler knows about. This
+    // naive implementation can steal from our own queue or from other
+    // special schedulers.
+    fn try_steals(&mut self) -> Option<~Task> {
+        let work_queues = &mut self.work_queues;
+        let len = work_queues.len();
+        let start_index = self.rng.gen_uint_range(0, len);
+        for index in range(0, len).map(|i| (i + start_index) % len) {
             match work_queues[index].steal() {
                 Some(task) => {
                     rtdebug!("found task by stealing");
