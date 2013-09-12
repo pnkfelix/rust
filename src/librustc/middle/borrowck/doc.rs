@@ -180,7 +180,7 @@ checker uses a data flow propagation to compute the full set of loans
 in scope at each expression and then uses that set to decide whether
 that expression is legal.  Remember that the scope of loan is defined
 by its lifetime LT.  We sometimes say that a loan which is in-scope at
-a particular point is an "outstanding loan", aand the set of
+a particular point is an "outstanding loan", and the set of
 restrictions included in those loans as the "outstanding
 restrictions".
 
@@ -242,7 +242,7 @@ that will go into the final loan. We'll discuss in more detail below.
 Checking mutability is fairly straightforward. We just want to prevent
 immutable data from being borrowed as mutable. Note that it is ok to
 borrow mutable data as immutable, since that is simply a
-freeze. Formally we define a predicate `MUTABLE(LV, MQ)` which, if
+freeze. Formally we define a predicate `MUTABILITY(LV, MQ)` which, if
 defined, means that "borrowing `LV` with mutability `MQ` is ok. The
 Rust code corresponding to this predicate is the function
 `check_mutability` in `middle::borrowck::gather_loans`.
