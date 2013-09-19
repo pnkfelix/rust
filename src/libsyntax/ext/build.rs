@@ -365,7 +365,7 @@ impl AstBuilder for @ExtCtxt {
 
     fn strip_bounds(&self, generics: &Generics) -> Generics {
         let new_params = do generics.ty_params.map |ty_param| {
-            ast::TyParam { bounds: opt_vec::Empty, ..*ty_param }
+            ast::TyParam { bounds: opt_vec::Empty, ..(*ty_param).clone() }
         };
         Generics {
             ty_params: new_params,

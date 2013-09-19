@@ -2915,8 +2915,8 @@ pub fn ty_region(tcx: ctxt,
 
 pub fn replace_fn_sig(cx: ctxt, fsty: &sty, new_sig: FnSig) -> t {
     match *fsty {
-        ty_bare_fn(ref f) => mk_bare_fn(cx, BareFnTy {sig: new_sig, ..*f}),
-        ty_closure(ref f) => mk_closure(cx, ClosureTy {sig: new_sig, ..*f}),
+        ty_bare_fn(ref f) => mk_bare_fn(cx, BareFnTy {sig: new_sig, ..(*f).clone()}),
+        ty_closure(ref f) => mk_closure(cx, ClosureTy {sig: new_sig, ..(*f).clone()}),
         ref s => {
             cx.sess.bug(
                 fmt!("ty_fn_sig() called on non-fn type: %?", s));

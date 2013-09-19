@@ -96,6 +96,7 @@ pub enum PointerKind {
 pub enum InteriorKind {
     InteriorField(FieldName),
     InteriorElement(ElementKind),
+    InteriorArbitrary, // e.g. multiple moves/copies via functional struct update.
 }
 
 #[deriving(Eq, IterBytes)]
@@ -423,6 +424,12 @@ impl mem_categorization_ctxt {
 
           ast::ExprParen(e) => self.cat_expr_unadjusted(e),
 
+          ast::ExprStruct(_, _, Some(base)) => {
+            let base_ty = self.expr_ty(base);
+            let base_cmt = self.cat_expr(base);
+            self.cat_struct_expr_with_base(expr, expr_ty, base_cmt, base, base_ty)
+          }
+
           ast::ExprAddrOf(*) | ast::ExprCall(*) |
           ast::ExprAssign(*) | ast::ExprAssignOp(*) |
           ast::ExprFnBlock(*) | ast::ExprRet(*) |
@@ -432,7 +439,7 @@ impl mem_categorization_ctxt {
           ast::ExprLogLevel | ast::ExprBinary(*) | ast::ExprWhile(*) |
           ast::ExprBlock(*) | ast::ExprLoop(*) | ast::ExprMatch(*) |
           ast::ExprLit(*) | ast::ExprBreak(*) | ast::ExprMac(*) |
-          ast::ExprAgain(*) | ast::ExprStruct(*) | ast::ExprRepeat(*) |
+          ast::ExprAgain(*) | ast::ExprStruct(_, _, None) | ast::ExprRepeat(*) |
           ast::ExprInlineAsm(*) => {
             return self.cat_rvalue_node(expr, expr_ty);
           }
@@ -794,6 +801,24 @@ impl mem_categorization_ctxt {
         }
     }
 
+    pub fn cat_struct_expr_with_base<N:ast_node>(&self,
+                                                 _expr: N,
+                                                 _expr_ty: ty::t,
+                                                 base_cmt: cmt,
+                                                 base: N,
+                                                 base_ty: ty::t) -> cmt {
+        // Below attaches info of base.span(), not expr.span(), so
+        // error messages point to base expression, as in Issue #4691.
+        // TODO: Ask Niko about "right thing" here.
+        @cmt_ {
+            id: base.id(),
+            span: base.span(),
+            cat: cat_interior(base_cmt, InteriorArbitrary), // ?
+            mutbl: base_cmt.mutbl.inherit(), // ?
+            ty: base_ty,
+        }
+    }
+
     pub fn cat_imm_interior<N:ast_node>(&self,
                                         node: N,
                                         base_cmt: cmt,
@@ -1037,6 +1062,9 @@ impl mem_categorization_ctxt {
           cat_interior(_, InteriorElement(OtherElement)) => {
               ~"indexed content"
           }
+          cat_interior(_, InteriorArbitrary) => {
+              ~"arbitrary content of struct"
+          }
           cat_stack_upvar(_) => {
               ~"captured outer variable"
           }
@@ -1231,6 +1259,7 @@ impl Repr for InteriorKind {
             InteriorField(NamedField(fld)) => token::interner_get(fld).to_owned(),
             InteriorField(PositionalField(i)) => fmt!("#%?", i),
             InteriorElement(_) => ~"[]",
+            InteriorArbitrary => ~"?",
         }
     }
 }

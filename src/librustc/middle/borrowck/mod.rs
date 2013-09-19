@@ -802,6 +802,11 @@ impl BorrowckCtxt {
                 out.push_str("[]");
             }
 
+            LpExtend(lp_base, _, LpInterior(mc::InteriorArbitrary)) => {
+                self.append_loan_path_to_str_from_interior(lp_base, out);
+                out.push_char('?'); // invent a notation here
+            }
+
             LpExtend(lp_base, _, LpDeref(_)) => {
                 out.push_char('*');
                 self.append_loan_path_to_str(lp_base, out);
