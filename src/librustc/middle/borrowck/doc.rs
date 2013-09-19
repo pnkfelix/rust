@@ -555,7 +555,7 @@ Borrowing mutable borrowed pointees is a bit subtle because we permit
 users to freeze or claim `&mut` pointees. To see what I mean, consider this
 (perfectly safe) code example:
 
-    fn foo(t0: &mut T, op: fn(&T)) {
+    fn foo(t0: &mut T, op: &fn(&T)) {
         let t1: &T = &*t0; // (1)
         op(t1);
     }
