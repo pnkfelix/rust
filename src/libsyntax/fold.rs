@@ -690,11 +690,25 @@ pub fn noop_fold_expr(e: &Expr_, fld: @ast_fold) -> Expr_ {
         ExprBreak(ref opt_ident) => {
             // FIXME #6993: add fold_name to fold.... then cut out the
             // bogus Name->Ident->Name conversion.
-            ExprBreak(opt_ident.map_move(|x| fld.fold_ident(Ident::new(x)).name))
+            debug!("fold ExprBreak input: %?", opt_ident);
+            let ret = ExprBreak(opt_ident.map_move(|x| {
+                        // let i1 = Ident::new(x);
+                        let i2 = fld.fold_ident(Ident::new(x));
+                        i2.name
+                    }));
+            debug!("fold ExprBreak output: %?", ret);
+            ret
         }
         ExprAgain(ref opt_ident) => {
             // FIXME #6993: add fold_name to fold....
-            ExprAgain(opt_ident.map_move(|x| fld.fold_ident(Ident::new(x)).name))
+            debug!("fold ExprAgain input: %?", opt_ident);
+            let ret = ExprAgain(opt_ident.map_move(|x| {
+                        let i1 = Ident::new(x);
+                        let i2 = fld.fold_ident(i1);
+                        i2.name
+                    }));
+            debug!("fold ExprAgain input: %?", ret);
+            ret
         }
         ExprRet(ref e) => {
             ExprRet(e.map_move(|x| fld.fold_expr(x)))
