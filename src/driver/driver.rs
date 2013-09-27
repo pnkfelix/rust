@@ -17,6 +17,9 @@ extern mod this(name = "rustdoc");
 #[cfg(rusti)]
 extern mod this(name = "rusti");
 
+#[cfg(rustdis)]
+extern mod this(name = "rustdis");
+
 #[cfg(rust)]
 extern mod this(name = "rust");
 

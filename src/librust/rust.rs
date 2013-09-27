@@ -23,6 +23,7 @@
 extern mod rustpkg;
 extern mod rustdoc;
 extern mod rusti;
+extern mod rustdis;
 extern mod rustc;
 
 use std::io;
@@ -104,6 +105,12 @@ static COMMANDS: &'static [Command<'static>] = &'static [
         action: CallMain("rusti", rusti::main_args),
         usage_line: "run a rust interpreter",
         usage_full: UsgStr("\nUsage:\trusti"),
+    },
+    Command {
+        cmd: "dis",
+        action: CallMain("rustdis", rustdis::main_args),
+        usage_line: "disassemble a compiled crate",
+        usage_full: UsgStr("\nUsage:\trustdis <lib>"),
     },
     Command {
         cmd: "help",

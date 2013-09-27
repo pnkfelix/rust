@@ -248,6 +248,35 @@ fn existing_match(e: &Env, metas: &[@ast::MetaItem], hash: &str)
     return None;
 }
 
+pub fn read_one_crate(ident: @str,
+                      diag: @mut span_handler,
+                      cstore: @mut cstore::CStore,
+                      filesearch: @FileSearch,
+                      os: loader::Os,
+                      statik: bool,
+                      intr: @ident_interner,
+                      metas: ~[@ast::MetaItem])
+              -> ast::CrateNum {
+
+    let e = @mut Env {
+        diag: diag,
+        filesearch: filesearch,
+        cstore: cstore,
+        os: os,
+        statik: statik,
+        crate_cache: @mut ~[],
+        next_crate_num: 1,
+        intr: intr
+    };
+
+    // FIXME (#2404): Need better error reporting than just a bogus
+    // span.
+    let fake_span = dummy_sp();
+    let cnum = resolve_crate(e, ident, metas, @"", fake_span);
+    // cstore::add_extern_mod_stmt_cnum(e.cstore, id, cnum);
+    cnum
+}
+
 fn resolve_crate(e: @mut Env,
                  ident: @str,
                  metas: ~[@ast::MetaItem],
