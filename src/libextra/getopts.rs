@@ -119,7 +119,7 @@ pub struct Opt {
     aliases: ~[Opt],
 }
 
-/// Describes wether an option is given at all or has a value.
+/// Describes whether an option is given at all or has a value.
 #[deriving(Clone, Eq)]
 enum Optval {
     Val(~str),
