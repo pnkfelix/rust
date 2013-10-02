@@ -17,6 +17,7 @@ use util::interner;
 
 use std::cast;
 use std::char;
+use std::str;
 use std::local_data;
 
 #[deriving(Clone, Encodable, Decodable, Eq, IterBytes)]
@@ -79,6 +80,7 @@ pub enum Token {
     LIT_FLOAT(ast::Ident, ast::float_ty),
     LIT_FLOAT_UNSUFFIXED(ast::Ident),
     LIT_STR(ast::Ident),
+    LIT_STR_RAW(ast::Ident, uint), /* raw str delimited by n hash symbols */
 
     /* Name components */
     // an identifier contains an "is_mod_name" boolean,
@@ -194,6 +196,18 @@ pub fn to_str(input: @ident_interner, t: &Token) -> ~str {
         body
       }
       LIT_STR(ref s) => { format!("\"{}\"", ident_to_str(s).escape_default()) }
+      LIT_STR_RAW(ref s, n) => {
+          let s = ident_to_str(s);
+          let len = 3 + 2 * n + s.len();
+          let mut body = str::with_capacity(len);
+          body.push_char('r');
+          n.times(|| body.push_char('#'));
+          body.push_char('"');
+          body.push_str(s);
+          body.push_char('"');
+          n.times(|| body.push_char('#'));
+          body
+      }
 
       /* Name components */
       IDENT(s, _) => input.get(s.name).to_owned(),
@@ -243,6 +257,7 @@ pub fn can_begin_expr(t: &Token) -> bool {
       LIT_FLOAT(_, _) => true,
       LIT_FLOAT_UNSUFFIXED(_) => true,
       LIT_STR(_) => true,
+      LIT_STR_RAW(_, _) => true,
       POUND => true,
       AT => true,
       NOT => true,
@@ -284,6 +299,7 @@ pub fn is_lit(t: &Token) -> bool {
       LIT_FLOAT(_, _) => true,
       LIT_FLOAT_UNSUFFIXED(_) => true,
       LIT_STR(_) => true,
+      LIT_STR_RAW(_, _) => true,
       _ => false
     }
 }

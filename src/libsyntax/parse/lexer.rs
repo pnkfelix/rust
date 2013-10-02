@@ -877,7 +877,7 @@ fn next_token_inner(rdr: @mut StringReader) -> token::Token {
                                            content_start_bpos,
                                            content_end_bpos,
                                            str_to_ident);
-        return token::LIT_STR(str_content);
+        return token::LIT_STR_RAW(str_content, hash_count);
       }
       '-' => {
         if nextch(rdr) == '>' {
@@ -1042,7 +1042,7 @@ mod test {
         let TokenAndSpan {tok, sp: _} =
             env.string_reader.next_token();
         let id = token::str_to_ident("\"#a\\b\x00c\"");
-        assert_eq!(tok, token::LIT_STR(id));
+        assert_eq!(tok, token::LIT_STR_RAW(id, 3));
     }
 
     #[test] fn line_doc_comments() {
