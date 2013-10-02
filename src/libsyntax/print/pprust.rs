@@ -28,7 +28,9 @@ use print::pp;
 use print::pprust;
 
 use std::char;
+use std::str;
 use std::io;
+use std::cmp;
 
 // The @ps is stored here to prevent recursive type.
 pub enum ann_node<'self> {
@@ -2178,10 +2180,51 @@ pub fn print_comment(s: @ps, cmnt: &comments::cmnt) {
     }
 }
 
+pub fn str_to_raw_lit(s: &str, n: uint) -> ~str {
+      let len = 3 + 2 * n + s.len();
+      let mut lit = str::with_capacity(len);
+      lit.push_char('r');
+      n.times(|| lit.push_char('#'));
+      lit.push_char('"');
+      lit.push_str(s);
+      lit.push_char('"');
+      n.times(|| lit.push_char('#'));
+      lit
+}
+
+pub fn str_to_lit(s: &str) -> ~str {
+    format!("\"{}\"", s.escape_default())
+}
+
 pub fn print_string(s: @ps, st: &str) {
-    word(s.s, "\"");
-    word(s.s, st.escape_default());
-    word(s.s, "\"");
+    // make an ad-hoc decision whether to print `st` as a raw string literal
+    let mut len_escaped = 2u;
+    let mut len_raw = 3u;
+    let mut hash_longest = 0u;
+    let mut hash_count = 0u;
+
+    for c in st.iter() {
+        do c.escape_default |_| { len_escaped += 1; };
+        len_raw += 1;
+
+        // keep track of longest sequence of a `"` followed by many `#`
+        if c == '#' {
+            if hash_count != 0 { hash_count += 1; }
+        } else {
+            if c == '"' { hash_count = 1; }
+            else { hash_count = 0; }
+        }
+        hash_longest = cmp::max(hash_longest, hash_count);
+    }
+    len_raw += hash_longest * 2;
+
+    let lit = if len_escaped > len_raw {
+        str_to_raw_lit(st, hash_longest)
+    } else {
+        str_to_lit(st)
+    };
+
+    word(s.s, lit);
 }
 
 pub fn to_str<T>(t: &T, f: &fn(@ps, &T), intr: @ident_interner) -> ~str {
