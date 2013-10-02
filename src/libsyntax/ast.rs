@@ -18,6 +18,7 @@ use parse::token::{interner_get, str_to_ident};
 use std::hashmap::HashMap;
 use std::option::Option;
 use std::to_str::ToStr;
+use std::str;
 use extra::serialize::{Encodable, Decodable, Encoder, Decoder};
 
 
@@ -682,11 +683,36 @@ pub enum mac_ {
     mac_invoc_tt(Path,~[token_tree],SyntaxContext),   // new macro-invocation
 }
 
+#[deriving(Clone, Eq, Encodable, Decodable, IterBytes)]
+pub enum StrStyle {
+    CookedStr,
+    RawStr(uint)
+}
+
+impl StrStyle {
+    pub fn escape_str(self, content: &str) -> ~str {
+        match self {
+            CookedStr => { format!("\"{}\"", content.escape_default()) }
+            RawStr(n) => {
+                let len = 3 + 2 * n + content.len();
+                let mut s = str::with_capacity(len);
+                s.push_char('r');
+                n.times(|| s.push_char('#'));
+                s.push_char('"');
+                s.push_str(content);
+                s.push_char('"');
+                n.times(|| s.push_char('#'));
+                s
+            }
+        }
+    }
+}
+
 pub type lit = Spanned<lit_>;
 
 #[deriving(Clone, Eq, Encodable, Decodable, IterBytes)]
 pub enum lit_ {
-    lit_str(@str),
+    lit_str(@str, StrStyle),
     lit_char(u32),
     lit_int(i64, int_ty),
     lit_uint(u64, uint_ty),
@@ -864,6 +890,7 @@ pub enum asm_dialect {
 #[deriving(Clone, Eq, Encodable, Decodable, IterBytes)]
 pub struct inline_asm {
     asm: @str,
+    asm_str_style: StrStyle,
     clobbers: @str,
     inputs: ~[(@str, @Expr)],
     outputs: ~[(@str, @Expr)],
@@ -1029,7 +1056,7 @@ pub enum view_item_ {
     // optional @str: if present, this is a location (containing
     // arbitrary characters) from which to fetch the crate sources
     // For example, extern mod whatever = "github.com/mozilla/rust"
-    view_item_extern_mod(Ident, Option<@str>, ~[@MetaItem], NodeId),
+    view_item_extern_mod(Ident, Option<(@str, StrStyle)>, ~[@MetaItem], NodeId),
     view_item_use(~[@view_path]),
 }
 

@@ -17,7 +17,6 @@ use util::interner;
 
 use std::cast;
 use std::char;
-use std::str;
 use std::local_data;
 
 #[deriving(Clone, Encodable, Decodable, Eq, IterBytes)]
@@ -195,19 +194,8 @@ pub fn to_str(input: @ident_interner, t: &Token) -> ~str {
         }
         body
       }
-      LIT_STR(ref s) => { format!("\"{}\"", ident_to_str(s).escape_default()) }
-      LIT_STR_RAW(ref s, n) => {
-          let s = ident_to_str(s);
-          let len = 3 + 2 * n + s.len();
-          let mut body = str::with_capacity(len);
-          body.push_char('r');
-          n.times(|| body.push_char('#'));
-          body.push_char('"');
-          body.push_str(s);
-          body.push_char('"');
-          n.times(|| body.push_char('#'));
-          body
-      }
+      LIT_STR(ref s) => { ast::CookedStr.escape_str(ident_to_str(s)) }
+      LIT_STR_RAW(ref s, n) => { ast::RawStr(n).escape_str(ident_to_str(s)) }
 
       /* Name components */
       IDENT(s, _) => input.get(s.name).to_owned(),
