@@ -952,6 +952,8 @@ impl<'self> Visitor<()> for UnusedImportCheckVisitor<'self> {
     }
 }
 
+enum ResolveStep<T> { ResolvedTo(T), Continue, }
+
 impl Resolver {
     /// The main name resolution procedure.
     fn resolve(&mut self, crate: &ast::Crate) {
@@ -3103,6 +3105,60 @@ impl Resolver {
         return Success(PrefixFound(containing_module, i));
     }
 
+    // Refactored from resolve_name_in_module and resolve_definition_of_name_in_module
+    fn resolve_common<T>(&mut self,
+                         module_: @mut Module,
+                         name: Ident,
+                         namespace: Namespace,
+                         child_result: &fn (@mut NameBindings) -> ResolveStep<T>,
+                         preimport_check: &fn(),
+                         import_result: &fn(&mut Resolver, @mut ImportResolution) -> ResolveStep<T>,
+                         external_result: &fn(@mut Module) -> ResolveStep<T>,
+                         fallback_result: &fn(&mut Resolver) -> T) -> T {
+
+        // First, check the direct children of the module.
+        self.populate_module_if_necessary(module_);
+        match module_.children.find(&name.name) {
+            Some(child_name_bindings) => {
+                match child_result(*child_name_bindings) {
+                    ResolvedTo(t) => return t,
+                    Continue => {}
+                }
+            }
+            None => {
+                // continue
+            }
+        }
+
+        preimport_check();
+
+        // Check the list of resolved imports.
+        match module_.import_resolutions.find(&name.name) {
+            Some(import_resolution) => {
+                match import_result(self, *import_resolution) {
+                    ResolvedTo(t) => return t,
+                    Continue => {},
+                }
+            }
+            None => {} // Continue.
+        }
+
+        // Finally, search through external children.
+        if namespace == TypeNS {
+            match module_.external_module_children.find(&name.name) {
+                None => {}
+                Some(module) => {
+                    match external_result(*module) {
+                        ResolvedTo(t) => return t,
+                        Continue => {},
+                    }
+                }
+            }
+        }
+
+        fallback_result(self)
+    }
+
     /// Attempts to resolve the supplied name in the given module for the
     /// given namespace. If successful, returns the target corresponding to
     /// the name.
@@ -3116,79 +3172,78 @@ impl Resolver {
                self.session.str_of(name),
                self.module_to_str(module_));
 
-        // First, check the direct children of the module.
-        self.populate_module_if_necessary(module_);
-        match module_.children.find(&name.name) {
-            Some(name_bindings)
-                    if name_bindings.defined_in_namespace(namespace) => {
+        return self.resolve_common(module_, name, namespace,
+                                   |b|child_result(b, module_, namespace),
+                                   ||preimport_check(module_, name_search_type),
+                                   |s,i|import_result(s, i, namespace, name_search_type),
+                                   |m|external_result(m, module_),
+                                   |s|fallback_result(s, name));
+
+        fn child_result(name_bindings: @mut NameBindings,
+                        module_: @mut Module,
+                        namespace:Namespace) -> ResolveStep<ResolveResult<Target>> {
+            if name_bindings.defined_in_namespace(namespace) {
                 debug2!("(resolving name in module) found node as child");
-                return Success(Target::new(module_, *name_bindings));
-            }
-            Some(_) | None => {
-                // Continue.
+                ResolvedTo(Success(Target::new(module_, name_bindings)))
+            } else {
+                Continue
             }
         }
 
-        // Next, check the module's imports if necessary.
-
-        // If this is a search of all imports, we should be done with glob
-        // resolution at this point.
-        if name_search_type == PathPublicOrPrivateSearch ||
+        fn preimport_check(module_: @mut Module, name_search_type: NameSearchType) {
+            // If this is a search of all imports, we should be done with glob
+            // resolution at this point.
+            if name_search_type == PathPublicOrPrivateSearch ||
                 name_search_type == PathPublicOnlySearch {
-            assert_eq!(module_.glob_count, 0);
-        }
-
-        // Check the list of resolved imports.
-        match module_.import_resolutions.find(&name.name) {
-            Some(import_resolution) => {
-                if import_resolution.privacy == Public &&
-                        import_resolution.outstanding_references != 0 {
-                    debug2!("(resolving name in module) import \
-                            unresolved; bailing out");
-                    return Indeterminate;
-                }
-
-                match import_resolution.target_for_namespace(namespace) {
-                    None => {
-                        debug2!("(resolving name in module) name found, \
-                                but not in namespace {:?}",
-                               namespace);
-                    }
-                    Some(target)
-                            if name_search_type ==
-                                PathPublicOrPrivateSearch ||
-                            import_resolution.privacy == Public => {
-                        debug2!("(resolving name in module) resolved to \
-                                import");
-                        self.used_imports.insert(import_resolution.id(namespace));
-                        return Success(target);
-                    }
-                    Some(_) => {
-                        debug2!("(resolving name in module) name found, \
-                                but not public");
-                    }
-                }
+                assert_eq!(module_.glob_count, 0);
             }
-            None => {} // Continue.
         }
 
-        // Finally, search through external children.
-        if namespace == TypeNS {
-            match module_.external_module_children.find(&name.name) {
-                None => {}
-                Some(module) => {
-                    let name_bindings =
-                        @mut Resolver::create_name_bindings_from_module(
-                            *module);
-                    return Success(Target::new(module_, name_bindings));
+        fn import_result(resolver: &mut Resolver,
+                         import_resolution: @mut ImportResolution,
+                         namespace: Namespace,
+                         name_search_type: NameSearchType) -> ResolveStep<ResolveResult<Target>> {
+            // Next, check the module's imports if necessary.
+
+            // Check the list of resolved imports.
+            if import_resolution.privacy == Public &&
+                import_resolution.outstanding_references != 0 {
+                debug2!("(resolving name in module) import unresolved; bailing out");
+                return ResolvedTo(Indeterminate);
+            }
+
+            match import_resolution.target_for_namespace(namespace) {
+                None => {
+                    debug2!("(resolving name in module) name found, but not in namespace {:?}",
+                            namespace);
+                    Continue
+                }
+                Some(target)
+                    if (name_search_type == PathPublicOrPrivateSearch ||
+                        import_resolution.privacy == Public) => {
+                    debug2!("(resolving name in module) resolved to import");
+                    resolver.used_imports.insert(import_resolution.id(namespace));
+                    ResolvedTo(Success(target))
+                }
+                Some(_) => {
+                    debug2!("(resolving name in module) name found, but not public");
+                    Continue
                 }
             }
         }
 
-        // We're out of luck.
-        debug2!("(resolving name in module) failed to resolve `{}`",
-               self.session.str_of(name));
-        return Failed;
+        fn external_result(module:@mut Module,
+                           module_: @mut Module) -> ResolveStep<ResolveResult<Target>> {
+            let name_bindings = @mut Resolver::create_name_bindings_from_module(module);
+            return ResolvedTo(Success(Target::new(module_, name_bindings)));
+        }
+
+        fn fallback_result(resolver: &mut Resolver, name:Ident) -> ResolveResult<Target> {
+            // We're out of luck.
+            debug2!("(resolving name in module) failed to resolve `{}`",
+                    resolver.session.str_of(name));
+            return Failed;
+        }
     }
 
     fn report_unresolved_imports(&mut self, module_: @mut Module) {
@@ -4647,73 +4702,72 @@ impl Resolver {
                                                 namespace: Namespace,
                                                 xray: XrayFlag)
                                                 -> NameDefinition {
-        // First, search children.
-        self.populate_module_if_necessary(containing_module);
-        match containing_module.children.find(&name.name) {
-            Some(child_name_bindings) => {
-                match (child_name_bindings.def_for_namespace(namespace),
-                       child_name_bindings.privacy_for_namespace(namespace)) {
-                    (Some(def), Some(Public)) => {
-                        // Found it. Stop the search here.
-                        return ChildNameDefinition(def);
-                    }
-                    (Some(def), _) if xray == Xray => {
-                        // Found it. Stop the search here.
-                        return ChildNameDefinition(def);
-                    }
-                    (Some(_), _) | (None, _) => {
-                        // Continue.
-                    }
+
+        return self.resolve_common(containing_module, name, namespace,
+                                   |b|child_result(b, namespace, xray),
+                                   || {},
+                                   |s,i|import_result(s, i, namespace, xray),
+                                   external_result,
+                                   |_|fallback_result());
+
+        fn child_result(name_bindings: @mut NameBindings,
+                        namespace: Namespace,
+                        xray: XrayFlag) -> ResolveStep<NameDefinition> {
+            match (name_bindings.def_for_namespace(namespace),
+                   name_bindings.privacy_for_namespace(namespace)) {
+                (Some(def), Some(Public)) => {
+                    // Found it. Stop the search here.
+                    return ResolvedTo(ChildNameDefinition(def));
                 }
-            }
-            None => {
-                // Continue.
+                (Some(def), _) if xray == Xray => {
+                    // Found it. Stop the search here.
+                    return ResolvedTo(ChildNameDefinition(def));
+                }
+                (Some(_), _) | (None, _) => {
+                    return Continue;
+                }
             }
         }
 
-        // Next, search import resolutions.
-        match containing_module.import_resolutions.find(&name.name) {
-            Some(import_resolution) if import_resolution.privacy == Public ||
-                                       xray == Xray => {
+        fn import_result(resolver: &mut Resolver,
+                         import_resolution: @mut ImportResolution,
+                         namespace: Namespace,
+                         xray: XrayFlag) -> ResolveStep<NameDefinition> {
+            if import_resolution.privacy == Public || xray == Xray {
                 match (*import_resolution).target_for_namespace(namespace) {
                     Some(target) => {
                         match (target.bindings.def_for_namespace(namespace),
-                               target.bindings.privacy_for_namespace(
-                                    namespace)) {
+                               target.bindings.privacy_for_namespace(namespace)) {
                             (Some(def), Some(Public)) => {
                                 // Found it.
                                 let id = import_resolution.id(namespace);
-                                self.used_imports.insert(id);
-                                return ImportNameDefinition(def);
+                                resolver.used_imports.insert(id);
+                                return ResolvedTo(ImportNameDefinition(def));
                             }
                             (Some(_), _) | (None, _) => {
                                 // This can happen with external impls, due to
                                 // the imperfect way we read the metadata.
+                                return Continue;
                             }
                         }
                     }
-                    None => {}
+                    None => Continue,
                 }
-            }
-            Some(_) | None => {}    // Continue.
-        }
-
-        // Finally, search through external children.
-        if namespace == TypeNS {
-            match containing_module.external_module_children.find(&name.name) {
-                None => {}
-                Some(module) => {
-                    match module.def_id {
-                        None => {} // Continue.
-                        Some(def_id) => {
-                            return ChildNameDefinition(DefMod(def_id));
-                        }
-                    }
-                }
+            } else {
+                Continue
             }
         }
 
-        return NoNameDefinition;
+        fn external_result(module:@mut Module) -> ResolveStep<NameDefinition> {
+            match module.def_id {
+                None => Continue,
+                Some(def_id) => ResolvedTo(ChildNameDefinition(DefMod(def_id))),
+            }
+        }
+
+        fn fallback_result() -> NameDefinition {
+            return NoNameDefinition;
+        }
     }
 
     // resolve a "module-relative" path, e.g. a::b::c
@@ -4813,9 +4867,9 @@ impl Resolver {
             }
         }
 
-        let name = path.segments.last().identifier;
-        match self.resolve_definition_of_name_in_module(containing_module,
-                                                        name,
+        let ident = path.segments.last().identifier;
+        let def = match self.resolve_definition_of_name_in_module(containing_module,
+                                                        ident,
                                                         namespace,
                                                         xray) {
             NoNameDefinition => {
@@ -4823,9 +4877,10 @@ impl Resolver {
                 return None;
             }
             ChildNameDefinition(def) | ImportNameDefinition(def) => {
-                return Some(def);
+                def
             }
-        }
+        };
+        return Some(def);
     }
 
     fn resolve_identifier_in_local_ribs(&mut self,
