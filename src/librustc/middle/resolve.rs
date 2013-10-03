@@ -157,9 +157,7 @@ enum ImportDirectiveSubclass {
 
 /// The context that we thread through while building the reduced graph.
 #[deriving(Clone)]
-enum ReducedGraphParent {
-    ModuleReducedGraphParent(@mut Module)
-}
+struct ReducedGraphParent(@mut Module);
 
 enum ResolveResult<T> {
     Failed,         // Failed to resolve the name (error if no fallback available).
@@ -974,7 +972,7 @@ impl Resolver {
     /// Constructs the reduced graph for the entire crate.
     fn build_reduced_graph(&mut self, crate: &ast::Crate) {
         let initial_parent =
-            ModuleReducedGraphParent(self.graph_root.get_module());
+            ReducedGraphParent(self.graph_root.get_module());
 
         let mut visitor = BuildReducedGraphVisitor { resolver: self, };
         visit::walk_crate(&mut visitor, crate, initial_parent);
@@ -984,11 +982,7 @@ impl Resolver {
     fn get_module_from_parent(&mut self,
                                   reduced_graph_parent: ReducedGraphParent)
                                   -> @mut Module {
-        match reduced_graph_parent {
-            ModuleReducedGraphParent(module_) => {
-                return module_;
-            }
-        }
+        *reduced_graph_parent
     }
 
     /**
@@ -1012,15 +1006,10 @@ impl Resolver {
         // child name directly. Otherwise, we create or reuse an anonymous
         // module and add the child to that.
 
-        let module_;
-        match reduced_graph_parent {
-            ModuleReducedGraphParent(parent_module) => {
-                module_ = parent_module;
-            }
-        }
+        let module_ = *reduced_graph_parent;
 
         // Add or reuse the child.
-        let new_parent = ModuleReducedGraphParent(module_);
+        let new_parent = ReducedGraphParent(module_);
         match module_.children.find(&name.name) {
             None => {
                 let child = @mut NameBindings();
@@ -1140,11 +1129,7 @@ impl Resolver {
 
     fn get_parent_link(&mut self, parent: ReducedGraphParent, name: Ident)
                            -> ParentLink {
-        match parent {
-            ModuleReducedGraphParent(module_) => {
-                return ModuleParentLink(module_, name);
-            }
-        }
+        ModuleParentLink(*parent, name)
     }
 
     /// Constructs the reduced graph for one item.
@@ -1171,7 +1156,7 @@ impl Resolver {
                                             false,
                                             sp);
 
-                ModuleReducedGraphParent(name_bindings.get_module())
+                ReducedGraphParent(name_bindings.get_module())
             }
 
             item_foreign_mod(ref fm) => {
@@ -1191,7 +1176,7 @@ impl Resolver {
                                                     false,
                                                     sp);
 
-                        ModuleReducedGraphParent(name_bindings.get_module())
+                        ReducedGraphParent(name_bindings.get_module())
                     }
 
                     // For anon foreign mods, the contents just go in the
@@ -1297,7 +1282,7 @@ impl Resolver {
                                                  .is_some() &&
                                             child.get_module().kind ==
                                                 ImplModuleKind => {
-                                ModuleReducedGraphParent(child.get_module())
+                                ReducedGraphParent(child.get_module())
                             }
                             // Create the module
                             _ => {
@@ -1317,7 +1302,7 @@ impl Resolver {
                                                             false,
                                                             sp);
 
-                                ModuleReducedGraphParent(
+                                ReducedGraphParent(
                                     name_bindings.get_module())
                             }
                         };
@@ -1372,8 +1357,7 @@ impl Resolver {
                                             TraitModuleKind,
                                             false,
                                             sp);
-                let module_parent = ModuleReducedGraphParent(name_bindings.
-                                                             get_module());
+                let module_parent = ReducedGraphParent(name_bindings.get_module());
 
                 // Add the names of all the methods to the trait info.
                 let mut method_names = HashMap::new();
@@ -1624,7 +1608,7 @@ impl Resolver {
                 AnonymousModuleKind,
                 false);
             parent_module.anonymous_children.insert(block_id, new_module);
-            ModuleReducedGraphParent(new_module)
+            ReducedGraphParent(new_module)
         } else {
             parent
         }
@@ -1790,7 +1774,7 @@ impl Resolver {
                     _ => {
                         let (child_name_bindings, new_parent) =
                             self.add_child(ident,
-                                           ModuleReducedGraphParent(root),
+                                           ReducedGraphParent(root),
                                            OverwriteDuplicates,
                                            dummy_sp());
 
@@ -1823,7 +1807,7 @@ impl Resolver {
                                 let (child_name_bindings, new_parent) =
                                     self.add_child(
                                         final_ident,
-                                        ModuleReducedGraphParent(root),
+                                        ReducedGraphParent(root),
                                         OverwriteDuplicates,
                                         dummy_sp());
 
@@ -1862,7 +1846,7 @@ impl Resolver {
 
                                 // Add each static method to the module.
                                 let new_parent =
-                                    ModuleReducedGraphParent(type_module);
+                                    ReducedGraphParent(type_module);
                                 for static_method_info in
                                         static_methods.iter() {
                                     let ident = static_method_info.ident;
