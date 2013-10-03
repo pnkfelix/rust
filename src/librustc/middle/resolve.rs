@@ -117,11 +117,6 @@ impl NamespaceResult {
     }
 }
 
-enum NameDefinition {
-    ChildNameDefinition(Def),   //< The name identifies an immediate child.
-    ImportNameDefinition(Def)   //< The name identifies an import.
-}
-
 #[deriving(Eq)]
 enum Mutability {
     Mutable,
@@ -4683,7 +4678,7 @@ impl Resolver {
                                                 name: Ident,
                                                 namespace: Namespace,
                                                 xray: XrayFlag)
-                                                -> ResolveResult<NameDefinition> {
+                                                -> ResolveResult<Def> {
 
         return self.resolve_common(containing_module, name, namespace,
                                    |b|child_result(b, namespace, xray),
@@ -4693,16 +4688,16 @@ impl Resolver {
 
         fn child_result(name_bindings: @mut NameBindings,
                         namespace: Namespace,
-                        xray: XrayFlag) -> ResolveResult<NameDefinition> {
+                        xray: XrayFlag) -> ResolveResult<Def> {
             match (name_bindings.def_for_namespace(namespace),
                    name_bindings.privacy_for_namespace(namespace)) {
                 (Some(def), Some(Public)) => {
                     // Found it. Stop the search here.
-                    return Success(ChildNameDefinition(def));
+                    return Success(def);
                 }
                 (Some(def), _) if xray == Xray => {
                     // Found it. Stop the search here.
-                    return Success(ChildNameDefinition(def));
+                    return Success(def);
                 }
                 (Some(_), _) | (None, _) => {
                     return Failed;
@@ -4713,7 +4708,7 @@ impl Resolver {
         fn import_result(resolver: &mut Resolver,
                          import_resolution: @mut ImportResolution,
                          namespace: Namespace,
-                         xray: XrayFlag) -> ResolveResult<NameDefinition> {
+                         xray: XrayFlag) -> ResolveResult<Def> {
             if import_resolution.privacy == Public || xray == Xray {
                 match (*import_resolution).target_for_namespace(namespace) {
                     Some(target) => {
@@ -4723,7 +4718,7 @@ impl Resolver {
                                 // Found it.
                                 let id = import_resolution.id(namespace);
                                 resolver.used_imports.insert(id);
-                                return Success(ImportNameDefinition(def));
+                                return Success(def);
                             }
                             (Some(_), _) | (None, _) => {
                                 // This can happen with external impls, due to
@@ -4739,10 +4734,10 @@ impl Resolver {
             }
         }
 
-        fn ext_result(module:@mut Module) -> ResolveResult<NameDefinition> {
+        fn ext_result(module:@mut Module) -> ResolveResult<Def> {
             match module.def_id {
                 None => Failed,
-                Some(def_id) => Success(ChildNameDefinition(DefMod(def_id))),
+                Some(def_id) => Success(DefMod(def_id)),
             }
         }
     }
@@ -4787,9 +4782,7 @@ impl Resolver {
                 return None;
             }
             Indeterminate => { fail2!("indeterminate unexpected"); }
-            Success(ChildNameDefinition(def)) | Success(ImportNameDefinition(def)) => {
-                def
-            }
+            Success(def) => def
         };
         match containing_module.kind {
             TraitModuleKind | ImplModuleKind => {
@@ -4855,9 +4848,7 @@ impl Resolver {
                 return None;
             }
             Indeterminate => { fail2!("indeterminate unexpected"); }
-            Success(ChildNameDefinition(def)) | Success(ImportNameDefinition(def)) => {
-                def
-            }
+            Success(def) => def
         };
         return Some(def);
     }
