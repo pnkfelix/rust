@@ -2217,7 +2217,7 @@ pub fn trans_item(ccx: @mut CrateContext, item: &ast::item) {
         _ => fail2!("trans_item"),
     };
     match item.node {
-      ast::item_fn(ref decl, purity, _abis, ref generics, ref body) => {
+      ast::item_fn(ref decl, purity, _abis, _abi_str_style, ref generics, ref body) => {
         if purity == ast::extern_fn  {
             let llfndecl = get_item_val(ccx, item.id);
             foreign::trans_rust_fn_with_foreign_abi(
@@ -2583,7 +2583,7 @@ pub fn get_item_val(ccx: @mut CrateContext, id: ast::NodeId) -> ValueRef {
                             }
                         }
 
-                        ast::item_fn(_, purity, _, _, _) => {
+                        ast::item_fn(_, purity, _, _, _, _) => {
                             let llfn = if purity != ast::extern_fn {
                                 register_fn(ccx, i.span, sym, i.id, ty)
                             } else {

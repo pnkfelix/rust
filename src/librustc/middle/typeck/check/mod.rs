@@ -601,7 +601,7 @@ pub fn check_item(ccx: @mut CrateCtxt, it: @ast::item) {
                             enum_definition.variants,
                             it.id);
       }
-      ast::item_fn(ref decl, _, _, _, ref body) => {
+      ast::item_fn(ref decl, _, _, _, _, ref body) => {
         check_bare_fn(ccx, decl, body, it.id, None);
       }
       ast::item_impl(_, _, _, ref ms) => {

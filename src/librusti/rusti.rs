@@ -294,7 +294,7 @@ fn run(mut program: ~Program, binary: ~str, lib_search_paths: ~[~str],
                  f: &fn(&ast::Block)) {
         for item in crate.module.items.iter() {
             match item.node {
-                ast::item_fn(_, _, _, _, ref blk) => {
+                ast::item_fn(_, _, _, _, _, ref blk) => {
                     if item.ident == sess.ident_of("main") {
                         return f(blk);
                     }

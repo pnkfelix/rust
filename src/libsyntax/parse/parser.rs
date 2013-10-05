@@ -799,12 +799,13 @@ impl Parser {
         */
 
         let opt_abis = self.parse_opt_abis();
-        let abis = opt_abis.unwrap_or(AbiSet::Rust());
+        let (abis, abi_str_style) = opt_abis.unwrap_or((AbiSet::Rust(), ast::CookedStr));
         let purity = self.parse_unsafety();
         self.expect_keyword(keywords::Fn);
         let (decl, lifetimes) = self.parse_ty_fn_decl();
         return ty_bare_fn(@TyBareFn {
             abis: abis,
+            abi_decl_str_style: abi_str_style,
             purity: purity,
             lifetimes: lifetimes,
             decl: decl
@@ -3634,12 +3635,12 @@ impl Parser {
     }
 
     // parse an item-position function declaration.
-    fn parse_item_fn(&self, purity: purity, abis: AbiSet) -> item_info {
+    fn parse_item_fn(&self, purity: purity, abis: AbiSet, abi_str_style: StrStyle) -> item_info {
         let (ident, generics) = self.parse_fn_header();
         let decl = self.parse_fn_decl();
         let (inner_attrs, body) = self.parse_inner_attrs_and_block();
         (ident,
-         item_fn(decl, purity, abis, generics, body),
+         item_fn(decl, purity, abis, abi_str_style, generics, body),
          Some(inner_attrs))
     }
 
@@ -4120,6 +4121,7 @@ impl Parser {
     fn parse_foreign_mod_items(&self,
                                sort: ast::foreign_mod_sort,
                                abis: AbiSet,
+                               abi_str_style: ast::StrStyle,
                                first_item_attrs: ~[Attribute])
                                -> foreign_mod {
         let ParsedItemsAndViewItems {
@@ -4136,6 +4138,7 @@ impl Parser {
         ast::foreign_mod {
             sort: sort,
             abis: abis,
+            abi_decl_str_style: abi_str_style,
             view_items: view_items,
             items: foreign_items
         }
@@ -4144,7 +4147,7 @@ impl Parser {
     // parse extern foo; or extern mod foo { ... } or extern { ... }
     fn parse_item_foreign_mod(&self,
                               lo: BytePos,
-                              opt_abis: Option<AbiSet>,
+                              opt_abis: Option<(AbiSet, ast::StrStyle)>,
                               visibility: visibility,
                               attrs: ~[Attribute],
                               items_allowed: bool)
@@ -4189,10 +4192,10 @@ impl Parser {
                 self.obsolete(*self.last_span, ObsoleteNamedExternModule);
             }
 
-            let abis = opt_abis.unwrap_or(AbiSet::C());
+            let (abis, abi_str_style) = opt_abis.unwrap_or((AbiSet::C(), ast::CookedStr));
 
             let (inner, next) = self.parse_inner_attrs_and_next();
-            let m = self.parse_foreign_mod_items(sort, abis, next);
+            let m = self.parse_foreign_mod_items(sort, abis, abi_str_style, next);
             self.expect(&token::RBRACE);
 
             return iovi_item(self.mk_item(lo,
@@ -4345,14 +4348,10 @@ impl Parser {
     }
 
     // parse a string as an ABI spec on an extern type or module
-    fn parse_opt_abis(&self) -> Option<AbiSet> {
-        let the_string = match self.parse_optional_str() {
-            Some((s, ast::CookedStr)) => s,
-            Some((s, ast::RawStr(_))) => {
-                self.span_err(*self.span, "ABI spec can't be raw string");
-                s
-            }
-            None => return None
+    fn parse_opt_abis(&self) -> (Option<(AbiSet, ast::StrStyle)>) {
+        let (the_string, abi_str_style) = match self.parse_optional_str() {
+            None => return None,
+            Some(s) => s
         };
         let mut abis = AbiSet::empty();
         for word in the_string.word_iter() {
@@ -4379,7 +4378,7 @@ impl Parser {
                 }
             }
         }
-        Some(abis)
+        Some((abis, abi_str_style))
     }
 
     // parse one of the items or view items allowed by the
@@ -4423,9 +4422,10 @@ impl Parser {
 
             if self.eat_keyword(keywords::Fn) {
                 // EXTERN FUNCTION ITEM
-                let abis = opt_abis.unwrap_or(AbiSet::C());
+                let (abis, abi_str_style) =
+                    opt_abis.unwrap_or((AbiSet::C(), ast::CookedStr));
                 let (ident, item_, extra_attrs) =
-                    self.parse_item_fn(extern_fn, abis);
+                    self.parse_item_fn(extern_fn, abis, abi_str_style);
                 return iovi_item(self.mk_item(lo, self.last_span.hi, ident,
                                               item_, visibility,
                                               maybe_append(attrs,
@@ -4450,7 +4450,7 @@ impl Parser {
             // FUNCTION ITEM
             self.bump();
             let (ident, item_, extra_attrs) =
-                self.parse_item_fn(impure_fn, AbiSet::Rust());
+                self.parse_item_fn(impure_fn, AbiSet::Rust(), ast::CookedStr);
             return iovi_item(self.mk_item(lo, self.last_span.hi, ident, item_,
                                           visibility,
                                           maybe_append(attrs, extra_attrs)));
@@ -4461,7 +4461,7 @@ impl Parser {
             self.bump();
             self.expect_keyword(keywords::Fn);
             let (ident, item_, extra_attrs) =
-                self.parse_item_fn(unsafe_fn, AbiSet::Rust());
+                self.parse_item_fn(unsafe_fn, AbiSet::Rust(), ast::CookedStr);
             return iovi_item(self.mk_item(lo, self.last_span.hi, ident, item_,
                                           visibility,
                                           maybe_append(attrs, extra_attrs)));

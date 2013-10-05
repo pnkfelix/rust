@@ -48,7 +48,7 @@ fn item_might_be_inlined(item: @item) -> bool {
     }
 
     match item.node {
-        item_fn(_, _, _, ref generics, _) => {
+        item_fn(_, _, _, _, ref generics, _) => {
             generics_require_inlining(generics)
         }
         _ => false,
@@ -370,7 +370,7 @@ impl ReachableContext {
             match self.tcx.items.find(&search_item) {
                 Some(&ast_map::node_item(item, _)) => {
                     match item.node {
-                        item_fn(_, _, _, _, ref search_block) => {
+                        item_fn(_, _, _, _, _, ref search_block) => {
                             visit::walk_block(&mut visitor, search_block, ())
                         }
                         _ => {

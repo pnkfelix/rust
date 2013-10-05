@@ -833,6 +833,7 @@ pub struct TyClosure {
 pub struct TyBareFn {
     purity: purity,
     abis: AbiSet,
+    abi_decl_str_style: StrStyle,
     lifetimes: OptVec<Lifetime>,
     decl: fn_decl
 }
@@ -960,6 +961,7 @@ pub enum foreign_mod_sort {
 pub struct foreign_mod {
     sort: foreign_mod_sort,
     abis: AbiSet,
+    abi_decl_str_style: StrStyle,
     view_items: ~[view_item],
     items: ~[@foreign_item],
 }
@@ -1128,7 +1130,7 @@ pub struct item {
 #[deriving(Clone, Eq, Encodable, Decodable, IterBytes)]
 pub enum item_ {
     item_static(Ty, Mutability, @Expr),
-    item_fn(fn_decl, purity, AbiSet, Generics, Block),
+    item_fn(fn_decl, purity, AbiSet, StrStyle, Generics, Block),
     item_mod(_mod),
     item_foreign_mod(foreign_mod),
     item_ty(Ty, Generics),

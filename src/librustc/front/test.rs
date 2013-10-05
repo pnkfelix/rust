@@ -83,7 +83,7 @@ impl fold::ast_fold for TestHarnessGenerator {
 
         if is_test_fn(self.cx, i) || is_bench_fn(i) {
             match i.node {
-                ast::item_fn(_, purity, _, _, _)
+                ast::item_fn(_, purity, _, _, _, _)
                     if purity == ast::unsafe_fn => {
                     let sess = self.cx.sess;
                     sess.span_fatal(i.span,
@@ -183,7 +183,7 @@ fn is_test_fn(cx: @mut TestCtxt, i: @ast::item) -> bool {
 
     fn has_test_signature(i: @ast::item) -> bool {
         match &i.node {
-          &ast::item_fn(ref decl, _, _, ref generics, _) => {
+          &ast::item_fn(ref decl, _, _, _, ref generics, _) => {
             let no_output = match decl.output.node {
                 ast::ty_nil => true,
                 _ => false
@@ -212,7 +212,7 @@ fn is_bench_fn(i: @ast::item) -> bool {
 
     fn has_test_signature(i: @ast::item) -> bool {
         match i.node {
-            ast::item_fn(ref decl, _, _, ref generics, _) => {
+            ast::item_fn(ref decl, _, _, _, ref generics, _) => {
                 let input_cnt = decl.inputs.len();
                 let no_output = match decl.output.node {
                     ast::ty_nil => true,

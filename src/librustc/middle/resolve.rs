@@ -1216,7 +1216,7 @@ impl Resolver {
                     (privacy, DefStatic(local_def(item.id), mutbl), sp);
                 parent
             }
-            item_fn(_, purity, _, _, _) => {
+            item_fn(_, purity, _, _, _, _) => {
               let (name_bindings, new_parent) =
                 self.add_child(ident, parent, ForbidDuplicateValues, sp);
 
@@ -3707,7 +3707,7 @@ impl Resolver {
                 }
             }
 
-            item_fn(ref fn_decl, _, _, ref generics, ref block) => {
+            item_fn(ref fn_decl, _, _, _, ref generics, ref block) => {
                 self.resolve_function(OpaqueFunctionRibKind,
                                       Some(fn_decl),
                                       HasTypeParameters

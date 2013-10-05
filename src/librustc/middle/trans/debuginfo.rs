@@ -551,7 +551,7 @@ pub fn create_function_debug_context(cx: &mut CrateContext,
     let (ident, fn_decl, generics, top_level_block, span) = match fnitem {
         ast_map::node_item(ref item, _) => {
             match item.node {
-                ast::item_fn(ref fn_decl, _, _, ref generics, ref top_level_block) => {
+                ast::item_fn(ref fn_decl, _, _, _, ref generics, ref top_level_block) => {
                     (item.ident, fn_decl, generics, top_level_block, item.span)
                 }
                 _ => {

@@ -688,6 +688,7 @@ mod test {
                             },
                                     ast::impure_fn,
                                     abi::AbiSet::Rust(),
+                                    ast::CookedStr,
                                     ast::Generics{ // no idea on either of these:
                                         lifetimes: opt_vec::Empty,
                                         ty_params: opt_vec::Empty,

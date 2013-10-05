@@ -59,7 +59,7 @@ fn stack_check_item(v: &mut StackCheckVisitor,
                     item: @ast::item,
                     in_cx: Context) {
     match item.node {
-        ast::item_fn(_, ast::extern_fn, _, _, _) => {
+        ast::item_fn(_, ast::extern_fn, _, _, _, _) => {
             // an extern fn is already being called from C code...
             let new_cx = Context {safe_stack: true};
             visit::walk_item(v, item, new_cx);

@@ -190,7 +190,7 @@ pub fn walk_item<E:Clone, V:Visitor<E>>(visitor: &mut V, item: &item, env: E) {
             visitor.visit_ty(typ, env.clone());
             visitor.visit_expr(expr, env);
         }
-        item_fn(ref declaration, purity, abi, ref generics, ref body) => {
+        item_fn(ref declaration, purity, abi, _abi_str_style, ref generics, ref body) => {
             visitor.visit_fn(&fk_item_fn(item.ident, generics, purity, abi),
                              declaration,
                              body,

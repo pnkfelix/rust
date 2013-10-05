@@ -920,7 +920,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
         encode_visibility(ebml_w, vis);
         ebml_w.end_tag();
       }
-      item_fn(_, purity, _, ref generics, _) => {
+      item_fn(_, purity, _, _, ref generics, _) => {
         add_to_index();
         ebml_w.start_tag(tag_items_data_item);
         encode_def_id(ebml_w, def_id);

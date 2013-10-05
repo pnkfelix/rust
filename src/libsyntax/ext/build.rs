@@ -719,6 +719,7 @@ impl AstBuilder for @ExtCtxt {
                   ast::item_fn(self.fn_decl(inputs, output),
                                ast::impure_fn,
                                AbiSet::Rust(),
+                               ast::CookedStr,
                                generics,
                                body))
     }

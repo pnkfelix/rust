@@ -261,6 +261,7 @@ pub trait ast_fold {
                     lifetimes: f.lifetimes.map(|l| fold_lifetime(l, self)),
                     purity: f.purity,
                     abis: f.abis,
+                    abi_decl_str_style: f.abi_decl_str_style,
                     decl: fold_fn_decl(&f.decl, self)
                 })
             }
@@ -291,6 +292,7 @@ pub trait ast_fold {
         ast::foreign_mod {
             sort: nm.sort,
             abis: nm.abis,
+            abi_decl_str_style: nm.abi_decl_str_style,
             view_items: nm.view_items
                           .iter()
                           .map(|x| self.fold_view_item(x))
@@ -616,11 +618,12 @@ pub fn noop_fold_item_underscore<T:ast_fold>(i: &item_, folder: &T) -> item_ {
         item_static(ref t, m, e) => {
             item_static(folder.fold_ty(t), m, folder.fold_expr(e))
         }
-        item_fn(ref decl, purity, abi, ref generics, ref body) => {
+        item_fn(ref decl, purity, abi, abi_str_style, ref generics, ref body) => {
             item_fn(
                 fold_fn_decl(decl, folder),
                 purity,
                 abi,
+                abi_str_style,
                 fold_generics(generics, folder),
                 folder.fold_block(body)
             )

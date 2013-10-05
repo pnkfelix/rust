@@ -76,7 +76,8 @@ impl RustdocVisitor {
         }
 
         fn visit_fn(item: &ast::item, fd: &ast::fn_decl, purity: &ast::purity,
-                     _abi: &AbiSet, gen: &ast::Generics) -> Function {
+                    _abi: &AbiSet, _abi_str_style: &ast::StrStyle,
+                    gen: &ast::Generics) -> Function {
             debug2!("Visiting fn");
             Function {
                 id: item.id,
@@ -121,8 +122,8 @@ impl RustdocVisitor {
                 },
                 ast::item_enum(ref ed, ref gen) => om.enums.push(visit_enum_def(item, ed, gen)),
                 ast::item_struct(sd, ref gen) => om.structs.push(visit_struct_def(item, sd, gen)),
-                ast::item_fn(ref fd, ref pur, ref abi, ref gen, _) =>
-                    om.fns.push(visit_fn(item, fd, pur, abi, gen)),
+                ast::item_fn(ref fd, ref pur, ref abi, ref abi_str_style, ref gen, _) =>
+                    om.fns.push(visit_fn(item, fd, pur, abi, abi_str_style, gen)),
                 ast::item_ty(ref ty, ref gen) => {
                     let t = Typedef {
                         ty: ty.clone(),
