@@ -809,6 +809,19 @@ pub fn std_macros() -> @str {
 
     macro_rules! ignore (($($x:tt)*) => (()))
 
+    macro_rules! error_entry_and_exit  {
+      ($s:expr) => ( let _l = ::std::logging::log_entry_and_exit(1u32, $s); )
+    }
+    macro_rules! warn_entry_and_exit  {
+      ($s:expr) => ( let _l = ::std::logging::log_entry_and_exit(2u32, $s); )
+    }
+    macro_rules! info_entry_and_exit  {
+      ($s:expr) => ( let _l = ::std::logging::log_entry_and_exit(3u32, $s); )
+    }
+    macro_rules! debug_entry_and_exit {
+      ($s:expr) => ( let _l = ::std::logging::log_entry_and_exit(4u32, $s); )
+    }
+
     #[cfg(not(nofmt))]
     mod fmt_extension {
         #[macro_escape];

@@ -15,6 +15,7 @@ use option::*;
 use os;
 use rt;
 use rt::logging::{Logger, StdErrLogger};
+use ops::Drop;
 
 /// Turns on logging to stdout globally
 pub fn console_on() {
@@ -55,5 +56,25 @@ pub fn log(_level: u32, args: &fmt::Arguments) {
                 logger.log(args);
             }
         }
+    }
+}
+
+/// Backing structure to support {info, debug}_entry_and_exit! macros.
+pub struct LogEntryAndExit { priv lvl: u32, priv name: &'static str }
+
+/// If logging, emits entry message and returns RAII object for exit message.
+pub fn log_entry_and_exit(lvl: u32,
+                          name: &'static str) -> Option<LogEntryAndExit> {
+    if lvl <= __log_level() {
+        format_args!(|args| { log(lvl, args) }, "{} >>", name);
+        Some(LogEntryAndExit { lvl: lvl, name: name })
+    } else {
+        None
+    }
+}
+
+impl Drop for LogEntryAndExit {
+    fn drop(&mut self) {
+        format_args!(|args| { log(self.lvl, args) }, "<< {}", self.name);
     }
 }
