@@ -252,13 +252,13 @@ impl ImportCertificate {
         use std::vec::append;
         let mut v = ~[];
         util::swap(&mut self.justify_type, &mut v);
-        self.justify_type = append(v, ~[LinkDir(other)]);
+        self.justify_type = append(v, [LinkDir(other)]);
     }
     fn append_directive_for_value(&mut self, other: @ImportDirective) {
         use std::vec::append;
         let mut v = ~[];
         util::swap(&mut self.justify_value, &mut v);
-        self.justify_value = append(v, ~[LinkDir(other)]);
+        self.justify_value = append(v, [LinkDir(other)]);
     }
     fn cloned_type_justification(&self) -> ~[ImportLink] {
         self.justify_type.clone()
@@ -3000,15 +3000,18 @@ impl Resolver {
                 search_module = containing_module;
                 start_index = index;
                 last_private = DependsOn(containing_module.def_id.unwrap());
+                cert = prefix_cert;
             }
         }
 
-        self.resolve_module_path_from_root(search_module,
-                                           module_path,
-                                           start_index,
-                                           span,
-                                           name_search_type,
-                                           last_private)
+        let mut result = self.resolve_module_path_from_root(search_module,
+                                                            module_path,
+                                                            start_index,
+                                                            span,
+                                                            name_search_type,
+                                                            last_private);
+        result.prepend_for_both(cert);
+        result
     }
 
     /// Invariant: This must only be called during main resolution, not during
