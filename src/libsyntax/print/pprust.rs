@@ -860,13 +860,7 @@ pub fn print_inner_attributes(s: @ps, attrs: &[ast::Attribute]) {
     let mut count = 0;
     for attr in attrs.iter() {
         match attr.node.style {
-          ast::AttrInner => {
-            print_attribute(s, attr);
-            if !attr.node.is_sugared_doc {
-                word(s.s, ";");
-            }
-            count += 1;
-          }
+          ast::AttrInner => { print_attribute(s, attr); count += 1; }
           _ => {/* fallthrough */ }
         }
     }
@@ -874,15 +868,18 @@ pub fn print_inner_attributes(s: @ps, attrs: &[ast::Attribute]) {
 }
 
 pub fn print_attribute(s: @ps, attr: &ast::Attribute) {
+    let inner = match attr.node.style {
+        ast::AttrOuter => false, ast::AttrInner => true
+    };
     hardbreak_if_not_bol(s);
     maybe_print_comment(s, attr.span.lo);
     if attr.node.is_sugared_doc {
         let comment = attr.value_str().unwrap();
         word(s.s, comment);
     } else {
-        word(s.s, "#[");
+        if inner { word(s.s, "#!"); } else { word(s.s, "#"); }
         print_meta_item(s, attr.meta());
-        word(s.s, "]");
+        if inner { word(s.s, ";"); }
     }
 }
 
