@@ -114,6 +114,7 @@ enum NamespaceError {
 /// A NamespaceResult represents the result of resolving an import in
 /// a particular namespace. The result is either definitely-resolved,
 /// definitely- unresolved, or unknown.
+#[deriving(Clone)]
 enum NamespaceResult {
     /// Means that resolve hasn't gathered enough information yet to determine
     /// whether the name is bound in this namespace. (That is, it hasn't
@@ -124,7 +125,7 @@ enum NamespaceResult {
     UnboundResult,
     /// Means that resolve has determined that the name is bound in the Module
     /// argument, and specified by the NameBindings argument.
-    BoundResult(@mut Module, @mut NameBindings)
+    BoundResult(@mut Module, @mut NameBindings, ImportCertificate)
 }
 
 impl NamespaceResult {
@@ -186,10 +187,91 @@ enum ReducedGraphParent {
     ModuleReducedGraphParent(@mut Module)
 }
 
+/// The series of directives justifying a target being in scope.
+#[deriving(Clone)]
+struct ImportCertificate {
+    priv justify_type:  ~[ImportLink],
+    priv justify_value: ~[ImportLink],
+    priv globbed: bool,
+}
+#[deriving(Clone)]
+enum ImportLink {
+    LinkDir(@ImportDirective),
+    LinkSelf,
+    LinkSuper,
+}
+
+impl ImportCertificate {
+    fn empty() -> ImportCertificate {
+        ImportCertificate{ justify_type: ~[], justify_value: ~[], globbed: false }
+    }
+    fn new(justify_type: ~[ImportLink], justify_value: ~[ImportLink]) -> ImportCertificate {
+        ImportCertificate{
+            justify_type: justify_type, justify_value: justify_value, globbed: false,
+        }
+    }
+    fn self_prefix() -> ImportCertificate {
+        ImportCertificate{ justify_type: ~[LinkSelf], justify_value: ~[LinkSelf], globbed: false }
+    }
+    fn add_super(&mut self) {
+        self.justify_type.push(LinkSuper);
+        self.justify_value.push(LinkSuper);
+    }
+    fn empty_globbed() -> ImportCertificate {
+        ImportCertificate{ justify_type: ~[], justify_value: ~[], globbed: true }
+    }
+    fn prepend_for_type(&mut self, other: ImportCertificate) {
+        use std::vec::append;
+        self.justify_type = append(other.justify_type, self.justify_type);
+    }
+    fn prepend_for_value(&mut self, other: ImportCertificate) {
+        use std::vec::append;
+        self.justify_value = append(other.justify_value, self.justify_value);
+    }
+    fn prepend_for_both(&mut self, other: ImportCertificate) {
+        self.prepend_for_type(other.clone());
+        self.prepend_for_value(other);
+    }
+    fn append_for_type(&mut self, other: ImportCertificate) {
+        use std::vec::append;
+        let mut v = ~[];
+        util::swap(&mut self.justify_type, &mut v);
+        self.justify_type = append(v, other.justify_type);
+    }
+    fn append_for_value(&mut self, other: ImportCertificate) {
+        use std::vec::append;
+        let mut v = ~[];
+        util::swap(&mut self.justify_value, &mut v);
+        self.justify_value = append(v, other.justify_value);
+    }
+    fn append_for_both(&mut self, other: ImportCertificate) {
+        self.append_for_type(other.clone());
+        self.append_for_value(other);
+    }
+    fn append_directive_for_type(&mut self, other: @ImportDirective) {
+        use std::vec::append;
+        let mut v = ~[];
+        util::swap(&mut self.justify_type, &mut v);
+        self.justify_type = append(v, ~[LinkDir(other)]);
+    }
+    fn append_directive_for_value(&mut self, other: @ImportDirective) {
+        use std::vec::append;
+        let mut v = ~[];
+        util::swap(&mut self.justify_value, &mut v);
+        self.justify_value = append(v, ~[LinkDir(other)]);
+    }
+    fn cloned_type_justification(&self) -> ~[ImportLink] {
+        self.justify_type.clone()
+    }
+    fn cloned_value_justification(&self) -> ~[ImportLink] {
+        self.justify_value.clone()
+    }
+}
+
 enum ResolveResult<T> {
-    Failed,         // Failed to resolve the name.
-    Indeterminate,  // Couldn't determine due to unresolved globs.
-    Success(T)      // Successfully resolved the import.
+    Failed,                       // Failed to resolve the name.
+    Indeterminate,                // Couldn't determine due to unresolved globs.
+    Success(T, ImportCertificate) // Successfully resolved the import.
 }
 
 impl<T> ResolveResult<T> {
@@ -198,6 +280,22 @@ impl<T> ResolveResult<T> {
     }
     fn indeterminate(&self) -> bool {
         match *self { Indeterminate => true, _ => false }
+    }
+    fn prepend_for_type(&mut self, other: ImportCertificate) {
+        match *self {
+            Success(_, ref mut cert) => { let _:() = cert.prepend_for_type(other); }
+            _ => {}
+        }
+    }
+    fn prepend_for_value(&mut self, other: ImportCertificate) {
+        match *self {
+            Success(_, ref mut cert) => { let _:() = cert.prepend_for_value(other); }
+            _ => {}
+        }
+    }
+    fn prepend_for_both(&mut self, other: ImportCertificate) {
+        self.prepend_for_type(other.clone());
+        self.prepend_for_value(other);
     }
 }
 
@@ -359,18 +457,22 @@ impl ImportDirective {
 }
 
 /// The item that an import resolves to.
+#[deriving(Clone)]
 struct Target {
     target_module: @mut Module,
     bindings: @mut NameBindings,
+    via_imports: ImportCertificate, // directives leading to this target.
 }
 
 impl Target {
     fn new(target_module: @mut Module,
-               bindings: @mut NameBindings)
-               -> Target {
+           bindings: @mut NameBindings,
+           via_imports: ImportCertificate)
+           -> Target {
         Target {
             target_module: target_module,
-            bindings: bindings
+            bindings: bindings,
+            via_imports: via_imports,
         }
     }
 }
@@ -413,11 +515,11 @@ impl ImportResolution {
         }
     }
 
-    fn target_for_namespace(&self, namespace: Namespace)
+    fn cloned_target_for_namespace(&self, namespace: Namespace)
                                 -> Option<Target> {
         match namespace {
-            TypeNS      => return self.type_target,
-            ValueNS     => return self.value_target,
+            TypeNS      => return self.type_target.clone(),
+            ValueNS     => return self.value_target.clone(),
         }
     }
 
@@ -521,22 +623,27 @@ impl Module {
 }
 
 // Records a possibly-private type definition.
+#[deriving(Clone)]
 struct TypeNsDef {
     is_public: bool, // see note in ImportResolution about how to use this
     module_def: Option<@mut Module>,
     type_def: Option<Def>,
-    type_span: Option<Span>
+    type_span: Option<Span>,
+    type_via_imports: ImportCertificate, // directives leading to type
 }
 
 // Records a possibly-private value definition.
+#[deriving(Clone)]
 struct ValueNsDef {
     is_public: bool, // see note in ImportResolution about how to use this
     def: Def,
     value_span: Option<Span>,
+    value_via_imports: ImportCertificate, // directives leading to value
 }
 
 // Records the definitions (at most one for each namespace) that a name is
 // bound to.
+#[deriving(Clone)]
 struct NameBindings {
     type_def: Option<TypeNsDef>,    //< Meaning in type namespace.
     value_def: Option<ValueNsDef>,  //< Meaning in value namespace.
@@ -550,6 +657,19 @@ enum TraitReferenceType {
 }
 
 impl NameBindings {
+    fn value_cert(&self) -> Option<ImportCertificate> {
+        self.value_def.map(|d|d.value_via_imports.clone())
+    }
+    fn type_cert(&self) -> Option<ImportCertificate> {
+        self.type_def.map(|d|d.type_via_imports.clone())
+    }
+    fn cert_for_namespace(&self, ns: Namespace) -> Option<ImportCertificate> {
+        match ns {
+            TypeNS  => self.type_cert(),
+            ValueNS => self.value_cert(),
+        }
+    }
+
     /// Creates a new module in this set of name bindings.
     fn define_module(&mut self,
                      parent_link: ParentLink,
@@ -561,13 +681,14 @@ impl NameBindings {
         // Merges the module with the existing type def or creates a new one.
         let module_ = @mut Module::new(parent_link, def_id, kind, external,
                                        is_public);
-        match self.type_def {
+        match self.type_def.clone() {
             None => {
                 self.type_def = Some(TypeNsDef {
                     is_public: is_public,
                     module_def: Some(module_),
                     type_def: None,
-                    type_span: Some(sp)
+                    type_span: Some(sp),
+                    type_via_imports: ImportCertificate::empty(),
                 });
             }
             Some(type_def) => {
@@ -575,7 +696,8 @@ impl NameBindings {
                     is_public: is_public,
                     module_def: Some(module_),
                     type_span: Some(sp),
-                    type_def: type_def.type_def
+                    type_def: type_def.type_def,
+                    type_via_imports: type_def.type_via_imports.clone(),
                 });
             }
         }
@@ -589,7 +711,7 @@ impl NameBindings {
                        external: bool,
                        is_public: bool,
                        _sp: Span) {
-        match self.type_def {
+        match self.type_def.clone() {
             None => {
                 let module = @mut Module::new(parent_link, def_id, kind,
                                               external, is_public);
@@ -598,6 +720,7 @@ impl NameBindings {
                     module_def: Some(module),
                     type_def: None,
                     type_span: None,
+                    type_via_imports: ImportCertificate::empty(),
                 })
             }
             Some(type_def) => {
@@ -613,6 +736,7 @@ impl NameBindings {
                             module_def: Some(module),
                             type_def: type_def.type_def,
                             type_span: None,
+                            type_via_imports: type_def.type_via_imports.clone(),
                         })
                     }
                     Some(module_def) => module_def.kind = kind,
@@ -624,21 +748,23 @@ impl NameBindings {
     /// Records a type definition.
     fn define_type(&mut self, def: Def, sp: Span, is_public: bool) {
         // Merges the type with the existing type def or creates a new one.
-        match self.type_def {
+        match self.type_def.clone() {
             None => {
                 self.type_def = Some(TypeNsDef {
                     module_def: None,
                     type_def: Some(def),
                     type_span: Some(sp),
                     is_public: is_public,
+                    type_via_imports: ImportCertificate::empty(),
                 });
             }
-            Some(type_def) => {
+            Some(ref type_def) => {
                 self.type_def = Some(TypeNsDef {
                     type_def: Some(def),
                     type_span: Some(sp),
                     module_def: type_def.module_def,
                     is_public: is_public,
+                    type_via_imports: type_def.type_via_imports.clone(),
                 });
             }
         }
@@ -646,8 +772,10 @@ impl NameBindings {
 
     /// Records a value definition.
     fn define_value(&mut self, def: Def, sp: Span, is_public: bool) {
+        let cert = ImportCertificate::empty();
         self.value_def = Some(ValueNsDef { def: def, value_span: Some(sp),
-                                           is_public: is_public });
+                                           is_public: is_public,
+                                           value_via_imports: cert });
     }
 
     /// Returns the module node if applicable.
@@ -682,10 +810,10 @@ impl NameBindings {
     fn defined_in_public_namespace(&self, namespace: Namespace) -> bool {
         match namespace {
             TypeNS => match self.type_def {
-                Some(def) => def.is_public, None => false
+                Some(ref def) => def.is_public, None => false
             },
             ValueNS => match self.value_def {
-                Some(def) => def.is_public, None => false
+                Some(ref def) => def.is_public, None => false
             }
         }
     }
@@ -716,7 +844,7 @@ impl NameBindings {
             ValueNS => {
                 match self.value_def {
                     None => None,
-                    Some(value_def) => Some(value_def.def)
+                    Some(ref value_def) => Some(value_def.def)
                 }
             }
         }
@@ -728,13 +856,13 @@ impl NameBindings {
                 TypeNS  => {
                     match self.type_def {
                         None => None,
-                        Some(type_def) => type_def.type_span
+                        Some(ref type_def) => type_def.type_span
                     }
                 }
                 ValueNS => {
                     match self.value_def {
                         None => None,
-                        Some(value_def) => value_def.value_span
+                        Some(ref value_def) => value_def.value_span
                     }
                 }
             }
@@ -954,6 +1082,8 @@ impl<'self> Visitor<()> for UnusedImportCheckVisitor<'self> {
         visit::walk_view_item(self, vi, ());
     }
 }
+
+type ResolvedModulePath = (@mut Module, LastPrivate);
 
 impl Resolver {
     /// The main name resolution procedure.
@@ -2110,7 +2240,7 @@ impl Resolver {
                     // Bail out. We'll come around next time.
                     break;
                 }
-                Success(()) => {
+                Success((), _cert) => {
                     // Good. Continue.
                 }
             }
@@ -2183,7 +2313,8 @@ impl Resolver {
         // First, resolve the module path for the directive, if necessary.
         let container = if module_path.len() == 0 {
             // Use the crate root.
-            Some((self.graph_root.get_module(), AllPublic))
+            Some(((self.graph_root.get_module(), AllPublic),
+                  ImportCertificate::empty()))
         } else {
             match self.resolve_module_path(module_,
                                            *module_path,
@@ -2196,13 +2327,13 @@ impl Resolver {
                     resolution_result = Indeterminate;
                     None
                 }
-                Success(container) => Some(container),
+                Success((m, lp), cert) => Some(((m, lp), cert)),
             }
         };
 
         match container {
             None => {}
-            Some((containing_module, lp)) => {
+            Some(((containing_module, lp), cert)) => {
                 // We found the module that the target is contained
                 // within. Attempt to resolve the import within it.
 
@@ -2220,17 +2351,17 @@ impl Resolver {
                         resolution_result =
                             self.resolve_glob_import(module_,
                                                      containing_module,
-                                                     import_directive.id,
-                                                     import_directive.is_public,
+                                                     import_directive,
                                                      lp);
                     }
                 }
+                resolution_result.prepend_for_both(cert);
             }
         }
 
         // Decrement the count of unresolved imports.
         match resolution_result {
-            Success(()) => {
+            Success((), ref _cert) => {
                 assert!(self.unresolved_imports >= 1);
                 self.unresolved_imports -= 1;
             }
@@ -2266,7 +2397,8 @@ impl Resolver {
                 is_public: false,
                 module_def: Some(module),
                 type_def: None,
-                type_span: None
+                type_span: None,
+                type_via_imports: ImportCertificate::empty(),
             }),
             value_def: None,
         }
@@ -2277,7 +2409,7 @@ impl Resolver {
                              containing_module: @mut Module,
                              target: Ident,
                              source: Ident,
-                             directive: &ImportDirective,
+                             directive: @ImportDirective,
                              lp: LastPrivate)
                                  -> ResolveResult<()> {
         debug2!("(resolving single import) resolving `{}` = `{}::{}` from \
@@ -2303,12 +2435,14 @@ impl Resolver {
             }
             Some(child_name_bindings) => {
                 if child_name_bindings.defined_in_namespace(ValueNS) {
-                    value_result = BoundResult(containing_module,
-                                               *child_name_bindings);
+                    let mut cert = child_name_bindings.value_cert().unwrap().clone();
+                    cert.append_directive_for_value(directive);
+                    value_result = BoundResult(containing_module, *child_name_bindings, cert);
                 }
                 if child_name_bindings.defined_in_namespace(TypeNS) {
-                    type_result = BoundResult(containing_module,
-                                              *child_name_bindings);
+                    let mut cert = child_name_bindings.type_cert().unwrap().clone();
+                    cert.append_directive_for_type(directive);
+                    type_result = BoundResult(containing_module, *child_name_bindings, cert);
                 }
             }
         }
@@ -2316,7 +2450,7 @@ impl Resolver {
         // Unless we managed to find a result in both namespaces (unlikely),
         // search imports as well.
         let mut used_reexport = false;
-        match (value_result, type_result) {
+        match (value_result.clone(), type_result.clone()) {
             (BoundResult(*), BoundResult(*)) => {} // Continue.
             _ => {
                 // If there is an unresolved glob at this point in the
@@ -2363,7 +2497,7 @@ impl Resolver {
                             }
 
                             match (*import_resolution).
-                                    target_for_namespace(namespace) {
+                                    cloned_target_for_namespace(namespace) {
                                 None => {
                                     return UnboundResult;
                                 }
@@ -2371,7 +2505,8 @@ impl Resolver {
                                     let id = import_resolution.id(namespace);
                                     this.used_imports.insert(id);
                                     return BoundResult(target.target_module,
-                                                       target.bindings);
+                                                       target.bindings,
+                                                       target.via_imports);
                                 }
                             }
                         }
@@ -2413,8 +2548,13 @@ impl Resolver {
                         let name_bindings =
                             @mut Resolver::create_name_bindings_from_module(
                                 *module);
+                        let cert = match name_bindings.type_def {
+                            Some(ref tdef) => tdef.type_via_imports.clone(),
+                            None           => ImportCertificate::empty(),
+                        };
                         type_result = BoundResult(containing_module,
-                                                  name_bindings);
+                                                  name_bindings,
+                                                  cert);
                         used_public = true;
                     }
                 }
@@ -2425,29 +2565,33 @@ impl Resolver {
         assert!(module_.import_resolutions.contains_key(&target.name));
         let import_resolution = module_.import_resolutions.get(&target.name);
 
+        let value_cert : Option<~[ImportLink]>;
+        let type_cert  : Option<~[ImportLink]>;
         match value_result {
-            BoundResult(target_module, name_bindings) => {
+            BoundResult(target_module, name_bindings, cert) => {
                 debug2!("(resolving single import) found value target");
+                value_cert = Some(cert.cloned_value_justification());
                 import_resolution.value_target =
-                    Some(Target::new(target_module, name_bindings));
+                    Some(Target::new(target_module, name_bindings, cert));
                 import_resolution.value_id = directive.id;
                 used_public = name_bindings.defined_in_public_namespace(ValueNS);
             }
-            UnboundResult => { /* Continue. */ }
+            UnboundResult => { /* Continue. */ value_cert = None; }
             UnknownResult => {
                 fail2!("value result should be known at this point");
             }
         }
         match type_result {
-            BoundResult(target_module, name_bindings) => {
+            BoundResult(target_module, name_bindings, cert) => {
                 debug2!("(resolving single import) found type target: {:?}",
-                        name_bindings.type_def.unwrap().type_def);
+                        name_bindings.type_def.clone().unwrap().type_def);
+                type_cert = Some(cert.cloned_type_justification());
                 import_resolution.type_target =
-                    Some(Target::new(target_module, name_bindings));
+                    Some(Target::new(target_module, name_bindings, cert));
                 import_resolution.type_id = directive.id;
                 used_public = name_bindings.defined_in_public_namespace(TypeNS);
             }
-            UnboundResult => { /* Continue. */ }
+            UnboundResult => { /* Continue. */ type_cert = None; }
             UnknownResult => {
                 fail2!("type result should be known at this point");
             }
@@ -2471,7 +2615,7 @@ impl Resolver {
         // this may resolve to either a value or a type, but for documentation
         // purposes it's good enough to just favor one over the other.
         match import_resolution.value_target {
-            Some(target) => {
+            Some(ref target) => {
                 let def = target.bindings.def_for_namespace(ValueNS).unwrap();
                 self.def_map.insert(directive.id, def);
                 let did = def_id_of_def(def);
@@ -2481,7 +2625,7 @@ impl Resolver {
             None => {}
         }
         match import_resolution.type_target {
-            Some(target) => {
+            Some(ref target) => {
                 let def = target.bindings.def_for_namespace(TypeNS).unwrap();
                 self.def_map.insert(directive.id, def);
                 let did = def_id_of_def(def);
@@ -2492,7 +2636,8 @@ impl Resolver {
         }
 
         debug2!("(resolving single import) successfully resolved import");
-        return Success(());
+        return Success((), ImportCertificate::new(type_cert.unwrap_or_else(||~[]),
+                                                  value_cert.unwrap_or_else(||~[])));
     }
 
     // Resolves a glob import. Note that this function cannot fail; it either
@@ -2501,10 +2646,12 @@ impl Resolver {
     fn resolve_glob_import(&mut self,
                            module_: @mut Module,
                            containing_module: @mut Module,
-                           id: NodeId,
-                           is_public: bool,
+                           import_directive: @ImportDirective,
                            lp: LastPrivate)
                            -> ResolveResult<()> {
+        let id = import_directive.id;
+        let is_public = import_directive.is_public;
+
         // This function works in a highly imperative manner; it eagerly adds
         // everything it can to the list of import resolutions of the module
         // node.
@@ -2540,9 +2687,9 @@ impl Resolver {
                     let new_import_resolution =
                         @mut ImportResolution::new(id, is_public);
                     new_import_resolution.value_target =
-                        target_import_resolution.value_target;
+                        target_import_resolution.value_target.clone();
                     new_import_resolution.type_target =
-                        target_import_resolution.type_target;
+                        target_import_resolution.type_target.clone();
 
                     module_.import_resolutions.insert
                         (*ident, new_import_resolution);
@@ -2555,18 +2702,18 @@ impl Resolver {
                         None => {
                             // Continue.
                         }
-                        Some(value_target) => {
+                        Some(ref value_target) => {
                             dest_import_resolution.value_target =
-                                Some(value_target);
+                                Some(value_target.clone());
                         }
                     }
                     match target_import_resolution.type_target {
                         None => {
                             // Continue.
                         }
-                        Some(type_target) => {
+                        Some(ref type_target) => {
                             dest_import_resolution.type_target =
-                                Some(type_target);
+                                Some(type_target.clone());
                         }
                     }
                     dest_import_resolution.is_public = is_public;
@@ -2599,14 +2746,18 @@ impl Resolver {
             // Merge the child item into the import resolution.
             if name_bindings.defined_in_public_namespace(ValueNS) {
                 debug2!("(resolving glob import) ... for value target");
+                let mut cert = name_bindings.value_cert().unwrap().clone();
+                cert.append_directive_for_value(import_directive);
                 dest_import_resolution.value_target =
-                    Some(Target::new(containing_module, name_bindings));
+                    Some(Target::new(containing_module, name_bindings, cert));
                 dest_import_resolution.value_id = id;
             }
             if name_bindings.defined_in_public_namespace(TypeNS) {
                 debug2!("(resolving glob import) ... for type target");
+                let mut cert = name_bindings.type_cert().unwrap().clone();
+                cert.append_directive_for_type(import_directive);
                 dest_import_resolution.type_target =
-                    Some(Target::new(containing_module, name_bindings));
+                    Some(Target::new(containing_module, name_bindings, cert));
                 dest_import_resolution.type_id = id;
             }
             dest_import_resolution.is_public = is_public;
@@ -2635,7 +2786,7 @@ impl Resolver {
         }
 
         debug2!("(resolving glob import) successfully resolved import");
-        return Success(());
+        return Success((), ImportCertificate::empty_globbed());
     }
 
     /// Resolves the given module path from the given root `module_`.
@@ -2646,11 +2797,12 @@ impl Resolver {
                                      span: Span,
                                      name_search_type: NameSearchType,
                                      lp: LastPrivate)
-                                -> ResolveResult<(@mut Module, LastPrivate)> {
+                                -> ResolveResult<ResolvedModulePath> {
         let mut search_module = module_;
         let mut index = index;
         let module_path_len = module_path.len();
         let mut closest_private = lp;
+        let mut the_cert = ImportCertificate::empty();
 
         // Resolve the module part of the path. This does not involve looking
         // upward though scope chains; we simply resolve names directly in
@@ -2687,20 +2839,17 @@ impl Resolver {
                             self.session.str_of(name));
                     return Indeterminate;
                 }
-                Success((target, used_proxy)) => {
+                Success((target, used_proxy), cert) => {
                     // Check to see whether there are type bindings, and, if
                     // so, whether there is a module within.
                     match target.bindings.type_def {
-                        Some(type_def) => {
+                        Some(ref type_def) => {
                             match type_def.module_def {
                                 None => {
                                     // Not a module.
-                                    self.resolve_error(span,
-                                                          format!("not a \
-                                                                module `{}`",
-                                                               self.session.
-                                                                   str_of(
-                                                                    name)));
+                                    let msg = format!("not a module `{}`",
+                                                      self.session.str_of(name));
+                                    self.resolve_error(span, msg);
                                     return Failed;
                                 }
                                 Some(module_def) => {
@@ -2719,6 +2868,7 @@ impl Resolver {
                                         }
                                         (_, _) => {
                                             search_module = module_def;
+                                            the_cert.append_for_both(cert);
 
                                             // Keep track of the closest
                                             // private module used when
@@ -2740,10 +2890,9 @@ impl Resolver {
                         }
                         None => {
                             // There are no type bindings at all.
-                            self.resolve_error(span,
-                                                  format!("not a module `{}`",
-                                                       self.session.str_of(
-                                                            name)));
+                            let msg = format!("not a module `{}`",
+                                              self.session.str_of(name));
+                            self.resolve_error(span, msg);
                             return Failed;
                         }
                     }
@@ -2753,7 +2902,7 @@ impl Resolver {
             index += 1;
         }
 
-        return Success((search_module, closest_private));
+        return Success((search_module, closest_private), the_cert);
     }
 
     /// Attempts to resolve the module part of an import directive or path
@@ -2767,7 +2916,7 @@ impl Resolver {
                            use_lexical_scope: UseLexicalScopeFlag,
                            span: Span,
                            name_search_type: NameSearchType)
-                               -> ResolveResult<(@mut Module, LastPrivate)> {
+                               -> ResolveResult<ResolvedModulePath> {
         let module_path_len = module_path.len();
         assert!(module_path_len > 0);
 
@@ -2783,6 +2932,7 @@ impl Resolver {
         let search_module;
         let start_index;
         let last_private;
+        let cert;
         match module_prefix_result {
             Failed => {
                 let mpath = self.idents_to_str(module_path);
@@ -2804,7 +2954,7 @@ impl Resolver {
                         bailing");
                 return Indeterminate;
             }
-            Success(NoPrefixFound) => {
+            Success(NoPrefixFound, no_prefix_cert) => {
                 // There was no prefix, so we're considering the first element
                 // of the path. How we handle this depends on whether we were
                 // instructed to use lexical scope or not.
@@ -2815,6 +2965,7 @@ impl Resolver {
                         search_module = self.graph_root.get_module();
                         start_index = 0;
                         last_private = AllPublic;
+                        cert = no_prefix_cert;
                     }
                     UseLexicalScope => {
                         // This is not a crate-relative path. We resolve the
@@ -2833,16 +2984,19 @@ impl Resolver {
                                         indeterminate; bailing");
                                 return Indeterminate;
                             }
-                            Success(containing_module) => {
+                            Success(containing_module, mod_cert) => {
                                 search_module = containing_module;
                                 start_index = 1;
                                 last_private = AllPublic;
+                                let mut result_cert = mod_cert;
+                                result_cert.prepend_for_both(no_prefix_cert);
+                                cert = result_cert;
                             }
                         }
                     }
                 }
             }
-            Success(PrefixFound(containing_module, index)) => {
+            Success(PrefixFound(containing_module, index), prefix_cert) => {
                 search_module = containing_module;
                 start_index = index;
                 last_private = DependsOn(containing_module.def_id.unwrap());
@@ -2879,7 +3033,9 @@ impl Resolver {
             Some(name_bindings)
                     if name_bindings.defined_in_namespace(namespace) => {
                 debug2!("top name bindings succeeded");
-                return Success((Target::new(module_, *name_bindings), false));
+                let cert = name_bindings.cert_for_namespace(namespace).unwrap();
+                return Success((Target::new(module_, *name_bindings, cert), false),
+                               ImportCertificate::empty());
             }
             Some(_) | None => { /* Not found; continue. */ }
         }
@@ -2893,18 +3049,19 @@ impl Resolver {
                 // Not found; continue.
             }
             Some(import_resolution) => {
-                match (*import_resolution).target_for_namespace(namespace) {
+                match (*import_resolution).cloned_target_for_namespace(namespace) {
                     None => {
                         // Not found; continue.
                         debug2!("(resolving item in lexical scope) found \
                                 import resolution, but not in namespace {:?}",
                                namespace);
                     }
-                    Some(target) => {
+                    Some(ref target) => {
                         debug2!("(resolving item in lexical scope) using \
                                 import resolution");
                         self.used_imports.insert(import_resolution.id(namespace));
-                        return Success((target, false));
+                        return Success((target.clone(), false),
+                                       target.via_imports.clone());
                     }
                 }
             }
@@ -2919,7 +3076,9 @@ impl Resolver {
                         @mut Resolver::create_name_bindings_from_module(
                             *module);
                     debug2!("lower name bindings succeeded");
-                    return Success((Target::new(module_, name_bindings), false));
+                    let cert = name_bindings.cert_for_namespace(namespace).unwrap();
+                    return Success((Target::new(module_, name_bindings, cert.clone()), false),
+                                   cert);
                 }
             }
         }
@@ -2981,11 +3140,11 @@ impl Resolver {
                             higher scope; bailing");
                     return Indeterminate;
                 }
-                Success((target, used_reexport)) => {
+                Success((target, used_reexport), cert) => {
                     // We found the module.
                     debug2!("(resolving item in lexical scope) found name \
                             in module, done");
-                    return Success((target, used_reexport));
+                    return Success((target, used_reexport), cert);
                 }
             }
         }
@@ -3001,7 +3160,7 @@ impl Resolver {
         let resolve_result = self.resolve_item_in_lexical_scope(
             module_, name, TypeNS, DontSearchThroughModules);
         match resolve_result {
-            Success((target, _)) => {
+            Success((target, _), cert) => {
                 let bindings = &mut *target.bindings;
                 match bindings.type_def {
                     Some(ref type_def) => {
@@ -3013,7 +3172,7 @@ impl Resolver {
                                 return Failed;
                             }
                             Some(module_def) => {
-                                return Success(module_def);
+                                return Success(module_def, cert);
                             }
                         }
                     }
@@ -3088,16 +3247,19 @@ impl Resolver {
         // top of the crate otherwise.
         let mut containing_module;
         let mut i;
+        let mut cert;
         if "self" == token::ident_to_str(&module_path[0]) {
             containing_module =
                 self.get_nearest_normal_module_parent_or_self(module_);
             i = 1;
+            cert = ImportCertificate::self_prefix();
         } else if "super" == token::ident_to_str(&module_path[0]) {
             containing_module =
                 self.get_nearest_normal_module_parent_or_self(module_);
             i = 0;  // We'll handle `super` below.
+            cert = ImportCertificate::empty();
         } else {
-            return Success(NoPrefixFound);
+            return Success(NoPrefixFound, ImportCertificate::empty());
         }
 
         // Now loop through all the `super`s we find.
@@ -3110,6 +3272,7 @@ impl Resolver {
                 Some(new_module) => {
                     containing_module = new_module;
                     i += 1;
+                    cert.add_super();
                 }
             }
         }
@@ -3117,7 +3280,7 @@ impl Resolver {
         debug2!("(resolving module prefix) finished resolving prefix at {}",
                self.module_to_str(containing_module));
 
-        return Success(PrefixFound(containing_module, i));
+        return Success(PrefixFound(containing_module, i), cert);
     }
 
     /// Attempts to resolve the supplied name in the given module for the
@@ -3142,7 +3305,8 @@ impl Resolver {
             Some(name_bindings)
                     if name_bindings.defined_in_namespace(namespace) => {
                 debug2!("(resolving name in module) found node as child");
-                return Success((Target::new(module_, *name_bindings), false));
+                let cert = name_bindings.cert_for_namespace(namespace).unwrap();
+                return Success((Target::new(module_, *name_bindings, cert.clone()), false), cert);
             }
             Some(_) | None => {
                 // Continue.
@@ -3166,17 +3330,17 @@ impl Resolver {
                            unresolved; bailing out");
                     return Indeterminate;
                 }
-                match import_resolution.target_for_namespace(namespace) {
+                match import_resolution.cloned_target_for_namespace(namespace) {
                     None => {
                         debug2!("(resolving name in module) name found, \
                                 but not in namespace {:?}",
                                namespace);
                     }
-                    Some(target) => {
+                    Some(ref target) => {
                         debug2!("(resolving name in module) resolved to \
                                 import");
                         self.used_imports.insert(import_resolution.id(namespace));
-                        return Success((target, true));
+                        return Success((target.clone(), true), target.via_imports.clone());
                     }
                 }
             }
@@ -3191,7 +3355,9 @@ impl Resolver {
                     let name_bindings =
                         @mut Resolver::create_name_bindings_from_module(
                             *module);
-                    return Success((Target::new(module_, name_bindings), false));
+                    let cert = name_bindings.cert_for_namespace(namespace).unwrap();
+                    let t = Target::new(module_, name_bindings, cert.clone());
+                    return Success((t, false), cert);
                 }
             }
         }
@@ -3340,7 +3506,7 @@ impl Resolver {
             if !importresolution.is_public { continue }
             let xs = [TypeNS, ValueNS];
             for &ns in xs.iter() {
-                match importresolution.target_for_namespace(ns) {
+                match importresolution.cloned_target_for_namespace(ns) {
                     Some(target) => {
                         debug2!("(computing exports) maybe reexport '{}'",
                                interner_get(*name));
@@ -4336,9 +4502,11 @@ impl Resolver {
                             self.record_def(pattern.id, (def, lp));
                         }
                         FoundConst(*) => {
-                            self.resolve_error(pattern.span,
-                                                  "only irrefutable patterns \
-                                                   allowed here");
+                            let msg = format!("only irrefutable patterns \
+                                               allowed here; `{}` is a static \
+                                               constant",
+                                               interner_get(renamed));
+                            self.resolve_error(pattern.span, msg);
                         }
                         BareIdentifierPatternUnresolved => {
                             debug2!("(resolving pattern) binding `{}`",
@@ -4538,7 +4706,7 @@ impl Resolver {
                                                  name,
                                                  ValueNS,
                                                  SearchThroughModules) {
-            Success((target, _)) => {
+            Success((target, _), _cert) => {
                 debug2!("(resolve bare identifier pattern) succeeded in \
                          finding {} at {:?}",
                         self.session.str_of(name), target.bindings.value_def);
@@ -4547,7 +4715,7 @@ impl Resolver {
                         fail2!("resolved name in the value namespace to a \
                               set of name bindings with no def?!");
                     }
-                    Some(def) => {
+                    Some(ref def) => {
                         // For the two success cases, this lookup can be
                         // considered as not having a private component because
                         // the lookup happened only within the current module.
@@ -4673,7 +4841,7 @@ impl Resolver {
         // Next, search import resolutions.
         match containing_module.import_resolutions.find(&name.name) {
             Some(import_resolution) if import_resolution.is_public => {
-                match (*import_resolution).target_for_namespace(namespace) {
+                match (*import_resolution).cloned_target_for_namespace(namespace) {
                     Some(target) => {
                         match target.bindings.def_for_namespace(namespace) {
                             Some(def) => {
@@ -4740,7 +4908,7 @@ impl Resolver {
                 fail2!("indeterminate unexpected");
             }
 
-            Success((resulting_module, resulting_last_private)) => {
+            Success((resulting_module, resulting_last_private), _cert) => {
                 containing_module = resulting_module;
                 last_private = resulting_last_private;
             }
@@ -4808,7 +4976,7 @@ impl Resolver {
                 fail2!("indeterminate unexpected");
             }
 
-            Success((resulting_module, resulting_last_private)) => {
+            Success((resulting_module, resulting_last_private), _cert) => {
                 containing_module = resulting_module;
                 last_private = resulting_last_private;
             }
@@ -4904,7 +5072,7 @@ impl Resolver {
                                                  ident,
                                                  namespace,
                                                  DontSearchThroughModules) {
-            Success((target, _)) => {
+            Success((target, _), _cert) => {
                 match (*target.bindings).def_for_namespace(namespace) {
                     None => {
                         // This can happen if we were looking for a type and
@@ -5291,7 +5459,7 @@ impl Resolver {
 
                 // Look for imports.
                 for (_, &import_resolution) in search_module.import_resolutions.iter() {
-                    match import_resolution.target_for_namespace(TypeNS) {
+                    match import_resolution.cloned_target_for_namespace(TypeNS) {
                         None => {
                             // Continue.
                         }
@@ -5484,7 +5652,7 @@ impl Resolver {
         debug2!("Import resolutions:");
         for (name, import_resolution) in module_.import_resolutions.iter() {
             let value_repr;
-            match import_resolution.target_for_namespace(ValueNS) {
+            match import_resolution.cloned_target_for_namespace(ValueNS) {
                 None => { value_repr = ~""; }
                 Some(_) => {
                     value_repr = ~" value:?";
@@ -5493,7 +5661,7 @@ impl Resolver {
             }
 
             let type_repr;
-            match import_resolution.target_for_namespace(TypeNS) {
+            match import_resolution.cloned_target_for_namespace(TypeNS) {
                 None => { type_repr = ~""; }
                 Some(_) => {
                     type_repr = ~" type:?";
