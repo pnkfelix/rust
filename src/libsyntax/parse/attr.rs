@@ -26,6 +26,16 @@ pub trait parser_attr {
     fn parse_optional_meta(&self) -> ~[@ast::MetaItem];
 }
 
+// Does token after `#` start some attribute?  Also, if `permit_inner`
+// then accept inner or outer attributes; otherwise solely outer.
+fn second_token_of_attr(t:&token::Token, permit_inner: bool) -> bool {
+    if permit_inner {
+        *t == token::LBRACKET || *t == token::NOT || token::is_ident(t)
+    } else {
+        *t == token::LBRACKET || token::is_ident(t)
+    }
+}
+
 impl parser_attr for Parser {
 
     // Parse attributes that appear before an item
@@ -39,7 +49,7 @@ impl parser_attr for Parser {
                 attrs.push(self.parse_attribute(false));
               }
               token::POUND => {
-                if self.look_ahead(1, |t| *t != token::LBRACKET) {
+                if self.look_ahead(1, |t| !second_token_of_attr(t, false)) {
                     break;
                 }
                 attrs.push(self.parse_attribute(false));
@@ -62,13 +72,21 @@ impl parser_attr for Parser {
         return attrs;
     }
 
-    // matches attribute = # [ meta_item ]
+    // matches old (deprecated) and new attribute syntax:
+    //   old, outer attribute:  # [ meta_item ]
+    //   old, inner attribute:  # [ meta_item ] ;
+    //   new, outer attribute:  #   meta_item
+    //   new, inner attribute:  # ! meta_item   ;
     //
-    // if permit_inner is true, then a trailing `;` indicates an inner
-    // attribute
+    // if permit_inner, then allowed to match either inner attribute
+    // case above (and a trailing `;` indicates an inner attribute).
+    // If not permit_inner, then parses `#[meta_item]` as an outer
+    // attribute (without looking ahead to see if semicolon follows).
     fn parse_attribute(&self, permit_inner: bool) -> ast::Attribute {
         debug2!("parse_attributes: permit_inner={:?} self.token={:?}",
                permit_inner, self.token);
+        enum AttrStyle { Indeterminate, MustBeInner, MustBeOuter };
+        let mut style_req = Indeterminate;
         let (span, value) = match *self.token {
             INTERPOLATED(token::nt_attr(attr)) => {
                 assert!(attr.node.style == ast::AttrOuter);
@@ -78,9 +96,25 @@ impl parser_attr for Parser {
             token::POUND => {
                 let lo = self.span.lo;
                 self.bump();
-                self.expect(&token::LBRACKET);
-                let meta_item = self.parse_meta_item();
-                self.expect(&token::RBRACKET);
+                let meta_item;
+                if *self.token == token::LBRACKET {
+                    self.expect(&token::LBRACKET);
+                    meta_item = self.parse_meta_item();
+                    self.expect(&token::RBRACKET);
+                } else {
+                    if *self.token == token::NOT {
+                        if !permit_inner {
+                            self.fatal(format!("Expected outer attribute \
+                                                but found `{}`",
+                                               self.this_token_to_str()));
+                        }
+                        style_req = MustBeInner;
+                        self.bump();
+                    } else {
+                        style_req = MustBeOuter;
+                    }
+                    meta_item = self.parse_meta_item();
+                }
                 let hi = self.span.hi;
                 (mk_sp(lo, hi), meta_item)
             }
@@ -89,11 +123,27 @@ impl parser_attr for Parser {
                                    self.this_token_to_str()));
             }
         };
-        let style = if permit_inner && *self.token == token::SEMI {
-            self.bump();
-            ast::AttrInner
-        } else {
-            ast::AttrOuter
+        let style = match style_req {
+            Indeterminate => {
+                if permit_inner && *self.token == token::SEMI {
+                    self.bump();
+                    ast::AttrInner
+                } else {
+                    ast::AttrOuter
+                }
+            }
+            MustBeInner => {
+                self.expect(&token::SEMI);
+                ast::AttrInner
+            }
+            MustBeOuter => {
+                if *self.token == token::SEMI {
+                    self.fatal(format!("expected item or another attribute \
+                                        but found `{}`",
+                                       self.this_token_to_str()));
+                }
+                ast::AttrOuter
+            }
         };
         return Spanned {
             span: span,
@@ -125,7 +175,7 @@ impl parser_attr for Parser {
                     self.parse_attribute(true)
                 }
                 token::POUND => {
-                    if self.look_ahead(1, |t| *t != token::LBRACKET) {
+                    if self.look_ahead(1, |t| !second_token_of_attr(t, true)) {
                         // This is an extension
                         break;
                     }
