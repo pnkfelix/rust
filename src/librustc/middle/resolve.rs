@@ -194,6 +194,7 @@ struct ImportCertificate {
     priv justify_value: ~[ImportLink],
     priv globbed: bool,
 }
+
 #[deriving(Clone)]
 enum ImportLink {
     LinkDir(@ImportDirective),
@@ -203,62 +204,85 @@ enum ImportLink {
 
 impl ImportCertificate {
     fn empty() -> ImportCertificate {
-        ImportCertificate{ justify_type: ~[], justify_value: ~[], globbed: false }
+        let cert = ImportCertificate{ justify_type: ~[], justify_value: ~[], globbed: false };
+        debug2!("create empty import certificate: {:s}", cert.to_str());
+        cert
     }
     fn new(justify_type: ~[ImportLink], justify_value: ~[ImportLink]) -> ImportCertificate {
-        ImportCertificate{
+        let cert = ImportCertificate{
             justify_type: justify_type, justify_value: justify_value, globbed: false,
-        }
+        };
+        debug2!("create new import certificate: {:s}", cert.to_str()); cert
     }
     fn self_prefix() -> ImportCertificate {
-        ImportCertificate{ justify_type: ~[LinkSelf], justify_value: ~[LinkSelf], globbed: false }
+        let cert = ImportCertificate{ justify_type: ~[LinkSelf],
+                                      justify_value: ~[LinkSelf],
+                                      globbed: false };
+        debug2!("create self import certificate: {:s}", cert.to_str()); cert
     }
     fn add_super(&mut self) {
         self.justify_type.push(LinkSuper);
         self.justify_value.push(LinkSuper);
     }
     fn empty_globbed() -> ImportCertificate {
-        ImportCertificate{ justify_type: ~[], justify_value: ~[], globbed: true }
+        let cert = ImportCertificate{ justify_type: ~[], justify_value: ~[], globbed: true };
+        debug2!("create globbed import certificate: {:s}", cert.to_str()); cert
     }
     fn prepend_for_type(&mut self, other: ImportCertificate) {
         use std::vec::append;
+        debug2!("cert prepend type {:s} {:s}", self.to_str(), other.to_str());
         self.justify_type = append(other.justify_type, self.justify_type);
+        debug2!("cert prepend type {:s}", self.to_str());
     }
     fn prepend_for_value(&mut self, other: ImportCertificate) {
         use std::vec::append;
+        debug2!("cert prepend value {:s} {:s}", self.to_str(), other.to_str());
         self.justify_value = append(other.justify_value, self.justify_value);
+        debug2!("cert prepend value {:s}", self.to_str());
     }
     fn prepend_for_both(&mut self, other: ImportCertificate) {
+        debug2!("cert prepend both {:s} {:s}", self.to_str(), other.to_str());
         self.prepend_for_type(other.clone());
         self.prepend_for_value(other);
+        debug2!("cert prepend both {:s}", self.to_str());
     }
     fn append_for_type(&mut self, other: ImportCertificate) {
         use std::vec::append;
+        debug2!("cert append type {:s} {:s}", self.to_str(), other.to_str());
         let mut v = ~[];
         util::swap(&mut self.justify_type, &mut v);
         self.justify_type = append(v, other.justify_type);
+        debug2!("cert append type {:s}", self.to_str());
     }
     fn append_for_value(&mut self, other: ImportCertificate) {
         use std::vec::append;
+        debug2!("cert append value {:s} {:s}", self.to_str(), other.to_str());
         let mut v = ~[];
         util::swap(&mut self.justify_value, &mut v);
         self.justify_value = append(v, other.justify_value);
+        debug2!("cert append value {:s}", self.to_str());
     }
     fn append_for_both(&mut self, other: ImportCertificate) {
+        debug2!("cert append both {:s} {:s}", self.to_str(), other.to_str());
         self.append_for_type(other.clone());
         self.append_for_value(other);
+        debug2!("cert append both post: {:s}", self.to_str());
     }
     fn append_directive_for_type(&mut self, other: @ImportDirective) {
         use std::vec::append;
+        debug2!("cert append type directive {:s} {:?}", self.to_str(), other);
         let mut v = ~[];
         util::swap(&mut self.justify_type, &mut v);
         self.justify_type = append(v, [LinkDir(other)]);
+        debug2!("cert append type directive post: {:s}", self.to_str());
     }
     fn append_directive_for_value(&mut self, other: @ImportDirective) {
         use std::vec::append;
+        debug2!("cert append value directive {:s} {:?}", self.to_str(), other);
         let mut v = ~[];
         util::swap(&mut self.justify_value, &mut v);
         self.justify_value = append(v, [LinkDir(other)]);
+        debug2!("cert append value directive post: {:s}", self.to_str());
     }
     fn cloned_type_justification(&self) -> ~[ImportLink] {
         self.justify_type.clone()
@@ -453,6 +477,44 @@ impl ImportDirective {
             id: id,
             is_public: is_public,
         }
+    }
+}
+
+impl ToStr for ImportCertificate {
+    fn to_str(&self) -> ~str {
+        use i2s = syntax::parse::token::ident_to_str;
+        fn combine_path_elem(s: ~str, i: &Ident) -> ~str {
+            if s.len() > 0 { s + "::" + i2s(i) } else { i2s(i).to_owned() }
+        }
+        fn combine_link(s: ~str, link: &ImportLink) -> ~str {
+            let mut s = s;
+            if s.len() > 0 { s = s + ",\n"; }
+            match link {
+                &LinkSelf  => { s = s + "LinkSelf" },
+                &LinkSuper => { s = s + "LinkSuper" },
+                &LinkDir(@ImportDirective{module_path: ref module_path,
+                                          subclass: subclass,
+                                          is_public: pub_, _}) => {
+                    let pub_ = if pub_ { "pub " } else { "" };
+                    let mp = module_path.iter().fold(~"", combine_path_elem);
+                    let (lhs,end) = match subclass {
+                        @SingleImport(ref target, ref source) =>
+                            (i2s(target).to_owned() + " = ",
+                             i2s(source).to_owned()),
+                        @GlobImport => (~"", ~"*"),
+                    };
+                    s = s + "LinkDir( " + pub_ + lhs + mp + "::" + end + " )";
+                }
+            }
+            s
+        }
+        let justify_type = self.justify_type.iter().fold(~"", combine_link);
+        let justify_value = self.justify_value.iter().fold(~"", combine_link);
+        format!("ImportCertificate\\{\
+                 {3:s}justify_type:  [{:s}]\
+                 {3:s}justify_value: [{:s}]\
+                 {3:s}globbed: {}\\}",
+                justify_type, justify_value, self.globbed, "    ")
     }
 }
 
@@ -2364,6 +2426,8 @@ impl Resolver {
             Success((), ref _cert) => {
                 assert!(self.unresolved_imports >= 1);
                 self.unresolved_imports -= 1;
+                debug2!("resolved import ({:u} left), yielding cert: {:s}",
+                        self.unresolved_imports, _cert.to_str());
             }
             _ => {
                 // Nothing to do here; just return the error.
