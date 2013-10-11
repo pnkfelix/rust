@@ -149,8 +149,7 @@ fn read_to_eol(rdr: @mut StringReader) -> ~str {
 
 fn read_one_line_comment(rdr: @mut StringReader) -> ~str {
     let val = read_to_eol(rdr);
-    assert!((val[0] == '/' as u8 && val[1] == '/' as u8) ||
-                 (val[0] == '#' as u8 && val[1] == '!' as u8));
+    assert!(val[0] == '/' as u8 && val[1] == '/' as u8);
     return val;
 }
 
@@ -177,16 +176,18 @@ fn consume_whitespace_counting_blank_lines(rdr: @mut StringReader,
 }
 
 
-fn read_shebang_comment(rdr: @mut StringReader, code_to_the_left: bool,
-                                            comments: &mut ~[cmnt]) {
+fn read_shebang_comment(rdr: @mut StringReader, comments: &mut ~[cmnt]) {
     debug2!(">>> shebang comment");
     let p = rdr.last_pos;
+    let lines = ~[line(rdr)];
     debug2!("<<< shebang comment");
-    comments.push(cmnt {
-        style: if code_to_the_left { trailing } else { isolated },
-        lines: ~[read_one_line_comment(rdr)],
-        pos: p
-    });
+    comments.push(cmnt { style: isolated, lines: lines, pos: p });
+
+    fn line(rdr: @mut StringReader) -> ~str {
+        let val = read_to_eol(rdr);
+        assert!(val[0] == '#' as u8 && val[1] == '!' as u8);
+        return val;
+    }
 }
 
 fn read_line_comments(rdr: @mut StringReader, code_to_the_left: bool,
@@ -317,8 +318,7 @@ fn read_block_comment(rdr: @mut StringReader,
 
 fn peeking_at_comment(rdr: @mut StringReader) -> bool {
     return ((rdr.curr == '/' && nextch(rdr) == '/') ||
-         (rdr.curr == '/' && nextch(rdr) == '*')) ||
-         (rdr.curr == '#' && nextch(rdr) == '!');
+         (rdr.curr == '/' && nextch(rdr) == '*'));
 }
 
 fn consume_comment(rdr: @mut StringReader,
@@ -329,8 +329,6 @@ fn consume_comment(rdr: @mut StringReader,
         read_line_comments(rdr, code_to_the_left, comments);
     } else if rdr.curr == '/' && nextch(rdr) == '*' {
         read_block_comment(rdr, code_to_the_left, comments);
-    } else if rdr.curr == '#' && nextch(rdr) == '!' {
-        read_shebang_comment(rdr, code_to_the_left, comments);
     } else { fail2!(); }
     debug2!("<<< consume comment");
 }
@@ -356,6 +354,11 @@ pub fn gather_comments_and_literals(span_diagnostic:
     let mut comments: ~[cmnt] = ~[];
     let mut literals: ~[lit] = ~[];
     let mut first_read: bool = true;
+
+    // shebang comments can only appear as initial two characters.
+    if !is_eof(rdr) && lexer::is_at_shebang(rdr) {
+        read_shebang_comment(rdr, &mut comments);
+    }
     while !is_eof(rdr) {
         loop {
             let mut code_to_the_left = !first_read;
