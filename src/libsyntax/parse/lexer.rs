@@ -267,6 +267,43 @@ pub fn nextch(rdr: @mut StringReader) -> char {
     } else { return unsafe { transmute(-1u32) }; } // FIXME: #8971: unsound
 }
 
+// Scans *after* nextch(rdr) to find first char `c` such that `pred(c)`.
+// Warning: this scans arbitrarily far forward in the string; make
+// sure to choose an `pred` that will stop the scan reasonably soon,
+// and avoid calling in a loop to avoid quadratic time blowup.
+fn find_char_such_that(rdr: @mut StringReader,
+                       pred:&fn(char) -> bool) -> char {
+    let offset = byte_offset(rdr, rdr.pos).to_uint();
+    let mut offset = offset + 1;
+    while offset < (rdr.src).len() {
+        let c = rdr.src.char_at(offset);
+        if pred(c) {
+            return c;
+        } else {
+            offset += 1;
+        }
+    }
+    return unsafe { transmute(-1u32) }; // FIXME: #8971: unsound
+}
+
+fn found_slash_after_shebang(rdr: @mut StringReader) -> bool {
+    let next = find_char_such_that(rdr, is_nonwhitespace_or_newline);
+    return next == '/' || next == '\\';
+
+    fn is_nonwhitespace_or_newline(c:char) -> bool {
+        c == '\n' || ! is_whitespace(c)
+    }
+}
+
+/// Is rdr currently at point matching shebang comment, i.e. regexp `#![ \t\r]*[/\\]` ?
+pub fn is_at_shebang(rdr: @mut StringReader) -> bool {
+    // This addresses a detail of #2569: sh-bangs (are supposed to) start
+    // with absolute paths; meanwhile neither '/' nor '\\' can be initial character
+    // of an attribute.  Thus can distinguish between shebang and inner attributes.
+
+    rdr.curr == '#' && nextch(rdr) == '!' && found_slash_after_shebang(rdr)
+}
+
 fn dec_digit_val(c: char) -> int { return (c as int) - ('0' as int); }
 
 fn hex_digit_val(c: char) -> int {
@@ -348,17 +385,15 @@ fn consume_any_line_comment(rdr: @mut StringReader)
           '*' => { bump(rdr); bump(rdr); return consume_block_comment(rdr); }
           _ => ()
         }
-    } else if rdr.curr == '#' {
-        if nextch(rdr) == '!' {
-            // I guess this is the only way to figure out if
-            // we're at the beginning of the file...
-            let cmap = @CodeMap::new();
-            (*cmap).files.push(rdr.filemap);
-            let loc = cmap.lookup_char_pos_adj(rdr.last_pos);
-            if loc.line == 1u && loc.col == CharPos(0u) {
-                while rdr.curr != '\n' && !is_eof(rdr) { bump(rdr); }
-                return consume_whitespace_and_comments(rdr);
-            }
+    } else if is_at_shebang(rdr) {
+        // I guess this is the only way to figure out if
+        // we're at the beginning of the file...
+        let cmap = @CodeMap::new();
+        (*cmap).files.push(rdr.filemap);
+        let loc = cmap.lookup_char_pos_adj(rdr.last_pos);
+        if loc.line == 1u && loc.col == CharPos(0u) {
+            while rdr.curr != '\n' && !is_eof(rdr) { bump(rdr); }
+            return consume_whitespace_and_comments(rdr);
         }
     }
     return None;
