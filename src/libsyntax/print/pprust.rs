@@ -868,6 +868,8 @@ pub fn print_inner_attributes(s: @ps, attrs: &[ast::Attribute]) {
 }
 
 pub fn print_attribute(s: @ps, attr: &ast::Attribute) {
+    use std::os::getenv;
+    use std::str;
     let inner = match attr.node.style {
         ast::AttrOuter => false, ast::AttrInner => true
     };
@@ -877,7 +879,14 @@ pub fn print_attribute(s: @ps, attr: &ast::Attribute) {
         let comment = attr.value_str().unwrap();
         word(s.s, comment);
     } else {
-        if inner { word(s.s, "#!"); } else { word(s.s, "#"); }
+        let second = str::from_char(match getenv("INNER_ATTR_TOKEN")  {
+                Some(ref s) if s.as_slice() == "bang"  => '!',
+                Some(ref s) if s.as_slice() == "pipe"  => '|',
+                Some(ref s) if s.as_slice() == "caret" => '^',
+                Some(ref s) if s.as_slice() == "pound" => '#',
+                _                                      => '^',
+            });
+        if inner { word(s.s, (~"#").append(second)); } else { word(s.s, "#"); }
         print_meta_item(s, attr.meta());
         if inner { word(s.s, ";"); }
     }
