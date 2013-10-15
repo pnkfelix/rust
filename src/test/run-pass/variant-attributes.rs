@@ -12,25 +12,25 @@
 
 enum crew_of_enterprise_d {
 
-    #[captain]
+    #captain
     jean_luc_picard,
 
-    #[oldcommander]
+    #oldcommander
     william_t_riker,
 
-    #[chief_medical_officer]
+    #chief_medical_officer
     beverly_crusher,
 
-    #[ships_councellor]
+    #ships_councellor
     deanna_troi,
 
-    #[lieutenant_oldcommander]
+    #lieutenant_oldcommander
     data,
 
-    #[chief_of_security]
+    #chief_of_security
     worf,
 
-    #[chief_engineer]
+    #chief_engineer
     geordi_la_forge,
 }
 

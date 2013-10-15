@@ -10,7 +10,7 @@
 
 // pp-exact
 
-#[cfg = r#"just parse this"#]
+#cfg = r#"just parse this"#
 extern mod blah = r##"blah"##;
 
 fn main() { unsafe { asm!(r###"blah"###); } }

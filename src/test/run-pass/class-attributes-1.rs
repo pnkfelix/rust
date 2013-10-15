@@ -15,12 +15,12 @@ struct cat {
 }
 
 impl Drop for cat {
-    #[cat_dropper]
+    #cat_dropper
     fn drop(&mut self) { error2!("{} landed on hir feet" , self . name); }
 }
 
 
-#[cat_maker]
+#cat_maker
 fn cat(name: ~str) -> cat { cat{name: name,} }
 
 pub fn main() { let _kitty = cat(~"Spotty"); }

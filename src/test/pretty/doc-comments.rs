@@ -53,9 +53,9 @@ fn e() {
  */
 fn f() { }
 
-#[doc = "unsugared outer doc-comments work also"]
+#doc = "unsugared outer doc-comments work also"
 fn g() { }
 
 fn h() {
-    #[doc = "as do inner ones"];
+    #^doc = "as do inner ones";
 }

@@ -10,24 +10,24 @@
 
 // pp-exact - Make sure we print all the attributes
 
-#[frobable]
+#frobable
 trait frobable {
-    #[frob_attr]
+    #frob_attr
     fn frob(&self);
-    #[defrob_attr]
+    #defrob_attr
     fn defrob(&self);
 }
 
-#[int_frobable]
+#int_frobable
 impl frobable for int {
-    #[frob_attr1]
+    #frob_attr1
     fn frob(&self) {
-        #[frob_attr2];
+        #^frob_attr2;
     }
 
-    #[defrob_attr1]
+    #defrob_attr1
     fn defrob(&self) {
-        #[defrob_attr2];
+        #^defrob_attr2;
     }
 }
 
