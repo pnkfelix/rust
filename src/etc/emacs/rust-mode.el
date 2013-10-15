@@ -169,8 +169,17 @@
      ;; Special types
      (,(regexp-opt rust-special-types 'words) . font-lock-type-face)
 
-     ;; Attributes like `#[bar(baz)]`
+     ;; Attributes like `#[bar(baz)]`, deprecated bracketed syntax
      (,(rust-re-grab (concat "#\\[" rust-re-ident "[^]]*\\]"))
+      1 font-lock-preprocessor-face)
+
+     ;; Inner attribute, new unbracketed syntax
+     (,(rust-re-grab (concat "#[!|#^] *" rust-re-ident "[^;]*;*"))
+      1 font-lock-preprocessor-face)
+
+     ;; Outer attribute, new unbracketed syntax.
+     ;; Unfortunately only makes a conservative guess at its extent.
+     (,(rust-re-grab (concat "# *" rust-re-ident "\\(?:" rust-re-ident "\\|, \\|[,()]\\)*"))
       1 font-lock-preprocessor-face)
 
      ;; Syntax extension invocations like `foo!`, highlight including the !
