@@ -26,11 +26,19 @@ pub trait parser_attr {
     fn parse_optional_meta(&self) -> ~[@ast::MetaItem];
 }
 
+fn second_token_of_inner_attr(t:&token::Token) -> bool {
+    (*t == token::NOT ||
+     *t == token::POUND ||
+     *t == token::BINOP(token::OR) ||
+     *t == token::BINOP(token::CARET))
+}
+
 // Does token after `#` start some attribute?  Also, if `permit_inner`
 // then accept inner or outer attributes; otherwise solely outer.
 fn second_token_of_attr(t:&token::Token, permit_inner: bool) -> bool {
     if permit_inner {
-        *t == token::LBRACKET || *t == token::NOT || token::is_ident(t)
+        *t == token::LBRACKET ||
+            second_token_of_inner_attr(t) || token::is_ident(t)
     } else {
         *t == token::LBRACKET || token::is_ident(t)
     }
@@ -102,7 +110,7 @@ impl parser_attr for Parser {
                     meta_item = self.parse_meta_item();
                     self.expect(&token::RBRACKET);
                 } else {
-                    if *self.token == token::NOT {
+                    if second_token_of_inner_attr(self.token) {
                         if !permit_inner {
                             self.fatal(format!("Expected outer attribute \
                                                 but found `{}`",
