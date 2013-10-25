@@ -2106,12 +2106,11 @@ pub fn type_contents(cx: ctxt, ty: t) -> TypeContents {
 
             ty_evec(mt, vstore_fixed(_)) => {
                 let contents = tc_mt(cx, mt, cache);
-                // FIXME(#6308) Uncomment this when construction of such
-                // vectors is prevented earlier in compilation.
-                // if !contents.is_sized(cx) {
-                //     cx.sess.bug("Fixed-length vector of unsized type \
-                //                  should be impossible");
-                // }
+                if !contents.is_sized(cx) {
+                    cx.sess.note(format!("Fixed-length vector of unsized type ({}) \
+                                          should be impossible",
+                                         ty_to_str(cx, mt.ty)));
+                }
                 contents
             }
 
@@ -2630,8 +2629,23 @@ pub fn type_is_enum(ty: t) -> bool {
 
 // Is the type's representation size known at compile time?
 pub fn type_is_sized(cx: ctxt, ty: ty::t) -> bool {
+    let result =
     match get(ty).sty {
-        // FIXME(#6308) add trait, vec, str, etc here.
+        ty_rptr(*) | ty_ptr(_) | ty_box(_) | ty_uniq(_) => true,
+
+        ty_nil | ty_bool | ty_char |
+        ty_int(_) | ty_uint(_) | ty_float(_) => true,
+
+        // no unsized subparts in enum/struct/tup, right?
+        ty_enum(*) | ty_struct(*) | ty_tup(*) => true,
+
+        ty_estr(_vstore) => true,
+        ty_evec(_an_mt, _a_vstore) => true,
+
+        ty_bare_fn(_) => true,
+        ty_closure(_) => true,
+        ty_trait(*) => false,
+
         ty_param(p) => {
             let param_def = cx.ty_param_defs.get(&p.def_id.node);
             if param_def.bounds.builtin_bounds.contains_elem(BoundSized) {
@@ -2639,8 +2653,23 @@ pub fn type_is_sized(cx: ctxt, ty: ty::t) -> bool {
             }
             return false;
         },
-        _ => return true,
+
+        ty_bot => false,
+
+        ty_self(_) => true, // Self type parameter
+
+        // type-inference unification variables
+        ty_infer(_) | ty_err => false,
+
+        // intermediate types for trans; XXX
+        ty_type => true,                  // type_desc*
+        ty_opaque_box => true,            // monomorphized @ box
+        ty_opaque_closure_ptr(_) => true, // ptr to env for &fn, @fn, ~fn
+        ty_unboxed_vec(_) => false,
     }
+    ; debug!("type_is_sized {}: {}",
+             ::util::ppaux::ty_to_str(cx, ty), result);
+    result
 }
 
 // Whether a type is enum like, that is a enum type with only nullary

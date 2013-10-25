@@ -304,6 +304,14 @@ pub fn check_expr(cx: &mut Context, e: @Expr) {
         }
     }
 
+    let result_type = ty::expr_ty(cx.tcx, e);
+    if !ty::type_is_sized(cx.tcx, result_type) { // XXX too broad a net.
+        cx.tcx.sess.span_note(e.span,
+                              format!("expression should have Sized type, \
+                                       but the type `{}` is not Sized",
+                                      ty_to_str(cx.tcx, result_type)));
+    }
+
     match e.node {
         ExprUnary(_, UnBox(_), interior) => {
             let interior_type = ty::expr_ty(cx.tcx, interior);
@@ -311,7 +319,7 @@ pub fn check_expr(cx: &mut Context, e: @Expr) {
         }
         ExprCast(source, _) => {
             check_cast_for_escaping_regions(cx, source, e);
-            match ty::get(ty::expr_ty(cx.tcx, e)).sty {
+            match ty::get(result_type).sty {
                 ty::ty_trait(_, _, _, _, bounds) => {
                     let source_ty = ty::expr_ty(cx.tcx, source);
                     check_trait_cast_bounds(cx, e.span, source_ty, bounds)
