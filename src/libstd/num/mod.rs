@@ -17,6 +17,7 @@
 
 use clone::{Clone, DeepClone};
 use cmp::{Eq, ApproxEq, Ord};
+use kinds::Sized;
 use ops::{Add, Sub, Mul, Div, Rem, Neg};
 use ops::{Not, BitAnd, BitOr, BitXor, Shl, Shr};
 use option::{Option, Some, None};
@@ -682,7 +683,7 @@ impl_to_primitive_float!(f32)
 impl_to_primitive_float!(f64)
 
 /// A generic trait for converting a number to a value.
-pub trait FromPrimitive {
+pub trait FromPrimitive : Sized {
     /// Convert an `int` to return an optional value of this type. If the
     /// value cannot be represented by this value, the `None` is returned.
     #[inline]
