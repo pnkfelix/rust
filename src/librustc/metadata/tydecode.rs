@@ -608,16 +608,16 @@ fn parse_bounds(st: &mut PState, conv: conv_did) -> ty::ParamBounds {
     loop {
         match next(st) {
             'S' => {
-                param_bounds.builtin_bounds.add(ty::BoundSend);
+                param_bounds.add_builtin_bound(ty::BoundSend);
             }
             'K' => {
-                param_bounds.builtin_bounds.add(ty::BoundFreeze);
+                param_bounds.add_builtin_bound(ty::BoundFreeze);
             }
             'O' => {
-                param_bounds.builtin_bounds.add(ty::BoundStatic);
+                param_bounds.add_builtin_bound(ty::BoundStatic);
             }
             'Z' => {
-                param_bounds.builtin_bounds.add(ty::BoundSized);
+                param_bounds.add_builtin_bound(ty::BoundSized);
             }
             'I' => {
                 param_bounds.trait_bounds.push(@parse_trait_ref(st, |x,y| conv(x,y)));
