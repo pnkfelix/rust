@@ -108,6 +108,7 @@ use cmp::{Eq, TotalOrd, Ordering, Less, Equal, Greater};
 use cmp;
 use default::Default;
 use iter::*;
+use kinds::Sized;
 use libc::c_void;
 use num::{Integer, CheckedAdd, Saturating};
 use option::{None, Option, Some};
@@ -132,7 +133,7 @@ use util;
  * Creates an owned vector of size `n_elts` and initializes the elements
  * to the value returned by the function `op`.
  */
-pub fn from_fn<T>(n_elts: uint, op: &fn(uint) -> T) -> ~[T] {
+pub fn from_fn<T:Sized>(n_elts: uint, op: &fn(uint) -> T) -> ~[T] {
     unsafe {
         let mut v = with_capacity(n_elts);
         let p = raw::to_mut_ptr(v);
@@ -207,7 +208,7 @@ pub fn with_capacity<T>(capacity: uint) -> ~[T] {
  *             onto the vector being constructed.
  */
 #[inline]
-pub fn build<A>(size: Option<uint>, builder: &fn(push: &fn(v: A))) -> ~[A] {
+pub fn build<A:Sized>(size: Option<uint>, builder: &fn(push: &fn(v: A))) -> ~[A] {
     let mut vec = with_capacity(size.unwrap_or(4));
     builder(|x| vec.push(x));
     vec
@@ -322,7 +323,7 @@ pub fn append<T:Clone>(lhs: ~[T], rhs: &[T]) -> ~[T] {
 /// Appends one element to the vector provided. The vector itself is then
 /// returned for use again.
 #[inline]
-pub fn append_one<T>(lhs: ~[T], x: T) -> ~[T] {
+pub fn append_one<T:Sized>(lhs: ~[T], x: T) -> ~[T] {
     let mut v = lhs;
     v.push(x);
     v
@@ -381,7 +382,7 @@ impl<'self, T: Clone, V: Vector<T>> VectorVector<T> for &'self [V] {
  * and the i-th element of the second vector contains the second element
  * of the i-th tuple of the input iterator.
  */
-pub fn unzip<T, U, V: Iterator<(T, U)>>(mut iter: V) -> (~[T], ~[U]) {
+pub fn unzip<T:Sized, U:Sized, V: Iterator<(T, U)>>(mut iter: V) -> (~[T], ~[U]) {
     let (lo, _) = iter.size_hint();
     let mut ts = with_capacity(lo);
     let mut us = with_capacity(lo);
@@ -827,7 +828,7 @@ impl<T: Clone> CopyableVector<T> for @[T] {
 }
 
 /// Extension methods for vectors
-pub trait ImmutableVector<'self, T> {
+pub trait ImmutableVector<'self, T:Sized> {
     /**
      * Returns a slice of self between `start` and `end`.
      *

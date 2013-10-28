@@ -21,10 +21,10 @@ the `clone` method.
 
 */
 
-use std::kinds::Freeze;
+use std::kinds::{Freeze,Sized};
 
 /// A common trait for cloning an object.
-pub trait Clone {
+pub trait Clone : Sized {
     /// Returns a copy of the value. The contents of owned pointers
     /// are copied to maintain uniqueness, while the contents of
     /// managed pointers are not copied.

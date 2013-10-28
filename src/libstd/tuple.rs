@@ -13,6 +13,7 @@
 #[allow(missing_doc)];
 
 use clone::Clone;
+use kinds::Sized;
 
 pub use self::inner::*;
 
@@ -61,7 +62,7 @@ pub trait ImmutableTuple<T, U> {
     fn second_ref<'a>(&'a self) -> &'a U;
 }
 
-impl<T, U> ImmutableTuple<T, U> for (T, U) {
+impl<T:Sized, U:Sized> ImmutableTuple<T, U> for (T, U) {
     #[inline]
     fn first_ref<'a>(&'a self) -> &'a T {
         match *self {
@@ -88,16 +89,17 @@ macro_rules! tuple_impls {
     )+) => {
         pub mod inner {
             use clone::Clone;
+            use kinds::Sized;
             #[cfg(not(test))] use cmp::*;
             #[cfg(not(test))] use default::Default;
             #[cfg(not(test))] use num::Zero;
 
             $(
-                pub trait $move_trait<$($T),+> {
+                pub trait $move_trait<$($T:Sized),+> {
                     $(fn $get_fn(self) -> $T;)+
                 }
 
-                impl<$($T),+> $move_trait<$($T),+> for ($($T,)+) {
+                impl<$($T:Sized),+> $move_trait<$($T),+> for ($($T,)+) {
                     $(
                         #[inline]
                         fn $get_fn(self) -> $T {
@@ -107,11 +109,11 @@ macro_rules! tuple_impls {
                     )+
                 }
 
-                pub trait $immutable_trait<$($T),+> {
+                pub trait $immutable_trait<$($T:Sized),+> {
                     $(fn $get_ref_fn<'a>(&'a self) -> &'a $T;)+
                 }
 
-                impl<$($T),+> $immutable_trait<$($T),+> for ($($T,)+) {
+                impl<$($T:Sized),+> $immutable_trait<$($T),+> for ($($T,)+) {
                     $(
                         #[inline]
                         fn $get_ref_fn<'a>(&'a self) -> &'a $T {
@@ -128,7 +130,7 @@ macro_rules! tuple_impls {
                 }
 
                 #[cfg(not(test))]
-                impl<$($T:Eq),+> Eq for ($($T,)+) {
+                impl<$($T:Eq + Sized),+> Eq for ($($T,)+) {
                     #[inline]
                     fn eq(&self, other: &($($T,)+)) -> bool {
                         $(*self.$get_ref_fn() == *other.$get_ref_fn())&&+
@@ -140,7 +142,7 @@ macro_rules! tuple_impls {
                 }
 
                 #[cfg(not(test))]
-                impl<$($T:TotalEq),+> TotalEq for ($($T,)+) {
+                impl<$($T:TotalEq + Sized),+> TotalEq for ($($T,)+) {
                     #[inline]
                     fn equals(&self, other: &($($T,)+)) -> bool {
                         $(self.$get_ref_fn().equals(other.$get_ref_fn()))&&+
@@ -148,7 +150,7 @@ macro_rules! tuple_impls {
                 }
 
                 #[cfg(not(test))]
-                impl<$($T:Ord + Eq),+> Ord for ($($T,)+) {
+                impl<$($T:Ord + Eq + Sized),+> Ord for ($($T,)+) {
                     #[inline]
                     fn lt(&self, other: &($($T,)+)) -> bool {
                         lexical_ord!(lt, $(self.$get_ref_fn(), other.$get_ref_fn()),+)
@@ -168,7 +170,7 @@ macro_rules! tuple_impls {
                 }
 
                 #[cfg(not(test))]
-                impl<$($T:TotalOrd),+> TotalOrd for ($($T,)+) {
+                impl<$($T:TotalOrd + Sized),+> TotalOrd for ($($T,)+) {
                     #[inline]
                     fn cmp(&self, other: &($($T,)+)) -> Ordering {
                         lexical_cmp!($(self.$get_ref_fn(), other.$get_ref_fn()),+)
@@ -176,7 +178,7 @@ macro_rules! tuple_impls {
                 }
 
                 #[cfg(not(test))]
-                impl<$($T:Default),+> Default for ($($T,)+) {
+                impl<$($T:Default + Sized),+> Default for ($($T,)+) {
                     #[inline]
                     fn default() -> ($($T,)+) {
                         ($({ let x: $T = Default::default(); x},)+)
@@ -184,7 +186,7 @@ macro_rules! tuple_impls {
                 }
 
                 #[cfg(not(test))]
-                impl<$($T:Zero),+> Zero for ($($T,)+) {
+                impl<$($T:Zero + Sized),+> Zero for ($($T,)+) {
                     #[inline]
                     fn zero() -> ($($T,)+) {
                         ($({ let x: $T = Zero::zero(); x},)+)
