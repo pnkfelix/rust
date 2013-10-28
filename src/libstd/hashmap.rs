@@ -22,6 +22,7 @@ use default::Default;
 use hash::Hash;
 use iter::{Iterator, FromIterator, Extendable};
 use iter::{FilterMap, Chain, Repeat, Zip};
+use kinds::Sized;
 use num;
 use option::{None, Option, Some};
 use rand::Rng;
