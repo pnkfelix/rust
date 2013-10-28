@@ -373,11 +373,11 @@ pub fn ensure_trait_methods(ccx: &CrateCtxt,
     }
 }
 
-pub fn ensure_supertraits(ccx: &CrateCtxt,
-                          id: ast::NodeId,
-                          sp: codemap::Span,
-                          ast_trait_refs: &[ast::trait_ref])
-                          -> ty::BuiltinBounds
+fn ensure_supertraits(ccx: &CrateCtxt,
+                      id: ast::NodeId,
+                      sp: codemap::Span,
+                      ast_trait_refs: &[ast::trait_ref])
+                      -> ty::BuiltinBounds
 {
     let tcx = ccx.tcx;
 
@@ -717,7 +717,7 @@ fn get_trait_def(ccx: &CrateCtxt, trait_id: ast::DefId) -> @ty::TraitDef {
     }
 }
 
-pub fn trait_def_of_item(ccx: &CrateCtxt, it: &ast::item) -> @ty::TraitDef {
+fn trait_def_of_item(ccx: &CrateCtxt, it: &ast::item) -> @ty::TraitDef {
     let def_id = local_def(it.id);
     let tcx = ccx.tcx;
     match tcx.trait_defs.find(&def_id) {
@@ -894,8 +894,8 @@ pub fn ty_generics(ccx: &CrateCtxt,
          * Translate the AST's notion of ty param bounds (which are an
          * enum consisting of a newtyped Ty or a region) to ty's
          * notion of ty param bounds, which can either be user-defined
-         * traits, or one of the two built-in traits (formerly known
-         * as kinds): Freeze and Send.
+         * traits, or built-in traits (formerly known as kinds) such
+         * Freeze or Send.
          */
 
         let mut param_bounds = ty::ParamBounds {
@@ -917,7 +917,7 @@ pub fn ty_generics(ccx: &CrateCtxt,
                 }
 
                 RegionTyParamBound => {
-                    param_bounds.builtin_bounds.add(ty::BoundStatic);
+                    param_bounds.add_builtin_bound(ty::BoundStatic);
                 }
             }
         }
