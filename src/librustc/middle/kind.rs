@@ -56,21 +56,58 @@ pub struct Context {
     method_map: typeck::method_map,
 }
 
-impl Visitor<()> for Context {
+#[deriving(Clone,Eq)]
+enum BroadContext { outermost, within_ty }
 
-    fn visit_expr(&mut self, ex:@Expr, _:()) {
-        check_expr(self, ex);
+#[deriving(Clone,Eq)]
+enum ImmedContext { generic_rhs, match_discriminant }
+
+#[deriving(Clone,Eq)]
+struct Where(BroadContext, ImmedContext);
+
+impl Where {
+    fn is_within_ty(&self) -> bool {
+        match self {
+            &Where(outermost, _) => false,
+            &Where(within_ty, _) => true,
+        }
+    }
+    fn is_match_discriminant(&self) -> bool {
+        match self {
+            &Where(_, generic_rhs) => false,
+            &Where(_, match_discriminant) => true,
+        }
+    }
+    fn must_be_sized(&self) -> bool {
+        !self.is_within_ty() && !self.is_match_discriminant()
+    }
+    fn at_match_discriminant(&self) -> Where {
+        match self {
+            &Where(b, _) => Where(b, match_discriminant)
+        }
+    }
+    fn at_generic(&self) -> Where {
+        match self {
+            &Where(b, _) => Where(b, generic_rhs)
+        }
+    }
+}
+
+impl Visitor<Where> for Context {
+
+    fn visit_expr(&mut self, ex:@Expr, w:Where) {
+        check_expr(self, ex, w);
     }
 
-    fn visit_fn(&mut self, fk:&visit::fn_kind, fd:&fn_decl, b:&Block, s:Span, n:NodeId, _:()) {
-        check_fn(self, fk, fd, b, s, n);
+    fn visit_fn(&mut self, fk:&visit::fn_kind, fd:&fn_decl, b:&Block, s:Span, n:NodeId, w:Where) {
+        check_fn(self, fk, fd, b, s, n, w);
     }
 
-    fn visit_ty(&mut self, t:&Ty, _:()) {
-        check_ty(self, t);
+    fn visit_ty(&mut self, t:&Ty, w:Where) {
+        check_ty(self, t, w);
     }
-    fn visit_item(&mut self, i:@item, _:()) {
-        check_item(self, i);
+    fn visit_item(&mut self, i:@item, w:Where) {
+        check_item(self, i, w);
     }
 }
 
@@ -81,7 +118,7 @@ pub fn check_crate(tcx: ty::ctxt,
         tcx: tcx,
         method_map: method_map,
     };
-    visit::walk_crate(&mut ctx, crate, ());
+    visit::walk_crate(&mut ctx, crate, Where(outermost, generic_rhs));
     tcx.sess.abort_if_errors();
 }
 
@@ -151,7 +188,7 @@ fn check_impl_of_trait(cx: &mut Context, it: @item, trait_ref: &trait_ref, self_
     }
 }
 
-fn check_item(cx: &mut Context, item: @item) {
+fn check_item(cx: &mut Context, item: @item, w:Where) {
     if !attr::contains_name(item.attrs, "unsafe_destructor") {
         match item.node {
             item_impl(_, Some(ref trait_ref), ref self_type, _) => {
@@ -161,7 +198,7 @@ fn check_item(cx: &mut Context, item: @item) {
         }
     }
 
-    visit::walk_item(cx, item, ());
+    visit::walk_item(cx, item, w);
 }
 
 // Yields the appropriate function to check the kind of closed over
@@ -251,7 +288,8 @@ fn check_fn(
     decl: &fn_decl,
     body: &Block,
     sp: Span,
-    fn_id: NodeId) {
+    fn_id: NodeId,
+    w: Where) {
 
     // Check kinds on free variables:
     do with_appropriate_checker(cx, fn_id) |chk| {
@@ -261,10 +299,10 @@ fn check_fn(
         }
     }
 
-    visit::walk_fn(cx, fk, decl, body, sp, fn_id, ());
+    visit::walk_fn(cx, fk, decl, body, sp, fn_id, w);
 }
 
-pub fn check_expr(cx: &mut Context, e: @Expr) {
+pub fn check_expr(cx: &mut Context, e: @Expr, w:Where) {
     debug!("kind::check_expr({})", expr_to_str(e, cx.tcx.sess.intr()));
 
     // Handle any kind bounds on type parameters
@@ -304,21 +342,32 @@ pub fn check_expr(cx: &mut Context, e: @Expr) {
         }
     }
 
-    let result_type = ty::expr_ty(cx.tcx, e);
-    if !ty::type_is_sized(cx.tcx, result_type) { // XXX too broad a net.
-        cx.tcx.sess.span_note(e.span,
-                              format!("expression should have Sized type, \
-                                       but the type `{}` is not Sized",
-                                      ty_to_str(cx.tcx, result_type)));
+    if w.must_be_sized() {
+        let result_type = ty::expr_ty(cx.tcx, e);
+        if !ty::type_is_bot(result_type) &&
+            !ty::type_is_sized(cx.tcx, result_type) { // XXX too broad a net.
+            cx.tcx.sess.span_note(e.span,
+                                  format!("expression should have Sized type, \
+                                          but the type `{}` is not Sized",
+                                          ty_to_str(cx.tcx, result_type)));
+        }
     }
 
     match e.node {
-        ExprUnary(_, UnBox(_), interior) => {
-            let interior_type = ty::expr_ty(cx.tcx, interior);
-            let _ = check_durable(cx.tcx, interior_type, interior.span);
+        ExprUnary(_, un_op, interior) => {
+            match un_op {
+                UnBox(_) => {
+                    let interior_type = ty::expr_ty(cx.tcx, interior);
+                    let _ = check_durable(cx.tcx, interior_type, interior.span);
+                }
+                _ => {}
+            }
+            visit::walk_expr(cx, e, w.at_generic());
         }
+
         ExprCast(source, _) => {
             check_cast_for_escaping_regions(cx, source, e);
+            let result_type = ty::expr_ty(cx.tcx, e);
             match ty::get(result_type).sty {
                 ty::ty_trait(_, _, _, _, bounds) => {
                     let source_ty = ty::expr_ty(cx.tcx, source);
@@ -326,7 +375,9 @@ pub fn check_expr(cx: &mut Context, e: @Expr) {
                 }
                 _ => { }
             }
+            visit::walk_expr(cx, e, w.at_generic());
         }
+
         ExprRepeat(element, count_expr, _) => {
             let count = ty::eval_repeat_count(&cx.tcx, count_expr);
             if count > 1 {
@@ -334,13 +385,32 @@ pub fn check_expr(cx: &mut Context, e: @Expr) {
                 check_copy(cx, element_ty, element.span,
                            "repeated element will be copied");
             }
+            visit::walk_expr(cx, e, w.at_generic());
         }
-        _ => {}
+
+        ExprMatch(subexpression, ref arms) => {
+            cx.visit_expr(subexpression, w.at_match_discriminant());
+            for arm in arms.iter() {
+                cx.visit_arm(arm, w.at_generic())
+            }
+        }
+
+        ExprVstore(*) | ExprVec(*) | ExprStruct(*) | ExprTup(*) | ExprCall(*)
+            | ExprMethodCall(*) | ExprBinary(*) | ExprAddrOf(*) | ExprDoBody(*)
+            | ExprLit(*) | ExprIf(*) | ExprWhile(*) | ExprForLoop(*)
+            | ExprLoop(*) | ExprFnBlock(*) | ExprBlock(*) | ExprAssign(*)
+            | ExprAssignOp(*) | ExprField(*) | ExprIndex(*) | ExprPath(*)
+            | ExprSelf | ExprBreak(*) | ExprAgain(*) | ExprRet(*)
+            | ExprLogLevel | ExprMac(*) | ExprParen(*) | ExprInlineAsm(*)
+            => {
+            visit::walk_expr(cx, e, w.at_generic())
+        }
     }
-    visit::walk_expr(cx, e, ());
+
+    cx.visit_expr_post(e, w.clone())
 }
 
-fn check_ty(cx: &mut Context, aty: &Ty) {
+fn check_ty(cx: &mut Context, aty: &Ty, _:Where) {
     match aty.node {
       ty_path(_, _, id) => {
           let r = cx.tcx.node_type_substs.find(&id);
@@ -355,7 +425,7 @@ fn check_ty(cx: &mut Context, aty: &Ty) {
       }
       _ => {}
     }
-    visit::walk_ty(cx, aty, ());
+    visit::walk_ty(cx, aty, Where(within_ty, generic_rhs));
 }
 
 // Calls "any_missing" if any bounds were missing.
