@@ -1306,7 +1306,7 @@ pub fn check_expr_with_unifier(fcx: @mut FnCtxt,
                                expr: @ast::Expr,
                                expected: Option<ty::t>,
                                unifier: &fn()) {
-    debug!(">> typechecking");
+    debug!(">> typechecking expr {}", expr.id);
 
     fn check_method_argument_types(
         fcx: @mut FnCtxt,
