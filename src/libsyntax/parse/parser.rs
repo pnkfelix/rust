@@ -78,12 +78,16 @@ use parse::token::{is_plain_ident, INTERPOLATED, keywords, special_idents};
 use parse::token::{token_to_binop};
 use parse::token;
 use parse::{new_sub_parser_from_file, ParseSess};
+use print::pprust::{path_to_str,ty_to_str};
 use opt_vec;
 use opt_vec::OptVec;
+use visit;
+use visit::Visitor;
 
 use std::hashmap::HashSet;
 use std::util;
 use std::vec;
+use std::container::Container;
 
 #[deriving(Eq)]
 enum restriction {
@@ -3926,6 +3930,66 @@ impl Parser {
         } else {
             None
         };
+
+        // At this point, `ty` holds the Self type for the impl.
+        // Add implicit bounds for impl's type parameters.
+        struct FindParamBounds {
+            idents_that_must_be_sized: ~[Ident],
+            paths_that_must_be_sized: ~[ast::Path]
+        }
+        impl FindParamBounds {
+            fn is_empty(&self) -> bool {
+                self.idents_that_must_be_sized.is_empty() &&
+                    self.paths_that_must_be_sized.is_empty()
+            }
+            fn in_immediate_sized_context(&mut self, t:&Ty) {
+                match t {
+                    &Ty { node: ty_path(ref path, _, _), _ } => {
+                        match &path.segments {
+                            // singleton path may be a simple type parameter.
+                            &[ast::PathSegment{identifier: ref id, lifetime: None, types: opt_vec::Empty}] => {
+                                self.idents_that_must_be_sized.push(id.clone())
+                            }
+                            _ => {
+                                self.paths_that_must_be_sized.push(path.clone())
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        impl Visitor<()> for FindParamBounds {
+            fn visit_ty(&mut self, t:&Ty, _:()) {
+                match t.node {
+                    ty_vec(mt { ty: ~ref elem, _ }) => {
+                        self.in_immediate_sized_context(elem);
+                    }
+                    ty_tup(ref tup_elems) => {
+                        for elem in tup_elems.iter() {
+                            self.in_immediate_sized_context(elem);
+                        }
+                    }
+                    _ => {} // other cases do not introduce implicit bounds
+                }
+                visit::walk_ty(self, t, ());
+            }
+        }
+        impl ToStr for FindParamBounds {
+            fn to_str(&self) -> ~str {
+                ~"FindParamBounds{ " +
+                    "idents: " + self.idents_that_must_be_sized.map(ident_to_str).to_str() +
+                    "paths: " + self.paths_that_must_be_sized.map(|p|path_to_str(p, token::get_ident_interner())).to_str() +
+                    "}"
+            }
+        }
+        let mut find_bounds = FindParamBounds {
+            idents_that_must_be_sized: ~[], paths_that_must_be_sized: ~[]
+        };
+        find_bounds.visit_ty(&ty, ());
+        debug!("implicit bounds for ty: {} are: {}",
+               ty_to_str(&ty, token::get_ident_interner()),
+               find_bounds.to_str());
 
         let mut meths = ~[];
         if self.eat(&token::SEMI) {
