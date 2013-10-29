@@ -15,6 +15,7 @@ use clone::Clone;
 #[cfg(not(test))]
 use cmp::Equiv;
 use iter::{range, Iterator};
+use kinds::Sized;
 use option::{Option, Some, None};
 use unstable::intrinsics;
 use util::swap;
@@ -227,7 +228,7 @@ pub unsafe fn array_each<T>(arr: **T, cb: &fn(*T)) {
 }
 
 #[allow(missing_doc)]
-pub trait RawPtr<T> {
+pub trait RawPtr<T> : Sized {
     fn null() -> Self;
     fn is_null(&self) -> bool;
     fn is_not_null(&self) -> bool;

@@ -20,6 +20,7 @@ use hashmap::HashMap;
 use hashmap::HashSet;
 use hash::Hash;
 use iter::Iterator;
+use kinds::Sized;
 use cmp::Eq;
 use vec::ImmutableVector;
 
@@ -51,7 +52,7 @@ impl<A:ToStr> ToStr for (A,) {
     }
 }
 
-impl<A:ToStr+Hash+Eq, B:ToStr> ToStr for HashMap<A, B> {
+impl<A:ToStr+Hash+Eq, B:ToStr+Sized> ToStr for HashMap<A, B> {
     #[inline]
     fn to_str(&self) -> ~str {
         let mut acc = ~"{";
