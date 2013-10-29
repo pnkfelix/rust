@@ -457,7 +457,7 @@ impl ErrorReporting for InferCtxt {
     }
 }
 
-trait Resolvable {
+trait Resolvable : Sized {
     fn resolve(&self, infcx: @mut InferCtxt) -> Self;
     fn contains_error(&self) -> bool;
 }
