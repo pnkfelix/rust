@@ -96,7 +96,7 @@ pub trait Extendable<A>: FromIterator<A> {
 /// is returned. A concrete Iterator implementation may choose to behave however
 /// it wishes, either by returning `None` infinitely, or by doing something
 /// else.
-pub trait Iterator<A> : Sized {
+pub trait Iterator<A> {
     /// Advance the iterator and return the next value. Return `None` when the end is reached.
     fn next(&mut self) -> Option<A>;
 
@@ -1321,7 +1321,7 @@ pub struct Peekable<A, T> {
     priv peeked: Option<A>,
 }
 
-impl<A:Sized, T: Iterator<A>> Iterator<A> for Peekable<A, T> {
+impl<A, T: Iterator<A>> Iterator<A> for Peekable<A, T> {
     #[inline]
     fn next(&mut self) -> Option<A> {
         if self.peeked.is_some() { self.peeked.take() }
@@ -1554,7 +1554,7 @@ pub struct Scan<'self, A, B, T, St> {
     state: St
 }
 
-impl<'self, A:Sized, B:Sized, T: Iterator<A>, St:Sized>
+impl<'self, A, B, T: Iterator<A>, St>
     Iterator<B> for Scan<'self, A, B, T, St> {
     #[inline]
     fn next(&mut self) -> Option<B> {
@@ -1774,7 +1774,7 @@ impl<'self, A, St> Unfold<'self, A, St> {
     }
 }
 
-impl<'self, A:Sized, St:Sized> Iterator<A> for Unfold<'self, A, St> {
+impl<'self, A, St> Iterator<A> for Unfold<'self, A, St> {
     #[inline]
     fn next(&mut self) -> Option<A> {
         (self.f)(&mut self.state)

@@ -68,6 +68,7 @@ they contained the following prologue:
 
 #[deny(non_camel_case_types)];
 #[deny(missing_doc)];
+#[allow(unused_imports)]; // XXX
 
 // Make extra accessible for benchmarking
 #[cfg(test)] extern mod extra(vers="0.9-pre");
