@@ -911,7 +911,7 @@ impl fold::ast_fold for Duplicator {
     }
 }
 
-pub trait Duplicate {
+pub trait Duplicate : Sized {
     //
     // Duplication functions
     //
