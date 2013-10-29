@@ -179,7 +179,7 @@ pub fn from_elem<T:Clone>(n_elts: uint, t: T) -> ~[T] {
 
 /// Creates a new vector with a capacity of `capacity`
 #[inline]
-pub fn with_capacity<T>(capacity: uint) -> ~[T] {
+pub fn with_capacity<T:Sized>(capacity: uint) -> ~[T] {
     unsafe {
         if contains_managed::<T>() {
             let mut vec = ~[];
@@ -223,7 +223,7 @@ pub struct SplitIterator<'self, T> {
     priv finished: bool
 }
 
-impl<'self, T> Iterator<&'self [T]> for SplitIterator<'self, T> {
+impl<'self, T:Sized> Iterator<&'self [T]> for SplitIterator<'self, T> {
     #[inline]
     fn next(&mut self) -> Option<&'self [T]> {
         if self.finished { return None; }
@@ -272,7 +272,7 @@ pub struct RSplitIterator<'self, T> {
     priv finished: bool
 }
 
-impl<'self, T> Iterator<&'self [T]> for RSplitIterator<'self, T> {
+impl<'self, T:Sized> Iterator<&'self [T]> for RSplitIterator<'self, T> {
     #[inline]
     fn next(&mut self) -> Option<&'self [T]> {
         if self.finished { return None; }
@@ -335,7 +335,7 @@ pub fn append_one<T:Sized>(lhs: ~[T], x: T) -> ~[T] {
  * Apply a function to each element of a vector and return a concatenation
  * of each result vector
  */
-pub fn flat_map<T, U>(v: &[T], f: &fn(t: &T) -> ~[U]) -> ~[U] {
+pub fn flat_map<T:Sized, U:Sized>(v: &[T], f: &fn(t: &T) -> ~[U]) -> ~[U] {
     let mut result = ~[];
     for elem in v.iter() { result.push_all_move(f(elem)); }
     result
@@ -505,7 +505,7 @@ pub struct WindowIter<'self, T> {
     priv size: uint
 }
 
-impl<'self, T> Iterator<&'self [T]> for WindowIter<'self, T> {
+impl<'self, T:Sized> Iterator<&'self [T]> for WindowIter<'self, T> {
     #[inline]
     fn next(&mut self) -> Option<&'self [T]> {
         if self.size > self.v.len() {
@@ -539,7 +539,7 @@ pub struct ChunkIter<'self, T> {
     priv size: uint
 }
 
-impl<'self, T> Iterator<&'self [T]> for ChunkIter<'self, T> {
+impl<'self, T:Sized> Iterator<&'self [T]> for ChunkIter<'self, T> {
     #[inline]
     fn next(&mut self) -> Option<&'self [T]> {
         if self.v.len() == 0 {
@@ -565,7 +565,7 @@ impl<'self, T> Iterator<&'self [T]> for ChunkIter<'self, T> {
     }
 }
 
-impl<'self, T> DoubleEndedIterator<&'self [T]> for ChunkIter<'self, T> {
+impl<'self, T:Sized> DoubleEndedIterator<&'self [T]> for ChunkIter<'self, T> {
     #[inline]
     fn next_back(&mut self) -> Option<&'self [T]> {
         if self.v.len() == 0 {
@@ -581,7 +581,7 @@ impl<'self, T> DoubleEndedIterator<&'self [T]> for ChunkIter<'self, T> {
     }
 }
 
-impl<'self, T> RandomAccessIterator<&'self [T]> for ChunkIter<'self, T> {
+impl<'self, T:Sized> RandomAccessIterator<&'self [T]> for ChunkIter<'self, T> {
     #[inline]
     fn indexable(&self) -> uint {
         self.v.len()/self.size + if self.v.len() % self.size != 0 { 1 } else { 0 }
@@ -610,10 +610,11 @@ pub mod traits {
 
     use clone::Clone;
     use cmp::{Eq, Ord, TotalEq, TotalOrd, Ordering, Equiv};
+    use kinds::Sized;
     use iter::order;
     use ops::Add;
 
-    impl<'self,T:Eq> Eq for &'self [T] {
+    impl<'self,T:Eq+Sized> Eq for &'self [T] {
         fn eq(&self, other: & &'self [T]) -> bool {
             self.len() == other.len() &&
                 order::eq(self.iter(), other.iter())
@@ -624,69 +625,69 @@ pub mod traits {
         }
     }
 
-    impl<T:Eq> Eq for ~[T] {
+    impl<T:Eq+Sized> Eq for ~[T] {
         #[inline]
         fn eq(&self, other: &~[T]) -> bool { self.as_slice() == *other }
         #[inline]
         fn ne(&self, other: &~[T]) -> bool { !self.eq(other) }
     }
 
-    impl<T:Eq> Eq for @[T] {
+    impl<T:Eq+Sized> Eq for @[T] {
         #[inline]
         fn eq(&self, other: &@[T]) -> bool { self.as_slice() == *other }
         #[inline]
         fn ne(&self, other: &@[T]) -> bool { !self.eq(other) }
     }
 
-    impl<'self,T:TotalEq> TotalEq for &'self [T] {
+    impl<'self,T:TotalEq+Sized> TotalEq for &'self [T] {
         fn equals(&self, other: & &'self [T]) -> bool {
             self.len() == other.len() &&
                 order::equals(self.iter(), other.iter())
         }
     }
 
-    impl<T:TotalEq> TotalEq for ~[T] {
+    impl<T:TotalEq+Sized> TotalEq for ~[T] {
         #[inline]
         fn equals(&self, other: &~[T]) -> bool { self.as_slice().equals(&other.as_slice()) }
     }
 
-    impl<T:TotalEq> TotalEq for @[T] {
+    impl<T:TotalEq+Sized> TotalEq for @[T] {
         #[inline]
         fn equals(&self, other: &@[T]) -> bool { self.as_slice().equals(&other.as_slice()) }
     }
 
-    impl<'self,T:Eq, V: Vector<T>> Equiv<V> for &'self [T] {
+    impl<'self,T:Eq+Sized, V: Vector<T>> Equiv<V> for &'self [T] {
         #[inline]
         fn equiv(&self, other: &V) -> bool { self.as_slice() == other.as_slice() }
     }
 
-    impl<'self,T:Eq, V: Vector<T>> Equiv<V> for ~[T] {
+    impl<'self,T:Eq+Sized, V: Vector<T>> Equiv<V> for ~[T] {
         #[inline]
         fn equiv(&self, other: &V) -> bool { self.as_slice() == other.as_slice() }
     }
 
-    impl<'self,T:Eq, V: Vector<T>> Equiv<V> for @[T] {
+    impl<'self,T:Eq+Sized, V: Vector<T>> Equiv<V> for @[T] {
         #[inline]
         fn equiv(&self, other: &V) -> bool { self.as_slice() == other.as_slice() }
     }
 
-    impl<'self,T:TotalOrd> TotalOrd for &'self [T] {
+    impl<'self,T:TotalOrd+Sized> TotalOrd for &'self [T] {
         fn cmp(&self, other: & &'self [T]) -> Ordering {
             order::cmp(self.iter(), other.iter())
         }
     }
 
-    impl<T: TotalOrd> TotalOrd for ~[T] {
+    impl<T: TotalOrd+Sized> TotalOrd for ~[T] {
         #[inline]
         fn cmp(&self, other: &~[T]) -> Ordering { self.as_slice().cmp(&other.as_slice()) }
     }
 
-    impl<T: TotalOrd> TotalOrd for @[T] {
+    impl<T: TotalOrd+Sized> TotalOrd for @[T] {
         #[inline]
         fn cmp(&self, other: &@[T]) -> Ordering { self.as_slice().cmp(&other.as_slice()) }
     }
 
-    impl<'self, T: Eq + Ord> Ord for &'self [T] {
+    impl<'self, T: Eq + Ord + Sized> Ord for &'self [T] {
         fn lt(&self, other: & &'self [T]) -> bool {
             order::lt(self.iter(), other.iter())
         }
@@ -704,7 +705,7 @@ pub mod traits {
         }
     }
 
-    impl<T: Eq + Ord> Ord for ~[T] {
+    impl<T: Eq + Ord + Sized> Ord for ~[T] {
         #[inline]
         fn lt(&self, other: &~[T]) -> bool { self.as_slice() < other.as_slice() }
         #[inline]
@@ -715,7 +716,7 @@ pub mod traits {
         fn gt(&self, other: &~[T]) -> bool { self.as_slice() > other.as_slice() }
     }
 
-    impl<T: Eq + Ord> Ord for @[T] {
+    impl<T: Eq + Ord + Sized> Ord for @[T] {
         #[inline]
         fn lt(&self, other: &@[T]) -> bool { self.as_slice() < other.as_slice() }
         #[inline]
@@ -748,12 +749,12 @@ pub mod traits {
 pub mod traits {}
 
 /// Any vector that can be represented as a slice.
-pub trait Vector<T> {
+pub trait Vector<T:Sized> : Sized {
     /// Work with `self` as a slice.
     fn as_slice<'a>(&'a self) -> &'a [T];
 }
 
-impl<'self,T> Vector<T> for &'self [T] {
+impl<'self,T:Sized> Vector<T> for &'self [T] {
     #[inline(always)]
     fn as_slice<'a>(&'a self) -> &'a [T] { *self }
 }
@@ -768,7 +769,7 @@ impl<T> Vector<T> for @[T] {
     fn as_slice<'a>(&'a self) -> &'a [T] { let v: &'a [T] = *self; v }
 }
 
-impl<'self, T> Container for &'self [T] {
+impl<'self, T:Sized> Container for &'self [T] {
     /// Returns the length of a vector
     #[inline]
     fn len(&self) -> uint {
@@ -776,7 +777,7 @@ impl<'self, T> Container for &'self [T] {
     }
 }
 
-impl<T> Container for ~[T] {
+impl<T:Sized> Container for ~[T] {
     /// Returns the length of a vector
     #[inline]
     fn len(&self) -> uint {
@@ -785,7 +786,7 @@ impl<T> Container for ~[T] {
 }
 
 /// Extension methods for vector slices with copyable elements
-pub trait CopyableVector<T> {
+pub trait CopyableVector<T:Sized> {
     /// Copy `self` into a new owned vector
     fn to_owned(&self) -> ~[T];
 
@@ -943,7 +944,7 @@ pub trait ImmutableVector<'self, T:Sized> {
      * Apply a function to each element of a vector and return a concatenation
      * of each result vector
      */
-    fn flat_map<U>(&self, f: &fn(t: &T) -> ~[U]) -> ~[U];
+    fn flat_map<U:Sized>(&self, f: &fn(t: &T) -> ~[U]) -> ~[U];
     /// Returns a pointer to the element at the given index, without doing
     /// bounds checking.
     unsafe fn unsafe_ref(&self, index: uint) -> *T;
@@ -974,7 +975,7 @@ pub trait ImmutableVector<'self, T:Sized> {
     fn as_imm_buf<U>(&self, f: &fn(*T, uint) -> U) -> U;
 }
 
-impl<'self,T> ImmutableVector<'self, T> for &'self [T] {
+impl<'self,T:Sized> ImmutableVector<'self, T> for &'self [T] {
     #[inline]
     fn slice(&self, start: uint, end: uint) -> &'self [T] {
         assert!(start <= end);
@@ -1101,7 +1102,7 @@ impl<'self,T> ImmutableVector<'self, T> for &'self [T] {
     }
 
     #[inline]
-    fn flat_map<U>(&self, f: &fn(t: &T) -> ~[U]) -> ~[U] {
+    fn flat_map<U:Sized>(&self, f: &fn(t: &T) -> ~[U]) -> ~[U] {
         flat_map(*self, f)
     }
 
@@ -1158,7 +1159,7 @@ pub trait ImmutableEqVector<T:Eq> {
     fn ends_with(&self, needle: &[T]) -> bool;
 }
 
-impl<'self,T:Eq> ImmutableEqVector<T> for &'self [T] {
+impl<'self,T:Eq+Sized> ImmutableEqVector<T> for &'self [T] {
     #[inline]
     fn position_elem(&self, x: &T) -> Option<uint> {
         self.iter().position(|y| *x == *y)
@@ -1197,7 +1198,7 @@ pub trait ImmutableTotalOrdVector<T: TotalOrd> {
     fn bsearch_elem(&self, x: &T) -> Option<uint>;
 }
 
-impl<'self, T: TotalOrd> ImmutableTotalOrdVector<T> for &'self [T] {
+impl<'self, T: TotalOrd+Sized> ImmutableTotalOrdVector<T> for &'self [T] {
     fn bsearch_elem(&self, x: &T) -> Option<uint> {
         self.bsearch(|p| p.cmp(x))
     }
@@ -1389,7 +1390,7 @@ pub trait OwnedVector<T> {
     fn grow_fn(&mut self, n: uint, op: &fn(uint) -> T);
 }
 
-impl<T> OwnedVector<T> for ~[T] {
+impl<T:Sized> OwnedVector<T> for ~[T] {
     fn move_iter(self) -> MoveIterator<T> {
         MoveIterator { v: self, idx: 0 }
     }
@@ -1686,7 +1687,7 @@ impl<T> OwnedVector<T> for ~[T] {
     }
 }
 
-impl<T> Mutable for ~[T] {
+impl<T:Sized> Mutable for ~[T] {
     /// Clear the vector, removing all values.
     fn clear(&mut self) { self.truncate(0) }
 }
@@ -1762,7 +1763,7 @@ pub trait OwnedEqVector<T:Eq> {
     fn dedup(&mut self);
 }
 
-impl<T:Eq> OwnedEqVector<T> for ~[T] {
+impl<T:Eq+Sized> OwnedEqVector<T> for ~[T] {
     fn dedup(&mut self) {
         unsafe {
             // Although we have a mutable reference to `self`, we cannot make
@@ -1919,7 +1920,7 @@ pub trait MutableVector<'self, T> {
     fn as_mut_buf<U>(self, f: &fn(*mut T, uint) -> U) -> U;
 }
 
-impl<'self,T> MutableVector<'self, T> for &'self mut [T] {
+impl<'self,T:Sized> MutableVector<'self, T> for &'self mut [T] {
     #[inline]
     fn mut_slice(self, start: uint, end: uint) -> &'self mut [T] {
         assert!(start <= end);
@@ -2045,7 +2046,7 @@ impl<'self, T:Clone> MutableCloneableVector<T> for &'self mut [T] {
 * * elts - The number of elements in the buffer
 */
 // Wrapper for fn in raw: needs to be called by net_tcp::on_tcp_read_cb
-pub unsafe fn from_buf<T>(ptr: *T, elts: uint) -> ~[T] {
+pub unsafe fn from_buf<T:Sized>(ptr: *T, elts: uint) -> ~[T] {
     raw::from_buf_raw(ptr, elts)
 }
 
@@ -2053,6 +2054,7 @@ pub unsafe fn from_buf<T>(ptr: *T, elts: uint) -> ~[T] {
 pub mod raw {
     use cast;
     use clone::Clone;
+    use kinds::Sized;
     use option::Some;
     use ptr;
     use mem;
@@ -2141,7 +2143,7 @@ pub mod raw {
      * is newly allocated.
      */
     #[inline]
-    pub unsafe fn init_elem<T>(v: &mut [T], i: uint, val: T) {
+    pub unsafe fn init_elem<T:Sized>(v: &mut [T], i: uint, val: T) {
         let mut box = Some(val);
         do v.as_mut_buf |p, _len| {
             intrinsics::move_val_init(&mut(*ptr::mut_offset(p, i as int)),
@@ -2159,7 +2161,7 @@ pub mod raw {
     */
     // Was in raw, but needs to be called by net_tcp::on_tcp_read_cb
     #[inline]
-    pub unsafe fn from_buf_raw<T>(ptr: *T, elts: uint) -> ~[T] {
+    pub unsafe fn from_buf_raw<T:Sized>(ptr: *T, elts: uint) -> ~[T] {
         let mut dst = with_capacity(elts);
         set_len(&mut dst, elts);
         dst.as_mut_buf(|p_dst, _len_dst| ptr::copy_memory(p_dst, ptr, elts));
@@ -2173,8 +2175,8 @@ pub mod raw {
       * may overlap.
       */
     #[inline]
-    pub unsafe fn copy_memory<T>(dst: &mut [T], src: &[T],
-                                 count: uint) {
+    pub unsafe fn copy_memory<T:Sized>(dst: &mut [T], src: &[T],
+                                       count: uint) {
         assert!(dst.len() >= count);
         assert!(src.len() >= count);
 
@@ -2427,7 +2429,7 @@ pub struct MoveIterator<T> {
     priv idx: uint,
 }
 
-impl<T> Iterator<T> for MoveIterator<T> {
+impl<T:Sized> Iterator<T> for MoveIterator<T> {
     #[inline]
     fn next(&mut self) -> Option<T> {
         // this is peculiar, but is required for safety with respect
@@ -2460,7 +2462,7 @@ pub struct MoveRevIterator<T> {
     priv v: ~[T]
 }
 
-impl<T> Iterator<T> for MoveRevIterator<T> {
+impl<T:Sized> Iterator<T> for MoveRevIterator<T> {
     #[inline]
     fn next(&mut self) -> Option<T> {
         self.v.pop_opt()
@@ -2473,7 +2475,7 @@ impl<T> Iterator<T> for MoveRevIterator<T> {
     }
 }
 
-impl<A> FromIterator<A> for ~[A] {
+impl<A:Sized> FromIterator<A> for ~[A] {
     fn from_iterator<T: Iterator<A>>(iterator: &mut T) -> ~[A] {
         let (lower, _) = iterator.size_hint();
         let mut xs = with_capacity(lower);
@@ -2484,7 +2486,7 @@ impl<A> FromIterator<A> for ~[A] {
     }
 }
 
-impl<A> Extendable<A> for ~[A] {
+impl<A:Sized> Extendable<A> for ~[A] {
     fn extend<T: Iterator<A>>(&mut self, iterator: &mut T) {
         let (lower, _) = iterator.size_hint();
         let len = self.len();

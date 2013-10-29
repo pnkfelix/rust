@@ -10,8 +10,10 @@
 
 //! The Default trait
 
+use kinds::Sized;
+
 /// A trait that types which have a useful default value should implement.
-pub trait Default {
+pub trait Default : Sized {
     /// Return the "default value" for a type.
     fn default() -> Self;
 }

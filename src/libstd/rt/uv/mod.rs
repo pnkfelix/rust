@@ -36,6 +36,7 @@ via `close` and `delete` methods.
 
 use container::Container;
 use option::*;
+use kinds::Sized;
 use str::raw::from_c_str;
 use to_str::ToStr;
 use ptr::RawPtr;
@@ -106,7 +107,7 @@ pub trait Watcher { }
 pub trait Request { }
 
 /// A type that wraps a native handle
-pub trait NativeHandle<T> {
+pub trait NativeHandle<T> : Sized {
     fn from_native_handle(T) -> Self;
     fn native_handle(&self) -> T;
 }

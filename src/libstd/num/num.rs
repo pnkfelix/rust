@@ -33,7 +33,7 @@ pub trait Num: Eq + Zero + One
              + Div<Self,Self>
              + Rem<Self,Self> {}
 
-pub trait Orderable: Ord {
+pub trait Orderable: Ord + Sized {
     // These should be methods on `Ord`, with overridable default implementations. We don't want
     // to encumber all implementors of Ord by requiring them to implement these functions, but at
     // the same time we want to be able to take advantage of the speed of the specific numeric
@@ -50,7 +50,7 @@ pub trait Orderable: Ord {
 /// Returns the number constrained within the range `mn <= self <= mx`.
 #[inline(always)] pub fn clamp<T: Orderable>(value: T, mn: T, mx: T) -> T { value.clamp(&mn, &mx) }
 
-pub trait Zero {
+pub trait Zero : Sized {
     fn zero() -> Self;      // FIXME (#5527): This should be an associated constant
     fn is_zero(&self) -> bool;
 }
@@ -58,7 +58,7 @@ pub trait Zero {
 /// Returns `0` of appropriate type.
 #[inline(always)] pub fn zero<T: Zero>() -> T { Zero::zero() }
 
-pub trait One {
+pub trait One : Sized {
     fn one() -> Self;       // FIXME (#5527): This should be an associated constant
 }
 
@@ -137,7 +137,7 @@ pub trait Integer: Num
 /// Calculates the Lowest Common Multiple (LCM) of the number and `other`.
 #[inline(always)] pub fn lcm<T: Integer>(x: T, y: T) -> T { x.lcm(&y) }
 
-pub trait Round {
+pub trait Round : Sized {
     fn floor(&self) -> Self;
     fn ceil(&self) -> Self;
     fn round(&self) -> Self;
@@ -152,7 +152,7 @@ pub trait Fractional: Num
     fn recip(&self) -> Self;
 }
 
-pub trait Algebraic {
+pub trait Algebraic : Sized {
     fn pow(&self, n: &Self) -> Self;
     fn sqrt(&self) -> Self;
     fn rsqrt(&self) -> Self;
@@ -179,7 +179,7 @@ pub trait Algebraic {
 /// `y`.
 #[inline(always)] pub fn hypot<T: Algebraic>(x: T, y: T) -> T { x.hypot(&y) }
 
-pub trait Trigonometric {
+pub trait Trigonometric : Sized {
     fn sin(&self) -> Self;
     fn cos(&self) -> Self;
     fn tan(&self) -> Self;
@@ -211,7 +211,7 @@ pub trait Trigonometric {
 /// Simultaneously computes the sine and cosine of the number.
 #[inline(always)] pub fn sin_cos<T: Trigonometric>(value: T) -> (T, T) { value.sin_cos() }
 
-pub trait Exponential {
+pub trait Exponential : Sized {
     fn exp(&self) -> Self;
     fn exp2(&self) -> Self;
 
@@ -260,7 +260,8 @@ pub trait Hyperbolic: Exponential {
 #[inline(always)] pub fn atanh<T: Hyperbolic>(value: T) -> T { value.atanh() }
 
 /// Defines constants and methods common to real numbers
-pub trait Real: Signed
+pub trait Real: Sized
+              + Signed
               + Fractional
               + Algebraic
               + Trigonometric
@@ -316,13 +317,13 @@ pub trait Bitwise: Not<Self>
                  + Shl<Self,Self>
                  + Shr<Self,Self> {}
 
-pub trait BitCount {
+pub trait BitCount : Sized {
     fn population_count(&self) -> Self;
     fn leading_zeros(&self) -> Self;
     fn trailing_zeros(&self) -> Self;
 }
 
-pub trait Bounded {
+pub trait Bounded : Sized {
     // FIXME (#5527): These should be associated constants
     fn min_value() -> Self;
     fn max_value() -> Self;
@@ -962,7 +963,7 @@ impl<T: Zero> Zero for ~T {
 }
 
 /// Saturating math operations
-pub trait Saturating {
+pub trait Saturating : Sized {
     /// Saturating addition operator.
     /// Returns a+b, saturating at the numeric bounds instead of overflowing.
     fn saturating_add(self, v: Self) -> Self;
