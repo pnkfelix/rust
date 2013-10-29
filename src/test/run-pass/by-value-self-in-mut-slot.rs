@@ -12,7 +12,7 @@ struct X {
     a: int
 }
 
-trait Changer {
+trait Changer : Sized{
     fn change(mut self) -> Self;
 }
 
