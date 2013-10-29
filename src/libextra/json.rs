@@ -1272,7 +1272,7 @@ impl<A:ToJson> ToJson for TreeMap<~str, A> {
     }
 }
 
-impl<A:ToJson> ToJson for HashMap<~str, A> {
+impl<A:ToJson+Sized> ToJson for HashMap<~str, A> {
     fn to_json(&self) -> Json {
         let mut d = TreeMap::new();
         for (key, value) in self.iter() {
