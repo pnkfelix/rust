@@ -10,7 +10,7 @@
 
 #[feature(managed_boxes)];
 
-trait add {
+trait add : Sized {
     fn plus(&self, x: Self) -> Self;
 }
 

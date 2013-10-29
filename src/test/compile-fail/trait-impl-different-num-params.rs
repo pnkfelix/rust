@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-trait foo {
+trait foo : Sized {
     fn bar(&self, x: uint) -> Self;
 }
 impl foo for int {

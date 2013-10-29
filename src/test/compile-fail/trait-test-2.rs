@@ -10,7 +10,7 @@
 
 #[feature(managed_boxes)];
 
-trait bar { fn dup(&self) -> Self; fn blah<X>(&self); }
+trait bar : Sized { fn dup(&self) -> Self; fn blah<X>(&self); }
 impl bar for int { fn dup(&self) -> int { *self } fn blah<X>(&self) {} }
 impl bar for uint { fn dup(&self) -> uint { *self } fn blah<X>(&self) {} }
 

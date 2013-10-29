@@ -9,7 +9,7 @@ pub trait FuzzyEq<Eps> {
     fn fuzzy_eq_eps(&self, other: &Self, epsilon: &Eps) -> bool;
 }
 
-trait Float: FuzzyEq<Self> {
+trait Float: FuzzyEq<Self> : Sized {
     fn two_pi() -> Self;
 }
 
