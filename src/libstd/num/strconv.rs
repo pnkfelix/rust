@@ -12,6 +12,7 @@
 
 use clone::Clone;
 use container::Container;
+use kinds::Sized;
 use std::cmp::{Ord, Eq};
 use ops::{Add, Sub, Mul, Div, Rem, Neg};
 use option::{None, Option, Some};
@@ -41,7 +42,7 @@ pub enum SignFormat {
     SignAll
 }
 
-pub trait NumStrConv {
+pub trait NumStrConv : Sized {
     fn nan()      -> Option<Self>;
     fn inf()      -> Option<Self>;
     fn neg_inf()  -> Option<Self>;

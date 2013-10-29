@@ -45,6 +45,7 @@ use clone::Clone;
 use cmp::{Eq,Ord};
 use default::Default;
 use either;
+use kinds::Sized;
 use util;
 use num::Zero;
 use iter;
@@ -435,7 +436,7 @@ impl<T: Default> Option<T> {
     }
 }
 
-impl<T> Default for Option<T> {
+impl<T:Sized> Default for Option<T> {
     #[inline]
     fn default() -> Option<T> { None }
 }

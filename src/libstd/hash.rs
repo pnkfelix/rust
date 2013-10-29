@@ -28,6 +28,7 @@
 
 use container::Container;
 use iter::Iterator;
+use kinds::Sized;
 use option::{Some, None};
 use rt::io::Writer;
 use str::OwnedStr;
@@ -50,7 +51,7 @@ pub use State = hash::SipState;
  * the rest. This is the recommended approach, since constructing
  * good keyed hash functions is quite difficult.
  */
-pub trait Hash {
+pub trait Hash : Sized {
     /**
      * Compute a "keyed" hash of the value implementing the trait,
      * taking `k0` and `k1` as "keying" parameters that randomize or
@@ -79,7 +80,7 @@ pub trait Streaming {
     fn reset(&mut self);
 }
 
-impl<A:IterBytes> Hash for A {
+impl<A:IterBytes + Sized> Hash for A {
     #[inline]
     fn hash_keyed(&self, k0: u64, k1: u64) -> u64 {
         let mut s = State::new(k0, k1);

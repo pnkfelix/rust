@@ -67,7 +67,7 @@ fn resize_at(capacity: uint) -> uint {
     (capacity * 3) / 4
 }
 
-impl<K:Hash + Eq,V> HashMap<K, V> {
+impl<K:Hash + Eq,V:Sized> HashMap<K, V> {
     #[inline]
     fn to_bucket(&self, h: uint) -> uint {
         // A good hash function with entropy spread over all of the
@@ -274,7 +274,7 @@ impl<K:Hash + Eq,V> Mutable for HashMap<K, V> {
     }
 }
 
-impl<K:Hash + Eq,V> Map<K, V> for HashMap<K, V> {
+impl<K:Hash + Eq,V:Sized> Map<K, V> for HashMap<K, V> {
     /// Return a reference to the value corresponding to the key
     fn find<'a>(&'a self, k: &K) -> Option<&'a V> {
         match self.bucket_for_key(k) {
@@ -284,7 +284,7 @@ impl<K:Hash + Eq,V> Map<K, V> for HashMap<K, V> {
     }
 }
 
-impl<K:Hash + Eq,V> MutableMap<K, V> for HashMap<K, V> {
+impl<K:Hash + Eq,V:Sized> MutableMap<K, V> for HashMap<K, V> {
     /// Return a mutable reference to the value corresponding to the key
     fn find_mut<'a>(&'a mut self, k: &K) -> Option<&'a mut V> {
         let idx = match self.bucket_for_key(k) {
@@ -321,7 +321,7 @@ impl<K:Hash + Eq,V> MutableMap<K, V> for HashMap<K, V> {
     }
 }
 
-impl<K: Hash + Eq, V> HashMap<K, V> {
+impl<K: Hash + Eq, V:Sized> HashMap<K, V> {
     /// Create an empty HashMap
     pub fn new() -> HashMap<K, V> {
         HashMap::with_capacity(INITIAL_CAPACITY)
@@ -490,7 +490,7 @@ impl<K: Hash + Eq, V: Clone> HashMap<K, V> {
     }
 }
 
-impl<K:Hash + Eq,V:Eq> Eq for HashMap<K, V> {
+impl<K:Hash + Eq,V:Eq + Sized> Eq for HashMap<K, V> {
     fn eq(&self, other: &HashMap<K, V>) -> bool {
         if self.len() != other.len() { return false; }
 
@@ -607,7 +607,7 @@ impl<K> Iterator<K> for HashSetMoveIterator<K> {
     }
 }
 
-impl<K: Eq + Hash, V> FromIterator<(K, V)> for HashMap<K, V> {
+impl<K: Eq + Hash, V:Sized> FromIterator<(K, V)> for HashMap<K, V> {
     fn from_iterator<T: Iterator<(K, V)>>(iter: &mut T) -> HashMap<K, V> {
         let (lower, _) = iter.size_hint();
         let mut map = HashMap::with_capacity(lower);
@@ -616,7 +616,7 @@ impl<K: Eq + Hash, V> FromIterator<(K, V)> for HashMap<K, V> {
     }
 }
 
-impl<K: Eq + Hash, V> Extendable<(K, V)> for HashMap<K, V> {
+impl<K: Eq + Hash, V:Sized> Extendable<(K, V)> for HashMap<K, V> {
     fn extend<T: Iterator<(K, V)>>(&mut self, iter: &mut T) {
         for (k, v) in *iter {
             self.insert(k, v);
@@ -624,7 +624,7 @@ impl<K: Eq + Hash, V> Extendable<(K, V)> for HashMap<K, V> {
     }
 }
 
-impl<K: Eq + Hash, V> Default for HashMap<K, V> {
+impl<K: Eq + Hash, V:Sized> Default for HashMap<K, V> {
     fn default() -> HashMap<K, V> { HashMap::new() }
 }
 

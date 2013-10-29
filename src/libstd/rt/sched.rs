@@ -12,6 +12,7 @@ use either::{Left, Right};
 use option::{Option, Some, None};
 use cast::{transmute, transmute_mut_region, transmute_mut_unsafe};
 use clone::Clone;
+use kinds::Sized;
 use unstable::raw;
 use super::sleeper_list::SleeperList;
 use super::work_queue::WorkQueue;
@@ -830,7 +831,7 @@ impl CleanupJob {
 // XXX: Some hacks to put a &fn in Scheduler without borrowck
 // complaining
 type UnsafeTaskReceiver = raw::Closure;
-trait ClosureConverter {
+trait ClosureConverter : Sized {
     fn from_fn(&fn(&mut Scheduler, ~Task)) -> Self;
     fn to_fn(self) -> &fn(&mut Scheduler, ~Task);
 }

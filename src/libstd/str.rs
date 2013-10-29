@@ -99,6 +99,7 @@ use container::{Container, Mutable};
 use iter::{Iterator, FromIterator, Extendable, range};
 use iter::{Filter, AdditiveIterator, Map};
 use iter::{Invert, DoubleEndedIterator, ExactSize};
+use kinds::Sized;
 use libc;
 use num::{Saturating};
 use option::{None, Option, Some};
@@ -307,7 +308,7 @@ impl<'self, S: Str> StrVector for &'self [S] {
 }
 
 /// Something that can be used to compare against a character
-pub trait CharEq {
+pub trait CharEq : Sized {
     /// Determine if the splitter should split at the given character
     fn matches(&self, char) -> bool;
     /// Indicate if this is only concerned about ASCII characters,
@@ -1312,7 +1313,7 @@ pub mod traits {
 pub mod traits {}
 
 /// Any string that can be represented as a slice
-pub trait Str {
+pub trait Str : Sized {
     /// Work with `self` as a slice.
     fn as_slice<'a>(&'a self) -> &'a str;
 

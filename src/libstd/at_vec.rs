@@ -13,6 +13,7 @@
 use clone::Clone;
 use container::Container;
 use iter::Iterator;
+use kinds::Sized;
 use option::{Option, Some, None};
 use mem;
 use unstable::raw::Repr;
@@ -43,7 +44,8 @@ pub fn capacity<T>(v: @[T]) -> uint {
  *             onto the vector being constructed.
  */
 #[inline]
-pub fn build<A>(size: Option<uint>, builder: &fn(push: &fn(v: A))) -> @[A] {
+pub fn build<A:Sized>(size: Option<uint>,
+                      builder: &fn(push: &fn(v: A))) -> @[A] {
     let mut vec = @[];
     unsafe { raw::reserve(&mut vec, size.unwrap_or(4)); }
     builder(|x| unsafe { raw::push(&mut vec, x) });
@@ -68,7 +70,7 @@ pub fn append<T:Clone>(lhs: @[T], rhs: &[T]) -> @[T] {
 
 
 /// Apply a function to each element of a vector and return the results
-pub fn map<T, U>(v: &[T], f: &fn(x: &T) -> U) -> @[U] {
+pub fn map<T:Sized, U:Sized>(v: &[T], f: &fn(x: &T) -> U) -> @[U] {
     do build(Some(v.len())) |push| {
         for elem in v.iter() {
             push(f(elem));
@@ -82,7 +84,7 @@ pub fn map<T, U>(v: &[T], f: &fn(x: &T) -> U) -> @[U] {
  * Creates an immutable vector of size `n_elts` and initializes the elements
  * to the value returned by the function `op`.
  */
-pub fn from_fn<T>(n_elts: uint, op: &fn(uint) -> T) -> @[T] {
+pub fn from_fn<T:Sized>(n_elts: uint, op: &fn(uint) -> T) -> @[T] {
     do build(Some(n_elts)) |push| {
         let mut i: uint = 0u;
         while i < n_elts { push(op(i)); i += 1u; }
@@ -109,7 +111,7 @@ pub fn from_elem<T:Clone>(n_elts: uint, t: T) -> @[T] {
  * Creates and initializes an immutable managed vector by moving all the
  * elements from an owned vector.
  */
-pub fn to_managed_move<T>(v: ~[T]) -> @[T] {
+pub fn to_managed_move<T:Sized>(v: ~[T]) -> @[T] {
     let mut av = @[];
     unsafe {
         raw::reserve(&mut av, v.len());
@@ -158,6 +160,8 @@ pub mod raw {
     use at_vec::capacity;
     use cast;
     use cast::{transmute, transmute_copy};
+    use kinds::Sized;
+    use libc;
     use ptr;
     use mem;
     use uint;
@@ -182,7 +186,7 @@ pub mod raw {
      * Pushes a new value onto this vector.
      */
     #[inline]
-    pub unsafe fn push<T>(v: &mut @[T], initval: T) {
+    pub unsafe fn push<T:Sized>(v: &mut @[T], initval: T) {
         let full = {
             let repr: *Box<Vec<T>> = cast::transmute_copy(v);
             (*repr).data.alloc > (*repr).data.fill
@@ -195,7 +199,7 @@ pub mod raw {
     }
 
     #[inline] // really pretty please
-    unsafe fn push_fast<T>(v: &mut @[T], initval: T) {
+    unsafe fn push_fast<T:Sized>(v: &mut @[T], initval: T) {
         let repr: *mut Box<Vec<T>> = cast::transmute_copy(v);
         let amt = v.len();
         (*repr).data.fill += mem::size_of::<T>();
@@ -203,7 +207,7 @@ pub mod raw {
         move_val_init(&mut(*p), initval);
     }
 
-    unsafe fn push_slow<T>(v: &mut @[T], initval: T) {
+    unsafe fn push_slow<T:Sized>(v: &mut @[T], initval: T) {
         reserve_at_least(v, v.len() + 1u);
         push_fast(v, initval);
     }
