@@ -16,6 +16,7 @@
 use std::num;
 use std::vec;
 use std::iter::{Invert, RandomAccessIterator};
+use std::kinds::Sized;
 
 use container::Deque;
 
@@ -44,7 +45,7 @@ impl<T> Mutable for RingBuf<T> {
     }
 }
 
-impl<T> Deque<T> for RingBuf<T> {
+impl<T:Sized> Deque<T> for RingBuf<T> {
     /// Return a reference to the first element in the RingBuf
     fn front<'a>(&'a self) -> Option<&'a T> {
         if self.nelts > 0 { Some(self.get(0)) } else { None }
@@ -109,7 +110,7 @@ impl<T> Deque<T> for RingBuf<T> {
     }
 }
 
-impl<T> RingBuf<T> {
+impl<T:Sized> RingBuf<T> {
     /// Create an empty RingBuf
     pub fn new() -> RingBuf<T> {
         RingBuf::with_capacity(INITIAL_CAPACITY)
@@ -329,7 +330,7 @@ fn raw_index(lo: uint, len: uint, index: uint) -> uint {
     }
 }
 
-impl<A: Eq> Eq for RingBuf<A> {
+impl<A: Eq+Sized> Eq for RingBuf<A> {
     fn eq(&self, other: &RingBuf<A>) -> bool {
         self.nelts == other.nelts &&
             self.iter().zip(other.iter()).all(|(a, b)| a.eq(b))
@@ -339,7 +340,7 @@ impl<A: Eq> Eq for RingBuf<A> {
     }
 }
 
-impl<A> FromIterator<A> for RingBuf<A> {
+impl<A:Sized> FromIterator<A> for RingBuf<A> {
     fn from_iterator<T: Iterator<A>>(iterator: &mut T) -> RingBuf<A> {
         let (lower, _) = iterator.size_hint();
         let mut deq = RingBuf::with_capacity(lower);
@@ -348,7 +349,7 @@ impl<A> FromIterator<A> for RingBuf<A> {
     }
 }
 
-impl<A> Extendable<A> for RingBuf<A> {
+impl<A:Sized> Extendable<A> for RingBuf<A> {
     fn extend<T: Iterator<A>>(&mut self, iterator: &mut T) {
         for elt in *iterator {
             self.push_back(elt);
