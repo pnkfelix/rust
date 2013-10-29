@@ -21,7 +21,7 @@ use util::ppaux::Repr;
 // Just call `foo.subst(tcx, substs)` to perform a substitution across
 // `foo`.
 
-pub trait Subst {
+pub trait Subst : Sized {
     fn subst(&self, tcx: ty::ctxt, substs: &ty::substs) -> Self;
 }
 
@@ -33,7 +33,7 @@ pub trait Subst {
 // to all subst methods but ran into trouble due to the limitations of
 // our current method/trait matching algorithm. - Niko
 
-trait EffectfulSubst {
+trait EffectfulSubst : Sized {
     fn effectfulSubst(&self, tcx: ty::ctxt, substs: &ty::substs) -> Self;
 }
 
