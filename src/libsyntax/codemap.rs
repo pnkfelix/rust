@@ -24,7 +24,7 @@ source code snippets, etc.
 use std::cmp;
 use extra::serialize::{Encodable, Decodable, Encoder, Decoder};
 
-pub trait Pos {
+pub trait Pos : Sized {
     fn from_uint(n: uint) -> Self;
     fn to_uint(&self) -> uint;
 }
