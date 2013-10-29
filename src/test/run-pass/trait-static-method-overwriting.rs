@@ -11,7 +11,7 @@
 // except according to those terms.
 
 mod base {
-    pub trait HasNew<T> {
+    pub trait HasNew<T> : Sized {
         fn new() -> Self;
     }
 

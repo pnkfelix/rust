@@ -12,7 +12,7 @@ impl<T> S<T> {
     }
 }
 
-trait Trait<T> {
+trait Trait<T> : Sized {
     fn new<U>(x: T, y: U) -> Self;
 }
 

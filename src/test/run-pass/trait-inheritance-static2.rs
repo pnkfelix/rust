@@ -10,7 +10,7 @@
 
 trait MyEq { }
 
-trait MyNum {
+trait MyNum : Sized {
     fn from_int(int) -> Self;
 }
 

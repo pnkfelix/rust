@@ -10,7 +10,7 @@
 
 
 pub mod num {
-    pub trait Num2 {
+    pub trait Num2 : Sized {
         fn from_int2(n: int) -> Self;
     }
 }

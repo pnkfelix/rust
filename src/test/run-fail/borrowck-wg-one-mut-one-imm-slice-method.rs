@@ -3,7 +3,7 @@
 // Test that write guards trigger when there is a coercion to
 // a slice on the receiver of a method.
 
-trait MyMutSlice {
+trait MyMutSlice : Sized {
     fn my_mut_slice(self) -> Self;
 }
 
@@ -13,7 +13,7 @@ impl<'self, T> MyMutSlice for &'self mut [T] {
     }
 }
 
-trait MySlice {
+trait MySlice : Sized {
     fn my_slice(self) -> Self;
 }
 
