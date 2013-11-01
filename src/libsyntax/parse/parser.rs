@@ -3977,19 +3977,21 @@ impl Parser {
         }
         impl ToStr for FindParamBounds {
             fn to_str(&self) -> ~str {
-                ~"FindParamBounds{ " +
-                    "idents: " + self.idents_that_must_be_sized.map(ident_to_str).to_str() +
-                    "paths: " + self.paths_that_must_be_sized.map(|p|path_to_str(p, token::get_ident_interner())).to_str() +
-                    "}"
+                let idents = self.idents_that_must_be_sized.map(ident_to_str).to_str();
+                let path_str = |p| path_to_str(p, token::get_ident_interner());
+                let paths = self.paths_that_must_be_sized.map(path_str).to_str();
+                ~"FindParamBounds{ " + "idents: " + idents + " paths: " + paths + "}"
             }
         }
         let mut find_bounds = FindParamBounds {
             idents_that_must_be_sized: ~[], paths_that_must_be_sized: ~[]
         };
         find_bounds.visit_ty(&ty, ());
-        debug!("implicit bounds for ty: {} are: {}",
-               ty_to_str(&ty, token::get_ident_interner()),
-               find_bounds.to_str());
+        if !find_bounds.is_empty() {
+            debug!("implicit bounds for ty: {} are: {}",
+                   ty_to_str(&ty, token::get_ident_interner()),
+                   find_bounds.to_str());
+        }
 
         let mut meths = ~[];
         if self.eat(&token::SEMI) {
