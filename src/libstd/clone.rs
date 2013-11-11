@@ -21,10 +21,10 @@ the `clone` method.
 
 */
 
-use std::kinds::{Freeze,Sized};
+use std::kinds::Freeze;
 
 /// A common trait for cloning an object.
-pub trait Clone : Sized {
+pub trait Clone {
     /// Returns a copy of the value. The contents of owned pointers
     /// are copied to maintain uniqueness, while the contents of
     /// managed pointers are not copied.
@@ -133,7 +133,7 @@ extern_fn_clone!(A, B, C, D, E, F, G, H)
 
 /// A trait distinct from `Clone` which represents "deep copies" of things like
 /// managed boxes which would otherwise not be copied.
-pub trait DeepClone : Clone + Sized {
+pub trait DeepClone : Clone {
     /// Return a deep copy of the value. Unlike `Clone`, the contents of shared pointer types
     /// *are* copied.
     fn deep_clone(&self) -> Self;

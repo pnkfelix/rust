@@ -13,7 +13,7 @@ pub use Baz = self::Bar;
 pub use sub_foo::Boz;
 pub use sub_foo::Bort;
 
-pub trait Bar : Sized {
+pub trait Bar {
     fn bar() -> Self;
 }
 
@@ -22,7 +22,7 @@ impl Bar for int {
 }
 
 pub mod sub_foo {
-    pub trait Foo : Sized {
+    pub trait Foo {
         fn foo() -> Self;
     }
 

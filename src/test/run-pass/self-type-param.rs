@@ -1,4 +1,4 @@
-trait MyTrait : Sized {
+trait MyTrait {
     fn f(&self) -> Self;
 }
 

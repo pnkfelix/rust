@@ -12,7 +12,7 @@ trait Deserializer {
     fn read_int(&self) -> int;
 }
 
-trait Deserializable<D:Deserializer> : Sized {
+trait Deserializable<D:Deserializer> {
     fn deserialize(d: &D) -> Self;
 }
 

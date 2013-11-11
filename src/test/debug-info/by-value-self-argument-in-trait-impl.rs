@@ -36,7 +36,7 @@
 // check:$4 = 8888
 // debugger:continue
 
-trait Trait : Sized {
+trait Trait {
     fn method(self) -> Self;
 }
 

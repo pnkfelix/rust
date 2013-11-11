@@ -43,7 +43,6 @@ use clone::DeepClone;
 use cmp::{Eq, TotalEq, TotalOrd};
 use default::Default;
 use fmt;
-use kinds::Sized;
 use iter::{Iterator, DoubleEndedIterator, ExactSize};
 use kinds::Send;
 use result::{IntoResult, ToResult, AsResult};
@@ -447,7 +446,7 @@ impl<T: fmt::Default> fmt::Default for Option<T> {
     }
 }
 
-impl<T:Sized> Default for Option<T> {
+impl<T> Default for Option<T> {
     #[inline]
     fn default() -> Option<T> { None }
 }

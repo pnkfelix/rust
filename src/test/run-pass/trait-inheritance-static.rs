@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-trait MyNum : Sized {
+trait MyNum {
     fn from_int(int) -> Self;
 }
 

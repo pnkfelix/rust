@@ -17,7 +17,6 @@
 
 use clone::{Clone, DeepClone};
 use cmp::{Eq, ApproxEq, Ord};
-use kinds::Sized;
 use ops::{Add, Sub, Mul, Div, Rem, Neg};
 use ops::{Not, BitAnd, BitOr, BitXor, Shl, Shr};
 use option::{Option, Some, None};
@@ -33,7 +32,7 @@ pub trait Num: Eq + Zero + One
              + Div<Self,Self>
              + Rem<Self,Self> {}
 
-pub trait Orderable: Ord + Sized {
+pub trait Orderable: Ord {
     // These should be methods on `Ord`, with overridable default implementations. We don't want
     // to encumber all implementors of Ord by requiring them to implement these functions, but at
     // the same time we want to be able to take advantage of the speed of the specific numeric
@@ -50,7 +49,7 @@ pub trait Orderable: Ord + Sized {
 /// Returns the number constrained within the range `mn <= self <= mx`.
 #[inline(always)] pub fn clamp<T: Orderable>(value: T, mn: T, mx: T) -> T { value.clamp(&mn, &mx) }
 
-pub trait Zero : Sized {
+pub trait Zero {
     fn zero() -> Self;      // FIXME (#5527): This should be an associated constant
     fn is_zero(&self) -> bool;
 }
@@ -58,7 +57,7 @@ pub trait Zero : Sized {
 /// Returns `0` of appropriate type.
 #[inline(always)] pub fn zero<T: Zero>() -> T { Zero::zero() }
 
-pub trait One : Sized {
+pub trait One {
     fn one() -> Self;       // FIXME (#5527): This should be an associated constant
 }
 
@@ -137,7 +136,7 @@ pub trait Integer: Num
 /// Calculates the Lowest Common Multiple (LCM) of the number and `other`.
 #[inline(always)] pub fn lcm<T: Integer>(x: T, y: T) -> T { x.lcm(&y) }
 
-pub trait Round : Sized {
+pub trait Round {
     fn floor(&self) -> Self;
     fn ceil(&self) -> Self;
     fn round(&self) -> Self;
@@ -152,7 +151,7 @@ pub trait Fractional: Num
     fn recip(&self) -> Self;
 }
 
-pub trait Algebraic : Sized {
+pub trait Algebraic {
     fn pow(&self, n: &Self) -> Self;
     fn sqrt(&self) -> Self;
     fn rsqrt(&self) -> Self;
@@ -179,7 +178,7 @@ pub trait Algebraic : Sized {
 /// `y`.
 #[inline(always)] pub fn hypot<T: Algebraic>(x: T, y: T) -> T { x.hypot(&y) }
 
-pub trait Trigonometric : Sized {
+pub trait Trigonometric {
     fn sin(&self) -> Self;
     fn cos(&self) -> Self;
     fn tan(&self) -> Self;
@@ -211,7 +210,7 @@ pub trait Trigonometric : Sized {
 /// Simultaneously computes the sine and cosine of the number.
 #[inline(always)] pub fn sin_cos<T: Trigonometric>(value: T) -> (T, T) { value.sin_cos() }
 
-pub trait Exponential : Sized {
+pub trait Exponential {
     fn exp(&self) -> Self;
     fn exp2(&self) -> Self;
 
@@ -260,8 +259,7 @@ pub trait Hyperbolic: Exponential {
 #[inline(always)] pub fn atanh<T: Hyperbolic>(value: T) -> T { value.atanh() }
 
 /// Defines constants and methods common to real numbers
-pub trait Real: Sized
-              + Signed
+pub trait Real: Signed
               + Fractional
               + Algebraic
               + Trigonometric
@@ -317,13 +315,13 @@ pub trait Bitwise: Not<Self>
                  + Shl<Self,Self>
                  + Shr<Self,Self> {}
 
-pub trait BitCount : Sized {
+pub trait BitCount {
     fn population_count(&self) -> Self;
     fn leading_zeros(&self) -> Self;
     fn trailing_zeros(&self) -> Self;
 }
 
-pub trait Bounded : Sized {
+pub trait Bounded {
     // FIXME (#5527): These should be associated constants
     fn min_value() -> Self;
     fn max_value() -> Self;
@@ -684,7 +682,7 @@ impl_to_primitive_float!(f32)
 impl_to_primitive_float!(f64)
 
 /// A generic trait for converting a number to a value.
-pub trait FromPrimitive : Sized {
+pub trait FromPrimitive {
     /// Convert an `int` to return an optional value of this type. If the
     /// value cannot be represented by this value, the `None` is returned.
     #[inline]
@@ -963,7 +961,7 @@ impl<T: Zero> Zero for ~T {
 }
 
 /// Saturating math operations
-pub trait Saturating : Sized {
+pub trait Saturating {
     /// Saturating addition operator.
     /// Returns a+b, saturating at the numeric bounds instead of overflowing.
     fn saturating_add(self, v: Self) -> Self;

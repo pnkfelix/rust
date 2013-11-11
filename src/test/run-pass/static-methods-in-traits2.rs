@@ -1,4 +1,4 @@
-pub trait Number: NumConv + Sized {
+pub trait Number: NumConv {
     fn from<T:Number>(n: T) -> Self;
 }
 

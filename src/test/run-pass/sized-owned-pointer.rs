@@ -10,6 +10,6 @@
 
 // Possibly-dynamic size of typaram should be cleared at pointer boundary.
 
-fn bar<T: Sized>() { }
+fn bar<T>() { }
 fn foo<T>() { bar::<~T>() }
 pub fn main() { }

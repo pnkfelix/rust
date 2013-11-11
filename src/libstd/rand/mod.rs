@@ -92,7 +92,7 @@ pub mod reseeding;
 mod rand_impls;
 
 /// A type that can be randomly generated using an Rng
-pub trait Rand : Sized {
+pub trait Rand {
     /// Generates a random instance of this type using the specified source of
     /// randomness
     fn rand<R: Rng>(rng: &mut R) -> Self;
@@ -382,7 +382,7 @@ pub trait Rng {
 
 /// A random number generator that can be explicitly seeded to produce
 /// the same stream of randomness multiple times.
-pub trait SeedableRng<Seed>: Rng + Sized {
+pub trait SeedableRng<Seed>: Rng {
     /// Reseed an RNG with the given seed.
     ///
     /// # Example

@@ -9,7 +9,7 @@
 // except according to those terms.
 
 mod a {
-    pub trait Foo : Sized {
+    pub trait Foo {
         fn foo() -> Self;
     }
 

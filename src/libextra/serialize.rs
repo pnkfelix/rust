@@ -170,7 +170,7 @@ pub trait Encodable<S:Encoder> {
     fn encode(&self, s: &mut S);
 }
 
-pub trait Decodable<D:Decoder> : Sized {
+pub trait Decodable<D:Decoder> {
     fn decode(d: &mut D) -> Self;
 }
 
@@ -674,7 +674,7 @@ impl<D:Decoder,T:Decodable<D>> Decodable<D> for DList<T> {
 
 impl<
     S: Encoder,
-    T: Encodable<S>+Sized
+    T: Encodable<S>
 > Encodable<S> for RingBuf<T> {
     fn encode(&self, s: &mut S) {
         do s.emit_seq(self.len()) |s| {
@@ -700,7 +700,7 @@ impl<D:Decoder,T:Decodable<D>> Decodable<D> for RingBuf<T> {
 impl<
     E: Encoder,
     K: Encodable<E> + Hash + IterBytes + Eq,
-    V: Encodable<E> + Sized
+    V: Encodable<E>
 > Encodable<E> for HashMap<K, V> {
     fn encode(&self, e: &mut E) {
         do e.emit_map(self.len()) |e| {
@@ -908,11 +908,11 @@ impl<S:Encoder> EncoderHelpers for S {
 }
 
 pub trait DecoderHelpers {
-    fn read_to_vec<T:Sized>(&mut self, f: &fn(&mut Self) -> T) -> ~[T];
+    fn read_to_vec<T>(&mut self, f: &fn(&mut Self) -> T) -> ~[T];
 }
 
 impl<D:Decoder> DecoderHelpers for D {
-    fn read_to_vec<T:Sized>(&mut self, f: &fn(&mut D) -> T) -> ~[T] {
+    fn read_to_vec<T>(&mut self, f: &fn(&mut D) -> T) -> ~[T] {
         do self.read_seq |this, len| {
             do vec::from_fn(len) |i| {
                 this.read_seq_elt(i, |this| f(this))

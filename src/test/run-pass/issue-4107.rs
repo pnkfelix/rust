@@ -24,7 +24,7 @@ impl<T> Index<uint, Vec2<T>> for Mat2<T> { }
 impl<T> Dimensional<T> for Vec2<T> { }
 impl<T> Index<uint, T> for Vec2<T> { }
 
-pub trait Matrix<T,V>: Dimensional<V> + Sized {
+pub trait Matrix<T,V>: Dimensional<V> {
     fn identity() -> Self;
 }
 

@@ -14,7 +14,7 @@
 
 use std::num::NumCast;
 
-trait Num : Sized {
+trait Num {
     fn from_int(i: int) -> Self;
     fn gt(&self, other: &Self) -> bool;
 }

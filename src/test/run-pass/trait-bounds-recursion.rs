@@ -8,13 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-trait I : Sized { fn i(&self) -> Self; }
+trait I { fn i(&self) -> Self; }
 
 trait A<T:I> {
     fn id(x:T) -> T { x.i() }
 }
 
-trait J<T> : Sized { fn j(&self) -> Self; }
+trait J<T> { fn j(&self) -> Self; }
 
 trait B<T:J<T>> {
     fn id(x:T) -> T { x.j() }

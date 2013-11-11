@@ -13,7 +13,6 @@
 
 use rand::{Rng, SeedableRng};
 use default::Default;
-use kinds::Sized;
 
 /// How many bytes of entropy the underling RNG is allowed to generate
 /// before it is reseeded.
@@ -57,7 +56,7 @@ impl<R: Rng, Rsdr: Reseeder<R>> ReseedingRng<R, Rsdr> {
 }
 
 
-impl<R: Rng+Sized, Rsdr: Reseeder<R>+Sized> Rng for ReseedingRng<R, Rsdr> {
+impl<R: Rng, Rsdr: Reseeder<R>> Rng for ReseedingRng<R, Rsdr> {
     fn next_u32(&mut self) -> u32 {
         self.reseed_if_necessary();
         self.bytes_generated += 4;
@@ -77,7 +76,7 @@ impl<R: Rng+Sized, Rsdr: Reseeder<R>+Sized> Rng for ReseedingRng<R, Rsdr> {
     }
 }
 
-impl<S, R: SeedableRng<S>+Sized, Rsdr: Reseeder<R>+Sized>
+impl<S, R: SeedableRng<S>, Rsdr: Reseeder<R>>
      SeedableRng<(Rsdr, S)> for ReseedingRng<R, Rsdr> {
     fn reseed(&mut self, (rsdr, seed): (Rsdr, S)) {
         self.rng.reseed(seed);

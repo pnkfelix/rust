@@ -204,7 +204,7 @@ impl<T> TrieMap<T> {
     }
 }
 
-impl<T:Sized> FromIterator<(uint, T)> for TrieMap<T> {
+impl<T> FromIterator<(uint, T)> for TrieMap<T> {
     fn from_iterator<Iter: Iterator<(uint, T)>>(iter: &mut Iter) -> TrieMap<T> {
         let mut map = TrieMap::new();
         map.extend(iter);

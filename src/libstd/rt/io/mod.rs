@@ -434,7 +434,7 @@ pub fn result<T>(cb: &fn() -> T) -> Result<T, IoError> {
     }
 }
 
-pub trait Reader {
+pub trait Reader { // (should be inferable from methods below that take self by-value)
 
     // Only two methods which need to get implemented for this trait
 

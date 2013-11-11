@@ -65,7 +65,6 @@ the rest of the rust manuals.
 */
 
 use cmp;
-use kinds::Sized;
 use num::{Zero, One, Integer, CheckedAdd, CheckedSub, Saturating};
 use option::{Option, Some, None};
 use ops::{Add, Mul, Sub};
@@ -75,7 +74,7 @@ use uint;
 use util;
 
 /// Conversion from an `Iterator`
-pub trait FromIterator<A> : Sized {
+pub trait FromIterator<A> {
     /// Build a container with elements from an external iterator.
     fn from_iterator<T: Iterator<A>>(iterator: &mut T) -> Self;
 }

@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-pub trait Clone2 : Sized {
+pub trait Clone2 {
     /// Returns a copy of the value. The contents of owned pointers
     /// are copied to maintain uniqueness, while the contents of
     /// managed pointers are not copied.

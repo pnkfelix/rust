@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-pub trait Clone2 : Sized {
+pub trait Clone2 {
     fn clone(&self) -> Self;
 }
 

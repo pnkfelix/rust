@@ -12,6 +12,6 @@
 
 struct Foo<T> { data: T }
 
-fn bar<T: Sized>() { }
+fn bar<T>() { }
 fn foo<T>() { bar::<Foo<T>>() }
 fn main() { }

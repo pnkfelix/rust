@@ -22,7 +22,7 @@ pub struct EnumSet<E> {
 }
 
 /// An interface for casting C-like enum to uint and back.
-pub trait CLike : Sized {
+pub trait CLike {
     /// Converts C-like enum to uint.
     fn to_uint(&self) -> uint;
     /// Converts uint to C-like enum.

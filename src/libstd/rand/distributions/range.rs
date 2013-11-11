@@ -13,7 +13,6 @@
 // this is surprisingly complicated to be both generic & correct
 
 use cmp::Ord;
-use kinds::Sized;
 use num::Bounded;
 use rand::Rng;
 use rand::distributions::{Sample, IndependentSample};
@@ -76,7 +75,7 @@ impl<Sup: SampleRange> IndependentSample<Sup> for Range<Sup> {
 /// The helper trait for types that have a sensible way to sample
 /// uniformly between two values. This should not be used directly,
 /// and is only to facilitate `Range`.
-pub trait SampleRange : Sized {
+pub trait SampleRange {
     /// Construct the `Range` object that `sample_range`
     /// requires. This should not ever be called directly, only via
     /// `Range::new`, which will check that `low < high`, so this

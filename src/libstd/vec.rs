@@ -108,7 +108,6 @@ use cmp::{Eq, TotalOrd, Ordering, Less, Equal, Greater};
 use cmp;
 use default::Default;
 use iter::*;
-use kinds::Sized;
 use libc::c_void;
 use num::{Integer, CheckedAdd, Saturating};
 use option::{None, Option, Some};
@@ -610,7 +609,6 @@ pub mod traits {
 
     use clone::Clone;
     use cmp::{Eq, Ord, TotalEq, TotalOrd, Ordering, Equiv};
-    use kinds::Sized;
     use iter::order;
     use ops::Add;
 
@@ -749,7 +747,7 @@ pub mod traits {
 pub mod traits {}
 
 /// Any vector that can be represented as a slice.
-pub trait Vector<T> : Sized {
+pub trait Vector<T> {
     /// Work with `self` as a slice.
     fn as_slice<'a>(&'a self) -> &'a [T];
 }
@@ -2054,7 +2052,6 @@ pub unsafe fn from_buf<T>(ptr: *T, elts: uint) -> ~[T] {
 pub mod raw {
     use cast;
     use clone::Clone;
-    use kinds::Sized;
     use option::Some;
     use ptr;
     use mem;

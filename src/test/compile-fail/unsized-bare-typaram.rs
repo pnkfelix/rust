@@ -9,6 +9,6 @@
 // except according to those terms.
 
 // error-pattern: instantiating a type parameter with an incompatible type
-fn bar<T: Sized>() { }
+fn bar<T>() { }
 fn foo<T>() { bar::<T>() }
 fn main() { }
