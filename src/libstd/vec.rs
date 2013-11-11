@@ -2173,7 +2173,7 @@ pub mod raw {
       */
     #[inline]
     pub unsafe fn copy_memory<T>(dst: &mut [T], src: &[T],
-                                       count: uint) {
+                                 count: uint) {
         assert!(dst.len() >= count);
         assert!(src.len() >= count);
 

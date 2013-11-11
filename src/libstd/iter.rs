@@ -1553,8 +1553,7 @@ pub struct Scan<'self, A, B, T, St> {
     state: St
 }
 
-impl<'self, A, B, T: Iterator<A>, St>
-    Iterator<B> for Scan<'self, A, B, T, St> {
+impl<'self, A, B, T: Iterator<A>, St> Iterator<B> for Scan<'self, A, B, T, St> {
     #[inline]
     fn next(&mut self) -> Option<B> {
         self.iter.next().and_then(|a| (self.f)(&mut self.state, a))

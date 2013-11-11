@@ -43,8 +43,7 @@ pub fn capacity<T>(v: @[T]) -> uint {
  *             onto the vector being constructed.
  */
 #[inline]
-pub fn build<A>(size: Option<uint>,
-                      builder: &fn(push: &fn(v: A))) -> @[A] {
+pub fn build<A>(size: Option<uint>, builder: &fn(push: &fn(v: A))) -> @[A] {
     let mut vec = @[];
     unsafe { raw::reserve(&mut vec, size.unwrap_or(4)); }
     builder(|x| unsafe { raw::push(&mut vec, x) });
@@ -170,7 +169,6 @@ pub mod raw {
     use at_vec::capacity;
     use cast;
     use cast::{transmute, transmute_copy};
-    use libc;
     use ptr;
     use mem;
     use uint;
