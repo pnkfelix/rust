@@ -136,6 +136,7 @@ pub struct Static {
 }
 
 pub struct Trait {
+    has_unsized: ast::HasUnsized,
     name: Ident,
     methods: ~[ast::trait_method], //should be TraitMethod
     generics: ast::Generics,

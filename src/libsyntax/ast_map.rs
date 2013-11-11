@@ -306,7 +306,7 @@ impl Visitor<()> for Ctx {
                                     node_item(i, item_path),
                                     i.ident)
             }
-            item_trait(_, ref traits, ref methods) => {
+            item_trait(_, ref traits, ref methods, ref _has_unsized) => {
                 for p in traits.iter() {
                     self.map.insert(p.ref_id, node_item(i, item_path));
                 }

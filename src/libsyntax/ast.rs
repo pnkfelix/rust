@@ -13,6 +13,7 @@
 use codemap::{Span, Spanned};
 use abi::AbiSet;
 use opt_vec::OptVec;
+use opt_vec;
 use parse::token::{interner_get, str_to_ident};
 
 use std::hashmap::HashMap;
@@ -193,9 +194,28 @@ pub enum TyParamBound {
 
 #[deriving(Clone, Eq, Encodable, Decodable, IterBytes)]
 pub struct TyParam {
+    has_unsized: bool,
     ident: Ident,
     id: NodeId,
-    bounds: OptVec<TyParamBound>
+    priv bounds: OptVec<TyParamBound>
+}
+
+impl TyParam {
+    pub fn strip_bounds(&self) -> TyParam {
+        TyParam {
+            has_unsized: self.has_unsized, ident: self.ident, id: self.id,
+            bounds: opt_vec::Empty,
+        }
+    }
+    pub fn bounds<'a>(&'a self) -> &'a OptVec<TyParamBound> { &'a self.bounds }
+    pub fn new(has_unsized: bool,
+               ident: Ident,
+               id: NodeId,
+               bounds: OptVec<TyParamBound>) -> TyParam {
+        TyParam {
+            has_unsized: has_unsized, ident: ident, id: id, bounds: bounds,
+        }
+    }
 }
 
 #[deriving(Clone, Eq, Encodable, Decodable, IterBytes)]
@@ -1126,6 +1146,11 @@ pub struct item {
 }
 
 #[deriving(Clone, Eq, Encodable, Decodable, IterBytes)]
+pub enum HasUnsized {
+    explicitly_unsized, implicitly_sized
+}
+
+#[deriving(Clone, Eq, Encodable, Decodable, IterBytes)]
 pub enum item_ {
     item_static(Ty, Mutability, @Expr),
     item_fn(fn_decl, purity, AbiSet, Generics, Block),
@@ -1134,7 +1159,7 @@ pub enum item_ {
     item_ty(Ty, Generics),
     item_enum(enum_def, Generics),
     item_struct(@struct_def, Generics),
-    item_trait(Generics, ~[trait_ref], ~[trait_method]),
+    item_trait(Generics, ~[trait_ref], ~[trait_method], HasUnsized),
     item_impl(Generics,
               Option<trait_ref>, // (optional) trait this impl implements
               Ty, // self

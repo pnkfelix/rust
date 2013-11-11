@@ -1345,7 +1345,7 @@ impl Resolver {
 
             item_impl(_, Some(_), _, _) => parent,
 
-            item_trait(_, _, ref methods) => {
+            item_trait(_, _, ref methods, _) => {
                 let (name_bindings, new_parent) =
                     self.add_child(ident, parent, ForbidDuplicateTypes, sp);
 
@@ -3597,7 +3597,7 @@ impl Resolver {
                                             *methods);
             }
 
-            item_trait(ref generics, ref traits, ref methods) => {
+            item_trait(ref generics, ref traits, ref methods, _) => {
                 // Create a new rib for the self type.
                 let self_type_rib = @Rib::new(NormalRibKind);
                 self.type_ribs.push(self_type_rib);
@@ -3852,7 +3852,7 @@ impl Resolver {
     fn resolve_type_parameters(&mut self,
                                    type_parameters: &OptVec<TyParam>) {
         for type_parameter in type_parameters.iter() {
-            for bound in type_parameter.bounds.iter() {
+            for bound in type_parameter.bounds().iter() {
                 self.resolve_type_parameter_bound(type_parameter.id, bound);
             }
         }

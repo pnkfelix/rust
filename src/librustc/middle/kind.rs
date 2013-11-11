@@ -162,13 +162,13 @@ fn check_impl_of_trait(cx: &mut Context, it: @item, trait_ref: &trait_ref, self_
     // If this trait has builtin-kind supertraits, meet them.
     let self_ty: ty::t = ty::node_id_to_type(cx.tcx, it.id);
     debug!("checking impl with self type {:?}", ty::get(self_ty).sty);
-    do check_builtin_bounds(cx, self_ty, trait_def.bounds) |missing| {
+    do check_builtin_bounds(cx, self_ty, *trait_def.bounds()) |missing| {
         cx.tcx.sess.span_err(self_type.span,
             format!("the type `{}', which does not fulfill `{}`, cannot implement this \
                   trait", ty_to_str(cx.tcx, self_ty), missing.user_string(cx.tcx)));
         cx.tcx.sess.span_note(self_type.span,
             format!("types implementing this trait must fulfill `{}`",
-                 trait_def.bounds.user_string(cx.tcx)));
+                 trait_def.bounds().user_string(cx.tcx)));
     }
 
     // If this is a destructor, check kinds.
@@ -402,6 +402,7 @@ pub fn check_expr(cx: &mut Context, e: @Expr, w:Where) {
             | ExprAssignOp(*) | ExprField(*) | ExprIndex(*) | ExprPath(*)
             | ExprSelf | ExprBreak(*) | ExprAgain(*) | ExprRet(*)
             | ExprLogLevel | ExprMac(*) | ExprParen(*) | ExprInlineAsm(*)
+            | ExprProc(*)
             => {
             visit::walk_expr(cx, e, w.at_generic())
         }

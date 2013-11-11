@@ -216,7 +216,8 @@ pub fn walk_item<E:Clone, V:Visitor<E>>(visitor: &mut V, item: &item, env: E) {
                                      item.id,
                                      env)
         }
-        item_trait(ref generics, ref trait_paths, ref methods) => {
+        item_trait(ref generics, ref trait_paths, ref methods,
+                   ref _has_unsized) => {
             visitor.visit_generics(generics, env.clone());
             for trait_path in trait_paths.iter() {
                 walk_path(visitor, &trait_path.path, env.clone())
@@ -411,7 +412,7 @@ pub fn walk_generics<E:Clone, V:Visitor<E>>(visitor: &mut V,
                                generics: &Generics,
                                env: E) {
     for type_parameter in generics.ty_params.iter() {
-        walk_ty_param_bounds(visitor, &type_parameter.bounds, env.clone())
+        walk_ty_param_bounds(visitor, type_parameter.bounds(), env.clone())
     }
     walk_lifetime_decls(visitor, &generics.lifetimes, env);
 }

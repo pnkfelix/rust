@@ -619,7 +619,7 @@ pub fn check_item(ccx: @mut CrateCtxt, it: @ast::item) {
         }
 
       }
-      ast::item_trait(_, _, ref trait_methods) => {
+      ast::item_trait(_, _, ref trait_methods, _) => {
         let trait_def = ty::lookup_trait_def(ccx.tcx, local_def(it.id));
         for trait_method in (*trait_methods).iter() {
             match *trait_method {

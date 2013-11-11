@@ -622,7 +622,7 @@ impl <K: Eq + Hash + IterBytes + 'static, V: 'static> MapChain<K,V>{
 }
 
 // returns true if the binding for 'n' satisfies 'pred' in 'map'
-fn satisfies_pred<K : Eq + Hash + IterBytes,V:Sized>(map : &mut HashMap<K,V>,
+fn satisfies_pred<K : Eq + Hash + IterBytes,V>(map : &mut HashMap<K,V>,
                                                      n: &K,
                                                      pred: &fn(&V)->bool)
     -> bool {

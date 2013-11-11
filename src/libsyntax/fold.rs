@@ -500,11 +500,10 @@ fn fold_ty_param_bound<T:ast_fold>(tpb: &TyParamBound, fld: &T)
 }
 
 pub fn fold_ty_param<T:ast_fold>(tp: &TyParam, fld: &T) -> TyParam {
-    TyParam {
-        ident: tp.ident,
-        id: fld.new_id(tp.id),
-        bounds: tp.bounds.map(|x| fold_ty_param_bound(x, fld)),
-    }
+    TyParam::new(tp.has_unsized,
+                 tp.ident,
+                 fld.new_id(tp.id),
+                 tp.bounds().map(|x| fold_ty_param_bound(x, fld)))
 }
 
 pub fn fold_ty_params<T:ast_fold>(tps: &OptVec<TyParam>, fld: &T)
@@ -677,7 +676,7 @@ pub fn noop_fold_item_underscore<T:ast_fold>(i: &item_, folder: &T) -> item_ {
                       methods.map(|x| folder.fold_method(*x))
             )
         }
-        item_trait(ref generics, ref traits, ref methods) => {
+        item_trait(ref generics, ref traits, ref methods, has_unsized) => {
             let methods = do methods.map |method| {
                 match *method {
                     required(ref m) => required(folder.fold_type_method(m)),
@@ -686,7 +685,8 @@ pub fn noop_fold_item_underscore<T:ast_fold>(i: &item_, folder: &T) -> item_ {
             };
             item_trait(fold_generics(generics, folder),
                        traits.map(|p| fold_trait_ref(p, folder)),
-                       methods)
+                       methods,
+                       has_unsized)
         }
         item_mac(ref m) => item_mac(folder.fold_mac(m)),
     }

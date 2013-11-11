@@ -1144,7 +1144,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
                                    ast_method)
         }
       }
-      item_trait(_, ref super_traits, ref ms) => {
+      item_trait(_, ref super_traits, ref ms, has_unsized) => {
         add_to_index();
         ebml_w.start_tag(tag_items_data_item);
         encode_def_id(ebml_w, def_id);
@@ -1170,6 +1170,20 @@ fn encode_info_for_item(ecx: &EncodeContext,
         // FIXME(#8559): This should use the tcx's supertrait cache instead of
         // reading the AST's list, because the former has already filtered out
         // the builtin-kinds-as-supertraits. See corresponding fixme in decoder.
+        match has_unsized {
+            explicitly_unsized => {
+               // no-op
+            }
+            implicitly_sized => {
+               let sized_def_id : ast::DefId =
+                 ecx.tcx.lang_items.sized_trait().unwrap();
+               let trait_ref : @ty::TraitRef = @ty::TraitRef {
+                 def_id: sized_def_id, substs: ty::substs::empty(),
+               };
+               encode_trait_ref(ebml_w, ecx, trait_ref, tag_item_super_trait_ref);
+               // assert!(false);
+            }
+        }
         for ast_trait_ref in super_traits.iter() {
             let trait_ref = ty::node_id_to_trait_ref(ecx.tcx, ast_trait_ref.ref_id);
             encode_trait_ref(ebml_w, ecx, trait_ref, tag_item_super_trait_ref);

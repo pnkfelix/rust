@@ -74,7 +74,7 @@ impl<'self> Visitor<()> for ParentVisitor<'self> {
             // method to the root. In this case, if the trait is private, then
             // parent all the methods to the trait to indicate that they're
             // private.
-            ast::item_trait(_, _, ref methods) if item.vis != ast::public => {
+            ast::item_trait(_, _, ref methods, _) if item.vis != ast::public => {
                 for m in methods.iter() {
                     match *m {
                         ast::provided(ref m) => self.parents.insert(m.id, item.id),
@@ -199,7 +199,7 @@ impl<'self> Visitor<()> for EmbargoVisitor<'self> {
 
             // Default methods on traits are all public so long as the trait is
             // public
-            ast::item_trait(_, _, ref methods) if self.path_all_public => {
+            ast::item_trait(_, _, ref methods, _) if self.path_all_public => {
                 for method in methods.iter() {
                     match *method {
                         ast::provided(ref m) => {
@@ -510,7 +510,7 @@ impl<'self> PrivacyVisitor<'self> {
                 match self.tcx.items.find(&trait_id.node) {
                     Some(&ast_map::node_item(item, _)) => {
                         match item.node {
-                            ast::item_trait(_, _, ref methods) => {
+                            ast::item_trait(_, _, ref methods, _) => {
                                 match methods[method_num] {
                                     ast::provided(ref method) => {
                                         let def = ast::DefId {
@@ -634,7 +634,7 @@ impl<'self> PrivacyVisitor<'self> {
 
             ast::item_struct(ref def, _) => check_struct(def),
 
-            ast::item_trait(_, _, ref methods) => {
+            ast::item_trait(_, _, ref methods, _) => {
                 for m in methods.iter() {
                     match *m {
                         ast::provided(ref m) => {

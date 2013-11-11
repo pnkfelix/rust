@@ -183,7 +183,7 @@ pub fn ensure_trait_methods(ccx: &CrateCtxt,
     let tcx = ccx.tcx;
     match tcx.items.get_copy(&trait_id) {
         ast_map::node_item(@ast::item {
-            node: ast::item_trait(ref generics, _, ref ms),
+            node: ast::item_trait(ref generics, _, ref ms, _),
             _
         }, _) => {
             let trait_ty_generics =
@@ -504,7 +504,7 @@ pub fn ensure_no_ty_param_bounds(ccx: &CrateCtxt,
                                  generics: &ast::Generics,
                                  thing: &'static str) {
     for ty_param in generics.ty_params.iter() {
-        if ty_param.bounds.len() > 0 {
+        if ty_param.bounds().len() > 0 {
             ccx.tcx.sess.span_err(
                 span,
                 format!("trait bounds are not allowed in {} definitions",
@@ -567,7 +567,7 @@ pub fn convert(ccx: &CrateCtxt, it: &ast::item) {
             }
         }
       }
-      ast::item_trait(ref generics, _, ref trait_methods) => {
+      ast::item_trait(ref generics, _, ref trait_methods, _) => {
           let trait_def = trait_def_of_item(ccx, it);
 
           // Run convert_methods on the provided methods.
@@ -725,16 +725,18 @@ fn trait_def_of_item(ccx: &CrateCtxt, it: &ast::item) -> @ty::TraitDef {
       _ => {}
     }
     match it.node {
-        ast::item_trait(ref generics, ref supertraits, _) => {
+        ast::item_trait(ref generics, ref supertraits, _, has_unsized) => {
             let self_ty = ty::mk_self(tcx, def_id);
             let ty_generics = ty_generics(ccx, generics, 0);
             let substs = mk_item_substs(ccx, &ty_generics, Some(self_ty));
-            let bounds = ensure_supertraits(ccx, it.id, it.span, *supertraits);
+            let mut bounds = ensure_supertraits(ccx, it.id, it.span, *supertraits);
+            match has_unsized {
+                ast::implicitly_sized => { bounds.add(ty::BoundSized) }
+                ast::explicitly_unsized => {}
+            }
             let trait_ref = @ty::TraitRef {def_id: def_id,
                                            substs: substs};
-            let trait_def = @ty::TraitDef {generics: ty_generics,
-                                           bounds: bounds,
-                                           trait_ref: trait_ref};
+            let trait_def = @ty::TraitDef::new(ty_generics, bounds, trait_ref);
             tcx.trait_defs.insert(def_id, trait_def);
             return trait_def;
         }
@@ -871,7 +873,9 @@ pub fn ty_generics(ccx: &CrateCtxt,
                 None => {
                     let param_ty = ty::param_ty {idx: base_index + offset,
                                                  def_id: local_def(param.id)};
-                    let bounds = @compute_bounds(ccx, param_ty, &param.bounds);
+                    let bounds = @compute_bounds(ccx, param_ty,
+                                                 param.has_unsized,
+                                                 param.bounds());
                     let def = ty::TypeParameterDef {
                         ident: param.ident,
                         def_id: local_def(param.id),
@@ -888,6 +892,7 @@ pub fn ty_generics(ccx: &CrateCtxt,
     fn compute_bounds(
         ccx: &CrateCtxt,
         param_ty: ty::param_ty,
+        ast_param_has_unsized: bool,
         ast_bounds: &OptVec<ast::TyParamBound>) -> ty::ParamBounds
     {
         /*!
@@ -902,6 +907,9 @@ pub fn ty_generics(ccx: &CrateCtxt,
             builtin_bounds: ty::EmptyBuiltinBounds(),
             trait_bounds: ~[]
         };
+        if !ast_param_has_unsized {
+            param_bounds.builtin_bounds.add(ty::BoundSized);
+        }
         for ast_bound in ast_bounds.iter() {
             match *ast_bound {
                 TraitTyParamBound(ref b) => {

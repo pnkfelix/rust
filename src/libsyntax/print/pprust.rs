@@ -600,8 +600,16 @@ pub fn print_item(s: @ps, item: &ast::item) {
         }
         bclose(s, item.span);
       }
-      ast::item_trait(ref generics, ref traits, ref methods) => {
-        head(s, visibility_qualified(item.vis, "trait"));
+      ast::item_trait(ref generics, ref traits, ref methods, has_unsized) => {
+        match has_unsized {
+                ast::explicitly_unsized => {
+                    head(s, visibility_qualified(item.vis, "unsized"));
+                    word(s.s, "trait");
+                }
+                ast::implicitly_sized => {
+                    head(s, visibility_qualified(item.vis, "trait"));
+                }
+        }
         print_ident(s, item.ident);
         print_generics(s, generics);
         if traits.len() != 0u {
@@ -1871,8 +1879,11 @@ pub fn print_generics(s: @ps, generics: &ast::Generics) {
             } else {
                 let idx = idx - generics.lifetimes.len();
                 let param = generics.ty_params.get(idx);
+                if param.has_unsized {
+                    word_space(s, "unsized");
+                }
                 print_ident(s, param.ident);
-                print_bounds(s, &param.bounds, false);
+                print_bounds(s, param.bounds(), false);
             }
         }
 

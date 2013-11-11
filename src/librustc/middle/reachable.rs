@@ -324,7 +324,7 @@ impl ReachableContext {
 
                         // Default methods of exported traits need to all be
                         // accessible.
-                        ast::item_trait(_, _, ref methods) => {
+                        ast::item_trait(_, _, ref methods, _) => {
                             for method in methods.iter() {
                                 match *method {
                                     ast::required(*) => {}

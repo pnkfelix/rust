@@ -269,7 +269,7 @@ impl Clean<TyParam> for ast::TyParam {
         TyParam {
             name: self.ident.clean(),
             id: self.id,
-            bounds: self.bounds.clean(),
+            bounds: self.bounds().clean(),
         }
     }
 }

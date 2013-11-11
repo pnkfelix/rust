@@ -148,8 +148,9 @@ impl RustdocVisitor {
                     };
                     om.statics.push(s);
                 },
-                ast::item_trait(ref gen, ref tr, ref met) => {
+                ast::item_trait(ref gen, ref tr, ref met, has_unsized) => {
                     let t = Trait {
+                        has_unsized: has_unsized,
                         name: item.ident,
                         methods: met.clone(),
                         generics: gen.clone(),

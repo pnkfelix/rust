@@ -115,12 +115,12 @@ fn fold_item_underscore(cx: &Context, item: &ast::item_) -> ast::item_ {
                 .map(|x| *x).collect();
             ast::item_impl((*a).clone(), (*b).clone(), (*c).clone(), methods)
         }
-        ast::item_trait(ref a, ref b, ref methods) => {
+        ast::item_trait(ref a, ref b, ref methods, ref h) => {
             let methods = methods.iter()
                                  .filter(|m| trait_method_in_cfg(cx, *m) )
                                  .map(|x| (*x).clone())
                                  .collect();
-            ast::item_trait((*a).clone(), (*b).clone(), methods)
+            ast::item_trait((*a).clone(), (*b).clone(), methods, (*h).clone())
         }
         ref item => (*item).clone(),
     };

@@ -944,8 +944,17 @@ pub struct ty_param_bounds_and_ty {
 /// As `ty_param_bounds_and_ty` but for a trait ref.
 pub struct TraitDef {
     generics: Generics,
-    bounds: BuiltinBounds,
+    priv bounds: BuiltinBounds,
     trait_ref: @ty::TraitRef,
+}
+
+impl TraitDef {
+    pub fn new(generics: Generics,
+               bounds: BuiltinBounds,
+               trait_ref: @ty::TraitRef) -> TraitDef {
+        TraitDef{ generics: generics, bounds: bounds, trait_ref: trait_ref }
+    }
+    pub fn bounds<'a>(&'a self) -> &'a BuiltinBounds { &'a self.bounds }
 }
 
 pub struct ty_param_substs_and_ty {
@@ -961,7 +970,7 @@ fn mk_rcache() -> creader_cache {
     return @mut HashMap::new();
 }
 
-pub fn new_ty_hash<V:'static+Sized>() -> @mut HashMap<t, V> {
+pub fn new_ty_hash<V:'static>() -> @mut HashMap<t, V> {
     @mut HashMap::new()
 }
 
@@ -2064,10 +2073,12 @@ pub fn type_contents(cx: ctxt, ty: t) -> TypeContents {
                     res = res | TC::OwnsDtor;
                 }
                 apply_attributes(cx, did, res)
+                    - TC::Nonsized
             }
 
             ty_tup(ref tys) => {
                 TypeContents::union(*tys, |ty| tc_ty(cx, *ty, cache))
+                    - TC::Nonsized
             }
 
             ty_enum(did, ref substs) => {
@@ -2079,6 +2090,7 @@ pub fn type_contents(cx: ctxt, ty: t) -> TypeContents {
                         })
                     });
                 apply_attributes(cx, did, res)
+                    - TC::Nonsized
             }
 
             ty_param(p) => {
@@ -3482,7 +3494,7 @@ pub fn provided_trait_methods(cx: ctxt, id: ast::DefId) -> ~[@Method] {
     if is_local(id) {
         match cx.items.find(&id.node) {
             Some(&ast_map::node_item(@ast::item {
-                        node: item_trait(_, _, ref ms),
+                        node: item_trait(_, _, ref ms, _),
                         _
                     }, _)) =>
                 match ast_util::split_trait_methods(*ms) {

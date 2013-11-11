@@ -22,7 +22,7 @@ use std::at_vec;
 // Just call `foo.subst(tcx, substs)` to perform a substitution across
 // `foo`.
 
-pub trait Subst : Sized {
+pub trait Subst {
     fn subst(&self, tcx: ty::ctxt, substs: &ty::substs) -> Self;
 }
 

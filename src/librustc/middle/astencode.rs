@@ -71,7 +71,7 @@ struct ExtendedDecodeContext {
     to_id_range: ast_util::id_range
 }
 
-trait tr : Sized {
+trait tr {
     fn tr(&self, xcx: @ExtendedDecodeContext) -> Self;
 }
 

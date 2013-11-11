@@ -420,12 +420,10 @@ pub fn get_trait_def(cdata: Cmd,
         };
         true
     };
-    ty::TraitDef {
-        generics: ty::Generics {type_param_defs: tp_defs,
-                                region_param_defs: rp_defs},
-        bounds: bounds,
-        trait_ref: @item_trait_ref(item_doc, tcx, cdata)
-    }
+    ty::TraitDef::new(ty::Generics {type_param_defs: tp_defs,
+                                    region_param_defs: rp_defs},
+                      bounds,
+                      @item_trait_ref(item_doc, tcx, cdata))
 }
 
 pub fn get_type(cdata: Cmd, id: ast::NodeId, tcx: ty::ctxt)

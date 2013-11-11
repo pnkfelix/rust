@@ -77,7 +77,7 @@ fn stack_check_item(v: &mut StackCheckVisitor,
                 visit::walk_method_helper(v, method, new_cx);
             }
         }
-        ast::item_trait(_, _, ref methods) => {
+        ast::item_trait(_, _, ref methods, _) => {
             for method in methods.iter() {
                 match *method {
                     ast::provided(@ref method) => {

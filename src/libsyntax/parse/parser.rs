@@ -3461,13 +3461,14 @@ impl Parser {
         return Some(result);
     }
 
-    // matches typaram = IDENT optbounds
+    // matches typaram = [unsized] IDENT optbounds
     fn parse_ty_param(&self) -> TyParam {
+        let has_unsized = self.eat_keyword(keywords::Unsized);
         let ident = self.parse_ident();
         let opt_bounds = self.parse_optional_ty_param_bounds();
         // For typarams we don't care about the difference b/w "<T>" and "<T:>".
         let bounds = opt_bounds.unwrap_or_default();
-        ast::TyParam { ident: ident, id: ast::DUMMY_NODE_ID, bounds: bounds }
+        ast::TyParam::new(has_unsized, ident, ast::DUMMY_NODE_ID, bounds)
     }
 
     // parse a set of optional generic type parameter declarations
@@ -3869,7 +3870,7 @@ impl Parser {
     }
 
     // parse trait Foo { ... }
-    fn parse_item_trait(&self) -> item_info {
+    fn parse_item_trait(&self, unsz:ast::HasUnsized) -> item_info {
         let ident = self.parse_ident();
         let tps = self.parse_generics();
 
@@ -3883,7 +3884,7 @@ impl Parser {
         }
 
         let meths = self.parse_trait_methods();
-        (ident, item_trait(tps, traits, meths), None)
+        (ident, item_trait(tps, traits, meths, unsz), None)
     }
 
     // Parses two variants (with the region/type params always optional):
@@ -3947,7 +3948,7 @@ impl Parser {
                     &Ty { node: ty_path(ref path, _, _), _ } => {
                         match &path.segments {
                             // singleton path may be a simple type parameter.
-                            &[ast::PathSegment{identifier: ref id, lifetime: None, types: opt_vec::Empty}] => {
+                            &[ast::PathSegment{identifier: ref id, lifetimes: opt_vec::Empty, types: opt_vec::Empty}] => {
                                 self.idents_that_must_be_sized.push(id.clone())
                             }
                             _ => {
@@ -3979,7 +3980,8 @@ impl Parser {
             fn to_str(&self) -> ~str {
                 let idents = self.idents_that_must_be_sized.map(ident_to_str).to_str();
                 let path_str = |p| path_to_str(p, token::get_ident_interner());
-                let paths = self.paths_that_must_be_sized.map(path_str).to_str();
+                let paths : ~[~str] = self.paths_that_must_be_sized.iter().map(path_str).collect();
+                let paths = paths.to_str();
                 ~"FindParamBounds{ " + "idents: " + idents + " paths: " + paths + "}"
             }
         }
@@ -4744,9 +4746,17 @@ impl Parser {
                                           visibility,
                                           maybe_append(attrs, extra_attrs)));
         }
-        if self.eat_keyword(keywords::Trait) {
+        let (is_trait, is_unsized) = if self.eat_keyword(keywords::Unsized) {
+            self.expect_keyword(keywords::Trait);
+            (true, ast::explicitly_unsized)
+        } else if self.eat_keyword(keywords::Trait) {
+            (true, ast::implicitly_sized)
+        } else {
+            (false, ast::implicitly_sized)
+        };
+        if is_trait {
             // TRAIT ITEM
-            let (ident, item_, extra_attrs) = self.parse_item_trait();
+            let (ident, item_, extra_attrs) = self.parse_item_trait(is_unsized);
             return iovi_item(self.mk_item(lo, self.last_span.hi, ident, item_,
                                           visibility,
                                           maybe_append(attrs, extra_attrs)));

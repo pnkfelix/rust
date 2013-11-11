@@ -71,7 +71,7 @@ impl<'self> Visitor<&'self ScopeChain<'self>> for LifetimeContext {
             ast::item_enum(_, ref generics) |
             ast::item_struct(_, ref generics) |
             ast::item_impl(ref generics, _, _, _) |
-            ast::item_trait(ref generics, _, _) => {
+            ast::item_trait(ref generics, _, _, _) => {
                 self.check_lifetime_names(&generics.lifetimes);
                 ItemScope(&generics.lifetimes)
             }
