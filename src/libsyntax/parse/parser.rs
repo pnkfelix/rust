@@ -3948,7 +3948,10 @@ impl Parser {
                     &Ty { node: ty_path(ref path, _, _), _ } => {
                         match &path.segments {
                             // singleton path may be a simple type parameter.
-                            &[ast::PathSegment{identifier: ref id, lifetimes: opt_vec::Empty, types: opt_vec::Empty}] => {
+                            &[ast::PathSegment{
+                                    identifier: ref id,
+                                    lifetimes: opt_vec::Empty,
+                                    types: opt_vec::Empty}] => {
                                 self.idents_that_must_be_sized.push(id.clone())
                             }
                             _ => {
