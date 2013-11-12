@@ -8,7 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+enum Foo<unsized T> { Zed, One(T), Two(int, T) }
+
 // error-pattern: instantiating a type parameter with an incompatible type
 fn bar<T: Sized>() { }
-fn foo<T>() { bar::<Option<T>>() }
+fn foo<unsized T>() { bar::<Foo<T>>() }
 fn main() { }

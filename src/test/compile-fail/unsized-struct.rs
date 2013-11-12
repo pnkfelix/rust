@@ -10,8 +10,8 @@
 
 // error-pattern: instantiating a type parameter with an incompatible type
 
-struct Foo<T> { data: T }
+struct Foo<unsized T> { x: int, data: T }
 
 fn bar<T: Sized>() { }
-fn foo<T>() { bar::<Foo<T>>() }
+fn foo<unsized T>() { bar::<Foo<T>>() }
 fn main() { }

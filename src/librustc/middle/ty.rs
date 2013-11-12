@@ -2073,12 +2073,10 @@ pub fn type_contents(cx: ctxt, ty: t) -> TypeContents {
                     res = res | TC::OwnsDtor;
                 }
                 apply_attributes(cx, did, res)
-                    - TC::Nonsized
             }
 
             ty_tup(ref tys) => {
                 TypeContents::union(*tys, |ty| tc_ty(cx, *ty, cache))
-                    - TC::Nonsized
             }
 
             ty_enum(did, ref substs) => {
@@ -2090,7 +2088,6 @@ pub fn type_contents(cx: ctxt, ty: t) -> TypeContents {
                         })
                     });
                 apply_attributes(cx, did, res)
-                    - TC::Nonsized
             }
 
             ty_param(p) => {
