@@ -21,6 +21,7 @@ use std::{str, task};
 use std::io;
 use std::io::{File, Decorator};
 use std::io::mem::MemWriter;
+use std::io::fs;
 
 /**
 *
@@ -175,13 +176,18 @@ impl Database {
 
     // FIXME #4330: This should have &mut self and should set self.db_dirty to false.
     fn save(&self) {
+        debug!("saving workcache to {}", self.db_filename.display());
         let f = @mut File::create(&self.db_filename);
         self.db_cache.to_json().to_pretty_writer(f as @mut io::Writer);
+        debug!("saved workcache to {}, size: {}", self.db_filename.display(),
+               fs::stat(&self.db_filename).size);
     }
 
     fn load(&mut self) {
         assert!(!self.db_dirty);
         assert!(self.db_filename.exists());
+        debug!("loading workcache from {}, size: {}", self.db_filename.display(),
+               fs::stat(&self.db_filename).size);
         match io::result(|| File::open(&self.db_filename)) {
             Err(e) => fail!("Couldn't load workcache database {}: {}",
                             self.db_filename.display(),
@@ -463,6 +469,13 @@ impl<'self, T:Send +
                 let (exe, v) = port.recv();
                 let s = json_encode(&v);
                 do prep.ctxt.db.write |db| {
+                    debug!("Work unwrap: caching fn {} and declared inputs {:?} \
+                           (plus discovered inputs {:?} and discovered outputs {:?}) \
+                           to some value v",
+                           prep.fn_name,
+                           prep.declared_inputs,
+                           exe.discovered_inputs,
+                           exe.discovered_outputs);
                     db.cache(prep.fn_name,
                              &prep.declared_inputs,
                              &exe.discovered_inputs,

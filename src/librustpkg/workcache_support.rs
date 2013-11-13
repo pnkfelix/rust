@@ -37,7 +37,9 @@ pub fn digest_only_date(path: &Path) -> ~str {
     let mut sha = Sha1::new();
     let st = path.stat();
     sha.input_str(st.modified.to_str());
-    sha.result_str()
+    let result = sha.result_str();
+    debug!("digest_only_date {} output: {}", path.display(), result);
+    result
 }
 
 /// Adds multiple discovered outputs

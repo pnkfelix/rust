@@ -11,6 +11,8 @@
 // rustpkg unit tests
 
 use context::{BuildContext, Context, RustcFlags};
+// use workcache_support::digest_only_date;
+
 use std::{os, run, str, task};
 use std::io;
 use std::io::fs;
@@ -2342,7 +2344,8 @@ fn test_c_dependency_ok() {
 #[test]
 fn test_c_dependency_no_rebuilding() {
     let dir = create_local_package(&PkgId::new("cdep"));
-    let dir = dir.path();
+    let dir = dir.unwrap();
+    let dir = &dir;
     writeFile(&dir.join_many(["src", "cdep-0.1", "main.rs"]),
               "#[link_args = \"-lfoo\"]\nextern { fn f(); } \
               \nfn main() { unsafe { f(); } }");
@@ -2360,7 +2363,10 @@ fn test_c_dependency_no_rebuilding() {
     assert!(c_library_path.exists());
 
     // Now, make it read-only so rebuilding will fail
+    // let digest_pre_chmod = digest_only_date(&c_library_path);
     assert!(chmod_read_only(&c_library_path));
+    // let digest_post_chmod = digest_only_date(&c_library_path);
+    // assert!(digest_pre_chmod == digest_post_chmod);
 
     match command_line_test_partial([~"build", ~"cdep"], dir) {
         Success(*) => (), // ok
@@ -2375,7 +2381,8 @@ fn test_c_dependency_no_rebuilding() {
 #[test]
 fn test_c_dependency_yes_rebuilding() {
     let dir = create_local_package(&PkgId::new("cdep"));
-    let dir = dir.path();
+    let dir = dir.unwrap();
+    let dir = &dir;
     writeFile(&dir.join_many(["src", "cdep-0.1", "main.rs"]),
               "#[link_args = \"-lfoo\"]\nextern { fn f(); } \
               \nfn main() { unsafe { f(); } }");
