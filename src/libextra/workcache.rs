@@ -132,7 +132,8 @@ impl WorkMap {
 pub struct Database {
     priv db_filename: Path,
     priv db_cache: TreeMap<~str, ~str>,
-    db_dirty: bool
+    db_dirty: bool,
+    priv db_fresh: bool
 }
 
 impl Database {
@@ -141,10 +142,17 @@ impl Database {
         let mut rslt = Database {
             db_filename: p,
             db_cache: TreeMap::new(),
-            db_dirty: false
+            db_dirty: false,
+            db_fresh: true,
         };
         if rslt.db_filename.exists() {
+            debug!("new workcache, load from {} now and overwrite on drop",
+                   rslt.db_filename.display());
             rslt.load();
+            rslt.db_fresh = false;
+        } else {
+            debug!("new workcache, will make {} on drop",
+                   rslt.db_filename.display());
         }
         rslt
     }
@@ -177,6 +185,9 @@ impl Database {
     // FIXME #4330: This should have &mut self and should set self.db_dirty to false.
     fn save(&self) {
         debug!("saving workcache to {}", self.db_filename.display());
+        if self.db_fresh && self.db_filename.exists() {
+            warn!("workcache: OVERWRITING an unexpected db file");
+        }
         let f = @mut File::create(&self.db_filename);
         self.db_cache.to_json().to_pretty_writer(f as @mut io::Writer);
         debug!("saved workcache to {}, size: {}", self.db_filename.display(),
