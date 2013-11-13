@@ -290,9 +290,10 @@ fn command_line_test_with_env(args: &[~str], cwd: &Path, env: Option<~[(~str, ~s
     });
     let output = prog.finish_with_output();
     debug!("Output from command {} with args {:?} was {} \\{{}\\}[{:?}]",
-                    cmd, args, str::from_utf8(output.output),
-                   str::from_utf8(output.error),
-                   output.status);
+           cmd, args,
+           str::from_utf8(output.output).replace("\n", "\n  > "),
+           str::from_utf8(output.error).replace("\n", "\n  > "),
+           output.status);
     if !output.status.success() {
         debug!("Command {} {:?} failed with exit code {:?}; its output was --- {} ---",
               cmd, args, output.status,
@@ -2344,8 +2345,7 @@ fn test_c_dependency_ok() {
 #[test]
 fn test_c_dependency_no_rebuilding() {
     let dir = create_local_package(&PkgId::new("cdep"));
-    let dir = dir.unwrap();
-    let dir = &dir;
+    let dir = dir.path(); // let dir = dir.unwrap(); let dir = &dir;
     writeFile(&dir.join_many(["src", "cdep-0.1", "main.rs"]),
               "#[link_args = \"-lfoo\"]\nextern { fn f(); } \
               \nfn main() { unsafe { f(); } }");
@@ -2381,8 +2381,7 @@ fn test_c_dependency_no_rebuilding() {
 #[test]
 fn test_c_dependency_yes_rebuilding() {
     let dir = create_local_package(&PkgId::new("cdep"));
-    let dir = dir.unwrap();
-    let dir = &dir;
+    let dir = dir.path(); // let dir = dir.unwrap(); let dir = &dir;
     writeFile(&dir.join_many(["src", "cdep-0.1", "main.rs"]),
               "#[link_args = \"-lfoo\"]\nextern { fn f(); } \
               \nfn main() { unsafe { f(); } }");
