@@ -9,8 +9,8 @@
 // except according to those terms.
 
 use libc::{c_void, size_t, free, malloc, realloc};
+use option::{Option, Some, None};
 use ptr::{RawPtr, mut_null};
-#[cfg(stage0)]
 use unstable::intrinsics::TyDesc;
 use unstable::intrinsics::abort;
 use unstable::raw;
@@ -48,6 +48,11 @@ pub unsafe fn malloc_raw(size: uint) -> *mut u8 {
     }
 }
 
+/// Frees a block of memory previously returned from malloc_raw.
+pub unsafe fn free_raw(ptr: *u8) {
+    free(ptr as *mut c_void);
+}
+
 /// A wrapper around libc::realloc, aborting on out-of-memory
 #[inline]
 pub unsafe fn realloc_raw(ptr: *mut u8, size: uint) -> *mut u8 {
@@ -66,20 +71,62 @@ pub unsafe fn realloc_raw(ptr: *mut u8, size: uint) -> *mut u8 {
     }
 }
 
+pub struct ExchangeCallbacks {
+    malloc_no_ty:   fn(ptr: *u8, size: uint),
+    malloc_precise: fn(ptr: *u8, size: uint, td: *TyDesc),
+    free:           fn(ptr: *u8),
+}
+static mut current_exchange_callbacks: Option<ExchangeCallbacks> = None;
+
 /// The allocator for unique pointers without contained managed pointers.
 #[cfg(not(test))]
 #[lang="exchange_malloc"]
 #[inline]
 pub unsafe fn exchange_malloc(size: uint) -> *u8 {
-    malloc_raw(size) as *u8
+    exchange_malloc_no_ty(size) as *u8
 }
+
+#[cfg(not(test),not(stage0))]
+#[lang="exchange_malloc_precise"]
+#[inline]
+pub unsafe fn exchange_malloc_precise(td: *u8, size: uint) -> *u8 {
+    exchange_malloc_precise1(td, size)
+}
+
+#[cfg(not(test),not(stage0))]
+unsafe fn exchange_malloc_precise1(td: *u8, size: uint) -> *u8 {
+    let td = td as *TyDesc;
+    let ret = malloc_raw(size) as *u8;
+    match current_exchange_callbacks {
+        None => {}, Some(cb) => (cb.malloc_precise)(ret, size, td)
+    }
+    ret
+}
+
+#[cfg(not(test))]
+unsafe fn exchange_malloc_no_ty(size: uint) -> *u8 {
+    let ret = malloc_raw(size) as *u8;
+    match current_exchange_callbacks {
+        None => {}, Some(cb) => (cb.malloc_no_ty)(ret, size)
+    }
+    ret
+}
+
 
 // FIXME: #7496
 #[cfg(not(test), stage0)]
 #[lang="closure_exchange_malloc"]
 #[inline]
 pub unsafe fn closure_exchange_malloc_(td: *u8, size: uint) -> *u8 {
-    closure_exchange_malloc(td, size)
+    closure_exchange_malloc0(td, size)
+}
+
+#[cfg(not(stage0))]
+#[lang="proc_malloc_precise"]
+#[inline]
+pub unsafe fn proc_malloc_precise(td: *u8, size: uint) -> *u8 {
+    let td = td as *TyDesc;
+    closure_exchange_malloc_precise1(td, size)
 }
 
 // FIXME: #7496
@@ -87,12 +134,12 @@ pub unsafe fn closure_exchange_malloc_(td: *u8, size: uint) -> *u8 {
 #[lang="closure_exchange_malloc"]
 #[inline]
 pub unsafe fn closure_exchange_malloc_(drop_glue: fn(*mut u8), size: uint, align: uint) -> *u8 {
-    closure_exchange_malloc(drop_glue, size, align)
+    closure_exchange_malloc_no_ty(drop_glue, size, align)
 }
 
 #[inline]
 #[cfg(stage0)]
-pub unsafe fn closure_exchange_malloc(td: *u8, size: uint) -> *u8 {
+unsafe fn closure_exchange_malloc0(td: *u8, size: uint) -> *u8 {
     let td = td as *TyDesc;
     let size = size;
 
@@ -107,16 +154,37 @@ pub unsafe fn closure_exchange_malloc(td: *u8, size: uint) -> *u8 {
     alloc as *u8
 }
 
+
 #[inline]
 #[cfg(not(stage0))]
-pub unsafe fn closure_exchange_malloc(drop_glue: fn(*mut u8), size: uint, align: uint) -> *u8 {
+unsafe fn closure_exchange_malloc_no_ty(drop_glue: fn(*mut u8), size: uint, align: uint) -> *u8 {
     let total_size = get_box_size(size, align);
     let p = malloc_raw(total_size);
 
     let alloc = p as *mut raw::Box<()>;
     (*alloc).drop_glue = drop_glue;
 
-    alloc as *u8
+    let ret = alloc as *u8;
+    match current_exchange_callbacks {
+        None => {}, Some(cb) => (cb.malloc_no_ty)(ret, size)
+    }
+    ret
+}
+
+#[inline]
+#[cfg(not(stage0))]
+unsafe fn closure_exchange_malloc_precise1(td: *TyDesc, size: uint) -> *u8 {
+    let total_size = get_box_size(size, (*td).align);
+    let p = malloc_raw(total_size);
+
+    let alloc = p as *mut raw::Box<()>;
+    (*alloc).drop_glue = (*td).drop_glue;
+
+    let ret = alloc as *u8;
+    match current_exchange_callbacks {
+        None => {}, Some(cb) => (cb.malloc_no_ty)(ret, size)
+    }
+    ret
 }
 
 // NB: Calls to free CANNOT be allowed to fail, as throwing an exception from
@@ -125,11 +193,13 @@ pub unsafe fn closure_exchange_malloc(drop_glue: fn(*mut u8), size: uint, align:
 #[lang="exchange_free"]
 #[inline]
 pub unsafe fn exchange_free_(ptr: *u8) {
+    match current_exchange_callbacks { None => {}, Some(cb) => (cb.free)(ptr) }
     exchange_free(ptr)
 }
 
 #[inline]
 pub unsafe fn exchange_free(ptr: *u8) {
+    match current_exchange_callbacks { None => {}, Some(cb) => (cb.free)(ptr) }
     free(ptr as *mut c_void);
 }
 

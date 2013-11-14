@@ -6,6 +6,7 @@
 #include "regs.h"
 #define ARG0 RUSTRT_ARG0_S
 #define ARG1 RUSTRT_ARG1_S
+#define ARG2 RUSTRT_ARG2_S
 
         .text
 
@@ -56,8 +57,10 @@ First four arguments:
 
 #if defined(__APPLE__)
 #define SWAP_REGISTERS _rust_swap_registers
+#define DUMP_REGISTERS _rust_dump_registers
 #else
 #define SWAP_REGISTERS rust_swap_registers
+#define DUMP_REGISTERS rust_dump_registers
 #endif
 
 // swap_registers(registers_t *oregs, registers_t *regs)
@@ -157,3 +160,32 @@ SWAP_REGISTERS:
         // Jump to the instruction pointer
         // found in regs:
         jmp *(RUSTRT_IP*8)(ARG1)
+
+// dump_registers(registers_t *oregs, env *ctxt, code *fn)
+.globl DUMP_REGISTERS
+DUMP_REGISTERS:
+
+	mov %rax, (0*8)(ARG0)
+	mov %rbx, (1*8)(ARG0)
+	mov %rcx, (2*8)(ARG0)
+	mov %rdx, (3*8)(ARG0)
+
+	mov %rsp, (4*8)(ARG0)
+	mov %rbp, (5*8)(ARG0)
+	mov %rsi, (6*8)(ARG0)
+	mov %rdi, (7*8)(ARG0)
+
+#define DUMP_REG_R(N) mov %r ## N, (N * 8)(ARG0)
+
+	DUMP_REG_R(8)
+	DUMP_REG_R(9)
+	DUMP_REG_R(10)
+	DUMP_REG_R(11)
+	DUMP_REG_R(12)
+	DUMP_REG_R(13)
+	DUMP_REG_R(14)
+	DUMP_REG_R(15)
+
+	fxsave (16*8)(ARG0)
+
+	jmp *ARG2

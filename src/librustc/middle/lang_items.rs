@@ -240,7 +240,9 @@ lets_do_this! {
     FailFnLangItem,                  "fail_",                   fail_fn;
     FailBoundsCheckFnLangItem,       "fail_bounds_check",       fail_bounds_check_fn;
     ExchangeMallocFnLangItem,        "exchange_malloc",         exchange_malloc_fn;
+    ExchangeMallocPreciseFnLangItem, "exchange_malloc_precise", exchange_malloc_precise_fn;
     ClosureExchangeMallocFnLangItem, "closure_exchange_malloc", closure_exchange_malloc_fn;
+    ProcMallocPreciseFnLangItem,     "proc_malloc_precise",     proc_malloc_precise_fn;
     ExchangeFreeFnLangItem,          "exchange_free",           exchange_free_fn;
     MallocFnLangItem,                "malloc",                  malloc_fn;
     FreeFnLangItem,                  "free",                    free_fn;
