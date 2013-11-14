@@ -43,6 +43,7 @@ rust_wait_little_lock
 tdefl_compress_mem_to_heap
 tinfl_decompress_mem_to_heap
 swap_registers
+dump_registers
 rust_readdir
 rust_opendir
 rust_dbg_extern_identity_u32
