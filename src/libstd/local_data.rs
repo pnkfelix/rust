@@ -129,6 +129,29 @@ impl LoanState {
     }
 }
 
+/// Helper for use by conservative gc.  Invokes `cb` on each key and
+/// value stored in the TLS.  (We don't know what kinds of things are
+/// in TLS, but we consider them all roots.)
+pub unsafe fn each_retained_ptr(cb: |*u8|) {
+    let map = get_local_map();
+
+    // N.B. In Graydon's original code, even `map` is a @~[...], and
+    // thus it too had to be visited by `cb`.  In the new runtime,
+    // map is a ~[...].
+
+    for elt in map.iter() {
+        match elt {
+            &None => {},
+            &Some((ref key, ref tls_value, ref _loan_state)) => {
+                let tls_value : &TLSValue = tls_value;
+                cb(*key);
+                let c_tls_value : **u8 = cast::transmute(tls_value);
+                cb(*c_tls_value);
+            }
+        }
+    }
+}
+
 fn key_to_key_value<T: 'static>(key: Key<T>) -> *u8 {
     unsafe { cast::transmute(key) }
 }

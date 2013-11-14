@@ -12,6 +12,7 @@ use std::uint;
 use std::cast::{transmute, transmute_mut_unsafe,
                 transmute_region, transmute_mut_region};
 use stack::Stack;
+use std::kinds::marker::NoPod;
 use std::unstable::stack;
 use std::unstable::raw;
 
@@ -122,6 +123,7 @@ impl Context {
 #[link(name = "context_switch", kind = "static")]
 extern {
     fn rust_swap_registers(out_regs: *mut Registers, in_regs: *Registers);
+    fn rust_dump_registers(regs: *mut Registers, ctxt: *mut u8, callback: *u8);
 }
 
 // Register contexts used in various architectures
@@ -143,16 +145,18 @@ extern {
 // An example of this would be the segment selectors for x86.
 //
 // These structures/functions are roughly in-sync with the source files inside
-// of src/rt/arch/$arch. The only currently used function from those folders is
-// the `rust_swap_registers` function, but that's only because for now segmented
-// stacks are disabled.
+// of src/rt/arch/$arch. The only currently used functions from those folders is
+// the `rust_swap_registers` (for context-switching) and `rust_dump_registers`
+// functions (for conservative GC root discovery/scanning).
 
 #[cfg(target_arch = "x86")]
-struct Registers {
+pub struct Registers {
     eax: u32, ebx: u32, ecx: u32, edx: u32,
     ebp: u32, esi: u32, edi: u32, esp: u32,
     cs: u16, ds: u16, ss: u16, es: u16, fs: u16, gs: u16,
-    eflags: u32, eip: u32
+    eflags: u32, eip: u32,
+    boundary_word: u32,
+    priv unforgeable: NoPod,
 }
 
 #[cfg(target_arch = "x86")]
@@ -161,7 +165,9 @@ fn new_regs() -> ~Registers {
         eax: 0, ebx: 0, ecx: 0, edx: 0,
         ebp: 0, esi: 0, edi: 0, esp: 0,
         cs: 0, ds: 0, ss: 0, es: 0, fs: 0, gs: 0,
-        eflags: 0, eip: 0
+        eflags: 0, eip: 0,
+        boundary_word: 0xDEADBEEF,
+        unforgeable: NoPod,
     }
 }
 
@@ -187,17 +193,30 @@ fn initialize_call_frame(regs: &mut Registers, fptr: InitFn, arg: uint,
     regs.ebp = 0;
 }
 
-// windows requires saving more registers (both general and XMM), so the windows
-// register context must be larger.
+// windows requires saving more registers (both general and XMM), so
+// the windows register context must be larger (34 uints on Windows,
+// 22 uints on non-Windows).  Furthermore, the `fxsave` instruction
+// stores to a 512-byte buffer (dump_registers uses `fxsave` to stash
+// xmm state).
 #[cfg(windows, target_arch = "x86_64")]
-type Registers = [uint, ..34];
+pub struct Registers {
+    regs: [uint, ..34], fxsave: [uint, ..64],
+    boundary_word: u32,
+    priv unforgeable: NoPod,
+}
 #[cfg(not(windows), target_arch = "x86_64")]
-type Registers = [uint, ..22];
+pub struct Registers { regs: [uint, ..22], fxsave: [uint, ..64],
+                       boundary_word: u32,
+                       priv unforgeable: NoPod }
 
 #[cfg(windows, target_arch = "x86_64")]
-fn new_regs() -> ~Registers { ~([0, .. 34]) }
+fn new_regs() -> ~Registers { ~Registers{ regs: [0, ..34], fxsave: [0, ..64],
+                                          boundary_word: 0xDEADBEEF,
+                                          unforgeable: NoPod } }
 #[cfg(not(windows), target_arch = "x86_64")]
-fn new_regs() -> ~Registers { ~([0, .. 22]) }
+fn new_regs() -> ~Registers { ~Registers { regs: [0, ..22], fxsave: [0, ..64],
+                                           boundary_word: 0xDEADBEEF,
+                                           unforgeable: NoPod } }
 
 #[cfg(target_arch = "x86_64")]
 fn initialize_call_frame(regs: &mut Registers, fptr: InitFn, arg: uint,
@@ -226,6 +245,7 @@ fn initialize_call_frame(regs: &mut Registers, fptr: InitFn, arg: uint,
 
     // These registers are frobbed by rust_bootstrap_green_task into the right
     // location so we can invoke the "real init function", `fptr`.
+    let regs = &mut regs.regs;
     regs[RUSTRT_R12] = arg as uint;
     regs[RUSTRT_R13] = procedure.code as uint;
     regs[RUSTRT_R14] = procedure.env as uint;
@@ -243,10 +263,15 @@ fn initialize_call_frame(regs: &mut Registers, fptr: InitFn, arg: uint,
 }
 
 #[cfg(target_arch = "arm")]
-type Registers = [uint, ..32];
+pub struct Registers {
+    regs: [uint, ..32],
+    boundary_word: u32,
+    unforgeable: NoPod }
 
 #[cfg(target_arch = "arm")]
-fn new_regs() -> ~Registers { ~([0, .. 32]) }
+fn new_regs() -> ~Registers { ~Registers { regs: [0, .. 32],
+                                           boundary_word: 0xDEADBEEF,
+                                           unforgeable: NoPod } }
 
 #[cfg(target_arch = "arm")]
 fn initialize_call_frame(regs: &mut Registers, fptr: InitFn, arg: uint,
@@ -263,6 +288,7 @@ fn initialize_call_frame(regs: &mut Registers, fptr: InitFn, arg: uint,
     // ARM uses the same technique as x86_64 to have a landing pad for the start
     // of all new green tasks. Neither r1/r2 are saved on a context switch, so
     // the shim will copy r3/r4 into r1/r2 and then execute the function in r5
+    let regs = &mut regs.regs;
     regs[0] = arg as uint;              // r0
     regs[3] = procedure.code as uint;   // r3
     regs[4] = procedure.env as uint;    // r4
@@ -272,10 +298,31 @@ fn initialize_call_frame(regs: &mut Registers, fptr: InitFn, arg: uint,
 }
 
 #[cfg(target_arch = "mips")]
-type Registers = [uint, ..32];
+pub struct Registers { regs: [uint, ..32],
+                       boundary_word: u32,
+                       unforgeable: NoPod }
 
 #[cfg(target_arch = "mips")]
-fn new_regs() -> ~Registers { ~([0, .. 32]) }
+fn new_regs() -> ~Registers { ~Registers{ regs: [0, .. 32],
+                                          boundary_word: 0xDEADBEEF,
+                                          unforgeable: NoPod } }
+
+// For now we will deal with the GC by blindly dumping all of the
+// registers and doing a conservative stack walk.  (This may need to
+// be moved somewhere not specific to libgreen...)
+
+pub struct DumpedRegs { priv regs: ~Registers }
+impl DumpedRegs {
+    pub fn new_unfilled() -> DumpedRegs { DumpedRegs { regs: new_regs() } }
+    pub fn dump<T>(&mut self,
+                   ctxt: &mut T,
+                   callback: extern "C" fn (&mut Registers,  &mut T, *())) {
+        unsafe {
+            let arg = transmute(ctxt);
+            rust_dump_registers(transmute(&*self.regs), arg, transmute(callback));
+        }
+    }
+}
 
 #[cfg(target_arch = "mips")]
 fn initialize_call_frame(regs: &mut Registers, fptr: InitFn, arg: uint,
@@ -287,6 +334,7 @@ fn initialize_call_frame(regs: &mut Registers, fptr: InitFn, arg: uint,
     // The final return address. 0 indicates the bottom of the stack
     unsafe { *sp = 0; }
 
+    let regs = &mut regs.regs;
     regs[4] = arg as uint;
     regs[29] = sp as uint;
     regs[25] = fptr as uint;
