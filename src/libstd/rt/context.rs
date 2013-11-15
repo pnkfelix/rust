@@ -120,6 +120,8 @@ impl Context {
 
 extern {
     fn swap_registers(out_regs: *mut Registers, in_regs: *Registers);
+    #[rust_stack]
+    fn dump_registers(out_regs: *mut Registers, next_fn: *c_void);
 }
 
 // Register contexts used in various architectures
