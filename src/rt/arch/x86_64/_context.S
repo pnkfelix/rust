@@ -6,6 +6,7 @@
 #include "regs.h"
 #define ARG0 RUSTRT_ARG0_S
 #define ARG1 RUSTRT_ARG1_S
+#define ARG2 RUSTRT_ARG2_S
 
         .text
 
@@ -160,7 +161,7 @@ SWAP_REGISTERS:
         // found in regs:
         jmp *(RUSTRT_IP*8)(ARG1)
 
-// dump_registers(registers_t *oregs, code *fn)
+// dump_registers(registers_t *oregs, code *fn, env *ctxt)
 .globl DUMP_REGISTERS
 DUMP_REGISTERS:
 

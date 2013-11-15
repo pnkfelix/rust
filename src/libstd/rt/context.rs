@@ -126,6 +126,7 @@ impl Context {
 
 extern {
     fn rust_swap_registers(out_regs: *mut Registers, in_regs: *Registers);
+    fn rust_dump_registers(out_regs: *mut Registers, next_fn: *c_void);
 }
 
 // Register contexts used in various architectures
