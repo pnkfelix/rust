@@ -120,8 +120,7 @@ impl Context {
 
 extern {
     fn swap_registers(out_regs: *mut Registers, in_regs: *Registers);
-    #[rust_stack]
-    fn dump_registers(out_regs: *mut Registers, next_fn: *c_void);
+    pub fn dump_registers(regs: *mut Registers, call: *c_void, ctxt: *c_void);
 }
 
 // Register contexts used in various architectures
@@ -143,9 +142,9 @@ extern {
 // An example of this would be the segment selectors for x86.
 //
 // These structures/functions are roughly in-sync with the source files inside
-// of src/rt/arch/$arch. The only currently used function from those folders is
-// the `swap_registers` function, but that's only because for now segmented
-// stacks are disabled.
+// of src/rt/arch/$arch. The only currently used functions from those folders
+// is the `swap_registers` (for context-switching) and `dump_registers`
+// functions (for conservative GC root discovery/scanning).
 
 #[cfg(target_arch = "x86")]
 struct Registers {
@@ -250,6 +249,20 @@ type Registers = [uint, ..32];
 
 #[cfg(target_arch = "mips")]
 fn new_regs() -> ~Registers { ~([0, .. 32]) }
+
+pub struct DumpedRegs { priv regs: ~Registers }
+impl DumpedRegs {
+    pub fn new_unfilled() -> DumpedRegs { DumpedRegs { regs: new_regs() } }
+    pub fn dump<T>(&mut self,
+                   ctxt: ~T,
+                   callback: extern "C" fn (DumpedRegs, c: *c_void, ~T)) {
+        unsafe {
+            dump_registers(transmute(self),
+                           transmute(callback),
+                           transmute(ctxt))
+        }
+    }
+}
 
 #[cfg(target_arch = "mips")]
 fn initialize_call_frame(regs: &mut Registers, fptr: *c_void, arg: *c_void,
