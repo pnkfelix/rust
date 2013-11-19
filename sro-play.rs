@@ -2,7 +2,7 @@
 use std::cast;
 use std::libc;
 use std::local_data;
-use std::rt::dump_registers;
+use std::rt::DumpedRegs;
 
 type DumpedRegsArea = [u64, ..80];
 
@@ -28,31 +28,43 @@ fn walk_managed(ctxt: ~ctxt) {
         let regs = [0u64, ..80];
         let r : uint = cast::transmute(&regs);
         let r = (r + 16) & (!15); // round-up to 16-byte alignment.
-        let action : *libc::c_void = cast::transmute(do_walk_managed);
+        let action = do_walk_managed;
         let ctxt_cloned = ctxt.clone();
         let c : *libc::c_void = cast::transmute(ctxt);
-        let a1 = cast::transmute(r);
-        let a2 = action;
-        let a3 = c;
-        println!("about to dump_registers(0x{:x}, 0x{:x}, 0x{:x}), ctxt: {:?} at 0x{:x}",
-                 a1 as libc::c_int, a2, a3, ctxt_cloned, c as libc::c_int);
-        dump_registers(a1, a2, a3);
+        let mut regs : DumpedRegs = cast::transmute(r);
+        let a1 : int = cast::transmute(regs);
+        let a2 = action as libc::c_int;
+        let a3 = c as libc::c_int;
+        println!("about to dump_registers(regs: 0x{:x}, \
+                                          action: 0x{:x}, \
+                                          ctxt: 0x{:x}), \
+                  ctxt: {:?} at 0x{:x}",
+                 a1, a2, a3, ctxt_cloned, a3);
+        let mut ctxt : ~ctxt = cast::transmute(c);
+        regs = cast::transmute(a1);
+        regs.dump(ctxt, action);
     }
 }
 
-extern "C" fn do_walk_managed(_regs: *libc::c_void, _action: *libc::c_void, ctxt_ptr: *libc::c_void) {
-    println!("do_walk_managed(0x{:x}, 0x{:x}, 0x{:x})",
-             _regs as libc::c_int,
-             _action as libc::c_int,
-             ctxt_ptr as libc::c_int);
+extern "C" fn do_walk_managed(regs: &mut DumpedRegs, mut ctxt: &mut ctxt) {
+    unsafe {
+        println!("do_walk_managed");
+        let a1 : int = cast::transmute(regs);
+        let ctxt_ptr : *() = cast::transmute(ctxt);
+        println!("do_walk_managed(regs: 0x{:x}, ctxt: 0x{:x})",
+                 a1.clone() as libc::c_int,
+                 ctxt_ptr as libc::c_int);
+        regs = cast::transmute(a1);
+        ctxt = cast::transmute(ctxt_ptr);
+    }
     let c : *libc::c_void;
     let ctxt_cloned;
     unsafe {
-        let ctxt: ~ctxt = cast::transmute(ctxt_ptr);
         ctxt_cloned = ctxt.clone();
         c = cast::transmute(ctxt);
     }
-    println!("got to do_walk_managed, ctxt: {:?} at 0x{:x}", ctxt_cloned, c as libc::c_int);
+    println!("got to do_walk_managed, regs: {:?} ctxt: {:?} at 0x{:x}",
+             regs, ctxt_cloned, c as libc::c_int);
 }
 
 fn main() {

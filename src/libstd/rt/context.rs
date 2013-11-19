@@ -126,7 +126,7 @@ impl Context {
 
 extern {
     fn rust_swap_registers(out_regs: *mut Registers, in_regs: *Registers);
-    fn rust_dump_registers(regs: *mut Registers, call: *c_void, ctxt: *c_void);
+    fn rust_dump_registers(regs: *mut Registers, ctxt: *c_void, callback: *c_void);
 }
 
 // Register contexts used in various architectures
@@ -260,12 +260,11 @@ pub struct DumpedRegs { priv regs: ~Registers }
 impl DumpedRegs {
     pub fn new_unfilled() -> DumpedRegs { DumpedRegs { regs: new_regs() } }
     pub fn dump<T>(&mut self,
-                   ctxt: ~T,
-                   callback: extern "C" fn (DumpedRegs, c: *c_void, ~T)) {
+                   ctxt: &mut T,
+                   callback: extern "C" fn (&mut Registers,  &mut T)) {
         unsafe {
-            dump_registers(transmute(self),
-                           transmute(callback),
-                           transmute(ctxt))
+            let arg = transmute(ctxt);
+            rust_dump_registers(transmute(&*self.regs), arg, transmute(callback));
         }
     }
 }

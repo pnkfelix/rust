@@ -77,7 +77,6 @@ use self::thread::Thread;
 
 // For now we will deal with the GC by blindly dumping all of the
 // registers and doing a conservative stack walk.
-pub use self::context::dump_registers;
 pub use self::context::DumpedRegs;
 
 // the os module needs to reach into this helper, so allow general access
