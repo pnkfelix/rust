@@ -161,7 +161,7 @@ SWAP_REGISTERS:
         // found in regs:
         jmp *(RUSTRT_IP*8)(ARG1)
 
-// dump_registers(registers_t *oregs, code *fn, env *ctxt)
+// dump_registers(registers_t *oregs, env *ctxt, code *fn)
 .globl DUMP_REGISTERS
 DUMP_REGISTERS:
 
@@ -188,4 +188,4 @@ DUMP_REGISTERS:
 
 	fxsave (16*8)(ARG0)
 
-	jmp *ARG1
+	jmp *ARG2
