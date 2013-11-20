@@ -80,6 +80,7 @@ use self::work_queue::WorkQueue;
 // For now we will deal with the GC by blindly dumping all of the
 // registers and doing a conservative stack walk.
 pub use self::context::DumpedRegs;
+pub use self::context::Registers;
 
 // the os module needs to reach into this helper, so allow general access
 // through this reexport.
