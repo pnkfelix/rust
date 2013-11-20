@@ -153,6 +153,7 @@ pub struct Registers {
     ebp: u32, esi: u32, edi: u32, esp: u32,
     cs: u16, ds: u16, ss: u16, es: u16, fs: u16, gs: u16,
     eflags: u32, eip: u32,
+    boundary_word: u32,
     priv unforgeable: NonCopyable,
 }
 
@@ -163,6 +164,7 @@ fn new_regs() -> ~Registers {
         ebp: 0, esi: 0, edi: 0, esp: 0,
         cs: 0, ds: 0, ss: 0, es: 0, fs: 0, gs: 0,
         eflags: 0, eip: 0,
+        boundary_word: 0xDEADBEEF,
         unforgeable: NonCopyable::new(),
     }
 }
@@ -185,17 +187,30 @@ fn initialize_call_frame(regs: &mut Registers, fptr: *c_void, arg: *c_void,
     regs.ebp = 0;
 }
 
-// windows requires saving more registers (both general and XMM), so the windows
-// register context must be larger.
+// windows requires saving more registers (both general and XMM), so
+// the windows register context must be larger (34 uints on Windows,
+// 22 uints on non-Windows).  Furthermore, the `fxsave` instruction
+// stores to a 512-byte buffer (dump_registers uses `fxsave` to stash
+// xmm state).
 #[cfg(windows, target_arch = "x86_64")]
-pub struct Registers { regs: [uint, ..34], priv unforgeable: NonCopyable }
+pub struct Registers {
+    regs: [uint, ..34], fxsave: [uint, ..64],
+    boundary_word: u32,
+    priv unforgeable: NonCopyable
+}
 #[cfg(not(windows), target_arch = "x86_64")]
-pub struct Registers { regs: [uint, ..22], priv unforgeable: NonCopyable }
+pub struct Registers { regs: [uint, ..22], fxsave: [uint, ..64],
+                       boundary_word: u32,
+                       priv unforgeable: NonCopyable }
 
 #[cfg(windows, target_arch = "x86_64")]
-fn new_regs() -> ~Registers { ~Registers{ regs: ([0, .. 34]), unforgeable: NonCopyable::new() } }
+fn new_regs() -> ~Registers { ~Registers{ regs: [0, ..34], fxsave: [0, ..64],
+                                          boundary_word: 0xDEADBEEF,
+                                          unforgeable: NonCopyable::new() } }
 #[cfg(not(windows), target_arch = "x86_64")]
-fn new_regs() -> ~Registers { ~Registers { regs: ([0, .. 22]), unforgeable: NonCopyable::new() } }
+fn new_regs() -> ~Registers { ~Registers { regs: [0, ..22], fxsave: [0, ..64],
+                                           boundary_word: 0xDEADBEEF,
+                                           unforgeable: NonCopyable::new() } }
 
 #[cfg(target_arch = "x86_64")]
 fn initialize_call_frame(regs: &mut Registers, fptr: *c_void, arg: *c_void,
@@ -228,10 +243,15 @@ fn initialize_call_frame(regs: &mut Registers, fptr: *c_void, arg: *c_void,
 }
 
 #[cfg(target_arch = "arm")]
-pub struct Registers { regs: [uint, ..32], unforgeable: NonCopyable }
+pub struct Registers {
+    regs: [uint, ..32],
+    boundary_word: u32,
+    unforgeable: NonCopyable }
 
 #[cfg(target_arch = "arm")]
-fn new_regs() -> ~Registers { ~Registers { regs: [0, .. 32], unforgeable: NonCopyable::new() } }
+fn new_regs() -> ~Registers { ~Registers { regs: [0, .. 32],
+                                           boundary_word: 0xDEADBEEF,
+                                           unforgeable: NonCopyable::new() } }
 
 #[cfg(target_arch = "arm")]
 fn initialize_call_frame(regs: &mut Registers, fptr: *c_void, arg: *c_void,
@@ -250,17 +270,21 @@ fn initialize_call_frame(regs: &mut Registers, fptr: *c_void, arg: *c_void,
 }
 
 #[cfg(target_arch = "mips")]
-pub struct Registers { regs: [uint, ..32], unforgeable: NonCopyable }
+pub struct Registers { regs: [uint, ..32],
+                       boundary_word: u32,
+                       unforgeable: NonCopyable }
 
 #[cfg(target_arch = "mips")]
-fn new_regs() -> ~Registers { ~Registers{ regs: [0, .. 32], unforgeable: NonCopyable::new() } }
+fn new_regs() -> ~Registers { ~Registers{ regs: [0, .. 32],
+                                          boundary_word: 0xDEADBEEF,
+                                          unforgeable: NonCopyable::new() } }
 
 pub struct DumpedRegs { priv regs: ~Registers }
 impl DumpedRegs {
     pub fn new_unfilled() -> DumpedRegs { DumpedRegs { regs: new_regs() } }
     pub fn dump<T>(&mut self,
                    ctxt: &mut T,
-                   callback: extern "C" fn (&mut Registers,  &mut T)) {
+                   callback: extern "C" fn (&mut Registers,  &mut T, *())) {
         unsafe {
             let arg = transmute(ctxt);
             dump_registers(transmute(&*self.regs), arg, transmute(callback));
