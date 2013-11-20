@@ -24,7 +24,7 @@ impl Drop for ctxt {
 fn walk_managed(mut ctxt: ~ctxt) {
     // Dumping xmm state requires 16-byte alignement (at least when
     // using `movapd`; not yet sure about `fxsave`).
-    let action = do_walk_managed;
+    let action = do_walk;
 
     // let regs = [0u64, ..80];
     // let r : uint = cast::transmute(&regs);
@@ -34,18 +34,27 @@ fn walk_managed(mut ctxt: ~ctxt) {
     let mut regs : DumpedRegs = DumpedRegs::new_unfilled();
 
     let c : int;
-    let a1 : int;
+    let dr : int;
+    let ir : int;
     unsafe { c = cast::transmute(ctxt); ctxt = cast::transmute(c); }
-    unsafe { a1 = cast::transmute(regs); regs = cast::transmute(a1); }
+    unsafe {
+        dr = cast::transmute(&regs);
+        struct FakeDumpedRegs { regs: ~Registers }
+        let fdr : FakeDumpedRegs = cast::transmute(regs);
+        let pir : *int = cast::transmute(&fdr.regs);
+        ir = *pir;
+        regs = cast::transmute(fdr);
+    }
 
+    let a1 = dr;
     let a2 = action as int;
     let a3 = c;
 
-    println!("about to regs.dump (regs: 0x{:x}, \
+    println!("about to regs.dump (regs: 0x{:x} \\{ .regs: 0x{:x} \\}, \
                                   action: 0x{:x}, \
                                   ctxt: 0x{:x}), \
               regs: {:?} ctxt: {:?} at 0x{:x}",
-             a1, a2, a3, regs, ctxt, a3);
+             a1, ir, a2, a3, regs, ctxt, a3);
     regs.dump(&mut *ctxt, action);
     println!("post the regs.dump (regs: 0x{:x}, \
                                   action: 0x{:x}, \
@@ -54,8 +63,8 @@ fn walk_managed(mut ctxt: ~ctxt) {
              a1, a2, a3, regs, ctxt, a3);
 }
 
-extern "C" fn do_walk_managed(mut regs: &mut Registers, mut ctxt: &mut ctxt) {
-    println!("do_walk_managed");
+extern "C" fn do_walk(mut regs: &mut Registers, mut ctxt: &mut ctxt, _:*()) {
+    println!("do_walk");
     let a1 : int;
     let ctxt_ptr : int;
     unsafe {
@@ -69,14 +78,14 @@ extern "C" fn do_walk_managed(mut regs: &mut Registers, mut ctxt: &mut ctxt) {
         // Or maybe error I am seeing is just non-deterministic.  Grr.
         ctxt = cast::transmute(ctxt_ptr);
         regs = cast::transmute(a1);
-        println!("do_walk_managed(regs: 0x{:x}, ctxt: 0x{:x})", a1, ctxt_ptr);
+        println!("do_walk(regs: 0x{:x}, ctxt: 0x{:x})", a1, ctxt_ptr);
     }
     let c : int;
     unsafe {
         c = cast::transmute(ctxt);
         ctxt = cast::transmute(c);
     }
-    println!("got to do_walk_managed, regs: {:?} ctxt: {:?} at 0x{:x}",
+    println!("got to do_walk, regs: {:?} ctxt: {:?} at 0x{:x}",
              regs, ctxt, c as libc::c_int);
 }
 
