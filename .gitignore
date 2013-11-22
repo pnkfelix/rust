@@ -55,7 +55,7 @@ TAGS.emacs
 TAGS.vi
 version.ml
 version.texi
-/Makefile
+*/Makefile
 config.mk
 /rt/
 /rustllvm/
