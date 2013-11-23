@@ -188,14 +188,26 @@ fn initialize_call_frame(regs: &mut Registers, fptr: *c_void, arg: *c_void,
 // windows requires saving more registers (both general and XMM), so the windows
 // register context must be larger.
 #[cfg(windows, target_arch = "x86_64")]
-pub struct Registers { regs: [uint, ..34], priv unforgeable: NonCopyable }
+pub struct Registers { regs: [uint, ..34],
+                       fxsave: [u64, ..64],
+                       boundary_word: u32,
+                       priv unforgeable: NonCopyable }
 #[cfg(not(windows), target_arch = "x86_64")]
-pub struct Registers { regs: [uint, ..22], priv unforgeable: NonCopyable }
+pub struct Registers { regs: [uint, ..22],
+                       fxsave: [u64, ..64],
+                       boundary_word: u32,
+                       priv unforgeable: NonCopyable }
 
 #[cfg(windows, target_arch = "x86_64")]
-fn new_regs() -> ~Registers { ~Registers{ regs: ([0, .. 34]), unforgeable: NonCopyable::new() } }
+fn new_regs() -> ~Registers { ~Registers{ regs: ([0, .. 34]),
+                                          fxsave: [0, ..64],
+                                          boundary_word: 0xCAFEBABE,
+                                          unforgeable: NonCopyable::new() } }
 #[cfg(not(windows), target_arch = "x86_64")]
-fn new_regs() -> ~Registers { ~Registers { regs: ([0, .. 22]), unforgeable: NonCopyable::new() } }
+fn new_regs() -> ~Registers { ~Registers { regs: [0, .. 22],
+                                           fxsave: [0, ..64],
+                                           boundary_word: 0xCAFEBABE,
+                                           unforgeable: NonCopyable::new() } }
 
 #[cfg(target_arch = "x86_64")]
 fn initialize_call_frame(regs: &mut Registers, fptr: *c_void, arg: *c_void,
@@ -228,10 +240,14 @@ fn initialize_call_frame(regs: &mut Registers, fptr: *c_void, arg: *c_void,
 }
 
 #[cfg(target_arch = "arm")]
-pub struct Registers { regs: [uint, ..32], unforgeable: NonCopyable }
+pub struct Registers { regs: [uint, ..32],
+                       boundary_word: u32,
+                       unforgeable: NonCopyable }
 
 #[cfg(target_arch = "arm")]
-fn new_regs() -> ~Registers { ~Registers { regs: [0, .. 32], unforgeable: NonCopyable::new() } }
+fn new_regs() -> ~Registers { ~Registers { regs: [0, .. 32],
+                                           boundary_word: 0xDEADBEEF,
+                                           unforgeable: NonCopyable::new() } }
 
 #[cfg(target_arch = "arm")]
 fn initialize_call_frame(regs: &mut Registers, fptr: *c_void, arg: *c_void,
@@ -250,10 +266,14 @@ fn initialize_call_frame(regs: &mut Registers, fptr: *c_void, arg: *c_void,
 }
 
 #[cfg(target_arch = "mips")]
-pub struct Registers { regs: [uint, ..32], unforgeable: NonCopyable }
+pub struct Registers { regs: [uint, ..32],
+                       boundary_word: u32,
+                       unforgeable: NonCopyable }
 
 #[cfg(target_arch = "mips")]
-fn new_regs() -> ~Registers { ~Registers{ regs: [0, .. 32], unforgeable: NonCopyable::new() } }
+fn new_regs() -> ~Registers { ~Registers{ regs: [0, .. 32],
+                                          boundary_word: 0xDEADBEEF,
+                                          unforgeable: NonCopyable::new() } }
 
 pub struct DumpedRegs { priv regs: ~Registers }
 impl DumpedRegs {
