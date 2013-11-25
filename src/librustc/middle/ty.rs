@@ -1830,7 +1830,7 @@ impl TypeContents {
         match bb {
             BoundStatic => self.is_static(cx),
             BoundFreeze => self.is_freezable(cx),
-            BoundSend => self.is_sendable(cx),
+            BoundSend => self.is_sendable(),
             BoundSized => self.is_sized(cx),
             BoundPod => self.is_pod(cx),
         }
@@ -1848,7 +1848,7 @@ impl TypeContents {
         !self.intersects(TC::Nonstatic)
     }
 
-    pub fn is_sendable(&self, _: ctxt) -> bool {
+    pub fn is_sendable(&self) -> bool {
         !self.intersects(TC::Nonsendable)
     }
 
@@ -1949,7 +1949,7 @@ pub fn type_is_static(cx: ctxt, t: ty::t) -> bool {
 }
 
 pub fn type_is_sendable(cx: ctxt, t: ty::t) -> bool {
-    type_contents(cx, t).is_sendable(cx)
+    type_contents(cx, t).is_sendable()
 }
 
 pub fn type_is_freezable(cx: ctxt, t: ty::t) -> bool {
