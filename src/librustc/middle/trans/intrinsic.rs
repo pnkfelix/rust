@@ -454,6 +454,10 @@ pub fn trans_intrinsic(ccx: @CrateContext,
             let tp_ty = substs.tys[0];
             Ret(bcx, C_bool(ty::type_contents(ccx.tcx, tp_ty).owns_managed()));
         }
+        "is_sendable" => {
+            let tp_ty = substs.tys[0];
+            Ret(bcx, C_bool(ty::type_contents(ccx.tcx, tp_ty).is_sendable()));
+        }
         "visit_tydesc" => {
             let td = get_param(decl, first_real_arg);
             let visitor = get_param(decl, first_real_arg + 1u);
