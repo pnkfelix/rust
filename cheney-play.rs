@@ -157,7 +157,7 @@ impl Gc {
         }
     }
 
-    pub fn alloc<T>(&mut self) -> @T {
+    pub fn alloc<T>(&mut self, arg:T) -> @T {
         #[allow(unused_variable)];
 
         unsafe {
@@ -267,4 +267,8 @@ impl Gc {
 
 fn main() {
     println!("Hello world.");
+    let mut gc = Gc::make_gc();
+    enum Pair<T> { Cons(T, @Pair<T>), Null }
+    let i3 = gc.alloc::<int>(3);
+    println!("i3: {:?}", i3);
 }
