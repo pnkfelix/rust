@@ -1,10 +1,11 @@
 #[feature(managed_boxes)];
 
 #[allow(unused_imports)];
+use std::cast;
+use std::mem;
+use std::ptr;
 use std::rt::local_heap::{Box};
 use std::rt::global_heap;
-use std::cast;
-use std::ptr;
 use std::unstable::intrinsics;
 use std::unstable::intrinsics::{TyDesc};
 
@@ -25,7 +26,13 @@ impl Span {
     }
     fn tup(&self) -> (*uint, *uint) { (self.start, self.limit) }
     fn from((start, limit): (*uint, *uint)) -> Span { Span::new(start, limit) }
-    fn size(&self) -> uint { (self.limit as uint) - (self.start as uint) }
+    fn size_bytes(&self) -> uint { (self.limit as uint) - (self.start as uint) }
+    fn can_fit(&self, bytes: uint) -> bool { bytes <= self.size_bytes() }
+    unsafe fn shift_start(&mut self, bytes: uint) {
+        assert!(self.can_fit(bytes));
+        assert!(bytes as int >= 0);
+        self.start = ptr::offset(self.start as *u8, bytes as int) as *uint;
+    }
 }
 
 /// A Chunk is the metadata for a contiguous area of memory that has
@@ -50,33 +57,37 @@ impl Chunk {
     fn new(size: uint) -> Chunk {
 
         // ensure we can safely do desired casts to block types.
-        assert!(size >= intrinsics::size_of::<FreePair>());
-        assert!(size >= intrinsics::size_of::<BigBlock>());
-        assert!(size >= intrinsics::size_of::<FutureBox<()>>());
-        assert!(size >= intrinsics::size_of::<ForwardedBox<()>>());
+        assert!(size >= mem::size_of::<FreePair>());
+        assert!(size >= mem::size_of::<BigBlock>());
+        assert!(size >= mem::size_of::<FutureBox<()>>());
+        assert!(size >= mem::size_of::<ForwardedBox<()>>());
 
-        let chunk_mem = global_heap::malloc_raw(size);
-        let start : *uint = unsafe { cast::transmute(chunk_mem) };
-        let limit : *uint = ptr::offset(start, size);
-        let block : *BigBlock = unsafe { cast::transmute(start) };
-        block.next = ptr::null();
-        block.limit = limit;
-        Chunk {
-            next: None,
-            free_pairs: None,
-            free_bblks: Some(block),
-            span: Span::new(start, limit),
-        };
+        unsafe {
+            let chunk_mem = global_heap::malloc_raw(size);
+            let start : *uint = cast::transmute(chunk_mem);
+            assert!((size as int) >= 0);
+            let limit : *uint = ptr::offset(start, size as int);
+            let block : *mut BigBlock = cast::transmute(start);
+            (*block).next = ptr::null();
+            (*block).limit = limit;
+            Chunk {
+                next: None,
+                free_pairs: None,
+                free_bblks: Some(cast::transmute(block)),
+                full_bblks: None,
+                span: Span::new(start, limit),
+            }
+        }
     }
 
     /// Pops first free big block and returns its span (presumably for
     /// use as a target allocation space by a bump-pointer allocator).
-    fn unwrap_target_space(&mut self) -> Span {
+    unsafe fn unwrap_target_space(&mut self) -> Span {
         let b : *BigBlock = self.free_bblks.unwrap();
         self.free_bblks =
-            if b.next == ptr::null() { None } else { Some(b.next) };
-        let start : *uint = unsafe { cast::transmute(b) };
-        let limit = b.limit;
+            if (*b).next == ptr::null() { None } else { Some((*b).next) };
+        let start : *uint = cast::transmute(b);
+        let limit = (*b).limit;
         Span::new(start, limit)
     }
 }
@@ -128,33 +139,37 @@ struct Gc {
     inverse_load_factor: f32,
     target_normal_size: uint,
     target_total_size: uint,
-    avail: *uint, // address of first word we can use for bump-pointer allocation
-    limit: *uint, // limit for bump-pointer allocation
+    avail: Span, // span currently in use for bump-pointer allocation
 }
 
 impl Gc {
     pub fn make_gc() -> Gc {
-        let mut chunk = Chunk::new();
-        let avail = chunk.unwrap_target_space().tup();
-        Gc { normal_chunks: chunk,
-             large_objects: None,
-             last_live_normal_size: 0,
-             last_live_large_size: 0,
-             inverse_load_factor: DEFAULT_LOAD_FACTOR,
-             target_normal_size: MINIMUM_TARGET_SIZE,
-             target_total_size: MINIMUM_TARGET_SIZE,
-             avail: avail }
+        let mut chunk = Chunk::new_default();
+        unsafe {
+            Gc { normal_chunks: chunk,
+                 large_objects: None,
+                 last_live_normal_size: 0,
+                 last_live_large_size: 0,
+                 inverse_load_factor: DEFAULT_LOAD_FACTOR,
+                 target_normal_size: MINIMUM_TARGET_SIZE,
+                 target_total_size: MINIMUM_TARGET_SIZE,
+                 avail: chunk.unwrap_target_space() }
+        }
     }
 
     pub fn alloc<T>(&mut self) -> @T {
-        let tydesc = intrinsics::get_tydesc::<T>();
-        let obj = self.alloc_ty_instance(tydesc);
-        fail!("GC::alloc not yet implemented");
+        #[allow(unused_variable)];
+
+        unsafe {
+            let tydesc = intrinsics::get_tydesc::<T>();
+            let obj = self.alloc_ty_instance(tydesc);
+            fail!("GC::alloc not yet implemented");
+        }
     }
 
-    fn alloc_ty_instance(&mut self, tydesc: *TyDesc) -> *uint {
-        let total_size = global_heap::get_box_size(tydesc.size, tydesc.align);
-        if self.avail + total_size > self.limit {
+    unsafe fn alloc_ty_instance(&mut self, tydesc: *TyDesc) -> *uint {
+        let total_size = global_heap::get_box_size((*tydesc).size, (*tydesc).align);
+        if self.avail.can_fit(total_size) {
             // TODO: if total_size is large enough, consider
             // allocating a separate chunk for it rather than
             // immediately jumping into a Gc attempt.
@@ -162,29 +177,37 @@ impl Gc {
             self.fill_remaining_space();
             self.perform_collection();
         }
-        assert!(self.avail + total_size <= self.limit);
-        let result = self.avail;
-        self.avail += total_size;
+        assert!(self.avail.can_fit(total_size));
+        let result = self.avail.start;
+        self.avail.shift_start(total_size);
         return result;
     }
 
     fn fill_remaining_space(&mut self) {
         // TODO: inject placeholder object with fixed-size header as
         // to spend O(1) effort rather than O(|remainingspace|).
-        let a = self.avail;
-        let lim = self.limit;
-        while a < lim {
-            *a = 0;
+        unsafe {
+            let mut a = self.avail.start;
+            let lim = self.avail.limit;
+            while a < lim {
+                {
+                    let a : *mut uint = cast::transmute(a);
+                    *a = 0;
+                }
+                a = ptr::offset(a, 1);
+            }
+            self.avail.start = lim;
         }
-        self.avail = lim;
     }
 
     fn perform_collection(&mut self) {
+        #[allow(unused_variable)];
+
         let owned_objects_to_scan : ~[*()] = ~[];
-        let pinned_shared_to_scan : ~[*Box<()>] = ~[];
-        let scan_ptr;
-        let to_ptr;
-        let limit;
+        let pinned_shared_to_scan : ~[*Box] = ~[];
+        let scan_ptr : *uint;
+        let to_ptr : *uint;
+        let limit  : *uint;
 
         // XXX: worrisome potential for wasted effort on duplicate
         // entries in owned_objects_to_scan.  Perhaps consider keeping
@@ -232,9 +255,11 @@ impl Gc {
     /// Returns total size of space occupied by normal_chunks.
     fn normal_chunks_size(&self) -> uint {
         let mut accum = 0;
-        let l : Option<*Chunk> = Some(&self.normal_chunks);
+        let l : Option<*Chunk> = Some(&self.normal_chunks as *Chunk);
         loop {
-            match l { None => break, Some(c) => accum += c.span.size() }
+            match l {
+                None => break,
+                Some(c) => accum += unsafe { (*c).span.size_bytes() } }
         }
         return accum;
     }
