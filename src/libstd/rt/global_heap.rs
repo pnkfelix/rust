@@ -9,6 +9,7 @@
 // except according to those terms.
 
 use libc::{c_void, c_char, size_t, uintptr_t, free, malloc, realloc};
+use option::{Option, Some, None};
 use unstable::intrinsics::TyDesc;
 use unstable::raw;
 use mem::size_of;
@@ -53,12 +54,29 @@ pub unsafe fn realloc_raw(ptr: *mut c_void, size: uint) -> *mut c_void {
     p
 }
 
+pub struct ExchangeCallbacks {
+    malloc: fn(ptr: *c_char, td: *TyDesc, size: uintptr_t),
+    free:   fn(ptr: *c_char),
+}
+static mut current_exchange_callbacks: Option<ExchangeCallbacks> = None;
+
 /// The allocator for unique pointers without contained managed pointers.
-#[cfg(not(test))]
+#[cfg(not(test),stage0)]
 #[lang="exchange_malloc"]
 #[inline]
 pub unsafe fn exchange_malloc(size: uintptr_t) -> *c_char {
     malloc_raw(size as uint) as *c_char
+}
+#[cfg(not(test),not(stage0))]
+#[lang="exchange_malloc"]
+#[inline]
+pub unsafe fn exchange_malloc(td: *c_char, size: uintptr_t) -> *c_char {
+    let td = td as *TyDesc;
+    let ret = malloc_raw(size as uint) as *c_char;
+    match current_exchange_callbacks {
+        None => {}, Some(cb) => (cb.malloc)(ret, td, size)
+    }
+    ret
 }
 
 // FIXME: #7496
@@ -82,7 +100,11 @@ pub unsafe fn closure_exchange_malloc(td: *c_char, size: uintptr_t) -> *c_char {
     let box = p as *mut raw::Box<()>;
     (*box).type_desc = td;
 
-    box as *c_char
+    let ret = box as *c_char;
+    match current_exchange_callbacks {
+        None => {}, Some(cb) => (cb.malloc)(ret, td, size)
+    }
+    ret
 }
 
 // NB: Calls to free CANNOT be allowed to fail, as throwing an exception from
@@ -91,10 +113,12 @@ pub unsafe fn closure_exchange_malloc(td: *c_char, size: uintptr_t) -> *c_char {
 #[lang="exchange_free"]
 #[inline]
 pub unsafe fn exchange_free_(ptr: *c_char) {
+    match current_exchange_callbacks { None => {}, Some(cb) => (cb.free)(ptr) }
     exchange_free(ptr)
 }
 
 pub unsafe fn exchange_free(ptr: *c_char) {
+    match current_exchange_callbacks { None => {}, Some(cb) => (cb.free)(ptr) }
     free(ptr as *c_void);
 }
 
