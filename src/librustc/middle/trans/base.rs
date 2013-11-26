@@ -331,12 +331,19 @@ pub fn malloc_raw_dyn(bcx: @mut Block,
     if heap == heap_exchange {
         let llty_value = type_of::type_of(ccx, t);
 
+        // let uniq_ptr_ty = ty::mk_imm_uniq(bcx.tcx(), t);
+        // let llty = type_of::type_of(ccx, uniq_ptr_ty);
+
+        // Get the tydesc for the body:
+        let static_ti = get_tydesc(ccx, t);
+        glue::lazily_emit_all_tydesc_glue(ccx, static_ti);
 
         // Allocate space:
+        let tydesc = PointerCast(bcx, static_ti.tydesc, Type::i8p());
         let r = callee::trans_lang_call(
             bcx,
             require_alloc_fn(bcx, t, ExchangeMallocFnLangItem),
-            [size],
+            [tydesc, size],
             None);
         rslt(r.bcx, PointerCast(r.bcx, r.val, llty_value.ptr_to()))
     } else {
