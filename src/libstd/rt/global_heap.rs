@@ -43,6 +43,11 @@ pub unsafe fn malloc_raw(size: uint) -> *c_void {
     p
 }
 
+/// Frees a block of memory previously returned from malloc_raw.
+pub unsafe fn free_raw(ptr: *c_void) {
+    free(ptr);
+}
+
 /// A wrapper around libc::realloc, aborting on out-of-memory
 pub unsafe fn realloc_raw(ptr: *mut c_void, size: uint) -> *mut c_void {
     let p = realloc(ptr, size as size_t);
