@@ -4,6 +4,7 @@
 use std::cast;
 use std::libc;
 use std::local_data;
+use std::os;
 use std::ptr;
 use std::rt::local_heap;
 use std::rt::local_heap::{MemoryRegion, Box};
@@ -161,23 +162,29 @@ extern "C" fn do_walk(mut regs: &mut Registers, mut ctxt: &mut ctxt, _:*()) {
         println!("got to do_walk");
     }
 
+    traverse_local_heap_structure();
+
     fn traverse_local_heap_structure() {
-        Local::borrow(|task: &mut Task| {
+        let mut borrowed_task = Local::borrow(None::<Task>);
+        {
+            let task = borrowed_task.get();
+            struct MyLocalHeap { // XXX keep synced w/ local_heap::LocalHeap
+                memory_region: MemoryRegion,
+                poison_on_free: bool,
+                live_allocs: *mut Box,
+            }
 
-                struct MyLocalHeap { // XXX keep synced w/ local_heap::LocalHeap
-                    memory_region: MemoryRegion,
-                    poison_on_free: bool,
-                    live_allocs: *mut Box,
-                }
-
-                let hp : &MyLocalHeap = unsafe { cast::transmute(&task.heap) };
-                println!("hp: {:?}", hp);
-            });
+            let hp : &MyLocalHeap = unsafe { cast::transmute(&task.heap) };
+            println!("hp: {:?}", hp);
+        }
     }
 }
 
 fn main() {
     println!("Hello world.");
-    let ctxt = ~ctxt { verbose: false, id: 100, info: () };
+    let mut ctxt = ~ctxt { verbose: false, id: 100, info: () };
+    if os::args().contains(&~"--verbose") {
+        ctxt.verbose = true;
+    }
     walk_managed(ctxt);
 }

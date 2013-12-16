@@ -1,18 +1,18 @@
 #[feature(managed_boxes)];
-
+#[allow(dead_code)]; // reenable check after done with dev.
 #[allow(unused_imports)];
 use std::cast;
 use std::mem;
 use std::ptr;
-use std::rt::local_heap::{Box};
+use RawBox = std::unstable::raw::Box;
 use std::rt::global_heap;
 use std::unstable::intrinsics;
 use std::unstable::intrinsics::{TyDesc};
 
 // Reminder:
-// struct Box<T> { refc: uint, desc: *TyDesc, links: Lnx<T>, data: T }
-// where
-// struct Lnx<T> { prev: *mut Box<T>, next: *mut Box<T> }
+// struct Box<T> {
+//    ref_count: uint, type_desc: *TyDesc,
+//    prev: *mut Box<T>, next: *mut Box<T>, data: T }
 
 /// A Span holds the span `[start, limit)` for contiguous area of memory.
 struct Span {
@@ -22,12 +22,15 @@ struct Span {
 
 impl Span {
     fn new(start: *uint, limit: *uint) -> Span{
-        Span{ start: start, limit: limit }
+        let ret = Span{ start: start, limit: limit };
+        debug!("Span::new({}, {})", start, limit);
+        ret
     }
     fn tup(&self) -> (*uint, *uint) { (self.start, self.limit) }
     fn from((start, limit): (*uint, *uint)) -> Span { Span::new(start, limit) }
     fn size_bytes(&self) -> uint { (self.limit as uint) - (self.start as uint) }
     fn can_fit(&self, bytes: uint) -> bool { bytes <= self.size_bytes() }
+    fn would_exhaust(&self, bytes: uint) -> bool { ! self.can_fit(bytes) }
     unsafe fn shift_start(&mut self, bytes: uint) {
         assert!(self.can_fit(bytes));
         assert!(bytes as int >= 0);
@@ -62,11 +65,16 @@ impl Chunk {
         assert!(size >= mem::size_of::<FutureBox<()>>());
         assert!(size >= mem::size_of::<ForwardedBox<()>>());
 
+        let word_size = mem::size_of::<uint>();
+        if 0 != size % word_size {
+            fail!("chunks must be multiples of machine words.");
+        }
+
         unsafe {
             let chunk_mem = global_heap::malloc_raw(size);
             let start : *uint = cast::transmute(chunk_mem);
             assert!((size as int) >= 0);
-            let limit : *uint = ptr::offset(start, size as int);
+            let limit : *uint = ptr::offset(start, (size / word_size) as int);
             let block : *mut BigBlock = cast::transmute(start);
             (*block).next = ptr::null();
             (*block).limit = limit;
@@ -89,6 +97,18 @@ impl Chunk {
         let start : *uint = cast::transmute(b);
         let limit = (*b).limit;
         Span::new(start, limit)
+    }
+
+    unsafe fn free_all(&mut self) {
+        let mut ptr   = self.span.start;
+        let mut next  = self.next;
+        loop {
+            global_heap::free_raw(ptr);
+            match next {
+                None => break,
+                Some(p) => { ptr = (*p).span.start; next = (*p).next; }
+            }
+        }
     }
 }
 
@@ -158,18 +178,24 @@ impl Gc {
     }
 
     pub fn alloc<T>(&mut self, arg:T) -> @T {
-        #[allow(unused_variable)];
-
         unsafe {
             let tydesc = intrinsics::get_tydesc::<T>();
             let obj = self.alloc_ty_instance(tydesc);
-            fail!("GC::alloc not yet implemented");
+            let obj : *mut RawBox<T> = cast::transmute(obj);
+            // artificially pump up ref-count so that cheney will manage this object.
+            (*obj).ref_count += 1;
+            (*obj).type_desc = tydesc;
+            (*obj).prev = ptr::mut_null();
+            (*obj).next = ptr::mut_null();
+            (*obj).data = arg;
+            let obj : @T = cast::transmute(obj);
+            return obj;
         }
     }
 
     unsafe fn alloc_ty_instance(&mut self, tydesc: *TyDesc) -> *uint {
         let total_size = global_heap::get_box_size((*tydesc).size, (*tydesc).align);
-        if self.avail.can_fit(total_size) {
+        if self.avail.would_exhaust(total_size) {
             // TODO: if total_size is large enough, consider
             // allocating a separate chunk for it rather than
             // immediately jumping into a Gc attempt.
@@ -186,9 +212,11 @@ impl Gc {
     fn fill_remaining_space(&mut self) {
         // TODO: inject placeholder object with fixed-size header as
         // to spend O(1) effort rather than O(|remainingspace|).
+        let mut a = self.avail.start;
+        let lim = self.avail.limit;
+        println!("fill_remaining_space: a: {} lim: {} lim-a: {} bytes",
+               a, lim, (lim as uint) - (a as uint));
         unsafe {
-            let mut a = self.avail.start;
-            let lim = self.avail.limit;
             while a < lim {
                 {
                     let a : *mut uint = cast::transmute(a);
@@ -204,7 +232,7 @@ impl Gc {
         #[allow(unused_variable)];
 
         let owned_objects_to_scan : ~[*()] = ~[];
-        let pinned_shared_to_scan : ~[*Box] = ~[];
+        let pinned_shared_to_scan : ~[*RawBox<()>] = ~[];
         let scan_ptr : *uint;
         let to_ptr : *uint;
         let limit  : *uint;
@@ -271,4 +299,15 @@ fn main() {
     enum Pair<T> { Cons(T, @Pair<T>), Null }
     let i3 = gc.alloc::<int>(3);
     println!("i3: {:?}", i3);
+}
+
+impl Drop for Gc {
+    fn drop(&mut self) {
+        unsafe {
+            self.normal_chunks.free_all();
+            match self.large_objects.take() {
+                None => {}, Some(c) => c.free_all(),
+            }
+        }
+    }
 }
