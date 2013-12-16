@@ -100,10 +100,11 @@ impl Chunk {
     }
 
     unsafe fn free_all(&mut self) {
+        use std::libc;
         let mut ptr   = self.span.start;
         let mut next  = self.next;
         loop {
-            global_heap::free_raw(ptr);
+            global_heap::free_raw(ptr as *libc::c_void);
             match next {
                 None => break,
                 Some(p) => { ptr = (*p).span.start; next = (*p).next; }
@@ -306,7 +307,10 @@ impl Drop for Gc {
         unsafe {
             self.normal_chunks.free_all();
             match self.large_objects.take() {
-                None => {}, Some(c) => c.free_all(),
+                None => {}, Some(c) => {
+                    let c : *mut Chunk = cast::transmute(c);
+                    (*c).free_all()
+                }
             }
         }
     }
