@@ -149,7 +149,7 @@ struct BigBlock {
 
 static MINIMUM_TARGET_SIZE: uint = DEFAULT_CHUNK_SIZE;
 static DEFAULT_LOAD_FACTOR: f32 = 3.0;
-
+static INITIAL_FAKE_REF_COUNT: uint = 2;
 struct Gc {
     normal_chunks: Chunk,
     large_objects: Option<*Chunk>,
@@ -184,7 +184,15 @@ impl Gc {
             let obj = self.alloc_ty_instance(tydesc);
             let obj : *mut RawBox<T> = cast::transmute(obj);
             // artificially pump up ref-count so that cheney will manage this object.
-            (*obj).ref_count += 1;
+
+            // Note that a ref_count of `1` does not appear
+            // sufficient; probably because this code is almost
+            // certainly decrementing the ref-count when it returns
+            // the transmuted box below, and thus ... enqueuing it for
+            // freeing?  Odd though, I would have thought such a bug
+            // would cause problems sooner than the task shutdown.
+
+            (*obj).ref_count = INITIAL_FAKE_REF_COUNT;
             (*obj).type_desc = tydesc;
             (*obj).prev = ptr::mut_null();
             (*obj).next = ptr::mut_null();
