@@ -203,7 +203,8 @@ impl Gc {
     }
 
     unsafe fn alloc_ty_instance(&mut self, tydesc: *TyDesc) -> *uint {
-        let total_size = global_heap::get_box_size((*tydesc).size, (*tydesc).align);
+        let total_size = global_heap::get_box_size((*tydesc).size,
+                                                   (*tydesc).align);
         if self.avail.would_exhaust(total_size) {
             // TODO: if total_size is large enough, consider
             // allocating a separate chunk for it rather than
@@ -213,7 +214,10 @@ impl Gc {
             self.perform_collection();
         }
         assert!(self.avail.can_fit(total_size));
+
         let result = self.avail.start;
+        debug!("alloc_ty_instance returning [{}, {}]",
+               result, ((result as uint) + total_size) as *uint);
         self.avail.shift_start(total_size);
         return result;
     }
@@ -302,12 +306,33 @@ impl Gc {
     }
 }
 
+enum Pair<T> { Cons(@(T, Pair<T>)), Null }
+impl Gc {
+    fn cons<T>(&mut self, ar: T, dr: Pair<T>) -> Pair<T> {
+        let arg : (T, Pair<T>) = (ar, dr);
+        Cons(self.alloc::<(T, Pair<T>)>(arg))
+    }
+}
+
 fn main() {
     println!("Hello world.");
     let mut gc = Gc::make_gc();
-    enum Pair<T> { Cons(T, @Pair<T>), Null }
     let i3 = gc.alloc::<int>(3);
+    let i4 = gc.alloc::<int>(4);
+
+    // mrrh.  This is illegal:
+    //  let p6 = gc.cons(6, gc.cons(5, Null));
+    // (due to "cannot borrow `gc` as mutable more than once at a time)
+    // while the below is not:
+    let p6 = { let p5 = gc.cons(5, Null); gc.cons(6, p5) };
+    // Perhaps related to:
+    //   - https://github.com/mozilla/rust/issues/3511
+    //   - https://github.com/mozilla/rust/issues/6393
+
     println!("i3: {:?}", i3);
+    println!("i4: {:?}", i4);
+
+    println!("p6: {:?}", p6);
 }
 
 impl Drop for Gc {
