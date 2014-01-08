@@ -9,3 +9,9 @@
 [submodule "src/gyp"]
 	path = src/gyp
 	url = https://github.com/rust-lang/gyp.git
+[submodule "src/libatomic_ops"]
+	path = src/libatomic_ops
+	url = git@github.com:pnkfelix/libatomic_ops.git
+[submodule "src/bdwgc"]
+	path = src/bdwgc
+	url = git@github.com:pnkfelix/bdwgc.git
