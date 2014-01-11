@@ -298,6 +298,18 @@ endef
 $(foreach host,$(CFG_HOST), \
  $(eval $(call DEF_LLVM_VARS,$(host))))
 
+define DEF_BDW_VARS
+# The configure script defines these variables with the target triples
+# separated by Z. This defines new ones with the expected format.
+CFG_BDW_BUILD_DIR_$(1):=$$(CFG_BDW_BUILD_DIR_$(subst -,_,$(1)))
+CFG_BDW_INST_DIR_$(1):=$$(CFG_BDW_INST_DIR_$(subst -,_,$(1)))
+
+endef
+
+$(foreach target,$(CFG_TARGET), \
+ $(eval $(call DEF_BDW_VARS,$(target))))
+
+
 ######################################################################
 # Exports for sub-utilities
 ######################################################################
@@ -312,6 +324,7 @@ export CFG_VERSION_WIN
 export CFG_RELEASE
 export CFG_BUILD
 export CFG_LLVM_ROOT
+export CFG_BDW_ROOT
 export CFG_ENABLE_MINGW_CROSS
 export CFG_PREFIX
 export CFG_LIBDIR

@@ -201,10 +201,10 @@ $$(LIBUV_LIB_$(1)): $$(LIBUV_DEPS) $$(MKFILE_DEPS)
 	$$(Q)cp $$(S)src/libuv/libuv.a $$@
 else
 $$(LIBUV_LIB_$(1)): $$(LIBUV_DIR_$(1))/Release/libuv.a $$(MKFILE_DEPS)
-	$$(Q)cp $$< $$@
+	$$(Q)ln -f $$< $$@
 $$(LIBUV_DIR_$(1))/Release/libuv.a: $$(LIBUV_DEPS) $$(LIBUV_MAKEFILE_$(1)) \
 				    $$(MKFILE_DEPS)
-	$$(Q)$$(MAKE) -C $$(LIBUV_DIR_$(1)) \
+	$$(Q)$$(MAKE) --trace -C $$(LIBUV_DIR_$(1)) \
 		CFLAGS="$$(LIBUV_CFLAGS_$(1)) $$(SNAP_DEFINES)" \
 		LDFLAGS="$$(CFG_GCCISH_LINK_FLAGS_$(1))" \
 		CC="$$(CC_$(1))" \
