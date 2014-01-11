@@ -48,6 +48,7 @@ $$(HLIB$(2)_H_$(4))/$(CFG_LIBSYNTAX_$(4)): \
 	$$(HSTDLIB_DEFAULT$(2)_H_$(4)) \
 	$$(HEXTRALIB_DEFAULT$(2)_H_$(4)) \
 	$$(HLIBRUSTUV_DEFAULT$(2)_H_$(4)) \
+	$$(HLIBRUSTBDW_DEFAULT$(2)_H_$(4)) \
 	$$(HLIBGREEN_DEFAULT$(2)_H_$(4)) \
 	$$(HLIBNATIVE_DEFAULT$(2)_H_$(4)) \
 	| $$(HLIB$(2)_H_$(4))/
@@ -115,6 +116,21 @@ $$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTUV_$(4)): \
 	        $$(HLIB$(2)_H_$(4))
 	$$(call LIST_ALL_OLD_GLOB_MATCHES_EXCEPT,$$(dir $$@),$(LIBRUSTUV_GLOB_$(4)),$$(notdir $$@))
 	$$(call LIST_ALL_OLD_GLOB_MATCHES_EXCEPT,$$(dir $$@),$(LIBRUSTUV_RGLOB_$(4)),$$(notdir $$@))
+
+$$(HLIB$(2)_H_$(4))/$(CFG_LIBRUSTBDW_$(4)): \
+	$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBRUSTBDW_$(4)) \
+	$$(HLIB$(2)_H_$(4))/$(CFG_STDLIB_$(4)) \
+	| $$(HLIB$(2)_H_$(4))/
+	@$$(call E, cp: $$@)
+	$$(call REMOVE_ALL_OLD_GLOB_MATCHES_EXCEPT,$$(dir $$@),$(LIBRUSTBDW_GLOB_$(4)),$$(notdir $$@))
+	$$(call REMOVE_ALL_OLD_GLOB_MATCHES_EXCEPT,$$(dir $$@),$(LIBRUSTBDW_RGLOB_$(4)),$$(notdir $$@))
+	$$(Q)cp $$< $$@
+	$$(Q)cp -R $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUSTBDW_GLOB_$(4)) \
+		$$(wildcard $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUSTBDW_RGLOB_$(4))) \
+		$$(wildcard $$(TLIB$(1)_T_$(4)_H_$(3))/$(LIBRUSTBDW_DSYM_GLOB_$(4))) \
+	        $$(HLIB$(2)_H_$(4))
+	$$(call LIST_ALL_OLD_GLOB_MATCHES_EXCEPT,$$(dir $$@),$(LIBRUSTBDW_GLOB_$(4)),$$(notdir $$@))
+	$$(call LIST_ALL_OLD_GLOB_MATCHES_EXCEPT,$$(dir $$@),$(LIBRUSTBDW_RGLOB_$(4)),$$(notdir $$@))
 
 $$(HLIB$(2)_H_$(4))/$(CFG_LIBGREEN_$(4)): \
 	$$(TLIB$(1)_T_$(4)_H_$(3))/$(CFG_LIBGREEN_$(4)) \
