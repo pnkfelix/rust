@@ -227,7 +227,7 @@ $$(LIBUV_LIB_$(1)): $$(LIBUV_DIR_$(1))/Release/libuv.a $$(MKFILE_DEPS)
 	$$(Q)ln -f $$< $$@
 $$(LIBUV_DIR_$(1))/Release/libuv.a: $$(LIBUV_DEPS) $$(LIBUV_MAKEFILE_$(1)) \
 				    $$(MKFILE_DEPS)
-	$$(Q)$$(MAKE) -C $$(LIBUV_DIR_$(1)) \
+	$$(Q)$$(MAKE) --trace -C $$(LIBUV_DIR_$(1)) \
 		CFLAGS="$$(LIBUV_CFLAGS_$(1)) $$(SNAP_DEFINES)" \
 		LDFLAGS="$$(CFG_GCCISH_LINK_FLAGS_$(1))" \
 		CC="$$(CC_$(1))" \
@@ -257,6 +257,35 @@ $$(UV_SUPPORT_DIR_$(1))/%.o: rt/%.c
 $$(UV_SUPPORT_LIB_$(1)): $$(UV_SUPPORT_OBJS_$(1))
 	@$$(call E, link: $$@)
 	$$(Q)$$(AR_$(1)) rcs $$@ $$^
+
+# bdw conservative gc
+
+LIBBDW_NAME_$(1) := $$(call CFG_STATIC_LIB_NAME_$(1),gc)
+LIBBDW_DIR_$(1) := $$(RT_OUTPUT_DIR_$(1))/bdw
+LIBBDW_LIB_$(1) := $$(LIBBDW_DIR_$(1))/$$(LIBBDW_NAME_$(1))
+
+LIBBDW_MAKEFILE_$(1) := $$(CFG_BUILD_DIR)$$(RT_OUTPUT_DIR_$(1))/bdw/Makefile
+
+LIBBDW_STAMP_$(1) = $$(LIBBDW_DIR_$(1))/libbdw-auto-clean-stamp
+
+$$(LIBBDW_STAMP_$(1)): $(S)src/rt/libbdw-auto-clean-trigger
+	$$(Q)rm -rf $$(LIBBDW_DIR_$(1))
+	$$(Q)mkdir -p $$(@D)
+	touch $$@
+
+$$(LIBBDW_LIB_$(1)): $$(LIBBDW_DIR_$(1))/.libs/libgc.a $$(MKFILE_DEPS)
+	$$(Q)ln -f $$< $$@
+$$(LIBBDW_DIR_$(1))/.libs/libgc.a: $$(LIBBDW_DEPS) $$(LIBBDW_MAKEFILE_$(1)) \
+				    $$(MKFILE_DEPS)
+	$$(Q)$$(MAKE) --trace -C $$(LIBBDW_DIR_$(1)) \
+		CFLAGS="$$(LIBBDW_CFLAGS_$(1)) $$(SNAP_DEFINES)" \
+		LDFLAGS="$$(CFG_GCCISH_LINK_FLAGS_$(1))" \
+		CC="$$(CC_$(1))" \
+		CXX="$$(CXX_$(1))" \
+		AR="$$(AR_$(1))" \
+		$$(LIBBDW_ARGS_$(1)) \
+		BUILDTYPE=Release \
+		V=$$(VERBOSE)
 
 # sundown markdown library (used by librustdoc)
 

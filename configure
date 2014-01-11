@@ -385,6 +385,7 @@ opt inject-std-version 1 "inject the current compiler version of libstd into pro
 valopt prefix "/usr/local" "set installation prefix"
 valopt local-rust-root "/usr/local" "set prefix for local rust binary"
 valopt llvm-root "" "set LLVM root"
+valopt bdw-root "" "set BDW root"
 valopt android-cross-path "/opt/ndk_standalone" "Android NDK standalone path"
 valopt mingw32-cross-path "" "MinGW32 cross compiler path"
 
@@ -748,6 +749,7 @@ do
   for s in 0 1 2 3
   do
     make_dir $t/rt/stage$s
+    make_dir $t/rt/bdw
     make_dir $t/rt/libuv
     make_dir $t/rt/libuv/src/ares
     make_dir $t/rt/libuv/src/eio
@@ -1023,6 +1025,168 @@ do
     eval ${CFG_LLVM_INST_DIR}="'$LLVM_INST_DIR'"
 done
 
+# Configure bdw, only if necessary
+step_msg "looking at BDW"
+CFG_BDWGC_SRC_DIR=${CFG_SRC_DIR}src/bdwgc/
+CFG_BDWATOMICS_SRC_DIR=${CFG_SRC_DIR}src/libatomic_ops/
+for t in $CFG_TARGET
+do
+    do_reconfigure=1
+
+    if [ -z $CFG_BDW_ROOT ]
+    then
+        # Link libatomic_ops into appropriate point in bdwgc submodule.
+        if [ ! -f $CFG_BDWGC_SRC_DIR/libatomic_ops ]
+        then
+            ln -s $CFG_BDWATOMICS_SRC_DIR $CFG_BDWGC_SRC_DIR/libatomic_ops
+        fi
+
+        BDW_BUILD_DIR=${CFG_BUILD_DIR}$t/rt/bdw
+        BDW_DBG_OPTS="--disable-gc-debug"
+        BDW_INST_DIR=$BDW_BUILD_DIR
+
+    else
+        msg "not reconfiguring BDW, external BDW root"
+        # The user is using their own BDW
+        BDW_BUILD_DIR=
+        BDW_INST_DIR=$CFG_BDW_ROOT
+        do_reconfigure=0
+    fi
+
+
+    if [ ${do_reconfigure} -ne 0 ]
+    then
+    # because git is hilarious, it might have put the module index
+    # in a couple places.
+        index1="${CFG_SRC_DIR}.git/modules/src/bdwgc/index"
+        index2="${CFG_SRC_DIR}src/bdwgc/.git/index"
+        for index in ${index1} ${index2}
+        do
+            config_status="${BDW_BUILD_DIR}/config.status"
+            if test -e ${index} -a \
+                    -e ${config_status} -a \
+                    ${config_status} -nt ${index}
+            then
+                msg "not reconfiguring BDW, config.status is fresh"
+                do_reconfigure=0
+            fi
+        done
+    fi
+
+    if [ ${do_reconfigure} -ne 0 ]
+    then
+        msg "configuring BDW for $t"
+
+        BDW_TARGETS="--enable-targets=x86,x86_64,arm,mips"
+        BDW_BUILD="--build=$t"
+        BDW_HOST="--host=$t"
+        BDW_TARGET="--target=$t"
+
+        # Disable unused BDW features
+        BDW_OPTS="$BDW_DBG_OPTS $BDW_ASSERTION_OPTS --disable-docs --enable-bindings=none"
+        # Disable term-info, linkage of which comes in multiple forms,
+        # making our snapshots incompatible (#9334)
+        BDW_OPTS="$BDW_OPTS --disable-terminfo"
+        # Try to have BDW pull in as few dependencies as possible (#9397)
+        BDW_OPTS="$BDW_OPTS --disable-zlib --disable-libffi"
+
+        case "$CFG_C_COMPILER" in
+            ("ccache clang")
+            BDW_CXX_32="ccache clang++ -m32 -Qunused-arguments"
+            BDW_CC_32="ccache clang -m32 -Qunused-arguments"
+
+            BDW_CXX_64="ccache clang++ -Qunused-arguments"
+            BDW_CC_64="ccache clang -Qunused-arguments"
+            ;;
+            ("clang")
+            BDW_CXX_32="clang++ -m32 -Qunused-arguments"
+            BDW_CC_32="clang -m32 -Qunused-arguments"
+
+            BDW_CXX_64="clang++ -Qunused-arguments"
+            BDW_CC_64="clang -Qunused-arguments"
+            ;;
+            ("ccache gcc")
+            BDW_CXX_32="ccache g++ -m32"
+            BDW_CC_32="ccache gcc -m32"
+
+            BDW_CXX_64="ccache g++"
+            BDW_CC_64="ccache gcc"
+            ;;
+            ("gcc")
+            BDW_CXX_32="g++ -m32"
+            BDW_CC_32="gcc -m32"
+
+            BDW_CXX_64="g++"
+            BDW_CC_64="gcc"
+        esac
+
+        BDW_CFLAGS_32="-m32"
+        BDW_CXXFLAGS_32="-m32"
+        BDW_LDFLAGS_32="-m32"
+
+        BDW_CFLAGS_64=""
+        BDW_CXXFLAGS_64=""
+        BDW_LDFLAGS_64=""
+
+        if echo $t | grep -q x86_64
+        then
+            BDW_CXX=$BDW_CXX_64
+            BDW_CC=$BDW_CC_64
+            BDW_CFLAGS=$BDW_CFLAGS_64
+            BDW_CXXFLAGS=$BDW_CXXFLAGS_64
+            BDW_LDFLAGS=$BDW_LDFLAGS_64
+        else
+            BDW_CXX=$BDW_CXX_32
+            BDW_CC=$BDW_CC_32
+            BDW_CFLAGS=$BDW_CFLAGS_32
+            BDW_CXXFLAGS=$BDW_CXXFLAGS_32
+            BDW_LDFLAGS=$BDW_LDFLAGS_32
+        fi
+
+        CXX=$BDW_CXX
+        CC=$BDW_CC
+        CFLAGS=$BDW_CFLAGS
+        CXXFLAGS=$BDW_CXXFLAGS
+        LDFLAGS=$BDW_LDFLAGS
+
+        BDW_FLAGS="$BDW_TARGETS $BDW_OPTS $BDW_BUILD $BDW_HOST $BDW_TARGET "
+
+        msg "configuring BDW with:"
+        msg "$BDW_FLAGS"
+
+        export CXX
+        export CC
+        export CFLAGS
+        export CXXFLAGS
+        export LDFLAGS
+
+        cd $BDW_BUILD_DIR
+        case $CFG_SRC_DIR in
+            /* | [a-z]:* | [A-Z]:*)
+                ${CFG_BDWGC_SRC_DIR}configure $BDW_FLAGS
+                ;;
+            *)
+                ${CFG_BUILD_DIR}${CFG_BDWGC_SRC_DIR}configure \
+                    $BDW_FLAGS
+                ;;
+        esac
+        need_ok "BDW configure failed"
+
+        cd $CFG_BUILD_DIR
+    fi
+
+    # Construct variables for BDW build and install directories for
+    # each target. These will be named
+    # CFG_BDW_BUILD_DIR_${target_triple} but all the hyphens in
+    # target_triple will be converted to underscore, because bash
+    # variables can't contain hyphens. The makefile will then have to
+    # convert back.
+    CFG_BDW_BUILD_DIR=$(echo CFG_BDW_BUILD_DIR_${t} | tr - _)
+    CFG_BDW_INST_DIR=$(echo CFG_BDW_INST_DIR_${t} | tr - _)
+    eval ${CFG_BDW_BUILD_DIR}="'$BDW_BUILD_DIR'"
+    eval ${CFG_BDW_INST_DIR}="'$BDW_INST_DIR'"
+done
+
 
 step_msg "writing configuration"
 
@@ -1090,6 +1254,18 @@ do
     CFG_LLVM_INST_DIR=$(echo CFG_LLVM_INST_DIR_${t} | tr - _)
     putvar $CFG_LLVM_BUILD_DIR
     putvar $CFG_LLVM_INST_DIR
+done
+
+putvar CFG_BDW_ROOT
+putvar CFG_BDWGC_SRC_DIR
+putvar CFG_BDWATOMICS_SRC_DIR
+
+for t in $CFG_TARGET
+do
+    CFG_BDW_BUILD_DIR=$(echo CFG_BDW_BUILD_DIR_${t} | tr - _)
+    CFG_BDW_INST_DIR=$(echo CFG_BDW_INST_DIR_${t} | tr - _)
+    putvar $CFG_BDW_BUILD_DIR
+    putvar $CFG_BDW_INST_DIR
 done
 
 # Munge any paths that appear in config.mk back to posix-y
