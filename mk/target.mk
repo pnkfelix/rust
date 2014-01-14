@@ -57,6 +57,7 @@ $$(TLIB$(1)_T_$(2)_H_$(3))/$(CFG_RUNTIME_$(2)): \
 $$(TLIB$(1)_T_$(2)_H_$(3))/$(CFG_STDLIB_$(2)): \
 		$$(STDLIB_CRATE) $$(STDLIB_INPUTS) \
 		$$(TSREQ$(1)_T_$(2)_H_$(3)) \
+		$$(LIBBDW_LIB_$(2)) \
 		| $$(TLIB$(1)_T_$(2)_H_$(3))/
 	@$$(call E, compile_and_link: $$@)
 	$$(call REMOVE_ALL_OLD_GLOB_MATCHES_EXCEPT,$$(dir $$@),$(STDLIB_GLOB_$(2)),$$(notdir $$@))
