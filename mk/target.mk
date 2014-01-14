@@ -62,6 +62,7 @@ $$(TLIB$(1)_T_$(2)_H_$(3))/$(CFG_STDLIB_$(2)): \
 	$$(call REMOVE_ALL_OLD_GLOB_MATCHES_EXCEPT,$$(dir $$@),$(STDLIB_GLOB_$(2)),$$(notdir $$@))
 	$$(call REMOVE_ALL_OLD_GLOB_MATCHES_EXCEPT,$$(dir $$@),$(STDLIB_RGLOB_$(2)),$$(notdir $$@))
 	$$(STAGE$(1)_T_$(2)_H_$(3)) $$(WFLAGS_ST$(1)) \
+		-L $$(dir $$(LIBBDW_LIB_$(2))) \
 		--out-dir $$(@D) $$< && touch $$@
 	$$(call LIST_ALL_OLD_GLOB_MATCHES_EXCEPT,$$(dir $$@),$(STDLIB_GLOB_$(2)),$$(notdir $$@))
 	$$(call LIST_ALL_OLD_GLOB_MATCHES_EXCEPT,$$(dir $$@),$(STDLIB_RGLOB_$(2)),$$(notdir $$@))
@@ -95,22 +96,6 @@ $$(TLIB$(1)_T_$(2)_H_$(3))/$(CFG_LIBRUSTUV_$(2)): \
 		--out-dir $$(@D) $$< && touch $$@
 	$$(call LIST_ALL_OLD_GLOB_MATCHES_EXCEPT,$$(dir $$@),$(LIBRUSTUV_GLOB_$(2)),$$(notdir $$@))
 	$$(call LIST_ALL_OLD_GLOB_MATCHES_EXCEPT,$$(dir $$@),$(LIBRUSTUV_RGLOB_$(2)),$$(notdir $$@))
-
-$$(TLIB$(1)_T_$(2)_H_$(3))/$(CFG_LIBRUSTBDW_$(2)): \
-		$$(LIBRUSTBDW_CRATE) $$(LIBRUSTBDW_INPUTS) \
-	        $$(TLIB$(1)_T_$(2)_H_$(3))/$(CFG_STDLIB_$(2)) \
-		$$(TSREQ$(1)_T_$(2)_H_$(3)) \
-		$$(LIBBDW_LIB_$(2)) \
-		| $$(TLIB$(1)_T_$(2)_H_$(3))/
-	@$$(call E, compile_and_link: $$@)
-	$$(call REMOVE_ALL_OLD_GLOB_MATCHES_EXCEPT,$$(dir $$@),$(LIBRUSTBDW_GLOB_$(2)),$$(notdir $$@))
-	$$(call REMOVE_ALL_OLD_GLOB_MATCHES_EXCEPT,$$(dir $$@),$(LIBRUSTBDW_RGLOB_$(2)),$$(notdir $$@))
-	$$(STAGE$(1)_T_$(2)_H_$(3)) $$(WFLAGS_ST$(1)) \
-		-L $$(dir $$(LIBBDW_LIB_$(2))) \
-		$$(LFLAGS_$(1)_$(2)_$(3)) \
-		--out-dir $$(@D) $$< && touch $$@
-	$$(call LIST_ALL_OLD_GLOB_MATCHES_EXCEPT,$$(dir $$@),$(LIBRUSTBDW_GLOB_$(2)),$$(notdir $$@))
-	$$(call LIST_ALL_OLD_GLOB_MATCHES_EXCEPT,$$(dir $$@),$(LIBRUSTBDW_RGLOB_$(2)),$$(notdir $$@))
 
 $$(TLIB$(1)_T_$(2)_H_$(3))/$(CFG_LIBGREEN_$(2)): \
 		$$(LIBGREEN_CRATE) $$(LIBGREEN_INPUTS) \
