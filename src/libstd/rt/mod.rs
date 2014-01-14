@@ -111,6 +111,9 @@ pub mod env;
 /// The local, managed heap
 pub mod local_heap;
 
+/// Interface to the BDW GC (which may be in use as the basis for the local_heap).
+pub mod bdwgc;
+
 /// The Logger trait and implementations
 pub mod logging;
 
