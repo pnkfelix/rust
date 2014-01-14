@@ -120,7 +120,7 @@ $(foreach lib,$(NATIVE_LIBS),					    \
 ################################################################################
 # Building third-party targets with external build systems
 #
-# The only current member of this section is libuv, but long ago this used to
+# The current members of this section are libuv and bdwgc, but this used to
 # also be occupied by jemalloc. This location is meant for dependencies which
 # have external build systems. It is still assumed that the output of each of
 # these steps is a static library in the correct location.
@@ -221,7 +221,7 @@ endif
 
 LIBBDW_NAME_$(1) := $$(call CFG_STATIC_LIB_NAME_$(1),gc)
 LIBBDW_DIR_$(1) := $$(RT_OUTPUT_DIR_$(1))/bdw
-LIBBDW_LIB_$(1) := $$(LIBBDW_DIR_$(1))/$$(LIBBDW_NAME_$(1))
+LIBBDW_LIB_$(1) := $$(RT_OUTPUT_DIR_$(1))/$$(LIBBDW_NAME_$(1))
 
 LIBBDW_MAKEFILE_$(1) := $$(CFG_BUILD_DIR)$$(RT_OUTPUT_DIR_$(1))/bdw/Makefile
 

@@ -1047,7 +1047,10 @@ do
         fi
 
         BDW_BUILD_DIR=${CFG_BUILD_DIR}$t/rt/bdw
-        BDW_DBG_OPTS="--disable-gc-debug"
+
+        # BDW_DBG_OPTS="--disable-gc-debug"
+        BDW_DBG_OPTS=""
+
         BDW_INST_DIR=$BDW_BUILD_DIR
 
     else
@@ -1087,13 +1090,8 @@ do
         BDW_HOST="--host=$t"
         BDW_TARGET="--target=$t"
 
-        # Disable unused BDW features
-        BDW_OPTS="$BDW_DBG_OPTS $BDW_ASSERTION_OPTS --disable-docs --enable-bindings=none"
-        # Disable term-info, linkage of which comes in multiple forms,
-        # making our snapshots incompatible (#9334)
-        BDW_OPTS="$BDW_OPTS --disable-terminfo"
-        # Try to have BDW pull in as few dependencies as possible (#9397)
-        BDW_OPTS="$BDW_OPTS --disable-zlib --disable-libffi"
+        # Enable thread-support
+        BDW_OPTS="$BDW_DBG_OPTS $BDW_ASSERTION_OPTS --enable-threads=posix"
 
         case "$CFG_C_COMPILER" in
             ("ccache clang")

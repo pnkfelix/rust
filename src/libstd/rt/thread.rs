@@ -23,7 +23,7 @@ use ops::Drop;
 use option::{Option, Some, None};
 use uint;
 
-type StartFn = extern "C" fn(*libc::c_void) -> imp::rust_thread_return;
+pub type StartFn = extern "C" fn(*libc::c_void) -> imp::rust_thread_return;
 
 /// This struct represents a native thread's state. This is used to join on an
 /// existing thread created in the join-able state.
@@ -209,6 +209,7 @@ mod imp {
     use os;
     use ptr;
     use unstable::stack::RED_ZONE;
+    use bdw = rt::bdwgc;
 
     pub type rust_thread = libc::pthread_t;
     pub type rust_thread_return = *u8;
@@ -241,17 +242,17 @@ mod imp {
         };
 
         let arg: *libc::c_void = cast::transmute(p);
-        assert_eq!(pthread_create(&mut native, &attr,
-                                  super::thread_start, arg), 0);
+        assert_eq!(bdw::pthread_create(&mut native, &attr,
+                                       super::thread_start, arg), 0);
         native
     }
 
     pub unsafe fn join(native: rust_thread) {
-        assert_eq!(pthread_join(native, ptr::null()), 0);
+        assert_eq!(bdw::pthread_join(native, ptr::null()), 0);
     }
 
     pub unsafe fn detach(native: rust_thread) {
-        assert_eq!(pthread_detach(native), 0);
+        assert_eq!(bdw::pthread_detach(native), 0);
     }
 
     #[cfg(target_os = "macos")]
@@ -306,6 +307,7 @@ mod imp {
         }
     }
 
+    #[allow(dead_code)]
     extern {
         fn pthread_create(native: *mut libc::pthread_t,
                           attr: *libc::pthread_attr_t,
