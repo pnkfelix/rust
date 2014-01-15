@@ -58,6 +58,7 @@ use ops::Drop;
 use option::{Option, Some, None};
 use ptr;
 use ptr::RawPtr;
+use rt::bdwgc;
 use sync::arc::UnsafeArc;
 use sync::atomics::{AtomicInt, AtomicPtr, SeqCst};
 use unstable::sync::Exclusive;
@@ -345,7 +346,7 @@ impl<T: Send> Drop for Deque<T> {
 impl<T: Send> Buffer<T> {
     unsafe fn new(log_size: int) -> Buffer<T> {
         let size = (1 << log_size) * mem::size_of::<T>();
-        let buffer = libc::malloc(size as libc::size_t);
+        let buffer = bdwgc::malloc(size as libc::size_t);
         assert!(!buffer.is_null());
         Buffer {
             storage: buffer as *T,

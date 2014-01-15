@@ -171,6 +171,7 @@ pub fn init(argc: int, argv: **u8) {
     // FIXME: Derefing these pointers is not safe.
     // Need to propagate the unsafety to `start`.
     unsafe {
+        bdwgc::init();
         args::init(argc, argv);
         env::init();
         logging::init();

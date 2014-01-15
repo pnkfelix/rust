@@ -1049,7 +1049,7 @@ do
         BDW_BUILD_DIR=${CFG_BUILD_DIR}$t/rt/bdw
 
         # BDW_DBG_OPTS="--disable-gc-debug"
-        BDW_DBG_OPTS=""
+        BDW_DBG_OPTS="--enable-gc-debug"
 
         BDW_INST_DIR=$BDW_BUILD_DIR
 
