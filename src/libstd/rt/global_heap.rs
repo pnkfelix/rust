@@ -8,11 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use libc::{c_void, c_char, size_t, uintptr_t, free, malloc, realloc};
+use libc::{c_void, c_char, size_t, uintptr_t};
+// use libc::{free, malloc, realloc};
 use ptr::{RawPtr, mut_null};
 use unstable::intrinsics::{TyDesc, abort};
 use unstable::raw;
 use mem::size_of;
+use rt::bdwgc;
 
 #[inline]
 pub fn get_box_size(body_size: uint, body_align: uint) -> uint {
@@ -37,7 +39,7 @@ pub unsafe fn malloc_raw(size: uint) -> *mut c_void {
     if size == 0 {
         mut_null()
     } else {
-        let p = malloc(size as size_t);
+        let p = bdwgc::malloc(size as size_t);
         if p.is_null() {
             // we need a non-allocating way to print an error here
             abort();
@@ -55,7 +57,7 @@ pub unsafe fn realloc_raw(ptr: *mut c_void, size: uint) -> *mut c_void {
         free(ptr as *c_void);
         mut_null()
     } else {
-        let p = realloc(ptr, size as size_t);
+        let p = bdwgc::realloc(ptr, size as size_t);
         if p.is_null() {
             // we need a non-allocating way to print an error here
             abort();
@@ -69,7 +71,13 @@ pub unsafe fn realloc_raw(ptr: *mut c_void, size: uint) -> *mut c_void {
 #[lang="exchange_malloc"]
 #[inline]
 pub unsafe fn exchange_malloc(size: uintptr_t) -> *c_char {
-    malloc_raw(size as uint) as *c_char
+    // let p = malloc(size as size_t);
+    let p = bdwgc::malloc_uncollectable(size as size_t);
+    if p.is_null() {
+        // we need a non-allocating way to print an error here
+        abort();
+    }
+    p as *c_char
 }
 
 // FIXME: #7496
@@ -88,7 +96,8 @@ pub unsafe fn closure_exchange_malloc(td: *c_char, size: uintptr_t) -> *c_char {
     assert!(td.is_not_null());
 
     let total_size = get_box_size(size, (*td).align);
-    let p = malloc_raw(total_size);
+    // let p = malloc_raw(total_size);
+    let p = exchange_malloc(total_size);
 
     let alloc = p as *mut raw::Box<()>;
     (*alloc).type_desc = td;
@@ -107,7 +116,7 @@ pub unsafe fn exchange_free_(ptr: *c_char) {
 
 #[inline]
 pub unsafe fn exchange_free(ptr: *c_char) {
-    free(ptr as *c_void);
+    bdwgc::free(ptr as *c_void);
 }
 
 #[cfg(test)]

@@ -15,6 +15,7 @@ use std::libc::{size_t, ssize_t, c_int, c_void, c_uint};
 use std::libc;
 use std::mem;
 use std::ptr;
+use std::rt::bdwgc;
 use std::rt::rtio;
 use std::rt::task::BlockedTask;
 use std::unstable::intrinsics;
