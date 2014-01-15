@@ -14,6 +14,7 @@ use std::io::net::ip::{Ipv4Addr, Ipv6Addr, SocketAddr, IpAddr};
 use std::libc::{size_t, ssize_t, c_int, c_void, c_uint, c_char};
 use std::libc;
 use std::ptr;
+use std::rt::bdwgc;
 use std::rt::rtio;
 use std::rt::task::BlockedTask;
 use std::str;
@@ -43,7 +44,7 @@ fn socket_addr_as_sockaddr<T>(addr: SocketAddr, f: |*sockaddr| -> T) -> T {
     (|| {
         f(addr)
     }).finally(|| {
-        unsafe { libc::free(addr) };
+        unsafe { bdwgc::free(addr) };
     })
 }
 
@@ -121,7 +122,7 @@ fn socket_name(sk: SocketNameKind, handle: *c_void) -> Result<SocketAddr, IoErro
         // Allocate a sockaddr_storage
         // since we don't know if it's ipv4 or ipv6
         let size = uvll::rust_sockaddr_size();
-        let name = libc::malloc(size as size_t);
+        let name = bdwgc::malloc(size as size_t);
         assert!(!name.is_null());
         let mut namelen = size;
 
@@ -129,7 +130,7 @@ fn socket_name(sk: SocketNameKind, handle: *c_void) -> Result<SocketAddr, IoErro
             0 => Ok(sockaddr_to_socket_addr(name)),
             n => Err(uv_error_to_io_error(UvError(n)))
         };
-        libc::free(name);
+        bdwgc::free(name);
         ret
     }
 }

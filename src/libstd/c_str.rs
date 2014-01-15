@@ -62,6 +62,7 @@ my_string.with_c_str(|c_buffer| {
 
 */
 
+use rt::bdwgc;
 use cast;
 use container::Container;
 use iter::{Iterator, range};
@@ -272,7 +273,7 @@ impl<'a> ToCStr for &'a [u8] {
 
     unsafe fn to_c_str_unchecked(&self) -> CString {
         let self_len = self.len();
-        let buf = libc::malloc(self_len as libc::size_t + 1) as *mut u8;
+        let buf = bdwgc::malloc_atomic(self_len as libc::size_t + 1) as *mut u8;
         if buf.is_null() {
             fail!("failed to allocate memory!");
         }

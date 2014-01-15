@@ -169,6 +169,7 @@ mod tests {
 
     fn malloc(n: uint) -> CVec<u8> {
         unsafe {
+            // unclear whether this should be overridden with bdwgc::malloc
             let mem = libc::malloc(n as size_t);
 
             assert!(mem as int != 0);

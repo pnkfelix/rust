@@ -33,6 +33,7 @@ use std::libc::{size_t, c_int, c_uint, c_void, c_char, c_double};
 use std::libc::ssize_t;
 use std::libc::{malloc, free};
 use std::libc;
+use std::rt::bdwgc;
 
 #[cfg(test)]
 use std::libc::uintptr_t;
@@ -374,25 +375,25 @@ pub enum uv_membership {
 pub unsafe fn malloc_handle(handle: uv_handle_type) -> *c_void {
     assert!(handle != UV_UNKNOWN_HANDLE && handle != UV_HANDLE_TYPE_MAX);
     let size = uv_handle_size(handle);
-    let p = malloc(size);
+    let p = bdwgc::malloc(size);
     assert!(p.is_not_null());
-    return p;
+    return p as *c_void;
 }
 
 pub unsafe fn free_handle(v: *c_void) {
-    free(v)
+    bdwgc::free(v)
 }
 
 pub unsafe fn malloc_req(req: uv_req_type) -> *c_void {
     assert!(req != UV_UNKNOWN_REQ && req != UV_REQ_TYPE_MAX);
     let size = uv_req_size(req);
-    let p = malloc(size);
+    let p = bdwgc::malloc(size);
     assert!(p.is_not_null());
-    return p;
+    return p as *c_void;
 }
 
 pub unsafe fn free_req(v: *c_void) {
-    free(v)
+    bdwgc::free(v)
 }
 
 #[test]

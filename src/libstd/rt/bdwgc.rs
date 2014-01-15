@@ -14,12 +14,49 @@
 use libc::{c_ulong, c_char, c_void, c_int, c_uint};
 use libc::{pthread_t, pthread_attr_t};
 use rt::thread;
+use ptr;
 
 pub use pthread_create = self::GC_pthread_create;
 pub use pthread_join   = self::GC_pthread_join;
 pub use pthread_detach = self::GC_pthread_detach;
 pub use pthread_cancel = self::GC_pthread_cancel;
 pub use pthread_exit   = self::GC_pthread_exit;
+
+pub use init           = self::GC_init;
+
+// pub use malloc_atomic                = self::GC_malloc_atomic;
+pub use malloc_atomic                = self::GC_debug_malloc_replacement;
+
+// pub use malloc_atomic_uncollectable  = self::GC_malloc_atomic_uncollectable;
+pub use malloc_atomic_uncollectable  = self::GC_debug_malloc_uncollectable;
+
+// pub use malloc_uncollectable         = self::GC_malloc_uncollectable;
+pub use malloc_uncollectable         = self::debug_malloc_uncollectable;
+
+// pub use realloc                      = self::GC_realloc;
+pub use realloc                      = self::debug_realloc;
+
+// pub use free                        = self::GC_free;
+// pub use malloc                      = self::GC_malloc;
+
+// wrappers to deal with BDW not offering full set of drop-in _replacement variants.
+unsafe fn debug_malloc_uncollectable(size_in_bytes: size_t) -> *c_void {
+    GC_debug_malloc_uncollectable(size_in_bytes, ptr::null(), 0) as *c_void
+}
+
+// wrappers to deal with BDW not offering full set of drop-in _replacement variants.
+unsafe fn debug_realloc(old: *mut c_void, size_in_bytes: size_t) -> *mut c_void {
+    GC_debug_realloc(old, size_in_bytes, ptr::null(), 0)
+}
+
+// wrappers compatible with current libc::malloc's lack of mutability.
+pub unsafe fn malloc(size_in_bytes: size_t) -> *c_void {
+    GC_debug_malloc_replacement(size_in_bytes) as *c_void
+}
+pub unsafe fn free(arg1: *c_void) {
+    GC_free(arg1 as *mut c_void)
+}
+
 
 type size_t = c_ulong;
 

@@ -8,10 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use libc::{c_void, c_char, size_t, uintptr_t, free, malloc, realloc};
+use libc::{c_void, c_char, size_t, uintptr_t};
+// use libc::{free, malloc, realloc};
 use unstable::intrinsics::TyDesc;
 use unstable::raw;
 use mem::size_of;
+use rt::bdwgc;
 
 extern {
     fn abort();
@@ -34,17 +36,18 @@ fn align_to(size: uint, align: uint) -> uint {
 
 /// A wrapper around libc::malloc, aborting on out-of-memory
 pub unsafe fn malloc_raw(size: uint) -> *c_void {
-    let p = malloc(size as size_t);
+    // let p = malloc(size as size_t);
+    let p = bdwgc::malloc(size as size_t);
     if p.is_null() {
         // we need a non-allocating way to print an error here
         abort();
     }
-    p
+    p as *c_void
 }
 
 /// A wrapper around libc::realloc, aborting on out-of-memory
 pub unsafe fn realloc_raw(ptr: *mut c_void, size: uint) -> *mut c_void {
-    let p = realloc(ptr, size as size_t);
+    let p = bdwgc::realloc(ptr, size as size_t);
     if p.is_null() {
         // we need a non-allocating way to print an error here
         abort();
@@ -57,7 +60,13 @@ pub unsafe fn realloc_raw(ptr: *mut c_void, size: uint) -> *mut c_void {
 #[lang="exchange_malloc"]
 #[inline]
 pub unsafe fn exchange_malloc(size: uintptr_t) -> *c_char {
-    malloc_raw(size as uint) as *c_char
+    // let p = malloc(size as size_t);
+    let p = bdwgc::malloc_uncollectable(size as size_t);
+    if p.is_null() {
+        // we need a non-allocating way to print an error here
+        abort();
+    }
+    p as *c_char
 }
 
 // FIXME: #7496
@@ -76,7 +85,8 @@ pub unsafe fn closure_exchange_malloc(td: *c_char, size: uintptr_t) -> *c_char {
     assert!(td.is_not_null());
 
     let total_size = get_box_size(size, (*td).align);
-    let p = malloc_raw(total_size);
+    // let p = malloc_raw(total_size);
+    let p = exchange_malloc(total_size);
 
     let alloc = p as *mut raw::Box<()>;
     (*alloc).type_desc = td;
@@ -94,7 +104,7 @@ pub unsafe fn exchange_free_(ptr: *c_char) {
 }
 
 pub unsafe fn exchange_free(ptr: *c_char) {
-    free(ptr as *c_void);
+    bdwgc::free(ptr as *c_void);
 }
 
 #[cfg(test)]

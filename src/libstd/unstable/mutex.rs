@@ -167,6 +167,7 @@ mod imp {
     use libc::c_void;
     use libc;
     use ptr;
+    use rt::bdwgc;
 
     type pthread_mutex_t = libc::c_void;
     type pthread_mutexattr_t = libc::c_void;
@@ -174,7 +175,8 @@ mod imp {
     type pthread_condattr_t = libc::c_void;
 
     pub unsafe fn init_lock() -> uint {
-        let block = libc::malloc(rust_pthread_mutex_t_size() as libc::size_t);
+        let block = bdwgc::malloc_uncollectable(rust_pthread_mutex_t_size() as libc::size_t);
+        let block = block as *libc::c_void;
         assert!(!block.is_null());
         let n = pthread_mutex_init(block, ptr::null());
         assert_eq!(n, 0);
@@ -182,7 +184,8 @@ mod imp {
     }
 
     pub unsafe fn init_cond() -> uint {
-        let block = libc::malloc(rust_pthread_cond_t_size() as libc::size_t);
+        let block = bdwgc::malloc_uncollectable(rust_pthread_cond_t_size() as libc::size_t);
+        let block = block as *libc::c_void;
         assert!(!block.is_null());
         let n = pthread_cond_init(block, ptr::null());
         assert_eq!(n, 0);
@@ -192,13 +195,13 @@ mod imp {
     pub unsafe fn free_lock(h: uint) {
         let block = h as *c_void;
         assert_eq!(pthread_mutex_destroy(block), 0);
-        libc::free(block);
+        bdwgc::free(block);
     }
 
     pub unsafe fn free_cond(h: uint) {
         let block = h as *c_void;
         assert_eq!(pthread_cond_destroy(block), 0);
-        libc::free(block);
+        bdwgc::free(block);
     }
 
     pub unsafe fn lock(l: *pthread_mutex_t) {
