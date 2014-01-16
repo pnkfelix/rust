@@ -732,10 +732,20 @@ pub enum BuiltinBound {
     BoundFreeze,
     BoundSized,
     BoundPod,
+    BoundTestate,
 }
 
 pub fn EmptyBuiltinBounds() -> BuiltinBounds {
     EnumSet::empty()
+}
+
+pub fn EnvBuiltinBounds() -> BuiltinBounds {
+    let mut set = EnumSet::empty();
+    set.add(BoundStatic);
+    set.add(BoundSend);
+    set.add(BoundFreeze);
+    set.add(BoundSized);
+    set
 }
 
 pub fn AllBuiltinBounds() -> BuiltinBounds {
@@ -744,6 +754,8 @@ pub fn AllBuiltinBounds() -> BuiltinBounds {
     set.add(BoundSend);
     set.add(BoundFreeze);
     set.add(BoundSized);
+    set.add(BoundPod);
+    set.add(BoundTestate);
     set
 }
 
@@ -1770,6 +1782,9 @@ def_type_content_sets!(
         ReachesMutable                      = 0b1000__00000000__0000,
         ReachesAll                          = 0b1111__00000000__0000,
 
+        // Everything below is defined as unions of subsets of the
+        // four nibbles defined above.
+
         // Things that cause values to *move* rather than *copy*
         Moves                               = 0b0000__00001011__0000,
 
@@ -1797,6 +1812,9 @@ def_type_content_sets!(
         // Things that make values considered not POD (same as `Moves`)
         Nonpod                              = 0b0000__00001111__0000,
 
+        // Things that make values considered not Testate
+        Nontestate                          = 0b0000__00000010__0000,
+
         // Bits to set when a managed value is encountered
         //
         // [1] Do not set the bits TC::OwnsManaged or
@@ -1821,6 +1839,7 @@ impl TypeContents {
             BoundSend => self.is_sendable(cx),
             BoundSized => self.is_sized(cx),
             BoundPod => self.is_pod(cx),
+            BoundTestate => self.is_testate(cx),
         }
     }
 
@@ -1854,6 +1873,10 @@ impl TypeContents {
 
     pub fn is_pod(&self, _: ctxt) -> bool {
         !self.intersects(TC::Nonpod)
+    }
+
+    pub fn is_testate(&self, _: ctxt) -> bool {
+        !self.intersects(TC::Nontestate)
     }
 
     pub fn moves_by_default(&self, _: ctxt) -> bool {
@@ -2236,6 +2259,7 @@ pub fn type_contents(cx: ctxt, ty: t) -> TypeContents {
                 BoundFreeze => TC::Nonfreezable,
                 BoundSized => TC::Nonsized,
                 BoundPod => TC::Nonpod,
+                BoundTestate => TC::Nontestate, // sic ("intestate")
             };
         });
         return tc;
@@ -2867,7 +2891,7 @@ pub fn adjust_ty(cx: ctxt,
                                                sigil: s,
                                                onceness: ast::Many,
                                                region: r,
-                                               bounds: ty::AllBuiltinBounds(),
+                                               bounds: ty::EnvBuiltinBounds(),
                                                sig: b.sig.clone()})
                         }
                         ref b => {

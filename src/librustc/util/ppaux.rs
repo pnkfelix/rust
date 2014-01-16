@@ -641,6 +641,7 @@ impl Repr for ty::ParamBounds {
                 ty::BoundFreeze => ~"Freeze",
                 ty::BoundSized => ~"Sized",
                 ty::BoundPod => ~"Pod",
+                ty::BoundTestate => ~"Testate",
             });
         }
         for t in self.trait_bounds.iter() {
@@ -934,6 +935,7 @@ impl UserString for ty::BuiltinBound {
             ty::BoundFreeze => ~"Freeze",
             ty::BoundSized => ~"Sized",
             ty::BoundPod => ~"Pod",
+            ty::BoundTestate => ~"Testate",
         }
     }
 }
