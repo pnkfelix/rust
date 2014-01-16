@@ -16,13 +16,13 @@ use libc::{pthread_t, pthread_attr_t};
 use rt::thread;
 use ptr;
 
+pub use collect = self::GC_gcollect;
+
 pub use pthread_create = self::GC_pthread_create;
 pub use pthread_join   = self::GC_pthread_join;
 pub use pthread_detach = self::GC_pthread_detach;
 pub use pthread_cancel = self::GC_pthread_cancel;
 pub use pthread_exit   = self::GC_pthread_exit;
-
-pub use init           = self::GC_init;
 
 // pub use malloc_atomic                = self::GC_malloc_atomic;
 pub use malloc_atomic                = self::GC_debug_malloc_replacement;
@@ -38,6 +38,36 @@ pub use realloc                      = self::debug_realloc;
 
 // pub use free                        = self::GC_free;
 // pub use malloc                      = self::GC_malloc;
+
+pub fn init() {
+    unsafe {
+
+        // A free-space-divisor of K means bdw tries to allocate N/K
+        // bytes between collections, where (approximately)
+        //   N = 2*|traced| + |untraced| + |root set|
+        // in bytes.  The relationship between the N above and the
+        // heap size H is non-obvious, but we can get some rough bounds
+        // by noting that H < N < 2*H.
+        // Thus the inverse load factor L = (H + N/K) / H
+        //              (H + H/K) / H < L < (H + 2*H/K) / H
+        //                  (1 + 1/K) < L < (1 + 2/K)
+        //
+        // So:
+        //    K = 1 implies    2 < L < 3
+        //    K = 2 implies  1.5 < L < 2
+        //    K = 4 implies 1.25 < L < 1.5
+        //   K = 20 implies 1.05 < L < 1.1
+        //   K = 50 implies 1.02 < L < 1.04
+        //  k = 100 implies 1.01 < L < 1.02
+        //
+        // Temporarily, I am putting in an absurdly small inverse load
+        // factor to try to catch GC-related bugs as quickly as
+        // possible during this initial development process.
+        GC_set_free_space_divisor(100);
+
+        GC_init();
+    }
+}
 
 // wrappers to deal with BDW not offering full set of drop-in _replacement variants.
 unsafe fn debug_malloc_uncollectable(size_in_bytes: size_t) -> *c_void {
