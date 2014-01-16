@@ -172,12 +172,15 @@ pub fn init(argc: int, argv: **u8) {
     // Need to propagate the unsafety to `start`.
     unsafe {
         bdwgc::init();
+        unsafe { bdwgc::collect(); }
         args::init(argc, argv);
         env::init();
         logging::init();
         local_ptr::init();
         at_exit_imp::init();
     }
+
+    unsafe { bdwgc::collect(); }
 }
 
 /// Enqueues a procedure to run when the runtime is cleaned up

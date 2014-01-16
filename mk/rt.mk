@@ -178,6 +178,8 @@ $$(LIBUV_STAMP_$(1)): $(S)src/rt/libuv-auto-clean-trigger
 
 # libuv triggers a few warnings on some platforms
 LIBUV_CFLAGS_$(1) := $(subst -Werror,,$(CFG_GCCISH_CFLAGS_$(1)))
+# and so does bdwgc
+LIBBDW_CFLAGS_$(1) := $(subst -Werror,,$(CFG_GCCISH_CFLAGS_$(1)))
 
 $$(LIBUV_MAKEFILE_$(1)): $$(LIBUV_DEPS) $$(MKFILE_DEPS) $$(LIBUV_STAMP_$(1))
 	(cd $(S)src/libuv/ && \
