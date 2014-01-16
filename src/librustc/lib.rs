@@ -196,10 +196,20 @@ pub fn describe_debug_flags() {
 }
 
 pub fn run_compiler(args: &[~str], demitter: @diagnostic::Emitter) {
+    unsafe {
+        println("\n run_compiler, collect outset");
+        std::rt::bdwgc::GC_gcollect();
+    }
+
     let mut args = args.to_owned();
     let binary = args.shift();
 
     if args.is_empty() { usage(binary); return; }
+
+    unsafe {
+        println("\n run_compiler, collect pre-getopts");
+        std::rt::bdwgc::GC_gcollect();
+    }
 
     let matches =
         &match getopts::groups::getopts(args, d::optgroups()) {
@@ -208,6 +218,11 @@ pub fn run_compiler(args: &[~str], demitter: @diagnostic::Emitter) {
             d::early_error(demitter, f.to_err_msg());
           }
         };
+
+    unsafe {
+        println("\n run_compiler, collect post-getopts");
+        std::rt::bdwgc::GC_gcollect();
+    }
 
     if matches.opt_present("h") || matches.opt_present("help") {
         usage(binary);
@@ -443,11 +458,29 @@ pub fn monitor(f: proc(@diagnostic::Emitter)) {
 }
 
 pub fn main() {
+    unsafe {
+        println("\n run_compiler, main outset");
+        std::rt::bdwgc::GC_gcollect();
+    }
     std::os::set_exit_status(main_args(std::os::args()));
 }
 
 pub fn main_args(args: &[~str]) -> int {
+    unsafe {
+        println("\n run_compiler, main_args outset");
+        std::rt::bdwgc::GC_gcollect();
+    }
     let owned_args = args.to_owned();
-    monitor(proc(demitter) run_compiler(owned_args, demitter));
+    unsafe {
+        println("\n run_compiler, pre-monitor run_compiler");
+        std::rt::bdwgc::GC_gcollect();
+    }
+    monitor(proc(demitter) {
+            unsafe {
+                println("\n run_compiler, pre-run_compiler");
+                std::rt::bdwgc::GC_gcollect();
+            }
+            run_compiler(owned_args, demitter);
+        });
     0
 }
