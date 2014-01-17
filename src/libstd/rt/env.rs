@@ -23,6 +23,8 @@ static mut POISON_ON_FREE: bool = false;
 
 pub fn init() {
     unsafe {
+        super::bdwgc::collect_from(1u); // bisecting source of smashed objects
+
         match os::getenv("RUST_MIN_STACK") {
             Some(s) => match FromStr::from_str(s) {
                 Some(i) => MIN_STACK = i,
@@ -38,6 +40,8 @@ pub fn init() {
             Some(_) => POISON_ON_FREE = true,
             None => ()
         }
+
+        super::bdwgc::collect_from(2u); // bisecting source of smashed objects
     }
 }
 
