@@ -247,9 +247,11 @@ impl AllocHeader {
 impl MemoryRegion {
     #[inline]
     fn malloc(&mut self, size: uint) -> *mut Box {
+        use rt::global_heap::bdw;
+        use rt::global_heap::bdw::*;
         let total_size = size + AllocHeader::size();
         let alloc: *AllocHeader = unsafe {
-            global_heap::malloc_raw(total_size) as *AllocHeader
+            global_heap::malloc_raw(total_size, bdw::GC(Scan)) as *AllocHeader
         };
 
         let alloc: &mut AllocHeader = unsafe { cast::transmute(alloc) };

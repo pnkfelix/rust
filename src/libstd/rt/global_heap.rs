@@ -33,15 +33,37 @@ fn align_to(size: uint, align: uint) -> uint {
     (size + align - 1) & !(align - 1)
 }
 
+pub mod bdw {
+    pub enum Contents { Scan, Atom, }
+    pub enum Origin { Exchange, Managed, Other }
+
+    pub enum Mode {
+        GC(Contents),
+        Uncollectable(Origin, Contents)
+    }
+
+}
+
 /// A wrapper around libc::malloc, aborting on out-of-memory
 #[inline]
-pub unsafe fn malloc_raw(size: uint) -> *mut u8 {
+pub unsafe fn malloc_raw(size: uint, mode: bdw::Mode) -> *mut u8 {
     // `malloc(0)` may allocate, but it may also return a null pointer
     // http://pubs.opengroup.org/onlinepubs/9699919799/functions/malloc.html
     if size == 0 {
         mut_null()
     } else {
-        let p = bdwgc::malloc(size as size_t);
+
+        let p = match mode {
+
+            GC(Scan) => bdwgc::managed_malloc(size) as *mut c_void,
+            GC(Atom) => bdwgc::managed_malloc_atomic(size),
+            Uncollectable(Managed,  _) => fail!("unhandled in bdw wrappers"),
+            Uncollectable(Exchange, Scan) => bdwgc::exchange_malloc_uncollectable(size) as *mut c_void,
+            Uncollectable(Other,    Scan) => bdwgc::other_malloc_uncollectable(size) as *mut c_void,
+            Uncollectable(Exchange, Atom) => bdwgc::exchange_malloc_atomic_uncollectable(size) as *mut c_void,
+            Uncollectable(Other,    Atom) => bdwgc::other_malloc_atomic_uncollectable(size) as *mut c_void,
+        };
+
         if p.is_null() {
             // we need a non-allocating way to print an error here
             abort();
@@ -59,7 +81,7 @@ pub unsafe fn realloc_raw(ptr: *mut u8, size: uint) -> *mut u8 {
         free(ptr as *mut c_void);
         mut_null()
     } else {
-        let p = bdwgc::realloc(ptr as *mut c_void, size as size_t);
+        let p = bdwgc::other_realloc(ptr as *mut c_void, size as size_t);
         if p.is_null() {
             // we need a non-allocating way to print an error here
             abort();
@@ -74,7 +96,17 @@ pub unsafe fn realloc_raw(ptr: *mut u8, size: uint) -> *mut u8 {
 #[inline]
 pub unsafe fn exchange_malloc(size: uint) -> *u8 {
     // let p = malloc_raw(size) as *u8;
-    let p = bdwgc::malloc_uncollectable(size as size_t);
+    let p = bdwgc::exchange_malloc_uncollectable(size as size_t);
+    if p.is_null() {
+        // we need a non-allocating way to print an error here
+        abort();
+    }
+    p as *c_char
+}
+
+unsafe fn proc_malloc(size: uint) -> *u8 {
+    // let p = malloc(size as size_t);
+    let p = bdwgc::proc_malloc_uncollectable(size as size_t);
     if p.is_null() {
         // we need a non-allocating way to print an error here
         abort();
@@ -108,7 +140,7 @@ pub unsafe fn closure_exchange_malloc(td: *u8, size: uint) -> *u8 {
 
     let total_size = get_box_size(size, (*td).align);
     // let p = malloc_raw(total_size);
-    let p = exchange_malloc(total_size);
+    let p = proc_malloc(total_size);
 
     let alloc = p as *mut raw::Box<()>;
     (*alloc).type_desc = td;
@@ -139,7 +171,12 @@ pub unsafe fn exchange_free_(ptr: *u8) {
 
 #[inline]
 pub unsafe fn exchange_free(ptr: *u8) {
-    bdwgc::free(ptr as *c_void);
+    bdwgc::exchange_free(ptr as *c_void);
+}
+
+#[inline]
+pub unsafe fn proc_free(ptr: *u8) {
+    bdwgc::proc_free(ptr as *c_void);
 }
 
 #[cfg(test)]

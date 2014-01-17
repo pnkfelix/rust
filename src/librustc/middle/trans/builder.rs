@@ -401,6 +401,7 @@ impl<'a> Builder<'a> {
     }
 
     /* Memory */
+    #[cfg(evil_llvm_malloc_free)]
     pub fn malloc(&self, ty: Type) -> ValueRef {
         self.count_insn("malloc");
         unsafe {
@@ -408,6 +409,7 @@ impl<'a> Builder<'a> {
         }
     }
 
+    #[cfg(evil_llvm_malloc_free)]
     pub fn array_malloc(&self, ty: Type, val: ValueRef) -> ValueRef {
         self.count_insn("arraymalloc");
         unsafe {
@@ -435,6 +437,7 @@ impl<'a> Builder<'a> {
         }
     }
 
+    #[cfg(evil_llvm_malloc_free)]
     pub fn free(&self, ptr: ValueRef) {
         self.count_insn("free");
         unsafe {
