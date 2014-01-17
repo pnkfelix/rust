@@ -109,17 +109,31 @@ fn parse_logging_spec(spec: ~str) -> ~[LogDirective]{
 /// Set the log level of an entry in the crate map depending on the vector
 /// of log directives
 fn update_entry(dirs: &[LogDirective], entry: &ModEntry) -> u32 {
+    fn gc(where: uint) { 
+        unsafe {
+            super::bdwgc::collect_from(where);
+        }
+    }
+
+    gc(100u);
+
     let mut new_lvl: u32 = DEFAULT_LOG_LEVEL;
     let mut longest_match = -1i;
+    let mut it = 0u;
     for dir in dirs.iter() {
+        it += 1;
+        gc(200u + it);
         match dir.name {
             None => {
+                gc(300u + it);
                 if longest_match == -1 {
                     longest_match = 0;
                     new_lvl = dir.level;
                 }
+                gc(400u + it);
             }
             Some(ref dir_name) => {
+                gc(500u + it);
                 let name = entry.name;
                 let len = dir_name.len() as int;
                 if name.starts_with(*dir_name) &&
@@ -127,17 +141,31 @@ fn update_entry(dirs: &[LogDirective], entry: &ModEntry) -> u32 {
                     longest_match = len;
                     new_lvl = dir.level;
                 }
+                gc(600u + it);
             }
         };
+        gc(700u + it);
     }
     unsafe { *entry.log_level = new_lvl; }
+    gc(800u);
     if longest_match >= 0 { return 1; } else { return 0; }
 }
 
 /// Set log level for every entry in crate_map according to the sepecification
 /// in settings
 fn update_log_settings(crate_map: &CrateMap, settings: ~str) {
+    fn gc(where: uint) { 
+        unsafe {
+            super::bdwgc::collect_from(where);
+        }
+    }
+
+    gc(10u);
+
     let mut dirs = ~[];
+
+    gc(20u);
+
     if settings.len() > 0 {
         if settings == ~"::help" || settings == ~"?" {
             rterrln!("\nCrate log map:\n");
@@ -154,11 +182,16 @@ fn update_log_settings(crate_map: &CrateMap, settings: ~str) {
         dirs = parse_logging_spec(settings);
     }
 
+    gc(30u);
+
     let mut n_matches: u32 = 0;
     iter_crate_map(crate_map, |entry| {
+        gc(n_matches as uint);
         let m = update_entry(dirs, entry);
         n_matches += m;
     });
+
+    gc(40u);
 
     if n_matches < (dirs.len() as u32) {
         rterrln!("warning: got {} RUST_LOG specs but only matched\n\
@@ -166,6 +199,8 @@ fn update_log_settings(crate_map: &CrateMap, settings: ~str) {
                   Use RUST_LOG=::help to see the list of crates and modules.\n",
                  dirs.len(), n_matches);
     }
+
+    gc(50u);
 }
 
 pub trait Logger {
@@ -195,17 +230,34 @@ impl Logger for StdErrLogger {
 pub fn init() {
     use os;
 
+    fn gc(where: uint) { 
+        unsafe {
+            super::bdwgc::collect_from(where);
+        }
+    }
+
+    gc(1u);
+
     let log_spec = os::getenv("RUST_LOG");
+
+    gc(2u);
+
     match get_crate_map() {
         Some(crate_map) => {
+            gc(3u);
             match log_spec {
                 Some(spec) => {
+                    gc(4u);
                     update_log_settings(crate_map, spec);
+                    gc(5u);
                 }
                 None => {
+                    gc(6u);
                     update_log_settings(crate_map, ~"");
+                    gc(7u);
                 }
             }
+            gc(8u);
         },
         _ => {
             match log_spec {
@@ -216,6 +268,8 @@ pub fn init() {
             }
         }
     }
+
+    gc(9u);
 }
 
 // Tests for parse_logging_spec()
