@@ -212,7 +212,7 @@ impl Drop for CString {
     fn drop(&mut self) {
         if self.owns_buffer_ {
             unsafe {
-                libc::free(self.buf as *mut libc::c_void)
+                bdwgc::other_free(self.buf as *mut libc::c_void)
             }
         }
     }
