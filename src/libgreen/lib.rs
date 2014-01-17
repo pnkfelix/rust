@@ -176,6 +176,7 @@
 
 use std::mem::replace;
 use std::os;
+use std::rt::bdwgc;
 use std::rt::crate_map;
 use std::rt::rtio;
 use std::rt::thread::Thread;
@@ -206,7 +207,10 @@ pub mod task;
 #[cfg(not(test))]
 pub fn lang_start(main: *u8, argc: int, argv: **u8) -> int {
     use std::cast;
+    bdwgc::init();
+    unsafe { bdwgc::collect_from(1u); }
     start(argc, argv, proc() {
+        unsafe { bdwgc::collect_from(2u); }
         let main: extern "Rust" fn() = unsafe { cast::transmute(main) };
         main();
     })

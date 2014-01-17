@@ -171,16 +171,20 @@ pub fn init(argc: int, argv: **u8) {
     // FIXME: Derefing these pointers is not safe.
     // Need to propagate the unsafety to `start`.
     unsafe {
-        bdwgc::init();
-        unsafe { bdwgc::collect(); }
+        bdwgc::collect_from(1u); // originally this was a bdwgc::init,
+                                 // but we cannot wait until here to
+                                 // do that.  Still, collecting here
+                                 // seems like a good idea.
+
         args::init(argc, argv);
         env::init();
         logging::init();
         local_ptr::init();
         at_exit_imp::init();
+
+        bdwgc::collect_from(2u);
     }
 
-    unsafe { bdwgc::collect(); }
 }
 
 /// Enqueues a procedure to run when the runtime is cleaned up

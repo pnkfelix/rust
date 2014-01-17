@@ -16,7 +16,7 @@ use libc::{pthread_t, pthread_attr_t};
 use rt::thread;
 use ptr;
 
-pub use collect = self::GC_gcollect;
+pub use collect      = self::GC_gcollect;
 
 pub use pthread_create = self::GC_pthread_create;
 pub use pthread_join   = self::GC_pthread_join;
@@ -45,6 +45,10 @@ pub use exchange_realloc                = self::debug_exchange_realloc;
 pub use proc_realloc                    = self::debug_proc_realloc;
 pub use managed_realloc                 = self::debug_managed_realloc;
 pub use other_realloc                   = self::debug_other_realloc;
+
+pub unsafe fn collect_from(where: uint) {
+    GC_gcollect_from(where as c_uint)
+}
 
 // pub use free                        = self::GC_free;
 // pub use malloc                      = self::GC_malloc;
@@ -132,19 +136,19 @@ pub unsafe fn other_malloc(size_in_bytes: size_t) -> *c_void {
 
 #[cfg(bdw_pristine_api)]
 pub unsafe fn free(arg1: *c_void) {
-    GC_free(arg1 as *mut c_void)
+    GC_debug_free(arg1 as *mut c_void)
 }
 pub unsafe fn exchange_free(arg1: *c_void) {
-    GC_exchange_free(arg1 as *mut c_void)
+    GC_debug_exchange_free(arg1 as *mut c_void)
 }
 pub unsafe fn proc_free(arg1: *c_void) {
-    GC_proc_free(arg1 as *mut c_void)
+    GC_debug_proc_free(arg1 as *mut c_void)
 }
 pub unsafe fn managed_free(arg1: *c_void) {
-    GC_managed_free(arg1 as *mut c_void)
+    GC_debug_managed_free(arg1 as *mut c_void)
 }
 pub unsafe fn other_free(arg1: *c_void) {
-    GC_other_free(arg1 as *mut c_void)
+    GC_debug_other_free(arg1 as *mut c_void)
 }
 
 
@@ -676,10 +680,18 @@ extern "C" {
     /// GC_free(0) is a no-op, as required by ANSI C for free.
     #[cfg(bdw_pristine_api)]
     fn GC_free(arg1: *mut c_void);
+
     fn GC_exchange_free(arg1: *mut c_void);
     fn GC_proc_free(arg1: *mut c_void);
     fn GC_managed_free(arg1: *mut c_void);
     fn GC_other_free(arg1: *mut c_void);
+
+    #[cfg(bdw_pristine_api)]
+    fn GC_debug_free(arg1: *mut c_void);
+    fn GC_debug_exchange_free(arg1: *mut c_void);
+    fn GC_debug_proc_free(arg1: *mut c_void);
+    fn GC_debug_managed_free(arg1: *mut c_void);
+    fn GC_debug_other_free(arg1: *mut c_void);
 
     /// Return a pointer to the base (lowest address) of an object given
     /// a pointer to a location within the object.
@@ -756,6 +768,7 @@ extern "C" {
 
     /// Explicitly trigger a full, world-stop collection.
     fn GC_gcollect();
+    fn GC_gcollect_from(context: c_uint);
 
     /// Same as above but ignores the default stop_func setting and tries to
     /// unmap as much memory as possible (regardless of the corresponding

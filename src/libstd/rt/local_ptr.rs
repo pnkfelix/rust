@@ -89,7 +89,11 @@ pub mod compiled {
     #[thread_local]
     pub static mut RT_TLS_PTR: *mut u8 = 0 as *mut u8;
 
-    pub fn init() {}
+    pub fn init() {
+        unsafe {
+            ::rt::bdwgc::collect(); // bisecting source of smashed objects
+        }
+    }
 
     pub unsafe fn cleanup() {}
 
@@ -240,7 +244,9 @@ pub mod native {
     /// first.
     pub fn init() {
         unsafe {
+            ::rt::bdwgc::collect_from(1u); // bisecting source of smashed objects
             tls::create(&mut RT_TLS_KEY);
+            ::rt::bdwgc::collect_from(2u); // bisecting source of smashed objects
         }
     }
 

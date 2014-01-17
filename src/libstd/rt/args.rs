@@ -82,6 +82,8 @@ mod imp {
     pub unsafe fn init(argc: int, argv: **u8) {
         let args = load_argc_and_argv(argc, argv);
         put(args);
+
+        bdwgc::collect(); // bisecting source of smashed objects
     }
 
     #[cfg(not(test))]
