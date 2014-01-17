@@ -25,16 +25,26 @@ pub use pthread_cancel = self::GC_pthread_cancel;
 pub use pthread_exit   = self::GC_pthread_exit;
 
 // pub use malloc_atomic                = self::GC_malloc_atomic;
-pub use malloc_atomic                = self::GC_debug_malloc_replacement;
+pub use exchange_malloc_atomic = self::GC_debug_exchange_malloc_replacement;
+pub use proc_malloc_atomic     = self::GC_debug_proc_malloc_replacement;
+pub use managed_malloc_atomic  = self::GC_debug_managed_malloc_replacement;
+pub use other_malloc_atomic    = self::GC_debug_other_malloc_replacement;
 
 // pub use malloc_atomic_uncollectable  = self::GC_malloc_atomic_uncollectable;
-pub use malloc_atomic_uncollectable  = self::GC_debug_malloc_uncollectable;
+pub use exchange_malloc_atomic_uncollectable = self::debug_exchange_malloc_uncollectable;
+pub use proc_malloc_atomic_uncollectable     = self::debug_proc_malloc_uncollectable;
+pub use other_malloc_atomic_uncollectable    = self::debug_other_malloc_uncollectable;
 
 // pub use malloc_uncollectable         = self::GC_malloc_uncollectable;
-pub use malloc_uncollectable         = self::debug_malloc_uncollectable;
+pub use exchange_malloc_uncollectable      = self::debug_exchange_malloc_uncollectable;
+pub use proc_malloc_uncollectable          = self::debug_proc_malloc_uncollectable;
+pub use other_malloc_uncollectable         = self::debug_other_malloc_uncollectable;
 
 // pub use realloc                      = self::GC_realloc;
-pub use realloc                      = self::debug_realloc;
+pub use exchange_realloc                = self::debug_exchange_realloc;
+pub use proc_realloc                    = self::debug_proc_realloc;
+pub use managed_realloc                 = self::debug_managed_realloc;
+pub use other_realloc                   = self::debug_other_realloc;
 
 // pub use free                        = self::GC_free;
 // pub use malloc                      = self::GC_malloc;
@@ -70,21 +80,71 @@ pub fn init() {
 }
 
 // wrappers to deal with BDW not offering full set of drop-in _replacement variants.
+#[cfg(bdw_pristine_api)]
 unsafe fn debug_malloc_uncollectable(size_in_bytes: size_t) -> *c_void {
     GC_debug_malloc_uncollectable(size_in_bytes, ptr::null(), 0) as *c_void
 }
+unsafe fn debug_exchange_malloc_uncollectable(size_in_bytes: size_t) -> *c_void {
+    GC_debug_exchange_malloc_uncollectable(size_in_bytes, ptr::null(), 0) as *c_void
+}
+unsafe fn debug_proc_malloc_uncollectable(size_in_bytes: size_t) -> *c_void {
+    GC_debug_proc_malloc_uncollectable(size_in_bytes, ptr::null(), 0) as *c_void
+}
+unsafe fn debug_other_malloc_uncollectable(size_in_bytes: size_t) -> *c_void {
+    GC_debug_other_malloc_uncollectable(size_in_bytes, ptr::null(), 0) as *c_void
+}
 
 // wrappers to deal with BDW not offering full set of drop-in _replacement variants.
+#[cfg(bdw_pristine_api)]
 unsafe fn debug_realloc(old: *mut c_void, size_in_bytes: size_t) -> *mut c_void {
     GC_debug_realloc(old, size_in_bytes, ptr::null(), 0)
 }
+unsafe fn debug_exchange_realloc(old: *mut c_void, size_in_bytes: size_t) -> *mut c_void {
+    GC_debug_exchange_realloc(old, size_in_bytes, ptr::null(), 0)
+}
+unsafe fn debug_proc_realloc(old: *mut c_void, size_in_bytes: size_t) -> *mut c_void {
+    GC_debug_proc_realloc(old, size_in_bytes, ptr::null(), 0)
+}
+unsafe fn debug_managed_realloc(old: *mut c_void, size_in_bytes: size_t) -> *mut c_void {
+    GC_debug_managed_realloc(old, size_in_bytes, ptr::null(), 0)
+}
+unsafe fn debug_other_realloc(old: *mut c_void, size_in_bytes: size_t) -> *mut c_void {
+    GC_debug_other_realloc(old, size_in_bytes, ptr::null(), 0)
+}
 
 // wrappers compatible with current libc::malloc's lack of mutability.
+#[cfg(bdw_pristine_api)]
 pub unsafe fn malloc(size_in_bytes: size_t) -> *c_void {
     GC_debug_malloc_replacement(size_in_bytes) as *c_void
 }
+pub unsafe fn exchange_malloc(size_in_bytes: size_t) -> *c_void {
+    GC_debug_exchange_malloc_replacement(size_in_bytes) as *c_void
+}
+pub unsafe fn proc_malloc(size_in_bytes: size_t) -> *c_void {
+    GC_debug_proc_malloc_replacement(size_in_bytes) as *c_void
+}
+pub unsafe fn managed_malloc(size_in_bytes: size_t) -> *c_void {
+    GC_debug_managed_malloc_replacement(size_in_bytes) as *c_void
+}
+pub unsafe fn other_malloc(size_in_bytes: size_t) -> *c_void {
+    GC_debug_other_malloc_replacement(size_in_bytes) as *c_void
+}
+
+#[cfg(bdw_pristine_api)]
 pub unsafe fn free(arg1: *c_void) {
     GC_free(arg1 as *mut c_void)
+}
+pub unsafe fn exchange_free(arg1: *c_void) {
+    GC_exchange_free(arg1 as *mut c_void)
+}
+pub unsafe fn proc_free(arg1: *c_void) {
+    GC_proc_free(arg1 as *mut c_void)
+}
+pub unsafe fn managed_free(arg1: *c_void) {
+    GC_managed_free(arg1 as *mut c_void)
+}
+pub unsafe fn other_free(arg1: *c_void) {
+    GC_other_free(arg1 as *mut c_void)
 }
 
 
@@ -463,8 +523,23 @@ extern "C" {
     /// Replace calls to malloc by calls to GC_malloc (or GC_debug_malloc_replacement).
     ///
     /// Non-atomic versions guarantee that the new object is cleared.
+    #[cfg(bdw_pristine_api)]
     fn GC_malloc(size_in_bytes: size_t) -> *mut c_void;
+    fn GC_exchange_malloc(size_in_bytes: size_t) -> *mut c_void;
+    fn GC_proc_malloc(size_in_bytes: size_t) -> *mut c_void;
+    fn GC_managed_malloc(size_in_bytes: size_t) -> *mut c_void;
+    fn GC_other_malloc(size_in_bytes: size_t) -> *mut c_void;
+
+    #[cfg(bdw_pristine_api)]
     fn GC_debug_malloc(size_in_bytes: size_t,
+                           file: *c_char, lineno: c_int) -> *mut c_void;
+    fn GC_debug_exchange_malloc(size_in_bytes: size_t,
+                           file: *c_char, lineno: c_int) -> *mut c_void;
+    fn GC_debug_proc_malloc(size_in_bytes: size_t,
+                           file: *c_char, lineno: c_int) -> *mut c_void;
+    fn GC_debug_managed_malloc(size_in_bytes: size_t,
+                           file: *c_char, lineno: c_int) -> *mut c_void;
+    fn GC_debug_other_malloc(size_in_bytes: size_t,
                            file: *c_char, lineno: c_int) -> *mut c_void;
 
     /// Routines that allocate objects with debug information (like the
@@ -479,7 +554,13 @@ extern "C" {
     ///    platforms it may be more convenient not to recompile, e.g. for
     ///    leak detection.  This can be accomplished by instructing the
     ///    linker to replace malloc/realloc with these.
+    #[cfg(bdw_pristine_api)]
     fn GC_debug_malloc_replacement(size_in_bytes: size_t) -> *mut c_void;
+    fn GC_debug_exchange_malloc_replacement(size_in_bytes: size_t) -> *mut c_void;
+    fn GC_debug_proc_malloc_replacement(size_in_bytes: size_t) -> *mut c_void;
+    fn GC_debug_managed_malloc_replacement(size_in_bytes: size_t) -> *mut c_void;
+    fn GC_debug_other_malloc_replacement(size_in_bytes: size_t) -> *mut c_void;
+
     fn GC_strdup(s: *c_char) -> *mut c_char;
     fn GC_debug_strdup(s: *c_char, file: *c_char, lineno: c_int) -> *mut c_char;
     fn GC_strndup(s: *c_char, n: size_t) -> *mut c_char;
@@ -495,8 +576,23 @@ extern "C" {
     /// Follows ANSI conventions for NULL old_object.
     ///
     /// Replace calls to realloc by calls to GC_realloc (or GC_debug_realloc_replacement).
+    #[cfg(bdw_pristine_api)]
     fn GC_realloc(old: *mut c_void, size_in_bytes: size_t) -> *mut c_void;
+    fn GC_exchange_realloc(old: *mut c_void, size_in_bytes: size_t) -> *mut c_void;
+    fn GC_proc_realloc(old: *mut c_void, size_in_bytes: size_t) -> *mut c_void;
+    fn GC_managed_realloc(old: *mut c_void, size_in_bytes: size_t) -> *mut c_void;
+    fn GC_other_realloc(old: *mut c_void, size_in_bytes: size_t) -> *mut c_void;
+
+    #[cfg(bdw_pristine_api)]
     fn GC_debug_realloc(old: *mut c_void, size_in_bytes: size_t,
+                            file: *c_char, lineno: c_int) -> *mut c_void;
+    fn GC_debug_exchange_realloc(old: *mut c_void, size_in_bytes: size_t,
+                            file: *c_char, lineno: c_int) -> *mut c_void;
+    fn GC_debug_proc_realloc(old: *mut c_void, size_in_bytes: size_t,
+                            file: *c_char, lineno: c_int) -> *mut c_void;
+    fn GC_debug_managed_realloc(old: *mut c_void, size_in_bytes: size_t,
+                            file: *c_char, lineno: c_int) -> *mut c_void;
+    fn GC_debug_other_realloc(old: *mut c_void, size_in_bytes: size_t,
                             file: *c_char, lineno: c_int) -> *mut c_void;
 
     /// Routines that allocate objects with debug information (like the
@@ -511,15 +607,35 @@ extern "C" {
     ///    platforms it may be more convenient not to recompile, e.g. for
     ///    leak detection.  This can be accomplished by instructing the
     ///    linker to replace malloc/realloc with these.
+    #[cfg(bdw_pristine_api)]
     fn GC_debug_realloc_replacement(old: *mut c_void, size_in_bytes: size_t) -> *mut c_void;
+    fn GC_debug_exchange_realloc_replacement(old: *mut c_void, size_in_bytes: size_t) -> *mut c_void;
+    fn GC_debug_proc_realloc_replacement(old: *mut c_void, size_in_bytes: size_t) -> *mut c_void;
+    fn GC_debug_managed_realloc_replacement(old: *mut c_void, size_in_bytes: size_t) -> *mut c_void;
+    fn GC_debug_other_realloc_replacement(old: *mut c_void, size_in_bytes: size_t) -> *mut c_void;
 
     /// If the object is known to never contain pointers, use
     /// GC_malloc_atomic instead of GC_malloc.
     ///
     /// The atomic versions promise that no relevant pointers are
     /// contained in the object.
+    #[cfg(bdw_pristine_api)]
     fn GC_malloc_atomic(size_in_bytes: size_t) -> *mut c_void;
+    fn GC_exchange_malloc_atomic(size_in_bytes: size_t) -> *mut c_void;
+    fn GC_proc_malloc_atomic(size_in_bytes: size_t) -> *mut c_void;
+    fn GC_managed_malloc_atomic(size_in_bytes: size_t) -> *mut c_void;
+    fn GC_other_malloc_atomic(size_in_bytes: size_t) -> *mut c_void;
+
+    #[cfg(bdw_pristine_api)]
     fn GC_debug_malloc_atomic(size_in_bytes: size_t,
+                                  file: *c_char, lineno: c_int) -> *mut c_void;
+    fn GC_debug_exchange_malloc_atomic(size_in_bytes: size_t,
+                                  file: *c_char, lineno: c_int) -> *mut c_void;
+    fn GC_debug_proc_malloc_atomic(size_in_bytes: size_t,
+                                  file: *c_char, lineno: c_int) -> *mut c_void;
+    fn GC_debug_managed_malloc_atomic(size_in_bytes: size_t,
+                                  file: *c_char, lineno: c_int) -> *mut c_void;
+    fn GC_debug_other_malloc_atomic(size_in_bytes: size_t,
                                   file: *c_char, lineno: c_int) -> *mut c_void;
 
     /// GC_malloc_uncollectable allocates an object that is scanned
@@ -529,8 +645,20 @@ extern "C" {
     ///
     /// GC_malloc_uncollectable and GC_free called on the resulting
     /// object implicitly update GC_non_gc_bytes appropriately.
+    #[cfg(bdw_pristine_api)]
     fn GC_malloc_uncollectable(size_in_bytes: size_t) -> *mut c_void;
+    fn GC_exchange_malloc_uncollectable(size_in_bytes: size_t) -> *mut c_void;
+    fn GC_proc_malloc_uncollectable(size_in_bytes: size_t) -> *mut c_void;
+    fn GC_other_malloc_uncollectable(size_in_bytes: size_t) -> *mut c_void;
+
+    #[cfg(bdw_pristine_api)]
     fn GC_debug_malloc_uncollectable(size_in_bytes: size_t,
+                                         file: *c_char, lineno: c_int) -> *mut c_void;
+    fn GC_debug_exchange_malloc_uncollectable(size_in_bytes: size_t,
+                                         file: *c_char, lineno: c_int) -> *mut c_void;
+    fn GC_debug_proc_malloc_uncollectable(size_in_bytes: size_t,
+                                         file: *c_char, lineno: c_int) -> *mut c_void;
+    fn GC_debug_other_malloc_uncollectable(size_in_bytes: size_t,
                                          file: *c_char, lineno: c_int) -> *mut c_void;
 
     /// GC_memalign() is not well tested.
@@ -546,7 +674,12 @@ extern "C" {
     /// An object should not be enabled for finalization when it is
     /// explicitly deallocated.
     /// GC_free(0) is a no-op, as required by ANSI C for free.
+    #[cfg(bdw_pristine_api)]
     fn GC_free(arg1: *mut c_void);
+    fn GC_exchange_free(arg1: *mut c_void);
+    fn GC_proc_free(arg1: *mut c_void);
+    fn GC_managed_free(arg1: *mut c_void);
+    fn GC_other_free(arg1: *mut c_void);
 
     /// Return a pointer to the base (lowest address) of an object given
     /// a pointer to a location within the object.
@@ -754,17 +887,33 @@ extern "C" {
     /// for arrays likely to be larger than 100K or so.  For other systems,
     /// or if the collector is not configured to recognize all interior
     /// pointers, the threshold is normally much higher.
+    #[cfg(bdw_pristine_api)]
     fn GC_malloc_ignore_off_page(lb: size_t) -> *mut c_void;
+    #[cfg(bdw_pristine_api)]
     fn GC_debug_malloc_ignore_off_page(lb: size_t,
                                            file: *c_char, lineno: c_int) -> *mut c_void;
+    #[cfg(bdw_pristine_api)]
     fn GC_malloc_atomic_ignore_off_page(lb: size_t) -> *mut c_void;
+    #[cfg(bdw_pristine_api)]
     fn GC_debug_malloc_atomic_ignore_off_page(lb: size_t,
                                                   file: *c_char, lineno: c_int) -> *mut c_void;
 
     /// (only defined if the library has been suitably compiled)
+    #[cfg(bdw_pristine_api)]
     fn GC_malloc_atomic_uncollectable(size_in_bytes: size_t) -> *mut c_void;
+    fn GC_exchange_malloc_atomic_uncollectable(size_in_bytes: size_t) -> *mut c_void;
+    fn GC_proc_malloc_atomic_uncollectable(size_in_bytes: size_t) -> *mut c_void;
+    fn GC_other_malloc_atomic_uncollectable(size_in_bytes: size_t) -> *mut c_void;
+
     /// (only defined if the library has been suitably compiled)
+    #[cfg(bdw_pristine_api)]
     fn GC_debug_malloc_atomic_uncollectable(size_in_bytes: size_t,
+                                                file: *c_char, lineno: c_int) -> *mut c_void;
+    fn GC_debug_exchange_malloc_atomic_uncollectable(size_in_bytes: size_t,
+                                                file: *c_char, lineno: c_int) -> *mut c_void;
+    fn GC_debug_proc_malloc_atomic_uncollectable(size_in_bytes: size_t,
+                                                file: *c_char, lineno: c_int) -> *mut c_void;
+    fn GC_debug_other_malloc_atomic_uncollectable(size_in_bytes: size_t,
                                                 file: *c_char, lineno: c_int) -> *mut c_void;
 
 

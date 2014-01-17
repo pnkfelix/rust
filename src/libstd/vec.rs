@@ -116,6 +116,7 @@ use ptr::to_unsafe_ptr;
 use ptr;
 use ptr::RawPtr;
 use rt::global_heap::{malloc_raw, realloc_raw, exchange_free};
+use rt::global_heap::bdw;
 use rt::local_heap::local_free;
 use mem;
 use mem::size_of;
@@ -190,7 +191,9 @@ pub fn with_capacity<T>(capacity: uint) -> ~[T] {
             if alloc / mem::nonzero_size_of::<T>() != capacity || size < alloc {
                 fail!("vector size is too large: {}", capacity);
             }
-            let ptr = malloc_raw(size) as *mut Vec<()>;
+            // Strictly speaking this could (and should) be Atom, not
+            // Scan.  But FSK is in debugging mode right now.
+            let ptr = malloc_raw(size, bdw::Uncollectable(bdw::Exchange, bdw::Scan)) as *mut Vec<()>;
             (*ptr).alloc = alloc;
             (*ptr).fill = 0;
             cast::transmute(ptr)

@@ -296,6 +296,7 @@ pub fn Not(cx: &Block, V: ValueRef) -> ValueRef {
 }
 
 /* Memory */
+#[cfg(evil_llvm_malloc_free)]
 pub fn Malloc(cx: &Block, Ty: Type) -> ValueRef {
     unsafe {
         if cx.unreachable.get() { return llvm::LLVMGetUndef(Type::i8p().to_ref()); }
@@ -303,6 +304,7 @@ pub fn Malloc(cx: &Block, Ty: Type) -> ValueRef {
     }
 }
 
+#[cfg(evil_llvm_malloc_free)]
 pub fn ArrayMalloc(cx: &Block, Ty: Type, Val: ValueRef) -> ValueRef {
     unsafe {
         if cx.unreachable.get() { return llvm::LLVMGetUndef(Type::i8p().to_ref()); }
@@ -326,8 +328,10 @@ pub fn ArrayAlloca(cx: &Block, Ty: Type, Val: ValueRef) -> ValueRef {
         b.position_before(cx.fcx.alloca_insert_pt.get().unwrap());
         b.array_alloca(Ty, Val)
     }
+
 }
 
+#[cfg(evil_llvm_malloc_free)]
 pub fn Free(cx: &Block, PointerVal: ValueRef) {
     if cx.unreachable.get() { return; }
     B(cx).free(PointerVal)

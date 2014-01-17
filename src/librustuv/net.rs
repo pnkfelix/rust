@@ -44,7 +44,7 @@ fn socket_addr_as_sockaddr<T>(addr: SocketAddr, f: |*sockaddr| -> T) -> T {
     (|| {
         f(addr)
     }).finally(|| {
-        unsafe { bdwgc::free(addr) };
+        unsafe { libc::free(addr) };
     })
 }
 
@@ -122,7 +122,7 @@ fn socket_name(sk: SocketNameKind, handle: *c_void) -> Result<SocketAddr, IoErro
         // Allocate a sockaddr_storage
         // since we don't know if it's ipv4 or ipv6
         let size = uvll::rust_sockaddr_size();
-        let name = bdwgc::malloc(size as size_t);
+        let name = bdwgc::other_malloc_uncollectable(size as size_t);
         assert!(!name.is_null());
         let mut namelen = size;
 
@@ -130,7 +130,7 @@ fn socket_name(sk: SocketNameKind, handle: *c_void) -> Result<SocketAddr, IoErro
             0 => Ok(sockaddr_to_socket_addr(name)),
             n => Err(uv_error_to_io_error(UvError(n)))
         };
-        bdwgc::free(name);
+        bdwgc::other_free(name);
         ret
     }
 }
