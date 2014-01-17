@@ -116,6 +116,7 @@ use ptr::to_unsafe_ptr;
 use ptr;
 use ptr::RawPtr;
 use rt::global_heap::{malloc_raw, realloc_raw, exchange_free};
+use rt::global_heap::bdw;
 use mem;
 use mem::size_of;
 use uint;

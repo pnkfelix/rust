@@ -273,7 +273,7 @@ impl<'a> ToCStr for &'a [u8] {
 
     unsafe fn to_c_str_unchecked(&self) -> CString {
         let self_len = self.len();
-        let buf = bdwgc::malloc_atomic(self_len as libc::size_t + 1) as *mut u8;
+        let buf = bdwgc::other_malloc_atomic_uncollectable(self_len as libc::size_t + 1) as *mut u8;
         if buf.is_null() {
             fail!("failed to allocate memory!");
         }

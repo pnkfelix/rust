@@ -346,7 +346,7 @@ impl<T: Send> Drop for Deque<T> {
 impl<T: Send> Buffer<T> {
     unsafe fn new(log_size: int) -> Buffer<T> {
         let size = (1 << log_size) * mem::size_of::<T>();
-        let buffer = bdwgc::malloc(size as libc::size_t);
+        let buffer = bdwgc::other_malloc_uncollectable(size as libc::size_t);
         assert!(!buffer.is_null());
         Buffer {
             storage: buffer as *T,
