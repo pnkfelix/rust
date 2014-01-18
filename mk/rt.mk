@@ -179,7 +179,7 @@ $$(LIBUV_STAMP_$(1)): $(S)src/rt/libuv-auto-clean-trigger
 # libuv triggers a few warnings on some platforms
 LIBUV_CFLAGS_$(1) := $(subst -Werror,,$(CFG_GCCISH_CFLAGS_$(1)))
 # and so does bdwgc
-LIBBDW_CFLAGS_$(1) := $(subst -Werror,,$(CFG_GCCISH_CFLAGS_$(1)))
+LIBBDW_CFLAGS_$(1) := $(subst -Werror,-Werror -Wno-error=incompatible-pointer-types -Wno-error=deprecated-declarations -Wno-error=unused-parameter -Wno-error=parentheses-equality,$(CFG_GCCISH_CFLAGS_$(1)))
 
 $$(LIBUV_MAKEFILE_$(1)): $$(LIBUV_DEPS) $$(MKFILE_DEPS) $$(LIBUV_STAMP_$(1))
 	(cd $(S)src/libuv/ && \
@@ -236,10 +236,12 @@ $$(LIBBDW_STAMP_$(1)): $(S)src/rt/libbdw-auto-clean-trigger
 
 $$(LIBBDW_LIB_$(1)): $$(LIBBDW_DIR_$(1))/.libs/libgc.a $$(MKFILE_DEPS)
 	$$(Q)ln -f $$< $$@
+
+# Below, can add -DLOG_ALLOCS to CFLAGS to get printfs on alloc/free calls.
 $$(LIBBDW_DIR_$(1))/.libs/libgc.a: $$(LIBBDW_DEPS) $$(LIBBDW_MAKEFILE_$(1)) \
 				    $$(MKFILE_DEPS)
 	$$(Q)$$(MAKE) -C $$(LIBBDW_DIR_$(1)) \
-		CFLAGS="$$(LIBBDW_CFLAGS_$(1)) $$(SNAP_DEFINES) -DLOG_ALLOCS" \
+		CFLAGS="$$(LIBBDW_CFLAGS_$(1)) $$(SNAP_DEFINES) " \
 		LDFLAGS="$$(CFG_GCCISH_LINK_FLAGS_$(1))" \
 		CC="$$(CC_$(1))" \
 		CXX="$$(CXX_$(1))" \
