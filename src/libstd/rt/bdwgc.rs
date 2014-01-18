@@ -77,7 +77,7 @@ pub fn init() {
         // Temporarily, I am putting in an absurdly small inverse load
         // factor to try to catch GC-related bugs as quickly as
         // possible during this initial development process.
-        GC_set_free_space_divisor(100);
+        // GC_set_free_space_divisor(100);
 
         GC_init();
     }
