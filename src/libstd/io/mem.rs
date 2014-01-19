@@ -24,17 +24,30 @@ use vec;
 pub struct MemWriter {
     priv buf: ~[u8],
     priv pos: uint,
+    priv origin: ~str,
 }
 
 impl MemWriter {
     /// Create a new `MemWriter`.
-    pub fn new() -> MemWriter {
-        MemWriter::with_capacity(128)
+    pub fn new<T:ToStr>(origin: T) -> MemWriter {
+        let origin = origin.to_str();
+        println!("MemWriter::new({})", origin);
+        MemWriter { buf: vec::with_capacity(128), pos: 0, origin: origin }
     }
+
+    pub fn new_from_fmt(origin: ~str) -> MemWriter {
+        // Cannot do the print here since that would diverge.
+        // println("MemWriter::new({})", origin);
+        MemWriter { buf: vec::with_capacity(128), pos: 0, origin: origin }
+    }
+
     /// Create a new `MemWriter`, allocating at least `n` bytes for
     /// the internal buffer.
-    pub fn with_capacity(n: uint) -> MemWriter {
-        MemWriter { buf: vec::with_capacity(n), pos: 0 }
+    pub fn with_capacity<T:ToStr>(n: uint, origin: T) -> MemWriter {
+        let origin = origin.to_str();
+        println!("MemWriter::with_capacity({}, {})", n, origin);
+        // if n == 128 { unsafe { asm!( "int3" ); } } else { unsafe { asm!( "int3; int3" ); } }
+        MemWriter { buf: vec::with_capacity(n), pos: 0, origin: origin }
     }
 }
 
@@ -61,7 +74,17 @@ impl Writer for MemWriter {
             vec::bytes::copy_memory(self.buf.mut_slice_from(self.pos), left);
         }
         if right.len() > 0 {
+            let oldcap = self.buf.capacity();
+            let oldlen = self.buf.len();
+            if right.len() > (oldcap - oldlen) && right.len() < oldcap {
+                self.buf.reserve(oldcap * 2);
+            }
             self.buf.push_all(right);
+            let newcap = self.buf.capacity();
+            if (newcap > oldcap) {
+                println!("MemWriter::write did realloc (old: {} new: {}), origin {}",
+                         oldcap, newcap, self.origin);
+            }
         }
 
         // Bump us forward
@@ -244,8 +267,8 @@ impl<'a> Buffer for BufReader<'a> {
 
 ///Calls a function with a MemWriter and returns
 ///the writer's stored vector.
-pub fn with_mem_writer(writeFn: |&mut MemWriter|) -> ~[u8] {
-    let mut writer = MemWriter::new();
+pub fn with_mem_writer<T:ToStr>(origin: T, writeFn: |&mut MemWriter|) -> ~[u8] {
+    let mut writer = MemWriter::new(origin);
     writeFn(&mut writer);
     writer.inner()
 }

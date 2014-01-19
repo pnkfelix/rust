@@ -113,6 +113,8 @@ pub struct CrateContext {
      uses_gc: bool,
      dbg_cx: Option<debuginfo::CrateDebugContext>,
      do_not_commit_warning_issued: Cell<bool>,
+     last_encode_size: Cell<Option<uint>>,
+     max_encode_size:  Cell<Option<uint>>,
 }
 
 impl CrateContext {
@@ -232,6 +234,8 @@ impl CrateContext {
                   uses_gc: false,
                   dbg_cx: dbg_cx,
                   do_not_commit_warning_issued: Cell::new(false),
+                  max_encode_size: Cell::new(None),
+                  last_encode_size: Cell::new(None),
             }
         }
     }

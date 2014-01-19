@@ -258,7 +258,7 @@ enum Work<'a, T> {
 }
 
 fn json_encode<'a, T:Encodable<json::Encoder<'a>>>(t: &T) -> ~str {
-    let mut writer = MemWriter::new();
+    let mut writer = MemWriter::new("extra::workcache::json_encode");
     let mut encoder = json::Encoder::new(&mut writer as &mut io::Writer);
     t.encode(&mut encoder);
     str::from_utf8_owned(writer.inner())

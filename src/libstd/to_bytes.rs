@@ -362,7 +362,7 @@ impl<A:IterBytes> ToBytes for A {
         use io::mem;
         use io::Writer;
 
-        mem::with_mem_writer(|wr| {
+        mem::with_mem_writer("std::to_bytes", |wr| {
             self.iter_bytes(lsb0, |bytes| {
                 wr.write(bytes);
                 true
