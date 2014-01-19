@@ -390,7 +390,7 @@ impl<T: Send> Buffer<T> {
 impl<T: Send> Drop for Buffer<T> {
     fn drop(&mut self) {
         // It is assumed that all buffers are empty on drop.
-        unsafe { libc::free(self.storage as *mut libc::c_void) }
+        unsafe { bdwgc::other_free(self.storage as *mut libc::c_void) }
     }
 }
 

@@ -43,7 +43,7 @@ impl MemWriter {
     /// Create a new `MemWriter`.
     pub fn new<T:ToStr>(origin: T) -> MemWriter {
         let origin = origin.to_str();
-        println!("MemWriter::new({})", origin);
+        // println!("MemWriter::new({})", origin);
         MemWriter { buf: vec::with_capacity(128), pos: 0, origin: origin }
     }
 
@@ -57,7 +57,7 @@ impl MemWriter {
     /// the internal buffer.
     pub fn with_capacity<T:ToStr>(n: uint, origin: T) -> MemWriter {
         let origin = origin.to_str();
-        println!("MemWriter::with_capacity({}, {})", n, origin);
+        // println!("MemWriter::with_capacity({}, {})", n, origin);
         // if n == 128 { unsafe { asm!( "int3" ); } } else { unsafe { asm!( "int3; int3" ); } }
         MemWriter { buf: vec::with_capacity(n), pos: 0, origin: origin }
     }
