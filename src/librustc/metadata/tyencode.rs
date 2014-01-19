@@ -70,7 +70,7 @@ pub fn enc_ty(w: &mut MemWriter, cx: @ctxt, t: ty::t) {
           let result_str = match result_str_opt {
             Some(s) => s,
             None => {
-                let wr = &mut MemWriter::new();
+                let wr = &mut MemWriter::with_capacity(128, "rustc::metadata::tyencode"); // 128 too small!
                 enc_sty(wr, cx, &ty::get(t).sty);
                 let s = str::from_utf8(wr.get_ref()).unwrap().to_managed();
                 let mut short_names_cache = cx.tcx

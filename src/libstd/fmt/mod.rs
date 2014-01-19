@@ -664,7 +664,7 @@ pub unsafe fn write_unsafe(output: &mut io::Writer,
 /// assert_eq!(s, ~"Hello, world!");
 /// ```
 pub fn format(args: &Arguments) -> ~str {
-    unsafe { format_unsafe(args.fmt, args.args) }
+    unsafe { format_unsafe(args.fmt, args.args, ~"std::fmt::format") }
 }
 
 /// The unsafe version of the formatting function.
@@ -688,8 +688,8 @@ pub fn format(args: &Arguments) -> ~str {
 ///
 /// Note that this function assumes that there are enough arguments for the
 /// format string.
-pub unsafe fn format_unsafe(fmt: &[rt::Piece], args: &[Argument]) -> ~str {
-    let mut output = MemWriter::new();
+unsafe fn format_unsafe(fmt: &[rt::Piece], args: &[Argument], origin: ~str) -> ~str {
+    let mut output = MemWriter::new_from_fmt(origin);
     write_unsafe(&mut output as &mut io::Writer, fmt, args);
     return str::from_utf8_owned(output.unwrap()).unwrap();
 }
