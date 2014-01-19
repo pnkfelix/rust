@@ -198,10 +198,10 @@ pub fn path_to_str(p: &ast::Path, intr: @IdentInterner) -> ~str {
     to_str(p, |a,b| print_path(a, b, false), intr)
 }
 
-pub fn fun_to_str(decl: &ast::FnDecl, purity: ast::Purity, name: ast::Ident,
-                  opt_explicit_self: Option<ast::ExplicitSelf_>,
+pub fn fun_to_str(decl: &ast::fn_decl, purity: ast::purity, name: ast::Ident,
+                  opt_explicit_self: Option<ast::explicit_self_>,
                   generics: &ast::Generics, intr: @IdentInterner) -> ~str {
-    let wr = ~MemWriter::new();
+    let wr = ~MemWriter::new("syntax::print::pprust::fun_to_str");
     let mut s = rust_printer(wr as ~io::Writer, intr);
     print_fn(&mut s, decl, Some(purity), AbiSet::Rust(),
              name, generics, opt_explicit_self, ast::Inherited).unwrap();
@@ -214,7 +214,7 @@ pub fn fun_to_str(decl: &ast::FnDecl, purity: ast::Purity, name: ast::Ident,
 }
 
 pub fn block_to_str(blk: &ast::Block, intr: @IdentInterner) -> ~str {
-    let wr = ~MemWriter::new();
+    let wr = ~MemWriter::new("syntax::print::pprust::block_to_str");
     let mut s = rust_printer(wr as ~io::Writer, intr);
     // containing cbox, will be closed by print-block at }
     cbox(&mut s, indent_unit).unwrap();
@@ -2452,7 +2452,7 @@ unsafe fn get_mem_writer(writer: &mut ~io::Writer) -> ~str {
 
 pub fn to_str<T>(t: &T, f: |&mut State, &T| -> io::IoResult<()>,
                  intr: @IdentInterner) -> ~str {
-    let wr = ~MemWriter::new();
+    let wr = ~MemWriter::new("syntax::print::pprust::to_str");
     let mut s = rust_printer(wr as ~io::Writer, intr);
     f(&mut s, t).unwrap();
     eof(&mut s.s).unwrap();

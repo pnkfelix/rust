@@ -347,7 +347,7 @@ impl<A:IterBytes> ToBytes for A {
     fn to_bytes(&self, lsb0: bool) -> ~[u8] {
         use io::Writer;
 
-        let mut m = ::io::MemWriter::new();
+        let mut m = ::io::MemWriter::new("to_bytes");
         self.iter_bytes(lsb0, |bytes| {
             m.write(bytes).unwrap();
             true

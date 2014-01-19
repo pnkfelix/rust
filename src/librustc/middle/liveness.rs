@@ -784,7 +784,7 @@ impl Liveness {
 
     #[allow(unused_must_use)]
     pub fn ln_str(&self, ln: LiveNode) -> ~str {
-        let mut wr = io::MemWriter::new();
+        let mut wr = io::MemWriter::new("rustc::middle::liveness:ln_str");
         {
             let wr = &mut wr as &mut io::Writer;
             {

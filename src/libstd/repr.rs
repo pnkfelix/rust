@@ -187,11 +187,11 @@ impl<'a> ReprVisitor<'a> {
     }
 
     pub fn write_escaped_slice(&mut self, slice: &str) -> bool {
-        if_ok!(self, self.writer.write(['"' as u8]));
+        if_ok!(self, self.writer.write(['\"' as u8]));
         for ch in slice.chars() {
             if !self.write_escaped_char(ch, true) { return false }
         }
-        if_ok!(self, self.writer.write(['"' as u8]));
+        if_ok!(self, self.writer.write(['\"' as u8]));
         true
     }
 
@@ -622,7 +622,7 @@ pub fn repr_to_str<T>(t: &T) -> ~str {
     use str;
     use io;
 
-    let mut result = io::MemWriter::new();
+    let mut result = io::MemWriter::new("std::repr");
     write_repr(&mut result as &mut io::Writer, t).unwrap();
     str::from_utf8_owned(result.unwrap()).unwrap()
 }
