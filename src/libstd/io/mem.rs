@@ -60,6 +60,8 @@ impl MemWriter {
 
 impl Writer for MemWriter {
     fn write(&mut self, buf: &[u8]) {
+        use vec::OwnedVector;
+
         // Make sure the internal buffer is as least as big as where we
         // currently are
         let difference = self.pos as i64 - self.buf.len() as i64;
@@ -81,6 +83,11 @@ impl Writer for MemWriter {
             vec::bytes::copy_memory(self.buf.mut_slice_from(self.pos), left);
         }
         if right.len() > 0 {
+            let oldcap = self.buf.capacity();
+            let oldlen = self.buf.len();
+            if (oldcap - oldlen) < right.len() && right.len() < (2*oldcap - oldlen) {
+                self.buf.reserve(oldcap * 2);
+            }
             self.buf.push_all(right);
         }
 
