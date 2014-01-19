@@ -282,7 +282,7 @@ $$(LIBBDW_LIB_$(1)): $$(LIBBDW_DIR_$(1))/.libs/libgc.a $$(MKFILE_DEPS)
 $$(LIBBDW_DIR_$(1))/.libs/libgc.a: $$(LIBBDW_DEPS) $$(LIBBDW_MAKEFILE_$(1)) \
 				    $$(MKFILE_DEPS)
 	$$(Q)$$(MAKE) -C $$(LIBBDW_DIR_$(1)) \
-		CFLAGS="$$(LIBBDW_CFLAGS_$(1)) $$(SNAP_DEFINES) " \
+		CFLAGS="$$(LIBBDW_CFLAGS_$(1)) $$(SNAP_DEFINES) -DLARGE_CONFIG -DATOMIC_UNCOLLECTABLE" \
 		LDFLAGS="$$(CFG_GCCISH_LINK_FLAGS_$(1))" \
 		CC="$$(CC_$(1))" \
 		CXX="$$(CXX_$(1))" \

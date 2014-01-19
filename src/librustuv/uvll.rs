@@ -31,7 +31,6 @@
 
 use std::libc::{size_t, c_int, c_uint, c_void, c_char, c_double};
 use std::libc::ssize_t;
-use std::libc::{malloc, free};
 use std::libc;
 use std::rt::bdwgc;
 
