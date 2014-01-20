@@ -18,7 +18,7 @@ collector is task-local so `Gc<T>` is not sendable.
 
 #[allow(experimental)];
 
-use kinds::Send;
+use kinds::{Send,Testate};
 use clone::{Clone, DeepClone};
 use managed;
 
@@ -39,7 +39,7 @@ pub struct Gc<T> {
     priv ptr: @T
 }
 
-impl<T: 'static> Gc<T> {
+impl<T: Testate + 'static> Gc<T> {
     /// Construct a new garbage-collected box
     #[inline]
     pub fn new(value: T) -> Gc<T> {
@@ -59,7 +59,7 @@ impl<T: 'static> Gc<T> {
     }
 }
 
-impl<T> Clone for Gc<T> {
+impl<T:Testate> Clone for Gc<T> {
     /// Clone the pointer only
     #[inline]
     fn clone(&self) -> Gc<T> {
@@ -80,7 +80,7 @@ pub static GC: () = ();
 /// The `Send` bound restricts this to acyclic graphs where it is well-defined.
 ///
 /// A `Freeze` bound would also work, but `Send` *or* `Freeze` cannot be expressed.
-impl<T: DeepClone + Send + 'static> DeepClone for Gc<T> {
+impl<T: DeepClone + Send + Testate + 'static> DeepClone for Gc<T> {
     #[inline]
     fn deep_clone(&self) -> Gc<T> {
         Gc::new(self.borrow().deep_clone())

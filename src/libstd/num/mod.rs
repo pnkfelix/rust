@@ -17,6 +17,7 @@
 
 use clone::{Clone, DeepClone};
 use cmp::{Eq, Ord};
+use kinds::Testate;
 use ops::{Add, Sub, Mul, Div, Rem, Neg};
 use ops::{Not, BitAnd, BitOr, BitXor, Shl, Shr};
 use option::{Option, Some, None};
@@ -991,7 +992,7 @@ pub fn pow_with_uint<T:NumCast+One+Zero+Div<T,T>+Mul<T,T>>(radix: uint, pow: uin
     total
 }
 
-impl<T: Zero + 'static> Zero for @T {
+impl<T: Testate + Zero + 'static> Zero for @T {
     fn zero() -> @T { @Zero::zero() }
     fn is_zero(&self) -> bool { (**self).is_zero() }
 }

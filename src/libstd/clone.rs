@@ -21,7 +21,7 @@ the `clone` method.
 
 */
 
-use std::kinds::Freeze;
+use std::kinds::{Freeze,Testate};
 
 /// A common trait for cloning an object.
 pub trait Clone {
@@ -155,7 +155,7 @@ impl<T: DeepClone> DeepClone for ~T {
 }
 
 // FIXME: #6525: should also be implemented for `T: Send + DeepClone`
-impl<T: Freeze + DeepClone + 'static> DeepClone for @T {
+impl<T: Testate + Freeze + DeepClone + 'static> DeepClone for @T {
     /// Return a deep copy of the managed box. The `Freeze` trait is required to prevent performing
     /// a deep clone of a potentially cyclical type.
     #[inline]

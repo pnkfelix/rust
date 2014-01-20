@@ -1951,7 +1951,11 @@ impl ops::Sub<TypeContents,TypeContents> for TypeContents {
 
 impl ToStr for TypeContents {
     fn to_str(&self) -> ~str {
-        format!("TypeContents({})", self.bits.to_str_radix(2))
+        let bitstr = self.bits.to_str_radix(2);
+        let leading = "0".repeat(16 - bitstr.len());
+        let bitstr = leading + bitstr;
+        let sub = |i,j| bitstr.slice(i,j);
+        format!("TypeContents({}__{}__{})", sub(0,4), sub(4,12), sub(12,16))
     }
 }
 
@@ -1965,6 +1969,10 @@ pub fn type_is_sendable(cx: ctxt, t: ty::t) -> bool {
 
 pub fn type_is_freezable(cx: ctxt, t: ty::t) -> bool {
     type_contents(cx, t).is_freezable(cx)
+}
+
+pub fn type_is_testate(cx: ctxt, t: ty::t) -> bool {
+    type_contents(cx, t).is_testate(cx)
 }
 
 pub fn type_contents(cx: ctxt, ty: t) -> TypeContents {
@@ -2040,7 +2048,11 @@ pub fn type_contents(cx: ctxt, ty: t) -> TypeContents {
             }
 
             ty_box(typ) => {
-                tc_ty(cx, typ, cache).managed_pointer()
+                let tc = tc_ty(cx, typ, cache).managed_pointer();
+                println!("  tc compute ty_box (ty: {}) = {}",
+                         ::util::ppaux::ty_to_str(cx, ty),
+                         tc.to_str());
+                tc
             }
 
             ty_uniq(typ) => {
@@ -2092,23 +2104,41 @@ pub fn type_contents(cx: ctxt, ty: t) -> TypeContents {
             ty_struct(did, ref substs) => {
                 let flds = struct_fields(cx, did, substs);
                 let mut res =
-                    TypeContents::union(flds, |f| tc_mt(cx, f.mt, cache));
+                    TypeContents::union(flds, |f| {
+                        let tc = tc_mt(cx, f.mt, cache);
+                        println!("  tc union ty_struct incl. (ty: {}) = {}",
+                                 ::util::ppaux::mt_to_str(cx, &f.mt),
+                                 tc.to_str());
+                        tc
+                    });
                 if ty::has_dtor(cx, did) {
+                    println!("  tc also ty_struct (ty: {}) has_dtor",
+                             ::util::ppaux::ty_to_str(cx, ty));
                     res = res | TC::OwnsDtor;
                 }
                 apply_attributes(cx, did, res)
             }
 
             ty_tup(ref tys) => {
-                TypeContents::union(*tys, |ty| tc_ty(cx, *ty, cache))
+                TypeContents::union(*tys, |ty| {
+                        let tc = tc_ty(cx, *ty, cache);
+                        println!("  tc union ty_tup incl. (ty: {}) = {}",
+                                 ::util::ppaux::ty_to_str(cx, *ty),
+                                 tc.to_str());
+                        tc
+                    })
             }
 
             ty_enum(did, ref substs) => {
                 let variants = substd_enum_variants(cx, did, substs);
                 let res =
                     TypeContents::union(variants, |variant| {
-                        TypeContents::union(variant.args, |arg_ty| {
-                            tc_ty(cx, *arg_ty, cache)
+                        TypeContents::union(variant.args, |&arg_ty| {
+                            let tc = tc_ty(cx, arg_ty, cache);
+                            println!("  tc union ty_enum incl. (ty: {}) = {}",
+                                     ::util::ppaux::ty_to_str(cx, arg_ty),
+                                     tc.to_str());
+                            tc
                         })
                     });
                 apply_attributes(cx, did, res)
@@ -2125,9 +2155,13 @@ pub fn type_contents(cx: ctxt, ty: t) -> TypeContents {
 
                 let ty_param_defs = cx.ty_param_defs.borrow();
                 let tp_def = ty_param_defs.get().get(&p.def_id.node);
-                kind_bounds_to_contents(cx,
-                                        tp_def.bounds.builtin_bounds,
-                                        tp_def.bounds.trait_bounds)
+                let tc = kind_bounds_to_contents(cx,
+                                                 tp_def.bounds.builtin_bounds,
+                                                 tp_def.bounds.trait_bounds);
+                println!("  tc lookup ty_param (ty: {}) = {}",
+                         ::util::ppaux::ty_to_str(cx, ty),
+                         tc.to_str());
+                tc
             }
 
             ty_self(def_id) => {
@@ -2259,7 +2293,7 @@ pub fn type_contents(cx: ctxt, ty: t) -> TypeContents {
                 BoundFreeze => TC::Nonfreezable,
                 BoundSized => TC::Nonsized,
                 BoundPod => TC::Nonpod,
-                BoundTestate => TC::Nontestate, // sic ("intestate")
+                BoundTestate => TC::Nontestate,
             };
         });
         return tc;

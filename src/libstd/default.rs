@@ -10,13 +10,15 @@
 
 //! The `Default` trait for types which may have meaningful default values
 
+use kinds::Testate;
+
 /// A trait that types which have a useful default value should implement.
 pub trait Default {
     /// Return the "default value" for a type.
     fn default() -> Self;
 }
 
-impl<T: Default + 'static> Default for @T {
+impl<T: Testate + Default + 'static> Default for @T {
     fn default() -> @T { @Default::default() }
 }
 

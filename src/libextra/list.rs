@@ -10,7 +10,7 @@
 
 //! A standard, garbage-collected linked list.
 
-
+use std::kinds::Testate;
 
 #[deriving(Clone, Eq)]
 #[allow(missing_doc)]
@@ -20,7 +20,7 @@ pub enum List<T> {
 }
 
 /// Create a list from a vector
-pub fn from_vec<T:Clone + 'static>(v: &[T]) -> @List<T> {
+pub fn from_vec<T:Clone + Testate + 'static>(v: &[T]) -> @List<T> {
     v.rev_iter().fold(@Nil::<T>, |t, h| @Cons((*h).clone(), t))
 }
 
@@ -105,7 +105,7 @@ pub fn head<T:Clone>(ls: @List<T>) -> T {
 }
 
 /// Appends one list to another
-pub fn append<T:Clone + 'static>(l: @List<T>, m: @List<T>) -> @List<T> {
+pub fn append<T:Clone + Testate + 'static>(l: @List<T>, m: @List<T>) -> @List<T> {
     match *l {
       Nil => return m,
       Cons(ref x, xs) => {

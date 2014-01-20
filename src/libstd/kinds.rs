@@ -38,6 +38,15 @@ pub trait Sized {
     // Empty.
 }
 
+/// Types that can be put into a Gc<T>.
+///
+/// The name "Testate" is borrowed from Estate Law: they have their
+/// affairs in order and are prepared to die.
+#[lang="testate"]
+pub trait Testate {
+    // Empty.
+}
+
 /// Types that can be copied by simply copying bits (i.e. `memcpy`).
 ///
 /// The name "POD" stands for "Plain Old Data" and is borrowed from C++.
@@ -45,4 +54,3 @@ pub trait Sized {
 pub trait Pod {
     // Empty.
 }
-

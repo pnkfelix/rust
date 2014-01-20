@@ -22,7 +22,7 @@
 
 use driver::session::Session;
 use metadata::csearch::each_lang_item;
-use middle::ty::{BuiltinBound, BoundFreeze, BoundPod, BoundSend, BoundSized};
+use middle::ty::{BuiltinBound, BoundFreeze, BoundPod, BoundSend, BoundSized, BoundTestate};
 use syntax::ast;
 use syntax::ast_util::local_def;
 use syntax::attr::AttrMetaMethods;
@@ -84,6 +84,8 @@ impl LanguageItems {
             Some(BoundSized)
         } else if Some(id) == self.pod_trait() {
             Some(BoundPod)
+        } else if Some(id) == self.testate_trait() {
+            Some(BoundTestate)
         } else {
             None
         }
@@ -207,7 +209,7 @@ pub fn collect_language_items(crate: &ast::Crate,
 }
 
 lets_do_this! {
-    There are 40 lang items.
+    There are 41 lang items.
 
 //  ID, Variant name,                    Name,                      Method name;
     0,  FreezeTraitLangItem,             "freeze",                  freeze_trait;
@@ -260,5 +262,7 @@ lets_do_this! {
     37, ManagedHeapLangItem,             "managed_heap",            managed_heap;
     38, ExchangeHeapLangItem,            "exchange_heap",           exchange_heap;
     39, GcLangItem,                      "gc",                      gc;
+
+    40, TestateTraitLangItem,            "testate",                 testate_trait;
 }
 

@@ -310,6 +310,7 @@ pub fn check_expr(cx: &mut Context, e: &Expr) {
         ExprUnary(_, UnBox, interior) => {
             let interior_type = ty::expr_ty(cx.tcx, interior);
             let _ = check_durable(cx.tcx, interior_type, interior.span);
+            let _ = check_testate(cx.tcx, interior_type, interior.span);
         }
         ExprCast(source, _) => {
             let source_ty = ty::expr_ty(cx.tcx, source);
@@ -482,6 +483,19 @@ pub fn check_send(cx: &Context, ty: ty::t, sp: Span) -> bool {
         cx.tcx.sess.span_err(
             sp, format!("value has non-sendable type `{}`",
                      ty_to_str(cx.tcx, ty)));
+        false
+    } else {
+        true
+    }
+}
+
+pub fn check_testate(tcx: ty::ctxt, ty: ty::t, sp: Span) -> bool {
+    println!("check_testate type_contents({})={}",
+           ty_to_str(tcx, ty),
+           ty::type_contents(tcx, ty).to_str());
+
+    if !ty::type_is_testate(tcx, ty) {
+        tcx.sess.span_err(sp, "operand to Gc<T> and @T must be Testate");
         false
     } else {
         true

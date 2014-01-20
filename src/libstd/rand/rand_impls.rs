@@ -12,6 +12,7 @@
 
 use char;
 use int;
+use kinds::Testate;
 use option::{Option, Some, None};
 use rand::{Rand,Rng};
 use uint;
@@ -219,7 +220,7 @@ impl<T: Rand> Rand for ~T {
     fn rand<R: Rng>(rng: &mut R) -> ~T { ~rng.gen() }
 }
 
-impl<T: Rand + 'static> Rand for @T {
+impl<T: Testate + Rand + 'static> Rand for @T {
     #[inline]
     fn rand<R: Rng>(rng: &mut R) -> @T { @rng.gen() }
 }

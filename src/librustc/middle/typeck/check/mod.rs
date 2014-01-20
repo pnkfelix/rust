@@ -2802,7 +2802,7 @@ pub fn check_expr_with_unifier(fcx: @FnCtxt,
         }
       }
       ast::ExprUnary(callee_id, unop, oprnd) => {
-        let exp_inner = unpack_expected(fcx, expected, |sty| {
+        let exp_inner : Option<ty::t> = unpack_expected(fcx, expected, |sty| {
             match unop {
                 ast::UnBox | ast::UnUniq => match *sty {
                     ty::ty_box(ty) | ty::ty_uniq(ty) => Some(ty),
@@ -2818,6 +2818,12 @@ pub fn check_expr_with_unifier(fcx: @FnCtxt,
               !ty::type_is_bot(oprnd_t) {
             match unop {
                 ast::UnBox => {
+/*
+                    if !ty::type_is_testate(tcx, oprnd_t) {
+                      println!("non-testate oprnd_t: {}", ppaux::ty_to_str(tcx, oprnd_t));
+                      tcx.sess.span_err(expr.span, "@expr operand must be testate");
+                    }
+*/
                     oprnd_t = ty::mk_box(tcx, oprnd_t)
                 }
                 ast::UnUniq => {
