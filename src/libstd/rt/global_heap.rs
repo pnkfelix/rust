@@ -58,10 +58,14 @@ pub unsafe fn malloc_raw(size: uint, mode: bdw::Mode) -> *mut u8 {
             GC(Scan) => bdwgc::managed_malloc(size) as *mut c_void,
             GC(Atom) => bdwgc::managed_malloc_atomic(size),
             Uncollectable(Managed,  _) => fail!("unhandled in bdw wrappers"),
-            Uncollectable(Exchange, Scan) => bdwgc::exchange_malloc_uncollectable(size) as *mut c_void,
-            Uncollectable(Other,    Scan) => bdwgc::other_malloc_uncollectable(size) as *mut c_void,
-            Uncollectable(Exchange, Atom) => bdwgc::exchange_malloc_atomic_uncollectable(size) as *mut c_void,
-            Uncollectable(Other,    Atom) => bdwgc::other_malloc_atomic_uncollectable(size) as *mut c_void,
+            Uncollectable(Exchange, Scan) =>
+                bdwgc::exchange_malloc_uncollectable(size) as *mut c_void,
+            Uncollectable(Other,    Scan) =>
+                bdwgc::other_malloc_uncollectable(size) as *mut c_void,
+            Uncollectable(Exchange, Atom) =>
+                bdwgc::exchange_malloc_atomic_uncollectable(size) as *mut c_void,
+            Uncollectable(Other,    Atom) =>
+                bdwgc::other_malloc_atomic_uncollectable(size) as *mut c_void,
         };
 
         if p.is_null() {
