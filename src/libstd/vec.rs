@@ -191,9 +191,13 @@ pub fn with_capacity<T>(capacity: uint) -> ~[T] {
             if alloc / mem::nonzero_size_of::<T>() != capacity || size < alloc {
                 fail!("vector size is too large: {}", capacity);
             }
-            // Strictly speaking this could (and should) be Atom, not
-            // Scan.  But FSK is in debugging mode right now.
-            let ptr = malloc_raw(size, bdw::Uncollectable(bdw::Exchange, bdw::Scan)) as *mut Vec<()>;
+
+            // Atom rather than Scan because: (1.)  borrowed-pointers
+            // into managed data should have some other owning pointer
+            // that we trace through, and (2.) bdw is a non-moving
+            // collector.
+            let mode = bdw::Uncollectable(bdw::Exchange, bdw::Atom);
+            let ptr = malloc_raw(size, mode) as *mut Vec<()>;
             (*ptr).alloc = alloc;
             (*ptr).fill = 0;
             cast::transmute(ptr)

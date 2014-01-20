@@ -613,7 +613,7 @@ extern "C" {
     ///    linker to replace malloc/realloc with these.
     #[cfg(bdw_pristine_api)]
     fn GC_debug_realloc_replacement(old: *mut c_void, size_in_bytes: size_t) -> *mut c_void;
-    fn GC_debug_exchange_realloc_replacement(old: *mut c_void, size_in_bytes: size_t) -> *mut c_void;
+    fn GC_debug_exchange_realloc_replacement(old: *mut c_void, size: size_t) -> *mut c_void;
     fn GC_debug_proc_realloc_replacement(old: *mut c_void, size_in_bytes: size_t) -> *mut c_void;
     fn GC_debug_managed_realloc_replacement(old: *mut c_void, size_in_bytes: size_t) -> *mut c_void;
     fn GC_debug_other_realloc_replacement(old: *mut c_void, size_in_bytes: size_t) -> *mut c_void;
