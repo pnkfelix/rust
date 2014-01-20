@@ -107,7 +107,7 @@ fn parse_logging_spec(spec: ~str) -> ~[LogDirective]{
 /// Set the log level of an entry in the crate map depending on the vector
 /// of log directives
 fn update_entry(dirs: &[LogDirective], entry: &ModEntry) -> u32 {
-    fn gc(where: uint) { 
+    fn gc(where: uint) {
         unsafe {
             super::bdwgc::collect_from(where);
         }
@@ -152,7 +152,7 @@ fn update_entry(dirs: &[LogDirective], entry: &ModEntry) -> u32 {
 /// Set log level for every entry in crate_map according to the sepecification
 /// in settings
 fn update_log_settings(crate_map: &CrateMap, settings: ~str) {
-    fn gc(where: uint) { 
+    fn gc(where: uint) {
         unsafe {
             super::bdwgc::collect_from(where);
         }
@@ -206,7 +206,7 @@ fn update_log_settings(crate_map: &CrateMap, settings: ~str) {
 pub fn init() {
     use os;
 
-    fn gc(where: uint) { 
+    fn gc(where: uint) {
         unsafe {
             super::bdwgc::collect_from(where);
         }
