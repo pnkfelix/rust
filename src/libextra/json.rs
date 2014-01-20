@@ -709,7 +709,7 @@ impl Json {
 
     /// Encodes a json value into a string
     pub fn to_pretty_str(&self) -> ~str {
-        let mut s = MemWriter::new("extra::json::to_pretty_str");
+        let mut s = MemWriter::new();
         self.to_pretty_writer(&mut s as &mut io::Writer).unwrap();
         str::from_utf8_owned(s.unwrap()).unwrap()
     }
@@ -1574,7 +1574,7 @@ impl<A:ToJson> ToJson for Option<A> {
 impl to_str::ToStr for Json {
     /// Encodes a json value into a string
     fn to_str(&self) -> ~str {
-        let mut s = MemWriter::new("extra::json::to_str");
+        let mut s = MemWriter::new();
         self.to_writer(&mut s as &mut io::Writer).unwrap();
         str::from_utf8_owned(s.unwrap()).unwrap()
     }

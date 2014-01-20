@@ -2634,19 +2634,7 @@ pub fn write_metadata(cx: &CrateContext, crate: &ast::Crate) -> ~[u8] {
 
     // XXX obviously size_hint should be one of the encode_parms
     let encode_parms = crate_ctxt_to_encode_parms(cx, encode_inlined_item);
-    let metadata = encoder::encode_metadata(encode_parms, crate, cx.max_encode_size.get());
-
-    match cx.max_encode_size.get() {
-        Some(old_max) => {
-            let len = metadata.len();
-            if len > old_max {
-                println!("updating max_encode_size from {} to {}", old_max, len);
-                cx.max_encode_size.set(Some(len));
-            }
-        }
-        None => {}
-    }
-    cx.last_encode_size.set(Some(metadata.len()));
+    let metadata = encoder::encode_metadata(encode_parms, crate);
     let compressed = encoder::metadata_encoding_version +
                         flate::deflate_bytes(metadata);
     let llmeta = C_bytes(compressed);
