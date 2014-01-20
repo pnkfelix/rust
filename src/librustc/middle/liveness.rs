@@ -794,7 +794,7 @@ impl Liveness {
     }
 
     pub fn ln_str(&self, ln: LiveNode) -> ~str {
-        str::from_utf8_owned(io::mem::with_mem_writer("rustc::middle::liveness::ln_str", |wr| {
+        str::from_utf8_owned(io::mem::with_mem_writer(|wr| {
             let wr = wr as &mut io::Writer;
             {
                 let lnks = self.ir.lnks.try_borrow();

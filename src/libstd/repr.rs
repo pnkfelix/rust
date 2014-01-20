@@ -622,7 +622,7 @@ pub fn repr_to_str<T>(t: &T) -> ~str {
     use io;
     use io::Decorator;
 
-    let mut result = io::mem::MemWriter::new("std::repr");
+    let mut result = io::mem::MemWriter::new();
     write_repr(&mut result as &mut io::Writer, t);
     str::from_utf8_owned(result.inner())
 }

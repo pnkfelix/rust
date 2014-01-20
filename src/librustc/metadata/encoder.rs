@@ -1804,12 +1804,8 @@ pub static metadata_encoding_version : &'static [u8] =
       0x74, //'t' as u8,
       0, 0, 0, 1 ];
 
-pub fn encode_metadata(parms: EncodeParams, crate: &Crate, size_hint: Option<uint>) -> ~[u8] {
-    let ctxt = "rustc::metadata::encoder::encode_metadata";
-    let mut wr = match size_hint {
-        None => MemWriter::new(ctxt),
-        Some(sz) => MemWriter::with_capacity(sz, ctxt),
-    };
+pub fn encode_metadata(parms: EncodeParams, crate: &Crate) -> ~[u8] {
+    let mut wr = MemWriter::new();
     encode_metadata_inner(&mut wr, parms, crate);
     wr.inner()
 }
@@ -1932,8 +1928,7 @@ pub fn encoded_ty(tcx: ty::ctxt, t: ty::t) -> ~str {
         ds: def_to_str,
         tcx: tcx,
         abbrevs: tyencode::ac_no_abbrevs};
-    let ctxt = "rustc::metadata::encoder::encoded_ty";
-    let mut wr = MemWriter::with_capacity(128, ctxt); // 128 too small?
+    let mut wr = MemWriter::new();
     tyencode::enc_ty(&mut wr, cx, t);
     str::from_utf8_owned(wr.inner_ref().to_owned())
 }
