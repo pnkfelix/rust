@@ -460,7 +460,7 @@ mod tests {
     #[test]
     fn test_unwrap() {
         let c_str = "hello".to_c_str();
-        unsafe { libc::free(c_str.unwrap() as *libc::c_void) }
+        unsafe { bdwgc::free(c_str.unwrap() as *libc::c_void) }
     }
 
     #[test]
