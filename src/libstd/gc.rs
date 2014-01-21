@@ -151,6 +151,18 @@ pub struct TrashCan {
 }
 
 impl TrashCan {
+    /// Puts the debris into this trash can for eventual dropping later.
+    pub fn discard(&mut self, debris: ~Drop) {
+        let mut g = self.bucket_list.borrow_mut();
+        g.get().receive(debris);
+    }
+
+    /// Drop up to `n` of the enqueued assets in this trash can.
+    pub fn empty_some(&mut self, n: uint) {
+        let mut bl = self.bucket_list.borrow_mut();
+        bl.get().drop_some_assets(n);
+    }
+
     /// Drop all of the enqueued assets in this trash can.
     pub fn empty_all(&mut self) {
         let mut bl = self.bucket_list.borrow_mut();
@@ -164,8 +176,6 @@ impl TrashCan {
         }
     }
 }
-
-pub type TaskTrash<E> = Discard<E, TrashCan>;
 
 // Note to self (can delete before posting for PR): I (Felix) started
 // off using Clone here and below to workaround fact that drop takes
@@ -217,26 +227,22 @@ impl<E:Drop + Send, G:Guardian<~Drop>> Drop for Discard<E,G> {
 // rustc.  Look more tomorrow.
 
 #[unsafe_destructor]
-impl<E:Drop + Send, G:Guardian<~Drop>> Drop for Can<E> {
+impl<E:Drop + Send> Drop for Can<E> {
     fn drop(&mut self) {
         use rt::task::Task;
         use rt::local::Local;
         let &Can(ref mut ptr_e) = self;
-        let asset : ~E = unsafe {
+        let (asset, trash_can) = unsafe {
             let p = ptr_e as *mut ~E;
-            ptr::read_and_zero_ptr(p)
-        };
-        let debris = asset as ~Drop;
-
-        let task_ptr: Option<*mut Task> = Local::try_unsafe_borrow();
-        match task_ptr {
-            Some(task) => {
-                let g : RefMut<SimpleGuardian<~Drop>> =
-                    (*task).trash.bucket_list.borrow_mut();
-                g.get().receive(debris);
+            let asset : ~E = ptr::read_and_zero_ptr(p);
+            let task_ptr : Option<*mut Task> = Local::try_unsafe_borrow();
+            match task_ptr {
+                Some(task) => (asset, &mut (*task).trash),
+                None => fail!("Trash Can disposal outside of task")
             }
-            None => fail!("Trash Can disposal outside of task")
-        }
+        };
+        let debris : ~Drop = asset as ~Drop;
+        trash_can.discard(debris);
     }
 }
 

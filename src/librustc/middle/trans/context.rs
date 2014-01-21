@@ -29,6 +29,7 @@ use util::sha2::Sha256;
 
 use std::cell::{Cell, RefCell};
 use std::c_str::ToCStr;
+use std::gc;
 use std::hashmap::{HashMap, HashSet};
 use std::local_data;
 use std::libc::c_uint;
@@ -116,7 +117,7 @@ pub struct CrateContext {
      do_not_commit_warning_issued: Cell<bool>,
 
      // context-destruction handling
-     after_death: gc::TaskTrash<UnsetTaskLocalState>,
+     after_death: gc::Can<UnsetTaskLocalState>,
 }
 
 impl CrateContext {
@@ -236,6 +237,7 @@ impl CrateContext {
                   uses_gc: false,
                   dbg_cx: dbg_cx,
                   do_not_commit_warning_issued: Cell::new(false),
+                  after_death: gc::Can(~UnsetTaskLocalState::new()),
             }
         }
     }
@@ -277,8 +279,12 @@ impl CrateContext {
 
 struct UnsetTaskLocalState;
 
+impl UnsetTaskLocalState {
+    fn new() -> UnsetTaskLocalState { UnsetTaskLocalState }
+}
+
 #[cfg(one_way_felix_is_considering)]
-// It may be more a reasonable start for me to abuse 
+// It may be a more reasonable start for me to abuse
 // unsafe_can_drop_during_gc for this
 impl Drop for UnsetTaskLocalState
 {
