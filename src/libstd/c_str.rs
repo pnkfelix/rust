@@ -62,7 +62,11 @@ my_string.with_c_str(|c_buffer| {
 
 */
 
+//#[cfg(test)]
+//use realstd::rt::bdwgc;
+//#[cfg(not(test))]
 use rt::bdwgc;
+
 use cast;
 use container::Container;
 use iter::{Iterator, range};
@@ -383,6 +387,9 @@ mod tests {
     use libc;
     use ptr;
 
+    // Working around issue when just importing rt::bdwgc.
+    use bdwgc_other_free = rt::bdwgc::other_free;
+
     #[test]
     fn test_str_multistring_parsing() {
         unsafe {
@@ -460,7 +467,7 @@ mod tests {
     #[test]
     fn test_unwrap() {
         let c_str = "hello".to_c_str();
-        unsafe { bdwgc::other_free(c_str.unwrap() as *libc::c_void) }
+        unsafe { bdwgc_other_free(c_str.unwrap() as *libc::c_void) }
     }
 
     #[test]
