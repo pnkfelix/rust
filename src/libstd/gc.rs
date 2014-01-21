@@ -19,8 +19,226 @@ collector is task-local so `Gc<T>` is not sendable.
 #[allow(experimental)];
 
 use kinds::{Send,Testate};
+use cell::{RefCell,RefMut};
 use clone::{Clone, DeepClone};
+use container::Container;
 use managed;
+use ops::Drop;
+use option::{Option, None, Some};
+use ptr;
+use vec::OwnedVector;
+
+/// A Guardian mediates the transfer of assets from dead managed
+/// data back to the program for disposal.
+///
+/// An "asset" here means "a struct implementing the Drop trait";
+/// usually this means the struct holds some resource that the GC is
+/// not itself responsible for disposing of.
+///
+/// Further explanation:
+///
+/// The Garbage Collector (GC) is responsible for identifying dead
+/// managed data; it does so at arbitrary points in the program's
+/// execution.  Much managed data will be plain old bytes that the GC
+/// deallocates directly; but some of the dead managed data may have
+/// owned resources that need special handling.
+///
+/// Examples of resources that the GC could encounter include:
+///
+///   * a block of memory (*T) shared across multiple tasks, or
+///
+///   * a pointer to a black box owned by a native library (such as a
+///     file handle).
+///
+/// Generally disposing of such resources will require running
+/// arbitrary user code; thus the above definition of "asset."
+///
+/// Since the GC runs at unpredictable times, it is not sound for the
+/// GC to invoke the arbitrary user code associated with assets
+///
+/// Instead, in a Guardian-based finalization the program is
+/// responsible for:
+///
+///   1. associating each asset with some guardian, and
+///
+///   2. disposing of the assets that accumulated in the guardian(s).
+///
+/// Note that the promptness of disposal (or lack thereof) is entirely
+/// up to the mutator.  If different assets have different disposal
+/// priorities, then associate them with distinct guardians, and poll
+/// them at different rates.
+///
+/// See also Testate
+trait Guardian<A> {
+    // Some easy methods: these are called from the mutator.
+
+    /// How many assets are currently awaiting post-processing by the mutator?
+    fn num_assets(&self) -> uint;
+
+    /// Extract an asset for custom post-processing.
+    fn pull_asset(&mut self) -> Option<A>; // ("pull" b/c pop implies order)
+
+    /// Calls the destructors of at most `n` enqueued assets.
+    fn drop_some_assets(&mut self, n: uint);
+
+    /// Calls the destructors for all enqueued assets.
+    fn drop_all_assets(&mut self) {
+        let n = self.num_assets();
+        self.drop_some_assets(n);
+    }
+
+    /// Enqueues `asset` for later post-processing.  Called by the GC
+    /// at arbitrary points in time; any asynchronous behavior
+    /// (e.g. acquiring a lock) should not be done here, but instead
+    /// left for the asset post-processing.
+    fn receive(&mut self, asset:A);
+}
+
+/// A SimpleGuardian is just a queue of gathered assets.
+pub struct SimpleGuardian<A> {
+    priv assets: ~[A]
+}
+
+impl<A> SimpleGuardian<A> {
+    fn new() -> SimpleGuardian<A> { SimpleGuardian { assets: ~[] } }
+}
+
+// a variation worth considering: a guardian whose receive method also
+// enqueues the guardian itself onto a collection of non-empty
+// guardians, thus side-stepping the issue of potentially wasting time
+// polling a large set of empty guardians.
+
+impl<E> Guardian<E> for SimpleGuardian<E> {
+    fn num_assets(&self) -> uint { self.assets.len() }
+    fn pull_asset(&mut self) -> Option<E> { self.assets.pop_opt() }
+    fn drop_some_assets(&mut self, n: uint) {
+        let l = self.assets.len();
+        self.assets.truncate(if n < l { l - n } else { 0 });
+    }
+    fn receive(&mut self, asset:E) { self.assets.push(asset); }
+}
+
+/// A Guard is specialized for handling assets of a particular type.
+#[unsafe_can_drop_during_gc]
+pub struct Guard<E, G> { // G:Guardian<E>
+    /// The asset to be handed off by this guard upon its death.
+    asset: E,
+    priv guardian: G
+}
+
+/// Use Discard with simple-minded guardians that only know how to do
+/// one thing with assets: destroy them.
+#[unsafe_can_drop_during_gc]
+pub struct Discard<E, G> { // G:Guardian<~Drop>
+    /// The asset to be handed off by this guard upon its death.
+    asset: ~E,
+    priv guardian: G
+}
+
+/// Can is a generic guard that is hard-wired to throw assets into the
+/// (per-task) TrashCan.  Note that if a program uses Can, the program
+/// is itself responsible for periodically empyting the trash.
+///
+/// See TrashCan::empty_all.
+#[unsafe_can_drop_during_gc]
+pub struct Can<E>(~E);
+
+/// The TrashCan is a task-local simple minded guardian.  You can hook
+/// up to it via Discard (or Guard, if your type is compatible), or
+/// you can just use Can.
+pub struct TrashCan {
+    priv bucket_list: RefCell<SimpleGuardian<~Drop>>
+}
+
+impl TrashCan {
+    /// Drop all of the enqueued assets in this trash can.
+    pub fn empty_all(&mut self) {
+        let mut bl = self.bucket_list.borrow_mut();
+        bl.get().drop_all_assets();
+    }
+
+    /// Create a new trash can.
+    pub fn new() -> TrashCan {
+        TrashCan {
+            bucket_list: RefCell::new(SimpleGuardian::new())
+        }
+    }
+}
+
+pub type TaskTrash<E> = Discard<E, TrashCan>;
+
+// Note to self (can delete before posting for PR): I (Felix) started
+// off using Clone here and below to workaround fact that drop takes
+// &mut self rather than self-by-value.  But really, assets won't be
+// cloneable (and shouldn't be), e.g. a uniquely held file-handle.
+// From reading the vec.rs code, it seems like ptr::read_and_zero_ptr
+// may have been made exactly for cases like this.
+
+/// Hands 'asset` off to (specialized) `guard` when this dies.
+pub fn Guard<A, G:Guardian<A>>(asset: A, guard: G) -> Guard<A,G> {
+    Guard{ asset: asset, guardian: guard }
+}
+
+#[unsafe_destructor]
+impl<E, G:Guardian<E>> Drop for Guard<E,G> {
+    fn drop(&mut self) {
+        let asset = unsafe {
+            let p = &mut self.asset as *mut E;
+            ptr::read_and_zero_ptr(p)
+        };
+        self.guardian.receive(asset);
+    }
+}
+
+/// Hands `asset` off to (generic) `guard` when this dies.
+pub fn Discard<A, G:Guardian<~Drop>>(asset: ~A, guard: G) -> Discard<A, G> {
+    Discard{ asset: asset, guardian: guard }
+}
+
+#[unsafe_destructor]
+impl<E:Drop + Send, G:Guardian<~Drop>> Drop for Discard<E,G> {
+    fn drop(&mut self) {
+        let asset = unsafe {
+            let p = &mut self.asset as *mut ~E;
+            ptr::read_and_zero_ptr(p)
+        };
+        self.guardian.receive(asset as ~Drop);
+    }
+}
+
+// XXX wait, is this madness?  I probably cannot rely on the
+// direct implementation, because we monomorpize Drop impls
+// and I doubt that the packagine code for `~E as ~Drop` is
+// invariant for all E:Drop.  (It *could* be, but I have no
+// reason to beliee that it is at the moment.)
+//
+// And for all I currently know, that inability to compile generic
+// destructors could explain the error messsage I am getting from
+// rustc.  Look more tomorrow.
+
+#[unsafe_destructor]
+impl<E:Drop + Send, G:Guardian<~Drop>> Drop for Can<E> {
+    fn drop(&mut self) {
+        use rt::task::Task;
+        use rt::local::Local;
+        let &Can(ref mut ptr_e) = self;
+        let asset : ~E = unsafe {
+            let p = ptr_e as *mut ~E;
+            ptr::read_and_zero_ptr(p)
+        };
+        let debris = asset as ~Drop;
+
+        let task_ptr: Option<*mut Task> = Local::try_unsafe_borrow();
+        match task_ptr {
+            Some(task) => {
+                let g : RefMut<SimpleGuardian<~Drop>> =
+                    (*task).trash.bucket_list.borrow_mut();
+                g.get().receive(debris);
+            }
+            None => fail!("Trash Can disposal outside of task")
+        }
+    }
+}
 
 /// Immutable garbage-collected pointer type
 #[lang="gc"]

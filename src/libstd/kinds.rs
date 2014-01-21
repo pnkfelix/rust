@@ -47,6 +47,10 @@ pub trait Testate {
     // Empty.
 }
 
+// remove after some appropriate snapshot in the future.
+#[cfg(stage0)]
+impl<T> Testate for T { }
+
 /// Types that can be copied by simply copying bits (i.e. `memcpy`).
 ///
 /// The name "POD" stands for "Plain Old Data" and is borrowed from C++.

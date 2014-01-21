@@ -18,6 +18,7 @@ use borrow;
 use cast;
 use cleanup;
 use clone::Clone;
+use gc;
 use io::Writer;
 use iter::{Iterator, Take};
 use local_data;
@@ -48,6 +49,7 @@ use unstable::finally::Finally;
 pub struct Task {
     heap: LocalHeap,
     gc: GarbageCollector,
+    trash: gc::TrashCan,
     storage: LocalStorage,
     unwinder: Unwinder,
     death: Death,
@@ -89,6 +91,7 @@ impl Task {
         Task {
             heap: LocalHeap::new(),
             gc: GarbageCollector,
+            trash: gc::TrashCan::new(),
             storage: LocalStorage(None),
             unwinder: Unwinder::new(),
             death: Death::new(),

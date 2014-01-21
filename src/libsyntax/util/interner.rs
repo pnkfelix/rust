@@ -17,6 +17,7 @@ use ast::Name;
 use std::cell::RefCell;
 use std::cmp::Equiv;
 use std::hashmap::HashMap;
+use std::kinds::Testate;
 
 pub struct Interner<T> {
     priv map: @RefCell<HashMap<T, Name>>,
@@ -24,7 +25,7 @@ pub struct Interner<T> {
 }
 
 // when traits can extend traits, we should extend index<Name,T> to get []
-impl<T:Eq + IterBytes + Hash + Freeze + Clone + 'static> Interner<T> {
+impl<T:Eq + IterBytes + Hash + Freeze + Clone + Testate + 'static> Interner<T> {
     pub fn new() -> Interner<T> {
         Interner {
             map: @RefCell::new(HashMap::new()),

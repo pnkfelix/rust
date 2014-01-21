@@ -1773,6 +1773,7 @@ def_type_content_sets!(
         OwnsDtor                            = 0b0000__00000010__0000,
         OwnsManaged /* see [1] below */     = 0b0000__00000100__0000,
         OwnsAffine                          = 0b0000__00001000__0000,
+        OwnsNonGCDtor                       = 0b0000__00010000__0000,
         OwnsAll                             = 0b0000__11111111__0000,
 
         // Things that are reachable by the value in any way (fourth nibble):
@@ -1813,7 +1814,7 @@ def_type_content_sets!(
         Nonpod                              = 0b0000__00001111__0000,
 
         // Things that make values considered not Testate
-        Nontestate                          = 0b0000__00000010__0000,
+        Nontestate                          = 0b0000__00010000__0000,
 
         // Bits to set when a managed value is encountered
         //
@@ -2049,7 +2050,7 @@ pub fn type_contents(cx: ctxt, ty: t) -> TypeContents {
 
             ty_box(typ) => {
                 let tc = tc_ty(cx, typ, cache).managed_pointer();
-                println!("  tc compute ty_box (ty: {}) = {}",
+                debug!("  tc compute ty_box (ty: {}) = {}",
                          ::util::ppaux::ty_to_str(cx, ty),
                          tc.to_str());
                 tc
@@ -2106,15 +2107,18 @@ pub fn type_contents(cx: ctxt, ty: t) -> TypeContents {
                 let mut res =
                     TypeContents::union(flds, |f| {
                         let tc = tc_mt(cx, f.mt, cache);
-                        println!("  tc union ty_struct incl. (ty: {}) = {}",
+                        debug!("  tc union ty_struct incl. (ty: {}) = {}",
                                  ::util::ppaux::mt_to_str(cx, &f.mt),
                                  tc.to_str());
                         tc
                     });
                 if ty::has_dtor(cx, did) {
-                    println!("  tc also ty_struct (ty: {}) has_dtor",
+                    debug!("  tc also ty_struct (ty: {}) has_dtor",
                              ::util::ppaux::ty_to_str(cx, ty));
                     res = res | TC::OwnsDtor;
+                    if !has_attr(cx, did, "unsafe_can_drop_during_gc") {
+                        res = res | TC::OwnsNonGCDtor;
+                    }
                 }
                 apply_attributes(cx, did, res)
             }
@@ -2122,7 +2126,7 @@ pub fn type_contents(cx: ctxt, ty: t) -> TypeContents {
             ty_tup(ref tys) => {
                 TypeContents::union(*tys, |ty| {
                         let tc = tc_ty(cx, *ty, cache);
-                        println!("  tc union ty_tup incl. (ty: {}) = {}",
+                        debug!("  tc union ty_tup incl. (ty: {}) = {}",
                                  ::util::ppaux::ty_to_str(cx, *ty),
                                  tc.to_str());
                         tc
@@ -2135,7 +2139,7 @@ pub fn type_contents(cx: ctxt, ty: t) -> TypeContents {
                     TypeContents::union(variants, |variant| {
                         TypeContents::union(variant.args, |&arg_ty| {
                             let tc = tc_ty(cx, arg_ty, cache);
-                            println!("  tc union ty_enum incl. (ty: {}) = {}",
+                            debug!("  tc union ty_enum incl. (ty: {}) = {}",
                                      ::util::ppaux::ty_to_str(cx, arg_ty),
                                      tc.to_str());
                             tc
@@ -2158,7 +2162,7 @@ pub fn type_contents(cx: ctxt, ty: t) -> TypeContents {
                 let tc = kind_bounds_to_contents(cx,
                                                  tp_def.bounds.builtin_bounds,
                                                  tp_def.bounds.trait_bounds);
-                println!("  tc lookup ty_param (ty: {}) = {}",
+                debug!("  tc lookup ty_param (ty: {}) = {}",
                          ::util::ppaux::ty_to_str(cx, ty),
                          tc.to_str());
                 tc

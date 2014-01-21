@@ -17,6 +17,7 @@ use parse::token::{interner_get, str_to_ident};
 
 use std::cell::RefCell;
 use std::hashmap::HashMap;
+use std::kinds::Testate;
 use std::option::Option;
 use std::to_str::ToStr;
 use extra::serialize::{Encodable, Decodable, Encoder, Decoder};
@@ -25,7 +26,7 @@ use extra::serialize::{Encodable, Decodable, Encoder, Decoder};
 pub type P<T> = @T;
 
 /// Construct a P<T> from a T value.
-pub fn P<T: 'static>(value: T) -> P<T> {
+pub fn P<T: Testate + 'static>(value: T) -> P<T> {
     @value
 }
 

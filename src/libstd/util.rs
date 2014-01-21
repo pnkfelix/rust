@@ -56,6 +56,7 @@ pub fn replace<T>(dest: &mut T, mut src: T) -> T {
 /// A non-copyable dummy type.
 #[deriving(Eq, TotalEq, Ord, TotalOrd)]
 #[unsafe_no_drop_flag]
+#[unsafe_can_drop_during_gc] // XXX better to just express non_copyable directly via lang_item!
 pub struct NonCopyable;
 
 impl Drop for NonCopyable {

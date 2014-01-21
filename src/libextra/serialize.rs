@@ -20,6 +20,7 @@ Core encoding and decoding interfaces.
 
 use std::at_vec;
 use std::hashmap::{HashMap, HashSet};
+use std::kinds::Testate;
 use std::rc::Rc;
 use std::trie::{TrieMap, TrieSet};
 use std::vec;
@@ -420,7 +421,15 @@ impl<D:Decoder,T:Decodable<D>> Decodable<D> for Rc<T> {
     }
 }
 
+#[cfg(stage0)]
 impl<D:Decoder,T:Decodable<D> + 'static> Decodable<D> for @T {
+    fn decode(d: &mut D) -> @T {
+        @Decodable::decode(d)
+    }
+}
+
+#[cfg(not(stage0))]
+impl<D:Decoder,T:Decodable<D> + Testate + 'static> Decodable<D> for @T {
     fn decode(d: &mut D) -> @T {
         @Decodable::decode(d)
     }

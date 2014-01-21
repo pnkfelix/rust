@@ -38,6 +38,7 @@ use middle::trans::common::{mono_id,ExternMap,tydesc_info,BuilderRef_res,Stats};
 
 use middle::trans::base::{decl_crate_map};
 
+#[unsafe_can_drop_during_gc]
 pub struct CrateContext {
      sess: session::Session,
      llmod: ModuleRef,
@@ -113,6 +114,9 @@ pub struct CrateContext {
      uses_gc: bool,
      dbg_cx: Option<debuginfo::CrateDebugContext>,
      do_not_commit_warning_issued: Cell<bool>,
+
+     // context-destruction handling
+     after_death: gc::TaskTrash<UnsetTaskLocalState>,
 }
 
 impl CrateContext {
@@ -268,6 +272,18 @@ impl CrateContext {
             llvm::LLVMConstPtrToInt(self.const_inbounds_gepi(null, indices),
                                     self.int_type.to_ref())
         }
+    }
+}
+
+struct UnsetTaskLocalState;
+
+#[cfg(one_way_felix_is_considering)]
+// It may be more a reasonable start for me to abuse 
+// unsafe_can_drop_during_gc for this
+impl Drop for UnsetTaskLocalState
+{
+    fn drop(&mut self) {
+        unset_task_llcx();
     }
 }
 
