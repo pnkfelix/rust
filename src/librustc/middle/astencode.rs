@@ -1377,7 +1377,7 @@ fn decode_side_tables(xcx: @ExtendedDecodeContext,
                         let mut ty_param_defs = dcx.tcx
                                                    .ty_param_defs
                                                    .borrow_mut();
-                        ty_param_defs.get().insert(id, bounds);
+                        ty_param_defs.get().insert(id, bounds); // XXX
                     }
                     c::tag_table_method_map => {
                         let entry = val_dsr.read_method_map_entry(xcx);

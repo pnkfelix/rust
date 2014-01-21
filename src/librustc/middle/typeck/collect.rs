@@ -966,7 +966,7 @@ pub fn ty_generics(ccx: &CrateCtxt,
                     let mut ty_param_defs = ccx.tcx
                                                .ty_param_defs
                                                .borrow_mut();
-                    ty_param_defs.get().insert(param.id, def);
+                    ty_param_defs.get().insert(param.id, def); // XXX
                     def
                 }
             }

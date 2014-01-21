@@ -3819,7 +3819,8 @@ pub fn instantiate_path(fcx: @FnCtxt,
         ty_substs_len += segment.types.len()
     }
 
-    debug!("tpt={} ty_param_count={:?} ty_substs_len={:?}",
+    debug!("pth={} tpt={} ty_param_count={:?} ty_substs_len={:?}",
+           pth.repr(fcx.tcx()),
            tpt.repr(fcx.tcx()),
            ty_param_count,
            ty_substs_len);

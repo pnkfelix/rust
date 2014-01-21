@@ -478,7 +478,7 @@ pub fn ty_to_str(cx: ctxt, typ: t) -> ~str {
               Some(def) => cx.sess.str_of(def.ident).to_owned(),
               None => {
                   // This should not happen...
-                  format!("BUG[{:?}]", id)
+                  format!("BUG[{:?};({},{})]", id, did.crate, did.node)
               }
           };
           if !cx.sess.verbose() { ident } else { format!("{}:{:?}", ident, did) }
@@ -683,6 +683,23 @@ impl Repr for ast::Pat {
         format!("pat({}: {})",
              self.id,
              pprust::pat_to_str(self, tcx.sess.intr()))
+    }
+}
+
+impl Repr for ast::Path {
+    fn repr(&self, tcx: ctxt) -> ~str {
+        format!("Path({}, {})",
+                if self.global { "global" } else { "local" },
+                self.segments.repr(tcx))
+    }
+}
+
+impl Repr for ast::PathSegment {
+    fn repr(&self, tcx: ctxt) -> ~str {
+        format!("PathSegment({}, {}, {})",
+                self.identifier.repr(tcx),
+                self.lifetimes.repr(tcx),
+                self.types.repr(tcx))
     }
 }
 
