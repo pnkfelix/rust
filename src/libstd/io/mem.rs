@@ -18,6 +18,7 @@ use super::{Reader, Writer, Seek, Buffer, IoError, SeekStyle, io_error,
             OtherIoError};
 use vec;
 use vec::{Vector, ImmutableVector, MutableVector, OwnedCopyableVector};
+use vec::OwnedVector;
 
 /// Writes to an owned, growable byte vector
 ///
@@ -44,7 +45,7 @@ impl MemWriter {
 
     /// Create a new `MemWriter`, allocating at least `n` bytes for
     /// the internal buffer.
-    pub fn with_capacity<T:ToStr>(n: uint) -> MemWriter {
+    pub fn with_capacity(n: uint) -> MemWriter {
         MemWriter { buf: vec::with_capacity(n), pos: 0 }
     }
 

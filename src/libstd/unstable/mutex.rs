@@ -167,7 +167,7 @@ mod imp {
     use libc::c_void;
     use libc;
     use ptr;
-    use rt::global_heap::malloc_raw;
+    use ptr::RawPtr;
     use rt::bdwgc;
 
     type pthread_mutex_t = libc::c_void;

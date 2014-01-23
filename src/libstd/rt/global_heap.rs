@@ -45,12 +45,14 @@ pub mod bdw {
 /// A wrapper around libc::malloc, aborting on out-of-memory
 #[inline]
 pub unsafe fn malloc_raw(size: uint, mode: bdw::Mode) -> *mut c_void {
+    use self::bdw::*;
+
     // `malloc(0)` may allocate, but it may also return a null pointer
     // http://pubs.opengroup.org/onlinepubs/9699919799/functions/malloc.html
     if size == 0 {
         mut_null()
     } else {
-
+        let size = size as size_t;
         let p = match mode {
 
             GC(Scan) => bdwgc::managed_malloc(size) as *mut c_void,
@@ -80,7 +82,7 @@ pub unsafe fn realloc_raw(ptr: *mut c_void, size: uint) -> *mut c_void {
     // `realloc(ptr, 0)` may allocate, but it may also return a null pointer
     // http://pubs.opengroup.org/onlinepubs/9699919799/functions/realloc.html
     if size == 0 {
-        free(ptr as *c_void);
+        bdwgc::other_free(ptr as *c_void);
         mut_null()
     } else {
         let p = bdwgc::other_realloc(ptr, size as size_t);

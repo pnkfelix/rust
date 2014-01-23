@@ -606,7 +606,7 @@ pub fn repr_to_str<T>(t: &T) -> ~str {
     use str;
     use io;
 
-    let mut result = io::mem::MemWriter::new();
+    let mut result = io::MemWriter::new();
     write_repr(&mut result as &mut io::Writer, t);
     str::from_utf8_owned(result.unwrap()).unwrap()
 }
