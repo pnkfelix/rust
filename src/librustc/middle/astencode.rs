@@ -1127,10 +1127,19 @@ trait ebml_decoder_decoder_helpers {
                       cdata: @cstore::crate_metadata) -> ~[ty::t];
 }
 
+fn type_string(doc: ebml::Doc) -> ~str {
+    let mut str = ~"";
+    for i in range(doc.start, doc.end) {
+        str.push_char(doc.data[i] as char);
+    }
+    str
+}
+
 impl<'a> ebml_decoder_decoder_helpers for reader::Decoder<'a> {
     fn read_ty_noxcx(&mut self,
                      tcx: ty::ctxt, cdata: @cstore::crate_metadata) -> ty::t {
         self.read_opaque(|_, doc| {
+            debug!("read_ty_noxcx({})", type_string(doc));
             tydecode::parse_ty_data(
                 doc.data,
                 cdata.cnum,
@@ -1164,14 +1173,6 @@ impl<'a> ebml_decoder_decoder_helpers for reader::Decoder<'a> {
 
             ty
         });
-
-        fn type_string(doc: ebml::Doc) -> ~str {
-            let mut str = ~"";
-            for i in range(doc.start, doc.end) {
-                str.push_char(doc.data[i] as char);
-            }
-            str
-        }
     }
 
     fn read_tys(&mut self, xcx: @ExtendedDecodeContext) -> ~[ty::t] {
@@ -1181,6 +1182,7 @@ impl<'a> ebml_decoder_decoder_helpers for reader::Decoder<'a> {
     fn read_type_param_def(&mut self, xcx: @ExtendedDecodeContext)
                            -> ty::TypeParameterDef {
         self.read_opaque(|this, doc| {
+            debug!("read_type_param_def({})", type_string(doc));
             tydecode::parse_type_param_def_data(
                 doc.data,
                 doc.start,
@@ -1222,6 +1224,7 @@ impl<'a> ebml_decoder_decoder_helpers for reader::Decoder<'a> {
 
     fn read_substs(&mut self, xcx: @ExtendedDecodeContext) -> ty::substs {
         self.read_opaque(|this, doc| {
+            debug!("read_substs({})", type_string(doc));
             tydecode::parse_substs_data(doc.data,
                                         xcx.dcx.cdata.cnum,
                                         doc.start,

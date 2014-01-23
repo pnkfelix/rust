@@ -24,6 +24,7 @@ use middle::ty::{ty_trait, ty_int};
 use middle::ty::{ty_uint, ty_unboxed_vec, ty_infer};
 use middle::ty;
 use middle::typeck;
+use middle::typeck::{astconv, rscope};
 use syntax::abi::AbiSet;
 use syntax::ast_map;
 use syntax::codemap::{Span, Pos};
@@ -696,10 +697,20 @@ impl Repr for ast::Path {
 
 impl Repr for ast::PathSegment {
     fn repr(&self, tcx: ctxt) -> ~str {
+        let conv_ty = |t:&@ast::Ty| {
+            astconv::ast_ty_to_ty(&tcx, &rscope::ExplicitRscope, &**t) };
         format!("PathSegment({}, {}, {})",
                 self.identifier.repr(tcx),
                 self.lifetimes.repr(tcx),
-                self.types.repr(tcx))
+                self.types.map(conv_ty).repr(tcx))
+    }
+}
+
+impl Repr for ast::Lifetime {
+    fn repr(&self, tcx: ctxt) -> ~str {
+        format!("Lifetime({}: {})",
+                self.id,
+                self.ident.repr(tcx))
     }
 }
 

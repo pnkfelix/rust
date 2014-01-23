@@ -77,6 +77,21 @@ pub trait AstConv {
     fn ty_infer(&self, span: Span) -> ty::t;
 }
 
+// Adapted by mixing together the implementations for CrateCtxt and FnCtxt
+impl AstConv for ty::ctxt {
+    fn tcx(&self) -> ty::ctxt { *self }
+    fn get_item_ty(&self, id: ast::DefId) -> ty::ty_param_bounds_and_ty {
+        ty::lookup_item_type(self.tcx(), id)
+    }
+    fn get_trait_def(&self, id: ast::DefId) -> @ty::TraitDef {
+        ty::lookup_trait_def(self.tcx(), id)
+    }
+    fn ty_infer(&self, span: Span) -> ty::t {
+        self.tcx().sess.span_bug(span,
+                                 "found `ty_infer` in unexpected place");
+    }
+}
+
 pub fn ast_region_to_region(tcx: ty::ctxt, lifetime: &ast::Lifetime)
                             -> ty::Region {
     let named_region_map = tcx.named_region_map.borrow();
