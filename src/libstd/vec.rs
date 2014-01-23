@@ -182,7 +182,7 @@ pub fn with_capacity<T>(capacity: uint) -> ~[T] {
         if alloc / mem::nonzero_size_of::<T>() != capacity || size < alloc {
             fail!("vector size is too large: {}", capacity);
         }
-        let ptr = malloc_raw(size) as *mut Vec<()>;
+        let ptr = malloc_raw(size, bdw::Uncollectable(bdw::Exchange, bdw::Scan)) as *mut Vec<()>;
         (*ptr).alloc = alloc;
         (*ptr).fill = 0;
         cast::transmute(ptr)

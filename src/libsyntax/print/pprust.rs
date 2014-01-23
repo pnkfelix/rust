@@ -198,8 +198,8 @@ pub fn path_to_str(p: &ast::Path, intr: @IdentInterner) -> ~str {
     to_str(p, |a,b| print_path(a, b, false), intr)
 }
 
-pub fn fun_to_str(decl: &ast::fn_decl, purity: ast::purity, name: ast::Ident,
-                  opt_explicit_self: Option<ast::explicit_self_>,
+pub fn fun_to_str(decl: &ast::FnDecl, purity: ast::Purity, name: ast::Ident,
+                  opt_explicit_self: Option<ast::ExplicitSelf_>,
                   generics: &ast::Generics, intr: @IdentInterner) -> ~str {
     let wr = ~MemWriter::new();
     let mut s = rust_printer(wr as ~io::Writer, intr);
