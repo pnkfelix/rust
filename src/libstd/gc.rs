@@ -141,7 +141,14 @@ pub struct Discard<E, G> { // G:Guardian<~Drop>
 ///
 /// See TrashCan::empty_all.
 #[unsafe_can_drop_during_gc]
-pub struct Can<E>(~E);
+pub struct Can<E>{
+    /// The contents of the can.  When dropped (including by the
+    /// Garbage Collector), contents will move to Task's TrashCan.
+    contents: ~E
+}
+
+/// Construct Can that, when dropped, will move `e` to the Task's TrashCan.
+pub fn Can<E>(e: ~E) -> Can<E> { Can{ contents: e } }
 
 /// The TrashCan is a task-local simple minded guardian.  You can hook
 /// up to it via Discard (or Guard, if your type is compatible), or
@@ -231,7 +238,7 @@ impl<E:Drop + Send> Drop for Can<E> {
     fn drop(&mut self) {
         use rt::task::Task;
         use rt::local::Local;
-        let &Can(ref mut ptr_e) = self;
+        let ptr_e = &mut self.contents;
         let (asset, trash_can) = unsafe {
             let p = ptr_e as *mut ~E;
             let asset : ~E = ptr::read_and_zero_ptr(p);
