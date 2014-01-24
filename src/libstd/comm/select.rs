@@ -199,11 +199,12 @@ impl Select {
                 if (*packet).decrement() {
                     Ok(())
                 } else {
+                    let task = (*packet).to_wake.take_unwrap();
                     (*packet).abort_selection(false);
                     (*packet).selecting.store(false, SeqCst);
                     ready_index = i;
                     ready_id = (*packet).selection_id;
-                    Err((*packet).to_wake.take_unwrap())
+                    Err(task)
                 }
             });
 
