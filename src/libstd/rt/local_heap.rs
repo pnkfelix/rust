@@ -296,6 +296,8 @@ impl MemoryRegion {
 
     #[cfg(rtdebug)]
     fn claim(&mut self, alloc: &mut AllocHeader) {
+        use container::Container;
+        use vec::OwnedVector;
         alloc.assert_sane();
         if TRACK_ALLOCATIONS > 1 {
             alloc.index = self.allocations.len() as i32;
