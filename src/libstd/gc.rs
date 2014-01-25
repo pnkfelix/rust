@@ -17,9 +17,12 @@ collector is task-local so `Gc<T>` is not sendable.
 */
 
 #[allow(experimental)];
+#[allow(attribute_usage)];
+#[allow(dead_code)];
 
 use kinds::{Send,Testate};
-use cell::{RefCell,RefMut};
+use cast::transmute;
+use cell::{RefCell};
 use clone::{Clone, DeepClone};
 use container::Container;
 use managed;
@@ -144,11 +147,30 @@ pub struct Discard<E, G> { // G:Guardian<~Drop>
 pub struct Can<E>{
     /// The contents of the can.  When dropped (including by the
     /// Garbage Collector), contents will move to Task's TrashCan.
-    contents: ~E
+    priv contents: *E,
+    // Drop implmentations currently do not carry vtables, so we eagerly construct
+    // the trait object that will be discarded in the TrashCan.
+    priv will_drop: Option<~Drop>
+}
+
+impl<E:Drop+Send> Can<E> {
+    fn get(&self) -> &E {
+        unsafe { transmute(self.contents) }
+    }
+    fn get_mut<'a>(&'a mut self) -> &'a mut E {
+        unsafe { transmute(self.contents) }
+    }
+    fn set(&mut self, e: ~E) {
+        let p : *E = unsafe { transmute(&*e) };
+        self.will_drop = Some(e as ~Drop);
+        self.contents = p;
+    }
 }
 
 /// Construct Can that, when dropped, will move `e` to the Task's TrashCan.
-pub fn Can<E>(e: ~E) -> Can<E> { Can{ contents: e } }
+pub fn Can<E:Drop+Send>(e: ~E) -> Can<E> {
+    Can{ contents: unsafe { transmute(&*e) }, will_drop: Some(e as ~Drop) }
+}
 
 /// The TrashCan is a task-local simple minded guardian.  You can hook
 /// up to it via Discard (or Guard, if your type is compatible), or
@@ -234,22 +256,21 @@ impl<E:Drop + Send, G:Guardian<~Drop>> Drop for Discard<E,G> {
 // rustc.  Look more tomorrow.
 
 #[unsafe_destructor]
-impl<E:Drop + Send> Drop for Can<E> {
+impl<E> Drop for Can<E> {
     fn drop(&mut self) {
+        use util;
         use rt::task::Task;
         use rt::local::Local;
-        let ptr_e = &mut self.contents;
-        let (asset, trash_can) = unsafe {
-            let p = ptr_e as *mut ~E;
-            let asset : ~E = ptr::read_and_zero_ptr(p);
+        let mut asset : Option<~Drop> = None;
+        util::swap(&mut self.will_drop, &mut asset);
+        let trash_can = unsafe {
             let task_ptr : Option<*mut Task> = Local::try_unsafe_borrow();
             match task_ptr {
-                Some(task) => (asset, &mut (*task).trash),
+                Some(task) => &mut (*task).trash,
                 None => fail!("Trash Can disposal outside of task")
             }
         };
-        let debris : ~Drop = asset as ~Drop;
-        trash_can.discard(debris);
+        trash_can.discard(asset.unwrap());
     }
 }
 

@@ -20,6 +20,7 @@ Core encoding and decoding interfaces.
 
 use std::at_vec;
 use std::hashmap::{HashMap, HashSet};
+#[cfg(not(stage0))]
 use std::kinds::Testate;
 use std::rc::Rc;
 use std::trie::{TrieMap, TrieSet};

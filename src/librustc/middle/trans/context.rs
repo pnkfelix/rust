@@ -8,6 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[allow(attribute_usage)];
 
 use driver::session;
 use lib::llvm::{ContextRef, ModuleRef, ValueRef};
@@ -283,9 +284,7 @@ impl UnsetTaskLocalState {
     fn new() -> UnsetTaskLocalState { UnsetTaskLocalState }
 }
 
-#[cfg(one_way_felix_is_considering)]
-// It may be a more reasonable start for me to abuse
-// unsafe_can_drop_during_gc for this
+// #[unsafe_destructor]
 impl Drop for UnsetTaskLocalState
 {
     fn drop(&mut self) {
@@ -293,7 +292,9 @@ impl Drop for UnsetTaskLocalState
     }
 }
 
-#[unsafe_destructor]
+#[cfg(one_way_felix_is_considering)]
+// It may be a more reasonable start for me to abuse
+// unsafe_can_drop_during_gc for this
 impl Drop for CrateContext {
     fn drop(&mut self) {
         unset_task_llcx();
