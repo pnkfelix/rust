@@ -796,11 +796,12 @@ impl BigUint {
         if n_bits == 0 || self.data.is_empty() { return (*self).clone(); }
 
         let mut borrow = 0;
-        let mut shifted = ~[];
+        let mut shifted_rev = ~[];
         for elem in self.data.rev_iter() {
-            shifted = ~[(*elem >> n_bits) | borrow] + shifted;
+            shifted_rev.push((*elem >> n_bits) | borrow);
             borrow = *elem << (BigDigit::bits - n_bits);
         }
+        let shifted = { shifted_rev.reverse(); shifted_rev };
         return BigUint::new(shifted);
     }
 
