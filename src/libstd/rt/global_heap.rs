@@ -107,7 +107,7 @@ pub unsafe fn exchange_malloc(size: uint) -> *u8 {
         // we need a non-allocating way to print an error here
         abort();
     }
-    p as *c_char
+    p as *u8 // fix to 2593e350 (or earlier)
 }
 
 unsafe fn proc_malloc(size: uint) -> *u8 {
@@ -158,7 +158,7 @@ pub unsafe fn closure_exchange_malloc(td: *u8, size: uint) -> *u8 {
 #[cfg(not(stage0))]
 pub unsafe fn closure_exchange_malloc(drop_glue: fn(*mut u8), size: uint, align: uint) -> *u8 {
     let total_size = get_box_size(size, align);
-    let p = malloc_raw(total_size);
+    let p = proc_malloc(total_size);
 
     let alloc = p as *mut raw::Box<()>;
     (*alloc).drop_glue = drop_glue;

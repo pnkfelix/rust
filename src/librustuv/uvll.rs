@@ -336,7 +336,7 @@ pub unsafe fn malloc_handle(handle: uv_handle_type) -> *c_void {
 }
 
 pub unsafe fn free_handle(v: *c_void) {
-    bdwgc::other_free(v)
+    bdwgc::other_free(v as *mut c_void)
 }
 
 pub unsafe fn malloc_req(req: uv_req_type) -> *c_void {
@@ -348,7 +348,7 @@ pub unsafe fn malloc_req(req: uv_req_type) -> *c_void {
 }
 
 pub unsafe fn free_req(v: *c_void) {
-    bdwgc::other_free(v)
+    bdwgc::other_free(v as *mut c_void)
 }
 
 #[test]

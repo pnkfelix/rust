@@ -147,7 +147,7 @@ pub unsafe fn proc_free(arg1: *c_void) {
 pub unsafe fn managed_free(arg1: *c_void) {
     GC_debug_managed_free(arg1 as *mut c_void)
 }
-pub unsafe fn other_free(arg1: *c_void) {
+pub unsafe fn other_free(arg1: *mut c_void) {
     GC_debug_other_free(arg1 as *mut c_void)
 }
 

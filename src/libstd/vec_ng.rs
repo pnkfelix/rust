@@ -19,11 +19,11 @@ use num::CheckedMul;
 use container::Container;
 use mem::{size_of, move_val_init};
 use cast::{forget, transmute};
-use rt::global_heap::{malloc_raw, realloc_raw};
+use rt::global_heap::{malloc_raw, realloc_raw, exchange_free, bdw};
 use vec::{ImmutableVector, Items, MutableVector};
 use unstable::raw::Slice;
 use ptr::{offset, read_ptr};
-use libc::{free, c_void};
+use libc::{c_void};
 
 pub struct Vec<T> {
     priv len: uint,
@@ -42,7 +42,7 @@ impl<T> Vec<T> {
             Vec::new()
         } else {
             let size = capacity.checked_mul(&size_of::<T>()).expect("capacity overflow");
-            let ptr = unsafe { malloc_raw(size) };
+            let ptr = unsafe { malloc_raw(size, bdw::Uncollectable(bdw::Exchange, bdw::Scan)) };
             Vec { len: 0, cap: capacity, ptr: ptr as *mut T }
         }
     }
@@ -97,7 +97,7 @@ impl<T> Vec<T> {
 
     pub fn shrink_to_fit(&mut self) {
         if self.len == 0 {
-            unsafe { free(self.ptr as *mut c_void) };
+            unsafe { exchange_free(self.ptr as *u8) };
             self.cap = 0;
             self.ptr = 0 as *mut T;
         } else {
@@ -189,7 +189,7 @@ impl<T> Drop for Vec<T> {
             for x in self.as_mut_slice().iter() {
                 read_ptr(x);
             }
-            free(self.ptr as *mut c_void)
+            exchange_free(self.ptr as *u8)
         }
     }
 }
@@ -228,7 +228,7 @@ impl<T> Drop for MoveItems<T> {
         // destroy the remaining elements
         for _x in *self {}
         unsafe {
-            free(self.allocation)
+            exchange_free(self.allocation as *u8)
         }
     }
 }
