@@ -45,9 +45,6 @@ A quick refresher on memory ordering:
 #[cfg(test)]
 pub use realstd::unstable::intrinsics::{TyDesc, Opaque, TyVisitor, TypeId};
 
-#[cfg(stage0)]
-pub type GlueFn = extern "Rust" fn(*i8);
-#[cfg(not(stage0))]
 pub type GlueFn = extern "Rust" fn(*mut u8);
 
 #[lang="ty_desc"]

@@ -155,13 +155,15 @@ unsafe fn destroy_chunk(chunk: &Chunk) {
         //debug!("freeing object: idx = {}, size = {}, align = {}, done = {}",
         //       start, size, align, is_done);
         if is_done {
-            ((*tydesc).drop_glue)(buf.offset(start as int) as *i8);
+            ((*tydesc).drop_glue)(coerce_glue_arg(buf.offset(start as int)));
         }
 
         // Find where the next tydesc lives
         idx = round_up(start + size, mem::pref_align_of::<*TyDesc>());
     }
 }
+
+fn coerce_glue_arg<T>(x:*T) -> *mut u8 { x as *mut u8 }
 
 // We encode whether the object a tydesc describes has been
 // initialized in the arena in the low bit of the tydesc pointer. This
@@ -396,7 +398,7 @@ impl TypedArenaChunk {
             Some(tydesc) => {
                 let mut start = self.start(tydesc);
                 for _ in range(0, len) {
-                    ((*tydesc).drop_glue)(start as *i8);
+                    ((*tydesc).drop_glue)(start as *mut u8);
                     start = start.offset((*tydesc).size as int)
                 }
             }
