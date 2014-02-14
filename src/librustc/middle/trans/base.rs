@@ -362,7 +362,7 @@ pub fn malloc_raw_dyn<'a>(
         let r = callee::trans_lang_call(
             bcx,
             require_alloc_fn(bcx, t, ExchangeMallocFnLangItem),
-            [tydesc, size],
+            [size],
             None);
         rslt(r.bcx, PointerCast(r.bcx, r.val, llty_value.ptr_to()))
     } else {
