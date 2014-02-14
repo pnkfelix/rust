@@ -358,7 +358,6 @@ pub fn malloc_raw_dyn<'a>(
         glue::lazily_emit_visit_glue(ccx, static_ti);
 
         // Allocate space:
-        let tydesc = PointerCast(bcx, static_ti.tydesc, Type::i8p());
         let r = callee::trans_lang_call(
             bcx,
             require_alloc_fn(bcx, t, ExchangeMallocFnLangItem),
