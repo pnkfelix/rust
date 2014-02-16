@@ -1091,7 +1091,12 @@ do
         BDW_TARGET="--target=$t"
 
         # Enable thread-support
-        BDW_OPTS="$BDW_DBG_OPTS $BDW_ASSERTION_OPTS --enable-threads=posix"
+        BDW_THREAD_OPTS="--enable-threads=posix"
+
+        # Force the use of the local-copy of libatomic_ops
+        BDW_LIBATOMIC_OPTS="--with-libatomic-ops=no"
+
+        BDW_OPTS="$BDW_DBG_OPTS $BDW_ASSERTION_OPTS $BDW_THREAD_OPTS $BDW_LIBATOMIC_OPTS"
 
         case "$CFG_C_COMPILER" in
             ("ccache clang")

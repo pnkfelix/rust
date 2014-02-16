@@ -73,6 +73,7 @@ mod imp {
     use unstable::finally::Finally;
     use unstable::mutex::{Mutex, MUTEX_INIT};
     use mem;
+    use rt::bdwgc;
     #[cfg(not(test))] use vec;
 
     static mut global_args_ptr: uint = 0;
@@ -83,7 +84,7 @@ mod imp {
         let args = load_argc_and_argv(argc, argv);
         put(args);
 
-        bdwgc::collect(); // bisecting source of smashed objects
+        bdwgc::collect_from(1u); // bisecting source of smashed objects
     }
 
     #[cfg(not(test))]
