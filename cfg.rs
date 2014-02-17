@@ -9,8 +9,9 @@ extern mod rustc;
 
 use std::cell::RefCell;
 use std::hashmap::HashMap;
-use collections::SmallIntMap;
+use diag = syntax::diagnostic;
 use syntax::ast;
+use syntax::ast_map;
 use syntax::codemap;
 use syntax::parse;
 use syntax::parse::token;
@@ -18,24 +19,43 @@ use syntax::print::pprust;
 use rustc::driver::driver;
 use rustc::middle::cfg;
 use rustc::middle::lang_items::LanguageItems;
+use rustc::middle::region;
 use rustc::middle::ty;
 
-fn mk_tcx() {
-    fn hm<K,V>() -> HashMap<K,V> { HashMap::new() }
+fn mk_tcx() -> ty::ctxt {
+    struct NoFoldOps;
+    impl ast_map::FoldOps for NoFoldOps { }
 
-    let matches = getopts::getopts(&[], &[]);
+    fn hm<K:Eq+IterBytes,V>() -> HashMap<K,V> { HashMap::new() }
+    fn ref_hm<K:Eq+IterBytes+'static,V:'static>() -> @RefCell<HashMap<K,V>> {
+        @RefCell::new(hm())
+    }
+
+    let matches = getopts::getopts(&[], driver::optgroups());
     let matches = matches.ok().unwrap();
     let sessopts = driver::build_session_options(&matches);
     let sess = driver::build_session(sessopts, None);
-    let dm                  = hm();
-    let amap                = hm();
-    let freevars            = @RefCell::new(SmallIntMap::new());
-    let region_map          = hm();
-    let region_paramd_items = hm();
-    let lang_items          = LanguageItems::new();
+    let dm                  = ref_hm();
+    let diag                = diag::mk_span_handler(diag::mk_handler(),
+                                                    @codemap::CodeMap::new());
+    let crate_ = ast::Crate {
+            module: ast::Mod {view_items: ~[], items: ~[]},
+            attrs: ~[],
+            config: ~[],
+            span: codemap::Span {
+                lo: codemap::BytePos(10),
+                hi: codemap::BytePos(20),
+                expn_info: None,
+            },
+        };
+    let (crate_, amap)      = ast_map::map_crate(diag, crate_, NoFoldOps);
+    let freevars            = hm();
+    let named_region_map    = ref_hm();
+    let region_paramd_items = region::resolve_crate(sess, &crate_);
+    let lang_items          = @LanguageItems::new();
 
-    let tcx = ty::mk_ctxt(sess, @RefCell::new(dm), @RefCell::new(amap),
-                          freevars, region_map, region_paramd_items, lang_items);
+    let tcx = ty::mk_ctxt(sess, dm, named_region_map, amap, freevars,
+                          region_paramd_items, lang_items);
     tcx
 }
 
@@ -49,6 +69,7 @@ fn main() {
     match e.node {
         ast::ExprBlock(b) => {
             let cfg = cfg::CFG::new(tcx, method_map, b);
+            println!("cfg: {:?}", cfg);
         }
         _            => fail!("quoted input for cfg test must \
                               be a expression block { ... }")
