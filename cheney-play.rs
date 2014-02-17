@@ -34,7 +34,7 @@ impl Span {
     unsafe fn shift_start(&mut self, bytes: uint) {
         assert!(self.can_fit(bytes));
         assert!(bytes as int >= 0);
-        self.start = ptr::offset(self.start as *u8, bytes as int) as *uint;
+        self.start = (self.start as *u8).offset(bytes as int) as *uint;
     }
 }
 
@@ -74,7 +74,7 @@ impl Chunk {
             let chunk_mem = global_heap::malloc_raw(size);
             let start : *uint = cast::transmute(chunk_mem);
             assert!((size as int) >= 0);
-            let limit : *uint = ptr::offset(start, (size / word_size) as int);
+            let limit : *uint = start.offset((size / word_size) as int);
             let block : *mut BigBlock = cast::transmute(start);
             (*block).next = ptr::null();
             (*block).limit = limit;
@@ -104,7 +104,7 @@ impl Chunk {
         let mut ptr   = self.span.start;
         let mut next  = self.next;
         loop {
-            global_heap::free_raw(ptr as *libc::c_void);
+            global_heap::free_raw(ptr as *u8);
             match next {
                 None => break,
                 Some(p) => { ptr = (*p).span.start; next = (*p).next; }
@@ -193,7 +193,8 @@ impl Gc {
             // would cause problems sooner than the task shutdown.
 
             (*obj).ref_count = INITIAL_FAKE_REF_COUNT;
-            (*obj).type_desc = tydesc;
+            // (*obj).type_desc = tydesc;
+            (*obj).drop_glue = (*tydesc).drop_glue;
             (*obj).prev = ptr::mut_null();
             (*obj).next = ptr::mut_null();
             (*obj).data = arg;
@@ -235,7 +236,7 @@ impl Gc {
                     let a : *mut uint = cast::transmute(a);
                     *a = 0;
                 }
-                a = ptr::offset(a, 1);
+                a = a.offset(1);
             }
             self.avail.start = lim;
         }

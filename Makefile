@@ -12,7 +12,7 @@ sro-test: sro-play-debug sro-play
 	$(RUSTC) -o $@ $<
 
 %-play-debug: %-play.rs $(RUSTC)
-	$(RUSTC) -o $@ -Z debug-info -Z extra-debug-info $<
+	$(RUSTC) -o $@ --debuginfo $<
 
 .PHONY: rustc
 
