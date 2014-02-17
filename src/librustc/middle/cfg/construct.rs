@@ -12,6 +12,7 @@ use middle::cfg::*;
 use middle::graph;
 use middle::typeck;
 use middle::ty;
+use std::cell::RefCell;
 use syntax::ast;
 use syntax::ast_util;
 use util::nodemap::NodeMap;
@@ -22,6 +23,32 @@ struct CFGBuilder<'a> {
     exit_map: NodeMap<CFGIndex>,
     graph: CFGGraph,
     loop_scopes: Vec<LoopScope> ,
+    depth: &'a RefCell<int>,
+}
+
+struct Entered<'a> {
+    context: &'a str,
+    depth: &'a RefCell<int>
+}
+
+#[unsafe_destructor]
+impl<'a> Drop for Entered<'a> {
+    fn drop(&mut self) {
+        self.depth.with_mut(|p| { *p -= 1; });
+        let d = self.depth.get();
+        assert!(d >= 0);
+        debug!("{:s} exit {:s}", "  ".repeat(d as uint), self.context);
+    }
+}
+
+impl<'a> CFGBuilder<'a> {
+    fn enter(&self, context: &'a str) -> Entered<'a> {
+        let d = self.depth.get();
+        assert!(d >= 0);
+        debug!("{:s} call {:s}", "  ".repeat(d as uint), context);
+        self.depth.with_mut(|p| { *p += 1; });
+        Entered{ context: context, depth: self.depth }
+    }
 }
 
 struct LoopScope {
@@ -33,12 +60,14 @@ struct LoopScope {
 pub fn construct(tcx: &ty::ctxt,
                  method_map: typeck::MethodMap,
                  blk: &ast::Block) -> CFG {
+    let depth = RefCell::new(0);
     let mut cfg_builder = CFGBuilder {
         exit_map: NodeMap::new(),
         graph: graph::Graph::new(),
         tcx: tcx,
         method_map: method_map,
-        loop_scopes: Vec::new()
+        loop_scopes: Vec::new(),
+        depth: &depth,
     };
     let entry = cfg_builder.add_node(0, []);
     let exit = cfg_builder.block(blk, entry);
@@ -51,6 +80,7 @@ pub fn construct(tcx: &ty::ctxt,
 
 impl<'a> CFGBuilder<'a> {
     fn block(&mut self, blk: &ast::Block, pred: CFGIndex) -> CFGIndex {
+        let _e = self.enter("CFGBuilder.block(blk, pred)");
         let mut stmts_exit = pred;
         for &stmt in blk.stmts.iter() {
             stmts_exit = self.stmt(stmt, stmts_exit);
@@ -62,6 +92,7 @@ impl<'a> CFGBuilder<'a> {
     }
 
     fn stmt(&mut self, stmt: @ast::Stmt, pred: CFGIndex) -> CFGIndex {
+        debug!("CFGBuilder.stmt(stmt, pred)");
         match stmt.node {
             ast::StmtDecl(decl, _) => {
                 self.decl(decl, pred)
@@ -78,6 +109,7 @@ impl<'a> CFGBuilder<'a> {
     }
 
     fn decl(&mut self, decl: @ast::Decl, pred: CFGIndex) -> CFGIndex {
+        debug!("CFGBuilder.decl(decl, pred)");
         match decl.node {
             ast::DeclLocal(local) => {
                 let init_exit = self.opt_expr(local.init, pred);
@@ -91,6 +123,7 @@ impl<'a> CFGBuilder<'a> {
     }
 
     fn pat(&mut self, pat: @ast::Pat, pred: CFGIndex) -> CFGIndex {
+        debug!("CFGBuilder.pat(pat, pred)");
         match pat.node {
             ast::PatIdent(_, _, None) |
             ast::PatEnum(_, None) |
@@ -136,6 +169,8 @@ impl<'a> CFGBuilder<'a> {
                                         pats: I,
                                         pred: CFGIndex) -> CFGIndex {
         //! Handles case where all of the patterns must match.
+        debug!("CFGBuilder.pats_all(pats, pred)");
+
         let mut pats = pats;
         pats.fold(pred, |pred, pat| self.pat(pat, pred))
     }
@@ -144,6 +179,7 @@ impl<'a> CFGBuilder<'a> {
                 pats: &[@ast::Pat],
                 pred: CFGIndex) -> CFGIndex {
         //! Handles case where just one of the patterns must match.
+        debug!("CFGBuilder.pats_any(pats, pred)");
 
         if pats.len() == 1 {
             self.pat(pats[0], pred)
@@ -158,6 +194,8 @@ impl<'a> CFGBuilder<'a> {
     }
 
     fn expr(&mut self, expr: @ast::Expr, pred: CFGIndex) -> CFGIndex {
+        debug!("CFGBuilder.expr(expr, pred)");
+
         match expr.node {
             ast::ExprBlock(blk) => {
                 let blk_exit = self.block(blk, pred);
@@ -422,6 +460,7 @@ impl<'a> CFGBuilder<'a> {
             pred: CFGIndex,
             func_or_rcvr: @ast::Expr,
             args: &[@ast::Expr]) -> CFGIndex {
+        debug!("CFGBuilder.call(call_expr, pred, func_or_rcvr, args)");
         let func_or_rcvr_exit = self.expr(func_or_rcvr, pred);
         self.straightline(call_expr, func_or_rcvr_exit, args)
     }
@@ -430,6 +469,7 @@ impl<'a> CFGBuilder<'a> {
              exprs: &[@ast::Expr],
              pred: CFGIndex) -> CFGIndex {
         //! Constructs graph for `exprs` evaluated in order
+        debug!("CFGBuilder.exprs(exprs, pred)");
 
         exprs.iter().fold(pred, |p, &e| self.expr(e, p))
     }
@@ -438,6 +478,7 @@ impl<'a> CFGBuilder<'a> {
                 opt_expr: Option<@ast::Expr>,
                 pred: CFGIndex) -> CFGIndex {
         //! Constructs graph for `opt_expr` evaluated, if Some
+        debug!("CFGBuilder.opt_expr(opt_expr, pred)");
 
         opt_expr.iter().fold(pred, |p, &e| self.expr(e, p))
     }
@@ -447,16 +488,19 @@ impl<'a> CFGBuilder<'a> {
                     pred: CFGIndex,
                     subexprs: &[@ast::Expr]) -> CFGIndex {
         //! Handles case of an expression that evaluates `subexprs` in order
+        debug!("CFGBuilder.straightline(expr, pred, subexprs)");
 
         let subexprs_exit = self.exprs(subexprs, pred);
         self.add_node(expr.id, [subexprs_exit])
     }
 
     fn add_dummy_node(&mut self, preds: &[CFGIndex]) -> CFGIndex {
+        debug!("CFGBuilder.add_dummy_node(preds)");
         self.add_node(0, preds)
     }
 
     fn add_node(&mut self, id: ast::NodeId, preds: &[CFGIndex]) -> CFGIndex {
+        debug!("CFGBuilder.add_node(id, preds)");
         assert!(!self.exit_map.contains_key(&id));
         let node = self.graph.add_node(CFGNodeData {id: id});
         self.exit_map.insert(id, node);
@@ -469,6 +513,7 @@ impl<'a> CFGBuilder<'a> {
     fn add_contained_edge(&mut self,
                           source: CFGIndex,
                           target: CFGIndex) {
+        debug!("CFGBuilder.add_contained_edge(source, target)");
         let data = CFGEdgeData {exiting_scopes: vec!() };
         self.graph.add_edge(source, target, data);
     }
@@ -478,6 +523,7 @@ impl<'a> CFGBuilder<'a> {
                         from_index: CFGIndex,
                         to_loop: LoopScope,
                         to_index: CFGIndex) {
+        debug!("CFGBuilder.add_exiting_edge(from_expr, from_index, to_loop, to_index)");
         let mut data = CFGEdgeData {exiting_scopes: vec!() };
         let mut scope_id = from_expr.id;
         while scope_id != to_loop.loop_id {
@@ -491,6 +537,7 @@ impl<'a> CFGBuilder<'a> {
     fn find_scope(&self,
                   expr: @ast::Expr,
                   label: Option<ast::Ident>) -> LoopScope {
+        debug!("CFGBuilder.find_scope(expr, label)");
         match label {
             None => {
                 return *self.loop_scopes.last().unwrap();
@@ -520,6 +567,7 @@ impl<'a> CFGBuilder<'a> {
     }
 
     fn is_method_call(&self, expr: &ast::Expr) -> bool {
+        debug!("CFGBuilder.is_method_call(expr)");
         let method_call = typeck::MethodCall::expr(expr.id);
         self.method_map.borrow().contains_key(&method_call)
     }
