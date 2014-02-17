@@ -15,6 +15,7 @@ use syntax::ast_map;
 use syntax::codemap;
 use syntax::parse;
 use syntax::parse::token;
+use syntax::parse::token::IdentInterner;
 use syntax::print::pprust;
 use rustc::driver::driver;
 use rustc::middle::cfg;
@@ -77,15 +78,21 @@ fn main() {
 }
 
 trait SyntaxToStr {
-    fn get_interner(&self) -> @token::IdentInterner { token::get_ident_interner() }
-    fn get_to_str() -> fn (_: &Self, intr: @token::IdentInterner) -> ~str;
-    fn to_str(&self) -> ~str { SyntaxToStr::get_to_str()(self, self.get_interner()) }
+    fn get_to_str() -> fn (_: &Self, intr: @IdentInterner) -> ~str;
+
+    fn get_interner(&self) -> @IdentInterner {
+        token::get_ident_interner()
+    }
+    fn to_str(&self) -> ~str {
+        SyntaxToStr::get_to_str()(self, self.get_interner())
+    }
 }
 
 macro_rules! impl_stx_to_str {
     ($Type:path, $func:path) => {
         impl SyntaxToStr for $Type {
-            fn get_to_str() -> fn (_: &$Type, intr: @token::IdentInterner) -> ~str {
+            fn get_to_str() -> fn (_: &$Type, intr: @IdentInterner) -> ~str {
+
                 $func
             }
         }
@@ -101,15 +108,15 @@ impl_stx_to_str!(ast::Generics, pprust::generics_to_str)
 impl_stx_to_str!(ast::Path,     pprust::path_to_str)
 
 trait QuoteCtxt {
-    fn parse_sess(&self) -> @syntax::parse::ParseSess;
+    fn parse_sess(&self) -> @parse::ParseSess;
     fn cfg(&self) -> ast::CrateConfig;
     fn call_site(&self) -> codemap::Span;
     fn ident_of(&self, st: &str) -> ast::Ident;
 }
 
 impl QuoteCtxt for () {
-    fn parse_sess(&self)         -> @syntax::parse::ParseSess { parse::new_parse_sess() }
-    fn cfg(&self)                -> ast::CrateConfig          { ~[] }
-    fn call_site(&self)          -> codemap::Span             { codemap::DUMMY_SP }
-    fn ident_of(&self, st: &str) -> ast::Ident                { token::str_to_ident(st) }
+    fn parse_sess(&self) -> @parse::ParseSess  { parse::new_parse_sess() }
+    fn cfg(&self) -> ast::CrateConfig          { ~[] }
+    fn call_site(&self) -> codemap::Span       { codemap::DUMMY_SP }
+    fn ident_of(&self, st: &str) -> ast::Ident { token::str_to_ident(st) }
 }
