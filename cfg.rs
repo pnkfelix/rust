@@ -61,7 +61,7 @@ fn mk_tcx() -> ty::ctxt {
 }
 
 fn main() {
-    let e = quote_expr!((), x + y);
+    let e = quote_expr!((), { x + y });
     println!("expr: {:s}", e.to_str());
 
     let tcx = mk_tcx();
