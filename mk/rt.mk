@@ -179,7 +179,13 @@ $$(LIBUV_STAMP_$(1)): $(S)src/rt/libuv-auto-clean-trigger
 # libuv triggers a few warnings on some platforms
 LIBUV_CFLAGS_$(1) := $(subst -Werror,,$(CFG_GCCISH_CFLAGS_$(1)))
 # and so does bdwgc
+# For now, while hacking on BDW, leave in some warning-checks on clang.
+# But in the end, subst call should look much like the libuv case above.
+ifeq ($(CFG_C_COMPILER),clang)
 LIBBDW_CFLAGS_$(1) := $(subst -Werror,-Werror -Wno-error=incompatible-pointer-types -Wno-error=deprecated-declarations -Wno-error=unused-parameter -Wno-error=parentheses-equality,$(CFG_GCCISH_CFLAGS_$(1)))
+else
+LIBBDW_CFLAGS_$(1) := $(subst -Werror,,$(CFG_GCCISH_CFLAGS_$(1)))
+endif
 
 # Workaround build issue for BDW libgc.a: Do not propogate the -shared
 # flag (from platform.mk) into the sub-build.
