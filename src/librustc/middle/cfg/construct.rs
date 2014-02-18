@@ -92,7 +92,7 @@ impl<'a> CFGBuilder<'a> {
     }
 
     fn stmt(&mut self, stmt: @ast::Stmt, pred: CFGIndex) -> CFGIndex {
-        debug!("CFGBuilder.stmt(stmt, pred)");
+        let _e = self.enter("CFGBuilder.stmt(stmt, pred)");
         match stmt.node {
             ast::StmtDecl(decl, _) => {
                 self.decl(decl, pred)
@@ -109,7 +109,7 @@ impl<'a> CFGBuilder<'a> {
     }
 
     fn decl(&mut self, decl: @ast::Decl, pred: CFGIndex) -> CFGIndex {
-        debug!("CFGBuilder.decl(decl, pred)");
+        let _e = self.enter("CFGBuilder.decl(decl, pred)");
         match decl.node {
             ast::DeclLocal(local) => {
                 let init_exit = self.opt_expr(local.init, pred);
@@ -123,7 +123,7 @@ impl<'a> CFGBuilder<'a> {
     }
 
     fn pat(&mut self, pat: @ast::Pat, pred: CFGIndex) -> CFGIndex {
-        debug!("CFGBuilder.pat(pat, pred)");
+        let _e = self.enter("CFGBuilder.pat(pat, pred)");
         match pat.node {
             ast::PatIdent(_, _, None) |
             ast::PatEnum(_, None) |
@@ -169,7 +169,7 @@ impl<'a> CFGBuilder<'a> {
                                         pats: I,
                                         pred: CFGIndex) -> CFGIndex {
         //! Handles case where all of the patterns must match.
-        debug!("CFGBuilder.pats_all(pats, pred)");
+        let _e = self.enter("CFGBuilder.pats_all(pats, pred)");
 
         let mut pats = pats;
         pats.fold(pred, |pred, pat| self.pat(pat, pred))
@@ -179,7 +179,7 @@ impl<'a> CFGBuilder<'a> {
                 pats: &[@ast::Pat],
                 pred: CFGIndex) -> CFGIndex {
         //! Handles case where just one of the patterns must match.
-        debug!("CFGBuilder.pats_any(pats, pred)");
+        let _e = self.enter("CFGBuilder.pats_any(pats, pred)");
 
         if pats.len() == 1 {
             self.pat(pats[0], pred)
@@ -194,15 +194,17 @@ impl<'a> CFGBuilder<'a> {
     }
 
     fn expr(&mut self, expr: @ast::Expr, pred: CFGIndex) -> CFGIndex {
-        debug!("CFGBuilder.expr(expr, pred)");
+        let _e = self.enter("CFGBuilder.expr(expr, pred)");
 
         match expr.node {
             ast::ExprBlock(blk) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprBlock");
                 let blk_exit = self.block(blk, pred);
                 self.add_node(expr.id, [blk_exit])
             }
 
             ast::ExprIf(cond, then, None) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprIf(_, _, None)");
                 //
                 //     [pred]
                 //       |
@@ -223,6 +225,7 @@ impl<'a> CFGBuilder<'a> {
             }
 
             ast::ExprIf(cond, then, Some(otherwise)) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprIf(_, _, Some(_))");
                 //
                 //     [pred]
                 //       |
@@ -244,6 +247,7 @@ impl<'a> CFGBuilder<'a> {
             }
 
             ast::ExprWhile(cond, body) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprWhile");
                 //
                 //         [pred]
                 //           |
@@ -278,6 +282,7 @@ impl<'a> CFGBuilder<'a> {
             ast::ExprForLoop(..) => fail!("non-desugared expr_for_loop"),
 
             ast::ExprLoop(body, _) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprLoop");
                 //
                 //     [pred]
                 //       |
@@ -306,6 +311,7 @@ impl<'a> CFGBuilder<'a> {
             }
 
             ast::ExprMatch(discr, ref arms) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprMatch");
                 //
                 //     [pred]
                 //       |
@@ -344,6 +350,7 @@ impl<'a> CFGBuilder<'a> {
             }
 
             ast::ExprBinary(op, l, r) if ast_util::lazy_binop(op) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprBinary lazy_binop");
                 //
                 //     [pred]
                 //       |
@@ -364,6 +371,7 @@ impl<'a> CFGBuilder<'a> {
             }
 
             ast::ExprRet(v) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprRet");
                 let v_exit = self.opt_expr(v, pred);
                 let loop_scope = *self.loop_scopes.get(0);
                 self.add_exiting_edge(expr, v_exit,
@@ -372,6 +380,7 @@ impl<'a> CFGBuilder<'a> {
             }
 
             ast::ExprBreak(label) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprBreak");
                 let loop_scope = self.find_scope(expr, label);
                 self.add_exiting_edge(expr, pred,
                                       loop_scope, loop_scope.break_index);
@@ -379,6 +388,7 @@ impl<'a> CFGBuilder<'a> {
             }
 
             ast::ExprAgain(label) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprAgain");
                 let loop_scope = self.find_scope(expr, label);
                 self.add_exiting_edge(expr, pred,
                                       loop_scope, loop_scope.continue_index);
@@ -386,31 +396,41 @@ impl<'a> CFGBuilder<'a> {
             }
 
             ast::ExprVec(ref elems, _) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprVec");
                 self.straightline(expr, pred, elems.as_slice())
             }
 
             ast::ExprCall(func, ref args) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprCall");
                 self.call(expr, pred, func, args.as_slice())
             }
 
             ast::ExprMethodCall(_, _, ref args) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprMethodCall");
                 self.call(expr, pred, *args.get(0), args.slice_from(1))
             }
 
-            ast::ExprIndex(l, r) |
+            ast::ExprIndex(l, r) if self.is_method_call(expr) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprIndex method_call");
+                self.call(expr, pred, l, [r])
+            }
             ast::ExprBinary(_, l, r) if self.is_method_call(expr) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprBinary method_call");
                 self.call(expr, pred, l, [r])
             }
 
             ast::ExprUnary(_, e) if self.is_method_call(expr) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprUnary method_call");
                 self.call(expr, pred, e, [])
             }
 
             ast::ExprTup(ref exprs) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprTup");
                 self.straightline(expr, pred, exprs.as_slice())
             }
 
             ast::ExprStruct(_, ref fields, base) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprStruct");
                 let base_exit = self.opt_expr(base, pred);
                 let field_exprs: Vec<@ast::Expr> =
                     fields.iter().map(|f| f.expr).collect();
@@ -418,38 +438,81 @@ impl<'a> CFGBuilder<'a> {
             }
 
             ast::ExprRepeat(elem, count, _) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprRepeat");
                 self.straightline(expr, pred, [elem, count])
             }
 
-            ast::ExprAssign(l, r) |
+            ast::ExprAssign(l, r) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprAssign");
+                self.straightline(expr, pred, [r, l])
+            }
             ast::ExprAssignOp(_, l, r) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprAssignOp");
                 self.straightline(expr, pred, [r, l])
             }
 
-            ast::ExprIndex(l, r) |
+            ast::ExprIndex(l, r) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprIndex");
+                self.straightline(expr, pred, [l, r])
+            }
             ast::ExprBinary(_, l, r) => { // NB: && and || handled earlier
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprBinary");
                 self.straightline(expr, pred, [l, r])
             }
 
             ast::ExprBox(p, e) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprBox");
                 self.straightline(expr, pred, [p, e])
             }
 
-            ast::ExprAddrOf(_, e) |
-            ast::ExprCast(e, _) |
-            ast::ExprUnary(_, e) |
-            ast::ExprParen(e) |
-            ast::ExprVstore(e, _) |
-            ast::ExprField(e, _, _) => {
+            ast::ExprAddrOf(_, e) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprAddrOf");
+                self.straightline(expr, pred, [e])
+            }
+            ast::ExprCast(e, _) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprCast");
+                self.straightline(expr, pred, [e])
+            }
+            ast::ExprUnary(_, e) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprUnary");
+                self.straightline(expr, pred, [e])
+            }
+            ast::ExprParen(e) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprParen");
+                self.straightline(expr, pred, [e])
+            }
+            ast::ExprVstore(e, _) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprVstore");
                 self.straightline(expr, pred, [e])
             }
 
-            ast::ExprMac(..) |
-            ast::ExprInlineAsm(..) |
-            ast::ExprFnBlock(..) |
-            ast::ExprProc(..) |
-            ast::ExprLit(..) |
+            ast::ExprField(e, _, _) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprField");
+                self.straightline(expr, pred, [e])
+            }
+
+            ast::ExprMac(..) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprMac");
+                self.straightline(expr, pred, [])
+            }
+            ast::ExprInlineAsm(..) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprInlineAsm");
+                self.straightline(expr, pred, [])
+            }
+            ast::ExprFnBlock(..) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprFnBlock");
+                self.straightline(expr, pred, [])
+            }
+            ast::ExprProc(..) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprProc");
+                self.straightline(expr, pred, [])
+            }
+            ast::ExprLit(..) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprLit");
+                self.straightline(expr, pred, [])
+            }
             ast::ExprPath(..) => {
+                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprPath");
                 self.straightline(expr, pred, [])
             }
         }
@@ -460,7 +523,7 @@ impl<'a> CFGBuilder<'a> {
             pred: CFGIndex,
             func_or_rcvr: @ast::Expr,
             args: &[@ast::Expr]) -> CFGIndex {
-        debug!("CFGBuilder.call(call_expr, pred, func_or_rcvr, args)");
+        let _e = self.enter("CFGBuilder.call(call_expr, pred, func_or_rcvr, args)");
         let func_or_rcvr_exit = self.expr(func_or_rcvr, pred);
         self.straightline(call_expr, func_or_rcvr_exit, args)
     }
@@ -469,7 +532,7 @@ impl<'a> CFGBuilder<'a> {
              exprs: &[@ast::Expr],
              pred: CFGIndex) -> CFGIndex {
         //! Constructs graph for `exprs` evaluated in order
-        debug!("CFGBuilder.exprs(exprs, pred)");
+        let _e = self.enter("CFGBuilder.exprs(exprs, pred)");
 
         exprs.iter().fold(pred, |p, &e| self.expr(e, p))
     }
@@ -478,7 +541,7 @@ impl<'a> CFGBuilder<'a> {
                 opt_expr: Option<@ast::Expr>,
                 pred: CFGIndex) -> CFGIndex {
         //! Constructs graph for `opt_expr` evaluated, if Some
-        debug!("CFGBuilder.opt_expr(opt_expr, pred)");
+        let _e = self.enter("CFGBuilder.opt_expr(opt_expr, pred)");
 
         opt_expr.iter().fold(pred, |p, &e| self.expr(e, p))
     }
@@ -488,19 +551,19 @@ impl<'a> CFGBuilder<'a> {
                     pred: CFGIndex,
                     subexprs: &[@ast::Expr]) -> CFGIndex {
         //! Handles case of an expression that evaluates `subexprs` in order
-        debug!("CFGBuilder.straightline(expr, pred, subexprs)");
+        let _e = self.enter("CFGBuilder.straightline(expr, pred, subexprs)");
 
         let subexprs_exit = self.exprs(subexprs, pred);
         self.add_node(expr.id, [subexprs_exit])
     }
 
     fn add_dummy_node(&mut self, preds: &[CFGIndex]) -> CFGIndex {
-        debug!("CFGBuilder.add_dummy_node(preds)");
+        let _e = self.enter("CFGBuilder.add_dummy_node(preds)");
         self.add_node(0, preds)
     }
 
     fn add_node(&mut self, id: ast::NodeId, preds: &[CFGIndex]) -> CFGIndex {
-        debug!("CFGBuilder.add_node(id, preds)");
+        let _e = self.enter("CFGBuilder.add_node(id, preds)");
         assert!(!self.exit_map.contains_key(&id));
         let node = self.graph.add_node(CFGNodeData {id: id});
         self.exit_map.insert(id, node);
@@ -513,7 +576,7 @@ impl<'a> CFGBuilder<'a> {
     fn add_contained_edge(&mut self,
                           source: CFGIndex,
                           target: CFGIndex) {
-        debug!("CFGBuilder.add_contained_edge(source, target)");
+        let _e = self.enter("CFGBuilder.add_contained_edge(source, target)");
         let data = CFGEdgeData {exiting_scopes: vec!() };
         self.graph.add_edge(source, target, data);
     }
@@ -523,7 +586,7 @@ impl<'a> CFGBuilder<'a> {
                         from_index: CFGIndex,
                         to_loop: LoopScope,
                         to_index: CFGIndex) {
-        debug!("CFGBuilder.add_exiting_edge(from_expr, from_index, to_loop, to_index)");
+        let _e = self.enter("CFGBuilder.add_exiting_edge(from_expr, from_index, to_loop, to_index)");
         let mut data = CFGEdgeData {exiting_scopes: vec!() };
         let mut scope_id = from_expr.id;
         while scope_id != to_loop.loop_id {
@@ -537,13 +600,15 @@ impl<'a> CFGBuilder<'a> {
     fn find_scope(&self,
                   expr: @ast::Expr,
                   label: Option<ast::Ident>) -> LoopScope {
-        debug!("CFGBuilder.find_scope(expr, label)");
+        let _e = self.enter("CFGBuilder.find_scope(expr, label)");
         match label {
             None => {
+                let _e = self.enter("CFGBuilder.find_scope(expr, label) None");
                 return *self.loop_scopes.last().unwrap();
             }
 
             Some(_) => {
+                let _e = self.enter("CFGBuilder.find_scope(expr, label) Some(_)");
                 match self.tcx.def_map.borrow().find(&expr.id) {
                     Some(&ast::DefLabel(loop_id)) => {
                         for l in self.loop_scopes.iter() {
@@ -567,7 +632,7 @@ impl<'a> CFGBuilder<'a> {
     }
 
     fn is_method_call(&self, expr: &ast::Expr) -> bool {
-        debug!("CFGBuilder.is_method_call(expr)");
+        let _e = self.enter("CFGBuilder.is_method_call(expr)");
         let method_call = typeck::MethodCall::expr(expr.id);
         self.method_map.borrow().contains_key(&method_call)
     }
