@@ -1090,8 +1090,9 @@ do
         BDW_HOST="--host=$t"
         BDW_TARGET="--target=$t"
 
-        # Enable thread-support
-        BDW_THREAD_OPTS="--enable-threads=posix"
+        # Enable thread-support.
+        # Work-around HANDLE_FORK being potentially unvailable.
+        BDW_THREAD_OPTS="--enable-threads=posix --disable-handle-fork"
 
         # Force the use of the local-copy of libatomic_ops
         BDW_LIBATOMIC_OPTS="--with-libatomic-ops=no"
