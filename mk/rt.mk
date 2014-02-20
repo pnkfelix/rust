@@ -133,12 +133,16 @@ $(foreach t,$(CFG_TARGET),$(eval $(call DEF_LIBUV_ARCH_VAR,$(t))))
 
 ifdef CFG_ENABLE_FAST_MAKE
 LIBUV_DEPS := $(S)/.gitmodules
+LIBBDW_DEPS := $(S)/.gitmodules
 else
 LIBUV_DEPS := $(wildcard \
               $(S)src/libuv/* \
               $(S)src/libuv/*/* \
               $(S)src/libuv/*/*/* \
               $(S)src/libuv/*/*/*/*)
+LIBBDW_DEPS := $(wildcard \
+              $(S)src/bdwgc/* \
+              $(S)src/bdwgc/*/* )
 endif
 
 LIBUV_NO_LOAD = run-benchmarks.target.mk run-tests.target.mk \
