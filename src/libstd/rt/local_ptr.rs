@@ -246,6 +246,7 @@ pub mod native {
         unsafe {
             ::rt::bdwgc::collect_from(1u); // bisecting source of smashed objects
             tls::create(&mut RT_TLS_KEY);
+            ::rt::bdwgc::add_root(&RT_TLS_KEY);
             ::rt::bdwgc::collect_from(2u); // bisecting source of smashed objects
         }
     }

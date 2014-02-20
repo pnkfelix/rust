@@ -11,10 +11,12 @@
 #[allow(dead_code)];
 #[allow(non_camel_case_types)];
 
+use cast;
 use libc::{c_ulong, c_char, c_void, c_int, c_uint};
 use libc::{pthread_t, pthread_attr_t};
 use rt::thread;
 use ptr;
+use ptr::RawPtr;
 
 pub use collect      = self::GC_gcollect;
 
@@ -50,11 +52,16 @@ pub unsafe fn collect_from(where: uint) {
     GC_gcollect_from(where as c_uint)
 }
 
-pub unsafe fn mutate_my_stack_base(stack_base: uint) {
+pub unsafe fn mutate_my_stack_base<T>(stack_base: *T) {
     let base = Struct_GC_stack_base {
         mem_base: stack_base as *mut c_void
     };
     GC_mutate_my_stack_base(&base);
+}
+
+pub unsafe fn add_root<T>(storage: &T) {
+    let start : *mut T = cast::transmute(storage);
+    GC_add_roots(start as *mut c_void, start.offset(1) as *mut c_void);
 }
 
 // pub use free                        = self::GC_free;

@@ -88,6 +88,13 @@ impl Stack {
             self.buf.data.offset(self.buf.len as int) as *uint
         }
     }
+
+    /// The cold end of the allocated stack (i.e. the stack base).
+    pub fn cold(&self) -> *uint { self.start() }
+
+    /// The hot end of the allocated stack (i.e. the stack tip).
+    pub fn hot(&self) -> *uint { self.end() }
+
 }
 
 #[cfg(unix)]

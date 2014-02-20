@@ -10,6 +10,7 @@
 
 use std::cast;
 use std::rand::{XorShiftRng, Rng, Rand};
+use std::rt::bdwgc;
 use std::rt::local::Local;
 use std::rt::rtio::{RemoteCallback, PausableIdleCallback, Callback, EventLoop};
 use std::rt::task::BlockedTask;
@@ -632,6 +633,14 @@ impl Scheduler {
         let mut current_task: ~GreenTask = unsafe {
             cast::transmute(current_task_dupe)
         };
+        current_task.coroutine.as_ref().map(|coroutine| {
+            let stack_base: *uint = coroutine.current_stack_segment.start();
+            unsafe {
+                rtdebug!("re-installing stack base {:x}", cast::transmute::<*uint,uint>(stack_base));
+                bdwgc::mutate_my_stack_base(stack_base);
+            }
+        });
+
         current_task.sched.get_mut_ref().run_cleanup_job();
 
         // See the comments in switch_running_tasks_and_then for why a lock

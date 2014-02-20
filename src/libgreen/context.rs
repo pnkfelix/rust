@@ -75,6 +75,21 @@ impl Context {
                                 transmute_region(&*regs));
         };
 
+        // Wrap the given start with one that first fixes BDW's notion
+        // of the current stack base.  (See also sched code that
+        // reinstalls stack base after swapping one task for another.)
+        let start = {
+            let orig_start = start;
+            let stack_base = stack.cold();
+            proc() {
+                unsafe {
+                    rtdebug!("installing stack base {:x}", transmute::<*uint,uint>(stack_base));
+                    bdwgc::mutate_my_stack_base(stack_base);
+                }
+                orig_start();
+            }
+        };
+
         // FIXME #7767: Putting main into a ~ so it's a thin pointer and can
         // be passed to the spawn function.  Another unfortunate
         // allocation
@@ -110,7 +125,9 @@ impl Context {
     then loading the registers from a previously saved Context.
     */
     pub fn swap(out_context: &mut Context, in_context: &Context) {
-        rtdebug!("swapping contexts");
+        fn addr<T>(t:T) -> uint { unsafe { transmute(t) } }
+        rtdebug!("swapping contexts out: {:x} in: {:x}",
+                 addr(out_context as *mut Context), addr(in_context as *Context));
         let out_regs: &mut Registers = match out_context {
             &Context { regs: ~ref mut r, .. } => r
         };
@@ -130,14 +147,15 @@ impl Context {
             match in_context.stack_bounds {
                 Some((lo, hi)) => {
                     stack::record_stack_bounds(lo, hi);
-                    bdwgc::mutate_my_stack_base(lo);
                 }
                 // If we're going back to one of the original contexts or
                 // something that's possibly not a "normal task", then reset
                 // the stack limit to 0 to make morestack never fail
                 None => stack::record_stack_bounds(0, uint::MAX),
             }
-            rust_swap_registers(out_regs, in_regs)
+            rust_swap_registers(out_regs, in_regs);
+
+
         }
     }
 }
