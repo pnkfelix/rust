@@ -238,6 +238,7 @@ endif
 LIBBDW_NAME_$(1) := $$(call CFG_STATIC_LIB_NAME_$(1),gc)
 LIBBDW_DIR_$(1) := $$(RT_OUTPUT_DIR_$(1))/bdw
 LIBBDW_LIB_$(1) := $$(RT_OUTPUT_DIR_$(1))/$$(LIBBDW_NAME_$(1))
+LIBBDW_LIB_DEPS_$(1) := $$(wildcard $$(LIBBDW_DIR_$(1))/.libs/*.o )
 
 LIBBDW_MAKEFILE_$(1) := $$(CFG_BUILD_DIR)$$(RT_OUTPUT_DIR_$(1))/bdw/Makefile
 
@@ -251,11 +252,11 @@ $$(LIBBDW_STAMP_$(1)): $(S)src/rt/libbdw-auto-clean-trigger
 $$(LIBBDW_LIB_$(1)): $$(LIBBDW_DIR_$(1))/.libs/libgc.a $$(MKFILE_DEPS)
 	$$(Q)ln -f $$< $$@
 
-$$(LIBBDW_DEPS): $$(MKFILE_DEPS)
+$$(LIBBDW_LIB_DEPS_$(1)): $$(MKFILE_DEPS)
 	$$(Q)$$(MAKE) -C $$(LIBBDW_DIR_$(1)) clean
 
 # Below, can add -DLOG_ALLOCS to CFLAGS to get printfs on alloc/free calls.
-$$(LIBBDW_DIR_$(1))/.libs/libgc.a: $$(LIBBDW_DEPS) $$(LIBBDW_MAKEFILE_$(1)) \
+$$(LIBBDW_DIR_$(1))/.libs/libgc.a: $$(LIBBDW_DEPS) $$(LIBBDW_LIB_DEPS_$(1)) $$(LIBBDW_MAKEFILE_$(1)) \
 				    $$(MKFILE_DEPS)
 	$$(Q)$$(MAKE) -C $$(LIBBDW_DIR_$(1)) \
 		CFLAGS="$$(LIBBDW_CFLAGS_$(1)) $$(SNAP_DEFINES) -DLARGE_CONFIG -DATOMIC_UNCOLLECTABLE " \
