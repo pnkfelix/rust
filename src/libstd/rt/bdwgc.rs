@@ -50,6 +50,13 @@ pub unsafe fn collect_from(where: uint) {
     GC_gcollect_from(where as c_uint)
 }
 
+pub unsafe fn mutate_my_stack_base(stack_base: uint) {
+    let base = Struct_GC_stack_base {
+        mem_base: stack_base as *mut c_void
+    };
+    GC_mutate_my_stack_base(&base);
+}
+
 // pub use free                        = self::GC_free;
 // pub use malloc                      = self::GC_malloc;
 
@@ -1253,6 +1260,11 @@ extern "C" {
     ///
     /// A manually registered thread requires manual unregistering.
     fn GC_register_my_thread(sb: *Struct_GC_stack_base) -> c_int;
+
+    /// This is a hack Felix is putting in to allow user-space threads
+    /// in the Rust runtime to install new stack-bases when a new task
+    /// is swapped onto a pre-existing pthread.
+    fn GC_mutate_my_stack_base(sb: *Struct_GC_stack_base) -> c_int;
 
     /// Return non-zero (TRUE) if and only if the calling thread is
     /// registered with the garbage collector.

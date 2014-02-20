@@ -14,6 +14,7 @@ use std::cast::{transmute, transmute_mut_unsafe,
                 transmute_region, transmute_mut_region};
 use stack::Stack;
 use std::unstable::stack;
+use std::rt::bdwgc;
 
 // FIXME #7761: Registers is boxed so that it is 16-byte aligned, for storing
 // SSE regs.  It would be marginally better not to do this. In C++ we
@@ -127,7 +128,10 @@ impl Context {
             // invalid for the current task. Lucky for us `rust_swap_registers`
             // is a C function so we don't have to worry about that!
             match in_context.stack_bounds {
-                Some((lo, hi)) => stack::record_stack_bounds(lo, hi),
+                Some((lo, hi)) => {
+                    stack::record_stack_bounds(lo, hi);
+                    bdwgc::mutate_my_stack_base(lo);
+                }
                 // If we're going back to one of the original contexts or
                 // something that's possibly not a "normal task", then reset
                 // the stack limit to 0 to make morestack never fail
