@@ -2632,7 +2632,8 @@ pub fn write_metadata(cx: &CrateContext, crate: &ast::Crate) -> ~[u8] {
         |ecx, ebml_w, path, ii|
         astencode::encode_inlined_item(ecx, ebml_w, path, ii, cx.maps);
 
-    // XXX obviously size_hint should be one of the encode_parms
+    // FIXME "obviously" size_hint should be one of the encode_parms
+    // (Felix has lost the context from when he added the above...)
     let encode_parms = crate_ctxt_to_encode_parms(cx, encode_inlined_item);
     let metadata = encoder::encode_metadata(encode_parms, crate);
     let compressed = encoder::metadata_encoding_version +

@@ -636,7 +636,7 @@ impl Scheduler {
         current_task.coroutine.as_ref().map(|coroutine| {
             let stack_base: *uint = coroutine.current_stack_segment.start();
             unsafe {
-                rtdebug!("re-installing stack base {:x}", cast::transmute::<*uint,uint>(stack_base));
+                rtdebug!("re-installing stack base {}", stack_base);
                 bdwgc::mutate_my_stack_base(stack_base);
             }
         });

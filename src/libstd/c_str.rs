@@ -103,7 +103,8 @@ impl Clone for CString {
             CString { buf: self.buf, owns_buffer_: self.owns_buffer_ }
         } else {
             let len = self.len() + 1;
-            let buf = unsafe { malloc_raw(len, bdw::Uncollectable(bdw::Other, bdw::Atom)) } as *mut libc::c_char;
+            let mode = bdw::Uncollectable(bdw::Other, bdw::Atom);
+            let buf = unsafe { malloc_raw(len, mode) } as *mut libc::c_char;
             unsafe { ptr::copy_nonoverlapping_memory(buf, self.buf, len); }
             CString { buf: buf as *libc::c_char, owns_buffer_: true }
         }
