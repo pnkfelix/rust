@@ -53,9 +53,15 @@ pub unsafe fn collect_from(where: uint) {
 }
 
 pub unsafe fn mutate_my_stack_base<T>(stack_base: *T) {
-    let base = Struct_GC_stack_base {
-        mem_base: stack_base as *mut c_void
+    let sb = if stack_base.is_null() {
+        // This must be a scheduler thread.  Scheduler threads do not
+        // gc-allocate or have references to gc'ed storage, so just
+        // use any pointer from the local stack as the stack base.
+        &stack_base as **T as *mut c_void
+    } else {
+        stack_base as *mut c_void
     };
+    let base = Struct_GC_stack_base { mem_base: sb };
     GC_mutate_my_stack_base(&base);
 }
 
