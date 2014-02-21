@@ -82,7 +82,8 @@ pub fn construct(tcx: ty::ctxt,
 
 impl<'a> CFGBuilder<'a> {
     fn block(&mut self, blk: &ast::Block, pred: CFGIndex) -> CFGIndex {
-        let _e = self.enter("CFGBuilder.block(blk, pred)");
+        let m = format!("CFGBuilder.block(blk, pred)");
+        let _e = self.enter(m);
         let mut stmts_exit = pred;
         for &stmt in blk.stmts.iter() {
             stmts_exit = self.stmt(stmt, stmts_exit);
@@ -94,7 +95,8 @@ impl<'a> CFGBuilder<'a> {
     }
 
     fn stmt(&mut self, stmt: @ast::Stmt, pred: CFGIndex) -> CFGIndex {
-        let _e = self.enter("CFGBuilder.stmt(stmt, pred)");
+        let m = format!("CFGBuilder.stmt(stmt, pred)");
+        let _e = self.enter(m);
         match stmt.node {
             ast::StmtDecl(decl, _) => {
                 self.decl(decl, pred)
@@ -111,7 +113,8 @@ impl<'a> CFGBuilder<'a> {
     }
 
     fn decl(&mut self, decl: @ast::Decl, pred: CFGIndex) -> CFGIndex {
-        let _e = self.enter("CFGBuilder.decl(decl, pred)");
+        let m = format!("CFGBuilder.decl(decl, pred)");
+        let _e = self.enter(m);
         match decl.node {
             ast::DeclLocal(local) => {
                 let init_exit = self.opt_expr(local.init, pred);
@@ -125,7 +128,8 @@ impl<'a> CFGBuilder<'a> {
     }
 
     fn pat(&mut self, pat: @ast::Pat, pred: CFGIndex) -> CFGIndex {
-        let _e = self.enter("CFGBuilder.pat(pat, pred)");
+        let m = format!("CFGBuilder.pat(pat, pred");
+        let _e = self.enter(m);
         match pat.node {
             ast::PatIdent(_, _, None) |
             ast::PatEnum(_, None) |
@@ -171,7 +175,8 @@ impl<'a> CFGBuilder<'a> {
                                         pats: I,
                                         pred: CFGIndex) -> CFGIndex {
         //! Handles case where all of the patterns must match.
-        let _e = self.enter("CFGBuilder.pats_all(pats, pred)");
+        let m = format!("CFGBuilder.pats_all(pats, pred)");
+        let _e = self.enter(m);
 
         let mut pats = pats;
         pats.fold(pred, |pred, pat| self.pat(pat, pred))
@@ -181,7 +186,8 @@ impl<'a> CFGBuilder<'a> {
                 pats: &[@ast::Pat],
                 pred: CFGIndex) -> CFGIndex {
         //! Handles case where just one of the patterns must match.
-        let _e = self.enter("CFGBuilder.pats_any(pats, pred)");
+        let m = format!("CFGBuilder.pats_any(pats, pred)");
+        let _e = self.enter(m);
 
         if pats.len() == 1 {
             self.pat(pats[0], pred)
@@ -196,17 +202,20 @@ impl<'a> CFGBuilder<'a> {
     }
 
     fn expr(&mut self, expr: @ast::Expr, pred: CFGIndex) -> CFGIndex {
-        let _e = self.enter("CFGBuilder.expr(expr, pred)");
+        let m = format!("CFGBuilder.expr(expr, pred) id: {}", expr.id);
+        let _e = self.enter(m);
 
         match expr.node {
             ast::ExprBlock(blk) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprBlock");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprBlock id: {}", expr.id);
+                let _e = self.enter(m);
                 let blk_exit = self.block(blk, pred);
                 self.add_node(expr.id, [blk_exit])
             }
 
             ast::ExprIf(cond, then, None) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprIf(_, _, None)");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprIf(_, _, None) id: {}", expr.id);
+                let _e = self.enter(m);
                 //
                 //     [pred]
                 //       |
@@ -227,7 +236,8 @@ impl<'a> CFGBuilder<'a> {
             }
 
             ast::ExprIf(cond, then, Some(otherwise)) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprIf(_, _, Some(_))");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprIf(_, _, Some(_)) id: {}", expr.id);
+                let _e = self.enter(m);
                 //
                 //     [pred]
                 //       |
@@ -249,7 +259,8 @@ impl<'a> CFGBuilder<'a> {
             }
 
             ast::ExprWhile(cond, body) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprWhile");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprWhile id: {}", expr.id);
+                let _e = self.enter(m);
                 //
                 //         [pred]
                 //           |
@@ -284,7 +295,8 @@ impl<'a> CFGBuilder<'a> {
             ast::ExprForLoop(..) => fail!("non-desugared expr_for_loop"),
 
             ast::ExprLoop(body, _) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprLoop");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprLoop id: {}", expr.id);
+                let _e = self.enter(m);
                 //
                 //     [pred]
                 //       |
@@ -313,7 +325,8 @@ impl<'a> CFGBuilder<'a> {
             }
 
             ast::ExprMatch(discr, ref arms) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprMatch");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprMatch id: {}", expr.id);
+                let _e = self.enter(m);
                 //
                 //     [pred]
                 //       |
@@ -352,7 +365,8 @@ impl<'a> CFGBuilder<'a> {
             }
 
             ast::ExprBinary(op, l, r) if ast_util::lazy_binop(op) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprBinary lazy_binop");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprBinary lazy_binop id: {}", expr.id);
+                let _e = self.enter(m);
                 //
                 //     [pred]
                 //       |
@@ -373,7 +387,8 @@ impl<'a> CFGBuilder<'a> {
             }
 
             ast::ExprRet(v) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprRet");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprRet id: {}", expr.id);
+                let _e = self.enter(m);
                 let v_exit = self.opt_expr(v, pred);
                 let loop_scope = *self.loop_scopes.get(0);
                 self.add_exiting_edge(expr, v_exit,
@@ -382,7 +397,8 @@ impl<'a> CFGBuilder<'a> {
             }
 
             ast::ExprBreak(label) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprBreak");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprBreak id: {}", expr.id);
+                let _e = self.enter(m);
                 let loop_scope = self.find_scope(expr, label);
                 self.add_exiting_edge(expr, pred,
                                       loop_scope, loop_scope.break_index);
@@ -390,7 +406,8 @@ impl<'a> CFGBuilder<'a> {
             }
 
             ast::ExprAgain(label) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprAgain");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprAgain id: {}", expr.id);
+                let _e = self.enter(m);
                 let loop_scope = self.find_scope(expr, label);
                 self.add_exiting_edge(expr, pred,
                                       loop_scope, loop_scope.continue_index);
@@ -398,41 +415,49 @@ impl<'a> CFGBuilder<'a> {
             }
 
             ast::ExprVec(ref elems, _) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprVec");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprVec id: {}", expr.id);
+                let _e = self.enter(m);
                 self.straightline(expr, pred, elems.as_slice())
             }
 
             ast::ExprCall(func, ref args) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprCall");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprCall id: {}", expr.id);
+                let _e = self.enter(m);
                 self.call(expr, pred, func, args.as_slice())
             }
 
             ast::ExprMethodCall(_, _, ref args) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprMethodCall");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprMethodCall id: {}", expr.id);
+                let _e = self.enter(m);
                 self.call(expr, pred, *args.get(0), args.slice_from(1))
             }
 
             ast::ExprIndex(l, r) if self.is_method_call(expr) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprIndex method_call");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprIndex method_call id: {}", expr.id);
+                let _e = self.enter(m);
                 self.call(expr, pred, l, [r])
             }
             ast::ExprBinary(_, l, r) if self.is_method_call(expr) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprBinary method_call");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprBinary method_call id: {}", expr.id);
+                let _e = self.enter(m);
                 self.call(expr, pred, l, [r])
             }
 
             ast::ExprUnary(_, e) if self.is_method_call(expr) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprUnary method_call");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprUnary method_call id: {}", expr.id);
+                let _e = self.enter(m);
                 self.call(expr, pred, e, [])
             }
 
             ast::ExprTup(ref exprs) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprTup");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprTup id: {}", expr.id);
+                let _e = self.enter(m);
                 self.straightline(expr, pred, exprs.as_slice())
             }
 
             ast::ExprStruct(_, ref fields, base) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprStruct");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprStruct id: {}", expr.id);
+                let _e = self.enter(m);
                 let base_exit = self.opt_expr(base, pred);
                 let field_exprs: Vec<@ast::Expr> =
                     fields.iter().map(|f| f.expr).collect();
@@ -440,81 +465,99 @@ impl<'a> CFGBuilder<'a> {
             }
 
             ast::ExprRepeat(elem, count, _) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprRepeat");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprRepeat id: {}", expr.id);
+                let _e = self.enter(m);
                 self.straightline(expr, pred, [elem, count])
             }
 
             ast::ExprAssign(l, r) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprAssign");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprAssign id: {}", expr.id);
+                let _e = self.enter(m);
                 self.straightline(expr, pred, [r, l])
             }
             ast::ExprAssignOp(_, l, r) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprAssignOp");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprAssignOp id: {}", expr.id);
+                let _e = self.enter(m);
                 self.straightline(expr, pred, [r, l])
             }
 
             ast::ExprIndex(l, r) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprIndex");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprIndex id: {}", expr.id);
+                let _e = self.enter(m);
                 self.straightline(expr, pred, [l, r])
             }
             ast::ExprBinary(_, l, r) => { // NB: && and || handled earlier
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprBinary");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprBinary id: {}", expr.id);
+                let _e = self.enter(m);
                 self.straightline(expr, pred, [l, r])
             }
 
             ast::ExprBox(p, e) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprBox");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprBox id: {}", expr.id);
+                let _e = self.enter(m);
                 self.straightline(expr, pred, [p, e])
             }
 
             ast::ExprAddrOf(_, e) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprAddrOf");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprAddrOf id: {}", expr.id);
+                let _e = self.enter(m);
                 self.straightline(expr, pred, [e])
             }
             ast::ExprCast(e, _) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprCast");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprCast id: {}", expr.id);
+                let _e = self.enter(m);
                 self.straightline(expr, pred, [e])
             }
             ast::ExprUnary(_, e) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprUnary");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprUnary id: {}", expr.id);
+                let _e = self.enter(m);
                 self.straightline(expr, pred, [e])
             }
             ast::ExprParen(e) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprParen");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprParen id: {}", expr.id);
+                let _e = self.enter(m);
                 self.straightline(expr, pred, [e])
             }
             ast::ExprVstore(e, _) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprVstore");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprVstore id: {}", expr.id);
+                let _e = self.enter(m);
                 self.straightline(expr, pred, [e])
             }
 
             ast::ExprField(e, _, _) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprField");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprField id: {}", expr.id);
+                let _e = self.enter(m);
                 self.straightline(expr, pred, [e])
             }
 
             ast::ExprMac(..) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprMac");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprMac id: {}", expr.id);
+                let _e = self.enter(m);
                 self.straightline(expr, pred, [])
             }
             ast::ExprInlineAsm(..) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprInlineAsm");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprInlineAsm id: {}", expr.id);
+                let _e = self.enter(m);
                 self.straightline(expr, pred, [])
             }
             ast::ExprFnBlock(..) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprFnBlock");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprFnBlock id: {}", expr.id);
+                let _e = self.enter(m);
                 self.straightline(expr, pred, [])
             }
             ast::ExprProc(..) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprProc");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprProc id: {}", expr.id);
+                let _e = self.enter(m);
                 self.straightline(expr, pred, [])
             }
             ast::ExprLit(..) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprLit");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprLit id: {}", expr.id);
+                let _e = self.enter(m);
                 self.straightline(expr, pred, [])
             }
             ast::ExprPath(..) => {
-                let _e = self.enter("CFGBuilder.expr(expr, pred) ExprPath");
+                let m = format!("CFGBuilder.expr(expr, pred) ExprPath id: {}", expr.id);
+                let _e = self.enter(m);
                 self.straightline(expr, pred, [])
             }
         }
@@ -565,7 +608,9 @@ impl<'a> CFGBuilder<'a> {
     }
 
     fn add_node(&mut self, id: ast::NodeId, preds: &[CFGIndex]) -> CFGIndex {
-        let _e = self.enter("CFGBuilder.add_node(id, preds)");
+        let msg = format!("CFGBuilder.add_node(id, preds) id: {}", id);
+        let _e = self.enter(msg);
+        assert!(id != ast::DUMMY_NODE_ID);
         assert!(!self.exit_map.contains_key(&id));
         let node = self.graph.add_node(CFGNodeData {id: id});
         self.exit_map.insert(id, node);
