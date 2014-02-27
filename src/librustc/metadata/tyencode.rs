@@ -179,7 +179,7 @@ fn enc_region(w: &mut MemWriter, cx: @ctxt, r: ty::Region) {
             mywrite!(w, "B[{}|{}|{}]",
                      node_id,
                      index,
-                     token::get_name(ident));
+                     token::get_name(ident.name()));
         }
         ty::ReFree(ref fr) => {
             mywrite!(w, "f[{}|", fr.scope_id);
@@ -210,7 +210,7 @@ fn enc_bound_region(w: &mut MemWriter, cx: @ctxt, br: ty::BoundRegion) {
         ty::BrNamed(d, s) => {
             mywrite!(w, "[{}|{}]",
                      (cx.ds)(d),
-                     token::get_name(s));
+                     token::get_name(s.name()));
         }
         ty::BrFresh(id) => {
             mywrite!(w, "f{}|", id);

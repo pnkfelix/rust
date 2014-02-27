@@ -163,7 +163,8 @@ pub fn bound_region_to_str(cx: ctxt,
 
     match br {
         BrNamed(_, ident)   => format!("{}'{}{}", prefix,
-                                       token::get_name(ident), space_str),
+                                       token::get_name(ident.name()),
+                                       space_str),
         BrAnon(_)           => prefix.to_str(),
         BrFresh(_)          => prefix.to_str(),
     }
@@ -225,7 +226,7 @@ pub fn region_to_str(cx: ctxt, prefix: &str, space: bool, region: Region) -> ~st
     // `explain_region()` or `note_and_explain_region()`.
     match region {
         ty::ReScope(_) => prefix.to_str(),
-        ty::ReEarlyBound(_, _, ident) => token::get_name(ident).get().to_str(),
+        ty::ReEarlyBound(_, _, ident) => token::get_name(ident.name()).get().to_str(),
         ty::ReLateBound(_, br) => bound_region_to_str(cx, prefix, space, br),
         ty::ReFree(ref fr) => bound_region_to_str(cx, prefix, space, fr.bound_region),
         ty::ReInfer(ReSkolemized(_, br)) => {
@@ -630,7 +631,7 @@ impl Repr for ty::TypeParameterDef {
 impl Repr for ty::RegionParameterDef {
     fn repr(&self, _tcx: ctxt) -> ~str {
         format!("RegionParameterDef({}, {:?})",
-                token::get_name(self.ident),
+                token::get_name(self.ident.name()),
                 self.def_id)
     }
 }
@@ -718,7 +719,7 @@ impl Repr for ty::BoundRegion {
             ty::BrAnon(id) => format!("BrAnon({})", id),
             ty::BrNamed(id, ident) => format!("BrNamed({}, {})",
                                                id.repr(tcx),
-                                               token::get_name(ident)),
+                                               token::get_name(ident.name())),
             ty::BrFresh(id) => format!("BrFresh({})", id),
         }
     }
@@ -729,7 +730,7 @@ impl Repr for ty::Region {
         match *self {
             ty::ReEarlyBound(id, index, ident) => {
                 format!("ReEarlyBound({}, {}, {})",
-                        id, index, token::get_name(ident))
+                        id, index, token::get_name(ident.name()))
             }
 
             ty::ReLateBound(binder_id, ref bound_region) => {
@@ -834,6 +835,18 @@ impl Repr for ty::Method {
                 self.explicit_self.repr(tcx),
                 self.vis.repr(tcx),
                 self.def_id.repr(tcx))
+    }
+}
+
+impl Repr for ast::LifetimeName {
+    fn repr(&self, _tcx: ctxt) -> ~str {
+        token::get_name(self.name()).get().to_str()
+    }
+}
+
+impl Repr for ast::Name {
+    fn repr(&self, _tcx: ctxt) -> ~str {
+        token::get_name(*self).get().to_str()
     }
 }
 
@@ -994,6 +1007,18 @@ impl UserString for ty::TraitRef {
 impl UserString for ty::t {
     fn user_string(&self, tcx: ctxt) -> ~str {
         ty_to_str(tcx, *self)
+    }
+}
+
+impl UserString for ast::Ident {
+    fn user_string(&self, _tcx: ctxt) -> ~str {
+        token::get_name(self.name).get().to_owned()
+    }
+}
+
+impl UserString for ast::LifetimeName {
+    fn user_string(&self, _tcx: ctxt) -> ~str {
+        token::get_name(self.name()).get().to_owned()
     }
 }
 

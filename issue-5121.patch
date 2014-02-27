@@ -1,0 +1,1545 @@
+commit 9a49101fdf0a2c0447981b127652e2dda215c37f
+Author: Niko Matsakis <niko@alum.mit.edu>
+Date:   Mon Nov 18 18:42:32 2013 -0500
+
+    Distinguish early- from late-bound lifetime parameters on the basis of whether they appear in a trait bound. Fixes #5121.
+---
+ src/librustc/middle/resolve_lifetime.rs            | 218 ++++++++++++++++-----
+ src/librustc/middle/subst.rs                       |   2 +-
+ src/librustc/middle/ty.rs                          |  35 +++-
+ src/librustc/middle/typeck/check/method.rs         |  60 ++++--
+ src/librustc/middle/typeck/check/mod.rs            |  51 +++--
+ src/librustc/middle/typeck/check/regionmanip.rs    |  14 +-
+ src/librustc/middle/typeck/check/vtable.rs         |   1 +
+ src/librustc/middle/typeck/coherence.rs            |  11 +-
+ src/librustc/middle/typeck/collect.rs              |  93 +++++----
+ .../middle/typeck/infer/error_reporting.rs         |  16 +-
+ src/librustc/middle/typeck/infer/glb.rs            |   4 +-
+ src/librustc/middle/typeck/infer/lub.rs            |   4 +-
+ src/librustc/middle/typeck/infer/mod.rs            |  56 +++---
+ src/librustc/middle/typeck/infer/sub.rs            |   6 +-
+ src/librustc/util/ppaux.rs                         |   6 +
+ .../regions-early-bound-error-method.rs            |  35 ++++
+ src/test/compile-fail/regions-early-bound-error.rs |  33 ++++
+ .../regions-early-bound-used-in-bound-method.rs    |  37 ++++
+ .../run-pass/regions-early-bound-used-in-bound.rs  |  35 ++++
+ .../regions-early-bound-used-in-type-param.rs      |  35 ++++
+ 20 files changed, 562 insertions(+), 190 deletions(-)
+
+diff --git a/src/librustc/middle/resolve_lifetime.rs b/src/librustc/middle/resolve_lifetime.rs
+index ead67f7..8b7f329 100644
+--- a/src/librustc/middle/resolve_lifetime.rs
++++ b/src/librustc/middle/resolve_lifetime.rs
+@@ -22,6 +22,7 @@ use std::cell::RefCell;
+ use std::hashmap::HashMap;
+ use syntax::ast;
+ use syntax::codemap::Span;
++use syntax::opt_vec;
+ use syntax::opt_vec::OptVec;
+ use syntax::parse::token::special_idents;
+ use syntax::print::pprust::{lifetime_to_str};
+@@ -38,12 +39,14 @@ struct LifetimeContext {
+ }
+ 
+ enum ScopeChain<'a> {
+-    ItemScope(&'a OptVec<ast::Lifetime>),
+-    FnScope(ast::NodeId, &'a OptVec<ast::Lifetime>, &'a ScopeChain<'a>),
+-    BlockScope(ast::NodeId, &'a ScopeChain<'a>),
++    EarlyScope(uint, &'a OptVec<ast::Lifetime>, Scope<'a>),
++    LateScope(ast::NodeId, &'a OptVec<ast::Lifetime>, Scope<'a>),
++    BlockScope(ast::NodeId, Scope<'a>),
+     RootScope
+ }
+ 
++type Scope<'a> = &'a ScopeChain<'a>;
++
+ pub fn crate(sess: session::Session, crate: &ast::Crate)
+              -> @RefCell<NamedRegionMap> {
+     let mut ctxt = LifetimeContext {
+@@ -55,10 +58,10 @@ pub fn crate(sess: session::Session, crate: &ast::Crate)
+     ctxt.named_region_map
+ }
+ 
+-impl<'a> Visitor<&'a ScopeChain<'a>> for LifetimeContext {
++impl<'a> Visitor<Scope<'a>> for LifetimeContext {
+     fn visit_item(&mut self,
+                   item: &ast::Item,
+-                  _: &'a ScopeChain<'a>) {
++                  _: Scope<'a>) {
+         let scope = match item.node {
+             ast::ItemFn(..) | // fn lifetimes get added in visit_fn below
+             ast::ItemMod(..) |
+@@ -73,7 +76,7 @@ impl<'a> Visitor<&'a ScopeChain<'a>> for LifetimeContext {
+             ast::ItemImpl(ref generics, _, _, _) |
+             ast::ItemTrait(ref generics, _, _) => {
+                 self.check_lifetime_names(&generics.lifetimes);
+-                ItemScope(&generics.lifetimes)
++                EarlyScope(0, &generics.lifetimes, &RootScope)
+             }
+         };
+         debug!("entering scope {:?}", scope);
+@@ -83,38 +86,32 @@ impl<'a> Visitor<&'a ScopeChain<'a>> for LifetimeContext {
+ 
+     fn visit_fn(&mut self, fk: &visit::FnKind, fd: &ast::FnDecl,
+                 b: &ast::Block, s: Span, n: ast::NodeId,
+-                scope: &'a ScopeChain<'a>) {
++                scope: Scope<'a>) {
+         match *fk {
+             visit::FkItemFn(_, generics, _, _) |
+             visit::FkMethod(_, generics, _) => {
+-                let scope1 = FnScope(n, &generics.lifetimes, scope);
+-                self.check_lifetime_names(&generics.lifetimes);
+-                debug!("pushing fn scope id={} due to item/method", n);
+-                visit::walk_fn(self, fk, fd, b, s, n, &scope1);
+-                debug!("popping fn scope id={} due to item/method", n);
++                self.visit_fn_decl(
++                    n, generics, scope,
++                    |this, scope1| visit::walk_fn(this, fk, fd, b,
++                                                  s, n, scope1))
+             }
+             visit::FkFnBlock(..) => {
+-                visit::walk_fn(self, fk, fd, b, s, n, scope);
++                visit::walk_fn(self, fk, fd, b, s, n, scope)
+             }
+         }
+     }
+ 
+-    fn visit_ty(&mut self, ty: &ast::Ty,
+-                scope: &'a ScopeChain<'a>) {
++    fn visit_ty(&mut self,
++                ty: &ast::Ty,
++                scope: Scope<'a>) {
+         match ty.node {
+-            ast::TyClosure(closure) => {
+-                let scope1 = FnScope(ty.id, &closure.lifetimes, scope);
+-                self.check_lifetime_names(&closure.lifetimes);
+-                debug!("pushing fn scope id={} due to type", ty.id);
+-                visit::walk_ty(self, ty, &scope1);
+-                debug!("popping fn scope id={} due to type", ty.id);
+-            }
+-            ast::TyBareFn(bare_fn) => {
+-                let scope1 = FnScope(ty.id, &bare_fn.lifetimes, scope);
+-                self.check_lifetime_names(&bare_fn.lifetimes);
+-                debug!("pushing fn scope id={} due to type", ty.id);
++            ast::TyClosure(@ast::TyClosure { lifetimes: ref lifetimes, .. }) |
++            ast::TyBareFn(@ast::TyBareFn { lifetimes: ref lifetimes, .. }) => {
++                let scope1 = LateScope(ty.id, lifetimes, scope);
++                self.check_lifetime_names(lifetimes);
++                debug!("pushing fn ty scope id={} due to type", ty.id);
+                 visit::walk_ty(self, ty, &scope1);
+-                debug!("popping fn scope id={} due to type", ty.id);
++                debug!("popping fn ty scope id={} due to type", ty.id);
+             }
+             _ => {
+                 visit::walk_ty(self, ty, scope);
+@@ -124,17 +121,15 @@ impl<'a> Visitor<&'a ScopeChain<'a>> for LifetimeContext {
+ 
+     fn visit_ty_method(&mut self,
+                        m: &ast::TypeMethod,
+-                       scope: &'a ScopeChain<'a>) {
+-        let scope1 = FnScope(m.id, &m.generics.lifetimes, scope);
+-        self.check_lifetime_names(&m.generics.lifetimes);
+-        debug!("pushing fn scope id={} due to ty_method", m.id);
+-        visit::walk_ty_method(self, m, &scope1);
+-        debug!("popping fn scope id={} due to ty_method", m.id);
++                       scope: Scope<'a>) {
++        self.visit_fn_decl(
++            m.id, &m.generics, scope,
++            |this, scope1| visit::walk_ty_method(this, m, scope1))
+     }
+ 
+     fn visit_block(&mut self,
+                    b: &ast::Block,
+-                   scope: &'a ScopeChain<'a>) {
++                   scope: Scope<'a>) {
+         let scope1 = BlockScope(b.id, scope);
+         debug!("pushing block scope {}", b.id);
+         visit::walk_block(self, b, &scope1);
+@@ -143,7 +138,7 @@ impl<'a> Visitor<&'a ScopeChain<'a>> for LifetimeContext {
+ 
+     fn visit_lifetime_ref(&mut self,
+                           lifetime_ref: &ast::Lifetime,
+-                          scope: &'a ScopeChain<'a>) {
++                          scope: Scope<'a>) {
+         if lifetime_ref.ident == special_idents::statik {
+             self.insert_lifetime(lifetime_ref, ast::DefStaticRegion);
+             return;
+@@ -152,7 +147,93 @@ impl<'a> Visitor<&'a ScopeChain<'a>> for LifetimeContext {
+     }
+ }
+ 
++impl<'a> ScopeChain<'a> {
++    fn count_early_params(&self) -> uint {
++        /*!
++         * Counts the number of early parameters that are in scope.
++         * Used when checking methods so that we assign the early
++         * lifetime parameters declared on the method indices that
++         * come after those from the type (e.g., if there is something
++         * like `impl<'a> Foo { ... fn bar<'b>(...) }` then `'a` would
++         * have index 0 and `'b` would have index 1.
++         */
++
++        match *self {
++            RootScope => 0,
++            EarlyScope(base, lifetimes, _) => base + lifetimes.len(),
++            LateScope(_, _, s) => s.count_early_params(),
++            BlockScope(_, _) => 0,
++        }
++    }
++}
++
+ impl LifetimeContext {
++    fn visit_fn_decl(&mut self,
++                     n: ast::NodeId,
++                     generics: &ast::Generics,
++                     scope: Scope,
++                     walk: |&mut LifetimeContext, Scope|) {
++        /*!
++         * Handles visiting fns and methods. These are a bit
++         * complicated because we must distinguish early- vs late-bound
++         * lifetime parameters. We do this by checking which lifetimes
++         * appear within type bounds; those are early bound lifetimes,
++         * and the rest are late bound.
++         *
++         * For example:
++         *
++         *    fn foo<'a,'b,'c,T:Trait<'b>>(...)
++         *
++         * Here `'a` and `'c` are late bound but `'b` is early
++         * bound. Note that early- and late-bound lifetimes may be
++         * interspersed together.
++         *
++         * If early bound lifetimes are present, we separate them into
++         * their own list (and likewise for late bound). They will be
++         * numbered sequentially, starting from the lowest index that
++         * is already in scope (for a fn item, that will be 0, but for
++         * a method it might not be). Late bound lifetimes are
++         * resolved by name and associated with a binder id (`n`), so
++         * the ordering is not important there.
++         */
++
++        self.check_lifetime_names(&generics.lifetimes);
++
++        let early_count = scope.count_early_params();
++        let referenced_idents =
++            free_lifetimes(&generics.ty_params);
++        debug!("pushing fn scope id={} due to item/method \
++               referenced_idents={:?} \
++               early_count={}",
++               n,
++               referenced_idents.map(|&i| self.sess.str_of(i)),
++               early_count);
++        if referenced_idents.is_empty() {
++            let scope1 = LateScope(n, &generics.lifetimes, scope);
++
++            walk(self, &scope1)
++        } else {
++            let early: OptVec<ast::Lifetime> =
++                generics.lifetimes.iter()
++                .filter(|l| referenced_idents.iter().any(|i| i == &l.ident))
++                .map(|l| *l)
++                .collect();
++            let scope1 = EarlyScope(early_count, &early, scope);
++            debug!("early names = {:?}",
++                   early.map(|l| self.sess.str_of(l.ident)));
++
++            let late: OptVec<ast::Lifetime> =
++                generics.lifetimes.iter()
++                .filter(|l| !referenced_idents.iter().any(|i| i == &l.ident))
++                .map(|l| *l)
++                .collect();
++            let scope2 = LateScope(n, &late, &scope1);
++
++            walk(self, &scope2)
++        }
++        debug!("popping fn scope id={} due to item/method", n);
++    }
++
+     fn resolve_lifetime_ref(&self,
+                             lifetime_ref: &ast::Lifetime,
+                             scope: &ScopeChain) {
+@@ -174,23 +255,25 @@ impl LifetimeContext {
+                     break;
+                 }
+ 
+-                ItemScope(lifetimes) => {
++                EarlyScope(base, lifetimes, s) => {
+                     match search_lifetimes(lifetimes, lifetime_ref) {
+-                        Some((index, decl_id)) => {
++                        Some((offset, decl_id)) => {
++                            let index = base + offset;
+                             let def = ast::DefEarlyBoundRegion(index, decl_id);
+                             self.insert_lifetime(lifetime_ref, def);
+                             return;
+                         }
+                         None => {
+-                            break;
++                            depth += 1;
++                            scope = s;
+                         }
+                     }
+                 }
+ 
+-                FnScope(id, lifetimes, s) => {
++                LateScope(binder_id, lifetimes, s) => {
+                     match search_lifetimes(lifetimes, lifetime_ref) {
+                         Some((_index, decl_id)) => {
+-                            let def = ast::DefLateBoundRegion(id, depth, decl_id);
++                            let def = ast::DefLateBoundRegion(binder_id, depth, decl_id);
+                             self.insert_lifetime(lifetime_ref, def);
+                             return;
+                         }
+@@ -228,12 +311,7 @@ impl LifetimeContext {
+                     break;
+                 }
+ 
+-                ItemScope(lifetimes) => {
+-                    search_result = search_lifetimes(lifetimes, lifetime_ref);
+-                    break;
+-                }
+-
+-                FnScope(_, lifetimes, s) => {
++                EarlyScope(_, lifetimes, s) | LateScope(_, lifetimes, s) => {
+                     search_result = search_lifetimes(lifetimes, lifetime_ref);
+                     if search_result.is_some() {
+                         break;
+@@ -321,3 +399,51 @@ fn search_lifetimes(lifetimes: &OptVec<ast::Lifetime>,
+     }
+     return None;
+ }
++
++///////////////////////////////////////////////////////////////////////////
++
++pub fn early_bound_lifetimes<'a>(generics: &'a ast::Generics) -> OptVec<ast::Lifetime> {
++    let referenced_idents = free_lifetimes(&generics.ty_params);
++    if referenced_idents.is_empty() {
++        return opt_vec::Empty;
++    }
++
++    generics.lifetimes.iter()
++        .filter(|l| referenced_idents.iter().any(|i| i == &l.ident))
++        .map(|l| *l)
++        .collect()
++}
++
++pub fn free_lifetimes(ty_params: &OptVec<ast::TyParam>) -> OptVec<ast::Ident> {
++    /*!
++     * Gathers up and returns the names of any lifetimes that appear
++     * free in `ty_params`. Of course, right now, all lifetimes appear
++     * free, since we don't have any binders in type parameter
++     * declarations, but I just to be forwards compatible for future
++     * extensions with my terminology. =)
++     */
++
++    let mut collector = FreeLifetimeCollector { names: opt_vec::Empty };
++    for ty_param in ty_params.iter() {
++        visit::walk_ty_param_bounds(&mut collector, &ty_param.bounds, ());
++    }
++    return collector.names;
++
++    struct FreeLifetimeCollector {
++        names: OptVec<ast::Ident>,
++    }
++
++    impl Visitor<()> for FreeLifetimeCollector {
++        fn visit_ty(&mut self, t:&ast::Ty, _:()) {
++            // for some weird reason visitor doesn't descend into
++            // types by default
++            visit::walk_ty(self, t, ());
++        }
++
++        fn visit_lifetime_ref(&mut self,
++                              lifetime_ref: &ast::Lifetime,
++                              _: ()) {
++            self.names.push(lifetime_ref.ident);
++        }
++    }
++}
+diff --git a/src/librustc/middle/subst.rs b/src/librustc/middle/subst.rs
+index 7176b51..886ee03 100644
+--- a/src/librustc/middle/subst.rs
++++ b/src/librustc/middle/subst.rs
+@@ -275,7 +275,7 @@ impl Subst for ty::Region {
+         // bound in *fn types*. Region substitution of the bound
+         // regions that appear in a function signature is done using
+         // the specialized routine
+-        // `middle::typeck::check::regionmanip::replace_bound_regions_in_fn_sig()`.
++        // `middle::typeck::check::regionmanip::replace_late_bound_regions_in_fn_sig()`.
+         match self {
+             &ty::ReEarlyBound(_, i, _) => {
+                 match substs.regions {
+diff --git a/src/librustc/middle/ty.rs b/src/librustc/middle/ty.rs
+index 003a10e..2c67b27 100644
+--- a/src/librustc/middle/ty.rs
++++ b/src/librustc/middle/ty.rs
+@@ -872,7 +872,8 @@ pub struct Generics {
+     /// List of type parameters declared on the item.
+     type_param_defs: Rc<~[TypeParameterDef]>,
+ 
+-    /// List of region parameters declared on the item.
++    /// List of region parameters declared on the item. In the
++    /// case of a fn or method, only includes *early-bound* lifetimes.
+     region_param_defs: Rc<~[RegionParameterDef]>,
+ }
+ 
+@@ -4992,6 +4993,7 @@ pub fn construct_parameter_environment(
+     item_type_params: &[TypeParameterDef],
+     method_type_params: &[TypeParameterDef],
+     item_region_params: &[RegionParameterDef],
++    method_region_params: &[RegionParameterDef],
+     free_id: ast::NodeId)
+     -> ParameterEnvironment
+ {
+@@ -5019,11 +5021,23 @@ pub fn construct_parameter_environment(
+         });
+ 
+     // map bound 'a => free 'a
+-    let region_params = item_region_params.iter().
+-        map(|r| ty::ReFree(ty::FreeRegion {
+-                scope_id: free_id,
+-                bound_region: ty::BrNamed(r.def_id, r.ident)})).
+-        collect();
++    let region_params = {
++        fn push_region_params(accum: OptVec<ty::Region>,
++                              free_id: ast::NodeId,
++                              region_params: &[RegionParameterDef])
++                              -> OptVec<ty::Region> {
++            let mut accum = accum;
++            for r in region_params.iter() {
++                accum.push(
++                    ty::ReFree(ty::FreeRegion {
++                            scope_id: free_id,
++                            bound_region: ty::BrNamed(r.def_id, r.ident)}));
++            }
++            accum
++        }
++        let t = push_region_params(opt_vec::Empty, free_id, item_region_params);
++        push_region_params(t, free_id, method_region_params)
++    };
+ 
+     let free_substs = substs {
+         self_ty: self_ty,
+@@ -5045,6 +5059,15 @@ pub fn construct_parameter_environment(
+         }
+     });
+ 
++    debug!("construct_parameter_environment: free_id={} \
++           free_substs={} \
++           self_param_bound={} \
++           type_param_bounds={}",
++           free_id,
++           free_substs.repr(tcx),
++           self_bound_substd.repr(tcx),
++           type_param_bounds_substd.repr(tcx));
++
+     ty::ParameterEnvironment {
+         free_substs: free_substs,
+         self_param_bound: self_bound_substd,
+diff --git a/src/librustc/middle/typeck/check/method.rs b/src/librustc/middle/typeck/check/method.rs
+index d32d51c..f03fdca 100644
+--- a/src/librustc/middle/typeck/check/method.rs
++++ b/src/librustc/middle/typeck/check/method.rs
+@@ -93,7 +93,7 @@ use middle::typeck::infer;
+ use middle::typeck::{method_map_entry, method_origin, method_param};
+ use middle::typeck::{method_static, method_object};
+ use middle::typeck::{param_numbered, param_self, param_index};
+-use middle::typeck::check::regionmanip::replace_bound_regions_in_fn_sig;
++use middle::typeck::check::regionmanip::replace_late_bound_regions_in_fn_sig;
+ use util::common::indenter;
+ use util::ppaux::Repr;
+ 
+@@ -402,7 +402,7 @@ impl<'a> LookupContext<'a> {
+                                             substs: &ty::substs) {
+         debug!("push_inherent_candidates_from_object(did={}, substs={})",
+                self.did_to_str(did),
+-               substs_to_str(self.tcx(), substs));
++               substs.repr(self.tcx()));
+         let _indenter = indenter();
+ 
+         // It is illegal to invoke a method on a trait instance that
+@@ -512,7 +512,8 @@ impl<'a> LookupContext<'a> {
+                     let cand = mk_cand(bound_trait_ref, method,
+                                        pos, this_bound_idx);
+ 
+-                    debug!("pushing inherent candidate for param: {:?}", cand);
++                    debug!("pushing inherent candidate for param: {}",
++                           cand.repr(self.tcx()));
+                     let mut inherent_candidates = self.inherent_candidates
+                                                       .borrow_mut();
+                     inherent_candidates.get().push(cand);
+@@ -892,8 +893,9 @@ impl<'a> LookupContext<'a> {
+             let mut j = i + 1;
+             while j < candidates.len() {
+                 let candidate_b = &candidates[j];
+-                debug!("attempting to merge {:?} and {:?}",
+-                       candidate_a, candidate_b);
++                debug!("attempting to merge {} and {}",
++                       candidate_a.repr(self.tcx()),
++                       candidate_b.repr(self.tcx()));
+                 let candidates_same = match (&candidate_a.origin,
+                                              &candidate_b.origin) {
+                     (&method_param(ref p1), &method_param(ref p2)) => {
+@@ -940,7 +942,8 @@ impl<'a> LookupContext<'a> {
+ 
+         debug!("confirm_candidate(expr={}, candidate={})",
+                self.expr.repr(tcx),
+-               self.cand_to_str(candidate));
++               candidate.repr(self.tcx()),
++               self.ty_to_str(fty));
+ 
+         self.enforce_object_limitations(candidate);
+         self.enforce_drop_trait_limitations(candidate);
+@@ -950,7 +953,7 @@ impl<'a> LookupContext<'a> {
+ 
+         // Determine the values for the type parameters of the method.
+         // If they were not explicitly supplied, just construct fresh
+-        // type variables.
++        // variables.
+         let num_supplied_tps = self.supplied_tps.len();
+         let num_method_tps = candidate.method_ty.generics.type_param_defs().len();
+         let m_substs = {
+@@ -972,11 +975,25 @@ impl<'a> LookupContext<'a> {
+             }
+         };
+ 
++        // Determine values for the early-bound lifetime parameters.
++        // FIXME -- permit users to manually specify lifetimes
++        let mut all_regions = match candidate.rcvr_substs.regions {
++            NonerasedRegions(ref v) => v.clone(),
++            ErasedRegions => tcx.sess.span_bug(self.expr.span, "ErasedRegions")
++        };
++        let m_regions =
++            self.fcx.infcx().region_vars_for_defs(
++                self.expr.span,
++                candidate.method_ty.generics.region_param_defs);
++        for &r in m_regions.iter() {
++            all_regions.push(r);
++        }
++
+         // Construct the full set of type parameters for the method,
+         // which is equal to the class tps + the method tps.
+         let all_substs = substs {
+             tps: vec::append(candidate.rcvr_substs.tps.clone(), m_substs),
+-            regions: candidate.rcvr_substs.regions.clone(),
++            regions: NonerasedRegions(all_regions),
+             self_ty: candidate.rcvr_substs.self_ty,
+         };
+ 
+@@ -1010,10 +1027,10 @@ impl<'a> LookupContext<'a> {
+ 
+         // Replace any bound regions that appear in the function
+         // signature with region variables
+-        let (_, fn_sig) = replace_bound_regions_in_fn_sig( tcx, &fn_sig, |br| {
+-            self.fcx.infcx().next_region_var(
+-                infer::BoundRegionInFnCall(self.expr.span, br))
+-        });
++        let (_, fn_sig) = replace_late_bound_regions_in_fn_sig(
++            tcx, &fn_sig,
++            |br| self.fcx.infcx().next_region_var(
++                infer::LateBoundRegion(self.expr.span, br)));
+         let transformed_self_ty = fn_sig.inputs[0];
+         let fty = ty::mk_bare_fn(tcx, ty::BareFnTy {
+             sig: fn_sig,
+@@ -1203,7 +1220,7 @@ impl<'a> LookupContext<'a> {
+     // candidate method's `self_ty`.
+     fn is_relevant(&self, rcvr_ty: ty::t, candidate: &Candidate) -> bool {
+         debug!("is_relevant(rcvr_ty={}, candidate={})",
+-               self.ty_to_str(rcvr_ty), self.cand_to_str(candidate));
++               self.ty_to_str(rcvr_ty), candidate.repr(self.tcx()));
+ 
+         return match candidate.method_ty.explicit_self {
+             SelfStatic => {
+@@ -1372,13 +1389,6 @@ impl<'a> LookupContext<'a> {
+         self.fcx.infcx().ty_to_str(t)
+     }
+ 
+-    fn cand_to_str(&self, cand: &Candidate) -> ~str {
+-        format!("Candidate(rcvr_ty={}, rcvr_substs={}, origin={:?})",
+-             cand.rcvr_match_condition.repr(self.tcx()),
+-             ty::substs_to_str(self.tcx(), &cand.rcvr_substs),
+-             cand.origin)
+-    }
+-
+     fn did_to_str(&self, did: DefId) -> ~str {
+         ty::item_path_str(self.tcx(), did)
+     }
+@@ -1400,3 +1410,13 @@ impl Repr for RcvrMatchCondition {
+         }
+     }
+ }
++
++impl Repr for Candidate {
++    fn repr(&self, tcx: ty::ctxt) -> ~str {
++        format!("Candidate(rcvr_ty={}, rcvr_substs={}, origin={:?})",
++                self.rcvr_match_condition.repr(tcx),
++                self.rcvr_substs.repr(tcx),
++                self.origin)
++    }
++}
++
+diff --git a/src/librustc/middle/typeck/check/mod.rs b/src/librustc/middle/typeck/check/mod.rs
+index e1679c8..1f0a9c3 100644
+--- a/src/librustc/middle/typeck/check/mod.rs
++++ b/src/librustc/middle/typeck/check/mod.rs
+@@ -98,7 +98,7 @@ use middle::typeck::check::method::{AutoderefReceiver};
+ use middle::typeck::check::method::{AutoderefReceiverFlag};
+ use middle::typeck::check::method::{CheckTraitsAndInherentMethods};
+ use middle::typeck::check::method::{CheckTraitsOnly, DontAutoderefReceiver};
+-use middle::typeck::check::regionmanip::replace_bound_regions_in_fn_sig;
++use middle::typeck::check::regionmanip::replace_late_bound_regions_in_fn_sig;
+ use middle::typeck::check::regionmanip::relate_free_regions;
+ use middle::typeck::check::vtable::{LocationInfo, VtableContext};
+ use middle::typeck::CrateCtxt;
+@@ -127,8 +127,8 @@ use syntax::ast_util;
+ use syntax::attr;
+ use syntax::codemap::Span;
+ use syntax::codemap;
+-use syntax::opt_vec::OptVec;
+ use syntax::opt_vec;
++use syntax::opt_vec::OptVec;
+ use syntax::parse::token;
+ use syntax::print::pprust;
+ use syntax::visit;
+@@ -436,7 +436,7 @@ fn check_fn(ccx: @CrateCtxt,
+ 
+     // First, we have to replace any bound regions in the fn type with free ones.
+     // The free region references will be bound the node_id of the body block.
+-    let (_, fn_sig) = replace_bound_regions_in_fn_sig(tcx, fn_sig, |br| {
++    let (_, fn_sig) = replace_late_bound_regions_in_fn_sig(tcx, fn_sig, |br| {
+         ty::ReFree(ty::FreeRegion {scope_id: body.id, bound_region: br})
+     });
+ 
+@@ -560,12 +560,12 @@ pub fn check_item(ccx: @CrateCtxt, it: &ast::Item) {
+       ast::ItemFn(decl, _, _, _, body) => {
+         let fn_tpt = ty::lookup_item_type(ccx.tcx, ast_util::local_def(it.id));
+ 
+-        // FIXME(#5121) -- won't work for lifetimes that appear in type bounds
+         let param_env = ty::construct_parameter_environment(
+                 ccx.tcx,
+                 None,
+                 fn_tpt.generics.type_param_defs(),
+                 [],
++                fn_tpt.generics.region_param_defs,
+                 [],
+                 body.id);
+ 
+@@ -677,6 +677,7 @@ fn check_method_body(ccx: @CrateCtxt,
+             item_generics.type_param_defs(),
+             method_generics.type_param_defs(),
+             item_generics.region_param_defs(),
++            method_generics.region_param_defs(),
+             method.body.id);
+ 
+     // Compute the fty from point of view of inside fn
+@@ -1372,20 +1373,17 @@ pub fn impl_self_ty(vcx: &VtableContext,
+                  -> ty_param_substs_and_ty {
+     let tcx = vcx.tcx();
+ 
+-    let (n_tps, n_rps, raw_ty) = {
++    let (n_tps, rps, raw_ty) = {
+         let ity = ty::lookup_item_type(tcx, did);
+         (ity.generics.type_param_defs().len(),
+-         ity.generics.region_param_defs().len(),
++         ity.generics.region_param_defs(),
+          ity.ty)
+     };
+ 
+-    let rps =
+-        vcx.infcx.next_region_vars(
+-            infer::BoundRegionInTypeOrImpl(location_info.span),
+-            n_rps);
++    let rps = vcx.infcx.region_vars_for_defs(location_info.span, rps);
+     let tps = vcx.infcx.next_ty_vars(n_tps);
+ 
+-    let substs = substs {regions: ty::NonerasedRegions(opt_vec::from(rps)),
++    let substs = substs {regions: ty::NonerasedRegions(rps),
+                          self_ty: None,
+                          tps: tps};
+     let substd_ty = ty::subst(tcx, &substs, raw_ty);
+@@ -1856,9 +1854,9 @@ pub fn check_expr_with_unifier(fcx: @FnCtxt,
+ 
+         // Replace any bound regions that appear in the function
+         // signature with region variables
+-        let (_, fn_sig) = replace_bound_regions_in_fn_sig(fcx.tcx(), fn_sig, |br| {
+-            fcx.infcx()
+-               .next_region_var(infer::BoundRegionInFnCall(call_expr.span, br))
++        let (_, fn_sig) = replace_late_bound_regions_in_fn_sig(fcx.tcx(), fn_sig, |br| {
++            fcx.infcx().next_region_var(
++                    infer::LateBoundRegion(call_expr.span, br))
+         });
+ 
+         // Call the generic checker.
+@@ -2209,7 +2207,7 @@ pub fn check_expr_with_unifier(fcx: @FnCtxt,
+             match expected_sty {
+                 Some(ty::ty_closure(ref cenv)) => {
+                     let (_, sig) =
+-                        replace_bound_regions_in_fn_sig(
++                        replace_late_bound_regions_in_fn_sig(
+                             tcx, &cenv.sig,
+                             |_| fcx.inh.infcx.fresh_bound_region(expr.id));
+                     (Some(sig), cenv.purity, cenv.sigil,
+@@ -2466,16 +2464,15 @@ pub fn check_expr_with_unifier(fcx: @FnCtxt,
+         // determine whether the class is region-parameterized.
+         let item_type = ty::lookup_item_type(tcx, class_id);
+         let type_parameter_count = item_type.generics.type_param_defs().len();
+-        let region_parameter_count = item_type.generics.region_param_defs().len();
++        let region_parameter_defs = item_type.generics.region_param_defs();
+         let raw_type = item_type.ty;
+ 
+         // Generate the struct type.
+-        let regions = fcx.infcx().next_region_vars(
+-            infer::BoundRegionInTypeOrImpl(span),
+-            region_parameter_count);
++        let regions = fcx.infcx().region_vars_for_defs(span,
++                                                       region_parameter_defs);
+         let type_parameters = fcx.infcx().next_ty_vars(type_parameter_count);
+         let substitutions = substs {
+-            regions: ty::NonerasedRegions(opt_vec::from(regions)),
++            regions: ty::NonerasedRegions(regions),
+             self_ty: None,
+             tps: type_parameters
+         };
+@@ -2524,16 +2521,15 @@ pub fn check_expr_with_unifier(fcx: @FnCtxt,
+         // determine whether the enum is region-parameterized.
+         let item_type = ty::lookup_item_type(tcx, enum_id);
+         let type_parameter_count = item_type.generics.type_param_defs().len();
+-        let region_parameter_count = item_type.generics.region_param_defs().len();
++        let region_parameter_defs = item_type.generics.region_param_defs();
+         let raw_type = item_type.ty;
+ 
+         // Generate the enum type.
+-        let regions = fcx.infcx().next_region_vars(
+-            infer::BoundRegionInTypeOrImpl(span),
+-            region_parameter_count);
++        let regions = fcx.infcx().region_vars_for_defs(span,
++                                                       region_parameter_defs);
+         let type_parameters = fcx.infcx().next_ty_vars(type_parameter_count);
+         let substitutions = substs {
+-            regions: ty::NonerasedRegions(opt_vec::from(regions)),
++            regions: ty::NonerasedRegions(regions),
+             self_ty: None,
+             tps: type_parameters
+         };
+@@ -3740,9 +3736,8 @@ pub fn instantiate_path(fcx: @FnCtxt,
+                         num_expected_regions, num_supplied_regions));
+         }
+ 
+-        opt_vec::from(fcx.infcx().next_region_vars(
+-                infer::BoundRegionInTypeOrImpl(span),
+-                num_expected_regions))
++        fcx.infcx().region_vars_for_defs(span,
++                                         tpt.generics.region_param_defs)
+     };
+     let regions = ty::NonerasedRegions(regions);
+ 
+diff --git a/src/librustc/middle/typeck/check/regionmanip.rs b/src/librustc/middle/typeck/check/regionmanip.rs
+index 0b04db8..ae44271 100644
+--- a/src/librustc/middle/typeck/check/regionmanip.rs
++++ b/src/librustc/middle/typeck/check/regionmanip.rs
+@@ -19,12 +19,14 @@ use util::ppaux;
+ 
+ // Helper functions related to manipulating region types.
+ 
+-pub fn replace_bound_regions_in_fn_sig(
+-        tcx: ty::ctxt,
+-        fn_sig: &ty::FnSig,
+-        mapf: |ty::BoundRegion| -> ty::Region)
+-        -> (HashMap<ty::BoundRegion,ty::Region>, ty::FnSig) {
+-    debug!("replace_bound_regions_in_fn_sig({})", fn_sig.repr(tcx));
++pub fn replace_late_bound_regions_in_fn_sig(
++    tcx: ty::ctxt,
++    fn_sig: &ty::FnSig,
++    mapf: |ty::BoundRegion| -> ty::Region)
++    -> (HashMap<ty::BoundRegion,ty::Region>, ty::FnSig)
++{
++    debug!("replace_late_bound_regions_in_fn_sig(fn_sig={})",
++           fn_sig.repr(tcx));
+ 
+     let mut map = HashMap::new();
+     let fn_sig = {
+diff --git a/src/librustc/middle/typeck/check/vtable.rs b/src/librustc/middle/typeck/check/vtable.rs
+index 4db43b2..d356361 100644
+--- a/src/librustc/middle/typeck/check/vtable.rs
++++ b/src/librustc/middle/typeck/check/vtable.rs
+@@ -787,6 +787,7 @@ pub fn resolve_impl(ccx: @CrateCtxt,
+         impl_generics.type_param_defs(),
+         [],
+         impl_generics.region_param_defs(),
++        [],
+         impl_item.id);
+ 
+     let impl_trait_ref = @impl_trait_ref.subst(ccx.tcx, &param_env.free_substs);
+diff --git a/src/librustc/middle/typeck/coherence.rs b/src/librustc/middle/typeck/coherence.rs
+index 5ca879f..9bcb492 100644
+--- a/src/librustc/middle/typeck/coherence.rs
++++ b/src/librustc/middle/typeck/coherence.rs
+@@ -42,7 +42,6 @@ use syntax::ast_map::NodeItem;
+ use syntax::ast_map;
+ use syntax::ast_util::{def_id_of_def, local_def};
+ use syntax::codemap::Span;
+-use syntax::opt_vec;
+ use syntax::visit;
+ 
+ use std::cell::RefCell;
+@@ -497,17 +496,17 @@ impl CoherenceChecker {
+     pub fn universally_quantify_polytype(&self,
+                                          polytype: ty_param_bounds_and_ty)
+                                          -> UniversalQuantificationResult {
+-        let region_parameter_count = polytype.generics.region_param_defs().len();
+         let region_parameters =
+-            self.inference_context.next_region_vars(
+-                infer::BoundRegionInCoherence,
+-                region_parameter_count);
++            polytype.generics.region_param_defs().iter()
++            .map(|d| self.inference_context.next_region_var(
++                         infer::BoundRegionInCoherence(d.ident)))
++            .collect();
+ 
+         let bounds_count = polytype.generics.type_param_defs().len();
+         let type_parameters = self.inference_context.next_ty_vars(bounds_count);
+ 
+         let substitutions = substs {
+-            regions: ty::NonerasedRegions(opt_vec::from(region_parameters)),
++            regions: ty::NonerasedRegions(region_parameters),
+             self_ty: None,
+             tps: type_parameters
+         };
+diff --git a/src/librustc/middle/typeck/collect.rs b/src/librustc/middle/typeck/collect.rs
+index c1a6e53..2a1af1b 100644
+--- a/src/librustc/middle/typeck/collect.rs
++++ b/src/librustc/middle/typeck/collect.rs
+@@ -32,6 +32,7 @@ are represented as `ty_param()` instances.
+ 
+ 
+ use metadata::csearch;
++use middle::resolve_lifetime;
+ use middle::ty::{ImplContainer, MethodContainer, TraitContainer, substs};
+ use middle::ty::{ty_param_bounds_and_ty};
+ use middle::ty;
+@@ -157,7 +158,7 @@ pub fn get_enum_variant_types(ccx: &CrateCtxt,
+ 
+             ast::StructVariantKind(struct_def) => {
+                 let tpt = ty_param_bounds_and_ty {
+-                    generics: ty_generics(ccx, generics, 0),
++                    generics: ty_generics_for_type(ccx, generics),
+                     ty: enum_ty
+                 };
+ 
+@@ -170,7 +171,7 @@ pub fn get_enum_variant_types(ccx: &CrateCtxt,
+         };
+ 
+         let tpt = ty_param_bounds_and_ty {
+-            generics: ty_generics(ccx, generics, 0),
++            generics: ty_generics_for_type(ccx, generics),
+             ty: result_ty
+         };
+ 
+@@ -189,7 +190,8 @@ pub fn ensure_trait_methods(ccx: &CrateCtxt, trait_id: ast::NodeId) {
+         ast_map::NodeItem(item, _) => {
+             match item.node {
+                 ast::ItemTrait(ref generics, _, ref ms) => {
+-                    let trait_ty_generics = ty_generics(ccx, generics, 0);
++                    let trait_ty_generics =
++                        ty_generics_for_type(ccx, generics);
+ 
+                     // For each method, construct a suitable ty::Method and
+                     // store it into the `tcx.methods` table:
+@@ -385,10 +387,12 @@ pub fn ensure_trait_methods(ccx: &CrateCtxt, trait_id: ast::NodeId) {
+         let fty = astconv::ty_of_method(this, *m_id, *m_purity, trait_self_ty,
+                                         *m_explicit_self, m_decl);
+         let num_trait_type_params = trait_generics.type_param_defs().len();
++        let ty_generics =
++            ty_generics_for_fn_or_method(this, m_generics,
++                                         num_trait_type_params);
+         ty::Method::new(
+             *m_ident,
+-            // FIXME(#5121) -- distinguish early vs late lifetime params
+-            ty_generics(this, m_generics, num_trait_type_params),
++            ty_generics,
+             fty,
+             m_explicit_self.node,
+             // assume public, because this is only invoked on trait methods
+@@ -468,7 +472,8 @@ fn convert_methods(ccx: &CrateCtxt,
+     let tcx = ccx.tcx;
+     for m in ms.iter() {
+         let num_rcvr_ty_params = rcvr_ty_generics.type_param_defs().len();
+-        let m_ty_generics = ty_generics(ccx, &m.generics, num_rcvr_ty_params);
++        let m_ty_generics =
++            ty_generics_for_fn_or_method(ccx, &m.generics, num_rcvr_ty_params);
+         let mty = @ty_of_method(ccx,
+                                 container,
+                                 *m,
+@@ -493,7 +498,9 @@ fn convert_methods(ccx: &CrateCtxt,
+                         type_param_defs: Rc::new(vec::append(
+                             rcvr_ty_generics.type_param_defs().to_owned(),
+                             m_ty_generics.type_param_defs())),
+-                        region_param_defs: rcvr_ty_generics.region_param_defs.clone(),
++                        region_param_defs: Rc::new(vec::append(
++                            rcvr_ty_generics.region_param_defs().to_owned(),
++                            m_ty_generics.region_param_defs())),
+                     },
+                     ty: fty
+                 });
+@@ -521,19 +528,17 @@ fn convert_methods(ccx: &CrateCtxt,
+         // { fn foo(); }` is public, but private in `priv impl { fn
+         // foo(); }`).
+         let method_vis = m.vis.inherit_from(rcvr_visibility);
+-
+         let num_rcvr_type_params = rcvr_generics.ty_params.len();
+-        ty::Method::new(
+-            m.ident,
+-            // FIXME(#5121) -- distinguish early vs late lifetime params
+-            ty_generics(ccx, &m.generics, num_rcvr_type_params),
+-            fty,
+-            m.explicit_self.node,
+-            method_vis,
+-            local_def(m.id),
+-            container,
+-            None
+-        )
++        let m_ty_generics =
++            ty_generics_for_fn_or_method(ccx, &m.generics, num_rcvr_type_params);
++        ty::Method::new(m.ident,
++                        m_ty_generics,
++                        fty,
++                        m.explicit_self.node,
++                        method_vis,
++                        local_def(m.id),
++                        container,
++                        None)
+     }
+ }
+ 
+@@ -567,7 +572,7 @@ pub fn convert(ccx: &CrateCtxt, it: &ast::Item) {
+                                  generics);
+       }
+       ast::ItemImpl(ref generics, ref opt_trait_ref, selfty, ref ms) => {
+-        let i_ty_generics = ty_generics(ccx, generics, 0);
++        let i_ty_generics = ty_generics_for_type(ccx, generics);
+         let selfty = ccx.to_ty(&ExplicitRscope, selfty);
+         write_ty_to_tcx(tcx, it.id, selfty);
+ 
+@@ -790,7 +795,7 @@ pub fn trait_def_of_item(ccx: &CrateCtxt, it: &ast::Item) -> @ty::TraitDef {
+     match it.node {
+         ast::ItemTrait(ref generics, ref supertraits, _) => {
+             let self_ty = ty::mk_self(tcx, def_id);
+-            let ty_generics = ty_generics(ccx, generics, 0);
++            let ty_generics = ty_generics_for_type(ccx, generics);
+             let substs = mk_item_substs(ccx, &ty_generics, Some(self_ty));
+             let bounds = ensure_supertraits(ccx, it.id, it.span, *supertraits);
+             let trait_ref = @ty::TraitRef {def_id: def_id,
+@@ -831,17 +836,14 @@ pub fn ty_of_item(ccx: &CrateCtxt, it: &ast::Item)
+             return tpt;
+         }
+         ast::ItemFn(decl, purity, abi, ref generics, _) => {
+-            let ty_generics = ty_generics(ccx, generics, 0);
++            let ty_generics = ty_generics_for_fn_or_method(ccx, generics, 0);
+             let tofd = astconv::ty_of_bare_fn(ccx,
+                                               it.id,
+                                               purity,
+                                               abi,
+                                               decl);
+             let tpt = ty_param_bounds_and_ty {
+-                generics: ty::Generics {
+-                    type_param_defs: ty_generics.type_param_defs.clone(),
+-                    region_param_defs: Rc::new(~[]),
+-                },
++                generics: ty_generics,
+                 ty: ty::mk_bare_fn(ccx.tcx, tofd)
+             };
+             debug!("type of {} (id {}) is {}",
+@@ -865,7 +867,7 @@ pub fn ty_of_item(ccx: &CrateCtxt, it: &ast::Item)
+             let tpt = {
+                 let ty = ccx.to_ty(&ExplicitRscope, t);
+                 ty_param_bounds_and_ty {
+-                    generics: ty_generics(ccx, generics, 0),
++                    generics: ty_generics_for_type(ccx, generics),
+                     ty: ty
+                 }
+             };
+@@ -876,7 +878,7 @@ pub fn ty_of_item(ccx: &CrateCtxt, it: &ast::Item)
+         }
+         ast::ItemEnum(_, ref generics) => {
+             // Create a new generic polytype.
+-            let ty_generics = ty_generics(ccx, generics, 0);
++            let ty_generics = ty_generics_for_type(ccx, generics);
+             let substs = mk_item_substs(ccx, &ty_generics, None);
+             let t = ty::mk_enum(tcx, local_def(it.id), substs);
+             let tpt = ty_param_bounds_and_ty {
+@@ -894,7 +896,7 @@ pub fn ty_of_item(ccx: &CrateCtxt, it: &ast::Item)
+                 format!("Invoked ty_of_item on trait"));
+         }
+         ast::ItemStruct(_, ref generics) => {
+-            let ty_generics = ty_generics(ccx, generics, 0);
++            let ty_generics = ty_generics_for_type(ccx, generics);
+             let substs = mk_item_substs(ccx, &ty_generics, None);
+             let t = ty::mk_struct(tcx, local_def(it.id), substs);
+             let tpt = ty_param_bounds_and_ty {
+@@ -935,23 +937,38 @@ pub fn ty_of_foreign_item(ccx: &CrateCtxt,
+     }
+ }
+ 
++pub fn ty_generics_for_type(ccx: &CrateCtxt,
++                            generics: &ast::Generics)
++                            -> ty::Generics {
++    ty_generics(ccx, &generics.lifetimes, &generics.ty_params, 0)
++}
++
++pub fn ty_generics_for_fn_or_method(ccx: &CrateCtxt,
++                                    generics: &ast::Generics,
++                                    base_index: uint)
++                                    -> ty::Generics {
++    let early_lifetimes = resolve_lifetime::early_bound_lifetimes(generics);
++    ty_generics(ccx, &early_lifetimes, &generics.ty_params, base_index)
++}
++
+ pub fn ty_generics(ccx: &CrateCtxt,
+-                   generics: &ast::Generics,
+-                   base_index: uint) -> ty::Generics {
++                   lifetimes: &OptVec<ast::Lifetime>,
++                   ty_params: &OptVec<ast::TyParam>,
++                   base_ty_index: uint) -> ty::Generics {
+     return ty::Generics {
+-        region_param_defs: Rc::new(generics.lifetimes.iter().map(|l| {
++        region_param_defs: Rc::new(lifetimes.iter().map(|l| {
+                 ty::RegionParameterDef { ident: l.ident,
+                                          def_id: local_def(l.id) }
+             }).collect()),
+-        type_param_defs: Rc::new(generics.ty_params.mapi_to_vec(|offset, param| {
++        type_param_defs: Rc::new(ty_params.mapi_to_vec(|offset, param| {
+             let existing_def_opt = {
+                 let ty_param_defs = ccx.tcx.ty_param_defs.borrow();
+-                ty_param_defs.get().find(&param.id).map(|def| *def)
++                ty_param_defs.get().find(&param.id)
+             };
+             match existing_def_opt {
+-                Some(def) => def,
++                Some(&def) => def,
+                 None => {
+-                    let param_ty = ty::param_ty {idx: base_index + offset,
++                    let param_ty = ty::param_ty {idx: base_ty_index + offset,
+                                                  def_id: local_def(param.id)};
+                     let bounds = @compute_bounds(ccx, param_ty, &param.bounds);
+                     let default = param.default.map(|x| ast_ty_to_ty(ccx, &ExplicitRscope, x));
+@@ -1019,8 +1036,8 @@ pub fn ty_of_foreign_fn_decl(ccx: &CrateCtxt,
+                              def_id: ast::DefId,
+                              ast_generics: &ast::Generics,
+                              abis: AbiSet)
+-                          -> ty::ty_param_bounds_and_ty {
+-    let ty_generics = ty_generics(ccx, ast_generics, 0);
++                             -> ty::ty_param_bounds_and_ty {
++    let ty_generics = ty_generics_for_fn_or_method(ccx, ast_generics, 0);
+     let rb = BindingRscope::new(def_id.node);
+     let input_tys = decl.inputs.map(|a| ty_of_arg(ccx, &rb, a, None) );
+     let output_ty = ast_ty_to_ty(ccx, &rb, decl.output);
+diff --git a/src/librustc/middle/typeck/infer/error_reporting.rs b/src/librustc/middle/typeck/infer/error_reporting.rs
+index d1bf998..f3e7914 100644
+--- a/src/librustc/middle/typeck/infer/error_reporting.rs
++++ b/src/librustc/middle/typeck/infer/error_reporting.rs
+@@ -461,19 +461,21 @@ impl ErrorReportingHelpers for InferCtxt {
+             infer::AddrOfSlice(_) => ~" for slice expression",
+             infer::Autoref(_) => ~" for autoref",
+             infer::Coercion(_) => ~" for automatic coercion",
+-            infer::BoundRegionInFnCall(_, br) => {
++            infer::LateBoundRegion(_, br) => {
+                 format!(" for {}in function call",
+-                        bound_region_to_str(self.tcx, "region ", true, br))
++                        bound_region_to_str(self.tcx, "lifetime parameter ", true, br))
+             }
+             infer::BoundRegionInFnType(_, br) => {
+                 format!(" for {}in function type",
+-                        bound_region_to_str(self.tcx, "region ", true, br))
++                        bound_region_to_str(self.tcx, "lifetime parameter ", true, br))
+             }
+-            infer::BoundRegionInTypeOrImpl(_) => {
+-                format!(" for region in type/impl")
++            infer::EarlyBoundRegion(_, ident) => {
++                format!(" for lifetime parameter `{}`",
++                        ident.user_string(self.tcx))
+             }
+-            infer::BoundRegionInCoherence(..) => {
+-                format!(" for coherence check")
++            infer::BoundRegionInCoherence(ident) => {
++                format!(" for lifetime parameter `{}` in coherence check",
++                        ident.user_string(self.tcx))
+             }
+         };
+ 
+diff --git a/src/librustc/middle/typeck/infer/glb.rs b/src/librustc/middle/typeck/infer/glb.rs
+index 075a45e..ebb6fb2 100644
+--- a/src/librustc/middle/typeck/infer/glb.rs
++++ b/src/librustc/middle/typeck/infer/glb.rs
+@@ -136,11 +136,11 @@ impl Combine for Glb {
+ 
+         // Instantiate each bound region with a fresh region variable.
+         let (a_with_fresh, a_map) =
+-            self.get_ref().infcx.replace_bound_regions_with_fresh_regions(
++            self.get_ref().infcx.replace_late_bound_regions_with_fresh_regions(
+                 self.get_ref().trace, a);
+         let a_vars = var_ids(self, &a_map);
+         let (b_with_fresh, b_map) =
+-            self.get_ref().infcx.replace_bound_regions_with_fresh_regions(
++            self.get_ref().infcx.replace_late_bound_regions_with_fresh_regions(
+                 self.get_ref().trace, b);
+         let b_vars = var_ids(self, &b_map);
+ 
+diff --git a/src/librustc/middle/typeck/infer/lub.rs b/src/librustc/middle/typeck/infer/lub.rs
+index 23bd060..b701dba 100644
+--- a/src/librustc/middle/typeck/infer/lub.rs
++++ b/src/librustc/middle/typeck/infer/lub.rs
+@@ -126,10 +126,10 @@ impl Combine for Lub {
+ 
+         // Instantiate each bound region with a fresh region variable.
+         let (a_with_fresh, a_map) =
+-            self.get_ref().infcx.replace_bound_regions_with_fresh_regions(
++            self.get_ref().infcx.replace_late_bound_regions_with_fresh_regions(
+                 self.get_ref().trace, a);
+         let (b_with_fresh, _) =
+-            self.get_ref().infcx.replace_bound_regions_with_fresh_regions(
++            self.get_ref().infcx.replace_late_bound_regions_with_fresh_regions(
+                 self.get_ref().trace, b);
+ 
+         // Collect constraints.
+diff --git a/src/librustc/middle/typeck/infer/mod.rs b/src/librustc/middle/typeck/infer/mod.rs
+index 812b7ff..e699666 100644
+--- a/src/librustc/middle/typeck/infer/mod.rs
++++ b/src/librustc/middle/typeck/infer/mod.rs
+@@ -25,7 +25,7 @@ use middle::ty::{TyVid, IntVid, FloatVid, RegionVid, Vid};
+ use middle::ty;
+ use middle::ty_fold;
+ use middle::ty_fold::TypeFolder;
+-use middle::typeck::check::regionmanip::replace_bound_regions_in_fn_sig;
++use middle::typeck::check::regionmanip::{replace_late_bound_regions_in_fn_sig};
+ use middle::typeck::infer::coercion::Coerce;
+ use middle::typeck::infer::combine::{Combine, CombineFields, eq_tys};
+ use middle::typeck::infer::region_inference::{RegionVarBindings};
+@@ -43,6 +43,7 @@ use syntax::ast::{MutImmutable, MutMutable};
+ use syntax::ast;
+ use syntax::codemap;
+ use syntax::codemap::Span;
++use syntax::opt_vec::OptVec;
+ use util::common::indent;
+ use util::ppaux::{bound_region_to_str, ty_to_str, trait_ref_to_str, Repr};
+ 
+@@ -217,17 +218,19 @@ pub enum RegionVariableOrigin {
+     // Regions created as part of an automatic coercion
+     Coercion(TypeTrace),
+ 
++    // Region variables created as the values
++    // for early-bound regions
++    EarlyBoundRegion(Span, ast::Ident),
++
+     // Region variables created for bound regions
+     // in a function or method that is called
+-    BoundRegionInFnCall(Span, ty::BoundRegion),
++    LateBoundRegion(Span, ty::BoundRegion),
+ 
+     // Region variables created for bound regions
+     // when doing subtyping/lub/glb computations
+     BoundRegionInFnType(Span, ty::BoundRegion),
+ 
+-    BoundRegionInTypeOrImpl(Span),
+-
+-    BoundRegionInCoherence,
++    BoundRegionInCoherence(ast::Ident),
+ }
+ 
+ pub enum fixup_err {
+@@ -650,11 +653,13 @@ impl InferCtxt {
+         ty::ReInfer(ty::ReVar(self.region_vars.new_region_var(origin)))
+     }
+ 
+-    pub fn next_region_vars(&self,
+-                            origin: RegionVariableOrigin,
+-                            count: uint)
+-                            -> ~[ty::Region] {
+-        vec::from_fn(count, |_| self.next_region_var(origin))
++    pub fn region_vars_for_defs(&mut self,
++                                span: Span,
++                                defs: &[ty::RegionParameterDef])
++                                -> OptVec<ty::Region> {
++        defs.iter()
++            .map(|d| self.next_region_var(EarlyBoundRegion(span, d.ident)))
++            .collect()
+     }
+ 
+     pub fn fresh_bound_region(&self, binder_id: ast::NodeId) -> ty::Region {
+@@ -803,14 +808,14 @@ impl InferCtxt {
+         self.type_error_message(sp, mk_msg, a, Some(err));
+     }
+ 
+-    pub fn replace_bound_regions_with_fresh_regions(&self,
+-                                                    trace: TypeTrace,
+-                                                    fsig: &ty::FnSig)
+-                                                    -> (ty::FnSig,
+-                                                        HashMap<ty::BoundRegion,
+-                                                                ty::Region>) {
++    pub fn replace_late_bound_regions_with_fresh_regions(
++        &self,
++        trace: TypeTrace,
++        fsig: &ty::FnSig)
++        -> (ty::FnSig, HashMap<ty::BoundRegion, ty::Region>)
++    {
+         let (map, fn_sig) =
+-            replace_bound_regions_in_fn_sig(self.tcx, fsig, |br| {
++            replace_late_bound_regions_in_fn_sig(self.tcx, fsig, |br| {
+                 let rvar = self.next_region_var(
+                     BoundRegionInFnType(trace.origin.span(), br));
+                 debug!("Bound region {} maps to {:?}",
+@@ -924,10 +929,10 @@ impl RegionVariableOrigin {
+             AddrOfSlice(a) => a,
+             Autoref(a) => a,
+             Coercion(a) => a.span(),
+-            BoundRegionInFnCall(a, _) => a,
++            EarlyBoundRegion(a, _) => a,
++            LateBoundRegion(a, _) => a,
+             BoundRegionInFnType(a, _) => a,
+-            BoundRegionInTypeOrImpl(a) => a,
+-            BoundRegionInCoherence => codemap::DUMMY_SP,
++            BoundRegionInCoherence(_) => codemap::DUMMY_SP,
+         }
+     }
+ }
+@@ -941,13 +946,14 @@ impl Repr for RegionVariableOrigin {
+             AddrOfSlice(a) => format!("AddrOfSlice({})", a.repr(tcx)),
+             Autoref(a) => format!("Autoref({})", a.repr(tcx)),
+             Coercion(a) => format!("Coercion({})", a.repr(tcx)),
+-            BoundRegionInFnCall(a, b) => format!("bound_regionInFnCall({},{})",
+-                                              a.repr(tcx), b.repr(tcx)),
++            LateBoundRegion(a, b) => format!("LateBoundRegion({},{})",
++                                             a.repr(tcx), b.repr(tcx)),
+             BoundRegionInFnType(a, b) => format!("bound_regionInFnType({},{})",
+                                               a.repr(tcx), b.repr(tcx)),
+-            BoundRegionInTypeOrImpl(a) => format!("bound_regionInTypeOrImpl({})",
+-                                               a.repr(tcx)),
+-            BoundRegionInCoherence => format!("bound_regionInCoherence"),
++            EarlyBoundRegion(a, b) => format!("EarlyBoundRegion({}, {})",
++                                              a.repr(tcx), b.repr(tcx)),
++            BoundRegionInCoherence(a) => format!("bound_regionInCoherence({})",
++                                                 a.repr(tcx)),
+         }
+     }
+ }
+diff --git a/src/librustc/middle/typeck/infer/sub.rs b/src/librustc/middle/typeck/infer/sub.rs
+index 19abbec..9a1b87f 100644
+--- a/src/librustc/middle/typeck/infer/sub.rs
++++ b/src/librustc/middle/typeck/infer/sub.rs
+@@ -12,7 +12,7 @@
+ use middle::ty::{BuiltinBounds};
+ use middle::ty;
+ use middle::ty::TyVar;
+-use middle::typeck::check::regionmanip::replace_bound_regions_in_fn_sig;
++use middle::typeck::check::regionmanip::replace_late_bound_regions_in_fn_sig;
+ use middle::typeck::infer::combine::*;
+ use middle::typeck::infer::{cres, CresCompare};
+ use middle::typeck::infer::glb::Glb;
+@@ -166,13 +166,13 @@ impl Combine for Sub {
+         // First, we instantiate each bound region in the subtype with a fresh
+         // region variable.
+         let (a_sig, _) =
+-            self.get_ref().infcx.replace_bound_regions_with_fresh_regions(
++            self.get_ref().infcx.replace_late_bound_regions_with_fresh_regions(
+                 self.get_ref().trace, a);
+ 
+         // Second, we instantiate each bound region in the supertype with a
+         // fresh concrete region.
+         let (skol_map, b_sig) = {
+-            replace_bound_regions_in_fn_sig(self.get_ref().infcx.tcx, b, |br| {
++            replace_late_bound_regions_in_fn_sig(self.get_ref().infcx.tcx, b, |br| {
+                 let skol = self.get_ref().infcx.region_vars.new_skolemized(br);
+                 debug!("Bound region {} skolemized to {:?}",
+                        bound_region_to_str(self.get_ref().infcx.tcx, "", false, br),
+diff --git a/src/librustc/util/ppaux.rs b/src/librustc/util/ppaux.rs
+index 334407f..e381424 100644
+--- a/src/librustc/util/ppaux.rs
++++ b/src/librustc/util/ppaux.rs
+@@ -1023,3 +1023,9 @@ impl UserString for AbiSet {
+         self.to_str()
+     }
+ }
++
++impl UserString for ast::Ident {
++    fn user_string(&self, _tcx: ctxt) -> ~str {
++        token::ident_to_str(self).to_owned()
++    }
++}
+diff --git a/src/test/compile-fail/regions-early-bound-error-method.rs b/src/test/compile-fail/regions-early-bound-error-method.rs
+new file mode 100644
+index 0000000..9c8f8f8
+--- /dev/null
++++ b/src/test/compile-fail/regions-early-bound-error-method.rs
+@@ -0,0 +1,35 @@
++// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
++// file at the top-level directory of this distribution and at
++// http://rust-lang.org/COPYRIGHT.
++//
++// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
++// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
++// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
++// option. This file may not be copied, modified, or distributed
++// except according to those terms.
++
++// Tests that you can use a fn lifetime parameter as part of
++// the value for a type parameter in a bound.
++
++trait GetRef<'a> {
++    fn get(&self) -> &'a int;
++}
++
++struct Box<'a> {
++    t: &'a int
++}
++
++impl<'a> GetRef<'a> for Box<'a> {
++    fn get(&self) -> &'a int {
++        self.t
++    }
++}
++
++impl<'a> Box<'a> {
++    fn or<'b,G:GetRef<'b>>(&self, g2: G) -> &'a int {
++        g2.get() //~ ERROR lifetime mismatch
++    }
++}
++
++fn main() {
++}
+diff --git a/src/test/compile-fail/regions-early-bound-error.rs b/src/test/compile-fail/regions-early-bound-error.rs
+new file mode 100644
+index 0000000..9cff484
+--- /dev/null
++++ b/src/test/compile-fail/regions-early-bound-error.rs
+@@ -0,0 +1,33 @@
++// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
++// file at the top-level directory of this distribution and at
++// http://rust-lang.org/COPYRIGHT.
++//
++// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
++// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
++// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
++// option. This file may not be copied, modified, or distributed
++// except according to those terms.
++
++// Tests that you can use a fn lifetime parameter as part of
++// the value for a type parameter in a bound.
++
++trait GetRef<'a, T> {
++    fn get(&self) -> &'a T;
++}
++
++struct Box<'a, T> {
++    t: &'a T
++}
++
++impl<'a,T:Clone> GetRef<'a,T> for Box<'a,T> {
++    fn get(&self) -> &'a T {
++        self.t
++    }
++}
++
++fn get<'a,'b,G:GetRef<'a, int>>(g1: G, b: &'b int) -> &'b int {
++    g1.get() //~ ERROR lifetime mismatch
++}
++
++fn main() {
++}
+diff --git a/src/test/run-pass/regions-early-bound-used-in-bound-method.rs b/src/test/run-pass/regions-early-bound-used-in-bound-method.rs
+new file mode 100644
+index 0000000..cc95594
+--- /dev/null
++++ b/src/test/run-pass/regions-early-bound-used-in-bound-method.rs
+@@ -0,0 +1,37 @@
++// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
++// file at the top-level directory of this distribution and at
++// http://rust-lang.org/COPYRIGHT.
++//
++// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
++// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
++// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
++// option. This file may not be copied, modified, or distributed
++// except according to those terms.
++
++// Tests that you can use a fn lifetime parameter as part of
++// the value for a type parameter in a bound.
++
++trait GetRef<'a> {
++    fn get(&self) -> &'a int;
++}
++
++struct Box<'a> {
++    t: &'a int
++}
++
++impl<'a> GetRef<'a> for Box<'a> {
++    fn get(&self) -> &'a int {
++        self.t
++    }
++}
++
++impl<'a> Box<'a> {
++    fn add<'b,G:GetRef<'b>>(&self, g2: G) -> int {
++        *self.t + *g2.get()
++    }
++}
++
++fn main() {
++    let b1 = Box { t: &3 };
++    assert_eq!(b1.add(b1), 6);
++}
+diff --git a/src/test/run-pass/regions-early-bound-used-in-bound.rs b/src/test/run-pass/regions-early-bound-used-in-bound.rs
+new file mode 100644
+index 0000000..69ff5c7
+--- /dev/null
++++ b/src/test/run-pass/regions-early-bound-used-in-bound.rs
+@@ -0,0 +1,35 @@
++// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
++// file at the top-level directory of this distribution and at
++// http://rust-lang.org/COPYRIGHT.
++//
++// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
++// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
++// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
++// option. This file may not be copied, modified, or distributed
++// except according to those terms.
++
++// Tests that you can use a fn lifetime parameter as part of
++// the value for a type parameter in a bound.
++
++trait GetRef<'a, T> {
++    fn get(&self) -> &'a T;
++}
++
++struct Box<'a, T> {
++    t: &'a T
++}
++
++impl<'a,T:Clone> GetRef<'a,T> for Box<'a,T> {
++    fn get(&self) -> &'a T {
++        self.t
++    }
++}
++
++fn add<'a,G:GetRef<'a, int>>(g1: G, g2: G) -> int {
++    *g1.get() + *g2.get()
++}
++
++fn main() {
++    let b1 = Box { t: &3 };
++    assert_eq!(add(b1, b1), 6);
++}
+diff --git a/src/test/run-pass/regions-early-bound-used-in-type-param.rs b/src/test/run-pass/regions-early-bound-used-in-type-param.rs
+new file mode 100644
+index 0000000..3f582e9
+--- /dev/null
++++ b/src/test/run-pass/regions-early-bound-used-in-type-param.rs
+@@ -0,0 +1,35 @@
++// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
++// file at the top-level directory of this distribution and at
++// http://rust-lang.org/COPYRIGHT.
++//
++// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
++// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
++// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
++// option. This file may not be copied, modified, or distributed
++// except according to those terms.
++
++// Tests that you can use a fn lifetime parameter as part of
++// the value for a type parameter in a bound.
++
++trait Get<T> {
++    fn get(&self) -> T;
++}
++
++struct Box<T> {
++    t: T
++}
++
++impl<T:Clone> Get<T> for Box<T> {
++    fn get(&self) -> T {
++        self.t.clone()
++    }
++}
++
++fn add<'a,G:Get<&'a int>>(g1: G, g2: G) -> int {
++    *g1.get() + *g2.get()
++}
++
++fn main() {
++    let b1 = Box { t: &3 };
++    assert_eq!(add(b1, b1), 6);
++}
+
+commit d52a90e0f088f0a30d0231c07eb1276d1720dc39
+Author: Niko Matsakis <niko@alum.mit.edu>
+Date:   Tue Feb 25 12:10:58 2014 -0500
+
+    Wip: fix some merge failures
+---
+ src/librustc/middle/resolve_lifetime.rs    | 25 ++++++++++++++-----------
+ src/librustc/middle/typeck/check/method.rs |  3 +--
+ src/librustc/util/ppaux.rs                 |  3 ++-
+ 3 files changed, 17 insertions(+), 14 deletions(-)
+
+diff --git a/src/librustc/middle/resolve_lifetime.rs b/src/librustc/middle/resolve_lifetime.rs
+index 8b7f329..9852ea0 100644
+--- a/src/librustc/middle/resolve_lifetime.rs
++++ b/src/librustc/middle/resolve_lifetime.rs
+@@ -105,17 +105,20 @@ impl<'a> Visitor<Scope<'a>> for LifetimeContext {
+                 ty: &ast::Ty,
+                 scope: Scope<'a>) {
+         match ty.node {
+-            ast::TyClosure(@ast::TyClosure { lifetimes: ref lifetimes, .. }) |
+-            ast::TyBareFn(@ast::TyBareFn { lifetimes: ref lifetimes, .. }) => {
+-                let scope1 = LateScope(ty.id, lifetimes, scope);
+-                self.check_lifetime_names(lifetimes);
+-                debug!("pushing fn ty scope id={} due to type", ty.id);
+-                visit::walk_ty(self, ty, &scope1);
+-                debug!("popping fn ty scope id={} due to type", ty.id);
+-            }
+-            _ => {
+-                visit::walk_ty(self, ty, scope);
+-            }
++            ast::TyClosure(c) => push_fn_scope(self, ty, scope, &c.lifetimes),
++            ast::TyBareFn(c) => push_fn_scope(self, ty, scope, &c.lifetimes),
++            _ => visit::walk_ty(self, ty, scope),
++        }
++
++        fn push_fn_scope(this: &mut LifetimeContext,
++                         ty: &ast::Ty,
++                         scope: Scope,
++                         lifetimes: &OptVec<ast::Lifetime>) {
++            let scope1 = LateScope(ty.id, lifetimes, scope);
++            this.check_lifetime_names(lifetimes);
++            debug!("pushing fn ty scope id={} due to type", ty.id);
++            visit::walk_ty(this, ty, &scope1);
++            debug!("popping fn ty scope id={} due to type", ty.id);
+         }
+     }
+ 
+diff --git a/src/librustc/middle/typeck/check/method.rs b/src/librustc/middle/typeck/check/method.rs
+index f03fdca..41e3af0 100644
+--- a/src/librustc/middle/typeck/check/method.rs
++++ b/src/librustc/middle/typeck/check/method.rs
+@@ -942,8 +942,7 @@ impl<'a> LookupContext<'a> {
+ 
+         debug!("confirm_candidate(expr={}, candidate={})",
+                self.expr.repr(tcx),
+-               candidate.repr(self.tcx()),
+-               self.ty_to_str(fty));
++               candidate.repr(self.tcx()));
+ 
+         self.enforce_object_limitations(candidate);
+         self.enforce_drop_trait_limitations(candidate);
+diff --git a/src/librustc/util/ppaux.rs b/src/librustc/util/ppaux.rs
+index e381424..e4698e4 100644
+--- a/src/librustc/util/ppaux.rs
++++ b/src/librustc/util/ppaux.rs
+@@ -1026,6 +1026,7 @@ impl UserString for AbiSet {
+ 
+ impl UserString for ast::Ident {
+     fn user_string(&self, _tcx: ctxt) -> ~str {
+-        token::ident_to_str(self).to_owned()
++        let string = token::get_ident(self.name);
++        string.get().to_str()
+     }
+ }

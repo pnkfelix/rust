@@ -146,11 +146,28 @@ impl<D:Decoder> Decodable<D> for Ident {
 /// Function name (not all functions have names)
 pub type FnIdent = Option<Ident>;
 
+// Factor out type used for lifetime name to ease switching to/from
+// hygiene-respecting ast::Ident.
+#[deriving(Clone, Eq, TotalEq, TotalOrd, Hash, Encodable, Decodable, Show)]
+pub struct LifetimeName(Name);
+
+impl LifetimeName {
+    pub fn name(&self) -> Name { match self { &LifetimeName(n) => n } }
+}
+
 #[deriving(Clone, Eq, Encodable, Decodable, Hash)]
 pub struct Lifetime {
     id: NodeId,
     span: Span,
-    ident: Name
+    ident: LifetimeName
+}
+
+impl Lifetime {
+    pub fn name(&self) -> Name { self.ident.name() }
+}
+
+impl Ident {
+    pub fn lifetime_name(&self) -> LifetimeName { LifetimeName(self.name) }
 }
 
 // a "Path" is essentially Rust's notion of a name;
