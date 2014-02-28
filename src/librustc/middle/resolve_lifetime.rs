@@ -147,7 +147,7 @@ impl<'a> Visitor<Scope<'a>> for LifetimeContext {
     fn visit_lifetime_ref(&mut self,
                           lifetime_ref: &ast::Lifetime,
                           scope: Scope<'a>) {
-        if lifetime_ref.ident == special_idents::statik.name {
+        if lifetime_ref.name == special_idents::statik.name {
             self.insert_lifetime(lifetime_ref, ast::DefStaticRegion);
             return;
         }
@@ -264,7 +264,7 @@ impl LifetimeContext {
         self.sess.span_err(
             lifetime_ref.span,
             format!("use of undeclared lifetime name `'{}`",
-                    token::get_name(lifetime_ref.ident)));
+                    token::get_name(lifetime_ref.name)));
     }
 
     fn check_lifetime_names(&self, lifetimes: &OptVec<ast::Lifetime>) {
@@ -273,23 +273,23 @@ impl LifetimeContext {
 
             let special_idents = [special_idents::statik];
             for lifetime in lifetimes.iter() {
-                if special_idents.iter().any(|&i| i.name == lifetime.ident) {
+                if special_idents.iter().any(|&i| i.name == lifetime.name) {
                     self.sess.span_err(
                         lifetime.span,
                         format!("illegal lifetime parameter name: `{}`",
-                                token::get_name(lifetime.ident)));
+                                token::get_name(lifetime.name)));
                 }
             }
 
             for j in range(i + 1, lifetimes.len()) {
                 let lifetime_j = lifetimes.get(j);
 
-                if lifetime_i.ident == lifetime_j.ident {
+                if lifetime_i.name == lifetime_j.name {
                     self.sess.span_err(
                         lifetime_j.span,
                         format!("lifetime name `'{}` declared twice in \
                                 the same scope",
-                                token::get_name(lifetime_j.ident)));
+                                token::get_name(lifetime_j.name)));
                 }
             }
         }
@@ -317,7 +317,7 @@ fn search_lifetimes(lifetimes: &OptVec<ast::Lifetime>,
                     lifetime_ref: &ast::Lifetime)
                     -> Option<(uint, ast::NodeId)> {
     for (i, lifetime_decl) in lifetimes.iter().enumerate() {
-        if lifetime_decl.ident == lifetime_ref.ident {
+        if lifetime_decl.name == lifetime_ref.name {
             return Some((i, lifetime_decl.id));
         }
     }

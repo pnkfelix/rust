@@ -466,7 +466,7 @@ pub enum Region {
     // Region bound in a type or fn declaration which will be
     // substituted 'early' -- that is, at the same time when type
     // parameters are substituted.
-    ReEarlyBound(/* param id */ ast::NodeId, /*index*/ uint, ast::Name),
+    ReEarlyBound(/* param id */ ast::NodeId, /*index*/ uint, ast::LifetimeName),
 
     // Region bound in a function scope, which will be substituted when the
     // function is called. The first argument must be the `binder_id` of
@@ -636,7 +636,7 @@ pub enum BoundRegion {
     ///
     /// The def-id is needed to distinguish free regions in
     /// the event of shadowing.
-    BrNamed(ast::DefId, ast::Name),
+    BrNamed(ast::DefId, ast::LifetimeName),
 
     /// Fresh bound identifiers created during GLB computations.
     BrFresh(uint),
@@ -985,7 +985,7 @@ pub struct TypeParameterDef {
 
 #[deriving(Encodable, Decodable, Clone)]
 pub struct RegionParameterDef {
-    ident: ast::Name,
+    name: ast::LifetimeName,
     def_id: ast::DefId,
 }
 
@@ -5114,7 +5114,7 @@ pub fn construct_parameter_environment(
     let region_params = item_region_params.iter().
         map(|r| ty::ReFree(ty::FreeRegion {
                 scope_id: free_id,
-                bound_region: ty::BrNamed(r.def_id, r.ident)})).
+                bound_region: ty::BrNamed(r.def_id, r.name)})).
         collect();
 
     let free_substs = substs {
