@@ -5114,7 +5114,6 @@ pub fn construct_parameter_environment(
 
     // map bound 'a => free 'a
     let region_params = {
-        // FSK: consider using a closure for this.
         fn push_region_params(accum: OptVec<ty::Region>,
                               free_id: ast::NodeId,
                               region_params: &[RegionParameterDef])
