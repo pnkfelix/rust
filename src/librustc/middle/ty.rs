@@ -997,6 +997,7 @@ pub struct Generics {
     type_param_defs: Rc<~[TypeParameterDef]>,
 
     /// List of region parameters declared on the item.
+    // For a fn or method, only includes *early-bound* lifetimes.
     region_param_defs: Rc<~[RegionParameterDef]>,
 }
 
@@ -5084,6 +5085,7 @@ pub fn construct_parameter_environment(
     item_type_params: &[TypeParameterDef],
     method_type_params: &[TypeParameterDef],
     item_region_params: &[RegionParameterDef],
+    method_region_params: &[RegionParameterDef],
     free_id: ast::NodeId)
     -> ParameterEnvironment
 {
@@ -5111,11 +5113,25 @@ pub fn construct_parameter_environment(
         });
 
     // map bound 'a => free 'a
-    let region_params = item_region_params.iter().
-        map(|r| ty::ReFree(ty::FreeRegion {
-                scope_id: free_id,
-                bound_region: ty::BrNamed(r.def_id, r.name)})).
-        collect();
+    let region_params = {
+        // FSK: consider using a closure for this.
+        fn push_region_params(accum: OptVec<ty::Region>,
+                              free_id: ast::NodeId,
+                              region_params: &[RegionParameterDef])
+                              -> OptVec<ty::Region> {
+            let mut accum = accum;
+            for r in region_params.iter() {
+                accum.push(
+                    ty::ReFree(ty::FreeRegion {
+                            scope_id: free_id,
+                            bound_region: ty::BrNamed(r.def_id, r.name)}));
+            }
+            accum
+        }
+
+        let t = push_region_params(opt_vec::Empty, free_id, item_region_params);
+        push_region_params(t, free_id, method_region_params)
+    };
 
     let free_substs = substs {
         self_ty: self_ty,
@@ -5136,6 +5152,15 @@ pub fn construct_parameter_environment(
             (*method_type_params[j].bounds).subst(tcx, &free_substs)
         }
     });
+
+    debug!("construct_parameter_environment: free_id={} \
+           free_subst={} \
+           self_param_bound={} \
+           type_param_bound={}",
+           free_id,
+           free_substs.repr(tcx),
+           self_bound_substd.repr(tcx),
+           type_param_bounds_substd.repr(tcx));
 
     ty::ParameterEnvironment {
         free_substs: free_substs,

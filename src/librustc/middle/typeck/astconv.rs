@@ -109,8 +109,8 @@ pub fn ast_region_to_region(tcx: ty::ctxt, lifetime: &ast::Lifetime)
     };
 
     debug!("ast_region_to_region(lifetime={} id={}) yields {}",
-            lifetime_to_str(lifetime),
-            lifetime.id, r.repr(tcx));
+           lifetime_to_str(lifetime),
+           lifetime.id, r.repr(tcx));
 
     r
 }
