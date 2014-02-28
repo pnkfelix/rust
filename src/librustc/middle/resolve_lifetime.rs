@@ -220,19 +220,9 @@ impl LifetimeContext {
             let scope1 = LateScope(n, &generics.lifetimes, scope);
             walk(self, &scope1)
         } else {
-            // ugh, filter.map.collect partition is UGLY.  Replace with one-pass helper.
-            let early: OptVec<ast::Lifetime> =
-                generics.lifetimes.iter()
-                .filter(|l| referenced_idents.iter().any(|&i| i == l.name))
-                .map(|l| *l)
-                .collect();
+            let (early, late) = generics.lifetimes.clone().partition(
+                |l| referenced_idents.iter().any(|&i| i == l.name));
             let scope1 = EarlyScope(early_count, &early, scope);
-
-            let late: OptVec<ast::Lifetime> =
-                generics.lifetimes.iter()
-                .filter(|l| !referenced_idents.iter().any(|&i| i == l.name))
-                .map(|l| *l)
-                .collect();
             let scope2 = LateScope(n, &late, &scope1);
 
             walk(self, &scope2);
@@ -408,10 +398,6 @@ fn search_lifetimes(lifetimes: &OptVec<ast::Lifetime>,
 
 ///////////////////////////////////////////////////////////////////////////
 
-// TODO: review definitions of early_bound_lifetimes and free_lifetimes
-
-///////////////////////////////////////////////////////////////////////////
-
 pub fn early_bound_lifetimes<'a>(generics: &'a ast::Generics) -> OptVec<ast::Lifetime> {
     let referenced_idents = free_lifetimes(&generics.ty_params);
     if referenced_idents.is_empty() {
@@ -428,9 +414,8 @@ pub fn free_lifetimes(ty_params: &OptVec<ast::TyParam>) -> OptVec<ast::LifetimeN
     /*!
      * Gathers up and returns the names of any lifetimes that appear
      * free in `ty_params`. Of course, right now, all lifetimes appear
-     * free, since we don't have any binders in type parameter
-     * declarations, but I just to be forwards compatible for future
-     * extensions with my terminology. =)
+     * free, since we don't currently have any binders in type parameter
+     * declarations; just being forwards compatible with future extensions.
      */
 
     let mut collector = FreeLifetimeCollector { names: opt_vec::Empty };
@@ -444,13 +429,6 @@ pub fn free_lifetimes(ty_params: &OptVec<ast::TyParam>) -> OptVec<ast::LifetimeN
     }
 
     impl Visitor<()> for FreeLifetimeCollector {
-        fn visit_ty(&mut self, t:&ast::Ty, _:()) {
-            // for some weird reason visitor doesn't descend into
-            // types by default
-            // FSK: I think it does now.
-            visit::walk_ty(self, t, ());
-        }
-
         fn visit_lifetime_ref(&mut self,
                               lifetime_ref: &ast::Lifetime,
                               _: ()) {

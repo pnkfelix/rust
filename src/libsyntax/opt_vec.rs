@@ -112,6 +112,16 @@ impl<T> OptVec<T> {
         }
     }
 
+    pub fn partition(self, f: |&T| -> bool) -> (OptVec<T>, OptVec<T>) {
+        match self {
+            Empty  => (Empty, Empty),
+            Vec(t) => {
+                let (l,r) = t.partition(f);
+                (from(l), from(r))
+            },
+        }
+    }
+
     #[inline]
     pub fn iter<'r>(&'r self) -> Items<'r, T> {
         match *self {
