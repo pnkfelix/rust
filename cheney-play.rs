@@ -1,7 +1,9 @@
 #[feature(managed_boxes)];
 #[allow(dead_code)]; // reenable check after done with dev.
 #[allow(unused_imports)];
+#[feature(macro_rules)];
 use std::cast;
+use std::cmp;
 use std::mem;
 use std::ptr;
 use RawBox = std::unstable::raw::Box;
@@ -42,7 +44,11 @@ impl Span {
 /// been individually allocated, and that can be individually freed
 /// when it is safe to do so (i.e. when it contains no live objects).
 
-static DEFAULT_CHUNK_SIZE: uint = 1_000_000; // 1 megabyte.
+static ONE_KILOBYTE: uint = 1024;
+static ONE_MEGABYTE: uint = 1024 * 1024;
+
+static DEFAULT_CHUNK_SIZE: uint = 32;
+
 struct Chunk {
     next: Option<*Chunk>, // next chunk in this collection.
     free_pairs: Option<*FreePair>,
@@ -315,14 +321,29 @@ impl Gc {
     }
 }
 
+macro_rules! print_len {
+    ($($args:expr),+) => { { let s = format!($($args),+); print!("{:s}", s); s.len() } }
+}
+
+fn indented_gc_avail(gc: &Gc, prev_len: uint) {
+    println!("{:s}gc.avail: {:?}",
+             " ".repeat(cmp::max(0, 40i - (prev_len as int)) as uint),
+             gc.avail);
+}
+
 fn main() {
-    println!("Hello world.");
     let mut gc = Gc::make_gc();
+    println!("Hello world, gc.avail: {:?}", gc.avail);
     let i3 = gc.alloc::<int>(3);
+    let print_i3 = |then: |len:uint|| { then(print_len!("i3: {:?}", i3)); };
+    print_i3(|len| indented_gc_avail(&gc, len));
     let i4 = gc.alloc::<int>(4);
+    let print_i4 = |then: |len:uint|| { then(print_len!("i4: {:?}", i4)); };
+    print_i4(|len| indented_gc_avail(&gc, len));
+
 
     // mrrh.  This is illegal:
-    //  let p6 = gc.cons(6, gc.cons(5, Null));
+    //   let p6 = gc.cons(6, gc.cons(5, Null));
     // (due to "cannot borrow `gc` as mutable more than once at a time)
     // while the below is not:
     let p6 = { let p5 = gc.cons(5, Null); gc.cons(6, p5) };
@@ -330,10 +351,11 @@ fn main() {
     //   - https://github.com/mozilla/rust/issues/3511
     //   - https://github.com/mozilla/rust/issues/6393
 
-    println!("i3: {:?}", i3);
-    println!("i4: {:?}", i4);
 
-    println!("p6: {:?}", p6);
+    let print_i6 = |then: |len:uint|| { then(print_len!("p6: {:?}", p6)); };
+    print_i6(|len| indented_gc_avail(&gc, len));
+
+    println!("at end");
 }
 
 impl Drop for Gc {
