@@ -43,6 +43,12 @@ impl Span {
 /// A Chunk is the metadata for a contiguous area of memory that has
 /// been individually allocated, and that can be individually freed
 /// when it is safe to do so (i.e. when it contains no live objects).
+///
+/// Sometimes (often?) the Chunk structure will be stored within the
+/// memory allocated by the Chunk itself.  In such a scenario all
+/// of the fields remain honest (e.g. `span` still represents all
+/// the memory of the chunk), but the size of the span is now broken
+/// down into free + occupied + fragmentation-loss + Chunk-fields.
 
 static ONE_KILOBYTE: uint = 1024;
 static ONE_MEGABYTE: uint = 1024 * 1024;
@@ -50,10 +56,10 @@ static ONE_MEGABYTE: uint = 1024 * 1024;
 static DEFAULT_CHUNK_SIZE: uint = 32;
 
 struct Chunk {
+    // FIXME Option<*T> takes two words; just use *T (or switch to non-*T refs).
     next: Option<*Chunk>, // next chunk in this collection.
     free_pairs: Option<*FreePair>,
-    free_bblks: Option<*BigBlock>,
-    full_bblks: Option<*BigBlock>,
+    free_bblks: Option<~BigBlock>,
     span: Span, // span covered by chunk's memory.
 }
 
@@ -82,25 +88,28 @@ impl Chunk {
             assert!((size as int) >= 0);
             let limit : *uint = start.offset((size / word_size) as int);
             let block : *mut BigBlock = cast::transmute(start);
-            (*block).next = ptr::null();
+            (*block).next = None;
             (*block).limit = limit;
             Chunk {
                 next: None,
                 free_pairs: None,
                 free_bblks: Some(cast::transmute(block)),
-                full_bblks: None,
                 span: Span::new(start, limit),
             }
         }
     }
 
+    fn new_ptr(size: uint) -> *Chunk {
+        let c = Chunk::new(size);
+        fail!();
+    }
+
     /// Pops first free big block and returns its span (presumably for
     /// use as a target allocation space by a bump-pointer allocator).
     unsafe fn unwrap_target_space(&mut self) -> Span {
-        let b : *BigBlock = self.free_bblks.unwrap();
-        self.free_bblks =
-            if (*b).next == ptr::null() { None } else { Some((*b).next) };
+        let b : ~BigBlock = self.free_bblks.unwrap();
         let start : *uint = cast::transmute(b);
+        self.free_bblks = b.next;
         let limit = (*b).limit;
         Span::new(start, limit)
     }
@@ -145,11 +154,17 @@ struct ForwardedBox<T> {
     forwarding_address: *FutureBox<T>,
 }
 
+/// Every span of memory (or "block") larger than a pair implicitly belongs to some BlockCategory:
+/// when on gc.free_bblks, is Empty,
+/// when part of the current `avail` span, it is InUse.
+/// otherwise, it is Full (and untracked by GC meta-data, apart from
+/// being implciitly tracked by being reachable)
 enum BlockCategory { Empty, Full, InUse, }
 
-/// Every BigBlock implicitly belongs to some BlockCategory.
+/// A BigBlock is a free span of memory.
+
 struct BigBlock {
-    next: *BigBlock, // next block in (free-big-blocks, chunk).
+    next: Option<~BigBlock>, // next block in (free_bblks, chunk)
     limit: *uint,    // address immediately after last word in block.
 }
 
@@ -216,9 +231,11 @@ impl Gc {
             // TODO: if total_size is large enough, consider
             // allocating a separate chunk for it rather than
             // immediately jumping into a Gc attempt.
+            // (Such is essentially the beginnings of a policy
+            //  directing a Large Object Space)
 
             self.fill_remaining_space();
-            self.perform_collection();
+            self.perform_collection(total_size);
         }
         assert!(self.avail.can_fit(total_size));
 
@@ -248,7 +265,7 @@ impl Gc {
         }
     }
 
-    fn perform_collection(&mut self) {
+    fn perform_collection(&mut self, goal_size_bytes: uint) {
         #[allow(unused_variable)];
 
         let owned_objects_to_scan : ~[*()] = ~[];
@@ -298,6 +315,23 @@ impl Gc {
         // free_bblks of the Gc's chunks, or by allocating a fresh
         // chunk).
 
+
+        // PLACE HOLDER ROUTINE
+        // regardless of what collection does, we can "always" fall back
+        // on allocating a fresh chunk.
+
+        let mut chunk = Chunk::new_ptr(DEFAULT_CHUNK_SIZE);
+        {
+            let mut cursor = &mut self.normal_chunks.next;
+            loop {
+                match cursor {
+                    &None => { *cursor = Some(chunk); break }
+                    &Some(c) => cursor = unsafe { &mut (*c).next },
+                }
+            }
+        }
+
+        assert!(self.avail.can_fit(goal_size_bytes));
     }
 
     /// Returns total size of space occupied by normal_chunks.

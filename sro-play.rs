@@ -1,6 +1,9 @@
 #[feature(managed_boxes)];
 
 #[allow(unused_imports)];
+
+extern crate green;
+
 use std::cast;
 use std::libc;
 use std::local_data;
@@ -8,7 +11,7 @@ use std::os;
 use std::ptr;
 use std::rt::local_heap;
 use std::rt::local_heap::{MemoryRegion, Box};
-use std::rt::{DumpedRegs,Registers};
+use green::context::{DumpedRegs,Registers};
 
 type DumpedRegsArea = [u64, ..80];
 
