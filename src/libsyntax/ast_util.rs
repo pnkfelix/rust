@@ -693,7 +693,7 @@ mod test {
 
     fn ident_to_segment(id : &Ident) -> PathSegment {
         PathSegment {identifier:id.clone(),
-                     lifetimes: opt_vec::Empty,
+                     lifetimes: Vec::new(),
                      types: opt_vec::Empty}
     }
 
