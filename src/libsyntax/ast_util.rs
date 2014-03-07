@@ -195,7 +195,7 @@ pub fn ident_to_path(s: Span, identifier: Ident) -> Path {
         segments: vec!(
             ast::PathSegment {
                 identifier: identifier,
-                lifetimes: opt_vec::Empty,
+                lifetimes: Vec::new(),
                 types: opt_vec::Empty,
             }
         ),
@@ -311,7 +311,7 @@ pub fn operator_prec(op: ast::BinOp) -> uint {
 pub static as_prec: uint = 12u;
 
 pub fn empty_generics() -> Generics {
-    Generics {lifetimes: opt_vec::Empty,
+    Generics {lifetimes: Vec::new(),
               ty_params: opt_vec::Empty}
 }
 
