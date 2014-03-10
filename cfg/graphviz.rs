@@ -1,3 +1,5 @@
+use std::io;
+
 trait Label {
     fn name<'a>(&'a self) -> ~str;
 }
@@ -10,26 +12,30 @@ trait GraphWalk<'a, N, E> {
     fn target(&self, edge:&'a E) -> &'a N;
 }
 
-fn render<'a,N:Label,E:Label,G:Label+GraphWalk<'a,N,E>,W:Writer>(g:&G, w:&W) {
-    let writeln = |arg:&[&str]| {
-        for &s in arg.iter() {
-            w.write_str(s);
-        }
-        w.write_line("");
-    };
-    let indented = |arg| { w.write_str("    "); writeln(arg); };
+type RenderResult = Result<(), io::IoError>;
 
-    writeln(["digraph ", g.name().as_slice(), " {"]);
+pub fn render<'a,N:Label,E:Label,G:Label+GraphWalk<'a,N,E>,W:Writer>(g:&G, w:&mut W) -> RenderResult {
+    let writeln = |w: &mut W, arg:&[&str]| -> RenderResult {
+        for &s in arg.iter() {
+            try!(w.write_str(s));
+        }
+        try!(w.write_line(""));
+        Ok(())
+    };
+
+    try!(writeln(w, ["digraph ", g.name().as_slice(), " {"]));
     for &n in g.nodes().iter() {
-        indented([n.name().as_slice(), ";"].as_slice());
+        try!(w.write_str("    "));
+        try!(writeln(w, [n.name().as_slice(), ";"]));
     }
 
     let edges : ~[&'a E] = g.edges();
     for &e in edges.iter() {
-        let mut escaped_label = e.name().escape_default();
-        indented([g.source(e).name().as_slice(), " -> ", g.target(e).name().as_slice(),
-                  "[label=\"", escaped_label.as_slice(), "\"];"].as_slice());
+        let escaped_label = e.name().escape_default();
+        try!(w.write_str("    "));
+        try!(writeln(w, [g.source(e).name().as_slice(), " -> ", g.target(e).name().as_slice(),
+                         "[label=\"", escaped_label.as_slice(), "\"];"].as_slice()));
     }
 
-    writeln(["}"]);
+    writeln(w, ["}"])
 }

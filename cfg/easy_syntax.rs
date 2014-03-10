@@ -1,22 +1,21 @@
-extern mod getopts;
-extern mod syntax;
-extern mod rustc;
+extern crate getopts;
+extern crate syntax;
+extern crate rustc;
 
 use std::cell::RefCell;
-use std::hashmap::HashMap;
-use diag = syntax::diagnostic;
+use collections::hashmap::HashMap;
 use syntax::ast;
 use syntax::ast_map;
 use syntax::codemap;
 use syntax::parse;
 use syntax::parse::token;
-use syntax::parse::token::IdentInterner;
 use syntax::print::pprust;
 use rustc::driver::session;
 use rustc::driver::driver;
 use rustc::middle::lang_items::LanguageItems;
 use rustc::middle::region;
 use rustc::middle::ty;
+use rustc::util::nodemap;
 
 struct AddNodeIds {
     sess: session::Session
@@ -34,23 +33,20 @@ impl ast_map::FoldOps for AddNodeIds {
     }
 }
 
-pub fn mk_context() -> (AddNodeIds, @diag::SpanHandler, ty::ctxt) {
-    fn hm<K:Eq+IterBytes,V>() -> HashMap<K,V> { HashMap::new() }
-    fn ref_hm<K:Eq+IterBytes+'static,V:'static>() -> @RefCell<HashMap<K,V>> {
-        @RefCell::new(hm())
+pub fn mk_context() -> (AddNodeIds, ty::ctxt) {
+    fn hm<V>() -> nodemap::NodeMap<V> {
+        nodemap::NodeMap::new()
     }
 
-    let matches = getopts::getopts(&[], driver::optgroups());
+    let matches = getopts::getopts(&[], driver::optgroups().as_slice());
     let matches = matches.ok().unwrap();
     let sessopts = driver::build_session_options(&matches);
     let sess = driver::build_session(sessopts, None);
-    let dm                  = ref_hm();
-    let diag                = diag::mk_span_handler(diag::mk_handler(),
-                                                    @codemap::CodeMap::new());
+    let dm = @RefCell::new(HashMap::with_hasher(nodemap::FnvHasher));
     let crate_ = ast::Crate {
-            module: ast::Mod {view_items: ~[], items: ~[]},
-            attrs: ~[],
-            config: ~[],
+            module: ast::Mod {view_items: vec!(), items: vec!()},
+            attrs: vec!(),
+            config: vec!(),
             span: codemap::Span {
                 lo: codemap::BytePos(10),
                 hi: codemap::BytePos(20),
@@ -58,32 +54,29 @@ pub fn mk_context() -> (AddNodeIds, @diag::SpanHandler, ty::ctxt) {
             },
     };
     let add_node_ids        = AddNodeIds::new(sess);
-    let (crate_, amap)      = ast_map::map_crate(diag, crate_, add_node_ids);
-    let freevars            = hm();
-    let named_region_map    = ref_hm();
+    let (crate_, amap)      = ast_map::map_crate(crate_, add_node_ids);
+    let freevars : nodemap::NodeMap<rustc::middle::freevars::freevar_info> = hm();
+    let named_region_map    = @RefCell::new(hm());
     let region_paramd_items = region::resolve_crate(sess, &crate_);
     let lang_items          = @LanguageItems::new();
 
     let tcx = ty::mk_ctxt(sess, dm, named_region_map, amap, freevars,
                           region_paramd_items, lang_items);
-    (add_node_ids, diag, tcx)
+    (add_node_ids, tcx)
 }
 
 pub trait SyntaxToStr {
-    fn get_to_str() -> fn (_: &Self, intr: @IdentInterner) -> ~str;
+    fn get_to_str() -> fn (_: &Self) -> ~str;
 
-    fn get_interner(&self) -> @IdentInterner {
-        token::get_ident_interner()
-    }
-    fn to_str(&self) -> ~str {
-        SyntaxToStr::get_to_str()(self, self.get_interner())
+    fn stx_to_str(&self) -> ~str {
+        SyntaxToStr::get_to_str()(self)
     }
 }
 
 macro_rules! impl_stx_to_str {
     ($Type:path, $func:path) => {
         impl SyntaxToStr for $Type {
-            fn get_to_str() -> fn (_: &$Type, intr: @IdentInterner) -> ~str {
+            fn get_to_str() -> fn (_: &$Type) -> ~str {
 
                 $func
             }
@@ -108,7 +101,7 @@ pub trait QuoteCtxt {
 
 impl QuoteCtxt for () {
     fn parse_sess(&self) -> @parse::ParseSess  { parse::new_parse_sess() }
-    fn cfg(&self) -> ast::CrateConfig          { ~[] }
+    fn cfg(&self) -> ast::CrateConfig          { vec!() }
     fn call_site(&self) -> codemap::Span       { codemap::DUMMY_SP }
     fn ident_of(&self, st: &str) -> ast::Ident { token::str_to_ident(st) }
 }
