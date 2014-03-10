@@ -18,7 +18,10 @@ use rustc::middle;
 use cfg::easy_syntax;
 use cfg::easy_syntax::{QuoteCtxt, SyntaxToStr};
 
-mod cfg { pub mod easy_syntax; }
+mod cfg {
+    pub mod easy_syntax;
+    pub mod graphviz;
+}
 
 // TODO: add ast_map::Map::new fn, and replace this with that.
 fn mk_ast_map() -> ast_map::Map {
