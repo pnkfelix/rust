@@ -53,6 +53,25 @@ fn main() {
     let e = NamedExpr{ name: ~"x_t_y_e_z",
                        expr: quote_expr!((), { if x { y } else { z } }) };
     process_expr(e);
+
+    let e = NamedExpr{ name: ~"x_send_foo",
+                       expr: quote_expr!((), { x.foo(y) }) };
+    process_expr(e);
+
+    let e = NamedExpr{ name: ~"match_x",
+                       expr: quote_expr!((), { match x { Foo(a) => y,
+                                                         Bar(b) if w => z1,
+                                                         Bar(b) => z2,
+                                                         Baz(c) => z3, } }) };
+    process_expr(e);
+
+    if false {
+        // does not work yet, getting:
+        // assertion failed: !self.exit_map.contains_key(&id)
+        let e = NamedExpr{ name: ~"while_x_y",
+                           expr: quote_expr!((), { while x { y(); } }) };
+        process_expr(e);
+    }
 }
 
 fn process_expr(e: NamedExpr) {
