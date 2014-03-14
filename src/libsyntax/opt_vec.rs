@@ -19,7 +19,7 @@ use std::default::Default;
 use std::vec;
 use std::vec_ng::Vec;
 
-#[deriving(Clone, Encodable, Decodable, Hash)]
+#[deriving(Clone, Encodable, Decodable, Hash, Show)]
 pub enum OptVec<T> {
     Empty,
     Vec(Vec<T> )
