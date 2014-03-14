@@ -27,6 +27,7 @@ use cast::transmute;
 use cell::Cell;
 use clone::Clone;
 use cmp::{Eq, Ord, TotalEq, TotalOrd, Ordering};
+use fmt;
 use kinds::marker;
 use ops::{Deref, Drop};
 use option::{Option, Some, None};
@@ -46,6 +47,12 @@ pub struct Rc<T> {
     ptr: *mut RcBox<T>,
     nosend: marker::NoSend,
     noshare: marker::NoShare
+}
+
+impl<T:fmt::Show> fmt::Show for Rc<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f.buf, "Rc({})", *self.borrow())
+    }
 }
 
 impl<T> Rc<T> {

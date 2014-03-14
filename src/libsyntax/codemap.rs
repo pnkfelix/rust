@@ -95,7 +95,7 @@ pub struct Span {
 
 pub static DUMMY_SP: Span = Span { lo: BytePos(0), hi: BytePos(0), expn_info: None };
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct Spanned<T> {
     pub node: T,
     pub span: Span,

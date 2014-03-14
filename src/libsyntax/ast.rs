@@ -113,7 +113,7 @@ impl<D:Decoder<E>, E> Decodable<D, E> for Ident {
 /// Function name (not all functions have names)
 pub type FnIdent = Option<Ident>;
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct Lifetime {
     pub id: NodeId,
     pub span: Span,
@@ -124,7 +124,7 @@ pub struct Lifetime {
 // for instance: std::cmp::Eq  .  It's represented
 // as a sequence of identifiers, along with a bunch
 // of supporting information.
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct Path {
     pub span: Span,
     /// A `::foo` path, is relative to the crate root rather than current
@@ -136,7 +136,7 @@ pub struct Path {
 
 /// A segment of a path: an identifier, an optional lifetime, and a set of
 /// types.
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct PathSegment {
     /// The identifier portion of this path segment.
     pub identifier: Ident,
@@ -170,13 +170,13 @@ pub static DUMMY_NODE_ID: NodeId = -1;
 // typeck::collect::compute_bounds matches these against
 // the "special" built-in traits (see middle::lang_items) and
 // detects Copy, Send and Share.
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum TyParamBound {
     TraitTyParamBound(TraitRef),
     RegionTyParamBound
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct TyParam {
     pub ident: Ident,
     pub id: NodeId,
@@ -184,7 +184,7 @@ pub struct TyParam {
     pub default: Option<P<Ty>>
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct Generics {
     pub lifetimes: Vec<Lifetime>,
     pub ty_params: OwnedSlice<TyParam>,
@@ -202,13 +202,13 @@ impl Generics {
     }
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum MethodProvenance {
     FromTrait(DefId),
     FromImpl(DefId),
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum Def {
     DefFn(DefId, Purity),
     DefStaticMethod(/* method */ DefId, MethodProvenance, Purity),
@@ -257,7 +257,7 @@ pub enum DefRegion {
 // used to drive conditional compilation
 pub type CrateConfig = Vec<@MetaItem> ;
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct Crate {
     pub module: Mod,
     pub attrs: Vec<Attribute>,
@@ -267,7 +267,7 @@ pub struct Crate {
 
 pub type MetaItem = Spanned<MetaItem_>;
 
-#[deriving(Clone, Encodable, Decodable, TotalEq, Hash)]
+#[deriving(Clone, Encodable, Decodable, TotalEq, Hash, Show)]
 pub enum MetaItem_ {
     MetaWord(InternedString),
     MetaList(InternedString, Vec<@MetaItem> ),
@@ -299,7 +299,7 @@ impl Eq for MetaItem_ {
     }
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct Block {
     pub view_items: Vec<ViewItem>,
     pub stmts: Vec<@Stmt>,
@@ -309,26 +309,26 @@ pub struct Block {
     pub span: Span,
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct Pat {
     pub id: NodeId,
     pub node: Pat_,
     pub span: Span,
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct FieldPat {
     pub ident: Ident,
     pub pat: @Pat,
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum BindingMode {
     BindByRef(Mutability),
     BindByValue(Mutability),
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum Pat_ {
     PatWild,
     PatWildMulti,
@@ -376,14 +376,14 @@ impl fmt::Show for Sigil {
     }
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum ExprVstore {
     ExprVstoreUniq,                 // ~[1,2,3,4]
     ExprVstoreSlice,                // &[1,2,3,4]
     ExprVstoreMutSlice,             // &mut [1,2,3,4]
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum BinOp {
     BiAdd,
     BiSub,
@@ -405,7 +405,7 @@ pub enum BinOp {
     BiGt,
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum UnOp {
     UnBox,
     UnUniq,
@@ -416,7 +416,7 @@ pub enum UnOp {
 
 pub type Stmt = Spanned<Stmt_>;
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum Stmt_ {
     // could be an item or a local (let) binding:
     StmtDecl(@Decl, NodeId),
@@ -434,7 +434,7 @@ pub enum Stmt_ {
 // FIXME (pending discussion of #1697, #2178...): local should really be
 // a refinement on pat.
 /// Local represents a `let` statement, e.g., `let <pat>:<ty> = <expr>;`
-#[deriving(Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct Local {
     pub ty: P<Ty>,
     pub pat: @Pat,
@@ -445,7 +445,7 @@ pub struct Local {
 
 pub type Decl = Spanned<Decl_>;
 
-#[deriving(Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum Decl_ {
     // a local (let) binding:
     DeclLocal(@Local),
@@ -453,14 +453,14 @@ pub enum Decl_ {
     DeclItem(@Item),
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct Arm {
     pub pats: Vec<@Pat>,
     pub guard: Option<@Expr>,
     pub body: @Expr,
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct Field {
     pub ident: SpannedIdent,
     pub expr: @Expr,
@@ -469,26 +469,26 @@ pub struct Field {
 
 pub type SpannedIdent = Spanned<Ident>;
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum BlockCheckMode {
     DefaultBlock,
     UnsafeBlock(UnsafeSource),
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum UnsafeSource {
     CompilerGenerated,
     UserProvided,
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct Expr {
     pub id: NodeId,
     pub node: Expr_,
     pub span: Span,
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum Expr_ {
     ExprVstore(@Expr, ExprVstore),
     // First expr is the place; second expr is the value.
@@ -557,7 +557,7 @@ pub enum Expr_ {
 // else knows what to do with them, so you'll probably get a syntax
 // error.
 //
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 #[doc="For macro invocations; parsing is delegated to the macro"]
 pub enum TokenTree {
     // a single token
@@ -633,7 +633,7 @@ pub enum TokenTree {
 //
 pub type Matcher = Spanned<Matcher_>;
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum Matcher_ {
     // match one token
     MatchTok(::parse::token::Token),
@@ -650,12 +650,12 @@ pub type Mac = Spanned<Mac_>;
 // is being invoked, and the vector of token-trees contains the source
 // of the macro invocation.
 // There's only one flavor, now, so this could presumably be simplified.
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum Mac_ {
     MacInvocTT(Path, Vec<TokenTree> , SyntaxContext),   // new macro-invocation
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum StrStyle {
     CookedStr,
     RawStr(uint)
@@ -663,7 +663,7 @@ pub enum StrStyle {
 
 pub type Lit = Spanned<Lit_>;
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum Lit_ {
     LitStr(InternedString, StrStyle),
     LitBinary(Rc<Vec<u8> >),
@@ -679,20 +679,20 @@ pub enum Lit_ {
 
 // NB: If you change this, you'll probably want to change the corresponding
 // type structure in middle/ty.rs as well.
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct MutTy {
     pub ty: P<Ty>,
     pub mutbl: Mutability,
 }
 
-#[deriving(Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct TypeField {
     pub ident: Ident,
     pub mt: MutTy,
     pub span: Span,
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct TypeMethod {
     pub ident: Ident,
     pub attrs: Vec<Attribute>,
@@ -707,7 +707,7 @@ pub struct TypeMethod {
 // A trait method is either required (meaning it doesn't have an
 // implementation, just a signature) or provided (meaning it has a default
 // implementation).
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum TraitMethod {
     Required(TypeMethod),
     Provided(@Method),
@@ -756,7 +756,7 @@ impl fmt::Show for FloatTy {
 }
 
 // NB Eq method appears below.
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct Ty {
     pub id: NodeId,
     pub node: Ty_,
@@ -764,7 +764,7 @@ pub struct Ty {
 }
 
 // Not represented directly in the AST, referred to by name through a ty_path.
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum PrimTy {
     TyInt(IntTy),
     TyUint(UintTy),
@@ -789,7 +789,7 @@ impl fmt::Show for Onceness {
     }
 }
 
-#[deriving(Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct ClosureTy {
     pub sigil: Sigil,
     pub region: Option<Lifetime>,
@@ -804,7 +804,7 @@ pub struct ClosureTy {
     pub bounds: Option<OwnedSlice<TyParamBound>>,
 }
 
-#[deriving(Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct BareFnTy {
     pub purity: Purity,
     pub abis: AbiSet,
@@ -812,7 +812,7 @@ pub struct BareFnTy {
     pub decl: P<FnDecl>
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum Ty_ {
     TyNil,
     TyBot, /* bottom type */
@@ -832,13 +832,13 @@ pub enum Ty_ {
     TyInfer,
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum AsmDialect {
     AsmAtt,
     AsmIntel
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct InlineAsm {
     pub asm: InternedString,
     pub asm_str_style: StrStyle,
@@ -850,7 +850,7 @@ pub struct InlineAsm {
     pub dialect: AsmDialect
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct Arg {
     pub ty: P<Ty>,
     pub pat: @Pat,
@@ -877,7 +877,7 @@ impl Arg {
     }
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct FnDecl {
     pub inputs: Vec<Arg>,
     pub output: P<Ty>,
@@ -902,14 +902,14 @@ impl fmt::Show for Purity {
     }
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum RetStyle {
     NoReturn, // functions with return type _|_ that always
               // raise an error or exit (i.e. never return to the caller)
     Return, // everything else
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum ExplicitSelf_ {
     SelfStatic,                                // no self
     SelfValue,                                 // `self`
@@ -919,7 +919,7 @@ pub enum ExplicitSelf_ {
 
 pub type ExplicitSelf = Spanned<ExplicitSelf_>;
 
-#[deriving(Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct Method {
     pub ident: Ident,
     pub attrs: Vec<Attribute>,
@@ -933,37 +933,37 @@ pub struct Method {
     pub vis: Visibility,
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct Mod {
     pub view_items: Vec<ViewItem> ,
     pub items: Vec<@Item> ,
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct ForeignMod {
     pub abis: AbiSet,
     pub view_items: Vec<ViewItem>,
     pub items: Vec<@ForeignItem>,
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct VariantArg {
     pub ty: P<Ty>,
     pub id: NodeId,
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum VariantKind {
     TupleVariantKind(Vec<VariantArg>),
     StructVariantKind(@StructDef),
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct EnumDef {
     pub variants: Vec<P<Variant>>,
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct Variant_ {
     pub name: Ident,
     pub attrs: Vec<Attribute>,
@@ -975,7 +975,7 @@ pub struct Variant_ {
 
 pub type Variant = Spanned<Variant_>;
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct PathListIdent_ {
     pub name: Ident,
     pub id: NodeId,
@@ -985,7 +985,7 @@ pub type PathListIdent = Spanned<PathListIdent_>;
 
 pub type ViewPath = Spanned<ViewPath_>;
 
-#[deriving(Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum ViewPath_ {
 
     // quux = foo::bar::baz
@@ -1002,7 +1002,7 @@ pub enum ViewPath_ {
     ViewPathList(Path, Vec<PathListIdent> , NodeId)
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct ViewItem {
     pub node: ViewItem_,
     pub attrs: Vec<Attribute>,
@@ -1010,7 +1010,7 @@ pub struct ViewItem {
     pub span: Span,
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum ViewItem_ {
     // ident: name used to refer to this crate in the code
     // optional (InternedString,StrStyle): if present, this is a location
@@ -1026,14 +1026,14 @@ pub type Attribute = Spanned<Attribute_>;
 // Distinguishes between Attributes that decorate items and Attributes that
 // are contained as statements within items. These two cases need to be
 // distinguished for pretty-printing.
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum AttrStyle {
     AttrOuter,
     AttrInner,
 }
 
 // doc-comments are promoted to attributes that have is_sugared_doc = true
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct Attribute_ {
     pub style: AttrStyle,
     pub value: @MetaItem,
@@ -1047,13 +1047,13 @@ pub struct Attribute_ {
   If this impl is an ItemImpl, the impl_id is redundant (it could be the
   same as the impl's node id).
  */
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct TraitRef {
     pub path: Path,
     pub ref_id: NodeId,
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum Visibility {
     Public,
     Private,
@@ -1069,7 +1069,7 @@ impl Visibility {
     }
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct StructField_ {
     pub kind: StructFieldKind,
     pub id: NodeId,
@@ -1079,7 +1079,7 @@ pub struct StructField_ {
 
 pub type StructField = Spanned<StructField_>;
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum StructFieldKind {
     NamedField(Ident, Visibility),
     UnnamedField(Visibility), // element of a tuple-like struct
@@ -1094,7 +1094,7 @@ impl StructFieldKind {
     }
 }
 
-#[deriving(Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct StructDef {
     pub fields: Vec<StructField>, /* fields, not including ctor */
     /* ID of the constructor. This is only used for tuple- or enum-like
@@ -1106,7 +1106,7 @@ pub struct StructDef {
   FIXME (#3300): Should allow items to be anonymous. Right now
   we just use dummy names for anon items.
  */
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct Item {
     pub ident: Ident,
     pub attrs: Vec<Attribute>,
@@ -1116,7 +1116,7 @@ pub struct Item {
     pub span: Span,
 }
 
-#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum Item_ {
     ItemStatic(P<Ty>, Mutability, @Expr),
     ItemFn(P<FnDecl>, Purity, AbiSet, Generics, P<Block>),
@@ -1134,7 +1134,7 @@ pub enum Item_ {
     ItemMac(Mac),
 }
 
-#[deriving(Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub struct ForeignItem {
     pub ident: Ident,
     pub attrs: Vec<Attribute>,
@@ -1144,7 +1144,7 @@ pub struct ForeignItem {
     pub vis: Visibility,
 }
 
-#[deriving(Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum ForeignItem_ {
     ForeignItemFn(P<FnDecl>, Generics),
     ForeignItemStatic(P<Ty>, /* is_mutbl */ bool),
@@ -1153,7 +1153,7 @@ pub enum ForeignItem_ {
 // The data we save and restore about an inlined item or method.  This is not
 // part of the AST that we parse from a file, but it becomes part of the tree
 // that we trans.
-#[deriving(Eq, TotalEq, Encodable, Decodable, Hash)]
+#[deriving(Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum InlinedItem {
     IIItem(@Item),
     IIMethod(DefId /* impl id */, bool /* is provided */, @Method),
