@@ -6,7 +6,7 @@ cfg.bin: cfg.rs cfg/*.rs $(RUSTC)
 	$(RUSTC) --debuginfo 2 cfg.rs -o $@
 
 ./objdir-dbgopt/x86_64-apple-darwin/stage2/bin/rustc: $(RUSTC_SRC)
-	make -C ./objdir-dbgopt/
+	remake --trace -j8 -C ./objdir-dbgopt/
 
 smoke-test: cfg.bin
-	./cfg.bin
+	RUST_LOG=rustc,cfg ./cfg.bin
