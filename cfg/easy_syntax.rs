@@ -2,8 +2,8 @@ extern crate getopts;
 extern crate syntax;
 extern crate rustc;
 
-use std::cell::RefCell;
-use collections::hashmap::HashMap;
+// use std::cell::RefCell;
+// use collections::hashmap::HashMap;
 use syntax::ast;
 use syntax::ast_map;
 use syntax::codemap;
@@ -12,19 +12,24 @@ use syntax::parse::token;
 use syntax::print::pprust;
 use rustc::driver::session;
 use rustc::driver::driver;
-use rustc::middle::lang_items::LanguageItems;
-use rustc::middle::region;
-use rustc::middle::ty;
-use rustc::util::nodemap;
+use rustc::metadata::creader::Loader;
+// use rustc::middle::lang_items::LanguageItems;
+// use rustc::middle::region;
+// use rustc::middle::ty;
+// use rustc::util::nodemap;
 
-struct AddNodeIds {
-    sess: session::Session
-}
+// struct FoldNoOp;
+// impl ast_map::FoldOps for FoldNoOp { }
 
+#[cfg(off)]
+struct AddNodeIds { sess: session::Session }
+
+#[cfg(off)]
 impl AddNodeIds {
-    fn new(sess: session::Session) -> AddNodeIds { AddNodeIds { sess: sess } }
+  fn new(sess: session::Session) -> AddNodeIds { AddNodeIds { sess: sess } }
 }
 
+#[cfg(off)]
 impl ast_map::FoldOps for AddNodeIds {
     fn new_id(&self, _old_id: ast::NodeId) -> ast::NodeId {
         let i = self.sess.next_node_id();
@@ -33,17 +38,18 @@ impl ast_map::FoldOps for AddNodeIds {
     }
 }
 
-pub fn mk_context() -> (AddNodeIds, ty::ctxt) {
-    fn hm<V>() -> nodemap::NodeMap<V> {
-        nodemap::NodeMap::new()
-    }
+pub trait MkContextArg {
+    fn to_crate(self) -> ast::Crate;
+}
 
-    let matches = getopts::getopts(&[], driver::optgroups().as_slice());
-    let matches = matches.ok().unwrap();
-    let sessopts = driver::build_session_options(&matches);
-    let sess = driver::build_session(sessopts, None);
-    let dm = @RefCell::new(HashMap::with_hasher(nodemap::FnvHasher));
-    let crate_ = ast::Crate {
+impl MkContextArg for ast::Crate {
+    fn to_crate(self) -> ast::Crate { self }
+}
+
+#[cfg(off)]
+impl MkContextArg for () {
+    fn to_crate(self) -> ast::Crate {
+        ast::Crate {
             module: ast::Mod {view_items: vec!(), items: vec!()},
             attrs: vec!(),
             config: vec!(),
@@ -52,17 +58,57 @@ pub fn mk_context() -> (AddNodeIds, ty::ctxt) {
                 hi: codemap::BytePos(20),
                 expn_info: None,
             },
-    };
-    let add_node_ids        = AddNodeIds::new(sess);
-    let (crate_, amap)      = ast_map::map_crate(crate_, add_node_ids);
-    let freevars : nodemap::NodeMap<rustc::middle::freevars::freevar_info> = hm();
-    let named_region_map    = @RefCell::new(hm());
-    let region_paramd_items = region::resolve_crate(sess, &crate_);
-    let lang_items          = @LanguageItems::new();
+        }
+    }
+}
 
-    let tcx = ty::mk_ctxt(sess, dm, named_region_map, amap, freevars,
-                          region_paramd_items, lang_items);
-    (add_node_ids, tcx)
+pub fn mk_context<A:MkContextArg>(arg:A) -> (session::Session,
+                                             ast::Crate,
+                                             ast_map::Map) {
+    // fn hm<V>() -> nodemap::NodeMap<V> { nodemap::NodeMap::new() }
+
+    let matches = getopts::getopts
+        (&[~"-Z", ~"time-passes",
+           ~"-Z", ~"ast-json-noexpand"],
+         driver::optgroups().as_slice());
+    let matches = matches.ok().unwrap();
+    println!("matches: {:?}", matches);
+    let sessopts = driver::build_session_options(&matches);
+
+
+    let sess = {
+        // driver::build_session(sessopts, None)
+        let sopts = sessopts;
+        let local_crate_source_file = None;
+
+        let codemap = @codemap::CodeMap::new();
+        let diagnostic_handler =
+            syntax::diagnostic::default_handler();
+        let span_diagnostic_handler =
+            syntax::diagnostic::mk_span_handler(diagnostic_handler, codemap);
+
+        driver::build_session_(sopts, local_crate_source_file, codemap, span_diagnostic_handler)
+    };
+
+    let crate_ = arg.to_crate();
+
+    // let add_node_ids        = AddNodeIds::new(sess);
+    // let fold_no_op          = FoldNoOp;
+    // let freevars : nodemap::NodeMap<rustc::middle::freevars::freevar_info> = hm();
+    // let region_paramd_items = region::resolve_crate(sess, &crate_);
+    // let lang_items          = @LanguageItems::new();
+
+    let loader = &mut Loader::new(sess);
+
+    let (crate_, amap)      = driver::phase_2_configure_and_expand(sess,
+                                                                   loader,
+                                                                   crate_);
+    // let (crate_, amap)      = ast_map::map_crate(crate_, add_node_ids);
+
+    // let named_region_map    = @RefCell::new(hm());
+    // let dm = @RefCell::new(HashMap::with_hasher(nodemap::FnvHasher));
+    // let tcx = ty::mk_ctxt(sess, dm, named_region_map, amap, freevars, region_paramd_items, lang_items);
+    (sess, crate_, amap)
 }
 
 pub trait SyntaxToStr {

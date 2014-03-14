@@ -602,16 +602,18 @@ impl<'a> CFGBuilder<'a> {
 
     fn add_dummy_node(&mut self, preds: &[CFGIndex]) -> CFGIndex {
         let _e = self.enter("CFGBuilder.add_dummy_node(preds)");
-        self.add_node(0, preds)
+        let ret = self.add_node(ast::DUMMY_NODE_ID, preds);
+        ret
     }
 
     fn add_node(&mut self, id: ast::NodeId, preds: &[CFGIndex]) -> CFGIndex {
         let msg = format!("CFGBuilder.add_node(id, preds) id: {}", id);
         let _e = self.enter(msg);
-        assert!(id != ast::DUMMY_NODE_ID);
-        assert!(!self.exit_map.contains_key(&id));
         let node = self.graph.add_node(CFGNodeData {id: id});
-        self.exit_map.insert(id, node);
+        if id != ast::DUMMY_NODE_ID {
+            assert!(!self.exit_map.contains_key(&id));
+            self.exit_map.insert(id, node);
+        }
         for &pred in preds.iter() {
             self.add_contained_edge(pred, node);
         }

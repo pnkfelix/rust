@@ -9,13 +9,15 @@ extern crate syntax;
 extern crate rustc;
 
 use std::cell::RefCell;
-use std::cast;
+// use std::cast;
 use std::io;
 use std::io::{File};
 use std::vec_ng::Vec;
 use syntax::ast;
 use syntax::ast_map;
-use syntax::fold::Folder;
+use syntax::codemap;
+use syntax::opt_vec;
+use rustc::driver::driver;
 use rustc::middle;
 use rustc::util::nodemap;
 use cfg::easy_syntax;
@@ -30,6 +32,7 @@ mod cfg {
     pub mod graphviz;
 }
 
+#[cfg(off)]
 // TODO: add ast_map::Map::new fn, and replace this with that.
 fn mk_ast_map() -> ast_map::Map {
     // Hack: work around inability to construct due to privacy in ast_map by
@@ -41,68 +44,138 @@ fn mk_ast_map() -> ast_map::Map {
     unsafe { cast::transmute(map) }
 }
 
-struct NamedExpr {
+type Expr = @syntax::ast::Expr;
+
+#[deriving(Show)]
+struct Named<T> {
     name: ~str,
-    expr: @syntax::ast::Expr
+    val: T,
 }
 
 fn main() {
-    let e = NamedExpr{ name: ~"just_x",
-                       expr: quote_expr!((), { x }) };
-    process_expr(e);
-    let e = NamedExpr{ name: ~"x_t_y_e_z",
-                       expr: quote_expr!((), { if x { y } else { z } }) };
+    let e = Named::<Expr>{ name: ~"just_x",
+                           val: quote_expr!((), { let x = 3; x }) };
     process_expr(e);
 
-    let e = NamedExpr{ name: ~"x_send_foo",
-                       expr: quote_expr!((), { x.foo(y) }) };
+
+    let e = Named::<Expr>{ name: ~"if_x_then_call_y",
+                           val: quote_expr!((), { if x { y(); } }) };
     process_expr(e);
 
-    let e = NamedExpr{ name: ~"match_x",
-                       expr: quote_expr!((), { match x { Foo(a) => y,
-                                                         Bar(b) if w => z1,
-                                                         Bar(b) => z2,
-                                                         Baz(c) => z3, } }) };
+    let e = Named::<Expr>{ name: ~"if_x_then_y_else_z",
+                           val: quote_expr!((), { if x { y } else { z } }) };
     process_expr(e);
 
-    if false {
-        // does not work yet, getting:
-        // assertion failed: !self.exit_map.contains_key(&id)
-        let e = NamedExpr{ name: ~"while_x_y",
-                           expr: quote_expr!((), { while x { y(); } }) };
-        process_expr(e);
-    }
+    let e = Named::<Expr>{ name: ~"x_send_foo_of_y",
+                           val: quote_expr!((), { x.foo(y) }) };
+    process_expr(e);
+
+    let e = Named::<Expr>{ name: ~"match_x",
+                           val: quote_expr!((), { match x { Foo(a) => y,
+                                                             Bar(b) if w => z1,
+                                                             Bar(b) => z2,
+                                                             Baz(c) => z3, } }) };
+    process_expr(e);
+
+    let e = Named::<Expr>{ name: ~"while_x",
+                           val: quote_expr!((), { while x {      } }) };
+    process_expr(e);
+    let e = Named::<Expr>{ name: ~"while_x_call_y",
+                           val: quote_expr!((), { while x { y(); } }) };
+    process_expr(e);
+    let e = Named::<Expr>{ name: ~"while_x_if_call_y_break_else_call_z",
+                           val: quote_expr!((), { while x { if y() { break; }    z(); } }) };
+    process_expr(e);
+    let e = Named::<Expr>{ name: ~"while_x_if_call_y_loop_else_call_z",
+                           val: quote_expr!((), { while x { if y() { continue; } z(); } }) };
+    process_expr(e);
+    let e = Named::<Expr>{ name: ~"l_while_x_while_y_if_w_break_l_else_call_z",
+                           val: quote_expr!((), {
+                               'exit while x { while y { if w { break 'exit } z(); } }
+                           }) };
+    process_expr(e);
+
 }
 
-fn process_expr(e: NamedExpr) {
-    println!("expr pre-numbering: {:s}", e.expr.stx_to_str());
-    println!("expr pre-numbering rep: {:?}", e.expr);
-
-    let (add_node_ids, tcx) = easy_syntax::mk_context();
-
-    let map = mk_ast_map();
-    let e = {
-        let mut ctx = ast_map::Ctx {
-            map: &map,
-            parent: ast::CRATE_NODE_ID,
-            fold_ops: add_node_ids
+fn process_expr(e: Named<Expr>) {
+    let crate_ = {
+        let fn_decl : ast::P<ast::FnDecl> = ast::P(ast::FnDecl {
+            inputs: Vec::new(),
+            output: ast::P(ast::Ty {
+                id: ast::DUMMY_NODE_ID, node: ast::TyNil, span: codemap::DUMMY_SP
+            }),
+            cf: ast::Return,
+            variadic: false,
+        });
+        let block : ast::P<ast::Block> = ast::P(ast::Block {
+            view_items: vec!(),
+            stmts: vec!(),
+            expr: Some(e.val),
+            id: ast::DUMMY_NODE_ID,
+            rules: ast::DefaultBlock,
+            span: codemap::DUMMY_SP,
+            });
+        let item : @ast::Item = @ast::Item {
+            ident: ast::Ident {
+                name: syntax::parse::token::intern("main"),
+                ctxt: ast::EMPTY_CTXT,
+            },
+            attrs: vec!(),
+            id: ast::DUMMY_NODE_ID,
+            node: ast::ItemFn(fn_decl, ast::ImpureFn, syntax::abi::AbiSet::Rust(),
+                         ast::Generics { lifetimes: vec!(), ty_params: opt_vec::Empty },
+                         block),
+            vis: ast::Public,
+            span: codemap::DUMMY_SP,
         };
-
-        NamedExpr{ expr: ctx.fold_expr(e.expr), ..e }
+        let mod_ : ast::Mod = ast::Mod {
+            view_items: vec!(),
+            items: vec!(item),
+        };
+        let cc : ast::CrateConfig = vec!();
+        ast::Crate { module: mod_,
+                     attrs: vec!(codemap::Spanned {
+                         node: ast::Attribute_ {
+                             style: ast::AttrInner,
+                             value: @codemap::Spanned {
+                                 node: ast::MetaWord(syntax::parse::token::intern_and_get_ident("no_std")),
+                                 span: codemap::DUMMY_SP,
+                             },
+                             is_sugared_doc: false,
+                         },
+                         span: codemap::DUMMY_SP,
+                     }),
+                     config: cc,
+                     span: codemap::DUMMY_SP,
+        }
     };
-    println!("expr postnumbering: {:s}", e.expr.stx_to_str());
-    println!("expr postnumbering rep: {:?}", e);
+
+
+    println!("expr pre-analysis: {:s}", e.val.stx_to_str());
+    println!("expr pre-analysis rep: {}", e.val);
+
+    let (sess, crate_, amap) = easy_syntax::mk_context(crate_);
+
+    println!("expr crate built rep: {}", crate_);
+
+    let analysis = driver::phase_3_run_analysis_passes(sess,
+                                                       &crate_,
+                                                       amap);
+
+    println!("expr postanalysis: {:s}", e.val.stx_to_str());
+    println!("expr postanalysis: rep: {}", e);
 
     let method_map = @RefCell::new(nodemap::NodeMap::new());
 
-    match e.expr.node {
+    match e.val.node {
         ast::ExprBlock(b) => {
-            let cfg = middle::cfg::CFG::new(tcx, method_map, b);
+            let cfg = middle::cfg::CFG::new(analysis.ty_cx, method_map, b);
             println!("cfg: {:?}", cfg);
             let path = Path::new(e.name.as_slice() + ".dot");
             let mut file = File::open_mode(&path, io::Truncate, io::Write);
             let lcfg = LabelledCFG(e.name, cfg);
-            match cfg::graphviz::render(&map, & &lcfg, &mut file) {
+            match cfg::graphviz::render(&analysis.ty_cx.map,
+                                        & &lcfg, &mut file) {
                 Ok(()) => println!("rendered to {}", path.display()),
                 Err(err) => fail!("render failed {}", err)
             }
