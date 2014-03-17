@@ -48,7 +48,7 @@ pub struct Rc<T> {
 
 impl<T:fmt::Show> fmt::Show for Rc<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f.buf, "Rc({})", *self.borrow())
+        write!(f.buf, "Rc({})", *self.deref())
     }
 }
 

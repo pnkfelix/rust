@@ -6,6 +6,7 @@ extern crate rustc;
 // use collections::hashmap::HashMap;
 use syntax::ast;
 use syntax::ast_map;
+use syntax::attr;
 use syntax::codemap;
 use syntax::parse;
 use syntax::parse::token;
@@ -51,13 +52,19 @@ impl MkContextArg for () {
     fn to_crate(self) -> ast::Crate {
         ast::Crate {
             module: ast::Mod {view_items: vec!(), items: vec!()},
-            attrs: vec!(),
+            attrs: vec!(codemap::Spanned {
+                node: ast::Attribute_ {
+                    style: ast::AttrInner,
+                    value: @codemap::Spanned {
+                        node: MetaNameValue(from_str("crate_id", "easy_syntax_fake_crate")),
+                        span: codemap::DUMMY_SP,
+                    },
+                    is_sugared_doc: false,
+                },
+                span: codemap::DUMMY_SP,
+            }),
             config: vec!(),
-            span: codemap::Span {
-                lo: codemap::BytePos(10),
-                hi: codemap::BytePos(20),
-                expn_info: None,
-            },
+            span: codemap::DUMMY_SP,
         }
     }
 }
@@ -91,6 +98,18 @@ pub fn mk_context<A:MkContextArg>(arg:A) -> (session::Session,
     };
 
     let crate_ = arg.to_crate();
+    let crate_id = {
+        let attrs = crate_.attrs.as_slice();
+        println!("attrs: {}", attrs);
+        let crate_id_cand = match attr::first_attr_value_str_by_name(attrs, "crate_id") {
+            Some(s) => (),
+            None => fail!("crate in easy_syntax is supposed to have crate_id but did not"),
+        };
+        match attr::find_crateid(attrs) {
+            Some(s) => s,
+            None => fail!("easy_syntax encountered an invalid crate_id"),
+        }
+    };
 
     // let add_node_ids        = AddNodeIds::new(sess);
     // let fold_no_op          = FoldNoOp;
@@ -102,7 +121,8 @@ pub fn mk_context<A:MkContextArg>(arg:A) -> (session::Session,
 
     let (crate_, amap)      = driver::phase_2_configure_and_expand(sess,
                                                                    loader,
-                                                                   crate_);
+                                                                   crate_,
+                                                                   &crate_id);
     // let (crate_, amap)      = ast_map::map_crate(crate_, add_node_ids);
 
     // let named_region_map    = @RefCell::new(hm());
