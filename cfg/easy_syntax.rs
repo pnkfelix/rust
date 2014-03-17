@@ -94,14 +94,14 @@ pub fn mk_context<A:MkContextArg>(arg:A) -> (session::Session,
 
         struct SimpleEmitter;
         impl diagnostic::Emitter for SimpleEmitter {
-            fn emit(&mut self, cmsp: Option<(&codemap::CodeMap, codemap::Span)>,
+            fn emit(&mut self, _cmsp: Option<(&codemap::CodeMap, codemap::Span)>,
                     msg: &str, lvl: diagnostic::Level) {
-                writeln!(&mut io::stderr(), "{}: {}", lvl, msg);
+                (writeln!(&mut io::stderr(), "{}: {}", lvl, msg)).unwrap();
 
             }
-            fn custom_emit(&mut self, cm: &codemap::CodeMap,
+            fn custom_emit(&mut self, _cm: &codemap::CodeMap,
                            sp: codemap::Span, msg: &str, lvl: diagnostic::Level) {
-                writeln!(&mut io::stderr(), "{}: {}", lvl, msg);
+                (writeln!(&mut io::stderr(), "{}: {}", lvl, msg)).unwrap();
             }
         }
         let emitter = ~SimpleEmitter as ~diagnostic::Emitter;
@@ -119,8 +119,8 @@ pub fn mk_context<A:MkContextArg>(arg:A) -> (session::Session,
     let crate_id = {
         let attrs = crate_.attrs.as_slice();
         println!("attrs: {}", attrs);
-        let crate_id_cand = match attr::first_attr_value_str_by_name(attrs, "crate_id") {
-            Some(s) => (),
+        let _crate_id_cand = match attr::first_attr_value_str_by_name(attrs, "crate_id") {
+            Some(_) => (),
             None => fail!("crate in easy_syntax is supposed to have crate_id but did not"),
         };
         match attr::find_crateid(attrs) {
