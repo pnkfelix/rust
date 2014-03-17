@@ -134,17 +134,34 @@ fn process_expr(e: Named<Expr>) {
         };
         let cc : ast::CrateConfig = vec!();
         ast::Crate { module: mod_,
-                     attrs: vec!(codemap::Spanned {
-                         node: ast::Attribute_ {
-                             style: ast::AttrInner,
-                             value: @codemap::Spanned {
-                                 node: ast::MetaWord(syntax::parse::token::intern_and_get_ident("no_std")),
-                                 span: codemap::DUMMY_SP,
+                     attrs: vec!(
+                         codemap::Spanned {
+                             node: ast::Attribute_ {
+                                 style: ast::AttrInner,
+                                 value: @codemap::Spanned {
+                                     node: ast::MetaWord(syntax::parse::token::intern_and_get_ident("no_std")),
+                                     span: codemap::DUMMY_SP,
+                                 },
+                                 is_sugared_doc: false,
                              },
-                             is_sugared_doc: false,
+                             span: codemap::DUMMY_SP,
                          },
-                         span: codemap::DUMMY_SP,
-                     }),
+                         codemap::Spanned {
+                             node: ast::Attribute_ {
+                                 style: ast::AttrInner,
+                                 value: @codemap::Spanned {
+                                     node: ast::MetaNameValue(syntax::parse::token::intern_and_get_ident("crate_id"),
+                                                              codemap::Spanned {
+                                                                  node: ast::LitStr(syntax::parse::token::intern_and_get_ident("cfg_fake_crate"), ast::CookedStr),
+                                                                  span: codemap::DUMMY_SP,
+                                                              }),
+                                     span: codemap::DUMMY_SP,
+                                 },
+                                 is_sugared_doc: false,
+                             },
+                             span: codemap::DUMMY_SP,
+                         }
+                         ),
                      config: cc,
                      span: codemap::DUMMY_SP,
         }
@@ -165,7 +182,7 @@ fn process_expr(e: Named<Expr>) {
     println!("expr postanalysis: {:s}", e.val.stx_to_str());
     println!("expr postanalysis: rep: {}", e);
 
-    let method_map = @RefCell::new(nodemap::NodeMap::new());
+    let method_map = @RefCell::new(nodemap::FnvHashMap::new());
 
     match e.val.node {
         ast::ExprBlock(b) => {
