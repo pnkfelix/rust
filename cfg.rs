@@ -54,44 +54,58 @@ struct Named<T> {
 
 fn main() {
     let e = Named::<Expr>{ name: ~"just_x",
-                           val: quote_expr!((), { let x = 3; x }) };
+                           val: quote_expr!((), { let x = 3; x; }) };
     process_expr(e);
 
-
     let e = Named::<Expr>{ name: ~"if_x_then_call_y",
-                           val: quote_expr!((), { if x { y(); } }) };
+                           val: quote_expr!((), { let x = false; let y = ||{};
+                                                  if x { y(); } }) };
     process_expr(e);
 
     let e = Named::<Expr>{ name: ~"if_x_then_y_else_z",
-                           val: quote_expr!((), { if x { y } else { z } }) };
+                           val: quote_expr!((), { let (x,y,z) = (false,3,4);
+                                                  if x { y } else { z }; }) };
     process_expr(e);
 
     let e = Named::<Expr>{ name: ~"x_send_foo_of_y",
-                           val: quote_expr!((), { x.foo(y) }) };
+                           val: quote_expr!((), { struct X; impl X { fn foo(&self, y: int) {} }
+                                                  let (x,y) = (X,3); x.foo(y) }) };
     process_expr(e);
 
     let e = Named::<Expr>{ name: ~"match_x",
-                           val: quote_expr!((), { match x { Foo(a) => y,
-                                                             Bar(b) if w => z1,
-                                                             Bar(b) => z2,
-                                                             Baz(c) => z3, } }) };
+                           val: quote_expr!((), { enum E { Foo(int), Bar(int), Baz(int) }
+                                                  let (w,x,y,z1,z2,z3) = (false,Bar(3),4,5,6,7);
+                                                  match x { Foo(a) => y,
+                                                            Bar(b) if w => z1,
+                                                            Bar(b) => z2,
+                                                            Baz(c) => z3, }; }) };
     process_expr(e);
 
     let e = Named::<Expr>{ name: ~"while_x",
-                           val: quote_expr!((), { while x {      } }) };
+                           val: quote_expr!((), { let x = true;
+                                                  while x {      } }) };
     process_expr(e);
     let e = Named::<Expr>{ name: ~"while_x_call_y",
-                           val: quote_expr!((), { while x { y(); } }) };
+                           val: quote_expr!((), { let x = true; let y = ||{};
+                                                  while x { y(); } }) };
     process_expr(e);
     let e = Named::<Expr>{ name: ~"while_x_if_call_y_break_else_call_z",
-                           val: quote_expr!((), { while x { if y() { break; }    z(); } }) };
+                           val: quote_expr!((), { let x = true; let y = ||{true}; let z = ||{};
+                                                  while x { if y() { break; }    z(); } }) };
     process_expr(e);
     let e = Named::<Expr>{ name: ~"while_x_if_call_y_loop_else_call_z",
-                           val: quote_expr!((), { while x { if y() { continue; } z(); } }) };
+                           val: quote_expr!((), { let x = true; let y = ||{false}; let z = ||{};
+                                                  while x { if y() { continue; } z(); } }) };
+    process_expr(e);
+
+    let e = Named::<Expr>{ name: ~"l_while_x_break_l",
+                           val: quote_expr!((), { let x = true;
+                                                  'exit: loop { if x { break 'exit; } } }) };
     process_expr(e);
     let e = Named::<Expr>{ name: ~"l_while_x_while_y_if_w_break_l_else_call_z",
                            val: quote_expr!((), {
-                               'exit while x { while y { if w { break 'exit } z(); } }
+                               let (w,x,y) = (true, true, true); let z = ||{};
+                               'exit: loop { while y { if w && x { break 'exit; } z(); } }
                            }) };
     process_expr(e);
 
