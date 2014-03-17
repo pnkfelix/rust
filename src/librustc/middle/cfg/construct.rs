@@ -15,6 +15,7 @@ use middle::ty;
 use std::cell::RefCell;
 use syntax::ast;
 use syntax::ast_util;
+use syntax::parse::token;
 use util::nodemap::NodeMap;
 
 struct CFGBuilder<'a> {
@@ -654,7 +655,7 @@ impl<'a> CFGBuilder<'a> {
                 return *self.loop_scopes.last().unwrap();
             }
 
-            Some(_) => {
+            Some(the_label) => {
                 let _e = self.enter("CFGBuilder.find_scope(expr, label) Some(_)");
                 match self.tcx.def_map.borrow().find(&expr.id) {
                     Some(&ast::DefLabel(loop_id)) => {
@@ -671,7 +672,8 @@ impl<'a> CFGBuilder<'a> {
                     r => {
                         self.tcx.sess.span_bug(
                             expr.span,
-                            format!("bad entry `{:?}` in def_map for label", r));
+                            format!("bad entry `{:?}` in def_map for expr.id (`{}`) [unused input label `{} ({:?})`]",
+                                    r, expr.id, token::get_ident(the_label).get(), the_label));
                     }
                 }
             }
