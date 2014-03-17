@@ -2,12 +2,14 @@ extern crate getopts;
 extern crate syntax;
 extern crate rustc;
 
-// use std::cell::RefCell;
+use std::cell::{Cell,RefCell};
+use std::io;
 // use collections::hashmap::HashMap;
 use syntax::ast;
 use syntax::ast_map;
 use syntax::attr;
 use syntax::codemap;
+use syntax::diagnostic;
 use syntax::parse;
 use syntax::parse::token;
 use syntax::print::pprust;
@@ -89,10 +91,26 @@ pub fn mk_context<A:MkContextArg>(arg:A) -> (session::Session,
         let local_crate_source_file = None;
 
         let codemap = @codemap::CodeMap::new();
-        let diagnostic_handler =
-            syntax::diagnostic::default_handler();
+
+        struct SimpleEmitter;
+        impl diagnostic::Emitter for SimpleEmitter {
+            fn emit(&mut self, cmsp: Option<(&codemap::CodeMap, codemap::Span)>,
+                    msg: &str, lvl: diagnostic::Level) {
+                write!(&mut io::stderr(), "{}: {}", lvl, msg);
+
+            }
+            fn custom_emit(&mut self, cm: &codemap::CodeMap,
+                           sp: codemap::Span, msg: &str, lvl: diagnostic::Level) {
+                write!(&mut io::stderr(), "{}: {}", lvl, msg);
+            }
+        }
+        let emitter = ~SimpleEmitter as ~diagnostic::Emitter;
+        let diagnostic_handler = @diagnostic::Handler {
+            err_count: Cell::new(0),
+            emit: RefCell::new(emitter),
+        };
         let span_diagnostic_handler =
-            syntax::diagnostic::mk_span_handler(diagnostic_handler, codemap);
+            diagnostic::mk_span_handler(diagnostic_handler, codemap);
 
         driver::build_session_(sopts, local_crate_source_file, codemap, span_diagnostic_handler)
     };
