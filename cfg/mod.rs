@@ -19,19 +19,15 @@ use syntax::codemap;
 use syntax::opt_vec;
 use rustc::driver::driver;
 use rustc::util::nodemap;
-use cfg::easy_syntax;
-use cfg::easy_syntax::{QuoteCtxt, SyntaxToStr};
-use cfg::graphviz;
+use self::easy_syntax::{QuoteCtxt, SyntaxToStr};
 
 use rustc_cfg = rustc::middle::cfg;
 
 use N  = self::rustc_cfg::CFGNode;
 use E  = self::rustc_cfg::CFGEdge;
 
-mod cfg {
-    pub mod easy_syntax;
-    pub mod graphviz;
-}
+pub mod easy_syntax;
+pub mod graphviz;
 
 #[cfg(off)]
 // TODO: add ast_map::Map::new fn, and replace this with that.
@@ -207,7 +203,7 @@ fn process_expr(e: Named<Expr>) {
             let path = Path::new(e.name.as_slice() + ".dot");
             let mut file = File::open_mode(&path, io::Truncate, io::Write);
             let lcfg = LabelledCFG(e.name, cfg);
-            match cfg::graphviz::render(&analysis.ty_cx.map,
+            match graphviz::render(&analysis.ty_cx.map,
                                         & &lcfg, &mut file) {
                 Ok(()) => println!("rendered to {}", path.display()),
                 Err(err) => fail!("render failed {}", err)
