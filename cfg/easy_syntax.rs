@@ -96,12 +96,12 @@ pub fn mk_context<A:MkContextArg>(arg:A) -> (session::Session,
         impl diagnostic::Emitter for SimpleEmitter {
             fn emit(&mut self, cmsp: Option<(&codemap::CodeMap, codemap::Span)>,
                     msg: &str, lvl: diagnostic::Level) {
-                write!(&mut io::stderr(), "{}: {}", lvl, msg);
+                writeln!(&mut io::stderr(), "{}: {}", lvl, msg);
 
             }
             fn custom_emit(&mut self, cm: &codemap::CodeMap,
                            sp: codemap::Span, msg: &str, lvl: diagnostic::Level) {
-                write!(&mut io::stderr(), "{}: {}", lvl, msg);
+                writeln!(&mut io::stderr(), "{}: {}", lvl, msg);
             }
         }
         let emitter = ~SimpleEmitter as ~diagnostic::Emitter;

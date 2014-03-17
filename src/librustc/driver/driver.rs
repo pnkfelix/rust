@@ -297,13 +297,8 @@ pub fn phase_3_run_analysis_passes(sess: Session,
                           middle::lang_items::collect_language_items(krate, sess));
 
     let middle::resolve::CrateMap {
-        def_map: def_map,
-        exp_map2: exp_map2,
-        trait_map: trait_map,
-        external_exports: external_exports,
-        last_private_map: last_private_map
-    } =
-        time(time_passes, "resolution", (), |_|
+        def_map, exp_map2, trait_map, external_exports, last_private_map,
+    } = time(time_passes, "resolution", (), |_|
              middle::resolve::resolve_crate(sess, lang_items, krate));
 
     let named_region_map = time(time_passes, "lifetime resolution", (),

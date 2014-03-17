@@ -18,14 +18,15 @@ use syntax::ast_map;
 use syntax::codemap;
 use syntax::opt_vec;
 use rustc::driver::driver;
-use rustc::middle;
 use rustc::util::nodemap;
 use cfg::easy_syntax;
 use cfg::easy_syntax::{QuoteCtxt, SyntaxToStr};
 use cfg::graphviz;
 
-use N  = self::middle::cfg::CFGNode;
-use E  = self::middle::cfg::CFGEdge;
+use rustc_cfg = rustc::middle::cfg;
+
+use N  = self::rustc_cfg::CFGNode;
+use E  = self::rustc_cfg::CFGEdge;
 
 mod cfg {
     pub mod easy_syntax;
@@ -55,6 +56,11 @@ struct Named<T> {
 fn main() {
     let e = Named::<Expr>{ name: ~"just_x",
                            val: quote_expr!((), { let x = 3; x; }) };
+    process_expr(e);
+
+    let e = Named::<Expr>{ name: ~"l_while_x_break_l",
+                           val: quote_expr!((), { let x = true;
+                                                  'exit: loop { if x { break 'exit; } } }) };
     process_expr(e);
 
     let e = Named::<Expr>{ name: ~"if_x_then_call_y",
@@ -98,10 +104,6 @@ fn main() {
                                                   while x { if y() { continue; } z(); } }) };
     process_expr(e);
 
-    let e = Named::<Expr>{ name: ~"l_while_x_break_l",
-                           val: quote_expr!((), { let x = true;
-                                                  'exit: loop { if x { break 'exit; } } }) };
-    process_expr(e);
     let e = Named::<Expr>{ name: ~"l_while_x_while_y_if_w_break_l_else_call_z",
                            val: quote_expr!((), {
                                let (w,x,y) = (true, true, true); let z = ||{};
@@ -200,7 +202,7 @@ fn process_expr(e: Named<Expr>) {
 
     match e.val.node {
         ast::ExprBlock(b) => {
-            let cfg = middle::cfg::CFG::new(analysis.ty_cx, method_map, b);
+            let cfg = rustc_cfg::CFG::new(analysis.ty_cx, method_map, b);
             println!("cfg: {:?}", cfg);
             let path = Path::new(e.name.as_slice() + ".dot");
             let mut file = File::open_mode(&path, io::Truncate, io::Write);
@@ -218,10 +220,10 @@ fn process_expr(e: Named<Expr>) {
 
 struct LabelledCFG {
     label: ~str,
-    cfg: middle::cfg::CFG,
+    cfg: rustc_cfg::CFG,
 }
 
-fn LabelledCFG(label: ~str, cfg: middle::cfg::CFG) -> LabelledCFG {
+fn LabelledCFG(label: ~str, cfg: rustc_cfg::CFG) -> LabelledCFG {
     LabelledCFG{ label: label, cfg: cfg }
 }
 
