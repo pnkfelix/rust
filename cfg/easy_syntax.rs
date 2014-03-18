@@ -100,7 +100,7 @@ pub fn mk_context<A:MkContextArg>(arg:A) -> (session::Session,
 
             }
             fn custom_emit(&mut self, _cm: &codemap::CodeMap,
-                           sp: codemap::Span, msg: &str, lvl: diagnostic::Level) {
+                           _sp: codemap::Span, msg: &str, lvl: diagnostic::Level) {
                 (writeln!(&mut io::stderr(), "{}: {}", lvl, msg)).unwrap();
             }
         }
