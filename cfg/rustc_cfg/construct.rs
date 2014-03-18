@@ -8,17 +8,17 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use middle::cfg::*;
-use middle::graph;
-use middle::typeck;
-use middle::ty;
+use super::*;
+use rustc::middle::graph;
+use rustc::middle::typeck;
+use rustc::middle::ty;
 use std::vec_ng::Vec;
 use std::cell::RefCell;
 use syntax::ast;
 use syntax::ast_util;
 use syntax::opt_vec;
 use syntax::parse::token;
-use util::nodemap::NodeMap;
+use rustc::util::nodemap::NodeMap;
 
 struct CFGBuilder<'a> {
     tcx: ty::ctxt,
