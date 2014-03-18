@@ -21,6 +21,7 @@ use syntax::ast;
 use syntax::ast_map;
 use syntax::codemap;
 use syntax::opt_vec;
+use syntax::parse::token;
 use rustc::driver::driver;
 use rustc::util::nodemap;
 use self::easy_syntax::{QuoteCtxt, SyntaxToStr};
@@ -114,13 +115,17 @@ fn main() {
 
 }
 
+fn dum_span<A>(a: A) -> codemap::Spanned<A> {
+    codemap::Spanned { node: a, span: codemap::DUMMY_SP }
+}
+
 fn process_expr(e: Named<Expr>) {
     let crate_ = {
         let fn_decl : ast::P<ast::FnDecl> = ast::P(ast::FnDecl {
             inputs: Vec::new(),
-            output: ast::P(ast::Ty {
-                id: ast::DUMMY_NODE_ID, node: ast::TyNil, span: codemap::DUMMY_SP
-            }),
+            output: ast::P(ast::Ty { id: ast::DUMMY_NODE_ID,
+                                     node: ast::TyNil,
+                                     span: codemap::DUMMY_SP }),
             cf: ast::Return,
             variadic: false,
         });
@@ -134,14 +139,15 @@ fn process_expr(e: Named<Expr>) {
             });
         let item : @ast::Item = @ast::Item {
             ident: ast::Ident {
-                name: syntax::parse::token::intern("main"),
+                name: token::intern("main"),
                 ctxt: ast::EMPTY_CTXT,
             },
             attrs: vec!(),
             id: ast::DUMMY_NODE_ID,
             node: ast::ItemFn(fn_decl, ast::ImpureFn, syntax::abi::AbiSet::Rust(),
-                         ast::Generics { lifetimes: vec!(), ty_params: opt_vec::Empty },
-                         block),
+                              ast::Generics { lifetimes: vec!(),
+                                              ty_params: opt_vec::Empty },
+                              block),
             vis: ast::Public,
             span: codemap::DUMMY_SP,
         };
@@ -152,33 +158,21 @@ fn process_expr(e: Named<Expr>) {
         let cc : ast::CrateConfig = vec!();
         ast::Crate { module: mod_,
                      attrs: vec!(
-                         codemap::Spanned {
-                             node: ast::Attribute_ {
-                                 style: ast::AttrInner,
-                                 value: @codemap::Spanned {
-                                     node: ast::MetaWord(syntax::parse::token::intern_and_get_ident("no_std")),
-                                     span: codemap::DUMMY_SP,
-                                 },
-                                 is_sugared_doc: false,
-                             },
-                             span: codemap::DUMMY_SP,
-                         },
-                         codemap::Spanned {
-                             node: ast::Attribute_ {
-                                 style: ast::AttrInner,
-                                 value: @codemap::Spanned {
-                                     node: ast::MetaNameValue(syntax::parse::token::intern_and_get_ident("crate_id"),
-                                                              codemap::Spanned {
-                                                                  node: ast::LitStr(syntax::parse::token::intern_and_get_ident("cfg_fake_crate"), ast::CookedStr),
-                                                                  span: codemap::DUMMY_SP,
-                                                              }),
-                                     span: codemap::DUMMY_SP,
-                                 },
-                                 is_sugared_doc: false,
-                             },
-                             span: codemap::DUMMY_SP,
-                         }
-                         ),
+                         dum_span(ast::Attribute_ {
+                             style: ast::AttrInner,
+                             value: @dum_span(ast::MetaWord(
+                                 token::intern_and_get_ident("no_std"))),
+                             is_sugared_doc: false,
+                         }),
+                         dum_span (ast::Attribute_ {
+                             style: ast::AttrInner,
+                             value: @dum_span(ast::MetaNameValue(
+                                 token::intern_and_get_ident("crate_id"),
+                                 dum_span (ast::LitStr(
+                                     token::intern_and_get_ident("cfg_fake_crate"),
+                                     ast::CookedStr)))),
+                             is_sugared_doc: false,
+                         }) ),
                      config: cc,
                      span: codemap::DUMMY_SP,
         }
