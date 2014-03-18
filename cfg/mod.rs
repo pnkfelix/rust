@@ -62,8 +62,8 @@ fn main() {
     process_expr(e);
 
     let e = Named::<Expr>{ name: ~"l_while_x_break_l",
-                           val: quote_expr!((), { let x = true;
-                                                  'exit: loop { if x { break 'exit; } } }) };
+                           val: quote_expr!((), { let (x,y) = (true,());
+                                                  'exit: loop { if x { break 'exit; } } y }) };
     process_expr(e);
 
     let e = Named::<Expr>{ name: ~"if_x_then_call_y",
