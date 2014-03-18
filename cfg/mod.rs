@@ -2,11 +2,15 @@
 #[feature(macro_rules)];
 #[feature(managed_boxes)];
 #[feature(quote)];
+#[feature(globs)];
+#[feature(phase)];
 
 extern crate collections;
 extern crate getopts;
-extern crate syntax;
+#[phase(syntax, link)] extern crate log;
+extern crate log;
 extern crate rustc;
+extern crate syntax;
 
 use std::cell::RefCell;
 // use std::cast;
@@ -21,10 +25,11 @@ use rustc::driver::driver;
 use rustc::util::nodemap;
 use self::easy_syntax::{QuoteCtxt, SyntaxToStr};
 
-use rustc_cfg = rustc::middle::cfg;
-
 use N  = self::rustc_cfg::CFGNode;
 use E  = self::rustc_cfg::CFGEdge;
+
+// use rustc_cfg = rustc::middle::cfg;
+mod rustc_cfg;
 
 pub mod easy_syntax;
 pub mod graphviz;

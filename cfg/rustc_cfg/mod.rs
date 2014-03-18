@@ -15,12 +15,12 @@ Uses `Graph` as the underlying representation.
 
 */
 
-use middle::graph;
-use middle::ty;
-use middle::typeck;
+use rustc::middle::graph;
+use rustc::middle::ty;
+use rustc::middle::typeck;
 use syntax::ast;
 use syntax::opt_vec::OptVec;
-use util::nodemap::NodeMap;
+use rustc::util::nodemap::NodeMap;
 
 mod construct;
 
