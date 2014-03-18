@@ -179,6 +179,12 @@ fn process_expr(e: Named<Expr>) {
         }
     };
 
+    fn crate_to_expr<'a>(crate_: &'a ast::Crate) -> Expr {
+        match crate_.module.items.get(0).node {
+            ast::ItemFn(_, _, _, _, block) => block.expr.unwrap(),
+            _ => fail!("crate does not have form expected by `process_expr`"),
+        }
+    }
 
     println!("expr pre-analysis: {:s}", e.val.stx_to_str());
     println!("expr pre-analysis rep: {}", e.val);
@@ -191,10 +197,12 @@ fn process_expr(e: Named<Expr>) {
                                                        &crate_,
                                                        amap);
 
+    println!("expr post phase 3: {}", crate_);
+    let e = Named { name: e.name, val: crate_to_expr(&crate_) };
     println!("expr postanalysis: {:s}", e.val.stx_to_str());
     println!("expr postanalysis: rep: {}", e);
 
-    let method_map = @RefCell::new(nodemap::FnvHashMap::new());
+    let method_map = analysis.maps.method_map;
 
     match e.val.node {
         ast::ExprBlock(b) => {
