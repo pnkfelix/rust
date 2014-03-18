@@ -30,6 +30,7 @@ use N  = self::rustc_cfg::CFGNode;
 use E  = self::rustc_cfg::CFGEdge;
 
 // use rustc_cfg = rustc::middle::cfg;
+#[allow(dead_code)]
 mod rustc_cfg;
 
 pub mod easy_syntax;
