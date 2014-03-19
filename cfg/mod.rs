@@ -12,7 +12,7 @@ extern crate log;
 extern crate rustc;
 extern crate syntax;
 
-use std::cell::RefCell;
+// use std::cell::RefCell;
 // use std::cast;
 use std::io;
 use std::io::{File};
@@ -23,11 +23,11 @@ use syntax::codemap;
 use syntax::opt_vec;
 use syntax::parse::token;
 use rustc::driver::driver;
-use rustc::util::nodemap;
+// use rustc::util::nodemap;
 use self::easy_syntax::{QuoteCtxt, SyntaxToStr};
 
-use N  = self::rustc_cfg::CFGNode;
-use E  = self::rustc_cfg::CFGEdge;
+use N      = self::rustc_cfg::CFGNode;
+use E      = self::rustc_cfg::CFGEdge;
 
 // use rustc_cfg = rustc::middle::cfg;
 #[allow(dead_code)]
@@ -62,8 +62,10 @@ fn main() {
     process_expr(e);
 
     let e = Named::<Expr>{ name: ~"l_while_x_break_l",
-                           val: quote_expr!((), { let (x,y) = (true,());
-                                                  'exit: loop { if x { break 'exit; } } y }) };
+                           val: quote_expr!((), {
+                               let (v,w,x,y,z) = (true,(),(),(),());
+                               'exit: loop { if v { w; break 'exit; x; } y }
+                               z }) };
     process_expr(e);
 
     let e = Named::<Expr>{ name: ~"if_x_then_call_y",
@@ -107,10 +109,10 @@ fn main() {
                                                   while x { if y() { continue; } z(); } }) };
     process_expr(e);
 
-    let e = Named::<Expr>{ name: ~"l_while_x_while_y_if_w_break_l_else_call_z",
+    let e = Named::<Expr>{ name: ~"l_loop_while_v_if_w_and_x__break_l_else_call_z",
                            val: quote_expr!((), {
-                               let (w,x,y) = (true, true, true); let z = ||{};
-                               'exit: loop { while y { if w && x { break 'exit; } z(); } }
+                               let (v,w,x,y) = (true, true, true, true); let z = ||{};
+                               'exit: loop { while v { if w && x { break 'exit; y } z(); } }
                            }) };
     process_expr(e);
 
@@ -211,7 +213,7 @@ fn process_expr(e: Named<Expr>) {
             let path = Path::new(e.name.as_slice() + ".dot");
             let mut file = File::open_mode(&path, io::Truncate, io::Write);
             let lcfg = LabelledCFG(e.name, cfg);
-            match graphviz::render(&analysis.ty_cx.map,
+            match graphviz::render(&(&analysis.ty_cx.map, &lcfg.cfg),
                                         & &lcfg, &mut file) {
                 Ok(()) => println!("rendered to {}", path.display()),
                 Err(err) => fail!("render failed {}", err)
@@ -231,26 +233,34 @@ fn LabelledCFG(label: ~str, cfg: rustc_cfg::CFG) -> LabelledCFG {
     LabelledCFG{ label: label, cfg: cfg }
 }
 
-impl<'a> graphviz::Label<ast_map::Map> for &'a LabelledCFG {
-    fn name(&self, _c: &ast_map::Map) -> ~str {
+type LabelContext<'a,'b> = (&'a ast_map::Map, &'b rustc_cfg::CFG);
+
+impl<'a,'b,'c> graphviz::Label<LabelContext<'a,'b>> for &'c LabelledCFG {
+    fn name(&self, &(_c, _): &LabelContext) -> ~str {
         format!("\"{:s}\"", self.label.escape_default())
     }
 }
 
-impl graphviz::Label<ast_map::Map> for N {
-    fn name(&self, _c: &ast_map::Map) -> ~str {
-        format!("N{}", self.data.id)
+impl<'a,'b> graphviz::Label<LabelContext<'a,'b>> for N {
+    fn name(&self, _c: &LabelContext) -> ~str {
+        let nodes = _c.ref1().graph.all_nodes();
+        // format!("N{}", self.data.id)
+        format!("N{}", nodes.iter().enumerate().find(|&(_,p)| {
+            let me = self as *N;
+            let curr = p as *N;
+            me == curr
+        }).unwrap().val0())
     }
-    fn text(&self, c: &ast_map::Map) -> ~str {
-        c.node_to_str(self.data.id)
+    fn text(&self, c: &LabelContext) -> ~str {
+        c.ref0().node_to_str(self.data.id)
     }
 }
 
-impl graphviz::Label<ast_map::Map> for E {
-    fn name(&self, _c: &ast_map::Map) -> ~str {
+impl<'a,'b> graphviz::Label<LabelContext<'a,'b>> for E {
+    fn name(&self, _c: &LabelContext) -> ~str {
         format!("E")
     }
-    fn text(&self, c: &ast_map::Map) -> ~str {
+    fn text(&self, c: &LabelContext) -> ~str {
         let mut label = ~"";
         let mut put_one = false;
         for &node_id in self.data.exiting_scopes.iter() {
@@ -259,7 +269,7 @@ impl graphviz::Label<ast_map::Map> for E {
             } else {
                 put_one = true;
             }
-            label = label + format!("{}", c.node_to_str(node_id));
+            label = label + format!("{}", c.ref0().node_to_str(node_id));
         }
         label
     }
