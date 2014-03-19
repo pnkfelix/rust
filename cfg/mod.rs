@@ -57,31 +57,32 @@ struct Named<T> {
 }
 
 fn main() {
+    let mut samples = vec!();
     let e = Named::<Expr>{ name: ~"just_x",
                            val: quote_expr!((), { let x = 3; x; }) };
-    process_expr(e);
+    samples.push(e);
 
     let e = Named::<Expr>{ name: ~"l_while_x_break_l",
                            val: quote_expr!((), {
                                let (v,w,x,y,z) = (true,(),(),(),());
                                'exit: loop { if v { w; break 'exit; x; } y }
                                z }) };
-    process_expr(e);
+    samples.push(e);
 
     let e = Named::<Expr>{ name: ~"if_x_then_call_y",
                            val: quote_expr!((), { let x = false; let y = ||{};
                                                   if x { y(); } }) };
-    process_expr(e);
+    samples.push(e);
 
     let e = Named::<Expr>{ name: ~"if_x_then_y_else_z",
                            val: quote_expr!((), { let (x,y,z) = (false,3,4);
                                                   if x { y } else { z }; }) };
-    process_expr(e);
+    samples.push(e);
 
     let e = Named::<Expr>{ name: ~"x_send_foo_of_y",
                            val: quote_expr!((), { struct X; impl X { fn foo(&self, y: int) {} }
                                                   let (x,y) = (X,3); x.foo(y) }) };
-    process_expr(e);
+    samples.push(e);
 
     let e = Named::<Expr>{ name: ~"match_x",
                            val: quote_expr!((), { enum E { Foo(int), Bar(int), Baz(int) }
@@ -90,24 +91,24 @@ fn main() {
                                                             Bar(b) if w => z1,
                                                             Bar(b) => z2,
                                                             Baz(c) => z3, }; }) };
-    process_expr(e);
+    samples.push(e);
 
     let e = Named::<Expr>{ name: ~"while_x",
                            val: quote_expr!((), { let x = true;
                                                   while x {      } }) };
-    process_expr(e);
+    samples.push(e);
     let e = Named::<Expr>{ name: ~"while_x_call_y",
                            val: quote_expr!((), { let x = true; let y = ||{};
                                                   while x { y(); } }) };
-    process_expr(e);
+    samples.push(e);
     let e = Named::<Expr>{ name: ~"while_x_if_call_y_break_else_call_z",
                            val: quote_expr!((), { let x = true; let y = ||{true}; let z = ||{};
                                                   while x { if y() { break; }    z(); } }) };
-    process_expr(e);
+    samples.push(e);
     let e = Named::<Expr>{ name: ~"while_x_if_call_y_loop_else_call_z",
                            val: quote_expr!((), { let x = true; let y = ||{false}; let z = ||{};
                                                   while x { if y() { continue; } z(); } }) };
-    process_expr(e);
+    samples.push(e);
 
     let e = Named::<Expr>{ name: ~"l_loop_while_v_if_w_and_x__break_l_else_call_z",
                            val: quote_expr!((), {
@@ -117,8 +118,11 @@ fn main() {
                                'exit: loop { while v { if w && x { break 'exit; y } z(); } }
                                omega();
                            }) };
-    process_expr(e);
+    samples.push(e);
 
+    for e in samples.move_iter().take(1) {
+        process_expr(e);
+    }
 }
 
 fn dum_span<A>(a: A) -> codemap::Spanned<A> {
@@ -258,7 +262,7 @@ impl<'a,'b> graphviz::Label<LabelContext<'a,'b>> for N {
             // Apparently left-alignment applies to line that precedes
             // \l, not line that follows; add \l at end if not already
             // present, ensuring last line left-aligned as well.
-            let mut last_two : ~[_] = s.chars().rev().take(2).collect();
+            let mut last_two : Vec<_> = s.chars().rev().take(2).collect();
             last_two.reverse();
             if last_two.as_slice() != ['\\', 'l'] {
                 s.push_str("\\l");
@@ -289,8 +293,8 @@ impl<'a,'b> graphviz::Label<LabelContext<'a,'b>> for E {
 }
 
 impl<'a> graphviz::GraphWalk<'a, N, E> for &'a LabelledCFG {
-    fn nodes(&self) -> ~[&'a N] { self.cfg.graph.all_nodes().iter().collect() }
-    fn edges(&self) -> ~[&'a E] { self.cfg.graph.all_edges().iter().collect() }
+    fn nodes(&self) -> Vec<&'a N> { self.cfg.graph.all_nodes().iter().collect() }
+    fn edges(&self) -> Vec<&'a E> { self.cfg.graph.all_edges().iter().collect() }
     fn source(&self, edge:&'a E) -> &'a N {
         self.cfg.graph.node(edge.source())
     }

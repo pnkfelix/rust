@@ -1,4 +1,5 @@
 use std::io;
+use std::vec_ng::Vec;
 
 pub enum LabelText {
     LabelStr(~str),
@@ -48,8 +49,8 @@ impl LabelText {
 
 // All of the type parameters should be associated items. :(
 pub trait GraphWalk<'a, N, E> {
-    fn nodes(&self) -> ~[&'a N];
-    fn edges(&self) -> ~[&'a E];
+    fn nodes(&self) -> Vec<&'a N>;
+    fn edges(&self) -> Vec<&'a E>;
     fn source(&self, edge:&'a E) -> &'a N;
     fn target(&self, edge:&'a E) -> &'a N;
 }
@@ -77,7 +78,7 @@ pub fn render<'a,C,N:Label<C>,E:Label<C>,G:Label<C>+GraphWalk<'a,N,E>,W:Writer>(
                          ";"]));
     }
 
-    let edges : ~[&'a E] = g.edges();
+    let edges : Vec<&'a E> = g.edges();
     for &e in edges.iter() {
         let escaped_label = e.text(c).escape();
         try!(w.write_str("    "));

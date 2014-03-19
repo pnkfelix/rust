@@ -81,7 +81,7 @@ pub fn mk_context<A:MkContextArg>(arg:A) -> (session::Session,
            ~"-Z", ~"ast-json-noexpand"],
          driver::optgroups().as_slice());
     let matches = matches.ok().unwrap();
-    println!("matches: {:?}", matches);
+    // println!("matches: {:?}", matches);
     let sessopts = driver::build_session_options(&matches);
 
 
