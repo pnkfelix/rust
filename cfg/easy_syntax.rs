@@ -118,7 +118,6 @@ pub fn mk_context<A:MkContextArg>(arg:A) -> (session::Session,
     let crate_ = arg.to_crate();
     let crate_id = {
         let attrs = crate_.attrs.as_slice();
-        println!("attrs: {}", attrs);
         let _crate_id_cand = match attr::first_attr_value_str_by_name(attrs, "crate_id") {
             Some(_) => (),
             None => fail!("crate in easy_syntax is supposed to have crate_id but did not"),

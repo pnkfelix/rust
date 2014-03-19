@@ -192,20 +192,15 @@ fn process_expr(e: Named<Expr>) {
     }
 
     println!("expr pre-analysis: {:s}", e.val.stx_to_str());
-    println!("expr pre-analysis rep: {}", e.val);
 
     let (sess, crate_, amap) = easy_syntax::mk_context(crate_);
-
-    println!("expr crate built rep: {}", crate_);
 
     let analysis = driver::phase_3_run_analysis_passes(sess,
                                                        &crate_,
                                                        amap);
 
-    println!("expr post phase 3: {}", crate_);
     let e = Named { name: e.name, val: crate_to_expr(&crate_) };
     println!("expr postanalysis: {:s}", e.val.stx_to_str());
-    println!("expr postanalysis: rep: {}", e);
 
     let method_map = analysis.maps.method_map;
 
