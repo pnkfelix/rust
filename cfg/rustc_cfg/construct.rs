@@ -114,38 +114,31 @@ impl Clone for Flow {
     }
 }
 
-type Pred = Flow;
 fn ret(idx: CFGIndex) -> Flow {
     Normal(idx)
 }
 
-impl Flow {
-    fn to_pred(&self) -> Pred {
-        self.clone()
-    }
-}
-
 impl<'a> CFGBuilder<'a> {
-    fn add_succ_node(&mut self, pred: Pred, id: ast::NodeId) -> Flow {
+    fn add_succ_node(&mut self, pred: Flow, id: ast::NodeId) -> Flow {
         match pred {
             Normal(exit) => Normal(self.add_node(id, [exit])),
             Jumped(_)    => Normal(self.add_node::<CFGIndex>(id, [])),
         }
     }
-    fn block(&mut self, blk: &ast::Block, pred: Pred) -> Flow {
+    fn block(&mut self, blk: &ast::Block, pred: Flow) -> Flow {
         let m = format!("CFGBuilder.block(blk, pred)");
         let _e = self.enter(m);
         let mut stmts_exit = pred;
         for &stmt in blk.stmts.iter() {
             let flow = self.stmt(stmt, stmts_exit);
-            stmts_exit = flow.to_pred();
+            stmts_exit = flow;
         }
 
         let expr_exit = self.opt_expr(blk.expr, stmts_exit);
         self.add_succ_node(expr_exit, blk.id)
     }
 
-    fn stmt(&mut self, stmt: @ast::Stmt, pred: Pred) -> Flow {
+    fn stmt(&mut self, stmt: @ast::Stmt, pred: Flow) -> Flow {
         let m = format!("CFGBuilder.stmt(stmt, pred)");
         let _e = self.enter(m);
         match stmt.node {
@@ -163,13 +156,13 @@ impl<'a> CFGBuilder<'a> {
         }
     }
 
-    fn decl(&mut self, decl: @ast::Decl, pred: Pred) -> Flow {
+    fn decl(&mut self, decl: @ast::Decl, pred: Flow) -> Flow {
         let m = format!("CFGBuilder.decl(decl, pred)");
         let _e = self.enter(m);
         match decl.node {
             ast::DeclLocal(local) => {
                 let init_exit = self.opt_expr(local.init, pred);
-                self.pat(local.pat, init_exit.to_pred())
+                self.pat(local.pat, init_exit)
             }
 
             ast::DeclItem(_) => {
@@ -178,7 +171,7 @@ impl<'a> CFGBuilder<'a> {
         }
     }
 
-    fn pat(&mut self, pat: @ast::Pat, pred: Pred) -> Flow {
+    fn pat(&mut self, pat: @ast::Pat, pred: Flow) -> Flow {
         let m = format!("CFGBuilder.pat(pat, pred");
         let _e = self.enter(m);
         match pat.node {
@@ -224,7 +217,7 @@ impl<'a> CFGBuilder<'a> {
 
     fn pats_all<I: Iterator<@ast::Pat>>(&mut self,
                                         pats: I,
-                                        pred: Pred) -> Flow {
+                                        pred: Flow) -> Flow {
         //! Handles case where all of the patterns must match.
         let m = format!("CFGBuilder.pats_all(pats, pred)");
         let _e = self.enter(m);
@@ -235,7 +228,7 @@ impl<'a> CFGBuilder<'a> {
 
     fn pats_any(&mut self,
                 pats: &[@ast::Pat],
-                pred: Pred) -> Flow {
+                pred: Flow) -> Flow {
         //! Handles case where just one of the patterns must match.
         let m = format!("CFGBuilder.pats_any(pats, pred)");
         let _e = self.enter(m);
@@ -266,7 +259,7 @@ impl<'a> CFGBuilder<'a> {
     /// `expr`; (in other words, `pred` should always be a predecessor
     /// of the generated node, but it is not always an immediate
     /// predecessor)
-    fn expr(&mut self, expr: @ast::Expr, pred: Pred) -> Flow {
+    fn expr(&mut self, expr: @ast::Expr, pred: Flow) -> Flow {
         let m = format!("CFGBuilder.expr(expr, pred) id: {}", expr.id);
         let _e = self.enter(m);
 
@@ -657,7 +650,7 @@ impl<'a> CFGBuilder<'a> {
 
     fn call(&mut self,
             call_expr: @ast::Expr,
-            pred: Pred,
+            pred: Flow,
             func_or_rcvr: @ast::Expr,
             args: &[@ast::Expr]) -> Flow {
         let _e = self.enter("CFGBuilder.call(call_expr, pred, func_or_rcvr, args)");
@@ -665,14 +658,14 @@ impl<'a> CFGBuilder<'a> {
         self.straightline(call_expr, func_or_rcvr_exit, args)
     }
 
-    fn exprs(&mut self, exprs: &[@ast::Expr], pred: Pred) -> Flow {
+    fn exprs(&mut self, exprs: &[@ast::Expr], pred: Flow) -> Flow {
         //! Constructs graph for `exprs` evaluated in order
         let _e = self.enter("CFGBuilder.exprs(exprs, pred)");
 
         exprs.iter().fold(pred, |p, &e| self.expr(e, p))
     }
 
-    fn opt_expr(&mut self, opt_expr: Option<@ast::Expr>, pred: Pred) -> Flow {
+    fn opt_expr(&mut self, opt_expr: Option<@ast::Expr>, pred: Flow) -> Flow {
         //! Constructs graph for `opt_expr` evaluated, if Some
         let _e = self.enter("CFGBuilder.opt_expr(opt_expr, pred)");
 
@@ -681,7 +674,7 @@ impl<'a> CFGBuilder<'a> {
 
     fn straightline(&mut self,
                     expr: @ast::Expr,
-                    pred: Pred,
+                    pred: Flow,
                     subexprs: &[@ast::Expr]) -> Flow {
         //! Handles case of an expression that evaluates `subexprs` in order
         let _e = self.enter("CFGBuilder.straightline(expr, pred, subexprs)");
