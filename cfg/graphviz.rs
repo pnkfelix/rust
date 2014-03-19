@@ -1,12 +1,48 @@
 use std::io;
 
+pub enum LabelText {
+    LabelStr(~str),
+    EscStr(~str),
+}
+
 pub trait Label<Ctxt> {
     // short identifier
     fn name(&self, &Ctxt) -> ~str;
 
     // descriptive text
-    fn text(&self, c:&Ctxt) -> ~str {
-        self.name(c)
+    fn text(&self, c:&Ctxt) -> LabelText {
+        LabelStr(self.name(c))
+    }
+}
+
+impl LabelText {
+    fn escape_char(c: char, f: |char|) {
+        match c {
+            '\t' => { f('\\'); f('t'); }
+            '\r' => { f('\\'); f('r'); }
+            '\n' => { f('\\'); f('n'); }
+            // deliberately not escaping \\,
+            // since it can be used within escString
+            '\'' => { f('\\'); f('\''); }
+            '\"'  => { f('\\'); f('\"'); }
+            '\x20' .. '\x7e' => { f(c); }
+            _ => c.escape_unicode(f),
+        }
+    }
+    fn escaped_str(s: &str) -> ~str {
+        use std::str;
+        let mut out = str::with_capacity(s.len());
+        for c in s.chars() {
+            LabelText::escape_char(c, |c| out.push_char(c));
+        }
+        out
+    }
+
+    pub fn escape(&self) -> ~str {
+        match self {
+            &LabelStr(ref s) => s.escape_default(),
+            &EscStr(ref s) => LabelText::escaped_str(*s),
+        }
     }
 }
 
@@ -32,18 +68,18 @@ pub fn render<'a,C,N:Label<C>,E:Label<C>,G:Label<C>+GraphWalk<'a,N,E>,W:Writer>(
         try!(w.write_line(""));
         Ok(())
     };
-
     try!(writeln(w, ["digraph ", g.name(c).as_slice(), " {"]));
     for &n in g.nodes().iter() {
         try!(w.write_str("    "));
+        let escaped = n.text(c).escape();
         try!(writeln(w, [n.name(c).as_slice(),
-                         "[label=\"", n.text(c).escape_default().as_slice(), "\"]",
+                         "[label=\"", escaped.as_slice(), "\"]",
                          ";"]));
     }
 
     let edges : ~[&'a E] = g.edges();
     for &e in edges.iter() {
-        let escaped_label = e.text(c).escape_default();
+        let escaped_label = e.text(c).escape();
         try!(w.write_str("    "));
         try!(writeln(w, [g.source(e).name(c).as_slice(), " -> ", g.target(e).name(c).as_slice(),
                          "[label=\"", escaped_label.as_slice(), "\"];"].as_slice()));
