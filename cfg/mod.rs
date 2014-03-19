@@ -263,13 +263,14 @@ impl<'a,'b> graphviz::Label<LabelContext<'a,'b>> for E {
     fn text(&self, c: &LabelContext) -> ~str {
         let mut label = ~"";
         let mut put_one = false;
-        for &node_id in self.data.exiting_scopes.iter() {
+        for (i, &node_id) in self.data.exiting_scopes.iter().enumerate() {
             if put_one {
-                label = label + ", "
+                label = label + ",\n"
             } else {
                 put_one = true;
             }
-            label = label + format!("{}", c.ref0().node_to_str(node_id));
+            label = label + format!("exiting scope_{} {}",
+                                    i, c.ref0().node_to_str(node_id));
         }
         label
     }
