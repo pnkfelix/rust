@@ -401,18 +401,20 @@ impl<'a> CFGBuilder<'a> {
                 let m = format!("CFGBuilder.expr(expr, pred) ExprBreak id: {}", expr.id);
                 let _e = self.enter(m);
                 let loop_scope = self.find_scope(expr, label);
-                self.add_exiting_edge(expr, pred,
+                let b = self.add_node(expr.id, [pred]);
+                self.add_exiting_edge(expr, b,
                                       loop_scope, loop_scope.break_index);
-                self.add_node(expr.id, [])
+                self.add_node(ast::DUMMY_NODE_ID, [])
             }
 
             ast::ExprAgain(label) => {
                 let m = format!("CFGBuilder.expr(expr, pred) ExprAgain id: {}", expr.id);
                 let _e = self.enter(m);
                 let loop_scope = self.find_scope(expr, label);
-                self.add_exiting_edge(expr, pred,
+                let a = self.add_node(expr.id, [pred]);
+                self.add_exiting_edge(expr, a,
                                       loop_scope, loop_scope.continue_index);
-                self.add_node(expr.id, [])
+                self.add_node(ast::DUMMY_NODE_ID, [])
             }
 
             ast::ExprVec(ref elems, _) => {
