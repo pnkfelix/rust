@@ -111,8 +111,11 @@ fn main() {
 
     let e = Named::<Expr>{ name: ~"l_loop_while_v_if_w_and_x__break_l_else_call_z",
                            val: quote_expr!((), {
-                               let (v,w,x,y) = (true, true, true, true); let z = ||{};
+                               let (v,w,x,y) = (true, true, true, true);
+                               let z = ||{};
+                               let omega = ||{};
                                'exit: loop { while v { if w && x { break 'exit; y } z(); } }
+                               omega();
                            }) };
     process_expr(e);
 
@@ -251,8 +254,22 @@ impl<'a,'b> graphviz::Label<LabelContext<'a,'b>> for N {
             me == curr
         }).unwrap().val0())
     }
-    fn text(&self, c: &LabelContext) -> ~str {
-        c.ref0().node_to_str(self.data.id)
+    fn text(&self, c: &LabelContext) -> graphviz::LabelText {
+        let mut s = c.ref0().node_to_str(self.data.id);
+        // Replacing newlines with \\l causes each line to be left-aligned,
+        // improving presentation of (long) pretty-printed expressions.
+        if s.contains("\n") {
+            s = s.replace("\n", "\\l");
+            // Apparently left-alignment applies to line that precedes
+            // \l, not line that follows; add \l at end if not already
+            // present, ensuring last line left-aligned as well.
+            let mut last_two : ~[_] = s.chars().rev().take(2).collect();
+            last_two.reverse();
+            if last_two.as_slice() != ['\\', 'l'] {
+                s.push_str("\\l");
+            }
+        }
+        graphviz::EscStr(s)
     }
 }
 
@@ -260,19 +277,19 @@ impl<'a,'b> graphviz::Label<LabelContext<'a,'b>> for E {
     fn name(&self, _c: &LabelContext) -> ~str {
         format!("E")
     }
-    fn text(&self, c: &LabelContext) -> ~str {
+    fn text(&self, c: &LabelContext) -> graphviz::LabelText {
         let mut label = ~"";
         let mut put_one = false;
         for (i, &node_id) in self.data.exiting_scopes.iter().enumerate() {
             if put_one {
-                label = label + ",\n"
+                label = label + ",\\l"
             } else {
                 put_one = true;
             }
             label = label + format!("exiting scope_{} {}",
                                     i, c.ref0().node_to_str(node_id));
         }
-        label
+        graphviz::EscStr(label)
     }
 }
 
