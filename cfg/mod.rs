@@ -20,6 +20,7 @@ use std::vec_ng::Vec;
 use std::os;
 use syntax::ast;
 use syntax::ast_map;
+use syntax::ast_util;
 use syntax::codemap;
 use syntax::opt_vec;
 use syntax::parse::token;
@@ -30,8 +31,12 @@ use self::easy_syntax::{QuoteCtxt, SyntaxToStr};
 use N      = self::rustc_cfg::CFGNode;
 use E      = self::rustc_cfg::CFGEdge;
 
-// use rustc_cfg = rustc::middle::cfg;
+use rustc_dataflow = rustc::middle::dataflow;
+
+#[cfg(use_rustc_cfg)]
+use rustc_cfg = rustc::middle::cfg;
 #[allow(dead_code)]
+#[cfg(not(use_rustc_cfg))]
 mod rustc_cfg;
 
 pub mod easy_syntax;
@@ -134,7 +139,9 @@ fn main() {
 
     let args = os_args();
     if args.len() == 1 {
-        // for e in samples.iter().take(1) { process_expr(e); }
+        for e in samples.iter().take(1) {
+            process_expr(e, BuildDataflowContext);
+        }
     } else {
         let mut args = args;
         while args.len() >= 2 {
@@ -144,7 +151,7 @@ fn main() {
                     let ne = samples.iter().find(|n|n.name.as_slice() == arg.as_slice());
                     let ne = ne.unwrap_or_else(||fail!("did not find expr {}",
                                                        arg));
-                    process_expr(ne);
+                    process_expr(ne, BuildCFG);
                     next_args = rest.iter().map(|x|x.clone()).collect();
                 }
                 _ => break,
@@ -158,7 +165,12 @@ fn dum_span<A>(a: A) -> codemap::Spanned<A> {
     codemap::Spanned { node: a, span: codemap::DUMMY_SP }
 }
 
-fn process_expr(e: &Named<Expr>) {
+enum ProcessOp {
+    BuildCFG,
+    BuildDataflowContext,
+}
+
+fn process_expr(e: &Named<Expr>, op: ProcessOp) {
     let crate_ = {
         let fn_decl : ast::P<ast::FnDecl> = ast::P(ast::FnDecl {
             inputs: Vec::new(),
@@ -235,24 +247,44 @@ fn process_expr(e: &Named<Expr>) {
     let e = Named { name: e.name.clone(), val: crate_to_expr(&crate_) };
     println!("expr postanalysis: {:s}", e.val.stx_to_str());
 
-    let method_map = analysis.maps.method_map;
-
     match e.val.node {
         ast::ExprBlock(b) => {
-            let cfg = rustc_cfg::CFG::new(analysis.ty_cx, method_map, b);
-            println!("cfg: {:?}", cfg);
-            let path = Path::new(e.name.as_slice() + ".dot");
-            let mut file = File::open_mode(&path, io::Truncate, io::Write);
-            let lcfg = LabelledCFG(e.name, cfg);
-            match graphviz::render(&(&analysis.ty_cx.map, &lcfg.cfg),
-                                        & &lcfg, &mut file) {
-                Ok(()) => println!("rendered to {}", path.display()),
-                Err(err) => fail!("render failed {}", err)
+            let b_named = Named{ name: e.name, val: b};
+            match op {
+                BuildCFG => build_cfg(analysis, b_named),
+                BuildDataflowContext => build_dfc(analysis, b_named),
             }
         }
         _ => fail!("quoted input for cfg test must \
                               be a expression block { ... }")
     }
+}
+
+fn build_cfg(analysis: driver::CrateAnalysis, b: Named<ast::P<ast::Block>>) {
+            let method_map = analysis.maps.method_map;
+            let cfg = rustc_cfg::CFG::new(analysis.ty_cx, method_map, b.val);
+            println!("cfg: {:?}", cfg);
+            let path = Path::new(b.name.as_slice() + ".dot");
+            let mut file = File::open_mode(&path, io::Truncate, io::Write);
+            let lcfg = LabelledCFG(b.name, cfg);
+            match graphviz::render(&(&analysis.ty_cx.map, &lcfg.cfg),
+                                        & &lcfg, &mut file) {
+                Ok(()) => println!("rendered to {}", path.display()),
+                Err(err) => fail!("render failed {}", err)
+            }
+}
+
+fn build_dfc(analysis: driver::CrateAnalysis, b: Named<ast::P<ast::Block>>) {
+    #[deriving(Clone)]
+    struct Op;
+    impl rustc_dataflow::DataFlowOperator for Op {
+        fn initial_value(&self) -> bool { false }
+        fn join(&self, succ: uint, pred: uint) -> uint { succ | pred }
+    }
+    let id_range = ast_util::IdRange::max();
+    let mut dfcx = rustc_dataflow::DataFlowContext::new(
+        analysis.ty_cx, analysis.maps.method_map, Op, id_range, 1);
+    dfcx.propagate(b.val);
 }
 
 struct LabelledCFG {
