@@ -12,8 +12,10 @@ extern crate log;
 extern crate rustc;
 extern crate syntax;
 
+use collections::bitv::Bitv;
 // use std::cell::RefCell;
 // use std::cast;
+use std::cmp;
 use std::io;
 use std::io::{File};
 use std::vec_ng::Vec;
@@ -24,6 +26,8 @@ use syntax::ast_util;
 use syntax::codemap;
 use syntax::opt_vec;
 use syntax::parse::token;
+use syntax::visit;
+use syntax::visit::Visitor;
 use rustc::driver::driver;
 // use rustc::util::nodemap;
 use self::easy_syntax::{QuoteCtxt, SyntaxToStr};
@@ -31,10 +35,13 @@ use self::easy_syntax::{QuoteCtxt, SyntaxToStr};
 use N      = self::rustc_cfg::CFGNode;
 use E      = self::rustc_cfg::CFGEdge;
 
-#[cfg(use_rustc_dataflow)]
 use rustc_dataflow = rustc::middle::dataflow;
+
 #[cfg(use_rustc_cfg)]
 use rustc_cfg = rustc::middle::cfg;
+
+use MyOp              = self::my_dataflow::DataFlowOperator;
+use RsOp              = self::rustc_dataflow::DataFlowOperator;
 
 #[allow(dead_code)]
 #[cfg(not(use_rustc_cfg))]
@@ -42,9 +49,43 @@ mod rustc_cfg;
 
 #[allow(dead_code)]
 #[allow(deprecated_owned_vector)]
-#[cfg(not(use_rustc_dataflow))]
 #[path="dataflow.rs"]
-mod rustc_dataflow;
+mod my_dataflow;
+
+type MyDataflowCtxt<O> = my_dataflow::DataFlowContext<O>;
+type RsDataflowCtxt<O> = rustc_dataflow::DataFlowContext<O>;
+
+fn make_bitvec<T>(t: &mut T, walker: |t: &mut T, f:|uint| -> bool|) -> Bitv {
+    let mut count = 0u;
+    walker(t, |idx:uint| { count = cmp::max(idx, count); true });
+
+    let mut bv = Bitv::new(count, false);
+    walker(t, |idx:uint| { bv.set(idx, true); true });
+    bv
+}
+
+fn matches_at<O:MyOp+RsOp>(mine: &mut MyDataflowCtxt<O>,
+                           other: &mut RsDataflowCtxt<O>,
+                           id: ast::NodeId) -> bool
+{
+    let my_bv = make_bitvec(mine,  |t, f| { t.each_bit_on_entry_frozen(id, f); });
+    let rs_bv = make_bitvec(other, |t, f| { t.each_bit_on_entry_frozen(id, f); });
+    if ! my_bv.equal(&rs_bv) { return false; }
+
+    let my_bv = make_bitvec(mine,  |t, f| { t.each_bit_on_entry(id, f); });
+    let rs_bv = make_bitvec(other, |t, f| { t.each_bit_on_entry(id, f); });
+    if ! my_bv.equal(&rs_bv) { return false; }
+
+    let my_bv = make_bitvec(mine,  |t, f| { t.each_gen_bit(id, f); });
+    let rs_bv = make_bitvec(other, |t, f| { t.each_gen_bit(id, f); });
+    if ! my_bv.equal(&rs_bv) { return false; }
+
+    let my_bv = make_bitvec(mine,  |t, f| { t.each_gen_bit_frozen(id, f); });
+    let rs_bv = make_bitvec(other, |t, f| { t.each_gen_bit_frozen(id, f); });
+    if ! my_bv.equal(&rs_bv) { return false; }
+
+    return true;
+}
 
 pub mod easy_syntax;
 pub mod graphviz;
@@ -301,10 +342,50 @@ fn build_dfc(analysis: driver::CrateAnalysis, b: Named<ast::P<ast::Block>>) {
         fn initial_value(&self) -> bool { false }
         fn join(&self, succ: uint, pred: uint) -> uint { succ | pred }
     }
+    impl my_dataflow::DataFlowOperator for Op {
+        fn initial_value(&self) -> bool { false }
+        fn join(&self, succ: uint, pred: uint) -> uint { succ | pred }
+    }
     let id_range = ast_util::IdRange::max();
-    let mut dfcx = rustc_dataflow::DataFlowContext::new(
+    let mut my_dfcx = my_dataflow::DataFlowContext::new(
         analysis.ty_cx, analysis.maps.method_map, Op, id_range, 1);
-    dfcx.propagate(b.val);
+    let mut rs_dfcx = rustc_dataflow::DataFlowContext::new(
+        analysis.ty_cx, analysis.maps.method_map, Op, id_range, 1);
+    my_dfcx.propagate(b.val);
+    rs_dfcx.propagate(b.val);
+
+    assert_matches(b.val, &mut my_dfcx, &mut rs_dfcx);
+}
+
+fn assert_matches<O:MyOp+RsOp>(b: &ast::Block,
+                               my_dfcx: &mut MyDataflowCtxt<O>,
+                               rs_dfcx: &mut RsDataflowCtxt<O>) {
+    let mut visit = IdVisitor { my_dfcx: my_dfcx, rs_dfcx: rs_dfcx };
+    visit.visit_block(b, ());
+
+    struct IdVisitor<'a, O> {
+        my_dfcx: &'a mut MyDataflowCtxt<O>,
+        rs_dfcx: &'a mut RsDataflowCtxt<O>,
+    }
+    impl<'a, O:MyOp+RsOp> Visitor<()> for IdVisitor<'a, O> {
+        fn visit_block(&mut self, b: &ast::Block, _: ()) {
+            self.on_id(b.id);
+            visit::walk_block(self, b, ());
+        }
+        fn visit_pat(&mut self, p: &ast::Pat, _: ()) {
+            self.on_id(p.id);
+            visit::walk_pat(self, p, ());
+        }
+        fn visit_expr(&mut self, ex: &ast::Expr, _: ()) {
+            self.on_id(ex.id);
+            visit::walk_expr(self, ex, ());
+        }
+    }
+    impl<'a, O:MyOp+RsOp> IdVisitor<'a, O> {
+        fn on_id(&mut self, id: ast::NodeId) {
+            assert!(matches_at(self.my_dfcx, self.rs_dfcx, id));
+        }
+    }
 }
 
 struct LabelledCFG {
