@@ -31,13 +31,20 @@ use self::easy_syntax::{QuoteCtxt, SyntaxToStr};
 use N      = self::rustc_cfg::CFGNode;
 use E      = self::rustc_cfg::CFGEdge;
 
+#[cfg(use_rustc_dataflow)]
 use rustc_dataflow = rustc::middle::dataflow;
-
 #[cfg(use_rustc_cfg)]
 use rustc_cfg = rustc::middle::cfg;
+
 #[allow(dead_code)]
 #[cfg(not(use_rustc_cfg))]
 mod rustc_cfg;
+
+#[allow(dead_code)]
+#[allow(deprecated_owned_vector)]
+#[cfg(not(use_rustc_dataflow))]
+#[path="dataflow.rs"]
+mod rustc_dataflow;
 
 pub mod easy_syntax;
 pub mod graphviz;
