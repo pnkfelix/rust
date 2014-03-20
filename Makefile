@@ -9,4 +9,4 @@ cfg.bin: cfg/mod.rs cfg/*.rs cfg/*/*.rs $(RUSTC) Makefile
 	remake --trace -j8 -C ./objdir-dbgopt/ --environment-overrides WFLAGS_ST0=-Awarnings
 
 smoke-test: cfg.bin
-	RUST_LOG=rustc,cfg ./cfg.bin
+	RUST_LOG=rustc,cfg ./cfg.bin dataflow just_x

@@ -143,18 +143,21 @@ fn main() {
             process_expr(e, BuildDataflowContext);
         }
     } else {
-        let mut args = args;
+        assert!(args.len() > 1);
+        let mut args = args; args.shift();
         while args.len() >= 2 {
             let next_args;
-            match args.as_slice() {
-                [ref op, ref arg, ..ref rest] if op.as_slice() == "cfg" => {
+            match (ProcessOp::from(*args.get(0)),
+                   args.get(1),
+                   args.slice_from(2)) {
+                (Some(op), arg, rest) => {
                     let ne = samples.iter().find(|n|n.name.as_slice() == arg.as_slice());
                     let ne = ne.unwrap_or_else(||fail!("did not find expr {}",
                                                        arg));
-                    process_expr(ne, BuildCFG);
+                    process_expr(ne, op);
                     next_args = rest.iter().map(|x|x.clone()).collect();
                 }
-                _ => break,
+                _ => fail!("unrecognized command line option: {}", args.get(0))
             }
             args = next_args;
         }
@@ -168,6 +171,16 @@ fn dum_span<A>(a: A) -> codemap::Spanned<A> {
 enum ProcessOp {
     BuildCFG,
     BuildDataflowContext,
+}
+
+impl ProcessOp {
+    fn from(s: &str) -> Option<ProcessOp> {
+        match s {
+            "cfg"      => Some(BuildCFG),
+            "dataflow" => Some(BuildDataflowContext),
+            _          => None,
+        }
+    }
 }
 
 fn process_expr(e: &Named<Expr>, op: ProcessOp) {
