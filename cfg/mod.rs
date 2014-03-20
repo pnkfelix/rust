@@ -17,6 +17,7 @@ extern crate syntax;
 use std::io;
 use std::io::{File};
 use std::vec_ng::Vec;
+use std::os;
 use syntax::ast;
 use syntax::ast_map;
 use syntax::codemap;
@@ -56,7 +57,7 @@ struct Named<T> {
     val: T,
 }
 
-fn main() {
+fn setup_samples() -> Vec<Named<Expr>> {
     let mut samples = vec!();
     let e = Named::<Expr>{ name: ~"just_x",
                            val: quote_expr!((), { let x = 3; x; }) };
@@ -120,8 +121,36 @@ fn main() {
                            }) };
     samples.push(e);
 
-    for e in samples.move_iter().take(1) {
-        process_expr(e);
+    samples
+}
+
+fn os_args() -> Vec<~str> {
+    #[allow(deprecated_owned_vector)];
+    os::args().move_iter().collect()
+}
+
+fn main() {
+    let samples = setup_samples();
+
+    let args = os_args();
+    if args.len() == 1 {
+        // for e in samples.iter().take(1) { process_expr(e); }
+    } else {
+        let mut args = args;
+        while args.len() >= 2 {
+            let next_args;
+            match args.as_slice() {
+                [ref op, ref arg, ..ref rest] if op.as_slice() == "cfg" => {
+                    let ne = samples.iter().find(|n|n.name.as_slice() == arg.as_slice());
+                    let ne = ne.unwrap_or_else(||fail!("did not find expr {}",
+                                                       arg));
+                    process_expr(ne);
+                    next_args = rest.iter().map(|x|x.clone()).collect();
+                }
+                _ => break,
+            }
+            args = next_args;
+        }
     }
 }
 
@@ -129,7 +158,7 @@ fn dum_span<A>(a: A) -> codemap::Spanned<A> {
     codemap::Spanned { node: a, span: codemap::DUMMY_SP }
 }
 
-fn process_expr(e: Named<Expr>) {
+fn process_expr(e: &Named<Expr>) {
     let crate_ = {
         let fn_decl : ast::P<ast::FnDecl> = ast::P(ast::FnDecl {
             inputs: Vec::new(),
@@ -203,7 +232,7 @@ fn process_expr(e: Named<Expr>) {
                                                        &crate_,
                                                        amap);
 
-    let e = Named { name: e.name, val: crate_to_expr(&crate_) };
+    let e = Named { name: e.name.clone(), val: crate_to_expr(&crate_) };
     println!("expr postanalysis: {:s}", e.val.stx_to_str());
 
     let method_map = analysis.maps.method_map;
