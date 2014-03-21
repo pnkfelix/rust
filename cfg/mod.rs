@@ -13,6 +13,7 @@ extern crate rustc;
 extern crate syntax;
 
 use collections::bitv::Bitv;
+use std::cell;
 // use std::cell::RefCell;
 // use std::cast;
 use std::cmp;
@@ -104,10 +105,20 @@ fn mk_ast_map() -> ast_map::Map {
 
 type Expr = @syntax::ast::Expr;
 
-#[deriving(Show)]
+#[deriving(Clone,Show)]
 struct Named<T> {
     name: ~str,
     val: T,
+}
+
+impl<T> Named<T> {
+    fn map<U>(self, f: |T| -> U) -> Named<U> {
+        let Named { name, val } = self;
+        Named { name: name, val: f(val) }
+    }
+    fn map_ref<'a, U>(&'a self, f: |&'a T| -> U) -> Named<U> {
+        Named { name: self.name.clone(), val: f(&self.val) }
+    }
 }
 
 fn setup_samples() -> Vec<Named<Expr>> {
@@ -231,89 +242,99 @@ impl ProcessOp {
     }
 }
 
-fn process_expr(e: &Named<Expr>, op: ProcessOp) {
-    let crate_ = {
-        let fn_decl : ast::P<ast::FnDecl> = ast::P(ast::FnDecl {
-            inputs: Vec::new(),
-            output: ast::P(ast::Ty { id: ast::DUMMY_NODE_ID,
-                                     node: ast::TyNil,
-                                     span: codemap::DUMMY_SP }),
-            cf: ast::Return,
-            variadic: false,
-        });
-        let block : ast::P<ast::Block> = ast::P(ast::Block {
-            view_items: vec!(),
-            stmts: vec!(),
-            expr: Some(e.val),
-            id: ast::DUMMY_NODE_ID,
-            rules: ast::DefaultBlock,
-            span: codemap::DUMMY_SP,
-            });
-        let item : @ast::Item = @ast::Item {
-            ident: ast::Ident {
-                name: token::intern("main"),
-                ctxt: ast::EMPTY_CTXT,
-            },
-            attrs: vec!(),
-            id: ast::DUMMY_NODE_ID,
-            node: ast::ItemFn(fn_decl, ast::ImpureFn, syntax::abi::AbiSet::Rust(),
-                              ast::Generics { lifetimes: vec!(),
-                                              ty_params: opt_vec::Empty },
-                              block),
-            vis: ast::Public,
-            span: codemap::DUMMY_SP,
-        };
-        let mod_ : ast::Mod = ast::Mod {
-            view_items: vec!(),
-            items: vec!(item),
-        };
-        let cc : ast::CrateConfig = vec!();
-        ast::Crate { module: mod_,
-                     attrs: vec!(
-                         dum_span(ast::Attribute_ {
-                             style: ast::AttrInner,
-                             value: @dum_span(ast::MetaWord(
-                                 token::intern_and_get_ident("no_std"))),
-                             is_sugared_doc: false,
-                         }),
-                         dum_span (ast::Attribute_ {
-                             style: ast::AttrInner,
-                             value: @dum_span(ast::MetaNameValue(
-                                 token::intern_and_get_ident("crate_id"),
-                                 dum_span (ast::LitStr(
-                                     token::intern_and_get_ident("cfg_fake_crate"),
-                                     ast::CookedStr)))),
-                             is_sugared_doc: false,
-                         }) ),
-                     config: cc,
-                     span: codemap::DUMMY_SP,
-        }
+fn expr_to_crate(e: Expr) -> ast::Crate {
+    let fn_decl : ast::P<ast::FnDecl> = ast::P(ast::FnDecl {
+        inputs: Vec::new(),
+        output: ast::P(ast::Ty { id: ast::DUMMY_NODE_ID,
+                                 node: ast::TyNil,
+                                 span: codemap::DUMMY_SP }),
+        cf: ast::Return,
+        variadic: false,
+    });
+    let block : ast::P<ast::Block> = ast::P(ast::Block {
+        view_items: vec!(),
+        stmts: vec!(),
+        expr: Some(e),
+        id: ast::DUMMY_NODE_ID,
+        rules: ast::DefaultBlock,
+        span: codemap::DUMMY_SP,
+    });
+    let item : @ast::Item = @ast::Item {
+        ident: ast::Ident {
+            name: token::intern("main"),
+            ctxt: ast::EMPTY_CTXT,
+        },
+        attrs: vec!(),
+        id: ast::DUMMY_NODE_ID,
+        node: ast::ItemFn(fn_decl, ast::ImpureFn, syntax::abi::AbiSet::Rust(),
+                          ast::Generics { lifetimes: vec!(),
+                                          ty_params: opt_vec::Empty },
+                          block),
+        vis: ast::Public,
+        span: codemap::DUMMY_SP,
     };
-
-    fn crate_to_expr<'a>(crate_: &'a ast::Crate) -> Expr {
-        match crate_.module.items.get(0).node {
-            ast::ItemFn(_, _, _, _, block) => block.expr.unwrap(),
-            _ => fail!("crate does not have form expected by `process_expr`"),
-        }
+    let mod_ : ast::Mod = ast::Mod {
+        view_items: vec!(),
+        items: vec!(item),
+    };
+    let cc : ast::CrateConfig = vec!();
+    ast::Crate { module: mod_,
+                 attrs: vec!(
+                     dum_span(ast::Attribute_ {
+                         style: ast::AttrInner,
+                         value: @dum_span(ast::MetaWord(
+                             token::intern_and_get_ident("no_std"))),
+                         is_sugared_doc: false,
+                     }),
+                     dum_span (ast::Attribute_ {
+                         style: ast::AttrInner,
+                         value: @dum_span(ast::MetaNameValue(
+                             token::intern_and_get_ident("crate_id"),
+                             dum_span (ast::LitStr(
+                                 token::intern_and_get_ident("cfg_fake_crate"),
+                                 ast::CookedStr)))),
+                         is_sugared_doc: false,
+                     }) ),
+                 config: cc,
+                 span: codemap::DUMMY_SP,
     }
+}
 
+fn crate_to_decl_block<'a>(crate_: &'a ast::Crate) -> (@ast::FnDecl, @ast::Block) {
+    match crate_.module.items.get(0).node {
+        ast::ItemFn(decl, _, _, _, block) => (decl, block),
+        _ => fail!("crate does not have form expected by `process_expr`"),
+    }
+}
+
+fn crate_to_expr<'a>(crate_: &'a ast::Crate) -> Expr {
+    let (_, b) = crate_to_decl_block(crate_);
+    b.expr.unwrap()
+}
+
+fn process_expr(e: &Named<Expr>, op: ProcessOp) {
     println!("expr pre-analysis: {:s}", e.val.stx_to_str());
 
-    let (sess, crate_, amap) = easy_syntax::mk_context(crate_);
+    let crate_ = e.clone().map(expr_to_crate);
+
+    let (sess, crate_, amap) = {
+        let Named { name, val } = crate_;
+        let (sess, crate_, amap) = easy_syntax::mk_context(val);
+        (sess, Named{ name: name, val: crate_ }, amap)
+    };
 
     let analysis = driver::phase_3_run_analysis_passes(sess,
-                                                       &crate_,
+                                                       &crate_.val,
                                                        amap);
 
-    let e = Named { name: e.name.clone(), val: crate_to_expr(&crate_) };
-    println!("expr postanalysis: {:s}", e.val.stx_to_str());
+    println!("expr postanalysis: {:s}", crate_to_expr(&crate_.val).stx_to_str());
 
-    match e.val.node {
+    match crate_to_expr(&crate_.val).node {
         ast::ExprBlock(b) => {
-            let b_named = Named{ name: e.name, val: b};
             match op {
-                BuildCFG => build_cfg(analysis, b_named),
-                BuildDataflowContext => build_dfc(analysis, b_named),
+                BuildCFG => { let b_named = Named{ name: crate_.name, val: b};
+                              build_cfg(analysis, b_named) }
+                BuildDataflowContext => build_dfc(analysis, crate_),
             }
         }
         _ => fail!("quoted input for cfg test must \
@@ -335,7 +356,35 @@ fn build_cfg(analysis: driver::CrateAnalysis, b: Named<ast::P<ast::Block>>) {
             }
 }
 
-fn build_dfc(analysis: driver::CrateAnalysis, b: Named<ast::P<ast::Block>>) {
+fn build_dfc(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
+    use rustc::middle::moves;
+    use rustc::middle::borrowck;
+
+    let moves::MoveMaps {moves_map, moved_variables_set, capture_map} =
+        moves::compute_moves(analysis.ty_cx, analysis.maps.method_map, &crate_.val);
+
+    let mut b_ctxt = borrowck::BorrowckCtxt {
+        tcx: analysis.ty_cx,
+        method_map: analysis.maps.method_map,
+        moves_map: moves_map,
+        moved_variables_set: moved_variables_set,
+        capture_map: capture_map,
+        root_map: borrowck::root_map(),
+        stats: @borrowck::BorrowStats {
+            loaned_paths_same: cell::Cell::new(0),
+            loaned_paths_imm:  cell::Cell::new(0),
+            stable_paths:      cell::Cell::new(0),
+            guaranteed_paths:  cell::Cell::new(0),
+        },
+    };
+
+    let b = crate_.map_ref(crate_to_decl_block);
+    let (decl, body) = b.val;
+
+    let (id_range, all_loans, move_data) =
+        borrowck::gather_loans::gather_loans(&mut b_ctxt, decl, body);
+    let loan_bitcount = all_loans.borrow().get().len();
+
     #[deriving(Clone)]
     struct Op;
     impl rustc_dataflow::DataFlowOperator for Op {
@@ -346,15 +395,23 @@ fn build_dfc(analysis: driver::CrateAnalysis, b: Named<ast::P<ast::Block>>) {
         fn initial_value(&self) -> bool { false }
         fn join(&self, succ: uint, pred: uint) -> uint { succ | pred }
     }
-    let id_range = ast_util::IdRange::max();
-    let mut my_dfcx = my_dataflow::DataFlowContext::new(
-        analysis.ty_cx, analysis.maps.method_map, Op, id_range, 1);
-    let mut rs_dfcx = rustc_dataflow::DataFlowContext::new(
-        analysis.ty_cx, analysis.maps.method_map, Op, id_range, 1);
-    my_dfcx.propagate(b.val);
-    rs_dfcx.propagate(b.val);
 
-    assert_matches(b.val, &mut my_dfcx, &mut rs_dfcx);
+    let mut my_dfcx = my_dataflow::DataFlowContext::new(
+        analysis.ty_cx, analysis.maps.method_map, Op, id_range, loan_bitcount);
+    let mut rs_dfcx = rustc_dataflow::DataFlowContext::new(
+        analysis.ty_cx, analysis.maps.method_map, Op, id_range, loan_bitcount);
+
+    for (loan_idx, loan) in all_loans.borrow().get().iter().enumerate() {
+        my_dfcx.add_gen(loan.gen_scope, loan_idx);
+        rs_dfcx.add_gen(loan.gen_scope, loan_idx);
+        my_dfcx.add_kill(loan.kill_scope, loan_idx);
+        rs_dfcx.add_kill(loan.kill_scope, loan_idx);
+    }
+
+    my_dfcx.propagate(body);
+    rs_dfcx.propagate(body);
+
+    assert_matches(body, &mut my_dfcx, &mut rs_dfcx);
 }
 
 fn assert_matches<O:MyOp+RsOp>(b: &ast::Block,
