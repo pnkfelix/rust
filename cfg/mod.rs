@@ -23,7 +23,7 @@ use std::vec_ng::Vec;
 use std::os;
 use syntax::ast;
 use syntax::ast_map;
-use syntax::ast_util;
+// use syntax::ast_util;
 use syntax::codemap;
 use syntax::opt_vec;
 use syntax::parse::token;
@@ -37,6 +37,7 @@ use N      = self::rustc_cfg::CFGNode;
 use E      = self::rustc_cfg::CFGEdge;
 
 use rustc_dataflow = rustc::middle::dataflow;
+// use rustc_region_inference = rustc::middle::typeck::infer::region_inference;
 
 #[cfg(use_rustc_cfg)]
 use rustc_cfg = rustc::middle::cfg;
@@ -55,6 +56,11 @@ mod my_dataflow;
 
 type MyDataflowCtxt<O> = my_dataflow::DataFlowContext<O>;
 type RsDataflowCtxt<O> = rustc_dataflow::DataFlowContext<O>;
+
+#[allow(dead_code)]
+#[allow(deprecated_owned_vector)]
+#[path="region_inference.rs"]
+mod my_region_inference;
 
 fn make_bitvec<T>(t: &mut T, walker: |t: &mut T, f:|uint| -> bool|) -> Bitv {
     let mut count = 0u;
@@ -230,6 +236,7 @@ fn dum_span<A>(a: A) -> codemap::Spanned<A> {
 enum ProcessOp {
     BuildCFG,
     BuildDataflowContext,
+    BuildRegionInferenceGraph,
 }
 
 impl ProcessOp {
@@ -237,6 +244,7 @@ impl ProcessOp {
         match s {
             "cfg"      => Some(BuildCFG),
             "dataflow" => Some(BuildDataflowContext),
+            "region_inference" => Some(BuildRegionInferenceGraph),
             _          => None,
         }
     }
@@ -335,6 +343,7 @@ fn process_expr(e: &Named<Expr>, op: ProcessOp) {
                 BuildCFG => { let b_named = Named{ name: crate_.name, val: b};
                               build_cfg(analysis, b_named) }
                 BuildDataflowContext => build_dfc(analysis, crate_),
+                BuildRegionInferenceGraph => build_rig(analysis, crate_),
             }
         }
         _ => fail!("quoted input for cfg test must \
@@ -381,7 +390,7 @@ fn build_dfc(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
     let b = crate_.map_ref(crate_to_decl_block);
     let (decl, body) = b.val;
 
-    let (id_range, all_loans, move_data) =
+    let (id_range, all_loans, _move_data) =
         borrowck::gather_loans::gather_loans(&mut b_ctxt, decl, body);
     let loan_bitcount = all_loans.borrow().get().len();
 
@@ -412,6 +421,11 @@ fn build_dfc(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
     rs_dfcx.propagate(body);
 
     assert_matches(body, &mut my_dfcx, &mut rs_dfcx);
+}
+
+fn build_rig(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
+    use rri = rustc::middle::typeck::infer::region_inference;
+    fail!("not implemented yet");
 }
 
 fn assert_matches<O:MyOp+RsOp>(b: &ast::Block,
