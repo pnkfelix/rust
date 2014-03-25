@@ -4944,6 +4944,34 @@ pub fn construct_parameter_environment(
 {
     /*! See `ParameterEnvironment` struct def'n for details */
 
+    {
+        fn types_idents_and_bounds(tcx: &ctxt, params: &[TypeParameterDef]) -> ~str {
+            params.iter().fold((~"[", false), |(accum_str, plural), tpd| {
+                let accum_str = if plural { accum_str.append(", ") } else { accum_str };
+                let entry = format!("{:s}:{:s}", tpd.ident.repr(tcx), tpd.bounds.repr(tcx));
+                (accum_str.append(entry), true)
+            }).val0().append("]")
+        }
+
+        fn regions_idents_and_bounds(tcx: &ctxt, params: &[RegionParameterDef]) -> ~str {
+            params.iter().fold((~"[", false), |(accum_str, plural), rpd| {
+                let accum_str = if plural { accum_str.append(", ") } else { accum_str };
+                let entry = rpd.repr(tcx);
+                (accum_str.append(entry), true)
+            }).val0().append("]")
+        }
+
+        debug!("construct_parameter_environment(\
+               self_bound={:?}, item_type_params={}, method_type_params={}, \
+               item_region_params={}, method_region_params={}, free_id={})",
+               self_bound,
+               types_idents_and_bounds(tcx, item_type_params),
+               types_idents_and_bounds(tcx, method_type_params),
+               regions_idents_and_bounds(tcx, item_region_params),
+               regions_idents_and_bounds(tcx, method_region_params),
+               free_id);
+    }
+
     //
     // Construct the free substs.
     //
