@@ -323,12 +323,34 @@ pub fn check_item_types(ccx: &CrateCtxt, krate: &ast::Crate) {
     visit::walk_crate(&mut visit, krate, ());
 }
 
+struct AssertTypeIsClosed<'a> { tcx: &'a ty::ctxt }
+
+fn is_early_bound(r: &ty::Region) -> bool {
+    match r {
+        &ty::ReEarlyBound(..) => true, _ => false
+    }
+}
+
+impl<'a> TypeFolder for AssertTypeIsClosed<'a> {
+    fn fold_region(&mut self, r: ty::Region) -> ty::Region {
+        assert!(!is_early_bound(&r));
+        r
+    }
+    fn tcx<'a>(&'a self) -> &'a ty::ctxt {
+        self.tcx
+    }
+}
+
 fn check_bare_fn(ccx: &CrateCtxt,
                  decl: &ast::FnDecl,
                  body: &ast::Block,
                  id: ast::NodeId,
                  fty: ty::t,
                  param_env: ty::ParameterEnvironment) {
+
+    let mut validator = AssertTypeIsClosed { tcx: ccx.tcx };
+    validator.fold_ty(fty);
+
     match ty::get(fty).sty {
         ty::ty_bare_fn(ref fn_ty) => {
             let inh = Inherited::new(ccx.tcx, param_env);
