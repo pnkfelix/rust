@@ -32,6 +32,11 @@ pub fn replace_late_bound_regions_in_fn_sig(
         let mut f = ty_fold::RegionFolder::regions(tcx, |r| {
             debug!("region r={}", r.to_str());
             match r {
+                ty::ReEarlyBound(s, idx, nm) if s == fn_sig.binder_id => {
+                    debug!("replace_late_bound_regions_in_fn_sig FYI: EarlyBound({}, {}, {}), but not subst",
+                           s, idx, nm);
+                    r
+                }
                 ty::ReLateBound(s, br) if s == fn_sig.binder_id => {
                     *map.find_or_insert_with(br, |_| mapf(br))
                 }
