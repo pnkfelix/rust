@@ -847,7 +847,8 @@ fn constrain_autoderefs(rcx: &mut Rcx,
      */
     let r_deref_expr = ty::ReScope(deref_expr.id);
     for i in range(0u, derefs) {
-        debug!("constrain_autoderefs(deref_expr=?, derefd_ty={}, derefs={:?}/{:?}",
+        debug!("constrain_autoderefs(deref_expr\\{id={}\\}, derefd_ty={}, derefs={:?}/{:?}",
+               deref_expr.id,
                rcx.fcx.infcx().ty_to_str(derefd_ty),
                i, derefs);
 

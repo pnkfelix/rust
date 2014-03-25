@@ -16,6 +16,7 @@ use middle::ty::{BrFresh, ctxt};
 use middle::ty::{mt, t, param_ty};
 use middle::ty::{ReFree, ReScope, ReInfer, ReStatic, Region,
                  ReEmpty};
+use middle::ty::RegionVid;
 use middle::ty::{ty_bool, ty_char, ty_bot, ty_box, ty_struct, ty_enum};
 use middle::ty::{ty_err, ty_str, ty_vec, ty_float, ty_bare_fn, ty_closure};
 use middle::ty::{ty_nil, ty_param, ty_ptr, ty_rptr, ty_self, ty_tup};
@@ -221,13 +222,18 @@ pub fn region_to_str(cx: &ctxt, prefix: &str, space: bool, region: Region) -> ~s
     // `explain_region()` or `note_and_explain_region()`.
     match region {
         ty::ReScope(_) => prefix.to_str(),
-        ty::ReEarlyBound(_, _, name) => token::get_name(name).get().to_str(),
-        ty::ReLateBound(_, br) => bound_region_to_str(cx, prefix, space, br),
-        ty::ReFree(ref fr) => bound_region_to_str(cx, prefix, space, fr.bound_region),
+        ty::ReEarlyBound(_, _, name) =>
+            format!("{:s}E!{:s}{:s}",
+                    prefix, token::get_name(name).get().to_str(), space_str),
+        ty::ReLateBound(_, br) =>
+            format!("{:s}L!{:s}", prefix, bound_region_to_str(cx, "", space, br)),
+        ty::ReFree(ref fr) =>
+            format!("{:s}F!{:s}", prefix, bound_region_to_str(cx, "", space, fr.bound_region)),
         ty::ReInfer(ReSkolemized(_, br)) => {
-            bound_region_to_str(cx, prefix, space, br)
+            format!("{:s}S!{:s}", prefix, bound_region_to_str(cx, "", space, br))
         }
-        ty::ReInfer(ReVar(_)) => prefix.to_str(),
+        ty::ReInfer(ReVar(RegionVid{id: vid})) =>
+            format!("{:s}V!{:u}", prefix, vid),
         ty::ReStatic => format!("{}'static{}", prefix, space_str),
         ty::ReEmpty => format!("{}'<empty>{}", prefix, space_str)
     }
