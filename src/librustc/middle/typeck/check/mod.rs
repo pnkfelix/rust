@@ -568,7 +568,11 @@ pub fn check_item(ccx: &CrateCtxt, it: &ast::Item) {
                 fn_tpt.generics.region_param_defs.as_slice(),
                 body.id);
 
-        check_bare_fn(ccx, decl, body, it.id, fn_tpt.ty, param_env);
+        // Compute the fty from point of view of inside fn
+        // (replace any type-scheme with a type)
+        let fty = fn_tpt.ty.subst(ccx.tcx, &param_env.free_substs);
+
+        check_bare_fn(ccx, decl, body, it.id, fty, param_env);
       }
       ast::ItemImpl(_, ref opt_trait_ref, _, ref ms) => {
         debug!("ItemImpl {} with id {}", token::get_ident(it.ident), it.id);
@@ -679,6 +683,7 @@ fn check_method_body(ccx: &CrateCtxt,
             method.body.id);
 
     // Compute the fty from point of view of inside fn
+    // (replace any type-scheme with a type)
     let fty = ty::node_id_to_type(ccx.tcx, method.id);
     let fty = fty.subst(ccx.tcx, &param_env.free_substs);
 
