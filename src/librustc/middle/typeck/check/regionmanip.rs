@@ -33,7 +33,8 @@ pub fn replace_late_bound_regions_in_fn_sig(
             debug!("region r={}", r.to_str());
             match r {
                 ty::ReEarlyBound(s, idx, nm) if s == fn_sig.binder_id => {
-                    debug!("replace_late_bound_regions_in_fn_sig FYI: EarlyBound({}, {}, {}), but not subst",
+                    debug!("replace_late_bound_regions_in_fn_sig \
+                            FYI: EarlyBound({}, {}, {}), but not subst",
                            s, idx, nm);
                     r
                 }
