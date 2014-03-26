@@ -347,6 +347,9 @@ fn check_bare_fn(ccx: &CrateCtxt,
                  id: ast::NodeId,
                  fty: ty::t,
                  param_env: ty::ParameterEnvironment) {
+    // Compute the fty from point of view of inside fn
+    // (replace any type-scheme with a type)
+    let fty = fty.subst(ccx.tcx, &param_env.free_substs);
 
     let mut validator = AssertTypeIsClosed { tcx: ccx.tcx };
     validator.fold_ty(fty);
@@ -590,11 +593,7 @@ pub fn check_item(ccx: &CrateCtxt, it: &ast::Item) {
                 fn_tpt.generics.region_param_defs.as_slice(),
                 body.id);
 
-        // Compute the fty from point of view of inside fn
-        // (replace any type-scheme with a type)
-        let fty = fn_tpt.ty.subst(ccx.tcx, &param_env.free_substs);
-
-        check_bare_fn(ccx, decl, body, it.id, fty, param_env);
+        check_bare_fn(ccx, decl, body, it.id, fn_tpt.ty, param_env);
       }
       ast::ItemImpl(_, ref opt_trait_ref, _, ref ms) => {
         debug!("ItemImpl {} with id {}", token::get_ident(it.ident), it.id);
@@ -704,10 +703,7 @@ fn check_method_body(ccx: &CrateCtxt,
             method_generics.region_param_defs(),
             method.body.id);
 
-    // Compute the fty from point of view of inside fn
-    // (replace any type-scheme with a type)
     let fty = ty::node_id_to_type(ccx.tcx, method.id);
-    let fty = fty.subst(ccx.tcx, &param_env.free_substs);
 
     check_bare_fn(ccx, method.decl, method.body, method.id, fty, param_env);
 }
