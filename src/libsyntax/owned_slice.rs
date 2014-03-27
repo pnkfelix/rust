@@ -8,6 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use std::fmt;
 use std::default::Default;
 use std::hash::Hash;
 use std::{cast, mem, raw, ptr, slice};
@@ -143,5 +144,13 @@ impl<D: Decoder<E>, T: Decodable<D, E>, E> Decodable<D, E> for OwnedSlice<T> {
             Ok(t) => t,
             Err(e) => return Err(e)
         }))
+    }
+}
+
+impl<T:fmt::Show> fmt::Show for OwnedSlice<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        try!(write!(f.buf, "OwnedSlice("));
+        try!(self.as_slice().fmt(f));
+        write!(f.buf, ")")
     }
 }
