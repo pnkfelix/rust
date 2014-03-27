@@ -13,7 +13,6 @@ extern crate log;
 extern crate rustc;
 extern crate syntax;
 
-use arena::Arena;
 use collections::bitv::Bitv;
 use std::cell;
 // use std::cell::RefCell;
@@ -397,7 +396,7 @@ fn build_dfc(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
 
     let (id_range, all_loans, _move_data) =
         borrowck::gather_loans::gather_loans_in_fn(&mut b_ctxt, decl, body);
-    let loan_bitcount = all_loans.len();
+    let loan_bitcount = cmp::max(1, all_loans.len());
 
     #[deriving(Clone)]
     struct Op;
