@@ -35,7 +35,7 @@ struct Entered<'a> {
 #[unsafe_destructor]
 impl<'a> Drop for Entered<'a> {
     fn drop(&mut self) {
-        self.depth.with_mut(|p| { *p -= 1; });
+        *self.depth.borrow_mut() -= 1;
         let d = self.depth.get();
         assert!(d >= 0);
         debug!("{:s} exit {:s}", "  ".repeat(d as uint), self.context);
@@ -47,7 +47,7 @@ impl<'a> CFGBuilder<'a> {
         let d = self.depth.get();
         assert!(d >= 0);
         debug!("{:s} call {:s}", "  ".repeat(d as uint), context);
-        self.depth.with_mut(|p| { *p += 1; });
+        *self.depth.borrow_mut() += 1;
         Entered{ context: context, depth: self.depth }
     }
 }
