@@ -19,7 +19,6 @@ use rustc::middle::graph;
 use rustc::middle::ty;
 use rustc::middle::typeck;
 use syntax::ast;
-use syntax::opt_vec::OptVec;
 use rustc::util::nodemap::NodeMap;
 
 mod construct;
@@ -36,7 +35,7 @@ pub struct CFGNodeData {
 }
 
 pub struct CFGEdgeData {
-    exiting_scopes: OptVec<ast::NodeId>
+    exiting_scopes: Vec<ast::NodeId>
 }
 
 pub type CFGIndex = graph::NodeIndex;
@@ -53,7 +52,7 @@ pub struct CFGIndices {
 }
 
 impl CFG {
-    pub fn new(tcx: ty::ctxt,
+    pub fn new(tcx: &ty::ctxt,
                method_map: typeck::MethodMap,
                blk: &ast::Block) -> CFG {
         construct::construct(tcx, method_map, blk)

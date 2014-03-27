@@ -5,6 +5,7 @@
 #[feature(globs)];
 #[feature(phase)];
 
+extern crate arena;
 extern crate collections;
 extern crate getopts;
 #[phase(syntax, link)] extern crate log;
@@ -12,6 +13,7 @@ extern crate log;
 extern crate rustc;
 extern crate syntax;
 
+use arena::Arena;
 use collections::bitv::Bitv;
 use std::cell;
 // use std::cell::RefCell;
@@ -19,19 +21,20 @@ use std::cell;
 use std::cmp;
 use std::io;
 use std::io::{File};
-use std::vec_ng::Vec;
+use std::vec::Vec;
 use std::os;
 use syntax::ast;
 use syntax::ast_map;
 // use syntax::ast_util;
 use syntax::codemap;
-use syntax::opt_vec;
+use syntax::owned_slice::OwnedSlice;
+use syntax::parse;
 use syntax::parse::token;
 use syntax::visit;
 use syntax::visit::Visitor;
 use rustc::driver::driver;
 // use rustc::util::nodemap;
-use self::easy_syntax::{QuoteCtxt, SyntaxToStr};
+use self::easy_syntax::{ParseSessQC, QuoteCtxt, SyntaxToStr};
 
 use N      = self::rustc_cfg::CFGNode;
 use E      = self::rustc_cfg::CFGEdge;
@@ -54,8 +57,8 @@ mod rustc_cfg;
 #[path="dataflow.rs"]
 mod my_dataflow;
 
-type MyDataflowCtxt<O> = my_dataflow::DataFlowContext<O>;
-type RsDataflowCtxt<O> = rustc_dataflow::DataFlowContext<O>;
+type MyDataflowCtxt<'a, O> = my_dataflow::DataFlowContext<'a, O>;
+type RsDataflowCtxt<'a, O> = rustc_dataflow::DataFlowContext<'a, O>;
 
 #[allow(dead_code)]
 #[allow(deprecated_owned_vector)]
@@ -127,36 +130,37 @@ impl<T> Named<T> {
     }
 }
 
-fn setup_samples() -> Vec<Named<Expr>> {
+fn setup_samples(sess: parse::ParseSess) -> Vec<Named<Expr>> {
+    let ref ps = ParseSessQC(sess);
     let mut samples = vec!();
     let e = Named::<Expr>{ name: ~"just_x",
-                           val: quote_expr!((), { let x = 3; x; }) };
+                           val: quote_expr!(ps, { let x = 3; x; }) };
     samples.push(e);
 
     let e = Named::<Expr>{ name: ~"l_while_x_break_l",
-                           val: quote_expr!((), {
+                           val: quote_expr!(ps, {
                                let (v,w,x,y,z) = (true,(),(),(),());
                                'exit: loop { if v { w; break 'exit; x; } y }
                                z }) };
     samples.push(e);
 
     let e = Named::<Expr>{ name: ~"if_x_then_call_y",
-                           val: quote_expr!((), { let x = false; let y = ||{};
+                           val: quote_expr!(ps, { let x = false; let y = ||{};
                                                   if x { y(); } }) };
     samples.push(e);
 
     let e = Named::<Expr>{ name: ~"if_x_then_y_else_z",
-                           val: quote_expr!((), { let (x,y,z) = (false,3,4);
+                           val: quote_expr!(ps, { let (x,y,z) = (false,3,4);
                                                   if x { y } else { z }; }) };
     samples.push(e);
 
     let e = Named::<Expr>{ name: ~"x_send_foo_of_y",
-                           val: quote_expr!((), { struct X; impl X { fn foo(&self, y: int) {} }
+                           val: quote_expr!(ps, { struct X; impl X { fn foo(&self, y: int) {} }
                                                   let (x,y) = (X,3); x.foo(y) }) };
     samples.push(e);
 
     let e = Named::<Expr>{ name: ~"match_x",
-                           val: quote_expr!((), { enum E { Foo(int), Bar(int), Baz(int) }
+                           val: quote_expr!(ps, { enum E { Foo(int), Bar(int), Baz(int) }
                                                   let (w,x,y,z1,z2,z3) = (false,Bar(3),4,5,6,7);
                                                   match x { Foo(a) => y,
                                                             Bar(b) if w => z1,
@@ -165,24 +169,24 @@ fn setup_samples() -> Vec<Named<Expr>> {
     samples.push(e);
 
     let e = Named::<Expr>{ name: ~"while_x",
-                           val: quote_expr!((), { let x = true;
+                           val: quote_expr!(ps, { let x = true;
                                                   while x {      } }) };
     samples.push(e);
     let e = Named::<Expr>{ name: ~"while_x_call_y",
-                           val: quote_expr!((), { let x = true; let y = ||{};
+                           val: quote_expr!(ps, { let x = true; let y = ||{};
                                                   while x { y(); } }) };
     samples.push(e);
     let e = Named::<Expr>{ name: ~"while_x_if_call_y_break_else_call_z",
-                           val: quote_expr!((), { let x = true; let y = ||{true}; let z = ||{};
+                           val: quote_expr!(ps, { let x = true; let y = ||{true}; let z = ||{};
                                                   while x { if y() { break; }    z(); } }) };
     samples.push(e);
     let e = Named::<Expr>{ name: ~"while_x_if_call_y_loop_else_call_z",
-                           val: quote_expr!((), { let x = true; let y = ||{false}; let z = ||{};
+                           val: quote_expr!(ps, { let x = true; let y = ||{false}; let z = ||{};
                                                   while x { if y() { continue; } z(); } }) };
     samples.push(e);
 
     let e = Named::<Expr>{ name: ~"l_loop_while_v_if_w_and_x__break_l_else_call_z",
-                           val: quote_expr!((), {
+                           val: quote_expr!(ps, {
                                let (v,w,x,y) = (true, true, true, true);
                                let z = ||{};
                                let omega = ||{};
@@ -200,7 +204,7 @@ fn os_args() -> Vec<~str> {
 }
 
 fn main() {
-    let samples = setup_samples();
+    let samples = setup_samples(parse::new_parse_sess());
 
     let args = os_args();
     if args.len() == 1 {
@@ -276,7 +280,7 @@ fn expr_to_crate(e: Expr) -> ast::Crate {
         id: ast::DUMMY_NODE_ID,
         node: ast::ItemFn(fn_decl, ast::ImpureFn, syntax::abi::AbiSet::Rust(),
                           ast::Generics { lifetimes: vec!(),
-                                          ty_params: opt_vec::Empty },
+                                          ty_params: OwnedSlice::empty(), },
                           block),
         vis: ast::Public,
         span: codemap::DUMMY_SP,
@@ -327,7 +331,8 @@ fn process_expr(e: &Named<Expr>, op: ProcessOp) {
 
     let (sess, crate_, amap) = {
         let Named { name, val } = crate_;
-        let (sess, crate_, amap) = easy_syntax::mk_context(val);
+        let sess = easy_syntax::mk_sess();
+        let (crate_, amap) = easy_syntax::mk_context(val, &sess);
         (sess, Named{ name: name, val: crate_ }, amap)
     };
 
@@ -353,9 +358,9 @@ fn process_expr(e: &Named<Expr>, op: ProcessOp) {
 
 fn build_cfg(analysis: driver::CrateAnalysis, b: Named<ast::P<ast::Block>>) {
             let method_map = analysis.maps.method_map;
-            let cfg = rustc_cfg::CFG::new(analysis.ty_cx, method_map, b.val);
+            let cfg = rustc_cfg::CFG::new(&analysis.ty_cx, method_map, b.val);
             println!("cfg: {:?}", cfg);
-            let path = Path::new(b.name.as_slice() + ".dot");
+    let path = Path::new(b.name.as_slice() + ".dot");
             let mut file = File::open_mode(&path, io::Truncate, io::Write);
             let lcfg = LabelledCFG(b.name, cfg);
             match graphviz::render(&(&analysis.ty_cx.map, &lcfg.cfg),
@@ -370,14 +375,14 @@ fn build_dfc(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
     use rustc::middle::borrowck;
 
     let moves::MoveMaps {moves_map, moved_variables_set, capture_map} =
-        moves::compute_moves(analysis.ty_cx, analysis.maps.method_map, &crate_.val);
+        moves::compute_moves(&analysis.ty_cx, analysis.maps.method_map, &crate_.val);
 
     let mut b_ctxt = borrowck::BorrowckCtxt {
-        tcx: analysis.ty_cx,
+        tcx: &analysis.ty_cx,
         method_map: analysis.maps.method_map,
-        moves_map: moves_map,
-        moved_variables_set: moved_variables_set,
-        capture_map: capture_map,
+        moves_map: &moves_map,
+        moved_variables_set: &moved_variables_set,
+        capture_map: &capture_map,
         root_map: borrowck::root_map(),
         stats: @borrowck::BorrowStats {
             loaned_paths_same: cell::Cell::new(0),
@@ -391,8 +396,8 @@ fn build_dfc(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
     let (decl, body) = b.val;
 
     let (id_range, all_loans, _move_data) =
-        borrowck::gather_loans::gather_loans(&mut b_ctxt, decl, body);
-    let loan_bitcount = all_loans.borrow().get().len();
+        borrowck::gather_loans::gather_loans_in_fn(&mut b_ctxt, decl, body);
+    let loan_bitcount = all_loans.len();
 
     #[deriving(Clone)]
     struct Op;
@@ -406,11 +411,11 @@ fn build_dfc(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
     }
 
     let mut my_dfcx = my_dataflow::DataFlowContext::new(
-        analysis.ty_cx, analysis.maps.method_map, Op, id_range, loan_bitcount);
+        &analysis.ty_cx, analysis.maps.method_map, Op, id_range, loan_bitcount);
     let mut rs_dfcx = rustc_dataflow::DataFlowContext::new(
-        analysis.ty_cx, analysis.maps.method_map, Op, id_range, loan_bitcount);
+        &analysis.ty_cx, analysis.maps.method_map, Op, id_range, loan_bitcount);
 
-    for (loan_idx, loan) in all_loans.borrow().get().iter().enumerate() {
+    for (loan_idx, loan) in all_loans.iter().enumerate() {
         my_dfcx.add_gen(loan.gen_scope, loan_idx);
         rs_dfcx.add_gen(loan.gen_scope, loan_idx);
         my_dfcx.add_kill(loan.kill_scope, loan_idx);
@@ -428,15 +433,15 @@ fn build_rig(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
     fail!("not implemented yet");
 }
 
-fn assert_matches<O:MyOp+RsOp>(b: &ast::Block,
-                               my_dfcx: &mut MyDataflowCtxt<O>,
-                               rs_dfcx: &mut RsDataflowCtxt<O>) {
+fn assert_matches<'a, O:MyOp+RsOp>(b: &ast::Block,
+                                   my_dfcx: &'a mut MyDataflowCtxt<'a, O>,
+                                   rs_dfcx: &'a mut RsDataflowCtxt<'a, O>) {
     let mut visit = IdVisitor { my_dfcx: my_dfcx, rs_dfcx: rs_dfcx };
     visit.visit_block(b, ());
 
     struct IdVisitor<'a, O> {
-        my_dfcx: &'a mut MyDataflowCtxt<O>,
-        rs_dfcx: &'a mut RsDataflowCtxt<O>,
+        my_dfcx: &'a mut MyDataflowCtxt<'a, O>,
+        rs_dfcx: &'a mut RsDataflowCtxt<'a, O>,
     }
     impl<'a, O:MyOp+RsOp> Visitor<()> for IdVisitor<'a, O> {
         fn visit_block(&mut self, b: &ast::Block, _: ()) {

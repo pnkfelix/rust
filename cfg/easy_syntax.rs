@@ -1,3 +1,4 @@
+extern crate arena;
 extern crate getopts;
 extern crate syntax;
 extern crate rustc;
@@ -71,10 +72,7 @@ impl MkContextArg for () {
     }
 }
 
-pub fn mk_context<A:MkContextArg>(arg:A) -> (session::Session,
-                                             ast::Crate,
-                                             ast_map::Map) {
-    // fn hm<V>() -> nodemap::NodeMap<V> { nodemap::NodeMap::new() }
+pub fn mk_sess() -> session::Session {
 
     let matches = getopts::getopts
         (&[~"-Z", ~"time-passes",
@@ -84,37 +82,39 @@ pub fn mk_context<A:MkContextArg>(arg:A) -> (session::Session,
     // println!("matches: {:?}", matches);
     let sessopts = driver::build_session_options(&matches);
 
+    // driver::build_session(sessopts, None)
 
-    let sess = {
-        // driver::build_session(sessopts, None)
-        let sopts = sessopts;
-        let local_crate_source_file = None;
+    let sopts = sessopts;
+    let local_crate_source_file = None;
 
-        let codemap = @codemap::CodeMap::new();
+    let codemap = codemap::CodeMap::new();
 
-        struct SimpleEmitter;
-        impl diagnostic::Emitter for SimpleEmitter {
-            fn emit(&mut self, _cmsp: Option<(&codemap::CodeMap, codemap::Span)>,
-                    msg: &str, lvl: diagnostic::Level) {
-                (writeln!(&mut io::stderr(), "{}: {}", lvl, msg)).unwrap();
+    struct SimpleEmitter;
+    impl diagnostic::Emitter for SimpleEmitter {
+        fn emit(&mut self, _cmsp: Option<(&codemap::CodeMap, codemap::Span)>,
+                msg: &str, lvl: diagnostic::Level) {
+            (writeln!(&mut io::stderr(), "{}: {}", lvl, msg)).unwrap();
 
-            }
-            fn custom_emit(&mut self, _cm: &codemap::CodeMap,
-                           _sp: codemap::Span, msg: &str, lvl: diagnostic::Level) {
-                (writeln!(&mut io::stderr(), "{}: {}", lvl, msg)).unwrap();
-            }
         }
-        let emitter = ~SimpleEmitter as ~diagnostic::Emitter;
-        let diagnostic_handler = @diagnostic::Handler {
-            err_count: Cell::new(0),
-            emit: RefCell::new(emitter),
-        };
-        let span_diagnostic_handler =
-            diagnostic::mk_span_handler(diagnostic_handler, codemap);
-
-        driver::build_session_(sopts, local_crate_source_file, codemap, span_diagnostic_handler)
+        fn custom_emit(&mut self, _cm: &codemap::CodeMap,
+                       _sp: codemap::Span, msg: &str, lvl: diagnostic::Level) {
+            (writeln!(&mut io::stderr(), "{}: {}", lvl, msg)).unwrap();
+        }
+    }
+    let emitter = ~SimpleEmitter as ~diagnostic::Emitter;
+    let diagnostic_handler = diagnostic::Handler {
+        err_count: Cell::new(0),
+        emit: RefCell::new(emitter),
     };
+    let span_diagnostic_handler =
+        diagnostic::mk_span_handler(diagnostic_handler, codemap);
 
+    driver::build_session_(sopts, local_crate_source_file, span_diagnostic_handler)
+}
+
+pub fn mk_context<A:MkContextArg>(arg:A, sess: &session::Session)
+                                  -> (ast::Crate, ast_map::Map) {
+    // fn hm<V>() -> nodemap::NodeMap<V> { nodemap::NodeMap::new() }
     let crate_ = arg.to_crate();
     let crate_id = {
         let attrs = crate_.attrs.as_slice();
@@ -145,7 +145,7 @@ pub fn mk_context<A:MkContextArg>(arg:A) -> (session::Session,
     // let named_region_map    = @RefCell::new(hm());
     // let dm = @RefCell::new(HashMap::with_hasher(nodemap::FnvHasher));
     // let tcx = ty::mk_ctxt(sess, dm, named_region_map, amap, freevars, region_paramd_items, lang_items);
-    (sess, crate_, amap)
+    (crate_, amap)
 }
 
 pub trait SyntaxToStr {
@@ -176,14 +176,23 @@ impl_stx_to_str!(ast::Generics, pprust::generics_to_str)
 impl_stx_to_str!(ast::Path,     pprust::path_to_str)
 
 pub trait QuoteCtxt {
-    fn parse_sess(&self) -> @parse::ParseSess;
+    fn parse_sess<'a>(&'a self) -> &'a parse::ParseSess;
     fn cfg(&self) -> ast::CrateConfig;
     fn call_site(&self) -> codemap::Span;
     fn ident_of(&self, st: &str) -> ast::Ident;
 }
 
-impl QuoteCtxt for () {
-    fn parse_sess(&self) -> @parse::ParseSess  { parse::new_parse_sess() }
+pub struct ParseSessQC(parse::ParseSess);
+
+impl ParseSessQC {
+    fn sess<'a>(&'a self) -> &'a parse::ParseSess {
+        let &ParseSessQC(ref ps) = self;
+        ps
+    }
+}
+
+impl QuoteCtxt for ParseSessQC {
+    fn parse_sess<'a>(&'a self) -> &'a parse::ParseSess  { self.sess() }
     fn cfg(&self) -> ast::CrateConfig          { vec!() }
     fn call_site(&self) -> codemap::Span       { codemap::DUMMY_SP }
     fn ident_of(&self, st: &str) -> ast::Ident { token::str_to_ident(st) }

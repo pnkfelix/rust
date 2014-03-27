@@ -12,16 +12,15 @@ use super::*;
 use rustc::middle::graph;
 use rustc::middle::typeck;
 use rustc::middle::ty;
-use std::vec_ng::Vec;
+use std::vec::Vec;
 use std::cell::RefCell;
 use syntax::ast;
 use syntax::ast_util;
-use syntax::opt_vec;
 use syntax::parse::token;
 use rustc::util::nodemap::NodeMap;
 
 struct CFGBuilder<'a> {
-    tcx: ty::ctxt,
+    tcx: &'a ty::ctxt,
     method_map: typeck::MethodMap,
     exit_map: NodeMap<CFGIndex>,
     graph: CFGGraph,
@@ -37,7 +36,7 @@ struct Entered<'a> {
 #[unsafe_destructor]
 impl<'a> Drop for Entered<'a> {
     fn drop(&mut self) {
-        self.depth.with_mut(|p| { *p -= 1; });
+        *self.depth.borrow_mut() -= 1;
         let d = self.depth.get();
         assert!(d >= 0);
         debug!("{:s} exit {:s}", "  ".repeat(d as uint), self.context);
@@ -49,7 +48,7 @@ impl<'a> CFGBuilder<'a> {
         let d = self.depth.get();
         assert!(d >= 0);
         debug!("{:s} call {:s}", "  ".repeat(d as uint), context);
-        self.depth.with_mut(|p| { *p += 1; });
+        *self.depth.borrow_mut() += 1;
         Entered{ context: context, depth: self.depth }
     }
 }
@@ -60,7 +59,7 @@ struct LoopScope {
     break_index: CFGIndex,    // where to go on a `break
 }
 
-pub fn construct(tcx: ty::ctxt,
+pub fn construct(tcx: &ty::ctxt,
                  method_map: typeck::MethodMap,
                  blk: &ast::Block) -> CFG {
     let depth = RefCell::new(0);
@@ -629,7 +628,7 @@ impl<'a> CFGBuilder<'a> {
                           source: CFGIndex,
                           target: CFGIndex) {
         let _e = self.enter("CFGBuilder.add_contained_edge(source, target)");
-        let data = CFGEdgeData {exiting_scopes: opt_vec::Empty};
+        let data = CFGEdgeData {exiting_scopes: vec!()};
         self.graph.add_edge(source, target, data);
     }
 
@@ -639,7 +638,7 @@ impl<'a> CFGBuilder<'a> {
                         to_loop: LoopScope,
                         to_index: CFGIndex) {
         let _e = self.enter("CFGBuilder.add_exiting_edge(from_expr, from_index, to_loop, to_index)");
-        let mut data = CFGEdgeData {exiting_scopes: opt_vec::Empty};
+        let mut data = CFGEdgeData {exiting_scopes: vec!()};
         let mut scope_id = from_expr.id;
         while scope_id != to_loop.loop_id {
             data.exiting_scopes.push(scope_id);
@@ -661,7 +660,7 @@ impl<'a> CFGBuilder<'a> {
             Some(the_label) => {
                 let _e = self.enter("CFGBuilder.find_scope(expr, label) Some(_)");
                 let def_map = self.tcx.def_map.borrow();
-                match def_map.get().find(&expr.id) {
+                match def_map.find(&expr.id) {
                     Some(&ast::DefLabel(loop_id)) => {
                         for l in self.loop_scopes.iter() {
                             if l.loop_id == loop_id {
@@ -687,6 +686,6 @@ impl<'a> CFGBuilder<'a> {
     fn is_method_call(&self, expr: &ast::Expr) -> bool {
         let _e = self.enter("CFGBuilder.is_method_call(expr)");
         let method_call = typeck::MethodCall::expr(expr.id);
-        self.method_map.borrow().get().contains_key(&method_call)
+        self.method_map.borrow().contains_key(&method_call)
     }
 }

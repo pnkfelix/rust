@@ -1,5 +1,5 @@
 use std::io;
-use std::vec_ng::Vec;
+use std::vec::Vec;
 
 pub enum LabelText {
     LabelStr(~str),
