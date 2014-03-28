@@ -22,6 +22,7 @@ use std::io;
 use std::io::{File};
 use std::vec::Vec;
 use std::os;
+use syntax::abi;
 use syntax::ast;
 use syntax::ast_map;
 // use syntax::ast_util;
@@ -63,6 +64,11 @@ type RsDataflowCtxt<'a, O> = rustc_dataflow::DataFlowContext<'a, O>;
 #[allow(deprecated_owned_vector)]
 #[path="region_inference.rs"]
 mod my_region_inference;
+
+#[allow(dead_code)]
+#[path="borrowck/mod.rs"]
+mod my_borrowck;
+
 
 fn make_bitvec<T>(t: &mut T, walker: |t: &mut T, f:|uint| -> bool|) -> Bitv {
     let mut count = 0u;
@@ -240,6 +246,7 @@ enum ProcessOp {
     BuildCFG,
     BuildDataflowContext,
     BuildRegionInferenceGraph,
+    GatherLoans,
 }
 
 impl ProcessOp {
@@ -248,6 +255,7 @@ impl ProcessOp {
             "cfg"      => Some(BuildCFG),
             "dataflow" => Some(BuildDataflowContext),
             "region_inference" => Some(BuildRegionInferenceGraph),
+            "loans"    => Some(GatherLoans),
             _          => None,
         }
     }
@@ -277,7 +285,7 @@ fn expr_to_crate(e: Expr) -> ast::Crate {
         },
         attrs: vec!(),
         id: ast::DUMMY_NODE_ID,
-        node: ast::ItemFn(fn_decl, ast::ImpureFn, syntax::abi::AbiSet::Rust(),
+        node: ast::ItemFn(fn_decl, ast::ImpureFn, abi::AbiSet::Rust(),
                           ast::Generics { lifetimes: vec!(),
                                           ty_params: OwnedSlice::empty(), },
                           block),
@@ -311,15 +319,22 @@ fn expr_to_crate(e: Expr) -> ast::Crate {
     }
 }
 
-fn crate_to_decl_block<'a>(crate_: &'a ast::Crate) -> (@ast::FnDecl, @ast::Block) {
-    match crate_.module.items.get(0).node {
-        ast::ItemFn(decl, _, _, _, block) => (decl, block),
+fn crate_to_decl_block<'a>(crate_: ast::Crate) -> (ast::Ident,
+                                                   ast::Purity,
+                                                   @ast::FnDecl,
+                                                   abi::AbiSet,
+                                                   ast::Generics,
+                                                   @ast::Block) {
+    let item = crate_.module.items.get(0);
+    match item.node.clone() {
+        ast::ItemFn(decl, purity, abi, generics, block)
+            => (item.ident, purity, decl, abi, generics, block),
         _ => fail!("crate does not have form expected by `process_expr`"),
     }
 }
 
-fn crate_to_expr<'a>(crate_: &'a ast::Crate) -> Expr {
-    let (_, b) = crate_to_decl_block(crate_);
+fn crate_to_expr<'a>(crate_: ast::Crate) -> Expr {
+    let (_, _, _, _, _, b) = crate_to_decl_block(crate_);
     b.expr.unwrap()
 }
 
@@ -339,15 +354,16 @@ fn process_expr(e: &Named<Expr>, op: ProcessOp) {
                                                        &crate_.val,
                                                        amap);
 
-    println!("expr postanalysis: {:s}", crate_to_expr(&crate_.val).stx_to_str());
+    println!("expr postanalysis: {:s}", crate_to_expr(crate_.val.clone()).stx_to_str());
 
-    match crate_to_expr(&crate_.val).node {
+    match crate_to_expr(crate_.val.clone()).node {
         ast::ExprBlock(b) => {
             match op {
                 BuildCFG => { let b_named = Named{ name: crate_.name, val: b};
                               build_cfg(analysis, b_named) }
                 BuildDataflowContext => build_dfc(analysis, crate_),
                 BuildRegionInferenceGraph => build_rig(analysis, crate_),
+                GatherLoans => build_loans(analysis, crate_),
             }
         }
         _ => fail!("quoted input for cfg test must \
@@ -391,8 +407,8 @@ fn build_dfc(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
         },
     };
 
-    let b = crate_.map_ref(crate_to_decl_block);
-    let (decl, body) = b.val;
+    let b = crate_.map(crate_to_decl_block);
+    let (ident, purity, decl, abi, generics, body) = b.val;
 
     let (id_range, all_loans, _move_data) =
         borrowck::gather_loans::gather_loans_in_fn(&mut b_ctxt, decl, body);
@@ -430,6 +446,65 @@ fn build_dfc(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
 fn build_rig(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
     use rri = rustc::middle::typeck::infer::region_inference;
     fail!("not implemented yet");
+}
+
+fn build_loans(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
+    use rustc::middle::moves;
+    use rs_borrowck = rustc::middle::borrowck;
+
+    let moves::MoveMaps {moves_map, moved_variables_set, capture_map} =
+        moves::compute_moves(&analysis.ty_cx, analysis.maps.method_map, &crate_.val);
+
+    let mut b_ctxt = rs_borrowck::BorrowckCtxt {
+        tcx: &analysis.ty_cx,
+        method_map: analysis.maps.method_map,
+        moves_map: &moves_map,
+        moved_variables_set: &moved_variables_set,
+        capture_map: &capture_map,
+        root_map: rs_borrowck::root_map(),
+        stats: @rs_borrowck::BorrowStats {
+            loaned_paths_same: cell::Cell::new(0),
+            loaned_paths_imm:  cell::Cell::new(0),
+            stable_paths:      cell::Cell::new(0),
+            guaranteed_paths:  cell::Cell::new(0),
+        },
+    };
+
+    let b = crate_.map(crate_to_decl_block);
+    let (ident, purity, decl, abi, generics, body) = b.val;
+
+    let (id_range, all_loans, move_data) =
+        rs_borrowck::gather_loans::gather_loans_in_fn(&mut b_ctxt, decl, body);
+
+    let mut rs_loan_dfcx =
+        rustc_dataflow::DataFlowContext::new(b_ctxt.tcx,
+                             b_ctxt.method_map,
+                             rs_borrowck::LoanDataFlowOperator,
+                             id_range,
+                             all_loans.len());
+    for (loan_idx, loan) in all_loans.iter().enumerate() {
+        rs_loan_dfcx.add_gen(loan.gen_scope, loan_idx);
+        rs_loan_dfcx.add_kill(loan.kill_scope, loan_idx);
+    }
+    rs_loan_dfcx.propagate(body);
+
+    let flowed_moves = rs_borrowck::move_data::FlowedMoveData::new(move_data,
+                                                      b_ctxt.tcx,
+                                                      b_ctxt.method_map,
+                                                      id_range,
+                                                      body);
+
+    rs_borrowck::check_loans::check_loans(&b_ctxt, &rs_loan_dfcx, flowed_moves,
+                             all_loans.as_slice(), body);
+
+    let fk = visit::FkItemFn(ident, &generics, purity, abi::AbiSet::Rust());
+    visit::walk_fn(&mut b_ctxt,
+                   &fk,
+                   decl,
+                   body,
+                   codemap::DUMMY_SP,
+                   ast::DUMMY_NODE_ID,
+                   ());
 }
 
 fn assert_matches<'a, O:MyOp+RsOp>(b: &ast::Block,
