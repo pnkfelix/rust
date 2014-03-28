@@ -564,12 +564,36 @@ fn build_loans(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
         loan_dfcx
     };
 
-
 }
 
-fn assert_matches<'a, O:MyOp+RsOp>(b: &ast::Block,
-                                   my_dfcx: &'a mut MyDataflowCtxt<'a, O>,
-                                   rs_dfcx: &'a mut RsDataflowCtxt<'a, O>) {
+fn assert_matches<'a, C, T, S: CouldMatch<'a, T, C>>(
+    context: &C,
+    lft: &'a mut S,
+    rgt: &'a mut T) -> bool
+{
+    lft.matches(rgt, context)
+}
+
+trait CouldMatch<'a, T, Context> {
+    fn matches(&'a mut self, other: &'a mut T, context: &Context) -> bool;
+}
+
+impl<'a, O:MyOp+RsOp> CouldMatch<'a, RsDataflowCtxt<'a, O>, ast::Block>
+    for MyDataflowCtxt<'a, O>
+{
+    fn matches(&'a mut self,
+               other: &'a mut RsDataflowCtxt<'a, O>,
+               context: &ast::Block) -> bool {
+        dataflow_assert_matches(context, self, other);
+        true
+    }
+}
+
+fn dataflow_assert_matches<'a, O:MyOp+RsOp>(
+    b: &ast::Block,
+    my_dfcx: &'a mut MyDataflowCtxt<'a, O>,
+    rs_dfcx: &'a mut RsDataflowCtxt<'a, O>)
+{
     let mut visit = IdVisitor { my_dfcx: my_dfcx, rs_dfcx: rs_dfcx };
     visit.visit_block(b, ());
 
