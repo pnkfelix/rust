@@ -65,7 +65,6 @@ type RsDataflowCtxt<'a, O> = rustc_dataflow::DataFlowContext<'a, O>;
 #[path="region_inference.rs"]
 mod my_region_inference;
 
-#[allow(dead_code)]
 #[path="borrowck/mod.rs"]
 mod my_borrowck;
 
@@ -455,7 +454,7 @@ fn build_loans(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
     let moves::MoveMaps {moves_map, moved_variables_set, capture_map} =
         moves::compute_moves(&analysis.ty_cx, analysis.maps.method_map, &crate_.val);
 
-    let mut b_ctxt = rs_borrowck::BorrowckCtxt {
+    let mut rs_b_ctxt = rs_borrowck::BorrowckCtxt {
         tcx: &analysis.ty_cx,
         method_map: analysis.maps.method_map,
         moves_map: &moves_map,
@@ -470,41 +469,102 @@ fn build_loans(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
         },
     };
 
-    let b = crate_.map(crate_to_decl_block);
-    let (ident, purity, decl, abi, generics, body) = b.val;
+    let mut my_b_ctxt = my_borrowck::BorrowckCtxt {
+        tcx: &analysis.ty_cx,
+        method_map: analysis.maps.method_map,
+        moves_map: &moves_map,
+        moved_variables_set: &moved_variables_set,
+        capture_map: &capture_map,
+        root_map: my_borrowck::root_map(),
+        stats: @my_borrowck::BorrowStats {
+            loaned_paths_same: cell::Cell::new(0),
+            loaned_paths_imm:  cell::Cell::new(0),
+            stable_paths:      cell::Cell::new(0),
+            guaranteed_paths:  cell::Cell::new(0),
+        },
+    };
 
-    let (id_range, all_loans, move_data) =
-        rs_borrowck::gather_loans::gather_loans_in_fn(&mut b_ctxt, decl, body);
+    let rs_loan_dfcx = {
+        let b = crate_.clone().map(crate_to_decl_block);
+        let (ident, purity, decl, abi, generics, body) = b.val;
 
-    let mut rs_loan_dfcx =
-        rustc_dataflow::DataFlowContext::new(b_ctxt.tcx,
-                             b_ctxt.method_map,
-                             rs_borrowck::LoanDataFlowOperator,
-                             id_range,
-                             all_loans.len());
-    for (loan_idx, loan) in all_loans.iter().enumerate() {
-        rs_loan_dfcx.add_gen(loan.gen_scope, loan_idx);
-        rs_loan_dfcx.add_kill(loan.kill_scope, loan_idx);
-    }
-    rs_loan_dfcx.propagate(body);
+        let (id_range, all_loans, move_data) =
+            rs_borrowck::gather_loans::gather_loans_in_fn(&mut rs_b_ctxt, decl, body);
 
-    let flowed_moves = rs_borrowck::move_data::FlowedMoveData::new(move_data,
-                                                      b_ctxt.tcx,
-                                                      b_ctxt.method_map,
-                                                      id_range,
-                                                      body);
+        let mut loan_dfcx =
+            rustc_dataflow::DataFlowContext::new(rs_b_ctxt.tcx,
+                                                 rs_b_ctxt.method_map,
+                                                 rs_borrowck::LoanDataFlowOperator,
+                                                 id_range,
+                                                 all_loans.len());
+        for (loan_idx, loan) in all_loans.iter().enumerate() {
+            loan_dfcx.add_gen(loan.gen_scope, loan_idx);
+            loan_dfcx.add_kill(loan.kill_scope, loan_idx);
+        }
+        loan_dfcx.propagate(body);
 
-    rs_borrowck::check_loans::check_loans(&b_ctxt, &rs_loan_dfcx, flowed_moves,
-                             all_loans.as_slice(), body);
+        let flowed_moves = rs_borrowck::move_data::FlowedMoveData::new(move_data,
+                                                                       rs_b_ctxt.tcx,
+                                                                       rs_b_ctxt.method_map,
+                                                                       id_range,
+                                                                       body);
 
-    let fk = visit::FkItemFn(ident, &generics, purity, abi::AbiSet::Rust());
-    visit::walk_fn(&mut b_ctxt,
-                   &fk,
-                   decl,
-                   body,
-                   codemap::DUMMY_SP,
-                   ast::DUMMY_NODE_ID,
-                   ());
+        rs_borrowck::check_loans::check_loans(&rs_b_ctxt, &loan_dfcx, flowed_moves,
+                                              all_loans.as_slice(), body);
+
+        let fk = visit::FkItemFn(ident, &generics, purity, abi::AbiSet::Rust());
+        visit::walk_fn(&mut rs_b_ctxt,
+                       &fk,
+                       decl,
+                       body,
+                       codemap::DUMMY_SP,
+                       ast::DUMMY_NODE_ID,
+                       ());
+
+        loan_dfcx
+    };
+
+    let my_loan_dfcx = {
+        let b = crate_.clone().map(crate_to_decl_block);
+        let (ident, purity, decl, abi, generics, body) = b.val;
+
+        let (id_range, all_loans, move_data) =
+            my_borrowck::gather_loans::gather_loans_in_fn(&mut my_b_ctxt, decl, body);
+
+        let mut loan_dfcx =
+            rustc_dataflow::DataFlowContext::new(my_b_ctxt.tcx,
+                                                 my_b_ctxt.method_map,
+                                                 my_borrowck::LoanDataFlowOperator,
+                                                 id_range,
+                                                 all_loans.len());
+        for (loan_idx, loan) in all_loans.iter().enumerate() {
+            loan_dfcx.add_gen(loan.gen_scope, loan_idx);
+            loan_dfcx.add_kill(loan.kill_scope, loan_idx);
+        }
+        loan_dfcx.propagate(body);
+
+        let flowed_moves = my_borrowck::move_data::FlowedMoveData::new(move_data,
+                                                                       my_b_ctxt.tcx,
+                                                                       my_b_ctxt.method_map,
+                                                                       id_range,
+                                                                       body);
+
+        my_borrowck::check_loans::check_loans(&my_b_ctxt, &loan_dfcx, flowed_moves,
+                                              all_loans.as_slice(), body);
+
+        let fk = visit::FkItemFn(ident, &generics, purity, abi::AbiSet::Rust());
+        visit::walk_fn(&mut my_b_ctxt,
+                       &fk,
+                       decl,
+                       body,
+                       codemap::DUMMY_SP,
+                       ast::DUMMY_NODE_ID,
+                       ());
+
+        loan_dfcx
+    };
+
+
 }
 
 fn assert_matches<'a, O:MyOp+RsOp>(b: &ast::Block,
