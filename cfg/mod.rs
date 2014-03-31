@@ -439,12 +439,45 @@ fn build_dfc(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
     my_dfcx.propagate(body);
     rs_dfcx.propagate(body);
 
-    assert_matches(body, &mut my_dfcx, &mut rs_dfcx);
+    dataflow_assert_matches(body, &mut my_dfcx, &mut rs_dfcx);
 }
 
 fn build_rig(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
     use rri = rustc::middle::typeck::infer::region_inference;
     fail!("not implemented yet");
+}
+
+fn dataflow_assert_matches<'a, O:MyOp+RsOp>(
+    b: &ast::Block,
+    my_dfcx: &'a mut MyDataflowCtxt<'a, O>,
+    rs_dfcx: &'a mut RsDataflowCtxt<'a, O>)
+{
+    let mut visit = IdVisitor { my_dfcx: my_dfcx, rs_dfcx: rs_dfcx };
+    visit.visit_block(b, ());
+
+    struct IdVisitor<'a, O> {
+        my_dfcx: &'a mut MyDataflowCtxt<'a, O>,
+        rs_dfcx: &'a mut RsDataflowCtxt<'a, O>,
+    }
+    impl<'a, O:MyOp+RsOp> Visitor<()> for IdVisitor<'a, O> {
+        fn visit_block(&mut self, b: &ast::Block, _: ()) {
+            self.on_id(b.id);
+            visit::walk_block(self, b, ());
+        }
+        fn visit_pat(&mut self, p: &ast::Pat, _: ()) {
+            self.on_id(p.id);
+            visit::walk_pat(self, p, ());
+        }
+        fn visit_expr(&mut self, ex: &ast::Expr, _: ()) {
+            self.on_id(ex.id);
+            visit::walk_expr(self, ex, ());
+        }
+    }
+    impl<'a, O:MyOp+RsOp> IdVisitor<'a, O> {
+        fn on_id(&mut self, id: ast::NodeId) {
+            assert!(matches_at(self.my_dfcx, self.rs_dfcx, id));
+        }
+    }
 }
 
 fn build_loans(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
@@ -484,10 +517,10 @@ fn build_loans(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
         },
     };
 
-    let rs_loan_dfcx = {
-        let b = crate_.clone().map(crate_to_decl_block);
-        let (ident, purity, decl, abi, generics, body) = b.val;
+    let b = crate_.clone().map(crate_to_decl_block);
+    let (ident, purity, decl, abi, generics, body) = b.val;
 
+    let mut rs_loan_dfcx = {
         let (id_range, all_loans, move_data) =
             rs_borrowck::gather_loans::gather_loans_in_fn(&mut rs_b_ctxt, decl, body);
 
@@ -524,10 +557,7 @@ fn build_loans(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
         loan_dfcx
     };
 
-    let my_loan_dfcx = {
-        let b = crate_.clone().map(crate_to_decl_block);
-        let (ident, purity, decl, abi, generics, body) = b.val;
-
+    let mut my_loan_dfcx = {
         let (id_range, all_loans, move_data) =
             my_borrowck::gather_loans::gather_loans_in_fn(&mut my_b_ctxt, decl, body);
 
@@ -564,62 +594,14 @@ fn build_loans(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
         loan_dfcx
     };
 
+    loans_assert_matches(body, &mut my_loan_dfcx, &mut rs_loan_dfcx);
 }
 
-fn assert_matches<'a, C, T, S: CouldMatch<'a, T, C>>(
-    context: &C,
-    lft: &'a mut S,
-    rgt: &'a mut T) -> bool
+fn loans_assert_matches<'a>(b: &ast::Block,
+    my_dfcx: &'a mut rustc_dataflow::DataFlowContext<'a, my_borrowck::LoanDataFlowOperator>,
+    rs_dfcx: &'a mut rustc_dataflow::DataFlowContext<'a, ::rustc::middle::borrowck::LoanDataFlowOperator>)
 {
-    lft.matches(rgt, context)
-}
 
-trait CouldMatch<'a, T, Context> {
-    fn matches(&'a mut self, other: &'a mut T, context: &Context) -> bool;
-}
-
-impl<'a, O:MyOp+RsOp> CouldMatch<'a, RsDataflowCtxt<'a, O>, ast::Block>
-    for MyDataflowCtxt<'a, O>
-{
-    fn matches(&'a mut self,
-               other: &'a mut RsDataflowCtxt<'a, O>,
-               context: &ast::Block) -> bool {
-        dataflow_assert_matches(context, self, other);
-        true
-    }
-}
-
-fn dataflow_assert_matches<'a, O:MyOp+RsOp>(
-    b: &ast::Block,
-    my_dfcx: &'a mut MyDataflowCtxt<'a, O>,
-    rs_dfcx: &'a mut RsDataflowCtxt<'a, O>)
-{
-    let mut visit = IdVisitor { my_dfcx: my_dfcx, rs_dfcx: rs_dfcx };
-    visit.visit_block(b, ());
-
-    struct IdVisitor<'a, O> {
-        my_dfcx: &'a mut MyDataflowCtxt<'a, O>,
-        rs_dfcx: &'a mut RsDataflowCtxt<'a, O>,
-    }
-    impl<'a, O:MyOp+RsOp> Visitor<()> for IdVisitor<'a, O> {
-        fn visit_block(&mut self, b: &ast::Block, _: ()) {
-            self.on_id(b.id);
-            visit::walk_block(self, b, ());
-        }
-        fn visit_pat(&mut self, p: &ast::Pat, _: ()) {
-            self.on_id(p.id);
-            visit::walk_pat(self, p, ());
-        }
-        fn visit_expr(&mut self, ex: &ast::Expr, _: ()) {
-            self.on_id(ex.id);
-            visit::walk_expr(self, ex, ());
-        }
-    }
-    impl<'a, O:MyOp+RsOp> IdVisitor<'a, O> {
-        fn on_id(&mut self, id: ast::NodeId) {
-            assert!(matches_at(self.my_dfcx, self.rs_dfcx, id));
-        }
-    }
 }
 
 struct LabelledCFG {
