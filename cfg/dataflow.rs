@@ -30,6 +30,9 @@ use rustc::middle::typeck;
 use rustc::util::ppaux::Repr;
 use rustc::util::nodemap::NodeMap;
 
+#[cfg(not(localize_everything))]
+pub use DataFlowOperator = rustc::middle::dataflow::DataFlowOperator;
+
 #[deriving(Clone)]
 pub struct DataFlowContext<'a, O> {
     priv tcx: &'a ty::ctxt,
@@ -64,6 +67,7 @@ pub struct DataFlowContext<'a, O> {
     /// `propagate()`.
     priv on_entry: Vec<uint> }
 
+#[cfg(localize_everything)]
 /// Parameterization for the precise form of data flow that is used.
 pub trait DataFlowOperator {
     /// Specifies the initial value for each bit in the `on_entry` set

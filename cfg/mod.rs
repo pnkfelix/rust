@@ -45,7 +45,7 @@ use rustc_dataflow = rustc::middle::dataflow;
 #[cfg(use_rustc_cfg)]
 use rustc_cfg = rustc::middle::cfg;
 
-use MyOp              = self::my_dataflow::DataFlowOperator;
+use MyOp              = self::rustc_dataflow::DataFlowOperator;
 use RsOp              = self::rustc_dataflow::DataFlowOperator;
 
 #[allow(dead_code)]
@@ -59,6 +59,43 @@ mod my_dataflow;
 
 type MyDataflowCtxt<'a, O> = my_dataflow::DataFlowContext<'a, O>;
 type RsDataflowCtxt<'a, O> = rustc_dataflow::DataFlowContext<'a, O>;
+
+trait AbstractDataFlowContext<O> {
+    fn each_bit_on_entry_frozen(&self, id: ast::NodeId, f: |uint| -> bool) -> bool;
+    fn each_bit_on_entry(&mut self, id: ast::NodeId, f: |uint| -> bool) -> bool;
+    fn each_gen_bit(&mut self, id: ast::NodeId, f: |uint| -> bool) -> bool;
+    fn each_gen_bit_frozen(&self, id: ast::NodeId, f: |uint| -> bool) -> bool;
+}
+
+impl<'a, O:MyOp> AbstractDataFlowContext<O> for MyDataflowCtxt<'a, O> {
+    fn each_bit_on_entry_frozen(&self, id: ast::NodeId, f: |uint| -> bool) -> bool {
+        self.each_bit_on_entry_frozen(id, f)
+    }
+    fn each_bit_on_entry(&mut self, id: ast::NodeId, f: |uint| -> bool) -> bool {
+        self.each_bit_on_entry(id, f)
+    }
+    fn each_gen_bit(&mut self, id: ast::NodeId, f: |uint| -> bool) -> bool {
+        self.each_gen_bit(id, f)
+    }
+    fn each_gen_bit_frozen(&self, id: ast::NodeId, f: |uint| -> bool) -> bool {
+        self.each_gen_bit_frozen(id, f)
+    }
+}
+
+impl<'a, O:RsOp> AbstractDataFlowContext<O> for RsDataflowCtxt<'a, O> {
+    fn each_bit_on_entry_frozen(&self, id: ast::NodeId, f: |uint| -> bool) -> bool {
+        self.each_bit_on_entry_frozen(id, f)
+    }
+    fn each_bit_on_entry(&mut self, id: ast::NodeId, f: |uint| -> bool) -> bool {
+        self.each_bit_on_entry(id, f)
+    }
+    fn each_gen_bit(&mut self, id: ast::NodeId, f: |uint| -> bool) -> bool {
+        self.each_gen_bit(id, f)
+    }
+    fn each_gen_bit_frozen(&self, id: ast::NodeId, f: |uint| -> bool) -> bool {
+        self.each_gen_bit_frozen(id, f)
+    }
+}
 
 #[allow(dead_code)]
 #[allow(deprecated_owned_vector)]
@@ -78,9 +115,12 @@ fn make_bitvec<T>(t: &mut T, walker: |t: &mut T, f:|uint| -> bool|) -> Bitv {
     bv
 }
 
-fn matches_at<O:MyOp+RsOp>(mine: &mut MyDataflowCtxt<O>,
-                           other: &mut RsDataflowCtxt<O>,
-                           id: ast::NodeId) -> bool
+fn matches_at<MyO:MyOp,
+              RsO:RsOp,
+              MyC: AbstractDataFlowContext<MyO>,
+              RsC: AbstractDataFlowContext<RsO>>(mine: &mut MyC,
+                                                 other: &mut RsC,
+                                                 id: ast::NodeId) -> bool
 {
     let my_bv = make_bitvec(mine,  |t, f| { t.each_bit_on_entry_frozen(id, f); });
     let rs_bv = make_bitvec(other, |t, f| { t.each_bit_on_entry_frozen(id, f); });
@@ -419,6 +459,7 @@ fn build_dfc(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
         fn initial_value(&self) -> bool { false }
         fn join(&self, succ: uint, pred: uint) -> uint { succ | pred }
     }
+    #[cfg(localize_everything)]
     impl my_dataflow::DataFlowOperator for Op {
         fn initial_value(&self) -> bool { false }
         fn join(&self, succ: uint, pred: uint) -> uint { succ | pred }
@@ -439,7 +480,9 @@ fn build_dfc(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
     my_dfcx.propagate(body);
     rs_dfcx.propagate(body);
 
-    dataflow_assert_matches(body, &mut my_dfcx, &mut rs_dfcx);
+    if loan_bitcount > 0 {
+        dataflow_assert_matches(body, &mut my_dfcx, &mut rs_dfcx);
+    }
 }
 
 fn build_rig(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
@@ -597,11 +640,50 @@ fn build_loans(analysis: driver::CrateAnalysis, crate_: Named<ast::Crate>) {
     loans_assert_matches(body, &mut my_loan_dfcx, &mut rs_loan_dfcx);
 }
 
-fn loans_assert_matches<'a>(b: &ast::Block,
-    my_dfcx: &'a mut rustc_dataflow::DataFlowContext<'a, my_borrowck::LoanDataFlowOperator>,
-    rs_dfcx: &'a mut rustc_dataflow::DataFlowContext<'a, ::rustc::middle::borrowck::LoanDataFlowOperator>)
+fn loans_assert_matches<'a,
+                        MyO:RsOp,
+                        RsO:RsOp,
+                        MyC: AbstractDataFlowContext<MyO>,
+                        RsC: AbstractDataFlowContext<RsO>>(
+    b: &ast::Block, my_dfcx: &'a mut MyC, rs_dfcx: &'a mut RsC)
 {
+    let mut visit = IdVisitor { my_dfcx: my_dfcx, rs_dfcx: rs_dfcx };
+    visit.visit_block(b, ());
 
+    struct IdVisitor<'a, MyC /*: AbstractDataFlowContext*/, RsC /*: AbstractDataFlowContext*/> {
+        my_dfcx: &'a mut MyC,
+        rs_dfcx: &'a mut RsC,
+    }
+    impl<'a,
+         MyO:MyOp,
+         RsO:RsOp,
+         MyC:AbstractDataFlowContext<MyO>,
+         RsC:AbstractDataFlowContext<RsO>>
+        Visitor<()>
+        for IdVisitor<'a, MyC, RsC> {
+        fn visit_block(&mut self, b: &ast::Block, _: ()) {
+            self.on_id(b.id);
+            visit::walk_block(self, b, ());
+        }
+        fn visit_pat(&mut self, p: &ast::Pat, _: ()) {
+            self.on_id(p.id);
+            visit::walk_pat(self, p, ());
+        }
+        fn visit_expr(&mut self, ex: &ast::Expr, _: ()) {
+            self.on_id(ex.id);
+            visit::walk_expr(self, ex, ());
+        }
+    }
+    impl<'a,
+         MyO:MyOp,
+         RsO:RsOp,
+         MyC:AbstractDataFlowContext<MyO>,
+         RsC:AbstractDataFlowContext<RsO>>
+        IdVisitor<'a, MyC, RsC> {
+        fn on_id(&mut self, id: ast::NodeId) {
+            assert!(matches_at(self.my_dfcx, self.rs_dfcx, id));
+        }
+    }
 }
 
 struct LabelledCFG {
