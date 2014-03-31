@@ -221,7 +221,7 @@ impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
         let start = *n * self.words_per_id;
         let end = start + self.words_per_id;
 
-        assert!(start < self.gens.len());
+        assert!(start < self.gens.len() || self.gens.len() == 0);
         assert!(end <= self.gens.len());
         assert!(self.gens.len() == self.kills.len());
         assert!(self.gens.len() == self.on_entry.len());
