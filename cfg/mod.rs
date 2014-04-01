@@ -106,12 +106,24 @@ mod my_region_inference;
 mod my_borrowck;
 
 
-fn make_bitvec<T>(t: &mut T, walker: |t: &mut T, f:|uint| -> bool|) -> Bitv {
+fn make_bitvec<T>(id: ast::NodeId,
+                  t: &mut T,
+                  walker: |t: &mut T, f:|uint| -> bool|) -> Bitv
+{
     let mut count = 0u;
-    walker(t, |idx:uint| { count = cmp::max(idx, count); true });
+    walker(t, |idx:uint| {
+        debug!("node id: {} accum: {} update: {}", id, count, idx);
+        count = cmp::max(idx+1, count);
+        true
+    });
 
+    debug!("node id: {} count: {}", id, count);
     let mut bv = Bitv::new(count, false);
-    walker(t, |idx:uint| { bv.set(idx, true); true });
+    walker(t, |idx:uint| {
+        debug!("node id: {} count: {} idx: {}", id, count, idx);
+        bv.set(idx, true);
+        true
+    });
     bv
 }
 
@@ -122,20 +134,20 @@ fn matches_at<MyO:MyOp,
                                                  other: &mut RsC,
                                                  id: ast::NodeId) -> bool
 {
-    let my_bv = make_bitvec(mine,  |t, f| { t.each_bit_on_entry_frozen(id, f); });
-    let rs_bv = make_bitvec(other, |t, f| { t.each_bit_on_entry_frozen(id, f); });
+    let my_bv = make_bitvec(id, mine,  |t, f| { t.each_bit_on_entry_frozen(id, f); });
+    let rs_bv = make_bitvec(id, other, |t, f| { t.each_bit_on_entry_frozen(id, f); });
     if ! my_bv.equal(&rs_bv) { return false; }
 
-    let my_bv = make_bitvec(mine,  |t, f| { t.each_bit_on_entry(id, f); });
-    let rs_bv = make_bitvec(other, |t, f| { t.each_bit_on_entry(id, f); });
+    let my_bv = make_bitvec(id, mine,  |t, f| { t.each_bit_on_entry(id, f); });
+    let rs_bv = make_bitvec(id, other, |t, f| { t.each_bit_on_entry(id, f); });
     if ! my_bv.equal(&rs_bv) { return false; }
 
-    let my_bv = make_bitvec(mine,  |t, f| { t.each_gen_bit(id, f); });
-    let rs_bv = make_bitvec(other, |t, f| { t.each_gen_bit(id, f); });
+    let my_bv = make_bitvec(id, mine,  |t, f| { t.each_gen_bit(id, f); });
+    let rs_bv = make_bitvec(id, other, |t, f| { t.each_gen_bit(id, f); });
     if ! my_bv.equal(&rs_bv) { return false; }
 
-    let my_bv = make_bitvec(mine,  |t, f| { t.each_gen_bit_frozen(id, f); });
-    let rs_bv = make_bitvec(other, |t, f| { t.each_gen_bit_frozen(id, f); });
+    let my_bv = make_bitvec(id, mine,  |t, f| { t.each_gen_bit_frozen(id, f); });
+    let rs_bv = make_bitvec(id, other, |t, f| { t.each_gen_bit_frozen(id, f); });
     if ! my_bv.equal(&rs_bv) { return false; }
 
     return true;
@@ -235,6 +247,19 @@ fn setup_samples(sess: parse::ParseSess) -> Vec<Named<Expr>> {
                                let z = ||{};
                                let omega = ||{};
                                'exit: loop { while v { if w && x { break 'exit; y } z(); } }
+                               omega();
+                           }) };
+    samples.push(e);
+
+    let e = Named::<Expr>{ name: ~"l_loop_while_v_bw_if_w_and_x_by_break_l_else_call_z",
+                           val: quote_expr!(ps, {
+                               let (v,w,x,y) = (true, true, true, true);
+                               let b = |a|{};
+                               let z = ||{};
+                               let omega = ||{};
+                               'exit: loop { while v {
+                                   b(&w); if w && x { b(&y); break 'exit; y } z();
+                               } }
                                omega();
                            }) };
     samples.push(e);
