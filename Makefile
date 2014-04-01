@@ -1,12 +1,15 @@
 default: smoke-test
 
-RUSTC=./objdir-dbg/x86_64-apple-darwin/stage2/bin/rustc
+RUST_OBJDIR=./objdir-dbg
+RUSTC=$(RUST_OBJDIR)/x86_64-apple-darwin/stage1/bin/rustc
 RUSTC_SRC=$(shell find src/libsyntax src/librustc -name '*.rs')
 cfg.bin: cfg/mod.rs cfg/*.rs cfg/*/*.rs $(RUSTC) Makefile
 	time $(RUSTC) -g $< -o $@
 
-./objdir-dbgopt/x86_64-apple-darwin/stage2/bin/rustc: $(RUSTC_SRC)
-	remake --trace -j8 -C ./objdir-dbgopt/ --environment-overrides WFLAGS_ST0=-Awarnings
+# $(info RUSTC_SRC,$(RUSTC_SRC))
 
-smoke-test: cfg.bin
-	RUST_BACKTRACE=1 RUST_LOG=rustc,cfg ./cfg.bin loans l_loop_while_v_if_w_and_x__break_l_else_call_z
+$(RUSTC): $(RUSTC_SRC)
+	remake --trace -j8 -C $(RUST_OBJDIR) --environment-overrides WFLAGS_ST0=-Awarnings rustc-stage1
+
+smoke-test: cfg.bin $(RUSTC)
+	RUST_BACKTRACE=1 RUST_LOG=rustc,cfg ./cfg.bin loans l_loop_while_v_bw_if_w_and_x_by_break_l_else_call_z
