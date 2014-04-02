@@ -431,6 +431,9 @@ pub trait Iterator<A> {
     /// Apply a function to each element, or stop iterating if the
     /// function returns `false`.
     ///
+    /// Returns false if and only if we stopped iterating in response
+    /// to the function returning `false`.
+    ///
     /// # Example
     ///
     /// ```rust

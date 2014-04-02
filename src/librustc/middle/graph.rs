@@ -213,7 +213,9 @@ impl<N,E> Graph<N,E> {
                               source: NodeIndex,
                               f: |EdgeIndex, &Edge<E>| -> bool)
                               -> bool {
-        //! Iterates over all outgoing edges from the node `from`
+        //! Iterates over outgoing edges from the node `source`.
+        //! Stops iterating early and returns false if `f` returns
+        //! false; otherwise returns true.
 
         self.each_adjacent_edge(source, Outgoing, f)
     }
@@ -222,7 +224,9 @@ impl<N,E> Graph<N,E> {
                               target: NodeIndex,
                               f: |EdgeIndex, &Edge<E>| -> bool)
                               -> bool {
-        //! Iterates over all incoming edges to the node `target`
+        //! Iterates over incoming edges to the node `target`,
+        //! Stops iterating early and returns false if `f` returns
+        //! false; otherwise returns true.
 
         self.each_adjacent_edge(target, Incoming, f)
     }
@@ -232,8 +236,10 @@ impl<N,E> Graph<N,E> {
                               dir: Direction,
                               f: |EdgeIndex, &Edge<E>| -> bool)
                               -> bool {
-        //! Iterates over all edges adjacent to the node `node`
-        //! in the direction `dir` (either `Outgoing` or `Incoming)
+        //! Iterates over edges adjacent to the node `node`
+        //! in the direction `dir` (either `Outgoing` or `Incoming).
+        //! Stops iterating early and returns false if `f` returns
+        //! false; otherwise returns true.
 
         let mut edge_idx = self.first_adjacent(node, dir);
         while edge_idx != InvalidEdgeIndex {
