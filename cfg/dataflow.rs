@@ -30,6 +30,9 @@ use rustc::middle::typeck;
 use rustc::util::ppaux::Repr;
 use rustc::util::nodemap::NodeMap;
 
+use cfg = rustc_cfg;
+use CFG = rustc_cfg::CFG;
+
 #[cfg(not(localize_everything))]
 pub use DataFlowOperator = rustc::middle::dataflow::DataFlowOperator;
 
@@ -79,6 +82,7 @@ pub trait DataFlowOperator {
 
 struct PropagationContext<'a, 'b, O> {
     dfcx: &'a mut DataFlowContext<'b, O>,
+    cfg: &'a CFG,
     changed: bool
 }
 
@@ -331,13 +335,23 @@ impl<'a, O:DataFlowOperator+Clone+'static> DataFlowContext<'a, O> {
         }
 
         {
+            let cfg = CFG::new(self.tcx, self.method_map, blk);
+
             let mut propcx = PropagationContext {
                 dfcx: &mut *self,
+                cfg: &cfg,
                 changed: true
             };
 
             let mut temp = slice::from_elem(self.words_per_id, 0u);
             let mut loop_scopes = Vec::new();
+
+            while propcx.changed {
+                cfg.each_node(|idx, node| {
+                    propcx.cfg_iteration(idx, node, temp);
+                    true
+                });
+            }
 
             while propcx.changed {
                 propcx.changed = false;
@@ -366,6 +380,22 @@ impl<'a, O:DataFlowOperator+Clone+'static> DataFlowContext<'a, O> {
 impl<'a, 'b, O:DataFlowOperator> PropagationContext<'a, 'b, O> {
     fn tcx(&self) -> &'b ty::ctxt {
         self.dfcx.tcx
+    }
+
+    fn cfg_iteration(&mut self,
+                     n_idx: cfg::CFGNodeIndex,
+                     node: &cfg::CFGNode,
+                     in_out: &mut [uint]) {
+        let id = node.data.id;
+        let (start, end) = self.compute_id_range(id);
+        let on_exit = {
+            let on_entry = self.on_entry.slice(start, end).to_owned();
+            self.dfcx.apply_gen_kill(id, on_entry);
+        };
+        self.cfg.each_outgoing_edge(n_idx, |e_idx, edge| {
+            let target = edge.target().data.id;
+            self.dfcx.merge_with_entry_set(target, on_exit);
+        });
     }
 
     fn walk_block(&mut self,
