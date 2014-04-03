@@ -10,7 +10,7 @@
 
 /*! See doc.rs for a thorough explanation of the borrow checker */
 
-#[allow(non_camel_case_types)];
+#![allow(non_camel_case_types)]
 
 use mc = rustc::middle::mem_categorization;
 use rustc::middle::ty;

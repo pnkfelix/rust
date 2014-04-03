@@ -173,11 +173,7 @@ impl<'a> RestrictionsContext<'a> {
             Safe => Safe,
             SafeIf(base_lp, base_vec) => {
                 let lp = @LpExtend(base_lp, mc, elem);
-                SafeIf(lp, vec::append_one(base_vec,
-                                              Restriction {
-                                                  loan_path: lp,
-                                                  set: restrictions
-                                              }))
+                SafeIf(lp, base_vec.append_one(Restriction { loan_path: lp, set: restrictions }))
             }
         }
     }

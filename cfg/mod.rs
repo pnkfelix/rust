@@ -1,9 +1,9 @@
-#[feature(default_type_params)];
-#[feature(macro_rules)];
-#[feature(managed_boxes)];
-#[feature(quote)];
-#[feature(globs)];
-#[feature(phase)];
+#![feature(default_type_params)]
+#![feature(macro_rules)]
+#![feature(managed_boxes)]
+#![feature(quote)]
+#![feature(globs)]
+#![feature(phase)]
 
 extern crate arena;
 extern crate collections;
@@ -268,7 +268,7 @@ fn setup_samples(sess: parse::ParseSess) -> Vec<Named<Expr>> {
 }
 
 fn os_args() -> Vec<~str> {
-    #[allow(deprecated_owned_vector)];
+    #![allow(deprecated_owned_vector)]
     os::args().move_iter().collect()
 }
 

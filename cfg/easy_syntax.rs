@@ -101,7 +101,7 @@ pub fn mk_sess() -> session::Session {
             (writeln!(&mut io::stderr(), "{}: {}", lvl, msg)).unwrap();
         }
     }
-    let emitter = ~SimpleEmitter as ~diagnostic::Emitter;
+    let emitter = ~SimpleEmitter as ~diagnostic::Emitter:Send;
     let diagnostic_handler = diagnostic::Handler {
         err_count: Cell::new(0),
         emit: RefCell::new(emitter),

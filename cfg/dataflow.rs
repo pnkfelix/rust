@@ -347,7 +347,7 @@ impl<'a, O:DataFlowOperator+Clone+'static> DataFlowContext<'a, O> {
             let mut loop_scopes = Vec::new();
 
             while propcx.changed {
-                cfg.each_node(|idx, node| {
+                cfg.graph.each_node(|idx, node| {
                     propcx.cfg_iteration(idx, node, temp);
                     true
                 });
@@ -383,18 +383,20 @@ impl<'a, 'b, O:DataFlowOperator> PropagationContext<'a, 'b, O> {
     }
 
     fn cfg_iteration(&mut self,
-                     n_idx: cfg::CFGNodeIndex,
+                     n_idx: cfg::CFGIndex,
                      node: &cfg::CFGNode,
                      in_out: &mut [uint]) {
         let id = node.data.id;
-        let (start, end) = self.compute_id_range(id);
-        let on_exit = {
-            let on_entry = self.on_entry.slice(start, end).to_owned();
+        let (start, end) = self.dfcx.compute_id_range(id);
+        let mut on_exit = {
+            let mut on_entry = self.dfcx.on_entry.slice(start, end).to_owned();
             self.dfcx.apply_gen_kill(id, on_entry);
+            on_entry
         };
-        self.cfg.each_outgoing_edge(n_idx, |e_idx, edge| {
-            let target = edge.target().data.id;
-            self.dfcx.merge_with_entry_set(target, on_exit);
+        self.cfg.graph.each_outgoing_edge(n_idx, |e_idx, edge| {
+            let target = self.cfg.graph.node_data(edge.target()).id;
+            self.merge_with_entry_set(target, on_exit);
+            true
         });
     }
 
