@@ -286,8 +286,16 @@ fn main() {
         while args.len() >= 2 {
             let next_args;
             match (ProcessOp::from(*args.get(0)),
-                   args.get(1),
+                   args.get(1).as_slice(),
                    args.slice_from(2)) {
+
+                (Some(op), "*", rest) => {
+                    for ne in samples.iter() {
+                        process_expr(ne, op);
+                    }
+                    next_args = rest.iter().map(|x|x.clone()).collect();
+                }
+
                 (Some(op), arg, rest) => {
                     let ne = samples.iter().find(|n|n.name.as_slice() == arg.as_slice());
                     let ne = ne.unwrap_or_else(||fail!("did not find expr {}",
@@ -295,6 +303,7 @@ fn main() {
                     process_expr(ne, op);
                     next_args = rest.iter().map(|x|x.clone()).collect();
                 }
+
                 _ => fail!("unrecognized command line option: {}", args.get(0))
             }
             args = next_args;
@@ -403,7 +412,7 @@ fn crate_to_expr<'a>(crate_: ast::Crate) -> Expr {
 }
 
 fn process_expr(e: &Named<Expr>, op: ProcessOp) {
-    println!("expr pre-analysis: {:s}", e.val.stx_to_str());
+    println!("expr pre-analysis: {:s}: {:s}", e.name, e.val.stx_to_str());
 
     let crate_ = e.clone().map(expr_to_crate);
 

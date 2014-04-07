@@ -174,22 +174,22 @@ fn borrowck_fn(this: &mut BorrowckCtxt,
 // Type definitions
 
 pub struct BorrowckCtxt<'a> {
-    tcx: &'a ty::ctxt,
-    method_map: typeck::MethodMap,
-    moves_map: &'a NodeSet,
-    moved_variables_set: &'a NodeSet,
-    capture_map: &'a moves::CaptureMap,
-    root_map: root_map,
+    pub tcx: &'a ty::ctxt,
+    pub method_map: typeck::MethodMap,
+    pub moves_map: &'a NodeSet,
+    pub moved_variables_set: &'a NodeSet,
+    pub capture_map: &'a moves::CaptureMap,
+    pub root_map: root_map,
 
     // Statistics:
-    stats: @BorrowStats
+    pub stats: @BorrowStats
 }
 
 pub struct BorrowStats {
-    loaned_paths_same: Cell<uint>,
-    loaned_paths_imm: Cell<uint>,
-    stable_paths: Cell<uint>,
-    guaranteed_paths: Cell<uint>,
+    pub loaned_paths_same: Cell<uint>,
+    pub loaned_paths_imm: Cell<uint>,
+    pub stable_paths: Cell<uint>,
+    pub guaranteed_paths: Cell<uint>,
 }
 
 // The keys to the root map combine the `id` of the deref expression
@@ -207,8 +207,8 @@ pub struct BorrowStats {
 // is T, which is not a box.
 #[deriving(Eq, TotalEq, Hash)]
 pub struct root_map_key {
-    id: ast::NodeId,
-    derefs: uint
+    pub id: ast::NodeId,
+    pub derefs: uint
 }
 
 pub type BckResult<T> = Result<T, BckError>;
@@ -224,15 +224,15 @@ pub enum PartialTotal {
 
 /// Record of a loan that was issued.
 pub struct Loan {
-    index: uint,
-    loan_path: @LoanPath,
-    cmt: mc::cmt,
-    kind: ty::BorrowKind,
-    restrictions: Vec<Restriction> ,
-    gen_scope: ast::NodeId,
-    kill_scope: ast::NodeId,
-    span: Span,
-    cause: LoanCause,
+    pub index: uint,
+    pub loan_path: @LoanPath,
+    pub cmt: mc::cmt,
+    pub kind: ty::BorrowKind,
+    pub restrictions: Vec<Restriction> ,
+    pub gen_scope: ast::NodeId,
+    pub kill_scope: ast::NodeId,
+    pub span: Span,
+    pub cause: LoanCause,
 }
 
 #[deriving(Eq)]
@@ -378,7 +378,7 @@ impl Repr for RestrictionSet {
 // uncovered after a certain number of auto-derefs.
 
 pub struct RootInfo {
-    scope: ast::NodeId,
+    pub scope: ast::NodeId,
 }
 
 pub type root_map = @RefCell<HashMap<root_map_key, RootInfo>>;

@@ -97,15 +97,13 @@ pub fn mk_sess() -> session::Session {
 
         }
         fn custom_emit(&mut self, _cm: &codemap::CodeMap,
-                       _sp: codemap::Span, msg: &str, lvl: diagnostic::Level) {
+                       _sp: diagnostic::RenderSpan, msg: &str, lvl: diagnostic::Level) {
             (writeln!(&mut io::stderr(), "{}: {}", lvl, msg)).unwrap();
         }
     }
     let emitter = ~SimpleEmitter as ~diagnostic::Emitter:Send;
-    let diagnostic_handler = diagnostic::Handler {
-        err_count: Cell::new(0),
-        emit: RefCell::new(emitter),
-    };
+    let diagnostic_handler =
+        diagnostic::mk_handler(emitter);
     let span_diagnostic_handler =
         diagnostic::mk_span_handler(diagnostic_handler, codemap);
 

@@ -172,6 +172,14 @@ fn with_resolve_table_mut<T>(op: |&mut ResolveTable| -> T) -> T {
 fn resolve_internal(id: Ident,
                     table: &SCTable,
                     resolve_table: &mut ResolveTable) -> Name {
+    debug!("resolve_internal(id.name={}, \
+            table\\{table.len()={}, mark_memo.len()={}, rename_memo={}\\}, \
+            resolve_table.len={})",
+           id.name,
+           table.table.borrow().len(),
+           table.mark_memo.borrow().len(),
+           table.rename_memo.borrow().len(),
+           resolve_table.len());
     let key = (id.name, id.ctxt);
 
     match resolve_table.find(&key) {

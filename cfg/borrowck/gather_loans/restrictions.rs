@@ -12,7 +12,6 @@
  * Computes the restrictions that result from a borrow.
  */
 
-use std::vec;
 use my_borrowck::*;
 use mc = rustc::middle::mem_categorization;
 use rustc::middle::ty;
