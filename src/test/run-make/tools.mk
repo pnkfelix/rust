@@ -37,6 +37,9 @@ DYLIB = $(TMPDIR)/lib$(1).so
 endif
 endif
 
+REMOVE_DYLIBS     = rm $(TMPDIR)/$(call DYLIB_GLOB,$(1))
+REMOVE_RLIBS      = rm $(TMPDIR)/$(call RLIB_GLOB,$(1))
+
 %.a: %.o
 	ar crus $@ $<
 %.dylib: %.o

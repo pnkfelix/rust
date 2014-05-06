@@ -5,5 +5,5 @@ all:
 	ln -s $(call DYLIB,foo-*) $(call DYLIB,foo)
 	$(CC) bar.c -lfoo -o $(call RUN_BINFILE,bar) -Wl,-rpath,$(TMPDIR)
 	$(call RUN,bar)
-	rm $(call DYLIB,foo)
+	$(call REMOVE_DYLIBS,foo)
 	$(call FAIL,bar)
