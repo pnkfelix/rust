@@ -312,6 +312,15 @@ check-stage$(1)-T-$(2)-H-$(3)-crates-exec: \
 
 endif
 
+# Issue #13983: rustdoc wants rpath for host and target at same time.
+# This is not generally compatible with stage1, so skip it.
+ifeq ($(1),1)
+check-stage$(1)-T-$(2)-H-$(3)-doc-crates-exec:
+	echo skipping $@ when running in stage$(1)
+
+check-stage$(1)-T-$(2)-H-$(3)-doc-exec:
+	echo skipping $@ when running in stage$(1)
+else
 check-stage$(1)-T-$(2)-H-$(3)-doc-crates-exec: \
         $$(foreach crate,$$(TEST_DOC_CRATES), \
            check-stage$(1)-T-$(2)-H-$(3)-doc-crate-$$(crate)-exec)
@@ -319,6 +328,7 @@ check-stage$(1)-T-$(2)-H-$(3)-doc-crates-exec: \
 check-stage$(1)-T-$(2)-H-$(3)-doc-exec: \
         $$(foreach docname,$$(DOCS), \
            check-stage$(1)-T-$(2)-H-$(3)-doc-$$(docname)-exec)
+endif
 
 check-stage$(1)-T-$(2)-H-$(3)-pretty-exec: \
 	check-stage$(1)-T-$(2)-H-$(3)-pretty-rpass-exec	\
