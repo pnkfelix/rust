@@ -22,7 +22,7 @@ use mem;
 use ops::*;
 use option::*;
 use os;
-use path::GenericPath;
+use path::{Path,GenericPath};
 use path;
 use result::*;
 use slice::{Vector,OwnedVector};
@@ -47,7 +47,7 @@ impl Drop for DynamicLibrary {
 impl DynamicLibrary {
     /// Lazily open a dynamic library. When passed None it gives a
     /// handle to the calling process
-    pub fn open(filename: Option<&path::Path>) -> Result<DynamicLibrary, ~str> {
+    pub fn open(filename: Option<&Path>) -> Result<DynamicLibrary, ~str> {
         unsafe {
             let maybe_library = dl::check_for_errors_in(|| {
                 match filename {
@@ -66,13 +66,39 @@ impl DynamicLibrary {
         }
     }
 
-    /// Appends a path to the system search path for dynamic libraries
-    pub fn add_search_path(path: &path::Path) {
-        let (envvar, sep) = if cfg!(windows) {
-            ("PATH", ';' as u8)
+    /// Prepends a path to this process's search path for dynamic libraries
+    pub fn prepend_search_path(path: &Path) {
+        let mut search_path = DynamicLibrary::search_path();
+        search_path.insert(0, path.clone());
+        let newval = DynamicLibrary::create_path(search_path.as_slice());
+        os::setenv(DynamicLibrary::envvar(),
+                   str::from_utf8(newval.as_slice()).unwrap());
+    }
+
+    /// From a slice of paths, create a new vector which is suitable to be an
+    /// environment variable for this platforms dylib search path.
+    pub fn create_path(path: &[Path]) -> Vec<u8> {
+        let mut newvar = Vec::new();
+        for (i, path) in path.iter().enumerate() {
+            if i > 0 { newvar.push(DynamicLibrary::separator()); }
+            newvar.push_all(path.as_vec());
+        }
+        return newvar;
+    }
+
+    /// Returns the environment variable for this process's dynamic library
+    /// search path
+    pub fn envvar() -> &'static str {
+        if cfg!(windows) {
+            "PATH"
         } else if cfg!(target_os = "macos") {
-            ("DYLD_LIBRARY_PATH", ':' as u8)
+            "DYLD_LIBRARY_PATH"
         } else {
+            "LD_LIBRARY_PATH"
+        }
+    }
+
+<<<<<<< HEAD
             ("LD_LIBRARY_PATH", ':' as u8)
         };
         let newenv = os::getenv_as_bytes(envvar).unwrap_or(box []);
@@ -80,6 +106,55 @@ impl DynamicLibrary {
         newenv.push_all(&[sep]);
         newenv.push_all(path.as_vec());
         os::setenv(envvar, str::from_utf8(newenv.as_slice()).unwrap());
+||||||| parent of 943b4dc... Fixing rustdoc stage1.
+            ("LD_LIBRARY_PATH", ':' as u8)
+        };
+        let newenv = os::getenv_as_bytes(envvar).unwrap_or(box []);
+        let newenv = newenv + &[sep] + path.as_vec();
+        os::setenv(envvar, str::from_utf8(newenv).unwrap());
+=======
+            "LD_LIBRARY_PATH"
+        }
+    }
+
+    fn separator() -> u8 {
+        if cfg!(windows) {';' as u8} else {':' as u8}
+    }
+
+    /// Returns the current search path for dynamic libraries being used by this
+    /// process
+    pub fn search_path() -> Vec<Path> {
+        let mut ret = Vec::new();
+        match os::getenv_as_bytes(DynamicLibrary::envvar()) {
+            Some(env) => {
+                for portion in env.split(|a| *a == DynamicLibrary::separator()) {
+                    ret.push(Path::new(portion));
+                }
+            }
+            None => {}
+        }
+        return ret;
+    }
+
+    /// From a slice of paths, create a new vector which is suitable to be an
+    /// environment variable for this platforms dylib search path.
+    pub fn create_path(path: &[Path]) -> Vec<u8> {
+        let mut newvar = Vec::new();
+        for (i, path) in path.iter().enumerate() {
+            if i > 0 { newvar.push(DynamicLibrary::separator()); }
+            newvar.push_all(path.as_vec());
+        }
+        return newvar;
+    }
+
+    /// Prepends a path to this process's search path for dynamic libraries
+    pub fn prepend_search_path(path: &Path) {
+        let mut search_path = DynamicLibrary::search_path();
+        search_path.insert(0, path.clone());
+        let newval = DynamicLibrary::create_path(search_path.as_slice());
+        os::setenv(DynamicLibrary::envvar(),
+                   str::from_utf8(newval.as_slice()).unwrap());
+>>>>>>> 943b4dc... Fixing rustdoc stage1.
     }
 
     /// Access the value at the symbol of the dynamic library
@@ -155,14 +230,14 @@ mod test {
 #[cfg(target_os = "macos")]
 #[cfg(target_os = "freebsd")]
 pub mod dl {
+    use prelude::*;
+
     use c_str::ToCStr;
     use libc;
-    use path;
     use ptr;
     use str;
-    use result::*;
 
-    pub unsafe fn open_external(filename: &path::Path) -> *u8 {
+    pub unsafe fn open_external(filename: &Path) -> *u8 {
         filename.with_c_str(|raw_name| {
             dlopen(raw_name, Lazy as libc::c_int) as *u8
         })
@@ -219,14 +294,13 @@ pub mod dl {
 
 #[cfg(target_os = "win32")]
 pub mod dl {
+    use prelude::*;
+
     use libc;
     use os;
-    use path::GenericPath;
-    use path;
     use ptr;
-    use result::{Ok, Err, Result};
 
-    pub unsafe fn open_external(filename: &path::Path) -> *u8 {
+    pub unsafe fn open_external(filename: &Path) -> *u8 {
         os::win32::as_utf16_p(filename.as_str().unwrap(), |raw_name| {
             LoadLibraryW(raw_name as *libc::c_void) as *u8
         })
