@@ -11,10 +11,11 @@
 use std::cell::RefCell;
 use std::char;
 use std::io;
-use std::io::{Process, TempDir};
+use std::io::{Process, TempDir, ProcessConfig};
 use std::os;
 use std::str;
 use std::strbuf::StrBuf;
+use std::unstable::dynamic_lib::DynamicLibrary;
 
 use collections::HashSet;
 use testing;
@@ -148,13 +149,41 @@ fn runtest(test: &str, cratename: &str, libs: HashSet<Path>, should_fail: bool,
     let outdir = TempDir::new("rustdoctest").expect("rustdoc needs a tempdir");
     let out = Some(outdir.path().clone());
     let cfg = driver::build_configuration(&sess);
+    let libdir = sess.target_filesearch().get_lib_path();
     driver::compile_input(sess, cfg, &input, &out, &None);
 
     if no_run { return }
 
     // Run the code!
+    //
+    // We're careful to prepend the *target* dylib search path to the child's
+    // environment to ensure that the target loads the right libraries at
+    // runtime. It would be a sad day if the *host* libraries were loaded as a
+    // mistake.
     let exe = outdir.path().join("rust_out");
-    let out = Process::output(exe.as_str().unwrap(), []);
+    let env = {
+        let mut path = DynamicLibrary::search_path();
+        path.insert(0, libdir.clone());
+
+        // Remove the previous dylib search path var
+        let var = DynamicLibrary::envvar();
+        let mut env: Vec<(~str,~str)> = os::env().move_iter().collect();
+        match env.iter().position(|&(ref k, _)| k.as_slice() == var) {
+            Some(i) => { env.remove(i); }
+            None => {}
+        };
+
+        // Add the new dylib search path var
+        let newpath = DynamicLibrary::create_path(path.as_slice());
+        env.push((var.to_owned(),
+                  str::from_utf8(newpath.as_slice()).unwrap().to_owned()));
+        env
+    };
+    let out = Process::configure(ProcessConfig {
+        env: Some(env.as_slice()),
+        program: exe.as_str().unwrap(),
+        ..ProcessConfig::new()
+    }).map(|mut p| p.wait_with_output());
     match out {
         Err(e) => fail!("couldn't run the test: {}{}", e,
                         if e.kind == io::PermissionDenied {

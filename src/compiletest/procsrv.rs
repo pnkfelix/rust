@@ -11,51 +11,30 @@
 use std::os;
 use std::str;
 use std::io::process::{ProcessExit, Process, ProcessConfig, ProcessOutput};
+use std::unstable::dynamic_lib::DynamicLibrary;
 
-#[cfg(target_os = "win32")]
-fn target_env(lib_path: &str, prog: &str) -> Vec<(~str, ~str)> {
-    let env = os::env();
-
-    // Make sure we include the aux directory in the path
-    assert!(prog.ends_with(".exe"));
-    let aux_path = prog.slice(0u, prog.len() - 4u).to_owned() + ".libaux";
-
-    let mut new_env: Vec<_> = env.move_iter().map(|(k, v)| {
-        let new_v = if "PATH" == k {
-            format!("{};{};{}", v, lib_path, aux_path)
-        } else {
-            v
-        };
-        (k, new_v)
-    }).collect();
-    if prog.ends_with("rustc.exe") {
-        new_env.push(("RUST_THREADS".to_owned(), "1".to_owned()));
-    }
-    return new_env;
-}
-
-#[cfg(target_os = "linux")]
-#[cfg(target_os = "macos")]
-#[cfg(target_os = "freebsd")]
 fn target_env(lib_path: &str, prog: &str) -> Vec<(~str,~str)> {
-    // Make sure we include the aux directory in the path
+    let prog = if cfg!(windows) {prog.slice_to(prog.len() - 4)} else {prog};
     let aux_path = prog + ".libaux";
 
+    // Need to be sure to put both the lib_path and the aux path in the dylib
+    // search path for the child.
+    let mut path = DynamicLibrary::search_path();
+    path.insert(0, Path::new(aux_path));
+    path.insert(0, Path::new(lib_path));
+
+    // Remove the previous dylib search path var
+    let var = DynamicLibrary::envvar();
     let mut env: Vec<(~str,~str)> = os::env().move_iter().collect();
-    let var = if cfg!(target_os = "macos") {
-        "DYLD_LIBRARY_PATH"
-    } else {
-        "LD_LIBRARY_PATH"
+    match env.iter().position(|&(ref k, _)| k.as_slice() == var) {
+        Some(i) => { env.remove(i); }
+        None => {}
     };
-    let prev = match env.iter().position(|&(ref k, _)| k.as_slice() == var) {
-        Some(i) => env.remove(i).unwrap().val1(),
-        None => "".to_owned(),
-    };
-    env.push((var.to_owned(), if prev.is_empty() {
-        lib_path + ":" + aux_path
-    } else {
-        lib_path + ":" + aux_path + ":" + prev
-    }));
+
+    // Add the new dylib search path var
+    let newpath = DynamicLibrary::create_path(path.as_slice());
+    env.push((var.to_owned(),
+              str::from_utf8(newpath.as_slice()).unwrap().to_owned()));
     return env;
 }
 
