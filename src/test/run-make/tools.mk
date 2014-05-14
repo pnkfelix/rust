@@ -25,15 +25,18 @@ endif
 ifeq ($(UNAME),Darwin)
 DYLIB_GLOB = lib$(1)*.dylib
 DYLIB = $(TMPDIR)/lib$(1).dylib
+RPATH_LINK_SEARCH =
 else
 ifdef IS_WINDOWS
 DYLIB_GLOB = $(1)*.dll
 DYLIB = $(TMPDIR)/$(1).dll
 BIN = $(1).exe
+RPATH_LINK_SEARCH =
 export PATH := $(PATH):$(LD_LIBRARY_PATH)
 else
 DYLIB_GLOB = lib$(1)*.so
 DYLIB = $(TMPDIR)/lib$(1).so
+RPATH_LINK_SEARCH = -Wl,-rpath-link=$(1)
 endif
 endif
 
