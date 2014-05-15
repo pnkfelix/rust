@@ -1051,13 +1051,15 @@ impl Clean<Item> for doctree::Static {
 #[deriving(Show, Clone, Encodable, Decodable)]
 pub enum Mutability {
     Mutable,
+    MutUniq,
     Immutable,
 }
 
 impl Clean<Mutability> for ast::Mutability {
     fn clean(&self) -> Mutability {
         match self {
-            &ast::MutMutable => Mutable,
+            &ast::MutMutable(ast::UmMut) => Mutable,
+            &ast::MutMutable(ast::UmUniq) => MutUniq,
             &ast::MutImmutable => Immutable,
         }
     }

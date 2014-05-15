@@ -408,6 +408,7 @@ impl fmt::Show for clean::Type {
                 write!(f.buf, "*{}{}",
                        match m {
                            clean::Mutable => "mut ",
+                           clean::MutUniq => "uniq ",
                            clean::Immutable => "",
                        }, **t)
             }
@@ -417,6 +418,7 @@ impl fmt::Show for clean::Type {
                        lt,
                        match mutability {
                            clean::Mutable => "mut ",
+                           clean::MutUniq => "uniq ",
                            clean::Immutable => "",
                        },
                        **ty)
@@ -458,11 +460,17 @@ impl<'a> fmt::Show for Method<'a> {
             clean::SelfBorrowed(Some(ref lt), clean::Immutable) => {
                 args.push_str(format!("&amp;{} self", *lt));
             }
+            clean::SelfBorrowed(Some(ref lt), clean::MutUniq) => {
+                args.push_str(format!("&amp;{} uniq self", *lt));
+            }
             clean::SelfBorrowed(Some(ref lt), clean::Mutable) => {
                 args.push_str(format!("&amp;{} mut self", *lt));
             }
             clean::SelfBorrowed(None, clean::Mutable) => {
                 args.push_str("&amp;mut self");
+            }
+            clean::SelfBorrowed(None, clean::MutUniq) => {
+                args.push_str("&amp;uniq self");
             }
             clean::SelfBorrowed(None, clean::Immutable) => {
                 args.push_str("&amp;self");
