@@ -174,7 +174,7 @@ impl<'a> Visitor<()> for EffectCheckVisitor<'a> {
             ast::ExprAssign(base, _) | ast::ExprAssignOp(_, base, _) => {
                 self.check_str_index(base);
             }
-            ast::ExprAddrOf(ast::MutMutable, base) => {
+            ast::ExprAddrOf(ast::MutMutable(_), base) => {
                 self.check_str_index(base);
             }
             ast::ExprInlineAsm(..) => {

@@ -22,6 +22,7 @@ use middle::typeck::infer::{cres, InferCtxt};
 use middle::typeck::infer::{TypeTrace, Subtype};
 use middle::typeck::infer::fold_regions_in_sig;
 use syntax::ast::{Many, Once, MutImmutable, MutMutable};
+use syntax::ast::{UmMut, UmUniq};
 use syntax::ast::{NormalFn, UnsafeFn, NodeId};
 use syntax::ast::{Onceness, FnStyle};
 use collections::HashMap;
@@ -55,9 +56,15 @@ impl<'f> Combine for Glb<'f> {
         match (a.mutbl, b.mutbl) {
           // If one side or both is mut, then the GLB must use
           // the precise type from the mut side.
-          (MutMutable, MutMutable) => {
+          (MutMutable(UmMut), MutMutable(UmMut)) => {
             eq_tys(self, a.ty, b.ty).then(|| {
-                Ok(ty::mt {ty: a.ty, mutbl: MutMutable})
+                Ok(ty::mt {ty: a.ty, mutbl: MutMutable(UmMut)})
+            })
+          }
+
+          (MutMutable(UmUniq), MutMutable(UmUniq)) => {
+            eq_tys(self, a.ty, b.ty).then(|| {
+                Ok(ty::mt {ty: a.ty, mutbl: MutMutable(UmMut)})
             })
           }
 
@@ -70,9 +77,14 @@ impl<'f> Combine for Glb<'f> {
           }
 
           // There is no mutual subtype of these combinations.
-          (MutMutable, MutImmutable) |
-          (MutImmutable, MutMutable) => {
+          (MutMutable(_), MutImmutable) |
+          (MutImmutable, MutMutable(_)) => {
               Err(ty::terr_mutability)
+          }
+
+          (MutMutable(UmUniq), MutMutable(UmMut)) |
+          (MutMutable(UmMut), MutMutable(UmUniq)) => {
+              unimplemented!() // FIXME
           }
         }
     }

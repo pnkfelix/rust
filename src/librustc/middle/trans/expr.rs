@@ -695,7 +695,7 @@ fn trans_rvalue_dps_unadjusted<'a>(bcx: &'a Block<'a>,
             }
         }
         ast::ExprVstore(contents, ast::ExprVstoreSlice) |
-        ast::ExprVstore(contents, ast::ExprVstoreMutSlice) => {
+        ast::ExprVstore(contents, ast::ExprVstoreMutSlice(_)) => {
             fcx.push_ast_cleanup_scope(contents.id);
             bcx = tvec::trans_slice_vstore(bcx, expr, contents, dest);
             fcx.pop_and_trans_ast_cleanup_scope(bcx, contents.id)

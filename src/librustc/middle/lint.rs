@@ -1394,7 +1394,7 @@ fn check_unused_mut_pat(cx: &Context, pats: &[@ast::Pat]) {
     for &p in pats.iter() {
         pat_util::pat_bindings(&cx.tcx.def_map, p, |mode, id, _, path| {
             match mode {
-                ast::BindByValue(ast::MutMutable) => {
+                ast::BindByValue(ast::MutMutable(_)) => {
                     if path.segments.len() != 1 {
                         cx.tcx.sess.span_bug(p.span,
                                              "mutable binding that doesn't consist \
@@ -1464,7 +1464,7 @@ fn check_unnecessary_allocation(cx: &Context, e: &ast::Expr) {
                             report("unnecessary allocation, use & instead");
                         }
                         (BoxAllocation,
-                         Some(ty::AutoPtr(_, ast::MutMutable))) => {
+                         Some(ty::AutoPtr(_, ast::MutMutable(_)))) => {
                             report("unnecessary allocation, use &mut \
                                     instead");
                         }

@@ -175,7 +175,7 @@ fn check_expr(v: &mut CheckCrateVisitor, e: &Expr, is_const: bool) {
                 None => {}
             }
           }
-          ExprVstore(_, ExprVstoreMutSlice) |
+          ExprVstore(_, ExprVstoreMutSlice(_)) |
           ExprVstore(_, ExprVstoreSlice) |
           ExprVec(_) |
           ExprAddrOf(MutImmutable, _) |

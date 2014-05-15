@@ -357,16 +357,38 @@ pub enum Pat_ {
 }
 
 #[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
+pub enum UniqMut {
+    UmUniq,
+    UmMut
+}
+
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash, Show)]
 pub enum Mutability {
-    MutMutable,
+    MutMutable(UniqMut),
     MutImmutable,
+}
+
+impl Mutability {
+    pub fn as_uint(&self) -> uint {
+        match *self {
+            MutMutable(UmMut)  => 0,
+            MutImmutable       => 1,
+            MutMutable(UmUniq) => 2,
+        }
+    }
+    pub fn is_mutable(&self) -> bool {
+        match *self { MutMutable(_) => true, MutImmutable  => false, }
+    }
+    pub fn is_immutable(&self) -> bool {
+        match *self { MutMutable(_) => false, MutImmutable  => true, }
+    }
 }
 
 #[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
 pub enum ExprVstore {
     ExprVstoreUniq,                 // ~[1,2,3,4]
     ExprVstoreSlice,                // &[1,2,3,4]
-    ExprVstoreMutSlice,             // &mut [1,2,3,4]
+    ExprVstoreMutSlice(UniqMut),    // &mut [1,2,3,4]
 }
 
 #[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]

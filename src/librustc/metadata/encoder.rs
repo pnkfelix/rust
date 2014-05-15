@@ -627,7 +627,8 @@ fn encode_explicit_self(ebml_w: &mut Encoder, explicit_self: ast::ExplicitSelf_)
                          m: ast::Mutability) {
         match m {
             MutImmutable => { ebml_w.writer.write(&[ 'i' as u8 ]); }
-            MutMutable => { ebml_w.writer.write(&[ 'm' as u8 ]); }
+            MutMutable(UmMut) => { ebml_w.writer.write(&[ 'm' as u8 ]); }
+            MutMutable(UmUniq) => { ebml_w.writer.write(&[ 'u' as u8 ]); }
         }
     }
 }
@@ -877,7 +878,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
         add_to_index(item, ebml_w, index);
         ebml_w.start_tag(tag_items_data_item);
         encode_def_id(ebml_w, def_id);
-        if m == ast::MutMutable {
+        if m.is_mutable() {
             encode_family(ebml_w, 'b');
         } else {
             encode_family(ebml_w, 'c');

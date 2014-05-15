@@ -101,6 +101,7 @@ use std::rc::Rc;
 use syntax::ast::{DefId, SelfValue, SelfRegion};
 use syntax::ast::{SelfUniq, SelfStatic};
 use syntax::ast::{MutMutable, MutImmutable};
+use syntax::ast::{UmUniq, UmMut};
 use syntax::ast;
 use syntax::codemap::Span;
 use syntax::parse::token;
@@ -833,7 +834,7 @@ impl<'a> LookupContext<'a> {
 
         // First try to borrow to a slice
         let entry = self.search_for_some_kind_of_autorefd_method(
-            AutoBorrowVec, autoderefs, [MutImmutable, MutMutable],
+            AutoBorrowVec, autoderefs, [MutImmutable, MutMutable(UmUniq), MutMutable(UmMut)],
             |m,r| ty::mk_slice(tcx, r,
                                ty::mt {ty:mt.ty, mutbl:m}));
 
@@ -843,7 +844,7 @@ impl<'a> LookupContext<'a> {
 
         // Then try to borrow to a slice *and* borrow a pointer.
         self.search_for_some_kind_of_autorefd_method(
-            AutoBorrowVecRef, autoderefs, [MutImmutable, MutMutable],
+            AutoBorrowVecRef, autoderefs, [MutImmutable, MutMutable(UmUniq), MutMutable(UmMut)],
             |m,r| {
                 let slice_ty = ty::mk_slice(tcx, r,
                                             ty::mt {ty:mt.ty, mutbl:m});
@@ -911,7 +912,9 @@ impl<'a> LookupContext<'a> {
                 // Coerce Box/&Trait instances to &Trait.
 
                 self.search_for_some_kind_of_autorefd_method(
-                    AutoBorrowObj, autoderefs, [MutImmutable, MutMutable],
+                    AutoBorrowObj, autoderefs, [MutImmutable,
+                                                MutMutable(UmUniq),
+                                                MutMutable(UmMut)],
                     |m, r| {
                         ty::mk_trait(tcx, trt_did, trt_substs.clone(),
                                      RegionTraitStore(r, m), b)
@@ -946,7 +949,7 @@ impl<'a> LookupContext<'a> {
             ty_float(..) | ty_enum(..) | ty_ptr(..) | ty_struct(..) | ty_tup(..) |
             ty_str | ty_vec(..) | ty_trait(..) | ty_closure(..) => {
                 self.search_for_some_kind_of_autorefd_method(
-                    AutoPtr, autoderefs, [MutImmutable, MutMutable],
+                    AutoPtr, autoderefs, [MutImmutable, MutMutable(UmUniq), MutMutable(UmMut)],
                     |m,r| ty::mk_rptr(tcx, r, ty::mt {ty:self_ty, mutbl:m}))
             }
 

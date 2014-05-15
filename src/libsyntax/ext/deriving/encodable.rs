@@ -83,7 +83,7 @@ would yield functions like:
 */
 
 use ast;
-use ast::{MetaItem, Item, Expr, ExprRet, MutMutable, LitNil};
+use ast::{MetaItem, Item, Expr, ExprRet, MutMutable, UmMut, LitNil};
 use codemap::Span;
 use ext::base::ExtCtxt;
 use ext::build::AstBuilder;
@@ -115,7 +115,7 @@ pub fn expand_deriving_encodable(cx: &mut ExtCtxt,
                 generics: LifetimeBounds::empty(),
                 explicit_self: borrowed_explicit_self(),
                 args: vec!(Ptr(box Literal(Path::new_local("__S")),
-                            Borrowed(None, MutMutable))),
+                            Borrowed(None, MutMutable(UmMut)))),
                 ret_ty: Literal(Path::new_(vec!("std", "result", "Result"),
                                            None,
                                            vec!(box Tuple(Vec::new()),

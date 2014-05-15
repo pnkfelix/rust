@@ -871,7 +871,8 @@ impl<'a> ConstraintContext<'a> {
                                mt: &ty::mt,
                                variance: VarianceTermPtr<'a>) {
         match mt.mutbl {
-            ast::MutMutable => {
+            // FIXME: can we be looser here if _um is UmUniq?
+            ast::MutMutable(_um) => {
                 let invar = self.invariant(variance);
                 self.add_constraints_from_ty(mt.ty, invar);
             }

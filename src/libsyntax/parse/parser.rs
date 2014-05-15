@@ -52,7 +52,7 @@ use ast::{TTNonterminal, TupleVariantKind, Ty, Ty_, TyBot, TyBox};
 use ast::{TypeField, TyFixedLengthVec, TyClosure, TyProc, TyBareFn};
 use ast::{TyTypeof, TyInfer, TypeMethod};
 use ast::{TyNil, TyParam, TyParamBound, TyPath, TyPtr, TyRptr};
-use ast::{TyTup, TyU32, TyUniq, TyVec, UnUniq};
+use ast::{TyTup, TyU32, TyUniq, TyVec, UmMut, UmUniq, UnUniq};
 use ast::{UnnamedField, UnsafeBlock, UnsafeFn, ViewItem};
 use ast::{ViewItem_, ViewItemExternCrate, ViewItemUse};
 use ast::{ViewPath, ViewPathGlob, ViewPathList, ViewPathSimple};
@@ -1370,6 +1370,7 @@ impl<'a> Parser<'a> {
             token::BINOP(token::AND) => 1,
             token::ANDAND => 1,
             _ if token::is_keyword(keywords::Mut, &self.token) => 1,
+            _ if token::is_keyword(keywords::Uniq, &self.token) => 1,
             _ => 0
         };
 
@@ -1666,13 +1667,16 @@ impl<'a> Parser<'a> {
 
     pub fn token_is_mutability(tok: &token::Token) -> bool {
         token::is_keyword(keywords::Mut, tok) ||
+        token::is_keyword(keywords::Uniq, tok) ||
         token::is_keyword(keywords::Const, tok)
     }
 
     // parse mutability declaration (mut/const/imm)
     pub fn parse_mutability(&mut self) -> Mutability {
         if self.eat_keyword(keywords::Mut) {
-            MutMutable
+            MutMutable(UmMut)
+        } else if self.eat_keyword(keywords::Uniq) {
+            MutMutable(UmUniq)
         } else if self.eat_keyword(keywords::Const) {
             self.obsolete(self.last_span, ObsoleteConstPointer);
             MutImmutable
@@ -2285,12 +2289,12 @@ impl<'a> Parser<'a> {
             let e = self.parse_prefix_expr();
             hi = e.span.hi;
             // HACK: turn &[...] into a &-vec
-            ex = match e.node {
-              ExprVec(..) if m == MutImmutable => {
+            ex = match (&e.node, m) {
+              (&ExprVec(..), MutImmutable) => {
                 ExprVstore(e, ExprVstoreSlice)
               }
-              ExprVec(..) if m == MutMutable => {
-                ExprVstore(e, ExprVstoreMutSlice)
+              (&ExprVec(..), MutMutable(a)) => {
+                ExprVstore(e, ExprVstoreMutSlice(a))
               }
               _ => ExprAddrOf(m, e)
             };
@@ -2771,7 +2775,7 @@ impl<'a> Parser<'a> {
             }
 
             let bind_type = if self.eat_keyword(keywords::Mut) {
-                BindByValue(MutMutable)
+                BindByValue(MutMutable(UmMut))
             } else if self.eat_keyword(keywords::Ref) {
                 BindByRef(self.parse_mutability())
             } else {
@@ -2782,7 +2786,7 @@ impl<'a> Parser<'a> {
 
             let subpat = if self.token == token::COLON {
                 match bind_type {
-                    BindByRef(..) | BindByValue(MutMutable) => {
+                    BindByRef(..) | BindByValue(MutMutable(_)) => {
                         let token_str = self.this_token_to_str();
                         self.fatal(format!("unexpected `{}`", token_str))
                     }
@@ -2933,7 +2937,7 @@ impl<'a> Parser<'a> {
                 pat = PatLit(val);
             }
         } else if self.eat_keyword(keywords::Mut) {
-            pat = self.parse_pat_ident(BindByValue(MutMutable));
+            pat = self.parse_pat_ident(BindByValue(MutMutable(UmMut)));
         } else if self.eat_keyword(keywords::Ref) {
             // parse ref pat
             let mutbl = self.parse_mutability();
@@ -4156,7 +4160,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_item_const(&mut self) -> ItemInfo {
-        let m = if self.eat_keyword(keywords::Mut) {MutMutable} else {MutImmutable};
+        let m = if self.eat_keyword(keywords::Mut) {MutMutable(UmMut)} else {MutImmutable};
         let id = self.parse_ident();
         self.expect(&token::COLON);
         let ty = self.parse_ty(false);

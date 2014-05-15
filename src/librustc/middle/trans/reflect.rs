@@ -80,7 +80,7 @@ impl<'a, 'b> Reflector<'a, 'b> {
     }
 
     pub fn c_mt(&mut self, mt: &ty::mt) -> Vec<ValueRef> {
-        vec!(self.c_uint(mt.mutbl as uint),
+        vec!(self.c_uint(mt.mutbl.as_uint()),
           self.c_tydesc(mt.ty))
     }
 

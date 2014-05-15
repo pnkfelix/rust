@@ -67,7 +67,7 @@ use middle::typeck;
 use util::nodemap::NodeMap;
 use util::ppaux::{ty_to_str, Repr};
 
-use syntax::ast::{MutImmutable, MutMutable};
+use syntax::ast::{MutImmutable, MutMutable, UmMut, UmUniq};
 use syntax::ast;
 use syntax::codemap::Span;
 use syntax::print::pprust;
@@ -282,7 +282,8 @@ impl MutabilityCategory {
     pub fn from_mutbl(m: ast::Mutability) -> MutabilityCategory {
         match m {
             MutImmutable => McImmutable,
-            MutMutable => McDeclared
+            MutMutable(UmMut) => McDeclared,
+            MutMutable(UmUniq) => McDeclared, // FIXME
         }
     }
 
@@ -530,7 +531,8 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
 
             // m: mutability of the argument
             let m = match binding_mode {
-                ast::BindByValue(ast::MutMutable) => McDeclared,
+                ast::BindByValue(ast::MutMutable(ast::UmMut)) => McDeclared,
+                ast::BindByValue(ast::MutMutable(ast::UmUniq)) => McDeclared, // FIXME
                 _ => McImmutable
             };
             Ok(Rc::new(cmt_ {
@@ -587,7 +589,8 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
           ast::DefBinding(vid, binding_mode) => {
             // by-value/by-ref bindings are local variables
             let m = match binding_mode {
-                ast::BindByValue(ast::MutMutable) => McDeclared,
+                ast::BindByValue(ast::MutMutable(ast::UmMut)) => McDeclared,
+                ast::BindByValue(ast::MutMutable(ast::UmUniq)) => McDeclared, // FIXME
                 _ => McImmutable
             };
 

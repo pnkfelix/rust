@@ -415,7 +415,7 @@ fn visit_local(ir: &mut IrMaps, local: &Local) {
           None => FromLetNoInitializer
         };
         let mutbl = match bm {
-            BindByValue(MutMutable) => true,
+            BindByValue(MutMutable(_)) => true,
             _ => false
         };
         ir.add_variable(Local(LocalInfo {
@@ -435,7 +435,7 @@ fn visit_arm(ir: &mut IrMaps, arm: &Arm) {
                    p_id, bm);
             let name = ast_util::path_to_ident(path);
             let mutbl = match bm {
-                BindByValue(MutMutable) => true,
+                BindByValue(MutMutable(_)) => true,
                 _ => false
             };
             ir.add_live_node_for_node(p_id, VarDefNode(sp));

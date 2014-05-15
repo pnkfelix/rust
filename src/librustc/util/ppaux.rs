@@ -205,7 +205,8 @@ pub fn region_to_str(cx: &ctxt, prefix: &str, space: bool, region: Region) -> St
 
 pub fn mutability_to_str(m: ast::Mutability) -> StrBuf {
     match m {
-        ast::MutMutable => "mut ".to_strbuf(),
+        ast::MutMutable(ast::UmMut) => "mut ".to_strbuf(),
+        ast::MutMutable(ast::UmUniq) => "uniq ".to_strbuf(),
         ast::MutImmutable => "".to_strbuf(),
     }
 }

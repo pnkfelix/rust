@@ -137,7 +137,7 @@ fn const_deref(cx: &CrateContext, v: ValueRef, t: ty::t, explicit: bool)
     -> (ValueRef, ty::t) {
     match ty::deref(t, explicit) {
         Some(ref mt) => {
-            assert!(mt.mutbl != ast::MutMutable);
+            assert!(mt.mutbl.is_immutable());
             let dv = match ty::get(t).sty {
                 ty::ty_ptr(mt) | ty::ty_rptr(_, mt) => {
                     match ty::get(mt.ty).sty {
@@ -238,11 +238,11 @@ pub fn const_expr(cx: &CrateContext, e: &ast::Expr, is_local: bool) -> (ValueRef
                             match *autoref {
                                 ty::AutoUnsafe(m) |
                                 ty::AutoPtr(ty::ReStatic, m) => {
-                                    assert!(m != ast::MutMutable);
+                                    assert!(m.is_immutable());
                                     llconst = llptr;
                                 }
                                 ty::AutoBorrowVec(ty::ReStatic, m) => {
-                                    assert!(m != ast::MutMutable);
+                                    assert!(m.is_immutable());
                                     assert_eq!(abi::slice_elt_base, 0);
                                     assert_eq!(abi::slice_elt_len, 1);
                                     match ty::get(ty).sty {
@@ -566,7 +566,7 @@ fn const_expr_unadjusted(cx: &CrateContext, e: &ast::Expr,
             (v, inlineable)
           }
           ast::ExprVstore(sub, store @ ast::ExprVstoreSlice) |
-          ast::ExprVstore(sub, store @ ast::ExprVstoreMutSlice) => {
+          ast::ExprVstore(sub, store @ ast::ExprVstoreMutSlice(_)) => {
             match sub.node {
               ast::ExprLit(ref lit) => {
                 match lit.node {
@@ -585,7 +585,7 @@ fn const_expr_unadjusted(cx: &CrateContext, e: &ast::Expr,
                 });
                 llvm::LLVMSetInitializer(gv, cv);
                 llvm::LLVMSetGlobalConstant(gv,
-                      if store == ast::ExprVstoreMutSlice { False } else { True });
+                      match store { ast::ExprVstoreMutSlice(_) => False, _ => True });
                 SetLinkage(gv, PrivateLinkage);
                 let p = const_ptrcast(cx, gv, llunitty);
                 (C_struct(cx, [p, C_uint(cx, es.len())], false), false)
@@ -692,7 +692,7 @@ pub fn trans_const(ccx: &CrateContext, m: ast::Mutability, id: ast::NodeId) {
         // constant's initializer to determine its LLVM type.
         let v = ccx.const_values.borrow().get_copy(&id);
         llvm::LLVMSetInitializer(g, v);
-        if m != ast::MutMutable {
+        if m.is_immutable() {
             llvm::LLVMSetGlobalConstant(g, True);
         }
         debuginfo::create_global_var_metadata(ccx, id, g);

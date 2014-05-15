@@ -585,7 +585,7 @@ impl<'a> State<'a> {
             ast::ItemStatic(ty, m, expr) => {
                 try!(self.head(visibility_qualified(item.vis,
                                                     "static").as_slice()));
-                if m == ast::MutMutable {
+                if m == ast::MutMutable(ast::UmMut) {
                     try!(self.word_space("mut"));
                 }
                 try!(self.print_ident(item.ident));
@@ -1138,9 +1138,9 @@ impl<'a> State<'a> {
         match t {
             ast::ExprVstoreUniq => word(&mut self.s, "box "),
             ast::ExprVstoreSlice => word(&mut self.s, "&"),
-            ast::ExprVstoreMutSlice => {
+            ast::ExprVstoreMutSlice(a) => {
                 try!(word(&mut self.s, "&"));
-                word(&mut self.s, "mut")
+                word(&mut self.s, match a { ast::UmMut => "mut", ast::UmUniq => "uniq" })
             }
         }
     }
@@ -1664,8 +1664,11 @@ impl<'a> State<'a> {
                         try!(self.print_mutability(mutbl));
                     }
                     ast::BindByValue(ast::MutImmutable) => {}
-                    ast::BindByValue(ast::MutMutable) => {
+                    ast::BindByValue(ast::MutMutable(ast::UmMut)) => {
                         try!(self.word_nbsp("mut"));
+                    }
+                    ast::BindByValue(ast::MutMutable(ast::UmUniq)) => {
+                        try!(self.word_nbsp("uniq"));
                     }
                 }
                 try!(self.print_path(path, true));
@@ -2061,7 +2064,8 @@ impl<'a> State<'a> {
     pub fn print_mutability(&mut self,
                             mutbl: ast::Mutability) -> IoResult<()> {
         match mutbl {
-            ast::MutMutable => self.word_nbsp("mut"),
+            ast::MutMutable(ast::UmMut) => self.word_nbsp("mut"),
+            ast::MutMutable(ast::UmUniq) => self.word_nbsp("uniq"),
             ast::MutImmutable => Ok(()),
         }
     }

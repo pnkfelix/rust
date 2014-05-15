@@ -1179,7 +1179,7 @@ impl<'a> Resolver<'a> {
             ItemStatic(_, m, _) => {
                 let name_bindings =
                     self.add_child(ident, parent.clone(), ForbidDuplicateValues, sp);
-                let mutbl = m == ast::MutMutable;
+                let mutbl = m.is_mutable();
 
                 name_bindings.define_value
                     (DefStatic(local_def(item.id), mutbl), sp, is_public);

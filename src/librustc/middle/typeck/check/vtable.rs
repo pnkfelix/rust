@@ -539,7 +539,7 @@ pub fn early_resolve_expr(ex: &ast::Expr, fcx: &FnCtxt, is_early: bool) {
               fn mutability_allowed(a_mutbl: ast::Mutability,
                                     b_mutbl: ast::Mutability) -> bool {
                   a_mutbl == b_mutbl ||
-                  (a_mutbl == ast::MutMutable && b_mutbl == ast::MutImmutable)
+                  (a_mutbl.is_mutable() && b_mutbl.is_immutable())
               }
               // Look up vtables for the type we're casting to,
               // passing in the source and target type.  The source

@@ -261,7 +261,7 @@ pub fn decl_rust_fn(ccx: &CrateContext, has_env: bool,
                 }
             }
             // `&mut` pointer parameters never alias other parameters, or mutable global data
-            ty::ty_rptr(_, mt) if mt.mutbl == ast::MutMutable => {
+            ty::ty_rptr(_, mt) if mt.mutbl.is_mutable() => {
                 unsafe {
                     llvm::LLVMAddAttribute(llarg, lib::llvm::NoAliasAttribute as c_uint);
                 }
@@ -1611,7 +1611,7 @@ pub fn trans_item(ccx: &CrateContext, item: &ast::Item) {
           // Do static_assert checking. It can't really be done much earlier
           // because we need to get the value of the bool out of LLVM
           if attr::contains_name(item.attrs.as_slice(), "static_assert") {
-              if m == ast::MutMutable {
+              if m.is_mutable() {
                   ccx.sess().span_fatal(expr.span,
                                         "cannot have static_assert on a mutable \
                                          static");

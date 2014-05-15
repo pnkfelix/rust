@@ -428,7 +428,7 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
 
     fn stmt_let(&self, sp: Span, mutbl: bool, ident: ast::Ident, ex: @ast::Expr) -> @ast::Stmt {
         let pat = if mutbl {
-            self.pat_ident_binding_mode(sp, ident, ast::BindByValue(ast::MutMutable))
+            self.pat_ident_binding_mode(sp, ident, ast::BindByValue(ast::MutMutable(ast::UmMut)))
         } else {
             self.pat_ident(sp, ident)
         };
@@ -451,7 +451,7 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
                       ex: @ast::Expr)
                       -> @ast::Stmt {
         let pat = if mutbl {
-            self.pat_ident_binding_mode(sp, ident, ast::BindByValue(ast::MutMutable))
+            self.pat_ident_binding_mode(sp, ident, ast::BindByValue(ast::MutMutable(ast::UmMut)))
         } else {
             self.pat_ident(sp, ident)
         };
@@ -530,7 +530,7 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
         self.expr(sp, ast::ExprAddrOf(ast::MutImmutable, e))
     }
     fn expr_mut_addr_of(&self, sp: Span, e: @ast::Expr) -> @ast::Expr {
-        self.expr(sp, ast::ExprAddrOf(ast::MutMutable, e))
+        self.expr(sp, ast::ExprAddrOf(ast::MutMutable(ast::UmMut), e))
     }
 
     fn expr_call(&self, span: Span, expr: @ast::Expr, args: Vec<@ast::Expr> ) -> @ast::Expr {

@@ -473,8 +473,8 @@ fn mk_pointer<AC:AstConv,
     match a_seq_ty.ty.node {
         ast::TyVec(ty) => {
             let mut mt = ast_ty_to_mt(this, rscope, ty);
-            if a_seq_ty.mutbl == ast::MutMutable {
-                mt.mutbl = ast::MutMutable;
+            if a_seq_ty.mutbl.is_mutable() {
+                mt.mutbl = ast::MutMutable(ast::UmMut);
             }
             return constr(ty::mk_vec(tcx, mt, None));
         }
@@ -601,7 +601,7 @@ pub fn ast_ty_to_ty<AC:AstConv, RS:RegionScope>(
                 let bound_region = opt_ast_region_to_region(this, rscope,
                                                             ast_ty.span, region);
 
-                let store = ty::RegionTraitStore(bound_region, ast::MutMutable);
+                let store = ty::RegionTraitStore(bound_region, ast::MutMutable(ast::UmMut));
 
                 // Use corresponding trait store to figure out default bounds
                 // if none were specified.

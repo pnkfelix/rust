@@ -731,7 +731,8 @@ fn get_explicit_self(item: ebml::Doc) -> ast::ExplicitSelf_ {
     fn get_mutability(ch: u8) -> ast::Mutability {
         match ch as char {
             'i' => ast::MutImmutable,
-            'm' => ast::MutMutable,
+            'm' => ast::MutMutable(ast::UmMut),
+            'u' => ast::MutMutable(ast::UmUniq),
             _ => fail!("unknown mutability character: `{}`", ch as char),
         }
     }

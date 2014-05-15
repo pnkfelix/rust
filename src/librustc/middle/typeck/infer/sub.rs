@@ -26,6 +26,7 @@ use util::common::{indenter};
 use util::ppaux::bound_region_to_str;
 
 use syntax::ast::{Onceness, FnStyle};
+use syntax::ast::{MutMutable, MutImmutable};
 
 pub struct Sub<'f>(pub CombineFields<'f>);  // "subtype", "subregion" etc
 
@@ -77,7 +78,8 @@ impl<'f> Combine for Sub<'f> {
         }
 
         match b.mutbl {
-          MutMutable => {
+          // FIXME: can we be looser here if _um is UmUniq?
+          MutMutable(_um) => {
             // If supertype is mut, subtype must match exactly
             // (i.e., invariant if mut):
             eq_tys(self, a.ty, b.ty).then(|| Ok(*a))

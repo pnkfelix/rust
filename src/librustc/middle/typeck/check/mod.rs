@@ -2637,7 +2637,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
             let typ = match ev.node {
                 ast::ExprVec(ref args) => {
                     let mutability = match vst {
-                        ast::ExprVstoreMutSlice => ast::MutMutable,
+                        ast::ExprVstoreMutSlice(um) => ast::MutMutable(um),
                         _ => ast::MutImmutable,
                     };
                     let mut any_error = false;
@@ -2669,7 +2669,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                     check_expr_with_hint(fcx, count_expr, ty::mk_uint());
                     let _ = ty::eval_repeat_count(fcx, count_expr);
                     let mutability = match vst {
-                        ast::ExprVstoreMutSlice => ast::MutMutable,
+                        ast::ExprVstoreMutSlice(um) => ast::MutMutable(um),
                         _ => ast::MutImmutable,
                     };
                     let t = fcx.infcx().next_ty_var();
@@ -2899,7 +2899,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
               |sty| match *sty { ty::ty_rptr(_, ref mt) => Some(mt.ty),
                                  _ => None });
         let lvalue_pref = match mutbl {
-            ast::MutMutable => PreferMutLvalue,
+            ast::MutMutable(_) => PreferMutLvalue,
             ast::MutImmutable => NoPreference
         };
         check_expr_with_opt_hint_and_lvalue_pref(fcx, oprnd, hint, lvalue_pref);
@@ -3032,7 +3032,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                                                        &None);
         check_expr_fn(fcx,
                       expr,
-                      ty::RegionTraitStore(region, ast::MutMutable),
+                      ty::RegionTraitStore(region, ast::MutMutable(ast::UmMut)),
                       decl,
                       body,
                       Vanilla,
@@ -4108,7 +4108,7 @@ pub fn ast_expr_vstore_to_ty(fcx: &FnCtxt,
                              -> ty::t {
     match v {
         ast::ExprVstoreUniq => ty::mk_uniq(fcx.ccx.tcx, mk_inner().ty),
-        ast::ExprVstoreSlice | ast::ExprVstoreMutSlice => {
+        ast::ExprVstoreSlice | ast::ExprVstoreMutSlice(_) => {
             match e.node {
                 ast::ExprLit(..) => {
                     // string literals and *empty slices* live in static memory
@@ -4309,7 +4309,7 @@ pub fn check_intrinsic_type(ccx: &CrateCtxt, it: &ast::ForeignItem) {
                vec!(
                   ty::mk_ptr(tcx, ty::mt {
                       ty: param(ccx, 0),
-                      mutbl: ast::MutMutable
+                      mutbl: ast::MutMutable(ast::UmMut)
                   }),
                   ty::mk_ptr(tcx, ty::mt {
                       ty: param(ccx, 0),
@@ -4324,7 +4324,7 @@ pub fn check_intrinsic_type(ccx: &CrateCtxt, it: &ast::ForeignItem) {
                vec!(
                   ty::mk_ptr(tcx, ty::mt {
                       ty: param(ccx, 0),
-                      mutbl: ast::MutMutable
+                      mutbl: ast::MutMutable(ast::UmMut)
                   }),
                   ty::mk_u8(),
                   ty::mk_uint()

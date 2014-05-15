@@ -85,7 +85,8 @@ pub fn enc_ty(w: &mut MemWriter, cx: &ctxt, t: ty::t) {
 fn enc_mutability(w: &mut MemWriter, mt: ast::Mutability) {
     match mt {
         MutImmutable => (),
-        MutMutable => mywrite!(w, "m"),
+        MutMutable(UmMut) => mywrite!(w, "m"),
+        MutMutable(UmUniq) => mywrite!(w, "q"),
     }
 }
 

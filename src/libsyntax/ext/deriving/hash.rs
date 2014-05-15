@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use ast;
-use ast::{MetaItem, Item, Expr, MutMutable};
+use ast::{MetaItem, Item, Expr, MutMutable, UmMut};
 use codemap::Span;
 use ext::base::ExtCtxt;
 use ext::build::AstBuilder;
@@ -48,7 +48,7 @@ pub fn expand_deriving_hash(cx: &mut ExtCtxt,
                 name: "hash",
                 generics: LifetimeBounds::empty(),
                 explicit_self: borrowed_explicit_self(),
-                args: vec!(Ptr(box Literal(args), Borrowed(None, MutMutable))),
+                args: vec!(Ptr(box Literal(args), Borrowed(None, MutMutable(UmMut)))),
                 ret_ty: nil_ty(),
                 attributes: attrs,
                 const_nonmatching: false,

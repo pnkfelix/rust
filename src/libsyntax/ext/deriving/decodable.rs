@@ -14,7 +14,7 @@ encodable.rs for more.
 */
 
 use ast;
-use ast::{MetaItem, Item, Expr, MutMutable, Ident};
+use ast::{MetaItem, Item, Expr, MutMutable, UmMut, Ident};
 use codemap::Span;
 use ext::base::ExtCtxt;
 use ext::build::AstBuilder;
@@ -47,7 +47,7 @@ pub fn expand_deriving_decodable(cx: &mut ExtCtxt,
                 generics: LifetimeBounds::empty(),
                 explicit_self: None,
                 args: vec!(Ptr(box Literal(Path::new_local("__D")),
-                            Borrowed(None, MutMutable))),
+                            Borrowed(None, MutMutable(UmMut)))),
                 ret_ty: Literal(Path::new_(vec!("std", "result", "Result"), None,
                                           vec!(box Self,
                                                box Literal(Path::new_local("__E"))), true)),

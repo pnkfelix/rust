@@ -25,6 +25,7 @@ use collections::HashMap;
 use syntax::ast::{Many, Once, NodeId};
 use syntax::ast::{NormalFn, UnsafeFn};
 use syntax::ast::{Onceness, FnStyle};
+use syntax::ast::{MutMutable, MutImmutable};
 use util::ppaux::mt_to_str;
 
 pub struct Lub<'f>(pub CombineFields<'f>);  // least-upper-bound: common supertype
@@ -61,7 +62,7 @@ impl<'f> Combine for Lub<'f> {
             self.tys(a.ty, b.ty).and_then(|t| Ok(ty::mt {ty: t, mutbl: m}) )
           }
 
-          MutMutable => {
+          MutMutable(_) => {
             self.get_ref().infcx.try(|| {
                 eq_tys(self, a.ty, b.ty).then(|| {
                     Ok(ty::mt {ty: a.ty, mutbl: m})

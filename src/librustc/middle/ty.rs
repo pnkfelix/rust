@@ -1378,14 +1378,14 @@ pub fn mk_ptr(cx: &ctxt, tm: mt) -> t { mk_t(cx, ty_ptr(tm)) }
 pub fn mk_rptr(cx: &ctxt, r: Region, tm: mt) -> t { mk_t(cx, ty_rptr(r, tm)) }
 
 pub fn mk_mut_rptr(cx: &ctxt, r: Region, ty: t) -> t {
-    mk_rptr(cx, r, mt {ty: ty, mutbl: ast::MutMutable})
+    mk_rptr(cx, r, mt {ty: ty, mutbl: ast::MutMutable(ast::UmMut) })
 }
 pub fn mk_imm_rptr(cx: &ctxt, r: Region, ty: t) -> t {
     mk_rptr(cx, r, mt {ty: ty, mutbl: ast::MutImmutable})
 }
 
 pub fn mk_mut_ptr(cx: &ctxt, ty: t) -> t {
-    mk_ptr(cx, mt {ty: ty, mutbl: ast::MutMutable})
+    mk_ptr(cx, mt {ty: ty, mutbl: ast::MutMutable(ast::UmMut) })
 }
 
 pub fn mk_imm_ptr(cx: &ctxt, ty: t) -> t {
@@ -2167,7 +2167,7 @@ pub fn type_contents(cx: &ctxt, ty: t) -> TypeContents {
              mt: mt,
              cache: &mut HashMap<uint, TypeContents>) -> TypeContents
     {
-        let mc = TC::ReachesMutable.when(mt.mutbl == MutMutable);
+        let mc = TC::ReachesMutable.when(mt.mutbl.is_mutable());
         mc | tc_ty(cx, mt.ty, cache)
     }
 
@@ -2201,7 +2201,7 @@ pub fn type_contents(cx: &ctxt, ty: t) -> TypeContents {
          */
 
         let b = match mutbl {
-            ast::MutMutable => TC::ReachesMutable | TC::OwnsAffine,
+            ast::MutMutable(_) => TC::ReachesMutable | TC::OwnsAffine,
             ast::MutImmutable => TC::None,
         };
         b | (TC::ReachesBorrowed).when(region != ty::ReStatic)
@@ -3094,7 +3094,7 @@ pub fn expr_kind(tcx: &ctxt, expr: &ast::Expr) -> ExprKind {
         ast::ExprBlock(..) |
         ast::ExprRepeat(..) |
         ast::ExprVstore(_, ast::ExprVstoreSlice) |
-        ast::ExprVstore(_, ast::ExprVstoreMutSlice) |
+        ast::ExprVstore(_, ast::ExprVstoreMutSlice(_)) |
         ast::ExprVec(..) => {
             RvalueDpsExpr
         }
@@ -4288,7 +4288,7 @@ pub fn visitor_object_ty(tcx: &ctxt,
         mk_trait(tcx,
                  trait_ref.def_id,
                  trait_ref.substs.clone(),
-                 RegionTraitStore(region, ast::MutMutable),
+                 RegionTraitStore(region, ast::MutMutable(ast::UmMut)),
                  EmptyBuiltinBounds())))
 }
 
@@ -4557,7 +4557,7 @@ pub fn hash_crate_independent(tcx: &ctxt, t: t, svh: &Svh) -> u64 {
                     RegionTraitStore(r, m) => {
                         byte!(1)
                         region(&mut state, r);
-                        assert_eq!(m, ast::MutMutable);
+                        assert_eq!(m, ast::MutMutable(ast::UmMut));
                     }
                 }
             }
@@ -4711,7 +4711,8 @@ impl substs {
 impl BorrowKind {
     pub fn from_mutbl(m: ast::Mutability) -> BorrowKind {
         match m {
-            ast::MutMutable => MutBorrow,
+            ast::MutMutable(ast::UmMut) => MutBorrow,
+            ast::MutMutable(ast::UmUniq) => UniqueImmBorrow,
             ast::MutImmutable => ImmBorrow,
         }
     }

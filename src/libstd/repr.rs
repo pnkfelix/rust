@@ -193,6 +193,8 @@ impl<'a> ReprVisitor<'a> {
     pub fn write_mut_qualifier(&mut self, mtbl: uint) -> bool {
         if mtbl == 0 {
             try!(self, self.writer.write("mut ".as_bytes()));
+        } else if mtbl == 2 {
+            try!(self, self.writer.write("uniq ".as_bytes()));
         } else if mtbl == 1 {
             // skip, this is ast::m_imm
         } else {

@@ -83,7 +83,7 @@ impl<'a> Visitor<bool> for CheckStaticVisitor<'a> {
                     ast::MutImmutable => {
                         self.visit_expr(expr, true);
                     }
-                    ast::MutMutable => {
+                    ast::MutMutable(_) => {
                         self.report_error(expr.span, safe_type_for_static_mut(self.tcx, expr));
                     }
                 }
@@ -111,7 +111,7 @@ impl<'a> Visitor<bool> for CheckStaticVisitor<'a> {
             ast::ExprVstore(_, ast::ExprVstoreSlice) => {
                 visit::walk_expr(self, e, is_const);
             }
-            ast::ExprVstore(_, ast::ExprVstoreMutSlice) => {
+            ast::ExprVstore(_, ast::ExprVstoreMutSlice(_)) => {
                 self.tcx.sess.span_err(e.span,
                                        "static items are not allowed to have mutable slices");
            },
