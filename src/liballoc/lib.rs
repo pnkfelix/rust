@@ -81,6 +81,8 @@ extern crate libc;
 #[cfg(test)] #[phase(syntax, link)] extern crate std;
 #[cfg(test)] #[phase(syntax, link)] extern crate log;
 
+pub mod allocator;
+
 // Heaps provided for low-level allocation strategies
 
 pub mod heap;

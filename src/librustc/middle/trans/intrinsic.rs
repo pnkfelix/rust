@@ -546,6 +546,12 @@ pub fn trans_intrinsic(ccx: &CrateContext,
         "u64_mul_with_overflow" =>
             with_overflow_instrinsic(bcx, "llvm.umul.with.overflow.i64", output_type),
 
+        "dst_pointer_extra_data" => unimplemented!(),
+        "dst_pointer_mem"        => unimplemented!(),
+        "dst_make_pointer"       => unimplemented!(),
+        "dst_sizeof_type"        => unimplemented!(),
+        "dst_alignof_type"       => unimplemented!(),
+
         _ => {
             // Could we make this an enum rather than a string? does it get
             // checked earlier?

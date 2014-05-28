@@ -4447,6 +4447,22 @@ pub fn check_intrinsic_type(ccx: &CrateCtxt, it: &ast::ForeignItem) {
                 (0, vec!(ty::mk_u64(), ty::mk_u64()),
                 ty::mk_tup(tcx, vec!(ty::mk_u64(), ty::mk_bool()))),
 
+            "dst_pointer_extra_data" =>
+                (2, vec!(ty::mk_ptr(tcx, ty::mt { ty: param(ccx, 0), mutbl: ast::MutImmutable })),
+                 ty::mk_uint()),
+            "dst_pointer_mem" =>
+                (1, vec!(ty::mk_ptr(tcx, ty::mt { ty: param(ccx, 0), mutbl: ast::MutImmutable })),
+                 ty::mk_ptr(tcx, ty::mt { ty: ty::mk_u8(), mutbl: ast::MutMutable })),
+            "dst_make_pointer" =>
+                (1, vec!(ty::mk_ptr(tcx, ty::mt { ty: ty::mk_u8(), mutbl: ast::MutMutable }),
+                         ty::mk_uint()),
+                 ty::mk_ptr(tcx, ty::mt { ty: param(ccx, 0), mutbl: ast::MutMutable })),
+            "dst_sizeof_type" =>
+                (1, vec!(ty::mk_uint()), ty::mk_uint()),
+            "dst_alignof_type" =>
+                (1, vec!(ty::mk_uint()), ty::mk_uint()),
+
+
             ref other => {
                 tcx.sess.span_err(it.span,
                                   format!("unrecognized intrinsic function: `{}`",

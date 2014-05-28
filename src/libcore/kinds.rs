@@ -94,6 +94,8 @@ pub trait Share {
 /// implemented using unsafe code. In that case, you may want to embed
 /// some of the marker types below into your type.
 pub mod marker {
+    use std::cmp::Eq;
+    use std::clone::Clone;
 
     /// A marker type whose type parameter `T` is considered to be
     /// covariant with respect to the type itself. This is (typically)
@@ -133,8 +135,15 @@ pub mod marker {
     /// (for example, `S<&'static int>` is a subtype of `S<&'a int>`
     /// for some lifetime `'a`, but not the other way around).
     #[lang="covariant_type"]
-    #[deriving(Eq,Clone)]
-    pub struct CovariantType<T>;
+    pub struct CovariantType<type T>;
+
+    impl<type T> Eq for CovariantType<T> {
+        fn eq(&self, _: &CovariantType<T>) -> bool { true }
+    }
+    impl<type T> Clone for CovariantType<T> {
+        fn clone(&self) -> CovariantType<T> { CovariantType }
+    }
+
 
     /// A marker type whose type parameter `T` is considered to be
     /// contravariant with respect to the type itself. This is (typically)
@@ -176,8 +185,13 @@ pub mod marker {
     /// function requires arguments of type `T`, it must also accept
     /// arguments of type `U`, hence such a conversion is safe.
     #[lang="contravariant_type"]
-    #[deriving(Eq,Clone)]
-    pub struct ContravariantType<T>;
+    pub struct ContravariantType<type T>;
+    impl<type T> Eq for ContravariantType<T> { 
+        fn eq(&self, _: &ContravariantType<T>) -> bool { true }
+    }
+    impl<type T> Clone for ContravariantType<T> {
+        fn clone(&self) -> ContravariantType<T> { ContravariantType }
+    }
 
     /// A marker type whose type parameter `T` is considered to be
     /// invariant with respect to the type itself. This is (typically)
@@ -201,8 +215,14 @@ pub mod marker {
     /// never written, but in fact `Cell` uses unsafe code to achieve
     /// interior mutability.
     #[lang="invariant_type"]
-    #[deriving(Eq,Clone)]
-    pub struct InvariantType<T>;
+    pub struct InvariantType<type T>;
+
+    impl<type T> Eq for InvariantType<T> {
+        fn eq(&self, _: &InvariantType<T>) -> bool { true }
+    }
+    impl<type T> Clone for InvariantType<T> {
+        fn clone(&self) -> InvariantType<T> { InvariantType }
+    }
 
     /// As `CovariantType`, but for lifetime parameters. Using
     /// `CovariantLifetime<'a>` indicates that it is ok to substitute
