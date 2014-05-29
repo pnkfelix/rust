@@ -242,7 +242,7 @@ lets_do_this! {
     EqTraitLangItem,                 "eq",                      eq_trait;
     OrdTraitLangItem,                "ord",                     ord_trait;
 
-    AllocatorTraitLangItme,           "allocator",               allocator_trait;
+    AllocatorTraitLangItem,          "allocator",               allocator_trait;
 
     StrEqFnLangItem,                 "str_eq",                  str_eq_fn;
     UniqStrEqFnLangItem,             "uniq_str_eq",             uniq_str_eq_fn;
