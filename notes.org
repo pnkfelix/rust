@@ -1,0 +1,160 @@
+* Niko emails
+** Niko email 1
+
+   So I spent some time while waiting for Gurvinder sketching out how
+   I thought a typed allocator trait could work. I think I have
+   something reasonable, let me know what you think.
+
+   To start with, I assume some intrinsics for working generically
+   with thin/fat pointers without having to know which is which.  The
+   first part is an opaque type called `PointerData<U>`, which
+   represents the extra data associated with a pointer:
+
+    // Opaque tag that is known to the compiler describing the
+    // extra data attached to a (fat or thin) pointer.
+    struct PointerData<unsized U> { marker: InvariantType<U> }
+
+    Since thin pointers to sized types don't have any extra data, you
+    can "gin up" one of these for any sized type:
+
+    // For thin types, gin up a valid pointer data.
+    fn thin_pointer_data<U>() -> &'static PointerData<U> {
+        static dummy: u8 = 1;
+        transmute(&dummy)
+    }
+
+    But in general you would want to use the `pointer_data` intrinsic.
+    This intrinsic takes a pointer to a pointer to U (`&&U`) and
+    returns the pointer data associated with the `&U` (if `U` is a
+    sized type, it just returns a dummy value). The reason it takes a
+    `&&U` and not just a `&U` is that I want to be able to create the
+    pointerdata by just doing some pointer arithmetic:
+
+    // Given fat (or thin) pointer, extract data suitable for `U`, if any.
+    intrinsic fn pointer_data<'a, unsized U>(x: &'a &U) -> &'a PointerData<U>;
+
+    There is also the `pointer_mem` intrinsic, which extracts out the
+    raw thin pointer. It also returns a `*u8`.
+
+    // Given fat (or thin) pointer, extract the memory
+    intrinsic fn pointer_mem<unsized U>(x: &U) -> *mut u8;
+
+    Next, we have the intrinsics for computing the size and alignment
+    requirements of a type. Note that these operator over any type, sized
+    of unsized, but for size computation a `PointerData` is required:
+
+    // Compute size or alignment of a type.
+    intrinsic fn sizeof_type<unsized U>(data: &PointerData<U>) -> uint;
+    intrinsic fn alignof_type<unsized U>() -> uint;
+
+    Finally, we have an intrinsic to make a pointer. If `U` is a sized
+    type, this is the same as a transmute, but if `U` is unsized, it
+    will pair up `p` with the given pointer data (note that pointer
+    data is always POD).
+
+    // Make a fat (or thin) pointer from some memory
+    intrinsic fn make_pointer<unsized U>(p: *mut u8, data: &PointerData)
+                                         -> *mut U;
+
+    Based on the above intrinsics you can build the following
+    user-facing functions for computing sizes:
+
+    fn sizeof<U>() -> uint {
+        sizeof_type(thin_pointer_data::<U>())
+    }
+
+    fn sizeof_value<unsized U>(x: &U) -> uint {
+        let data = pointer_data(&x);
+        sizeof_unsized_type<U>(data)
+    }
+
+    OK, preamble aside, here is the allocator trait:
+
+    trait Alloc<unsized T> {
+        fn malloc(&self, data: &PointerData<T>) -> *T;
+        fn free(&self, pointer: *T);
+    }
+
+    And here is an example of how we might write the standard
+    allocator, just using `malloc` to actually get the memory:
+
+    struct StandardAlloc;
+
+    extern "C" {
+        fn malloc(size: uint) -> *mut u8;
+        fn free(data: *mut u8);
+    }
+
+    impl<T> Alloc<T> for StandardAlloc {
+        fn malloc(&self, data: &PointerData<T>) -> *T {
+            let size = sizeof_type::<T>(data);
+            let ptr: *mut u8 = malloc(size);
+            make_fat_pointer(pointer, data)
+        }
+
+        fn free(&self, pointer: *T) {
+            free(pointer_mem(pointer));
+        }
+    }
+
+    What do you think, sound plausible?
+
+
+    Niko
+
+** Niko email 2
+
+   I was working through implementing the Box trait and I realized
+   that the message I sent you regarding the Alloc trait was a touch
+   oversimplified. I included a "get_pointer_data" intrinsic that,
+   given a &U, gave a PointerData<U> which could then be used to get
+   type info for U and so on. But that's not quite sufficient for the
+   box trait. You need a version like:
+
+    fn get_pointer_data<T,U>(x: &'a &T) -> PointerData<U>
+
+    Note that I supply a pointer to T but get data for U. The compiler
+    would have to check that the pointer data for U is compatible. The
+    motivation here is to be able to get the appropriate pointer data
+    for a RcBox<T> given a value of type T (here U = RcBox<T>).
+
+    Anyway, beyond that, I've been thinking that a simplistic GC is
+    probably not...that hard to implement. If we can walk the stack,
+    and walk the live allocations for the roots, we can at least get a
+    mark-sweep thing working. The most interesting part remains
+    figuring out how to handle finalization.
+
+    We never did finish that conversation, which is too bad, but I'm
+    thinking that the right approach is to separate the guardian API
+    from the GC. The GC should be able to run finalizers for Send
+    data, or maybe Share data, which I believe cannot create the same
+    sort of hazards, but not arbitrary things. Then perhaps there is a
+    guardian API that takes ownership of more general destructible
+    things and "masquerades" as Share. Something like that. But many
+    details to be worked out.
+
+    OK, just some thoughts I didn't want to lose track of.
+
+    PS, this Tuesday we should talk quarterly goals and a bit of other
+    managerial things.
+
+** Felix response
+
+   I think having an opaque type is a good idea, It is not what I
+   would have done in a first draft (my first instinct was to have a
+   struct carrying the size and alignment), but an opaque type is more
+   future-proof than what I was imagining.  So that's good.
+
+   I'm not yet clear on how the intrinsic accessors to extract the
+   size and alignment are themselves implemented, but I do not doubt
+   we can figure something out there.
+
+   Anyway, it seems plausible.  I want to read over the EA STL
+   document and maybe also the Bloomberg BDE allocator paper too
+   before I comment further.
+
+   Another issue is that this seems like yet-another item that may be
+   gated on DST.  Maybe I should put in the parser changes to support
+   reading in the unsized keyword in the right spots, just to get
+   things started there.  A change like that doesn't need to wait for
+   the full RFC, especially if feature-guarded, right?
