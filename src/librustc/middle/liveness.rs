@@ -493,17 +493,9 @@ fn visit_expr(ir: &mut IrMaps, expr: &Expr) {
                             let fv_ln = ir.add_live_node(FreeVarNode(fv.span));
                             let fv_id = ast_util::def_id_of_def(fv.def).node;
                             let fv_ty = ty::node_id_to_type(ir.tcx, fv_id);
-                            let is_move = match fv_mode {
-                                // var must be dead afterwards
-                                freevars::CaptureByValue => {
-                                    ty::type_moves_by_default(ir.tcx, fv_ty)
-                                }
-
-                                // var can still be used
-                                freevars::CaptureByRef => {
-                                    false
-                                }
-                            };
+                            // var must be dead afterwards
+                            let is_move = ty::type_moves_by_default(ir.tcx,
+                                                                    fv_ty);
                             call_caps_ptr.push(CaptureInfo {
                                 ln: fv_ln,
                                 is_move: is_move,
