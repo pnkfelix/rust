@@ -525,7 +525,7 @@ impl<'a> CheckLoanCtxt<'a> {
          */
 
         match **lp {
-            LpVar(_) => {
+            LpVar(_) | LpCopiedUpvar(_) => {
                 // assigning to `x` does not require that `x` is initialized
             }
             LpExtend(ref lp_base, _, LpInterior(_)) => {
@@ -829,7 +829,7 @@ impl<'a> CheckLoanCtxt<'a> {
                     // Otherwise stop iterating
                     LpExtend(_, mc::McDeclared, _) |
                     LpExtend(_, mc::McImmutable, _) |
-                    LpVar(_) => {
+                    LpVar(_) | LpCopiedUpvar(_) => {
                         return true;
                     }
                 };
@@ -887,7 +887,7 @@ impl<'a> CheckLoanCtxt<'a> {
         }
 
         match *move_path {
-            LpVar(_) => MoveOk,
+            LpVar(_) | LpCopiedUpvar(_) => MoveOk,
             LpExtend(ref subpath, _, _) => {
                 self.analyze_move_out_from(expr_id, &**subpath)
             }
