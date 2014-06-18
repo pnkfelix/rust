@@ -441,6 +441,8 @@ fn check_fn<'a>(ccx: &'a CrateCtxt<'a>,
     let tcx = ccx.tcx;
     let err_count_on_creation = tcx.sess.err_count();
 
+    debug!("check_fn({}) pre subst", fn_sig.repr(tcx));
+
     // First, we have to replace any bound regions in the fn type with free ones.
     // The free region references will be bound the node_id of the body block.
     let (_, fn_sig) = replace_late_bound_regions_in_fn_sig(tcx, fn_sig, |br| {
@@ -1898,6 +1900,8 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
             }
         };
 
+        debug!("check_call({}) pre subst", fn_sig.repr(fcx.ccx.tcx));
+
         // Replace any bound regions that appear in the function
         // signature with region variables
         let (_, fn_sig) = replace_late_bound_regions_in_fn_sig(fcx.tcx(), fn_sig, |br| {
@@ -2280,6 +2284,8 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
              expected_bounds) = {
             match expected_sty {
                 Some(ty::ty_closure(ref cenv)) => {
+                    debug!("check_expr_fn({}) pre subst", cenv.sig.repr(tcx));
+
                     let (_, sig) =
                         replace_late_bound_regions_in_fn_sig(
                             tcx, &cenv.sig,

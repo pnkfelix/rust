@@ -101,7 +101,7 @@ impl<'f> Combine for Lub<'f> {
     }
 
     fn regions(&self, a: ty::Region, b: ty::Region) -> cres<ty::Region> {
-        debug!("{}.regions({:?}, {:?})",
+        debug!("{}.regions({:s}, {:s})",
                self.tag(),
                a.inf_str(self.get_ref().infcx),
                b.inf_str(self.get_ref().infcx));
@@ -151,8 +151,8 @@ impl<'f> Combine for Lub<'f> {
                              -> ty::Region {
             // Regions that pre-dated the LUB computation stay as they are.
             if !is_var_in_set(new_vars, r0) {
-                assert!(!r0.is_bound());
                 debug!("generalize_region(r0={:?}): not new variable", r0);
+                assert!(!r0.is_bound());
                 return r0;
             }
 
@@ -177,7 +177,7 @@ impl<'f> Combine for Lub<'f> {
             for (a_br, a_r) in a_map.iter() {
                 if tainted.iter().any(|x| x == a_r) {
                     debug!("generalize_region(r0={:?}): \
-                            replacing with {:?}, tainted={:?}",
+                            replacing with {}, tainted={:?}",
                            r0, *a_br, tainted);
                     return ty::ReLateBound(new_scope, *a_br);
                 }

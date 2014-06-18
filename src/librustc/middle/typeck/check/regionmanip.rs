@@ -40,7 +40,7 @@ pub fn replace_late_bound_regions_in_fn_sig(
         });
         ty_fold::super_fold_sig(&mut f, fn_sig)
     };
-    debug!("resulting map: {}", map);
+    debug!("resulting map: {} fn_sig: {}", map, fn_sig.repr(tcx));
     (map, fn_sig)
 }
 

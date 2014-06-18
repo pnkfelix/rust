@@ -61,6 +61,7 @@ use middle::typeck::infer::to_str::InferStr;
 use middle::typeck::infer::unify::InferCtxtMethods;
 use middle::typeck::infer::{InferCtxt, cres, ures};
 use middle::typeck::infer::{TypeTrace};
+use util;
 use util::common::indent;
 use util::ppaux::Repr;
 
@@ -395,9 +396,10 @@ pub fn super_tys<C:Combine>(this: &C, a: ty::t, b: ty::t) -> cres<ty::t> {
     }
 
     let tcx = this.infcx().tcx;
+    debug!("super_tys: a={} b={}",
+           util::ppaux::ty_to_str(tcx, a), util::ppaux::ty_to_str(tcx, b));
     let a_sty = &ty::get(a).sty;
     let b_sty = &ty::get(b).sty;
-    debug!("super_tys: a_sty={:?} b_sty={:?}", a_sty, b_sty);
     return match (a_sty, b_sty) {
       // The "subtype" ought to be handling cases involving bot or var:
       (&ty::ty_bot, _) |

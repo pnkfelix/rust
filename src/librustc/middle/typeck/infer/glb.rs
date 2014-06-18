@@ -102,7 +102,7 @@ impl<'f> Combine for Glb<'f> {
     }
 
     fn regions(&self, a: ty::Region, b: ty::Region) -> cres<ty::Region> {
-        debug!("{}.regions({:?}, {:?})",
+        debug!("{}.regions({}, {})",
                self.tag(),
                a.inf_str(self.get_ref().infcx),
                b.inf_str(self.get_ref().infcx));
@@ -123,7 +123,7 @@ impl<'f> Combine for Glb<'f> {
         // Note: this is a subtle algorithm.  For a full explanation,
         // please see the large comment in `region_inference.rs`.
 
-        debug!("{}.fn_sigs({:?}, {:?})",
+        debug!("{}.fn_sigs({}, {})",
                self.tag(), a.inf_str(self.get_ref().infcx), b.inf_str(self.get_ref().infcx));
         let _indenter = indenter();
 

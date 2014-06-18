@@ -815,6 +815,8 @@ impl<'a> InferCtxt<'a> {
                                                     -> (ty::FnSig,
                                                         HashMap<ty::BoundRegion,
                                                                 ty::Region>) {
+        debug!("replace_late_bound_regions_with_fresh_regions(trace, {})",
+               fsig.repr(self.tcx));
         let (map, fn_sig) =
             replace_late_bound_regions_in_fn_sig(self.tcx, fsig, |br| {
                 let rvar = self.next_region_var(

@@ -518,7 +518,8 @@ pub enum Region {
 /**
  * Upvars do not get their own node-id. Instead, we use the pair of
  * the original var id (that is, the root variable that is referenced
- * by the upvar) and the id of the closure expression.
+ * by the upvar) and the id of the referencing closure expression
+ * (that is, the closure that has the upvar as a free variable).
  */
 #[deriving(Clone, PartialEq, Eq, Hash)]
 pub struct UpvarId {
