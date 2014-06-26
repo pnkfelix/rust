@@ -380,6 +380,24 @@ impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
         self.each_bit(slice, f)
     }
 
+    pub fn each_bit_on_exit_frozen(&self,
+                                   cfgidx: CFGIndex,
+                                   f: |uint| -> bool)
+                                   -> bool {
+        //! Iterates through each bit that is set on exit from `id`.
+        //! Only useful after `propagate()` has been called.
+        if !self.has_bitset_for_cfgidx(cfgidx) {
+            return true;
+        }
+        let (start, end) = self.compute_id_range_frozen(cfgidx);
+        let mut bits = self.on_entry.slice(start, end).to_owned();
+        self.apply_gen_kill_frozen(cfgidx, bits.as_mut_slice());
+        let on_exit = bits.as_slice();
+        debug!("{:s} each_bit_on_entry_frozen(cfgidx={:?}, on_exit={})",
+               self.analysis_name, cfgidx, bits_to_str(on_exit));
+        self.each_bit(on_exit, f)
+    }
+
     pub fn each_gen_bit_frozen(&self, id: ast::NodeId, f: |uint| -> bool)
                                -> bool {
         //! Iterates through each bit in the gen set for `id`.

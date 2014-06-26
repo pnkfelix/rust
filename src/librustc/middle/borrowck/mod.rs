@@ -49,6 +49,8 @@ pub mod doc;
 
 pub mod check_loans;
 
+pub mod check_dtors;
+
 pub mod gather_loans;
 
 pub mod graphviz;
@@ -138,6 +140,8 @@ fn borrowck_fn(this: &mut BorrowckCtxt,
                        loans: loan_dfcx,
                        move_data:flowed_moves } =
         build_borrowck_dataflow_data(this, fk, decl, &cfg, body, sp, id);
+
+    check_dtors::check_dtors(this, &flowed_moves, &cfg, decl, body);
 
     check_loans::check_loans(this, &loan_dfcx, flowed_moves,
                              all_loans.as_slice(), decl, body);

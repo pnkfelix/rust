@@ -2526,6 +2526,11 @@ pub fn type_is_sized(cx: &ctxt, ty: ty::t) -> bool {
     type_contents(cx, ty).is_sized(cx)
 }
 
+// Can this type  be freely copied without worry about destructors?
+pub fn type_is_copy(cx: &ctxt, ty: ty::t) -> bool {
+    type_contents(cx, ty).is_copy(cx)
+}
+
 // Whether a type is enum like, that is an enum type with only nullary
 // constructors
 pub fn type_is_c_like_enum(cx: &ctxt, ty: t) -> bool {

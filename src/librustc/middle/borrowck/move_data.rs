@@ -68,7 +68,7 @@ pub struct FlowedMoveData<'a> {
 }
 
 /// Index into `MoveData.paths`, used like a pointer
-#[deriving(PartialEq)]
+#[deriving(Hash, PartialEq)]
 pub struct MovePathIndex(uint);
 
 impl MovePathIndex {
@@ -193,7 +193,7 @@ impl MoveData {
         self.paths.borrow().get(index.get()).loan_path.clone()
     }
 
-    fn path_parent(&self, index: MovePathIndex) -> MovePathIndex {
+    pub fn path_parent(&self, index: MovePathIndex) -> MovePathIndex {
         self.paths.borrow().get(index.get()).parent
     }
 

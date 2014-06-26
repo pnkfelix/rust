@@ -30,10 +30,12 @@ pub struct CFG {
     pub exit: CFGIndex,
 }
 
+#[deriving(Clone, PartialEq, Show)]
 pub struct CFGNodeData {
     pub id: ast::NodeId
 }
 
+#[deriving(Show)]
 pub struct CFGEdgeData {
     pub exiting_scopes: Vec<ast::NodeId>
 }
