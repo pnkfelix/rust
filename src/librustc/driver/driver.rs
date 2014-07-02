@@ -12,12 +12,15 @@
 use back::link;
 use driver::session::Session;
 use driver::{config, PpMode};
+use driver::{GraphAnalysisName};
 use driver::{PpmFlowGraph, PpmExpanded, PpmExpandedIdentified, PpmTyped};
 use driver::{PpmIdentified};
 use front;
 use lib::llvm::{ContextRef, ModuleRef};
 use metadata::common::LinkMeta;
 use metadata::creader;
+use middle::borrowck;
+use middle::borrowck::graphviz::DataflowLabeller;
 use middle::cfg;
 use middle::cfg::graphviz::LabelledCFG;
 use middle::{trans, freevars, stability, kind, ty, typeck, reachable};
@@ -38,13 +41,19 @@ use serialize::{json, Encodable};
 use std::io;
 use std::io::fs;
 use std::io::MemReader;
+use syntax::abi;
 use syntax::ast;
+use syntax::ast::{Block,Item,TraitMethod,P};
+use syntax::ast_map;
+use syntax::ast_map::{Node};
 use syntax::attr;
 use syntax::attr::{AttrMetaMethods};
+use syntax::codemap::Span;
 use syntax::crateid::CrateId;
 use syntax::parse;
 use syntax::parse::token;
 use syntax::print::{pp, pprust};
+use syntax::visit;
 use syntax;
 
 pub fn host_triple() -> &'static str {
@@ -643,6 +652,142 @@ impl pprust::PpAnn for TypedAnnotation {
     }
 }
 
+pub struct FnLikeNode { node: ast_map::Node }
+
+type ItemFnHandler<'a, A> =
+    |ident:    ast::Ident,
+     decl:     P<ast::FnDecl>,
+     style:    ast::FnStyle,
+     abi:      abi::Abi,
+     generics: &'a ast::Generics,
+     body:     P<Block>,
+     id:       ast::NodeId,
+     span:     Span              |:'static -> A;
+
+impl FnLikeNode {
+    fn new(node: Node) -> FnLikeNode { FnLikeNode { node: node } }
+    fn to_fn_parts<'a>(&'a self, cfg: &'a cfg::CFG) -> borrowck::FnParts<'a> {
+        borrowck::FnParts {
+            decl: self.decl(),
+            body: self.body(),
+            kind: self.kind(),
+            span: self.span(),
+            id:   self.id(),
+            cfg:  cfg,
+        }
+    }
+    fn body<'a>(&'a self) -> P<ast::Block> {
+        let item : ItemFnHandler<P<ast::Block>> = |_,_,_,_,_,body,_,_| body;
+        let closure = |_:P<ast::FnDecl>, body: P<Block>, _: ast::NodeId, _: Span| body;
+        let method = |m: &'a ast::Method| m.body;
+        self.handle(item, method, closure)
+    }
+    fn decl<'a>(&'a self) -> P<ast::FnDecl> {
+        let item : ItemFnHandler<P<ast::FnDecl>> = |_,decl,_,_,_,_,_,_| decl;
+        let closure = |decl:P<ast::FnDecl>, _: P<Block>, _: ast::NodeId, _: Span| decl;
+        let method = |m: &'a ast::Method| m.decl;
+        self.handle(item, method, closure)
+    }
+    fn span<'a>(&'a self) -> Span {
+        let item : ItemFnHandler<Span> = |_,_,_,_,_,_,_,span| span;
+        let closure = |_:P<ast::FnDecl>, _: P<Block>, _: ast::NodeId, span: Span| span;
+        let method = |m: &'a ast::Method| m.span;
+        self.handle(item, method, closure)
+    }
+    fn id<'a>(&'a self) -> ast::NodeId {
+        let item : ItemFnHandler<ast::NodeId> = |_,_,_,_,_,_,id,_| id;
+        let closure = |_:P<ast::FnDecl>, _: P<Block>, id: ast::NodeId, _: Span| id;
+        let method = |m: &'a ast::Method| m.id;
+        self.handle(item, method, closure)
+    }
+    fn kind<'a>(&'a self) -> visit::FnKind<'a> {
+        let item : ItemFnHandler<visit::FnKind> = |ident,_,style,abi,generics,_,_,_| {
+            visit::FkItemFn(ident, generics, style, abi)
+        };
+        let closure = |_:P<ast::FnDecl>, _: P<Block>, _: ast::NodeId, _: Span| {
+            visit::FkFnBlock
+        };
+        let method = |m: &'a ast::Method| visit::FkMethod(m.ident, &m.generics, m);
+        self.handle(item, method, closure)
+    }
+
+    fn handle<'a, A>(&'a self,
+                     item_fn: ItemFnHandler<'a, A>,
+                     method: |&'a ast::Method| -> A,
+                     closure: |P<ast::FnDecl>, P<Block>, ast::NodeId, Span| -> A) -> A {
+        match self.node {
+            ast_map::NodeItem(ref i) => match i.node {
+                ast::ItemFn(decl, style, abi, ref generics, block) =>
+                    item_fn(i.ident, decl, style, abi, generics, block, i.id, i.span),
+                _ => fail!("item FnLikeNode that is not fn-like"),
+            },
+            ast_map::NodeTraitMethod(ref t) => match **t {
+                ast::Provided(ref m) => method(&**m),
+                _ => fail!("trait method FnLikeNode that is not fn-like"),
+            },
+            ast_map::NodeMethod(ref m) => method(&**m),
+            ast_map::NodeExpr(ref e) => match e.node {
+                ast::ExprFnBlock(ref decl, ref block) => closure(*decl, *block, e.id, e.span),
+                ast::ExprProc(ref decl, ref block) => closure(*decl, *block, e.id, e.span),
+                _ => fail!("expr FnLikeNode that is not fn-like"),
+            },
+            _ => fail!("other FnLikeNode that is not fn-like"),
+        }
+    }
+
+}
+
+pub enum CodeFromId {
+    FnLikeCode(FnLikeNode),
+    BlockCode(P<Block>),
+}
+
+trait MaybeFnLike { fn is_fn_like(&self) -> bool; }
+impl MaybeFnLike for Item {
+    fn is_fn_like(&self) -> bool {
+        match self.node { ast::ItemFn(..) => true, _ => false, }
+    }
+}
+impl MaybeFnLike for TraitMethod {
+    fn is_fn_like(&self) -> bool {
+        match *self { ast::Provided(_) => true, _ => false, }
+    }
+}
+impl MaybeFnLike for ast::Expr {
+    fn is_fn_like(&self) -> bool {
+        match self.node {
+            ast::ExprFnBlock(..) | ast::ExprProc(..) => true,
+            _ => false,
+        }
+    }
+}
+
+impl CodeFromId {
+    fn id(&self) -> ast::NodeId {
+        match *self {
+            FnLikeCode(node) => node.id(),
+            BlockCode(block) => block.id,
+        }
+    }
+
+    fn from_node(node: Node) -> Option<CodeFromId> {
+        match node {
+            ast_map::NodeItem(item) if item.is_fn_like() =>
+                Some(FnLikeCode(FnLikeNode::new(node))),
+            ast_map::NodeTraitMethod(tm) if tm.is_fn_like() =>
+                Some(FnLikeCode(FnLikeNode::new(node))),
+            ast_map::NodeMethod(_) =>
+                Some(FnLikeCode(FnLikeNode::new(node))),
+            ast_map::NodeExpr(e) if e.is_fn_like() =>
+                Some(FnLikeCode(FnLikeNode::new(node))),
+            ast_map::NodeBlock(block) =>
+                Some(BlockCode(block)),
+            _ =>
+                None,
+        }
+    }
+}
+
 pub fn pretty_print_input(sess: Session,
                           cfg: ast::CrateConfig,
                           input: &Input,
@@ -653,7 +798,7 @@ pub fn pretty_print_input(sess: Session,
                                  input.filestem().as_slice());
 
     let (krate, ast_map, is_expanded) = match ppm {
-        PpmExpanded | PpmExpandedIdentified | PpmTyped | PpmFlowGraph(_) => {
+        PpmExpanded | PpmExpandedIdentified | PpmTyped | PpmFlowGraph(_, _) => {
             let (krate, ast_map)
                 = match phase_2_configure_and_expand(&sess, krate, &id) {
                     None => return,
@@ -708,16 +853,21 @@ pub fn pretty_print_input(sess: Session,
                                 &annotation,
                                 is_expanded)
         }
-        PpmFlowGraph(nodeid) => {
+        PpmFlowGraph(nodeid, analysis_name) => {
             let ast_map = ast_map.expect("--pretty flowgraph missing ast_map");
             let node = ast_map.find(nodeid).unwrap_or_else(|| {
                 sess.fatal(format!("--pretty flowgraph couldn't find id: {}",
                                    nodeid).as_slice())
             });
-            let block = match node {
-                syntax::ast_map::NodeBlock(block) => block,
-                _ => {
-                    let message = format!("--pretty=flowgraph needs block, got {:?}",
+            let code = CodeFromId::from_node(node);
+            match code {
+                Some(code) => {
+                    let analysis = phase_3_run_analysis_passes(sess, &krate, ast_map);
+                    print_flowgraph(analysis, code, analysis_name, out)
+                }
+                None => {
+                    let message = format!("--pretty=flowgraph needs \
+                                           block, fn, or method; got {:?}",
                                           node);
 
                     // point to what was found, if there's an
@@ -727,9 +877,7 @@ pub fn pretty_print_input(sess: Session,
                         None => sess.fatal(message.as_slice())
                     }
                 }
-            };
-            let analysis = phase_3_run_analysis_passes(sess, &krate, ast_map);
-            print_flowgraph(analysis, block, out)
+            }
         }
         _ => {
             pprust::print_crate(sess.codemap(),
@@ -746,16 +894,47 @@ pub fn pretty_print_input(sess: Session,
 }
 
 fn print_flowgraph<W:io::Writer>(analysis: CrateAnalysis,
-                                 block: ast::P<ast::Block>,
+                                 code: CodeFromId,
+                                 opt_analysis_name: Option<GraphAnalysisName>,
                                  mut out: W) -> io::IoResult<()> {
     let ty_cx = &analysis.ty_cx;
-    let cfg = cfg::CFG::new(ty_cx, &*block);
-    let lcfg = LabelledCFG { ast_map: &ty_cx.map,
-                             cfg: &cfg,
-                             name: format!("block{}", block.id), };
+    let cfg = match code {
+        BlockCode(block) => cfg::CFG::new(ty_cx, &*block),
+        FnLikeCode(fn_like) => cfg::CFG::new(ty_cx, fn_like.body()),
+    };
     debug!("cfg: {:?}", cfg);
-    let r = dot::render(&lcfg, &mut out);
-    return expand_err_details(r);
+    match (opt_analysis_name, code) {
+        (None, _) => {
+            let lcfg = LabelledCFG {
+                ast_map: &ty_cx.map,
+                cfg: &cfg,
+                name: format!("code_{}", code.id()).to_string(), };
+            let r = dot::render(&lcfg, &mut out);
+            return expand_err_details(r);
+        }
+        (Some(_analysis_name), BlockCode(_)) => {
+            fail!("--pretty <annotated>,flowgraph requires fn-like node id.");
+        }
+        (Some(analysis_name), FnLikeCode(fn_like)) => {
+            let fn_parts = fn_like.to_fn_parts(&cfg);
+            let (bccx, analysis_data) =
+                borrowck::build_borrowck_dataflow_data_for_fn(ty_cx, fn_parts);
+
+            let lcfg = LabelledCFG {
+                ast_map: &ty_cx.map,
+                cfg: &cfg,
+                name: format!("{}_{}",
+                              analysis_name.short_name(),
+                              code.id()).to_string(), };
+            let lcfg = DataflowLabeller {
+                inner: lcfg,
+                variant: analysis_name,
+                borrowck_ctxt: &bccx,
+                analysis_data: &analysis_data, };
+            let r = dot::render(&lcfg, &mut out);
+            return expand_err_details(r);
+        }
+    }
 
     fn expand_err_details(r: io::IoResult<()>) -> io::IoResult<()> {
         r.map_err(|ioerr| {

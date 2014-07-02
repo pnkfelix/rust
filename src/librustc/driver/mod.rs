@@ -333,7 +333,37 @@ pub enum PpMode {
     PpmTyped,
     PpmIdentified,
     PpmExpandedIdentified,
-    PpmFlowGraph(ast::NodeId),
+    PpmFlowGraph(ast::NodeId, Option<GraphAnalysisName>),
+}
+
+pub enum GraphAnalysisVariant {
+    Loans,
+    Moves,
+    Assigns,
+}
+
+pub enum GraphAnalysisName {
+    DataflowAllVariants,
+    Dataflow(GraphAnalysisVariant),
+}
+
+impl GraphAnalysisVariant {
+    pub fn short_name(&self) -> &'static str {
+        match *self {
+            Loans   => "loans",
+            Moves   => "moves",
+            Assigns => "assigns",
+        }
+    }
+}
+
+impl GraphAnalysisName {
+    pub fn short_name(&self) -> &'static str {
+        match *self {
+            DataflowAllVariants => "all",
+            Dataflow(v) => v.short_name(),
+        }
+    }
 }
 
 pub fn parse_pretty(sess: &Session, name: &str) -> PpMode {
@@ -346,9 +376,27 @@ pub fn parse_pretty(sess: &Session, name: &str) -> PpMode {
         (None, "typed")        => PpmTyped,
         (None, "expanded,identified") => PpmExpandedIdentified,
         (None, "identified")   => PpmIdentified,
-        (arg, "flowgraph") => {
+        (arg, "flowgraph") |
+        (arg, "all,flowgraph") |
+        (arg, "loans,flowgraph") |
+        (arg, "moves,flowgraph") |
+        (arg, "assigns,flowgraph") => {
+            let prefix = first.slice_to(first.len() - "flowgraph".len());
              match arg.and_then(from_str) {
-                 Some(id) => PpmFlowGraph(id),
+                 Some(id) => match prefix {
+                     "" => PpmFlowGraph(id, None),
+                     "all," => PpmFlowGraph(id, Some(DataflowAllVariants)),
+                     "loans," => PpmFlowGraph(id, Some(Dataflow(Loans))),
+                     "moves," => PpmFlowGraph(id, Some(Dataflow(Moves))),
+                     "assigns," => PpmFlowGraph(id, Some(Dataflow(Assigns))),
+                     _ => {
+                         sess.fatal(format!("`<analysis>,flowgraph` needs \
+                                             the <analysis> to be one of \
+                                             `all`, `loans`, `moves`, or \
+                                             `assigns`; got {}",
+                                            prefix.slice_to(prefix.len() - 1)).as_slice())
+                     }
+                 },
                  None => {
                      sess.fatal(format!("`pretty flowgraph=<nodeid>` needs \
                                          an integer <nodeid>; got {}",

@@ -440,6 +440,29 @@ impl<'a> LabelText<'a> {
             &EscStr(ref s) => LabelText::escape_str(s.as_slice()).to_string(),
         }
     }
+
+    /// Decomposes content into string suitable for making EscStr that
+    /// yields same content as self.
+    pub fn pre_escaped_content(self) -> str::MaybeOwned<'a> {
+        match self {
+            EscStr(s) => s,
+            LabelStr(s) => if s.as_slice().contains_char('\\') {
+                str::Owned(s.as_slice().escape_default().to_string())
+            } else {
+                s
+            },
+        }
+    }
+
+    pub fn prefix_line(self, prefix: LabelText) -> LabelText {
+        prefix.suffix_line(self)
+    }
+
+    pub fn suffix_line(self, suffix: LabelText) -> LabelText {
+        let prefix = self.pre_escaped_content().to_string();
+        let suffix = suffix.pre_escaped_content();
+        EscStr(str::Owned(prefix.append(r"\n\n").append(suffix.as_slice())))
+    }
 }
 
 pub type Nodes<'a,N> = MaybeOwnedVector<'a,N>;
