@@ -19,7 +19,7 @@ use {f32, f64};
 use clone::Clone;
 use cmp::{PartialEq, PartialOrd};
 use kinds::Copy;
-use mem::size_of;
+use mem::{drop, size_of};
 use ops::{Add, Sub, Mul, Div, Rem, Neg};
 use ops::{Not, BitAnd, BitOr, BitXor, Shl, Shr};
 use option::{Option, Some, None};
@@ -336,6 +336,7 @@ pub fn pow<T: One + Mul<T, T>>(mut base: T, mut exp: uint) -> T {
             base = base * base;
             exp = exp >> 1;
         }
+        drop(base);
         acc
     }
 }

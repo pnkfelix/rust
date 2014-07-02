@@ -1005,7 +1005,7 @@ pub fn ignore_lhs(_bcx: &Block, local: &ast::Local) -> bool {
 
 pub fn init_local<'a>(bcx: &'a Block<'a>, local: &ast::Local)
                   -> &'a Block<'a> {
-    debug!("init_local(bcx={}, local.id={:?})", bcx.to_str(), local.id);
+    debug!("init_local(bcx={}, local.id={:?})", bcx.to_string(), local.id);
     let _indenter = indenter();
     let _icx = push_ctxt("init_local");
     _match::store_local(bcx, local)

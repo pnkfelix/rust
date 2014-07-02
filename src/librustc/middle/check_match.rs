@@ -137,8 +137,11 @@ fn check_expr(cx: &mut MatchCheckCtxt, ex: &Expr) {
             }
 
             // Second, check for unreachable arms.
-            check_arms(cx, arms.as_slice());
-
+            {
+                let arms : Vec<Arm> =
+                    arms.as_slice().iter().map(|x|(**x).clone()).collect();
+                check_arms(cx, arms.as_slice());
+            }
             // Finally, check if the whole match expression is exhaustive.
             // Check for empty enum, because is_useful only works on inhabited types.
             let pat_ty = node_id_to_type(cx.tcx, scrut.id);
@@ -155,7 +158,7 @@ fn check_expr(cx: &mut MatchCheckCtxt, ex: &Expr) {
             }
             let m: Matrix = Matrix(arms
                 .iter()
-                .filter(|&arm| is_unguarded(arm))
+                .filter(|&arm| is_unguarded(&**arm))
                 .flat_map(|arm| arm.pats.iter())
                 .map(|pat| vec!(pat.clone()))
                 .collect());

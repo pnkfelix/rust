@@ -394,7 +394,7 @@ pub fn trans_fn_ref_with_vtables(
 
     debug!("trans_fn_ref_with_vtables(bcx={}, def_id={}, node={:?}, \
             substs={}, vtables={})",
-           bcx.to_str(),
+           bcx.to_string(),
            def_id.repr(tcx),
            node,
            substs.repr(tcx),

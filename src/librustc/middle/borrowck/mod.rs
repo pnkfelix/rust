@@ -121,7 +121,6 @@ fn borrowck_item(this: &mut BorrowckCtxt, item: &ast::Item) {
     }
 }
 
-/// Collection of conclusions determined via borrow checker analyses.
 pub struct AnalysisData<'a> {
     pub all_loans: Vec<Loan>,
     pub loans: DataFlowContext<'a, LoanDataFlowOperator>,
@@ -145,7 +144,6 @@ fn borrowck_fn(this: &mut BorrowckCtxt,
 
     check_loans::check_loans(this, &loan_dfcx, flowed_moves,
                              all_loans.as_slice(), decl, body);
-
     visit::walk_fn(this, fk, decl, body, sp, ());
 }
 
@@ -157,7 +155,8 @@ fn build_borrowck_dataflow_data<'a>(this: &mut BorrowckCtxt<'a>,
                                     sp: Span,
                                     id: ast::NodeId) -> AnalysisData<'a> {
     // Check the body of fn items.
-    let id_range = ast_util::compute_id_range_for_fn_body(fk, decl, body, sp, id);
+    let id_range =
+        ast_util::compute_id_range_for_fn_body(fk, decl, body, sp, id);
     let (all_loans, move_data) =
         gather_loans::gather_loans_in_fn(this, decl, body);
 

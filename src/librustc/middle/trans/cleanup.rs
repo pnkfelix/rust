@@ -78,6 +78,23 @@ pub enum ScopeId {
 }
 
 impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
+    fn push_match_arm_cleanup_scope(&self, id: ast::NodeId) {
+        // FIXME this is currently just a cut-and-paste of
+        // push_ast_cleanup_scope.  It would be good to see if we can
+        // either get rid of this, or replace the custom cleanup scope
+        // currently used for match arms with something here instead.
+
+        debug!("push_match_arm_cleanup_scope({})",
+               self.ccx.tcx.map.node_to_string(id));
+
+        let top_scope = self.top_ast_scope();
+        if top_scope.is_some() {
+            assert_eq!(self.ccx.tcx.region_maps.opt_encl_scope(id), top_scope);
+        }
+
+        self.push_scope(CleanupScope::new(AstScopeKind(id)));
+    }
+
     fn push_ast_cleanup_scope(&self, id: ast::NodeId) {
         /*!
          * Invoked when we start to trans the code contained
@@ -133,6 +150,26 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
          */
 
         debug!("pop_and_trans_ast_cleanup_scope({})",
+               self.ccx.tcx.map.node_to_string(cleanup_scope));
+
+        assert!(self.top_scope(|s| s.kind.is_ast_with_id(cleanup_scope)));
+
+        let scope = self.pop_scope();
+        self.trans_scope_cleanups(bcx, &scope)
+
+    }
+
+    fn pop_and_trans_match_arm_cleanup_scope(&self,
+                                             bcx: &'a Block<'a>,
+                                             cleanup_scope: ast::NodeId)
+                                             -> &'a Block<'a> {
+        /*!
+         * Removes the cleanup scope for id `cleanup_scope`, which
+         * must be at the top of the cleanup stack, and generates the
+         * code to do its cleanups for normal exit.
+         */
+
+        debug!("pop_and_trans_match_arm_cleanup_scope({})",
                self.ccx.tcx.map.node_to_string(cleanup_scope));
 
         assert!(self.top_scope(|s| s.kind.is_ast_with_id(cleanup_scope)));
@@ -940,7 +977,12 @@ pub trait CleanupMethods<'a> {
                                    id: ast::NodeId,
                                    exits: [&'a Block<'a>, ..EXIT_MAX]);
     fn push_custom_cleanup_scope(&self) -> CustomScopeIndex;
+    fn push_match_arm_cleanup_scope(&self, id: ast::NodeId);
     fn pop_and_trans_ast_cleanup_scope(&self,
+                                              bcx: &'a Block<'a>,
+                                              cleanup_scope: ast::NodeId)
+                                              -> &'a Block<'a>;
+    fn pop_and_trans_match_arm_cleanup_scope(&self,
                                               bcx: &'a Block<'a>,
                                               cleanup_scope: ast::NodeId)
                                               -> &'a Block<'a>;

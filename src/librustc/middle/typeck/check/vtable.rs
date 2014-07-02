@@ -207,7 +207,7 @@ fn relate_trait_refs(vcx: &VtableContext,
                     format!("expected {}, but found {} ({})",
                             ppaux::trait_ref_to_string(tcx, &r_exp_trait_ref),
                             ppaux::trait_ref_to_string(tcx, &r_act_trait_ref),
-                            ty::type_err_to_str(tcx, err)).as_slice());
+                            ty::type_err_to_string(tcx, err)).as_slice());
             }
         }
     }

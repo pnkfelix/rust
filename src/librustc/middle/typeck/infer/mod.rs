@@ -743,7 +743,7 @@ impl<'a> InferCtxt<'a> {
         debug!("hi! expected_ty = {:?}, actual_ty = {}", expected_ty, actual_ty);
 
         let error_str = err.map_or("".to_string(), |t_err| {
-            format!(" ({})", ty::type_err_to_str(self.tcx, t_err))
+            format!(" ({})", ty::type_err_to_string(self.tcx, t_err))
         });
         let resolved_expected = expected_ty.map(|e_ty| {
             self.resolve_type_vars_if_possible(e_ty)

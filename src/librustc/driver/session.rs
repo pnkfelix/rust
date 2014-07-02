@@ -65,13 +65,15 @@ impl Session {
         self.diagnostic().handler().fatal(msg)
     }
     pub fn span_err(&self, sp: Span, msg: &str) {
-        self.diagnostic().span_err(sp, msg)
+        self.diagnostic().span_err(sp, msg);
+        fail!("(span_err; produce stack trace via fail)");
     }
     pub fn span_err_with_code(&self, sp: Span, msg: &str, code: &str) {
         self.diagnostic().span_err_with_code(sp, msg, code)
     }
     pub fn err(&self, msg: &str) {
-        self.diagnostic().handler().err(msg)
+        self.diagnostic().handler().err(msg);
+        fail!("(err; produce stack trace via fail)");
     }
     pub fn err_count(&self) -> uint {
         self.diagnostic().handler().err_count()

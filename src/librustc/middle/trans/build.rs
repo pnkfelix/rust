@@ -24,7 +24,7 @@ use middle::trans::type_::Type;
 use libc::{c_uint, c_ulonglong, c_char};
 
 pub fn terminate(cx: &Block, _: &str) {
-    debug!("terminate({})", cx.to_str());
+    debug!("terminate({})", cx.to_string());
     cx.terminated.set(true);
 }
 

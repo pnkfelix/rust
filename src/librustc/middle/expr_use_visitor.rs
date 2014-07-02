@@ -348,7 +348,7 @@ impl<'d,'t,TYPER:mc::Typer> ExprUseVisitor<'d,'t,TYPER> {
                 self.walk_expr(&**discr);
                 let discr_cmt = return_if_err!(self.mc.cat_expr(&**discr));
                 for arm in arms.iter() {
-                    self.walk_arm(discr_cmt.clone(), arm);
+                    self.walk_arm(discr_cmt.clone(), &**arm);
                 }
             }
 

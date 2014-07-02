@@ -358,7 +358,7 @@ impl<'a> ErrorReporting for InferCtxt<'a> {
             format!("{}: {} ({})",
                  message_root_str,
                  expected_found_str,
-                 ty::type_err_to_str(self.tcx, terr)).as_slice());
+                 ty::type_err_to_string(self.tcx, terr)).as_slice());
 
         match trace.origin {
             infer::MatchExpressionArm(_, arm_span) =>

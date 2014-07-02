@@ -1059,7 +1059,7 @@ fn compare_impl_method(tcx: &ty::ctxt,
             span_err!(tcx.sess, impl_m_span, E0053,
                 "method `{}` has an incompatible type for trait: {}",
                 token::get_ident(trait_m.ident),
-                ty::type_err_to_str(tcx, terr));
+                ty::type_err_to_string(tcx, terr));
             ty::note_and_explain_type_err(tcx, terr);
         }
     }
@@ -3214,6 +3214,8 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
         }
       }
       ast::ExprMatch(ref discrim, ref arms) => {
+        let arms : Vec<ast::Arm> =
+            arms.as_slice().iter().map(|x|(**x).clone()).collect();
         _match::check_match(fcx, expr, &**discrim, arms.as_slice());
       }
       ast::ExprFnBlock(ref decl, ref body) => {

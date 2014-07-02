@@ -29,7 +29,6 @@ use syntax::diagnostics;
 
 use getopts;
 
-
 pub mod driver;
 pub mod session;
 pub mod config;

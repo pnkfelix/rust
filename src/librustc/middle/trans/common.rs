@@ -465,7 +465,7 @@ impl<'a> Block<'a> {
         t.repr(self.tcx())
     }
 
-    pub fn to_str(&self) -> String {
+    pub fn to_string(&self) -> String {
         let blk: *const Block = self;
         format!("[block {}]", blk)
     }

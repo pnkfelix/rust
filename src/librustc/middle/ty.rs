@@ -3266,7 +3266,7 @@ pub fn ty_sort_string(cx: &ctxt, t: t) -> String {
     }
 }
 
-pub fn type_err_to_str(cx: &ctxt, err: &type_err) -> String {
+pub fn type_err_to_string(cx: &ctxt, err: &type_err) -> String {
     /*!
      *
      * Explains the source of a type err in a short,

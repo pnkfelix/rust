@@ -85,9 +85,10 @@ pub struct RegionMaps {
 
 #[deriving(Clone)]
 pub struct Context {
+    /// THIS NEEDS DOCUMENTATION
     var_parent: Option<ast::NodeId>,
 
-    // Innermost enclosing expression
+    // Innermost enclosing scope
     parent: Option<ast::NodeId>,
 }
 
@@ -122,7 +123,7 @@ impl RegionMaps {
     }
 
     pub fn record_var_scope(&self, var: ast::NodeId, lifetime: ast::NodeId) {
-        debug!("record_var_scope(sub={}, sup={})", var, lifetime);
+        debug!("record_var_scope(var={}, lifetime={})", var, lifetime);
         assert!(var != lifetime);
         self.var_map.borrow_mut().insert(var, lifetime);
     }
@@ -331,6 +332,9 @@ impl RegionMaps {
          * both `scope_a` and `scope_b`.
          */
 
+        debug!("nearest_common_ancestor(scope_a={}, scope_b={})",
+               scope_a, scope_b);
+
         if scope_a == scope_b { return Some(scope_a); }
 
         let a_ancestors = ancestors_of(self, scope_a);
@@ -364,7 +368,7 @@ impl RegionMaps {
 
         fn ancestors_of(this: &RegionMaps, scope: ast::NodeId)
             -> Vec<ast::NodeId> {
-            // debug!("ancestors_of(scope={})", scope);
+            debug!("ancestors_of(scope={})", scope);
             let mut result = vec!(scope);
             let mut scope = scope;
             loop {
@@ -386,6 +390,7 @@ fn record_superlifetime(visitor: &mut RegionResolutionVisitor,
                         cx: Context,
                         child_id: ast::NodeId,
                         _sp: Span) {
+    debug!("record_superlifetime(child_id={})", child_id);
     for &parent_id in cx.parent.iter() {
         visitor.region_maps.record_encl_scope(child_id, parent_id);
     }
@@ -432,6 +437,8 @@ fn resolve_block(visitor: &mut RegionResolutionVisitor,
 fn resolve_arm(visitor: &mut RegionResolutionVisitor,
                arm: &ast::Arm,
                cx: Context) {
+    debug!("resolve_arm(arm.id={})", arm.id);
+
     visitor.region_maps.mark_as_terminating_scope(arm.body.id);
 
     match arm.guard {
@@ -441,12 +448,34 @@ fn resolve_arm(visitor: &mut RegionResolutionVisitor,
         None => { }
     }
 
-    visit::walk_arm(visitor, arm, cx);
+    // Deliberately not invoking `visit::walk_arm(visitor, arm, cx)`.
+    // Instead, walk each component in turn below, using one context
+    // (i.e. parent scope) for the pattern and optional guard, and a
+    // different parent scope for the arm's expression body.
+
+    let &Arm { ref attrs, ref pats, guard, body, id } = arm;
+
+    for pattern in pats.iter() {
+        visitor.visit_pat(&**pattern, cx)
+    }
+    visit::walk_expr_opt(visitor, guard, cx);
+
+    // (Slightly misleading hack: using body of an arm as its span.)
+    record_superlifetime(visitor, cx, id, body.span);
+
+    let subcx = Context {var_parent: Some(id), parent: Some(id)};
+
+    visitor.visit_expr(&*body, subcx);
+    for attr in attrs.iter() {
+        visitor.visit_attribute(attr, subcx);
+    }
 }
 
 fn resolve_pat(visitor: &mut RegionResolutionVisitor,
                pat: &ast::Pat,
                cx: Context) {
+    debug!("resolve_pat(pat.id={})", pat.id);
+
     record_superlifetime(visitor, cx, pat.id, pat.span);
 
     // If this is a binding (or maybe a binding, I'm too lazy to check
@@ -515,6 +544,7 @@ fn resolve_expr(visitor: &mut RegionResolutionVisitor,
         }
 
         ast::ExprMatch(..) => {
+            // Might not be needed when Arm has its own scoped NodeId.
             new_cx.var_parent = Some(expr.id);
         }
 

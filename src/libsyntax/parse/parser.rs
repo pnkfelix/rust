@@ -2717,7 +2717,7 @@ impl<'a> Parser<'a> {
         let lo = self.last_span.lo;
         let discriminant = self.parse_expr_res(RESTRICT_NO_STRUCT_LITERAL);
         self.commit_expr_expecting(discriminant, token::LBRACE);
-        let mut arms: Vec<Arm> = Vec::new();
+        let mut arms: Vec<Gc<Arm>> = Vec::new();
         while self.token != token::RBRACE {
             let attrs = self.parse_outer_attributes();
             let pats = self.parse_pats();
@@ -2738,11 +2738,12 @@ impl<'a> Parser<'a> {
                 self.eat(&token::COMMA);
             }
 
-            arms.push(ast::Arm {
+            arms.push(box(GC) ast::Arm {
                 attrs: attrs,
                 pats: pats,
                 guard: guard,
-                body: expr
+                body: expr,
+                id: ast::DUMMY_NODE_ID,
             });
         }
         let hi = self.span.hi;

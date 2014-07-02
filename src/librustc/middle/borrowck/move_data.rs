@@ -419,11 +419,13 @@ impl MoveData {
 
         for (i, assignment) in self.var_assignments.borrow().iter().enumerate() {
             dfcx_assign.add_gen(assignment.id, i);
-            self.kill_moves(assignment.path, assignment.id, dfcx_moves);
+            self.kill_moves(assignment.path, assignment.id, dfcx_moves,
+                            "var_assignments");
         }
 
         for assignment in self.path_assignments.borrow().iter() {
-            self.kill_moves(assignment.path, assignment.id, dfcx_moves);
+            self.kill_moves(assignment.path, assignment.id, dfcx_moves,
+                            "path_assignments");
         }
 
         // Kill all moves related to a variable `x` when it goes out
@@ -433,12 +435,12 @@ impl MoveData {
                 LpVar(id) => {
                     let kill_id = tcx.region_maps.var_scope(id);
                     let path = *self.path_map.borrow().get(&path.loan_path);
-                    self.kill_moves(path, kill_id, dfcx_moves);
+                    self.kill_moves(path, kill_id, dfcx_moves, "popscope var");
                 }
                 LpUpvar(ty::UpvarId { var_id: _, closure_expr_id }) => {
                     let kill_id = closure_to_block(closure_expr_id, tcx);
                     let path = *self.path_map.borrow().get(&path.loan_path);
-                    self.kill_moves(path, kill_id, dfcx_moves);
+                    self.kill_moves(path, kill_id, dfcx_moves, "popscope upvar");
                 }
                 LpExtend(..) => {}
             }
@@ -516,12 +518,18 @@ impl MoveData {
     fn kill_moves(&self,
                   path: MovePathIndex,
                   kill_id: ast::NodeId,
-                  dfcx_moves: &mut MoveDataFlow) {
+                  dfcx_moves: &mut MoveDataFlow,
+                  context: &str) {
         // We can only perform kills for paths that refer to a unique location,
         // since otherwise we may kill a move from one location with an
         // assignment referring to another location.
 
+
         let loan_path = self.path_loan_path(path);
+
+        debug!("move_data kill_moves {:s} from {:s}",
+               loan_path.repr(dfcx_moves.tcx), context);
+
         if loan_path_is_precise(&*loan_path) {
             self.each_applicable_move(path, |move_index| {
                 dfcx_moves.add_kill(kill_id, move_index.get());

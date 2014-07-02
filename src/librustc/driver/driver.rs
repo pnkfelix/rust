@@ -43,6 +43,7 @@ use std::io;
 use std::io::fs;
 use std::io::MemReader;
 use syntax::ast;
+use syntax::ast_map;
 use syntax::ast_map::blocks;
 use syntax::attr;
 use syntax::attr::{AttrMetaMethods};
@@ -317,7 +318,7 @@ pub struct CrateAnalysis {
 /// structures carrying the results of the analysis.
 pub fn phase_3_run_analysis_passes(sess: Session,
                                    krate: &ast::Crate,
-                                   ast_map: syntax::ast_map::Map,
+                                   ast_map: ast_map::Map,
                                    name: String) -> CrateAnalysis {
     let time_passes = sess.time_passes();
 
@@ -628,6 +629,10 @@ impl pprust::PpAnn for IdentifiedAnnotation {
             pprust::NodePat(pat) => {
                 try!(pp::space(&mut s.s));
                 s.synth_comment(format!("pat {}", pat.id))
+            }
+            pprust::NodeArm(arm) => {
+                try!(pp::space(&mut s.s));
+                s.synth_comment((format!("arm {}", arm.id)).to_string())
             }
         }
     }

@@ -336,11 +336,10 @@ pub fn require_same_types(tcx: &ty::ctxt,
     match result {
         Ok(_) => true,
         Err(ref terr) => {
-            tcx.sess.span_err(span,
-                              format!("{}: {}",
-                                      msg(),
-                                      ty::type_err_to_str(tcx,
-                                                          terr)).as_slice());
+            tcx.sess.span_err(
+                span,
+                format!("{}: {}", msg(), ty::type_err_to_string(tcx, terr))
+                    .as_slice());
             ty::note_and_explain_type_err(tcx, terr);
             false
         }

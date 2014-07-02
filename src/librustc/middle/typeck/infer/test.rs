@@ -212,7 +212,7 @@ impl<'a> Env<'a> {
         match infer::mk_subty(self.infcx, true, infer::Misc(DUMMY_SP), a, b) {
             Ok(_) => true,
             Err(ref e) => fail!("Encountered error: {}",
-                                ty::type_err_to_str(self.tcx, e))
+                                ty::type_err_to_string(self.tcx, e))
         }
     }
 
@@ -309,7 +309,7 @@ impl<'a> Env<'a> {
         match self.lub().tys(t1, t2) {
             Ok(t) => t,
             Err(ref e) => fail!("unexpected error computing LUB: {:?}",
-                                ty::type_err_to_str(self.tcx, e))
+                                ty::type_err_to_string(self.tcx, e))
         }
     }
 
@@ -321,7 +321,7 @@ impl<'a> Env<'a> {
             }
             Err(ref e) => {
                 fail!("unexpected error in LUB: {}",
-                      ty::type_err_to_str(self.tcx, e))
+                      ty::type_err_to_string(self.tcx, e))
             }
         }
     }

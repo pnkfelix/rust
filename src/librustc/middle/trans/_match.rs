@@ -407,7 +407,7 @@ fn expand_nested_bindings<'a, 'b>(
                           val: ValueRef)
                           -> Vec<Match<'a, 'b>> {
     debug!("expand_nested_bindings(bcx={}, m={}, col={}, val={})",
-           bcx.to_str(),
+           bcx.to_string(),
            m.repr(bcx.tcx()),
            col,
            bcx.val_to_string(val));
@@ -447,7 +447,7 @@ fn enter_match<'a, 'b>(
                e: enter_pats)
                -> Vec<Match<'a, 'b>> {
     debug!("enter_match(bcx={}, m={}, col={}, val={})",
-           bcx.to_str(),
+           bcx.to_string(),
            m.repr(bcx.tcx()),
            col,
            bcx.val_to_string(val));
@@ -483,7 +483,7 @@ fn enter_default<'a, 'b>(
                  val: ValueRef)
                  -> Vec<Match<'a, 'b>> {
     debug!("enter_default(bcx={}, m={}, col={}, val={})",
-           bcx.to_str(),
+           bcx.to_string(),
            m.repr(bcx.tcx()),
            col,
            bcx.val_to_string(val));
@@ -538,7 +538,7 @@ fn enter_opt<'a, 'b>(
              val: ValueRef)
              -> Vec<Match<'a, 'b>> {
     debug!("enter_opt(bcx={}, m={}, opt={:?}, col={}, val={})",
-           bcx.to_str(),
+           bcx.to_string(),
            m.repr(bcx.tcx()),
            *opt,
            col,
@@ -1011,7 +1011,7 @@ fn compile_guard<'a, 'b>(
                  has_genuine_default: bool)
                  -> &'b Block<'b> {
     debug!("compile_guard(bcx={}, guard_expr={}, m={}, vals={})",
-           bcx.to_str(),
+           bcx.to_string(),
            bcx.expr_to_string(guard_expr),
            m.repr(bcx.tcx()),
            vec_map_to_string(vals, |v| bcx.val_to_string(*v)));
@@ -1049,7 +1049,7 @@ fn compile_submatch<'a, 'b>(
                     chk: &FailureHandler,
                     has_genuine_default: bool) {
     debug!("compile_submatch(bcx={}, m={}, vals={})",
-           bcx.to_str(),
+           bcx.to_string(),
            m.repr(bcx.tcx()),
            vec_map_to_string(vals, |v| bcx.val_to_string(*v)));
     let _indenter = indenter();
@@ -1472,10 +1472,12 @@ fn trans_match_inner<'a>(scope_cx: &'a Block<'a>,
         let mut bcx = arm_data.bodycx;
 
         // insert bindings into the lllocals map and add cleanups
+        fcx.push_match_arm_cleanup_scope(arm_data.arm.id);
         let cs = fcx.push_custom_cleanup_scope();
         bcx = insert_lllocals(bcx, &arm_data.bindings_map, Some(cleanup::CustomScope(cs)));
         bcx = expr::trans_into(bcx, &*arm_data.arm.body, dest);
         bcx = fcx.pop_and_trans_custom_cleanup_scope(bcx, cs);
+        bcx = fcx.pop_and_trans_match_arm_cleanup_scope(bcx, arm_data.arm.id);
         arm_cxs.push(bcx);
     }
 
@@ -1666,7 +1668,7 @@ fn bind_irrefutable_pat<'a>(
      */
 
     debug!("bind_irrefutable_pat(bcx={}, pat={}, binding_mode={:?})",
-           bcx.to_str(),
+           bcx.to_string(),
            pat.repr(bcx.tcx()),
            binding_mode);
 
