@@ -28,6 +28,9 @@ use syntax::visit;
 use syntax::print::{pp, pprust};
 use util::nodemap::NodeMap;
 
+#[deriving(Show)]
+pub enum EntryOrExit { Entry, Exit }
+
 #[deriving(Clone)]
 pub struct DataFlowContext<'a, O> {
     pub tcx: &'a ty::ctxt,
@@ -346,29 +349,34 @@ impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
             return true;
         }
         let cfgidx = to_cfgidx_or_die(id, &self.nodeid_to_index);
-        let (start, end) = self.compute_id_range_frozen(cfgidx);
-        let on_entry = self.on_entry.slice(start, end);
-        debug!("{:s} each_bit_on_entry_frozen(id={:?}, on_entry={})",
-               self.analysis_name, id, bits_to_str(on_entry));
-        self.each_bit(on_entry, f)
+        self.each_bit_for_node(Entry, cfgidx, f)
     }
 
-    pub fn each_bit_on_exit_frozen(&self,
-                                   cfgidx: CFGIndex,
-                                   f: |uint| -> bool)
-                                   -> bool {
-        //! Iterates through each bit that is set on exit from `id`.
+    pub fn each_bit_for_node(&self,
+                             e: EntryOrExit,
+                             cfgidx: CFGIndex,
+                             f: |uint| -> bool)
+                             -> bool {
+        //! Iterates through each bit that is set on entry/exit to `cfgidx`.
         //! Only useful after `propagate()` has been called.
         if !self.has_bitset_for_cfgidx(cfgidx) {
             return true;
         }
         let (start, end) = self.compute_id_range_frozen(cfgidx);
-        let mut bits = self.on_entry.slice(start, end).to_owned();
-        self.apply_gen_kill_frozen(cfgidx, bits.as_mut_slice());
-        let on_exit = bits.as_slice();
-        debug!("{:s} each_bit_on_entry_frozen(cfgidx={:?}, on_exit={})",
-               self.analysis_name, cfgidx, bits_to_str(on_exit));
-        self.each_bit(on_exit, f)
+        let on_entry = self.on_entry.slice(start, end);
+        let temp_bits;
+        let slice = match e {
+            Entry => on_entry,
+            Exit => {
+                let mut t = on_entry.to_owned();
+                self.apply_gen_kill_frozen(cfgidx, t.as_mut_slice());
+                temp_bits = t;
+                temp_bits.as_slice()
+            }
+        };
+        debug!("{:s} each_bit_for_node({}, cfgidx={}) bits={}",
+               self.analysis_name, e, cfgidx, bits_to_str(slice));
+        self.each_bit(slice, f)
     }
 
     pub fn each_gen_bit_frozen(&self, id: ast::NodeId, f: |uint| -> bool)

@@ -342,6 +342,12 @@ pub enum GraphAnalysisVariant {
     Assigns,
 }
 
+pub static ALL_GRAPH_ANALYSIS_VARIANTS : [GraphAnalysisVariant, ..3] = [
+    Loans,
+    Moves,
+    Assigns,
+];
+
 pub enum GraphAnalysisName {
     DataflowAllVariants,
     Dataflow(GraphAnalysisVariant),
