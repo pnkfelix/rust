@@ -4615,6 +4615,7 @@ pub fn construct_parameter_environment(
         push_types_from_defs(tcx, &mut types, space,
                              generics.types.get_vec(space));
     }
+    types.shrink_to_fit();
 
     // map bound 'a => free 'a
     let mut regions = VecPerParamSpace::empty();
@@ -4622,6 +4623,7 @@ pub fn construct_parameter_environment(
         push_region_params(&mut regions, space, free_id,
                            generics.regions.get_vec(space));
     }
+    regions.shrink_to_fit();
 
     let free_substs = Substs {
         types: types,
@@ -4637,6 +4639,7 @@ pub fn construct_parameter_environment(
         push_bounds_from_defs(tcx, &mut bounds, space, &free_substs,
                               generics.types.get_vec(space));
     }
+    bounds.shrink_to_fit();
 
     debug!("construct_parameter_environment: free_id={} \
            free_subst={} \

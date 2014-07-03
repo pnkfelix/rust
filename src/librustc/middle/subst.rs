@@ -271,6 +271,12 @@ impl<T> VecPerParamSpace<T> {
         }
     }
 
+    pub fn shrink_to_fit(&mut self) {
+        self.vecs.mut0().shrink_to_fit();
+        self.vecs.mut1().shrink_to_fit();
+        self.vecs.mut2().shrink_to_fit();
+    }
+
     pub fn params_from_type(types: Vec<T>) -> VecPerParamSpace<T> {
         VecPerParamSpace::empty().with_vec(TypeSpace, types)
     }
