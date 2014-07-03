@@ -193,7 +193,7 @@ impl MoveData {
         self.paths.borrow().get(index.get()).loan_path.clone()
     }
 
-    pub fn path_parent(&self, index: MovePathIndex) -> MovePathIndex {
+    fn path_parent(&self, index: MovePathIndex) -> MovePathIndex {
         self.paths.borrow().get(index.get()).parent
     }
 

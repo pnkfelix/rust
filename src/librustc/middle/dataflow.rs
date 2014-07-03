@@ -33,7 +33,7 @@ pub enum EntryOrExit { Entry, Exit }
 
 #[deriving(Clone)]
 pub struct DataFlowContext<'a, O> {
-    pub tcx: &'a ty::ctxt,
+    tcx: &'a ty::ctxt,
 
     /// a name for the analysis using this dataflow instance
     analysis_name: &'static str,
@@ -96,14 +96,14 @@ fn to_cfgidx_or_die(id: ast::NodeId, index: &NodeMap<CFGIndex>) -> CFGIndex {
 }
 
 impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
-    pub fn has_bitset_for_nodeid(&self, n: ast::NodeId) -> bool {
+    fn has_bitset_for_nodeid(&self, n: ast::NodeId) -> bool {
         assert!(n != ast::DUMMY_NODE_ID);
         match self.nodeid_to_index.find(&n) {
             None => false,
             Some(&cfgidx) => self.has_bitset_for_cfgidx(cfgidx),
         }
     }
-    pub fn has_bitset_for_cfgidx(&self, cfgidx: CFGIndex) -> bool {
+    fn has_bitset_for_cfgidx(&self, cfgidx: CFGIndex) -> bool {
         let node_id = cfgidx.node_id();
         node_id < self.index_to_bitset.len() &&
             self.index_to_bitset.get(node_id).is_some()

@@ -118,6 +118,13 @@ fn borrowck_item(this: &mut BorrowckCtxt, item: &ast::Item) {
     }
 }
 
+/// Collection of conclusions determined via borrow checker analyses.
+pub struct AnalysisData<'a> {
+    pub all_loans: Vec<Loan>,
+    pub loans: DataFlowContext<'a, LoanDataFlowOperator>,
+    pub move_data: move_data::FlowedMoveData<'a>,
+}
+
 fn borrowck_fn(this: &mut BorrowckCtxt,
                fk: &FnKind,
                decl: &ast::FnDecl,
@@ -174,6 +181,42 @@ fn build_borrowck_dataflow_data<'a>(this: &mut BorrowckCtxt<'a>,
     AnalysisData { all_loans: all_loans,
                    loans: loan_dfcx,
                    move_data:flowed_moves }
+}
+
+/// Accessor for introspective clients inspecting `AnalysisData` and
+/// the `BorrowckCtxt` itself , e.g. the flowgraph visualizer.
+pub fn build_borrowck_dataflow_data_for_fn<'a>(
+    tcx: &'a ty::ctxt,
+    fn_parts: FnParts<'a>) -> (BorrowckCtxt<'a>, AnalysisData<'a>) {
+
+    let mut bccx = BorrowckCtxt {
+        tcx: tcx,
+        stats: box(GC) BorrowStats {
+            loaned_paths_same: Cell::new(0),
+            loaned_paths_imm: Cell::new(0),
+            stable_paths: Cell::new(0),
+            guaranteed_paths: Cell::new(0),
+        }
+    };
+
+    let p = fn_parts;
+
+    let dataflow_data = build_borrowck_dataflow_data(
+        &mut bccx, &p.kind, p.decl, p.cfg, p.body, p.span, p.id);
+
+    (bccx, dataflow_data)
+}
+
+/// Components shared by fn-like things (fn items, methods, closures).
+/// This and a `ty::ctxt` is all you need to run the dataflow analyses
+/// used in the borrow checker.
+pub struct FnParts<'a> {
+    pub decl: ast::P<ast::FnDecl>,
+    pub body: ast::P<ast::Block>,
+    pub kind: visit::FnKind<'a>,
+    pub span: Span,
+    pub id:   ast::NodeId,
+    pub cfg:  &'a cfg::CFG,
 }
 
 // ----------------------------------------------------------------------
@@ -233,44 +276,6 @@ pub enum LoanPath {
 pub enum LoanPathElem {
     LpDeref(mc::PointerKind),    // `*LV` in doc.rs
     LpInterior(mc::InteriorKind) // `LV.f` in doc.rs
-}
-
-/// Components shared by fn-like things (fn items, methods, closures).
-pub struct FnParts<'a> {
-    pub decl: ast::P<ast::FnDecl>,
-    pub body: ast::P<ast::Block>,
-    pub kind: visit::FnKind<'a>,
-    pub span: Span,
-    pub id:   ast::NodeId,
-    pub cfg:  &'a cfg::CFG,
-}
-
-pub struct AnalysisData<'a> {
-    pub all_loans: Vec<Loan>,
-    pub loans: DataFlowContext<'a, LoanDataFlowOperator>,
-    pub move_data: move_data::FlowedMoveData<'a>,
-}
-
-pub fn build_borrowck_dataflow_data_for_fn<'a>(
-    tcx: &'a ty::ctxt,
-    parts: FnParts<'a>) -> (BorrowckCtxt<'a>, AnalysisData<'a>) {
-
-    let mut bccx = BorrowckCtxt {
-        tcx: tcx,
-        stats: box(GC) BorrowStats {
-            loaned_paths_same: Cell::new(0),
-            loaned_paths_imm: Cell::new(0),
-            stable_paths: Cell::new(0),
-            guaranteed_paths: Cell::new(0),
-        }
-    };
-
-    let p = parts;
-
-    let dataflow_data = build_borrowck_dataflow_data(
-        &mut bccx, &p.kind, p.decl, p.cfg, p.body, p.span, p.id);
-
-    (bccx, dataflow_data)
 }
 
 pub fn closure_to_block(closure_id: ast::NodeId,
