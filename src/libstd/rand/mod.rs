@@ -265,6 +265,8 @@ pub fn sample<T, I: Iterator<T>, R: Rng>(rng: &mut R,
         let k = rng.gen_range(0, i + 1 + amount);
         if k < amount {
             *reservoir.get_mut(k) = elem;
+        } else {
+            mem::drop(elem);
         }
     }
     return reservoir;
