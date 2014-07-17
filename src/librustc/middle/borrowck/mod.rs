@@ -171,7 +171,7 @@ fn build_borrowck_dataflow_data<'a>(this: &mut BorrowckCtxt<'a>,
         loan_dfcx.add_kill(loan.kill_scope, loan_idx);
     }
     loan_dfcx.add_kills_from_flow_exits(cfg);
-    loan_dfcx.propagate(cfg, body);
+    let loans = loan_dfcx.propagate(cfg, body);
 
     let flowed_moves = move_data::FlowedMoveData::new(move_data,
                                                       this.tcx,
@@ -181,7 +181,7 @@ fn build_borrowck_dataflow_data<'a>(this: &mut BorrowckCtxt<'a>,
                                                       body);
 
     AnalysisData { all_loans: all_loans,
-                   loans: loan_dfcx.results,
+                   loans: loans,
                    move_data:flowed_moves }
 }
 

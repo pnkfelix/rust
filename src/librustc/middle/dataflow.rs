@@ -452,18 +452,18 @@ impl<'a> DataFlowResults<'a> {
 
 impl<'a, O:DataFlowOperator+Clone+'static> DataFlowContext<'a, O> {
 //                          ^^^^^^^^^^^^^ only needed for pretty printing
-    pub fn propagate(&mut self, cfg: &cfg::CFG, blk: &ast::Block) {
+    pub fn propagate(mut self, cfg: &cfg::CFG, blk: &ast::Block) -> DataFlowResults<'a> {
         //! Performs the data flow analysis.
 
         if self.results.bits_per_id == 0 {
             // Optimize the surprisingly common degenerate case.
-            return;
+            return self.results;
         }
 
         {
             let words_per_id = self.results.words_per_id;
             let mut propcx = PropagationContext {
-                dfcx: &mut *self,
+                dfcx: &mut self,
                 changed: true
             };
 
@@ -480,6 +480,8 @@ impl<'a, O:DataFlowOperator+Clone+'static> DataFlowContext<'a, O> {
             self.pretty_print_to(box io::stderr(), blk).unwrap();
             ""
         });
+
+        self.results
     }
 
     fn pretty_print_to(&self, wr: Box<io::Writer>,

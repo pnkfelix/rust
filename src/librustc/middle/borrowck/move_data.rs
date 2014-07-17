@@ -560,13 +560,13 @@ impl<'a> FlowedMoveData<'a> {
         move_data.add_gen_kills(tcx, &mut dfcx_moves, &mut dfcx_assign);
         dfcx_moves.add_kills_from_flow_exits(cfg);
         dfcx_assign.add_kills_from_flow_exits(cfg);
-        dfcx_moves.propagate(cfg, body);
-        dfcx_assign.propagate(cfg, body);
+        let dfcx_moves = dfcx_moves.propagate(cfg, body);
+        let dfcx_assign = dfcx_assign.propagate(cfg, body);
 
         FlowedMoveData {
             move_data: move_data,
-            dfcx_moves: dfcx_moves.results,
-            dfcx_assign: dfcx_assign.results,
+            dfcx_moves: dfcx_moves,
+            dfcx_assign: dfcx_assign,
         }
     }
 
