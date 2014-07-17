@@ -13,7 +13,7 @@
 #![allow(non_camel_case_types)]
 
 use middle::cfg;
-use middle::dataflow::DataFlowContext;
+use middle::dataflow::{DataFlowContext, DataFlowResults};
 use middle::dataflow::BitwiseOperator;
 use middle::dataflow::DataFlowOperator;
 use middle::def;
@@ -56,9 +56,10 @@ pub mod graphviz;
 pub mod move_data;
 
 #[deriving(Clone)]
-pub struct LoanDataFlowOperator;
+struct LoanDataFlowOperator;
 
-pub type LoanDataFlow<'a> = DataFlowContext<'a, LoanDataFlowOperator>;
+type LoanDataFlowContext<'a> = DataFlowContext<'a, LoanDataFlowOperator>;
+pub type LoanDataFlow<'a> = DataFlowResults<'a>;
 
 impl<'a> Visitor<()> for BorrowckCtxt<'a> {
     fn visit_fn(&mut self, fk: &FnKind, fd: &FnDecl,
@@ -122,7 +123,7 @@ fn borrowck_item(this: &mut BorrowckCtxt, item: &ast::Item) {
 /// Collection of conclusions determined via borrow checker analyses.
 pub struct AnalysisData<'a> {
     pub all_loans: Vec<Loan>,
-    pub loans: DataFlowContext<'a, LoanDataFlowOperator>,
+    pub loans: LoanDataFlow<'a>,
     pub move_data: move_data::FlowedMoveData<'a>,
 }
 
@@ -135,11 +136,11 @@ fn borrowck_fn(this: &mut BorrowckCtxt,
     debug!("borrowck_fn(id={})", id);
     let cfg = cfg::CFG::new(this.tcx, body);
     let AnalysisData { all_loans,
-                       loans: loan_dfcx,
+                       loans: loan_results,
                        move_data:flowed_moves } =
         build_borrowck_dataflow_data(this, fk, decl, &cfg, body, sp, id);
 
-    check_loans::check_loans(this, &loan_dfcx, flowed_moves,
+    check_loans::check_loans(this, &loan_results, flowed_moves,
                              all_loans.as_slice(), decl, body);
 
     visit::walk_fn(this, fk, decl, body, sp, ());
@@ -180,7 +181,7 @@ fn build_borrowck_dataflow_data<'a>(this: &mut BorrowckCtxt<'a>,
                                                       body);
 
     AnalysisData { all_loans: all_loans,
-                   loans: loan_dfcx,
+                   loans: loan_dfcx.results,
                    move_data:flowed_moves }
 }
 

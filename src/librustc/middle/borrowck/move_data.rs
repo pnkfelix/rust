@@ -21,7 +21,7 @@ use std::uint;
 use std::collections::{HashMap, HashSet};
 use middle::borrowck::*;
 use middle::cfg;
-use middle::dataflow::DataFlowContext;
+use middle::dataflow::{DataFlowContext, DataFlowResults};
 use middle::dataflow::BitwiseOperator;
 use middle::dataflow::DataFlowOperator;
 use euv = middle::expr_use_visitor;
@@ -152,14 +152,16 @@ pub struct Assignment {
 }
 
 #[deriving(Clone)]
-pub struct MoveDataFlowOperator;
+struct MoveDataFlowOperator;
 
-pub type MoveDataFlow<'a> = DataFlowContext<'a, MoveDataFlowOperator>;
+type MoveDataFlowContext<'a> = DataFlowContext<'a, MoveDataFlowOperator>;
+pub type MoveDataFlow<'a> = DataFlowResults<'a>;
 
 #[deriving(Clone)]
-pub struct AssignDataFlowOperator;
+struct AssignDataFlowOperator;
 
-pub type AssignDataFlow<'a> = DataFlowContext<'a, AssignDataFlowOperator>;
+type AssignDataFlowContext<'a> = DataFlowContext<'a, AssignDataFlowOperator>;
+pub type AssignDataFlow<'a> = DataFlowResults<'a>;
 
 fn loan_path_is_precise(loan_path: &LoanPath) -> bool {
     match *loan_path {
@@ -403,8 +405,8 @@ impl MoveData {
 
     fn add_gen_kills(&self,
                      tcx: &ty::ctxt,
-                     dfcx_moves: &mut MoveDataFlow,
-                     dfcx_assign: &mut AssignDataFlow) {
+                     dfcx_moves: &mut MoveDataFlowContext,
+                     dfcx_assign: &mut AssignDataFlowContext) {
         /*!
          * Adds the gen/kills for the various moves and
          * assignments into the provided data flow contexts.
@@ -516,7 +518,7 @@ impl MoveData {
     fn kill_moves(&self,
                   path: MovePathIndex,
                   kill_id: ast::NodeId,
-                  dfcx_moves: &mut MoveDataFlow) {
+                  dfcx_moves: &mut MoveDataFlowContext) {
         // We can only perform kills for paths that refer to a unique location,
         // since otherwise we may kill a move from one location with an
         // assignment referring to another location.
@@ -563,8 +565,8 @@ impl<'a> FlowedMoveData<'a> {
 
         FlowedMoveData {
             move_data: move_data,
-            dfcx_moves: dfcx_moves,
-            dfcx_assign: dfcx_assign,
+            dfcx_moves: dfcx_moves.results,
+            dfcx_assign: dfcx_assign.results,
         }
     }
 
@@ -576,7 +578,7 @@ impl<'a> FlowedMoveData<'a> {
          * Iterates through each path moved by `id`
          */
 
-        self.dfcx_moves.results.each_gen_bit(id, |index| {
+        self.dfcx_moves.each_gen_bit(id, |index| {
             let move = self.move_data.moves.borrow();
             let move = move.get(index);
             let moved_path = move.path;
@@ -592,7 +594,7 @@ impl<'a> FlowedMoveData<'a> {
 
         let mut ret = None;
         for loan_path_index in self.move_data.path_map.borrow().find(&*loan_path).iter() {
-            self.dfcx_moves.results.each_gen_bit(id, |move_index| {
+            self.dfcx_moves.each_gen_bit(id, |move_index| {
                 let move = self.move_data.moves.borrow();
                 let move = move.get(move_index);
                 if move.path == **loan_path_index {
@@ -637,7 +639,7 @@ impl<'a> FlowedMoveData<'a> {
 
         let mut ret = true;
 
-        self.dfcx_moves.results.each_bit_on_entry(id, |index| {
+        self.dfcx_moves.each_bit_on_entry(id, |index| {
             let move = self.move_data.moves.borrow();
             let move = move.get(index);
             let moved_path = move.path;
@@ -693,7 +695,7 @@ impl<'a> FlowedMoveData<'a> {
             }
         };
 
-        self.dfcx_assign.results.each_bit_on_entry(id, |index| {
+        self.dfcx_assign.each_bit_on_entry(id, |index| {
             let assignment = self.move_data.var_assignments.borrow();
             let assignment = assignment.get(index);
             if assignment.path == loan_path_index && !f(assignment) {
