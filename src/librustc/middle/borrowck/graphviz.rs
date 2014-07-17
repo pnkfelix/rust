@@ -20,7 +20,7 @@ use cfg_dot = middle::cfg::graphviz;
 use middle::borrowck;
 use middle::borrowck::{BorrowckCtxt, LoanPath};
 use middle::cfg::{CFGIndex};
-use middle::dataflow::{DataFlowOperator, DataFlowContext, EntryOrExit};
+use middle::dataflow::{DataFlowResults, EntryOrExit};
 use middle::dataflow;
 
 use std::rc::Rc;
@@ -74,14 +74,14 @@ impl<'a> DataflowLabeller<'a> {
         }
     }
 
-    fn build_set<O:DataFlowOperator>(&self,
-                                     e: EntryOrExit,
-                                     cfgidx: CFGIndex,
-                                     dfcx: &DataFlowContext<'a, O>,
-                                     to_lp: |uint| -> Rc<LoanPath>) -> String {
+    fn build_set(&self,
+                 e: EntryOrExit,
+                 cfgidx: CFGIndex,
+                 results: &DataFlowResults<'a>,
+                 to_lp: |uint| -> Rc<LoanPath>) -> String {
         let mut saw_some = false;
         let mut set = "{".to_string();
-        dfcx.each_bit_for_node(e, cfgidx, |index| {
+        results.each_bit_for_node(e, cfgidx, |index| {
             let lp = to_lp(index);
             if saw_some {
                 set.push_str(", ");
@@ -95,34 +95,34 @@ impl<'a> DataflowLabeller<'a> {
     }
 
     fn dataflow_loans_for(&self, e: EntryOrExit, cfgidx: CFGIndex) -> String {
-        let dfcx = &self.analysis_data.loans;
+        let results = &self.analysis_data.loans.results;
         let loan_index_to_path = |loan_index| {
             let all_loans = &self.analysis_data.all_loans;
             all_loans.get(loan_index).loan_path()
         };
-        self.build_set(e, cfgidx, dfcx, loan_index_to_path)
+        self.build_set(e, cfgidx, results, loan_index_to_path)
     }
 
     fn dataflow_moves_for(&self, e: EntryOrExit, cfgidx: CFGIndex) -> String {
-        let dfcx = &self.analysis_data.move_data.dfcx_moves;
+        let results = &self.analysis_data.move_data.dfcx_moves.results;
         let move_index_to_path = |move_index| {
             let move_data = &self.analysis_data.move_data.move_data;
             let moves = move_data.moves.borrow();
             let move = moves.get(move_index);
             move_data.path_loan_path(move.path)
         };
-        self.build_set(e, cfgidx, dfcx, move_index_to_path)
+        self.build_set(e, cfgidx, results, move_index_to_path)
     }
 
     fn dataflow_assigns_for(&self, e: EntryOrExit, cfgidx: CFGIndex) -> String {
-        let dfcx = &self.analysis_data.move_data.dfcx_assign;
+        let results = &self.analysis_data.move_data.dfcx_assign.results;
         let assign_index_to_path = |assign_index| {
             let move_data = &self.analysis_data.move_data.move_data;
             let assignments = move_data.var_assignments.borrow();
             let assignment = assignments.get(assign_index);
             move_data.path_loan_path(assignment.path)
         };
-        self.build_set(e, cfgidx, dfcx, assign_index_to_path)
+        self.build_set(e, cfgidx, results, assign_index_to_path)
     }
 }
 

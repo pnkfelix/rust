@@ -32,14 +32,11 @@ use util::nodemap::NodeMap;
 pub enum EntryOrExit { Entry, Exit }
 
 #[deriving(Clone)]
-pub struct DataFlowContext<'a, O> {
+pub struct DataFlowResults<'a> {
     tcx: &'a ty::ctxt,
 
     /// a name for the analysis using this dataflow instance
     analysis_name: &'static str,
-
-    /// the data flow operator
-    oper: O,
 
     /// number of bits to propagate per id
     bits_per_id: uint,
@@ -69,6 +66,14 @@ pub struct DataFlowContext<'a, O> {
     on_entry: Vec<uint>,
 }
 
+#[deriving(Clone)]
+pub struct DataFlowContext<'a, O> {
+    pub results: DataFlowResults<'a>,
+
+    /// the data flow operator
+    oper: O,
+}
+
 pub trait BitwiseOperator {
     /// Joins two predecessor bits together, typically either `|` or `&`
     fn join(&self, succ: uint, pred: uint) -> uint;
@@ -92,14 +97,14 @@ fn to_cfgidx_or_die(id: ast::NodeId, index: &NodeMap<CFGIndex>) -> CFGIndex {
     })
 }
 
-impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
+impl<'a> DataFlowResults<'a> {
     fn has_bitset_for_nodeid(&self, n: ast::NodeId) -> bool {
         assert!(n != ast::DUMMY_NODE_ID);
         self.nodeid_to_index.contains_key(&n)
     }
 }
 
-impl<'a, O:DataFlowOperator> pprust::PpAnn for DataFlowContext<'a, O> {
+impl<'a> pprust::PpAnn for DataFlowResults<'a> {
     fn pre(&self,
            ps: &mut pprust::State,
            node: pprust::AnnNode) -> io::IoResult<()> {
@@ -207,20 +212,46 @@ impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
         let nodeid_to_index = build_nodeid_to_index(decl, cfg);
 
         DataFlowContext {
-            tcx: tcx,
-            analysis_name: analysis_name,
-            words_per_id: words_per_id,
-            nodeid_to_index: nodeid_to_index,
-            bits_per_id: bits_per_id,
+            results: DataFlowResults {
+                tcx: tcx,
+                analysis_name: analysis_name,
+                words_per_id: words_per_id,
+                nodeid_to_index: nodeid_to_index,
+                bits_per_id: bits_per_id,
+                gens: gens,
+                kills: kills,
+                on_entry: on_entry
+            },
             oper: oper,
-            gens: gens,
-            kills: kills,
-            on_entry: on_entry
         }
     }
+}
 
+impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
     pub fn add_gen(&mut self, id: ast::NodeId, bit: uint) {
         //! Indicates that `id` generates `bit`
+        self.results.add_gen(id, bit)
+    }
+
+    pub fn add_kill(&mut self, id: ast::NodeId, bit: uint) {
+        //! Indicates that `id` kills `bit`
+        self.results.add_kill(id, bit)
+    }
+    pub fn add_kills_from_flow_exits(&mut self, cfg: &cfg::CFG) {
+        //! Whenever you have a `break` or `continue` statement, flow
+        //! exits through any number of enclosing scopes on its way to
+        //! the new destination. This function infers the kill bits of
+        //! those control operators based on the kill bits associated
+        //! with those scopes.
+        //!
+        //! This is usually called (if it is called at all), after
+        //! all add_gen and add_kill calls, but before propagate.
+        self.results.add_kills_from_flow_exits(cfg)
+    }
+}
+
+impl<'a> DataFlowResults<'a> {
+    fn add_gen(&mut self, id: ast::NodeId, bit: uint) {
         debug!("{:s} add_gen(id={:?}, bit={:?})",
                self.analysis_name, id, bit);
         assert!(self.nodeid_to_index.contains_key(&id));
@@ -232,8 +263,7 @@ impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
         set_bit(gens, bit);
     }
 
-    pub fn add_kill(&mut self, id: ast::NodeId, bit: uint) {
-        //! Indicates that `id` kills `bit`
+    fn add_kill(&mut self, id: ast::NodeId, bit: uint) {
         debug!("{:s} add_kill(id={:?}, bit={:?})",
                self.analysis_name, id, bit);
         assert!(self.nodeid_to_index.contains_key(&id));
@@ -244,7 +274,10 @@ impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
         let kills = self.kills.mut_slice(start, end);
         set_bit(kills, bit);
     }
+}
 
+
+impl<'a> DataFlowResults<'a> {
     fn apply_gen_kill(&self, cfgidx: CFGIndex, bits: &mut [uint]) {
         //! Applies the gen and kill sets for `cfgidx` to `bits`
         debug!("{:s} apply_gen_kill(cfgidx={}, bits={}) [before]",
@@ -373,16 +406,7 @@ impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
         return true;
     }
 
-    pub fn add_kills_from_flow_exits(&mut self, cfg: &cfg::CFG) {
-        //! Whenever you have a `break` or `continue` statement, flow
-        //! exits through any number of enclosing scopes on its way to
-        //! the new destination. This function infers the kill bits of
-        //! those control operators based on the kill bits associated
-        //! with those scopes.
-        //!
-        //! This is usually called (if it is called at all), after
-        //! all add_gen and add_kill calls, but before propagate.
-
+    fn add_kills_from_flow_exits(&mut self, cfg: &cfg::CFG) {
         debug!("{:s} add_kills_from_flow_exits", self.analysis_name);
         if self.bits_per_id == 0 {
             // Skip the surprisingly common degenerate case.  (Note
@@ -431,13 +455,13 @@ impl<'a, O:DataFlowOperator+Clone+'static> DataFlowContext<'a, O> {
     pub fn propagate(&mut self, cfg: &cfg::CFG, blk: &ast::Block) {
         //! Performs the data flow analysis.
 
-        if self.bits_per_id == 0 {
+        if self.results.bits_per_id == 0 {
             // Optimize the surprisingly common degenerate case.
             return;
         }
 
         {
-            let words_per_id = self.words_per_id;
+            let words_per_id = self.results.words_per_id;
             let mut propcx = PropagationContext {
                 dfcx: &mut *self,
                 changed: true
@@ -451,7 +475,7 @@ impl<'a, O:DataFlowOperator+Clone+'static> DataFlowContext<'a, O> {
             }
         }
 
-        debug!("Dataflow result for {:s}:", self.analysis_name);
+        debug!("Dataflow result for {:s}:", self.results.analysis_name);
         debug!("{}", {
             self.pretty_print_to(box io::stderr(), blk).unwrap();
             ""
@@ -460,7 +484,7 @@ impl<'a, O:DataFlowOperator+Clone+'static> DataFlowContext<'a, O> {
 
     fn pretty_print_to(&self, wr: Box<io::Writer>,
                        blk: &ast::Block) -> io::IoResult<()> {
-        let mut ps = pprust::rust_printer_annotated(wr, self);
+        let mut ps = pprust::rust_printer_annotated(wr, &self.results);
         try!(ps.cbox(pprust::indent_unit));
         try!(ps.ibox(0u));
         try!(ps.print_block(blk));
@@ -473,21 +497,21 @@ impl<'a, 'b, O:DataFlowOperator> PropagationContext<'a, 'b, O> {
                 cfg: &cfg::CFG,
                 in_out: &mut [uint]) {
         debug!("DataFlowContext::walk_cfg(in_out={}) {:s}",
-               bits_to_string(in_out), self.dfcx.analysis_name);
-        assert!(self.dfcx.bits_per_id > 0);
+               bits_to_string(in_out), self.dfcx.results.analysis_name);
+        assert!(self.dfcx.results.bits_per_id > 0);
 
         cfg.graph.each_node(|node_index, node| {
             debug!("DataFlowContext::walk_cfg idx={} id={} begin in_out={}",
                    node_index, node.data.id, bits_to_string(in_out));
 
-            let (start, end) = self.dfcx.compute_id_range(node_index);
+            let (start, end) = self.dfcx.results.compute_id_range(node_index);
 
             // Initialize local bitvector with state on-entry.
-            in_out.copy_from(self.dfcx.on_entry.slice(start, end));
+            in_out.copy_from(self.dfcx.results.on_entry.slice(start, end));
 
             // Compute state on-exit by applying transfer function to
             // state on-entry.
-            self.dfcx.apply_gen_kill(node_index, in_out);
+            self.dfcx.results.apply_gen_kill(node_index, in_out);
 
             // Propagate state on-exit from node into its successors.
             self.propagate_bits_into_graph_successors_of(in_out, cfg, node_index);
@@ -518,19 +542,23 @@ impl<'a, 'b, O:DataFlowOperator> PropagationContext<'a, 'b, O> {
         let source = edge.source();
         let cfgidx = edge.target();
         debug!("{:s} propagate_bits_into_entry_set_for(pred_bits={}, {} to {})",
-               self.dfcx.analysis_name, bits_to_string(pred_bits), source, cfgidx);
-        assert!(self.dfcx.bits_per_id > 0);
+               self.dfcx.results.analysis_name,
+               bits_to_string(pred_bits),
+               source,
+               cfgidx);
+        assert!(self.dfcx.results.bits_per_id > 0);
 
-        let (start, end) = self.dfcx.compute_id_range(cfgidx);
+        let (start, end) = self.dfcx.results.compute_id_range(cfgidx);
         let changed = {
-            // (scoping mutable borrow of self.dfcx.on_entry)
-            let on_entry = self.dfcx.on_entry.mut_slice(start, end);
+            // (scoping mutable borrow of self.dfcx.results.on_entry)
+            let on_entry = self.dfcx.results.on_entry.mut_slice(start, end);
             bitwise(on_entry, pred_bits, &self.dfcx.oper)
         };
         if changed {
+            let entry_set_bits = self.dfcx.results.on_entry.slice(start, end);
             debug!("{:s} changed entry set for {:?} to {}",
-                   self.dfcx.analysis_name, cfgidx,
-                   bits_to_string(self.dfcx.on_entry.slice(start, end)));
+                   self.dfcx.results.analysis_name, cfgidx,
+                   bits_to_string(entry_set_bits));
             self.changed = true;
         }
     }
