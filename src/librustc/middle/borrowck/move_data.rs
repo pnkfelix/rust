@@ -151,13 +151,11 @@ pub struct Assignment {
     pub span: Span,
 }
 
-#[deriving(Clone)]
 struct MoveDataFlowOperator;
 
 type MoveDataFlowContext<'a> = DataFlowContext<'a, MoveDataFlowOperator>;
 pub type MoveDataFlow<'a> = DataFlowResults<'a>;
 
-#[deriving(Clone)]
 struct AssignDataFlowOperator;
 
 type AssignDataFlowContext<'a> = DataFlowContext<'a, AssignDataFlowOperator>;
@@ -542,16 +540,14 @@ impl<'a> FlowedMoveData<'a> {
                body: &ast::Block)
                -> FlowedMoveData<'a> {
         let mut dfcx_moves =
-            DataFlowContext::new(tcx,
-                                 "flowed_move_data_moves",
+            DataFlowContext::new("flowed_move_data_moves",
                                  Some(decl),
                                  cfg,
                                  MoveDataFlowOperator,
                                  id_range,
                                  move_data.moves.borrow().len());
         let mut dfcx_assign =
-            DataFlowContext::new(tcx,
-                                 "flowed_move_data_assigns",
+            DataFlowContext::new("flowed_move_data_assigns",
                                  Some(decl),
                                  cfg,
                                  AssignDataFlowOperator,

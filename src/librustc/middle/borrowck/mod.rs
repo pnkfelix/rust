@@ -55,7 +55,6 @@ pub mod graphviz;
 
 pub mod move_data;
 
-#[deriving(Clone)]
 struct LoanDataFlowOperator;
 
 type LoanDataFlowContext<'a> = DataFlowContext<'a, LoanDataFlowOperator>;
@@ -159,8 +158,7 @@ fn build_borrowck_dataflow_data<'a>(this: &mut BorrowckCtxt<'a>,
         gather_loans::gather_loans_in_fn(this, decl, body);
 
     let mut loan_dfcx =
-        DataFlowContext::new(this.tcx,
-                             "borrowck",
+        DataFlowContext::new("borrowck",
                              Some(decl),
                              cfg,
                              LoanDataFlowOperator,

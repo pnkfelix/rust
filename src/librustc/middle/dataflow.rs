@@ -19,7 +19,6 @@
 
 use middle::cfg;
 use middle::cfg::CFGIndex;
-use middle::ty;
 use std::io;
 use std::uint;
 use syntax::ast;
@@ -31,10 +30,7 @@ use util::nodemap::NodeMap;
 #[deriving(Show)]
 pub enum EntryOrExit { Entry, Exit }
 
-#[deriving(Clone)]
 pub struct DataFlowResults<'a> {
-    tcx: &'a ty::ctxt,
-
     /// a name for the analysis using this dataflow instance
     analysis_name: &'static str,
 
@@ -66,7 +62,6 @@ pub struct DataFlowResults<'a> {
     on_entry: Vec<uint>,
 }
 
-#[deriving(Clone)]
 pub struct DataFlowContext<'a, O> {
     pub results: DataFlowResults<'a>,
 
@@ -187,8 +182,7 @@ fn build_nodeid_to_index(decl: Option<&ast::FnDecl>,
 }
 
 impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
-    pub fn new(tcx: &'a ty::ctxt,
-               analysis_name: &'static str,
+    pub fn new(analysis_name: &'static str,
                decl: Option<&ast::FnDecl>,
                cfg: &cfg::CFG,
                oper: O,
@@ -213,7 +207,6 @@ impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
 
         DataFlowContext {
             results: DataFlowResults {
-                tcx: tcx,
                 analysis_name: analysis_name,
                 words_per_id: words_per_id,
                 nodeid_to_index: nodeid_to_index,
@@ -450,8 +443,7 @@ impl<'a> DataFlowResults<'a> {
     }
 }
 
-impl<'a, O:DataFlowOperator+Clone+'static> DataFlowContext<'a, O> {
-//                          ^^^^^^^^^^^^^ only needed for pretty printing
+impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
     pub fn propagate(mut self, cfg: &cfg::CFG, blk: &ast::Block) -> DataFlowResults<'a> {
         //! Performs the data flow analysis.
 
