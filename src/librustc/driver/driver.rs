@@ -613,6 +613,528 @@ fn write_out_deps(sess: &Session,
     }
 }
 
+<<<<<<< HEAD
+||||||| merged common ancestors
+struct IdentifiedAnnotation;
+
+impl pprust::PpAnn for IdentifiedAnnotation {
+    fn pre(&self,
+           s: &mut pprust::State,
+           node: pprust::AnnNode) -> io::IoResult<()> {
+        match node {
+            pprust::NodeExpr(_) => s.popen(),
+            _ => Ok(())
+        }
+    }
+    fn post(&self,
+            s: &mut pprust::State,
+            node: pprust::AnnNode) -> io::IoResult<()> {
+        match node {
+            pprust::NodeItem(item) => {
+                try!(pp::space(&mut s.s));
+                s.synth_comment(item.id.to_string())
+            }
+            pprust::NodeBlock(blk) => {
+                try!(pp::space(&mut s.s));
+                s.synth_comment(format!("block {}", blk.id))
+            }
+            pprust::NodeExpr(expr) => {
+                try!(pp::space(&mut s.s));
+                try!(s.synth_comment(expr.id.to_string()));
+                s.pclose()
+            }
+            pprust::NodePat(pat) => {
+                try!(pp::space(&mut s.s));
+                s.synth_comment(format!("pat {}", pat.id))
+            }
+        }
+    }
+}
+
+struct TypedAnnotation {
+    analysis: CrateAnalysis,
+}
+
+impl pprust::PpAnn for TypedAnnotation {
+    fn pre(&self,
+           s: &mut pprust::State,
+           node: pprust::AnnNode) -> io::IoResult<()> {
+        match node {
+            pprust::NodeExpr(_) => s.popen(),
+            _ => Ok(())
+        }
+    }
+    fn post(&self,
+            s: &mut pprust::State,
+            node: pprust::AnnNode) -> io::IoResult<()> {
+        let tcx = &self.analysis.ty_cx;
+        match node {
+            pprust::NodeExpr(expr) => {
+                try!(pp::space(&mut s.s));
+                try!(pp::word(&mut s.s, "as"));
+                try!(pp::space(&mut s.s));
+                try!(pp::word(&mut s.s,
+                              ppaux::ty_to_string(
+                                  tcx,
+                                  ty::expr_ty(tcx, expr)).as_slice()));
+                s.pclose()
+            }
+            _ => Ok(())
+        }
+    }
+}
+
+fn gather_flowgraph_variants(sess: &Session) -> Vec<borrowck_dot::Variant> {
+    let print_loans   = config::FLOWGRAPH_PRINT_LOANS;
+    let print_moves   = config::FLOWGRAPH_PRINT_MOVES;
+    let print_assigns = config::FLOWGRAPH_PRINT_ASSIGNS;
+    let print_all     = config::FLOWGRAPH_PRINT_ALL;
+    let opt = |print_which| sess.debugging_opt(print_which);
+    let mut variants = Vec::new();
+    if opt(print_all) || opt(print_loans) {
+        variants.push(borrowck_dot::Loans);
+    }
+    if opt(print_all) || opt(print_moves) {
+        variants.push(borrowck_dot::Moves);
+    }
+    if opt(print_all) || opt(print_assigns) {
+        variants.push(borrowck_dot::Assigns);
+    }
+    variants
+}
+
+pub fn pretty_print_input(sess: Session,
+                          cfg: ast::CrateConfig,
+                          input: &Input,
+                          ppm: PpMode,
+                          ofile: Option<Path>) {
+    let krate = phase_1_parse_input(&sess, cfg, input);
+    let id = link::find_crate_name(Some(&sess), krate.attrs.as_slice(), input);
+
+    let (krate, ast_map, is_expanded) = match ppm {
+        PpmExpanded | PpmExpandedIdentified | PpmTyped | PpmFlowGraph(_) => {
+            let (krate, ast_map)
+                = match phase_2_configure_and_expand(&sess, krate,
+                                                     id.as_slice(), None) {
+                    None => return,
+                    Some(p) => p,
+                };
+            (krate, Some(ast_map), true)
+        }
+        _ => (krate, None, false)
+    };
+
+    let src_name = source_name(input);
+    let src = Vec::from_slice(sess.codemap()
+                                  .get_filemap(src_name.as_slice())
+                                  .src
+                                  .as_bytes());
+    let mut rdr = MemReader::new(src);
+
+    let out = match ofile {
+        None => box io::stdout() as Box<Writer>,
+        Some(p) => {
+            let r = io::File::create(&p);
+            match r {
+                Ok(w) => box w as Box<Writer>,
+                Err(e) => fail!("print-print failed to open {} due to {}",
+                                p.display(), e),
+            }
+        }
+    };
+    match ppm {
+        PpmIdentified | PpmExpandedIdentified => {
+            pprust::print_crate(sess.codemap(),
+                                sess.diagnostic(),
+                                &krate,
+                                src_name.to_string(),
+                                &mut rdr,
+                                out,
+                                &IdentifiedAnnotation,
+                                is_expanded)
+        }
+        PpmTyped => {
+            let ast_map = ast_map.expect("--pretty=typed missing ast_map");
+            let analysis = phase_3_run_analysis_passes(sess, &krate, ast_map, id);
+            let annotation = TypedAnnotation {
+                analysis: analysis
+            };
+            pprust::print_crate(annotation.analysis.ty_cx.sess.codemap(),
+                                annotation.analysis.ty_cx.sess.diagnostic(),
+                                &krate,
+                                src_name.to_string(),
+                                &mut rdr,
+                                out,
+                                &annotation,
+                                is_expanded)
+        }
+        PpmFlowGraph(nodeid) => {
+            let ast_map = ast_map.expect("--pretty flowgraph missing ast_map");
+            let node = ast_map.find(nodeid).unwrap_or_else(|| {
+                sess.fatal(format!("--pretty flowgraph couldn't find id: {}",
+                                   nodeid).as_slice())
+            });
+            let code = blocks::Code::from_node(node);
+            match code {
+                Some(code) => {
+                    let variants = gather_flowgraph_variants(&sess);
+                    let analysis = phase_3_run_analysis_passes(sess, &krate,
+                                                               ast_map, id);
+                    print_flowgraph(variants, analysis, code, out)
+                }
+                None => {
+                    let message = format!("--pretty=flowgraph needs \
+                                           block, fn, or method; got {:?}",
+                                          node);
+
+                    // point to what was found, if there's an
+                    // accessible span.
+                    match ast_map.opt_span(nodeid) {
+                        Some(sp) => sess.span_fatal(sp, message.as_slice()),
+                        None => sess.fatal(message.as_slice())
+                    }
+                }
+            }
+        }
+        _ => {
+            pprust::print_crate(sess.codemap(),
+                                sess.diagnostic(),
+                                &krate,
+                                src_name.to_string(),
+                                &mut rdr,
+                                out,
+                                &pprust::NoAnn,
+                                is_expanded)
+        }
+    }.unwrap()
+
+}
+
+fn print_flowgraph<W:io::Writer>(variants: Vec<borrowck_dot::Variant>,
+                                 analysis: CrateAnalysis,
+                                 code: blocks::Code,
+                                 mut out: W) -> io::IoResult<()> {
+    let ty_cx = &analysis.ty_cx;
+    let cfg = match code {
+        blocks::BlockCode(block) => cfg::CFG::new(ty_cx, &*block),
+        blocks::FnLikeCode(fn_like) => cfg::CFG::new(ty_cx, &*fn_like.body()),
+    };
+    debug!("cfg: {:?}", cfg);
+
+    match code {
+        _ if variants.len() == 0 => {
+            let lcfg = LabelledCFG {
+                ast_map: &ty_cx.map,
+                cfg: &cfg,
+                name: format!("node_{}", code.id()),
+            };
+            let r = dot::render(&lcfg, &mut out);
+            return expand_err_details(r);
+        }
+        blocks::BlockCode(_) => {
+            ty_cx.sess.err("--pretty flowgraph with -Z flowgraph-print \
+                            annotations requires fn-like node id.");
+            return Ok(())
+        }
+        blocks::FnLikeCode(fn_like) => {
+            let fn_parts = FnPartsWithCFG::from_fn_like(&fn_like, &cfg);
+            let (bccx, analysis_data) =
+                borrowck::build_borrowck_dataflow_data_for_fn(ty_cx, fn_parts);
+
+            let lcfg = LabelledCFG {
+                ast_map: &ty_cx.map,
+                cfg: &cfg,
+                name: format!("node_{}", code.id()),
+            };
+            let lcfg = borrowck_dot::DataflowLabeller {
+                inner: lcfg,
+                variants: variants,
+                borrowck_ctxt: &bccx,
+                analysis_data: &analysis_data,
+            };
+            let r = dot::render(&lcfg, &mut out);
+            return expand_err_details(r);
+        }
+    }
+
+    fn expand_err_details(r: io::IoResult<()>) -> io::IoResult<()> {
+        r.map_err(|ioerr| {
+            let orig_detail = ioerr.detail.clone();
+            let m = "graphviz::render failed";
+            io::IoError {
+                detail: Some(match orig_detail {
+                    None => m.into_string(),
+                    Some(d) => format!("{}: {}", m, d)
+                }),
+                ..ioerr
+            }
+        })
+    }
+}
+
+=======
+struct IdentifiedAnnotation;
+
+impl pprust::PpAnn for IdentifiedAnnotation {
+    fn pre(&self,
+           s: &mut pprust::State,
+           node: pprust::AnnNode) -> io::IoResult<()> {
+        match node {
+            pprust::NodeExpr(_) => s.popen(),
+            _ => Ok(())
+        }
+    }
+    fn post(&self,
+            s: &mut pprust::State,
+            node: pprust::AnnNode) -> io::IoResult<()> {
+        match node {
+            pprust::NodeItem(item) => {
+                try!(pp::space(&mut s.s));
+                s.synth_comment(item.id.to_string())
+            }
+            pprust::NodeBlock(blk) => {
+                try!(pp::space(&mut s.s));
+                s.synth_comment(format!("block {}", blk.id))
+            }
+            pprust::NodeExpr(expr) => {
+                try!(pp::space(&mut s.s));
+                try!(s.synth_comment(expr.id.to_string()));
+                s.pclose()
+            }
+            pprust::NodePat(pat) => {
+                try!(pp::space(&mut s.s));
+                s.synth_comment(format!("pat {}", pat.id))
+            }
+        }
+    }
+}
+
+struct TypedAnnotation {
+    analysis: CrateAnalysis,
+}
+
+impl pprust::PpAnn for TypedAnnotation {
+    fn pre(&self,
+           s: &mut pprust::State,
+           node: pprust::AnnNode) -> io::IoResult<()> {
+        match node {
+            pprust::NodeExpr(_) => s.popen(),
+            _ => Ok(())
+        }
+    }
+    fn post(&self,
+            s: &mut pprust::State,
+            node: pprust::AnnNode) -> io::IoResult<()> {
+        let tcx = &self.analysis.ty_cx;
+        match node {
+            pprust::NodeExpr(expr) => {
+                try!(pp::space(&mut s.s));
+                try!(pp::word(&mut s.s, "as"));
+                try!(pp::space(&mut s.s));
+                try!(pp::word(&mut s.s,
+                              ppaux::ty_to_string(
+                                  tcx,
+                                  ty::expr_ty(tcx, expr)).as_slice()));
+                s.pclose()
+            }
+            _ => Ok(())
+        }
+    }
+}
+
+fn gather_flowgraph_variants(sess: &Session) -> Vec<borrowck_dot::Variant> {
+    let print_loans      = config::FLOWGRAPH_PRINT_LOANS;
+    let print_moves      = config::FLOWGRAPH_PRINT_MOVES;
+    let print_assigns    = config::FLOWGRAPH_PRINT_ASSIGNS;
+    let print_needs_drop = config::FLOWGRAPH_PRINT_NEEDS_DROP;
+    let print_all        = config::FLOWGRAPH_PRINT_ALL;
+    let opt = |print_which| sess.debugging_opt(print_which);
+    let mut variants = Vec::new();
+    if opt(print_all) || opt(print_loans) {
+        variants.push(borrowck_dot::Loans);
+    }
+    if opt(print_all) || opt(print_moves) {
+        variants.push(borrowck_dot::Moves);
+    }
+    if opt(print_all) || opt(print_assigns) {
+        variants.push(borrowck_dot::Assigns);
+    }
+    if opt(print_all) || opt(print_needs_drop) {
+        variants.push(borrowck_dot::NeedsDrop);
+    }
+    variants
+}
+
+pub fn pretty_print_input(sess: Session,
+                          cfg: ast::CrateConfig,
+                          input: &Input,
+                          ppm: PpMode,
+                          ofile: Option<Path>) {
+    let krate = phase_1_parse_input(&sess, cfg, input);
+    let id = link::find_crate_name(Some(&sess), krate.attrs.as_slice(), input);
+
+    let (krate, ast_map, is_expanded) = match ppm {
+        PpmExpanded | PpmExpandedIdentified | PpmTyped | PpmFlowGraph(_) => {
+            let (krate, ast_map)
+                = match phase_2_configure_and_expand(&sess, krate,
+                                                     id.as_slice(), None) {
+                    None => return,
+                    Some(p) => p,
+                };
+            (krate, Some(ast_map), true)
+        }
+        _ => (krate, None, false)
+    };
+
+    let src_name = source_name(input);
+    let src = Vec::from_slice(sess.codemap()
+                                  .get_filemap(src_name.as_slice())
+                                  .src
+                                  .as_bytes());
+    let mut rdr = MemReader::new(src);
+
+    let out = match ofile {
+        None => box io::stdout() as Box<Writer>,
+        Some(p) => {
+            let r = io::File::create(&p);
+            match r {
+                Ok(w) => box w as Box<Writer>,
+                Err(e) => fail!("print-print failed to open {} due to {}",
+                                p.display(), e),
+            }
+        }
+    };
+    match ppm {
+        PpmIdentified | PpmExpandedIdentified => {
+            pprust::print_crate(sess.codemap(),
+                                sess.diagnostic(),
+                                &krate,
+                                src_name.to_string(),
+                                &mut rdr,
+                                out,
+                                &IdentifiedAnnotation,
+                                is_expanded)
+        }
+        PpmTyped => {
+            let ast_map = ast_map.expect("--pretty=typed missing ast_map");
+            let analysis = phase_3_run_analysis_passes(sess, &krate, ast_map, id);
+            let annotation = TypedAnnotation {
+                analysis: analysis
+            };
+            pprust::print_crate(annotation.analysis.ty_cx.sess.codemap(),
+                                annotation.analysis.ty_cx.sess.diagnostic(),
+                                &krate,
+                                src_name.to_string(),
+                                &mut rdr,
+                                out,
+                                &annotation,
+                                is_expanded)
+        }
+        PpmFlowGraph(nodeid) => {
+            let ast_map = ast_map.expect("--pretty flowgraph missing ast_map");
+            let node = ast_map.find(nodeid).unwrap_or_else(|| {
+                sess.fatal(format!("--pretty flowgraph couldn't find id: {}",
+                                   nodeid).as_slice())
+            });
+            let code = blocks::Code::from_node(node);
+            match code {
+                Some(code) => {
+                    let variants = gather_flowgraph_variants(&sess);
+                    let analysis = phase_3_run_analysis_passes(sess, &krate,
+                                                               ast_map, id);
+                    print_flowgraph(variants, analysis, code, out)
+                }
+                None => {
+                    let message = format!("--pretty=flowgraph needs \
+                                           block, fn, or method; got {:?}",
+                                          node);
+
+                    // point to what was found, if there's an
+                    // accessible span.
+                    match ast_map.opt_span(nodeid) {
+                        Some(sp) => sess.span_fatal(sp, message.as_slice()),
+                        None => sess.fatal(message.as_slice())
+                    }
+                }
+            }
+        }
+        _ => {
+            pprust::print_crate(sess.codemap(),
+                                sess.diagnostic(),
+                                &krate,
+                                src_name.to_string(),
+                                &mut rdr,
+                                out,
+                                &pprust::NoAnn,
+                                is_expanded)
+        }
+    }.unwrap()
+
+}
+
+fn print_flowgraph<W:io::Writer>(variants: Vec<borrowck_dot::Variant>,
+                                 analysis: CrateAnalysis,
+                                 code: blocks::Code,
+                                 mut out: W) -> io::IoResult<()> {
+    let ty_cx = &analysis.ty_cx;
+    let cfg = match code {
+        blocks::BlockCode(block) => cfg::CFG::new(ty_cx, &*block),
+        blocks::FnLikeCode(fn_like) => cfg::CFG::new(ty_cx, &*fn_like.body()),
+    };
+    debug!("cfg: {:?}", cfg);
+
+    match code {
+        _ if variants.len() == 0 => {
+            let lcfg = LabelledCFG {
+                ast_map: &ty_cx.map,
+                cfg: &cfg,
+                name: format!("node_{}", code.id()),
+            };
+            let r = dot::render(&lcfg, &mut out);
+            return expand_err_details(r);
+        }
+        blocks::BlockCode(_) => {
+            ty_cx.sess.err("--pretty flowgraph with -Z flowgraph-print \
+                            annotations requires fn-like node id.");
+            return Ok(())
+        }
+        blocks::FnLikeCode(fn_like) => {
+            let fn_parts = FnPartsWithCFG::from_fn_like(&fn_like, &cfg);
+            let (bccx, analysis_data) =
+                borrowck::build_borrowck_dataflow_data_for_fn(ty_cx, fn_parts);
+
+            let lcfg = LabelledCFG {
+                ast_map: &ty_cx.map,
+                cfg: &cfg,
+                name: format!("node_{}", code.id()),
+            };
+            let lcfg = borrowck_dot::DataflowLabeller {
+                inner: lcfg,
+                variants: variants,
+                borrowck_ctxt: &bccx,
+                analysis_data: &analysis_data,
+            };
+            let r = dot::render(&lcfg, &mut out);
+            return expand_err_details(r);
+        }
+    }
+
+    fn expand_err_details(r: io::IoResult<()>) -> io::IoResult<()> {
+        r.map_err(|ioerr| {
+            let orig_detail = ioerr.detail.clone();
+            let m = "graphviz::render failed";
+            io::IoError {
+                detail: Some(match orig_detail {
+                    None => m.into_string(),
+                    Some(d) => format!("{}: {}", m, d)
+                }),
+                ..ioerr
+            }
+        })
+    }
+}
+
+>>>>>>> checkpoint prelim needs drop analysis.
 pub fn collect_crate_types(session: &Session,
                            attrs: &[ast::Attribute]) -> Vec<config::CrateType> {
     // Unconditionally collect crate types from attributes to make them used
