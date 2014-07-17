@@ -63,7 +63,7 @@ pub struct DataFlowResults<'a> {
 }
 
 pub struct DataFlowContext<'a, O> {
-    pub results: DataFlowResults<'a>,
+    results: DataFlowResults<'a>,
 
     /// the data flow operator
     oper: O,
