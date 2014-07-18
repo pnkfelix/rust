@@ -92,3 +92,6 @@ tmp.*.rs
 version.md
 version.ml
 version.texi
+*.pot
+/*.dot
+/objdir-*
