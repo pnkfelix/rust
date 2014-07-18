@@ -29,8 +29,10 @@ use middle::dataflow::BitwiseOperator;
 use middle::dataflow;
 use euv = middle::expr_use_visitor;
 use mc = middle::mem_categorization;
+use middle::ty;
 use syntax::ast;
 use syntax::ast_util;
+use syntax::codemap::Span;
 
 struct NeedsDropCtxt<'a> {
     paths: uint,
@@ -43,7 +45,10 @@ impl<'a> euv::Delegate for NeedsDropCtxt<'a> {
                consume_id: ast::NodeId,
                consume_span: Span,
                cmt: mc::cmt,
-               mode: ConsumeMode) {
+               mode: euv::ConsumeMode) {
+        debug!("consume(consume_id={}, cmt={}, mode={})",
+               consume_id, cmt.repr(self.tcx()), mode);
+
         unimplemented!()
     }
 
@@ -52,7 +57,12 @@ impl<'a> euv::Delegate for NeedsDropCtxt<'a> {
     fn consume_pat(&mut self,
                    consume_pat: &ast::Pat,
                    cmt: mc::cmt,
-                   mode: ConsumeMode) {
+                   mode: euv::ConsumeMode) {
+        debug!("consume_pat(consume_pat={}, cmt={}, mode={})",
+               consume_pat.repr(self.tcx()),
+               cmt.repr(self.tcx()),
+               mode);
+
         unimplemented!()
     }
 
@@ -64,7 +74,12 @@ impl<'a> euv::Delegate for NeedsDropCtxt<'a> {
               cmt: mc::cmt,
               loan_region: ty::Region,
               bk: ty::BorrowKind,
-              loan_cause: LoanCause) {
+              loan_cause: euv::LoanCause) {
+        debug!("borrow(borrow_id={}, cmt={}, loan_region={}, \
+               bk={}, loan_cause={:?})",
+               borrow_id, cmt.repr(self.tcx()), loan_region,
+               bk, loan_cause);
+
         unimplemented!()
     }
 
@@ -72,6 +87,8 @@ impl<'a> euv::Delegate for NeedsDropCtxt<'a> {
     fn decl_without_init(&mut self,
                          id: ast::NodeId,
                          span: Span) {
+        debug!("decl_without_init(id={})", id);
+
         unimplemented!()
     }
 
@@ -80,7 +97,10 @@ impl<'a> euv::Delegate for NeedsDropCtxt<'a> {
               assignment_id: ast::NodeId,
               assignment_span: Span,
               assignee_cmt: mc::cmt,
-              mode: MutateMode) {
+              mode: euv::MutateMode) {
+        debug!("mutate(assignment_id={}, assignee_cmt={})",
+               assignment_id, assignee_cmt.repr(self.tcx()));
+
         unimplemented!()
     }
 }

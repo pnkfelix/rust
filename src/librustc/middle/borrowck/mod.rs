@@ -55,7 +55,7 @@ pub mod graphviz;
 
 pub mod move_data;
 
-pub mod needs_drop;
+// pub mod needs_drop;
 
 #[deriving(Clone)]
 pub struct LoanDataFlowOperator;
@@ -180,12 +180,6 @@ fn build_borrowck_dataflow_data<'a>(this: &mut BorrowckCtxt<'a>,
                                                       id_range,
                                                       decl,
                                                       body);
-
-    let needs_drop = needs_drop::NeedsDropData::new(this,
-                                                    id_range,
-                                                    decl,
-                                                    cfg,
-                                                    body);
 
     AnalysisData { all_loans: all_loans,
                    loans: loan_dfcx,
@@ -539,17 +533,7 @@ impl<'a> BorrowckCtxt<'a> {
             move_data::Declared => {}
 
             move_data::MoveExpr => {
-                let (expr_ty, expr_span) = match self.tcx.map.find(move.id) {
-                    Some(ast_map::NodeExpr(expr)) => {
-                        (ty::expr_ty_adjusted(self.tcx, &*expr), expr.span)
-                    }
-                    r => {
-                        self.tcx.sess.bug(format!("MoveExpr({:?}) maps to \
-                                                   {:?}, not Expr",
-                                                  move.id,
-                                                  r).as_slice())
-                    }
-                };
+                let (expr_ty, expr_span) = move.ty_and_span(self.tcx);
                 let suggestion = move_suggestion(self.tcx, expr_ty,
                         "moved by default (use `copy` to override)");
                 self.tcx.sess.span_note(
@@ -561,8 +545,8 @@ impl<'a> BorrowckCtxt<'a> {
             }
 
             move_data::MovePat => {
-                let pat_ty = ty::node_id_to_type(self.tcx, move.id);
-                self.tcx.sess.span_note(self.tcx.map.span(move.id),
+                let (pat_ty, pat_span) = move.ty_and_span(self.tcx);
+                self.tcx.sess.span_note(pat_span,
                     format!("`{}` moved here because it has type `{}`, \
                              which is moved by default (use `ref` to \
                              override)",
@@ -571,17 +555,7 @@ impl<'a> BorrowckCtxt<'a> {
             }
 
             move_data::Captured => {
-                let (expr_ty, expr_span) = match self.tcx.map.find(move.id) {
-                    Some(ast_map::NodeExpr(expr)) => {
-                        (ty::expr_ty_adjusted(self.tcx, &*expr), expr.span)
-                    }
-                    r => {
-                        self.tcx.sess.bug(format!("Captured({:?}) maps to \
-                                                   {:?}, not Expr",
-                                                  move.id,
-                                                  r).as_slice())
-                    }
-                };
+                let (expr_ty, expr_span) = move.ty_and_span(self.tcx);
                 let suggestion = move_suggestion(self.tcx, expr_ty,
                         "moved by default (make a copy and \
                          capture that instead to override)");

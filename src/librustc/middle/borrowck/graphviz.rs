@@ -31,14 +31,16 @@ pub enum Variant {
     Loans,
     Moves,
     Assigns,
+    NeedsDrop,
 }
 
 impl Variant {
     pub fn short_name(&self) -> &'static str {
         match *self {
-            Loans   => "loans",
-            Moves   => "moves",
-            Assigns => "assigns",
+            Loans     => "loans",
+            Moves     => "moves",
+            Assigns   => "assigns",
+            NeedsDrop => "needs_drop",
         }
     }
 }
@@ -68,9 +70,10 @@ impl<'a> DataflowLabeller<'a> {
     fn dataflow_for_variant(&self, e: EntryOrExit, n: &Node, v: Variant) -> String {
         let cfgidx = n.val0();
         match v {
-            Loans   => self.dataflow_loans_for(e, cfgidx),
-            Moves   => self.dataflow_moves_for(e, cfgidx),
-            Assigns => self.dataflow_assigns_for(e, cfgidx),
+            Loans     => self.dataflow_loans_for(e, cfgidx),
+            Moves     => self.dataflow_moves_for(e, cfgidx),
+            Assigns   => self.dataflow_assigns_for(e, cfgidx),
+            NeedsDrop => self.dataflow_needs_drop_for(e, cfgidx),
         }
     }
 
@@ -123,6 +126,15 @@ impl<'a> DataflowLabeller<'a> {
             move_data.path_loan_path(assignment.path)
         };
         self.build_set(e, cfgidx, dfcx, assign_index_to_path)
+    }
+
+    fn dataflow_needs_drop_for(&self, e: EntryOrExit, cfgidx: CFGIndex) -> String {
+        let dfcx = &self.analysis_data.move_data.dfcx_needs_drop;
+        let needs_drop_index_to_path = |needs_drop_index| {
+            let move_data = &self.analysis_data.move_data.move_data;
+            move_data.path_loan_path(borrowck::move_data::MovePathIndex(needs_drop_index))
+        };
+        self.build_set(e, cfgidx, dfcx, needs_drop_index_to_path)
     }
 }
 

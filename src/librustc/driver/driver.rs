@@ -672,10 +672,11 @@ impl pprust::PpAnn for TypedAnnotation {
 }
 
 fn gather_flowgraph_variants(sess: &Session) -> Vec<borrowck_dot::Variant> {
-    let print_loans   = config::FLOWGRAPH_PRINT_LOANS;
-    let print_moves   = config::FLOWGRAPH_PRINT_MOVES;
-    let print_assigns = config::FLOWGRAPH_PRINT_ASSIGNS;
-    let print_all     = config::FLOWGRAPH_PRINT_ALL;
+    let print_loans      = config::FLOWGRAPH_PRINT_LOANS;
+    let print_moves      = config::FLOWGRAPH_PRINT_MOVES;
+    let print_assigns    = config::FLOWGRAPH_PRINT_ASSIGNS;
+    let print_needs_drop = config::FLOWGRAPH_PRINT_NEEDS_DROP;
+    let print_all        = config::FLOWGRAPH_PRINT_ALL;
     let opt = |print_which| sess.debugging_opt(print_which);
     let mut variants = Vec::new();
     if opt(print_all) || opt(print_loans) {
@@ -686,6 +687,9 @@ fn gather_flowgraph_variants(sess: &Session) -> Vec<borrowck_dot::Variant> {
     }
     if opt(print_all) || opt(print_assigns) {
         variants.push(borrowck_dot::Assigns);
+    }
+    if opt(print_all) || opt(print_needs_drop) {
+        variants.push(borrowck_dot::NeedsDrop);
     }
     variants
 }
