@@ -88,3 +88,5 @@ src/etc/dl
 i686-pc-mingw32/
 src/librustc_llvm/llvmdeps.rs
 *.pot
+/*.dot
+/objdir-*
