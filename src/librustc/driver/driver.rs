@@ -713,9 +713,7 @@ impl FromStr for FlowGraphId {
 
 impl FlowGraphId {
     fn to_node_id(self,
-                  crate_cfg: ast::CrateConfig,
                   tcx: &ty::ctxt) -> ast::NodeId {
-        let def_map = &tcx.def_map;
         let sess = &tcx.sess;
         return match self {
             FlowGraphViaNode(node_id) => node_id,
@@ -741,7 +739,7 @@ pub fn pretty_print_input(sess: Session,
                           input: &Input,
                           ppm: PpMode,
                           ofile: Option<Path>) {
-    let krate = phase_1_parse_input(&sess, cfg.clone(), input);
+    let krate = phase_1_parse_input(&sess, cfg, input);
     let id = link::find_crate_name(Some(&sess), krate.attrs.as_slice(), input);
 
     let (krate, ast_map, is_expanded) = match ppm {
@@ -805,7 +803,7 @@ pub fn pretty_print_input(sess: Session,
             let variants = gather_flowgraph_variants(&sess);
             let ast_map = ast_map.expect("--pretty flowgraph missing ast_map");
             let analysis = phase_3_run_analysis_passes(sess, &krate, ast_map, id);
-            print_flowgraph(variants, cfg, analysis, flow_graph_id, out)
+            print_flowgraph(variants, analysis, flow_graph_id, out)
         }
         _ => {
             pprust::print_crate(sess.codemap(),
@@ -822,13 +820,12 @@ pub fn pretty_print_input(sess: Session,
 }
 
 fn flow_graph_id_to_code(flow_graph_id: FlowGraphId,
-                         crate_cfg: ast::CrateConfig,
                          analysis: &CrateAnalysis) -> blocks::Code {
     let ty_cx = &analysis.ty_cx;
     let ast_map = &ty_cx.map;
     let sess = &ty_cx.sess;
 
-    let nodeid = flow_graph_id.to_node_id(crate_cfg, ty_cx);
+    let nodeid = flow_graph_id.to_node_id(ty_cx);
     let node = ast_map.find(nodeid).unwrap_or_else(|| {
         sess.fatal(format!("--pretty flowgraph couldn't find id: {}",
                            nodeid).as_slice())
@@ -852,13 +849,12 @@ fn flow_graph_id_to_code(flow_graph_id: FlowGraphId,
 }
 
 fn print_flowgraph<W:io::Writer>(variants: Vec<borrowck_dot::Variant>,
-                                 crate_cfg: ast::CrateConfig,
                                  analysis: CrateAnalysis,
                                  flow_graph_id: FlowGraphId,
                                  mut out: W) -> io::IoResult<()> {
     let ty_cx = &analysis.ty_cx;
 
-    let code = flow_graph_id_to_code(flow_graph_id, crate_cfg, &analysis);
+    let code = flow_graph_id_to_code(flow_graph_id, &analysis);
     let cfg = match code {
         blocks::BlockCode(block) => cfg::CFG::new(ty_cx, &*block),
         blocks::FnLikeCode(fn_like) => cfg::CFG::new(ty_cx, &*fn_like.body()),

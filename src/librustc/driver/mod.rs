@@ -15,7 +15,6 @@ use driver::driver::{Input, FileInput, StrInput};
 use driver::session::{Session, build_session};
 use lint::Lint;
 use lint;
-use middle::resolve;
 use metadata;
 
 use std::any::AnyRefExt;
