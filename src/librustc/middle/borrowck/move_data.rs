@@ -202,6 +202,15 @@ impl Move {
     pub fn ty(&self, tcx: &ty::ctxt) -> ty::t {
         self.ty_and_span(tcx).val0()
     }
+
+    pub fn to_string(&self, move_data: &MoveData, tcx: &ty::ctxt) -> String {
+        format!("Move{:s} path: {}, id: {}, kind: {:?} {:s}",
+                "{",
+                move_data.path_loan_path(self.path).repr(tcx),
+                self.id,
+                self.kind,
+                "}")
+    }
 }
 
 impl Assignment {
@@ -216,6 +225,13 @@ impl Assignment {
     }
     pub fn ty(&self, tcx: &ty::ctxt) -> ty::t {
         self.ty_and_span(tcx).val0()
+    }
+    pub fn to_string(&self, move_data: &MoveData, tcx: &ty::ctxt) -> String {
+        format!("Assignment{:s} path: {}, id: {} {:s}",
+                "{",
+                move_data.path_loan_path(self.path).repr(tcx),
+                self.id,
+                "}")
     }
 }
 
@@ -466,11 +482,13 @@ impl MoveData {
         for (i, assignment) in self.var_assignments.borrow().iter().enumerate() {
             dfcx_assign.add_gen(assignment.id, i);
             self.kill_moves(assignment.path, assignment.id, dfcx_moves);
+            debug!("add_drop_obligations var_assignment {}", assignment.to_string(self, tcx));
             self.add_drop_obligations(tcx, assignment, dfcx_needs_drop);
         }
 
         for assignment in self.path_assignments.borrow().iter() {
             self.kill_moves(assignment.path, assignment.id, dfcx_moves);
+            debug!("add_drop_obligations path_assignment {}", assignment.to_string(self, tcx));
             self.add_drop_obligations(tcx, assignment, dfcx_needs_drop);
         }
 
