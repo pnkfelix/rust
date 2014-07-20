@@ -55,6 +55,16 @@ pub struct MoveData {
 
     /// Assignments to a variable or path, like `x = foo`, but not `x += foo`.
     pub assignee_ids: RefCell<HashSet<ast::NodeId>>,
+
+    /// During move_data construction, `fragments` tracks paths that
+    /// *might* be needs-drop leftovers.  When move_data has been
+    /// completed, `fragments` tracks paths that are *definitely*
+    /// needs-drop left-overs.
+    pub fragments: RefCell<Vec<MovePathIndex>>,
+
+    /// `nonfragments` always tracks paths that have been definitely
+    /// used directly in moves).
+    pub nonfragments: RefCell<Vec<MovePathIndex>>,
 }
 
 pub struct FlowedMoveData<'a, 'tcx: 'a> {
@@ -202,6 +212,15 @@ impl Move {
     pub fn ty(&self, tcx: &ty::ctxt) -> ty::t {
         self.ty_and_span(tcx).val0()
     }
+
+    pub fn to_string(&self, move_data: &MoveData, tcx: &ty::ctxt) -> String {
+        format!("Move{:s} path: {}, id: {}, kind: {:?} {:s}",
+                "{",
+                move_data.path_loan_path(self.path).repr(tcx),
+                self.id,
+                self.kind,
+                "}")
+    }
 }
 
 impl Assignment {
@@ -217,6 +236,13 @@ impl Assignment {
     pub fn ty(&self, tcx: &ty::ctxt) -> ty::t {
         self.ty_and_span(tcx).val0()
     }
+    pub fn to_string(&self, move_data: &MoveData, tcx: &ty::ctxt) -> String {
+        format!("Assignment{:s} path: {}, id: {} {:s}",
+                "{",
+                move_data.path_loan_path(self.path).repr(tcx),
+                self.id,
+                "}")
+    }
 }
 
 impl MoveData {
@@ -228,6 +254,8 @@ impl MoveData {
             path_assignments: RefCell::new(Vec::new()),
             var_assignments: RefCell::new(Vec::new()),
             assignee_ids: RefCell::new(HashSet::new()),
+            fragments: RefCell::new(Vec::new()),
+            nonfragments: RefCell::new(Vec::new()),
         }
     }
 
@@ -273,7 +301,7 @@ impl MoveData {
         self.path_parent(index) == InvalidMovePathIndex
     }
 
-    pub fn move_path(&self,
+    fn move_path(&self,
                      tcx: &ty::ctxt,
                      lp: Rc<LoanPath>) -> MovePathIndex {
         /*!
@@ -386,8 +414,10 @@ impl MoveData {
                id,
                kind);
 
-        let path_index = self.move_path(tcx, lp);
+        let path_index = self.move_path(tcx, lp.clone());
         let move_index = MoveIndex(self.moves.borrow().len());
+
+        self.nonfragments.borrow_mut().push(path_index);
 
         let next_move = self.path_first_move(path_index);
         self.set_path_first_move(path_index, move_index);
@@ -398,6 +428,8 @@ impl MoveData {
             kind: kind,
             next_move: next_move
         });
+
+        self.add_fragment_siblings(tcx, lp);
     }
 
     pub fn add_assignment(&self,
@@ -417,6 +449,8 @@ impl MoveData {
 
         let path_index = self.move_path(tcx, lp.clone());
 
+        self.nonfragments.borrow_mut().push(path_index);
+        
         match mode {
             euv::Init | euv::JustWrite => {
                 self.assignee_ids.borrow_mut().insert(assignee_id);
@@ -443,6 +477,76 @@ impl MoveData {
         }
     }
 
+    fn add_fragment_siblings(&self,
+                             tcx: &ty::ctxt,
+                             lp: Rc<LoanPath>) {
+        /*! Adds all of the precisely-tracked siblings of `lp` as
+         * potential move paths of interest. For example, if `lp`
+         * represents `s.x.j`, then adds moves paths for `s.x.i` and
+         * `s.x.k`, the siblings of `s.x.j`.
+         */
+
+        match *lp {
+            LpVar(_) | LpUpvar(_) => {} // Local variables have no siblings.
+
+            // *LV for OwnedPtr itself has no siblings, but we might need
+            // to propagate inward.  Not sure.
+            LpExtend(_, _, LpDeref(mc::OwnedPtr)) => unimplemented!(),
+
+            // *LV has no siblings
+            LpExtend(_, _, LpDeref(_)) => {}
+
+            // LV[j] is not tracked precisely
+            LpExtend(_, _, LpInterior(mc::InteriorElement(_))) => {}
+
+            // field access LV.x and tuple access LV#k are the cases
+            // we are interested in
+            LpExtend(ref parent, mc, LpInterior(mc::InteriorField(ref field_name))) => {
+                let add_new_field = |new_field_name| {
+                    let loan_path_elem = LpInterior(mc::InteriorField(new_field_name));
+                    let lp = LpExtend(parent.clone(), mc, loan_path_elem);
+                    let mp = self.move_path(tcx, Rc::new(lp));
+
+                    // Do not worry about checking for duplicates
+                    // here; if necessary we will sort and dedup after
+                    // all are added.
+                    self.fragments.borrow_mut().push(mp);
+
+                    mp
+                };
+
+                let parent_ty = parent.to_type(tcx);
+                match *field_name {
+                    mc::NamedField(ast_name) => {
+                        let parent_def_id = match ty::get(parent_ty).sty {
+                            ty::ty_struct(def_id, ref _substs) |
+                            ty::ty_enum(def_id, ref _substs) => def_id,
+                            _ => fail!("type with named fields must be struct or enum"),
+                        };
+                        let fields = ty::lookup_struct_fields(tcx, parent_def_id);
+                        for f in fields.iter().filter(|field| field.name != ast_name) {
+                            add_new_field(mc::NamedField(f.name));
+                        }
+                    }
+                    mc::PositionalField(tuple_idx) => {
+                        let tuple_len = match ty::get(parent_ty).sty {
+                            ty::ty_tup(ref v) => v.len(),
+                            ty::ty_struct(def_id, ref _substs) =>
+                                ty::lookup_struct_fields(tcx, def_id).len(),
+                            ty::ty_enum(def_id, ref _substs) =>
+                                ty::lookup_struct_fields(tcx, def_id).len(),
+                            _ => fail!("type with positional field must be tuple, struct or enum"),
+                        };
+                        for i in range(0, tuple_len) {
+                            if i == tuple_idx { continue }
+                            add_new_field(mc::PositionalField(i));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn add_gen_kills(&self,
                      tcx: &ty::ctxt,
                      dfcx_moves: &mut MoveDataFlow,
@@ -460,17 +564,20 @@ impl MoveData {
 
         for (i, move) in self.moves.borrow().iter().enumerate() {
             dfcx_moves.add_gen(move.id, i);
+            debug!("remove_drop_obligations move {}", move.to_string(self, tcx));
             self.remove_drop_obligation(move, dfcx_needs_drop);
         }
 
         for (i, assignment) in self.var_assignments.borrow().iter().enumerate() {
             dfcx_assign.add_gen(assignment.id, i);
             self.kill_moves(assignment.path, assignment.id, dfcx_moves);
+            debug!("add_drop_obligations var_assignment {}", assignment.to_string(self, tcx));
             self.add_drop_obligations(tcx, assignment, dfcx_needs_drop);
         }
 
         for assignment in self.path_assignments.borrow().iter() {
             self.kill_moves(assignment.path, assignment.id, dfcx_moves);
+            debug!("add_drop_obligations path_assignment {}", assignment.to_string(self, tcx));
             self.add_drop_obligations(tcx, assignment, dfcx_needs_drop);
         }
 
@@ -595,6 +702,41 @@ impl MoveData {
                                                     a: A,
                                                     dfcx_needs_drop: &mut NeedsDropDataFlow) {
         // Kill path and all of its sub-paths.
+        // Lets assume we had a pre-existing drop obligation ND = { s.a, s2 },
+        // where:
+        // ```
+        // struct S { a: A, b: B, c: C }
+        // struct A { i: I, j: J, k: K }
+        // struct J { x: X, y: Y, z: Z }
+        // and s : S (and s2 : S as well).
+        //
+        // Moving `s.a.j.x` implies that:
+        // * We no longer have a drop-obligation for s.a in its entirety: ND' := ND \ { s.a }
+        // * We now do have drop-obligations for the portions of `s.a` that were not moved:
+        //   ND' := ND + { s.a.i, s.a.k }
+        // * Likewise, we also have drop-obligations for the portions of `s.a.j` that were
+        //   not moved:
+        //   ND' := ND + { s.a.j.y, s.a.j.z }
+        //
+        // Altogether, the above modifications accumulate to:
+        // ND' := ND \ { s.a } + { s.a.i, s.a.j.y, s.a.j.z, s.a.k }
+        //
+        // To simplify constructions like the above let us define taking the derivative
+        // of a path P with respect to an appropriate subpath suffix S: d/d{S}(P)
+        //
+        // So for example, d/d{.j.x}(s.a) := { s.a.i, s.a.j.y, s.a.j.z, s.a.k }
+        //
+        // TODO: Write definition of d/d{S}(P), presumably by induction on suffix S.
+        //
+        // For d/d{.j.x}(s.a), S = .j.x and P = s.a:
+        //
+        // 1. P_0 = s.a      : remove obligation s.a, if present
+        //
+        // 2. P_1 = s.a.j    : assert obligation s.a.j not present; add
+        //                     all needs-drop fields of s.a, then remove s.a.j.
+        // 3. P_2 = s.a.j.x  : assert obligation s.a.j.x not present; add
+        //                     all needs-drop fields of s.a.j, then remove s.a.j.x.
+
         let id = a.node_id_removing_obligation();
         let path = a.path_being_moved();
         dfcx_needs_drop.add_kill(id, path.get());
