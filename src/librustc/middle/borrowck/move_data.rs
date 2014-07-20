@@ -476,6 +476,7 @@ impl MoveData {
 
         for (i, move) in self.moves.borrow().iter().enumerate() {
             dfcx_moves.add_gen(move.id, i);
+            debug!("remove_drop_obligations move {}", move.to_string(self, tcx));
             self.remove_drop_obligation(move, dfcx_needs_drop);
         }
 
@@ -613,6 +614,32 @@ impl MoveData {
                                                     a: A,
                                                     dfcx_needs_drop: &mut NeedsDropDataFlow) {
         // Kill path and all of its sub-paths.
+        // Lets assume we had a pre-existing drop obligation ND = { s.a, s2 },
+        // where:
+        // ```
+        // struct S { a: A, b: B, c: C }
+        // struct A { i: I, j: J, k: K }
+        // struct J { x: X, y: Y, z: Z }
+        // and s : S (and s2 : S as well).
+        //
+        // Moving `s.a.j.x` implies that:
+        // * We no longer have a drop-obligation for s.a in its entirety: ND' := ND \ { s.a }
+        // * We now do have drop-obligations for the portions of `s.a` that were not moved:
+        //   ND' := ND + { s.a.i, s.a.k }
+        // * Likewise, we also have drop-obligations for the portions of `s.a.j` that were
+        //   not moved:
+        //   ND' := ND + { s.a.j.y, s.a.j.z }
+        //
+        // Altogether, the above modifications accumulate to:
+        // ND' := ND \ { s.a } + { s.a.i, s.a.j.y, s.a.j.z, s.a.k }
+        //
+        // To simplify constructions like the above let us define taking the derivative
+        // of a path P with respect to an appropriate subpath suffix S: d/d{S}(P)
+        //
+        // So for example, d/d{.j.x}(s.a) := { s.a.i, s.a.j.y, s.a.j.z, s.a.k }
+        //
+        // TODO: Write definition of d/d{S}(P), presumably by induction on suffix S.
+
         let id = a.node_id_removing_obligation();
         let path = a.path_being_moved();
         dfcx_needs_drop.add_kill(id, path.get());
