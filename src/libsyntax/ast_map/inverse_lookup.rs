@@ -13,6 +13,7 @@ use ast_map;
 
 /// Flag indicating whether one is requesting a lookup in the Mod
 /// namespace or in the Value namespace.
+#[deriving(Show)]
 pub enum ModOrValue {
     Mod,
     Val,
@@ -61,16 +62,22 @@ fn slow_lookup_part(ast_map: &ast_map::Map,
     for (idx, map_entry) in entries.iter().enumerate() {
         let idx = idx.to_u32().unwrap();
         match *map_entry {
-            super::EntryItem(_parent, item)
-                if (item.ident.name.as_str() == s &&
+            super::EntryItem(idx_parent, item)
+                if (item_name_matches_str(item, s) &&
                     item_matches_namespace(item, namespace) &&
-                    mod_parent == find_first_mod_parent(ast_map, idx))
+                    first_mod_parent_of_matches(ast_map, idx_parent, mod_parent))
                 => return Some(idx),
 
             _   => continue,
         }
     }
     return None;
+
+    fn item_name_matches_str(item: &ast::Item, s: &str) -> bool {
+        debug!("item_name_matches_str(item: {}, s: {})",
+               item.ident.name.as_str(), s);
+        item.ident.name.as_str() == s
+    }
 
     /// Finds the first mod in the parent chain for id.
     /// If `id` itself is a mod, then returns `Some(id)`.
@@ -88,10 +95,20 @@ fn slow_lookup_part(ast_map: &ast_map::Map,
             if parent == id { return None }
             id = parent;
         }
+    }
 
+    fn first_mod_parent_of_matches(ast_map: &ast_map::Map,
+                                   idx: ast::NodeId,
+                                   mod_parent: Option<ast::NodeId>) -> bool {
+        let first = find_first_mod_parent(ast_map, idx);
+        debug!("first_mod_parent_of_matches(idx: {}, mod_parent: {}) first: {}",
+               idx, mod_parent, first);
+        mod_parent == first
     }
 
     fn item_matches_namespace(item: &ast::Item, namespace: ModOrValue) -> bool {
+        debug!("item_matches_namespace(item: {}, namespace: {})",
+               item.ident.name.as_str(), namespace);
         match namespace {
             Val => !item_is_mod(item),
             Mod =>  item_is_mod(item),
