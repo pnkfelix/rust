@@ -14,13 +14,5 @@ objdir-dbg/x86_64-apple-darwin/stage1/rustc: src/etc/rustc-wrapper.macosx.sh obj
 	cp $< $@
 	chmod +x $@
 
-define FIND_LAST_FN
-LAST_FN_NUM_$(1) := $(shell $(RUSTC_LIB) --pretty=expanded,identified $(1) \
-			 | grep block
-			 | tail -1
-			 | sed -e 's@.*/\* block \([0-9]*\) \*/ /\* \([0-9]*\) \*/.*@\2@')
-endef
-
 %.dot: %.rs Makefile objdir-dbg/x86_64-apple-darwin/stage1/rustc
-	$(eval $(call FIND_LAST_FN,$<))
-	$(RUSTC_LIB) -Z flowgraph-print-needs-drop --pretty flowgraph=$(LAST_FN_NUM_$<) $< -o $@
+	$(RUSTC_LIB) -Z flowgraph-print-needs-drop --pretty flowgraph=foo $< -o $@
