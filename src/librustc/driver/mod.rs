@@ -385,6 +385,46 @@ fn print_crate_info(sess: &Session,
     }
 }
 
+<<<<<<< HEAD
+||||||| merged common ancestors
+pub enum PpMode {
+    PpmNormal,
+    PpmExpanded,
+    PpmTyped,
+    PpmIdentified,
+    PpmExpandedIdentified,
+    PpmFlowGraph(ast::NodeId),
+}
+
+pub fn parse_pretty(sess: &Session, name: &str) -> PpMode {
+    let mut split = name.splitn('=', 1);
+    let first = split.next().unwrap();
+    let opt_second = split.next();
+    match (opt_second, first) {
+        (None, "normal")       => PpmNormal,
+        (None, "expanded")     => PpmExpanded,
+        (None, "typed")        => PpmTyped,
+        (None, "expanded,identified") => PpmExpandedIdentified,
+        (None, "identified")   => PpmIdentified,
+        (arg, "flowgraph") => {
+             match arg.and_then(from_str) {
+                 Some(id) => PpmFlowGraph(id),
+                 None => {
+                     sess.fatal(format!("`pretty flowgraph=<nodeid>` needs \
+                                         an integer <nodeid>; got {}",
+                                        arg.unwrap_or("nothing")).as_slice())
+                 }
+             }
+        }
+        _ => {
+            sess.fatal(format!(
+                "argument to `pretty` must be one of `normal`, \
+                 `expanded`, `flowgraph=<nodeid>`, `typed`, `identified`, \
+                 or `expanded,identified`; got {}", name).as_slice());
+        }
+    }
+}
+
 fn parse_crate_attrs(sess: &Session, input: &Input) ->
                      Vec<ast::Attribute> {
     let result = match *input {
