@@ -15,6 +15,7 @@ use driver::driver::{Input, FileInput, StrInput};
 use driver::session::{Session, build_session};
 use lint::Lint;
 use lint;
+use middle::resolve;
 use metadata;
 
 use std::any::AnyRefExt;
@@ -346,7 +347,7 @@ pub enum PpMode {
     PpmTyped,
     PpmIdentified,
     PpmExpandedIdentified,
-    PpmFlowGraph(ast::NodeId),
+    PpmFlowGraph(driver::FlowGraphId),
 }
 
 pub fn parse_pretty(sess: &Session, name: &str) -> PpMode {

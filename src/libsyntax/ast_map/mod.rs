@@ -25,6 +25,7 @@ use std::iter;
 use std::slice;
 
 pub mod blocks;
+pub mod inverse_lookup;
 
 #[deriving(Clone, PartialEq)]
 pub enum PathElem {

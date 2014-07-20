@@ -39,11 +39,13 @@ use dot = graphviz;
 
 use serialize::{json, Encodable};
 
+use std::from_str::FromStr;
 use std::io;
 use std::io::fs;
 use std::io::MemReader;
 use syntax::ast;
 use syntax::ast_map::blocks;
+use syntax::ast_map::inverse_lookup;
 use syntax::attr;
 use syntax::attr::{AttrMetaMethods};
 use syntax::diagnostics;
@@ -694,12 +696,52 @@ fn gather_flowgraph_variants(sess: &Session) -> Vec<borrowck_dot::Variant> {
     variants
 }
 
+pub enum FlowGraphId {
+    FlowGraphViaNode(ast::NodeId),
+    FlowGraphViaPath(String),
+}
+
+impl FromStr for FlowGraphId {
+    fn from_str(s: &str) -> Option<FlowGraphId> {
+        let oi: Option<ast::NodeId> = FromStr::from_str(s);
+        match oi {
+            Some(i) => Some(FlowGraphViaNode(i)),
+            None => Some(FlowGraphViaPath(s.to_string())),
+        }
+    }
+}
+
+impl FlowGraphId {
+    fn to_node_id(self,
+                  crate_cfg: ast::CrateConfig,
+                  tcx: &ty::ctxt) -> ast::NodeId {
+        let def_map = &tcx.def_map;
+        let sess = &tcx.sess;
+        return match self {
+            FlowGraphViaNode(node_id) => node_id,
+            FlowGraphViaPath(string) => {
+                let parts : Vec<&str> = string.as_slice().split_str("::").collect();
+                inverse_lookup::slow_lookup(&tcx.map,
+                                            inverse_lookup::Val,
+                                            parts.as_slice())
+                    .unwrap_or_else(|| {
+                        let message = format!("pretty flowgraph= needs \
+                                               NodeId (int) or resolvable \
+                                               Path (a::b::c); got {}, which \
+                                               does not resolve", string);
+                        sess.fatal(message.as_slice())
+                    })
+            }
+        };
+    }
+}
+
 pub fn pretty_print_input(sess: Session,
                           cfg: ast::CrateConfig,
                           input: &Input,
                           ppm: PpMode,
                           ofile: Option<Path>) {
-    let krate = phase_1_parse_input(&sess, cfg, input);
+    let krate = phase_1_parse_input(&sess, cfg.clone(), input);
     let id = link::find_crate_name(Some(&sess), krate.attrs.as_slice(), input);
 
     let (krate, ast_map, is_expanded) = match ppm {
@@ -759,33 +801,11 @@ pub fn pretty_print_input(sess: Session,
                                 &annotation,
                                 is_expanded)
         }
-        PpmFlowGraph(nodeid) => {
+        PpmFlowGraph(flow_graph_id) => {
+            let variants = gather_flowgraph_variants(&sess);
             let ast_map = ast_map.expect("--pretty flowgraph missing ast_map");
-            let node = ast_map.find(nodeid).unwrap_or_else(|| {
-                sess.fatal(format!("--pretty flowgraph couldn't find id: {}",
-                                   nodeid).as_slice())
-            });
-            let code = blocks::Code::from_node(node);
-            match code {
-                Some(code) => {
-                    let variants = gather_flowgraph_variants(&sess);
-                    let analysis = phase_3_run_analysis_passes(sess, &krate,
-                                                               ast_map, id);
-                    print_flowgraph(variants, analysis, code, out)
-                }
-                None => {
-                    let message = format!("--pretty=flowgraph needs \
-                                           block, fn, or method; got {:?}",
-                                          node);
-
-                    // point to what was found, if there's an
-                    // accessible span.
-                    match ast_map.opt_span(nodeid) {
-                        Some(sp) => sess.span_fatal(sp, message.as_slice()),
-                        None => sess.fatal(message.as_slice())
-                    }
-                }
-            }
+            let analysis = phase_3_run_analysis_passes(sess, &krate, ast_map, id);
+            print_flowgraph(variants, cfg, analysis, flow_graph_id, out)
         }
         _ => {
             pprust::print_crate(sess.codemap(),
@@ -801,11 +821,44 @@ pub fn pretty_print_input(sess: Session,
 
 }
 
+fn flow_graph_id_to_code(flow_graph_id: FlowGraphId,
+                         crate_cfg: ast::CrateConfig,
+                         analysis: &CrateAnalysis) -> blocks::Code {
+    let ty_cx = &analysis.ty_cx;
+    let ast_map = &ty_cx.map;
+    let sess = &ty_cx.sess;
+
+    let nodeid = flow_graph_id.to_node_id(crate_cfg, ty_cx);
+    let node = ast_map.find(nodeid).unwrap_or_else(|| {
+        sess.fatal(format!("--pretty flowgraph couldn't find id: {}",
+                           nodeid).as_slice())
+    });
+    let code = blocks::Code::from_node(node);
+    match code {
+        Some(code) => code,
+        None => {
+            let message = format!("--pretty=flowgraph needs \
+                                   block, fn, or method; got {:?}",
+                                  node);
+
+            // point to what was found, if there's an
+            // accessible span.
+            match ast_map.opt_span(nodeid) {
+                Some(sp) => sess.span_fatal(sp, message.as_slice()),
+                None => sess.fatal(message.as_slice())
+            }
+        }
+    }
+}
+
 fn print_flowgraph<W:io::Writer>(variants: Vec<borrowck_dot::Variant>,
+                                 crate_cfg: ast::CrateConfig,
                                  analysis: CrateAnalysis,
-                                 code: blocks::Code,
+                                 flow_graph_id: FlowGraphId,
                                  mut out: W) -> io::IoResult<()> {
     let ty_cx = &analysis.ty_cx;
+
+    let code = flow_graph_id_to_code(flow_graph_id, crate_cfg, &analysis);
     let cfg = match code {
         blocks::BlockCode(block) => cfg::CFG::new(ty_cx, &*block),
         blocks::FnLikeCode(fn_like) => cfg::CFG::new(ty_cx, &*fn_like.body()),
