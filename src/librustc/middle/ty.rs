@@ -3097,10 +3097,12 @@ pub fn array_element_ty(t: t) -> Option<t> {
 }
 
 /// Returns the type of element at index `i` in tuple or tuple-like type.
-pub fn positional_element_ty(_cx: &ctxt, t: t, i: uint) -> Option<t> {
+pub fn positional_element_ty(cx: &ctxt, t: t, i: uint) -> Option<t> {
     match get(t).sty {
         ty_tup(ref v) => v.as_slice().get(i).map(|&t| t),
-        ty_struct(_def_id, ref _substs) => unimplemented!(),
+        ty_struct(def_id, ref _substs) => lookup_struct_fields(cx, def_id)
+            .as_slice().get(i)
+            .map(|&t|lookup_item_type(cx, t.id).ty),
         ty_enum(_def_id, ref _substs) => unimplemented!(),
         _ => None
     }
