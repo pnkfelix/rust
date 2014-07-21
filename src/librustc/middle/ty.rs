@@ -3096,6 +3096,32 @@ pub fn array_element_ty(t: t) -> Option<t> {
     }
 }
 
+/// Returns the type of element at index `i` in tuple or tuple-like type.
+pub fn positional_element_ty(_cx: &ctxt, t: t, i: uint) -> Option<t> {
+    match get(t).sty {
+        ty_tup(ref v) => v.as_slice().get(i).map(|&t| t),
+        ty_struct(_def_id, ref _substs) => unimplemented!(),
+        ty_enum(_def_id, ref _substs) => unimplemented!(),
+        _ => None
+    }
+}
+
+/// Returns the type of element at field `n` in struct or struct-like type.
+pub fn named_element_ty(cx: &ctxt, t: t, n: ast::Name) -> Option<t> {
+    match get(t).sty {
+        ty_struct(def_id, ref _substs) => {
+            let r = lookup_struct_fields(cx, def_id);
+            r.iter().find(|f| f.name == n)
+                // FIXME probably need to pass in substs from the
+                // surrounding context, not the substs from the
+                // definition itself.
+                .map(|&f| lookup_field_type(cx, def_id, f.id, _substs))
+        }
+        ty_enum(_def_id, ref _substs) => unimplemented!(),
+        _ => None
+    }
+}
+
 pub fn node_id_to_trait_ref(cx: &ctxt, id: ast::NodeId) -> Rc<ty::TraitRef> {
     match cx.trait_refs.borrow().find(&id) {
         Some(t) => t.clone(),
