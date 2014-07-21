@@ -282,6 +282,30 @@ pub enum LoanPath {
     LpExtend(Rc<LoanPath>, mc::MutabilityCategory, LoanPathElem)
 }
 
+impl LoanPath {
+    fn to_type(&self, tcx: &ty::ctxt) -> ty::t {
+        match *self {
+            LpUpvar(ty::UpvarId { var_id: id, closure_expr_id: _ }) |
+            LpVar(id) => ty::node_id_to_type_opt(tcx, id).unwrap(),
+
+            LpExtend(ref lp, _mc, ref loan_path_elem) => {
+                let t = lp.to_type(tcx);
+                match *loan_path_elem {
+                    LpDeref(_pointer_kind) =>
+                        // (claiming deref is explicit)
+                        ty::deref(t, true).unwrap().ty,
+                    LpInterior(mc::InteriorElement(_element_kind)) =>
+                        ty::array_element_ty(t).unwrap().ty,
+                    LpInterior(mc::InteriorField(mc::NamedField(field_name))) =>
+                        ty::named_element_ty(tcx, t, field_name).unwrap(),
+                    LpInterior(mc::InteriorField(mc::PositionalField(tuple_idx))) =>
+                        ty::positional_element_ty(tcx, t, tuple_idx).unwrap(),
+                }
+            }
+        }
+    }
+}
+
 #[deriving(PartialEq, Eq, Hash)]
 pub enum LoanPathElem {
     LpDeref(mc::PointerKind),    // `*LV` in doc.rs
