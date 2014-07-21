@@ -55,7 +55,7 @@ pub mod graphviz;
 
 pub mod move_data;
 
-// pub mod needs_drop;
+pub mod check_drops;
 
 #[deriving(Clone)]
 pub struct LoanDataFlowOperator;
@@ -140,6 +140,8 @@ fn borrowck_fn(this: &mut BorrowckCtxt,
                        loans: loan_dfcx,
                        move_data:flowed_moves } =
         build_borrowck_dataflow_data(this, fk, decl, &cfg, body, sp, id);
+
+    check_drops::check_drops(this, &flowed_moves, &cfg, decl, body);
 
     check_loans::check_loans(this, &loan_dfcx, flowed_moves,
                              all_loans.as_slice(), decl, body);

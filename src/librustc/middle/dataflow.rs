@@ -274,6 +274,19 @@ impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
         (start, end)
     }
 
+    pub fn bitset_for(&self, e: EntryOrExit, cfgidx: CFGIndex) -> Vec<uint> {
+        self.with_set(e, cfgidx, || Vec::new(), |slice| slice.to_owned())
+    }
+
+    /// Let S be the entry/exit (`e`) set for `cfgidx`.  Sets `bits`
+    /// to `bits o S` where `o` denotes the bitwise operator `oper`.
+    pub fn apply_op<Op:BitwiseOperator>(&self,
+                                        e: EntryOrExit,
+                                        cfgidx: CFGIndex,
+                                        bits: &mut [uint],
+                                        oper: Op) {
+        self.with_set(e, cfgidx, || (), |slice| { bitwise(bits, slice, &oper); })
+    }
 
     pub fn each_bit_on_entry(&self,
                              id: ast::NodeId,
@@ -291,15 +304,28 @@ impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
     pub fn each_bit_for_node(&self,
                              e: EntryOrExit,
                              cfgidx: CFGIndex,
-                             f: |uint| -> bool)
+                             on_one: |uint| -> bool)
                              -> bool {
         //! Iterates through each bit that is set on entry/exit to `cfgidx`.
         //! Only useful after `propagate()` has been called.
 
+        self.with_set(e, cfgidx, || true, |slice| {
+            debug!("{:s} each_bit_for_node({}, cfgidx={}) bits={}",
+                   self.analysis_name, e, cfgidx, bits_to_string(slice));
+            self.each_one_bit(slice, |x|on_one(x))
+        })
+    }
+
+    fn with_set<A>(&self,
+                   e: EntryOrExit,
+                   cfgidx: CFGIndex,
+                   default: || -> A,
+                   f: |&[uint]| -> A) -> A {
+
         if self.bits_per_id == 0 {
-            // Skip the surprisingly common degenerate case.  (Note
+            // degenerate case: use the default.  (Note
             // compute_id_range requires self.words_per_id > 0.)
-            return true;
+            return default();
         }
 
         let (start, end) = self.compute_id_range(cfgidx);
@@ -314,9 +340,8 @@ impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
                 temp_bits.as_slice()
             }
         };
-        debug!("{:s} each_bit_for_node({}, cfgidx={}) bits={}",
-               self.analysis_name, e, cfgidx, bits_to_string(slice));
-        self.each_bit(slice, f)
+
+        f(slice)
     }
 
     pub fn each_gen_bit(&self, id: ast::NodeId, f: |uint| -> bool)
@@ -337,11 +362,11 @@ impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
         let gens = self.gens.slice(start, end);
         debug!("{:s} each_gen_bit(id={:?}, gens={})",
                self.analysis_name, id, bits_to_string(gens));
-        self.each_bit(gens, f)
+        self.each_one_bit(gens, f)
     }
 
-    fn each_bit(&self, words: &[uint], f: |uint| -> bool) -> bool {
-        //! Helper for iterating over the bits in a bit set.
+    fn each_one_bit(&self, words: &[uint], f: |uint| -> bool) -> bool {
+        //! Helper for iterating over the 1 bits in a bit set.
         //! Returns false on the first call to `f` that returns false;
         //! if all calls to `f` return true, then returns true.
 
@@ -574,6 +599,14 @@ fn bitwise<Op:BitwiseOperator>(out_vec: &mut [uint],
     changed
 }
 
+pub fn is_bit_set(words: &[uint], bit: uint) -> bool {
+    let word = bit / uint::BITS;
+    let bit_in_word = bit % uint::BITS;
+    let bit_mask = 1 << bit_in_word;
+    let oldv = words[word];
+    0 != (oldv & bit_mask)
+}
+
 fn set_bit(words: &mut [uint], bit: uint) -> bool {
     debug!("set_bit: words={} bit={}",
            mut_bits_to_string(words), bit_str(bit));
@@ -593,11 +626,18 @@ fn bit_str(bit: uint) -> String {
     format!("[{}:{}-{:02x}]", bit, byte, lobits)
 }
 
-struct Union;
+pub struct Union;
 impl BitwiseOperator for Union {
     fn join(&self, a: uint, b: uint) -> uint { a | b }
 }
-struct Subtract;
+pub struct Subtract;
 impl BitwiseOperator for Subtract {
     fn join(&self, a: uint, b: uint) -> uint { a & !b }
+}
+pub struct Intersect;
+impl BitwiseOperator for Intersect {
+    fn join(&self, a: uint, b: uint) -> uint { a & b }
+}
+pub fn subtract(a: &mut [uint], b: &[uint]) {
+    bitwise(a, b, &Subtract);
 }

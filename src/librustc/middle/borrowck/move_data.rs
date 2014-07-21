@@ -271,10 +271,20 @@ impl MoveData {
         self.paths.borrow().get(index.get()).first_move
     }
 
+    /// Returns true iff `index` has no children.
+    fn path_is_leaf(&self, index: MovePathIndex) -> bool {
+        self.path_first_child(index) == InvalidMovePathIndex
+    }
+
+    /// Returns the index of first child, or `InvalidMovePathIndex` if
+    /// `index` is leaf.
     fn path_first_child(&self, index: MovePathIndex) -> MovePathIndex {
         self.paths.borrow().get(index.get()).first_child
     }
 
+    /// Returns index for next sibling, or `InvalidMovePathIndex` if
+    /// `index` has no remaining siblings in the list.  (The head of
+    /// the list is the parent's first child; see `path_first_child`).
     fn path_next_sibling(&self, index: MovePathIndex) -> MovePathIndex {
         self.paths.borrow().get(index.get()).next_sibling
     }
@@ -485,6 +495,7 @@ impl MoveData {
          * represents `s.x.j`, then adds moves paths for `s.x.i` and
          * `s.x.k`, the siblings of `s.x.j`.
          */
+        debug!("add_fragment_siblings(lp={})", lp.repr(tcx));
 
         match *lp {
             LpVar(_) | LpUpvar(_) => {} // Local variables have no siblings.
@@ -501,50 +512,76 @@ impl MoveData {
 
             // field access LV.x and tuple access LV#k are the cases
             // we are interested in
-            LpExtend(ref parent, mc, LpInterior(mc::InteriorField(ref field_name))) => {
-                let add_new_field = |new_field_name| {
-                    let loan_path_elem = LpInterior(mc::InteriorField(new_field_name));
-                    let lp = LpExtend(parent.clone(), mc, loan_path_elem);
-                    let mp = self.move_path(tcx, Rc::new(lp));
+            LpExtend(ref parent, mc,
+                     LpInterior(mc::InteriorField(ref field_name))) =>
+                self.add_fragment_siblings_for_extension(
+                    tcx, parent, mc, field_name, &lp),
+        }
+    }
 
-                    // Do not worry about checking for duplicates
-                    // here; if necessary we will sort and dedup after
-                    // all are added.
-                    self.fragments.borrow_mut().push(mp);
+    fn add_fragment_siblings_for_extension(&self,
+                                           tcx: &ty::ctxt,
+                                           parent: &Rc<LoanPath>,
+                                           mc: mc::MutabilityCategory,
+                                           origin_field_name: &mc::FieldName,
+                                           origin_lp: &Rc<LoanPath>) {
+        /*! We have determined that `origin_lp` destructures to
+         * LpExtend(parent, original_field_name). Based on this,
+         * add move paths for all of the siblings of `origin_lp`.
+         */
+        let parent_ty = parent.to_type(tcx);
 
-                    mp
+        match *origin_field_name {
+            mc::NamedField(ast_name) => {
+                let parent_def_id = match ty::get(parent_ty).sty {
+                    ty::ty_struct(def_id, ref _substs) |
+                    ty::ty_enum(def_id, ref _substs) => def_id,
+                    _ => fail!("type shouldn't have named fields"),
                 };
-
-                let parent_ty = parent.to_type(tcx);
-                match *field_name {
-                    mc::NamedField(ast_name) => {
-                        let parent_def_id = match ty::get(parent_ty).sty {
-                            ty::ty_struct(def_id, ref _substs) |
-                            ty::ty_enum(def_id, ref _substs) => def_id,
-                            _ => fail!("type with named fields must be struct or enum"),
-                        };
-                        let fields = ty::lookup_struct_fields(tcx, parent_def_id);
-                        for f in fields.iter().filter(|field| field.name != ast_name) {
-                            add_new_field(mc::NamedField(f.name));
-                        }
-                    }
-                    mc::PositionalField(tuple_idx) => {
-                        let tuple_len = match ty::get(parent_ty).sty {
-                            ty::ty_tup(ref v) => v.len(),
-                            ty::ty_struct(def_id, ref _substs) =>
-                                ty::lookup_struct_fields(tcx, def_id).len(),
-                            ty::ty_enum(def_id, ref _substs) =>
-                                ty::lookup_struct_fields(tcx, def_id).len(),
-                            _ => fail!("type with positional field must be tuple, struct or enum"),
-                        };
-                        for i in range(0, tuple_len) {
-                            if i == tuple_idx { continue }
-                            add_new_field(mc::PositionalField(i));
-                        }
-                    }
+                let fields = ty::lookup_struct_fields(tcx, parent_def_id);
+                for f in fields.iter().filter(|field| field.name != ast_name) {
+                    self.add_fragment_sibling(
+                        tcx, parent.clone(), mc, mc::NamedField(f.name), origin_lp);
+                }
+            }
+            mc::PositionalField(tuple_idx) => {
+                let tuple_len = match ty::get(parent_ty).sty {
+                    ty::ty_tup(ref v) => v.len(),
+                    ty::ty_struct(def_id, ref _substs) =>
+                        ty::lookup_struct_fields(tcx, def_id).len(),
+                    ty::ty_enum(def_id, ref _substs) =>
+                        ty::lookup_struct_fields(tcx, def_id).len(),
+                    _ => fail!("type shouldn't have positional fields"),
+                };
+                for i in range(0, tuple_len) {
+                    if i == tuple_idx { continue }
+                    self.add_fragment_sibling(
+                        tcx, parent.clone(), mc, mc::PositionalField(i), origin_lp);
                 }
             }
         }
+    }
+
+    fn add_fragment_sibling(&self,
+                            tcx: &ty::ctxt,
+                            parent: Rc<LoanPath>,
+                            mc: mc::MutabilityCategory,
+                            new_field_name: mc::FieldName,
+                            origin_lp: &Rc<LoanPath>) -> MovePathIndex {
+        /*! Adds the single sibling `LpExtend(parent, new_field_name)`
+         * of `origin_lp` (the original loan-path).
+         */
+        let loan_path_elem = LpInterior(mc::InteriorField(new_field_name));
+        let lp = LpExtend(parent, mc, loan_path_elem);
+        debug!("add_fragment_sibling(lp={}, origin_lp={})",
+               lp.repr(tcx), origin_lp.repr(tcx));
+        let mp = self.move_path(tcx, Rc::new(lp));
+
+        // Do not worry about checking for duplicates here; if
+        // necessary, we will sort and dedup after all are added.
+        self.fragments.borrow_mut().push(mp);
+
+        mp
     }
 
     fn add_gen_kills(&self,
@@ -565,7 +602,7 @@ impl MoveData {
         for (i, move) in self.moves.borrow().iter().enumerate() {
             dfcx_moves.add_gen(move.id, i);
             debug!("remove_drop_obligations move {}", move.to_string(self, tcx));
-            self.remove_drop_obligation(move, dfcx_needs_drop);
+            self.remove_drop_obligations(tcx, move, dfcx_needs_drop);
         }
 
         for (i, assignment) in self.var_assignments.borrow().iter().enumerate() {
@@ -587,17 +624,22 @@ impl MoveData {
             match *path.loan_path {
                 LpVar(id) => {
                     let kill_id = tcx.region_maps.var_scope(id);
-                    let path = *self.path_map.borrow().get(&path.loan_path);
-                    self.kill_moves(path, kill_id, dfcx_moves);
-                    self.remove_drop_obligation(
-                        Removed { where: kill_id, what_path: path }, dfcx_needs_drop);
+                    let move_path_index =
+                        *self.path_map.borrow().get(&path.loan_path);
+                    self.kill_moves(move_path_index, kill_id, dfcx_moves);
+                    debug!("remove_drop_obligations scope {} {}",
+                           kill_id, path.loan_path.repr(tcx));
+                    let rm = Removed { where: kill_id, what_path: move_path_index };
+                    self.remove_drop_obligations(tcx, rm, dfcx_needs_drop);
                 }
                 LpUpvar(ty::UpvarId { var_id: _, closure_expr_id }) => {
                     let kill_id = closure_to_block(closure_expr_id, tcx);
-                    let path = *self.path_map.borrow().get(&path.loan_path);
-                    self.kill_moves(path, kill_id, dfcx_moves);
-                    self.remove_drop_obligation(
-                        Removed { where: kill_id, what_path: path }, dfcx_needs_drop);
+                    let move_path_index = *self.path_map.borrow().get(&path.loan_path);
+                    self.kill_moves(move_path_index, kill_id, dfcx_moves);
+                    debug!("remove_drop_obligations scope {} {}",
+                           kill_id, path.loan_path.repr(tcx));
+                    let rm = Removed { where: kill_id, what_path: move_path_index };
+                    self.remove_drop_obligations(tcx, rm, dfcx_needs_drop);
                 }
                 LpExtend(..) => {}
             }
@@ -689,57 +731,157 @@ impl MoveData {
         }
     }
 
+
+    // A digression on needs-drop design.
+    //
+    // Lets assume we had a pre-existing drop obligation ND = { s.a, s2 }, where:
+    // ```
+    // struct S { a: A, b: B, c: C }
+    // struct A { i: I, j: J, k: K }
+    // struct J { x: X, y: Y, z: Z }
+    // ```
+    // and `s : S` (and `s2 : S` as well).
+    //
+    // Moving `s.a.j.x` implies that:
+    // * We no longer have a drop-obligation for s.a in its entirety: ND' := ND \ { s.a }
+    // * We now do have drop-obligations for the portions of `s.a` that were not moved:
+    //   ND' := ND + { s.a.i, s.a.k }
+    // * Likewise, we also have drop-obligations for the portions of `s.a.j` that were
+    //   not moved:
+    //   ND' := ND + { s.a.j.y, s.a.j.z }
+    //
+    // Altogether, the above modifications accumulate to:
+    // ND' := ND \ { s.a } + { s.a.i, s.a.j.y, s.a.j.z, s.a.k }
+    //
+    // To simplify constructions like the above let us define taking the derivative
+    // of a path P with respect to an appropriate subpath suffix S: d/d{S}(P)
+    //
+    // So for example, d/d{.j.x}(s.a) := { s.a.i, s.a.j.y, s.a.j.z, s.a.k }
+    //
+    // TODO: Write definition of d/d{S}(P), presumably by induction on suffix S.
+    //
+    // For d/d{.j.x}(s.a), S = .j.x and P = s.a:
+    //
+    // 1. P_0 = s.a      : remove obligation s.a, if present
+    //
+    // 2. P_1 = s.a.j    : assert obligation s.a.j not present; add
+    //                     all needs-drop fields of s.a, then remove s.a.j.
+    // 3. P_2 = s.a.j.x  : assert obligation s.a.j.x not present; add
+    //                     all needs-drop fields of s.a.j, then remove s.a.j.x.
+    //
+    // Big Question: Under the kill/gen paradigm, how do I ensure that
+    // I only add the bits associated with d/d{.j.x}(s.a) and not the
+    // bits associated with d/d{.a.j.x}(s) ?  I.e. the explanation
+    // above makes assumptions about computations I will be able to do
+    // as part the transfer function, but I need to encode those
+    // computations as gen+kill bits.
+    //
+    // ==> one way to resolve this problem while remaining under the
+    //     gen/kill paradigm is to carry-on with a suggestion I made
+    //     to Niko a while back, namely to treat the path `s` as a
+    //     shorthand for
+    //
+    //      `{ s.a.i, s.a.j.x, s.a.j.y, s.a.j.z, s.a.k, s.b, s.c }`,
+    //
+    //     and likewise `s.a` as as shorthand for
+    //
+    //      `{ s.a.i, s.a.j.x, s.a.j.y, s.a.j.z, s.a.k }`
+    //
+    //     That is, put these paths through a normalization process that
+    //     unrolls them to their leaves (or at least, their leaves with
+    //     respect to a given piece of code.
+    //
+    //     I might even be able to implement this independently of
+    //     the other dataflow analyses, since happenstance led me
+    //     to make the needs-drop analysis separate from the
+    //     loans/moves/assigns analyses.
+    //
+    // UPDATE: The above is in fact the strategy that Felix went with.
+    // The above comment should be revised/shortened to a succinct
+    // summary.
+
+    fn needs_drop(&self, tcx: &ty::ctxt, move_path_index: MovePathIndex) -> bool {
+        //! Returns true iff move_path_index needs drop.
+        let path_type = self.path_loan_path(move_path_index).to_type(tcx);
+        ty::type_needs_drop(tcx, path_type)
+    }
+
+    fn for_each_droppable_leaf(&self,
+                               tcx: &ty::ctxt,
+                               root: MovePathIndex,
+                               found_droppable_leaf: |MovePathIndex|) {
+        //! Here we normalize a path so that it is unraveled to its
+        //! consituent droppable pieces that might be independently
+        //! handled by the function being compiled: e.g. `s.a.j`
+        //! unravels to `{ s.a.j.x, s.a.j.y, s.a.j.z }` (assuming the
+        //! function never moves out any part of those unraveled
+        //! elements).
+        //!
+        //! Note that the callback is only invoked on unraveled leaves
+        //! that also need to be dropped.
+
+        if !self.needs_drop(tcx, root) {
+            return;
+        }
+
+        if self.path_is_leaf(root) {
+            found_droppable_leaf(root);
+            return;
+        }
+
+        let mut stack = vec![];
+        stack.push(root);
+        loop {
+            let top = match stack.pop() { None => break, Some(elem) => elem };
+            assert!(self.needs_drop(tcx, top));
+            assert!(!self.path_is_leaf(top));
+            let mut child = self.path_first_child(top);
+            while child != InvalidMovePathIndex {
+                if self.needs_drop(tcx, child) {
+                    if self.path_is_leaf(child) {
+                        found_droppable_leaf(child);
+                    } else {
+                        stack.push(child);
+                    }
+                }
+
+                child = self.path_next_sibling(child);
+            }
+        }
+    }
+
     fn add_drop_obligations(&self,
                             tcx: &ty::ctxt,
                             assignment: &Assignment,
                             dfcx_needs_drop: &mut NeedsDropDataFlow) {
-        if ty::type_needs_drop(tcx, assignment.ty(tcx)) {
-            dfcx_needs_drop.add_gen(assignment.id, assignment.path.get());
-        }
+        let add_gen = |move_path_index| {
+            debug!("add_drop_obligations(assignment={}) adds {}",
+                   assignment.to_string(self, tcx),
+                   self.path_loan_path(move_path_index).repr(tcx));
+            dfcx_needs_drop.add_gen(assignment.id, move_path_index.get());
+        };
+
+        self.for_each_droppable_leaf(tcx, assignment.path, add_gen);
     }
 
-    fn remove_drop_obligation<A:RemoveNeedsDropArg>(&self,
-                                                    a: A,
-                                                    dfcx_needs_drop: &mut NeedsDropDataFlow) {
-        // Kill path and all of its sub-paths.
-        // Lets assume we had a pre-existing drop obligation ND = { s.a, s2 },
-        // where:
-        // ```
-        // struct S { a: A, b: B, c: C }
-        // struct A { i: I, j: J, k: K }
-        // struct J { x: X, y: Y, z: Z }
-        // and s : S (and s2 : S as well).
-        //
-        // Moving `s.a.j.x` implies that:
-        // * We no longer have a drop-obligation for s.a in its entirety: ND' := ND \ { s.a }
-        // * We now do have drop-obligations for the portions of `s.a` that were not moved:
-        //   ND' := ND + { s.a.i, s.a.k }
-        // * Likewise, we also have drop-obligations for the portions of `s.a.j` that were
-        //   not moved:
-        //   ND' := ND + { s.a.j.y, s.a.j.z }
-        //
-        // Altogether, the above modifications accumulate to:
-        // ND' := ND \ { s.a } + { s.a.i, s.a.j.y, s.a.j.z, s.a.k }
-        //
-        // To simplify constructions like the above let us define taking the derivative
-        // of a path P with respect to an appropriate subpath suffix S: d/d{S}(P)
-        //
-        // So for example, d/d{.j.x}(s.a) := { s.a.i, s.a.j.y, s.a.j.z, s.a.k }
-        //
-        // TODO: Write definition of d/d{S}(P), presumably by induction on suffix S.
-        //
-        // For d/d{.j.x}(s.a), S = .j.x and P = s.a:
-        //
-        // 1. P_0 = s.a      : remove obligation s.a, if present
-        //
-        // 2. P_1 = s.a.j    : assert obligation s.a.j not present; add
-        //                     all needs-drop fields of s.a, then remove s.a.j.
-        // 3. P_2 = s.a.j.x  : assert obligation s.a.j.x not present; add
-        //                     all needs-drop fields of s.a.j, then remove s.a.j.x.
+    fn remove_drop_obligations<A:RemoveNeedsDropArg>(&self,
+                                                     tcx: &ty::ctxt,
+                                                     a: A,
+                                                     dfcx_needs_drop: &mut NeedsDropDataFlow) {
+        //! Kill path and all of its sub-paths.
+        //! Adds fragment-siblings of path as necessary.
 
         let id = a.node_id_removing_obligation();
-        let path = a.path_being_moved();
-        dfcx_needs_drop.add_kill(id, path.get());
+        let path : MovePathIndex = a.path_being_moved();
+
+        let add_kill = |move_path_index| {
+            debug!("remove_drop_obligations(id={}) removes {}",
+                   id, self.path_loan_path(move_path_index).repr(tcx));
+
+            dfcx_needs_drop.add_kill(id, move_path_index.get());
+        };
+
+        self.for_each_droppable_leaf(tcx, path, add_kill);
     }
 }
 
