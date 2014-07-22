@@ -17,6 +17,7 @@ use syntax::ast;
 use syntax::ast_util;
 use util::nodemap::NodeMap;
 
+use std::collections::bitv::Bitv;
 use std::gc::Gc;
 
 struct CFGBuilder<'a> {
@@ -55,10 +56,36 @@ pub fn construct(tcx: &ty::ctxt,
     block_exit = cfg_builder.block(blk, entry);
     cfg_builder.add_contained_edge(block_exit, fn_exit);
     let CFGBuilder {exit_map, graph, ..} = cfg_builder;
+
+    let mut reachable = Bitv::with_capacity(graph.all_nodes().len(), false);
+    mark_reachable(&graph, entry, &mut reachable);
     CFG {exit_map: exit_map,
          graph: graph,
          entry: entry,
-         exit: fn_exit}
+         exit: fn_exit,
+         reachable: reachable}
+}
+
+fn mark_reachable(graph: &CFGGraph,
+                  entry: CFGIndex,
+                  reachable: &mut Bitv) {
+    let mut stack = vec![];
+    stack.push(entry);
+    loop {
+        let n = match stack.pop() {
+            None => return,
+            Some(n) => n,
+        };
+
+        reachable.set(n.node_id(), true);
+        graph.each_outgoing_edge(n, |_edge_index, edge| {
+            let target = edge.target();
+            if !reachable.get(target.node_id()) {
+                stack.push(target);
+            }
+            true
+        });
+    }
 }
 
 fn add_initial_dummy_node(g: &mut CFGGraph) -> CFGIndex {

@@ -20,6 +20,8 @@ use middle::ty;
 use syntax::ast;
 use util::nodemap::NodeMap;
 
+use std::collections::bitv::Bitv;
+
 mod construct;
 pub mod graphviz;
 
@@ -28,6 +30,7 @@ pub struct CFG {
     pub graph: CFGGraph,
     pub entry: CFGIndex,
     pub exit: CFGIndex,
+    pub reachable: Bitv,
 }
 
 pub struct CFGNodeData {
@@ -50,5 +53,9 @@ impl CFG {
     pub fn new(tcx: &ty::ctxt,
                blk: &ast::Block) -> CFG {
         construct::construct(tcx, blk)
+    }
+
+    pub fn is_reachable(&self, cfg_index: CFGIndex) -> bool {
+        self.reachable.get(cfg_index.node_id())
     }
 }
