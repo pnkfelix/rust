@@ -40,6 +40,12 @@ pub fn check_drops(bccx: &BorrowckCtxt,
             return true;
         }
 
+        // Do not bother doing the query for unreachable portions of
+        // the control flow graph.
+        if !cfg.is_reachable(node_index) {
+            return true;
+        }
+
         // First, figure out if there is >1 incoming edge.
         {
             let mut how_many = 0u;
@@ -84,10 +90,12 @@ pub fn check_drops(bccx: &BorrowckCtxt,
             for u in temp.mut_iter() { *u = -1 as uint; }
             cfg.graph.each_incoming_edge(node_index, |_edge_index, edge| {
                 let source = edge.source();
-                needs_drop.apply_op(dataflow::Exit,
-                                    source,
-                                    temp.as_mut_slice(),
-                                    dataflow::Intersect);
+                if cfg.is_reachable(source) {
+                    needs_drop.apply_op(dataflow::Exit,
+                                        source,
+                                        temp.as_mut_slice(),
+                                        dataflow::Intersect);
+                }
                 true
             });
             temp
@@ -100,7 +108,8 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                 let source_id = cfg.graph.node(source).data.id;
                 let opt_source_span = bccx.tcx.map.opt_span(source_id);
                 needs_drop.each_bit_for_node(dataflow::Exit, source, |bit_idx| {
-                    if dataflow::is_bit_set(intersection.as_slice(), bit_idx) {
+                    if !cfg.is_reachable(source) ||
+                        dataflow::is_bit_set(intersection.as_slice(), bit_idx) {
                         return true;
                     }
 
@@ -128,6 +137,10 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                     }
                     cfg.graph.each_incoming_edge(node_index, |edge_index, edge| {
                         let source2 = edge.source();
+                        if !cfg.is_reachable(source2) {
+                            return true;
+                        }
+
                         let temp2 = needs_drop.bitset_for(dataflow::Exit, source2);
                         let mut count = 0u;
                         if !dataflow::is_bit_set(temp2.as_slice(), bit_idx) {
