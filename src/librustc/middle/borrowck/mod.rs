@@ -286,25 +286,37 @@ pub enum LoanPath {
 
 impl LoanPath {
     fn to_type(&self, tcx: &ty::ctxt) -> ty::t {
-        match *self {
+        let opt_ty = match *self {
             LpUpvar(ty::UpvarId { var_id: id, closure_expr_id: _ }) |
-            LpVar(id) => ty::node_id_to_type_opt(tcx, id).unwrap(),
+            LpVar(id) => ty::node_id_to_type_opt(tcx, id),
 
             LpExtend(ref lp, _mc, ref loan_path_elem) => {
                 let t = lp.to_type(tcx);
                 match *loan_path_elem {
                     LpDeref(_pointer_kind) =>
-                        // (claiming deref is explicit)
-                        ty::deref(t, true).unwrap().ty,
+                        // (claiming explicit deref, under the
+                        // assumption that it is the correct choice
+                        // here, or at least the most conservative.)
+                        ty::deref(t, true).map(|mt|mt.ty),
                     LpInterior(mc::InteriorElement(_element_kind)) =>
-                        ty::array_element_ty(t).unwrap().ty,
+                        ty::array_element_ty(t).map(|mt|mt.ty),
                     LpInterior(mc::InteriorField(mc::NamedField(field_name))) =>
-                        ty::named_element_ty(tcx, t, field_name).unwrap(),
+                        ty::named_element_ty(tcx, t, field_name),
                     LpInterior(mc::InteriorField(mc::PositionalField(tuple_idx))) =>
-                        ty::positional_element_ty(tcx, t, tuple_idx).unwrap(),
+                        ty::positional_element_ty(tcx, t, tuple_idx),
                 }
             }
-        }
+        };
+
+        opt_ty.unwrap_or_else(|| {
+            let id = self.kill_scope(tcx);
+            let msg = format!("no type found for lp={:s}", self.repr(tcx));
+            let opt_span = tcx.map.opt_span(id);
+            match opt_span {
+                Some(s) => tcx.sess.span_bug(s, msg.as_slice()),
+                None => tcx.sess.bug(msg.as_slice()),
+            }
+        })
     }
 }
 
