@@ -97,7 +97,8 @@ pub fn check_drops(bccx: &BorrowckCtxt,
             let source = edge.source();
             let temp = needs_drop.bitset_for(dataflow::Exit, source);
             if temp != intersection {
-                let source_span = ty::expr_span(bccx.tcx, cfg.graph.node(source).data.id);
+                let source_id = cfg.graph.node(source).data.id;
+                let opt_source_span = bccx.tcx.map.opt_span(source_id);
                 needs_drop.each_bit_for_node(dataflow::Exit, source, |bit_idx| {
                     if dataflow::is_bit_set(intersection.as_slice(), bit_idx) {
                         return true;
@@ -108,24 +109,44 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                     let lp = &path.loan_path;
                     let loan_path_str = bccx.loan_path_to_string(lp.deref());
 
-                    bccx.tcx.sess.span_warn(
-                        source_span,
-                        format!("Storage at {:s} is left initialized here, but \
-                                 uninitialized on other control flow paths.",
-                                loan_path_str).as_slice());
+                    let cfgidx_and_id = format!(" (cfgidx={}, id={})", source, source_id);
+                    let where = if bccx.tcx.sess.verbose() {
+                        cfgidx_and_id.as_slice()
+                    } else {
+                        ""
+                    };
 
+                    let msg = format!("Storage at {:s} is left initialized here{:s}, \
+                                       but uninitialized on other control flow paths. \
+                                       (Consider either calling `drop()` on it here, \
+                                       or reinitializing it on the other paths)",
+                                      loan_path_str, where);
+
+                    match opt_source_span {
+                        Some(span) => bccx.tcx.sess.span_warn(span, msg.as_slice()),
+                        None => bccx.tcx.sess.warn(msg.as_slice()),
+                    }
                     cfg.graph.each_incoming_edge(node_index, |edge_index, edge| {
                         let source2 = edge.source();
                         let temp2 = needs_drop.bitset_for(dataflow::Exit, source2);
                         let mut count = 0u;
-                        if dataflow::is_bit_set(temp2.as_slice(), bit_idx) {
+                        if !dataflow::is_bit_set(temp2.as_slice(), bit_idx) {
                             count += 1;
-                            let source2_span = ty::expr_span(bccx.tcx,
-                                                             cfg.graph.node(source2).data.id);
-                            bccx.tcx.sess.span_note(
-                                source2_span,
-                                format!("This is path {} that leaves {:s} uninitialized.",
-                                        count, loan_path_str).as_slice())
+                            let source2_id = cfg.graph.node(source2).data.id;
+                            let opt_source2_span = bccx.tcx.map.opt_span(source2_id);
+                            let cfgidx_and_id = format!(" (cfgidx={}, id={})",
+                                                        source2, source2_id);
+                            let where = if bccx.tcx.sess.verbose() {
+                                cfgidx_and_id.as_slice()
+                            } else {
+                                ""
+                            };
+                            let msg = format!("Path {:u} here{:s} leaves {:s} uninitialized.",
+                                              count, where, loan_path_str);
+                            match opt_source2_span {
+                                Some(span) => bccx.tcx.sess.span_note(span, msg.as_slice()),
+                                None => bccx.tcx.sess.note(msg.as_slice()),
+                            }
                         }
                         true
                     });
