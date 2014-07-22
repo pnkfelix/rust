@@ -116,7 +116,7 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                         ""
                     };
 
-                    let msg = format!("Storage at {:s} is left initialized here{:s}, \
+                    let msg = format!("Storage at `{:s}` is left initialized here{:s}, \
                                        but uninitialized on other control flow paths. \
                                        (Consider either calling `drop()` on it here, \
                                        or reinitializing it on the other paths)",
@@ -141,7 +141,8 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                             } else {
                                 ""
                             };
-                            let msg = format!("Path {:u} here{:s} leaves {:s} uninitialized.",
+                            let msg = format!("Path {:u} here{:s} leaves `{:s}` \
+                                               uninitialized.",
                                               count, where, loan_path_str);
                             match opt_source2_span {
                                 Some(span) => bccx.tcx.sess.span_note(span, msg.as_slice()),

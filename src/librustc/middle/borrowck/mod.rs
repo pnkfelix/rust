@@ -286,29 +286,45 @@ pub enum LoanPath {
 
 impl LoanPath {
     fn to_type(&self, tcx: &ty::ctxt) -> ty::t {
+        use Element = middle::mem_categorization::InteriorElement;
+        use Field = middle::mem_categorization::InteriorField;
+
+        debug!("lp.to_type() for lp={:s}", self.repr(tcx));
         let opt_ty = match *self {
             LpUpvar(ty::UpvarId { var_id: id, closure_expr_id: _ }) |
             LpVar(id) => ty::node_id_to_type_opt(tcx, id),
 
             LpExtend(ref lp, _mc, ref loan_path_elem) => {
                 let t = lp.to_type(tcx);
-                match *loan_path_elem {
-                    LpDeref(_pointer_kind) =>
-                        // (claiming explicit deref, under the
-                        // assumption that it is the correct choice
-                        // here, or at least the most conservative.)
-                        ty::deref(t, true).map(|mt|mt.ty),
-                    LpInterior(mc::InteriorElement(_element_kind)) =>
-                        ty::array_element_ty(t).map(|mt|mt.ty),
-                    LpInterior(mc::InteriorField(mc::NamedField(field_name))) =>
-                        ty::named_element_ty(tcx, t, field_name),
-                    LpInterior(mc::InteriorField(mc::PositionalField(tuple_idx))) =>
-                        ty::positional_element_ty(tcx, t, tuple_idx),
+                let t_sty = &ty::get(t).sty;
+                match (loan_path_elem, t_sty) {
+                    (&LpDeref(_), &ty::ty_ptr(ty::mt{ty: t, ..})) |
+                    (&LpDeref(_), &ty::ty_rptr(_, ty::mt{ty: t, ..})) |
+                    (&LpDeref(_), &ty::ty_box(t)) |
+                    (&LpDeref(_), &ty::ty_uniq(t)) => Some(t),
+
+                    (&LpInterior(Field(mc::NamedField(ast_name))),
+                     _) => ty::named_element_ty(tcx, t, ast_name),
+
+                    (&LpInterior(Field(mc::PositionalField(idx))),
+                     _) => ty::positional_element_ty(tcx, t, idx),
+
+                    // (Deliberately not using ty::array_element_ty
+                    // here, because that assumes r-value context and
+                    // returns deref'ed elem type, but loan structure
+                    // separates element-access from deref.)
+                    (&LpInterior(Element(_)), &ty::ty_str) =>
+                        Some(ty::mk_ptr(tcx, ty::mt{ty: ty::mk_u8(),
+                                                    mutbl: ast::MutImmutable})),
+                    (&LpInterior(Element(_)), &ty::ty_vec(mt, _len)) =>
+                        Some(ty::mk_ptr(tcx, mt)),
+
+                    _ => None,
                 }
             }
         };
 
-        opt_ty.unwrap_or_else(|| {
+        let t = opt_ty.unwrap_or_else(|| {
             let id = self.kill_scope(tcx);
             let msg = format!("no type found for lp={:s}", self.repr(tcx));
             let opt_span = tcx.map.opt_span(id);
@@ -316,7 +332,10 @@ impl LoanPath {
                 Some(s) => tcx.sess.span_bug(s, msg.as_slice()),
                 None => tcx.sess.bug(msg.as_slice()),
             }
-        })
+        });
+        debug!("lp.to_type() for lp={:s} returns t={:s}",
+               self.repr(tcx), t.repr(tcx));
+        t
     }
 }
 
