@@ -279,9 +279,10 @@ impl Loan {
 
 #[deriving(PartialEq, Eq, Hash)]
 pub enum LoanPath {
-    LpVar(ast::NodeId),               // `x` in doc.rs
-    LpUpvar(ty::UpvarId),             // `x` captured by-value into closure
-    LpExtend(Rc<LoanPath>, mc::MutabilityCategory, LoanPathElem)
+    LpVar(ast::NodeId),                   // `x` in doc.rs
+    LpUpvar(ty::UpvarId),                 // `x` captured by-value into closure
+    LpDowncast(Rc<LoanPath>, ast::DefId), // `x` downcast to particular enum variant
+    LpExtend(Rc<LoanPath>, mc::MutabilityCategory, LoanPathElem),
 }
 
 impl LoanPath {
@@ -294,9 +295,22 @@ impl LoanPath {
             LpUpvar(ty::UpvarId { var_id: id, closure_expr_id: _ }) |
             LpVar(id) => ty::node_id_to_type_opt(tcx, id),
 
+            // treat the downcasted enum as having the enum's type;
+            // extracting the particular types within the variant is
+            // handled by `LpExtend` cases.
+            LpDowncast(ref lp, _variant_did) => Some(lp.to_type(tcx)),
+
             LpExtend(ref lp, _mc, ref loan_path_elem) => {
+                let (opt_variant_did, lp) = match **lp {
+                    LpDowncast(ref sub_lp, variant_did) =>
+                        (Some(variant_did), sub_lp),
+                    LpVar(..) | LpUpvar(..) | LpExtend(..) =>
+                        (None, lp)
+                };
+
                 let t = lp.to_type(tcx);
                 let t_sty = &ty::get(t).sty;
+
                 match (loan_path_elem, t_sty) {
                     (&LpDeref(_), &ty::ty_ptr(ty::mt{ty: t, ..})) |
                     (&LpDeref(_), &ty::ty_rptr(_, ty::mt{ty: t, ..})) |
@@ -304,10 +318,10 @@ impl LoanPath {
                     (&LpDeref(_), &ty::ty_uniq(t)) => Some(t),
 
                     (&LpInterior(Field(mc::NamedField(ast_name))),
-                     _) => ty::named_element_ty(tcx, t, ast_name),
+                     _) => ty::named_element_ty(tcx, t, ast_name, opt_variant_did),
 
                     (&LpInterior(Field(mc::PositionalField(idx))),
-                     _) => ty::positional_element_ty(tcx, t, idx),
+                     _) => ty::positional_element_ty(tcx, t, idx, opt_variant_did),
 
                     // (Deliberately not using ty::array_element_ty
                     // here, because that assumes r-value context and
@@ -323,7 +337,6 @@ impl LoanPath {
                 }
             }
         };
-
         let t = opt_ty.unwrap_or_else(|| {
             let id = self.kill_scope(tcx);
             let msg = format!("no type found for lp={:s}", self.repr(tcx));
@@ -343,6 +356,13 @@ impl LoanPath {
 pub enum LoanPathElem {
     LpDeref(mc::PointerKind),    // `*LV` in doc.rs
     LpInterior(mc::InteriorKind) // `LV.f` in doc.rs
+    // LpInterior(mc::InteriorKind, Box<InteriorInfo>) // `LV.f` in doc.rs
+}
+
+pub enum InteriorInfo {
+    StructInterior(ty::t),
+    TupleIndexInterior(Vec<ty::t>),
+    EnumVariantInterior(ty::VariantInfo),
 }
 
 pub fn closure_to_block(closure_id: ast::NodeId,
@@ -363,19 +383,22 @@ impl LoanPath {
             LpVar(local_id) => tcx.region_maps.var_scope(local_id),
             LpUpvar(upvar_id) =>
                 closure_to_block(upvar_id.closure_expr_id, tcx),
+            LpDowncast(ref base, _) |
             LpExtend(ref base, _, _) => base.kill_scope(tcx),
         }
     }
 }
 
-pub fn opt_loan_path(cmt: &mc::cmt) -> Option<Rc<LoanPath>> {
+pub fn opt_loan_path(cmt: &mc::cmt, tcx: &ty::ctxt) -> Option<Rc<LoanPath>> {
     //! Computes the `LoanPath` (if any) for a `cmt`.
     //! Note that this logic is somewhat duplicated in
     //! the method `compute()` found in `gather_loans::restrictions`,
     //! which allows it to share common loan path pieces as it
     //! traverses the CMT.
 
-    match cmt.cat {
+    debug!("opt_loan_path(cmt={})", cmt.repr(tcx));
+
+    let ret = match cmt.cat {
         mc::cat_rvalue(..) |
         mc::cat_static_item |
         mc::cat_copied_upvar(mc::CopiedUpvar { onceness: ast::Many, .. }) => {
@@ -396,22 +419,37 @@ pub fn opt_loan_path(cmt: &mc::cmt) -> Option<Rc<LoanPath>> {
         }
 
         mc::cat_deref(ref cmt_base, _, pk) => {
-            opt_loan_path(cmt_base).map(|lp| {
-                Rc::new(LpExtend(lp, cmt.mutbl, LpDeref(pk)))
+            opt_loan_path(cmt_base, tcx).map(|lp| {
+                let lp : LoanPath =
+                    LpExtend(lp, cmt.mutbl, LpDeref(pk)); 
+                Rc::new(lp)
             })
         }
 
         mc::cat_interior(ref cmt_base, ik) => {
-            opt_loan_path(cmt_base).map(|lp| {
-                Rc::new(LpExtend(lp, cmt.mutbl, LpInterior(ik)))
+            opt_loan_path(cmt_base, tcx).map(|lp| {
+                let lp : LoanPath =
+                    LpExtend(lp, cmt.mutbl, LpInterior(ik));
+                Rc::new(lp)
             })
         }
 
-        mc::cat_downcast(ref cmt_base) |
-        mc::cat_discr(ref cmt_base, _) => {
-            opt_loan_path(cmt_base)
-        }
-    }
+        mc::cat_downcast(ref cmt_base, variant_def_id) =>
+            opt_loan_path(cmt_base, tcx)
+            .map(|lp| {
+                debug!("opt_loan_path cat_downcast \
+                        cmt.ty={} ({:?}) \
+                        cmt_base.ty={} ({:?})",
+                       cmt.ty.repr(tcx), cmt.ty,
+                       cmt_base.ty.repr(tcx), cmt_base.ty);
+                Rc::new(LpDowncast(lp, variant_def_id))
+            }),
+        mc::cat_discr(ref cmt_base, _) => opt_loan_path(cmt_base, tcx),
+    };
+
+    debug!("opt_loan_path(cmt={}) => {}", cmt.repr(tcx), ret.repr(tcx));
+
+    ret
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -669,7 +707,7 @@ impl<'a> BorrowckCtxt<'a> {
     pub fn bckerr_to_string(&self, err: &BckError) -> String {
         match err.code {
             err_mutbl => {
-                let descr = match opt_loan_path(&err.cmt) {
+                let descr = match opt_loan_path(&err.cmt, self.tcx) {
                     None => {
                         format!("{} {}",
                                 err.cmt.mutbl.to_user_str(),
@@ -701,7 +739,7 @@ impl<'a> BorrowckCtxt<'a> {
                 }
             }
             err_out_of_scope(..) => {
-                let msg = match opt_loan_path(&err.cmt) {
+                let msg = match opt_loan_path(&err.cmt, self.tcx) {
                     None => "borrowed value".to_string(),
                     Some(lp) => {
                         format!("`{}`", self.loan_path_to_string(&*lp))
@@ -710,7 +748,7 @@ impl<'a> BorrowckCtxt<'a> {
                 format!("{} does not live long enough", msg)
             }
             err_borrowed_pointer_too_short(..) => {
-                let descr = match opt_loan_path(&err.cmt) {
+                let descr = match opt_loan_path(&err.cmt, self.tcx) {
                     Some(lp) => {
                         format!("`{}`", self.loan_path_to_string(&*lp))
                     }
@@ -808,7 +846,7 @@ impl<'a> BorrowckCtxt<'a> {
             }
 
             err_borrowed_pointer_too_short(loan_scope, ptr_scope) => {
-                let descr = match opt_loan_path(&err.cmt) {
+                let descr = match opt_loan_path(&err.cmt, self.tcx) {
                     Some(lp) => {
                         format!("`{}`", self.loan_path_to_string(&*lp))
                     }
@@ -836,6 +874,11 @@ impl<'a> BorrowckCtxt<'a> {
             LpUpvar(ty::UpvarId{ var_id: id, closure_expr_id: _ }) |
             LpVar(id) => {
                 out.push_str(ty::local_var_name_str(self.tcx, id).get());
+            }
+
+            LpDowncast(ref lp_base, _) => {
+                // FIXME: perhaps extend notation with variant tag notation?
+                self.append_loan_path_to_string(&**lp_base, out)
             }
 
             LpExtend(ref lp_base, _, LpInterior(mc::InteriorField(fname))) => {
@@ -868,6 +911,11 @@ impl<'a> BorrowckCtxt<'a> {
                                               loan_path: &LoanPath,
                                               out: &mut String) {
         match *loan_path {
+            // FIXME: perhaps extend notation with variant tag notation?
+            LpDowncast(ref lp_base, _) => {
+                self.append_autoderefd_loan_path_to_string(&**lp_base, out)
+            }
+
             LpExtend(ref lp_base, _, LpDeref(_)) => {
                 // For a path like `(*x).f` or `(*x)[3]`, autoderef
                 // rules would normally allow users to omit the `*x`.
@@ -948,6 +996,10 @@ impl Repr for LoanPath {
 
             &LpExtend(ref lp, _, LpInterior(ref interior)) => {
                 format!("{}.{}", lp.repr(tcx), interior.repr(tcx))
+            }
+
+            &LpDowncast(ref lp, variant_def_id) => {
+                format!("({} as {})", lp.repr(tcx), variant_def_id.repr(tcx))
             }
         }
     }

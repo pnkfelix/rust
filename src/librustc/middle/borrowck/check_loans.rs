@@ -72,7 +72,7 @@ impl<'a> euv::Delegate for CheckLoanCtxt<'a> {
                borrow_id, cmt.repr(self.tcx()), loan_region,
                bk, loan_cause);
 
-        match opt_loan_path(&cmt) {
+        match opt_loan_path(&cmt, self.tcx()) {
             Some(lp) => {
                 let moved_value_use_kind = match loan_cause {
                     euv::ClosureCapture(_) => MovedInCapture,
@@ -95,7 +95,7 @@ impl<'a> euv::Delegate for CheckLoanCtxt<'a> {
         debug!("mutate(assignment_id={}, assignee_cmt={})",
                assignment_id, assignee_cmt.repr(self.tcx()));
 
-        match opt_loan_path(&assignee_cmt) {
+        match opt_loan_path(&assignee_cmt, self.tcx()) {
             Some(lp) => {
                 match mode {
                     euv::Init | euv::JustWrite => {
@@ -244,6 +244,10 @@ impl<'a> CheckLoanCtxt<'a> {
             match *loan_path {
                 LpVar(_) | LpUpvar(_) => {
                     break;
+                }
+                LpDowncast(ref lp_base, _) => {
+                    loan_path = &**lp_base;
+                    continue;
                 }
                 LpExtend(ref lp_base, _, _) => {
                     loan_path = &**lp_base;
@@ -473,7 +477,7 @@ impl<'a> CheckLoanCtxt<'a> {
                       span: Span,
                       cmt: mc::cmt,
                       mode: euv::ConsumeMode) {
-        match opt_loan_path(&cmt) {
+        match opt_loan_path(&cmt, self.tcx()) {
             Some(lp) => {
                 let moved_value_use_kind = match mode {
                     euv::Copy => {
@@ -636,6 +640,10 @@ impl<'a> CheckLoanCtxt<'a> {
             LpVar(_) | LpUpvar(_) => {
                 // assigning to `x` does not require that `x` is initialized
             }
+            LpDowncast(ref lp_base, _) => {
+                self.check_if_assigned_path_is_moved(id, span,
+                                                     use_kind, lp_base);
+            }
             LpExtend(ref lp_base, _, LpInterior(_)) => {
                 // assigning to `P.f` is ok if assigning to `P` is ok
                 self.check_if_assigned_path_is_moved(id, span,
@@ -678,7 +686,7 @@ impl<'a> CheckLoanCtxt<'a> {
         // if they cannot already have been assigned
         if self.is_local_variable_or_arg(assignee_cmt.clone()) {
             assert!(assignee_cmt.mutbl.is_immutable()); // no "const" locals
-            let lp = opt_loan_path(&assignee_cmt).unwrap();
+            let lp = opt_loan_path(&assignee_cmt, self.tcx()).unwrap();
             self.move_data.each_assignment_of(assignment_id, &lp, |assign| {
                 self.bccx.report_reassigned_immutable_variable(
                     assignment_span,
@@ -690,7 +698,7 @@ impl<'a> CheckLoanCtxt<'a> {
         }
 
         // Otherwise, just a plain error.
-        match opt_loan_path(&assignee_cmt) {
+        match opt_loan_path(&assignee_cmt, self.tcx()) {
             Some(lp) => {
                 self.bccx.span_err(
                     assignment_span,
@@ -752,7 +760,7 @@ impl<'a> CheckLoanCtxt<'a> {
                         cmt = b;
                     }
 
-                    mc::cat_downcast(b) |
+                    mc::cat_downcast(b, _) |
                     mc::cat_interior(b, _) => {
                         assert_eq!(cmt.mutbl, mc::McInherited);
                         cmt = b;
@@ -812,7 +820,7 @@ impl<'a> CheckLoanCtxt<'a> {
             //! Check for assignments that violate the terms of an
             //! outstanding loan.
 
-            let loan_path = match opt_loan_path(&assignee_cmt) {
+            let loan_path = match opt_loan_path(&assignee_cmt, this.tcx()) {
                 Some(lp) => lp,
                 None => { return; /* no loan path, can't be any loans */ }
             };

@@ -84,7 +84,7 @@ impl<'a> RestrictionsContext<'a> {
                 Safe
             }
 
-            mc::cat_downcast(cmt_base) => {
+            mc::cat_downcast(cmt_base, _) => {
                 // When we borrow the interior of an enum, we have to
                 // ensure the enum itself is not mutated, because that
                 // could cause the type of the memory to change.
