@@ -192,6 +192,9 @@ fn loan_path_is_precise(loan_path: &LoanPath) -> bool {
         LpExtend(ref lp_base, _, _) => {
             loan_path_is_precise(&**lp_base)
         }
+        LpDowncast(ref lp_base, _) => {
+            loan_path_is_precise(&**lp_base)
+        }
     }
 }
 
@@ -328,6 +331,10 @@ impl MoveData {
         }
 
         let index = match *lp {
+            LpDowncast(ref base, _) => {
+                return self.move_path(tcx, base.clone());
+            }
+
             LpVar(..) | LpUpvar(..) => {
                 let index = MovePathIndex(self.paths.borrow().len());
 
@@ -400,6 +407,9 @@ impl MoveData {
             None => {
                 match **lp {
                     LpVar(..) | LpUpvar(..) => { }
+                    LpDowncast(ref b, _) => {
+                        self.add_existing_base_paths(b, result);
+                    }
                     LpExtend(ref b, _, _) => {
                         self.add_existing_base_paths(b, result);
                     }
@@ -439,7 +449,7 @@ impl MoveData {
             next_move: next_move
         });
 
-        self.add_fragment_siblings(tcx, lp);
+        self.add_fragment_siblings(tcx, lp, id);
     }
 
     pub fn add_assignment(&self,
@@ -460,7 +470,7 @@ impl MoveData {
         let path_index = self.move_path(tcx, lp.clone());
 
         self.nonfragments.borrow_mut().push(path_index);
-        
+
         match mode {
             euv::Init | euv::JustWrite => {
                 self.assignee_ids.borrow_mut().insert(assignee_id);
@@ -489,16 +499,20 @@ impl MoveData {
 
     fn add_fragment_siblings(&self,
                              tcx: &ty::ctxt,
-                             lp: Rc<LoanPath>) {
+                             lp: Rc<LoanPath>,
+                             origin_id: ast::NodeId) {
         /*! Adds all of the precisely-tracked siblings of `lp` as
          * potential move paths of interest. For example, if `lp`
          * represents `s.x.j`, then adds moves paths for `s.x.i` and
          * `s.x.k`, the siblings of `s.x.j`.
          */
-        debug!("add_fragment_siblings(lp={})", lp.repr(tcx));
+        debug!("add_fragment_siblings(lp={}, origin_id={})",
+               lp.repr(tcx), origin_id);
 
         match *lp {
             LpVar(_) | LpUpvar(_) => {} // Local variables have no siblings.
+
+            LpDowncast(..) => {} // an enum variant (on its own) has no siblings.
 
             // *LV for OwnedPtr itself has no siblings, but we might need
             // to propagate inward.  Not sure.
@@ -512,53 +526,114 @@ impl MoveData {
 
             // field access LV.x and tuple access LV#k are the cases
             // we are interested in
-            LpExtend(ref parent, mc,
-                     LpInterior(mc::InteriorField(ref field_name))) =>
+            LpExtend(ref loan_parent, mc,
+                     LpInterior(mc::InteriorField(ref field_name))) => {
+                let enum_variant_info = match **loan_parent {
+                    LpDowncast(ref loan_parent_2, variant_def_id) =>
+                        Some((variant_def_id, loan_parent_2.clone())),
+                    LpExtend(..) | LpVar(..) | LpUpvar(..) =>
+                        None,
+                };
                 self.add_fragment_siblings_for_extension(
-                    tcx, parent, mc, field_name, &lp),
+                    tcx, loan_parent, mc, field_name, &lp, origin_id, enum_variant_info);
+            }
         }
     }
 
     fn add_fragment_siblings_for_extension(&self,
                                            tcx: &ty::ctxt,
-                                           parent: &Rc<LoanPath>,
+                                           parent_lp: &Rc<LoanPath>,
                                            mc: mc::MutabilityCategory,
                                            origin_field_name: &mc::FieldName,
-                                           origin_lp: &Rc<LoanPath>) {
+                                           origin_lp: &Rc<LoanPath>,
+                                           _origin_id: ast::NodeId,
+                                           enum_variant_info: Option<(ast::DefId, Rc<LoanPath>)>) {
         /*! We have determined that `origin_lp` destructures to
          * LpExtend(parent, original_field_name). Based on this,
          * add move paths for all of the siblings of `origin_lp`.
          */
-        let parent_ty = parent.to_type(tcx);
+        let parent_ty = parent_lp.to_type(tcx);
 
-        match *origin_field_name {
-            mc::NamedField(ast_name) => {
-                let parent_def_id = match ty::get(parent_ty).sty {
-                    ty::ty_struct(def_id, ref _substs) |
-                    ty::ty_enum(def_id, ref _substs) => def_id,
-                    _ => fail!("type shouldn't have named fields"),
+        let add_fragment_sibling = |field_name, _field_type| {
+            self.add_fragment_sibling(
+                tcx, parent_lp.clone(), mc, field_name, origin_lp);
+        };
+
+        match (&ty::get(parent_ty).sty, enum_variant_info) {
+            (&ty::ty_tup(ref v), None) => {
+                let tuple_idx = match *origin_field_name {
+                    mc::PositionalField(tuple_idx) => tuple_idx,
+                    mc::NamedField(_) =>
+                        fail!("tuple type should not have named fields."),
                 };
-                let fields = ty::lookup_struct_fields(tcx, parent_def_id);
-                for f in fields.iter().filter(|field| field.name != ast_name) {
-                    self.add_fragment_sibling(
-                        tcx, parent.clone(), mc, mc::NamedField(f.name), origin_lp);
-                }
-            }
-            mc::PositionalField(tuple_idx) => {
-                let tuple_len = match ty::get(parent_ty).sty {
-                    ty::ty_tup(ref v) => v.len(),
-                    ty::ty_struct(def_id, ref _substs) =>
-                        ty::lookup_struct_fields(tcx, def_id).len(),
-                    ty::ty_enum(def_id, ref _substs) =>
-                        ty::lookup_struct_fields(tcx, def_id).len(),
-                    _ => fail!("type shouldn't have positional fields"),
-                };
+                let tuple_len = v.len();
                 for i in range(0, tuple_len) {
                     if i == tuple_idx { continue }
-                    self.add_fragment_sibling(
-                        tcx, parent.clone(), mc, mc::PositionalField(i), origin_lp);
+                    let field_type =
+                        // v[i];
+                        ();
+                    let field_name = mc::PositionalField(i);
+                    add_fragment_sibling(field_name, field_type);
                 }
             }
+
+            (&ty::ty_struct(def_id, ref _substs), None) => {
+                let fields = ty::lookup_struct_fields(tcx, def_id);
+                match *origin_field_name {
+                    mc::NamedField(ast_name) => {
+                        for f in fields.iter() {
+                            if f.name == ast_name {
+                                continue;
+                            }
+                            let field_name = mc::NamedField(f.name);
+                            let field_type = ();
+                            add_fragment_sibling(field_name, field_type);
+                        }
+                    }
+                    mc::PositionalField(tuple_idx) => {
+                        for (i, _f) in fields.iter().enumerate() {
+                            if i == tuple_idx {
+                                continue
+                            }
+                            let field_name = mc::PositionalField(i);
+                            let field_type = ();
+                            add_fragment_sibling(field_name, field_type);
+                        }
+                    }
+                }
+            }
+
+            (&ty::ty_enum(def_id, ref substs), Some((variant_def_id, ref _lp2))) => {
+                let variant_info = ty::enum_variant_with_id(tcx, def_id, variant_def_id);
+                match *origin_field_name {
+                    mc::NamedField(ast_name) => {
+                        let variant_arg_names = variant_info.arg_names.as_ref().unwrap();
+                        let variant_arg_types = &variant_info.args;
+                        for (variant_arg_ident, variant_arg_ty) in variant_arg_names.iter().zip(variant_arg_types.iter()) {
+                            if variant_arg_ident.name == ast_name {
+                                continue;
+                            }
+                            let field_name = mc::NamedField(variant_arg_ident.name);
+                            let field_type = ();
+                            add_fragment_sibling(field_name, field_type);
+                        }
+                    }
+                    mc::PositionalField(tuple_idx) => {
+                        let mut variant_arg_types = variant_info.args.iter();
+                        for (i, variant_arg_ty) in variant_arg_types.enumerate() {
+                            if tuple_idx == i {
+                                continue;
+                            }
+                            let field_name = mc::PositionalField(i);
+                            let field_type = ();
+                            add_fragment_sibling(field_name, field_type);
+                        }
+                    }
+                }
+            }
+
+            ref sty => fail!("type {} ({:?}) shouldn't have named fields",
+                             parent_ty.repr(tcx), sty),
         }
     }
 
@@ -572,7 +647,7 @@ impl MoveData {
          * of `origin_lp` (the original loan-path).
          */
         let loan_path_elem = LpInterior(mc::InteriorField(new_field_name));
-        let lp = LpExtend(parent, mc, loan_path_elem);
+        let lp : LoanPath = LpExtend(parent, mc, loan_path_elem);
         debug!("add_fragment_sibling(lp={}, origin_lp={})",
                lp.repr(tcx), origin_lp.repr(tcx));
         let mp = self.move_path(tcx, Rc::new(lp));
@@ -641,6 +716,7 @@ impl MoveData {
                     let rm = Removed { where: kill_id, what_path: move_path_index };
                     self.remove_drop_obligations(tcx, rm, dfcx_needs_drop);
                 }
+                LpDowncast(..) => {} // FIXME: is this right, or should this loop to top?
                 LpExtend(..) => {}
             }
         }
@@ -657,6 +733,7 @@ impl MoveData {
                     let kill_id = closure_to_block(closure_expr_id, tcx);
                     dfcx_assign.add_kill(kill_id, assignment_index);
                 }
+                LpDowncast(..) |
                 LpExtend(..) => {
                     tcx.sess.bug("var assignment for non var path");
                 }
@@ -800,16 +877,10 @@ impl MoveData {
     // The above comment should be revised/shortened to a succinct
     // summary.
 
-    fn needs_drop(&self, tcx: &ty::ctxt, move_path_index: MovePathIndex) -> bool {
-        //! Returns true iff move_path_index needs drop.
-        let path_type = self.path_loan_path(move_path_index).to_type(tcx);
-        ty::type_needs_drop(tcx, path_type)
-    }
-
-    fn for_each_droppable_leaf(&self,
-                               tcx: &ty::ctxt,
-                               root: MovePathIndex,
-                               found_droppable_leaf: |MovePathIndex|) {
+    fn for_each_leaf(&self,
+                     _tcx: &ty::ctxt,
+                     root: MovePathIndex,
+                     found_leaf: |MovePathIndex|) {
         //! Here we normalize a path so that it is unraveled to its
         //! consituent droppable pieces that might be independently
         //! handled by the function being compiled: e.g. `s.a.j`
@@ -820,12 +891,8 @@ impl MoveData {
         //! Note that the callback is only invoked on unraveled leaves
         //! that also need to be dropped.
 
-        if !self.needs_drop(tcx, root) {
-            return;
-        }
-
         if self.path_is_leaf(root) {
-            found_droppable_leaf(root);
+            found_leaf(root);
             return;
         }
 
@@ -833,16 +900,13 @@ impl MoveData {
         stack.push(root);
         loop {
             let top = match stack.pop() { None => break, Some(elem) => elem };
-            assert!(self.needs_drop(tcx, top));
             assert!(!self.path_is_leaf(top));
             let mut child = self.path_first_child(top);
             while child != InvalidMovePathIndex {
-                if self.needs_drop(tcx, child) {
-                    if self.path_is_leaf(child) {
-                        found_droppable_leaf(child);
-                    } else {
-                        stack.push(child);
-                    }
+                if self.path_is_leaf(child) {
+                    found_leaf(child);
+                } else {
+                    stack.push(child);
                 }
 
                 child = self.path_next_sibling(child);
@@ -861,7 +925,7 @@ impl MoveData {
             dfcx_needs_drop.add_gen(assignment.id, move_path_index.get());
         };
 
-        self.for_each_droppable_leaf(tcx, assignment.path, add_gen);
+        self.for_each_leaf(tcx, assignment.path, add_gen);
     }
 
     fn remove_drop_obligations<A:RemoveNeedsDropArg>(&self,
@@ -881,7 +945,7 @@ impl MoveData {
             dfcx_needs_drop.add_kill(id, move_path_index.get());
         };
 
-        self.for_each_droppable_leaf(tcx, path, add_kill);
+        self.for_each_leaf(tcx, path, add_kill);
     }
 }
 

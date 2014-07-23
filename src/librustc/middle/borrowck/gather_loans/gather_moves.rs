@@ -101,7 +101,7 @@ fn gather_move(bccx: &BorrowckCtxt,
         None => ()
     }
 
-    match opt_loan_path(&move_info.cmt) {
+    match opt_loan_path(&move_info.cmt, bccx.tcx) {
         Some(loan_path) => {
             move_data.add_move(bccx.tcx, loan_path,
                                move_info.id, move_info.kind);
@@ -152,7 +152,7 @@ fn check_and_get_illegal_move_origin(bccx: &BorrowckCtxt,
             None
         }
 
-        mc::cat_downcast(ref b) |
+        mc::cat_downcast(ref b, _) |
         mc::cat_interior(ref b, _) => {
             match ty::get(b.ty).sty {
                 ty::ty_struct(did, _) | ty::ty_enum(did, _) => {

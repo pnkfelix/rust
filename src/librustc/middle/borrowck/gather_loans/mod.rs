@@ -133,7 +133,7 @@ impl<'a, 'tcx> euv::Delegate for GatherLoanCtxt<'a, 'tcx> {
         debug!("mutate(assignment_id={}, assignee_cmt={})",
                assignment_id, assignee_cmt.repr(self.tcx()));
 
-        match opt_loan_path(&assignee_cmt) {
+        match opt_loan_path(&assignee_cmt, self.tcx()) {
             Some(lp) => {
                 gather_moves::gather_assignment(self.bccx, &self.move_data,
                                                 assignment_id, assignment_span,
@@ -400,6 +400,9 @@ impl<'a, 'tcx> GatherLoanCtxt<'a, 'tcx> {
             LpVar(local_id) |
             LpUpvar(ty::UpvarId{ var_id: local_id, closure_expr_id: _ }) => {
                 self.tcx().used_mut_nodes.borrow_mut().insert(local_id);
+            }
+            LpDowncast(ref base, _) => {
+                self.mark_loan_path_as_mutated(&**base);
             }
             LpExtend(ref base, mc::McInherited, _) => {
                 self.mark_loan_path_as_mutated(&**base);
