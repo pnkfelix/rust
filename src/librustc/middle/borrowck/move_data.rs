@@ -279,6 +279,14 @@ impl MoveData {
         self.path_first_child(index) == InvalidMovePathIndex
     }
 
+    /// Returns true iff `index` represents downcast to an enum variant (i.e. LpDowncast).
+    fn path_is_downcast_to_variant(&self, index: MovePathIndex) -> bool {
+        match *self.path_loan_path(index) {
+            LpDowncast(..) => true,
+            _ => false,
+        }
+    }
+
     /// Returns the index of first child, or `InvalidMovePathIndex` if
     /// `index` is leaf.
     fn path_first_child(&self, index: MovePathIndex) -> MovePathIndex {
@@ -910,13 +918,13 @@ impl MoveData {
     // The above comment should be revised/shortened to a succinct
     // summary.
 
-    fn needs_drop(&self, tcx: &ty::ctxt, move_path_index: MovePathIndex) -> bool {
+    fn type_needs_drop(&self, tcx: &ty::ctxt, move_path_index: MovePathIndex) -> bool {
         //! Returns true iff move_path_index needs drop.
         let path_type = self.path_loan_path(move_path_index).to_type(tcx);
         ty::type_needs_drop(tcx, path_type)
     }
 
-    fn moves_by_default(&self, tcx: &ty::ctxt, move_path_index: MovePathIndex) -> bool {
+    fn type_moves_by_default(&self, tcx: &ty::ctxt, move_path_index: MovePathIndex) -> bool {
         //! Returns true iff move_path_index needs moves by default.
         let path_type = self.path_loan_path(move_path_index).to_type(tcx);
         ty::type_contents(tcx, path_type).moves_by_default(tcx)
@@ -925,7 +933,8 @@ impl MoveData {
     fn for_each_leaf(&self,
                      _tcx: &ty::ctxt,
                      root: MovePathIndex,
-                     found_leaf: |MovePathIndex|) {
+                     found_leaf: |MovePathIndex|,
+                     found_variant: |MovePathIndex|) {
         //! Here we normalize a path so that it is unraveled to its
         //! consituent droppable pieces that might be independently
         //! handled by the function being compiled: e.g. `s.a.j`
@@ -941,6 +950,11 @@ impl MoveData {
             return;
         }
 
+        if self.path_is_downcast_to_variant(root) {
+            found_variant(root);
+            return;
+        }
+
         let mut stack = vec![];
         stack.push(root);
         loop {
@@ -950,6 +964,9 @@ impl MoveData {
             while child != InvalidMovePathIndex {
                 if self.path_is_leaf(child) {
                     found_leaf(child);
+                } else if self.path_is_downcast_to_variant(child) {
+                    found_variant(child);
+                    continue;
                 } else {
                     stack.push(child);
                 }
@@ -964,19 +981,32 @@ impl MoveData {
                             assignment: &Assignment,
                             dfcx_needs_drop: &mut NeedsDropDataFlow) {
         let add_gen = |move_path_index| {
-            if self.needs_drop(tcx, move_path_index) {
+            if self.path_is_downcast_to_variant(move_path_index) {
+                // A downcast to a variant occurs on a match arm.
+                // It does not in itself add a drop-obligation; those
+                // come from the variable bindings within the match arm.
+                return;
+            }
+
+            if self.type_needs_drop(tcx, move_path_index) {
                 debug!("add_drop_obligations(assignment={}) adds {}",
                        assignment.to_string(self, tcx),
                        self.path_loan_path(move_path_index).repr(tcx));
                 dfcx_needs_drop.add_gen(assignment.id, move_path_index.get());
             } else {
-                debug!("add_drop_obligations(assignment={}) skips {}",
+                debug!("add_drop_obligations(assignment={}) skips non-drop {}",
                        assignment.to_string(self, tcx),
                        self.path_loan_path(move_path_index).repr(tcx));
             }
         };
 
-        self.for_each_leaf(tcx, assignment.path, add_gen);
+        let report_variant = |move_path_index| {
+            debug!("add_drop_obligations(assignment={}) skips variant {}",
+                   assignment.to_string(self, tcx),
+                   self.path_loan_path(move_path_index).repr(tcx));
+        };
+
+        self.for_each_leaf(tcx, assignment.path, add_gen, report_variant);
     }
 
     fn remove_drop_obligations<A:RemoveNeedsDropArg>(&self,
@@ -990,17 +1020,22 @@ impl MoveData {
         let path : MovePathIndex = a.path_being_moved();
 
         let add_kill = |move_path_index| {
-            if self.moves_by_default(tcx, move_path_index) {
+            if self.type_moves_by_default(tcx, move_path_index) {
                 debug!("remove_drop_obligations(id={}) removes {}",
                        id, self.path_loan_path(move_path_index).repr(tcx));
                 dfcx_needs_drop.add_kill(id, move_path_index.get());
             } else {
-                debug!("remove_drop_obligations(id={}) skips {}",
+                debug!("remove_drop_obligations(id={}) skips copyable {}",
                        id, self.path_loan_path(move_path_index).repr(tcx));
             }
         };
 
-        self.for_each_leaf(tcx, path, add_kill);
+        let report_variant = |move_path_index| {
+            debug!("remove_drop_obligations(id={}) skips variant {}",
+                   id, self.path_loan_path(move_path_index).repr(tcx));
+        };
+
+        self.for_each_leaf(tcx, path, add_kill, report_variant);
     }
 }
 
