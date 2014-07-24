@@ -45,7 +45,6 @@ use std::io::fs;
 use std::io::MemReader;
 use syntax::ast;
 use syntax::ast_map::blocks;
-use syntax::ast_map::inverse_lookup;
 use syntax::attr;
 use syntax::attr::{AttrMetaMethods};
 use syntax::diagnostics;
@@ -715,22 +714,35 @@ impl FlowGraphId {
     fn to_node_id(self,
                   tcx: &ty::ctxt) -> ast::NodeId {
         let sess = &tcx.sess;
-        return match self {
-            FlowGraphViaNode(node_id) => node_id,
-            FlowGraphViaPath(string) => {
-                let parts : Vec<&str> = string.as_slice().split_str("::").collect();
-                inverse_lookup::slow_lookup(&tcx.map,
-                                            inverse_lookup::Val,
-                                            parts.as_slice())
-                    .unwrap_or_else(|| {
-                        let message = format!("pretty flowgraph= needs \
-                                               NodeId (int) or resolvable \
-                                               Path (a::b::c); got {}, which \
-                                               does not resolve", string);
-                        sess.fatal(message.as_slice())
-                    })
-            }
+        let string = match self {
+            FlowGraphViaNode(node_id) => return node_id,
+            FlowGraphViaPath(string) => string,
         };
+
+        let fail_because = |is_wrong_because| -> ast::NodeId {
+            let message =
+                format!("pretty flowgraph= needs NodeId (int) or unique \
+                         path suffix (b::c::d); got {:s}, which {:s}",
+                        string, is_wrong_because);
+            sess.fatal(message.as_slice())
+        };
+
+        let parts : Vec<&str> = string.as_slice().split_str("::").collect();
+        let mut saw_node = ast::DUMMY_NODE_ID;
+        let mut seen = 0u;
+        for node in tcx.map.nodes_matching_suffix(parts.as_slice()) {
+            saw_node = node;
+            seen += 1;
+            if seen > 1 {
+                fail_because("does not resolve uniquely");
+            }
+        }
+        if seen == 0 {
+            fail_because("does not resolve to any item");
+        }
+
+        assert!(seen == 1);
+        return saw_node;
     }
 }
 

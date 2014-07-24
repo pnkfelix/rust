@@ -11,7 +11,7 @@
 use abi;
 use ast::*;
 use ast_util;
-use codemap::Span;
+use codemap::{Span, Spanned};
 use fold::Folder;
 use fold;
 use parse::token;
@@ -25,7 +25,6 @@ use std::iter;
 use std::slice;
 
 pub mod blocks;
-pub mod inverse_lookup;
 
 #[deriving(Clone, PartialEq)]
 pub enum PathElem {
@@ -204,6 +203,10 @@ pub struct Map {
 }
 
 impl Map {
+    fn entry_count(&self) -> uint {
+        self.map.borrow().len()
+    }
+
     fn find_entry(&self, id: NodeId) -> Option<MapEntry> {
         let map = self.map.borrow();
         if map.len() > id as uint {
@@ -406,6 +409,20 @@ impl Map {
         f(attrs)
     }
 
+    /// Returns an iterator that yields the node id's with paths that
+    /// match `parts`.  (Requires `parts` is non-empty.)
+    ///
+    /// For example, if given `parts` equal to `["bar", "quux"]`, then
+    /// the iterator will produce node id's such as `foo::bar::quux`,
+    /// `bar::quux`, `other::bar::quux`, and any others it can find in
+    /// the map.
+    pub fn nodes_matching_suffix<'a>(&'a self, parts: &'a [&str]) -> NodesMatchingSuffix<'a> {
+        NodesMatchingSuffix { map: self,
+                              item_name: parts.last().map(|&x|x).unwrap(),
+                              where: parts.slice_to(parts.len() - 1),
+                              idx: 0 }
+    }
+
     pub fn opt_span(&self, id: NodeId) -> Option<Span> {
         let sp = match self.find(id) {
             Some(NodeItem(item)) => item.span,
@@ -436,6 +453,137 @@ impl Map {
 
     pub fn node_to_string(&self, id: NodeId) -> String {
         node_id_to_string(self, id)
+    }
+}
+
+pub struct NodesMatchingSuffix<'a> {
+    map: &'a Map,
+    item_name: &'a str,
+    where: &'a [&'a str],
+    idx: NodeId,
+}
+
+trait Named {
+    fn name(&self) -> Name;
+}
+
+impl<T:Named> Named for Spanned<T> { fn name(&self) -> Name { self.node.name() } }
+
+impl Named for Item { fn name(&self) -> Name { self.ident.name } }
+impl Named for ForeignItem { fn name(&self) -> Name { self.ident.name } }
+impl Named for Variant_ { fn name(&self) -> Name { self.name.name } }
+impl Named for TraitMethod {
+    fn name(&self) -> Name {
+        match *self {
+            Required(ref tm) => tm.ident.name,
+            Provided(m) => m.name(),
+        }
+    }
+}
+impl Named for Method {
+    fn name(&self) -> Name {
+        match self.node {
+            MethDecl(i, _, _, _, _, _, _) => i.name,
+            MethMac(_) => fail!("encountered unexpanded method macro."),
+        }
+    }
+}
+
+impl<'a> NodesMatchingSuffix<'a> {
+    fn suffix_matches(&self, parent: NodeId) -> bool {
+        let mut cursor = parent;
+        for &part in self.where.iter().rev() {
+            let (mod_id, mod_name) = match self.find_first_mod_parent(cursor) {
+                None => return false,
+                Some((node_id, name)) => (node_id, name),
+            };
+            if part != mod_name.as_str() {
+                return false;
+            }
+            cursor = self.map.get_parent(mod_id);
+        }
+        return true;
+    }
+
+    /// Finds the first mod in parent chain for id, along with that
+    /// mod's name.
+    ///
+    /// If `id` itself is a mod named `m` with parent `p`, then
+    /// returns `Some(id, m, p)`.  If `id` has no mod in its parent
+    /// chain, then returns `None`.
+    fn find_first_mod_parent(&self, mut id: NodeId) -> Option<(NodeId, Name)> {
+        loop {
+            match self.map.find(id) {
+                None => return None,
+                Some(NodeItem(item)) if item_is_mod(item) =>
+                    return Some((id, item.ident.name)),
+                _ => {}
+            }
+            let parent = self.map.get_parent(id);
+            if parent == id { return None }
+            id = parent;
+        }
+
+        fn item_is_mod(item: &Item) -> bool {
+            match item.node {
+                ItemMod(_) | ItemForeignMod(_) => true,
+                _ => false,
+            }
+        }
+    }
+
+    fn matches_named<N:Named>(&self, parent_of_n: NodeId, n: &N) -> bool {
+        n.name().as_str() == self.item_name && self.suffix_matches(parent_of_n)
+    }
+
+    fn matches_item(&self, parent_of_item: NodeId, item: &Item) -> bool {
+        self.matches_named(parent_of_item, item) &&
+            self.suffix_matches(parent_of_item)
+    }
+
+    fn matches_foreign_item(&self, parent_of_item: NodeId, item: &ForeignItem) -> bool {
+        self.matches_named(parent_of_item, item) &&
+            self.suffix_matches(parent_of_item)
+    }
+
+    fn matches_trait_method(&self, parent_of_item: NodeId, item: &TraitMethod) -> bool {
+        self.matches_named(parent_of_item, item) &&
+            self.suffix_matches(parent_of_item)
+    }
+
+    fn matches_method(&self, parent_of_item: NodeId, item: &Method) -> bool {
+        self.matches_named(parent_of_item, item) &&
+            self.suffix_matches(parent_of_item)
+    }
+
+    fn matches_variant(&self, parent_of_item: NodeId, item: &Variant) -> bool {
+        self.matches_named(parent_of_item, item) &&
+            self.suffix_matches(parent_of_item)
+    }
+}
+
+impl<'a> Iterator<NodeId> for NodesMatchingSuffix<'a> {
+    fn next(&mut self) -> Option<NodeId> {
+        loop {
+            let idx = self.idx;
+            if idx as uint >= self.map.entry_count() {
+                return None;
+            }
+            self.idx += 1;
+            match self.map.find_entry(idx) {
+                Some(EntryItem(p, i))
+                    if self.matches_item(p, &*i) => return Some(idx),
+                Some(EntryForeignItem(p, fi))
+                    if self.matches_foreign_item(p, &*fi) => return Some(idx),
+                Some(EntryTraitMethod(p, tm))
+                    if self.matches_trait_method(p, &*tm) => return Some(idx),
+                Some(EntryMethod(p, m))
+                    if self.matches_method(p, &*m) => return Some(idx),
+                Some(EntryVariant(p, v))
+                    if self.matches_variant(p, &*v) => return Some(idx),
+                _ => continue,
+            }
+        }
     }
 }
 
