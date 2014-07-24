@@ -603,13 +603,13 @@ impl MoveData {
                 }
             }
 
-            (&ty::ty_enum(def_id, ref substs), Some((variant_def_id, ref _lp2))) => {
+            (&ty::ty_enum(def_id, ref _substs), Some((variant_def_id, ref _lp2))) => {
                 let variant_info = ty::enum_variant_with_id(tcx, def_id, variant_def_id);
                 match *origin_field_name {
                     mc::NamedField(ast_name) => {
                         let variant_arg_names = variant_info.arg_names.as_ref().unwrap();
                         let variant_arg_types = &variant_info.args;
-                        for (variant_arg_ident, variant_arg_ty) in variant_arg_names.iter().zip(variant_arg_types.iter()) {
+                        for (variant_arg_ident, _variant_arg_ty) in variant_arg_names.iter().zip(variant_arg_types.iter()) {
                             if variant_arg_ident.name == ast_name {
                                 continue;
                             }
@@ -619,8 +619,8 @@ impl MoveData {
                         }
                     }
                     mc::PositionalField(tuple_idx) => {
-                        let mut variant_arg_types = variant_info.args.iter();
-                        for (i, variant_arg_ty) in variant_arg_types.enumerate() {
+                        let variant_arg_types = &variant_info.args;
+                        for (i, _variant_arg_ty) in variant_arg_types.iter().enumerate() {
                             if tuple_idx == i {
                                 continue;
                             }
