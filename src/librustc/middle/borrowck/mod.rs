@@ -876,9 +876,12 @@ impl<'a> BorrowckCtxt<'a> {
                 out.push_str(ty::local_var_name_str(self.tcx, id).get());
             }
 
-            LpDowncast(ref lp_base, _) => {
-                // FIXME: perhaps extend notation with variant tag notation?
-                self.append_loan_path_to_string(&**lp_base, out)
+            LpDowncast(ref lp_base, variant_def_id) => {
+                out.push_char('(');
+                self.append_loan_path_to_string(&**lp_base, out);
+                out.push_char(':');
+                out.push_str(ty::item_path_str(self.tcx, variant_def_id).as_slice());
+                out.push_char(')');
             }
 
             LpExtend(ref lp_base, _, LpInterior(mc::InteriorField(fname))) => {
@@ -911,9 +914,12 @@ impl<'a> BorrowckCtxt<'a> {
                                               loan_path: &LoanPath,
                                               out: &mut String) {
         match *loan_path {
-            // FIXME: perhaps extend notation with variant tag notation?
-            LpDowncast(ref lp_base, _) => {
-                self.append_autoderefd_loan_path_to_string(&**lp_base, out)
+            LpDowncast(ref lp_base, variant_def_id) => {
+                out.push_char('(');
+                self.append_autoderefd_loan_path_to_string(&**lp_base, out);
+                out.push_char(':');
+                out.push_str(ty::item_path_str(self.tcx, variant_def_id).as_slice());
+                out.push_char(')');
             }
 
             LpExtend(ref lp_base, _, LpDeref(_)) => {
@@ -999,7 +1005,12 @@ impl Repr for LoanPath {
             }
 
             &LpDowncast(ref lp, variant_def_id) => {
-                format!("({} as {})", lp.repr(tcx), variant_def_id.repr(tcx))
+                let variant_str = if variant_def_id.krate == ast::LOCAL_CRATE {
+                    ty::item_path_str(tcx, variant_def_id)
+                } else {
+                    variant_def_id.repr(tcx)
+                };
+                format!("({} as {})", lp.repr(tcx), variant_str)
             }
         }
     }
