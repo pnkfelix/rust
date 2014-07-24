@@ -674,6 +674,39 @@ impl MoveData {
          * See `doc.rs` for more details.
          */
 
+        {
+            let mut nonfragments = {
+                let mut nonfragments = self.nonfragments.borrow_mut();
+                nonfragments.sort_by(|a, b| a.get().cmp(&b.get()));
+                nonfragments.dedup();
+                nonfragments
+            };
+            let mut fragments = {
+                let mut maybe_fragments = self.fragments.borrow_mut();
+                maybe_fragments.sort_by(|a, b| a.get().cmp(&b.get()));
+                maybe_fragments.dedup();
+
+                // FIXME: why does rustc say that the below code means
+                // `nonfragments` must be declared mut?  Potential
+                // fallout from recent closure changes?
+                maybe_fragments.retain(|f| !nonfragments.contains(f));
+
+                maybe_fragments
+            };
+
+            // See FIXME above: being forced to declare `nonfragments` as mut
+            for (i, &nf) in nonfragments.iter().enumerate() {
+                let lp = self.path_loan_path(nf);
+                debug!("add_gen_kills nonfragment {:u}: {:s}", i, lp.repr(tcx));
+            }
+
+            // See FIXME above: being forced to declare `fragments` as mut
+            for (i, &f) in fragments.iter().enumerate() {
+                let lp = self.path_loan_path(f);
+                debug!("add_gen_kills fragment {:u}: {:s}", i, lp.repr(tcx));
+            }
+        }
+
         for (i, move) in self.moves.borrow().iter().enumerate() {
             dfcx_moves.add_gen(move.id, i);
             debug!("remove_drop_obligations move {}", move.to_string(self, tcx));
