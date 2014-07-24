@@ -877,6 +877,18 @@ impl MoveData {
     // The above comment should be revised/shortened to a succinct
     // summary.
 
+    fn needs_drop(&self, tcx: &ty::ctxt, move_path_index: MovePathIndex) -> bool {
+        //! Returns true iff move_path_index needs drop.
+        let path_type = self.path_loan_path(move_path_index).to_type(tcx);
+        ty::type_needs_drop(tcx, path_type)
+    }
+
+    fn moves_by_default(&self, tcx: &ty::ctxt, move_path_index: MovePathIndex) -> bool {
+        //! Returns true iff move_path_index needs moves by default.
+        let path_type = self.path_loan_path(move_path_index).to_type(tcx);
+        ty::type_contents(tcx, path_type).moves_by_default(tcx)
+    }
+
     fn for_each_leaf(&self,
                      _tcx: &ty::ctxt,
                      root: MovePathIndex,
@@ -919,10 +931,16 @@ impl MoveData {
                             assignment: &Assignment,
                             dfcx_needs_drop: &mut NeedsDropDataFlow) {
         let add_gen = |move_path_index| {
-            debug!("add_drop_obligations(assignment={}) adds {}",
-                   assignment.to_string(self, tcx),
-                   self.path_loan_path(move_path_index).repr(tcx));
-            dfcx_needs_drop.add_gen(assignment.id, move_path_index.get());
+            if self.needs_drop(tcx, move_path_index) {
+                debug!("add_drop_obligations(assignment={}) adds {}",
+                       assignment.to_string(self, tcx),
+                       self.path_loan_path(move_path_index).repr(tcx));
+                dfcx_needs_drop.add_gen(assignment.id, move_path_index.get());
+            } else {
+                debug!("add_drop_obligations(assignment={}) skips {}",
+                       assignment.to_string(self, tcx),
+                       self.path_loan_path(move_path_index).repr(tcx));
+            }
         };
 
         self.for_each_leaf(tcx, assignment.path, add_gen);
@@ -939,10 +957,14 @@ impl MoveData {
         let path : MovePathIndex = a.path_being_moved();
 
         let add_kill = |move_path_index| {
-            debug!("remove_drop_obligations(id={}) removes {}",
-                   id, self.path_loan_path(move_path_index).repr(tcx));
-
-            dfcx_needs_drop.add_kill(id, move_path_index.get());
+            if self.moves_by_default(tcx, move_path_index) {
+                debug!("remove_drop_obligations(id={}) removes {}",
+                       id, self.path_loan_path(move_path_index).repr(tcx));
+                dfcx_needs_drop.add_kill(id, move_path_index.get());
+            } else {
+                debug!("remove_drop_obligations(id={}) skips {}",
+                       id, self.path_loan_path(move_path_index).repr(tcx));
+            }
         };
 
         self.for_each_leaf(tcx, path, add_kill);
