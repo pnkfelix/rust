@@ -70,7 +70,7 @@ pub fn gather_move_into_variant(bccx: &BorrowckCtxt,
 
     let opt_lp = opt_loan_path(&cmt, bccx.tcx);
     let opt_base_lp = match cmt.cat {
-        mc::cat_downcast(ref base_cmt, variant_def_id) => opt_loan_path(base_cmt, bccx.tcx),
+        mc::cat_downcast(ref base_cmt, _variant_def_id) => opt_loan_path(base_cmt, bccx.tcx),
         _ => fail!("should only encounter move_into_variant on cat_downcast."),
     };
     match (opt_lp, opt_base_lp) {

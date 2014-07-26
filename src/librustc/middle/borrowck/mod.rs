@@ -879,7 +879,7 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
             LpDowncast(ref lp_base, variant_def_id) => {
                 out.push_char('(');
                 self.append_loan_path_to_string(&**lp_base, out);
-                out.push_char(':');
+                out.push_str("->");
                 out.push_str(ty::item_path_str(self.tcx, variant_def_id).as_slice());
                 out.push_char(')');
             }
