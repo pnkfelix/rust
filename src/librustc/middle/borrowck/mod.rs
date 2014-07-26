@@ -1010,7 +1010,7 @@ impl Repr for LoanPath {
                 } else {
                     variant_def_id.repr(tcx)
                 };
-                format!("({} as {})", lp.repr(tcx), variant_str)
+                format!("({}->{})", lp.repr(tcx), variant_str)
             }
         }
     }

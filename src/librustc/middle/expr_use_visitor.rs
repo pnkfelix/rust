@@ -42,6 +42,18 @@ pub trait Delegate {
                cmt: mc::cmt,
                mode: ConsumeMode);
 
+    // The value found at `cmt` has been determined to match the
+    // pattern binding `matched_pat`, and its subparts are being
+    // copied or moved depending on `mode`.  Note that `matched_pat`
+    // is called on all variant/structs in the pattern (i.e., the
+    // interior nodes of the pattern's tree structure) while
+    // consume_pat is called on the binding identifiers in the pattern
+    // (i.e., the leaves of the pattern's tree structure)
+    fn matched_pat(&mut self,
+                   matched_pat: &ast::Pat,
+                   cmt: mc::cmt,
+                   mode: MatchMode);
+
     // The value found at `cmt` is either copied or moved via the
     // pattern binding `consume_pat`, depending on mode.
     fn consume_pat(&mut self,
@@ -94,6 +106,12 @@ pub enum MoveReason {
     DirectRefMove,
     PatBindingMove,
     CaptureMove,
+}
+
+#[deriving(PartialEq,Show)]
+pub enum MatchMode {
+    BorrowingMatch,
+    ConsumingMatch(ConsumeMode),
 }
 
 #[deriving(PartialEq,Show)]
@@ -802,7 +820,45 @@ impl<'d,'t,TYPER:mc::Typer> ExprUseVisitor<'d,'t,TYPER> {
         let tcx = typer.tcx();
         let def_map = &self.typer.tcx().def_map;
         let delegate = &mut self.delegate;
-        return_if_err!(mc.cat_pattern(cmt_discr, &*pat, |mc, cmt_pat, pat| {
+
+        enum TrackMatchMode {
+            Unknown, Definite(MatchMode), Conflicting
+        }
+        impl TrackMatchMode {
+            fn meet(&mut self, mode: MatchMode) {
+                *self = match (*self, mode) {
+                    (Unknown, new) => Definite(new),
+
+                    (Definite(old), new) if old == new => Definite(old),
+
+                    (Definite(old), ConsumingMatch(Copy)) => Definite(old),
+
+                    (Definite(ConsumingMatch(Copy)), new) => Definite(new),
+
+                    _ => Conflicting
+                };
+            }
+
+            fn mode(self) -> MatchMode {
+                match self {
+                    // if we don't know, then there was no binding,
+                    // and the match will just borrow.
+                    Unknown => BorrowingMatch,
+
+                    Definite(mm) => mm,
+
+                    // if there were conflicting results, then we will
+                    // hit a compiler error later.  But just to let
+                    // the rustc make progress now, claim that it was
+                    // a consuming match.
+                    Conflicting => ConsumingMatch(Move(PatBindingMove)),
+                }
+            }
+        }
+
+        let mut match_mode = Unknown;
+
+        return_if_err!(mc.cat_pattern(cmt_discr.clone(), &*pat, |mc, cmt_pat, pat| {
             if pat_util::pat_is_binding(def_map, pat) {
                 let tcx = typer.tcx();
 
@@ -832,10 +888,12 @@ impl<'d,'t,TYPER:mc::Typer> ExprUseVisitor<'d,'t,TYPER> {
                         };
                         delegate.borrow(pat.id, pat.span, cmt_pat,
                                              r, bk, RefBinding);
+                        match_mode.meet(BorrowingMatch);
                     }
                     ast::PatIdent(ast::BindByValue(_), _, _) => {
                         let mode = copy_or_move(typer.tcx(), cmt_pat.ty, PatBindingMove);
                         delegate.consume_pat(pat, cmt_pat, mode);
+                        match_mode.meet(ConsumingMatch(mode));
                     }
                     _ => {
                         typer.tcx().sess.span_bug(
@@ -888,6 +946,44 @@ impl<'d,'t,TYPER:mc::Typer> ExprUseVisitor<'d,'t,TYPER> {
                     }
                     _ => { }
                 }
+            }
+        }));
+
+        let match_mode = match_mode.mode();
+
+        return_if_err!(mc.cat_pattern(cmt_discr, &*pat, |mc, cmt_pat, pat| {
+            let def_map = def_map.borrow();
+            let tcx = typer.tcx();
+            match pat.node {
+                ast::PatEnum(_, _) | ast::PatIdent(_, _, None) | ast::PatStruct(..) => {
+                    match def_map.find(&pat.id) {
+                        Some(&def::DefVariant(enum_did, variant_did, _is_struct)) => {
+                            let downcast_cmt =
+                                if ty::enum_is_univariant(tcx, enum_did) {
+                                    cmt_pat
+                                } else {
+                                    let cmt_pat_ty = cmt_pat.ty;
+                                    mc.cat_downcast(pat, cmt_pat, cmt_pat_ty, variant_did)
+                                };
+
+                            debug!("variant downcast_cmt={} pat={}",
+                                   downcast_cmt.repr(tcx),
+                                   pat.repr(tcx));
+
+                            delegate.matched_pat(pat, downcast_cmt, match_mode);
+                        }
+
+                        Some(&def::DefStruct(..)) => {
+                            debug!("struct cmt_pat={} pat={}",
+                                   cmt_pat.repr(tcx),
+                                   pat.repr(tcx));
+
+                            delegate.matched_pat(pat, cmt_pat, match_mode);
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
             }
         }));
     }

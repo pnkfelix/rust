@@ -53,6 +53,10 @@ pub struct MoveData {
     /// kill move bits.
     pub path_assignments: RefCell<Vec<Assignment>>,
 
+    /// Enum variant matched within a pattern on some match arm, like
+    /// `SomeStruct{ f: Variant1(x, y) } => ...`
+    pub variant_matches: RefCell<Vec<VariantMatch>>,
+
     /// Assignments to a variable or path, like `x = foo`, but not `x += foo`.
     pub assignee_ids: RefCell<HashSet<ast::NodeId>>,
 
@@ -165,6 +169,17 @@ pub struct Assignment {
     pub span: Span,
 }
 
+pub struct VariantMatch {
+    /// downcast to the variant.
+    pub path: MovePathIndex,
+
+    /// path being downcast to the variant.
+    pub base_path: MovePathIndex,
+
+    /// id where variant's pattern occurs
+    pub id: ast::NodeId,
+}
+
 #[deriving(Clone)]
 pub struct MoveDataFlowOperator;
 
@@ -248,6 +263,25 @@ impl Assignment {
     }
 }
 
+impl VariantMatch {
+    pub fn ty_and_span(&self, tcx: &ty::ctxt) -> (ty::t, Span) {
+        match tcx.map.find(self.id) {
+            Some(ast_map::NodePat(pat)) => (ty::pat_ty(tcx, &*pat), pat.span),
+            r => tcx.sess.bug(format!("{:?} maps to {:?}, not Pat", self, r).as_slice())
+        }
+    }
+    pub fn ty(&self, tcx: &ty::ctxt) -> ty::t {
+        self.ty_and_span(tcx).val0()
+    }
+    pub fn to_string(&self, move_data: &MoveData, tcx: &ty::ctxt) -> String {
+        format!("VariantMatch{:s} path: {}, id: {} {:s}",
+                "{",
+                move_data.path_loan_path(self.path).repr(tcx),
+                self.id,
+                "}")
+    }
+}
+
 impl MoveData {
     pub fn new() -> MoveData {
         MoveData {
@@ -256,6 +290,7 @@ impl MoveData {
             moves: RefCell::new(Vec::new()),
             path_assignments: RefCell::new(Vec::new()),
             var_assignments: RefCell::new(Vec::new()),
+            variant_matches: RefCell::new(Vec::new()),
             assignee_ids: RefCell::new(HashSet::new()),
             fragments: RefCell::new(Vec::new()),
             nonfragments: RefCell::new(Vec::new()),
@@ -274,9 +309,20 @@ impl MoveData {
         self.paths.borrow().get(index.get()).first_move
     }
 
-    /// Returns true iff `index` has no children.
-    fn path_is_leaf(&self, index: MovePathIndex) -> bool {
-        self.path_first_child(index) == InvalidMovePathIndex
+    /// Returns true iff `index` itself cannot be directly split into
+    /// child fragments.  This means it is an atomic value (like a
+    /// pointer or an integer), or it an enum (and so we can only
+    /// split off subparts when we narrow it to a particular variant),
+    /// or it is a struct whose fields are never accessed in the
+    /// function being compiled.
+    fn path_is_leaf(&self, index: MovePathIndex, tcx: &ty::ctxt) -> bool {
+
+        let lp = self.path_loan_path(index);
+        let lp_type = lp.to_type(tcx);
+        let is_enum = match ty::get(lp_type).sty {
+            ty::ty_enum(..) => true, _ => false,
+        };
+        return is_enum || self.path_first_child(index) == InvalidMovePathIndex
     }
 
     /// Returns true iff `index` represents downcast to an enum variant (i.e. LpDowncast).
@@ -339,10 +385,6 @@ impl MoveData {
         }
 
         let index = match *lp {
-            LpDowncast(ref base, _) => {
-                return self.move_path(tcx, base.clone());
-            }
-
             LpVar(..) | LpUpvar(..) => {
                 let index = MovePathIndex(self.paths.borrow().len());
 
@@ -357,6 +399,7 @@ impl MoveData {
                 index
             }
 
+            LpDowncast(ref base, _) |
             LpExtend(ref base, _, _) => {
                 let parent_index = self.move_path(tcx, base.clone());
 
@@ -503,6 +546,33 @@ impl MoveData {
 
             self.path_assignments.borrow_mut().push(assignment);
         }
+    }
+
+    pub fn add_variant_match(&self,
+                         tcx: &ty::ctxt,
+                         lp: Rc<LoanPath>,
+                         pattern_id: ast::NodeId,
+                         base_lp: Rc<LoanPath>) {
+        /*!
+         * Adds a new record for an match of `base_lp`, downcast to
+         * variant `lp`, that occurs at location `pattern_id`.  (One
+         * should be able to recover teh span info from the
+         * `pattern_id` and the ast_map, I think.)
+         */
+        debug!("add_variant_match(lp={}, pattern_id={:?})",
+               lp.repr(tcx), pattern_id);
+
+        let path_index = self.move_path(tcx, lp.clone());
+        let base_path_index = self.move_path(tcx, base_lp.clone());
+
+        self.nonfragments.borrow_mut().push(path_index);
+        let variant_match = VariantMatch {
+            path: path_index,
+            base_path: base_path_index,
+            id: pattern_id,
+        };
+
+        self.variant_matches.borrow_mut().push(variant_match);
     }
 
     fn add_fragment_siblings(&self,
@@ -721,6 +791,13 @@ impl MoveData {
             self.remove_drop_obligations(tcx, move, dfcx_needs_drop);
         }
 
+        for variant_match in self.variant_matches.borrow().iter() {
+            debug!("remove_drop_obligations variant_match {}", variant_match.to_string(self, tcx));
+            self.remove_drop_obligations(tcx, variant_match, dfcx_needs_drop);
+            debug!("add_drop_obligations variant_match {}", variant_match.to_string(self, tcx));
+            self.add_drop_obligations(tcx, variant_match, dfcx_needs_drop);
+        }
+
         for (i, assignment) in self.var_assignments.borrow().iter().enumerate() {
             dfcx_assign.add_gen(assignment.id, i);
             self.kill_moves(assignment.path, assignment.id, dfcx_moves);
@@ -746,7 +823,7 @@ impl MoveData {
                     debug!("remove_drop_obligations scope {} {}",
                            kill_id, path.loan_path.repr(tcx));
                     let rm = Removed { where: kill_id, what_path: move_path_index };
-                    self.remove_drop_obligations(tcx, rm, dfcx_needs_drop);
+                    self.remove_drop_obligations(tcx, &rm, dfcx_needs_drop);
                 }
                 LpUpvar(ty::UpvarId { var_id: _, closure_expr_id }) => {
                     let kill_id = closure_to_block(closure_expr_id, tcx);
@@ -755,7 +832,7 @@ impl MoveData {
                     debug!("remove_drop_obligations scope {} {}",
                            kill_id, path.loan_path.repr(tcx));
                     let rm = Removed { where: kill_id, what_path: move_path_index };
-                    self.remove_drop_obligations(tcx, rm, dfcx_needs_drop);
+                    self.remove_drop_obligations(tcx, &rm, dfcx_needs_drop);
                 }
                 LpDowncast(..) => {} // FIXME: is this right, or should this loop to top?
                 LpExtend(..) => {}
@@ -931,7 +1008,7 @@ impl MoveData {
     }
 
     fn for_each_leaf(&self,
-                     _tcx: &ty::ctxt,
+                     tcx: &ty::ctxt,
                      root: MovePathIndex,
                      found_leaf: |MovePathIndex|,
                      found_variant: |MovePathIndex|) {
@@ -945,7 +1022,10 @@ impl MoveData {
         //! Note that the callback is only invoked on unraveled leaves
         //! that also need to be dropped.
 
-        if self.path_is_leaf(root) {
+        let root_lp = self.path_loan_path(root);
+        debug!("for_each_leaf(root_lp={:s})", root_lp.repr(tcx));
+
+        if self.path_is_leaf(root, tcx) {
             found_leaf(root);
             return;
         }
@@ -959,14 +1039,23 @@ impl MoveData {
         stack.push(root);
         loop {
             let top = match stack.pop() { None => break, Some(elem) => elem };
-            assert!(!self.path_is_leaf(top));
+            assert!(!self.path_is_leaf(top, tcx));
             let mut child = self.path_first_child(top);
             while child != InvalidMovePathIndex {
-                if self.path_is_leaf(child) {
+                {
+                    let top_lp = self.path_loan_path(top);
+                    let child_lp = self.path_loan_path(child);
+                    debug!("for_each_leaf(root_lp={:s}){:s} top_lp={:s} child_lp={:s}",
+                           root_lp.repr(tcx),
+                           " ".repeat(stack.len()),
+                           top_lp.repr(tcx),
+                           child_lp.repr(tcx));
+                }
+
+                if self.path_is_leaf(child, tcx) {
                     found_leaf(child);
                 } else if self.path_is_downcast_to_variant(child) {
                     found_variant(child);
-                    continue;
                 } else {
                     stack.push(child);
                 }
@@ -976,45 +1065,52 @@ impl MoveData {
         }
     }
 
-    fn add_drop_obligations(&self,
-                            tcx: &ty::ctxt,
-                            assignment: &Assignment,
-                            dfcx_needs_drop: &mut NeedsDropDataFlow) {
+    fn add_drop_obligations<A:AddNeedsDropArg>(&self,
+                                               tcx: &ty::ctxt,
+                                               a: &A,
+                                               dfcx_needs_drop: &mut NeedsDropDataFlow) {
+        let a_id = a.node_id_adding_obligation();
+        let a_path = a.path_being_established();
+
         let add_gen = |move_path_index| {
-            if self.path_is_downcast_to_variant(move_path_index) {
-                // A downcast to a variant occurs on a match arm.
-                // It does not in itself add a drop-obligation; those
-                // come from the variable bindings within the match arm.
-                return;
+            if self.path_is_downcast_to_variant(a_path) {
+                debug!("add_drop_obligations(a={}) {} is variant on match arm",
+                       a.to_string_(self, tcx),
+                       self.path_loan_path(move_path_index).repr(tcx));
             }
 
             if self.type_needs_drop(tcx, move_path_index) {
-                debug!("add_drop_obligations(assignment={}) adds {}",
-                       assignment.to_string(self, tcx),
+                debug!("add_drop_obligations(a={}) adds {}",
+                       a.to_string_(self, tcx),
                        self.path_loan_path(move_path_index).repr(tcx));
-                dfcx_needs_drop.add_gen(assignment.id, move_path_index.get());
+                dfcx_needs_drop.add_gen(a_id, move_path_index.get());
             } else {
-                debug!("add_drop_obligations(assignment={}) skips non-drop {}",
-                       assignment.to_string(self, tcx),
+                debug!("add_drop_obligations(a={}) skips non-drop {}",
+                       a.to_string_(self, tcx),
                        self.path_loan_path(move_path_index).repr(tcx));
             }
         };
 
         let report_variant = |move_path_index| {
-            debug!("add_drop_obligations(assignment={}) skips variant {}",
-                   assignment.to_string(self, tcx),
+            debug!("add_drop_obligations(a={}) skips variant {}",
+                   a.to_string_(self, tcx),
                    self.path_loan_path(move_path_index).repr(tcx));
         };
 
-        self.for_each_leaf(tcx, assignment.path, add_gen, report_variant);
+        self.for_each_leaf(tcx, a_path, add_gen, report_variant);
     }
 
     fn remove_drop_obligations<A:RemoveNeedsDropArg>(&self,
                                                      tcx: &ty::ctxt,
-                                                     a: A,
+                                                     a: &A,
                                                      dfcx_needs_drop: &mut NeedsDropDataFlow) {
-        //! Kill path and all of its sub-paths.
-        //! Adds fragment-siblings of path as necessary.
+        //! Kills all of the fragment leaves of path.
+        //!
+        //! Also kills all parents of path: while we do normalize a
+        //! path to its fragment leaves, (e.g. `a.j` to `{a.j.x,
+        //! a.j.y, a.j.z}`, an enum variant's path `(b:Variant1).x`
+        //! has the parent `b` that is itself considered a "leaf" for
+        //! the purposes of tracking drop obligations.
 
         let id = a.node_id_removing_obligation();
         let path : MovePathIndex = a.path_being_moved();
@@ -1039,6 +1135,22 @@ impl MoveData {
     }
 }
 
+trait AddNeedsDropArg {
+    fn node_id_adding_obligation(&self) -> ast::NodeId;
+    fn path_being_established(&self) -> MovePathIndex;
+    fn to_string_(&self, move_data: &MoveData, tcx: &ty::ctxt) -> String;
+}
+impl AddNeedsDropArg for Assignment {
+    fn node_id_adding_obligation(&self) -> ast::NodeId { self.id }
+    fn path_being_established(&self) -> MovePathIndex { self.path }
+    fn to_string_(&self, md: &MoveData, tcx: &ty::ctxt) -> String { self.to_string(md, tcx) }
+}
+impl AddNeedsDropArg for VariantMatch {
+    fn node_id_adding_obligation(&self) -> ast::NodeId { self.id }
+    fn path_being_established(&self) -> MovePathIndex { self.path }
+    fn to_string_(&self, md: &MoveData, tcx: &ty::ctxt) -> String { self.to_string(md, tcx) }
+}
+
 trait RemoveNeedsDropArg {
     fn node_id_removing_obligation(&self) -> ast::NodeId;
     fn path_being_moved(&self) -> MovePathIndex;
@@ -1048,9 +1160,13 @@ impl RemoveNeedsDropArg for Removed {
     fn node_id_removing_obligation(&self) -> ast::NodeId { self.where }
     fn path_being_moved(&self) -> MovePathIndex { self.what_path }
 }
-impl<'a> RemoveNeedsDropArg for &'a Move {
+impl<'a> RemoveNeedsDropArg for Move {
     fn node_id_removing_obligation(&self) -> ast::NodeId { self.id }
     fn path_being_moved(&self) -> MovePathIndex { self.path }
+}
+impl<'a> RemoveNeedsDropArg for VariantMatch {
+    fn node_id_removing_obligation(&self) -> ast::NodeId { self.id }
+    fn path_being_moved(&self) -> MovePathIndex { self.base_path }
 }
 
 impl<'a> FlowedMoveData<'a> {
