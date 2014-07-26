@@ -311,18 +311,21 @@ impl MoveData {
 
     /// Returns true iff `index` itself cannot be directly split into
     /// child fragments.  This means it is an atomic value (like a
-    /// pointer or an integer), or it an enum (and so we can only
-    /// split off subparts when we narrow it to a particular variant),
-    /// or it is a struct whose fields are never accessed in the
-    /// function being compiled.
-    fn path_is_leaf(&self, index: MovePathIndex, tcx: &ty::ctxt) -> bool {
+    /// pointer or an integer), or it a non-downcasted enum (and so we
+    /// can only split off subparts when we narrow it to a particular
+    /// variant), or it is a struct whose fields are never accessed in
+    /// the function being compiled.
+    fn path_is_leaf(&self, index: MovePathIndex, _tcx: &ty::ctxt) -> bool {
 
-        let lp = self.path_loan_path(index);
-        let lp_type = lp.to_type(tcx);
-        let is_enum = match ty::get(lp_type).sty {
-            ty::ty_enum(..) => true, _ => false,
-        };
-        return is_enum || self.path_first_child(index) == InvalidMovePathIndex
+        let first_child = self.path_first_child(index);
+        if first_child == InvalidMovePathIndex {
+            true
+        } else {
+            match *self.path_loan_path(first_child) {
+                LpDowncast(..) => true,
+                LpVar(..) | LpUpvar(..) | LpExtend(..) => false,
+            }
+        }
     }
 
     /// Returns true iff `index` represents downcast to an enum variant (i.e. LpDowncast).
@@ -1011,7 +1014,7 @@ impl MoveData {
                      tcx: &ty::ctxt,
                      root: MovePathIndex,
                      found_leaf: |MovePathIndex|,
-                     found_variant: |MovePathIndex|) {
+                     _found_variant: |MovePathIndex|) {
         //! Here we normalize a path so that it is unraveled to its
         //! consituent droppable pieces that might be independently
         //! handled by the function being compiled: e.g. `s.a.j`
@@ -1027,11 +1030,6 @@ impl MoveData {
 
         if self.path_is_leaf(root, tcx) {
             found_leaf(root);
-            return;
-        }
-
-        if self.path_is_downcast_to_variant(root) {
-            found_variant(root);
             return;
         }
 
@@ -1054,8 +1052,6 @@ impl MoveData {
 
                 if self.path_is_leaf(child, tcx) {
                     found_leaf(child);
-                } else if self.path_is_downcast_to_variant(child) {
-                    found_variant(child);
                 } else {
                     stack.push(child);
                 }
