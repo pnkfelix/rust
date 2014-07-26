@@ -976,13 +976,7 @@ impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
                                     downcast_ty: ty::t,
                                     variant_did: ast::DefId)
                                     -> cmt {
-        Rc::new(cmt_ {
-            id: node.id(),
-            span: node.span(),
-            mutbl: base_cmt.mutbl.inherit(),
-            cat: cat_downcast(base_cmt, variant_did),
-            ty: downcast_ty
-        })
+        mk_cat_downcast(node, base_cmt, downcast_ty, variant_did)
     }
 
     pub fn cat_pattern(&self,
@@ -1221,6 +1215,19 @@ impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
     }
 }
 
+fn mk_cat_downcast<N:ast_node>(node: &N,
+                               base_cmt: cmt,
+                               downcast_ty: ty::t,
+                               variant_did: ast::DefId) -> cmt {
+    Rc::new(cmt_ {
+        id: node.id(),
+        span: node.span(),
+        mutbl: base_cmt.mutbl.inherit(),
+        cat: cat_downcast(base_cmt, variant_did),
+        ty: downcast_ty
+    })
+}
+
 pub enum InteriorSafety {
     InteriorUnsafe,
     InteriorSafe
@@ -1351,8 +1358,8 @@ impl Repr for categorization {
             cat_interior(ref cmt, interior) => {
                 format!("{}.{}", cmt.cat.repr(tcx), interior.repr(tcx))
             }
-            cat_downcast(ref cmt, _) => {
-                format!("{}->(enum)", cmt.cat.repr(tcx))
+            cat_downcast(ref cmt, ref variant_did) => {
+                format!("({}->{})", cmt.cat.repr(tcx), variant_did.repr(tcx))
             }
             cat_discr(ref cmt, _) => {
                 cmt.cat.repr(tcx)
