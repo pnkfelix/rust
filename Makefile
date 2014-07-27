@@ -1,4 +1,6 @@
-FILES=foo1.rs foo2.rs foo3.rs foo4.rs foo5.rs foo6.rs foo7.rs foo8.rs
+FILES=foo1.rs foo2.rs foo3.rs foo4.rs foo5.rs foo6.rs foo7.rs foo8.rs \
+      foo11.rs foo12.rs \
+      iter1.rs
 
 all: $(patsubst %.rs,%.dot,$(FILES))
 
@@ -15,4 +17,7 @@ objdir-dbg/x86_64-apple-darwin/stage1/rustc: src/etc/rustc-wrapper.macosx.sh obj
 	chmod +x $@
 
 %.dot: %.rs Makefile objdir-dbg/x86_64-apple-darwin/stage1/rustc
-	$(RUSTC_LIB) -Z flowgraph-print-needs-drop --pretty flowgraph=foo $< -o $@
+	$(RUSTC_LIB) -Z flowgraph-print-all --pretty flowgraph=foo $< -o $@
+
+%.log: %.rs Makefile objdir-dbg/x86_64-apple-darwin/stage1/rustc
+	RUST_LOG=rustc::middle::borrowck,rustc::middle::ty,rustc::middle::typeck,rustc::middle::expr_use_visitor  $(RUSTC_LIB) -Z flowgraph-print-all --pretty flowgraph=foo $< -o $@.dot 2> $@
