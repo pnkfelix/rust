@@ -20,6 +20,7 @@ use middle::def;
 use euv = middle::expr_use_visitor;
 use mc = middle::mem_categorization;
 use middle::ty;
+use middle::subst::Subst;
 use util::ppaux::{note_and_explain_region, Repr, UserString};
 
 use std::cell::{Cell};
@@ -349,6 +350,39 @@ impl LoanPath {
         debug!("lp.to_type() for lp={:s} returns t={:s}",
                self.repr(tcx), t.repr(tcx));
         t
+    }
+
+    fn needs_drop(&self, tcx: &ty::ctxt) -> bool {
+        //! Returns true if this loan path needs drop glue.  Usually
+        //! this just means that the type of the loan path needs drop
+        //! glue, but an enum can have some variants that need drop
+        //! glue and other variants that do not.
+
+        debug!("needs_drop(tcx) self={}", self.repr(tcx));
+
+        let (lp, variant_def_id) = match *self {
+            LpDowncast(ref lp, def_id) => (lp, def_id),
+            _ => return ty::type_needs_drop(tcx, self.to_type(tcx)),
+        };
+
+        // Code below is to handle one enum variant as a special case.
+
+        let lp_type = lp.to_type(tcx);
+        match ty::get(lp_type).sty {
+            ty::ty_enum(enum_def_id, ref substs) => {
+                let variant_info = ty::enum_variant_with_id(tcx, enum_def_id, variant_def_id);
+                let type_contents = ty::TypeContents::union(
+                    variant_info.args.as_slice(),
+                    |arg_ty| {
+                        let arg_ty_subst = arg_ty.subst(tcx, substs);
+                        debug!("needs_drop(tcx) self={} arg_ty={:s} arg_ty_subst={:s}",
+                               self.repr(tcx), arg_ty.repr(tcx), arg_ty_subst.repr(tcx));
+                        ty::type_contents(tcx, arg_ty_subst)
+                    });
+                type_contents.needs_drop(tcx)
+            }
+            _ => fail!("encountered LpDowncast on non-enum base type."),
+        }
     }
 }
 
