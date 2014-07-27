@@ -998,10 +998,9 @@ impl MoveData {
     // The above comment should be revised/shortened to a succinct
     // summary.
 
-    fn type_needs_drop(&self, tcx: &ty::ctxt, move_path_index: MovePathIndex) -> bool {
+    fn path_needs_drop(&self, tcx: &ty::ctxt, move_path_index: MovePathIndex) -> bool {
         //! Returns true iff move_path_index needs drop.
-        let path_type = self.path_loan_path(move_path_index).to_type(tcx);
-        ty::type_needs_drop(tcx, path_type)
+        self.path_loan_path(move_path_index).needs_drop(tcx)
     }
 
     fn type_moves_by_default(&self, tcx: &ty::ctxt, move_path_index: MovePathIndex) -> bool {
@@ -1075,7 +1074,7 @@ impl MoveData {
                        self.path_loan_path(move_path_index).repr(tcx));
             }
 
-            if self.type_needs_drop(tcx, move_path_index) {
+            if self.path_needs_drop(tcx, move_path_index) {
                 debug!("add_drop_obligations(a={}) adds {}",
                        a.to_string_(self, tcx),
                        self.path_loan_path(move_path_index).repr(tcx));
