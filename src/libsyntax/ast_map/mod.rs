@@ -483,7 +483,7 @@ impl Named for TraitMethod {
 impl Named for Method {
     fn name(&self) -> Name {
         match self.node {
-            MethDecl(i, _, _, _, _, _, _) => i.name,
+            MethDecl(i, _, _, _, _, _, _, _) => i.name,
             MethMac(_) => fail!("encountered unexpanded method macro."),
         }
     }
