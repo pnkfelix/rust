@@ -293,7 +293,13 @@ impl LoanPath {
 
         debug!("lp.to_type() for lp={:s}", self.repr(tcx));
         let opt_ty = match *self {
-            LpUpvar(ty::UpvarId { var_id: id, closure_expr_id: _ }) |
+            LpUpvar(ty::UpvarId { var_id: id, closure_expr_id: _ }) =>
+                ty::node_id_to_type_opt(tcx, id).map(|t| {
+                    ty::mk_ptr(tcx, ty::mt{ty: t,
+                                           // making up immut here.
+                                           // Hopefully won't matter.
+                                           mutbl: ast::MutImmutable})
+                }),
             LpVar(id) => ty::node_id_to_type_opt(tcx, id),
 
             // treat the downcasted enum as having the enum's type;
