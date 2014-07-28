@@ -465,6 +465,7 @@ impl Map {
             Some(NodeStmt(stmt)) => stmt.span,
             Some(NodeArg(pat)) | Some(NodeLocal(pat)) => pat.span,
             Some(NodePat(pat)) => pat.span,
+            Some(NodeArm(arm)) => arm.body.span,
             Some(NodeBlock(block)) => block.span,
             Some(NodeStructCtor(_)) => self.expect_item(self.get_parent(id)).span,
             _ => return None,
