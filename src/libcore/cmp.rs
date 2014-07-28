@@ -38,7 +38,7 @@
 //! ```
 
 #![stable]
-
+use mem::drop;
 use option::{Option, Some};
 
 /// Trait for values that can be compared for equality and inequality.
@@ -223,14 +223,14 @@ pub trait Equiv<T> {
 #[inline]
 #[stable]
 pub fn min<T: Ord>(v1: T, v2: T) -> T {
-    if v1 < v2 { v1 } else { v2 }
+    if v1 < v2 { drop(v2); v1 } else { drop(v1); v2 }
 }
 
 /// Compare and return the maximum of two values.
 #[inline]
 #[stable]
 pub fn max<T: Ord>(v1: T, v2: T) -> T {
-    if v1 > v2 { v1 } else { v2 }
+    if v1 > v2 { drop(v2); v1 } else { drop(v1); v2 }
 }
 
 // Implementation of PartialEq, Eq, PartialOrd and Ord for primitive types

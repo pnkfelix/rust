@@ -278,6 +278,7 @@ use clone::Clone;
 use cmp::PartialEq;
 use std::fmt::Show;
 use iter::{Iterator, FromIterator};
+use mem::drop;
 use option::{None, Option, Some};
 
 /// `Result` is a type that represents either success (`Ok`) or failure (`Err`).
@@ -365,7 +366,7 @@ impl<T, E> Result<T, E> {
     pub fn ok(self) -> Option<T> {
         match self {
             Ok(x)  => Some(x),
-            Err(_) => None,
+            Err(g) => { drop(g); None }
         }
     }
 
@@ -376,7 +377,7 @@ impl<T, E> Result<T, E> {
     #[inline]
     pub fn err(self) -> Option<E> {
         match self {
-            Ok(_)  => None,
+            Ok(g)  => { drop(g); None }
             Err(x) => Some(x),
         }
     }
@@ -469,8 +470,8 @@ impl<T, E> Result<T, E> {
     #[inline]
     pub fn and<U>(self, res: Result<U, E>) -> Result<U, E> {
         match self {
-            Ok(_) => res,
-            Err(e) => Err(e),
+            Ok(g) => { drop(g); res }
+            Err(e) => { drop(res); Err(e) }
         }
     }
 
@@ -489,8 +490,8 @@ impl<T, E> Result<T, E> {
     #[inline]
     pub fn or(self, res: Result<T, E>) -> Result<T, E> {
         match self {
-            Ok(_) => self,
-            Err(_) => res,
+            Ok(_) => { drop(res); self }
+            Err(_) => { drop(self); res }
         }
     }
 
@@ -510,8 +511,8 @@ impl<T, E> Result<T, E> {
     #[inline]
     pub fn unwrap_or(self, optb: T) -> T {
         match self {
-            Ok(t) => t,
-            Err(_) => optb
+            Ok(t) => { drop(optb); t }
+            Err(g) => { drop(g); optb }
         }
     }
 
@@ -617,7 +618,7 @@ pub fn collect<T, E, Iter: Iterator<Result<T, E>>, V: FromIterator<T>>(iter: Ite
     let v: V = FromIterator::from_iter(adapter.by_ref());
 
     match adapter.err {
-        Some(err) => Err(err),
+        Some(err) => { drop(v); Err(err) }
         None => Ok(v),
     }
 }

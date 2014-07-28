@@ -145,6 +145,7 @@ use cmp::{PartialEq, Eq, Ord};
 use default::Default;
 use iter::{Iterator, DoubleEndedIterator, FromIterator, ExactSize};
 use mem;
+use mem::drop;
 use slice;
 
 // Note that this is not a lang item per se, but it has a hidden dependency on
@@ -275,7 +276,7 @@ impl<T> Option<T> {
     #[inline]
     pub fn unwrap_or(self, def: T) -> T {
         match self {
-            Some(x) => x,
+            Some(x) => { drop(def); x }
             None => def
         }
     }
@@ -312,7 +313,7 @@ impl<T> Option<T> {
     /// Applies a function to the contained value or returns a default.
     #[inline]
     pub fn map_or<U>(self, def: U, f: |T| -> U) -> U {
-        match self { None => def, Some(t) => f(t) }
+        match self { None => def, Some(t) => { drop(def); f(t) } }
     }
 
     /// Applies a function to the contained value or does nothing.
@@ -329,6 +330,7 @@ impl<T> Option<T> {
     pub fn mutate_or_set(&mut self, def: T, f: |T| -> T) -> bool {
         if self.is_some() {
             *self = Some(f(self.take_unwrap()));
+            drop(def);
             true
         } else {
             *self = Some(def);
@@ -367,7 +369,7 @@ impl<T> Option<T> {
     pub fn and<U>(self, optb: Option<U>) -> Option<U> {
         match self {
             Some(_) => optb,
-            None => None,
+            None => { drop(optb); None }
         }
     }
 
@@ -385,8 +387,8 @@ impl<T> Option<T> {
     #[inline]
     pub fn or(self, optb: Option<T>) -> Option<T> {
         match self {
-            Some(_) => self,
-            None => optb
+            Some(_) => { drop(optb); self }
+            None => { drop(self); optb }
         }
     }
 
@@ -396,7 +398,7 @@ impl<T> Option<T> {
     pub fn or_else(self, f: || -> Option<T>) -> Option<T> {
         match self {
             Some(_) => self,
-            None => f()
+            None => { drop(self); f() }
         }
     }
 
@@ -414,7 +416,7 @@ impl<T> Option<T> {
     #[inline(always)]
     pub fn filtered(self, f: |t: &T| -> bool) -> Option<T> {
         match self {
-            Some(x) => if f(&x) { Some(x) } else { None },
+            Some(x) => if f(&x) { Some(x) } else { drop(x); None },
             None => None
         }
     }
@@ -618,6 +620,7 @@ pub fn collect<T, Iter: Iterator<Option<T>>, V: FromIterator<T>>(iter: Iter) -> 
     let v: V = FromIterator::from_iter(adapter.by_ref());
 
     if adapter.found_none {
+        drop(v);
         None
     } else {
         Some(v)

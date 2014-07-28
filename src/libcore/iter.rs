@@ -68,6 +68,7 @@ use clone::Clone;
 use cmp;
 use cmp::{PartialEq, PartialOrd, Ord};
 use mem;
+use mem::drop;
 use num::{Zero, One, CheckedAdd, CheckedSub, Saturating, ToPrimitive, Int};
 use ops::{Add, Mul, Sub};
 use option::{Option, Some, None};
@@ -483,7 +484,7 @@ pub trait Iterator<A> {
     fn nth(&mut self, mut n: uint) -> Option<A> {
         loop {
             match self.next() {
-                Some(x) => if n == 0 { return Some(x) },
+                Some(x) => if n == 0 { return Some(x) } else { drop(x) },
                 None => return None
             }
             n -= 1;
@@ -612,8 +613,10 @@ pub trait Iterator<A> {
             match max {
                 None             => Some((x, x_val)),
                 Some((y, y_val)) => if x_val > y_val {
+                    drop((y, y_val));
                     Some((x, x_val))
                 } else {
+                    drop((x, x_val));
                     Some((y, y_val))
                 }
             }
@@ -636,8 +639,10 @@ pub trait Iterator<A> {
             match min {
                 None             => Some((x, x_val)),
                 Some((y, y_val)) => if x_val < y_val {
+                    drop((y, y_val));
                     Some((x, x_val))
                 } else {
+                    drop((x, x_val));
                     Some((y, y_val))
                 }
             }
@@ -963,17 +968,19 @@ impl<A: Ord, T: Iterator<A>> OrdIterator<A> for T {
                         min = first;
                     } else if first > max {
                         max = first;
+                    } else {
+                        drop(first);
                     }
                     break;
                 }
                 Some(x) => x
             };
             if first < second {
-                if first < min {min = first;}
-                if max < second {max = second;}
+                if first < min {min = first;} else {drop(first);}
+                if max < second {max = second;} else {drop(second);}
             } else {
-                if second < min {min = second;}
-                if max < first {max = first;}
+                if second < min {min = second;} else {drop(second);}
+                if max < first {max = first;} else {drop(first);}
             }
         }
 
@@ -1183,7 +1190,7 @@ impl<A, B, T: Iterator<A>, U: Iterator<B>> Iterator<(A, B)> for Zip<T, U> {
         match self.a.next() {
             None => None,
             Some(x) => match self.b.next() {
-                None => None,
+                None => { drop(x); None }
                 Some(y) => Some((x, y))
             }
         }
@@ -1242,7 +1249,7 @@ RandomAccessIterator<(A, B)> for Zip<T, U> {
         match self.a.idx(index) {
             None => None,
             Some(x) => match self.b.idx(index) {
-                None => None,
+                None => { drop(x); None }
                 Some(y) => Some((x, y))
             }
         }
@@ -1261,7 +1268,7 @@ impl<'a, A, B, T> Map<'a, A, B, T> {
     fn do_map(&mut self, elt: Option<A>) -> Option<B> {
         match elt {
             Some(a) => Some((self.f)(a)),
-            _ => None
+            _ => { drop(elt); None }
         }
     }
 }
@@ -1555,6 +1562,7 @@ impl<'a, A, T: Iterator<A>> Iterator<A> for TakeWhile<'a, A, T> {
                         Some(x)
                     } else {
                         self.flag = true;
+                        drop(x);
                         None
                     }
                 }
