@@ -852,7 +852,8 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
             attrs: vec!(),
             pats: pats,
             guard: None,
-            body: expr
+            body: expr,
+            id: ast::DUMMY_NODE_ID,
         }
     }
 
@@ -862,7 +863,7 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
 
     fn expr_match(&self, span: Span, arg: Gc<ast::Expr>,
                   arms: Vec<ast::Arm>) -> Gc<Expr> {
-        self.expr(span, ast::ExprMatch(arg, arms))
+        self.expr(span, ast::ExprMatch(arg, arms.move_iter().map(|x| box(GC)x).collect()))
     }
 
     fn expr_if(&self, span: Span,

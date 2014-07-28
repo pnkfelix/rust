@@ -144,6 +144,27 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
 
     }
 
+    fn pop_and_trans_match_arm_cleanup_scope(&self,
+                                             bcx: &'a Block<'a>,
+                                             cleanup_scope: ast::NodeId)
+                                             -> &'a Block<'a> {
+        /*!
+         * Removes the cleanup scope for match arm with id
+         * `cleanup_scope`, which must be at the top of the cleanup
+         * stack, and generates the code to do its cleanups for normal
+         * exit.
+         */
+
+        debug!("pop_and_trans_match_arm_cleanup_scope({})",
+               self.ccx.tcx.map.node_to_string(cleanup_scope));
+
+        assert!(self.top_scope(|s| s.kind.is_ast_with_id(cleanup_scope)));
+
+        let scope = self.pop_scope();
+        self.trans_scope_cleanups(bcx, &scope)
+
+    }
+
     fn pop_loop_cleanup_scope(&self,
                               cleanup_scope: ast::NodeId) {
         /*!
@@ -1032,6 +1053,7 @@ pub trait CleanupMethods<'blk, 'tcx> {
                                    id: ast::NodeId,
                                    exits: [Block<'blk, 'tcx>, ..EXIT_MAX]);
     fn push_custom_cleanup_scope(&self) -> CustomScopeIndex;
+    fn push_match_arm_cleanup_scope(&self, id: ast::NodeId);
     fn pop_and_trans_ast_cleanup_scope(&self,
                                               bcx: Block<'blk, 'tcx>,
                                               cleanup_scope: ast::NodeId)

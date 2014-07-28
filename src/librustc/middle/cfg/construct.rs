@@ -369,12 +369,16 @@ impl<'a, 'tcx> CFGBuilder<'a, 'tcx> {
                 //  [guard1]   |
                 //     |       |
                 //     |       |
-                //     v 5     v
-                //  [body1]  [cond2]
+                //     v 5     |
+                //  [body1]    |
+                //     |       |
+                //     | 6     |
+                //   [arm1]    v
+                //     |     [cond2]
                 //     |      /  \
                 //     |    ...  ...
                 //     |     |    |
-                //     v 6   v    v
+                //     v 7   v    v
                 //  [.....expr.....]
                 //
                 let discr_exit = self.expr(discr.clone(), pred);         // 1
@@ -389,7 +393,8 @@ impl<'a, 'tcx> CFGBuilder<'a, 'tcx> {
                                                    pats_exit);           // 4
                     let body_exit = self.expr(arm.body.clone(),
                                               guard_exit);               // 5
-                    self.add_contained_edge(body_exit, expr_exit);       // 6
+                    let arm_exit = self.add_node(arm.id, [body_exit]);   // 6
+                    self.add_contained_edge(arm_exit, expr_exit);        // 7
                 }
                 expr_exit
             }

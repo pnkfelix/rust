@@ -2777,7 +2777,7 @@ impl<'a> Parser<'a> {
         let lo = self.last_span.lo;
         let discriminant = self.parse_expr_res(RESTRICT_NO_STRUCT_LITERAL);
         self.commit_expr_expecting(discriminant, token::LBRACE);
-        let mut arms: Vec<Arm> = Vec::new();
+        let mut arms: Vec<Gc<Arm>> = Vec::new();
         while self.token != token::RBRACE {
             arms.push(self.parse_arm());
         }
@@ -2811,6 +2811,7 @@ impl<'a> Parser<'a> {
             pats: pats,
             guard: guard,
             body: expr,
+            id: ast::DUMMY_NODE_ID,
         }
     }
 
