@@ -90,7 +90,28 @@ pub struct Context {
     var_parent: Option<ast::NodeId>,
 
     // Innermost enclosing scope (e.g. expression, match arm)
-    parent: Option<ast::NodeId>,
+    lifetime_parent: Option<ast::NodeId>,
+}
+
+impl Context {
+    fn new(id: ast::NodeId) -> Context {
+        Context {
+            var_parent: Some(id),
+            lifetime_parent: Some(id),
+        }
+    }
+    fn fresh() -> Context {
+        Context {
+            var_parent: None,
+            lifetime_parent: None,
+        }
+    }
+    fn with_var_parent(&self, id: ast::NodeId) -> Context {
+        Context { var_parent: Some(id), ..*self }
+    }
+    fn with_lifetime_parent(&self, id: ast::NodeId) -> Context {
+        Context { lifetime_parent: Some(id), ..*self }
+    }
 }
 
 struct RegionResolutionVisitor<'a> {
@@ -232,6 +253,7 @@ impl RegionMaps {
 
         let mut s = subscope;
         while superscope != s {
+            debug!("is_subscope_of({}, {}) cursor s={}", subscope, superscope, s);
             match self.scope_map.borrow().find(&s) {
                 None => {
                     debug!("is_subscope_of({}, {}, s={})=false",
@@ -375,7 +397,7 @@ fn record_superlifetime(visitor: &mut RegionResolutionVisitor,
                         child_id: ast::NodeId,
                         _sp: Span) {
     debug!("record_superlifetime(child_id={})", child_id);
-    for &parent_id in cx.parent.iter() {
+    for &parent_id in cx.lifetime_parent.iter() {
         visitor.region_maps.record_encl_scope(child_id, parent_id);
     }
 }
@@ -414,7 +436,7 @@ fn resolve_block(visitor: &mut RegionResolutionVisitor,
     //   }
     //
 
-    let subcx = Context {var_parent: Some(blk.id), parent: Some(blk.id)};
+    let subcx = Context::new(blk.id);
     visit::walk_block(visitor, blk, subcx);
 }
 
@@ -440,20 +462,17 @@ fn resolve_arm(visitor: &mut RegionResolutionVisitor,
 
     let &Arm { ref attrs, ref pats, guard, body, id } = arm;
 
-    let mut new_cx = cx;
-    // The variable parent of everything inside (most importantly, the
-    // pattern) is the arm.
-    new_cx.var_parent = Some(body.id);
-
-    for pattern in pats.iter() {
-        visitor.visit_pat(&**pattern, new_cx);
-    }
-    visit::walk_expr_opt(visitor, guard, new_cx);
-
     // (Slightly misleading hack: using body of an arm as its span.)
     record_superlifetime(visitor, cx, id, body.span);
 
-    let subcx = Context { var_parent: Some(id), parent: Some(id), };
+    // The variable parent of everything inside (most importantly, the
+    // pattern) is the arm.
+    let subcx = Context::new(id);
+
+    for pattern in pats.iter() {
+        visitor.visit_pat(&**pattern, subcx);
+    }
+    visit::walk_expr_opt(visitor, guard, subcx);
 
     visitor.visit_expr(&*body, subcx);
     for attr in attrs.iter() {
@@ -488,7 +507,7 @@ fn resolve_stmt(visitor: &mut RegionResolutionVisitor,
     visitor.region_maps.mark_as_terminating_scope(stmt_id);
     record_superlifetime(visitor, cx, stmt_id, stmt.span);
 
-    let subcx = Context {parent: Some(stmt_id), ..cx};
+    let subcx = cx.with_lifetime_parent(stmt_id);
     visit::walk_stmt(visitor, stmt, subcx);
 }
 
@@ -499,8 +518,7 @@ fn resolve_expr(visitor: &mut RegionResolutionVisitor,
 
     record_superlifetime(visitor, cx, expr.id, expr.span);
 
-    let mut new_cx = cx;
-    new_cx.parent = Some(expr.id);
+    let mut new_cx = cx.with_lifetime_parent(expr.id);
     match expr.node {
         // Conditional or repeating scopes are always terminating
         // scopes, meaning that temporaries cannot outlive them.
@@ -826,9 +844,9 @@ fn resolve_local(visitor: &mut RegionResolutionVisitor,
 
 fn resolve_item(visitor: &mut RegionResolutionVisitor,
                 item: &ast::Item,
-                cx: Context) {
+                _cx: Context) {
     // Items create a new outer block scope as far as we're concerned.
-    let new_cx = Context {var_parent: None, parent: None, ..cx};
+    let new_cx = Context::fresh();
     visit::walk_item(visitor, item, new_cx);
 }
 
@@ -842,25 +860,22 @@ fn resolve_fn(visitor: &mut RegionResolutionVisitor,
     debug!("region::resolve_fn(id={}, \
                                span={:?}, \
                                body.id={}, \
-                               cx.parent={})",
+                               cx.lifetime_parent={})",
            id,
            visitor.sess.codemap().span_to_string(sp),
            body.id,
-           cx.parent);
+           cx.lifetime_parent);
 
     visitor.region_maps.mark_as_terminating_scope(body.id);
 
     // The arguments and `self` are parented to the body of the fn.
-    let decl_cx = Context {parent: Some(body.id),
-                           var_parent: Some(body.id)};
+    let decl_cx = Context::new(body.id);
     visit::walk_fn_decl(visitor, decl, decl_cx);
 
     // The body of the fn itself is either a root scope (top-level fn)
     // or it continues with the inherited scope (closures).
     let body_cx = match *fk {
-        visit::FkItemFn(..) | visit::FkMethod(..) => {
-            Context {parent: None, var_parent: None, ..cx}
-        }
+        visit::FkItemFn(..) | visit::FkMethod(..) => Context::fresh(),
         visit::FkFnBlock(..) => {
             // FIXME(#3696) -- at present we are place the closure body
             // within the region hierarchy exactly where it appears lexically.
@@ -919,7 +934,7 @@ pub fn resolve_crate(sess: &Session, krate: &ast::Crate) -> RegionMaps {
             sess: sess,
             region_maps: &maps
         };
-        let cx = Context { parent: None, var_parent: None };
+        let cx = Context::fresh();
         visit::walk_crate(&mut visitor, krate, cx);
     }
     return maps;
@@ -928,8 +943,7 @@ pub fn resolve_crate(sess: &Session, krate: &ast::Crate) -> RegionMaps {
 pub fn resolve_inlined_item(sess: &Session,
                             region_maps: &RegionMaps,
                             item: &ast::InlinedItem) {
-    let cx = Context {parent: None,
-                      var_parent: None};
+    let cx = Context::fresh();
     let mut visitor = RegionResolutionVisitor {
         sess: sess,
         region_maps: region_maps,
