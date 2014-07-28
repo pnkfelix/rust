@@ -467,7 +467,7 @@ impl<'d,'t,TYPER:mc::Typer> ExprUseVisitor<'d,'t,TYPER> {
                 self.walk_expr(&**head);
 
                 let head_cmt = return_if_err!(self.mc.cat_expr(&**head));
-                self.walk_pat(head_cmt, pat.clone());
+                self.walk_pat_isolated(head_cmt, pat.clone());
 
                 self.walk_block(&**blk);
             }
