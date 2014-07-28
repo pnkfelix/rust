@@ -484,7 +484,7 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
                                                  pat.span,
                                                  ty::ReScope(blk.id),
                                                  pattern_type);
-                self.walk_pat(pat_cmt, pat.clone());
+                self.walk_pat_isolated(pat_cmt, pat.clone());
 
                 self.walk_block(&**blk);
             }
