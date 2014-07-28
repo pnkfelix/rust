@@ -5,9 +5,21 @@
 #[lang="copy"]  pub trait Copy { }
 #[lang="sized"] pub trait Sized { }
 
-pub fn foo<T:Copy>(b: bool, x: T, f: |T| -> int) -> int {
+mod marker {
+    #[lang="no_send_bound"]
+    pub struct NoSend;
+}
+
+#[lang="gc"]
+pub struct Gc<T> {
+    _ptr: *mut T,
+    marker: marker::NoSend,
+}
+
+pub fn foo<T:Copy>(b: bool, c: || -> Gc<T>, f: |Gc<T>| -> int) -> int {
+    let x = c();
     //                                                          // NEEDS_DROP={}
-    if b {
+    let ret = if b {
     //                                                          // NEEDS_DROP={}
         f(x) // Variable x copied in this branch ...
     //                                                          // NEEDS_DROP={}
@@ -15,6 +27,9 @@ pub fn foo<T:Copy>(b: bool, x: T, f: |T| -> int) -> int {
     //                                                          // NEEDS_DROP={}
         3    // ... but not this one ...
     //                                                          // NEEDS_DROP={}
-    } // ... but since it is copy, needs-drop = {}.  (Copy and Drop are mutually exclusive)
+    }; // ... but since it is Gc<T>, needs-drop = {}.
+    //        (Gc should not impose drop obligation)
     //                                                          // NEEDS_DROP={}
+    c();
+    ret
 }
