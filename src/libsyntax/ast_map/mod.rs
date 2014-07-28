@@ -107,6 +107,7 @@ pub enum Node {
     NodeLocal(Gc<Pat>),
     NodePat(Gc<Pat>),
     NodeBlock(P<Block>),
+    NodeArm(Gc<Arm>),
 
     /// NodeStructCtor represents a tuple struct.
     NodeStructCtor(Gc<StructDef>),
@@ -133,6 +134,7 @@ enum MapEntry {
     EntryLocal(NodeId, Gc<Pat>),
     EntryPat(NodeId, Gc<Pat>),
     EntryBlock(NodeId, P<Block>),
+    EntryArm(NodeId, Gc<Arm>),
     EntryStructCtor(NodeId, Gc<StructDef>),
     EntryLifetime(NodeId, Gc<Lifetime>),
 
@@ -160,10 +162,11 @@ impl MapEntry {
             EntryArg(id, _) => id,
             EntryLocal(id, _) => id,
             EntryPat(id, _) => id,
+            EntryArm(id, _) => id,
             EntryBlock(id, _) => id,
             EntryStructCtor(id, _) => id,
             EntryLifetime(id, _) => id,
-            _ => return None
+            NotPresent | RootCrate | RootInlinedParent(_) => return None,
         })
     }
 
@@ -180,9 +183,10 @@ impl MapEntry {
             EntryLocal(_, p) => NodeLocal(p),
             EntryPat(_, p) => NodePat(p),
             EntryBlock(_, p) => NodeBlock(p),
+            EntryArm(_, p) => NodeArm(p),
             EntryStructCtor(_, p) => NodeStructCtor(p),
             EntryLifetime(_, p) => NodeLifetime(p),
-            _ => return None
+            NotPresent | RootCrate | RootInlinedParent(_) => return None,
         })
     }
 }
@@ -609,6 +613,7 @@ pub struct Ctx<'a, F> {
 impl<'a, F> Ctx<'a, F> {
     fn insert(&self, id: NodeId, entry: MapEntry) {
         (*self.map.map.borrow_mut()).grow_set(id as uint, &NotPresent, entry);
+        debug!("ast_map::Ctx.insert({}, {:s})", id, node_id_to_string(self.map, id));
     }
 }
 
@@ -709,6 +714,14 @@ impl<'a, F: FoldOps> Folder for Ctx<'a, F> {
         expr
     }
 
+    fn fold_arm(&mut self, arm: Gc<Arm>) -> Gc<Arm> {
+        let arm = fold::noop_fold_arm(arm, self);
+
+        self.insert(arm.id, EntryArm(self.parent, arm));
+
+        arm
+    }
+
     fn fold_stmt(&mut self, stmt: &Stmt) -> SmallVector<Gc<Stmt>> {
         let stmt = fold::noop_fold_stmt(stmt, self).expect_one("expected one statement");
         self.insert(ast_util::stmt_id(&*stmt), EntryStmt(self.parent, stmt));
@@ -731,6 +744,7 @@ impl<'a, F: FoldOps> Folder for Ctx<'a, F> {
             "noop_fold_method must produce exactly one method");
         assert_eq!(self.parent, m.id);
         self.parent = parent;
+        self.insert(m.id, EntryMethod(self.parent, m));
         SmallVector::one(m)
     }
 
@@ -893,6 +907,9 @@ fn node_id_to_string(map: &Map, id: NodeId) -> String {
         }
         Some(NodePat(ref pat)) => {
             format!("pat {} (id={})", pprust::pat_to_string(&**pat), id)
+        }
+        Some(NodeArm(ref arm)) => {
+            format!("arm {} (id={})", pprust::arm_to_string(&**arm), id)
         }
         Some(NodeBlock(ref block)) => {
             format!("block {} (id={})", pprust::block_to_string(&**block), id)

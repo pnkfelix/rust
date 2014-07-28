@@ -1402,10 +1402,12 @@ fn trans_match_inner<'a>(scope_cx: &'a Block<'a>,
         let mut bcx = arm_data.bodycx;
 
         // insert bindings into the lllocals map and add cleanups
+        fcx.push_match_arm_cleanup_scope(arm_data.arm.id);
         let cs = fcx.push_custom_cleanup_scope();
         bcx = insert_lllocals(bcx, &arm_data.bindings_map, Some(cleanup::CustomScope(cs)));
         bcx = expr::trans_into(bcx, &*arm_data.arm.body, dest);
         bcx = fcx.pop_and_trans_custom_cleanup_scope(bcx, cs);
+        bcx = fcx.pop_and_trans_match_arm_cleanup_scope(bcx, arm_data.arm.id);
         arm_cxs.push(bcx);
     }
 

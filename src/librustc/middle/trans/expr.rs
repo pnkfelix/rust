@@ -740,6 +740,8 @@ fn trans_rvalue_dps_unadjusted<'a>(bcx: &'a Block<'a>,
             controlflow::trans_if(bcx, expr.id, &**cond, thn.clone(), els, dest)
         }
         ast::ExprMatch(ref discr, ref arms) => {
+            let arms : Vec<ast::Arm> =
+                arms.as_slice().iter().map(|x|(**x).clone()).collect();
             _match::trans_match(bcx, expr, &**discr, arms.as_slice(), dest)
         }
         ast::ExprBlock(ref blk) => {

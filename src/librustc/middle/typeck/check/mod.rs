@@ -3376,6 +3376,8 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
         }
       }
       ast::ExprMatch(ref discrim, ref arms) => {
+        let arms : Vec<ast::Arm> =
+            arms.as_slice().iter().map(|x|(**x).clone()).collect();
         _match::check_match(fcx, expr, &**discrim, arms.as_slice());
       }
       ast::ExprFnBlock(ref decl, ref body) => {

@@ -364,25 +364,29 @@ impl<'a> CFGBuilder<'a> {
                 //  [pat1]  |
                 //     |
                 //     v 4  |
-                // [body1]  v
+                // [body1]  |
+                //     |    |
+                //     v 5  |
+                //  [arm1]  v
                 //     |  [guard2]
                 //     |    /   \
                 //     | [body2] \
                 //     |    |   ...
                 //     |    |    |
-                //     v 5  v    v
+                //     v 6  v    v
                 //   [....expr....]
                 //
-                let discr_exit = self.expr(discr.clone(), pred);         // 1
+                let discr_exit = self.expr(discr.clone(), pred);            // 1
 
                 let expr_exit = self.add_node(expr.id, []);
                 let mut guard_exit = discr_exit;
                 for arm in arms.iter() {
-                    guard_exit = self.opt_expr(arm.guard, guard_exit);   // 2
+                    guard_exit = self.opt_expr(arm.guard, guard_exit);      // 2
                     let pats_exit = self.pats_any(arm.pats.as_slice(),
-                                                  guard_exit);           // 3
+                                                  guard_exit);              // 3
                     let body_exit = self.expr(arm.body.clone(), pats_exit); // 4
-                    self.add_contained_edge(body_exit, expr_exit);       // 5
+                    let arm_exit = self.add_node(arm.id, [body_exit]);      // 5
+                    self.add_contained_edge(arm_exit, expr_exit);           // 6
                 }
                 expr_exit
             }

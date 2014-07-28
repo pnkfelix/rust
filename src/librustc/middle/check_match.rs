@@ -144,7 +144,12 @@ fn check_expr(cx: &mut MatchCheckCtxt, ex: &Expr) {
             }
 
             // Second, check for unreachable arms.
-            check_arms(cx, arms.as_slice());
+            {
+                // FIXME: is this really necessary?  Revisit (FSK).
+                let arms: Vec<Arm> =
+                    arms.as_slice().iter().map(|x|(**x).clone()).collect();
+                check_arms(cx, arms.as_slice());
+            }
 
             // Finally, check if the whole match expression is exhaustive.
             // Check for empty enum, because is_useful only works on inhabited types.
@@ -164,7 +169,7 @@ fn check_expr(cx: &mut MatchCheckCtxt, ex: &Expr) {
             let mut static_inliner = StaticInliner { tcx: cx.tcx };
             let matrix: Matrix = arms
                 .iter()
-                .filter(|&arm| is_unguarded(arm))
+                .filter(|&arm| is_unguarded(&**arm))
                 .flat_map(|arm| arm.pats.iter())
                 .map(|pat| vec![static_inliner.fold_pat(*pat)])
                 .collect();

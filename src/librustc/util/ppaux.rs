@@ -91,9 +91,12 @@ pub fn explain_region_and_span(cx: &ctxt, region: ty::Region)
                 ast::ItemFn(..) => true, _ => false}) => {
               explain_span(cx, "function body", it.span)
           }
+          Some(ast_map::NodeArm(arm)) => {
+              explain_span(cx, "match arm", arm.body.span)
+          }
           Some(_) | None => {
             // this really should not happen
-            (format!("unknown scope: {}.  Please report a bug.", node_id), None)
+            fail!("unknown scope: {}.  Please report a bug.", node_id)
           }
         }
       }
