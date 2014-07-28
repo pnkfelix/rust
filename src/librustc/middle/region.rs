@@ -465,10 +465,15 @@ fn resolve_arm(visitor: &mut RegionResolutionVisitor,
 
     let &Arm { ref attrs, ref pats, guard, body, id } = arm;
 
+    let mut new_cx = cx;
+    // The variable parent of everything inside (most importantly, the
+    // pattern) is the arm.
+    new_cx.var_parent = Some(body.id);
+
     for pattern in pats.iter() {
-        visitor.visit_pat(&**pattern, cx);
+        visitor.visit_pat(&**pattern, new_cx);
     }
-    visit::walk_expr_opt(visitor, guard, cx);
+    visit::walk_expr_opt(visitor, guard, new_cx);
 
     // (Slightly misleading hack: using body of an arm as its span.)
     record_superlifetime(visitor, cx, id, body.span);
