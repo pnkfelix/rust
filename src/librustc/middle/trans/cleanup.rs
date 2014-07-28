@@ -117,7 +117,12 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
         // this new AST scope had better be its immediate child.
         let top_scope = self.top_ast_scope();
         if top_scope.is_some() {
-            assert_eq!(self.ccx.tcx.region_maps.opt_encl_scope(id), top_scope);
+            let encl_scope = self.ccx.tcx.region_maps.opt_encl_scope(id);
+            if encl_scope != top_scope {
+                println!("mismatch between top_scope={} and encl_scope={} for id={}",
+                         encl_scope, top_scope, id);
+            }
+            assert_eq!(encl_scope, top_scope);
         }
 
         self.push_scope(CleanupScope::new(AstScopeKind(id)));
