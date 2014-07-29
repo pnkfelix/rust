@@ -635,7 +635,7 @@ impl MoveData {
                                            mc: mc::MutabilityCategory,
                                            origin_field_name: &mc::FieldName,
                                            origin_lp: &Rc<LoanPath>,
-                                           _origin_id: ast::NodeId,
+                                           origin_id: ast::NodeId,
                                            enum_variant_info: Option<(ast::DefId, Rc<LoanPath>)>) {
         /*! We have determined that `origin_lp` destructures to
          * LpExtend(parent, original_field_name). Based on this,
@@ -653,7 +653,8 @@ impl MoveData {
                 let tuple_idx = match *origin_field_name {
                     mc::PositionalField(tuple_idx) => tuple_idx,
                     mc::NamedField(_) =>
-                        fail!("tuple type should not have named fields."),
+                        fail!("tuple type {} should not have named fields.",
+                              parent_ty.repr(tcx)),
                 };
                 let tuple_len = v.len();
                 for i in range(0, tuple_len) {
@@ -721,8 +722,12 @@ impl MoveData {
                 }
             }
 
-            ref sty => fail!("type {} ({:?}) shouldn't have named fields",
-                             parent_ty.repr(tcx), sty),
+            ref sty => {
+                let msg = format!("type {} ({:?}) shouldn't have named fields",
+                                  parent_ty.repr(tcx), sty);
+                tcx.sess.opt_span_bug(tcx.map.opt_span(origin_id),
+                                      msg.as_slice())
+            }
         }
     }
 
