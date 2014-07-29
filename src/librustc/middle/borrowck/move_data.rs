@@ -597,7 +597,15 @@ impl MoveData {
 
             // *LV for OwnedPtr itself has no siblings, but we might need
             // to propagate inward.  Not sure.
-            LpExtend(_, _, LpDeref(mc::OwnedPtr)) => unimplemented!(),
+            LpExtend(_, _, LpDeref(mc::OwnedPtr)) => {
+                let msg =
+                    format!("add_fragment_siblings encountered \
+                             LpExtend(.., OwnedPtr): {}; \
+                             Assuming it has no siblings (for now).",
+                            lp.repr(tcx));
+                tcx.sess.opt_span_warn(tcx.map.opt_span(origin_id),
+                                       msg.as_slice());
+            }
 
             // *LV has no siblings
             LpExtend(_, _, LpDeref(_)) => {}

@@ -37,6 +37,7 @@ pub enum AnnNode<'a> {
     NodeExpr(&'a ast::Expr),
     NodePat(&'a ast::Pat),
     NodeArm(&'a ast::Arm),
+    NodeMethod(&'a ast::Method),
 }
 
 pub trait PpAnn {
@@ -1009,6 +1010,7 @@ impl<'a> State<'a> {
         try!(self.hardbreak_if_not_bol());
         try!(self.maybe_print_comment(meth.span.lo));
         try!(self.print_outer_attributes(meth.attrs.as_slice()));
+        try!(self.ann.pre(self, NodeMethod(meth)));
         match meth.node {
             ast::MethDecl(ident,
                           ref generics,
@@ -1026,7 +1028,7 @@ impl<'a> State<'a> {
                                    Some(explicit_self.node),
                                    vis));
                 try!(word(&mut self.s, " "));
-                self.print_block_with_attrs(&*body, meth.attrs.as_slice())
+                try!(self.print_block_with_attrs(&*body, meth.attrs.as_slice()))
             },
             ast::MethMac(codemap::Spanned { node: ast::MacInvocTT(ref pth, ref tts, _),
                                             ..}) => {
@@ -1037,9 +1039,10 @@ impl<'a> State<'a> {
                 try!(self.popen());
                 try!(self.print_tts(tts.as_slice()));
                 try!(self.pclose());
-                self.end()
+                try!(self.end())
             }
         }
+        self.ann.post(self, NodeMethod(meth))
     }
 
     pub fn print_outer_attributes(&mut self,

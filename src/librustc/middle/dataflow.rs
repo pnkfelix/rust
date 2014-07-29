@@ -108,6 +108,7 @@ impl<'a, O:DataFlowOperator> pprust::PpAnn for DataFlowContext<'a, O> {
             pprust::NodeBlock(blk) => blk.id,
             pprust::NodeItem(_) => 0,
             pprust::NodePat(pat) => pat.id,
+            pprust::NodeMethod(m) => m.id,
             pprust::NodeArm(arm) => arm.id, // TODO: double-check Arm on dataflow+cfg
         };
 
@@ -246,7 +247,7 @@ impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
         set_bit(kills, bit);
     }
 
-    fn apply_gen_kill(&self, cfgidx: CFGIndex, bits: &mut [uint]) {
+    pub fn apply_gen_kill(&self, cfgidx: CFGIndex, bits: &mut [uint]) {
         //! Applies the gen and kill sets for `cfgidx` to `bits`
         debug!("{:s} apply_gen_kill(cfgidx={}, bits={}) [before]",
                self.analysis_name, cfgidx, mut_bits_to_string(bits));

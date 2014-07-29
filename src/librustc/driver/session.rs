@@ -82,6 +82,12 @@ impl Session {
     pub fn abort_if_errors(&self) {
         self.diagnostic().handler().abort_if_errors()
     }
+    pub fn opt_span_warn(&self, opt_sp: Option<Span>, msg: &str) {
+        match opt_sp {
+            Some(sp) => self.span_warn(sp, msg),
+            None => self.warn(msg),
+        }
+    }
     pub fn span_warn(&self, sp: Span, msg: &str) {
         self.diagnostic().span_warn(sp, msg)
     }

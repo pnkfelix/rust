@@ -120,7 +120,7 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
             let encl_scope = self.ccx.tcx.region_maps.opt_encl_scope(id);
             if encl_scope != top_scope {
                 println!("mismatch between top_scope={} and encl_scope={} for id={}",
-                         encl_scope, top_scope, id);
+                         top_scope, encl_scope, id);
             }
             assert_eq!(encl_scope, top_scope);
         }
@@ -535,6 +535,8 @@ impl<'a> CleanupHelperMethods<'a> for FunctionContext<'a> {
     }
 
     fn push_scope(&self, scope: CleanupScope<'a>) {
+        debug!("pushing cleanup scope={}, {} scopes now",
+               scope.block_name(""), self.scopes_len() + 1);
         self.scopes.borrow_mut().push(scope)
     }
 
