@@ -251,7 +251,9 @@ impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
         //! Applies the gen and kill sets for `cfgidx` to `bits`
         debug!("{:s} apply_gen_kill(cfgidx={}, bits={}) [before]",
                self.analysis_name, cfgidx, mut_bits_to_string(bits));
-        assert!(self.bits_per_id > 0);
+        if self.bits_per_id == 0 {
+            return;
+        }
 
         let (start, end) = self.compute_id_range(cfgidx);
         let gens = self.gens.slice(start, end);
