@@ -910,6 +910,10 @@ impl pprust::PpAnn for IdentifiedAnnotation {
                 try!(pp::space(&mut s.s));
                 s.synth_comment(format!("arm {}", arm.id))
             }
+            pprust::NodeMethod(m) => {
+                try!(pp::space(&mut s.s));
+                s.synth_comment(format!("method {}", m.id))
+            }
         }
     }
 }

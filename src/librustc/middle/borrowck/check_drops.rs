@@ -101,9 +101,54 @@ pub fn check_drops(bccx: &BorrowckCtxt,
             temp
         };
 
+        // In theory, that should be all we need to do; i.e. at this
+        // point we should be able to compare each incoming node's
+        // exit state with the computed intersection, and report any
+        // deviation we see.
+        //
+        // HOWEVER: match arms complicate things.  In principle the
+        // bindings introduced by the bindings on a match arm are
+        // scoped to the match arm, and so for code like this:
+        //
+        //    match s {
+        //        Ok(x)  => { Some(x) },
+        //        Err(s) => { None },
+        //    }
+        //
+        // you might expect that the `s` on the `Err(s)` branch is
+        // dropped at the end of that arm.
+        //
+        // That's not how things are represented in the compiler,
+        // unfortunately for us here; instead, the compiler see's the
+        // lifetime of `s` as being the entire match expression, with
+        // the drop of `s` tied to the flowgraph node for the match
+        // itself, not each arm.
+        //
+        // pnkfelix tried to hack in support for representing the
+        // narrower scope of each arm that fits his mental model, but
+        // encountered some problems.
+        //
+        // So instead, we take this approach: instead of comparing
+        // each incoming edge to the intersection above directly, now
+        // compare each incoming edge to the intersection *after*
+        // applying the kill bits for this merge point to both sides.
+        // pnkfelix calls this "equivalence modulo merge-kills"
+        //
+        // This should take care of match patterns that will be
+        // automatically destroyed, while leaving paths with a broader
+        // scope than the match preserved.
+
+        let mut intersection = intersection;
+        needs_drop.apply_gen_kill(node_index, intersection.as_mut_slice());
+        let intersection = intersection;
+
         cfg.graph.each_incoming_edge(node_index, |edge_index, edge| {
             let source = edge.source();
-            let temp = needs_drop.bitset_for(dataflow::Exit, source);
+            let mut temp = needs_drop.bitset_for(dataflow::Exit, source);
+
+            // see note above about "equivalence modulo merge-kills"
+            needs_drop.apply_gen_kill(node_index, temp.as_mut_slice());
+
             if temp != intersection {
                 let source_id = cfg.graph.node(source).data.id;
                 let opt_source_span = bccx.tcx.map.opt_span(source_id);

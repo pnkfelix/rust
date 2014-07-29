@@ -453,6 +453,41 @@ fn resolve_arm(visitor: &mut RegionResolutionVisitor,
         None => { }
     }
 
+    visit::walk_arm(visitor, arm, cx);
+
+    // Regarding the commented out code below: it is difficult to
+    // figure out what to do for arm = {pat, guard, body}.
+    // In particular, it seems that currently, the scopes are
+    // set up to indcate that the parent of all three components
+    // is the whole match expression, which implies that the
+    // drops of pattern bindings occur at the end of the whole match,
+    // rather than at the end of an individual arm.
+    //
+    // In terms of the actual control flow, there is no distinction
+    // between the whole match and an individual arm.  But in terms of
+    // the control-flow graph representation, these seems to be
+    // very different things.
+    //
+    // pnkfelix's initial take on how to fix this was to explicitly
+    // represent the "scope of the arm" separately, and treat that as
+    // the parent for the pat and the expression.  But what about the
+    // guard?  That is where thing's got tricky, in part because the
+    // arm is not really a scope, and so it was not easy to figure out
+    // how to hack that in.  (Perhaps future changes to the language
+    // will make this make more sense, eg.. the proposal to make
+    // guards take bindings by-ref even if they are going to move for
+    // the body if the guard succeeds.  Or perhaps another approach
+    // would be to more fully distinguish between by-ref and by-move
+    // match arms, since the latter cannot have guards and the former
+    // ... do not need cleanup?  Is that right?  Not sure.)
+    //
+    // Anyway, pnkfelix is now revisiting his approach.  I.e. perhaps
+    // the answer is not to try to introduce some new notion of a
+    // match arm's "scope", but rather, "just" revise the move_data
+    // code for check_drops to treat the merge point for match as a
+    // special case.  Not yet sure.
+
+/*
     // Deliberately not invoking `visit::walk_arm(visitor, arm, cx)`.
     // Instead, walk each component in turn below, using `cx`
     // (carrying the parent scope) for the pattern and optional guard,
@@ -460,24 +495,35 @@ fn resolve_arm(visitor: &mut RegionResolutionVisitor,
     // encoding the distinct lifetime that is established for the
     // expression body.
 
-    let &Arm { ref attrs, ref pats, guard, body, id } = arm;
+    let &Arm { ref attrs, ref pats, guard, body, id: arm_id } = arm;
 
     // (Slightly misleading hack: using body of an arm as its span.)
-    record_superlifetime(visitor, cx, id, body.span);
+    record_superlifetime(visitor, cx, arm_id, body.span);
 
-    // The variable parent of everything inside (most importantly, the
-    // pattern) is the arm.
-    let subcx = Context::new(id);
-
+    // Bindings introduced by the pattern should be treated as having
+    // lifetime bounded by the arm itself.
+    let pat_subcx = cx.with_var_parent(arm_id);
     for pattern in pats.iter() {
-        visitor.visit_pat(&**pattern, subcx);
+        visitor.visit_pat(&**pattern, pat_subcx);
     }
-    visit::walk_expr_opt(visitor, guard, subcx);
 
-    visitor.visit_expr(&*body, subcx);
+    // For the guard, treat its lifetime parent as the arm itself.
+    //
+    // FIXME: would be nice to use `arm_id` here as well, for
+    // uniformity, but making that work requires trans hacking (FSK).
+    let arm_cx = Context::new(arm_id);
+    visit::walk_expr_opt(visitor, guard, arm_cx);
+
+    // The parent of the body expression is the arm itself (so that
+    // expressions within the arm will properly report that their
+    // lifetimes are contained within arm's superlifetime).
+    let body_cx = Context::new(arm_id);
+    visitor.visit_expr(&*body, body_cx);
+
     for attr in attrs.iter() {
-        visitor.visit_attribute(attr, subcx);
+        visitor.visit_attribute(attr, cx);
     }
+*/
 }
 
 fn resolve_pat(visitor: &mut RegionResolutionVisitor,
