@@ -951,7 +951,7 @@ impl<'a, 'b> Folder for MacroExpander<'a, 'b> {
     }
 
     fn fold_arm(&mut self, arm: Gc<ast::Arm>) -> Gc<ast::Arm> {
-        expand_arm(arm, self)
+        expand_arm(&*arm, self)
     }
 
     fn fold_method(&mut self, method: Gc<ast::Method>) -> SmallVector<Gc<ast::Method>> {
