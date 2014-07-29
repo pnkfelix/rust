@@ -12,11 +12,10 @@ pub enum Option<T> { None, Some(T), }
 pub struct Range<A> {
     state: A,
     stop: A,
-    one: A
 }
 
 impl<T> Option<T> {
-    fn map<A>(self, f: |T| -> A) -> Option<A> { loop { } }
+    fn map<A>(self, _f: |T| -> A) -> Option<A> { loop { } }
 }
 
 trait ToNums {
@@ -26,7 +25,7 @@ trait ToNums {
 }
 
 trait CheckedSub {
-    fn checked_sub(&self, y: &Self) -> Option<Self> { loop { } }
+    fn checked_sub(&self, _y: &Self) -> Option<Self> { loop { } }
 }
 impl CheckedSub for i64 {}
 impl CheckedSub for u64 {}
@@ -34,7 +33,7 @@ impl ToNums for i64 {}
 impl ToNums for u64 {}
 
 #[inline]
-fn size_hint<A:ToNums>(_self: &Range<A>) -> (uint, Option<uint>) {
+pub fn foo<A:ToNums>(_self: &Range<A>) -> (uint, Option<uint>) {
     // This first checks if the elements are representable as i64. If they aren't, try u64 (to
     // handle cases like range(huge, huger)). We don't use uint/int because the difference of
     // the i64/u64 might lie within their range.
