@@ -520,7 +520,7 @@ impl<'a> NodesMatchingSuffix<'a> {
         loop {
             match self.map.find(id) {
                 None => return None,
-                Some(NodeItem(item)) if item_is_mod(item) =>
+                Some(NodeItem(item)) if item_is_mod(&*item) =>
                     return Some((id, item.ident.name)),
                 _ => {}
             }
