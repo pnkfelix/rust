@@ -300,7 +300,7 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
         let mut loan_path = loan_path;
         loop {
             match *loan_path {
-                LpVar(_) | LpUpvar(_) => {
+                LpVar(_) | LpUpvar(..) => {
                     break;
                 }
                 LpDowncast(ref lp_base, _) => {
@@ -697,7 +697,7 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
          */
 
         match **lp {
-            LpVar(_) | LpUpvar(_) => {
+            LpVar(_) | LpUpvar(..) => {
                 // assigning to `x` does not require that `x` is initialized
             }
             LpDowncast(ref lp_base, _) => {

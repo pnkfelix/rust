@@ -279,9 +279,12 @@ impl Loan {
 }
 
 #[deriving(PartialEq, Eq, Hash)]
+pub enum CaptureKind { CaptureByVal, CaptureByRef }
+
+#[deriving(PartialEq, Eq, Hash)]
 pub enum LoanPath {
     LpVar(ast::NodeId),                   // `x` in doc.rs
-    LpUpvar(ty::UpvarId),                 // `x` captured by-value into closure
+    LpUpvar(ty::UpvarId, CaptureKind),    // `x` captured by-value into closure
     LpDowncast(Rc<LoanPath>, ast::DefId), // `x` downcast to particular enum variant
     LpExtend(Rc<LoanPath>, mc::MutabilityCategory, LoanPathElem),
 }
@@ -293,13 +296,17 @@ impl LoanPath {
 
         debug!("lp.to_type() for lp={:s}", self.repr(tcx));
         let opt_ty = match *self {
-            LpUpvar(ty::UpvarId { var_id: id, closure_expr_id: _ }) =>
+            LpUpvar(ty::UpvarId { var_id: id, closure_expr_id: _ }, capture) =>
                 ty::node_id_to_type_opt(tcx, id).map(|t| {
-                    ty::mk_ptr(tcx, ty::mt{ty: t,
-                                           // making up immut here.
-                                           // Hopefully won't matter.
-                                           mutbl: ast::MutImmutable})
-                }),
+                    match capture {
+                        CaptureByVal => t,
+                        CaptureByRef =>
+                            ty::mk_ptr(tcx, ty::mt{ty: t,
+                                                   // making up immut here.
+                                                   // Hopefully won't matter.
+                                                   mutbl: ast::MutImmutable}),
+                    }}),
+
             LpVar(id) => ty::node_id_to_type_opt(tcx, id),
 
             // treat the downcasted enum as having the enum's type;
@@ -340,10 +347,15 @@ impl LoanPath {
                     (&LpInterior(Element(_)), &ty::ty_vec(mt, _len)) =>
                         Some(ty::mk_ptr(tcx, mt)),
 
-                    (lp_elem, _) =>
-                        fail!("Unexpected combination of LpExtend with \
-                               LoanPathElem={:?} and base t = {}",
-                              lp_elem, t.repr(tcx)),
+                    (lp_elem, _) => {
+                        let id = self.kill_scope(tcx);
+                        let msg =
+                            format!("Unexpected combination of LpExtend \
+                                     with LoanPathElem={:?} and base t = {}",
+                                    lp_elem, t.repr(tcx));
+                        let opt_span = tcx.map.opt_span(id);
+                        tcx.sess.opt_span_bug(opt_span, msg.as_slice())
+                    }
                 }
             }
         };
@@ -351,10 +363,7 @@ impl LoanPath {
             let id = self.kill_scope(tcx);
             let msg = format!("no type found for lp={:s}", self.repr(tcx));
             let opt_span = tcx.map.opt_span(id);
-            match opt_span {
-                Some(s) => tcx.sess.span_bug(s, msg.as_slice()),
-                None => tcx.sess.bug(msg.as_slice()),
-            }
+            tcx.sess.opt_span_bug(opt_span, msg.as_slice());
         });
         debug!("lp.to_type() for lp={:s} returns t={:s}",
                self.repr(tcx), t.repr(tcx));
@@ -369,7 +378,7 @@ impl LoanPath {
         debug!("needs_drop(tcx) self={}", self.repr(tcx));
 
         match *self {
-            LpVar(_) | LpUpvar(_) =>
+            LpVar(_) | LpUpvar(..) =>
                 // Variables are the easiest case: just use their
                 // types to determine wwhether they introduce a drop
                 // obligation when assigned.  (FSK well, at the
@@ -463,7 +472,7 @@ impl LoanPath {
     pub fn kill_scope(&self, tcx: &ty::ctxt) -> ast::NodeId {
         match *self {
             LpVar(local_id) => tcx.region_maps.var_scope(local_id),
-            LpUpvar(upvar_id) =>
+            LpUpvar(upvar_id, _) =>
                 closure_to_block(upvar_id.closure_expr_id, tcx),
             LpDowncast(ref base, _) |
             LpExtend(ref base, _, _) => base.kill_scope(tcx),
@@ -492,12 +501,15 @@ pub fn opt_loan_path(cmt: &mc::cmt, tcx: &ty::ctxt) -> Option<Rc<LoanPath>> {
             Some(Rc::new(LpVar(id)))
         }
 
-        mc::cat_upvar(ty::UpvarId {var_id: id, closure_expr_id: proc_id}, _) |
+        mc::cat_upvar(ty::UpvarId {var_id: id, closure_expr_id: proc_id}, _) => {
+            let upvar_id = ty::UpvarId{ var_id: id, closure_expr_id: proc_id };
+            Some(Rc::new(LpUpvar(upvar_id, CaptureByRef)))
+        }
         mc::cat_copied_upvar(mc::CopiedUpvar { upvar_id: id,
                                                onceness: _,
                                                capturing_proc: proc_id }) => {
             let upvar_id = ty::UpvarId{ var_id: id, closure_expr_id: proc_id };
-            Some(Rc::new(LpUpvar(upvar_id)))
+            Some(Rc::new(LpUpvar(upvar_id, CaptureByVal)))
         }
 
         mc::cat_deref(ref cmt_base, _, pk) => {
@@ -952,7 +964,7 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
                                    loan_path: &LoanPath,
                                    out: &mut String) {
         match *loan_path {
-            LpUpvar(ty::UpvarId{ var_id: id, closure_expr_id: _ }) |
+            LpUpvar(ty::UpvarId{ var_id: id, closure_expr_id: _ }, _) |
             LpVar(id) => {
                 out.push_str(ty::local_var_name_str(self.tcx, id).get());
             }
@@ -1072,7 +1084,7 @@ impl Repr for LoanPath {
                 format!("$({})", tcx.map.node_to_string(id))
             }
 
-            &LpUpvar(ty::UpvarId{ var_id, closure_expr_id }) => {
+            &LpUpvar(ty::UpvarId{ var_id, closure_expr_id }, _) => {
                 let s = tcx.map.node_to_string(var_id);
                 format!("$({} captured by id={})", s, closure_expr_id)
             }

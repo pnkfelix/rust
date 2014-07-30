@@ -196,7 +196,7 @@ pub type NeedsDropDataFlow<'a> = DataFlowContext<'a, NeedsDropDataFlowOperator>;
 
 fn loan_path_is_precise(loan_path: &LoanPath) -> bool {
     match *loan_path {
-        LpVar(_) | LpUpvar(_) => {
+        LpVar(_) | LpUpvar(..) => {
             true
         }
         LpExtend(_, _, LpInterior(mc::InteriorElement(_))) => {
@@ -591,7 +591,7 @@ impl MoveData {
                lp.repr(tcx), origin_id);
 
         match *lp {
-            LpVar(_) | LpUpvar(_) => {} // Local variables have no siblings.
+            LpVar(_) | LpUpvar(..) => {} // Local variables have no siblings.
 
             LpDowncast(..) => {} // an enum variant (on its own) has no siblings.
 
@@ -854,7 +854,7 @@ impl MoveData {
                     let rm = Removed { where: kill_id, what_path: move_path_index };
                     self.remove_drop_obligations(tcx, &rm, dfcx_needs_drop);
                 }
-                LpUpvar(ty::UpvarId { var_id: _, closure_expr_id }) => {
+                LpUpvar(ty::UpvarId { var_id: _, closure_expr_id }, _) => {
                     let kill_id = closure_to_block(closure_expr_id, tcx);
                     let move_path_index = *self.path_map.borrow().get(&path.loan_path);
                     self.kill_moves(move_path_index, kill_id, dfcx_moves);
@@ -876,7 +876,7 @@ impl MoveData {
                     let kill_id = tcx.region_maps.var_scope(id);
                     dfcx_assign.add_kill(kill_id, assignment_index);
                 }
-                LpUpvar(ty::UpvarId { var_id: _, closure_expr_id }) => {
+                LpUpvar(ty::UpvarId { var_id: _, closure_expr_id }, _) => {
                     let kill_id = closure_to_block(closure_expr_id, tcx);
                     dfcx_assign.add_kill(kill_id, assignment_index);
                 }
