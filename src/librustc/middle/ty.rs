@@ -2653,6 +2653,13 @@ pub fn positional_element_ty(cx: &ctxt, t: t, i: uint, variant_id: Option<ast::D
             variant_info.args.as_slice().get(i).map(|t|t.subst(cx, substs))
         }
 
+        (&ty_enum(def_id, ref substs), None) => {
+            assert!(enum_is_univariant(cx, def_id));
+            let enum_variants = enum_variants(cx, def_id);
+            let variant_info = enum_variants.get(0);
+            variant_info.args.as_slice().get(i).map(|t|t.subst(cx, substs))
+        }
+
         _ => None
     }
 }
