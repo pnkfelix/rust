@@ -75,7 +75,7 @@ impl<'a> RestrictionsContext<'a> {
 
             mc::cat_upvar(upvar_id, _) => {
                 // R-Variable, captured into closure
-                let lp = Rc::new(LpUpvar(upvar_id));
+                let lp = Rc::new(LpUpvar(upvar_id, CaptureByRef));
                 SafeIf(lp.clone(), vec!(lp))
             }
 
