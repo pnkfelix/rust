@@ -106,9 +106,6 @@ impl Context {
             lifetime_parent: None,
         }
     }
-    fn with_var_parent(&self, id: ast::NodeId) -> Context {
-        Context { var_parent: Some(id), ..*self }
-    }
     fn with_lifetime_parent(&self, id: ast::NodeId) -> Context {
         Context { lifetime_parent: Some(id), ..*self }
     }
