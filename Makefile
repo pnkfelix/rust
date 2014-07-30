@@ -1,7 +1,8 @@
-FILES=foo1.rs foo2.rs foo3.rs foo4.rs foo5.rs foo6.rs foo7.rs foo8.rs \
-      foo11.rs foo12.rs \
+FILES=foo1.rs foo2.rs  foo3.rs  foo4.rs  foo5.rs  foo6.rs  foo7.rs  foo8.rs \
+      foo9.rs         foo11.rs foo12.rs foo13.rs foo14.rs \
       dlist01.rs \
       iter1.rs iter2.rs \
+      num01.rs \
       option01.rs \
       result01.rs result02.rs result03.rs \
       str01.rs

@@ -62,7 +62,7 @@ impl<T> Rawlink<T> {
 
 impl<T> DList<T> {
     /// Remove the first Node and return it, or None if the list is empty
-    fn pop_front_node(&mut self) -> Option<Box<Node<T>>> {
+    fn foo(&mut self) -> Option<Box<Node<T>>> {
         self.list_head.take().map(|mut front_node| {
             self.length -= 1;
             match front_node.next.take() {
