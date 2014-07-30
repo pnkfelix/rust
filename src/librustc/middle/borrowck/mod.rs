@@ -340,7 +340,10 @@ impl LoanPath {
                     (&LpInterior(Element(_)), &ty::ty_vec(mt, _len)) =>
                         Some(ty::mk_ptr(tcx, mt)),
 
-                    _ => None,
+                    (lp_elem, _) =>
+                        fail!("Unexpected combination of LpExtend with \
+                               LoanPathElem={:?} and base t = {}",
+                              lp_elem, t.repr(tcx)),
                 }
             }
         };
