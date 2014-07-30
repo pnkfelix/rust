@@ -693,8 +693,21 @@ impl MoveData {
                 }
             }
 
-            (&ty::ty_enum(def_id, ref _substs), Some((variant_def_id, ref _lp2))) => {
-                let variant_info = ty::enum_variant_with_id(tcx, def_id, variant_def_id);
+            (&ty::ty_enum(enum_def_id, ref substs), ref enum_variant_info) => {
+                let variant_info = {
+                    let mut variants = ty::substd_enum_variants(tcx, enum_def_id, substs);
+                    match *enum_variant_info {
+                        Some((variant_def_id, ref _lp2)) =>
+                            variants.iter()
+                            .find(|variant| variant.id == variant_def_id)
+                            .expect("enum_variant_with_id(): no variant exists with that ID")
+                            .clone(),
+                        None => {
+                            assert!(variants.len() == 1);
+                            variants.pop().unwrap()
+                        }
+                    }
+                };
                 match *origin_field_name {
                     mc::NamedField(ast_name) => {
                         let variant_arg_names = variant_info.arg_names.as_ref().unwrap();
@@ -722,9 +735,9 @@ impl MoveData {
                 }
             }
 
-            ref sty => {
-                let msg = format!("type {} ({:?}) shouldn't have named fields",
-                                  parent_ty.repr(tcx), sty);
+            ref sty_and_variant_info => {
+                let msg = format!("type {} ({:?}) is not fragmentable",
+                                  parent_ty.repr(tcx), sty_and_variant_info);
                 tcx.sess.opt_span_bug(tcx.map.opt_span(origin_id),
                                       msg.as_slice())
             }
