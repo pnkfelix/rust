@@ -362,19 +362,57 @@ impl LoanPath {
     }
 
     fn needs_drop(&self, tcx: &ty::ctxt) -> bool {
-        //! Returns true if this loan path needs drop glue.  Usually
-        //! this just means that the type of the loan path needs drop
-        //! glue, but an enum can have some variants that need drop
-        //! glue and other variants that do not.
+        //! Returns true if this loan path needs drop glue.  I.e.,
+        //! does introducing this loan path as a binding introduce a
+        //! new drop obligation.
 
         debug!("needs_drop(tcx) self={}", self.repr(tcx));
 
-        let (lp, variant_def_id) = match *self {
-            LpDowncast(ref lp, def_id) => (lp, def_id),
-            _ => return ty::type_needs_drop(tcx, self.to_type(tcx)),
-        };
+        match *self {
+            LpVar(_) | LpUpvar(_) =>
+                // Variables are the easiest case: just use their
+                // types to determine wwhether they introduce a drop
+                // obligation when assigned.  (FSK well, at the
+                // *moment* they are easy; we may put in
+                // flow-sensitivity in some form.  Or maybe not, we
+                // will see.)
+                ty::type_needs_drop(tcx, self.to_type(tcx)),
 
-        // Code below is to handle one enum variant as a special case.
+            LpExtend(_, _, LpDeref(_)) =>
+                // A path through a `&` or `&mut` reference cannot
+                // introduce a drop obligation; e.g. the assignment
+                // `*p = box 3u` installs a pointer elsewhere that is
+                // the responsibility of someone else (e.g. a caller).
+                false,
+
+            LpExtend(ref base_lp, _cat, LpInterior(_)) =>
+                // 1. Ensure base_lp does not nullify the drop
+                //    obligation (e.g. if it is through a LpDeref,
+                //    such as an example like `*x.p = box 3u` (which
+                //    in the source code may look like `x.p = box 3u`
+                //    due to autoderef).
+                base_lp.needs_drop(tcx) &&
+
+                // 2. Even if the base_lp needs drop, this particular
+                //    field might not.  E.g. for `x.q = 3u`, `x` may
+                //    itself introduce a drop obligation, but the type
+                //    of `q` means that that particular field does not
+                //    affect dropping.
+                ty::type_needs_drop(tcx, self.to_type(tcx)),
+
+            LpDowncast(ref lp, def_id) => self.enum_variant_needs_drop(tcx, lp, def_id),
+        }
+    }
+
+    fn enum_variant_needs_drop(&self,
+                               tcx: &ty::ctxt,
+                               lp: &Rc<LoanPath>,
+                               variant_def_id: ast::DefId) -> bool {
+        //! Handle a particular enum variant as a special case, since
+        //! the type of an enum variant, like `None` has type
+        //! `Option<T>`, can indicate that it needs-drop, even though
+        //! that particular variant does not introduce a
+        //! drop-obligation.
 
         let lp_type = lp.to_type(tcx);
         match ty::get(lp_type).sty {
