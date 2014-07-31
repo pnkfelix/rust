@@ -332,7 +332,7 @@ fn construct_witness(cx: &MatchCheckCtxt, ctor: &Constructor,
                 let fields = ty::lookup_struct_fields(cx.tcx, vid);
                 let field_pats: Vec<FieldPat> = fields.move_iter()
                     .zip(pats.iter())
-                    .filter(|&(_, pat)| pat.node != PatWild)
+                    .filter(|&(_, pat)| pat.node != PatWild(PatWildSingle))
                     .map(|(field, pat)| FieldPat {
                         ident: Ident::new(field.name),
                         pat: pat.clone()
@@ -360,7 +360,7 @@ fn construct_witness(cx: &MatchCheckCtxt, ctor: &Constructor,
                     },
                     _ => unreachable!()
                 },
-                ty::ty_str => PatWild,
+                ty::ty_str => PatWild(PatWildSingle),
 
                 _ => {
                     assert_eq!(pats.len(), 1);
@@ -382,7 +382,7 @@ fn construct_witness(cx: &MatchCheckCtxt, ctor: &Constructor,
         _ => {
             match *ctor {
                 ConstantValue(ref v) => PatLit(const_val_to_expr(v)),
-                _ => PatWild
+                _ => PatWild(PatWildSingle),
             }
         }
     };
@@ -583,7 +583,7 @@ fn pat_constructors(cx: &MatchCheckCtxt, p: Gc<Pat>,
             },
         PatBox(_) | PatTup(_) | PatRegion(..) =>
             vec!(Single),
-        PatWild | PatWildMulti =>
+        PatWild(_) =>
             vec!(),
         PatMac(_) =>
             cx.tcx.sess.bug("unexpanded macro")
@@ -650,10 +650,7 @@ pub fn specialize(cx: &MatchCheckCtxt, r: &[Gc<Pat>],
         id: pat_id, node: ref node, span: pat_span
     } = &(*raw_pat(r[col]));
     let head: Option<Vec<Gc<Pat>>> = match node {
-        &PatWild =>
-            Some(Vec::from_elem(arity, wild())),
-
-        &PatWildMulti =>
+        &PatWild(_) =>
             Some(Vec::from_elem(arity, wild())),
 
         &PatIdent(_, _, _) => {
