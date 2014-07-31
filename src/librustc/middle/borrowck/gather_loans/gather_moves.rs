@@ -15,7 +15,8 @@
 use mc = middle::mem_categorization;
 use middle::borrowck::*;
 use middle::borrowck::gather_loans::move_error::{MoveError, MoveErrorCollector};
-use middle::borrowck::gather_loans::move_error::MoveSpanAndPath;
+use middle::borrowck::gather_loans::move_error::{MoveSpanAndIdent, MoveTarget};
+use middle::borrowck::gather_loans::move_error::{MoveTargetIdent, MoveTargetWildcard};
 use middle::borrowck::move_data::*;
 use euv = middle::expr_use_visitor;
 use middle::ty;
@@ -29,7 +30,7 @@ struct GatherMoveInfo {
     id: ast::NodeId,
     kind: MoveKind,
     cmt: mc::cmt,
-    span_path_opt: Option<MoveSpanAndPath>
+    span_path_opt: Option<MoveTarget>
 }
 
 pub fn gather_decl(bccx: &BorrowckCtxt,
@@ -94,8 +95,8 @@ pub fn gather_move_from_pat(bccx: &BorrowckCtxt,
                             cmt: mc::cmt) {
     let pat_span_path_opt = match move_pat.node {
         ast::PatIdent(_, ref path1, _) => {
-            Some(MoveSpanAndPath{span: move_pat.span,
-                                 ident: path1.node})
+            Some(MoveTargetIdent(MoveSpanAndIdent{span: move_pat.span,
+                                                  ident: path1.node}))
         },
         _ => None,
     };
