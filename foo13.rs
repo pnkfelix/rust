@@ -5,6 +5,8 @@
 #[lang="copy"]  pub trait Copy { }
 #[lang="sized"] pub trait Sized { }
 
+pub fn drop<T>(_x: T) { }
+
 pub enum Foo<A,B> { Fx(A), Fy(B) }
 
 pub fn foo<X,Y:Copy>(s: Foo<X,Y>, f: |X| -> int, f2: |&X| -> int, g: |Y| -> int) -> int {
@@ -25,5 +27,8 @@ pub fn foo<X,Y:Copy>(s: Foo<X,Y>, f: |X| -> int, f2: |&X| -> int, g: |Y| -> int)
             g(y)
     //                                                          // NEEDS_DROP={}
         }
-    } // ... this should be fine.
+    } // ... at some point, I wrote here "this should be fine"
+    // but I no longer understand why I thought that, since there
+    // are true mismatches in the drop obligations for the left and right hand
+    // sides above.
 }
