@@ -77,7 +77,20 @@ pub trait BitwiseOperator {
 /// Parameterization for the precise form of data flow that is used.
 pub trait DataFlowOperator : BitwiseOperator {
     /// Specifies the initial value for each bit in the `on_entry` set
+    /// for every node (except `cfg.entry`) in the flowgraph `cfg`
+    /// that is being analyzed.
+    ///
+    /// See also `entry_initial_value`.
     fn initial_value(&self) -> bool;
+
+    /// Specifies the initial value for each bit in the `on_entry` set
+    /// for `cfg.entry` in the flowgraph `cfg` that is being analyzed.
+    ///
+    /// Defaults to `self.initial_value()`, since many dataflow
+    /// analyses use the same setting in both contexts.
+    fn entry_initial_value(&self) -> bool {
+        self.initial_value()
+    }
 }
 
 struct PropagationContext<'a, 'b, O> {
@@ -200,15 +213,15 @@ impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
                analysis_name, id_range, bits_per_id, words_per_id,
                num_nodes);
 
-        let entry = if oper.initial_value() { uint::MAX } else {0};
+        let init_most = if oper.initial_value() { uint::MAX } else {0};
 
         let gens = Vec::from_elem(num_nodes * words_per_id, 0);
         let kills = Vec::from_elem(num_nodes * words_per_id, 0);
-        let on_entry = Vec::from_elem(num_nodes * words_per_id, entry);
+        let on_entry = Vec::from_elem(num_nodes * words_per_id, init_most);
 
         let nodeid_to_index = build_nodeid_to_index(decl, cfg);
 
-        DataFlowContext {
+        let mut dfcx = DataFlowContext {
             tcx: tcx,
             analysis_name: analysis_name,
             words_per_id: words_per_id,
@@ -218,7 +231,22 @@ impl<'a, O:DataFlowOperator> DataFlowContext<'a, O> {
             gens: gens,
             kills: kills,
             on_entry: on_entry
+        };
+
+        if dfcx.words_per_id == 0 {
+            return dfcx;
         }
+
+        let init_first = if dfcx.oper.entry_initial_value() { uint::MAX } else {0};
+        if init_first != init_most {
+            let (start, end) = dfcx.compute_id_range(cfg.entry);
+            let on_entry_to_entry = dfcx.on_entry.mut_slice(start, end);
+            for elem in on_entry_to_entry.mut_iter() {
+                *elem = init_first;
+            }
+        }
+
+        dfcx
     }
 
     pub fn add_gen(&mut self, id: ast::NodeId, bit: uint) {
