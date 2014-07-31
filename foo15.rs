@@ -17,10 +17,17 @@ pub struct Cell<T> {
 pub fn foo<T>(self_: &mut Cell<T>,
               taken: Option<T>) {
     let f = |front_node: Option<T>| {
-        match front_node {
-            Some(node) => self_.value = node,
-            None => {}
-        }
+    //                                                          // NEEDS_DROP={front_node}
+        match front_node { // by-move match consumes front_node ...
+            Some(node) => {
+    //                                                          // NEEDS_DROP={node}
+                self_.value = node
+    //                                                          // NEEDS_DROP={}
+            }
+            None => {
+    //                                                          // NEEDS_DROP={}
+            }
+        } // ... this should be fine
     };
 
     f(taken)
