@@ -98,6 +98,9 @@ pub fn gather_move_from_pat(bccx: &BorrowckCtxt,
             Some(MoveTargetIdent(MoveSpanAndIdent{span: move_pat.span,
                                                   ident: path1.node}))
         },
+        ast::PatWild(k) => {
+            Some(MoveTargetWildcard(move_pat.span, move_pat.id, k))
+        },
         _ => None,
     };
     let move_info = GatherMoveInfo {

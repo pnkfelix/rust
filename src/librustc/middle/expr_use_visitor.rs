@@ -922,29 +922,32 @@ impl<'d,'t,TYPER:mc::Typer> ExprUseVisitor<'d,'t,TYPER> {
         let delegate = &mut self.delegate;
 
         return_if_err!(mc.cat_pattern(cmt_discr.clone(), &*pat, |mc, cmt_pat, pat| {
-            if pat_util::pat_is_binding(def_map, pat) {
+            if pat_util::pat_is_binding_or_wild(def_map, pat) {
                 let tcx = typer.tcx();
 
-                debug!("binding cmt_pat={} pat={}",
+                debug!("binding cmt_pat={} pat={} match_mode={}",
                        cmt_pat.repr(tcx),
-                       pat.repr(tcx));
+                       pat.repr(tcx),
+                       match_mode);
 
                 // pat_ty: the type of the binding being produced.
                 let pat_ty = ty::node_id_to_type(tcx, pat.id);
 
-                // Each match binding is effectively an assignment to the
-                // binding being produced.
-                let def = def_map.borrow().get_copy(&pat.id);
-                match mc.cat_def(pat.id, pat.span, pat_ty, def) {
-                    Ok(binding_cmt) => {
-                        delegate.mutate(pat.id, pat.span, binding_cmt, Init);
+                if pat_util::pat_is_binding(def_map, pat) {
+                    // Each match binding is effectively an assignment to the
+                    // binding being produced.
+                    let def = def_map.borrow().get_copy(&pat.id);
+                    match mc.cat_def(pat.id, pat.span, pat_ty, def) {
+                        Ok(binding_cmt) => {
+                            delegate.mutate(pat.id, pat.span, binding_cmt, Init);
+                        }
+                        Err(_) => { }
                     }
-                    Err(_) => { }
                 }
 
                 // It is also a borrow or copy/move of the value being matched.
-                match pat.node {
-                    ast::PatIdent(ast::BindByRef(m), _, _) => {
+                match (&pat.node, match_mode) {
+                    (&ast::PatIdent(ast::BindByRef(m), _, _), _) => {
                         let (r, bk) = {
                             (ty::ty_region(tcx, pat.span, pat_ty),
                              ty::BorrowKind::from_mutbl(m))
@@ -952,10 +955,20 @@ impl<'d,'t,TYPER:mc::Typer> ExprUseVisitor<'d,'t,TYPER> {
                         delegate.borrow(pat.id, pat.span, cmt_pat,
                                              r, bk, RefBinding);
                     }
-                    ast::PatIdent(ast::BindByValue(_), _, _) => {
+
+                    (&ast::PatIdent(ast::BindByValue(_), _, _), _) |
+                    (&ast::PatWild(_), ConsumingMatch(Move(_))) => {
+                        // FIXME: I may need to distinguish these two
+                        // cases, since the PatWild case will probably
+                        // imply auto-drop without warning at the end
+                        // of the scope (FSK).
                         let mode = copy_or_move(typer.tcx(), cmt_pat.ty, PatBindingMove);
                         delegate.consume_pat(pat, cmt_pat, mode);
                     }
+
+                    (&ast::PatWild(_), ConsumingMatch(Copy)) |
+                    (&ast::PatWild(_), BorrowingMatch) => {}
+
                     _ => {
                         typer.tcx().sess.span_bug(
                             pat.span,
