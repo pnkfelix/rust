@@ -13,7 +13,13 @@ pub fn foo<A,B:Copy>(c: || -> Pairy<A,bool,B>,
     let s = c();
     match s {
         Two(a, true) => dA(a),
-        Two(_, false) => 4,
+
+        Two(_, false) => 4, // this is an example of `_` being an
+                            // "autodrop", since user could not write
+                            // the drop themselves except by binding
+                            // it to name, which would be a misfeature
+                            // in the language.
+
         One(b) => dB(b),
         None => 5,
     }
