@@ -1,6 +1,6 @@
 FILES= foo1.rs  foo2.rs  foo3.rs  foo4.rs  foo5.rs  foo6.rs  foo7.rs  foo8.rs \
        foo9.rs foo10.rs foo11.rs foo12.rs foo13.rs foo14.rs foo15.rs foo16.rs \
-      foo17.rs foo18.rs                                                       \
+      foo17.rs foo18.rs foo19.rs foo20.rs                                     \
       dlist01.rs \
       iter1.rs iter2.rs \
       num01.rs \

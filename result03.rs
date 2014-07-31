@@ -12,7 +12,13 @@ pub enum Result<T, E> { Ok(T), Err(E), }
 // originally `Result::or`
 pub fn foo<T,E>(s: Result<T, E>, res: Result<T,E>) -> Result<T,E> {
     match s {
-        Err(g) => { drop(g); res }
-        Ok(_) => { drop(res); s }
+        Err(_) => {
+            drop(s);
+            res
+        }
+        Ok(_) => {
+            drop(res);
+            s
+        }
     }
 }
