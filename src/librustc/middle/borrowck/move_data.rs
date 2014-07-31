@@ -1414,38 +1414,129 @@ impl BitwiseOperator for NeedsDropDataFlowOperator {
         // In principle, for correct code, the fixed-point solution
         // to the dataflow equations will have succ == pred here.
         //
-        // But since we need to deal with states before we hit the
-        // fixed point, we use logical-or here, to properly handle cases
-        // like a while loop:
+        // But of course need to deal with states before we hit the
+        // fixed point.  Consider the following while-loop:
+        //
         //   `{ let a = box 3; while <cond> { <body> } <rest> }`
         // where <cond> and <body> do not move or drop `a`:
         //
-        //         [let a = box 3;]
-        //           |
-        //           v 1
-        //       [loopback] <--+ 5
-        //           |         |
-        //           v 2       |
-        //   +-----[cond]      |
-        //   |       |         |
-        //   |       v 4       |
-        //   |     [body] -----+
-        //   v 3
-        // [rest]
+        //                    [let a = box 3;]
+        //                      |
+        //                      v 1
+        //                  [loopback] <--+ 5
+        //                      |         |
+        //                      v 2       |
+        //              +-----[cond]      |
+        //              |       |         |
+        //              |       v 4       |
+        //              |     [body] -----+
+        //              v 3
+        //            [rest]
         //
         // we need to ensure that the fixed-point solution registers
-        // that `a` is needs-drop on all of the above edges.
-        // Logical-or will accomplish that here (while logical-and
-        // would cause the fixed point solution to falsely claim that
-        // `a` is only needs-drop on edge 1.
+        // that `a` is needs-drop on all of the above edges.  (Note
+        // that choosing logical-and and a false initial value would
+        // cause the fixed point solution to falsely claim that `a` is
+        // only needs-drop on edge 1, because edge 5 would start as
+        // false and then the merge between edge 1 and edge 5 would be
+        // logically anded to false on edge 2, and so on.)
+        //
+        // We could use logical-or here (and a false initial value)
+        // like the other analyses.  Or, we can (and do) use
+        // logical-and and a true initial value.  For correct code,
+        // they will both end with the same fixed point.
+        //
+        // The reason to use logical-and instead of logical-or is
+        // error reporting.  In particular, we start with an
+        // assumption.
+        //
+        // ASSUMPTION: When there is a discrepancy between the set of
+        // drop-obligations for two paths at a merge point, we assume
+        // for the purposes of error reporting that the error was that
+        // the user forgot to include a drop of the resource, *not*
+        // that the user intended to re-establish the resource on the
+        // path where it had been dropped.
+        //
+        // Consider the following example:
+        //
+        //                       [let a = box 3;]             
+        //                             +                      
+        //                             |                      
+        //                             v                      
+        //                    +---+[cond 1]+--+               
+        //    (a needs drop)  |               | (a needs drop)
+        //                    v               |               
+        //             +-+[cond 2]+-+         |               
+        //             |            |         |               
+        //             v            v         v               
+        //     [no use of a]   [consume a]   [consume a]      
+        //                +         +         |               
+        // (a needs drop) |         |  ()     | ()            
+        //                v         v         |               
+        //              [merge point 1]       |               
+        //                    +               |               
+        //                (*) |               |               
+        //                    +---------+     |               
+        //                              |     |               
+        //                              v     v               
+        //                          [merge point 2]           
+        //
+        // At `[merge point 1]`, we obviously report a discrepancy
+        // between the two incoming paths.  The question: What do we
+        // want the set of drop obligations to be at the exit of
+        // `[merge point 1]`, where the `(*)` is marked.  There are
+        // two possible choices for `(*)`: `()`, and `(a needs drop)`.
+        //
+        // Choosing `(a needs drop)` corresponds to an assumption that
+        // on the path where `a` was dropped, the programmer probably
+        // meant to re-establish `a`.  To get this choice, one would
+        // use logical-or here.
+        //
+        // Choosing `()` corresponds to an assumption that on the path
+        // where `a` was not dropped, the programmer probably meant to
+        // drop it.  To get this choice, we use logical-and here.
+        //
+        // Each choice for `(*)` also has implications for when
+        // check_drops considers `[merge point 2]`: Choosing `()`
+        // means that nothing is reported for `[merge point 2]`, since
+        // the two incoming paths have the same set of drop
+        // obligations.  Choosing `(a needs drop)` means that we get a
+        // similar error report to the one for `[merge point 1]`,
+        // which may be frustrating to the programmer who already
+        // probably saw that they would need to add the drop of `a` on
+        // the far left path.
+        //
+        // (One could argue that the above example is artificial,
+        // since a small alteration of the graph above has a path on
+        // the far right-hand side that does not consume `a`, and in
+        // that situation, choosing `(a needs drop)` for `(*)` will
+        // produce fewer error messages.  However, we are *not*
+        // selecting logical-and over logical-or solely based on some
+        // expectation of the number of error messages encountered.
+        // Instead, it is based on our starting assumption: if in
+        // example above the far right path is missing a drop of a,
+        // then by our assumption, we *should* issue two error
+        // reports, since there are *two* places where the programmer
+        // needs to add calls to drop: the far left-hand path, and the
+        // far right-hand path.)
 
-        succ | pred
+        succ & pred
     }
 }
 
 impl DataFlowOperator for NeedsDropDataFlowOperator {
     #[inline]
     fn initial_value(&self) -> bool {
-        false // paths uninitialized by default and thus do not need dropping
+        // For non-entry nodes, assume paths need dropping until
+        // proven otherwise.
+        //
+        // See extensive discussion in impl BitwiseOperator for
+        // NeedsDropDataFlowOperator.
+        true
+    }
+
+    #[inline]
+    fn entry_initial_value(&self) -> bool {
+        false
     }
 }
