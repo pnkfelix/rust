@@ -18,9 +18,17 @@ pub fn foo<X>(b: || -> bool,
     }
 
     let s_return = c();
-    return if b() {
-        d(s_return)
+    if b() {
+        if b() {
+            d(s_return)
+        } else {
+            3
+        }
     } else {
-        3
-    };
+        return if b() { // TODO: Stlll not handling this right
+            d(s_return)
+        } else {
+            3
+        };
+    }
 }
