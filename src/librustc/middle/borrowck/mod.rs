@@ -397,7 +397,7 @@ impl LoanPath {
                 // *moment* they are easy; we may put in
                 // flow-sensitivity in some form.  Or maybe not, we
                 // will see.)
-                ty::type_needs_drop(tcx, self.to_type(tcx)),
+                self.to_type(tcx).needs_drop_call(tcx),
 
             LpExtend(_, _, LpDeref(_)) =>
                 // A path through a `&` or `&mut` reference cannot
@@ -419,7 +419,7 @@ impl LoanPath {
                 //    itself introduce a drop obligation, but the type
                 //    of `q` means that that particular field does not
                 //    affect dropping.
-                ty::type_needs_drop(tcx, self.to_type(tcx)),
+                self.to_type(tcx).needs_drop_call(tcx),
 
             LpDowncast(ref lp, def_id) => self.enum_variant_needs_drop(tcx, lp, def_id),
         }
@@ -447,10 +447,26 @@ impl LoanPath {
                                self.repr(tcx), arg_ty.repr(tcx), arg_ty_subst.repr(tcx));
                         ty::type_contents(tcx, arg_ty_subst)
                     });
-                type_contents.needs_drop(tcx)
+
+                type_contents.needs_drop_call(tcx)
             }
             _ => fail!("encountered LpDowncast on non-enum base type."),
         }
+    }
+}
+
+trait NeedsDropCallArg {
+    fn needs_drop_call(&self, tcx: &ty::ctxt) -> bool;
+}
+impl NeedsDropCallArg for ty::TypeContents {
+    fn needs_drop_call(&self, tcx: &ty::ctxt) -> bool {
+        // self.needs_drop(tcx)
+        self.moves_by_default(tcx)
+    }
+}
+impl NeedsDropCallArg for ty::t {
+    fn needs_drop_call(&self, tcx: &ty::ctxt) -> bool {
+        ty::type_contents(tcx, *self).needs_drop_call(tcx)
     }
 }
 
