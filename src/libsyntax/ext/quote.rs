@@ -676,7 +676,7 @@ fn expand_wrapper(cx: &ExtCtxt,
     cx.expr_block(cx.block_all(sp, uses, vec!(stmt_let_ext_cx), Some(expr)))
 }
 
-fn expand_parse_call(cx: &ExtCtxt,
+pub fn expand_parse_call(cx: &ExtCtxt,
                      sp: Span,
                      parse_method: &str,
                      arg_exprs: Vec<Gc<ast::Expr>>,
