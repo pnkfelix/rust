@@ -22,7 +22,10 @@ use middle::ty;
 use middle::ty::TypeContents;
 use std::rc::Rc;
 use std::collections::hashmap::HashMap;
+use std::sync::atomics;
 use syntax::{ast,ast_map};
+
+static mut warning_count: atomics::AtomicUint = atomics::INIT_ATOMIC_UINT;
 
 pub fn check_drops(bccx: &BorrowckCtxt,
                    flowed_move_data: &move_data::FlowedMoveData,
@@ -167,6 +170,9 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                     }
 
                     // At this point, we are committed to reporting a warning to the user
+                    let count = unsafe {
+                        warning_count.fetch_add(1, atomics::Relaxed) + 1
+                    };
 
                     let loan_path_str = bccx.loan_path_to_string(lp.deref());
 
@@ -180,8 +186,8 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                     let msg = format!("Storage at `{:s}` is left initialized here{:s}, \
                                        but uninitialized on other control flow paths. \
                                        (Consider either calling `drop()` on it here, \
-                                       or reinitializing it on the other paths)",
-                                      loan_path_str, where);
+                                       or reinitializing it on the other paths); count: {}",
+                                      loan_path_str, where, count);
 
                     match opt_source_span {
                         Some(span) => bccx.tcx.sess.span_warn(span, msg.as_slice()),
