@@ -10,24 +10,16 @@ pub fn drop<T>(_x: T) { }
 pub enum Option<T> { None, Some(T), }
 
 impl<T> Option<T> {
-    fn map<A>(self, f: |T| -> A) -> Option<A> { loop { } }
+    fn map<A>(self, _f: |T| -> A) -> Option<A> { loop { } }
 }
 
-mod slice {
-    mod marker {
-        #[lang="contravariant_lifetime"]
-        pub struct ContravariantLifetime<'a>;
-    }
-
-    pub struct Items<'a, T> {
-        ptr: *const T,
-        end: *const T,
-        marker: marker::ContravariantLifetime<'a>
-    }
+mod marker {
+    #[lang="contravariant_lifetime"]
+    pub struct ContravariantLifetime<'a>;
 }
 
 pub struct Chars<'a> {
-    iter: slice::Items<'a, u8>
+    marker: marker::ContravariantLifetime<'a>
 }
 
 pub struct Utf16CodeUnits<'a> {
@@ -40,13 +32,13 @@ impl<'a> Chars<'a> {
 }
 
 trait EncodeUtf16 {
-    fn encode_utf16(&self, buf: &mut [u16]) -> uint { loop { } }
+    fn encode_utf16(&self, _buf: &mut [u16]) -> uint { loop { } }
 }
 
 impl EncodeUtf16 for char { }
 
 impl<'a> Utf16CodeUnits<'a> {
-    fn foo(&mut self) -> Option<u16> {
+    pub fn foo(&mut self) -> Option<u16> {
         if self.extra != 0 {
             let tmp = self.extra;
             self.extra = 0;

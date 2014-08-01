@@ -18,17 +18,12 @@ pub fn drop<T>(_x: T) { }
 
 pub enum Option<T> { None, Some(T), }
 
-pub struct Cell<T> {
-    value: T,
-}
-
-pub fn set_stderr(stderr: Box<Writer + Send>) -> Option<Box<Writer + Send>> {
+pub fn set_stderr(_stderr: Box<Writer + Send>) -> Option<Box<Writer + Send>> {
     loop { }
 }
 
 /// Remove the first Node and return it, or None if the list is empty
-pub fn foo<T>(self_: &mut Cell<T>,
-              taken: Option<T>) {
+pub fn foo<T>() {
     // a snippet taken from rustdoc::test::runtest
 
     struct ChanWriter;
@@ -37,7 +32,7 @@ pub fn foo<T>(self_: &mut Cell<T>,
     let old = set_stderr(box w1);
 
     let my_proc = proc() {
-        let mut err = match old {
+        match old {
             Some(old) => {
                 // Chop off the `Send` bound.
                 let old : Box<Writer> = old;

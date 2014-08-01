@@ -10,12 +10,7 @@
 pub struct Box<T>(*mut T);
 
 mod mem {
-    pub fn replace<T>(dest: &mut T, mut src: T) -> T { loop { } }
-}
-
-mod ptr {
-    pub fn null<T>() -> *const T { 0 as *const T }
-    pub fn mut_null<T>() -> *mut T { 0 as *mut T }
+    pub fn replace<T>(_dest: &mut T, mut _src: T) -> T { loop { } }
 }
 
 pub fn drop<T>(_x: T) { }
@@ -46,23 +41,22 @@ pub struct DList<T> {
 }
 
 type Link<T> = Option<Box<Node<T>>>;
-struct Rawlink<T> { p: *mut T }
+pub struct Rawlink<T>;
 
-struct Node<T> {
+pub struct Node<T> {
     next: Link<T>,
     prev: Rawlink<Node<T>>,
-    value: T,
 }
 
 impl<T> Rawlink<T> {
     fn none() -> Rawlink<T> {
-        Rawlink{p: ptr::mut_null()}
+        Rawlink
     }
 }
 
 impl<T> DList<T> {
     /// Remove the first Node and return it, or None if the list is empty
-    fn foo(&mut self) -> Option<Box<Node<T>>> {
+    pub fn foo(&mut self) -> Option<Box<Node<T>>> {
         self.list_head.take().map(|mut front_node| {
             self.length -= 1;
             match front_node.next.take() {

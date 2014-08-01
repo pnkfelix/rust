@@ -10,11 +10,11 @@ pub fn drop<T>(_x: T) { }
 pub enum Ordering { Less = -1i, Equal = 0i, Greater = 1i, }
 
 pub trait Ord {
-    fn cmp(&self, other: &Self) -> bool { loop { } }
+    fn cmp(&self, _other: &Self) -> bool { loop { } }
 }
 impl Ord for int { }
 
-fn foo(x: &int) -> int {
+pub fn foo(x: &int) -> int {
     match *x {
         n if n.cmp(&0) => 1,
         0 => 0,
