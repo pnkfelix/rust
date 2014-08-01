@@ -1,4 +1,5 @@
 FILES= test.bin
+# FILES= test_gensym.bin test.bin
 
 all: $(patsubst %.rs,%.dot,$(FILES))
 
@@ -23,6 +24,8 @@ RUST_LOG=rustc::middle::borrowck,rustc::middle::ty,rustc::middle::typeck,rustc::
 	$(RUSTC) $< -L. -o $@
 
 test.bin: plugin.dylib
+
+test_gensym.bin: gensym.dylib
 
 %.dot: %.rs Makefile objdir-dbg/x86_64-apple-darwin/stage2/rustc
 	$(RUSTC) -Z flowgraph-print-all --pretty flowgraph=% $< -o $@
