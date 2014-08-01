@@ -4,9 +4,10 @@
 
 #[lang="sized"] pub trait Sized { }
 
-pub fn foo<T>(b: bool, x: T, f: |T| -> int) -> int {
+pub fn foo<T>(b: bool, c: || -> T, f: |T| -> int) -> int {
+    let x = c();
     //                                                          // NEEDS_DROP={x}
-    if b {
+    let ret = if b {
     //                                                          // NEEDS_DROP={x}
         f(x) // Variable x moved in this branch ...
     //                                                          // NEEDS_DROP={}
@@ -14,5 +15,7 @@ pub fn foo<T>(b: bool, x: T, f: |T| -> int) -> int {
     //                                                          // NEEDS_DROP={x}
         3    // ... but not this one ...
     //                                                          // NEEDS_DROP={x}
-    } // ... thus expect notice at this join-point.
+    }; // ... thus expect notice at this join-point.
+    c();
+    ret
 }

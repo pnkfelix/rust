@@ -40,6 +40,7 @@ pub fn foo<T>() {
             }
             None => loop { }
         };
+        loop { }
     };
     my_proc()
 }

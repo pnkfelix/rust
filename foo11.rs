@@ -7,9 +7,10 @@
 
 pub enum Foo<A,B> { Fx(A), Fy(B) }
 
-pub fn foo<X,Y>(s: Foo<X,Y>, f: |X| -> int, g: |Y| -> int) -> int {
+pub fn foo<X,Y>(c: || -> Foo<X,Y>, f: |X| -> int, g: |Y| -> int) -> int {
+    let s = c();
     //                                                          // NEEDS_DROP={s}
-    match s {
+    let ret = match s {
         Fx(x) => {
     //                                                          // NEEDS_DROP={x}
             f(x)
@@ -20,5 +21,7 @@ pub fn foo<X,Y>(s: Foo<X,Y>, f: |X| -> int, g: |Y| -> int) -> int {
             g(y)
     //                                                          // NEEDS_DROP={}
         }
-    } // ... this should be fine.
+    }; // ... this should be fine.
+    c();
+    ret
 }

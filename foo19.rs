@@ -11,7 +11,7 @@ pub fn foo<A,B:Copy>(c: || -> Pairy<(A,A),bool,B>,
                      dA: |A| -> i8,
                      dB: |B| -> i8) -> i8 {
     let s = c();
-    match s {
+    let ret = match s {
         Two((a1,a2), true) => dA(a1) + dA(a2),
 
         Two((_,a2), false) => dA(a2),
@@ -23,5 +23,7 @@ pub fn foo<A,B:Copy>(c: || -> Pairy<(A,A),bool,B>,
 
         One(b) => dB(b),
         None => 5,
-    }
+    };
+    c();
+    ret
 }

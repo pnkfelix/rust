@@ -10,8 +10,10 @@ pub enum Result<T,E> { Ok(T), Err(E) }
 pub fn foo<X,Y>(c: || -> Result<X,Y>,
                 x: |X| -> Result<X,Y>) -> Result<X,Y> {
     let s = c();
-    match s {
+    let ret = match s {
         Err(_) => s,
         Ok(content) => x(content),
-    }
+    };
+    c();
+    ret
 }

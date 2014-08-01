@@ -11,7 +11,7 @@ pub fn foo<X,Y>(b: || -> bool, c: || -> Foo<X,Y>, f: |Foo<X,Y>| -> i8) -> i8 {
     //                                                       // NEEDS_DROP={}
     let s = c();
     //                                                       // NEEDS_DROP={s}
-    if !b() {
+    let ret = if !b() {
         //                                                   // NEEDS_DROP={s}
         f(s) // s moved in this branch ...
             //                                               // NEEDS_DROP={}
@@ -34,5 +34,7 @@ pub fn foo<X,Y>(b: || -> bool, c: || -> Foo<X,Y>, f: |Foo<X,Y>| -> i8) -> i8 {
         // ... (see extensive discussion of why in impl
         // BitwiseOperator for NeedsDropDataFlowOperator) ...
         //                                                   //      ...  = {}
-    } // ... thus do *not* expect notice at this joint point.
+    }; // ... thus do *not* expect notice at this joint point.
+    c();
+    ret
 }

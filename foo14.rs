@@ -7,13 +7,16 @@
 
 pub enum Foo<A> { Fx(A) }
 
-pub fn foo<X>(s: Foo<X>, f: |X| -> int) -> int {
+pub fn foo<X>(c: || -> Foo<X>, f: |X| -> int) -> int {
+    let s = c();
     //                                                          // NEEDS_DROP={s}
-    match s {
+    let ret = match s {
         Fx(x) => {
     //                                                          // NEEDS_DROP={x}
             f(x)
     //                                                          // NEEDS_DROP={}
         }
-    } // ... this should be fine.
+    }; // ... this should be fine.
+    c();
+    ret
 }
