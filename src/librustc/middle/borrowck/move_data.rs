@@ -323,7 +323,8 @@ impl MoveData {
         } else {
             match *self.path_loan_path(first_child) {
                 LpDowncast(..) => true,
-                LpVar(..) | LpUpvar(..) | LpExtend(..) => false,
+                LpExtend(..) => false, // FIXME
+                LpVar(..) | LpUpvar(..) => false,
             }
         }
     }
@@ -595,16 +596,16 @@ impl MoveData {
 
             LpDowncast(..) => {} // an enum variant (on its own) has no siblings.
 
-            // *LV for OwnedPtr itself has no siblings, but we might need
-            // to propagate inward.  Not sure.
-            LpExtend(_, _, LpDeref(mc::OwnedPtr)) => {
+            // *LV for OwnedPtr consumes the contents of the box (at
+            // least when it is non-copy...), so propagate inward.
+            LpExtend(ref loan_parent, _, LpDeref(mc::OwnedPtr)) => {
                 let msg =
                     format!("add_fragment_siblings encountered \
-                             LpExtend(.., OwnedPtr): {}; \
-                             Assuming it has no siblings (for now).",
+                            LpExtend(.., OwnedPtr): {}; recursing down.",
                             lp.repr(tcx));
                 tcx.sess.opt_span_warn(tcx.map.opt_span(origin_id),
                                        msg.as_slice());
+                self.add_fragment_siblings(tcx, loan_parent.clone(), origin_id);
             }
 
             // *LV has no siblings
