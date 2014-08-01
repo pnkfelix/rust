@@ -869,22 +869,9 @@ impl MoveData {
         }
 
         // Kill all assignments when the variable goes out of scope:
-        for (assignment_index, assignment) in
-                self.var_assignments.borrow().iter().enumerate() {
-            match *self.path_loan_path(assignment.path) {
-                LpVar(id) => {
-                    let kill_id = tcx.region_maps.var_scope(id);
-                    dfcx_assign.add_kill(kill_id, assignment_index);
-                }
-                LpUpvar(ty::UpvarId { var_id: _, closure_expr_id }, _) => {
-                    let kill_id = closure_to_block(closure_expr_id, tcx);
-                    dfcx_assign.add_kill(kill_id, assignment_index);
-                }
-                LpDowncast(..) |
-                LpExtend(..) => {
-                    tcx.sess.bug("var assignment for non var path");
-                }
-            }
+        for (assignment_index, assignment) in self.var_assignments.borrow().iter().enumerate() {
+            let kill_id = self.path_loan_path(assignment.path).kill_id(tcx);
+            dfcx_assign.add_kill(kill_id, assignment_index);
         }
     }
 

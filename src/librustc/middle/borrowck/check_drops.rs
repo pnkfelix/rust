@@ -138,6 +138,9 @@ pub fn check_drops(bccx: &BorrowckCtxt,
             let mut temp = needs_drop.bitset_for(dataflow::Exit, source);
 
             // see note above about "equivalence modulo merge-kills"
+            //
+            // But also, this hack can probably go away with new
+            // "scan-ahead-for-scope-end" rule
             needs_drop.apply_gen_kill(node_index, temp.as_mut_slice());
 
             if temp != intersection {
@@ -152,6 +155,19 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                     let paths = move_data.paths.borrow();
                     let path = paths.get(bit_idx);
                     let lp = &path.loan_path;
+
+                    // Check if there is a single effect-free
+                    // successor chain that leads to the end of the
+                    // scope of the local variable at the base of `lp`
+                    // (and therefore we can safely auto-drop `lp`
+                    // without warning the user)
+                    let kill_id = lp.kill_id(bccx.tcx);
+                    if scan_forward_for_kill_id(bccx, cfg, node_index, kill_id) {
+                        return true;
+                    }
+
+                    // At this point, we are committed to reporting a warning to the user
+
                     let loan_path_str = bccx.loan_path_to_string(lp.deref());
 
                     let cfgidx_and_id = format!(" (cfgidx={}, id={})", source, source_id);
@@ -210,4 +226,83 @@ pub fn check_drops(bccx: &BorrowckCtxt,
 
         true
     });
+}
+
+fn scan_forward_for_kill_id(bccx: &BorrowckCtxt,
+                           cfg: &cfg::CFG,
+                           start: cfg::CFGIndex,
+                           kill_id: ast::NodeId) -> bool {
+    //! returns true only if there is a unique effect-free successor
+    //! chain from `start` to `kill_id`
+
+    let mut cursor = start;
+    loop {
+        debug!("fwd-scan for kill_id={} cursor={}", kill_id, cursor);
+        let mut count = 0u;
+        let mut successor = None;
+        cfg.graph.each_outgoing_edge(cursor, |edge_index, edge| {
+            debug!("fwd-scan cursor={} edge.target={}", cursor, edge.target());
+            successor = Some(edge_index);
+            count += 1;
+            count <= 1
+        });
+
+        if count != 1 {
+            debug!("fwd-scan: broken successor chain; give up");
+            return false;
+        }
+
+        cursor = cfg.graph.edge(successor.unwrap()).target();
+        let successor_id = cfg.graph.node(cursor).data.id;
+        if successor_id == ast::DUMMY_NODE_ID {
+            debug!("fwd-scan: dummy node in flow graph; give up");
+            return false;
+        }
+
+        debug!("fwd-scan: successor_id={}", successor_id);
+        if successor_id == kill_id {
+            debug!("fwd-scan: success, no need for warning");
+            return true;
+        }
+
+        match bccx.tcx.map.get(successor_id) {
+            ast_map::NodeBlock(_) | ast_map::NodeArm(_) => {
+                debug!("fwd-scan: node effect-free; continue looking");
+            }
+
+            ast_map::NodeExpr(e) => {
+                // Keep in mind when reading these cases that the
+                // NodeId associated with an expression node like
+                // ExprIf is at the *end* of the expression, where the
+                // two arms of the if join.
+                match e.node {
+                    ast::ExprMatch(..) |
+                    ast::ExprBlock(..) |
+                    ast::ExprParen(..) |
+                    ast::ExprIf(..) => {
+                        debug!("fwd-scan: expr effect-free; continue looking");
+                    }
+
+                    _ => {
+                        debug!("fwd-scan: expr potentially effectful; give up");
+                        return false;
+                    }
+
+                }
+            }
+
+            ast_map::NodeStmt(_)       | ast_map::NodeArg(_) |
+            ast_map::NodeLocal(_)      | ast_map::NodePat(_) |
+            ast_map::NodeStructCtor(_) => {
+                debug!("fwd-scan: node potentially effectful; give up");
+                return false;
+            }
+
+            ast_map::NodeItem(_)        | ast_map::NodeForeignItem(_) |
+            ast_map::NodeTraitMethod(_) | ast_map::NodeMethod(_)      |
+            ast_map::NodeVariant(_)     | ast_map::NodeLifetime(_) => {
+                bccx.tcx.sess.bug("unexpected node")
+            }
+        }
+    }
 }
