@@ -233,7 +233,7 @@ fn scan_forward_for_kill_id(bccx: &BorrowckCtxt,
                            start: cfg::CFGIndex,
                            kill_id: ast::NodeId) -> bool {
     //! returns true only if there is a unique effect-free successor
-    //! chain from `start` to `kill_id`
+    //! chain from `start` to `kill_id` or to `cfg.exit`
 
     let mut cursor = start;
     loop {
@@ -253,21 +253,27 @@ fn scan_forward_for_kill_id(bccx: &BorrowckCtxt,
         }
 
         cursor = cfg.graph.edge(successor.unwrap()).target();
+        if cursor == cfg.exit {
+            debug!("fwd-scan: success (hit exit), no need for warning");
+            return true;
+        }
+
         let successor_id = cfg.graph.node(cursor).data.id;
         if successor_id == ast::DUMMY_NODE_ID {
             debug!("fwd-scan: dummy node in flow graph; give up");
             return false;
         }
 
-        debug!("fwd-scan: successor_id={}", successor_id);
         if successor_id == kill_id {
-            debug!("fwd-scan: success, no need for warning");
+            debug!("fwd-scan: success (hit {}), no need for warning", kill_id);
             return true;
         }
 
         match bccx.tcx.map.get(successor_id) {
             ast_map::NodeBlock(_) | ast_map::NodeArm(_) => {
-                debug!("fwd-scan: node effect-free; continue looking");
+                debug!("fwd-scan: node {} effect-free; continue looking",
+                       successor_id);
+                continue;
             }
 
             ast_map::NodeExpr(e) => {
@@ -279,12 +285,18 @@ fn scan_forward_for_kill_id(bccx: &BorrowckCtxt,
                     ast::ExprMatch(..) |
                     ast::ExprBlock(..) |
                     ast::ExprParen(..) |
+                    ast::ExprRet(..)   |
                     ast::ExprIf(..) => {
-                        debug!("fwd-scan: expr effect-free; continue looking");
+                        debug!("fwd-scan: expr {} effect-free; \
+                                continue looking",
+                               successor_id);
+                        continue;
                     }
 
                     _ => {
-                        debug!("fwd-scan: expr potentially effectful; give up");
+                        debug!("fwd-scan: expr {} potentially effectful; \
+                                give up",
+                               successor_id);
                         return false;
                     }
 
@@ -294,7 +306,8 @@ fn scan_forward_for_kill_id(bccx: &BorrowckCtxt,
             ast_map::NodeStmt(_)       | ast_map::NodeArg(_) |
             ast_map::NodeLocal(_)      | ast_map::NodePat(_) |
             ast_map::NodeStructCtor(_) => {
-                debug!("fwd-scan: node potentially effectful; give up");
+                debug!("fwd-scan: node {} potentially effectful; give up",
+                       successor_id);
                 return false;
             }
 
