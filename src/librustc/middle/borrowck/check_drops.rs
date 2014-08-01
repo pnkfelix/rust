@@ -83,23 +83,7 @@ pub fn check_drops(bccx: &BorrowckCtxt,
         let needs_drop = &flowed_move_data.dfcx_needs_drop;
         let path_count = move_data.paths.borrow().len();
 
-        let intersection = {
-            // (it doesn't matter which index we grab this from, we going
-            // to fill it with ones anyway.)
-            let mut temp = needs_drop.bitset_for(dataflow::Entry, node_index);
-            for u in temp.mut_iter() { *u = -1 as uint; }
-            cfg.graph.each_incoming_edge(node_index, |_edge_index, edge| {
-                let source = edge.source();
-                if cfg.is_reachable(source) {
-                    needs_drop.apply_op(dataflow::Exit,
-                                        source,
-                                        temp.as_mut_slice(),
-                                        dataflow::Intersect);
-                }
-                true
-            });
-            temp
-        };
+        let intersection = needs_drop.bitset_for(dataflow::Entry, node_index);
 
         // In theory, that should be all we need to do; i.e. at this
         // point we should be able to compare each incoming node's
@@ -137,6 +121,13 @@ pub fn check_drops(bccx: &BorrowckCtxt,
         // This should take care of match patterns that will be
         // automatically destroyed, while leaving paths with a broader
         // scope than the match preserved.
+        //
+        // UPDATE: There is actually a more general principle we can
+        // apply here, without worrying about match-arms: simply
+        // walking forward looking if the end-of-scope for the
+        // variable comes before any other side-effect.  If so, then
+        // we can safely auto-drop without warning the user, since the
+        // net effect is the same as if we still had a drop-flag.
 
         let mut intersection = intersection;
         needs_drop.apply_gen_kill(node_index, intersection.as_mut_slice());
