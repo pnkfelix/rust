@@ -290,6 +290,18 @@ pub enum LoanPath {
 }
 
 impl LoanPath {
+    fn kill_id(&self, tcx: &ty::ctxt) -> ast::NodeId {
+        //! Returns the lifetime of the local variable that forms the base of this path.
+        match *self {
+            LpVar(id) =>
+                tcx.region_maps.var_scope(id),
+            LpUpvar(ty::UpvarId { var_id: _, closure_expr_id }, _) => 
+                closure_to_block(closure_expr_id, tcx),
+            LpDowncast(ref base_lp, _) | LpExtend(ref base_lp, _, _) =>
+                base_lp.kill_id(tcx),
+        }
+    }
+
     fn to_type(&self, tcx: &ty::ctxt) -> ty::t {
         use Element = middle::mem_categorization::InteriorElement;
         use Field = middle::mem_categorization::InteriorField;
