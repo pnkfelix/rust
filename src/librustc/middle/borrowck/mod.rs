@@ -307,8 +307,8 @@ impl LoanPath {
         use Field = middle::mem_categorization::InteriorField;
 
         debug!("lp.to_type() for lp={:s}", self.repr(tcx));
-        let opt_ty = match *self {
-            LpUpvar(ty::UpvarId { var_id: id, closure_expr_id: _ }, capture) =>
+        let ty = match *self {
+            LpUpvar(ty::UpvarId { var_id: id, closure_expr_id: _ }, capture) => {
                 ty::node_id_to_type_opt(tcx, id).map(|t| {
                     match capture {
                         CaptureByVal => t,
@@ -317,14 +317,27 @@ impl LoanPath {
                                                    // making up immut here.
                                                    // Hopefully won't matter.
                                                    mutbl: ast::MutImmutable}),
-                    }}),
+                    }}).unwrap_or_else(|| {
+                    let id = self.kill_scope(tcx);
+                    let msg = format!("no type found for LpUpvar={:s}", self.repr(tcx));
+                    let opt_span = tcx.map.opt_span(id);
+                    tcx.sess.opt_span_bug(opt_span, msg.as_slice());
+                })
+            }
 
-            LpVar(id) => ty::node_id_to_type_opt(tcx, id),
+            LpVar(id) => {
+                ty::node_id_to_type_opt(tcx, id).unwrap_or_else(|| {
+                    let id = self.kill_scope(tcx);
+                    let msg = format!("no type found for LpVar={:s}", self.repr(tcx));
+                    let opt_span = tcx.map.opt_span(id);
+                    tcx.sess.opt_span_bug(opt_span, msg.as_slice());
+                })
+            }
 
             // treat the downcasted enum as having the enum's type;
             // extracting the particular types within the variant is
             // handled by `LpExtend` cases.
-            LpDowncast(ref lp, _variant_did) => Some(lp.to_type(tcx)),
+            LpDowncast(ref lp, _variant_did) => lp.to_type(tcx),
 
             LpExtend(ref lp, _mc, ref loan_path_elem) => {
                 let (opt_variant_did, lp) = match **lp {
@@ -337,27 +350,75 @@ impl LoanPath {
                 let t = lp.to_type(tcx);
                 let t_sty = &ty::get(t).sty;
 
+                let base_deref_t = match **lp {
+                    LpExtend(ref lp2, _, LpDeref(_)) => Some(lp2.to_type(tcx)),
+                    _                                => None,
+                };
+                let base_elem_t =
+                    base_deref_t.and_then(|t|ty::array_element_ty(t));
+
                 match (loan_path_elem, t_sty) {
+
                     (&LpDeref(_), &ty::ty_ptr(ty::mt{ty: t, ..})) |
                     (&LpDeref(_), &ty::ty_rptr(_, ty::mt{ty: t, ..})) |
                     (&LpDeref(_), &ty::ty_box(t)) |
-                    (&LpDeref(_), &ty::ty_uniq(t)) => Some(t),
+                    (&LpDeref(_), &ty::ty_uniq(t)) => t,
 
                     (&LpInterior(Field(mc::NamedField(ast_name))),
-                     _) => ty::named_element_ty(tcx, t, ast_name, opt_variant_did),
+                     _) => ty::named_element_ty(tcx, t, ast_name, opt_variant_did)
+                        .unwrap_or_else(|| {
+                            let id = self.kill_scope(tcx);
+                            let msg = format!("no type found for LpExtend LpInterior NamedField={:s}", self.repr(tcx));
+                            let opt_span = tcx.map.opt_span(id);
+                            tcx.sess.opt_span_bug(opt_span, msg.as_slice());
+                        }),
 
                     (&LpInterior(Field(mc::PositionalField(idx))),
-                     _) => ty::positional_element_ty(tcx, t, idx, opt_variant_did),
+                     _) => ty::positional_element_ty(tcx, t, idx, opt_variant_did)
+                        .unwrap_or_else(|| {
+                            let id = self.kill_scope(tcx);
+                            let msg = format!("no type found for LpExtend LpInterior PositionalField={:s}", self.repr(tcx));
+                            let opt_span = tcx.map.opt_span(id);
+                            tcx.sess.opt_span_bug(opt_span, msg.as_slice());
+                        }),
 
-                    // (Deliberately not using ty::array_element_ty
-                    // here, because that assumes r-value context and
-                    // returns deref'ed elem type, but loan structure
-                    // separates element-access from deref.)
-                    (&LpInterior(Element(_)), &ty::ty_str) =>
-                        Some(ty::mk_ptr(tcx, ty::mt{ty: ty::mk_u8(),
-                                                    mutbl: ast::MutImmutable})),
-                    (&LpInterior(Element(_)), &ty::ty_vec(mt, _len)) =>
-                        Some(ty::mk_ptr(tcx, mt)),
+                    // FIXME: Complete hack; array_element_ty does not
+                    // yet do Dynamically Sized Types (DST); (instead
+                    // it returns none for `[T]`).  So catch such
+                    // cases ahead of time, instead of returning a
+                    // type that we cannot actually handle recursively
+                    // (which is what the subsequent clauses would
+                    // do).  Though we should strongly consider just
+                    // revising array_element_ty to also map input
+                    // `[T]` to `Some(T)` rather than `None` (FSK).
+                    (&LpInterior(Element(_)), _) if base_elem_t.is_some() =>
+                        base_elem_t.unwrap().ty,
+
+                    // FIXME: At one point I was deliberately
+                    // eschewing ty::array_element_ty because I
+                    // thought it was presuming r-value context and
+                    // loan-path structure kept element-access
+                    // separate from deref.  But now I am not so sure
+                    // what is appropriate here anymore.  So I am
+                    // trying ty::array_element_ty out of desperation
+                    // mostly.  See also the complete hack in the
+                    // clause above (FSK).
+
+                    // FIXME I could at least merge the two clauses (FSK).
+
+                    (&LpInterior(Element(_)), _) => ty::array_element_ty(t)
+                        .unwrap_or_else(|| {
+                            // Once, we would get into this case when
+                            // we are given a `&[T]`, rather than a
+                            // `[T, ..N]`.  But now that is handled up
+                            // above.
+                            let id = self.kill_scope(tcx);
+                            let msg = format!("no array elem type found for \
+                                               LpExtend LpInterior Element={:s} t={}",
+                                              self.repr(tcx), t.repr(tcx));
+                            let opt_span = tcx.map.opt_span(id);
+                            tcx.sess.opt_span_bug(opt_span, msg.as_slice());
+                        }).ty,
 
                     (lp_elem, _) => {
                         let id = self.kill_scope(tcx);
@@ -371,15 +432,9 @@ impl LoanPath {
                 }
             }
         };
-        let t = opt_ty.unwrap_or_else(|| {
-            let id = self.kill_scope(tcx);
-            let msg = format!("no type found for lp={:s}", self.repr(tcx));
-            let opt_span = tcx.map.opt_span(id);
-            tcx.sess.opt_span_bug(opt_span, msg.as_slice());
-        });
-        debug!("lp.to_type() for lp={:s} returns t={:s}",
-               self.repr(tcx), t.repr(tcx));
-        t
+        debug!("lp.to_type() for lp={:s} returns ty={:s}",
+               self.repr(tcx), ty.repr(tcx));
+        ty
     }
 
     fn needs_drop(&self, tcx: &ty::ctxt) -> bool {
@@ -463,7 +518,15 @@ impl LoanPath {
 
                 type_contents.needs_drop_call(tcx)
             }
-            _ => fail!("encountered LpDowncast on non-enum base type."),
+            _ => {
+                debug!("needs_drop encountered LpDowncast on non-enum base type: {}",
+                       lp_type.repr(tcx));
+                let msg = format!("encountered LpDowncast on non-enum base type: {}.",
+                                  lp_type.repr(tcx));
+                tcx.sess.opt_span_warn(tcx.map.opt_span(self.kill_id(tcx)),
+                                       msg.as_slice());
+                false
+            }
         }
     }
 }
