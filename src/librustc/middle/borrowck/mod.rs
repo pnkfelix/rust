@@ -384,26 +384,39 @@ impl LoanPath {
 
     fn needs_drop(&self, tcx: &ty::ctxt) -> bool {
         //! Returns true if this loan path needs drop glue.  I.e.,
-        //! does introducing this loan path as a binding introduce a
-        //! new drop obligation.
+        //! does assigning to this loan path introduce a new drop
+        //! obligation.
 
         debug!("needs_drop(tcx) self={}", self.repr(tcx));
 
         match *self {
             LpVar(_) | LpUpvar(..) =>
                 // Variables are the easiest case: just use their
-                // types to determine wwhether they introduce a drop
+                // types to determine whether they introduce a drop
                 // obligation when assigned.  (FSK well, at the
                 // *moment* they are easy; we may put in
                 // flow-sensitivity in some form.  Or maybe not, we
                 // will see.)
                 self.to_type(tcx).needs_drop_call(tcx),
 
-            LpExtend(_, _, LpDeref(_)) =>
+            LpExtend(_, _, LpDeref(mc::BorrowedPtr(..))) |
+            LpExtend(_, _, LpDeref(mc::Implicit(..)))    =>
                 // A path through a `&` or `&mut` reference cannot
                 // introduce a drop obligation; e.g. the assignment
                 // `*p = box 3u` installs a pointer elsewhere that is
                 // the responsibility of someone else (e.g. a caller).
+                false,
+
+            LpExtend(_, _, LpDeref(mc::OwnedPtr)) =>
+                // However, an assignment to a deref of a Box<T> is
+                // conceptually owned by the parent and thus does
+                // introduce a drop obligation.
+                true,
+
+            LpExtend(_, _, LpDeref(mc::GcPtr))     |
+            LpExtend(_, _, LpDeref(mc::UnsafePtr(_))) =>
+                // An assignment through a GcPtr or UnsafePtr cannot
+                // affect the local drop obligation state.
                 false,
 
             LpExtend(ref base_lp, _cat, LpInterior(_)) =>
