@@ -23,7 +23,7 @@ objdir-dbg/x86_64-apple-darwin/stage1/rustc: src/etc/rustc-wrapper.macosx.sh obj
 	cp $< $@
 	chmod +x $@
 
-RUST_LOG=rustc::middle::borrowck,rustc::middle::ty,rustc::middle::typeck,rustc::middle::expr_use_visitor,rustc::middle::region,rustc::middle::trans
+RUST_LOG=rustc::middle::borrowck,rustc::middle::ty,rustc::middle::typeck,rustc::middle::expr_use_visitor,rustc::middle::region,rustc::middle::trans,rustc::middle::resolve
 
 %.dot: %.rs Makefile objdir-dbg/x86_64-apple-darwin/stage1/rustc
 	$(RUSTC_LIB) -Z flowgraph-print-all --pretty flowgraph=foo $< -o $@
