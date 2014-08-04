@@ -93,17 +93,11 @@ impl<'a, 'tcx> euv::Delegate for GatherLoanCtxt<'a, 'tcx> {
                cmt.repr(self.tcx()),
                mode);
 
-        match mode {
-            euv::BorrowingMatch |
-            euv::ConsumingMatch(euv::Copy) => return,
-            euv::ConsumingMatch(euv::Move(_)) => {}
-        }
-
         match cmt.cat {
             mc::cat_downcast(..) =>
-                gather_moves::gather_move_into_variant(
+                gather_moves::gather_match_variant(
                     self.bccx, &self.move_data, &self.move_error_collector,
-                    matched_pat, cmt),
+                    matched_pat, cmt, mode),
             _ => {}
         }
     }

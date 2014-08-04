@@ -61,13 +61,14 @@ pub fn gather_move_from_expr(bccx: &BorrowckCtxt,
     gather_move(bccx, move_data, move_error_collector, move_info);
 }
 
-pub fn gather_move_into_variant(bccx: &BorrowckCtxt,
+pub fn gather_match_variant(bccx: &BorrowckCtxt,
                                 move_data: &MoveData,
                                 _move_error_collector: &MoveErrorCollector,
                                 move_pat: &ast::Pat,
-                                cmt: mc::cmt) { 
-    debug!("gather_match(move_pat={}, cmt={})",
-           move_pat.id, cmt.repr(bccx.tcx));
+                                cmt: mc::cmt,
+                                mode: euv::MatchMode) {
+    debug!("gather_match_variant(move_pat={}, cmt={}, mode={})",
+           move_pat.id, cmt.repr(bccx.tcx), mode);
 
     let opt_lp = opt_loan_path(&cmt, bccx.tcx);
     let opt_base_lp = match cmt.cat {
@@ -79,7 +80,8 @@ pub fn gather_move_into_variant(bccx: &BorrowckCtxt,
             move_data.add_variant_match(bccx.tcx,
                                         loan_path,
                                         move_pat.id,
-                                        base_loan_path);
+                                        base_loan_path,
+                                        mode);
         }
         (lp, base_lp) => {
             debug!("add_variant_match body for ({:?}, {:?}) NOT YET IMPLEMENTED", lp, base_lp);
