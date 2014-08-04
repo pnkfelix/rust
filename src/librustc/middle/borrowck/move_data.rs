@@ -316,14 +316,13 @@ impl MoveData {
     /// variant), or it is a struct whose fields are never accessed in
     /// the function being compiled.
     fn path_is_leaf(&self, index: MovePathIndex, _tcx: &ty::ctxt) -> bool {
-
         let first_child = self.path_first_child(index);
         if first_child == InvalidMovePathIndex {
             true
         } else {
             match *self.path_loan_path(first_child) {
                 LpDowncast(..) => true,
-                LpExtend(..) => false, // FIXME
+                LpExtend(..) => false,
                 LpVar(..) | LpUpvar(..) => false,
             }
         }
@@ -599,12 +598,6 @@ impl MoveData {
             // *LV for OwnedPtr consumes the contents of the box (at
             // least when it is non-copy...), so propagate inward.
             LpExtend(ref loan_parent, _, LpDeref(mc::OwnedPtr)) => {
-                let msg =
-                    format!("add_fragment_siblings encountered \
-                            LpExtend(.., OwnedPtr): {}; recursing down.",
-                            lp.repr(tcx));
-                tcx.sess.opt_span_warn(tcx.map.opt_span(origin_id),
-                                       msg.as_slice());
                 self.add_fragment_siblings(tcx, loan_parent.clone(), origin_id);
             }
 
