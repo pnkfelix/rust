@@ -476,7 +476,10 @@ impl tr for def::Def {
           def::DefTy(did) => def::DefTy(did.tr(xcx)),
           def::DefPrimTy(p) => def::DefPrimTy(p),
           def::DefTyParam(s, did, v) => def::DefTyParam(s, did.tr(xcx), v),
-          def::DefBinding(nid, bm) => def::DefBinding(xcx.tr_id(nid), bm),
+          def::DefBinding(nid, bm, def::Original) => def::DefBinding(xcx.tr_id(nid), bm, def::Original),
+          def::DefBinding(nid, bm, def::Aliasing(oid)) => {
+            def::DefBinding(xcx.tr_id(nid), bm, def::Aliasing(xcx.tr_id(oid)))
+          },
           def::DefUse(did) => def::DefUse(did.tr(xcx)),
           def::DefUpvar(nid1, def, nid2, nid3) => {
             def::DefUpvar(xcx.tr_id(nid1),
