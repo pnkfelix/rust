@@ -105,11 +105,22 @@ impl LastPrivate {
     }
 }
 
-#[deriving(PartialEq)]
-enum PatternBindingMode {
-    RefutableMode,
+enum PatternBindingMode<'a> {
+    /// Payload maps idents to node ID of first occurrence of ident in
+    /// the first pattern in a match disjunction `p_1 | p_2 | ...`
+    RefutableMode(&'a mut HashMap<Name,NodeId>),
     LocalIrrefutableMode,
     ArgumentIrrefutableMode,
+}
+
+impl<'a> PatternBindingMode<'a> {
+    fn is_refutable(&self) -> bool {
+        match *self {
+            RefutableMode(_) => true,
+            LocalIrrefutableMode => false,
+            ArgumentIrrefutableMode => false,
+        }
+    }
 }
 
 #[deriving(PartialEq, Eq, Hash)]
@@ -4266,8 +4277,11 @@ impl<'a> Resolver<'a> {
         self.value_ribs.borrow_mut().push(Rib::new(NormalRibKind));
 
         let mut bindings_list = HashMap::new();
+        let mut normalized_list = HashMap::new();
         for pattern in arm.pats.iter() {
-            self.resolve_pattern(&**pattern, RefutableMode, &mut bindings_list);
+            self.resolve_pattern(&**pattern,
+                                 RefutableMode(&mut normalized_list),
+                                 &mut bindings_list);
         }
 
         // This has to happen *after* we determine which
@@ -4411,6 +4425,7 @@ impl<'a> Resolver<'a> {
                        // pattern that binds them
                        bindings_list: &mut HashMap<Name,NodeId>) {
         let pat_id = pattern.id;
+        let mut mode = mode;
         walk_pat(pattern, |pattern| {
             match pattern.node {
                 PatIdent(binding_mode, ref path1, _) => {
@@ -4429,7 +4444,7 @@ impl<'a> Resolver<'a> {
 
                     match self.resolve_bare_identifier_pattern(ident, pattern.span) {
                         FoundStructOrEnumVariant(def, lp)
-                                if mode == RefutableMode => {
+                                if mode.is_refutable() => {
                             debug!("(resolving pattern) resolving `{}` to \
                                     struct or enum variant",
                                    token::get_name(renamed));
@@ -4448,7 +4463,7 @@ impl<'a> Resolver<'a> {
                                          scope",
                                         token::get_name(renamed)).as_slice());
                         }
-                        FoundConst(def, lp) if mode == RefutableMode => {
+                        FoundConst(def, lp) if mode.is_refutable() => {
                             debug!("(resolving pattern) resolving `{}` to \
                                     constant",
                                    token::get_name(renamed));
@@ -4469,11 +4484,20 @@ impl<'a> Resolver<'a> {
                                    token::get_name(renamed));
 
                             let def = match mode {
-                                RefutableMode => {
+                                RefutableMode(ref mut normalization) => {
+                                    let opt_first_id = normalization.find(&renamed).map(|&x|x);
+                                    let aliasing_mode = match opt_first_id {
+                                        Some(first_id) => Aliasing(first_id),
+                                        None => {
+                                            // this is the first id; insert it.
+                                            normalization.insert(renamed, pattern.id);
+                                            Original
+                                        }
+                                    };
+
                                     // For pattern arms, we must use
                                     // `def_binding` definitions.
-
-                                    DefBinding(pattern.id, binding_mode)
+                                    DefBinding(pattern.id, binding_mode, aliasing_mode)
                                 }
                                 LocalIrrefutableMode => {
                                     // But for locals, we use `def_local`.

@@ -960,7 +960,7 @@ impl LintPass for UppercaseVariables {
         match &p.node {
             &ast::PatIdent(_, ref path1, _) => {
                 match cx.tcx.def_map.borrow().find(&p.id) {
-                    Some(&def::DefLocal(_, _)) | Some(&def::DefBinding(_, _)) |
+                    Some(&def::DefLocal(_, _)) | Some(&def::DefBinding(_, _, _)) |
                             Some(&def::DefArg(_, _)) => {
                         let s = token::get_ident(path1.node);
                         if s.get().len() > 0 && s.get().char_at(0).is_uppercase() {

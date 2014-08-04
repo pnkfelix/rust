@@ -603,7 +603,8 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
           }
 
           def::DefLocal(vid, binding_mode) |
-          def::DefBinding(vid, binding_mode) => {
+          def::DefBinding(vid, binding_mode, def::Original) |
+          def::DefBinding(_, binding_mode, def::Aliasing(vid)) => {
             // by-value/by-ref bindings are local variables
             let m = match binding_mode {
                 ast::BindByValue(ast::MutMutable) => McDeclared,

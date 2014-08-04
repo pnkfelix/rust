@@ -15,6 +15,11 @@ use syntax::ast_util::local_def;
 use std::gc::Gc;
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+pub enum BindingAliasMode {
+    Aliasing(ast::NodeId),
+    Original,
+}
+#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum Def {
     DefFn(ast::DefId, ast::FnStyle),
     DefStaticMethod(/* method */ ast::DefId, MethodProvenance, ast::FnStyle),
@@ -29,7 +34,7 @@ pub enum Def {
     DefTrait(ast::DefId),
     DefPrimTy(ast::PrimTy),
     DefTyParam(ParamSpace, ast::DefId, uint),
-    DefBinding(ast::NodeId, ast::BindingMode),
+    DefBinding(ast::NodeId, ast::BindingMode, BindingAliasMode),
     DefUse(ast::DefId),
     DefUpvar(ast::NodeId,  // id of closed over var
              Gc<Def>,     // closed over def
@@ -70,7 +75,7 @@ impl Def {
             DefLocal(id, _) |
             DefSelfTy(id) |
             DefUpvar(id, _, _, _) |
-            DefBinding(id, _) |
+            DefBinding(id, _, _) |
             DefRegion(id) |
             DefTyParamBinder(id) |
             DefLabel(id) => {
