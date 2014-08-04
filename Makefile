@@ -22,8 +22,16 @@ FILES_UNCATEGORIZED=                   foo13.rs                                 
 FILES=$(FILES_WARN) $(FILES_FINE) $(FILES_UNCATEGORIZED)
 
 all: $(patsubst %.rs,%.dot,$(FILES))
-fine: $(patsubst %.rs,%.dot,$(FILES_FINE))
-warn: $(patsubst %.rs,%.dot,$(FILES_WARN))
+.PHONY: touch_fine
+touch_fine:
+	touch *fine.rs
+.PHONY: touch_warn
+touch_warn:
+	touch *warn.rs
+.PHONY: fine
+fine: touch_fine $(patsubst %.rs,%.dot,$(FILES_FINE))
+.PHONY: warn
+warn: touch_warn $(patsubst %.rs,%.dot,$(FILES_WARN))
 
 RUSTC_LIB=$(RUSTC) --crate-type=lib
 
