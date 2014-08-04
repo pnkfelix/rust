@@ -24,6 +24,7 @@ use std::rc::Rc;
 use std::collections::hashmap::HashMap;
 use std::sync::atomics;
 use syntax::{ast,ast_map};
+use util::ppaux::Repr;
 
 static mut warning_count: atomics::AtomicUint = atomics::INIT_ATOMIC_UINT;
 
@@ -84,6 +85,7 @@ pub fn check_drops(bccx: &BorrowckCtxt,
 
         let move_data = &flowed_move_data.move_data;
         let needs_drop = &flowed_move_data.dfcx_needs_drop;
+        let ignore_drop = &flowed_move_data.dfcx_ignore_drop;
         let path_count = move_data.paths.borrow().len();
 
         let intersection = needs_drop.bitset_for(dataflow::Entry, node_index);
@@ -159,6 +161,13 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                     let path = paths.get(bit_idx);
                     let lp = &path.loan_path;
 
+                    let ignored_paths = ignore_drop.bitset_for(dataflow::Exit, source);
+                    if dataflow::is_bit_set(ignored_paths.as_slice(), bit_idx) {
+                        debug!("check_drops can ignore lp={} as it is non-drop on this path.",
+                               lp.repr(bccx.tcx));
+                        return true;
+                    }
+
                     // Check if there is a single effect-free
                     // successor chain that leads to the end of the
                     // scope of the local variable at the base of `lp`
@@ -166,6 +175,8 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                     // without warning the user)
                     let kill_id = lp.kill_id(bccx.tcx);
                     if scan_forward_for_kill_id(bccx, cfg, node_index, kill_id) {
+                        debug!("check_drops can ignore lp={} as its scope-end is imminent.",
+                               lp.repr(bccx.tcx));
                         return true;
                     }
 

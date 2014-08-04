@@ -82,6 +82,11 @@ pub struct FlowedMoveData<'a> {
     pub dfcx_assign: AssignDataFlow<'a>,
 
     pub dfcx_needs_drop: NeedsDropDataFlow<'a>,
+
+    /// If we match a variant for which no drop is necessary, then on
+    /// this branch (alone), no-drop is necessary for the original
+    /// path.  That flow-sensitive inforamtion is tracked here.
+    pub dfcx_ignore_drop: IgnoreDropDataFlow<'a>,
 }
 
 /// Index into `MoveData.paths`, used like a pointer
@@ -178,6 +183,9 @@ pub struct VariantMatch {
 
     /// id where variant's pattern occurs
     pub id: ast::NodeId,
+
+    /// says if variant established by move (and why), by copy, or by borrow.
+    pub mode: euv::MatchMode
 }
 
 #[deriving(Clone)]
@@ -193,6 +201,10 @@ pub type AssignDataFlow<'a> = DataFlowContext<'a, AssignDataFlowOperator>;
 #[deriving(Clone)]
 pub struct NeedsDropDataFlowOperator;
 pub type NeedsDropDataFlow<'a> = DataFlowContext<'a, NeedsDropDataFlowOperator>;
+
+#[deriving(Clone)]
+pub struct IgnoreDropDataFlowOperator;
+pub type IgnoreDropDataFlow<'a> = DataFlowContext<'a, IgnoreDropDataFlowOperator>;
 
 fn loan_path_is_precise(loan_path: &LoanPath) -> bool {
     match *loan_path {
@@ -555,11 +567,12 @@ impl MoveData {
                          tcx: &ty::ctxt,
                          lp: Rc<LoanPath>,
                          pattern_id: ast::NodeId,
-                         base_lp: Rc<LoanPath>) {
+                         base_lp: Rc<LoanPath>,
+                         mode: euv::MatchMode) {
         /*!
          * Adds a new record for an match of `base_lp`, downcast to
          * variant `lp`, that occurs at location `pattern_id`.  (One
-         * should be able to recover teh span info from the
+         * should be able to recover the span info from the
          * `pattern_id` and the ast_map, I think.)
          */
         debug!("add_variant_match(lp={}, pattern_id={:?})",
@@ -573,6 +586,7 @@ impl MoveData {
             path: path_index,
             base_path: base_path_index,
             id: pattern_id,
+            mode: mode,
         };
 
         self.variant_matches.borrow_mut().push(variant_match);
@@ -764,7 +778,8 @@ impl MoveData {
                      tcx: &ty::ctxt,
                      dfcx_moves: &mut MoveDataFlow,
                      dfcx_assign: &mut AssignDataFlow,
-                     dfcx_needs_drop: &mut NeedsDropDataFlow) {
+                     dfcx_needs_drop: &mut NeedsDropDataFlow,
+                     dfcx_ignore_drop: &mut IgnoreDropDataFlow) {
         /*!
          * Adds the gen/kills for the various moves and
          * assignments into the provided data flow contexts.
@@ -812,13 +827,23 @@ impl MoveData {
             dfcx_moves.add_gen(move.id, i);
             debug!("remove_drop_obligations move {}", move.to_string(self, tcx));
             self.remove_drop_obligations(tcx, move, dfcx_needs_drop);
+            // FIXME: do I need to also remove_ignored_drops here? (FSK)
         }
 
         for variant_match in self.variant_matches.borrow().iter() {
-            debug!("remove_drop_obligations variant_match {}", variant_match.to_string(self, tcx));
-            self.remove_drop_obligations(tcx, variant_match, dfcx_needs_drop);
-            debug!("add_drop_obligations variant_match {}", variant_match.to_string(self, tcx));
-            self.add_drop_obligations(tcx, variant_match, dfcx_needs_drop);
+            match variant_match.mode {
+                euv::BorrowingMatch => {}
+                euv::ConsumingMatch(_consume_mode) => {
+                    debug!("remove_drop_obligations variant_match {}", variant_match.to_string(self, tcx));
+                    self.remove_drop_obligations(tcx, variant_match, dfcx_needs_drop);
+                    // FIXME: do I need to also remove_ignored_drops here? (FSK)
+                    debug!("add_drop_obligations variant_match {}", variant_match.to_string(self, tcx));
+                    self.add_drop_obligations(tcx, variant_match, dfcx_needs_drop);
+                }
+            }
+
+            debug!("add_ignored_drops variant_match {}", variant_match.to_string(self, tcx));
+            self.add_ignored_drops(tcx, variant_match, dfcx_ignore_drop);
         }
 
         for (i, assignment) in self.var_assignments.borrow().iter().enumerate() {
@@ -847,6 +872,7 @@ impl MoveData {
                            kill_id, path.loan_path.repr(tcx));
                     let rm = Removed { where: kill_id, what_path: move_path_index };
                     self.remove_drop_obligations(tcx, &rm, dfcx_needs_drop);
+                    // FIXME: do I need to also remove_ignored_drops here? (FSK)
                 }
                 LpUpvar(ty::UpvarId { var_id: _, closure_expr_id }, _) => {
                     let kill_id = closure_to_block(closure_expr_id, tcx);
@@ -856,6 +882,7 @@ impl MoveData {
                            kill_id, path.loan_path.repr(tcx));
                     let rm = Removed { where: kill_id, what_path: move_path_index };
                     self.remove_drop_obligations(tcx, &rm, dfcx_needs_drop);
+                    // FIXME: do I need to also remove_ignored_drops here? (FSK)
                 }
                 LpDowncast(..) => {} // FIXME: is this right, or should this loop to top?
                 LpExtend(..) => {}
@@ -1135,6 +1162,23 @@ impl MoveData {
 
         self.for_each_leaf(tcx, path, add_kill, report_variant);
     }
+
+    fn add_ignored_drops(&self,
+                         tcx: &ty::ctxt,
+                         variant_match: &VariantMatch,
+                         dfcx_ignore_drop: &mut IgnoreDropDataFlow) {
+        let path_lp = self.path_loan_path(variant_match.path);
+        let base_path_lp = self.path_loan_path(variant_match.base_path);
+
+        if !self.path_needs_drop(tcx, variant_match.path) {
+            debug!("add_ignored_drops(id={} lp={}) adds {}",
+                   variant_match.id, path_lp.repr(tcx), base_path_lp.repr(tcx));
+            dfcx_ignore_drop.add_gen(variant_match.id, variant_match.base_path.get());
+        } else {
+            debug!("add_ignored_drops(id={} lp={}) skipped {}",
+                   variant_match.id, path_lp.repr(tcx), base_path_lp.repr(tcx));
+        }
+    }
 }
 
 trait AddNeedsDropArg {
@@ -1203,24 +1247,37 @@ impl<'a> FlowedMoveData<'a> {
                                  NeedsDropDataFlowOperator,
                                  id_range,
                                  move_data.paths.borrow().len());
+        let mut dfcx_ignore_drop =
+            DataFlowContext::new(tcx,
+                                 "flowed_move_data_ignore_drop",
+                                 Some(decl),
+                                 cfg,
+                                 IgnoreDropDataFlowOperator,
+                                 id_range,
+                                 move_data.paths.borrow().len());
+
         move_data.add_gen_kills(tcx,
                                 &mut dfcx_moves,
                                 &mut dfcx_assign,
-                                &mut dfcx_needs_drop);
+                                &mut dfcx_needs_drop,
+                                &mut dfcx_ignore_drop);
 
         dfcx_moves.add_kills_from_flow_exits(cfg);
         dfcx_assign.add_kills_from_flow_exits(cfg);
         dfcx_needs_drop.add_kills_from_flow_exits(cfg);
+        dfcx_ignore_drop.add_kills_from_flow_exits(cfg);
 
         dfcx_moves.propagate(cfg, body);
         dfcx_assign.propagate(cfg, body);
         dfcx_needs_drop.propagate(cfg, body);
+        dfcx_ignore_drop.propagate(cfg, body);
 
         FlowedMoveData {
             move_data: move_data,
             dfcx_moves: dfcx_moves,
             dfcx_assign: dfcx_assign,
             dfcx_needs_drop: dfcx_needs_drop,
+            dfcx_ignore_drop: dfcx_ignore_drop,
         }
     }
 
@@ -1513,6 +1570,27 @@ impl DataFlowOperator for NeedsDropDataFlowOperator {
         //
         // See extensive discussion in impl BitwiseOperator for
         // NeedsDropDataFlowOperator.
+        true
+    }
+
+    #[inline]
+    fn entry_initial_value(&self) -> bool {
+        false
+    }
+}
+
+impl BitwiseOperator for IgnoreDropDataFlowOperator {
+    #[inline]
+    fn join(&self, succ: uint, pred: uint) -> uint {
+        // You can only ignore a drop if both incoming paths agree that you can do so
+        succ & pred
+    }
+}
+
+impl DataFlowOperator for IgnoreDropDataFlowOperator {
+    #[inline]
+    fn initial_value(&self) -> bool {
+        // For non-entry nodes, assume you can ignore a drop until proven otherwise.
         true
     }
 

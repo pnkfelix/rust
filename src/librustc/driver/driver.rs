@@ -699,6 +699,7 @@ fn gather_flowgraph_variants(sess: &Session) -> Vec<borrowck_dot::Variant> {
     }
     if opt(print_all) || opt(print_needs_drop) {
         variants.push(borrowck_dot::NeedsDrop);
+        variants.push(borrowck_dot::IgnoreDrop);
     }
     variants
 }
