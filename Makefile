@@ -1,15 +1,29 @@
-FILES= foo1.rs  foo2.rs  foo3.rs  foo4.rs  foo5.rs  foo6.rs  foo7.rs  foo8.rs \
-       foo9.rs foo10.rs foo11.rs foo12.rs foo13.rs foo14.rs foo15.rs foo16.rs \
-      foo17.rs foo18.rs foo19.rs foo20.rs foo21.rs foo22.rs foo23.rs foo24.rs \
-      foo25.rs foo26.rs foo27.rs foo28.rs foo29.rs foo30.rs                   \
-      dlist01.rs \
-      iter1.rs iter2.rs \
-      num01.rs \
-      option01.rs \
-      result01.rs result02.rs result03.rs \
-      str01.rs
+FILES_WARN=foo01_warn.rs               foo03_warn.rs foo04_warn.rs foo05_warn.rs \
+           foo06_warn.rs foo07_warn.rs foo08_warn.rs foo09_warn.rs foo10_warn.rs \
+                         foo17_warn.rs foo18_warn.rs                             \
+                                                                   foo25_warn.rs \
+           foo26_warn.rs foo27_warn.rs foo28_warn.rs
+
+FILES_FINE=              foo02_fine.rs                                           \
+           foo11_fine.rs foo12_fine.rs               foo14_fine.rs foo15_fine.rs \
+                                       foo23_fine.rs foo24_fine.rs               \
+                                                     foo29_fine.rs foo30_fine.rs
+
+FILES_UNCATEGORIZED=                   foo13.rs                                  \
+           foo16.rs                                  foo19.rs      foo20.rs      \
+           foo21.rs      foo22.rs                                                \
+           dlist01.rs \
+           iter1.rs iter2.rs \
+           num01.rs \
+           option01.rs \
+           result01.rs result02.rs result03.rs \
+           str01.rs
+
+FILES=$(FILES_WARN) $(FILES_FINE) $(FILES_UNCATEGORIZED)
 
 all: $(patsubst %.rs,%.dot,$(FILES))
+fine: $(patsubst %.rs,%.dot,$(FILES_FINE))
+warn: $(patsubst %.rs,%.dot,$(FILES_WARN))
 
 RUSTC_LIB=$(RUSTC) --crate-type=lib
 
