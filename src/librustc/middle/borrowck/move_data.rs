@@ -711,7 +711,7 @@ impl MoveData {
                             .expect("enum_variant_with_id(): no variant exists with that ID")
                             .clone(),
                         None => {
-                            assert!(variants.len() == 1);
+                            assert_eq!(variants.len(), 1);
                             variants.pop().unwrap()
                         }
                     }
