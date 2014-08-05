@@ -1088,9 +1088,21 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
 
           ast::PatStruct(_, ref field_pats, _) => {
             // {f1: p1, ..., fN: pN}
+            let downcast_cmt = match self.tcx().def_map.borrow().find(&pat.id) {
+                Some(&def::DefVariant(enum_did, variant_did, _)) => {
+                    // variant{ a: x, b: y, c: z }
+                    if ty::enum_is_univariant(self.tcx(), enum_did) {
+                        cmt // univariant, no downcast needed
+                    } else {
+                        self.cat_downcast(pat, cmt.clone(), cmt.ty, variant_did)
+                    }
+                }
+                _ => cmt,
+            };
+
             for fp in field_pats.iter() {
                 let field_ty = if_ok!(self.pat_ty(&*fp.pat)); // see (*2)
-                let cmt_field = self.cat_field(pat, cmt.clone(), fp.ident, field_ty);
+                let cmt_field = self.cat_field(pat, downcast_cmt.clone(), fp.ident, field_ty);
                 if_ok!(self.cat_pattern(cmt_field, &*fp.pat, |x,y,z| op(x,y,z)));
             }
           }
