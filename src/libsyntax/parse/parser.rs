@@ -5233,6 +5233,7 @@ impl<'a> Parser<'a> {
         match self.token {
           token::EQ => {
             // x = foo::bar
+            let ident_lo = self.last_span.lo;
             self.bump();
             let path_lo = self.span.lo;
             path = vec!(self.parse_ident());
@@ -5241,8 +5242,19 @@ impl<'a> Parser<'a> {
                 let id = self.parse_ident();
                 path.push(id);
             }
+            let use_span = mk_sp(ident_lo, self.last_span.hi);
+            let path_span = mk_sp(path_lo, self.last_span.hi);
+            // NOTE: turn on after snapshot
+            if false {
+                let snippet = self.sess.span_diagnostic.cm.span_to_snippet(path_span).unwrap();
+                let msg = format!("deprecated rebinding use syntax; \
+                                   write `use {} as {};` instead",
+                                  snippet,
+                                  first_ident.as_str());
+                self.span_warn(use_span, msg.as_slice());
+            }
             let path = ast::Path {
-                span: mk_sp(path_lo, self.span.hi),
+                span: use_span,
                 global: false,
                 segments: path.move_iter().map(|identifier| {
                     ast::PathSegment {
@@ -5252,6 +5264,7 @@ impl<'a> Parser<'a> {
                     }
                 }).collect()
             };
+
             return box(GC) spanned(lo, self.span.hi,
                             ViewPathSimple(first_ident, path,
                                            ast::DUMMY_NODE_ID));
@@ -5327,9 +5340,18 @@ impl<'a> Parser<'a> {
                 }
             }).collect()
         };
-        return box(GC) spanned(lo,
-                        self.last_span.hi,
-                        ViewPathSimple(last, path, ast::DUMMY_NODE_ID));
+
+        let bound_ident = if self.is_keyword(keywords::As) {
+            // foo::bar as x
+            self.bump();
+            self.parse_ident()
+        } else {
+            last
+        };
+
+        return box(GC) spanned(lo, self.last_span.hi,
+                               ViewPathSimple(bound_ident, path,
+                                              ast::DUMMY_NODE_ID));
     }
 
     /// Parses a sequence of items. Stops when it finds program
