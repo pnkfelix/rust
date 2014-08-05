@@ -80,7 +80,7 @@ fn field_match_in_let(f: Bar) -> bool {
     b
 }
 
-pub fn main() {
+pub fn foo() {
     field_read(Foo { x: 1, b: false, marker: marker::NoCopy });
     field_match_in_patterns(X);
     field_match_in_let(Bar { x: 42u, b: true });
