@@ -391,7 +391,7 @@ fn ids_ext(strs: Vec<String> ) -> Vec<ast::Ident> {
     strs.iter().map(|str| str_to_ident((*str).as_slice())).collect()
 }
 
-fn id_ext(str: &str) -> ast::Ident {
+pub fn id_ext(str: &str) -> ast::Ident {
     str_to_ident(str)
 }
 
@@ -593,7 +593,7 @@ fn mk_tts(cx: &ExtCtxt, sp: Span, tts: &[ast::TokenTree])
     ss
 }
 
-fn expand_tts(cx: &ExtCtxt, sp: Span, tts: &[ast::TokenTree])
+pub fn expand_tts(cx: &ExtCtxt, sp: Span, tts: &[ast::TokenTree])
               -> (Gc<ast::Expr>, Gc<ast::Expr>) {
     // NB: It appears that the main parser loses its mind if we consider
     // $foo as a TTNonterminal during the main parse, so we have to re-parse
@@ -660,7 +660,7 @@ fn expand_tts(cx: &ExtCtxt, sp: Span, tts: &[ast::TokenTree])
     (cx_expr, block)
 }
 
-fn expand_wrapper(cx: &ExtCtxt,
+pub fn expand_wrapper(cx: &ExtCtxt,
                   sp: Span,
                   cx_expr: Gc<ast::Expr>,
                   expr: Gc<ast::Expr>) -> Gc<ast::Expr> {
