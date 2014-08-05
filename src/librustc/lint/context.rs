@@ -545,8 +545,11 @@ impl<'a> Visitor<()> for Context<'a> {
     }
 
     fn visit_arm(&mut self, a: &ast::Arm, _: ()) {
-        run_lints!(self, check_arm, a);
-        visit::walk_arm(self, a, ());
+        self.with_lint_attrs(a.attrs.as_slice(), |cx| {
+            run_lints!(cx, check_arm, a);
+            cx.visit_ids(|v| v.visit_arm(a, ()));
+            visit::walk_arm(cx, a, ());
+        })
     }
 
     fn visit_decl(&mut self, d: &ast::Decl, _: ()) {
