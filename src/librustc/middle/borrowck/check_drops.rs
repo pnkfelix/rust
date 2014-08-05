@@ -14,6 +14,7 @@
 use middle::borrowck::*;
 use middle::borrowck::move_data::{Assignment, Move};
 use euv = middle::expr_use_visitor;
+use lint;
 use mc = middle::mem_categorization;
 use middle::dataflow;
 use middle::graph;
@@ -23,7 +24,7 @@ use middle::ty::TypeContents;
 use std::rc::Rc;
 use std::collections::hashmap::HashMap;
 use std::sync::atomics;
-use syntax::{ast,ast_map};
+use syntax::{ast,ast_map,codemap};
 use util::ppaux::Repr;
 
 static mut warning_count: atomics::AtomicUint = atomics::INIT_ATOMIC_UINT;
@@ -200,11 +201,12 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                                        or reinitializing it on the other paths); count: {}",
                                       loan_path_str, where, count);
 
-                    match opt_source_span {
-                        Some(span) => bccx.tcx.sess.span_warn(span, msg.as_slice()),
-                        None => bccx.tcx.sess.warn(msg.as_slice()),
-                    }
-                    cfg.graph.each_incoming_edge(node_index, |edge_index, edge| {
+                    bccx.tcx.sess.add_lint(lint::builtin::EARLY_DROP,
+                                           source_id,
+                                           opt_source_span.unwrap_or(codemap::DUMMY_SP),
+                                           msg);
+
+                    if false { cfg.graph.each_incoming_edge(node_index, |edge_index, edge| {
                         let source2 = edge.source();
                         if !cfg.is_reachable(source2) {
                             return true;
@@ -232,7 +234,7 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                             }
                         }
                         true
-                    });
+                    }); }
 
                     true
                 });

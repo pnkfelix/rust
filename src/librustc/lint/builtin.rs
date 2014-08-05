@@ -1524,6 +1524,9 @@ declare_lint!(pub VISIBLE_PRIVATE_TYPES, Warn,
 declare_lint!(pub UNREACHABLE_CODE, Warn,
               "detects unreachable code")
 
+declare_lint!(pub EARLY_DROP, Warn,
+              "detect drops that will happen earlier when drop flags are gone")
+
 declare_lint!(pub WARNINGS, Warn,
               "mass-change the level for lints which produce warnings")
 
@@ -1549,6 +1552,7 @@ impl LintPass for HardwiredLints {
             UNUSED_VARIABLE,
             DEAD_ASSIGNMENT,
             DEAD_CODE,
+            EARLY_DROP,
             VISIBLE_PRIVATE_TYPES,
             UNREACHABLE_CODE,
             WARNINGS,
