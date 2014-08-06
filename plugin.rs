@@ -8,19 +8,25 @@ extern crate rustc;
 
 use rustc::plugin::Registry;
 
-use syntax::codemap::Span;
+use syntax::codemap::{DUMMY_SP, Span};
+use syntax::diagnostic::SpanHandler;
+use syntax::ext::tt::macro_parser::{NamedMatch, MatchedSeq, MatchedNonterminal};
+use syntax::ext::tt::transcribe::{TtFrame, TtReader};
+use syntax::ext::tt::transcribe;
 use syntax::ext::base::{ExtCtxt, MacResult, MacExpr};
-use syntax::ext::base;
 use syntax::ext::quote::{id_ext};
 use syntax::ext::quote;
 use syntax::ext::build::AstBuilder;
 use syntax::parse::token::*;
 use syntax::parse::token;
+use syntax::parse::lexer;
 use syntax::parse;
+use syntax::ast::{Ident};
 use syntax::ast;
 
+use std::collections::hashmap::HashMap;
 use std::gc::Gc;
-
+use std::rc::Rc;
 
 fn expand(cx: &mut ExtCtxt, _span: Span, tts: &[ast::TokenTree])
           -> Box<MacResult>
@@ -35,7 +41,7 @@ fn expand(cx: &mut ExtCtxt, _span: Span, tts: &[ast::TokenTree])
     let expr = parser.parse_expr();
     println!("expand expr: {}", expr);
 
-    if true {
+    if false {
         let expanded = expand_parse_call(cx, _span, "parse_expr", Vec::new(), tts);
         println!("built expanded: {}", expanded);
         let manual_quote_expr_result = MacExpr::new(expanded);
@@ -44,7 +50,72 @@ fn expand(cx: &mut ExtCtxt, _span: Span, tts: &[ast::TokenTree])
         println!("manual_quote_expr_result: {}", manual_quote_expr_result_expr);
     }
 
-    MacExpr::new(quote_expr!(&mut *cx, $expr))
+    // MacExpr::new(quote_expr!(&mut *cx, $expr))
+    {
+        use syntax::ext::quote::rt::*;
+        let ext_cx = &mut *cx;
+        let parse_sess = ext_cx.parse_sess();
+        let cfg = ext_cx.cfg();
+        let tt = {
+            let _sp = ext_cx.call_site();
+            let mut tt =
+                ::std::vec::Vec::new();
+            tt.push_all_move(expr.to_tokens(ext_cx));
+            tt
+        };
+        let mut parser = new_parser_from_tts(parse_sess, cfg, tt);
+        let expr = parse_expr(&mut parser);
+        println!("parsed: {}", expr);
+        MacExpr::new(expr)
+    }
+
+}
+
+pub fn new_parser_from_tts<'a>(sess: &'a parse::ParseSess,
+                               cfg: ast::CrateConfig,
+                               tts: Vec<ast::TokenTree>) -> parse::parser::Parser<'a> {
+    tts_to_parser(sess, tts, cfg)
+}
+
+pub fn tts_to_parser<'a>(sess: &'a parse::ParseSess,
+                         tts: Vec<ast::TokenTree>,
+                         cfg: ast::CrateConfig) -> parse::parser::Parser<'a> {
+    let trdr = new_tt_reader(&sess.span_diagnostic, None, tts);
+    parse::parser::Parser::new(sess, cfg, box trdr)
+}
+
+/// This can do Macro-By-Example transcription. On the other hand, if
+/// `src` contains no `TTSeq`s and `TTNonterminal`s, `interp` can (and
+/// should) be none.
+pub fn new_tt_reader<'a>(sp_diag: &'a SpanHandler,
+                         interp: Option<HashMap<Ident, Rc<NamedMatch>>>,
+                         src: Vec<ast::TokenTree> )
+                         -> TtReader<'a> {
+    let mut r = TtReader {
+        sp_diag: sp_diag,
+        stack: vec!(TtFrame {
+            forest: Rc::new(src),
+            idx: 0,
+            dotdotdoted: false,
+            sep: None,
+        }),
+        interpolations: match interp { /* just a convenience */
+            None => HashMap::new(),
+            Some(x) => x,
+        },
+        repeat_idx: Vec::new(),
+        repeat_len: Vec::new(),
+        /* dummy values, never read: */
+        cur_tok: EOF,
+        cur_span: DUMMY_SP,
+    };
+    transcribe::tt_next_token(&mut r); /* get cur_tok and cur_span set up */
+    r
+}
+
+
+pub fn parse_expr(parser: &mut parse::parser::Parser) -> Gc<ast::Expr> {
+    parser.parse_expr_res(parse::parser::UNRESTRICTED)
 }
 
 #[plugin_registrar]
@@ -89,6 +160,8 @@ pub fn expand_parse_call(cx: &ExtCtxt,
 
 pub fn expand_tts(cx: &ExtCtxt, sp: Span, tts: &[ast::TokenTree])
               -> (Gc<ast::Expr>, Gc<ast::Expr>) {
+    println!("entered expand_tts: {}", tts);
+
     // NB: It appears that the main parser loses its mind if we consider
     // $foo as a TTNonterminal during the main parse, so we have to re-parse
     // under quote_depth > 0. This is silly and should go away; the _guess_ is
@@ -99,6 +172,8 @@ pub fn expand_tts(cx: &ExtCtxt, sp: Span, tts: &[ast::TokenTree])
     p.quote_depth += 1u;
 
     let cx_expr = p.parse_expr();
+    println!("expand_tts parsed_expr: {}", cx_expr);
+
     if !p.eat(&token::COMMA) {
         p.fatal("expected token `,`");
     }
@@ -144,7 +219,7 @@ pub fn expand_tts(cx: &ExtCtxt, sp: Span, tts: &[ast::TokenTree])
     let stmt_let_tt = cx.stmt_let(sp, true, id_ext("tt"), cx.expr_vec_ng(sp));
 
     let mut vector = vec!(stmt_let_sp, stmt_let_tt);
-    vector.push_all_move(mk_tts(cx, sp, tts.as_slice()));
+    vector.push_all_move(quote::mk_tts(cx, sp, tts.as_slice()));
     let block = cx.expr_block(
         cx.block_all(sp,
                      Vec::new(),
