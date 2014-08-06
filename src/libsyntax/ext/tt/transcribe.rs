@@ -22,7 +22,7 @@ use std::collections::HashMap;
 
 ///an unzipping of `TokenTree`s
 #[deriving(Clone)]
-struct TtFrame {
+pub struct TtFrame {
     forest: Rc<Vec<ast::TokenTree>>,
     idx: uint,
     dotdotdoted: bool,
