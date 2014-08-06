@@ -732,8 +732,6 @@ fn visit_expr(rcx: &mut Rcx, expr: &ast::Expr) {
         }
 
         ast::ExprMatch(ref discr, ref arms) => {
-            let arms : Vec<ast::Arm>
-                = arms.as_slice().iter().map(|x|(**x).clone()).collect();
             link_match(rcx, &**discr, arms.as_slice());
 
             visit::walk_expr(rcx, expr, ());

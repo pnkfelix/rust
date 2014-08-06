@@ -39,7 +39,6 @@ pub enum AnnNode<'a> {
     NodeItem(&'a ast::Item),
     NodeExpr(&'a ast::Expr),
     NodePat(&'a ast::Pat),
-    NodeArm(&'a ast::Arm),
     NodeMethod(&'a ast::Method),
 }
 
@@ -197,10 +196,6 @@ pub fn pat_to_string(pat: &ast::Pat) -> String {
 
 pub fn arm_to_string(arm: &ast::Arm) -> String {
     $to_string(|s| s.print_arm(arm))
-}
-
-pub fn arm_to_string(arm: &ast::Arm) -> String {
-    to_string(|s| s.print_arm(arm))
 }
 
 pub fn expr_to_string(e: &ast::Expr) -> String {
@@ -1823,43 +1818,6 @@ impl<'a> State<'a> {
                           bounds: &Option<OwnedSlice<ast::TyParamBound>>)
         -> IoResult<()> {
         self.print_path_(path, false, bounds)
-    }
-
-    pub fn print_arm(&mut self, arm: &ast::Arm) -> IoResult<()> {
-        try!(self.cbox(indent_unit));
-        try!(self.ibox(0u));
-        try!(self.print_outer_attributes(arm.attrs.as_slice()));
-        let mut first = true;
-        for p in arm.pats.iter() {
-            if first {
-                first = false;
-            } else {
-                try!(space(&mut self.s));
-                try!(self.word_space("|"));
-            }
-            try!(self.print_pat(&**p));
-        }
-        try!(space(&mut self.s));
-        match arm.guard {
-            Some(ref e) => {
-                try!(self.word_space("if"));
-                try!(self.print_expr(&**e));
-                try!(space(&mut self.s));
-            }
-            None => ()
-        }
-        try!(self.word_space("=>"));
-
-        match arm.body.node {
-            ast::ExprBlock(ref blk) => {
-                // the block will close the pattern's ibox
-                self.print_block_unclosed_indent(&**blk, indent_unit)
-            }
-            _ => {
-                try!(self.end()); // close the ibox for the pattern
-                self.print_expr(&*arm.body)
-            }
-        }
     }
 
     pub fn print_pat(&mut self, pat: &ast::Pat) -> IoResult<()> {

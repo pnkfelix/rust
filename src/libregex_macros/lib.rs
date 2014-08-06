@@ -590,7 +590,6 @@ fn exec<'t>(which: ::regex::native::MatchKind, input: &'t str,
     // Creates a wild-card match arm with the expression `body`.
     fn wild_arm_expr(&self, body: Gc<ast::Expr>) -> ast::Arm {
         ast::Arm {
-            id: ast::DUMMY_NODE_ID,
             attrs: vec!(),
             pats: vec!(box(GC) ast::Pat{
                 id: ast::DUMMY_NODE_ID,

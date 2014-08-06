@@ -86,29 +86,10 @@ pub struct RegionMaps {
 
 #[deriving(Clone)]
 pub struct Context {
-    /// THIS NEEDS DOCUMENTATION
     var_parent: Option<ast::NodeId>,
 
-    // Innermost enclosing scope (e.g. expression, match arm)
-    lifetime_parent: Option<ast::NodeId>,
-}
-
-impl Context {
-    fn new(id: ast::NodeId) -> Context {
-        Context {
-            var_parent: Some(id),
-            lifetime_parent: Some(id),
-        }
-    }
-    fn fresh() -> Context {
-        Context {
-            var_parent: None,
-            lifetime_parent: None,
-        }
-    }
-    fn with_lifetime_parent(&self, id: ast::NodeId) -> Context {
-        Context { lifetime_parent: Some(id), ..*self }
-    }
+    // Innermost enclosing expression
+    parent: Option<ast::NodeId>,
 }
 
 struct RegionResolutionVisitor<'a> {
@@ -250,7 +231,6 @@ impl RegionMaps {
 
         let mut s = subscope;
         while superscope != s {
-            debug!("is_subscope_of({}, {}) cursor s={}", subscope, superscope, s);
             match self.scope_map.borrow().find(&s) {
                 None => {
                     debug!("is_subscope_of({}, {}, s={})=false",
@@ -371,7 +351,7 @@ impl RegionMaps {
 
         fn ancestors_of(this: &RegionMaps, scope: ast::NodeId)
             -> Vec<ast::NodeId> {
-            debug!("ancestors_of(scope={})", scope);
+            // debug!("ancestors_of(scope={})", scope);
             let mut result = vec!(scope);
             let mut scope = scope;
             loop {
@@ -393,8 +373,7 @@ fn record_superlifetime(visitor: &mut RegionResolutionVisitor,
                         cx: Context,
                         child_id: ast::NodeId,
                         _sp: Span) {
-    debug!("record_superlifetime(child_id={})", child_id);
-    for &parent_id in cx.lifetime_parent.iter() {
+    for &parent_id in cx.parent.iter() {
         visitor.region_maps.record_encl_scope(child_id, parent_id);
     }
 }
@@ -433,14 +412,13 @@ fn resolve_block(visitor: &mut RegionResolutionVisitor,
     //   }
     //
 
-    let subcx = Context::new(blk.id);
+    let subcx = Context {var_parent: Some(blk.id), parent: Some(blk.id)};
     visit::walk_block(visitor, blk, subcx);
 }
 
 fn resolve_arm(visitor: &mut RegionResolutionVisitor,
                arm: &ast::Arm,
                cx: Context) {
-    debug!("resolve_arm(arm.id={})", arm.id);
     visitor.region_maps.mark_as_terminating_scope(arm.body.id);
 
     match arm.guard {
@@ -451,82 +429,11 @@ fn resolve_arm(visitor: &mut RegionResolutionVisitor,
     }
 
     visit::walk_arm(visitor, arm, cx);
-
-    // Regarding the commented out code below: it is difficult to
-    // figure out what to do for arm = {pat, guard, body}.
-    // In particular, it seems that currently, the scopes are
-    // set up to indcate that the parent of all three components
-    // is the whole match expression, which implies that the
-    // drops of pattern bindings occur at the end of the whole match,
-    // rather than at the end of an individual arm.
-    //
-    // In terms of the actual control flow, there is no distinction
-    // between the whole match and an individual arm.  But in terms of
-    // the control-flow graph representation, these seems to be
-    // very different things.
-    //
-    // pnkfelix's initial take on how to fix this was to explicitly
-    // represent the "scope of the arm" separately, and treat that as
-    // the parent for the pat and the expression.  But what about the
-    // guard?  That is where thing's got tricky, in part because the
-    // arm is not really a scope, and so it was not easy to figure out
-    // how to hack that in.  (Perhaps future changes to the language
-    // will make this make more sense, eg.. the proposal to make
-    // guards take bindings by-ref even if they are going to move for
-    // the body if the guard succeeds.  Or perhaps another approach
-    // would be to more fully distinguish between by-ref and by-move
-    // match arms, since the latter cannot have guards and the former
-    // ... do not need cleanup?  Is that right?  Not sure.)
-    //
-    // Anyway, pnkfelix is now revisiting his approach.  I.e. perhaps
-    // the answer is not to try to introduce some new notion of a
-    // match arm's "scope", but rather, "just" revise the move_data
-    // code for check_drops to treat the merge point for match as a
-    // special case.  Not yet sure.
-
-/*
-    // Deliberately not invoking `visit::walk_arm(visitor, arm, cx)`.
-    // Instead, walk each component in turn below, using `cx`
-    // (carrying the parent scope) for the pattern and optional guard,
-    // and a different context for the arm's expression body, thus
-    // encoding the distinct lifetime that is established for the
-    // expression body.
-
-    let &Arm { ref attrs, ref pats, guard, body, id: arm_id } = arm;
-
-    // (Slightly misleading hack: using body of an arm as its span.)
-    record_superlifetime(visitor, cx, arm_id, body.span);
-
-    // Bindings introduced by the pattern should be treated as having
-    // lifetime bounded by the arm itself.
-    let pat_subcx = cx.with_var_parent(arm_id);
-    for pattern in pats.iter() {
-        visitor.visit_pat(&**pattern, pat_subcx);
-    }
-
-    // For the guard, treat its lifetime parent as the arm itself.
-    //
-    // FIXME: would be nice to use `arm_id` here as well, for
-    // uniformity, but making that work requires trans hacking (FSK).
-    let arm_cx = Context::new(arm_id);
-    visit::walk_expr_opt(visitor, guard, arm_cx);
-
-    // The parent of the body expression is the arm itself (so that
-    // expressions within the arm will properly report that their
-    // lifetimes are contained within arm's superlifetime).
-    let body_cx = Context::new(arm_id);
-    visitor.visit_expr(&*body, body_cx);
-
-    for attr in attrs.iter() {
-        visitor.visit_attribute(attr, cx);
-    }
-*/
 }
 
 fn resolve_pat(visitor: &mut RegionResolutionVisitor,
                pat: &ast::Pat,
                cx: Context) {
-    debug!("resolve_pat(pat.id={})", pat.id);
     record_superlifetime(visitor, cx, pat.id, pat.span);
 
     // If this is a binding (or maybe a binding, I'm too lazy to check
@@ -550,7 +457,7 @@ fn resolve_stmt(visitor: &mut RegionResolutionVisitor,
     visitor.region_maps.mark_as_terminating_scope(stmt_id);
     record_superlifetime(visitor, cx, stmt_id, stmt.span);
 
-    let subcx = cx.with_lifetime_parent(stmt_id);
+    let subcx = Context {parent: Some(stmt_id), ..cx};
     visit::walk_stmt(visitor, stmt, subcx);
 }
 
@@ -561,7 +468,8 @@ fn resolve_expr(visitor: &mut RegionResolutionVisitor,
 
     record_superlifetime(visitor, cx, expr.id, expr.span);
 
-    let mut new_cx = cx.with_lifetime_parent(expr.id);
+    let mut new_cx = cx;
+    new_cx.parent = Some(expr.id);
     match expr.node {
         // Conditional or repeating scopes are always terminating
         // scopes, meaning that temporaries cannot outlive them.
@@ -602,7 +510,6 @@ fn resolve_expr(visitor: &mut RegionResolutionVisitor,
         }
 
         ast::ExprMatch(..) => {
-            // Might not be needed when Arm has its own scoped NodeId.
             new_cx.var_parent = Some(expr.id);
         }
 
@@ -887,9 +794,9 @@ fn resolve_local(visitor: &mut RegionResolutionVisitor,
 
 fn resolve_item(visitor: &mut RegionResolutionVisitor,
                 item: &ast::Item,
-                _cx: Context) {
+                cx: Context) {
     // Items create a new outer block scope as far as we're concerned.
-    let new_cx = Context::fresh();
+    let new_cx = Context {var_parent: None, parent: None, ..cx};
     visit::walk_item(visitor, item, new_cx);
 }
 
@@ -903,22 +810,25 @@ fn resolve_fn(visitor: &mut RegionResolutionVisitor,
     debug!("region::resolve_fn(id={}, \
                                span={:?}, \
                                body.id={}, \
-                               cx.lifetime_parent={})",
+                               cx.parent={})",
            id,
            visitor.sess.codemap().span_to_string(sp),
            body.id,
-           cx.lifetime_parent);
+           cx.parent);
 
     visitor.region_maps.mark_as_terminating_scope(body.id);
 
     // The arguments and `self` are parented to the body of the fn.
-    let decl_cx = Context::new(body.id);
+    let decl_cx = Context {parent: Some(body.id),
+                           var_parent: Some(body.id)};
     visit::walk_fn_decl(visitor, decl, decl_cx);
 
     // The body of the fn itself is either a root scope (top-level fn)
     // or it continues with the inherited scope (closures).
     let body_cx = match *fk {
-        visit::FkItemFn(..) | visit::FkMethod(..) => Context::fresh(),
+        visit::FkItemFn(..) | visit::FkMethod(..) => {
+            Context {parent: None, var_parent: None, ..cx}
+        }
         visit::FkFnBlock(..) => {
             // FIXME(#3696) -- at present we are place the closure body
             // within the region hierarchy exactly where it appears lexically.
@@ -977,7 +887,7 @@ pub fn resolve_crate(sess: &Session, krate: &ast::Crate) -> RegionMaps {
             sess: sess,
             region_maps: &maps
         };
-        let cx = Context::fresh();
+        let cx = Context { parent: None, var_parent: None };
         visit::walk_crate(&mut visitor, krate, cx);
     }
     return maps;
@@ -986,7 +896,8 @@ pub fn resolve_crate(sess: &Session, krate: &ast::Crate) -> RegionMaps {
 pub fn resolve_inlined_item(sess: &Session,
                             region_maps: &RegionMaps,
                             item: &ast::InlinedItem) {
-    let cx = Context::fresh();
+    let cx = Context {parent: None,
+                      var_parent: None};
     let mut visitor = RegionResolutionVisitor {
         sess: sess,
         region_maps: region_maps,

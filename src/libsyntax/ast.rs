@@ -477,7 +477,6 @@ pub enum Decl_ {
 /// represents one arm of a 'match'
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub struct Arm {
-    pub id: NodeId,
     pub attrs: Vec<Attribute>,
     pub pats: Vec<Gc<Pat>>,
     pub guard: Option<Gc<Expr>>,
@@ -532,7 +531,7 @@ pub enum Expr_ {
     // Conditionless loop (can be exited with break, cont, or ret)
     // FIXME #6993: change to Option<Name> ... or not, if these are hygienic.
     ExprLoop(P<Block>, Option<Ident>),
-    ExprMatch(Gc<Expr>, Vec<Gc<Arm>>),
+    ExprMatch(Gc<Expr>, Vec<Arm>),
     ExprFnBlock(CaptureClause, P<FnDecl>, P<Block>),
     ExprProc(P<FnDecl>, P<Block>),
     ExprUnboxedFn(CaptureClause, UnboxedClosureKind, P<FnDecl>, P<Block>),

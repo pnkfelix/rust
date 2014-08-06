@@ -118,7 +118,6 @@ fn cs_from(name: &str, cx: &mut ExtCtxt, trait_span: Span,
                             pats: vec!(cx.pat_wild(span)),
                             guard: Some(guard),
                             body: body,
-                            id: ast::DUMMY_NODE_ID,
                         };
 
                         arms.push(arm);
@@ -139,7 +138,6 @@ fn cs_from(name: &str, cx: &mut ExtCtxt, trait_span: Span,
                 pats: vec!(cx.pat_wild(trait_span)),
                 guard: None,
                 body: cx.expr_none(trait_span),
-                id: ast::DUMMY_NODE_ID,
             };
             arms.push(arm);
 

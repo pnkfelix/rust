@@ -123,7 +123,6 @@ impl<'a, 'tcx, O:DataFlowOperator> pprust::PpAnn for DataFlowContext<'a, 'tcx, O
             pprust::NodeItem(_) => 0,
             pprust::NodePat(pat) => pat.id,
             pprust::NodeMethod(m) => m.id,
-            pprust::NodeArm(arm) => arm.id, // TODO: double-check Arm on dataflow+cfg
         };
 
         if self.has_bitset_for_nodeid(id) {

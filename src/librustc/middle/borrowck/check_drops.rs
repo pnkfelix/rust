@@ -289,7 +289,7 @@ fn scan_forward_for_kill_id(bccx: &BorrowckCtxt,
         }
 
         match bccx.tcx.map.get(successor_id) {
-            ast_map::NodeBlock(_) | ast_map::NodeArm(_) => {
+            ast_map::NodeBlock(_) => {
                 debug!("fwd-scan: node {} effect-free; continue looking",
                        successor_id);
                 continue;
