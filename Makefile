@@ -12,6 +12,9 @@ RUSTC ?= objdir-dbg/x86_64-apple-darwin/$(STAGE)/rustc
 rwildcard=$(foreach d,$(wildcard $1*),$(call rwildcard,$d/,$2) \
   $(filter $(subst *,%,$2),$d))
 
+objdir-dbg/x86_64-apple-darwin/$(STAGE)/bin/rustc:
+	make -C objdir-dbg x86_64-apple-darwin/$(STAGE)/bin/rustc
+
 objdir-dbg/x86_64-apple-darwin/$(STAGE)/rustc: src/etc/rustc-wrapper.macosx.sh objdir-dbg/x86_64-apple-darwin/$(STAGE)/bin/rustc Makefile $(call rwildcard,src/,*.rs)
 	cd objdir-dbg && make-rustc-$(STAGE)
 	cp $< $@
