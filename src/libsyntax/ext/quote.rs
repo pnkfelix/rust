@@ -114,7 +114,7 @@ pub mod rt {
         );
     )
 
-    fn slice_to_source<'a, T: ToSource>(sep: &'static str, xs: &'a [T]) -> String {
+    pub fn slice_to_source<'a, T: ToSource>(sep: &'static str, xs: &'a [T]) -> String {
         xs.iter()
             .map(|i| i.to_source())
             .collect::<Vec<String>>()
@@ -387,7 +387,7 @@ pub fn expand_quote_stmt(cx: &mut ExtCtxt,
     base::MacExpr::new(expanded)
 }
 
-fn ids_ext(strs: Vec<String> ) -> Vec<ast::Ident> {
+pub fn ids_ext(strs: Vec<String> ) -> Vec<ast::Ident> {
     strs.iter().map(|str| str_to_ident((*str).as_slice())).collect()
 }
 
@@ -396,7 +396,7 @@ pub fn id_ext(str: &str) -> ast::Ident {
 }
 
 // Lift an ident to the expr that evaluates to that ident.
-fn mk_ident(cx: &ExtCtxt, sp: Span, ident: ast::Ident) -> Gc<ast::Expr> {
+pub fn mk_ident(cx: &ExtCtxt, sp: Span, ident: ast::Ident) -> Gc<ast::Expr> {
     let e_str = cx.expr_str(sp, token::get_ident(ident));
     cx.expr_method_call(sp,
                         cx.expr_ident(sp, id_ext("ext_cx")),
@@ -405,7 +405,7 @@ fn mk_ident(cx: &ExtCtxt, sp: Span, ident: ast::Ident) -> Gc<ast::Expr> {
 }
 
 // Lift a name to the expr that evaluates to that name
-fn mk_name(cx: &ExtCtxt, sp: Span, ident: ast::Ident) -> Gc<ast::Expr> {
+pub fn mk_name(cx: &ExtCtxt, sp: Span, ident: ast::Ident) -> Gc<ast::Expr> {
     let e_str = cx.expr_str(sp, token::get_ident(ident));
     cx.expr_method_call(sp,
                         cx.expr_ident(sp, id_ext("ext_cx")),
@@ -413,17 +413,17 @@ fn mk_name(cx: &ExtCtxt, sp: Span, ident: ast::Ident) -> Gc<ast::Expr> {
                         vec!(e_str))
 }
 
-fn mk_ast_path(cx: &ExtCtxt, sp: Span, name: &str) -> Gc<ast::Expr> {
+pub fn mk_ast_path(cx: &ExtCtxt, sp: Span, name: &str) -> Gc<ast::Expr> {
     let idents = vec!(id_ext("syntax"), id_ext("ast"), id_ext(name));
     cx.expr_path(cx.path_global(sp, idents))
 }
 
-fn mk_token_path(cx: &ExtCtxt, sp: Span, name: &str) -> Gc<ast::Expr> {
+pub fn mk_token_path(cx: &ExtCtxt, sp: Span, name: &str) -> Gc<ast::Expr> {
     let idents = vec!(id_ext("syntax"), id_ext("parse"), id_ext("token"), id_ext(name));
     cx.expr_path(cx.path_global(sp, idents))
 }
 
-fn mk_binop(cx: &ExtCtxt, sp: Span, bop: token::BinOp) -> Gc<ast::Expr> {
+pub fn mk_binop(cx: &ExtCtxt, sp: Span, bop: token::BinOp) -> Gc<ast::Expr> {
     let name = match bop {
         PLUS => "PLUS",
         MINUS => "MINUS",
@@ -439,7 +439,7 @@ fn mk_binop(cx: &ExtCtxt, sp: Span, bop: token::BinOp) -> Gc<ast::Expr> {
     mk_token_path(cx, sp, name)
 }
 
-fn mk_token(cx: &ExtCtxt, sp: Span, tok: &token::Token) -> Gc<ast::Expr> {
+pub fn mk_token(cx: &ExtCtxt, sp: Span, tok: &token::Token) -> Gc<ast::Expr> {
 
     match *tok {
         BINOP(binop) => {
@@ -545,7 +545,7 @@ fn mk_token(cx: &ExtCtxt, sp: Span, tok: &token::Token) -> Gc<ast::Expr> {
 }
 
 
-fn mk_tt(cx: &ExtCtxt, sp: Span, tt: &ast::TokenTree) -> Vec<Gc<ast::Stmt>> {
+pub fn mk_tt(cx: &ExtCtxt, sp: Span, tt: &ast::TokenTree) -> Vec<Gc<ast::Stmt>> {
     match *tt {
         ast::TTTok(sp, ref tok) => {
             let e_sp = cx.expr_ident(sp, id_ext("_sp"));
@@ -584,7 +584,7 @@ fn mk_tt(cx: &ExtCtxt, sp: Span, tt: &ast::TokenTree) -> Vec<Gc<ast::Stmt>> {
     }
 }
 
-fn mk_tts(cx: &ExtCtxt, sp: Span, tts: &[ast::TokenTree])
+pub fn mk_tts(cx: &ExtCtxt, sp: Span, tts: &[ast::TokenTree])
     -> Vec<Gc<ast::Stmt>> {
     let mut ss = Vec::new();
     for tt in tts.iter() {
