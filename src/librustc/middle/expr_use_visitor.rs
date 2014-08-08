@@ -989,15 +989,33 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
                                              r, bk, RefBinding);
                     }
 
-                    (&ast::PatIdent(ast::BindByValue(_), _, _), _) |
-                    (&ast::PatWild(_), MovingMatch) => {
-                        // FIXME: I may need to distinguish these two
-                        // cases, since the PatWild case may end up
-                        // implying auto-drop without warning at the
-                        // end of the scope (FSK).
+                    (&ast::PatIdent(ast::BindByValue(_), _, _), _) => {
                         let mode = copy_or_move(typer.tcx(), cmt_pat.ty, PatBindingMove);
                         debug!("walk_pat binding consuming pat");
                         delegate.consume_pat(pat, cmt_pat, mode);
+                    }
+
+                    (&ast::PatWild(_), MovingMatch) => {
+
+                        // On `enum E { Variant(Box<T>) }`, both of
+                        // the match arms:
+                        //
+                        //    Variant(a) => ...
+                        //    Variant(_) => ...
+                        //
+                        // are conceptually moving into the `Variant`
+                        // pattern, while the match arm:
+                        //
+                        //    a @ Variant(_) => ...
+                        //
+                        // is *not* moving into the `Variant(_)`.
+                        // Thus check the `pat_already_bound` flag to
+                        // distinguish the latter two cases.
+
+                        if ! mc.pat_already_bound {
+                            let mode = copy_or_move(typer.tcx(), cmt_pat.ty, PatBindingMove);
+                            delegate.consume_pat(pat, cmt_pat, mode);
+                        }
                     }
 
                     (&ast::PatWild(_), NonBindingMatch) |
