@@ -1012,7 +1012,7 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
                         // Thus check the `pat_already_bound` flag to
                         // distinguish the latter two cases.
 
-                        if ! mc.pat_already_bound {
+                        if !mc.pat_is_already_bound_by_value {
                             let mode = copy_or_move(typer.tcx(), cmt_pat.ty, PatBindingMove);
                             delegate.consume_pat(pat, cmt_pat, mode);
                         }
@@ -1079,6 +1079,18 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
         return_if_err!(mc.cat_pattern(cmt_discr, &*pat, |mc, cmt_pat, pat| {
             let def_map = def_map.borrow();
             let tcx = typer.tcx();
+            let match_mode = if mc.pat_is_already_bound_by_value {
+                // A pat in the context of `id @ ... pat ...` cannot
+                // be moved into, it can at most copy or borrow.
+                //
+                // Actually, post PR #16053, we cannot do *any*
+                // binding in such a context, but I am writing this
+                // code in anticipation of loosening that rule (FSK).
+                BorrowingMatch
+            } else {
+                match_mode
+            };
+
             match pat.node {
                 ast::PatEnum(_, _) | ast::PatIdent(_, _, None) | ast::PatStruct(..) => {
                     match def_map.find(&pat.id) {

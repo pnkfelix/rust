@@ -241,11 +241,11 @@ impl ast_node for ast::Pat {
 }
 
 pub struct MemCategorizationContext<'t,TYPER:'t> {
-    // `already_bound` tracks whether we are looking at `pat` in the
-    // context of `id @ (... pat ...)` (it affects whether we move
-    // into a wildcard or not).
-    pub pat_already_bound: bool,
-    typer: &'t TYPER
+    typer: &'t TYPER,
+
+    // tracks when looking at `pat` in context of `id @ (... pat ...)`
+    // (it affects whether we move into a wildcard or not).
+    pub pat_is_already_bound_by_value: bool,
 }
 
 pub type McResult<T> = Result<T, ()>;
@@ -381,13 +381,20 @@ macro_rules! if_ok(
 
 impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
     pub fn new(typer: &'t TYPER) -> MemCategorizationContext<'t,TYPER> {
-        MemCategorizationContext { pat_already_bound: false,
-                                   typer: typer }
+        MemCategorizationContext {
+            typer: typer,
+            pat_is_already_bound_by_value: false,
+        }
     }
 
-    fn with_pat_already_bound(&self) -> MemCategorizationContext<'t,TYPER> {
-        MemCategorizationContext { pat_already_bound: true,
-                                   typer: self.typer }
+    fn already_bound(&self, mode: ast::BindingMode) -> MemCategorizationContext<'t,TYPER> {
+        match mode {
+            ast::BindByRef(_) => *self,
+            ast::BindByValue(_) => MemCategorizationContext {
+                pat_is_already_bound_by_value: true,
+                ..*self
+            }
+        }
     }
 
     fn tcx(&self) -> &'t ty::ctxt<'tcx> {
@@ -1105,8 +1112,8 @@ impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
             }
           }
 
-          ast::PatIdent(_, _, Some(ref subpat)) => {
-              if_ok!(self.with_pat_already_bound().cat_pattern(
+          ast::PatIdent(binding_mode, _, Some(ref subpat)) => {
+              if_ok!(self.already_bound(binding_mode).cat_pattern(
                   cmt, &**subpat, op));
           }
 
