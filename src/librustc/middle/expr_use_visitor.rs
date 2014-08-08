@@ -109,52 +109,77 @@ pub enum MoveReason {
 }
 
 #[deriving(PartialEq,Show)]
+pub enum MatchMode {
+    NonBindingMatch,
+    BorrowingMatch,
+    CopyingMatch,
+    MovingMatch,
+}
+
+#[deriving(PartialEq,Show)]
 enum TrackMatchMode {
     Unknown, Definite(MatchMode), Conflicting
 }
 
 impl TrackMatchMode {
+    // Builds up the whole match mode for a pattern from its constituent
+    // parts.  The lattice looks like this:
+    //
+    //             Conflicting
+    //              /      \
+    //             /       \
+    //       Borrowing    Moving
+    //            \        /
+    //            \       /
+    //             Copying
+    //                |
+    //            NonBinding
+    //                |
+    //             Unknown
+    //
+    // examples:
+    //
+    // * `(_, some_int)` pattern is Copying, since
+    //   NonBinding + Copying => Copying
+    //
+    // * `(some_int, some_box)` pattern is Moving, since
+    //   Copying + Moving => Moving
+    //
+    // * `(ref x, some_box)` pattern is Conflicting, since
+    //   Borrowing + Moving => Conflicting
+    //
+    // Note that the `Unknown` and `Conflicting` states are
+    // represented separately from the other more interesting
+    // `Definite` states, which simplifies logic here somewhat.
     fn meet(&mut self, mode: MatchMode) {
         *self = match (*self, mode) {
+            // Note that clause order below is very significant.
             (Unknown, new) => Definite(new),
             (Definite(old), new) if old == new => Definite(old),
-            (Definite(old), ConsumingMatch(Copy)) => Definite(old),
-            (Definite(ConsumingMatch(Copy)), new) => Definite(new),
+
+            (Definite(old), NonBindingMatch) => Definite(old),
+            (Definite(NonBindingMatch), new) => Definite(new),
+
+            (Definite(old), CopyingMatch) => Definite(old),
+            (Definite(CopyingMatch), new) => Definite(new),
+
             _ => Conflicting
         };
     }
 
     fn mode(self) -> MatchMode {
         match self {
-            // if we don't know, then there was no binding,
-            // and the match will just borrow.
-            Unknown => BorrowingMatch,
+            // if we don't know, then there was no binding.
+            Unknown => NonBindingMatch,
 
             Definite(mm) => mm,
 
             // if there were conflicting results, then we will hit a
-            // compiler error later.  But just to let the rustc make
-            // progress now, claim that it was a consuming match.
-            Conflicting => ConsumingMatch(Move(PatBindingMove)),
+            // compiler error later.  But to let rustc make progress
+            // now, claim it was a move (i.e. consumes the input).
+            Conflicting => MovingMatch,
         }
     }
-
-    #[allow(dead_code)]
-    fn mode_within(self, outer_context: &TrackMatchMode) -> MatchMode {
-        match self {
-            // if we don't know, or if this is a copy, then inherit
-            // from the outer_context.
-            Unknown |
-            Definite(ConsumingMatch(Copy)) => outer_context.mode(),
-            _ => self.mode()
-        }
-    }
-}
-
-#[deriving(PartialEq,Show)]
-pub enum MatchMode {
-    BorrowingMatch,
-    ConsumingMatch(ConsumeMode),
 }
 
 #[deriving(PartialEq,Show)]
@@ -899,8 +924,12 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
                 match pat.node {
                     ast::PatIdent(ast::BindByRef(_), _, _) =>
                         mode.meet(BorrowingMatch),
-                    ast::PatIdent(ast::BindByValue(_), _, _) =>
-                        mode.meet(ConsumingMatch(copy_or_move(tcx, cmt_pat.ty, PatBindingMove))),
+                    ast::PatIdent(ast::BindByValue(_), _, _) => {
+                        match copy_or_move(tcx, cmt_pat.ty, PatBindingMove) {
+                            Copy => mode.meet(CopyingMatch),
+                            Move(_) => mode.meet(MovingMatch),
+                        }
+                    }
                     _ => {
                         // we will report the error here in the actual
                         // pass, after the prepass is completed.
@@ -917,9 +946,6 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
         debug!("walk_pat cmt_discr={} pat={} outer_context_mode={}",
                cmt_discr.repr(self.tcx()), pat.repr(self.tcx()), outer_context_mode);
 
-        // let mut local_mode = Unknown;
-        // self.walk_pat_prepass(cmt_discr.clone(), pat, &mut local_mode);
-        // let match_mode = local_mode.mode_within(outer_context_mode);
         let match_mode = outer_context_mode.mode();
 
         let mc = &self.mc;
@@ -964,18 +990,19 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
                     }
 
                     (&ast::PatIdent(ast::BindByValue(_), _, _), _) |
-                    (&ast::PatWild(_), ConsumingMatch(Move(_))) => {
+                    (&ast::PatWild(_), MovingMatch) => {
                         // FIXME: I may need to distinguish these two
-                        // cases, since the PatWild case will probably
-                        // imply auto-drop without warning at the end
-                        // of the scope (FSK).
+                        // cases, since the PatWild case may end up
+                        // implying auto-drop without warning at the
+                        // end of the scope (FSK).
                         let mode = copy_or_move(typer.tcx(), cmt_pat.ty, PatBindingMove);
                         debug!("walk_pat binding consuming pat");
                         delegate.consume_pat(pat, cmt_pat, mode);
                     }
 
-                    (&ast::PatWild(_), ConsumingMatch(Copy)) |
-                    (&ast::PatWild(_), BorrowingMatch) => {}
+                    (&ast::PatWild(_), NonBindingMatch) |
+                    (&ast::PatWild(_), BorrowingMatch) |
+                    (&ast::PatWild(_), CopyingMatch)  => {}
 
                     _ => {
                         typer.tcx().sess.span_bug(

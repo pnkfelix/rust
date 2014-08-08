@@ -832,8 +832,10 @@ impl MoveData {
 
         for variant_match in self.variant_matches.borrow().iter() {
             match variant_match.mode {
-                euv::BorrowingMatch => {}
-                euv::ConsumingMatch(_consume_mode) => {
+                euv::NonBindingMatch |
+                euv::BorrowingMatch |
+                euv::CopyingMatch => {}
+                euv::MovingMatch => {
                     debug!("remove_drop_obligations variant_match {}", variant_match.to_string(self, tcx));
                     self.remove_drop_obligations(tcx, variant_match, dfcx_needs_drop);
                     // FIXME: do I need to also remove_ignored_drops here? (FSK)
