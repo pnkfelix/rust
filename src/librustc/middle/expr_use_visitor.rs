@@ -424,8 +424,8 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
                 let discr_cmt = return_if_err!(self.mc.cat_expr(&**discr));
                 for arm in arms.iter() {
                     let mut mode = Unknown;
-                    self.walk_arm_prepass(discr_cmt.clone(), &**arm, &mut mode);
-                    self.walk_arm(discr_cmt.clone(), &**arm, &mode);
+                    self.walk_arm_prepass(discr_cmt.clone(), arm, &mut mode);
+                    self.walk_arm(discr_cmt.clone(), arm, &mode);
                 }
             }
 
