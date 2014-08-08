@@ -195,10 +195,10 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                         ""
                     };
 
-                    let msg = format!("Storage at `{:s}` is left initialized here{:s}, \
-                                       but uninitialized on other control flow paths. \
-                                       (Consider either calling `drop()` on it here, \
-                                       or reinitializing it on the other paths); count: {}",
+                    let msg = format!("Storage at `{:s}` is left initialized on some paths \
+                                       exiting here{:s}, but uninitialized on others. \
+                                       (Consider either using Option, or calling `drop()` \
+                                       on it or reinitializing it as necessary); count: {}",
                                       loan_path_str, where, count);
 
                     bccx.tcx.sess.add_lint(lint::builtin::EARLY_DROP,
