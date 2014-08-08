@@ -59,3 +59,15 @@ RUST_LOG=rustc::middle::borrowck,rustc::middle::ty,rustc::middle::typeck,rustc::
 	RUST_LOG=$(RUST_LOG) RUST_BACKTRACE=1 $(RUSTC_LIB) $< 2> $@
 
 #	RUST_LOG=$(RUST_LOG) $(RUSTC_LIB) -Z flowgraph-print-all --pretty flowgraph=foo $< -o $@.dot 2> $@
+
+foo41.dot: foo41.rs libfoo41_support.rlib
+	RUST_BACKTRACE=1 $(RUSTC_LIB) -L . -Z flowgraph-print-all --pretty flowgraph=foo $< -o $@
+
+foo41: foo41.rs libfoo41_support.rlib
+	RUST_BACKTRACE=1 $(RUSTC_LIB) -L . $<
+
+foo41.llog: foo41.rs libfoo41_support.rlib
+	RUST_LOG=$(RUST_LOG) RUST_BACKTRACE=1 $(RUSTC_LIB) -L . $< 2> $@
+
+libfoo41_support.rlib: foo41_support.rs Makefile objdir-dbg/x86_64-apple-darwin/stage1/rustc
+	objdir-dbg/x86_64-apple-darwin/stage1/bin/rustc  foo41_support.rs --out-dir .
