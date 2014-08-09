@@ -11,6 +11,7 @@
 #![allow(unused_imports)]
 #![allow(unused_variable)]
 
+use metadata::csearch;
 use middle::borrowck::*;
 use middle::borrowck::move_data::{Assignment, Move};
 use euv = middle::expr_use_visitor;
@@ -24,7 +25,8 @@ use middle::ty::TypeContents;
 use std::rc::Rc;
 use std::collections::hashmap::HashMap;
 use std::sync::atomics;
-use syntax::{ast,ast_map,codemap};
+use syntax::{ast,ast_map,ast_util,codemap};
+use syntax::attr::AttrMetaMethods;
 use util::ppaux::Repr;
 
 static mut warning_count: atomics::AtomicUint = atomics::INIT_ATOMIC_UINT;
@@ -201,7 +203,30 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                                        on it or reinitializing it as necessary); count: {}",
                                       loan_path_str, where, count);
 
-                    bccx.tcx.sess.add_lint(lint::builtin::EARLY_DROP,
+                    // Check if the type of `lp` has #[quiet_early_drop] attribute,
+                    // and select the appropriate lint to signal.
+                    let t = lp.to_type(bccx.tcx);
+                    let is_quiet_early_drop = match ty::get(t).sty {
+                        ty::ty_struct(did, _) |
+                        ty::ty_enum(did, _) => {
+                            with_attrs_for_did(bccx.tcx, did, |attrs| {
+                                for attr in attrs.iter() {
+                                    if attr.check_name("quiet_early_drop") {
+                                        return true
+                                    }
+                                }
+                                return false;
+                            })
+                        }
+                        _ => false,
+                    };
+
+                    let lint_category = if is_quiet_early_drop {
+                        lint::builtin::QUIET_EARLY_DROP
+                    } else {
+                        lint::builtin::UNMARKED_EARLY_DROP
+                    };
+                    bccx.tcx.sess.add_lint(lint_category,
                                            source_id,
                                            opt_source_span.unwrap_or(codemap::DUMMY_SP),
                                            msg);
@@ -336,5 +361,24 @@ fn scan_forward_for_kill_id(bccx: &BorrowckCtxt,
                 bccx.tcx.sess.bug("unexpected node")
             }
         }
+    }
+}
+
+fn with_attrs_for_did<A>(tcx: &ty::ctxt,
+                         did: ast::DefId,
+                         f: |&[ast::Attribute]| -> A) -> A {
+    if ast_util::is_local(did) {
+        match tcx.map.get(did.node) {
+            ast_map::NodeItem(it) => f(it.attrs.as_slice()),
+            _ => fail!("must have entry for struct or enum"),
+        }
+    } else {
+        // FIXME: interface of `get_item_attrs` could be generalized
+        // to support this directly.
+        let mut result = None;
+        csearch::get_item_attrs(&tcx.sess.cstore, did, |attrs| {
+            result = Some(f(attrs.as_slice()))
+        });
+        result.unwrap()
     }
 }
