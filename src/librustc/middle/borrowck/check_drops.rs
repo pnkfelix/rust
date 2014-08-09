@@ -218,6 +218,13 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                                 return false;
                             })
                         }
+                        ty::ty_closure(ref f) => {
+                            match f.store {
+                                ty::RegionTraitStore(..) => true,
+                                ty::UniqTraitStore => false,
+                            }
+                        }
+                        ty::ty_unboxed_closure(_) => false,
                         _ => false,
                     };
 
