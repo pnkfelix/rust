@@ -18,6 +18,7 @@ use util::ppaux::Repr;
 use std::fmt;
 use std::mem;
 use std::raw;
+use std::result;
 use std::slice::{Items, MutItems};
 use std::vec::Vec;
 use syntax::codemap::{Span, DUMMY_SP};
@@ -467,18 +468,38 @@ impl<T> VecPerParamSpace<T> {
          * can be run to a fixed point
          */
 
-        let mut fns: Vec<U> = self.get_slice(FnSpace).iter().rev().map(|p| pred(p)).collect();
+        let f = |t:&T| -> Result<U,()> { Ok(pred(t)) };
+
+        self.try_map_rev::<U,()>(f).unwrap()
+    }
+
+    pub fn try_map_rev<U,E>(&self, f: |&T| -> Result<U, E>) -> Result<VecPerParamSpace<U>, E> {
+        /*!
+         * If all of the calls to `f` are `Ok`, then behaves like
+         * `map_rev`, (executing the map but in reverse order).
+         * Otherwise, returns the first error encountered during the
+         * map execution.
+         */
+
+        let mut fns: Vec<U> = try!(result::collect(
+            self.get_slice(FnSpace).iter().rev().map(|p| f(p))));
 
         // NB: Calling foo.rev().map().rev() causes the calls to map
         // to occur in the wrong order. This was somewhat surprising
         // to me, though it makes total sense.
         fns.reverse();
 
-        let mut selfs: Vec<U> = self.get_slice(SelfSpace).iter().rev().map(|p| pred(p)).collect();
+        let mut selfs: Vec<U> = try!(result::collect(
+            self.get_slice(SelfSpace).iter().rev().map(|p| f(p))));
+
         selfs.reverse();
-        let mut tys: Vec<U> = self.get_slice(TypeSpace).iter().rev().map(|p| pred(p)).collect();
+
+        let mut tys: Vec<U> = try!(result::collect(
+            self.get_slice(TypeSpace).iter().rev().map(|p| f(p))));
+
         tys.reverse();
-        VecPerParamSpace::new(tys, selfs, fns)
+
+        Ok(VecPerParamSpace::new(tys, selfs, fns))
     }
 
     pub fn split(self) -> (Vec<T>, Vec<T>, Vec<T>) {
