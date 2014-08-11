@@ -1583,7 +1583,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     pub fn vtable_context<'a>(&'a self) -> VtableContext<'a, 'tcx> {
         VtableContext {
             infcx: self.infcx(),
-            param_env: &self.inh.param_env,
+            param_bounds: &self.inh.param_env.bounds,
             unboxed_closures: &self.inh.unboxed_closures,
         }
     }
@@ -2571,20 +2571,18 @@ fn check_expr_with_lvalue_pref(fcx: &FnCtxt, expr: &ast::Expr,
 // declared on the impl declaration e.g., `impl<A,B> for ~[(A,B)]`
 // would return ($0, $1) where $0 and $1 are freshly instantiated type
 // variables.
-pub fn impl_self_ty(vcx: &VtableContext,
+pub fn impl_self_ty(tcx: &ty::ctxt,
+                    infcx: &infer::InferCtxt,
                     span: Span, // (potential) receiver for this impl
-                    did: ast::DefId)
-                    -> TypeAndSubsts {
-    let tcx = vcx.tcx();
-
+                    did: ast::DefId) -> TypeAndSubsts {
     let ity = ty::lookup_item_type(tcx, did);
     let (n_tps, rps, raw_ty) =
         (ity.generics.types.len(subst::TypeSpace),
          ity.generics.regions.get_slice(subst::TypeSpace),
          ity.ty);
 
-    let rps = vcx.infcx.region_vars_for_defs(span, rps);
-    let tps = vcx.infcx.next_ty_vars(n_tps);
+    let rps = infcx.region_vars_for_defs(span, rps);
+    let tps = infcx.next_ty_vars(n_tps);
     let substs = subst::Substs::new_type(tps, rps);
     let substd_ty = raw_ty.subst(tcx, &substs);
 

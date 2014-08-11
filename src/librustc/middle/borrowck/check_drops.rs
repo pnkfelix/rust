@@ -19,15 +19,31 @@ use lint;
 use mc = middle::mem_categorization;
 use middle::dataflow;
 use middle::graph;
+use middle::lang_items::QuietEarlyDropTraitLangItem;
 use middle::cfg;
+use middle::subst::Subst;
+use middle::subst;
 use middle::ty;
 use middle::ty::TypeContents;
+use middle::typeck::check;
+use middle::typeck::infer;
+use middle::typeck;
+use middle::typeck::check::vtable::relate_trait_refs; // FIXME
+use middle::typeck::check::vtable::connect_trait_tps; // FIXME
+use middle::typeck::check::vtable::fixup_substs; // FIXME
+use middle::typeck::check::vtable::fixup_ty; // FIXME
+use middle::typeck::check::vtable::lookup_vtable_from_bounds; // FIXME
+use middle::typeck::check::vtable::lookup_vtable; // FIXME
+use middle::typeck::check::vtable; // FIXME
+use util::ppaux::Repr;
+use util::nodemap::DefIdMap;
+
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::collections::hashmap::HashMap;
 use std::sync::atomics;
 use syntax::{ast,ast_map,ast_util,codemap};
 use syntax::attr::AttrMetaMethods;
-use util::ppaux::Repr;
 
 static mut warning_count: atomics::AtomicUint = atomics::INIT_ATOMIC_UINT;
 
@@ -36,7 +52,7 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                    cfg: &cfg::CFG,
                    decl: &ast::FnDecl,
                    body: &ast::Block) {
-    debug!("check_dtors(body id={:?})", body.id);
+    debug!("check_drops(body id={:?})", body.id);
 
     cfg.graph.each_node(|node_index, node| {
         // Special case: do not flag violations for control flow from
@@ -177,10 +193,14 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                     // (and therefore we can safely auto-drop `lp`
                     // without warning the user)
                     let kill_id = lp.kill_id(bccx.tcx);
-                    if scan_forward_for_kill_id(bccx, cfg, node_index, kill_id) {
-                        debug!("check_drops can ignore lp={} as its scope-end is imminent.",
-                               lp.repr(bccx.tcx));
-                        return true;
+                    match scan_forward_for_kill_id(bccx, cfg, node_index, kill_id)
+                    {
+                        FoundScopeEndPure => {
+                            debug!("check_drops can ignore lp={} as its scope-end is imminent.",
+                                   lp.repr(bccx.tcx));
+                            return true;
+                        }
+                        AbandonedScan => {}
                     }
 
                     // At this point, we are committed to reporting a warning to the user
@@ -203,32 +223,10 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                                        on it or reinitializing it as necessary); count: {}",
                                       loan_path_str, where, count);
 
-                    // Check if the type of `lp` has #[quiet_early_drop] attribute,
-                    // and select the appropriate lint to signal.
-                    let t = lp.to_type(bccx.tcx);
-                    let is_quiet_early_drop = match ty::get(t).sty {
-                        ty::ty_struct(did, _) |
-                        ty::ty_enum(did, _) => {
-                            with_attrs_for_did(bccx.tcx, did, |attrs| {
-                                for attr in attrs.iter() {
-                                    if attr.check_name("quiet_early_drop") {
-                                        return true
-                                    }
-                                }
-                                return false;
-                            })
-                        }
-                        ty::ty_closure(ref f) => {
-                            match f.store {
-                                ty::RegionTraitStore(..) => true,
-                                ty::UniqTraitStore => false,
-                            }
-                        }
-                        ty::ty_unboxed_closure(_) => false,
-                        _ => false,
-                    };
-
-                    let lint_category = if is_quiet_early_drop {
+                    // Check if type of `lp` has #[quiet_early_drop]
+                    // attribute or implements `QuietEarlyDrop`;
+                    // select the appropriate lint to signal.
+                    let lint_category = if is_quiet_early_drop(bccx.tcx, &**lp) {
                         lint::builtin::QUIET_EARLY_DROP
                     } else {
                         lint::builtin::UNMARKED_EARLY_DROP
@@ -279,10 +277,19 @@ pub fn check_drops(bccx: &BorrowckCtxt,
     });
 }
 
+// This uses an enum rather than a bool to support future handling of
+// walking over paths with potentially significant effects; e.g. see
+// notes below with ExprPath.
+#[deriving(PartialEq)]
+enum ForwardScanResult {
+    FoundScopeEndPure,
+    AbandonedScan,
+}
+
 fn scan_forward_for_kill_id(bccx: &BorrowckCtxt,
-                           cfg: &cfg::CFG,
-                           start: cfg::CFGIndex,
-                           kill_id: ast::NodeId) -> bool {
+                            cfg: &cfg::CFG,
+                            start: cfg::CFGIndex,
+                            kill_id: ast::NodeId) -> ForwardScanResult {
     //! returns true only if there is a unique effect-free successor
     //! chain from `start` to `kill_id` or to `cfg.exit`
 
@@ -300,27 +307,33 @@ fn scan_forward_for_kill_id(bccx: &BorrowckCtxt,
 
         if count != 1 {
             debug!("fwd-scan: broken successor chain; give up");
-            return false;
+            return AbandonedScan;
         }
 
         cursor = cfg.graph.edge(successor.unwrap()).target();
         if cursor == cfg.exit {
             debug!("fwd-scan: success (hit exit), no need for warning");
-            return true;
+            return FoundScopeEndPure;
         }
 
         let successor_id = cfg.graph.node(cursor).data.id;
         if successor_id == ast::DUMMY_NODE_ID {
             debug!("fwd-scan: dummy node in flow graph; give up");
-            return false;
+            return AbandonedScan;
         }
 
         if successor_id == kill_id {
             debug!("fwd-scan: success (hit {}), no need for warning", kill_id);
-            return true;
+            return FoundScopeEndPure;
         }
 
         match bccx.tcx.map.get(successor_id) {
+            // See notes below about ExprPath handling.  Note that
+            // NodeLocal and NodeArg correespond to binding sites, not
+            // uses. Skipping these is likely to not matter too much
+            // until some ExprPath's are treated as pure.
+            ast_map::NodeLocal(_) |
+            ast_map::NodeArg(_)   |
             ast_map::NodeBlock(_) => {
                 debug!("fwd-scan: node {} effect-free; continue looking",
                        successor_id);
@@ -331,12 +344,17 @@ fn scan_forward_for_kill_id(bccx: &BorrowckCtxt,
                 // Keep in mind when reading these cases that the
                 // NodeId associated with an expression node like
                 // ExprIf is at the *end* of the expression, where the
-                // two arms of the if join.
+                // two arms of the if meet.
                 match e.node {
+                    // node is where arms of match meet.
                     ast::ExprMatch(..) |
+                    // node is where block exits.
                     ast::ExprBlock(..) |
+                    // (<expr>) is definitely pure.
                     ast::ExprParen(..) |
+                    // node is after arg is evaluated; before return itself.
                     ast::ExprRet(..)   |
+                    // node is where arms of if meet.
                     ast::ExprIf(..) => {
                         debug!("fwd-scan: expr {} effect-free; \
                                 continue looking",
@@ -344,22 +362,65 @@ fn scan_forward_for_kill_id(bccx: &BorrowckCtxt,
                         continue;
                     }
 
+                    // variable lookup
+                    ast::ExprPath(ref p) => {
+                        // Strictly speaking, this is an observable
+                        // effect. In particular, if a destructor has
+                        // access to the address of this path and
+                        // imperatively overwrites it, then a client
+                        // will care about the drop order.
+                        //
+                        // A captured `&mut`-ref cannot actually alias
+                        // such a path, according to Rust's borrowing
+                        // rules. Therefore, the scenario only arises
+                        // with either (1.) a `*mut`-pointer or (2.) a
+                        // `&`-ref to a type with interior mutability
+                        // (type_interior_is_unsafe). Still, it can
+                        // arise.
+                        //
+                        // The easy conservative approach is to simply
+                        // treat this as an effect and abandon the
+                        // forward-scan.
+
+                        // FIXME: A less-conservative but still sound
+                        // approach would be to treat reads of
+                        // non-local variables that had never been
+                        // borrowed as effect-free as well, and it
+                        // would probably cover many cases of
+                        // interest.  We can put that in later
+                        // (pnkfelix).
+
+                        // FIXME: A "less sound" but potentially
+                        // useful approach would be to further tier
+                        // the lint structure here to allow the user
+                        // to specify whether all variable-reads
+                        // should be treated as pure.  But I am
+                        // hesistant to make that part of the default
+                        // set of lints, at least for now (pnkfelix).
+
+                        debug!("fwd-scan: expr {} path read {} \
+                                potentially effectful; give up",
+                               successor_id, p);
+
+                        return AbandonedScan;
+                    }
+
                     _ => {
                         debug!("fwd-scan: expr {} potentially effectful; \
                                 give up",
                                successor_id);
-                        return false;
+                        return AbandonedScan;
                     }
 
                 }
             }
 
-            ast_map::NodeStmt(_)       | ast_map::NodeArg(_) |
-            ast_map::NodeLocal(_)      | ast_map::NodePat(_) |
+            ast_map::NodeStmt(_)       |
+            ast_map::NodePat(_) |
             ast_map::NodeStructCtor(_) => {
                 debug!("fwd-scan: node {} potentially effectful; give up",
                        successor_id);
-                return false;
+                return AbandonedScan;
             }
 
             ast_map::NodeItem(_)        | ast_map::NodeForeignItem(_) |
@@ -369,6 +430,56 @@ fn scan_forward_for_kill_id(bccx: &BorrowckCtxt,
             }
         }
     }
+}
+
+fn is_quiet_early_drop(tcx: &ty::ctxt, lp: &LoanPath) -> bool {
+    let t = lp.to_type(tcx);
+    match ty::get(t).sty {
+        ty::ty_struct(did, _) |
+        ty::ty_enum(did, _) => {
+            let found_attr = with_attrs_for_did(tcx, did, |attrs| {
+                for attr in attrs.iter() {
+                    if attr.check_name("quiet_early_drop") {
+                        return true
+                    }
+                }
+                return false;
+            });
+            if found_attr {
+                return true;
+            }
+        }
+        ty::ty_closure(ref f) => {
+            match f.store {
+                // by-ref closure
+                ty::RegionTraitStore(..) => return true,
+                ty::UniqTraitStore => {}
+            }
+        }
+        ty::ty_unboxed_closure(_) => {}
+        _ => {}
+    }
+
+    // Okay, so far we know that the type does not have the
+    // `quiet_early_drop` attribute marker, nor is it a by-ref
+    // closure.
+    //
+    // But still, it could implement the `QuietEarlyDrop` trait.
+    // Let's find out.
+
+    let opt_trait_did = tcx.lang_items.require(QuietEarlyDropTraitLangItem);
+    let trait_did = match opt_trait_did {
+        Ok(trait_did) => trait_did,
+        Err(_) => {
+            // if there is no `QuietEarlyDrop` lang item, then
+            // just do not bother trying to handle this case.
+            return false;
+        }
+    };
+
+    let ret = type_implements_trait(tcx, t, trait_did);
+    debug!("is_quiet_early_drop: type_implements_trait is {}", ret);
+    ret
 }
 
 fn with_attrs_for_did<A>(tcx: &ty::ctxt,
@@ -388,4 +499,43 @@ fn with_attrs_for_did<A>(tcx: &ty::ctxt,
         });
         result.unwrap()
     }
+}
+
+fn type_implements_trait(tcx: &ty::ctxt,
+                         ty: ty::t,
+                         trait_did: ast::DefId) -> bool {
+    // largely modelled after lookup_vtable
+
+    let infcx = infer::new_infer_ctxt(tcx);
+    let span = codemap::DUMMY_SP;
+    let substs = subst::Substs::empty();
+
+    let trait_def = ty::lookup_trait_def(tcx, trait_did);
+    let trait_ref = &trait_def.trait_ref;
+
+    debug!("type_implements_trait ty={} trait_ref={}",
+           ty.repr(tcx),
+           trait_ref.repr(tcx));
+
+    ty::populate_implementations_for_trait_if_necessary(tcx, trait_ref.def_id);
+
+    let substs = substs.with_self_ty(ty);
+
+    // Substitute the values of the type parameters that may
+    // appear in the bound.
+    debug!("about to subst: {}, {}", trait_ref.repr(tcx), substs.repr(tcx));
+    let trait_ref = trait_ref.subst(tcx, &substs);
+
+    debug!("after subst: {}", trait_ref.repr(tcx));
+
+    let param_bounds = subst::VecPerParamSpace::empty();
+    let unboxed_closure_types = RefCell::new(DefIdMap::new());
+
+    let vcx = vtable::VtableContext {
+        infcx: &infcx,
+        param_bounds: &param_bounds,
+        unboxed_closure_types: &unboxed_closure_types,
+    };
+
+    return lookup_vtable(&vcx, span, ty, trait_ref, false).is_ok();
 }

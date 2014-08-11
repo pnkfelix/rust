@@ -820,7 +820,7 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
         let TypeAndSubsts {
             substs: impl_substs,
             ty: impl_ty
-        } = impl_self_ty(&vcx, span, impl_did);
+        } = impl_self_ty(vcx.tcx(), vcx.infcx, span, impl_did);
 
         let candidates = if is_extension {
             &mut self.extension_candidates
