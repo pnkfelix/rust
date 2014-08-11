@@ -221,6 +221,7 @@ lets_do_this! {
     SyncTraitLangItem,               "sync",                    sync_trait;
 
     DropTraitLangItem,               "drop",                    drop_trait;
+    QuietEarlyDropTraitLangItem,     "quiet_early_drop",        quiet_early_drop;
 
     AddTraitLangItem,                "add",                     add_trait;
     SubTraitLangItem,                "sub",                     sub_trait;

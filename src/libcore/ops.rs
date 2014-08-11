@@ -87,6 +87,22 @@ pub trait Drop {
 
 /**
  *
+ * The `QuietEarlyDrop` trait is used to tag types whose drop
+ * invocations can be safely moved to earlier than the end of their
+ * scope without significant potential for interference with other
+ * side-effects in user code.  For example, a type whose drop method
+ * solely deallocates storage is a likely candidate for implementing
+ * `QuietEarlyDrop`.
+ *
+ * See also the `quiet_early_drop` and `unmarked_early_drop` lints.
+ */
+#[lang="quiet_early_drop"]
+pub trait QuietEarlyDrop {
+    // empty
+}
+
+/**
+ *
  * The `Add` trait is used to specify the functionality of `+`.
  *
  * # Example
