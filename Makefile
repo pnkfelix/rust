@@ -4,13 +4,16 @@ FILES_WARN=foo01_warn.rs               foo03_warn.rs foo04_warn.rs foo05_warn.rs
                                                                    foo25_warn.rs \
            foo26_warn.rs foo27_warn.rs foo28_warn.rs                             \
            foo31_warn.rs                                                         \
-                                       foo43_warn.rs
+                                       foo43_warn.rs                             \
+                                       foo48_warn.rs               foo50_warn.rs
+
 FILES_FINE=              foo02_fine.rs                                           \
            foo11_fine.rs foo12_fine.rs foo13_fine.rs foo14_fine.rs foo15_fine.rs \
                                        foo23_fine.rs foo24_fine.rs               \
                                                      foo29_fine.rs foo30_fine.rs \
                          foo32_fine.rs foo33_fine.rs foo34_fine.rs               \
-                         foo42_fine.rs               foo44_fine.rs
+                         foo42_fine.rs               foo44_fine.rs               \
+                         foo47_fine.rs               foo49_fine.rs
 
 FILES_UNCATEGORIZED=                                                             \
            foo16.rs                                  foo19.rs      foo20.rs      \
@@ -48,7 +51,7 @@ objdir-dbg/x86_64-apple-darwin/stage1/rustc: src/etc/rustc-wrapper.macosx.sh obj
 	cp $< $@
 	chmod +x $@
 
-RUST_LOG=rustc::middle::borrowck,rustc::middle::ty,rustc::middle::typeck,rustc::middle::expr_use_visitor,rustc::middle::region,rustc::middle::trans,rustc::middle::resolve,rustc::middle::mem_categorization
+RUST_LOG=rustc::middle::borrowck,rustc::middle::ty,rustc::middle::typeck,rustc::middle::expr_use_visitor,rustc::middle::region,rustc::middle::trans,rustc::middle::resolve,rustc::middle::mem_categorization::rustc::util::common
 
 %.dot: %.rs Makefile objdir-dbg/x86_64-apple-darwin/stage1/rustc
 	$(RUSTC_LIB) -Z flowgraph-print-all --pretty flowgraph=foo $< -o $@
@@ -57,7 +60,7 @@ RUST_LOG=rustc::middle::borrowck,rustc::middle::ty,rustc::middle::typeck,rustc::
 	$(RUSTC_LIB)                        --pretty expanded,identified $< -o $@
 
 %.log: %.rs Makefile objdir-dbg/x86_64-apple-darwin/stage1/rustc
-	RUST_LOG=$(RUST_LOG) RUST_BACKTRACE=1 $(RUSTC_LIB) $< 2> $@
+	RUST_LOG=$(RUST_LOG) RUST_BACKTRACE=1 $(RUSTC_LIB) -Z verbose $< 2> $@
 
 #	RUST_LOG=$(RUST_LOG) $(RUSTC_LIB) -Z flowgraph-print-all --pretty flowgraph=foo $< -o $@.dot 2> $@
 
