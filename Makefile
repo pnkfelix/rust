@@ -5,7 +5,8 @@ FILES_WARN=foo01_warn.rs               foo03_warn.rs foo04_warn.rs foo05_warn.rs
            foo26_warn.rs foo27_warn.rs foo28_warn.rs                             \
            foo31_warn.rs                                                         \
                                        foo43_warn.rs                             \
-                                       foo48_warn.rs               foo50_warn.rs
+                                       foo48_warn.rs               foo50_warn.rs \
+                         foo52_warn.rs
 
 FILES_FINE=              foo02_fine.rs                                           \
            foo11_fine.rs foo12_fine.rs foo13_fine.rs foo14_fine.rs foo15_fine.rs \
