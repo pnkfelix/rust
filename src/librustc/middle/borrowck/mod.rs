@@ -142,7 +142,7 @@ fn borrowck_fn(this: &mut BorrowckCtxt,
                        move_data:flowed_moves } =
         build_borrowck_dataflow_data(this, fk, decl, &cfg, body, sp, id);
 
-    check_drops::check_drops(this, &flowed_moves, &cfg, decl, body);
+    check_drops::check_drops(this, &flowed_moves, id, &cfg, decl, body);
 
     check_loans::check_loans(this, &loan_dfcx, flowed_moves,
                              all_loans.as_slice(), decl, body);

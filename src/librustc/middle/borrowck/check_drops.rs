@@ -34,7 +34,8 @@ use middle::typeck::check::vtable::fixup_substs; // FIXME
 use middle::typeck::check::vtable::fixup_ty; // FIXME
 use middle::typeck::check::vtable::lookup_vtable_from_bounds; // FIXME
 use middle::typeck::check::vtable::lookup_vtable; // FIXME
-use middle::typeck::check::vtable; // FIXME
+// use middle::typeck::check::vtable; // FIXME for some reason this is failing.  :(
+use middle::typeck::check;
 use util::ppaux::Repr;
 use util::nodemap::DefIdMap;
 
@@ -49,10 +50,32 @@ static mut warning_count: atomics::AtomicUint = atomics::INIT_ATOMIC_UINT;
 
 pub fn check_drops(bccx: &BorrowckCtxt,
                    flowed_move_data: &move_data::FlowedMoveData,
+                   id: ast::NodeId,
                    cfg: &cfg::CFG,
                    decl: &ast::FnDecl,
                    body: &ast::Block) {
     debug!("check_drops(body id={:?})", body.id);
+
+    let param_env;
+    let mut cursor_id = id;
+    loop {
+        match bccx.tcx.map.find(cursor_id) {
+            Some(ast_map::NodeItem(..)) => {
+                let fn_pty = ty::lookup_item_type(bccx.tcx, ast_util::local_def(cursor_id));
+                param_env = ty::construct_parameter_environment(bccx.tcx,
+                                                                &fn_pty.generics,
+                                                                body.id);
+                break;
+            }
+            Some(_) => {
+                cursor_id = bccx.tcx.map.get_parent(cursor_id);
+                continue;
+            }
+            None => {
+                fail!("could not find param_env for node {}", id);
+            }
+        }
+    };
 
     cfg.graph.each_node(|node_index, node| {
         // Special case: do not flag violations for control flow from
@@ -226,7 +249,7 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                     // Check if type of `lp` has #[quiet_early_drop]
                     // attribute or implements `QuietEarlyDrop`;
                     // select the appropriate lint to signal.
-                    let lint_category = if is_quiet_early_drop(bccx.tcx, &**lp) {
+                    let lint_category = if is_quiet_early_drop(bccx.tcx, &param_env, &**lp) {
                         lint::builtin::QUIET_EARLY_DROP
                     } else {
                         lint::builtin::UNMARKED_EARLY_DROP
@@ -432,7 +455,9 @@ fn scan_forward_for_kill_id(bccx: &BorrowckCtxt,
     }
 }
 
-fn is_quiet_early_drop(tcx: &ty::ctxt, lp: &LoanPath) -> bool {
+fn is_quiet_early_drop(tcx: &ty::ctxt,
+                       param_env: &ty::ParameterEnvironment,
+                       lp: &LoanPath) -> bool {
     let t = lp.to_type(tcx);
     match ty::get(t).sty {
         ty::ty_struct(did, _) |
@@ -477,7 +502,7 @@ fn is_quiet_early_drop(tcx: &ty::ctxt, lp: &LoanPath) -> bool {
         }
     };
 
-    let ret = type_implements_trait(tcx, t, trait_did);
+    let ret = type_implements_trait(tcx, param_env, t, trait_did);
     debug!("is_quiet_early_drop: type_implements_trait is {}", ret);
     ret
 }
@@ -502,6 +527,7 @@ fn with_attrs_for_did<A>(tcx: &ty::ctxt,
 }
 
 fn type_implements_trait(tcx: &ty::ctxt,
+                         param_env: &ty::ParameterEnvironment,
                          ty: ty::t,
                          trait_did: ast::DefId) -> bool {
     // largely modelled after lookup_vtable
@@ -528,14 +554,15 @@ fn type_implements_trait(tcx: &ty::ctxt,
 
     debug!("after subst: {}", trait_ref.repr(tcx));
 
-    let param_bounds = subst::VecPerParamSpace::empty();
     let unboxed_closure_types = RefCell::new(DefIdMap::new());
 
-    let vcx = vtable::VtableContext {
+    let vcx = check::vtable::VtableContext {
         infcx: &infcx,
-        param_bounds: &param_bounds,
+        param_bounds: &param_env.bounds,
         unboxed_closure_types: &unboxed_closure_types,
+        is_early: check::vtable::NotEarly,
+        if_missing_ty_param: check::vtable::IfMissingTyParamGiveUp,
     };
 
-    return lookup_vtable(&vcx, span, ty, trait_ref, false).is_ok();
+    return lookup_vtable(&vcx, span, ty, trait_ref).is_ok();
 }

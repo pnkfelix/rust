@@ -103,6 +103,7 @@ use middle::typeck::check::method::{DontAutoderefReceiver};
 use middle::typeck::check::method::{IgnoreStaticMethods, ReportStaticMethods};
 use middle::typeck::check::regionmanip::replace_late_bound_regions_in_fn_sig;
 use middle::typeck::check::vtable::VtableContext;
+use middle::typeck::check;
 use middle::typeck::CrateCtxt;
 use middle::typeck::infer::{resolve_type, force_tvar};
 use middle::typeck::infer;
@@ -1585,6 +1586,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             infcx: self.infcx(),
             param_bounds: &self.inh.param_env.bounds,
             unboxed_closures: &self.inh.unboxed_closures,
+            if_missing_ty_param: check::vtable::IfMissingTyParamSearch,
+            is_early: check::vtable::NotEarly,
         }
     }
 }
