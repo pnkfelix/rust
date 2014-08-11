@@ -24,6 +24,7 @@ use kinds::Copy;
 use mem::size_of;
 use ops::{Add, Sub, Mul, Div, Rem, Neg};
 use ops::{Not, BitAnd, BitOr, BitXor, Shl, Shr};
+use ops::QuietEarlyDrop;
 use option::{Option, Some, None};
 
 /// The base trait for numeric types
@@ -42,6 +43,7 @@ macro_rules! trait_impl(
 )
 
 trait_impl!(Num for uint u8 u16 u32 u64 int i8 i16 i32 i64 f32 f64)
+trait_impl!(QuietEarlyDrop for uint u8 u16 u32 u64 int i8 i16 i32 i64 f32 f64)
 
 /// Simultaneous division and remainder
 #[inline]

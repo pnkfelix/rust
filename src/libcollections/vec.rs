@@ -18,6 +18,7 @@ use core::default::Default;
 use core::fmt;
 use core::mem;
 use core::num;
+use core::ops::QuietEarlyDrop;
 use core::ptr;
 use core::raw::Slice as RawSlice;
 use core::uint;
@@ -1528,6 +1529,8 @@ impl<T: Clone, V: Slice<T>> Add<V, Vec<T>> for Vec<T> {
         res
     }
 }
+
+impl<T:QuietEarlyDrop> QuietEarlyDrop for Vec<T> {}
 
 #[unsafe_destructor]
 impl<T> Drop for Vec<T> {

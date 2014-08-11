@@ -22,6 +22,7 @@ use hash;
 use io::Writer;
 use iter::{AdditiveIterator, DoubleEndedIterator, Extendable, Iterator, Map};
 use mem;
+use ops::QuietEarlyDrop;
 use option::{Option, Some, None};
 use slice::{Slice, ImmutableSlice};
 use str::{CharSplits, Str, StrAllocating, StrVector, StrSlice};
@@ -82,6 +83,8 @@ pub struct Path {
     prefix: Option<PathPrefix>,
     sepidx: Option<uint> // index of the final separator in the non-prefix portion of repr
 }
+
+impl QuietEarlyDrop for Path {}
 
 impl PartialEq for Path {
     #[inline]
@@ -734,7 +737,7 @@ impl Path {
         };
         (prefix, match val {
             None => s.into_string(),
-            Some(val) => val
+            Some(val) => { mem::drop(s); val }
         })
     }
 

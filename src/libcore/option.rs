@@ -148,6 +148,7 @@ use default::Default;
 use slice::Slice;
 use iter::{Iterator, DoubleEndedIterator, FromIterator, ExactSize};
 use mem;
+use ops::QuietEarlyDrop;
 use slice;
 
 // Note that this is not a lang item per se, but it has a hidden dependency on
@@ -164,6 +165,8 @@ pub enum Option<T> {
     /// Some value `T`
     Some(T)
 }
+
+impl<T:QuietEarlyDrop> QuietEarlyDrop for Option<T> {}
 
 /////////////////////////////////////////////////////////////////////////////
 // Type implementation

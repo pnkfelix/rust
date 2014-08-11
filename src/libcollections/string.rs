@@ -17,6 +17,7 @@ use core::prelude::*;
 use core::default::Default;
 use core::fmt;
 use core::mem;
+use core::ops::QuietEarlyDrop;
 use core::ptr;
 // FIXME: ICE's abound if you import the `Slice` type while importing `Slice` trait
 use core::raw::Slice as RawSlice;
@@ -33,6 +34,8 @@ use vec::Vec;
 pub struct String {
     vec: Vec<u8>,
 }
+
+impl QuietEarlyDrop for String {}
 
 impl String {
     /// Creates a new string buffer initialized with the empty string.

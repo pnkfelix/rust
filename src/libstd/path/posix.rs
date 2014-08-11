@@ -18,6 +18,7 @@ use from_str::FromStr;
 use hash;
 use io::Writer;
 use iter::{DoubleEndedIterator, AdditiveIterator, Extendable, Iterator, Map};
+use ops::QuietEarlyDrop;
 use option::{Option, None, Some};
 use str::Str;
 use str;
@@ -40,6 +41,8 @@ pub struct Path {
     repr: Vec<u8>, // assumed to never be empty or contain NULs
     sepidx: Option<uint> // index of the final separator in repr
 }
+
+impl QuietEarlyDrop for Path {}
 
 /// The standard path separator character
 pub static SEP: char = '/';
