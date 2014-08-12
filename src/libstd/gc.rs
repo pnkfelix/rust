@@ -26,7 +26,7 @@ use fmt;
 use hash;
 use kinds::marker;
 use option::Option;
-use ops::Deref;
+use ops::{Deref, QuietEarlyDrop};
 use raw;
 
 /// Immutable garbage-collected pointer type
@@ -45,6 +45,8 @@ impl<T> Clone for Gc<T> {
     #[inline]
     fn clone(&self) -> Gc<T> { *self }
 }
+
+impl<T:QuietEarlyDrop> QuietEarlyDrop for Gc<T> { }
 
 /// An value that represents the task-local managed heap.
 ///

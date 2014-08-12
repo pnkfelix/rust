@@ -154,7 +154,7 @@ use core::default::Default;
 use core::fmt;
 use core::kinds::marker;
 use core::mem::{transmute, min_align_of, size_of, forget};
-use core::ops::{Deref, Drop};
+use core::ops::{Deref, Drop, QuietEarlyDrop};
 use core::option::{Option, Some, None};
 use core::ptr;
 use core::ptr::RawPtr;
@@ -178,6 +178,8 @@ pub struct Rc<T> {
     _nosend: marker::NoSend,
     _noshare: marker::NoSync
 }
+
+impl<T:QuietEarlyDrop> QuietEarlyDrop for Rc<T> { }
 
 #[stable]
 impl<T> Rc<T> {
