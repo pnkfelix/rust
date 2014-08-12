@@ -19,13 +19,13 @@ rwildcard=$(foreach d,$(wildcard $1*),$(call rwildcard,$d/,$2) \
   $(filter $(subst *,%,$2),$d))
 
 $(OBJDIR)/x86_64-apple-darwin/$(STAGE)/bin/rustc: $(call rwildcard,src/,*.rs)
-	make -C $(OBJDIR) x86_64-apple-darwin/$(STAGE)/bin/rustc
+	$(MAKE) -C $(OBJDIR) x86_64-apple-darwin/$(STAGE)/bin/rustc
 
 $(OBJDIR)/$(call RUSTLIB_STAMP,syntax):
-	make -C $(OBJDIR) $(call RUSTLIB_STAMP,syntax)
+	$(MAKE) -C $(OBJDIR) $(call RUSTLIB_STAMP,syntax)
 
 $(OBJDIR)/$(call RUSTLIB_STAMP,rustc):
-	make -C $(OBJDIR) $(call RUSTLIB_STAMP,rustc)
+	$(MAKE) -C $(OBJDIR) $(call RUSTLIB_STAMP,rustc)
 
 $(OBJDIR)/x86_64-apple-darwin/$(STAGE)/rustc: src/etc/rustc-wrapper.macosx.sh $(OBJDIR)/x86_64-apple-darwin/$(STAGE)/bin/rustc Makefile
 	cd $(OBJDIR) && make-rustc-$(STAGE)
