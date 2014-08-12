@@ -238,7 +238,20 @@ pub mod rt {
         )
     )
 
-    impl_to_tokens!(ast::Ident)
+    impl<'a> ToTokens for ast::Ident {
+        fn to_tokens(&self, cx: &ExtCtxt) -> Vec<TokenTree> {
+            // cx.parse_tts(self.to_source())
+
+            // #15750: encode a pre-existing Ident in a special manner
+            // to preserve its hygiene.
+            let ast::Ident { name, ctxt } = *self;
+            let fake_source = format!("\x00name_{:u},ctxt_{:u}\x00", name.uint(), ctxt);
+            debug!("embedding Ident {} name: {} ctxt: {} {} in fake source: {:s}",
+                   "{", name, ctxt, "}", fake_source);
+            cx.parse_tts(fake_source)
+        }
+    }
+
     impl_to_tokens!(Gc<ast::Item>)
     impl_to_tokens!(Gc<ast::Pat>)
     impl_to_tokens!(ast::Arm)
