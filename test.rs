@@ -6,6 +6,6 @@
 extern crate plugin;
 
 fn main() {
-    let x = 3;
+    let x = 3i;
     println!("{}", mymacro!(x));
 }

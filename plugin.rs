@@ -50,9 +50,9 @@ fn expand(cx: &mut ExtCtxt, _span: Span, tts: &[ast::TokenTree])
         println!("manual_quote_expr_result: {}", manual_quote_expr_result_expr);
     }
 
-    // MacExpr::new(quote_expr!(&mut *cx, $expr))
     {
         use syntax::ext::quote::rt::*;
+        println!("quote_expr start, pre-parsed: {}", expr);
         let ext_cx = &mut *cx;
         let parse_sess = ext_cx.parse_sess();
         let cfg = ext_cx.cfg();
@@ -65,7 +65,7 @@ fn expand(cx: &mut ExtCtxt, _span: Span, tts: &[ast::TokenTree])
         };
         let mut parser = new_parser_from_tts(parse_sess, cfg, tt);
         let expr = parse_expr(&mut parser);
-        println!("parsed: {}", expr);
+        println!("quote_expr finis, postparsed: {}", expr);
         MacExpr::new(expr)
     }
 
