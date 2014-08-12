@@ -23,21 +23,21 @@ use std::collections::HashMap;
 ///an unzipping of `TokenTree`s
 #[deriving(Clone)]
 pub struct TtFrame {
-    forest: Rc<Vec<ast::TokenTree>>,
-    idx: uint,
-    dotdotdoted: bool,
-    sep: Option<Token>,
+    pub forest: Rc<Vec<ast::TokenTree>>,
+    pub idx: uint,
+    pub dotdotdoted: bool,
+    pub sep: Option<Token>,
 }
 
 #[deriving(Clone)]
 pub struct TtReader<'a> {
     pub sp_diag: &'a SpanHandler,
     /// the unzipped tree:
-    stack: Vec<TtFrame>,
+    pub stack: Vec<TtFrame>,
     /* for MBE-style macro transcription */
-    interpolations: HashMap<Ident, Rc<NamedMatch>>,
-    repeat_idx: Vec<uint>,
-    repeat_len: Vec<uint>,
+    pub interpolations: HashMap<Ident, Rc<NamedMatch>>,
+    pub repeat_idx: Vec<uint>,
+    pub repeat_len: Vec<uint>,
     /* cached: */
     pub cur_tok: Token,
     pub cur_span: Span,
