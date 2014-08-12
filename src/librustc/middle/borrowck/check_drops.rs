@@ -57,14 +57,21 @@ pub fn check_drops(bccx: &BorrowckCtxt,
     debug!("check_drops(body id={:?})", body.id);
 
     let param_env;
+
     let mut cursor_id = id;
     loop {
         match bccx.tcx.map.find(cursor_id) {
             Some(ast_map::NodeItem(..)) => {
                 let fn_pty = ty::lookup_item_type(bccx.tcx, ast_util::local_def(cursor_id));
-                param_env = ty::construct_parameter_environment(bccx.tcx,
-                                                                &fn_pty.generics,
-                                                                body.id);
+                let generics = &fn_pty.generics;
+                param_env = ty::construct_parameter_environment(bccx.tcx, generics, body.id);
+                break;
+            }
+            Some(ast_map::NodeMethod(..))      |
+            Some(ast_map::NodeTraitMethod(..)) => {
+                let method = ty::method(bccx.tcx, ast_util::local_def(cursor_id));
+                let generics = &method.generics;
+                param_env = ty::construct_parameter_environment(bccx.tcx, generics, body.id);
                 break;
             }
             Some(_) => {
