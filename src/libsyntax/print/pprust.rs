@@ -58,7 +58,8 @@ pub struct State<'a> {
     literals: Option<Vec<comments::Literal> >,
     cur_cmnt_and_lit: CurrentCommentAndLiteral,
     boxes: Vec<pp::Breaks>,
-    ann: &'a PpAnn
+    ann: &'a PpAnn,
+    encode_idents_with_hygiene: bool,
 }
 
 pub fn rust_printer(writer: Box<io::Writer>) -> State<'static> {
@@ -78,7 +79,8 @@ pub fn rust_printer_annotated<'a>(writer: Box<io::Writer>,
             cur_lit: 0
         },
         boxes: Vec::new(),
-        ann: ann
+        ann: ann,
+        encode_idents_with_hygiene: false,
     }
 }
 
@@ -119,7 +121,8 @@ pub fn print_crate<'a>(cm: &'a CodeMap,
             cur_lit: 0
         },
         boxes: Vec::new(),
-        ann: ann
+        ann: ann,
+        encode_idents_with_hygiene: false,
     };
     try!(s.print_mod(&krate.module, krate.attrs.as_slice()));
     try!(s.print_remaining_comments());
@@ -139,6 +142,64 @@ pub fn to_string(f: |&mut State| -> IoResult<()>) -> String {
             String::from_utf8(Vec::from_slice(wr.get_ref().as_slice())).unwrap();
         mem::forget(wr);
         result.to_string()
+    }
+}
+
+pub mod with_hygiene {
+    use ast;
+    use std::io::IoResult;
+
+    pub fn to_string(f: |&mut super::State| -> IoResult<()>) -> String {
+        super::to_string(|s| {
+            s.encode_idents_with_hygiene = true;
+            f(s)
+        })
+    }
+
+    pub fn ty_to_string(ty: &ast::Ty) -> String {
+        to_string(|s| s.print_type(ty))
+    }
+
+    pub fn block_to_string(blk: &ast::Block) -> String {
+        to_string(|s| {
+            // containing cbox, will be closed by print-block at }
+            try!(s.cbox(super::indent_unit));
+            // head-ibox, will be closed by print-block after {
+            try!(s.ibox(0u));
+            s.print_block(blk)
+        })
+    }
+
+    pub fn arg_to_string(arg: &ast::Arg) -> String {
+        to_string(|s| s.print_arg(arg))
+    }
+
+    pub fn generics_to_string(generics: &ast::Generics) -> String {
+        to_string(|s| s.print_generics(generics))
+    }
+
+    pub fn item_to_string(i: &ast::Item) -> String {
+        to_string(|s| s.print_item(i))
+    }
+
+    pub fn method_to_string(p: &ast::Method) -> String {
+        to_string(|s| s.print_method(p))
+    }
+
+    pub fn stmt_to_string(stmt: &ast::Stmt) -> String {
+        to_string(|s| s.print_stmt(stmt))
+    }
+
+    pub fn expr_to_string(e: &ast::Expr) -> String {
+        to_string(|s| s.print_expr(e))
+    }
+
+    pub fn pat_to_string(pat: &ast::Pat) -> String {
+        to_string(|s| s.print_pat(pat))
+    }
+
+    pub fn arm_to_string(arm: &ast::Arm) -> String {
+        to_string(|s| s.print_arm(arm))
     }
 }
 
@@ -1645,7 +1706,12 @@ impl<'a> State<'a> {
     }
 
     pub fn print_ident(&mut self, ident: ast::Ident) -> IoResult<()> {
-        word(&mut self.s, token::get_ident(ident).get())
+        if self.encode_idents_with_hygiene {
+            let encoded = ident.encode_with_hygiene();
+            word(&mut self.s, encoded.as_slice())
+        } else {
+            word(&mut self.s, token::get_ident(ident).get())
+        }
     }
 
     pub fn print_name(&mut self, name: ast::Name) -> IoResult<()> {
