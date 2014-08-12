@@ -95,6 +95,11 @@ pub mod rt {
     pub trait ToSource {
         // Takes a thing and generates a string containing rust code for it.
         fn to_source(&self) -> String;
+
+        // Takes a thing and generates a string containing rust code
+        // for it, encoding Idents as special byte sequences to
+        // maintain hygiene across serialization and deserialization.
+        fn to_source_with_hygiene(&self) -> String;
     }
 
     macro_rules! impl_to_source(
@@ -103,12 +108,18 @@ pub mod rt {
                 fn to_source(&self) -> String {
                     pprust::$pp(&**self)
                 }
+                fn to_source_with_hygiene(&self) -> String {
+                    pprust::with_hygiene::$pp(&**self)
+                }
             }
         );
         ($t:ty, $pp:ident) => (
             impl ToSource for $t {
                 fn to_source(&self) -> String {
                     pprust::$pp(self)
+                }
+                fn to_source_with_hygiene(&self) -> String {
+                    pprust::with_hygiene::$pp(self)
                 }
             }
         );
@@ -122,11 +133,22 @@ pub mod rt {
             .to_string()
     }
 
+    pub fn slice_to_source_with_hygiene<'a, T: ToSource>(sep: &'static str, xs: &'a [T]) -> String {
+        xs.iter()
+            .map(|i| i.to_source_with_hygiene())
+            .collect::<Vec<String>>()
+            .connect(sep)
+            .to_string()
+    }
+
     macro_rules! impl_to_source_slice(
         ($t:ty, $sep:expr) => (
             impl<'a> ToSource for &'a [$t] {
                 fn to_source(&self) -> String {
                     slice_to_source($sep, *self)
+                }
+                fn to_source_with_hygiene(&self) -> String {
+                    slice_to_source_with_hygiene($sep, *self)
                 }
             }
         )
@@ -135,6 +157,9 @@ pub mod rt {
     impl ToSource for ast::Ident {
         fn to_source(&self) -> String {
             token::get_ident(*self).get().to_string()
+        }
+        fn to_source_with_hygiene(&self) -> String {
+            self.encode_with_hygiene()
         }
     }
 
@@ -155,6 +180,9 @@ pub mod rt {
         fn to_source(&self) -> String {
             pprust::attribute_to_string(&dummy_spanned(*self))
         }
+        fn to_source_with_hygiene(&self) -> String {
+            self.to_source()
+        }
     }
 
     impl<'a> ToSource for &'a str {
@@ -163,11 +191,17 @@ pub mod rt {
                     token::intern_and_get_ident(*self), ast::CookedStr));
             pprust::lit_to_string(&lit)
         }
+        fn to_source_with_hygiene(&self) -> String {
+            self.to_source()
+        }
     }
 
     impl ToSource for () {
         fn to_source(&self) -> String {
             "()".to_string()
+        }
+        fn to_source_with_hygiene(&self) -> String {
+            self.to_source()
         }
     }
 
@@ -176,12 +210,18 @@ pub mod rt {
             let lit = dummy_spanned(ast::LitBool(*self));
             pprust::lit_to_string(&lit)
         }
+        fn to_source_with_hygiene(&self) -> String {
+            self.to_source()
+        }
     }
 
     impl ToSource for char {
         fn to_source(&self) -> String {
             let lit = dummy_spanned(ast::LitChar(*self));
             pprust::lit_to_string(&lit)
+        }
+        fn to_source_with_hygiene(&self) -> String {
+            self.to_source()
         }
     }
 
@@ -192,6 +232,9 @@ pub mod rt {
                     let lit = dummy_spanned(ast::LitInt(*self as i64, ast::$tag));
                     pprust::lit_to_string(&lit)
                 }
+                fn to_source_with_hygiene(&self) -> String {
+                    self.to_source()
+                }
             }
         );
         (unsigned, $t:ty, $tag:ident) => (
@@ -199,6 +242,9 @@ pub mod rt {
                 fn to_source(&self) -> String {
                     let lit = dummy_spanned(ast::LitUint(*self as u64, ast::$tag));
                     pprust::lit_to_string(&lit)
+                }
+                fn to_source_with_hygiene(&self) -> String {
+                    self.to_source()
                 }
             }
         );
@@ -222,7 +268,7 @@ pub mod rt {
         ($t:ty) => (
             impl ToTokens for $t {
                 fn to_tokens(&self, cx: &ExtCtxt) -> Vec<TokenTree> {
-                    cx.parse_tts(self.to_source())
+                    cx.parse_tts_with_hygiene(self.to_source_with_hygiene())
                 }
             }
         )
@@ -232,26 +278,13 @@ pub mod rt {
         ($t:ty) => (
             impl<'a> ToTokens for $t {
                 fn to_tokens(&self, cx: &ExtCtxt) -> Vec<TokenTree> {
-                    cx.parse_tts(self.to_source())
+                    cx.parse_tts_with_hygiene(self.to_source_with_hygiene())
                 }
             }
         )
     )
 
-    impl<'a> ToTokens for ast::Ident {
-        fn to_tokens(&self, cx: &ExtCtxt) -> Vec<TokenTree> {
-            // cx.parse_tts(self.to_source())
-
-            // #15750: encode a pre-existing Ident in a special manner
-            // to preserve its hygiene.
-            let ast::Ident { name, ctxt } = *self;
-            let fake_source = format!("\x00name_{:u},ctxt_{:u}\x00", name.uint(), ctxt);
-            debug!("embedding Ident {} name: {} ctxt: {} {} in fake source: {:s}",
-                   "{", name, ctxt, "}", fake_source);
-            cx.parse_tts(fake_source)
-        }
-    }
-
+    impl_to_tokens!(ast::Ident)
     impl_to_tokens!(Gc<ast::Item>)
     impl_to_tokens!(Gc<ast::Pat>)
     impl_to_tokens!(ast::Arm)
@@ -284,7 +317,8 @@ pub mod rt {
         fn parse_item(&self, s: String) -> Gc<ast::Item>;
         fn parse_expr(&self, s: String) -> Gc<ast::Expr>;
         fn parse_stmt(&self, s: String) -> Gc<ast::Stmt>;
-        fn parse_tts(&self, s: String) -> Vec<ast::TokenTree> ;
+        fn parse_tts(&self, s: String) -> Vec<ast::TokenTree>;
+        fn parse_tts_with_hygiene(&self, s: String) -> Vec<ast::TokenTree>;
     }
 
     impl<'a> ExtParseUtils for ExtCtxt<'a> {
@@ -325,6 +359,11 @@ pub mod rt {
                                              self.cfg(),
                                              self.parse_sess())
         }
+
+        fn parse_tts_with_hygiene(&self, s: String) -> Vec<ast::TokenTree> {
+            self.parse_tts(s)
+        }
+
     }
 
 }
