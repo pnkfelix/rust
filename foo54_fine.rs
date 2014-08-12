@@ -5,19 +5,19 @@
 #[lang="copy"]  pub trait Copy { }
 #[lang="sized"] pub trait Sized { }
 
-pub fn drop<T>(_x: T) { }
-
 pub trait Float {
     fn infinity() -> Self;
     fn neg_infinity() -> Self;
-    fn foo(self) -> bool;
 }
 
+pub static INFINITY: f32 = 1.0_f32/0.0_f32;
+pub static NEG_INFINITY: f32 = -1.0_f32/0.0_f32;
+
 impl Float for f32 {
-    #[inline]
-    fn foo(self) -> bool {
-        self == Float::infinity() || self == Float::neg_infinity()
-    }
-    fn infinity() -> f32 { loop { } }
-    fn neg_infinity() -> f32 { loop { } }
+    fn infinity() -> f32 { INFINITY }
+    fn neg_infinity() -> f32 { NEG_INFINITY }
+}
+
+fn foo(s: f32) -> bool {
+    s == Float::infinity() || s == Float::neg_infinity()
 }
