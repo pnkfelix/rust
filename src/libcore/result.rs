@@ -282,6 +282,7 @@ use std::fmt::Show;
 use slice;
 use slice::Slice;
 use iter::{Iterator, DoubleEndedIterator, FromIterator, ExactSize};
+use ops::QuietEarlyDrop;
 use option::{None, Option, Some};
 
 /// `Result` is a type that represents either success (`Ok`) or failure (`Err`).
@@ -297,6 +298,8 @@ pub enum Result<T, E> {
     /// Contains the error value
     Err(E)
 }
+
+impl<T:QuietEarlyDrop,E:QuietEarlyDrop> QuietEarlyDrop for Result<T,E> { }
 
 /////////////////////////////////////////////////////////////////////////////
 // Type implementation
