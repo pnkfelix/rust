@@ -99,10 +99,6 @@ impl<'a, 'tcx> VtableContext<'a, 'tcx> {
             Err((span, msg)) => self.tcx().sess.span_fatal(span, msg.as_slice()),
         }
     }
-
-    pub fn make_early_vcx(&self, is_early: bool) -> VtableContext<'a> {
-        VtableContext { is_early: if is_early { IsEarly } else { NotEarly }, ..*self }
-    }
 }
 
 pub type ErrMsg = (Span, String);
@@ -824,7 +820,7 @@ pub fn early_resolve_expr(ex: &ast::Expr, fcx: &FnCtxt, is_early: bool) {
                    fcx.infcx().ty_to_string(item_ty.ty));
             debug!("early_resolve_expr: looking up vtables for type params {}",
                    item_ty.generics.types.repr(fcx.tcx()));
-            let vcx = fcx.vtable_context().make_early_vcx(is_early);
+            let vcx = fcx.vtable_context_is_early(is_early);
             let vtbls = vcx.ok_or_die(
                 lookup_vtables(&vcx, ex.span,
                                &item_ty.generics.types,
@@ -850,7 +846,7 @@ pub fn early_resolve_expr(ex: &ast::Expr, fcx: &FnCtxt, is_early: bool) {
               let type_param_defs =
                   ty::method_call_type_param_defs(fcx, method.origin);
               let substs = fcx.method_ty_substs(ex.id);
-              let vcx = fcx.vtable_context().make_early_vcx(is_early);
+              let vcx = fcx.vtable_context_is_early(is_early);
               let vtbls = vcx.ok_or_die(
                   lookup_vtables(&vcx, ex.span,
                                  &type_param_defs,
@@ -910,7 +906,7 @@ pub fn early_resolve_expr(ex: &ast::Expr, fcx: &FnCtxt, is_early: bool) {
                                        ex.repr(fcx.tcx()));
                                 let type_param_defs =
                                     ty::method_call_type_param_defs(cx.tcx, method.origin);
-                                let vcx = fcx.vtable_context().make_early_vcx(is_early);
+                                let vcx = fcx.vtable_context_is_early(is_early);
                                 let vtbls = vcx.ok_or_die(
                                     lookup_vtables(&vcx, ex.span,
                                                    &type_param_defs,

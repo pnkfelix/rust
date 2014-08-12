@@ -1581,14 +1581,19 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         self.ccx.tcx.sess.err_count() - self.err_count_on_creation
     }
 
-    pub fn vtable_context<'a>(&'a self) -> VtableContext<'a, 'tcx> {
+    pub fn vtable_context<'a>(&'a self, is_early: check::vtable::IsEarly) -> VtableContext<'a, 'tcx> {
         VtableContext {
             infcx: self.infcx(),
             param_bounds: &self.inh.param_env.bounds,
             unboxed_closures: &self.inh.unboxed_closures,
             if_missing_ty_param: check::vtable::IfMissingTyParamSearch,
-            is_early: check::vtable::NotEarly,
+            is_early: is_early,
         }
+    }
+
+    pub fn vtable_context_is_early<'a>(&'a self, is_early: bool) -> VtableContext<'a> {
+        self.vtable_context(
+            if is_early { check::vtable::IsEarly } else { check::vtable::NotEarly })
     }
 }
 

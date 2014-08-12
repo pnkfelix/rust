@@ -537,14 +537,14 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
             return
         }
 
-        let vcx = self.fcx.vtable_context();
+        let infcx = self.fcx.infcx();
 
         // Get the tupled type of the arguments.
         let arguments_type = *closure_function_type.sig.inputs.get(0);
         let return_type = closure_function_type.sig.output;
 
         let closure_region =
-            vcx.infcx.next_region_var(infer::MiscVariable(self.span));
+            infcx.next_region_var(infer::MiscVariable(self.span));
         let unboxed_closure_type = ty::mk_unboxed_closure(self.tcx(),
                                                           closure_did,
                                                           closure_region);
@@ -554,7 +554,7 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
             rcvr_substs: subst::Substs::new_trait(
                 vec![arguments_type, return_type],
                 vec![],
-                *vcx.infcx.next_ty_vars(1).get(0)),
+                *infcx.next_ty_vars(1).get(0)),
             method_ty: method,
             origin: MethodStaticUnboxedClosure(closure_did),
         });
@@ -816,11 +816,10 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
         // determine the `self` of the impl with fresh
         // variables for each parameter:
         let span = self.self_expr.map_or(self.span, |e| e.span);
-        let vcx = self.fcx.vtable_context();
         let TypeAndSubsts {
             substs: impl_substs,
             ty: impl_ty
-        } = impl_self_ty(vcx.tcx(), vcx.infcx, span, impl_did);
+        } = impl_self_ty(self.tcx(), self.infcx(), span, impl_did);
 
         let candidates = if is_extension {
             &mut self.extension_candidates
