@@ -734,8 +734,8 @@ pub fn pretty_print_input(sess: Session,
 
     let out = match ofile {
         None => box io::stdout() as Box<Writer>,
-        Some(p) => {
-            let r = io::File::create(&p);
+        Some(ref p) => {
+            let r = io::File::create(p);
             match r {
                 Ok(w) => box w as Box<Writer>,
                 Err(e) => fail!("print-print failed to open {} due to {}",
@@ -743,7 +743,10 @@ pub fn pretty_print_input(sess: Session,
             }
         }
     };
-    match ppm {
+
+    let mut file_cleanup = OutputFileCleanup::if_needed(ofile);
+
+    let res = match ppm {
         PpmIdentified | PpmExpandedIdentified => {
             pprust::print_crate(sess.codemap(),
                                 sess.diagnostic(),
@@ -1103,9 +1106,48 @@ pub fn pretty_print_input(sess: Session,
                                 &pprust::NoAnn,
                                 is_expanded)
         }
-    }.unwrap()
+    };
 
+    if res.is_ok() {
+        file_cleanup.unneeded();
+    }
+
+    res.unwrap()
 }
+
+struct OutputFileCleanup {
+    path: Option<Path>,
+}
+
+impl OutputFileCleanup {
+    fn unneeded(&mut self) { self.path = None; }
+    fn if_needed(opt_path: Option<Path>) -> OutputFileCleanup {
+        OutputFileCleanup { path: opt_path }
+    }
+}
+
+impl Drop for OutputFileCleanup {
+    fn drop(&mut self) {
+        match self.path {
+            None => {}
+            Some(ref path) => {
+                // clean-up is only best-effort (and only if no output
+                // was produced); so drop result.
+                drop(io::fs::stat(path).
+                     and_then(|file_stat| {
+                         if file_stat.size == 0 {
+                             io::fs::unlink(path)
+                         } else {
+                             Ok(())
+                         }
+                     }));
+            }
+        }
+    }
+}
+
+
+
 
 fn flow_graph_id_to_code(flow_graph_id: FlowGraphId,
                          analysis: &CrateAnalysis) -> blocks::Code {
