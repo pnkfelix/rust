@@ -520,7 +520,7 @@ impl<'a> StringReader<'a> {
     /// integer (the ctxt), separate by a comma and delimited by a
     /// `\x00` marker.
     #[inline(never)]
-    fn scan_embedded_hygienic_ident(&mut self) -> token::Token {
+    fn scan_embedded_hygienic_ident(&mut self) -> ast::Ident {
         fn bump_expecting_char<'a,D:fmt::Show>(r: &mut StringReader<'a>,
                                                c: char,
                                                described_c: D,
@@ -574,8 +574,8 @@ impl<'a> StringReader<'a> {
         // skip over the `\x00`
         bump_expecting_char(self, '\x00', "nul-byte", where);
 
-        token::IDENT(ast::Ident { name: ast::Name(encoded_name),
-                                  ctxt: encoded_ctxt, }, false)
+        ast::Ident { name: ast::Name(encoded_name),
+                     ctxt: encoded_ctxt, }
     }
 
     /// Scan through any digits (base `radix`) or underscores, and return how
@@ -907,7 +907,9 @@ impl<'a> StringReader<'a> {
 
         match (c.unwrap(), self.nextch(), self.nextnextch()) {
             ('\x00', Some('n'), Some('a')) => {
-                return self.scan_embedded_hygienic_ident();
+                let ast_ident = self.scan_embedded_hygienic_ident();
+                let is_mod_name = self.curr_is(':') && self.nextch_is(':');
+                return token::IDENT(ast_ident, is_mod_name);
             }
             _ => {}
         }
