@@ -571,5 +571,8 @@ fn type_implements_trait(tcx: &ty::ctxt,
         if_missing_ty_param: check::vtable::IfMissingTyParamGiveUp,
     };
 
-    return lookup_vtable(&vcx, span, ty, trait_ref).is_ok();
+    match lookup_vtable(&vcx, span, ty, trait_ref) {
+        Ok(Some(_)) => true,
+        Ok(None) | Err(_) => false,
+    }
 }
