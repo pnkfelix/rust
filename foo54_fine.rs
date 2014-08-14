@@ -18,6 +18,6 @@ impl Float for f32 {
     fn neg_infinity() -> f32 { NEG_INFINITY }
 }
 
-fn foo(s: f32) -> bool {
+pub fn foo(s: f32) -> bool {
     s == Float::infinity() || s == Float::neg_infinity()
 }
