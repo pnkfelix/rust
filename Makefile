@@ -15,7 +15,7 @@ FILES_FINE=              foo02_fine.rs                                          
                          foo32_fine.rs foo33_fine.rs foo34_fine.rs               \
                          foo42_fine.rs               foo44_fine.rs               \
                          foo47_fine.rs               foo49_fine.rs               \
-                                       foo53_fine.rs foo54_fine.rs
+                                       foo53_fine.rs foo54_fine.rs foo55_fine.rs
 
 FILES_UNCATEGORIZED=                                                             \
            foo16.rs                                  foo19.rs      foo20.rs      \

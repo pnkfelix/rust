@@ -15,7 +15,7 @@ use core::ptr;
 use core::result::{Result,Ok,Err};
 use collections::string::String;
 
-pub fn check_for_errors_in<T>(f: || -> T) -> Result<T, String> {
+pub fn foo<T>(f: || -> T) -> Result<T, String> {
     use rustrt::mutex::{StaticNativeMutex, NATIVE_MUTEX_INIT};
     static mut lock: StaticNativeMutex = NATIVE_MUTEX_INIT;
     unsafe {
