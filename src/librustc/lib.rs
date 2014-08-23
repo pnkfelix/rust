@@ -36,6 +36,7 @@ This API is completely unstable and subject to change.
 #![feature(rustc_diagnostic_macros)]
 #![feature(import_shadowing)]
 
+extern crate alloc;
 extern crate arena;
 extern crate debug;
 extern crate flate;
@@ -153,6 +154,49 @@ mod rustc {
 }
 
 pub fn main() {
+    use alloc::heap::imp::loud_heap;
+    static mut delay: uint = 0u;
+    fn report(m: loud_heap::Msg) {
+        unsafe {
+            if delay > 0 {
+                delay -= 1;
+                return;
+            }
+        }
+
+        match m {
+            loud_heap::As(s) => {
+                println!("Allocate(size={:u}, align={:u})",
+                         s.size, s.align);
+            }
+            loud_heap::Af(s) => {
+                println!("Allocate(size={:u}, align={:u}) ret=0x{:010x}",
+                         s.size, s.align, s.ret as uint);
+            }
+            loud_heap::Rs(s) => {
+                println!("Reallocate(ptr=0x{:010x}, size={:u}, align={:u}, old_size={:u})",
+                         s.ptr as uint, s.size, s.align, s.old_size);
+            }
+            loud_heap::Rf(s) => {
+                println!("Reallocate(ptr=0x{:010x}, size={:u}, align={:u}, old_size={:u}) ret=0x{:010x}",
+                         s.ptr as uint, s.size, s.align, s.old_size, s.ret as uint);
+            }
+            loud_heap::D(s) => {
+                println!("Deallocate(ptr=0x{:010x}, size={:u}, align={:u})",
+                         s.ptr as uint, s.size, s.align);
+            }
+        }
+    }
+    let d : Option<uint> = std::os::getenv("CFG_COMPILER_ALLOC_MSG_DELAY")
+        .and_then(|x|from_str::<uint>(x.as_slice()));
+    match d {
+        None => {},
+        Some(d) => {
+            println!("registering loud_heap messenger with delay {}", d);
+            unsafe { delay = d; }
+            loud_heap::register_messenger(report)
+        }
+    }
     let args = std::os::args();
     std::os::set_exit_status(driver::main_args(args.as_slice()));
 }
