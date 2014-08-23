@@ -12,9 +12,7 @@
 
 use core::prelude::*;
 
-use alloc::libc_heap;
 use alloc::util;
-use libc::{c_void, free};
 
 use core::mem;
 use core::ptr;
@@ -186,12 +184,18 @@ impl Drop for LocalHeap {
     }
 }
 
-struct AllocHeader;
+struct AllocHeader {
+    payload_size: uint,
+}
 
 impl AllocHeader {
-    fn init(&mut self, _size: u32) {}
+    fn init(&mut self, _size: u32) {
+        self.payload_size = _size as uint;
+    }
     fn assert_sane(&self) {}
-    fn update_size(&mut self, _size: u32) {}
+    fn update_size(&mut self, _size: u32) {
+        self.payload_size = _size as uint;
+    }
 
     fn as_box(&mut self) -> *mut Box {
         let myaddr: uint = unsafe { mem::transmute(self) };
@@ -203,6 +207,9 @@ impl AllocHeader {
         let ptr_size = 16;
         let header_size = mem::size_of::<AllocHeader>();
         return (header_size + ptr_size - 1) / ptr_size * ptr_size;
+    }
+    fn actual_size(&self) -> uint {
+        self.payload_size + AllocHeader::size()
     }
 
     fn from(a_box: *mut Box) -> *mut AllocHeader {
@@ -224,9 +231,11 @@ fn debug_mem() -> bool {
 impl MemoryRegion {
     #[inline]
     fn malloc(&mut self, size: uint) -> *mut Box {
+        use alloc::heap::imp::loud_heap;
+        assert!(size < ::core::uint::MAX - AllocHeader::size());
         let total_size = size + AllocHeader::size();
         let alloc: *mut AllocHeader = unsafe {
-            libc_heap::malloc_raw(total_size) as *mut AllocHeader
+            loud_heap::allocate_noalign(total_size) as *mut AllocHeader
         };
 
         let alloc: &mut AllocHeader = unsafe { mem::transmute(alloc) };
@@ -239,13 +248,16 @@ impl MemoryRegion {
 
     #[inline]
     fn realloc(&mut self, alloc: *mut Box, size: uint) -> *mut Box {
+        use alloc::heap::imp::loud_heap;
+        assert!(size < ::core::uint::MAX - AllocHeader::size());
         rtassert!(!alloc.is_null());
         let orig_alloc = AllocHeader::from(alloc);
+        let orig_actual_size = unsafe { (*orig_alloc).actual_size() };
         unsafe { (*orig_alloc).assert_sane(); }
 
         let total_size = size + AllocHeader::size();
         let alloc: *mut AllocHeader = unsafe {
-            libc_heap::realloc_raw(orig_alloc as *mut u8, total_size) as *mut AllocHeader
+            loud_heap::reallocate_noalign(orig_alloc as *mut u8, total_size, orig_actual_size) as *mut AllocHeader
         };
 
         let alloc: &mut AllocHeader = unsafe { mem::transmute(alloc) };
@@ -257,14 +269,16 @@ impl MemoryRegion {
 
     #[inline]
     fn free(&mut self, alloc: *mut Box) {
+        use alloc::heap::imp::loud_heap;
         rtassert!(!alloc.is_null());
         let alloc = AllocHeader::from(alloc);
         unsafe {
+            let actual_size = (*alloc).actual_size();
             (*alloc).assert_sane();
             self.release(mem::transmute(alloc));
             rtassert!(self.live_allocations > 0);
             self.live_allocations -= 1;
-            free(alloc as *mut c_void)
+            loud_heap::deallocate_noalign(alloc as *mut u8, actual_size)
         }
     }
 
