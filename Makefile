@@ -6,7 +6,10 @@ FILES_WARN=foo01_warn.rs               foo03_warn.rs foo04_warn.rs foo05_warn.rs
            foo31_warn.rs                                                         \
                                        foo43_warn.rs                             \
                                        foo48_warn.rs               foo50_warn.rs \
-                         foo52_warn.rs
+                         foo52_warn.rs                                           \
+                                                                                 \
+                         rfc02_warn.rs               rfc04_warn.rs
+
 
 FILES_FINE=              foo02_fine.rs                                           \
            foo11_fine.rs foo12_fine.rs foo13_fine.rs foo14_fine.rs foo15_fine.rs \
@@ -15,7 +18,12 @@ FILES_FINE=              foo02_fine.rs                                          
                          foo32_fine.rs foo33_fine.rs foo34_fine.rs               \
                          foo42_fine.rs               foo44_fine.rs               \
                          foo47_fine.rs               foo49_fine.rs               \
-                                       foo53_fine.rs foo54_fine.rs foo55_fine.rs
+                                       foo53_fine.rs foo54_fine.rs foo55_fine.rs \
+                                                                                 \
+           rfc01_fine.rs               rfc03_fine.rs                             \
+           rfc06_fine.rs
+
+FILES_DENY=rfc05_deny.rs
 
 FILES_UNCATEGORIZED=                                                             \
            foo16.rs                                  foo19.rs      foo20.rs      \
@@ -27,7 +35,7 @@ FILES_UNCATEGORIZED=                                                            
            result01.rs result02.rs result03.rs \
            str01.rs
 
-FILES=$(FILES_WARN) $(FILES_FINE) $(FILES_UNCATEGORIZED)
+FILES=$(FILES_WARN) $(FILES_FINE) $(FILES_DENY) $(FILES_UNCATEGORIZED)
 
 all: $(patsubst %.rs,%.dot,$(FILES))
 .PHONY: touch_fine
