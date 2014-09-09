@@ -491,6 +491,13 @@ pub struct ctxt<'tcx> {
     /// populated during the coherence phase of typechecking.
     pub destructor_for_type: RefCell<DefIdMap<ast::DefId>>,
 
+    /// A mapping from the def ID of an enum or struct type to the def
+    /// ID of its impl of QuietEarlyDrop, if present (flagging any
+    /// associated drop-glue as "pure"/"quiet"). This map is populated
+    /// during the coherence phase of typechecking.
+    pub quiet_dtor_for_type: RefCell<DefIdMap<ast::DefId>>,
+    pub quiet_dtor_for_ty_box: Cell<Option<ast::DefId>>,
+
     /// A method will be in this list if and only if it is a destructor.
     pub destructors: RefCell<DefIdSet>,
 
@@ -1423,6 +1430,8 @@ pub fn mk_ctxt<'tcx>(s: Session,
         superstructs: RefCell::new(DefIdMap::new()),
         struct_fields: RefCell::new(DefIdMap::new()),
         destructor_for_type: RefCell::new(DefIdMap::new()),
+        quiet_dtor_for_type: RefCell::new(DefIdMap::new()),
+        quiet_dtor_for_ty_box: Cell::new(None),
         destructors: RefCell::new(DefIdSet::new()),
         trait_impls: RefCell::new(DefIdMap::new()),
         inherent_impls: RefCell::new(DefIdMap::new()),
@@ -2154,6 +2163,7 @@ def_type_content_sets!(
         OwnsDtor                            = 0b0000_0000__0000_0010__0000,
         OwnsManaged /* see [1] below */     = 0b0000_0000__0000_0100__0000,
         OwnsAffine                          = 0b0000_0000__0000_1000__0000,
+        OwnsLoudDtor                        = 0b0000_0000__0001_0000__0000,
         OwnsAll                             = 0b0000_0000__1111_1111__0000,
 
         // Things that are reachable by the value in any way (fourth nibble):
@@ -2303,6 +2313,23 @@ impl TypeContents {
     pub fn has_dtor(&self) -> bool {
         self.intersects(TC::OwnsDtor)
     }
+
+    // A "loud" destructor is one that has effects that we think the user may care about,
+    // e.g. releasing locks, flushing buffers, etc.
+    // It is the default setting for implementations of Drop.
+    pub fn has_loud_dtor(&self) -> bool {
+        self.intersects(TC::OwnsDtor) &&
+            self.intersects(TC::OwnsLoudDtor)
+    }
+
+    // A "quiet" destructor is one that has no "significant" effects;
+    // e.g. a destructor that just frees memory it owns is considered
+    // quiet.  One opts into this by implementing the QuietEarlyDrop
+    // trait.
+    pub fn has_quiet_dtor(&self) -> bool {
+        self.intersects(TC::OwnsDtor) &&
+            !self.intersects(TC::OwnsLoudDtor)
+    }
 }
 
 impl ops::BitOr<TypeContents,TypeContents> for TypeContents {
@@ -2404,7 +2431,11 @@ pub fn type_contents(cx: &ctxt, ty: t) -> TypeContents {
             }
 
             ty_box(typ) => {
-                tc_ty(cx, typ, cache).managed_pointer() | TC::ReachesFfiUnsafe
+                let mut ret = tc_ty(cx, typ, cache).managed_pointer() | TC::ReachesFfiUnsafe
+                if cx.quiet_dtor_for_ty_box.get().is_some() {
+                    ret = ret - TC::OwnsLoudDtor
+                }
+                ret
             }
 
             ty_uniq(typ) => {
@@ -2450,7 +2481,11 @@ pub fn type_contents(cx: &ctxt, ty: t) -> TypeContents {
                 }
 
                 if ty::has_dtor(cx, did) {
-                    res = res | TC::OwnsDtor;
+                    res = res | TC::OwnsDtor | TC::OwnsLoudDtor;
+                }
+                // Note that a type can impl QuietEarlyDrop even if it does not directly impl Drop
+                if ty::has_quiet_dtor(cx, did) {
+                    res = res - TC::OwnsLoudDtor;
                 }
                 apply_lang_items(cx, did, res)
             }
@@ -2480,7 +2515,11 @@ pub fn type_contents(cx: &ctxt, ty: t) -> TypeContents {
                     });
 
                 if ty::has_dtor(cx, did) {
-                    res = res | TC::OwnsDtor;
+                    res = res | TC::OwnsDtor | TC::OwnsLoudDtor;
+                }
+                // Note that a type can impl QuietEarlyDrop even if it does not directly impl Drop
+                if ty::has_quiet_dtor(cx, did) {
+                    res = res - TC::OwnsLoudDtor;
                 }
 
                 if variants.len() != 0 {
@@ -4307,6 +4346,11 @@ pub fn ty_dtor(cx: &ctxt, struct_id: DefId) -> DtorKind {
 
 pub fn has_dtor(cx: &ctxt, struct_id: DefId) -> bool {
     ty_dtor(cx, struct_id).is_present()
+}
+
+/* Return true iff struct_id names a struct that implements QuietEarlyDrop. */
+fn has_quiet_dtor(cx: &ctxt, struct_id: DefId) -> bool {
+    cx.quiet_dtor_for_type.borrow().find(&struct_id).is_some()
 }
 
 pub fn with_path<T>(cx: &ctxt, id: ast::DefId, f: |ast_map::PathElems| -> T) -> T {

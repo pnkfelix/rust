@@ -256,7 +256,7 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                     // Check if type of `lp` has #[quiet_early_drop]
                     // attribute or implements `QuietEarlyDrop`;
                     // select the appropriate lint to signal.
-                    let lint_category = if is_quiet_early_drop(bccx.tcx, &param_env, &**lp) {
+                    let lint_category = if is_quiet_early_drop_lp(bccx.tcx, &param_env, &**lp) {
                         lint::builtin::QUIET_EARLY_DROP
                     } else {
                         lint::builtin::UNMARKED_EARLY_DROP
@@ -462,10 +462,19 @@ fn scan_forward_for_kill_id(bccx: &BorrowckCtxt,
     }
 }
 
-fn is_quiet_early_drop(tcx: &ty::ctxt,
-                       param_env: &ty::ParameterEnvironment,
-                       lp: &LoanPath) -> bool {
+fn is_quiet_early_drop_lp(tcx: &ty::ctxt,
+                          param_env: &ty::ParameterEnvironment,
+                          lp: &LoanPath) -> bool {
     let t = lp.to_type(tcx);
+    let ret = is_quiet_early_drop_ty(tcx, param_env, t);
+    debug!("is_quiet_early_drop_lp: {} is {}", lp.repr(tcx), ret);
+    ret
+}
+
+
+fn is_quiet_early_drop_ty(tcx: &ty::ctxt,
+                          param_env: &ty::ParameterEnvironment,
+                          t: ty::t) -> bool {
     match ty::get(t).sty {
         ty::ty_struct(did, _) |
         ty::ty_enum(did, _) => {
@@ -481,23 +490,11 @@ fn is_quiet_early_drop(tcx: &ty::ctxt,
                 return true;
             }
         }
-        ty::ty_closure(ref f) => {
-            match f.store {
-                // by-ref closure
-                ty::RegionTraitStore(..) => return true,
-                ty::UniqTraitStore => {}
-            }
-        }
-        ty::ty_unboxed_closure(_) => {}
         _ => {}
     }
 
     // Okay, so far we know that the type does not have the
-    // `quiet_early_drop` attribute marker, nor is it a by-ref
-    // closure.
-    //
-    // But still, it could implement the `QuietEarlyDrop` trait.
-    // Let's find out.
+    // `quiet_early_drop` attribute marker.
 
     let opt_trait_did = tcx.lang_items.require(QuietEarlyDropTraitLangItem);
     let trait_did = match opt_trait_did {
@@ -508,10 +505,112 @@ fn is_quiet_early_drop(tcx: &ty::ctxt,
             return false;
         }
     };
+    is_quiet_early_drop_ty_recur(tcx, param_env, trait_did, t)
+}
 
-    let ret = type_implements_trait(tcx, param_env, t, trait_did);
-    debug!("is_quiet_early_drop: type_implements_trait is {}", ret);
-    ret
+fn is_quiet_early_drop_ty_recur(tcx: &ty::ctxt,
+                                param_env: &ty::ParameterEnvironment,
+                                trait_did: ast::DefId,
+                                t: ty::t) -> bool {
+
+    // The main base case: if the type implements `QuietEarlyDrop`,
+    // then we stop looking.
+    let implements = type_implements_trait(tcx, param_env, t, trait_did);
+    debug!("is_quiet_early_drop_ty_recur: type_implements_trait({}) is {}",
+           t.repr(tcx), implements);
+    if implements {
+        return true;
+    }
+
+    // If it does not implement the QuietEarlyDrop trait, then we need
+    // to emulate the traversal done by `type_contents`, looking at
+    // the substructure of the type to see if the type (or any part of
+    // it) "drops loudly", i.e., implements Drop but does not
+    // implement QuietEarlyDrop.
+
+    let drops_quiet = || {
+        let ret = true;
+        debug!("is_quiet_early_drop_ty_recur: {} fallthru base case: {}", t.repr(tcx), ret);
+        ret
+    };
+
+    let drops_loud = || {
+        let ret = false;
+        debug!("is_quiet_early_drop_ty_recur: {} fallthru base case: {}", t.repr(tcx), ret);
+        ret
+    };
+
+    let drops_recur = |f:|| -> bool| {
+        debug!("is_quiet_early_drop_ty_recur: {} fallthru recur entry", t.repr(tcx));
+        let ret = f();
+        debug!("is_quiet_early_drop_ty_recur: {} fallthru recur ret: {}", t.repr(tcx), ret);
+        ret
+    };
+
+    let recur = |ty| is_quiet_early_drop_ty_recur(tcx, param_env, trait_did, ty);
+
+    match ty::get(t).sty {
+        ty::ty_nil |
+        ty::ty_bot |
+        ty::ty_bool |
+        ty::ty_char |
+        ty::ty_int(_) |
+        ty::ty_uint(_) |
+        ty::ty_float(_) |
+        ty::ty_str |
+        ty::ty_bare_fn(_) |
+        ty::ty_rptr(_, _) |
+        ty::ty_err => drops_quiet(),
+
+        ty::ty_box(_) |
+        ty::ty_uniq(_) |
+        ty::ty_ptr(_) |
+        ty::ty_infer(_) |
+        ty::ty_unboxed_closure(_) => drops_loud(),
+
+        ty::ty_param(_) => drops_loud(),
+
+        ty::ty_trait(_) => drops_loud(),
+
+        ty::ty_closure(ref f) => {
+            match f.store {
+                // by-ref closure
+                ty::RegionTraitStore(..) => drops_quiet(),
+                ty::UniqTraitStore => drops_loud(),
+            }
+        }
+
+        // (Below are all the potentially recursive cases)
+
+        ty::ty_tup(ref tys) => drops_recur(|| tys.iter().all(|&ty| recur(ty))),
+        ty::ty_vec(mt, opt_len) => drops_recur(|| recur(mt.ty)),
+
+        ty::ty_enum(def_id, ref substs) => {
+            // if this type *itself* has a dtor, but does not
+            // implment `QuietEarlyDrop`, then it must drop loudly.
+            if ty::has_dtor(tcx, def_id) {
+                drops_loud()
+            } else {
+                let variants = ty::substd_enum_variants(tcx, def_id, substs);
+                drops_recur(|| variants.iter()
+                            .flat_map(|v| v.args.iter())
+                            .all(|&ty| recur(ty)))
+            }
+        }
+
+        ty::ty_struct(def_id, ref substs) => {
+            // if this type *itself* has a dtor, but does not
+            // implment `QuietEarlyDrop`, then it must drop loudly.
+            if ty::has_dtor(tcx, def_id) {
+                drops_loud()
+            } else {
+                drops_recur(|| ty::struct_fields(tcx, def_id, substs).iter()
+                            .map(|field| field.mt.ty)
+                            .all(|ty| recur(ty)))
+            }
+        }
+
+    }
 }
 
 fn with_attrs_for_did<A>(tcx: &ty::ctxt,

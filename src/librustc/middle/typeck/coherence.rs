@@ -690,8 +690,12 @@ impl<'a, 'tcx> CoherenceChecker<'a, 'tcx> {
     //
     // Destructors
     //
-
     fn populate_destructor_table(&self) {
+        self.populate_destructor_table_for_drop();
+        self.populate_destructor_table_for_quiet_early_drop();
+    }
+
+    fn populate_destructor_table_for_drop(&self) {
         let tcx = self.crate_context.tcx;
         let drop_trait = match tcx.lang_items.drop_trait() {
             Some(id) => id, None => { return }
@@ -740,6 +744,53 @@ impl<'a, 'tcx> CoherenceChecker<'a, 'tcx> {
                         }
                     } else {
                         tcx.sess.bug("found external impl of Drop trait on \
+                                      something other than a struct");
+                    }
+                }
+            }
+        }
+    }
+
+    fn populate_destructor_table_for_quiet_early_drop(&self) {
+        let tcx = self.crate_context.tcx;
+        let quiet_early_drop_trait = match tcx.lang_items.quiet_early_drop() {
+            Some(id) => id, None => { return }
+        };
+
+        let trait_impls = match tcx.trait_impls.borrow().find_copy(&quiet_early_drop_trait) {
+            None => return, // No types with (new-style) dtors present.
+            Some(found_impls) => found_impls
+        };
+
+        for &impl_did in trait_impls.borrow().iter() {
+            let self_type = self.get_self_type_for_implementation(impl_did);
+            match ty::get(self_type.ty).sty {
+                ty::ty_enum(type_def_id, _) |
+                ty::ty_struct(type_def_id, _) |
+                ty::ty_unboxed_closure(type_def_id) => {
+                    tcx.quiet_dtor_for_type.borrow_mut().insert(type_def_id, impl_did);
+                }
+                ty::ty_box(..) => {
+                    assert!(tcx.quiet_dtor_for_ty_box.get().is_none());
+                    tcx.quiet_dtor_for_ty_box.set(Some(impl_did));
+                }
+                _ => {
+                    // Destructors only work on nominal types.
+                    if impl_did.krate == ast::LOCAL_CRATE {
+                        {
+                            match tcx.map.find(impl_did.node) {
+                                Some(ast_map::NodeItem(item)) => {
+                                    span_err!(tcx.sess, item.span, E0158,
+                                        "the QuietEarlyDrop trait may only be implemented on structures");
+                                }
+                                _ => {
+                                    tcx.sess.bug("didn't find impl in ast \
+                                                  map");
+                                }
+                            }
+                        }
+                    } else {
+                        tcx.sess.bug("found external impl of QuietEarlyDrop trait on \
                                       something other than a struct");
                     }
                 }
