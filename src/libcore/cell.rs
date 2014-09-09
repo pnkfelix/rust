@@ -158,7 +158,7 @@
 use clone::Clone;
 use cmp::PartialEq;
 use kinds::{marker, Copy};
-use ops::{Deref, DerefMut, Drop};
+use ops::{Deref, DerefMut, Drop, QuietEarlyDrop};
 use option::{None, Option, Some};
 
 /// A mutable memory location that admits only `Copy` data.
@@ -215,6 +215,8 @@ pub struct RefCell<T> {
     nocopy: marker::NoCopy,
     noshare: marker::NoSync,
 }
+
+impl<T:QuietEarlyDrop> QuietEarlyDrop for RefCell<T> { }
 
 // Values [1, MAX-1] represent the number of `Ref` active
 // (will not outgrow its range since `uint` is the size of the address space)
@@ -339,6 +341,8 @@ impl<'b, T> Drop for Ref<'b, T> {
         self._parent.borrow.set(borrow - 1);
     }
 }
+
+impl<'b,T:QuietEarlyDrop> QuietEarlyDrop for Ref<'b,T> { }
 
 #[unstable = "waiting for `Deref` to become stable"]
 impl<'b, T> Deref<T> for Ref<'b, T> {

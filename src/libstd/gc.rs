@@ -46,7 +46,10 @@ impl<T> Clone for Gc<T> {
     fn clone(&self) -> Gc<T> { *self }
 }
 
-impl<T:QuietEarlyDrop> QuietEarlyDrop for Gc<T> { }
+// We do not require QuietEarlyDrop on T in this case, because the
+// assumption is that if you are using Gc<T>, then you are prepared
+// for the Drop to occur at any time.
+impl<T> QuietEarlyDrop for Gc<T> { }
 
 /// An value that represents the task-local managed heap.
 ///

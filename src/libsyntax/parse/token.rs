@@ -572,7 +572,6 @@ pub fn get_ident_interner() -> Rc<IdentInterner> {
 /// be fixed in the future by just leaking all strings until task death
 /// somehow.
 #[deriving(Clone, PartialEq, Hash, PartialOrd, Eq, Ord)]
-#[quiet_early_drop]
 pub struct InternedString {
     string: RcStr,
 }

@@ -170,5 +170,6 @@ register_diagnostics!(
     E0158,
     E0159,
     E0160,
-    E0161
+    E0161,
+    E0162  // QuietEarlyDrop is only for struct/enum/unboxed-closures
 )
