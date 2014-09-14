@@ -1546,6 +1546,9 @@ declare_lint!(pub VISIBLE_PRIVATE_TYPES, Warn,
 declare_lint!(pub UNREACHABLE_CODE, Warn,
               "detects unreachable code")
 
+declare_lint!(pub MATCH_ARMS_MOVE_MODE_CONFLICT, Warn,
+              "detect two arms in a match that pass by-ref and by-move")
+
 declare_lint!(pub WARNINGS, Warn,
               "mass-change the level for lints which produce warnings")
 
@@ -1576,6 +1579,7 @@ impl LintPass for HardwiredLints {
             DEAD_CODE,
             VISIBLE_PRIVATE_TYPES,
             UNREACHABLE_CODE,
+            MATCH_ARMS_MOVE_MODE_CONFLICT,
             WARNINGS,
             UNKNOWN_FEATURES,
             UNKNOWN_CRATE_TYPE,

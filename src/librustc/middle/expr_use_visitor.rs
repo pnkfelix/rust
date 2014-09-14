@@ -14,6 +14,7 @@
  * `ExprUseVisitor` determines how expressions are being used.
  */
 
+use lint;
 use middle::mem_categorization as mc;
 use middle::def;
 use middle::freevars;
@@ -94,6 +95,81 @@ pub enum MoveReason {
     DirectRefMove,
     PatBindingMove,
     CaptureMove,
+}
+
+#[deriving(PartialEq,Show)]
+pub enum MatchMode {
+    NonBindingMatch,
+    BorrowingMatch,
+    CopyingMatch,
+    MovingMatch,
+}
+
+#[deriving(PartialEq,Show)]
+enum TrackMatchMode {
+    Unknown, Definite(MatchMode), Conflicting
+}
+
+impl TrackMatchMode {
+    // Builds up the whole match mode for a pattern from its constituent
+    // parts.  The lattice looks like this:
+    //
+    //             Conflicting
+    //              /      \
+    //             /       \
+    //       Borrowing    Moving
+    //            \        /
+    //            \       /
+    //             Copying
+    //                |
+    //            NonBinding
+    //                |
+    //             Unknown
+    //
+    // examples:
+    //
+    // * `(_, some_int)` pattern is Copying, since
+    //   NonBinding + Copying => Copying
+    //
+    // * `(some_int, some_box)` pattern is Moving, since
+    //   Copying + Moving => Moving
+    //
+    // * `(ref x, some_box)` pattern is Conflicting, since
+    //   Borrowing + Moving => Conflicting
+    //
+    // Note that the `Unknown` and `Conflicting` states are
+    // represented separately from the other more interesting
+    // `Definite` states, which simplifies logic here somewhat.
+    fn meet(&mut self, mode: MatchMode) {
+        *self = match (*self, mode) {
+            // Note that clause order below is very significant.
+            (Unknown, new) => Definite(new),
+            (Definite(old), new) if old == new => Definite(old),
+
+            (Definite(old), NonBindingMatch) => Definite(old),
+            (Definite(NonBindingMatch), new) => Definite(new),
+
+            (Definite(old), CopyingMatch) => Definite(old),
+            (Definite(CopyingMatch), new) => Definite(new),
+
+            _ => Conflicting
+        };
+    }
+
+    fn mode(self) -> MatchMode {
+        match self {
+            // if we don't know, then there was no binding.
+            Unknown => NonBindingMatch,
+
+            Definite(mm) => mm,
+
+            // if there were conflicting results, then we will hit a
+            // compiler error later.  But to let rustc make progress
+            // now, claim it was a move (i.e. consumes the input).
+            Conflicting => // fail!("found a conflicting match input")
+                MovingMatch,
+        }
+    }
 }
 
 #[deriving(PartialEq,Show)]
@@ -242,7 +318,7 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
                 ty::ReScope(body.id), // Args live only as long as the fn body.
                 arg_ty);
 
-            self.walk_pat(arg_cmt, arg.pat.clone());
+            self.walk_pat_isolated(arg_cmt, arg.pat.clone());
         }
     }
 
@@ -365,8 +441,21 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
                 // walking the arms:
                 self.walk_expr(&**discr);
                 let discr_cmt = return_if_err!(self.mc.cat_expr(&**discr));
+                let mut mode = Unknown;
                 for arm in arms.iter() {
-                    self.walk_arm(discr_cmt.clone(), arm);
+                    self.walk_arm_prepass(discr_cmt.clone(), arm, &mut mode);
+                }
+                if mode == Conflicting {
+                    self.tcx().sess.add_lint(
+                        lint::builtin::MATCH_ARMS_MOVE_MODE_CONFLICT,
+                        expr.id,
+                        expr.span,
+                        "conflicting match modes".to_string())
+                }
+                for arm in arms.iter() {
+                    let mut mode = Unknown;
+                    self.walk_arm_prepass(discr_cmt.clone(), arm, &mut mode);
+                    self.walk_arm(discr_cmt.clone(), arm, &mode);
                 }
             }
 
@@ -423,7 +512,7 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
                                                  pat.span,
                                                  ty::ReScope(blk.id),
                                                  pattern_type);
-                self.walk_pat(pat_cmt, pat.clone());
+                self.walk_pat_isolated(pat_cmt, pat.clone());
 
                 self.walk_block(&**blk);
             }
@@ -592,7 +681,7 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
                 // `walk_pat`:
                 self.walk_expr(&**expr);
                 let init_cmt = return_if_err!(self.mc.cat_expr(&**expr));
-                self.walk_pat(init_cmt, local.pat);
+                self.walk_pat_isolated(init_cmt, local.pat);
             }
         }
     }
@@ -795,9 +884,15 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
         return true;
     }
 
-    fn walk_arm(&mut self, discr_cmt: mc::cmt, arm: &ast::Arm) {
+    fn walk_arm_prepass(&mut self, discr_cmt: mc::cmt, arm: &ast::Arm, mode: &mut TrackMatchMode) {
         for &pat in arm.pats.iter() {
-            self.walk_pat(discr_cmt.clone(), pat);
+            self.walk_pat_prepass(discr_cmt.clone(), pat, mode);
+        }
+    }
+
+    fn walk_arm(&mut self, discr_cmt: mc::cmt, arm: &ast::Arm, mode: &TrackMatchMode) {
+        for &pat in arm.pats.iter() {
+            self.walk_pat(discr_cmt.clone(), pat, mode);
         }
 
         for guard in arm.guard.iter() {
@@ -807,21 +902,70 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
         self.consume_expr(&*arm.body);
     }
 
-    fn walk_pat(&mut self, cmt_discr: mc::cmt, pat: Gc<ast::Pat>) {
-        debug!("walk_pat cmt_discr={} pat={}", cmt_discr.repr(self.tcx()),
+    /// Walks a pat that occurs in isolation (i.e. top-level of a fn
+    /// arg or let binding.  *Not* a match arm or nested pat.)
+    fn walk_pat_isolated(&mut self, cmt_discr: mc::cmt, pat: Gc<ast::Pat>) {
+        let mut mode = Unknown;
+        self.walk_pat_prepass(cmt_discr.clone(), pat, &mut mode);
+        self.walk_pat(cmt_discr, pat, &mode);
+    }
+
+    /// Identifies any bindings within `pat` and accumulates within
+    /// `mode` whether the overall pattern/match structure is a move,
+    /// copy, or borrow.
+    fn walk_pat_prepass(&mut self,
+                        cmt_discr: mc::cmt,
+                        pat: Gc<ast::Pat>,
+                        mode: &mut TrackMatchMode) {
+        debug!("walk_pat_prepass cmt_discr={} pat={}", cmt_discr.repr(self.tcx()),
                pat.repr(self.tcx()));
+
+        return_if_err!(self.mc.cat_pattern(cmt_discr.clone(), &*pat, |_mc, cmt_pat, pat| {
+            let tcx = self.typer.tcx();
+            let def_map = &tcx.def_map;
+            if pat_util::pat_is_binding(def_map, pat) {
+                debug!("prepass binding cmt_pat={} pat={}", cmt_pat.repr(tcx), pat.repr(tcx));
+
+                match pat.node {
+                    ast::PatIdent(ast::BindByRef(_), _, _) =>
+                        mode.meet(BorrowingMatch),
+                    ast::PatIdent(ast::BindByValue(_), _, _) => {
+                        match copy_or_move(tcx, cmt_pat.ty, PatBindingMove) {
+                            Copy => mode.meet(CopyingMatch),
+                            Move(_) => mode.meet(MovingMatch),
+                        }
+                    }
+                    _ => {
+                        // we will report the error here in the actual
+                        // pass, after the prepass is completed.
+                    }
+                }
+            }
+        }));
+    }
+
+    fn walk_pat(&mut self,
+                cmt_discr: mc::cmt,
+                pat: Gc<ast::Pat>,
+                outer_context_mode: &TrackMatchMode) {
+        debug!("walk_pat cmt_discr={} pat={} outer_context_mode={}",
+               cmt_discr.repr(self.tcx()), pat.repr(self.tcx()), outer_context_mode);
+
+        let match_mode = outer_context_mode.mode();
+
         let mc = &self.mc;
         let typer = self.typer;
         let tcx = typer.tcx();
         let def_map = &self.typer.tcx().def_map;
         let delegate = &mut self.delegate;
-        return_if_err!(mc.cat_pattern(cmt_discr, &*pat, |mc, cmt_pat, pat| {
+        return_if_err!(mc.cat_pattern(cmt_discr.clone(), &*pat, |mc, cmt_pat, pat| {
             if pat_util::pat_is_binding(def_map, pat) {
                 let tcx = typer.tcx();
 
-                debug!("binding cmt_pat={} pat={}",
+                debug!("binding cmt_pat={} pat={} match_mode={}",
                        cmt_pat.repr(tcx),
-                       pat.repr(tcx));
+                       pat.repr(tcx),
+                       match_mode);
 
                 // pat_ty: the type of the binding being produced.
                 let pat_ty = return_if_err!(typer.node_ty(pat.id));
@@ -837,8 +981,8 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
                 }
 
                 // It is also a borrow or copy/move of the value being matched.
-                match pat.node {
-                    ast::PatIdent(ast::BindByRef(m), _, _) => {
+                match (&pat.node, match_mode) {
+                    (&ast::PatIdent(ast::BindByRef(m), _, _), _) => {
                         let (r, bk) = {
                             (ty::ty_region(tcx, pat.span, pat_ty),
                              ty::BorrowKind::from_mutbl(m))
@@ -846,11 +990,39 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
                         delegate.borrow(pat.id, pat.span, cmt_pat,
                                              r, bk, RefBinding);
                     }
-                    ast::PatIdent(ast::BindByValue(_), _, _) => {
+                    (&ast::PatIdent(ast::BindByValue(_), _, _), _) => {
                         let mode = copy_or_move(typer.tcx(), cmt_pat.ty, PatBindingMove);
                         debug!("walk_pat binding consuming pat");
                         delegate.consume_pat(pat, cmt_pat, mode);
                     }
+
+                    (&ast::PatWild(_), MovingMatch) => {
+
+                        // On `enum E { Variant(Box<T>) }`, both of
+                        // the match arms:
+                        //
+                        //    Variant(a) => ...
+                        //    Variant(_) => ...
+                        //
+                        // are conceptually moving into the `Variant`
+                        // pattern, while the match arm:
+                        //
+                        //    a @ Variant(_) => ...
+                        //
+                        // is *not* moving into the `Variant(_)`.
+                        // Thus check the `pat_already_bound` flag to
+                        // distinguish the latter two cases.
+
+                        if !mc.pat_is_already_bound_by_value {
+                            let mode = copy_or_move(typer.tcx(), cmt_pat.ty, PatBindingMove);
+                            delegate.consume_pat(pat, cmt_pat, mode);
+                        }
+                    }
+
+                    (&ast::PatWild(_), NonBindingMatch) |
+                    (&ast::PatWild(_), BorrowingMatch) |
+                    (&ast::PatWild(_), CopyingMatch)  => {}
+
                     _ => {
                         typer.tcx().sess.span_bug(
                             pat.span,
@@ -904,6 +1076,55 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
                 }
             }
         }));
+
+        return_if_err!(mc.cat_pattern(cmt_discr, &*pat, |mc, cmt_pat, pat| {
+            let def_map = def_map.borrow();
+            let tcx = typer.tcx();
+            let _match_mode = if mc.pat_is_already_bound_by_value {
+                // A pat in the context of `id @ ... pat ...` cannot
+                // be moved into, it can at most copy or borrow.
+                //
+                // Actually, post PR #16053, we cannot do *any*
+                // binding in such a context, but I am writing this
+                // code in anticipation of loosening that rule (FSK).
+                BorrowingMatch
+            } else {
+                match_mode
+            };
+
+            match pat.node {
+                ast::PatEnum(_, _) | ast::PatIdent(_, _, None) | ast::PatStruct(..) => {
+                    match def_map.find(&pat.id) {
+                        Some(&def::DefVariant(enum_did, variant_did, _is_struct)) => {
+                            let downcast_cmt =
+                                if ty::enum_is_univariant(tcx, enum_did) {
+                                    cmt_pat
+                                } else {
+                                    let cmt_pat_ty = cmt_pat.ty;
+                                    mc.cat_downcast(pat, cmt_pat, cmt_pat_ty, variant_did)
+                                };
+
+                            debug!("variant downcast_cmt={} pat={}",
+                                   downcast_cmt.repr(tcx),
+                                   pat.repr(tcx));
+
+                            // delegate.matched_pat(pat, downcast_cmt, _match_mode);
+                        }
+
+                        Some(&def::DefStruct(..)) => {
+                            debug!("struct cmt_pat={} pat={}",
+                                   cmt_pat.repr(tcx),
+                                   pat.repr(tcx));
+
+                            // delegate.matched_pat(pat, cmt_pat, _match_mode);
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }));
+
     }
 
     fn walk_captures(&mut self, closure_expr: &ast::Expr) {

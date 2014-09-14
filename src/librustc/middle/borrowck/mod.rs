@@ -349,7 +349,7 @@ pub fn opt_loan_path(cmt: &mc::cmt) -> Option<Rc<LoanPath>> {
             })
         }
 
-        mc::cat_downcast(ref cmt_base) |
+        mc::cat_downcast(ref cmt_base, _) |
         mc::cat_discr(ref cmt_base, _) => {
             opt_loan_path(cmt_base)
         }

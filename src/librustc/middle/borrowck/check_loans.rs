@@ -804,7 +804,7 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
                         cmt = b;
                     }
 
-                    mc::cat_downcast(b) |
+                    mc::cat_downcast(b, _) |
                     mc::cat_interior(b, _) => {
                         assert_eq!(cmt.mutbl, mc::McInherited);
                         cmt = b;

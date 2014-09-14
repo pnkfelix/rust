@@ -88,7 +88,7 @@ pub enum categorization {
     cat_arg(ast::NodeId),              // formal argument
     cat_deref(cmt, uint, PointerKind), // deref of a ptr
     cat_interior(cmt, InteriorKind),   // something interior: field, tuple, etc
-    cat_downcast(cmt),                 // selects a particular enum variant (*1)
+    cat_downcast(cmt, ast::DefId),     // selects a particular enum variant (*1)
     cat_discr(cmt, ast::NodeId),       // match discriminant (see preserve())
 
     // (*1) downcast is only required if the enum has more than one variant
@@ -241,7 +241,11 @@ impl ast_node for ast::Pat {
 }
 
 pub struct MemCategorizationContext<'t,TYPER:'t> {
-    typer: &'t TYPER
+    typer: &'t TYPER,
+
+    // tracks when looking at `pat` in context of `id @ (... pat ...)`
+    // (it affects whether we move into a wildcard or not).
+    pub pat_is_already_bound_by_value: bool,
 }
 
 pub type McResult<T> = Result<T, ()>;
@@ -377,7 +381,20 @@ macro_rules! if_ok(
 
 impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
     pub fn new(typer: &'t TYPER) -> MemCategorizationContext<'t,TYPER> {
-        MemCategorizationContext { typer: typer }
+        MemCategorizationContext {
+            typer: typer,
+            pat_is_already_bound_by_value: false,
+        }
+    }
+
+    fn already_bound(&self, mode: ast::BindingMode) -> MemCategorizationContext<'t,TYPER> {
+        match mode {
+            ast::BindByRef(_) => *self,
+            ast::BindByValue(_) => MemCategorizationContext {
+                pat_is_already_bound_by_value: true,
+                ..*self
+            }
+        }
     }
 
     fn tcx(&self) -> &'t ty::ctxt<'tcx> {
@@ -993,15 +1010,10 @@ impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
     pub fn cat_downcast<N:ast_node>(&self,
                                     node: &N,
                                     base_cmt: cmt,
-                                    downcast_ty: ty::t)
+                                    downcast_ty: ty::t,
+                                    variant_did: ast::DefId)
                                     -> cmt {
-        Rc::new(cmt_ {
-            id: node.id(),
-            span: node.span(),
-            mutbl: base_cmt.mutbl.inherit(),
-            cat: cat_downcast(base_cmt),
-            ty: downcast_ty
-        })
+        mk_cat_downcast(node, base_cmt, downcast_ty, variant_did)
     }
 
     pub fn cat_pattern(&self,
@@ -1072,14 +1084,14 @@ impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
           }
           ast::PatEnum(_, Some(ref subpats)) => {
             match self.tcx().def_map.borrow().find(&pat.id) {
-                Some(&def::DefVariant(enum_did, _, _)) => {
+                Some(&def::DefVariant(enum_did, variant_did, _)) => {
                     // variant(x, y, z)
 
                     let downcast_cmt = {
                         if ty::enum_is_univariant(self.tcx(), enum_did) {
                             cmt // univariant, no downcast needed
                         } else {
-                            self.cat_downcast(pat, cmt.clone(), cmt.ty)
+                            self.cat_downcast(pat, cmt.clone(), cmt.ty, variant_did)
                         }
                     };
 
@@ -1119,8 +1131,9 @@ impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
             }
           }
 
-          ast::PatIdent(_, _, Some(ref subpat)) => {
-              if_ok!(self.cat_pattern(cmt, &**subpat, op));
+          ast::PatIdent(binding_mode, _, Some(ref subpat)) => {
+              if_ok!(self.already_bound(binding_mode).cat_pattern(
+                  cmt, &**subpat, op));
           }
 
           ast::PatIdent(_, _, None) => {
@@ -1129,9 +1142,21 @@ impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
 
           ast::PatStruct(_, ref field_pats, _) => {
             // {f1: p1, ..., fN: pN}
+            let downcast_cmt = match self.tcx().def_map.borrow().find(&pat.id) {
+                Some(&def::DefVariant(enum_did, variant_did, _)) => {
+                    // variant{ a: x, b: y, c: z }
+                    if ty::enum_is_univariant(self.tcx(), enum_did) {
+                        cmt // univariant, no downcast needed
+                    } else {
+                        self.cat_downcast(pat, cmt.clone(), cmt.ty, variant_did)
+                    }
+                }
+                _ => cmt,
+            };
+
             for fp in field_pats.iter() {
                 let field_ty = if_ok!(self.pat_ty(&*fp.pat)); // see (*2)
-                let cmt_field = self.cat_field(pat, cmt.clone(), fp.ident, field_ty);
+                let cmt_field = self.cat_field(pat, downcast_cmt.clone(), fp.ident, field_ty);
                 if_ok!(self.cat_pattern(cmt_field, &*fp.pat, |x,y,z| op(x,y,z)));
             }
           }
@@ -1233,11 +1258,24 @@ impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
           cat_discr(ref cmt, _) => {
             self.cmt_to_string(&**cmt)
           }
-          cat_downcast(ref cmt) => {
+          cat_downcast(ref cmt, _) => {
             self.cmt_to_string(&**cmt)
           }
         }
     }
+}
+
+fn mk_cat_downcast<N:ast_node>(node: &N,
+                               base_cmt: cmt,
+                               downcast_ty: ty::t,
+                               variant_did: ast::DefId) -> cmt {
+    Rc::new(cmt_ {
+        id: node.id(),
+        span: node.span(),
+        mutbl: base_cmt.mutbl.inherit(),
+        cat: cat_downcast(base_cmt, variant_did),
+        ty: downcast_ty
+    })
 }
 
 pub enum InteriorSafety {
@@ -1272,7 +1310,7 @@ impl cmt_ {
             cat_upvar(..) => {
                 Rc::new((*self).clone())
             }
-            cat_downcast(ref b) |
+            cat_downcast(ref b, _) |
             cat_discr(ref b, _) |
             cat_interior(ref b, _) |
             cat_deref(ref b, _, OwnedPtr) => {
@@ -1296,7 +1334,7 @@ impl cmt_ {
             cat_deref(ref b, _, Implicit(ty::MutBorrow, _)) |
             cat_deref(ref b, _, BorrowedPtr(ty::UniqueImmBorrow, _)) |
             cat_deref(ref b, _, Implicit(ty::UniqueImmBorrow, _)) |
-            cat_downcast(ref b) |
+            cat_downcast(ref b, _) |
             cat_deref(ref b, _, OwnedPtr) |
             cat_interior(ref b, _) |
             cat_discr(ref b, _) => {
@@ -1370,8 +1408,8 @@ impl Repr for categorization {
             cat_interior(ref cmt, interior) => {
                 format!("{}.{}", cmt.cat.repr(tcx), interior.repr(tcx))
             }
-            cat_downcast(ref cmt) => {
-                format!("{}->(enum)", cmt.cat.repr(tcx))
+            cat_downcast(ref cmt, ref variant_did) => {
+                format!("({}->{})", cmt.cat.repr(tcx), variant_did.repr(tcx))
             }
             cat_discr(ref cmt, _) => {
                 cmt.cat.repr(tcx)
