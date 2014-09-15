@@ -149,27 +149,26 @@ impl<'a, 'tcx> CFGBuilder<'a, 'tcx> {
             ast::PatBox(ref subpat) |
             ast::PatRegion(ref subpat) |
             ast::PatIdent(_, _, Some(ref subpat)) => {
-                let subpat_exit = self.pat(&**subpat, pred);
-                self.add_node(pat.id, [subpat_exit])
+                let pat_head_exit = self.add_node(pat.id, [pred]);
+                self.pat(&**subpat, pat_head_exit)
             }
 
             ast::PatEnum(_, Some(ref subpats)) |
             ast::PatTup(ref subpats) => {
-                let pats_exit = self.pats_all(subpats.iter(), pred);
-                self.add_node(pat.id, [pats_exit])
+                let pat_head_exit = self.add_node(pat.id, [pred]);
+                self.pats_all(subpats.iter(), pat_head_exit)
             }
 
             ast::PatStruct(_, ref subpats, _) => {
-                let pats_exit =
-                    self.pats_all(subpats.iter().map(|f| &f.pat), pred);
-                self.add_node(pat.id, [pats_exit])
+                let pat_head_exit = self.add_node(pat.id, [pred]);
+                self.pats_all(subpats.iter().map(|f| &f.pat), pat_head_exit)
             }
 
             ast::PatVec(ref pre, ref vec, ref post) => {
-                let pre_exit = self.pats_all(pre.iter(), pred);
+                let pat_head_exit = self.add_node(pat.id, [pred]);
+                let pre_exit = self.pats_all(pre.iter(), pat_head_exit);
                 let vec_exit = self.pats_all(vec.iter(), pre_exit);
-                let post_exit = self.pats_all(post.iter(), vec_exit);
-                self.add_node(pat.id, [post_exit])
+                self.pats_all(post.iter(), vec_exit)
             }
 
             ast::PatMac(_) => {
