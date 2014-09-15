@@ -77,7 +77,20 @@ pub trait BitwiseOperator {
 /// Parameterization for the precise form of data flow that is used.
 pub trait DataFlowOperator : BitwiseOperator {
     /// Specifies the initial value for each bit in the `on_entry` set
+    /// for every node (except `cfg.entry`) in the flowgraph `cfg`
+    /// that is being analyzed.
+    ///
+    /// See also `entry_initial_value`.
     fn initial_value(&self) -> bool;
+
+    /// Specifies the initial value for each bit in the `on_entry` set
+    /// for `cfg.entry` in the flowgraph `cfg` that is being analyzed.
+    ///
+    /// Defaults to `self.initial_value()`, since many dataflow
+    /// analyses use the same setting in both contexts.
+    fn entry_initial_value(&self) -> bool {
+        self.initial_value()
+    }
 }
 
 struct PropagationContext<'a, 'b: 'a, 'tcx: 'b, O: 'a> {
