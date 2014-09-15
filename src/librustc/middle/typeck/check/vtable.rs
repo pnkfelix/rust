@@ -104,11 +104,10 @@ impl<'a, 'tcx> VtableContext<'a, 'tcx> {
 pub type ErrMsg = (Span, String);
 pub type VtResult<A> = Result<A, ErrMsg>;
 
-pub fn lookup_vtables(vcx: &VtableContext,
+fn lookup_vtables(vcx: &VtableContext,
                   span: Span,
                   type_param_defs: &VecPerParamSpace<ty::TypeParameterDef>,
-                  substs: &subst::Substs,
-                  is_early: bool)
+                  substs: &subst::Substs)
                   -> VtResult<VecPerParamSpace<vtable_param_res>> {
     debug!("lookup_vtables(\
            type_param_defs={}, \
@@ -120,7 +119,7 @@ pub fn lookup_vtables(vcx: &VtableContext,
     let result = type_param_defs.try_map_rev(|def| {
         let ty = *substs.types.get(def.space, def.index);
         lookup_vtables_for_param(vcx, span, Some(substs),
-                                 &def.bounds, ty, is_early)
+                                 &def.bounds, ty)
     });
 
     match result {
@@ -147,7 +146,7 @@ pub fn lookup_vtables(vcx: &VtableContext,
     result
 }
 
-pub fn lookup_vtables_for_param(vcx: &VtableContext,
+fn lookup_vtables_for_param(vcx: &VtableContext,
                                 span: Span,
                                 // None for substs means the identity
                                 substs: Option<&subst::Substs>,
@@ -199,7 +198,7 @@ pub fn lookup_vtables_for_param(vcx: &VtableContext,
                             trait {} for {}",
                             vcx.infcx.trait_ref_to_string(&*trait_ref),
                             vcx.infcx.ty_to_string(ty).as_slice());
-                param_result.push(vtable_error)
+                param_result.push(vtable_error);
                 first_error = Some((span, msg));
             }
             Err(msg) => {
@@ -256,7 +255,7 @@ pub fn relate_trait_refs(tcx: &ty::ctxt,
             if !ty::trait_ref_contains_error(&r_act_trait_ref) &&
                 !ty::trait_ref_contains_error(&r_exp_trait_ref)
             {
-                let tcx = vcx.tcx();
+                let tcx = infcx.tcx;
                 span_err!(tcx.sess, span, E0095, "expected {}, found {} ({})",
                           ppaux::trait_ref_to_string(tcx, &r_exp_trait_ref),
                           ppaux::trait_ref_to_string(tcx, &r_act_trait_ref),
@@ -454,8 +453,7 @@ pub fn search_for_unboxed_closure_vtable(vcx: &VtableContext,
 fn search_for_vtable(vcx: &VtableContext,
                      span: Span,
                      ty: ty::t,
-                     trait_ref: Rc<ty::TraitRef>,
-                     is_early: bool)
+                     trait_ref: Rc<ty::TraitRef>)
                      -> VtResult<Option<vtable_origin>> {
     let tcx = vcx.tcx();
 
@@ -635,7 +633,7 @@ pub fn fixup_substs(tcx: &ty::ctxt,
     let t = ty::mk_trait(tcx,
                          id, substs,
                          ty::region_existential_bound(ty::ReStatic));
-    fixup_ty(vcx, infcx, span, t, is_early).map(|t_f| {
+    fixup_ty(tcx, infcx, span, t, is_early).map(|t_f| {
         match ty::get(t_f).sty {
           ty::ty_trait(ref inner) => inner.substs.clone(),
           _ => fail!("t_f should be a trait")
@@ -767,7 +765,7 @@ pub fn early_resolve_expr(ex: &ast::Expr, fcx: &FnCtxt, is_early: bool) {
           ty::ty_trait(box ty::TyTrait {
               def_id: target_def_id, substs: ref target_substs, ..
           }) => {
-              let vcx = fcx.vtable_context();
+              let vcx = fcx.vtable_context_is_early(is_early);
 
               // Take the type parameters from the object
               // type, but set the Self type (which is
@@ -796,12 +794,11 @@ pub fn early_resolve_expr(ex: &ast::Expr, fcx: &FnCtxt, is_early: bool) {
                                              ex.span,
                                              None,
                                              &param_bounds,
-                                             src_ty,
-                                             is_early);
+                                             src_ty);
 
               if !is_early {
-                  let mut r = VecPerParamSpace::empty();
-                  r.push(subst::SelfSpace, vtables);
+                  let mut r : vtable_res = VecPerParamSpace::empty();
+                  r.push(subst::SelfSpace, vtables.unwrap());
                   insert_vtables(fcx, key, r);
               }
           }
@@ -1129,11 +1126,13 @@ pub fn check_param_bounds(tcx: &ty::ctxt,
     let unboxed_closures = RefCell::new(DefIdMap::new());
     let vcx = VtableContext {
         infcx: &infer::new_infer_ctxt(tcx),
-        param_env: parameter_environment,
+        param_bounds: &parameter_environment.bounds,
         unboxed_closures: &unboxed_closures,
+        is_early: NotEarly,
+        if_missing_ty_param: IfMissingTyParamSearch,
     };
     let vtable_param_results =
-        lookup_vtables(&vcx, span, type_param_defs, substs, false);
+        lookup_vtables(&vcx, span, type_param_defs, substs);
     for (vtable_param_result, type_param_def) in
             vtable_param_results.iter().zip(type_param_defs.iter()) {
         for (vtable_result, trait_ref) in
@@ -1141,7 +1140,7 @@ pub fn check_param_bounds(tcx: &ty::ctxt,
                                    .zip(type_param_def.bounds
                                                       .trait_bounds
                                                       .iter()) {
-            match *vtable_result {
+            match vtable_result.unwrap() {
                 vtable_error => any_missing(&**trait_ref),
                 vtable_static(..) |
                 vtable_param(..) |

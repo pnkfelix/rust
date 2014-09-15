@@ -14,9 +14,9 @@
 use metadata::csearch;
 use middle::borrowck::*;
 use middle::borrowck::move_data::{Assignment, Move};
-use euv = middle::expr_use_visitor;
+use middle::expr_use_visitor as euv;
 use lint;
-use mc = middle::mem_categorization;
+use middle::mem_categorization as mc;
 use middle::dataflow;
 use middle::graph;
 use middle::lang_items::QuietEarlyDropTraitLangItem;
@@ -67,13 +67,13 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                 param_env = ty::construct_parameter_environment(bccx.tcx, generics, body.id);
                 break;
             }
-            Some(ast_map::NodeMethod(..))      |
-            Some(ast_map::NodeTraitMethod(..)) => {
-                let method = ty::method(bccx.tcx, ast_util::local_def(cursor_id));
-                let generics = &method.generics;
-                param_env = ty::construct_parameter_environment(bccx.tcx, generics, body.id);
-                break;
-            }
+
+            // FIXME (pnkfelix): There used to be cut-and-pasted code
+            // here that did the same thing as NodeItem case above,
+            // but for NodeMethod and NodeTraitMethod. Those variants
+            // do not exist anymore, but presumably they are still
+            // separate cases under a different name.
+
             Some(_) => {
                 cursor_id = bccx.tcx.map.get_parent(cursor_id);
                 continue;
@@ -241,7 +241,7 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                     let loan_path_str = bccx.loan_path_to_string(lp.deref());
 
                     let cfgidx_and_id = format!(" (cfgidx={}, id={})", source, source_id);
-                    let where = if bccx.tcx.sess.verbose() {
+                    let where_ = if bccx.tcx.sess.verbose() {
                         cfgidx_and_id.as_slice()
                     } else {
                         ""
@@ -251,7 +251,7 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                                        exiting here{:s}, but uninitialized on others. \
                                        (Consider either using Option, or calling `drop()` \
                                        on it or reinitializing it as necessary); count: {}",
-                                      loan_path_str, where, count);
+                                      loan_path_str, where_, count);
 
                     // Check if type of `lp` has #[quiet_early_drop]
                     // attribute or implements `QuietEarlyDrop`;
@@ -280,14 +280,14 @@ pub fn check_drops(bccx: &BorrowckCtxt,
                             let opt_source2_span = bccx.tcx.map.opt_span(source2_id);
                             let cfgidx_and_id = format!(" (cfgidx={}, id={})",
                                                         source2, source2_id);
-                            let where = if bccx.tcx.sess.verbose() {
+                            let where_ = if bccx.tcx.sess.verbose() {
                                 cfgidx_and_id.as_slice()
                             } else {
                                 ""
                             };
                             let msg = format!("Path {:u} here{:s} leaves `{:s}` \
                                                uninitialized.",
-                                              count, where, loan_path_str);
+                                              count, where_, loan_path_str);
                             match opt_source2_span {
                                 Some(span) => bccx.tcx.sess.span_note(span, msg.as_slice()),
                                 None => bccx.tcx.sess.note(msg.as_slice()),
@@ -454,7 +454,6 @@ fn scan_forward_for_kill_id(bccx: &BorrowckCtxt,
             }
 
             ast_map::NodeItem(_)        | ast_map::NodeForeignItem(_) |
-            ast_map::NodeTraitMethod(_) | ast_map::NodeMethod(_)      |
             ast_map::NodeVariant(_)     | ast_map::NodeLifetime(_) => {
                 bccx.tcx.sess.bug("unexpected node")
             }
@@ -566,7 +565,7 @@ fn is_quiet_early_drop_ty_recur(tcx: &ty::ctxt,
         ty::ty_uniq(_) |
         ty::ty_ptr(_) |
         ty::ty_infer(_) |
-        ty::ty_unboxed_closure(_) => drops_loud(),
+        ty::ty_unboxed_closure(..) => drops_loud(),
 
         ty::ty_param(_) => drops_loud(),
 
@@ -583,7 +582,7 @@ fn is_quiet_early_drop_ty_recur(tcx: &ty::ctxt,
         // (Below are all the potentially recursive cases)
 
         ty::ty_tup(ref tys) => drops_recur(|| tys.iter().all(|&ty| recur(ty))),
-        ty::ty_vec(mt, opt_len) => drops_recur(|| recur(mt.ty)),
+        ty::ty_vec(ty, opt_len) => drops_recur(|| recur(ty)),
 
         ty::ty_enum(def_id, ref substs) => {
             // if this type *itself* has a dtor, but does not
@@ -660,12 +659,12 @@ fn type_implements_trait(tcx: &ty::ctxt,
 
     debug!("after subst: {}", trait_ref.repr(tcx));
 
-    let unboxed_closure_types = RefCell::new(DefIdMap::new());
+    let unboxed_closures = RefCell::new(DefIdMap::new());
 
     let vcx = check::vtable::VtableContext {
         infcx: &infcx,
         param_bounds: &param_env.bounds,
-        unboxed_closure_types: &unboxed_closure_types,
+        unboxed_closures: &unboxed_closures,
         is_early: check::vtable::NotEarly,
         if_missing_ty_param: check::vtable::IfMissingTyParamGiveUp,
     };

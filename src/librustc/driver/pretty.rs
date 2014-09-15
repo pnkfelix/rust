@@ -218,10 +218,6 @@ impl pprust::PpAnn for IdentifiedAnnotation {
                 try!(pp::space(&mut s.s));
                 s.synth_comment(format!("pat {}", pat.id))
             }
-            pprust::Nodearm(arm) => {
-                try!(pp::space(&mut s.s));
-                s.synth_comment(format!("arm {}", arm.id))
-            }
         }
     }
 }

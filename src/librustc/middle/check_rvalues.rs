@@ -57,6 +57,11 @@ impl<'a, 'tcx> euv::Delegate for RvalueContext<'a, 'tcx> {
         }
     }
 
+    fn matched_pat(&mut self,
+                   matched_pat: &ast::Pat,
+                   cmt: mc::cmt,
+                   mode: euv::MatchMode) {}
+
     fn consume_pat(&mut self,
                    _consume_pat: &ast::Pat,
                    _cmt: mc::cmt,

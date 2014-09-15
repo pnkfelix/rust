@@ -79,7 +79,7 @@ pub struct FlowedMoveData<'a, 'tcx: 'a> {
     // We could (and maybe should, for efficiency) combine both move
     // and assign data flow into one, but this way it's easier to
     // distinguish the bits that correspond to moves and assignments.
-    pub dfcx_assign: AssignDataFlow<'a, 'tcx>
+    pub dfcx_assign: AssignDataFlow<'a, 'tcx>,
 
     pub dfcx_needs_drop: NeedsDropDataFlow<'a, 'tcx>,
 
@@ -200,11 +200,11 @@ pub type AssignDataFlow<'a, 'tcx> = DataFlowContext<'a, 'tcx, AssignDataFlowOper
 
 #[deriving(Clone)]
 pub struct NeedsDropDataFlowOperator;
-pub type NeedsDropDataFlow<'a> = DataFlowContext<'a, NeedsDropDataFlowOperator>;
+pub type NeedsDropDataFlow<'a, 'tcx> = DataFlowContext<'a, 'tcx, NeedsDropDataFlowOperator>;
 
 #[deriving(Clone)]
 pub struct IgnoreDropDataFlowOperator;
-pub type IgnoreDropDataFlow<'a> = DataFlowContext<'a, IgnoreDropDataFlowOperator>;
+pub type IgnoreDropDataFlow<'a, 'tcx> = DataFlowContext<'a, 'tcx, IgnoreDropDataFlowOperator>;
 
 fn loan_path_is_precise(loan_path: &LoanPath) -> bool {
     match *loan_path {
@@ -872,7 +872,7 @@ impl MoveData {
                     self.kill_moves(move_path_index, kill_id, dfcx_moves);
                     debug!("remove_drop_obligations scope {} {}",
                            kill_id, path.loan_path.repr(tcx));
-                    let rm = Removed { where: kill_id, what_path: move_path_index };
+                    let rm = Removed { where_: kill_id, what_path: move_path_index };
                     self.remove_drop_obligations(tcx, &rm, dfcx_needs_drop);
                     // FIXME: do I need to also remove_ignored_drops here? (FSK)
                 }
@@ -882,7 +882,7 @@ impl MoveData {
                     self.kill_moves(move_path_index, kill_id, dfcx_moves);
                     debug!("remove_drop_obligations scope {} {}",
                            kill_id, path.loan_path.repr(tcx));
-                    let rm = Removed { where: kill_id, what_path: move_path_index };
+                    let rm = Removed { where_: kill_id, what_path: move_path_index };
                     self.remove_drop_obligations(tcx, &rm, dfcx_needs_drop);
                     // FIXME: do I need to also remove_ignored_drops here? (FSK)
                 }
@@ -1203,9 +1203,9 @@ trait RemoveNeedsDropArg {
     fn node_id_removing_obligation(&self) -> ast::NodeId;
     fn path_being_moved(&self) -> MovePathIndex;
 }
-struct Removed { where: ast::NodeId, what_path: MovePathIndex }
+struct Removed { where_: ast::NodeId, what_path: MovePathIndex }
 impl RemoveNeedsDropArg for Removed {
-    fn node_id_removing_obligation(&self) -> ast::NodeId { self.where }
+    fn node_id_removing_obligation(&self) -> ast::NodeId { self.where_ }
     fn path_being_moved(&self) -> MovePathIndex { self.what_path }
 }
 impl<'a> RemoveNeedsDropArg for Move {

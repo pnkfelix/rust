@@ -329,7 +329,7 @@ impl MutabilityCategory {
             def::DefStatic(_, true) => McDeclared,
 
             def::DefArg(_, binding_mode) |
-            def::DefBinding(_, binding_mode) |
+            def::DefBinding(_, binding_mode, _) |
             def::DefLocal(_, binding_mode)  => match binding_mode {
                 ast::BindByValue(ast::MutMutable) => McDeclared,
                 _ => McImmutable

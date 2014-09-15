@@ -2431,7 +2431,7 @@ pub fn type_contents(cx: &ctxt, ty: t) -> TypeContents {
             }
 
             ty_box(typ) => {
-                let mut ret = tc_ty(cx, typ, cache).managed_pointer() | TC::ReachesFfiUnsafe
+                let mut ret = tc_ty(cx, typ, cache).managed_pointer() | TC::ReachesFfiUnsafe;
                 if cx.quiet_dtor_for_ty_box.get().is_some() {
                     ret = ret - TC::OwnsLoudDtor
                 }

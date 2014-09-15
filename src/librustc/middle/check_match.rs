@@ -12,7 +12,7 @@ use middle::const_eval::{compare_const_vals, const_bool, const_float, const_nil,
 use middle::const_eval::{const_expr_to_pat, eval_const_expr, lookup_const_by_id};
 use middle::def::*;
 use middle::expr_use_visitor::{ConsumeMode, Delegate, ExprUseVisitor, Init};
-use middle::expr_use_visitor::{JustWrite, LoanCause, MutateMode};
+use middle::expr_use_visitor::{JustWrite, LoanCause, MatchMode, MutateMode};
 use middle::expr_use_visitor::{WriteAndRead};
 use middle::mem_categorization::cmt;
 use middle::pat_util::*;
@@ -977,6 +977,7 @@ struct MutationChecker<'a, 'tcx: 'a> {
 
 impl<'a, 'tcx> Delegate for MutationChecker<'a, 'tcx> {
     fn consume(&mut self, _: NodeId, _: Span, _: cmt, _: ConsumeMode) {}
+    fn matched_pat(&mut self, _: &Pat, _: cmt, _: MatchMode) {}
     fn consume_pat(&mut self, _: &Pat, _: cmt, _: ConsumeMode) {}
     fn borrow(&mut self,
               _: NodeId,

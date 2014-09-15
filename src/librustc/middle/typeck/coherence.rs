@@ -780,7 +780,7 @@ impl<'a, 'tcx> CoherenceChecker<'a, 'tcx> {
                         {
                             match tcx.map.find(impl_did.node) {
                                 Some(ast_map::NodeItem(item)) => {
-                                    span_err!(tcx.sess, item.span, E0158,
+                                    span_err!(tcx.sess, item.span, E0162,
                                         "the QuietEarlyDrop trait may only be implemented on structures");
                                 }
                                 _ => {

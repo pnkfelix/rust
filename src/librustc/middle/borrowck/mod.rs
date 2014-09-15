@@ -303,8 +303,8 @@ impl LoanPath {
     }
 
     fn to_type(&self, tcx: &ty::ctxt) -> ty::t {
-        use Element = middle::mem_categorization::InteriorElement;
-        use Field = middle::mem_categorization::InteriorField;
+        use middle::mem_categorization::InteriorElement as Element;
+        use middle::mem_categorization::InteriorField as Field;
 
         debug!("lp.to_type() for lp={:s}", self.repr(tcx));
         let ty = match *self {
@@ -392,7 +392,7 @@ impl LoanPath {
                     // revising array_element_ty to also map input
                     // `[T]` to `Some(T)` rather than `None` (FSK).
                     (&LpInterior(Element(_)), _) if base_elem_t.is_some() =>
-                        base_elem_t.unwrap().ty,
+                        base_elem_t.unwrap(),
 
                     // FIXME: At one point I was deliberately
                     // eschewing ty::array_element_ty because I
@@ -418,7 +418,7 @@ impl LoanPath {
                                               self.repr(tcx), t.repr(tcx));
                             let opt_span = tcx.map.opt_span(id);
                             tcx.sess.opt_span_bug(opt_span, msg.as_slice());
-                        }).ty,
+                        }),
 
                     (lp_elem, _) => {
                         let id = self.kill_scope(tcx);

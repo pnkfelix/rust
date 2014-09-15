@@ -745,7 +745,6 @@ impl<'a, F: FoldOps> Folder for Ctx<'a, F> {
             "noop_fold_method must produce exactly one method");
         assert_eq!(self.parent, m.id);
         self.parent = parent;
-        self.insert(m.id, EntryMethod(self.parent, m));
         SmallVector::one(m)
     }
 

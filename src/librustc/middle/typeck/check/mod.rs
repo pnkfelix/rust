@@ -1591,7 +1591,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         }
     }
 
-    pub fn vtable_context_is_early<'a>(&'a self, is_early: bool) -> VtableContext<'a> {
+    pub fn vtable_context_is_early<'a>(&'a self, is_early: bool) -> VtableContext<'a, 'tcx> {
         self.vtable_context(
             if is_early { check::vtable::IsEarly } else { check::vtable::NotEarly })
     }

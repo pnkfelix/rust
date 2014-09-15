@@ -44,7 +44,7 @@ fn owned_ptr_base_path<'a>(loan_path: &'a LoanPath) -> &'a LoanPath {
 
     fn owned_ptr_base_path_helper<'a>(loan_path: &'a LoanPath) -> Option<&'a LoanPath> {
         match *loan_path {
-            LpVar(_) | LpUpvar(_) => None,
+            LpVar(_) | LpUpvar(..) => None,
             LpExtend(ref lp_base, _, LpDeref(mc::OwnedPtr)) => {
                 match owned_ptr_base_path_helper(&**lp_base) {
                     v @ Some(_) => v,
@@ -67,7 +67,7 @@ fn owned_ptr_base_path_rc(loan_path: &Rc<LoanPath>) -> Rc<LoanPath> {
 
     fn owned_ptr_base_path_helper(loan_path: &Rc<LoanPath>) -> Option<Rc<LoanPath>> {
         match **loan_path {
-            LpVar(_) | LpUpvar(_) => None,
+            LpVar(_) | LpUpvar(..) => None,
             LpExtend(ref lp_base, _, LpDeref(mc::OwnedPtr)) => {
                 match owned_ptr_base_path_helper(lp_base) {
                     v @ Some(_) => v,
