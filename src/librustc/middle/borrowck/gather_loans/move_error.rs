@@ -40,12 +40,12 @@ impl MoveErrorCollector {
 
 pub struct MoveError {
     move_from: mc::cmt,
-    move_to: Option<MoveSpanAndPath>
+    move_to: Option<MoveTarget>
 }
 
 impl MoveError {
     pub fn with_move_info(move_from: mc::cmt,
-                          move_to: Option<MoveSpanAndPath>)
+                          move_to: Option<MoveTarget>)
                           -> MoveError {
         MoveError {
             move_from: move_from,
@@ -55,14 +55,39 @@ impl MoveError {
 }
 
 #[deriving(Clone)]
-pub struct MoveSpanAndPath {
+pub struct MoveSpanAndIdent {
     pub span: codemap::Span,
     pub ident: ast::Ident
 }
 
+#[deriving(Clone)]
+pub enum MoveTarget {
+    MoveTargetIdent(MoveSpanAndIdent),
+    MoveTargetWildcard(codemap::Span, ast::NodeId, ast::PatWildKind),
+}
+
+impl MoveTarget {
+    fn span(&self) -> codemap::Span {
+        match *self {
+            MoveTargetIdent(span_and_ident) => span_and_ident.span,
+            MoveTargetWildcard(span, _, _) => span,
+        }
+    }
+    fn name(&self) -> String {
+        match *self {
+            MoveTargetIdent(span_and_ident) =>
+                pprust::ident_to_string(&span_and_ident.ident),
+            MoveTargetWildcard(_, _, ast::PatWildSingle) =>
+                "_".to_string(),
+            MoveTargetWildcard(_, _, ast::PatWildMulti) =>
+                "..".to_string(),
+        }
+    }
+}
+
 pub struct GroupedMoveErrors {
     move_from: mc::cmt,
-    move_to_places: Vec<MoveSpanAndPath>
+    move_to_places: Vec<MoveTarget>
 }
 
 fn report_move_errors(bccx: &BorrowckCtxt, errors: &Vec<MoveError>) {
@@ -71,8 +96,7 @@ fn report_move_errors(bccx: &BorrowckCtxt, errors: &Vec<MoveError>) {
         report_cannot_move_out_of(bccx, error.move_from.clone());
         let mut is_first_note = true;
         for move_to in error.move_to_places.iter() {
-            note_move_destination(bccx, move_to.span,
-                                  &move_to.ident, is_first_note);
+            note_move_destination(bccx, move_to, is_first_note);
             is_first_note = false;
         }
     }
@@ -143,10 +167,10 @@ fn report_cannot_move_out_of(bccx: &BorrowckCtxt, move_from: mc::cmt) {
 }
 
 fn note_move_destination(bccx: &BorrowckCtxt,
-                         move_to_span: codemap::Span,
-                         pat_ident: &ast::Ident,
+                         move_to: &MoveTarget,
                          is_first_note: bool) {
-    let pat_name = pprust::ident_to_string(pat_ident);
+    let move_to_span = move_to.span();
+    let pat_name = move_to.name();
     if is_first_note {
         bccx.span_note(
             move_to_span,
