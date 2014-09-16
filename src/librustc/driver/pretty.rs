@@ -199,6 +199,10 @@ impl<'ast> pprust::PpAnn for IdentifiedAnnotation<'ast> {
                 try!(pp::space(&mut s.s));
                 s.synth_comment(format!("pat {}", pat.id))
             }
+            pprust::NodeMethod(pat) => {
+                try!(pp::space(&mut s.s));
+                s.synth_comment(format!("method {}", pat.id))
+            }
         }
     }
 }
