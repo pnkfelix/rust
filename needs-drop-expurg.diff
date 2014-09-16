@@ -1,0 +1,3380 @@
+diff --git a/src/librustc/middle/borrowck/check_drops.rs b/src/librustc/middle/borrowck/check_drops.rs
+new file mode 100644
+index 0000000..b3d5527
+--- /dev/null
++++ b/src/librustc/middle/borrowck/check_drops.rs
+@@ -0,0 +1,676 @@
++// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
++// file at the top-level directory of this distribution and at
++// http://rust-lang.org/COPYRIGHT.
++//
++// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
++// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
++// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
++// option. This file may not be copied, modified, or distributed
++// except according to those terms.
++
++#![allow(unused_imports)]
++#![allow(unused_variable)]
++
++use metadata::csearch;
++use middle::borrowck::*;
++use middle::borrowck::move_data::{Assignment, Move};
++use middle::expr_use_visitor as euv;
++use lint;
++use middle::mem_categorization as mc;
++use middle::dataflow;
++use middle::graph;
++use middle::lang_items::QuietEarlyDropTraitLangItem;
++use middle::cfg;
++use middle::subst::Subst;
++use middle::subst;
++use middle::ty;
++use middle::ty::TypeContents;
++use middle::typeck::check;
++use middle::typeck::infer;
++use middle::typeck;
++use middle::typeck::check::vtable::relate_trait_refs; // FIXME
++use middle::typeck::check::vtable::connect_trait_tps; // FIXME
++use middle::typeck::check::vtable::fixup_substs; // FIXME
++use middle::typeck::check::vtable::fixup_ty; // FIXME
++use middle::typeck::check::vtable::lookup_vtable_from_bounds; // FIXME
++use middle::typeck::check::vtable::lookup_vtable; // FIXME
++// use middle::typeck::check::vtable; // FIXME for some reason this is failing.  :(
++use middle::typeck::check;
++use util::ppaux::Repr;
++use util::nodemap::DefIdMap;
++
++use std::cell::RefCell;
++use std::rc::Rc;
++use std::collections::hashmap::HashMap;
++use std::sync::atomics;
++use syntax::{ast,ast_map,ast_util,codemap};
++use syntax::attr::AttrMetaMethods;
++
++static mut warning_count: atomics::AtomicUint = atomics::INIT_ATOMIC_UINT;
++
++pub fn check_drops(bccx: &BorrowckCtxt,
++                   flowed_move_data: &move_data::FlowedMoveData,
++                   id: ast::NodeId,
++                   cfg: &cfg::CFG,
++                   decl: &ast::FnDecl,
++                   body: &ast::Block) {
++    debug!("check_drops(body id={:?})", body.id);
++
++    let param_env;
++
++    let mut cursor_id = id;
++    loop {
++        match bccx.tcx.map.find(cursor_id) {
++            Some(ast_map::NodeItem(..)) => {
++                let fn_pty = ty::lookup_item_type(bccx.tcx, ast_util::local_def(cursor_id));
++                let generics = &fn_pty.generics;
++                param_env = ty::construct_parameter_environment(bccx.tcx, generics, body.id);
++                break;
++            }
++
++            // FIXME (pnkfelix): There used to be cut-and-pasted code
++            // here that did the same thing as NodeItem case above,
++            // but for NodeMethod and NodeTraitMethod. Those variants
++            // do not exist anymore, but presumably they are still
++            // separate cases under a different name.
++
++            Some(_) => {
++                cursor_id = bccx.tcx.map.get_parent(cursor_id);
++                continue;
++            }
++            None => {
++                fail!("could not find param_env for node {}", id);
++            }
++        }
++    };
++
++    cfg.graph.each_node(|node_index, node| {
++        // Special case: do not flag violations for control flow from
++        // return expressions.  Each return can be prefixed with
++        // separate destructor invocation code specialized to whatever
++        // paths need dropping.
++        if node_index == cfg.exit {
++            return true;
++        }
++
++        // Do not bother doing the query for unreachable portions of
++        // the control flow graph.
++        if !cfg.is_reachable(node_index) {
++            return true;
++        }
++
++        // First, figure out if there is >1 incoming edge.
++        {
++            let mut how_many = 0u;
++            cfg.graph.each_incoming_edge(node_index, |_edge_index, _edge| {
++                how_many += 1;
++                how_many <= 1 // keep looking until we see >1.
++            });
++
++            if how_many <= 1 {
++                return true;
++            }
++        }
++
++        // Okay, >1 incoming edge.
++        //
++        // Now we need to verify that all predecessor nodes establish
++        // the same set of destruction obligations for the current
++        // scope.
++        //
++        // We could just do a pairwise comparison, e.g. assume that the
++        // first incoming edge is correct, then compare (1st, 2nd);
++        // (2nd, 3rd); etc, until we encounter a difference, and then
++        // report that as an error.
++        //
++        // However, under the (not yet validated) assumption that most
++        // errors that we see will be missing calls to drop, we adopt
++        // a different strategy: First, compute the intersection `I`
++        // of the destruction obligations for all incoming edges.
++        // Then compare each edge's destruction obligations against
++        // `I`, and report all extra entries as needing to be
++        // explicitly dropped on this edge (or to be reconstructed on
++        // the edges where it was moved away).
++
++        let move_data = &flowed_move_data.move_data;
++        let needs_drop = &flowed_move_data.dfcx_needs_drop;
++        let ignore_drop = &flowed_move_data.dfcx_ignore_drop;
++        let path_count = move_data.paths.borrow().len();
++
++        let intersection = needs_drop.bitset_for(dataflow::Entry, node_index);
++
++        // In theory, that should be all we need to do; i.e. at this
++        // point we should be able to compare each incoming node's
++        // exit state with the computed intersection, and report any
++        // deviation we see.
++        //
++        // HOWEVER: match arms complicate things.  In principle the
++        // bindings introduced by the bindings on a match arm are
++        // scoped to the match arm, and so for code like this:
++        //
++        //    match s {
++        //        Ok(x)  => { Some(x) },
++        //        Err(s) => { None },
++        //    }
++        //
++        // you might expect that the `s` on the `Err(s)` branch is
++        // dropped at the end of that arm.
++        //
++        // That's not how things are represented in the compiler,
++        // unfortunately for us here; instead, the compiler see's the
++        // lifetime of `s` as being the entire match expression, with
++        // the drop of `s` tied to the flowgraph node for the match
++        // itself, not each arm.
++        //
++        // pnkfelix tried to hack in support for representing the
++        // narrower scope of each arm that fits his mental model, but
++        // encountered some problems.
++        //
++        // So instead, we take this approach: instead of comparing
++        // each incoming edge to the intersection above directly, now
++        // compare each incoming edge to the intersection *after*
++        // applying the kill bits for this merge point to both sides.
++        // pnkfelix calls this "equivalence modulo merge-kills"
++        //
++        // This should take care of match patterns that will be
++        // automatically destroyed, while leaving paths with a broader
++        // scope than the match preserved.
++        //
++        // UPDATE: There is actually a more general principle we can
++        // apply here, without worrying about match-arms: simply
++        // walking forward looking if the end-of-scope for the
++        // variable comes before any other side-effect.  If so, then
++        // we can safely auto-drop without warning the user, since the
++        // net effect is the same as if we still had a drop-flag.
++
++        let mut intersection = intersection;
++        needs_drop.apply_gen_kill(node_index, intersection.as_mut_slice());
++        let intersection = intersection;
++
++        cfg.graph.each_incoming_edge(node_index, |edge_index, edge| {
++            let source = edge.source();
++            let mut temp = needs_drop.bitset_for(dataflow::Exit, source);
++
++            // see note above about "equivalence modulo merge-kills"
++            //
++            // But also, this hack can probably go away with new
++            // "scan-ahead-for-scope-end" rule
++            needs_drop.apply_gen_kill(node_index, temp.as_mut_slice());
++
++            if temp != intersection {
++                let source_id = cfg.graph.node(source).data.id;
++                let opt_source_span = bccx.tcx.map.opt_span(source_id);
++                needs_drop.each_bit_for_node(dataflow::Exit, source, |bit_idx| {
++                    if !cfg.is_reachable(source) ||
++                        dataflow::is_bit_set(intersection.as_slice(), bit_idx) {
++                        return true;
++                    }
++
++                    let paths = move_data.paths.borrow();
++                    let path = paths.get(bit_idx);
++                    let lp = &path.loan_path;
++
++                    let ignored_paths = ignore_drop.bitset_for(dataflow::Exit, source);
++                    if dataflow::is_bit_set(ignored_paths.as_slice(), bit_idx) {
++                        debug!("check_drops can ignore lp={} as it is non-drop on this path.",
++                               lp.repr(bccx.tcx));
++                        return true;
++                    }
++
++                    // Check if there is a single effect-free
++                    // successor chain that leads to the end of the
++                    // scope of the local variable at the base of `lp`
++                    // (and therefore we can safely auto-drop `lp`
++                    // without warning the user)
++                    let kill_id = lp.kill_id(bccx.tcx);
++                    match scan_forward_for_kill_id(bccx, cfg, node_index, kill_id)
++                    {
++                        FoundScopeEndPure => {
++                            debug!("check_drops can ignore lp={} as its scope-end is imminent.",
++                                   lp.repr(bccx.tcx));
++                            return true;
++                        }
++                        AbandonedScan => {}
++                    }
++
++                    // At this point, we are committed to reporting a warning to the user
++                    let count = unsafe {
++                        warning_count.fetch_add(1, atomics::Relaxed) + 1
++                    };
++
++                    let loan_path_str = bccx.loan_path_to_string(lp.deref());
++
++                    let cfgidx_and_id = format!(" (cfgidx={}, id={})", source, source_id);
++                    let where_ = if bccx.tcx.sess.verbose() {
++                        cfgidx_and_id.as_slice()
++                    } else {
++                        ""
++                    };
++
++                    let msg = format!("Storage at `{:s}` is left initialized on some paths \
++                                       exiting here{:s}, but uninitialized on others. \
++                                       (Consider either using Option, or calling `drop()` \
++                                       on it or reinitializing it as necessary); count: {}",
++                                      loan_path_str, where_, count);
++
++                    // Check if type of `lp` has #[quiet_early_drop]
++                    // attribute or implements `QuietEarlyDrop`;
++                    // select the appropriate lint to signal.
++                    let lint_category = if is_quiet_early_drop_lp(bccx.tcx, &param_env, &**lp) {
++                        lint::builtin::QUIET_EARLY_DROP
++                    } else {
++                        lint::builtin::UNMARKED_EARLY_DROP
++                    };
++                    bccx.tcx.sess.add_lint(lint_category,
++                                           source_id,
++                                           opt_source_span.unwrap_or(codemap::DUMMY_SP),
++                                           msg);
++
++                    if false { cfg.graph.each_incoming_edge(node_index, |edge_index, edge| {
++                        let source2 = edge.source();
++                        if !cfg.is_reachable(source2) {
++                            return true;
++                        }
++
++                        let temp2 = needs_drop.bitset_for(dataflow::Exit, source2);
++                        let mut count = 0u;
++                        if !dataflow::is_bit_set(temp2.as_slice(), bit_idx) {
++                            count += 1;
++                            let source2_id = cfg.graph.node(source2).data.id;
++                            let opt_source2_span = bccx.tcx.map.opt_span(source2_id);
++                            let cfgidx_and_id = format!(" (cfgidx={}, id={})",
++                                                        source2, source2_id);
++                            let where_ = if bccx.tcx.sess.verbose() {
++                                cfgidx_and_id.as_slice()
++                            } else {
++                                ""
++                            };
++                            let msg = format!("Path {:u} here{:s} leaves `{:s}` \
++                                               uninitialized.",
++                                              count, where_, loan_path_str);
++                            match opt_source2_span {
++                                Some(span) => bccx.tcx.sess.span_note(span, msg.as_slice()),
++                                None => bccx.tcx.sess.note(msg.as_slice()),
++                            }
++                        }
++                        true
++                    }); }
++
++                    true
++                });
++            }
++
++            true
++        });
++
++        true
++    });
++}
++
++// This uses an enum rather than a bool to support future handling of
++// walking over paths with potentially significant effects; e.g. see
++// notes below with ExprPath.
++#[deriving(PartialEq)]
++enum ForwardScanResult {
++    FoundScopeEndPure,
++    AbandonedScan,
++}
++
++fn scan_forward_for_kill_id(bccx: &BorrowckCtxt,
++                            cfg: &cfg::CFG,
++                            start: cfg::CFGIndex,
++                            kill_id: ast::NodeId) -> ForwardScanResult {
++    //! returns true only if there is a unique effect-free successor
++    //! chain from `start` to `kill_id` or to `cfg.exit`
++
++    let mut cursor = start;
++    loop {
++        debug!("fwd-scan for kill_id={} cursor={}", kill_id, cursor);
++        let mut count = 0u;
++        let mut successor = None;
++        cfg.graph.each_outgoing_edge(cursor, |edge_index, edge| {
++            debug!("fwd-scan cursor={} edge.target={}", cursor, edge.target());
++            successor = Some(edge_index);
++            count += 1;
++            count <= 1
++        });
++
++        if count != 1 {
++            debug!("fwd-scan: broken successor chain; give up");
++            return AbandonedScan;
++        }
++
++        cursor = cfg.graph.edge(successor.unwrap()).target();
++        if cursor == cfg.exit {
++            debug!("fwd-scan: success (hit exit), no need for warning");
++            return FoundScopeEndPure;
++        }
++
++        let successor_id = cfg.graph.node(cursor).data.id;
++        if successor_id == ast::DUMMY_NODE_ID {
++            debug!("fwd-scan: dummy node in flow graph; give up");
++            return AbandonedScan;
++        }
++
++        if successor_id == kill_id {
++            debug!("fwd-scan: success (hit {}), no need for warning", kill_id);
++            return FoundScopeEndPure;
++        }
++
++        match bccx.tcx.map.get(successor_id) {
++            // See notes below about ExprPath handling.  Note that
++            // NodeLocal and NodeArg correespond to binding sites, not
++            // uses. Skipping these is likely to not matter too much
++            // until some ExprPath's are treated as pure.
++            ast_map::NodeLocal(_) |
++            ast_map::NodeArg(_)   |
++            ast_map::NodeBlock(_) => {
++                debug!("fwd-scan: node {} effect-free; continue looking",
++                       successor_id);
++                continue;
++            }
++
++            ast_map::NodeExpr(e) => {
++                // Keep in mind when reading these cases that the
++                // NodeId associated with an expression node like
++                // ExprIf is at the *end* of the expression, where the
++                // two arms of the if meet.
++                match e.node {
++                    // node is where arms of match meet.
++                    ast::ExprMatch(..) |
++                    // node is where block exits.
++                    ast::ExprBlock(..) |
++                    // (<expr>) is definitely pure.
++                    ast::ExprParen(..) |
++                    // node is after arg is evaluated; before return itself.
++                    ast::ExprRet(..)   |
++                    // node is where arms of if meet.
++                    ast::ExprIf(..) => {
++                        debug!("fwd-scan: expr {} effect-free; \
++                                continue looking",
++                               successor_id);
++                        continue;
++                    }
++
++                    // variable lookup
++                    ast::ExprPath(ref p) => {
++                        // Strictly speaking, this is an observable
++                        // effect. In particular, if a destructor has
++                        // access to the address of this path and
++                        // imperatively overwrites it, then a client
++                        // will care about the drop order.
++                        //
++                        // A captured `&mut`-ref cannot actually alias
++                        // such a path, according to Rust's borrowing
++                        // rules. Therefore, the scenario only arises
++                        // with either (1.) a `*mut`-pointer or (2.) a
++                        // `&`-ref to a type with interior mutability
++                        // (type_interior_is_unsafe). Still, it can
++                        // arise.
++                        //
++                        // The easy conservative approach is to simply
++                        // treat this as an effect and abandon the
++                        // forward-scan.
++
++                        // FIXME: A less-conservative but still sound
++                        // approach would be to treat reads of
++                        // non-local variables that had never been
++                        // borrowed as effect-free as well, and it
++                        // would probably cover many cases of
++                        // interest.  We can put that in later
++                        // (pnkfelix).
++
++                        // FIXME: A "less sound" but potentially
++                        // useful approach would be to further tier
++                        // the lint structure here to allow the user
++                        // to specify whether all variable-reads
++                        // should be treated as pure.  But I am
++                        // hesistant to make that part of the default
++                        // set of lints, at least for now (pnkfelix).
++
++                        debug!("fwd-scan: expr {} path read {} \
++                                potentially effectful; give up",
++                               successor_id, p);
++
++                        return AbandonedScan;
++                    }
++
++                    _ => {
++                        debug!("fwd-scan: expr {} potentially effectful; \
++                                give up",
++                               successor_id);
++                        return AbandonedScan;
++                    }
++
++                }
++            }
++
++            ast_map::NodeStmt(_)       |
++            ast_map::NodePat(_) |
++            ast_map::NodeStructCtor(_) => {
++                debug!("fwd-scan: node {} potentially effectful; give up",
++                       successor_id);
++                return AbandonedScan;
++            }
++
++            ast_map::NodeItem(_)        | ast_map::NodeForeignItem(_) |
++            ast_map::NodeVariant(_)     | ast_map::NodeLifetime(_) => {
++                bccx.tcx.sess.bug("unexpected node")
++            }
++        }
++    }
++}
++
++fn is_quiet_early_drop_lp(tcx: &ty::ctxt,
++                          param_env: &ty::ParameterEnvironment,
++                          lp: &LoanPath) -> bool {
++    let t = lp.to_type(tcx);
++    let ret = is_quiet_early_drop_ty(tcx, param_env, t);
++    debug!("is_quiet_early_drop_lp: {} is {}", lp.repr(tcx), ret);
++    ret
++}
++
++
++fn is_quiet_early_drop_ty(tcx: &ty::ctxt,
++                          param_env: &ty::ParameterEnvironment,
++                          t: ty::t) -> bool {
++    match ty::get(t).sty {
++        ty::ty_struct(did, _) |
++        ty::ty_enum(did, _) => {
++            let found_attr = with_attrs_for_did(tcx, did, |attrs| {
++                for attr in attrs.iter() {
++                    if attr.check_name("quiet_early_drop") {
++                        return true
++                    }
++                }
++                return false;
++            });
++            if found_attr {
++                return true;
++            }
++        }
++        _ => {}
++    }
++
++    // Okay, so far we know that the type does not have the
++    // `quiet_early_drop` attribute marker.
++
++    let opt_trait_did = tcx.lang_items.require(QuietEarlyDropTraitLangItem);
++    let trait_did = match opt_trait_did {
++        Ok(trait_did) => trait_did,
++        Err(_) => {
++            // if there is no `QuietEarlyDrop` lang item, then
++            // just do not bother trying to handle this case.
++            return false;
++        }
++    };
++    is_quiet_early_drop_ty_recur(tcx, param_env, trait_did, t)
++}
++
++fn is_quiet_early_drop_ty_recur(tcx: &ty::ctxt,
++                                param_env: &ty::ParameterEnvironment,
++                                trait_did: ast::DefId,
++                                t: ty::t) -> bool {
++
++    // The main base case: if the type implements `QuietEarlyDrop`,
++    // then we stop looking.
++    let implements = type_implements_trait(tcx, param_env, t, trait_did);
++    debug!("is_quiet_early_drop_ty_recur: type_implements_trait({}) is {}",
++           t.repr(tcx), implements);
++    if implements {
++        return true;
++    }
++
++    // If it does not implement the QuietEarlyDrop trait, then we need
++    // to emulate the traversal done by `type_contents`, looking at
++    // the substructure of the type to see if the type (or any part of
++    // it) "drops loudly", i.e., implements Drop but does not
++    // implement QuietEarlyDrop.
++
++    let drops_quiet = || {
++        let ret = true;
++        debug!("is_quiet_early_drop_ty_recur: {} fallthru base case: {}", t.repr(tcx), ret);
++        ret
++    };
++
++    let drops_loud = || {
++        let ret = false;
++        debug!("is_quiet_early_drop_ty_recur: {} fallthru base case: {}", t.repr(tcx), ret);
++        ret
++    };
++
++    let drops_recur = |f:|| -> bool| {
++        debug!("is_quiet_early_drop_ty_recur: {} fallthru recur entry", t.repr(tcx));
++        let ret = f();
++        debug!("is_quiet_early_drop_ty_recur: {} fallthru recur ret: {}", t.repr(tcx), ret);
++        ret
++    };
++
++    let recur = |ty| is_quiet_early_drop_ty_recur(tcx, param_env, trait_did, ty);
++
++    match ty::get(t).sty {
++        ty::ty_nil |
++        ty::ty_bot |
++        ty::ty_bool |
++        ty::ty_char |
++        ty::ty_int(_) |
++        ty::ty_uint(_) |
++        ty::ty_float(_) |
++        ty::ty_str |
++        ty::ty_bare_fn(_) |
++        ty::ty_rptr(_, _) |
++        ty::ty_err => drops_quiet(),
++
++        ty::ty_box(_) |
++        ty::ty_uniq(_) |
++        ty::ty_ptr(_) |
++        ty::ty_infer(_) |
++        ty::ty_unboxed_closure(..) => drops_loud(),
++
++        ty::ty_param(_) => drops_loud(),
++
++        ty::ty_trait(_) => drops_loud(),
++
++        ty::ty_closure(ref f) => {
++            match f.store {
++                // by-ref closure
++                ty::RegionTraitStore(..) => drops_quiet(),
++                ty::UniqTraitStore => drops_loud(),
++            }
++        }
++
++        // (Below are all the potentially recursive cases)
++
++        ty::ty_tup(ref tys) => drops_recur(|| tys.iter().all(|&ty| recur(ty))),
++        ty::ty_vec(ty, opt_len) => drops_recur(|| recur(ty)),
++
++        ty::ty_enum(def_id, ref substs) => {
++            // if this type *itself* has a dtor, but does not
++            // implment `QuietEarlyDrop`, then it must drop loudly.
++            if ty::has_dtor(tcx, def_id) {
++                drops_loud()
++            } else {
++                let variants = ty::substd_enum_variants(tcx, def_id, substs);
++                drops_recur(|| variants.iter()
++                            .flat_map(|v| v.args.iter())
++                            .all(|&ty| recur(ty)))
++            }
++        }
++
++        ty::ty_struct(def_id, ref substs) => {
++            // if this type *itself* has a dtor, but does not
++            // implment `QuietEarlyDrop`, then it must drop loudly.
++            if ty::has_dtor(tcx, def_id) {
++                drops_loud()
++            } else {
++                drops_recur(|| ty::struct_fields(tcx, def_id, substs).iter()
++                            .map(|field| field.mt.ty)
++                            .all(|ty| recur(ty)))
++            }
++        }
++
++    }
++}
++
++fn with_attrs_for_did<A>(tcx: &ty::ctxt,
++                         did: ast::DefId,
++                         f: |&[ast::Attribute]| -> A) -> A {
++    if ast_util::is_local(did) {
++        match tcx.map.get(did.node) {
++            ast_map::NodeItem(it) => f(it.attrs.as_slice()),
++            _ => fail!("must have entry for struct or enum"),
++        }
++    } else {
++        // FIXME: interface of `get_item_attrs` could be generalized
++        // to support this directly.
++        let mut result = None;
++        csearch::get_item_attrs(&tcx.sess.cstore, did, |attrs| {
++            result = Some(f(attrs.as_slice()))
++        });
++        result.unwrap()
++    }
++}
++
++fn type_implements_trait(tcx: &ty::ctxt,
++                         param_env: &ty::ParameterEnvironment,
++                         ty: ty::t,
++                         trait_did: ast::DefId) -> bool {
++    // largely modelled after lookup_vtable
++
++    let infcx = infer::new_infer_ctxt(tcx);
++    let span = codemap::DUMMY_SP;
++    let substs = subst::Substs::empty();
++
++    let trait_def = ty::lookup_trait_def(tcx, trait_did);
++    let trait_ref = &trait_def.trait_ref;
++
++    debug!("type_implements_trait ty={} trait_ref={}",
++           ty.repr(tcx),
++           trait_ref.repr(tcx));
++
++    ty::populate_implementations_for_trait_if_necessary(tcx, trait_ref.def_id);
++
++    let substs = substs.with_self_ty(ty);
++
++    // Substitute the values of the type parameters that may
++    // appear in the bound.
++    debug!("about to subst: {}, {}", trait_ref.repr(tcx), substs.repr(tcx));
++    let trait_ref = trait_ref.subst(tcx, &substs);
++
++    debug!("after subst: {}", trait_ref.repr(tcx));
++
++    let unboxed_closures = RefCell::new(DefIdMap::new());
++
++    let vcx = check::vtable::VtableContext {
++        infcx: &infcx,
++        param_bounds: &param_env.bounds,
++        unboxed_closures: &unboxed_closures,
++        is_early: check::vtable::NotEarly,
++        if_missing_ty_param: check::vtable::IfMissingTyParamGiveUp,
++    };
++
++    match lookup_vtable(&vcx, span, ty, trait_ref) {
++        Ok(Some(_)) => true,
++        Ok(None) | Err(_) => false,
++    }
++}
+diff --git a/src/librustc/middle/borrowck/mod.rs b/src/librustc/middle/borrowck/mod.rs
+index f4d3678..64c1aad 100644
+--- a/src/librustc/middle/borrowck/mod.rs
++++ b/src/librustc/middle/borrowck/mod.rs
+@@ -20,6 +20,7 @@ use middle::def;
+ use middle::expr_use_visitor as euv;
+ use middle::mem_categorization as mc;
+ use middle::ty;
++use middle::subst::Subst;
+ use util::ppaux::{note_and_explain_region, Repr, UserString};
+ 
+ use std::cell::{Cell};
+@@ -55,6 +56,8 @@ pub mod graphviz;
+ 
+ pub mod move_data;
+ 
++pub mod check_drops;
++
+ #[deriving(Clone)]
+ pub struct LoanDataFlowOperator;
+ 
+@@ -139,6 +142,8 @@ fn borrowck_fn(this: &mut BorrowckCtxt,
+                        move_data:flowed_moves } =
+         build_borrowck_dataflow_data(this, fk, decl, &cfg, body, sp, id);
+ 
++    check_drops::check_drops(this, &flowed_moves, id, &cfg, decl, body);
++
+     check_loans::check_loans(this, &loan_dfcx, flowed_moves,
+                              all_loans.as_slice(), decl, body);
+ 
+@@ -531,17 +825,7 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
+             move_data::Declared => {}
+ 
+             move_data::MoveExpr => {
+-                let (expr_ty, expr_span) = match self.tcx.map.find(move.id) {
+-                    Some(ast_map::NodeExpr(expr)) => {
+-                        (ty::expr_ty_adjusted(self.tcx, &*expr), expr.span)
+-                    }
+-                    r => {
+-                        self.tcx.sess.bug(format!("MoveExpr({:?}) maps to \
+-                                                   {:?}, not Expr",
+-                                                  move.id,
+-                                                  r).as_slice())
+-                    }
+-                };
++                let (expr_ty, expr_span) = move.ty_and_span(self.tcx);
+                 let suggestion = move_suggestion(self.tcx, expr_ty,
+                         "moved by default (use `copy` to override)");
+                 self.tcx.sess.span_note(
+@@ -553,8 +837,8 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
+             }
+ 
+             move_data::MovePat => {
+-                let pat_ty = ty::node_id_to_type(self.tcx, move.id);
+-                self.tcx.sess.span_note(self.tcx.map.span(move.id),
++                let (pat_ty, pat_span) = move.ty_and_span(self.tcx);
++                self.tcx.sess.span_note(pat_span,
+                     format!("`{}` moved here because it has type `{}`, \
+                              which is moved by default (use `ref` to \
+                              override)",
+@@ -563,17 +847,7 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
+             }
+ 
+             move_data::Captured => {
+-                let (expr_ty, expr_span) = match self.tcx.map.find(move.id) {
+-                    Some(ast_map::NodeExpr(expr)) => {
+-                        (ty::expr_ty_adjusted(self.tcx, &*expr), expr.span)
+-                    }
+-                    r => {
+-                        self.tcx.sess.bug(format!("Captured({:?}) maps to \
+-                                                   {:?}, not Expr",
+-                                                  move.id,
+-                                                  r).as_slice())
+-                    }
+-                };
++                let (expr_ty, expr_span) = move.ty_and_span(self.tcx);
+                 let suggestion = move_suggestion(self.tcx, expr_ty,
+                         "moved by default (make a copy and \
+                          capture that instead to override)");
+@@ -794,11 +1068,19 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
+                                    loan_path: &LoanPath,
+                                    out: &mut String) {
+         match *loan_path {
+-            LpUpvar(ty::UpvarId{ var_id: id, closure_expr_id: _ }) |
++            LpUpvar(ty::UpvarId{ var_id: id, closure_expr_id: _ }, _) |
+             LpVar(id) => {
+                 out.push_str(ty::local_var_name_str(self.tcx, id).get());
+             }
+ 
++            LpDowncast(ref lp_base, variant_def_id) => {
++                out.push_char('(');
++                self.append_loan_path_to_string(&**lp_base, out);
++                out.push_str("->");
++                out.push_str(ty::item_path_str(self.tcx, variant_def_id).as_slice());
++                out.push_char(')');
++            }
++
+             LpExtend(ref lp_base, _, LpInterior(mc::InteriorField(fname))) => {
+                 self.append_autoderefd_loan_path_to_string(&**lp_base, out);
+                 match fname {
+@@ -829,6 +1111,14 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
+                                               loan_path: &LoanPath,
+                                               out: &mut String) {
+         match *loan_path {
++            LpDowncast(ref lp_base, variant_def_id) => {
++                out.push_char('(');
++                self.append_autoderefd_loan_path_to_string(&**lp_base, out);
++                out.push_char(':');
++                out.push_str(ty::item_path_str(self.tcx, variant_def_id).as_slice());
++                out.push_char(')');
++            }
++
+             LpExtend(ref lp_base, _, LpDeref(_)) => {
+                 // For a path like `(*x).f` or `(*x)[3]`, autoderef
+                 // rules would normally allow users to omit the `*x`.
+@@ -898,7 +1188,7 @@ impl Repr for LoanPath {
+                 format!("$({})", tcx.map.node_to_string(id))
+             }
+ 
+-            &LpUpvar(ty::UpvarId{ var_id, closure_expr_id }) => {
++            &LpUpvar(ty::UpvarId{ var_id, closure_expr_id }, _) => {
+                 let s = tcx.map.node_to_string(var_id);
+                 format!("$({} captured by id={})", s, closure_expr_id)
+             }
+@@ -910,6 +1200,15 @@ impl Repr for LoanPath {
+             &LpExtend(ref lp, _, LpInterior(ref interior)) => {
+                 format!("{}.{}", lp.repr(tcx), interior.repr(tcx))
+             }
++
++            &LpDowncast(ref lp, variant_def_id) => {
++                let variant_str = if variant_def_id.krate == ast::LOCAL_CRATE {
++                    ty::item_path_str(tcx, variant_def_id)
++                } else {
++                    variant_def_id.repr(tcx)
++                };
++                format!("({}->{})", lp.repr(tcx), variant_str)
++            }
+         }
+     }
+ }
+diff --git a/src/librustc/middle/borrowck/move_data.rs b/src/librustc/middle/borrowck/move_data.rs
+index fdd16c8..fd25c71 100644
+--- a/src/librustc/middle/borrowck/move_data.rs
++++ b/src/librustc/middle/borrowck/move_data.rs
+@@ -28,6 +28,7 @@ use middle::expr_use_visitor as euv;
+ use middle::mem_categorization as mc;
+ use middle::ty;
+ use syntax::ast;
++use syntax::ast_map;
+ use syntax::ast_util;
+ use syntax::codemap::Span;
+ use util::ppaux::Repr;
+@@ -52,8 +53,22 @@ pub struct MoveData {
+     /// kill move bits.
+     pub path_assignments: RefCell<Vec<Assignment>>,
+ 
++    /// Enum variant matched within a pattern on some match arm, like
++    /// `SomeStruct{ f: Variant1(x, y) } => ...`
++    pub variant_matches: RefCell<Vec<VariantMatch>>,
++
+     /// Assignments to a variable or path, like `x = foo`, but not `x += foo`.
+     pub assignee_ids: RefCell<HashSet<ast::NodeId>>,
++
++    /// During move_data construction, `fragments` tracks paths that
++    /// *might* be needs-drop leftovers.  When move_data has been
++    /// completed, `fragments` tracks paths that are *definitely*
++    /// needs-drop left-overs.
++    pub fragments: RefCell<Vec<MovePathIndex>>,
++
++    /// `nonfragments` always tracks paths that have been definitely
++    /// used directly in moves).
++    pub nonfragments: RefCell<Vec<MovePathIndex>>,
+ }
+ 
+ pub struct FlowedMoveData<'a, 'tcx: 'a> {
+@@ -64,12 +79,20 @@ pub struct FlowedMoveData<'a, 'tcx: 'a> {
+     // We could (and maybe should, for efficiency) combine both move
+     // and assign data flow into one, but this way it's easier to
+     // distinguish the bits that correspond to moves and assignments.
+-    pub dfcx_assign: AssignDataFlow<'a, 'tcx>
++    pub dfcx_assign: AssignDataFlow<'a, 'tcx>,
++
++    pub dfcx_needs_drop: NeedsDropDataFlow<'a, 'tcx>,
++
++    /// If we match a variant for which no drop is necessary, then on
++    /// this branch (alone), no-drop is necessary for the original
++    /// path.  That flow-sensitive inforamtion is tracked here.
++    pub dfcx_ignore_drop: IgnoreDropDataFlow<'a, 'tcx>,
+ }
+ 
+ /// Index into `MoveData.paths`, used like a pointer
+ #[deriving(PartialEq)]
+-pub struct MovePathIndex(uint);
++// FIXME: should not be `pub`. Revise dataflow to support abstractions like this.
++pub struct MovePathIndex(pub uint);
+ 
+ impl MovePathIndex {
+     fn get(&self) -> uint {
+@@ -151,6 +174,20 @@ pub struct Assignment {
+     pub span: Span,
+ }
+ 
++pub struct VariantMatch {
++    /// downcast to the variant.
++    pub path: MovePathIndex,
++
++    /// path being downcast to the variant.
++    pub base_path: MovePathIndex,
++
++    /// id where variant's pattern occurs
++    pub id: ast::NodeId,
++
++    /// says if variant established by move (and why), by copy, or by borrow.
++    pub mode: euv::MatchMode
++}
++
+ #[deriving(Clone)]
+ pub struct MoveDataFlowOperator;
+ 
+@@ -161,9 +198,17 @@ pub struct AssignDataFlowOperator;
+ 
+ pub type AssignDataFlow<'a, 'tcx> = DataFlowContext<'a, 'tcx, AssignDataFlowOperator>;
+ 
++#[deriving(Clone)]
++pub struct NeedsDropDataFlowOperator;
++pub type NeedsDropDataFlow<'a, 'tcx> = DataFlowContext<'a, 'tcx, NeedsDropDataFlowOperator>;
++
++#[deriving(Clone)]
++pub struct IgnoreDropDataFlowOperator;
++pub type IgnoreDropDataFlow<'a, 'tcx> = DataFlowContext<'a, 'tcx, IgnoreDropDataFlowOperator>;
++
+ fn loan_path_is_precise(loan_path: &LoanPath) -> bool {
+     match *loan_path {
+-        LpVar(_) | LpUpvar(_) => {
++        LpVar(_) | LpUpvar(..) => {
+             true
+         }
+         LpExtend(_, _, LpInterior(mc::InteriorElement(_))) => {
+@@ -174,6 +219,78 @@ fn loan_path_is_precise(loan_path: &LoanPath) -> bool {
+         LpExtend(ref lp_base, _, _) => {
+             loan_path_is_precise(&**lp_base)
+         }
++        LpDowncast(ref lp_base, _) => {
++            loan_path_is_precise(&**lp_base)
++        }
++    }
++}
++
++impl Move {
++    pub fn ty_and_span(&self, tcx: &ty::ctxt) -> (ty::t, Span) {
++        match self.kind {
++            Declared  => unimplemented!(),
++            MovePat => (ty::node_id_to_type(tcx, self.id), tcx.map.span(self.id)),
++            MoveExpr | Captured => match tcx.map.find(self.id) {
++                Some(ast_map::NodeExpr(expr)) =>
++                    (ty::expr_ty_adjusted(tcx, &*expr), expr.span),
++                r => tcx.sess.bug(format!("{:?}({:?}) maps to {:?}, not Expr",
++                                          self.kind, self.id, r).as_slice())
++            },
++        }
++    }
++
++    pub fn ty(&self, tcx: &ty::ctxt) -> ty::t {
++        self.ty_and_span(tcx).val0()
++    }
++
++    pub fn to_string(&self, move_data: &MoveData, tcx: &ty::ctxt) -> String {
++        format!("Move{:s} path: {}, id: {}, kind: {:?} {:s}",
++                "{",
++                move_data.path_loan_path(self.path).repr(tcx),
++                self.id,
++                self.kind,
++                "}")
++    }
++}
++
++impl Assignment {
++    pub fn ty_and_span(&self, tcx: &ty::ctxt) -> (ty::t, Span) {
++        match tcx.map.find(self.id) {
++            Some(ast_map::NodeExpr(expr)) =>
++                (ty::expr_ty_adjusted(tcx, &*expr), expr.span),
++            Some(ast_map::NodeLocal(pat)) =>
++                (ty::node_id_to_type(tcx, pat.id), tcx.map.span(pat.id)),
++            r => tcx.sess.bug(format!("{:?} maps to {:?}, not Expr", self, r).as_slice())
++        }
++    }
++    pub fn ty(&self, tcx: &ty::ctxt) -> ty::t {
++        self.ty_and_span(tcx).val0()
++    }
++    pub fn to_string(&self, move_data: &MoveData, tcx: &ty::ctxt) -> String {
++        format!("Assignment{:s} path: {}, id: {} {:s}",
++                "{",
++                move_data.path_loan_path(self.path).repr(tcx),
++                self.id,
++                "}")
++    }
++}
++
++impl VariantMatch {
++    pub fn ty_and_span(&self, tcx: &ty::ctxt) -> (ty::t, Span) {
++        match tcx.map.find(self.id) {
++            Some(ast_map::NodePat(pat)) => (ty::pat_ty(tcx, &*pat), pat.span),
++            r => tcx.sess.bug(format!("{:?} maps to {:?}, not Pat", self, r).as_slice())
++        }
++    }
++    pub fn ty(&self, tcx: &ty::ctxt) -> ty::t {
++        self.ty_and_span(tcx).val0()
++    }
++    pub fn to_string(&self, move_data: &MoveData, tcx: &ty::ctxt) -> String {
++        format!("VariantMatch{:s} path: {}, id: {} {:s}",
++                "{",
++                move_data.path_loan_path(self.path).repr(tcx),
++                self.id,
++                "}")
+     }
+ }
+ 
+@@ -185,7 +302,10 @@ impl MoveData {
+             moves: RefCell::new(Vec::new()),
+             path_assignments: RefCell::new(Vec::new()),
+             var_assignments: RefCell::new(Vec::new()),
++            variant_matches: RefCell::new(Vec::new()),
+             assignee_ids: RefCell::new(HashSet::new()),
++            fragments: RefCell::new(Vec::new()),
++            nonfragments: RefCell::new(Vec::new()),
+         }
+     }
+ 
+@@ -201,10 +321,42 @@ impl MoveData {
+         self.paths.borrow().get(index.get()).first_move
+     }
+ 
++    /// Returns true iff `index` itself cannot be directly split into
++    /// child fragments.  This means it is an atomic value (like a
++    /// pointer or an integer), or it a non-downcasted enum (and so we
++    /// can only split off subparts when we narrow it to a particular
++    /// variant), or it is a struct whose fields are never accessed in
++    /// the function being compiled.
++    fn path_is_leaf(&self, index: MovePathIndex, _tcx: &ty::ctxt) -> bool {
++        let first_child = self.path_first_child(index);
++        if first_child == InvalidMovePathIndex {
++            true
++        } else {
++            match *self.path_loan_path(first_child) {
++                LpDowncast(..) => true,
++                LpExtend(..) => false,
++                LpVar(..) | LpUpvar(..) => false,
++            }
++        }
++    }
++
++    /// Returns true iff `index` represents downcast to an enum variant (i.e. LpDowncast).
++    fn path_is_downcast_to_variant(&self, index: MovePathIndex) -> bool {
++        match *self.path_loan_path(index) {
++            LpDowncast(..) => true,
++            _ => false,
++        }
++    }
++
++    /// Returns the index of first child, or `InvalidMovePathIndex` if
++    /// `index` is leaf.
+     fn path_first_child(&self, index: MovePathIndex) -> MovePathIndex {
+         self.paths.borrow().get(index.get()).first_child
+     }
+ 
++    /// Returns index for next sibling, or `InvalidMovePathIndex` if
++    /// `index` has no remaining siblings in the list.  (The head of
++    /// the list is the parent's first child; see `path_first_child`).
+     fn path_next_sibling(&self, index: MovePathIndex) -> MovePathIndex {
+         self.paths.borrow().get(index.get()).next_sibling
+     }
+@@ -231,7 +383,7 @@ impl MoveData {
+         self.path_parent(index) == InvalidMovePathIndex
+     }
+ 
+-    pub fn move_path(&self,
++    fn move_path(&self,
+                      tcx: &ty::ctxt,
+                      lp: Rc<LoanPath>) -> MovePathIndex {
+         /*!
+@@ -262,6 +414,7 @@ impl MoveData {
+                 index
+             }
+ 
++            LpDowncast(ref base, _) |
+             LpExtend(ref base, _, _) => {
+                 let parent_index = self.move_path(tcx, base.clone());
+ 
+@@ -320,6 +473,9 @@ impl MoveData {
+             None => {
+                 match **lp {
+                     LpVar(..) | LpUpvar(..) => { }
++                    LpDowncast(ref b, _) => {
++                        self.add_existing_base_paths(b, result);
++                    }
+                     LpExtend(ref b, _, _) => {
+                         self.add_existing_base_paths(b, result);
+                     }
+@@ -344,9 +500,11 @@ impl MoveData {
+                id,
+                kind);
+ 
+-        let path_index = self.move_path(tcx, lp);
++        let path_index = self.move_path(tcx, lp.clone());
+         let move_index = MoveIndex(self.moves.borrow().len());
+ 
++        self.nonfragments.borrow_mut().push(path_index);
++
+         let next_move = self.path_first_move(path_index);
+         self.set_path_first_move(path_index, move_index);
+ 
+@@ -356,6 +514,8 @@ impl MoveData {
+             kind: kind,
+             next_move: next_move
+         });
++
++        self.add_fragment_siblings(tcx, lp, id);
+     }
+ 
+     pub fn add_assignment(&self,
+@@ -375,6 +535,8 @@ impl MoveData {
+ 
+         let path_index = self.move_path(tcx, lp.clone());
+ 
++        self.nonfragments.borrow_mut().push(path_index);
++
+         match mode {
+             euv::Init | euv::JustWrite => {
+                 self.assignee_ids.borrow_mut().insert(assignee_id);
+@@ -401,65 +563,338 @@ impl MoveData {
+     fn add_gen_kills(&self,
+                      tcx: &ty::ctxt,
+                      dfcx_moves: &mut MoveDataFlow,
+-                     dfcx_assign: &mut AssignDataFlow) {
++                     dfcx_assign: &mut AssignDataFlow,
++                     dfcx_needs_drop: &mut NeedsDropDataFlow,
++                     dfcx_ignore_drop: &mut IgnoreDropDataFlow) {
+         /*!
+          * Adds the gen/kills for the various moves and
+          * assignments into the provided data flow contexts.
+          * Moves are generated by moves and killed by assignments and
+          * scoping. Assignments are generated by assignment to variables and
+-         * killed by scoping. See `doc.rs` for more details.
++         * killed by scoping.  Drop obligations (aka "Needs-Drop") are
++         * generated by assignments and killed by moves and scoping. by
++         * See `doc.rs` for more details.
+          */
+ 
++        {
++            let mut nonfragments = {
++                let mut nonfragments = self.nonfragments.borrow_mut();
++                nonfragments.sort_by(|a, b| a.get().cmp(&b.get()));
++                nonfragments.dedup();
++                nonfragments
++            };
++            let mut fragments = {
++                let mut maybe_fragments = self.fragments.borrow_mut();
++                maybe_fragments.sort_by(|a, b| a.get().cmp(&b.get()));
++                maybe_fragments.dedup();
++
++                // FIXME: why does rustc say that the below code means
++                // `nonfragments` must be declared mut?  Potential
++                // fallout from recent closure changes?
++                maybe_fragments.retain(|f| !nonfragments.contains(f));
++
++                maybe_fragments
++            };
++
++            // See FIXME above: being forced to declare `nonfragments` as mut
++            for (i, &nf) in nonfragments.iter().enumerate() {
++                let lp = self.path_loan_path(nf);
++                debug!("add_gen_kills nonfragment {:u}: {:s}", i, lp.repr(tcx));
++            }
++
++            // See FIXME above: being forced to declare `fragments` as mut
++            for (i, &f) in fragments.iter().enumerate() {
++                let lp = self.path_loan_path(f);
++                debug!("add_gen_kills fragment {:u}: {:s}", i, lp.repr(tcx));
++            }
++        }
++
+         for (i, move) in self.moves.borrow().iter().enumerate() {
+             dfcx_moves.add_gen(move.id, i);
++            debug!("remove_drop_obligations move {}", move.to_string(self, tcx));
++            self.remove_drop_obligations(tcx, move, dfcx_needs_drop);
++            // FIXME: do I need to also remove_ignored_drops here? (FSK)
++        }
++
++        for variant_match in self.variant_matches.borrow().iter() {
++            match variant_match.mode {
++                euv::NonBindingMatch |
++                euv::BorrowingMatch |
++                euv::CopyingMatch => {}
++                euv::MovingMatch => {
++                    debug!("remove_drop_obligations variant_match {}", variant_match.to_string(self, tcx));
++                    self.remove_drop_obligations(tcx, variant_match, dfcx_needs_drop);
++                    // FIXME: do I need to also remove_ignored_drops here? (FSK)
++                    debug!("add_drop_obligations variant_match {}", variant_match.to_string(self, tcx));
++                    self.add_drop_obligations(tcx, variant_match, dfcx_needs_drop);
++                }
++            }
++
++            debug!("add_ignored_drops variant_match {}", variant_match.to_string(self, tcx));
++            self.add_ignored_drops(tcx, variant_match, dfcx_ignore_drop);
+         }
+ 
+         for (i, assignment) in self.var_assignments.borrow().iter().enumerate() {
+             dfcx_assign.add_gen(assignment.id, i);
+             self.kill_moves(assignment.path, assignment.id, dfcx_moves);
++            debug!("add_drop_obligations var_assignment {}", assignment.to_string(self, tcx));
++            self.add_drop_obligations(tcx, assignment, dfcx_needs_drop);
+         }
+ 
+         for assignment in self.path_assignments.borrow().iter() {
+             self.kill_moves(assignment.path, assignment.id, dfcx_moves);
++            debug!("add_drop_obligations path_assignment {}", assignment.to_string(self, tcx));
++            self.add_drop_obligations(tcx, assignment, dfcx_needs_drop);
+         }
+ 
+-        // Kill all moves related to a variable `x` when it goes out
+-        // of scope:
++        // Kill all moves and drop-obligations related to a variable `x` when
++        // it goes out of scope:
+         for path in self.paths.borrow().iter() {
+             match *path.loan_path {
+                 LpVar(id) => {
+                     let kill_id = tcx.region_maps.var_scope(id);
+-                    let path = *self.path_map.borrow().get(&path.loan_path);
+-                    self.kill_moves(path, kill_id, dfcx_moves);
++                    let move_path_index =
++                        *self.path_map.borrow().get(&path.loan_path);
++                    self.kill_moves(move_path_index, kill_id, dfcx_moves);
++                    debug!("remove_drop_obligations scope {} {}",
++                           kill_id, path.loan_path.repr(tcx));
++                    let rm = Removed { where_: kill_id, what_path: move_path_index };
++                    self.remove_drop_obligations(tcx, &rm, dfcx_needs_drop);
++                    // FIXME: do I need to also remove_ignored_drops here? (FSK)
+                 }
+-                LpUpvar(ty::UpvarId { var_id: _, closure_expr_id }) => {
++                LpUpvar(ty::UpvarId { var_id: _, closure_expr_id }, _) => {
+                     let kill_id = closure_to_block(closure_expr_id, tcx);
+-                    let path = *self.path_map.borrow().get(&path.loan_path);
+-                    self.kill_moves(path, kill_id, dfcx_moves);
++                    let move_path_index = *self.path_map.borrow().get(&path.loan_path);
++                    self.kill_moves(move_path_index, kill_id, dfcx_moves);
++                    debug!("remove_drop_obligations scope {} {}",
++                           kill_id, path.loan_path.repr(tcx));
++                    let rm = Removed { where_: kill_id, what_path: move_path_index };
++                    self.remove_drop_obligations(tcx, &rm, dfcx_needs_drop);
++                    // FIXME: do I need to also remove_ignored_drops here? (FSK)
+                 }
++                LpDowncast(..) => {} // FIXME: is this right, or should this loop to top?
+                 LpExtend(..) => {}
+             }
+         }
+ 
+         // Kill all assignments when the variable goes out of scope:
+-        for (assignment_index, assignment) in
+-                self.var_assignments.borrow().iter().enumerate() {
+-            match *self.path_loan_path(assignment.path) {
+-                LpVar(id) => {
+-                    let kill_id = tcx.region_maps.var_scope(id);
+-                    dfcx_assign.add_kill(kill_id, assignment_index);
+-                }
+-                LpUpvar(ty::UpvarId { var_id: _, closure_expr_id }) => {
+-                    let kill_id = closure_to_block(closure_expr_id, tcx);
+-                    dfcx_assign.add_kill(kill_id, assignment_index);
+-                }
+-                LpExtend(..) => {
+-                    tcx.sess.bug("var assignment for non var path");
+-                }
+-            }
++        for (assignment_index, assignment) in self.var_assignments.borrow().iter().enumerate() {
++            let kill_id = self.path_loan_path(assignment.path).kill_id(tcx);
++            dfcx_assign.add_kill(kill_id, assignment_index);
+         }
+     }
+ 
+@@ -529,6 +964,257 @@ impl MoveData {
+             });
+         }
+     }
++
++
++    // A digression on needs-drop design.
++    //
++    // Lets assume we had a pre-existing drop obligation ND = { s.a, s2 }, where:
++    // ```
++    // struct S { a: A, b: B, c: C }
++    // struct A { i: I, j: J, k: K }
++    // struct J { x: X, y: Y, z: Z }
++    // ```
++    // and `s : S` (and `s2 : S` as well).
++    //
++    // Moving `s.a.j.x` implies that:
++    // * We no longer have a drop-obligation for s.a in its entirety: ND' := ND \ { s.a }
++    // * We now do have drop-obligations for the portions of `s.a` that were not moved:
++    //   ND' := ND + { s.a.i, s.a.k }
++    // * Likewise, we also have drop-obligations for the portions of `s.a.j` that were
++    //   not moved:
++    //   ND' := ND + { s.a.j.y, s.a.j.z }
++    //
++    // Altogether, the above modifications accumulate to:
++    // ND' := ND \ { s.a } + { s.a.i, s.a.j.y, s.a.j.z, s.a.k }
++    //
++    // To simplify constructions like the above let us define taking the derivative
++    // of a path P with respect to an appropriate subpath suffix S: d/d{S}(P)
++    //
++    // So for example, d/d{.j.x}(s.a) := { s.a.i, s.a.j.y, s.a.j.z, s.a.k }
++    //
++    // TODO: Write definition of d/d{S}(P), presumably by induction on suffix S.
++    //
++    // For d/d{.j.x}(s.a), S = .j.x and P = s.a:
++    //
++    // 1. P_0 = s.a      : remove obligation s.a, if present
++    //
++    // 2. P_1 = s.a.j    : assert obligation s.a.j not present; add
++    //                     all needs-drop fields of s.a, then remove s.a.j.
++    // 3. P_2 = s.a.j.x  : assert obligation s.a.j.x not present; add
++    //                     all needs-drop fields of s.a.j, then remove s.a.j.x.
++    //
++    // Big Question: Under the kill/gen paradigm, how do I ensure that
++    // I only add the bits associated with d/d{.j.x}(s.a) and not the
++    // bits associated with d/d{.a.j.x}(s) ?  I.e. the explanation
++    // above makes assumptions about computations I will be able to do
++    // as part the transfer function, but I need to encode those
++    // computations as gen+kill bits.
++    //
++    // ==> one way to resolve this problem while remaining under the
++    //     gen/kill paradigm is to carry-on with a suggestion I made
++    //     to Niko a while back, namely to treat the path `s` as a
++    //     shorthand for
++    //
++    //      `{ s.a.i, s.a.j.x, s.a.j.y, s.a.j.z, s.a.k, s.b, s.c }`,
++    //
++    //     and likewise `s.a` as as shorthand for
++    //
++    //      `{ s.a.i, s.a.j.x, s.a.j.y, s.a.j.z, s.a.k }`
++    //
++    //     That is, put these paths through a normalization process that
++    //     unrolls them to their leaves (or at least, their leaves with
++    //     respect to a given piece of code.
++    //
++    //     I might even be able to implement this independently of
++    //     the other dataflow analyses, since happenstance led me
++    //     to make the needs-drop analysis separate from the
++    //     loans/moves/assigns analyses.
++    //
++    // UPDATE: The above is in fact the strategy that Felix went with.
++    // The above comment should be revised/shortened to a succinct
++    // summary.
++
++    fn path_needs_drop(&self, tcx: &ty::ctxt, move_path_index: MovePathIndex) -> bool {
++        //! Returns true iff move_path_index needs drop.
++        self.path_loan_path(move_path_index).needs_drop(tcx)
++    }
++
++    fn type_moves_by_default(&self, tcx: &ty::ctxt, move_path_index: MovePathIndex) -> bool {
++        //! Returns true iff move_path_index needs moves by default.
++        let path_type = self.path_loan_path(move_path_index).to_type(tcx);
++        ty::type_contents(tcx, path_type).moves_by_default(tcx)
++    }
++
++    fn for_each_leaf(&self,
++                     tcx: &ty::ctxt,
++                     root: MovePathIndex,
++                     found_leaf: |MovePathIndex|,
++                     _found_variant: |MovePathIndex|) {
++        //! Here we normalize a path so that it is unraveled to its
++        //! consituent droppable pieces that might be independently
++        //! handled by the function being compiled: e.g. `s.a.j`
++        //! unravels to `{ s.a.j.x, s.a.j.y, s.a.j.z }` (assuming the
++        //! function never moves out any part of those unraveled
++        //! elements).
++        //!
++        //! Note that the callback is only invoked on unraveled leaves
++        //! that also need to be dropped.
++
++        let root_lp = self.path_loan_path(root);
++        debug!("for_each_leaf(root_lp={:s})", root_lp.repr(tcx));
++
++        if self.path_is_leaf(root, tcx) {
++            found_leaf(root);
++            return;
++        }
++
++        let mut stack = vec![];
++        stack.push(root);
++        loop {
++            let top = match stack.pop() { None => break, Some(elem) => elem };
++            assert!(!self.path_is_leaf(top, tcx));
++            let mut child = self.path_first_child(top);
++            while child != InvalidMovePathIndex {
++                {
++                    let top_lp = self.path_loan_path(top);
++                    let child_lp = self.path_loan_path(child);
++                    debug!("for_each_leaf(root_lp={:s}){:s} top_lp={:s} child_lp={:s}",
++                           root_lp.repr(tcx),
++                           " ".repeat(stack.len()),
++                           top_lp.repr(tcx),
++                           child_lp.repr(tcx));
++                }
++
++                if self.path_is_leaf(child, tcx) {
++                    found_leaf(child);
++                } else {
++                    stack.push(child);
++                }
++
++                child = self.path_next_sibling(child);
++            }
++        }
++    }
++
++    fn add_drop_obligations<A:AddNeedsDropArg>(&self,
++                                               tcx: &ty::ctxt,
++                                               a: &A,
++                                               dfcx_needs_drop: &mut NeedsDropDataFlow) {
++        let a_id = a.node_id_adding_obligation();
++        let a_path = a.path_being_established();
++
++        let add_gen = |move_path_index| {
++            if self.path_is_downcast_to_variant(a_path) {
++                debug!("add_drop_obligations(a={}) {} is variant on match arm",
++                       a.to_string_(self, tcx),
++                       self.path_loan_path(move_path_index).repr(tcx));
++            }
++
++            if self.path_needs_drop(tcx, move_path_index) {
++                debug!("add_drop_obligations(a={}) adds {}",
++                       a.to_string_(self, tcx),
++                       self.path_loan_path(move_path_index).repr(tcx));
++                dfcx_needs_drop.add_gen(a_id, move_path_index.get());
++            } else {
++                debug!("add_drop_obligations(a={}) skips non-drop {}",
++                       a.to_string_(self, tcx),
++                       self.path_loan_path(move_path_index).repr(tcx));
++            }
++        };
++
++        let report_variant = |move_path_index| {
++            debug!("add_drop_obligations(a={}) skips variant {}",
++                   a.to_string_(self, tcx),
++                   self.path_loan_path(move_path_index).repr(tcx));
++        };
++
++        self.for_each_leaf(tcx, a_path, add_gen, report_variant);
++    }
++
++    fn remove_drop_obligations<A:RemoveNeedsDropArg>(&self,
++                                                     tcx: &ty::ctxt,
++                                                     a: &A,
++                                                     dfcx_needs_drop: &mut NeedsDropDataFlow) {
++        //! Kills all of the fragment leaves of path.
++        //!
++        //! Also kills all parents of path: while we do normalize a
++        //! path to its fragment leaves, (e.g. `a.j` to `{a.j.x,
++        //! a.j.y, a.j.z}`, an enum variant's path `(b:Variant1).x`
++        //! has the parent `b` that is itself considered a "leaf" for
++        //! the purposes of tracking drop obligations.
++
++        let id = a.node_id_removing_obligation();
++        let path : MovePathIndex = a.path_being_moved();
++
++        let add_kill = |move_path_index| {
++            if self.type_moves_by_default(tcx, move_path_index) {
++                debug!("remove_drop_obligations(id={}) removes {}",
++                       id, self.path_loan_path(move_path_index).repr(tcx));
++                dfcx_needs_drop.add_kill(id, move_path_index.get());
++            } else {
++                debug!("remove_drop_obligations(id={}) skips copyable {}",
++                       id, self.path_loan_path(move_path_index).repr(tcx));
++            }
++        };
++
++        let report_variant = |move_path_index| {
++            debug!("remove_drop_obligations(id={}) skips variant {}",
++                   id, self.path_loan_path(move_path_index).repr(tcx));
++        };
++
++        self.for_each_leaf(tcx, path, add_kill, report_variant);
++    }
++
++    fn add_ignored_drops(&self,
++                         tcx: &ty::ctxt,
++                         variant_match: &VariantMatch,
++                         dfcx_ignore_drop: &mut IgnoreDropDataFlow) {
++        let path_lp = self.path_loan_path(variant_match.path);
++        let base_path_lp = self.path_loan_path(variant_match.base_path);
++
++        if !self.path_needs_drop(tcx, variant_match.path) {
++            debug!("add_ignored_drops(id={} lp={}) adds {}",
++                   variant_match.id, path_lp.repr(tcx), base_path_lp.repr(tcx));
++            dfcx_ignore_drop.add_gen(variant_match.id, variant_match.base_path.get());
++        } else {
++            debug!("add_ignored_drops(id={} lp={}) skipped {}",
++                   variant_match.id, path_lp.repr(tcx), base_path_lp.repr(tcx));
++        }
++    }
++}
++
++trait AddNeedsDropArg {
++    fn node_id_adding_obligation(&self) -> ast::NodeId;
++    fn path_being_established(&self) -> MovePathIndex;
++    fn to_string_(&self, move_data: &MoveData, tcx: &ty::ctxt) -> String;
++}
++impl AddNeedsDropArg for Assignment {
++    fn node_id_adding_obligation(&self) -> ast::NodeId { self.id }
++    fn path_being_established(&self) -> MovePathIndex { self.path }
++    fn to_string_(&self, md: &MoveData, tcx: &ty::ctxt) -> String { self.to_string(md, tcx) }
++}
++impl AddNeedsDropArg for VariantMatch {
++    fn node_id_adding_obligation(&self) -> ast::NodeId { self.id }
++    fn path_being_established(&self) -> MovePathIndex { self.path }
++    fn to_string_(&self, md: &MoveData, tcx: &ty::ctxt) -> String { self.to_string(md, tcx) }
++}
++
++trait RemoveNeedsDropArg {
++    fn node_id_removing_obligation(&self) -> ast::NodeId;
++    fn path_being_moved(&self) -> MovePathIndex;
++}
++struct Removed { where_: ast::NodeId, what_path: MovePathIndex }
++impl RemoveNeedsDropArg for Removed {
++    fn node_id_removing_obligation(&self) -> ast::NodeId { self.where_ }
++    fn path_being_moved(&self) -> MovePathIndex { self.what_path }
++}
++impl<'a> RemoveNeedsDropArg for Move {
++    fn node_id_removing_obligation(&self) -> ast::NodeId { self.id }
++    fn path_being_moved(&self) -> MovePathIndex { self.path }
++}
++impl<'a> RemoveNeedsDropArg for VariantMatch {
++    fn node_id_removing_obligation(&self) -> ast::NodeId { self.id }
++    fn path_being_moved(&self) -> MovePathIndex { self.base_path }
+ }
+ 
+ impl<'a, 'tcx> FlowedMoveData<'a, 'tcx> {
+@@ -555,16 +1241,45 @@ impl<'a, 'tcx> FlowedMoveData<'a, 'tcx> {
+                                  AssignDataFlowOperator,
+                                  id_range,
+                                  move_data.var_assignments.borrow().len());
+-        move_data.add_gen_kills(tcx, &mut dfcx_moves, &mut dfcx_assign);
++        let mut dfcx_needs_drop =
++            DataFlowContext::new(tcx,
++                                 "flowed_move_data_needs_drop",
++                                 Some(decl),
++                                 cfg,
++                                 NeedsDropDataFlowOperator,
++                                 id_range,
++                                 move_data.paths.borrow().len());
++        let mut dfcx_ignore_drop =
++            DataFlowContext::new(tcx,
++                                 "flowed_move_data_ignore_drop",
++                                 Some(decl),
++                                 cfg,
++                                 IgnoreDropDataFlowOperator,
++                                 id_range,
++                                 move_data.paths.borrow().len());
++
++        move_data.add_gen_kills(tcx,
++                                &mut dfcx_moves,
++                                &mut dfcx_assign,
++                                &mut dfcx_needs_drop,
++                                &mut dfcx_ignore_drop);
++
+         dfcx_moves.add_kills_from_flow_exits(cfg);
+         dfcx_assign.add_kills_from_flow_exits(cfg);
++        dfcx_needs_drop.add_kills_from_flow_exits(cfg);
++        dfcx_ignore_drop.add_kills_from_flow_exits(cfg);
++
+         dfcx_moves.propagate(cfg, body);
+         dfcx_assign.propagate(cfg, body);
++        dfcx_needs_drop.propagate(cfg, body);
++        dfcx_ignore_drop.propagate(cfg, body);
+ 
+         FlowedMoveData {
+             move_data: move_data,
+             dfcx_moves: dfcx_moves,
+             dfcx_assign: dfcx_assign,
++            dfcx_needs_drop: dfcx_needs_drop,
++            dfcx_ignore_drop: dfcx_ignore_drop,
+         }
+     }
+ 
+@@ -732,3 +1447,157 @@ impl DataFlowOperator for AssignDataFlowOperator {
+         false // no assignments in scope by default
+     }
+ }
++
++impl BitwiseOperator for NeedsDropDataFlowOperator {
++    #[inline]
++    fn join(&self, succ: uint, pred: uint) -> uint {
++        // In principle, for correct code, the fixed-point solution
++        // to the dataflow equations will have succ == pred here.
++        //
++        // But of course need to deal with states before we hit the
++        // fixed point.  Consider the following while-loop:
++        //
++        //   `{ let a = box 3; while <cond> { <body> } <rest> }`
++        // where <cond> and <body> do not move or drop `a`:
++        //
++        //                    [let a = box 3;]
++        //                      |
++        //                      v 1
++        //                  [loopback] <--+ 5
++        //                      |         |
++        //                      v 2       |
++        //              +-----[cond]      |
++        //              |       |         |
++        //              |       v 4       |
++        //              |     [body] -----+
++        //              v 3
++        //            [rest]
++        //
++        // we need to ensure that the fixed-point solution registers
++        // that `a` is needs-drop on all of the above edges.  (Note
++        // that choosing logical-and and a false initial value would
++        // cause the fixed point solution to falsely claim that `a` is
++        // only needs-drop on edge 1, because edge 5 would start as
++        // false and then the merge between edge 1 and edge 5 would be
++        // logically anded to false on edge 2, and so on.)
++        //
++        // We could use logical-or here (and a false initial value)
++        // like the other analyses.  Or, we can (and do) use
++        // logical-and and a true initial value.  For correct code,
++        // they will both end with the same fixed point.
++        //
++        // The reason to use logical-and instead of logical-or is
++        // error reporting.  In particular, we start with an
++        // assumption.
++        //
++        // ASSUMPTION: When there is a discrepancy between the set of
++        // drop-obligations for two paths at a merge point, we assume
++        // for the purposes of error reporting that the error was that
++        // the user forgot to include a drop of the resource, *not*
++        // that the user intended to re-establish the resource on the
++        // path where it had been dropped.
++        //
++        // Consider the following example:
++        //
++        //                       [let a = box 3;]             
++        //                             +                      
++        //                             |                      
++        //                             v                      
++        //                    +---+[cond 1]+--+               
++        //    (a needs drop)  |               | (a needs drop)
++        //                    v               |               
++        //             +-+[cond 2]+-+         |               
++        //             |            |         |               
++        //             v            v         v               
++        //     [no use of a]   [consume a]   [consume a]      
++        //                +         +         |               
++        // (a needs drop) |         |  ()     | ()            
++        //                v         v         |               
++        //              [merge point 1]       |               
++        //                    +               |               
++        //                (*) |               |               
++        //                    +---------+     |               
++        //                              |     |               
++        //                              v     v               
++        //                          [merge point 2]           
++        //
++        // At `[merge point 1]`, we obviously report a discrepancy
++        // between the two incoming paths.  The question: What do we
++        // want the set of drop obligations to be at the exit of
++        // `[merge point 1]`, where the `(*)` is marked.  There are
++        // two possible choices for `(*)`: `()`, and `(a needs drop)`.
++        //
++        // Choosing `(a needs drop)` corresponds to an assumption that
++        // on the path where `a` was dropped, the programmer probably
++        // meant to re-establish `a`.  To get this choice, one would
++        // use logical-or here.
++        //
++        // Choosing `()` corresponds to an assumption that on the path
++        // where `a` was not dropped, the programmer probably meant to
++        // drop it.  To get this choice, we use logical-and here.
++        //
++        // Each choice for `(*)` also has implications for when
++        // check_drops considers `[merge point 2]`: Choosing `()`
++        // means that nothing is reported for `[merge point 2]`, since
++        // the two incoming paths have the same set of drop
++        // obligations.  Choosing `(a needs drop)` means that we get a
++        // similar error report to the one for `[merge point 1]`,
++        // which may be frustrating to the programmer who already
++        // probably saw that they would need to add the drop of `a` on
++        // the far left path.
++        //
++        // (One could argue that the above example is artificial,
++        // since a small alteration of the graph above has a path on
++        // the far right-hand side that does not consume `a`, and in
++        // that situation, choosing `(a needs drop)` for `(*)` will
++        // produce fewer error messages.  However, we are *not*
++        // selecting logical-and over logical-or solely based on some
++        // expectation of the number of error messages encountered.
++        // Instead, it is based on our starting assumption: if in
++        // example above the far right path is missing a drop of a,
++        // then by our assumption, we *should* issue two error
++        // reports, since there are *two* places where the programmer
++        // needs to add calls to drop: the far left-hand path, and the
++        // far right-hand path.)
++
++        succ & pred
++    }
++}
++
++impl DataFlowOperator for NeedsDropDataFlowOperator {
++    #[inline]
++    fn initial_value(&self) -> bool {
++        // For non-entry nodes, assume paths need dropping until
++        // proven otherwise.
++        //
++        // See extensive discussion in impl BitwiseOperator for
++        // NeedsDropDataFlowOperator.
++        true
++    }
++
++    #[inline]
++    fn entry_initial_value(&self) -> bool {
++        false
++    }
++}
++
++impl BitwiseOperator for IgnoreDropDataFlowOperator {
++    #[inline]
++    fn join(&self, succ: uint, pred: uint) -> uint {
++        // You can only ignore a drop if both incoming paths agree that you can do so
++        succ & pred
++    }
++}
++
++impl DataFlowOperator for IgnoreDropDataFlowOperator {
++    #[inline]
++    fn initial_value(&self) -> bool {
++        // For non-entry nodes, assume you can ignore a drop until proven otherwise.
++        true
++    }
++
++    #[inline]
++    fn entry_initial_value(&self) -> bool {
++        false
++    }
++}
+diff --git a/src/librustc/middle/cfg/construct.rs b/src/librustc/middle/cfg/construct.rs
+index ec414b8..789c563 100644
+--- a/src/librustc/middle/cfg/construct.rs
++++ b/src/librustc/middle/cfg/construct.rs
+@@ -17,6 +17,7 @@ use syntax::ast;
+ use syntax::ast_util;
+ use util::nodemap::NodeMap;
+ 
++use std::collections::bitv::Bitv;
+ use std::gc::Gc;
+ 
+ struct CFGBuilder<'a, 'tcx: 'a> {
+@@ -55,10 +56,36 @@ pub fn construct(tcx: &ty::ctxt,
+     block_exit = cfg_builder.block(blk, entry);
+     cfg_builder.add_contained_edge(block_exit, fn_exit);
+     let CFGBuilder {exit_map, graph, ..} = cfg_builder;
++
++    let mut reachable = Bitv::with_capacity(graph.all_nodes().len(), false);
++    mark_reachable(&graph, entry, &mut reachable);
+     CFG {exit_map: exit_map,
+          graph: graph,
+          entry: entry,
+-         exit: fn_exit}
++         exit: fn_exit,
++         reachable: reachable}
++}
++
++fn mark_reachable(graph: &CFGGraph,
++                  entry: CFGIndex,
++                  reachable: &mut Bitv) {
++    let mut stack = vec![];
++    stack.push(entry);
++    loop {
++        let n = match stack.pop() {
++            None => return,
++            Some(n) => n,
++        };
++
++        reachable.set(n.node_id(), true);
++        graph.each_outgoing_edge(n, |_edge_index, edge| {
++            let target = edge.target();
++            if !reachable.get(target.node_id()) {
++                stack.push(target);
++            }
++            true
++        });
++    }
+ }
+ 
+ fn add_initial_dummy_node(g: &mut CFGGraph) -> CFGIndex {
+@@ -121,31 +148,28 @@ impl<'a, 'tcx> CFGBuilder<'a, 'tcx> {
+             ast::PatBox(ref subpat) |
+             ast::PatRegion(ref subpat) |
+             ast::PatIdent(_, _, Some(ref subpat)) => {
+-                let subpat_exit = self.pat(&**subpat, pred);
+-                self.add_node(pat.id, [subpat_exit])
++                let pat_head_exit = self.add_node(pat.id, [pred]);
++                self.pat(&**subpat, pat_head_exit)
+             }
+ 
+             ast::PatEnum(_, Some(ref subpats)) |
+             ast::PatTup(ref subpats) => {
+-                let pats_exit =
+-                    self.pats_all(subpats.iter().map(|p| p.clone()), pred);
+-                self.add_node(pat.id, [pats_exit])
++                let pat_head_exit = self.add_node(pat.id, [pred]);
++                self.pats_all(subpats.iter().map(|p| p.clone()), pat_head_exit)
+             }
+ 
+             ast::PatStruct(_, ref subpats, _) => {
+-                let pats_exit =
+-                    self.pats_all(subpats.iter().map(|f| f.pat.clone()), pred);
+-                self.add_node(pat.id, [pats_exit])
++                let pat_head_exit = self.add_node(pat.id, [pred]);
++                self.pats_all(subpats.iter().map(|f| f.pat.clone()), pat_head_exit)
+             }
+ 
+             ast::PatVec(ref pre, ref vec, ref post) => {
++                let pat_head_exit = self.add_node(pat.id, [pred]);
+                 let pre_exit =
+-                    self.pats_all(pre.iter().map(|p| *p), pred);
++                    self.pats_all(pre.iter().map(|p| *p), pat_head_exit);
+                 let vec_exit =
+                     self.pats_all(vec.iter().map(|p| *p), pre_exit);
+-                let post_exit =
+-                    self.pats_all(post.iter().map(|p| *p), vec_exit);
+-                self.add_node(pat.id, [post_exit])
++                self.pats_all(post.iter().map(|p| *p), vec_exit)
+             }
+ 
+             ast::PatMac(_) => {
+@@ -345,8 +369,9 @@ impl<'a, 'tcx> CFGBuilder<'a, 'tcx> {
+                 //  [guard1]   |
+                 //     |       |
+                 //     |       |
+-                //     v 5     v
+-                //  [body1]  [cond2]
++                //     v 5     |
++                //  [body1]    V
++                //     |     [cond2]
+                 //     |      /  \
+                 //     |    ...  ...
+                 //     |     |    |
+diff --git a/src/librustc/middle/cfg/mod.rs b/src/librustc/middle/cfg/mod.rs
+index bb758ec..e3f88c7 100644
+--- a/src/librustc/middle/cfg/mod.rs
++++ b/src/librustc/middle/cfg/mod.rs
+@@ -20,6 +20,8 @@ use middle::ty;
+ use syntax::ast;
+ use util::nodemap::NodeMap;
+ 
++use std::collections::bitv::Bitv;
++
+ mod construct;
+ pub mod graphviz;
+ 
+@@ -28,6 +30,7 @@ pub struct CFG {
+     pub graph: CFGGraph,
+     pub entry: CFGIndex,
+     pub exit: CFGIndex,
++    pub reachable: Bitv,
+ }
+ 
+ pub struct CFGNodeData {
+@@ -51,4 +54,8 @@ impl CFG {
+                blk: &ast::Block) -> CFG {
+         construct::construct(tcx, blk)
+     }
++
++    pub fn is_reachable(&self, cfg_index: CFGIndex) -> bool {
++        self.reachable.get(cfg_index.node_id())
++    }
+ }
+diff --git a/src/librustc/middle/dataflow.rs b/src/librustc/middle/dataflow.rs
+index c32f8db..22da628 100644
+--- a/src/librustc/middle/dataflow.rs
++++ b/src/librustc/middle/dataflow.rs
+@@ -199,15 +213,15 @@ impl<'a, 'tcx, O:DataFlowOperator> DataFlowContext<'a, 'tcx, O> {
+                analysis_name, id_range, bits_per_id, words_per_id,
+                num_nodes);
+ 
+-        let entry = if oper.initial_value() { uint::MAX } else {0};
++        let init_most = if oper.initial_value() { uint::MAX } else {0};
+ 
+         let gens = Vec::from_elem(num_nodes * words_per_id, 0);
+         let kills = Vec::from_elem(num_nodes * words_per_id, 0);
+-        let on_entry = Vec::from_elem(num_nodes * words_per_id, entry);
++        let on_entry = Vec::from_elem(num_nodes * words_per_id, init_most);
+ 
+         let nodeid_to_index = build_nodeid_to_index(decl, cfg);
+ 
+-        DataFlowContext {
++        let mut dfcx = DataFlowContext {
+             tcx: tcx,
+             analysis_name: analysis_name,
+             words_per_id: words_per_id,
+@@ -217,7 +231,22 @@ impl<'a, 'tcx, O:DataFlowOperator> DataFlowContext<'a, 'tcx, O> {
+             gens: gens,
+             kills: kills,
+             on_entry: on_entry
++        };
++
++        if dfcx.words_per_id == 0 {
++            return dfcx;
++        }
++
++        let init_first = if dfcx.oper.entry_initial_value() { uint::MAX } else {0};
++        if init_first != init_most {
++            let (start, end) = dfcx.compute_id_range(cfg.entry);
++            let on_entry_to_entry = dfcx.on_entry.mut_slice(start, end);
++            for elem in on_entry_to_entry.mut_iter() {
++                *elem = init_first;
++            }
+         }
++
++        dfcx
+     }
+ 
+     pub fn add_gen(&mut self, id: ast::NodeId, bit: uint) {
+@@ -246,11 +275,13 @@ impl<'a, 'tcx, O:DataFlowOperator> DataFlowContext<'a, 'tcx, O> {
+         set_bit(kills, bit);
+     }
+ 
+-    fn apply_gen_kill(&self, cfgidx: CFGIndex, bits: &mut [uint]) {
++    pub fn apply_gen_kill(&self, cfgidx: CFGIndex, bits: &mut [uint]) {
+         //! Applies the gen and kill sets for `cfgidx` to `bits`
+         debug!("{:s} apply_gen_kill(cfgidx={}, bits={}) [before]",
+                self.analysis_name, cfgidx, mut_bits_to_string(bits));
+-        assert!(self.bits_per_id > 0);
++        if self.bits_per_id == 0 {
++            return;
++        }
+ 
+         let (start, end) = self.compute_id_range(cfgidx);
+         let gens = self.gens.slice(start, end);
+@@ -275,6 +306,19 @@ impl<'a, 'tcx, O:DataFlowOperator> DataFlowContext<'a, 'tcx, O> {
+         (start, end)
+     }
+ 
++    pub fn bitset_for(&self, e: EntryOrExit, cfgidx: CFGIndex) -> Vec<uint> {
++        self.with_set(e, cfgidx, || Vec::new(), |slice| slice.to_owned())
++    }
++
++    /// Let S be the entry/exit (`e`) set for `cfgidx`.  Sets `bits`
++    /// to `bits o S` where `o` denotes the bitwise operator `oper`.
++    pub fn apply_op<Op:BitwiseOperator>(&self,
++                                        e: EntryOrExit,
++                                        cfgidx: CFGIndex,
++                                        bits: &mut [uint],
++                                        oper: Op) {
++        self.with_set(e, cfgidx, || (), |slice| { bitwise(bits, slice, &oper); })
++    }
+ 
+     pub fn each_bit_on_entry(&self,
+                              id: ast::NodeId,
+@@ -292,15 +336,28 @@ impl<'a, 'tcx, O:DataFlowOperator> DataFlowContext<'a, 'tcx, O> {
+     pub fn each_bit_for_node(&self,
+                              e: EntryOrExit,
+                              cfgidx: CFGIndex,
+-                             f: |uint| -> bool)
++                             on_one: |uint| -> bool)
+                              -> bool {
+         //! Iterates through each bit that is set on entry/exit to `cfgidx`.
+         //! Only useful after `propagate()` has been called.
+ 
++        self.with_set(e, cfgidx, || true, |slice| {
++            debug!("{:s} each_bit_for_node({}, cfgidx={}) bits={}",
++                   self.analysis_name, e, cfgidx, bits_to_string(slice));
++            self.each_one_bit(slice, |x|on_one(x))
++        })
++    }
++
++    fn with_set<A>(&self,
++                   e: EntryOrExit,
++                   cfgidx: CFGIndex,
++                   default: || -> A,
++                   f: |&[uint]| -> A) -> A {
++
+         if self.bits_per_id == 0 {
+-            // Skip the surprisingly common degenerate case.  (Note
++            // degenerate case: use the default.  (Note
+             // compute_id_range requires self.words_per_id > 0.)
+-            return true;
++            return default();
+         }
+ 
+         let (start, end) = self.compute_id_range(cfgidx);
+@@ -315,9 +372,8 @@ impl<'a, 'tcx, O:DataFlowOperator> DataFlowContext<'a, 'tcx, O> {
+                 temp_bits.as_slice()
+             }
+         };
+-        debug!("{:s} each_bit_for_node({}, cfgidx={}) bits={}",
+-               self.analysis_name, e, cfgidx, bits_to_string(slice));
+-        self.each_bit(slice, f)
++
++        f(slice)
+     }
+ 
+     pub fn each_gen_bit(&self, id: ast::NodeId, f: |uint| -> bool)
+@@ -338,11 +394,11 @@ impl<'a, 'tcx, O:DataFlowOperator> DataFlowContext<'a, 'tcx, O> {
+         let gens = self.gens.slice(start, end);
+         debug!("{:s} each_gen_bit(id={:?}, gens={})",
+                self.analysis_name, id, bits_to_string(gens));
+-        self.each_bit(gens, f)
++        self.each_one_bit(gens, f)
+     }
+ 
+-    fn each_bit(&self, words: &[uint], f: |uint| -> bool) -> bool {
+-        //! Helper for iterating over the bits in a bit set.
++    fn each_one_bit(&self, words: &[uint], f: |uint| -> bool) -> bool {
++        //! Helper for iterating over the 1 bits in a bit set.
+         //! Returns false on the first call to `f` that returns false;
+         //! if all calls to `f` return true, then returns true.
+ 
+@@ -575,6 +631,14 @@ fn bitwise<Op:BitwiseOperator>(out_vec: &mut [uint],
+     changed
+ }
+ 
++pub fn is_bit_set(words: &[uint], bit: uint) -> bool {
++    let word = bit / uint::BITS;
++    let bit_in_word = bit % uint::BITS;
++    let bit_mask = 1 << bit_in_word;
++    let oldv = words[word];
++    0 != (oldv & bit_mask)
++}
++
+ fn set_bit(words: &mut [uint], bit: uint) -> bool {
+     debug!("set_bit: words={} bit={}",
+            mut_bits_to_string(words), bit_str(bit));
+@@ -594,11 +658,18 @@ fn bit_str(bit: uint) -> String {
+     format!("[{}:{}-{:02x}]", bit, byte, lobits)
+ }
+ 
+-struct Union;
++pub struct Union;
+ impl BitwiseOperator for Union {
+     fn join(&self, a: uint, b: uint) -> uint { a | b }
+ }
+-struct Subtract;
++pub struct Subtract;
+ impl BitwiseOperator for Subtract {
+     fn join(&self, a: uint, b: uint) -> uint { a & !b }
+ }
++pub struct Intersect;
++impl BitwiseOperator for Intersect {
++    fn join(&self, a: uint, b: uint) -> uint { a & b }
++}
++pub fn subtract(a: &mut [uint], b: &[uint]) {
++    bitwise(a, b, &Subtract);
++}
+diff --git a/src/librustc/middle/region.rs b/src/librustc/middle/region.rs
+index 21bfcfe..1e13966 100644
+--- a/src/librustc/middle/region.rs
++++ b/src/librustc/middle/region.rs
+@@ -123,13 +123,13 @@ impl RegionMaps {
+     }
+ 
+     pub fn record_var_scope(&self, var: ast::NodeId, lifetime: ast::NodeId) {
+-        debug!("record_var_scope(sub={}, sup={})", var, lifetime);
++        debug!("record_var_scope(var={}, lifetime={})", var, lifetime);
+         assert!(var != lifetime);
+         self.var_map.borrow_mut().insert(var, lifetime);
+     }
+ 
+     pub fn record_rvalue_scope(&self, var: ast::NodeId, lifetime: ast::NodeId) {
+-        debug!("record_rvalue_scope(sub={}, sup={})", var, lifetime);
++        debug!("record_rvalue_scope(var={}, lifetime={})", var, lifetime);
+         assert!(var != lifetime);
+         self.rvalue_scopes.borrow_mut().insert(var, lifetime);
+     }
+diff --git a/src/librustc/middle/subst.rs b/src/librustc/middle/subst.rs
+index c1c23df..5731bce 100644
+--- a/src/librustc/middle/subst.rs
++++ b/src/librustc/middle/subst.rs
+@@ -18,6 +18,7 @@ use util::ppaux::Repr;
+ use std::fmt;
+ use std::mem;
+ use std::raw;
++use std::result;
+ use std::slice::{Items, MutItems};
+ use std::vec::Vec;
+ use syntax::codemap::{Span, DUMMY_SP};
+@@ -467,18 +468,38 @@ impl<T> VecPerParamSpace<T> {
+          * can be run to a fixed point
+          */
+ 
+-        let mut fns: Vec<U> = self.get_slice(FnSpace).iter().rev().map(|p| pred(p)).collect();
++        let f = |t:&T| -> Result<U,()> { Ok(pred(t)) };
++
++        self.try_map_rev::<U,()>(f).unwrap()
++    }
++
++    pub fn try_map_rev<U,E>(&self, f: |&T| -> Result<U, E>) -> Result<VecPerParamSpace<U>, E> {
++        /*!
++         * If all of the calls to `f` are `Ok`, then behaves like
++         * `map_rev`, (executing the map but in reverse order).
++         * Otherwise, returns the first error encountered during the
++         * map execution.
++         */
++
++        let mut fns: Vec<U> = try!(result::collect(
++            self.get_slice(FnSpace).iter().rev().map(|p| f(p))));
+ 
+         // NB: Calling foo.rev().map().rev() causes the calls to map
+         // to occur in the wrong order. This was somewhat surprising
+         // to me, though it makes total sense.
+         fns.reverse();
+ 
+-        let mut selfs: Vec<U> = self.get_slice(SelfSpace).iter().rev().map(|p| pred(p)).collect();
++        let mut selfs: Vec<U> = try!(result::collect(
++            self.get_slice(SelfSpace).iter().rev().map(|p| f(p))));
++
+         selfs.reverse();
+-        let mut tys: Vec<U> = self.get_slice(TypeSpace).iter().rev().map(|p| pred(p)).collect();
++
++        let mut tys: Vec<U> = try!(result::collect(
++            self.get_slice(TypeSpace).iter().rev().map(|p| f(p))));
++
+         tys.reverse();
+-        VecPerParamSpace::new(tys, selfs, fns)
++
++        Ok(VecPerParamSpace::new(tys, selfs, fns))
+     }
+ 
+     pub fn split(self) -> (Vec<T>, Vec<T>, Vec<T>) {
+diff --git a/src/librustc/middle/trans/_match.rs b/src/librustc/middle/trans/_match.rs
+index dd0668b..c3380a8 100644
+--- a/src/librustc/middle/trans/_match.rs
++++ b/src/librustc/middle/trans/_match.rs
+@@ -1225,7 +1225,7 @@ pub fn trans_match<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
+ fn is_discr_reassigned(bcx: Block, discr: &ast::Expr, body: &ast::Expr) -> bool {
+     match discr.node {
+         ast::ExprPath(..) => match bcx.def(discr.id) {
+-            def::DefArg(vid, _) | def::DefBinding(vid, _) |
++            def::DefArg(vid, _) | def::DefBinding(vid, _, _) |
+             def::DefLocal(vid, _) | def::DefUpvar(vid, _, _, _) => {
+                 let mut rc = ReassignmentChecker {
+                     node: vid,
+@@ -1250,6 +1250,7 @@ struct ReassignmentChecker {
+ 
+ impl euv::Delegate for ReassignmentChecker {
+     fn consume(&mut self, _: ast::NodeId, _: Span, _: mc::cmt, _: euv::ConsumeMode) {}
++    fn matched_pat(&mut self, _: &ast::Pat, _: mc::cmt, _: euv::MatchMode) {}
+     fn consume_pat(&mut self, _: &ast::Pat, _: mc::cmt, _: euv::ConsumeMode) {}
+     fn borrow(&mut self, _: ast::NodeId, _: Span, _: mc::cmt, _: ty::Region,
+               _: ty::BorrowKind, _: euv::LoanCause) {}
+diff --git a/src/librustc/middle/trans/expr.rs b/src/librustc/middle/trans/expr.rs
+index 0421aef..4d74ba3 100644
+--- a/src/librustc/middle/trans/expr.rs
++++ b/src/librustc/middle/trans/expr.rs
+@@ -1193,7 +1193,7 @@ pub fn trans_local_var<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
+         def::DefArg(nid, _) => {
+             take_local(bcx, &*bcx.fcx.llargs.borrow(), nid)
+         }
+-        def::DefLocal(nid, _) | def::DefBinding(nid, _) => {
++        def::DefLocal(nid, _) | def::DefBinding(nid, _, _) => {
+             take_local(bcx, &*bcx.fcx.lllocals.borrow(), nid)
+         }
+         _ => {
+diff --git a/src/librustc/middle/ty.rs b/src/librustc/middle/ty.rs
+index feed762..b2a9b32 100644
+--- a/src/librustc/middle/ty.rs
++++ b/src/librustc/middle/ty.rs
+@@ -491,6 +491,13 @@ pub struct ctxt<'tcx> {
+     /// populated during the coherence phase of typechecking.
+     pub destructor_for_type: RefCell<DefIdMap<ast::DefId>>,
+ 
++    /// A mapping from the def ID of an enum or struct type to the def
++    /// ID of its impl of QuietEarlyDrop, if present (flagging any
++    /// associated drop-glue as "pure"/"quiet"). This map is populated
++    /// during the coherence phase of typechecking.
++    pub quiet_dtor_for_type: RefCell<DefIdMap<ast::DefId>>,
++    pub quiet_dtor_for_ty_box: Cell<Option<ast::DefId>>,
++
+     /// A method will be in this list if and only if it is a destructor.
+     pub destructors: RefCell<DefIdSet>,
+ 
+@@ -1423,6 +1430,8 @@ pub fn mk_ctxt<'tcx>(s: Session,
+         superstructs: RefCell::new(DefIdMap::new()),
+         struct_fields: RefCell::new(DefIdMap::new()),
+         destructor_for_type: RefCell::new(DefIdMap::new()),
++        quiet_dtor_for_type: RefCell::new(DefIdMap::new()),
++        quiet_dtor_for_ty_box: Cell::new(None),
+         destructors: RefCell::new(DefIdSet::new()),
+         trait_impls: RefCell::new(DefIdMap::new()),
+         inherent_impls: RefCell::new(DefIdMap::new()),
+@@ -2154,6 +2163,7 @@ def_type_content_sets!(
+         OwnsDtor                            = 0b0000_0000__0000_0010__0000,
+         OwnsManaged /* see [1] below */     = 0b0000_0000__0000_0100__0000,
+         OwnsAffine                          = 0b0000_0000__0000_1000__0000,
++        OwnsLoudDtor                        = 0b0000_0000__0001_0000__0000,
+         OwnsAll                             = 0b0000_0000__1111_1111__0000,
+ 
+         // Things that are reachable by the value in any way (fourth nibble):
+@@ -2303,6 +2313,23 @@ impl TypeContents {
+     pub fn has_dtor(&self) -> bool {
+         self.intersects(TC::OwnsDtor)
+     }
++
++    // A "loud" destructor is one that has effects that we think the user may care about,
++    // e.g. releasing locks, flushing buffers, etc.
++    // It is the default setting for implementations of Drop.
++    pub fn has_loud_dtor(&self) -> bool {
++        self.intersects(TC::OwnsDtor) &&
++            self.intersects(TC::OwnsLoudDtor)
++    }
++
++    // A "quiet" destructor is one that has no "significant" effects;
++    // e.g. a destructor that just frees memory it owns is considered
++    // quiet.  One opts into this by implementing the QuietEarlyDrop
++    // trait.
++    pub fn has_quiet_dtor(&self) -> bool {
++        self.intersects(TC::OwnsDtor) &&
++            !self.intersects(TC::OwnsLoudDtor)
++    }
+ }
+ 
+ impl ops::BitOr<TypeContents,TypeContents> for TypeContents {
+@@ -2404,7 +2431,11 @@ pub fn type_contents(cx: &ctxt, ty: t) -> TypeContents {
+             }
+ 
+             ty_box(typ) => {
+-                tc_ty(cx, typ, cache).managed_pointer() | TC::ReachesFfiUnsafe
++                let mut ret = tc_ty(cx, typ, cache).managed_pointer() | TC::ReachesFfiUnsafe;
++                if cx.quiet_dtor_for_ty_box.get().is_some() {
++                    ret = ret - TC::OwnsLoudDtor
++                }
++                ret
+             }
+ 
+             ty_uniq(typ) => {
+@@ -2450,7 +2481,11 @@ pub fn type_contents(cx: &ctxt, ty: t) -> TypeContents {
+                 }
+ 
+                 if ty::has_dtor(cx, did) {
+-                    res = res | TC::OwnsDtor;
++                    res = res | TC::OwnsDtor | TC::OwnsLoudDtor;
++                }
++                // Note that a type can impl QuietEarlyDrop even if it does not directly impl Drop
++                if ty::has_quiet_dtor(cx, did) {
++                    res = res - TC::OwnsLoudDtor;
+                 }
+                 apply_lang_items(cx, did, res)
+             }
+@@ -2480,7 +2515,11 @@ pub fn type_contents(cx: &ctxt, ty: t) -> TypeContents {
+                     });
+ 
+                 if ty::has_dtor(cx, did) {
+-                    res = res | TC::OwnsDtor;
++                    res = res | TC::OwnsDtor | TC::OwnsLoudDtor;
++                }
++                // Note that a type can impl QuietEarlyDrop even if it does not directly impl Drop
++                if ty::has_quiet_dtor(cx, did) {
++                    res = res - TC::OwnsLoudDtor;
+                 }
+ 
+                 if variants.len() != 0 {
+@@ -3096,6 +3135,62 @@ pub fn array_element_ty(t: t) -> Option<t> {
+     }
+ }
+ 
++/// Returns the type of element at index `i` in tuple or tuple-like type.
++/// requires variant_id be Some(_) iff t represents a ty_enum.
++pub fn positional_element_ty(cx: &ctxt, t: t, i: uint, variant_id: Option<ast::DefId>) -> Option<t> {
++
++    // FIXME probably need to pass in substs from the surrounding
++    // context, not the substs from the definition itself.
++
++    match (&get(t).sty, variant_id) {
++        (&ty_tup(ref v), None) => v.as_slice().get(i).map(|&t| t),
++
++
++        (&ty_struct(def_id, ref substs), None) => lookup_struct_fields(cx, def_id)
++            .as_slice().get(i)
++            .map(|&t|lookup_item_type(cx, t.id).ty.subst(cx, substs)),
++
++        (&ty_enum(def_id, ref substs), Some(variant_def_id)) => {
++            let variant_info = enum_variant_with_id(cx, def_id, variant_def_id);
++            variant_info.args.as_slice().get(i).map(|t|t.subst(cx, substs))
++        }
++
++        (&ty_enum(def_id, ref substs), None) => {
++            assert!(enum_is_univariant(cx, def_id));
++            let enum_variants = enum_variants(cx, def_id);
++            let variant_info = enum_variants.get(0);
++            variant_info.args.as_slice().get(i).map(|t|t.subst(cx, substs))
++        }
++
++        _ => None
++    }
++}
++
++/// Returns the type of element at field `n` in struct or struct-like type.
++/// requires variant_id is Some(_) iff t represents a ty_enum.
++pub fn named_element_ty(cx: &ctxt, t: t, n: ast::Name, variant_id: Option<ast::DefId>) -> Option<t> {
++
++    // FIXME probably need to pass in substs from the surrounding
++    // context, not the substs from the definition itself.
++
++    match (&get(t).sty, variant_id) {
++        (&ty_struct(def_id, ref substs), None) => {
++            let r = lookup_struct_fields(cx, def_id);
++            r.iter().find(|f| f.name == n)
++                .map(|&f| lookup_field_type(cx, def_id, f.id, substs))
++        }
++        (&ty_enum(def_id, ref substs), Some(variant_def_id)) => {
++            let variant_info = enum_variant_with_id(cx, def_id, variant_def_id);
++            variant_info.arg_names.as_ref()
++                .expect("must have struct enum variant if accessing a named fields")
++                .iter().zip(variant_info.args.iter())
++                .find(|&(ident, _)| ident.name == n)
++                .map(|(_ident, arg_t)| arg_t.subst(cx, substs))
++        }
++        _ => None
++    }
++}
++
+ pub fn node_id_to_trait_ref(cx: &ctxt, id: ast::NodeId) -> Rc<ty::TraitRef> {
+     match cx.trait_refs.borrow().find(&id) {
+         Some(t) => t.clone(),
+@@ -4253,6 +4348,11 @@ pub fn has_dtor(cx: &ctxt, struct_id: DefId) -> bool {
+     ty_dtor(cx, struct_id).is_present()
+ }
+ 
++/* Return true iff struct_id names a struct that implements QuietEarlyDrop. */
++fn has_quiet_dtor(cx: &ctxt, struct_id: DefId) -> bool {
++    cx.quiet_dtor_for_type.borrow().find(&struct_id).is_some()
++}
++
+ pub fn with_path<T>(cx: &ctxt, id: ast::DefId, f: |ast_map::PathElems| -> T) -> T {
+     if id.krate == ast::LOCAL_CRATE {
+         cx.map.with_path(id.node, f)
+diff --git a/src/librustc/middle/typeck/check/method.rs b/src/librustc/middle/typeck/check/method.rs
+index 88d9a58..45be755 100644
+--- a/src/librustc/middle/typeck/check/method.rs
++++ b/src/librustc/middle/typeck/check/method.rs
+@@ -537,14 +537,14 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
+             return
+         }
+ 
+-        let vcx = self.fcx.vtable_context();
++        let infcx = self.fcx.infcx();
+ 
+         // Get the tupled type of the arguments.
+         let arguments_type = *closure_function_type.sig.inputs.get(0);
+         let return_type = closure_function_type.sig.output;
+ 
+         let closure_region =
+-            vcx.infcx.next_region_var(infer::MiscVariable(self.span));
++            infcx.next_region_var(infer::MiscVariable(self.span));
+         let unboxed_closure_type = ty::mk_unboxed_closure(self.tcx(),
+                                                           closure_did,
+                                                           closure_region);
+@@ -554,7 +554,7 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
+             rcvr_substs: subst::Substs::new_trait(
+                 vec![arguments_type, return_type],
+                 vec![],
+-                *vcx.infcx.next_ty_vars(1).get(0)),
++                *infcx.next_ty_vars(1).get(0)),
+             method_ty: method,
+             origin: MethodStaticUnboxedClosure(closure_did),
+         });
+@@ -816,11 +816,10 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
+         // determine the `self` of the impl with fresh
+         // variables for each parameter:
+         let span = self.self_expr.map_or(self.span, |e| e.span);
+-        let vcx = self.fcx.vtable_context();
+         let TypeAndSubsts {
+             substs: impl_substs,
+             ty: impl_ty
+-        } = impl_self_ty(&vcx, span, impl_did);
++        } = impl_self_ty(self.tcx(), self.infcx(), span, impl_did);
+ 
+         let candidates = if is_extension {
+             &mut self.extension_candidates
+diff --git a/src/librustc/middle/typeck/check/mod.rs b/src/librustc/middle/typeck/check/mod.rs
+index 01b5fd6..599b460 100644
+--- a/src/librustc/middle/typeck/check/mod.rs
++++ b/src/librustc/middle/typeck/check/mod.rs
+@@ -103,6 +103,7 @@ use middle::typeck::check::method::{DontAutoderefReceiver};
+ use middle::typeck::check::method::{IgnoreStaticMethods, ReportStaticMethods};
+ use middle::typeck::check::regionmanip::replace_late_bound_regions_in_fn_sig;
+ use middle::typeck::check::vtable::VtableContext;
++use middle::typeck::check;
+ use middle::typeck::CrateCtxt;
+ use middle::typeck::infer::{resolve_type, force_tvar};
+ use middle::typeck::infer;
+@@ -1580,13 +1581,20 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
+         self.ccx.tcx.sess.err_count() - self.err_count_on_creation
+     }
+ 
+-    pub fn vtable_context<'a>(&'a self) -> VtableContext<'a, 'tcx> {
++    pub fn vtable_context<'a>(&'a self, is_early: check::vtable::IsEarly) -> VtableContext<'a, 'tcx> {
+         VtableContext {
+             infcx: self.infcx(),
+-            param_env: &self.inh.param_env,
++            param_bounds: &self.inh.param_env.bounds,
+             unboxed_closures: &self.inh.unboxed_closures,
++            if_missing_ty_param: check::vtable::IfMissingTyParamSearch,
++            is_early: is_early,
+         }
+     }
++
++    pub fn vtable_context_is_early<'a>(&'a self, is_early: bool) -> VtableContext<'a, 'tcx> {
++        self.vtable_context(
++            if is_early { check::vtable::IsEarly } else { check::vtable::NotEarly })
++    }
+ }
+ 
+ impl<'a, 'tcx> RegionScope for infer::InferCtxt<'a, 'tcx> {
+@@ -2571,20 +2579,18 @@ fn check_expr_with_lvalue_pref(fcx: &FnCtxt, expr: &ast::Expr,
+ // declared on the impl declaration e.g., `impl<A,B> for ~[(A,B)]`
+ // would return ($0, $1) where $0 and $1 are freshly instantiated type
+ // variables.
+-pub fn impl_self_ty(vcx: &VtableContext,
++pub fn impl_self_ty(tcx: &ty::ctxt,
++                    infcx: &infer::InferCtxt,
+                     span: Span, // (potential) receiver for this impl
+-                    did: ast::DefId)
+-                    -> TypeAndSubsts {
+-    let tcx = vcx.tcx();
+-
++                    did: ast::DefId) -> TypeAndSubsts {
+     let ity = ty::lookup_item_type(tcx, did);
+     let (n_tps, rps, raw_ty) =
+         (ity.generics.types.len(subst::TypeSpace),
+          ity.generics.regions.get_slice(subst::TypeSpace),
+          ity.ty);
+ 
+-    let rps = vcx.infcx.region_vars_for_defs(span, rps);
+-    let tps = vcx.infcx.next_ty_vars(n_tps);
++    let rps = infcx.region_vars_for_defs(span, rps);
++    let tps = infcx.next_ty_vars(n_tps);
+     let substs = subst::Substs::new_type(tps, rps);
+     let substd_ty = raw_ty.subst(tcx, &substs);
+ 
+@@ -4715,7 +4721,7 @@ pub fn polytype_for_def(fcx: &FnCtxt,
+                         -> Polytype {
+     match defn {
+       def::DefArg(nid, _) | def::DefLocal(nid, _) |
+-      def::DefBinding(nid, _) => {
++      def::DefBinding(nid, _, _) => {
+           let typ = fcx.local_ty(sp, nid);
+           return no_params(typ);
+       }
+diff --git a/src/librustc/middle/typeck/check/regionck.rs b/src/librustc/middle/typeck/check/regionck.rs
+index eb630d0..ca5f113 100644
+--- a/src/librustc/middle/typeck/check/regionck.rs
++++ b/src/librustc/middle/typeck/check/regionck.rs
+@@ -234,7 +234,7 @@ fn region_of_def(fcx: &FnCtxt, def: def::Def) -> ty::Region {
+     let tcx = fcx.tcx();
+     match def {
+         DefLocal(node_id, _) | DefArg(node_id, _) |
+-        DefBinding(node_id, _) => {
++        DefBinding(node_id, _, _) => {
+             tcx.region_maps.var_region(node_id)
+         }
+         DefUpvar(_, subdef, closure_id, body_id) => {
+@@ -1446,7 +1446,7 @@ fn link_region(rcx: &Rcx,
+             }
+ 
+             mc::cat_discr(cmt_base, _) |
+-            mc::cat_downcast(cmt_base) |
++            mc::cat_downcast(cmt_base, _) |
+             mc::cat_deref(cmt_base, _, mc::GcPtr(..)) |
+             mc::cat_deref(cmt_base, _, mc::OwnedPtr) |
+             mc::cat_interior(cmt_base, _) => {
+@@ -1648,7 +1648,7 @@ fn adjust_upvar_borrow_kind_for_mut(rcx: &Rcx,
+         match cmt.cat.clone() {
+             mc::cat_deref(base, _, mc::OwnedPtr) |
+             mc::cat_interior(base, _) |
+-            mc::cat_downcast(base) |
++            mc::cat_downcast(base, _) |
+             mc::cat_discr(base, _) => {
+                 // Interior or owned data is mutable if base is
+                 // mutable, so iterate to the base.
+@@ -1703,7 +1703,7 @@ fn adjust_upvar_borrow_kind_for_unique(rcx: &Rcx, cmt: mc::cmt) {
+         match cmt.cat.clone() {
+             mc::cat_deref(base, _, mc::OwnedPtr) |
+             mc::cat_interior(base, _) |
+-            mc::cat_downcast(base) |
++            mc::cat_downcast(base, _) |
+             mc::cat_discr(base, _) => {
+                 // Interior or owned data is unique if base is
+                 // unique.
+diff --git a/src/librustc/middle/typeck/check/vtable.rs b/src/librustc/middle/typeck/check/vtable.rs
+index 16136fc..dbaf4ca 100644
+--- a/src/librustc/middle/typeck/check/vtable.rs
++++ b/src/librustc/middle/typeck/check/vtable.rs
+@@ -70,20 +70,45 @@ use syntax::visit::Visitor;
+ /// and a list of unboxed closure types.
+ pub struct VtableContext<'a, 'tcx: 'a> {
+     pub infcx: &'a infer::InferCtxt<'a, 'tcx>,
+-    pub param_env: &'a ty::ParameterEnvironment,
++    pub param_bounds: &'a VecPerParamSpace<ty::ParamBounds>,
+     pub unboxed_closures: &'a RefCell<DefIdMap<ty::UnboxedClosure>>,
++    pub is_early: IsEarly,
++    pub if_missing_ty_param: IfMissingTyParam,
++}
++
++#[deriving(PartialEq, Show)]
++pub enum IsEarly {
++    IsEarly,
++    NotEarly,
++}
++
++#[deriving(Show)]
++pub enum IfMissingTyParam {
++    IfMissingTyParamSearch,
++    IfMissingTyParamGiveUp,
+ }
+ 
+ impl<'a, 'tcx> VtableContext<'a, 'tcx> {
+     pub fn tcx(&self) -> &'a ty::ctxt<'tcx> { self.infcx.tcx }
++
++    pub fn is_early(&self) -> bool { self.is_early == IsEarly }
++
++    fn ok_or_die<A>(&self, r: VtResult<A>) -> A {
++        match r {
++            Ok(r) => r,
++            Err((span, msg)) => self.tcx().sess.span_fatal(span, msg.as_slice()),
++        }
++    }
+ }
+ 
++pub type ErrMsg = (Span, String);
++pub type VtResult<A> = Result<A, ErrMsg>;
++
+ fn lookup_vtables(vcx: &VtableContext,
+                   span: Span,
+                   type_param_defs: &VecPerParamSpace<ty::TypeParameterDef>,
+-                  substs: &subst::Substs,
+-                  is_early: bool)
+-                  -> VecPerParamSpace<vtable_param_res> {
++                  substs: &subst::Substs)
++                  -> VtResult<VecPerParamSpace<vtable_param_res>> {
+     debug!("lookup_vtables(\
+            type_param_defs={}, \
+            substs={}",
+@@ -91,40 +116,53 @@ fn lookup_vtables(vcx: &VtableContext,
+            substs.repr(vcx.tcx()));
+ 
+     // We do this backwards for reasons discussed above.
+-    let result = type_param_defs.map_rev(|def| {
++    let result = type_param_defs.try_map_rev(|def| {
+         let ty = *substs.types.get(def.space, def.index);
+         lookup_vtables_for_param(vcx, span, Some(substs),
+-                                 &def.bounds, ty, is_early)
++                                 &def.bounds, ty)
+     });
+ 
+-    debug!("lookup_vtables result(\
+-            type_param_defs={}, \
+-            substs={}, \
+-            result={})",
+-           type_param_defs.repr(vcx.tcx()),
+-           substs.repr(vcx.tcx()),
+-           result.repr(vcx.tcx()));
++    match result {
++        Ok(ref result) => {
++            debug!("lookup_vtables result(\
++                   type_param_defs={}, \
++                   substs={}, \
++                   result={})",
++                   type_param_defs.repr(vcx.tcx()),
++                   substs.repr(vcx.tcx()),
++                   result.repr(vcx.tcx()));
++        }
++        Err(ref payload) => {
++            debug!("lookup_vtables result err(\
++                   type_param_defs={}, \
++                   substs={}, \
++                   result={})",
++                   type_param_defs.repr(vcx.tcx()),
++                   substs.repr(vcx.tcx()),
++                   payload.ref1());
++        }
++    }
+ 
+     result
+ }
+ 
+ fn lookup_vtables_for_param(vcx: &VtableContext,
+-                            span: Span,
+-                            // None for substs means the identity
+-                            substs: Option<&subst::Substs>,
+-                            type_param_bounds: &ty::ParamBounds,
+-                            ty: ty::t,
+-                            is_early: bool)
+-                            -> vtable_param_res {
++                                span: Span,
++                                // None for substs means the identity
++                                substs: Option<&subst::Substs>,
++                                type_param_bounds: &ty::ParamBounds,
++                                ty: ty::t)
++                                -> VtResult<vtable_param_res> {
+     let tcx = vcx.tcx();
+ 
+     debug!("lookup_vtables_for_param(ty={}, type_param_bounds={}, is_early={})",
+            ty.repr(vcx.tcx()),
+            type_param_bounds.repr(vcx.tcx()),
+-           is_early);
++           vcx.is_early());
+ 
+     // ty is the value supplied for the type parameter A...
+     let mut param_result = Vec::new();
++    let mut first_error = None;
+ 
+     ty::each_bound_trait_and_supertraits(tcx,
+                                          type_param_bounds.trait_bounds
+@@ -150,35 +188,47 @@ fn lookup_vtables_for_param(vcx: &VtableContext,
+ 
+         debug!("after subst: {}", trait_ref.repr(tcx));
+ 
+-        match lookup_vtable(vcx, span, ty, trait_ref.clone(), is_early) {
+-            Some(vtable) => param_result.push(vtable),
+-            None => {
+-                vcx.tcx().sess.span_err(span,
++        match lookup_vtable(vcx, span, ty, trait_ref.clone()) {
++            Ok(Some(vtable)) => {
++                param_result.push(vtable);
++            }
++            Ok(None) => {
++                let msg =
+                     format!("failed to find an implementation of \
+-                          trait {} for {}",
+-                         vcx.infcx.trait_ref_to_string(&*trait_ref),
+-                         vcx.infcx.ty_to_string(ty)).as_slice());
+-                param_result.push(vtable_error)
++                            trait {} for {}",
++                            vcx.infcx.trait_ref_to_string(&*trait_ref),
++                            vcx.infcx.ty_to_string(ty).as_slice());
++                param_result.push(vtable_error);
++                first_error = Some((span, msg));
++            }
++            Err(msg) => {
++                first_error = Some(msg);
+             }
+         }
+-        true
++        first_error.is_none()
+     });
+ 
+-    debug!("lookup_vtables_for_param result(\
+-            type_param_bounds={}, \
+-            ty={}, \
+-            result={})",
+-           type_param_bounds.repr(vcx.tcx()),
+-           ty.repr(vcx.tcx()),
+-           param_result.repr(vcx.tcx()));
+-
+-    param_result
++    match first_error {
++        Some(error_payload) => Err(error_payload),
++        None => {
++            debug!("lookup_vtables_for_param result(\
++                   type_param_bounds={}, \
++                   ty={}, \
++                   result={})",
++                   type_param_bounds.repr(vcx.tcx()),
++                   ty.repr(vcx.tcx()),
++                   param_result.repr(vcx.tcx()));
++            Ok(param_result)
++        }
++    }
+ }
+ 
+-fn relate_trait_refs(vcx: &VtableContext,
+-                     span: Span,
+-                     act_trait_ref: Rc<ty::TraitRef>,
+-                     exp_trait_ref: Rc<ty::TraitRef>) {
++// FIXME: this does not belong in this module anymore.
++pub fn relate_trait_refs(tcx: &ty::ctxt,
++                         infcx: &infer::InferCtxt,
++                         span: Span,
++                         act_trait_ref: Rc<ty::TraitRef>,
++                         exp_trait_ref: Rc<ty::TraitRef>) {
+     /*!
+      *
+      * Checks that an implementation of `act_trait_ref` is suitable
+@@ -186,7 +236,7 @@ fn relate_trait_refs(vcx: &VtableContext,
+      * error otherwise.
+      */
+ 
+-    match infer::mk_sub_trait_refs(vcx.infcx,
++    match infer::mk_sub_trait_refs(infcx,
+                                    false,
+                                    infer::RelateTraitRefs(span),
+                                    act_trait_ref.clone(),
+@@ -197,15 +247,15 @@ fn relate_trait_refs(vcx: &VtableContext,
+             // the message good.
+             // Resolve any type vars in the trait refs
+             let r_act_trait_ref =
+-                vcx.infcx.resolve_type_vars_in_trait_ref_if_possible(&*act_trait_ref);
++                infcx.resolve_type_vars_in_trait_ref_if_possible(&*act_trait_ref);
+             let r_exp_trait_ref =
+-                vcx.infcx.resolve_type_vars_in_trait_ref_if_possible(&*exp_trait_ref);
++                infcx.resolve_type_vars_in_trait_ref_if_possible(&*exp_trait_ref);
+             // Only print the message if there aren't any previous type errors
+             // inside the types.
+             if !ty::trait_ref_contains_error(&r_act_trait_ref) &&
+                 !ty::trait_ref_contains_error(&r_exp_trait_ref)
+             {
+-                let tcx = vcx.tcx();
++                let tcx = infcx.tcx;
+                 span_err!(tcx.sess, span, E0095, "expected {}, found {} ({})",
+                           ppaux::trait_ref_to_string(tcx, &r_exp_trait_ref),
+                           ppaux::trait_ref_to_string(tcx, &r_act_trait_ref),
+@@ -216,79 +266,97 @@ fn relate_trait_refs(vcx: &VtableContext,
+ }
+ 
+ // Look up the vtable implementing the trait `trait_ref` at type `t`
+-fn lookup_vtable(vcx: &VtableContext,
+-                 span: Span,
+-                 ty: ty::t,
+-                 trait_ref: Rc<ty::TraitRef>,
+-                 is_early: bool)
+-                 -> Option<vtable_origin>
++pub fn lookup_vtable(vcx: &VtableContext,
++                     span: Span,
++                     ty: ty::t,
++                     trait_ref: Rc<ty::TraitRef>)
++                 -> VtResult<Option<vtable_origin>>
+ {
+-    debug!("lookup_vtable(ty={}, trait_ref={})",
++    debug!("lookup_vtable(vcx{} param_bounds={} {}, ty={}, trait_ref={})",
++           "{", vcx.param_bounds.repr(vcx.tcx()), "}",
+            ty.repr(vcx.tcx()),
+            trait_ref.repr(vcx.tcx()));
+     let _i = indenter();
+ 
+-    let ty = match fixup_ty(vcx, span, ty, is_early) {
+-        Some(ty) => ty,
++    let ty = match fixup_ty(vcx.tcx(), vcx.infcx, span, ty, vcx.is_early()) {
++        Some(ty) => {
++            ty
++        }
+         None => {
+             // fixup_ty can only fail if this is early resolution
+-            assert!(is_early);
++            assert!(vcx.is_early());
+             // The type has unconstrained type variables in it, so we can't
+             // do early resolution on it. Return some completely bogus vtable
+             // information: we aren't storing it anyways.
+-            return Some(vtable_error);
++            debug!("lookup_vtable vtable_error");
++            return Ok(Some(vtable_error));
+         }
+     };
+ 
+     if ty::type_is_error(ty) {
+-        return Some(vtable_error);
++        debug!("lookup_vtable type_is_error(ty={})", ty.repr(vcx.tcx()));
++        return Ok(Some(vtable_error));
+     }
+ 
+     // If the type is self or a param, we look at the trait/supertrait
+     // bounds to see if they include the trait we are looking for.
+-    let vtable_opt = match ty::get(ty).sty {
++    match ty::get(ty).sty {
+         ty::ty_param(ParamTy {space, idx: n, ..}) => {
+-            let env_bounds = &vcx.param_env.bounds;
++            let env_bounds = &vcx.param_bounds;
+             let type_param_bounds = &env_bounds.get(space, n).trait_bounds;
+-            lookup_vtable_from_bounds(vcx,
+-                                      span,
+-                                      type_param_bounds.as_slice(),
+-                                      param_index {
+-                                          space: space,
+-                                          index: n,
+-                                      },
+-                                      trait_ref.clone())
++            let param_index = param_index { space: space, index: n };
++            debug!("lookup_vtable type_param_bounds: {} \
++                    param_index: {:?} trait_ref: {}",
++                   type_param_bounds.repr(vcx.tcx()),
++                   param_index,
++                   trait_ref.repr(vcx.tcx()));
++            let ret = lookup_vtable_from_bounds(vcx.tcx(),
++                                                vcx.infcx,
++                                                span,
++                                                type_param_bounds.as_slice(),
++                                                param_index,
++                                                trait_ref.clone());
++            if ret.is_some() {
++                return Ok(ret);
++            }
++
++            match vcx.if_missing_ty_param {
++                IfMissingTyParamGiveUp => {
++                    let msg = format!("No vtable found for ty param {}", ty.repr(vcx.tcx()));
++                    return Err((span, msg));
++                }
++                IfMissingTyParamSearch => {
++                    // fall through to search below
++                }
++            }
+         }
+ 
+         // Default case just falls through
+-        _ => None
++        _ => {}
+     };
+ 
+-    if vtable_opt.is_some() { return vtable_opt; }
+-
+     // If we aren't a self type or param, or it was, but we didn't find it,
+     // do a search.
+-    search_for_vtable(vcx, span, ty, trait_ref, is_early)
++    search_for_vtable(vcx, span, ty, trait_ref)
+ }
+ 
+ // Given a list of bounds on a type, search those bounds to see if any
+ // of them are the vtable we are looking for.
+-fn lookup_vtable_from_bounds(vcx: &VtableContext,
+-                             span: Span,
+-                             bounds: &[Rc<ty::TraitRef>],
+-                             param: param_index,
+-                             trait_ref: Rc<ty::TraitRef>)
+-                             -> Option<vtable_origin> {
+-    let tcx = vcx.tcx();
+-
++pub fn lookup_vtable_from_bounds(tcx: &ty::ctxt,
++                                 infcx: &infer::InferCtxt,
++                                 span: Span,
++                                 bounds: &[Rc<ty::TraitRef>],
++                                 param: param_index,
++                                 trait_ref: Rc<ty::TraitRef>)
++                                 -> Option<vtable_origin> {
+     let mut n_bound = 0;
+     let mut ret = None;
+     ty::each_bound_trait_and_supertraits(tcx, bounds, |bound_trait_ref| {
+         debug!("checking bounds trait {}",
+-               bound_trait_ref.repr(vcx.tcx()));
++               bound_trait_ref.repr(tcx));
+ 
+         if bound_trait_ref.def_id == trait_ref.def_id {
+-            relate_trait_refs(vcx, span, bound_trait_ref, trait_ref.clone());
++            relate_trait_refs(tcx, infcx, span, bound_trait_ref, trait_ref.clone());
+             let vtable = vtable_param(param, n_bound);
+             debug!("found param vtable: {:?}",
+                    vtable);
+@@ -302,7 +370,7 @@ fn lookup_vtable_from_bounds(vcx: &VtableContext,
+     ret
+ }
+ 
+-fn search_for_unboxed_closure_vtable(vcx: &VtableContext,
++pub fn search_for_unboxed_closure_vtable(vcx: &VtableContext,
+                                      span: Span,
+                                      ty: ty::t,
+                                      trait_ref: Rc<ty::TraitRef>)
+@@ -375,7 +443,7 @@ fn search_for_unboxed_closure_vtable(vcx: &VtableContext,
+                 ty)
+         });
+ 
+-        relate_trait_refs(vcx, span, corresponding_trait_ref, trait_ref);
++        relate_trait_refs(vcx.tcx(), vcx.infcx, span, corresponding_trait_ref, trait_ref);
+         return Some(vtable_unboxed_closure(closure_def_id))
+     }
+ 
+@@ -385,9 +453,8 @@ fn search_for_unboxed_closure_vtable(vcx: &VtableContext,
+ fn search_for_vtable(vcx: &VtableContext,
+                      span: Span,
+                      ty: ty::t,
+-                     trait_ref: Rc<ty::TraitRef>,
+-                     is_early: bool)
+-                     -> Option<vtable_origin> {
++                     trait_ref: Rc<ty::TraitRef>)
++                     -> VtResult<Option<vtable_origin>> {
+     let tcx = vcx.tcx();
+ 
+     // First, check to see whether this is a call to the `call` method of an
+@@ -396,7 +463,7 @@ fn search_for_vtable(vcx: &VtableContext,
+                                             span,
+                                             ty,
+                                             trait_ref.clone()) {
+-        Some(vtable_origin) => return Some(vtable_origin),
++        Some(vtable_origin) => return Ok(Some(vtable_origin)),
+         None => {}
+     }
+ 
+@@ -412,7 +479,7 @@ fn search_for_vtable(vcx: &VtableContext,
+     let impls = match tcx.trait_impls.borrow().find_copy(&trait_ref.def_id) {
+         Some(impls) => impls,
+         None => {
+-            return None;
++            return Ok(None);
+         }
+     };
+     // impls is the list of all impls in scope for trait_ref.
+@@ -451,7 +518,7 @@ fn search_for_vtable(vcx: &VtableContext,
+         let TypeAndSubsts {
+             substs: substs,
+             ty: for_ty
+-        } = impl_self_ty(vcx, span, impl_did);
++        } = impl_self_ty(vcx.tcx(), vcx.infcx, span, impl_did);
+         match infer::mk_eqty(vcx.infcx,
+                              false,
+                              infer::RelateSelfType(span),
+@@ -484,7 +551,7 @@ fn search_for_vtable(vcx: &VtableContext,
+                vcx.infcx.trait_ref_to_string(&*trait_ref),
+                vcx.infcx.trait_ref_to_string(&*of_trait_ref));
+ 
+-        relate_trait_refs(vcx, span, of_trait_ref, trait_ref.clone());
++        relate_trait_refs(vcx.tcx(), vcx.infcx, span, of_trait_ref, trait_ref.clone());
+ 
+ 
+         // Recall that trait_ref -- the trait type we're casting to --
+@@ -499,23 +566,24 @@ fn search_for_vtable(vcx: &VtableContext,
+         // later in the kind checking pass.
+         let im_generics =
+             ty::lookup_item_type(tcx, impl_did).generics;
+-        let subres = lookup_vtables(vcx,
+-                                    span,
+-                                    &im_generics.types,
+-                                    &substs,
+-                                    is_early);
++        let subres = try!(lookup_vtables(vcx,
++                                         span,
++                                         &im_generics.types,
++                                         &substs));
+ 
+         // substs might contain type variables, so we call
+         // fixup_substs to resolve them.
+-        let substs_f = match fixup_substs(vcx, span,
++        let substs_f = match fixup_substs(vcx.tcx(),
++                                          vcx.infcx,
++                                          span,
+                                           trait_ref.def_id,
+                                           substs,
+-                                          is_early) {
++                                          vcx.is_early()) {
+             Some(ref substs) => (*substs).clone(),
+             None => {
+-                assert!(is_early);
++                assert!(vcx.is_early());
+                 // Bail out with a bogus answer
+-                return Some(vtable_error);
++                return Ok(Some(vtable_error));
+             }
+         };
+ 
+@@ -532,7 +600,7 @@ fn search_for_vtable(vcx: &VtableContext,
+         // I am a little confused about this, since it seems to be
+         // very similar to the relate_trait_refs we already do,
+         // but problems crop up if it is removed, so... -sully
+-        connect_trait_tps(vcx, span, &substs_f, trait_ref.clone(), impl_did);
++        connect_trait_tps(vcx.tcx(), vcx.infcx, span, &substs_f, trait_ref.clone(), impl_did);
+ 
+         // Finally, we register that we found a matching impl, and
+         // record the def ID of the impl as well as the resolved list
+@@ -541,31 +609,31 @@ fn search_for_vtable(vcx: &VtableContext,
+     }
+ 
+     match found.len() {
+-        0 => { return None }
+-        1 => return Some(found.get(0).clone()),
++        0 => { return Ok(None) }
++        1 => return Ok(Some(found.get(0).clone())),
+         _ => {
+-            if !is_early {
++            if !vcx.is_early() {
+                 span_err!(vcx.tcx().sess, span, E0096,
+                           "multiple applicable methods in scope");
+             }
+-            return Some(found.get(0).clone());
++            return Ok(Some(found.get(0).clone()));
+         }
+     }
+ }
+ 
+-
+-fn fixup_substs(vcx: &VtableContext,
+-                span: Span,
+-                id: ast::DefId,
+-                substs: subst::Substs,
+-                is_early: bool)
+-                -> Option<subst::Substs> {
+-    let tcx = vcx.tcx();
++// FIXME: may not belong here anymore
++pub fn fixup_substs(tcx: &ty::ctxt,
++                    infcx: &infer::InferCtxt,
++                    span: Span,
++                    id: ast::DefId,
++                    substs: subst::Substs,
++                    is_early: bool)
++                    -> Option<subst::Substs> {
+     // use a dummy type just to package up the substs that need fixing up
+     let t = ty::mk_trait(tcx,
+                          id, substs,
+                          ty::region_existential_bound(ty::ReStatic));
+-    fixup_ty(vcx, span, t, is_early).map(|t_f| {
++    fixup_ty(tcx, infcx, span, t, is_early).map(|t_f| {
+         match ty::get(t_f).sty {
+           ty::ty_trait(ref inner) => inner.substs.clone(),
+           _ => fail!("t_f should be a trait")
+@@ -573,13 +641,13 @@ fn fixup_substs(vcx: &VtableContext,
+     })
+ }
+ 
+-fn fixup_ty(vcx: &VtableContext,
+-            span: Span,
+-            ty: ty::t,
+-            is_early: bool)
+-            -> Option<ty::t> {
+-    let tcx = vcx.tcx();
+-    match resolve_type(vcx.infcx, Some(span), ty, resolve_and_force_all_but_regions) {
++pub fn fixup_ty(tcx: &ty::ctxt,
++                infcx: &infer::InferCtxt,
++                span: Span,
++                ty: ty::t,
++                is_early: bool)
++                -> Option<ty::t> {
++    match resolve_type(infcx, Some(span), ty, resolve_and_force_all_but_regions) {
+         Ok(new_type) => Some(new_type),
+         Err(e) if !is_early => {
+             tcx.sess.span_err(span,
+@@ -594,24 +662,23 @@ fn fixup_ty(vcx: &VtableContext,
+     }
+ }
+ 
+-fn connect_trait_tps(vcx: &VtableContext,
++pub fn connect_trait_tps(tcx: &ty::ctxt,
++                     infcx: &infer::InferCtxt,
+                      span: Span,
+                      impl_substs: &subst::Substs,
+                      trait_ref: Rc<ty::TraitRef>,
+                      impl_did: ast::DefId) {
+-    let tcx = vcx.tcx();
+-
+     let impl_trait_ref = match ty::impl_trait_ref(tcx, impl_did) {
+         Some(t) => t,
+-        None => vcx.tcx().sess.span_bug(span,
++        None => tcx.sess.span_bug(span,
+                                   "connect_trait_tps invoked on a type impl")
+     };
+ 
+     let impl_trait_ref = impl_trait_ref.subst(tcx, impl_substs);
+-    relate_trait_refs(vcx, span, impl_trait_ref, trait_ref);
++    relate_trait_refs(tcx, infcx, span, impl_trait_ref, trait_ref);
+ }
+ 
+-fn insert_vtables(fcx: &FnCtxt, vtable_key: MethodCall, vtables: vtable_res) {
++pub fn insert_vtables(fcx: &FnCtxt, vtable_key: MethodCall, vtables: vtable_res) {
+     debug!("insert_vtables(vtable_key={}, vtables={})",
+            vtable_key, vtables.repr(fcx.tcx()));
+     fcx.inh.vtable_map.borrow_mut().insert(vtable_key, vtables);
+@@ -698,7 +765,7 @@ pub fn early_resolve_expr(ex: &ast::Expr, fcx: &FnCtxt, is_early: bool) {
+           ty::ty_trait(box ty::TyTrait {
+               def_id: target_def_id, substs: ref target_substs, ..
+           }) => {
+-              let vcx = fcx.vtable_context();
++              let vcx = fcx.vtable_context_is_early(is_early);
+ 
+               // Take the type parameters from the object
+               // type, but set the Self type (which is
+@@ -727,12 +794,11 @@ pub fn early_resolve_expr(ex: &ast::Expr, fcx: &FnCtxt, is_early: bool) {
+                                              ex.span,
+                                              None,
+                                              &param_bounds,
+-                                             src_ty,
+-                                             is_early);
++                                             src_ty);
+ 
+               if !is_early {
+-                  let mut r = VecPerParamSpace::empty();
+-                  r.push(subst::SelfSpace, vtables);
++                  let mut r : vtable_res = VecPerParamSpace::empty();
++                  r.push(subst::SelfSpace, vtables.unwrap());
+                   insert_vtables(fcx, key, r);
+               }
+           }
+@@ -751,11 +817,12 @@ pub fn early_resolve_expr(ex: &ast::Expr, fcx: &FnCtxt, is_early: bool) {
+                    fcx.infcx().ty_to_string(item_ty.ty));
+             debug!("early_resolve_expr: looking up vtables for type params {}",
+                    item_ty.generics.types.repr(fcx.tcx()));
+-            let vcx = fcx.vtable_context();
+-            let vtbls = lookup_vtables(&vcx, ex.span,
+-                                       &item_ty.generics.types,
+-                                       &item_substs.substs, is_early);
+-            if !is_early {
++            let vcx = fcx.vtable_context_is_early(is_early);
++            let vtbls = vcx.ok_or_die(
++                lookup_vtables(&vcx, ex.span,
++                               &item_ty.generics.types,
++                               &item_substs.substs));
++            if !vcx.is_early() {
+                 insert_vtables(fcx, MethodCall::expr(ex.id), vtbls);
+             }
+         });
+@@ -776,11 +843,12 @@ pub fn early_resolve_expr(ex: &ast::Expr, fcx: &FnCtxt, is_early: bool) {
+               let type_param_defs =
+                   ty::method_call_type_param_defs(fcx, method.origin);
+               let substs = fcx.method_ty_substs(ex.id);
+-              let vcx = fcx.vtable_context();
+-              let vtbls = lookup_vtables(&vcx, ex.span,
+-                                         &type_param_defs,
+-                                         &substs, is_early);
+-              if !is_early {
++              let vcx = fcx.vtable_context_is_early(is_early);
++              let vtbls = vcx.ok_or_die(
++                  lookup_vtables(&vcx, ex.span,
++                                 &type_param_defs,
++                                 &substs));
++              if !vcx.is_early() {
+                   insert_vtables(fcx, MethodCall::expr(ex.id), vtbls);
+               }
+           }
+@@ -835,11 +903,12 @@ pub fn early_resolve_expr(ex: &ast::Expr, fcx: &FnCtxt, is_early: bool) {
+                                        ex.repr(fcx.tcx()));
+                                 let type_param_defs =
+                                     ty::method_call_type_param_defs(cx.tcx, method.origin);
+-                                let vcx = fcx.vtable_context();
+-                                let vtbls = lookup_vtables(&vcx, ex.span,
+-                                                           &type_param_defs,
+-                                                           &method.substs, is_early);
+-                                if !is_early {
++                                let vcx = fcx.vtable_context_is_early(is_early);
++                                let vtbls = vcx.ok_or_die(
++                                    lookup_vtables(&vcx, ex.span,
++                                                   &type_param_defs,
++                                                   &method.substs));
++                                if !vcx.is_early() {
+                                     insert_vtables(fcx, method_call, vtbls);
+                                 }
+                             }
+@@ -961,8 +1030,10 @@ pub fn resolve_impl(tcx: &ty::ctxt,
+     let unboxed_closures = RefCell::new(DefIdMap::new());
+     let vcx = VtableContext {
+         infcx: infcx,
+-        param_env: &param_env,
++        param_bounds: &param_env.bounds,
+         unboxed_closures: &unboxed_closures,
++        if_missing_ty_param: IfMissingTyParamSearch,
++        is_early: NotEarly,
+     };
+ 
+     // Resolve the vtables for the trait reference on the impl.  This
+@@ -988,11 +1059,11 @@ pub fn resolve_impl(tcx: &ty::ctxt,
+     //     fn default_x<T:B, Self:A>(...) { .. .})
+ 
+     let trait_def = ty::lookup_trait_def(tcx, impl_trait_ref.def_id);
+-    let vtbls = lookup_vtables(&vcx,
+-                                   impl_item.span,
+-                                   &trait_def.generics.types,
+-                                   &impl_trait_ref.substs,
+-                                   false);
++    let vtbls = vcx.ok_or_die(
++        lookup_vtables(&vcx,
++                       impl_item.span,
++                       &trait_def.generics.types,
++                       &impl_trait_ref.substs));
+ 
+     infcx.resolve_regions_and_report_errors();
+ 
+@@ -1012,17 +1083,19 @@ pub fn trans_resolve_method(tcx: &ty::ctxt, id: ast::NodeId,
+                             substs: &subst::Substs) -> vtable_res {
+     let generics = ty::lookup_item_type(tcx, ast_util::local_def(id)).generics;
+     let unboxed_closures = RefCell::new(DefIdMap::new());
++    let param_env = ty::construct_parameter_environment(tcx, &ty::Generics::empty(), id);
+     let vcx = VtableContext {
+         infcx: &infer::new_infer_ctxt(tcx),
+-        param_env: &ty::construct_parameter_environment(tcx, &ty::Generics::empty(), id),
++        param_bounds: &param_env.bounds,
+         unboxed_closures: &unboxed_closures,
++        if_missing_ty_param: IfMissingTyParamSearch,
++        is_early: NotEarly,
+     };
+ 
+-    lookup_vtables(&vcx,
+-                   tcx.map.span(id),
+-                   &generics.types,
+-                   substs,
+-                   false)
++    vcx.ok_or_die(lookup_vtables(&vcx,
++                                 tcx.map.span(id),
++                                 &generics.types,
++                                 substs))
+ }
+ 
+ impl<'a, 'b, 'tcx> visit::Visitor<()> for &'a FnCtxt<'b, 'tcx> {
+@@ -1053,11 +1126,13 @@ pub fn check_param_bounds(tcx: &ty::ctxt,
+     let unboxed_closures = RefCell::new(DefIdMap::new());
+     let vcx = VtableContext {
+         infcx: &infer::new_infer_ctxt(tcx),
+-        param_env: parameter_environment,
++        param_bounds: &parameter_environment.bounds,
+         unboxed_closures: &unboxed_closures,
++        is_early: NotEarly,
++        if_missing_ty_param: IfMissingTyParamSearch,
+     };
+     let vtable_param_results =
+-        lookup_vtables(&vcx, span, type_param_defs, substs, false);
++        lookup_vtables(&vcx, span, type_param_defs, substs);
+     for (vtable_param_result, type_param_def) in
+             vtable_param_results.iter().zip(type_param_defs.iter()) {
+         for (vtable_result, trait_ref) in
+@@ -1065,7 +1140,7 @@ pub fn check_param_bounds(tcx: &ty::ctxt,
+                                    .zip(type_param_def.bounds
+                                                       .trait_bounds
+                                                       .iter()) {
+-            match *vtable_result {
++            match vtable_result.unwrap() {
+                 vtable_error => any_missing(&**trait_ref),
+                 vtable_static(..) |
+                 vtable_param(..) |
+diff --git a/src/librustc/middle/typeck/coherence.rs b/src/librustc/middle/typeck/coherence.rs
+index 2c6dc94..101c68d 100644
+--- a/src/librustc/middle/typeck/coherence.rs
++++ b/src/librustc/middle/typeck/coherence.rs
+@@ -690,8 +690,12 @@ impl<'a, 'tcx> CoherenceChecker<'a, 'tcx> {
+     //
+     // Destructors
+     //
+-
+     fn populate_destructor_table(&self) {
++        self.populate_destructor_table_for_drop();
++        self.populate_destructor_table_for_quiet_early_drop();
++    }
++
++    fn populate_destructor_table_for_drop(&self) {
+         let tcx = self.crate_context.tcx;
+         let drop_trait = match tcx.lang_items.drop_trait() {
+             Some(id) => id, None => { return }
+@@ -746,6 +750,53 @@ impl<'a, 'tcx> CoherenceChecker<'a, 'tcx> {
+             }
+         }
+     }
++
++    fn populate_destructor_table_for_quiet_early_drop(&self) {
++        let tcx = self.crate_context.tcx;
++        let quiet_early_drop_trait = match tcx.lang_items.quiet_early_drop() {
++            Some(id) => id, None => { return }
++        };
++
++        let trait_impls = match tcx.trait_impls.borrow().find_copy(&quiet_early_drop_trait) {
++            None => return, // No types with (new-style) dtors present.
++            Some(found_impls) => found_impls
++        };
++
++        for &impl_did in trait_impls.borrow().iter() {
++            let self_type = self.get_self_type_for_implementation(impl_did);
++            match ty::get(self_type.ty).sty {
++                ty::ty_enum(type_def_id, _) |
++                ty::ty_struct(type_def_id, _) |
++                ty::ty_unboxed_closure(type_def_id) => {
++                    tcx.quiet_dtor_for_type.borrow_mut().insert(type_def_id, impl_did);
++                }
++                ty::ty_box(..) => {
++                    assert!(tcx.quiet_dtor_for_ty_box.get().is_none());
++                    tcx.quiet_dtor_for_ty_box.set(Some(impl_did));
++                }
++                _ => {
++                    // Destructors only work on nominal types.
++                    if impl_did.krate == ast::LOCAL_CRATE {
++                        {
++                            match tcx.map.find(impl_did.node) {
++                                Some(ast_map::NodeItem(item)) => {
++                                    span_err!(tcx.sess, item.span, E0162,
++                                        "the QuietEarlyDrop trait may only be implemented on structures");
++                                }
++                                _ => {
++                                    tcx.sess.bug("didn't find impl in ast \
++                                                  map");
++                                }
++                            }
++                        }
++                    } else {
++                        tcx.sess.bug("found external impl of QuietEarlyDrop trait on \
++                                      something other than a struct");
++                    }
++                }
++            }
++        }
++    }
+ }
+ 
+ pub fn make_substs_for_receiver_types(tcx: &ty::ctxt,
+diff --git a/src/librustc/util/ppaux.rs b/src/librustc/util/ppaux.rs
+index 11f16f1..638ca5d 100644
+--- a/src/librustc/util/ppaux.rs
++++ b/src/librustc/util/ppaux.rs
+@@ -107,7 +107,7 @@ pub fn explain_region_and_span(cx: &ctxt, region: ty::Region)
+           }
+           Some(_) | None => {
+             // this really should not happen
+-            (format!("unknown scope: {}.  Please report a bug.", node_id), None)
++            fail!("unknown scope: {}.  Please report a bug.", node_id)
+           }
+         }
+       }
+diff --git a/src/libstd/gc.rs b/src/libstd/gc.rs
+index 47b7426..71fa68f 100644
+--- a/src/libstd/gc.rs
++++ b/src/libstd/gc.rs
+@@ -26,7 +26,7 @@ use fmt;
+ use hash;
+ use kinds::marker;
+ use option::Option;
+-use ops::Deref;
++use ops::{Deref, QuietEarlyDrop};
+ use raw;
+ 
+ /// Immutable garbage-collected pointer type
+@@ -46,6 +46,11 @@ impl<T> Clone for Gc<T> {
+     fn clone(&self) -> Gc<T> { *self }
+ }
+ 
++// We do not require QuietEarlyDrop on T in this case, because the
++// assumption is that if you are using Gc<T>, then you are prepared
++// for the Drop to occur at any time.
++impl<T> QuietEarlyDrop for Gc<T> { }
++
+ /// An value that represents the task-local managed heap.
+ ///
+ /// Use this like `let foo = box(GC) Bar::new(...);`
+diff --git a/src/libstd/path/posix.rs b/src/libstd/path/posix.rs
+index 06eab31..574dabe 100644
+--- a/src/libstd/path/posix.rs
++++ b/src/libstd/path/posix.rs
+@@ -18,6 +18,7 @@ use from_str::FromStr;
+ use hash;
+ use io::Writer;
+ use iter::{DoubleEndedIterator, AdditiveIterator, Extendable, Iterator, Map};
++use ops::QuietEarlyDrop;
+ use option::{Option, None, Some};
+ use str::Str;
+ use str;
+@@ -41,6 +42,8 @@ pub struct Path {
+     sepidx: Option<uint> // index of the final separator in repr
+ }
+ 
++impl QuietEarlyDrop for Path {}
++
+ /// The standard path separator character
+ pub static SEP: char = '/';
+ 
+diff --git a/src/libstd/path/windows.rs b/src/libstd/path/windows.rs
+index d9864cf..ac9a676 100644
+--- a/src/libstd/path/windows.rs
++++ b/src/libstd/path/windows.rs
+@@ -22,6 +22,7 @@ use hash;
+ use io::Writer;
+ use iter::{AdditiveIterator, DoubleEndedIterator, Extendable, Iterator, Map};
+ use mem;
++use ops::QuietEarlyDrop;
+ use option::{Option, Some, None};
+ use slice::{Slice, ImmutableSlice};
+ use str::{CharSplits, Str, StrAllocating, StrVector, StrSlice};
+@@ -83,6 +84,8 @@ pub struct Path {
+     sepidx: Option<uint> // index of the final separator in the non-prefix portion of repr
+ }
+ 
++impl QuietEarlyDrop for Path {}
++
+ impl PartialEq for Path {
+     #[inline]
+     fn eq(&self, other: &Path) -> bool {
+@@ -734,7 +737,7 @@ impl Path {
+         };
+         (prefix, match val {
+             None => s.into_string(),
+-            Some(val) => val
++            Some(val) => { mem::drop(s); val }
+         })
+     }
+ 
+diff --git a/src/libsyntax/ast_map/mod.rs b/src/libsyntax/ast_map/mod.rs
+index d1f78c7..4cb865e 100644
+--- a/src/libsyntax/ast_map/mod.rs
++++ b/src/libsyntax/ast_map/mod.rs
+@@ -164,7 +164,7 @@ impl MapEntry {
+             EntryBlock(id, _) => id,
+             EntryStructCtor(id, _) => id,
+             EntryLifetime(id, _) => id,
+-            _ => return None
++            NotPresent | RootCrate | RootInlinedParent(_) => return None,
+         })
+     }
+ 
+@@ -183,7 +183,7 @@ impl MapEntry {
+             EntryBlock(_, p) => NodeBlock(p),
+             EntryStructCtor(_, p) => NodeStructCtor(p),
+             EntryLifetime(_, p) => NodeLifetime(p),
+-            _ => return None
++            NotPresent | RootCrate | RootInlinedParent(_) => return None,
+         })
+     }
+ }
+@@ -620,6 +620,7 @@ pub struct Ctx<'a, F> {
+ impl<'a, F> Ctx<'a, F> {
+     fn insert(&self, id: NodeId, entry: MapEntry) {
+         (*self.map.map.borrow_mut()).grow_set(id as uint, &NotPresent, entry);
++        debug!("ast_map::Ctx.insert({}, {:s})", id, node_id_to_string(self.map, id));
+     }
+ }
+ 
