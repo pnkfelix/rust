@@ -330,7 +330,7 @@ impl MutabilityCategory {
             def::DefStatic(_, true) => McDeclared,
 
             def::DefArg(_, binding_mode) |
-            def::DefBinding(_, binding_mode) |
+            def::DefBinding(_, binding_mode, _) |
             def::DefLocal(_, binding_mode)  => match binding_mode {
                 ast::BindByValue(ast::MutMutable) => McDeclared,
                 _ => McImmutable
@@ -655,7 +655,8 @@ impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
           }
 
           def::DefLocal(vid, _) |
-          def::DefBinding(vid, _) => {
+          def::DefBinding(vid, _, def::Original) |
+          def::DefBinding(_, _, def::Aliasing(vid)) => {
             // by-value/by-ref bindings are local variables
             Ok(Rc::new(cmt_ {
                 id: id,

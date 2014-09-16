@@ -5028,7 +5028,7 @@ pub fn polytype_for_def(fcx: &FnCtxt,
                         -> Polytype {
     match defn {
       def::DefArg(nid, _) | def::DefLocal(nid, _) |
-      def::DefBinding(nid, _) => {
+      def::DefBinding(nid, _, _) => {
           let typ = fcx.local_ty(sp, nid);
           return no_params(typ);
       }

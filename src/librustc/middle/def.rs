@@ -14,6 +14,35 @@ use syntax::ast_util::local_def;
 
 use std::gc::Gc;
 
+/// BindingAliasMode represents the situation where disjunct patterns
+/// in a match arm bind the same identifier by mapping each identifier
+/// beyond the first to a single representative identifier for the
+/// set.
+///
+/// E.g. in:
+///
+///     match pair {
+///         (a /* 101 */, 0) | (a /* 102 */, 1) => xform_1(a),
+///         (b, _) => xform_2(b),
+///     }
+///
+/// there are two occurrences of the identfier `a` the first arm, but
+/// both `a /* 101 */` and `a /* 102 */` are effectively a single
+/// binding from the view point of the body.  To represent this, we
+/// tag `a /* 101 */` as having an `Original` as its
+/// `BindingAliasMode` and tag `a /* 102 */` as having `Aliasing(101)`
+/// as its `BindingAliasMode`.
+
+#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+pub enum BindingAliasMode {
+    /// An original identifier in pattern disjunction of a match arm.
+    Original,
+
+    /// `Aliasing(id)` represents identifier same as one numbered
+    /// `id`, but in a different clause in the pattern disjunction.
+    Aliasing(ast::NodeId),
+}
+
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum Def {
     DefFn(ast::DefId, ast::FnStyle),
@@ -30,7 +59,7 @@ pub enum Def {
     DefTrait(ast::DefId),
     DefPrimTy(ast::PrimTy),
     DefTyParam(ParamSpace, ast::DefId, uint),
-    DefBinding(ast::NodeId, ast::BindingMode),
+    DefBinding(ast::NodeId, ast::BindingMode, BindingAliasMode),
     DefUse(ast::DefId),
     DefUpvar(ast::NodeId,  // id of closed over var
              Gc<Def>,     // closed over def
@@ -72,7 +101,7 @@ impl Def {
             DefLocal(id, _) |
             DefSelfTy(id) |
             DefUpvar(id, _, _, _) |
-            DefBinding(id, _) |
+            DefBinding(id, _, _) |
             DefRegion(id) |
             DefTyParamBinder(id) |
             DefLabel(id) => {

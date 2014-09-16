@@ -439,7 +439,7 @@ fn visit_arm(ir: &mut IrMaps, arm: &Arm) {
 
 fn moved_variable_node_id_from_def(def: Def) -> Option<NodeId> {
     match def {
-        DefBinding(nid, _) |
+        DefBinding(nid, _, _) |
         DefArg(nid, _) |
         DefLocal(nid, _) => Some(nid),
 

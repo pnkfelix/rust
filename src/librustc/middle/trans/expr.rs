@@ -1192,7 +1192,7 @@ pub fn trans_local_var<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
         def::DefArg(nid, _) => {
             take_local(bcx, &*bcx.fcx.llargs.borrow(), nid)
         }
-        def::DefLocal(nid, _) | def::DefBinding(nid, _) => {
+        def::DefLocal(nid, _) | def::DefBinding(nid, _, _) => {
             take_local(bcx, &*bcx.fcx.lllocals.borrow(), nid)
         }
         _ => {

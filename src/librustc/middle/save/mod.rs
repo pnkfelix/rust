@@ -230,7 +230,7 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
             def::DefAssociatedTy(..) |
             def::DefTrait(_) => Some(recorder::TypeRef),
             def::DefStatic(_, _) |
-            def::DefBinding(_, _) |
+            def::DefBinding(_, _, _) |
             def::DefArg(_, _) |
             def::DefLocal(_, _) |
             def::DefVariant(_, _, _) |
@@ -742,11 +742,16 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
             def::DefLocal(id, _) |
             def::DefArg(id, _) |
             def::DefUpvar(id, _, _, _) |
-            def::DefBinding(id, _) => self.fmt.ref_str(recorder::VarRef,
-                                                       ex.span,
-                                                       sub_span,
-                                                       ast_util::local_def(id),
-                                                       self.cur_scope),
+            def::DefBinding(id, _, def::Original) |
+            // FIXME (pnkfelix): in DXR, should `def::Aliasing(orig)`
+            // use own ident `id`, or the representative `orig` ?
+            def::DefBinding(id, _, def::Aliasing(_)) => {
+                self.fmt.ref_str(recorder::VarRef,
+                                 ex.span,
+                                 sub_span,
+                                 ast_util::local_def(id),
+                                 self.cur_scope)
+            },
             def::DefStatic(def_id,_) |
             def::DefVariant(_, def_id, _) => self.fmt.ref_str(recorder::VarRef,
                                                               ex.span,
@@ -1382,12 +1387,12 @@ impl<'l, 'tcx, 'v> Visitor<'v> for DxrVisitor<'l, 'tcx> {
             }
             let def = def_map.get(&id);
             match *def {
-                def::DefBinding(id, _)  => self.fmt.variable_str(p.span,
-                                                                 sub_span,
-                                                                 id,
-                                                                 path_to_string(p).as_slice(),
-                                                                 value.as_slice(),
-                                                                 ""),
+                def::DefBinding(id, _, _)  => self.fmt.variable_str(p.span,
+                                                                    sub_span,
+                                                                    id,
+                                                                    path_to_string(p).as_slice(),
+                                                                    value.as_slice(),
+                                                                    ""),
                 def::DefVariant(_,id,_) => self.fmt.ref_str(ref_kind,
                                                             p.span,
                                                             sub_span,
