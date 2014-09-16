@@ -31,6 +31,8 @@ pub enum Variant {
     Loans,
     Moves,
     Assigns,
+    NeedsDrop,
+    IgnoreDrop,
 }
 
 impl Variant {
@@ -39,6 +41,8 @@ impl Variant {
             Loans   => "loans",
             Moves   => "moves",
             Assigns => "assigns",
+            NeedsDrop  => "needs_drop",
+            IgnoreDrop => "ignore_drop",
         }
     }
 }
@@ -68,9 +72,11 @@ impl<'a, 'tcx> DataflowLabeller<'a, 'tcx> {
     fn dataflow_for_variant(&self, e: EntryOrExit, n: &Node, v: Variant) -> String {
         let cfgidx = n.val0();
         match v {
-            Loans   => self.dataflow_loans_for(e, cfgidx),
-            Moves   => self.dataflow_moves_for(e, cfgidx),
-            Assigns => self.dataflow_assigns_for(e, cfgidx),
+            Loans      => self.dataflow_loans_for(e, cfgidx),
+            Moves      => self.dataflow_moves_for(e, cfgidx),
+            Assigns    => self.dataflow_assigns_for(e, cfgidx),
+            NeedsDrop  => self.dataflow_needs_drop_for(e, cfgidx),
+            IgnoreDrop => self.dataflow_ignore_drop_for(e, cfgidx),
         }
     }
 
@@ -123,6 +129,24 @@ impl<'a, 'tcx> DataflowLabeller<'a, 'tcx> {
             move_data.path_loan_path(assignment.path)
         };
         self.build_set(e, cfgidx, dfcx, assign_index_to_path)
+    }
+
+    fn dataflow_needs_drop_for(&self, e: EntryOrExit, cfgidx: CFGIndex) -> String {
+        let dfcx = &self.analysis_data.move_data.dfcx_needs_drop;
+        let needs_drop_index_to_path = |needs_drop_index| {
+            let move_data = &self.analysis_data.move_data.move_data;
+            move_data.path_loan_path(borrowck::move_data::MovePathIndex(needs_drop_index))
+        };
+        self.build_set(e, cfgidx, dfcx, needs_drop_index_to_path)
+    }
+
+    fn dataflow_ignore_drop_for(&self, e: EntryOrExit, cfgidx: CFGIndex) -> String {
+        let dfcx = &self.analysis_data.move_data.dfcx_ignore_drop;
+        let ignore_drop_index_to_path = |ignore_drop_index| {
+            let move_data = &self.analysis_data.move_data.move_data;
+            move_data.path_loan_path(borrowck::move_data::MovePathIndex(ignore_drop_index))
+        };
+        self.build_set(e, cfgidx, dfcx, ignore_drop_index_to_path)
     }
 }
 
