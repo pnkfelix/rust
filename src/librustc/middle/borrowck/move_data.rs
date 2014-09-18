@@ -78,7 +78,18 @@ pub struct FlowedMoveData<'a, 'tcx: 'a> {
     // We could (and maybe should, for efficiency) combine both move
     // and assign data flow into one, but this way it's easier to
     // distinguish the bits that correspond to moves and assignments.
-    pub dfcx_assign: AssignDataFlow<'a, 'tcx>
+    pub dfcx_assign: AssignDataFlow<'a, 'tcx>,
+
+    /// Tracks the drop obligations at each point in the control flow.
+    /// (It is conceivable that moves/assigns/needs_drop could be folded
+    ///  all into one.)
+    pub dfcx_needs_drop: NeedsDropDataFlow<'a, 'tcx>,
+
+    /// If we match a variant for which no drop is necessary, then on
+    /// this branch (alone), no-drop is necessary for the original
+    /// path.  That flow-sensitive inforamtion is tracked here.
+    pub dfcx_ignore_drop: IgnoreDropDataFlow<'a, 'tcx>,
+
 }
 
 /// Index into `MoveData.paths`, used like a pointer
@@ -188,6 +199,14 @@ pub type MoveDataFlow<'a, 'tcx> = DataFlowContext<'a, 'tcx, MoveDataFlowOperator
 pub struct AssignDataFlowOperator;
 
 pub type AssignDataFlow<'a, 'tcx> = DataFlowContext<'a, 'tcx, AssignDataFlowOperator>;
+
+#[deriving(Clone)]
+pub struct NeedsDropDataFlowOperator;
+pub type NeedsDropDataFlow<'a, 'tcx> = DataFlowContext<'a, 'tcx, NeedsDropDataFlowOperator>;
+
+#[deriving(Clone)]
+pub struct IgnoreDropDataFlowOperator;
+pub type IgnoreDropDataFlow<'a, 'tcx> = DataFlowContext<'a, 'tcx, IgnoreDropDataFlowOperator>;
 
 fn loan_path_is_precise(loan_path: &LoanPath) -> bool {
     match loan_path.variant {
@@ -728,6 +747,8 @@ impl MoveData {
                      tcx: &ty::ctxt,
                      dfcx_moves: &mut MoveDataFlow,
                      dfcx_assign: &mut AssignDataFlow,
+                     dfcx_needs_drop: &mut NeedsDropDataFlow,
+                     dfcx_ignore_drop: &mut IgnoreDropDataFlow,
                      flags: &[FlowedMoveDataFlag]) {
         /*!
          * Adds the gen/kills for the various moves and
@@ -775,6 +796,7 @@ impl MoveData {
             self.remove_drop_obligations(
                 tcx,
                 move,
+                dfcx_needs_drop,
                 instrument_drop_obligations_as_errors);
         }
 
@@ -801,11 +823,13 @@ impl MoveData {
                     self.remove_drop_obligations(
                         tcx,
                         variant_match,
+                        dfcx_needs_drop,
                         instrument_drop_obligations_as_errors);
                     debug!("add_drop_obligations variant_match {}", variant_match.to_string(self, tcx));
                     self.add_drop_obligations(
                         tcx,
                         variant_match,
+                        dfcx_needs_drop,
                         instrument_drop_obligations_as_errors);
                 }
             }
@@ -824,6 +848,7 @@ impl MoveData {
             self.add_drop_obligations(
                 tcx,
                 assignment,
+                dfcx_needs_drop,
                 instrument_drop_obligations_as_errors);
         }
 
@@ -833,6 +858,7 @@ impl MoveData {
             self.add_drop_obligations(
                 tcx,
                 assignment,
+                dfcx_needs_drop,
                 instrument_drop_obligations_as_errors);
         }
 
@@ -849,6 +875,7 @@ impl MoveData {
                     let rm = ScopeRemoved { where_: kill_id, what_path: move_path_index };
                     self.remove_drop_obligations(tcx,
                                                  &rm,
+                                                 dfcx_needs_drop,
                                                  instrument_drop_obligations_as_errors);
                 }
                 LpExtend(..) => {}
@@ -995,7 +1022,9 @@ impl MoveData {
         &self,
         tcx: &ty::ctxt,
         a: &A,
+        dfcx_needs_drop: &mut NeedsDropDataFlow,
         instrument_drop_obligations_as_errors: bool) {
+        let a_id = a.node_id_adding_obligation();
         let a_path = a.path_being_established();
 
         let add_gen = |move_path_index| {
@@ -1009,7 +1038,7 @@ impl MoveData {
                 let print = || self.path_loan_path(move_path_index).user_string(tcx);
                 debug!("add_drop_obligations(a={}) adds {}",
                        a.to_string_(self, tcx), print())
-
+                dfcx_needs_drop.add_gen(a_id, move_path_index.get());
                 if instrument_drop_obligations_as_errors {
                     let sp = tcx.map.span(a.node_id_adding_obligation());
                     let msg = format!("{} adds drop-obl `{}`", a.kind(), print());
@@ -1035,6 +1064,7 @@ impl MoveData {
         &self,
         tcx: &ty::ctxt,
         a: &A,
+        dfcx_needs_drop: &mut NeedsDropDataFlow,
         instrument_drop_obligations_as_errors: bool) {
         //! Kills all of the fragment leaves of path.
         //!
@@ -1052,6 +1082,7 @@ impl MoveData {
 
             if self.type_moves_by_default(tcx, move_path_index) {
                 debug!("remove_drop_obligations(id={}) removes {}", id, print());
+                dfcx_needs_drop.add_kill(id, move_path_index.get());
                 if instrument_drop_obligations_as_errors {
                     let sp = tcx.map.span(id);
                     let msg = format!("{} removes drop-obl `{}`", a.kind(), print());
@@ -1165,21 +1196,46 @@ impl<'a, 'tcx> FlowedMoveData<'a, 'tcx> {
                                  id_range,
                                  move_data.var_assignments.borrow().len());
 
+        let mut dfcx_needs_drop =
+            DataFlowContext::new(tcx,
+                                 "flowed_move_data_needs_drop",
+                                 Some(decl),
+                                 cfg,
+                                 NeedsDropDataFlowOperator,
+                                 id_range,
+                                 move_data.paths.borrow().len());
+        let mut dfcx_ignore_drop =
+            DataFlowContext::new(tcx,
+                                 "flowed_move_data_ignore_drop",
+                                 Some(decl),
+                                 cfg,
+                                 IgnoreDropDataFlowOperator,
+                                 id_range,
+                                 move_data.paths.borrow().len());
+
         move_data.add_gen_kills(tcx,
                                 &mut dfcx_moves,
                                 &mut dfcx_assign,
+                                &mut dfcx_needs_drop,
+                                &mut dfcx_ignore_drop,
                                 flags);
 
         dfcx_moves.add_kills_from_flow_exits(cfg);
         dfcx_assign.add_kills_from_flow_exits(cfg);
+        dfcx_needs_drop.add_kills_from_flow_exits(cfg);
+        dfcx_ignore_drop.add_kills_from_flow_exits(cfg);
 
         dfcx_moves.propagate(cfg, body);
         dfcx_assign.propagate(cfg, body);
+        dfcx_needs_drop.propagate(cfg, body);
+        dfcx_ignore_drop.propagate(cfg, body);
 
         FlowedMoveData {
             move_data: move_data,
             dfcx_moves: dfcx_moves,
             dfcx_assign: dfcx_assign,
+            dfcx_needs_drop: dfcx_needs_drop,
+            dfcx_ignore_drop: dfcx_ignore_drop,
         }
     }
 
@@ -1345,5 +1401,159 @@ impl DataFlowOperator for AssignDataFlowOperator {
     #[inline]
     fn initial_value(&self) -> bool {
         false // no assignments in scope by default
+    }
+}
+
+impl BitwiseOperator for NeedsDropDataFlowOperator {
+    #[inline]
+    fn join(&self, succ: uint, pred: uint) -> uint {
+        // In principle, for correct code, the fixed-point solution
+        // to the dataflow equations will have succ == pred here.
+        //
+        // But of course need to deal with states before we hit the
+        // fixed point.  Consider the following while-loop:
+        //
+        //   `{ let a = box 3; while <cond> { <body> } <rest> }`
+        // where <cond> and <body> do not move or drop `a`:
+        //
+        //                    [let a = box 3;]
+        //                      |
+        //                      v 1
+        //                  [loopback] <--+ 5
+        //                      |         |
+        //                      v 2       |
+        //              +-----[cond]      |
+        //              |       |         |
+        //              |       v 4       |
+        //              |     [body] -----+
+        //              v 3
+        //            [rest]
+        //
+        // we need to ensure that the fixed-point solution registers
+        // that `a` is needs-drop on all of the above edges.  (Note
+        // that choosing logical-and and a false initial value would
+        // cause the fixed point solution to falsely claim that `a` is
+        // only needs-drop on edge 1, because edge 5 would start as
+        // false and then the merge between edge 1 and edge 5 would be
+        // logically anded to false on edge 2, and so on.)
+        //
+        // We could use logical-or here (and a false initial value)
+        // like the other analyses.  Or, we can (and do) use
+        // logical-and and a true initial value.  For correct code,
+        // they will both end with the same fixed point.
+        //
+        // The reason to use logical-and instead of logical-or is
+        // error reporting.  In particular, we start with an
+        // assumption.
+        //
+        // ASSUMPTION: When there is a discrepancy between the set of
+        // drop-obligations for two paths at a merge point, we assume
+        // for the purposes of error reporting that the error was that
+        // the user forgot to include a drop of the resource, *not*
+        // that the user intended to re-establish the resource on the
+        // path where it had been dropped.
+        //
+        // Consider the following example:
+        //
+        //                       [let a = box 3;]
+        //                             +
+        //                             |
+        //                             v
+        //                    +---+[cond 1]+--+
+        //    (a needs drop)  |               | (a needs drop)
+        //                    v               |
+        //             +-+[cond 2]+-+         |
+        //             |            |         |
+        //             v            v         v
+        //     [no use of a]   [consume a]   [consume a]
+        //                +         +         |
+        // (a needs drop) |         |  ()     | ()
+        //                v         v         |
+        //              [merge point 1]       |
+        //                    +               |
+        //                (*) |               |
+        //                    +---------+     |
+        //                              |     |
+        //                              v     v
+        //                          [merge point 2]
+        //
+        // At `[merge point 1]`, we obviously report a discrepancy
+        // between the two incoming paths.  The question: What do we
+        // want the set of drop obligations to be at the exit of
+        // `[merge point 1]`, where the `(*)` is marked.  There are
+        // two possible choices for `(*)`: `()`, and `(a needs drop)`.
+        //
+        // Choosing `(a needs drop)` corresponds to an assumption that
+        // on the path where `a` was dropped, the programmer probably
+        // meant to re-establish `a`.  To get this choice, one would
+        // use logical-or here.
+        //
+        // Choosing `()` corresponds to an assumption that on the path
+        // where `a` was not dropped, the programmer probably meant to
+        // drop it.  To get this choice, we use logical-and here.
+        //
+        // Each choice for `(*)` also has implications for when
+        // check_drops considers `[merge point 2]`: Choosing `()`
+        // means that nothing is reported for `[merge point 2]`, since
+        // the two incoming paths have the same set of drop
+        // obligations.  Choosing `(a needs drop)` means that we get a
+        // similar error report to the one for `[merge point 1]`,
+        // which may be frustrating to the programmer who already
+        // probably saw that they would need to add the drop of `a` on
+        // the far left path.
+        //
+        // (One could argue that the above example is artificial,
+        // since a small alteration of the graph above has a path on
+        // the far right-hand side that does not consume `a`, and in
+        // that situation, choosing `(a needs drop)` for `(*)` will
+        // produce fewer error messages.  However, we are *not*
+        // selecting logical-and over logical-or solely based on some
+        // expectation of the number of error messages encountered.
+        // Instead, it is based on our starting assumption: if in
+        // example above the far right path is missing a drop of a,
+        // then by our assumption, we *should* issue two error
+        // reports, since there are *two* places where the programmer
+        // needs to add calls to drop: the far left-hand path, and the
+        // far right-hand path.)
+
+        succ & pred
+    }
+}
+
+impl DataFlowOperator for NeedsDropDataFlowOperator {
+    #[inline]
+    fn initial_value(&self) -> bool {
+        // For non-entry nodes, assume paths need dropping until
+        // proven otherwise.
+        //
+        // See extensive discussion in impl BitwiseOperator for
+        // NeedsDropDataFlowOperator.
+        true
+    }
+
+    #[inline]
+    fn entry_initial_value(&self) -> bool {
+        false
+    }
+}
+
+impl BitwiseOperator for IgnoreDropDataFlowOperator {
+    #[inline]
+    fn join(&self, succ: uint, pred: uint) -> uint {
+        // You can only ignore a drop if both incoming paths agree that you can do so
+        succ & pred
+    }
+}
+
+impl DataFlowOperator for IgnoreDropDataFlowOperator {
+    #[inline]
+    fn initial_value(&self) -> bool {
+        // For non-entry nodes, assume you can ignore a drop until proven otherwise.
+        true
+    }
+
+    #[inline]
+    fn entry_initial_value(&self) -> bool {
+        false
     }
 }
