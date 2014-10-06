@@ -475,7 +475,7 @@ impl<'a> PluginMetadataReader<'a> {
                 should_link = info.should_link;
                 lib
             }
-            None => { load_ctxt.report_load_errs(); unreachable!() },
+            None => { load_ctxt.report_load_errs(None); unreachable!() },
         };
         let macros = decoder::get_exported_macros(library.metadata.as_slice());
         let registrar = decoder::get_plugin_registrar_fn(library.metadata.as_slice()).map(|id| {

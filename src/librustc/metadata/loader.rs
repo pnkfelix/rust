@@ -229,6 +229,7 @@ use util::fs;
 
 use std::c_str::ToCStr;
 use std::cmp;
+use std::fmt;
 use std::io::fs::PathExtensions;
 use std::io;
 use std::mem;
@@ -308,22 +309,38 @@ impl CratePaths {
     }
 }
 
+pub struct NonMatchingCandidate {
+    pub rlib: Option<Path>,
+    pub dylib: Option<Path>,
+}
+
+impl fmt::Show for NonMatchingCandidate {
+    fn fmt(&self, w: &mut fmt::Formatter) -> fmt::Result {
+        write!(w, "NonMatchingCandidate {} rlib: {}, dylib: {} {}",
+               "{", self.rlib.as_ref().map(|x|x.display()), self.dylib.as_ref().map(|x|x.display()), "}")
+    }
+}
+
+pub struct LibraryNotFound {
+    pub nonmatching_candidates: Vec<NonMatchingCandidate>,
+}
+
 impl<'a> Context<'a> {
     pub fn maybe_load_library_crate(&mut self) -> Option<Library> {
-        self.find_library_crate()
+        self.find_library_crate().ok()
     }
 
     pub fn load_library_crate(&mut self) -> Library {
         match self.find_library_crate() {
-            Some(t) => t,
-            None => {
-                self.report_load_errs();
+            Ok(t) => t,
+            Err(not_found_info) => {
+                self.report_load_errs(Some(&not_found_info));
                 unreachable!()
             }
         }
     }
 
-    pub fn report_load_errs(&mut self) {
+    pub fn report_load_errs(&mut self, not_found_info: Option<&LibraryNotFound>) {
         let message = if self.rejected_via_hash.len() > 0 {
             format!("found possibly newer version of crate `{}`",
                     self.ident)
@@ -338,7 +355,12 @@ impl<'a> Context<'a> {
                                     message, r.ident)
         };
         self.sess.span_err(self.span, message.as_slice());
-
+        for (i, nonmatch) in not_found_info.iter()
+            .flat_map(|info|info.nonmatching_candidates.iter())
+            .enumerate() {
+                let msg = format!("candidate[{}]: {}", i, nonmatch);
+                self.sess.span_note(self.span, msg.as_slice());
+        }
         let mismatches = self.rejected_via_triple.iter();
         if self.rejected_via_triple.len() > 0 {
             self.sess.span_note(self.span,
@@ -373,13 +395,13 @@ impl<'a> Context<'a> {
         self.sess.abort_if_errors();
     }
 
-    fn find_library_crate(&mut self) -> Option<Library> {
+    fn find_library_crate(&mut self) -> Result<Library, LibraryNotFound> {
         // If an SVH is specified, then this is a transitive dependency that
         // must be loaded via -L plus some filtering.
         if self.hash.is_none() {
             self.should_match_name = false;
             match self.find_commandline_library() {
-                Some(l) => return Some(l),
+                Some(l) => return Ok(l),
                 None => {}
             }
             self.should_match_name = true;
@@ -453,6 +475,7 @@ impl<'a> Context<'a> {
         // libraries corresponds to the crate id and hash criteria that this
         // search is being performed for.
         let mut libraries = Vec::new();
+        let mut nonmatching_candidates = Vec::new();
         for (_hash, (rlibs, dylibs)) in candidates.into_iter() {
             let mut metadata = None;
             let rlib = self.extract_one(rlibs, "rlib", &mut metadata);
@@ -465,7 +488,12 @@ impl<'a> Context<'a> {
                         metadata: metadata,
                     })
                 }
-                None => {}
+                None => {
+                    nonmatching_candidates.push(NonMatchingCandidate {
+                        dylib: dylib,
+                        rlib: rlib,
+                    });
+                }
             }
         }
 
@@ -473,8 +501,8 @@ impl<'a> Context<'a> {
         // what we've got and figure out if we found multiple candidates for
         // libraries or not.
         match libraries.len() {
-            0 => None,
-            1 => Some(libraries.into_iter().next().unwrap()),
+            0 => Err(LibraryNotFound { nonmatching_candidates: nonmatching_candidates }),
+            1 => Ok(libraries.into_iter().next().unwrap()),
             _ => {
                 self.sess.span_err(self.span,
                     format!("multiple matching crates for `{}`",
@@ -499,7 +527,7 @@ impl<'a> Context<'a> {
                     let name = decoder::get_crate_name(data);
                     note_crate_name(self.sess.diagnostic(), name.as_slice());
                 }
-                None
+                Err(LibraryNotFound { nonmatching_candidates: nonmatching_candidates })
             }
         }
     }
