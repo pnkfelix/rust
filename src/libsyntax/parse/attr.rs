@@ -162,7 +162,7 @@ impl<'a> ParserAttr for Parser<'a> {
     /// | IDENT meta_seq
     fn parse_meta_item(&mut self) -> Gc<ast::MetaItem> {
         match self.token {
-            token::INTERPOLATED(token::NtMeta(e)) => {
+            token::INTERPOLATED(token::NtMeta(e), _) => {
                 self.bump();
                 return e
             }

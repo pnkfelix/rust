@@ -596,7 +596,7 @@ fn mk_token(cx: &ExtCtxt, sp: Span, tok: &token::Token) -> Gc<ast::Expr> {
                                 vec!(mk_name(cx, sp, ident.ident())));
         }
 
-        INTERPOLATED(_) => fail!("quote! with interpolated token"),
+        INTERPOLATED(_, _) => fail!("quote! with interpolated token"),
 
         _ => ()
     }

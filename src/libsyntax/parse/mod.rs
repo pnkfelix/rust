@@ -446,6 +446,8 @@ pub fn str_lit(lit: &str) -> String {
         }
     }
 
+    debug!("parse_str_lit: lit {:s} ({:u}) to res {:s} ({:u})",
+           lit, lit.len(), res, res.len());
     res.shrink_to_fit(); // probably not going to do anything, unless there was an escape.
     debug!("parse_str_lit: returning {}", res);
     res

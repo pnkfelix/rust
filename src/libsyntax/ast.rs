@@ -601,6 +601,17 @@ pub enum TokenTree {
     TTNonterminal(Span, Ident)
 }
 
+impl TokenTree {
+    pub fn opt_span(&self) -> Option<Span> {
+        match *self {
+            TTTok(sp, _) => Some(sp),
+            TTDelim(_) => None,
+            TTSeq(sp, _, _, _) => Some(sp),
+            TTNonterminal(sp, _) => Some(sp),
+        }
+    }
+}
+
 // Matchers are nodes defined-by and recognized-by the main rust parser and
 // language, but they're only ever found inside syntax-extension invocations;
 // indeed, the only thing that ever _activates_ the rules in the rust parser

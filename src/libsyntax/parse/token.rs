@@ -10,6 +10,7 @@
 
 use ast;
 use ast::{P, Ident, Name, Mrk};
+use codemap;
 use ext::mtwt;
 use parse::token;
 use util::interner::{RcStr, StrInterner};
@@ -96,7 +97,7 @@ pub enum Token {
     LIFETIME(Ident),
 
     /* For interpolation */
-    INTERPOLATED(Nonterminal),
+    INTERPOLATED(Nonterminal, Option<Box<codemap::Span>>),
     DOC_COMMENT(Name),
 
     // Junk. These carry no data because we don't really care about the data
@@ -145,6 +146,27 @@ impl fmt::Show for Nonterminal {
             NtTT(..) => f.pad("NtTT(..)"),
             NtMatchers(..) => f.pad("NtMatchers(..)"),
         }
+    }
+}
+
+impl Nonterminal {
+    pub fn opt_span(&self) -> Option<codemap::Span> {
+        let span = match *self {
+            NtItem(ref item) => item.span,
+            NtBlock(ref block) => block.span,
+            NtStmt(ref stmt) => stmt.span,
+            NtPat(ref pat) => pat.span,
+            NtExpr(ref expr) => expr.span,
+            NtTy(ref ty) => ty.span,
+            /// See IDENT, above, for meaning of bool in NtIdent:
+            NtIdent(_, _) => return None,
+            /// Stuff inside brackets for attributes
+            NtMeta(ref meta) => meta.span,
+            NtPath(ref path) => path.span,
+            NtTT(ref tt) => return tt.opt_span(),
+            NtMatchers(_) => return None,
+        };
+        Some(span)
     }
 }
 
@@ -245,7 +267,7 @@ pub fn to_string(t: &Token) -> String {
       COMMENT => "/* */".to_string(),
       SHEBANG(s) => format!("/* shebang: {}*/", s.as_str()),
 
-      INTERPOLATED(ref nt) => {
+      INTERPOLATED(ref nt, ref ei) => {
         match nt {
             &NtExpr(ref e) => ::print::pprust::expr_to_string(&**e),
             &NtMeta(ref e) => ::print::pprust::meta_item_to_string(&**e),
@@ -298,10 +320,10 @@ pub fn can_begin_expr(t: &Token) -> bool {
       BINOP(OR) => true, // in lambda syntax
       OROR => true, // in lambda syntax
       MOD_SEP => true,
-      INTERPOLATED(NtExpr(..))
-      | INTERPOLATED(NtIdent(..))
-      | INTERPOLATED(NtBlock(..))
-      | INTERPOLATED(NtPath(..)) => true,
+      INTERPOLATED(NtExpr(..), _)
+      | INTERPOLATED(NtIdent(..), _)
+      | INTERPOLATED(NtBlock(..), _)
+      | INTERPOLATED(NtPath(..), _) => true,
       _ => false
     }
 }
@@ -337,7 +359,7 @@ pub fn is_ident(t: &Token) -> bool {
 
 pub fn is_ident_or_path(t: &Token) -> bool {
     match *t {
-      IDENT(_, _) | INTERPOLATED(NtPath(..)) => true,
+      IDENT(_, _) | INTERPOLATED(NtPath(..), _) => true,
       _ => false
     }
 }

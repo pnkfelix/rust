@@ -76,6 +76,7 @@ use parse::token::{is_ident, is_ident_or_path, is_plain_ident};
 use parse::token::{keywords, special_idents, token_to_binop};
 use parse::token;
 use parse::{new_sub_parser_from_file, ParseSess};
+use print::pprust;
 use owned_slice::OwnedSlice;
 
 use std::collections::HashSet;
@@ -128,6 +129,31 @@ enum ItemOrViewItem {
     IoviViewItem(ViewItem)
 }
 
+/// Pushs `span` onto the stack implicitly formed from `e.span.expn_info`.
+fn push_span(e: Gc<Expr>, span: Span, fake_callee: codemap::NameAndSpan) -> Gc<Expr> {
+    box (GC) Expr {
+        id: e.id,
+        node: e.node.clone(),
+        span: Span {
+            lo: e.span.lo,
+            hi: e.span.hi,
+            expn_info: Some(box (GC) codemap::ExpnInfo {
+                call_site: Span {
+                    lo: span.lo,
+                    hi: span.hi,
+                    expn_info: e.span.expn_info,
+                },
+
+                // FIXME: this is bogus, and in general is a sign that
+                // this expn_info field needs to be replaced with an
+                // enum that can choose between the two kinds of
+                // stacks we may be dealing with (interpolation
+                // results versus expansion results).  Though perhaps
+                // the two intertwine.  Not sure yet.  (FSK).
+                callee: fake_callee,
+            })},
+    }
+}
 
 /// Possibly accept an `INTERPOLATED` expression (a pre-parsed expression
 /// dropped into the token stream, which happens while parsing the
@@ -138,21 +164,29 @@ enum ItemOrViewItem {
 macro_rules! maybe_whole_expr (
     ($p:expr) => (
         {
+            let opt_span = match $p.token {
+                INTERPOLATED(token::NtExpr(_), ref opt_span) |
+                INTERPOLATED(token::NtPath(_), ref opt_span) |
+                INTERPOLATED(token::NtBlock(_), ref opt_span) => {
+                    opt_span.as_ref().map(|b| **b)
+                }
+                _ => None,
+            };
             let found = match $p.token {
-                INTERPOLATED(token::NtExpr(e)) => {
+                INTERPOLATED(token::NtExpr(e), _) => {
                     Some(e)
                 }
-                INTERPOLATED(token::NtPath(_)) => {
+                INTERPOLATED(token::NtPath(_), _) => {
                     // FIXME: The following avoids an issue with lexical borrowck scopes,
                     // but the clone is unfortunate.
                     let pt = match $p.token {
-                        INTERPOLATED(token::NtPath(ref pt)) => (**pt).clone(),
+                        INTERPOLATED(token::NtPath(ref pt), _) => (**pt).clone(),
                         _ => unreachable!()
                     };
                     let span = $p.span;
                     Some($p.mk_expr(span.lo, span.hi, ExprPath(pt)))
                 }
-                INTERPOLATED(token::NtBlock(b)) => {
+                INTERPOLATED(token::NtBlock(b), _) => {
                     let span = $p.span;
                     Some($p.mk_expr(span.lo, span.hi, ExprBlock(b)))
                 }
@@ -160,7 +194,48 @@ macro_rules! maybe_whole_expr (
             };
             match found {
                 Some(e) => {
+                    let self_span_prebump = $p.span;
+                    debug!("maybe_whole_expr bump before e={} ({}) extra span: {} {:?} self.span: {} {:?}",
+                           pprust::expr_to_string(&*e),
+                           $p.sess.span_diagnostic.cm.span_to_string(e.span),
+                           opt_span.map(|s| $p.sess.span_diagnostic.cm.span_to_string(s)),
+                           opt_span,
+                           $p.sess.span_diagnostic.cm.span_to_string($p.span),
+                           $p.span);
                     $p.bump();
+
+                    debug!("maybe_whole_expr push_span e={} ({}) {:?} extra span: {} {:?} self.span: {} {:?} prebump span: {} {:?}",
+                           pprust::expr_to_string(&*e),
+                           $p.sess.span_diagnostic.cm.span_to_string(e.span),
+                           e.span,
+                           opt_span.map(|s| $p.sess.span_diagnostic.cm.span_to_string(s)),
+                           opt_span,
+                           $p.sess.span_diagnostic.cm.span_to_string($p.span),
+                           $p.span,
+                           $p.sess.span_diagnostic.cm.span_to_string(self_span_prebump),
+                           self_span_prebump
+                           );
+
+                    let e = push_span(e,
+                                      self_span_prebump,
+                                      codemap::NameAndSpan {
+                                          name: format!("INTERPOLATED"),
+                                          format: codemap::MacroBang,
+                                          span: None,
+                                      });
+
+                    debug!("maybe_whole_expr returning e={} ({}) {:?} extra span: {} {:?} self.span: {} {:?} prebump span: {} {:?}",
+                           pprust::expr_to_string(&*e),
+                           $p.sess.span_diagnostic.cm.span_to_string(e.span),
+                           e.span,
+                           opt_span.map(|s| $p.sess.span_diagnostic.cm.span_to_string(s)),
+                           opt_span,
+                           $p.sess.span_diagnostic.cm.span_to_string($p.span),
+                           $p.span,
+                           $p.sess.span_diagnostic.cm.span_to_string(self_span_prebump),
+                           self_span_prebump
+                           );
+
                     return e;
                 }
                 None => ()
@@ -173,14 +248,23 @@ macro_rules! maybe_whole_expr (
 macro_rules! maybe_whole (
     ($p:expr, $constructor:ident) => (
         {
+            let opt_span = match ($p).token {
+                INTERPOLATED(token::$constructor(_), ref s) => {
+                    s.as_ref().map(|s| **s)
+                }
+                _ => None
+            };
             let found = match ($p).token {
-                INTERPOLATED(token::$constructor(_)) => {
+                INTERPOLATED(token::$constructor(_), _) => {
                     Some(($p).bump_and_get())
                 }
                 _ => None
             };
             match found {
-                Some(INTERPOLATED(token::$constructor(x))) => {
+                Some(INTERPOLATED(token::$constructor(x), _)) => {
+                    debug!("maybe_whole returning x vec extra span: {} {:?}",
+                           opt_span.map(|s| $p.sess.span_diagnostic.cm.span_to_string(s)),
+                           opt_span);
                     return x.clone()
                 }
                 _ => {}
@@ -189,14 +273,23 @@ macro_rules! maybe_whole (
     );
     (no_clone $p:expr, $constructor:ident) => (
         {
+            let opt_span = match ($p).token {
+                INTERPOLATED(token::$constructor(_), ref s) => {
+                    s.as_ref().map(|s| **s)
+                }
+                _ => None
+            };
             let found = match ($p).token {
-                INTERPOLATED(token::$constructor(_)) => {
+                INTERPOLATED(token::$constructor(_), _) => {
                     Some(($p).bump_and_get())
                 }
                 _ => None
             };
             match found {
-                Some(INTERPOLATED(token::$constructor(x))) => {
+                Some(INTERPOLATED(token::$constructor(x), _)) => {
+                    debug!("maybe_whole returning no_clone x vec extra span: {} {:?}",
+                           opt_span.map(|s| $p.sess.span_diagnostic.cm.span_to_string(s)),
+                           opt_span);
                     return x
                 }
                 _ => {}
@@ -205,14 +298,23 @@ macro_rules! maybe_whole (
     );
     (deref $p:expr, $constructor:ident) => (
         {
+            let opt_span = match ($p).token {
+                INTERPOLATED(token::$constructor(_), ref s) => {
+                    s.as_ref().map(|s| **s)
+                }
+                _ => None
+            };
             let found = match ($p).token {
-                INTERPOLATED(token::$constructor(_)) => {
+                INTERPOLATED(token::$constructor(_), _) => {
                     Some(($p).bump_and_get())
                 }
                 _ => None
             };
             match found {
-                Some(INTERPOLATED(token::$constructor(x))) => {
+                Some(INTERPOLATED(token::$constructor(x), _)) => {
+                    debug!("maybe_whole returning deref x vec extra span: {} {:?}",
+                           opt_span.map(|s| $p.sess.span_diagnostic.cm.span_to_string(s)),
+                           opt_span);
                     return (*x).clone()
                 }
                 _ => {}
@@ -221,14 +323,23 @@ macro_rules! maybe_whole (
     );
     (Some $p:expr, $constructor:ident) => (
         {
+            let opt_span = match ($p).token {
+                INTERPOLATED(token::$constructor(_), ref s) => {
+                    s.as_ref().map(|s| **s)
+                }
+                _ => None
+            };
             let found = match ($p).token {
-                INTERPOLATED(token::$constructor(_)) => {
+                INTERPOLATED(token::$constructor(_), _) => {
                     Some(($p).bump_and_get())
                 }
                 _ => None
             };
             match found {
-                Some(INTERPOLATED(token::$constructor(x))) => {
+                Some(INTERPOLATED(token::$constructor(x), _)) => {
+                    debug!("maybe_whole returning Some x vec extra span: {} {:?}",
+                           opt_span.map(|s| $p.sess.span_diagnostic.cm.span_to_string(s)),
+                           opt_span);
                     return Some(x.clone()),
                 }
                 _ => {}
@@ -237,14 +348,23 @@ macro_rules! maybe_whole (
     );
     (iovi $p:expr, $constructor:ident) => (
         {
+            let opt_span = match ($p).token {
+                INTERPOLATED(token::$constructor(_), ref s) => {
+                    s.as_ref().map(|s| **s)
+                }
+                _ => None
+            };
             let found = match ($p).token {
-                INTERPOLATED(token::$constructor(_)) => {
+                INTERPOLATED(token::$constructor(_), _) => {
                     Some(($p).bump_and_get())
                 }
                 _ => None
             };
             match found {
-                Some(INTERPOLATED(token::$constructor(x))) => {
+                Some(INTERPOLATED(token::$constructor(x), _)) => {
+                    debug!("maybe_whole returning Iovi x vec extra span: {} {:?}",
+                           opt_span.map(|s| $p.sess.span_diagnostic.cm.span_to_string(s)),
+                           opt_span);
                     return IoviItem(x.clone())
                 }
                 _ => {}
@@ -253,14 +373,23 @@ macro_rules! maybe_whole (
     );
     (pair_empty $p:expr, $constructor:ident) => (
         {
+            let opt_span = match ($p).token {
+                INTERPOLATED(token::$constructor(_), ref s) => {
+                    s.as_ref().map(|s| **s)
+                }
+                _ => None
+            };
             let found = match ($p).token {
-                INTERPOLATED(token::$constructor(_)) => {
+                INTERPOLATED(token::$constructor(_), _) => {
                     Some(($p).bump_and_get())
                 }
                 _ => None
             };
             match found {
-                Some(INTERPOLATED(token::$constructor(x))) => {
+                Some(INTERPOLATED(token::$constructor(x), _)) => {
+                    debug!("maybe_whole returning pair_empty x vec extra span: {} {:?}",
+                           opt_span.map(|s| $p.sess.span_diagnostic.cm.span_to_string(s)),
+                           opt_span);
                     return (Vec::new(), x)
                 }
                 _ => {}
@@ -338,6 +467,7 @@ fn real_token(rdr: &mut Reader) -> TokenAndSpan {
             _ => break
         }
     }
+    debug!("real_token returning: t={}", t);
     t
 }
 
@@ -527,7 +657,7 @@ impl<'a> Parser<'a> {
                 self.bump();
                 i
             }
-            token::INTERPOLATED(token::NtIdent(..)) => {
+            token::INTERPOLATED(token::NtIdent(..), _) => {
                 self.bug("ident interpolation not converted to real token");
             }
             _ => {
@@ -899,6 +1029,7 @@ impl<'a> Parser<'a> {
             };
             replace(&mut self.buffer[buffer_start], placeholder)
         };
+        debug!("bump setting curr to next span={} token={}", next.sp, next.tok);
         self.span = next.sp;
         self.token = next.tok;
         self.tokens_consumed += 1u;
@@ -916,8 +1047,10 @@ impl<'a> Parser<'a> {
                          next: token::Token,
                          lo: BytePos,
                          hi: BytePos) {
+        assert!(self.span.lo <= lo);
         self.last_span = mk_sp(self.span.lo, lo);
         self.token = next;
+        assert!(lo <= hi, "lo <= hi replace_token");
         self.span = mk_sp(lo, hi);
     }
     pub fn buffer_length(&mut self) -> int {
@@ -930,7 +1063,9 @@ impl<'a> Parser<'a> {
                       -> R {
         let dist = distance as int;
         while self.buffer_length() < dist {
-            self.buffer[self.buffer_end as uint] = real_token(self.reader);
+            let t = real_token(self.reader);
+            debug!("look_ahead set buffer_end to t={}", t);
+            self.buffer[self.buffer_end as uint] = t;
             self.buffer_end = (self.buffer_end + 1) & 3;
         }
         f(&self.buffer[((self.buffer_start + dist - 1) & 3) as uint].tok)
@@ -1249,6 +1384,7 @@ impl<'a> Parser<'a> {
               token::SEMI => {
                 p.bump();
                 debug!("parse_trait_methods(): parsing required method");
+                assert!(lo <= hi, "lo <= hi parse_trait_methods SEMI");
                 Required(TypeMethod {
                     ident: ident,
                     attrs: attrs,
@@ -1267,6 +1403,7 @@ impl<'a> Parser<'a> {
                 let (inner_attrs, body) =
                     p.parse_inner_attrs_and_block();
                 let attrs = attrs.append(inner_attrs.as_slice());
+                assert!(lo <= hi, "lo <= hi parse_trait_methods LBRACE");
                 Provided(box(GC) ast::Method {
                     attrs: attrs,
                     id: ast::DUMMY_NODE_ID,
@@ -1307,6 +1444,7 @@ impl<'a> Parser<'a> {
         self.expect(&token::COLON);
         let ty = self.parse_ty(true);
         let hi = ty.span.hi;
+        assert!(lo <= hi, "lo <= hi parse_ty_field");
         ast::TypeField {
             ident: id,
             mt: MutTy { ty: ty, mutbl: mutbl },
@@ -1319,6 +1457,7 @@ impl<'a> Parser<'a> {
         return if self.eat(&token::RARROW) {
             let lo = self.span.lo;
             if self.eat(&token::NOT) {
+                assert!(lo <= self.last_span.hi);
                 (
                     NoReturn,
                     P(Ty {
@@ -1332,6 +1471,7 @@ impl<'a> Parser<'a> {
             }
         } else {
             let pos = self.span.lo;
+            assert!(pos <= pos);
             (
                 Return,
                 P(Ty {
@@ -1466,6 +1606,7 @@ impl<'a> Parser<'a> {
             self.fatal(msg.as_slice());
         };
 
+        assert!(lo <= self.last_span.hi);
         let sp = mk_sp(lo, self.last_span.hi);
         P(Ty {id: ast::DUMMY_NODE_ID, node: t, span: sp})
     }
@@ -1551,6 +1692,7 @@ impl<'a> Parser<'a> {
         let t = if self.eat(&token::COLON) {
             self.parse_ty(true)
         } else {
+            assert!(self.span.lo <= self.span.hi);
             P(Ty {
                 id: ast::DUMMY_NODE_ID,
                 node: TyInfer,
@@ -1612,6 +1754,7 @@ impl<'a> Parser<'a> {
             let lit = self.lit_from_token(&token);
             lit
         };
+        assert!(lo <= self.last_span.hi);
         codemap::Spanned { node: lit, span: mk_sp(lo, self.last_span.hi) }
     }
 
@@ -1640,12 +1783,21 @@ impl<'a> Parser<'a> {
     /// groups.
     pub fn parse_path(&mut self, mode: PathParsingMode) -> PathAndBounds {
         // Check for a whole path...
+        let opt_span = match self.token {
+            INTERPOLATED(token::NtPath(_), ref ei) => {
+                ei.as_ref().map(|b| **b)
+            }
+            _ => None,
+        };
         let found = match self.token {
-            INTERPOLATED(token::NtPath(_)) => Some(self.bump_and_get()),
+            INTERPOLATED(token::NtPath(_), _) => Some(self.bump_and_get()),
             _ => None,
         };
         match found {
-            Some(INTERPOLATED(token::NtPath(box path))) => {
+            Some(INTERPOLATED(token::NtPath(box path), _)) => {
+                debug!("parse_path returning PathAndBounds opt_span: {} {:?}",
+                       opt_span.map(|s| self.sess.span_diagnostic.cm.span_to_string(s)),
+                       opt_span);
                 return PathAndBounds {
                     path: path,
                     bounds: None,
@@ -1727,6 +1879,7 @@ impl<'a> Parser<'a> {
         };
 
         // Assemble the span.
+        assert!(lo <= self.last_span.hi);
         let span = mk_sp(lo, self.last_span.hi);
 
         // Assemble the result.
@@ -1862,6 +2015,7 @@ impl<'a> Parser<'a> {
         let hi = self.last_span.hi;
         self.expect(&token::COLON);
         let e = self.parse_expr();
+        assert!(lo <= e.span.hi);
         ast::Field {
             ident: spanned(lo, hi, i),
             expr: e,
@@ -1870,6 +2024,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn mk_expr(&mut self, lo: BytePos, hi: BytePos, node: Expr_) -> Gc<Expr> {
+        assert!(lo <= hi, "lo <= hi mk_expr");
         box(GC) Expr {
             id: ast::DUMMY_NODE_ID,
             node: node,
@@ -1913,6 +2068,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn mk_mac_expr(&mut self, lo: BytePos, hi: BytePos, m: Mac_) -> Gc<Expr> {
+        assert!(lo <= hi, "lo <= hi mk_mac_expr");
         box(GC) Expr {
             id: ast::DUMMY_NODE_ID,
             node: ExprMac(codemap::Spanned {node: m, span: mk_sp(lo, hi)}),
@@ -1937,7 +2093,7 @@ impl<'a> Parser<'a> {
     /// At the bottom (top?) of the precedence hierarchy,
     /// parse things like parenthesized exprs,
     /// macros, return, etc.
-    pub fn parse_bottom_expr(&mut self) -> Gc<Expr> {
+    pub fn parse_bottom_expr(&mut self, opt_lhs: Option<Gc<Expr>>) -> Gc<Expr> {
         maybe_whole_expr!(self);
 
         let lo = self.span.lo;
@@ -1955,7 +2111,18 @@ impl<'a> Parser<'a> {
                     hi = self.span.hi;
                     self.bump();
                     let lit = box(GC) spanned(lo, hi, LitNil);
-                    return self.mk_expr(lo, hi, ExprLit(lit));
+                    let ret = self.mk_expr(lo, hi, ExprLit(lit));
+                            opt_lhs.map(|lhs| {
+                                return lhs;
+                                assert!(lhs.span.lo <= ret.span.hi, "parse_bottom_expr lparen start, lhs {} ({}) ret: {} ({})",
+                    pprust::expr_to_string(&*lhs),
+                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                    pprust::expr_to_string(&*ret),
+                    self.sess.span_diagnostic.cm.span_to_string(ret.span));
+        });
+
+
+                    return ret;
                 }
                 let mut es = vec!(self.parse_expr());
                 self.commit_expr(*es.last().unwrap(), &[], &[token::COMMA, token::RPAREN]);
@@ -1972,21 +2139,53 @@ impl<'a> Parser<'a> {
                 hi = self.span.hi;
                 self.commit_expr_expecting(*es.last().unwrap(), token::RPAREN);
 
-                return if es.len() == 1 && !trailing_comma {
+                let ret = if es.len() == 1 && !trailing_comma {
                     self.mk_expr(lo, hi, ExprParen(*es.get(0)))
                 }
                     else {
                     self.mk_expr(lo, hi, ExprTup(es))
-                }
+                    };
+
+                opt_lhs.map(|lhs| {
+                    return lhs;
+            assert!(lhs.span.lo <= ret.span.hi, "parse_bottom_expr lparen finis, lhs {} ({}) ret: {} ({})",
+                    pprust::expr_to_string(&*lhs),
+                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                    pprust::expr_to_string(&*ret),
+                    self.sess.span_diagnostic.cm.span_to_string(ret.span));
+        });
+
+
+                return ret;
             },
             token::LBRACE => {
                 self.bump();
                 let blk = self.parse_block_tail(lo, DefaultBlock);
-                return self.mk_expr(blk.span.lo, blk.span.hi,
-                                    ExprBlock(blk));
+                let ret = self.mk_expr(blk.span.lo, blk.span.hi,
+                                       ExprBlock(blk));
+                        opt_lhs.map(|lhs| { return lhs;
+            assert!(lhs.span.lo <= ret.span.hi, "parse_bottom_expr lbrace start, lhs {} ({}) ret: {} ({})",
+                    pprust::expr_to_string(&*lhs),
+                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                    pprust::expr_to_string(&*ret),
+                    self.sess.span_diagnostic.cm.span_to_string(ret.span));
+        });
+
+
+                return ret;
             },
             token::BINOP(token::OR) |  token::OROR => {
-                return self.parse_lambda_expr(CaptureByValue);
+                let ret = self.parse_lambda_expr(CaptureByValue);
+                        opt_lhs.map(|lhs| { return lhs;
+            assert!(lhs.span.lo <= ret.span.hi, "parse_bottom_expr or-oror, lhs {} ({}) ret: {} ({})",
+                    pprust::expr_to_string(&*lhs),
+                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                    pprust::expr_to_string(&*ret),
+                    self.sess.span_diagnostic.cm.span_to_string(ret.span));
+        });
+
+
+                return ret;
             },
             // FIXME #13626: Should be able to stick in
             // token::SELF_KEYWORD_NAME
@@ -1995,9 +2194,19 @@ impl<'a> Parser<'a> {
                         ctxt: _
                     } ,false) => {
                 self.bump();
+                assert!(lo <= hi, "lo <= hi parse_bottom_expr");
                 let path = ast_util::ident_to_path(mk_sp(lo, hi), id);
                 ex = ExprPath(path);
                 hi = self.last_span.hi;
+                opt_lhs.map(|lhs| { return lhs;
+                    let ex = self.mk_expr(lo, hi, ex.clone());
+                    assert!(lhs.span.lo <= hi, "parse_bottom_expr ident, lhs {} ({}) ex: {} ({})",
+                            pprust::expr_to_string(&*lhs),
+                            self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                            pprust::expr_to_string(&*ex),
+                            self.sess.span_diagnostic.cm.span_to_string(ex.span));
+                });
+
             }
             token::LBRACKET => {
                 self.bump();
@@ -2006,6 +2215,15 @@ impl<'a> Parser<'a> {
                     // Empty vector.
                     self.bump();
                     ex = ExprVec(Vec::new());
+                    opt_lhs.map(|lhs| { return lhs;
+                        let ex = self.mk_expr(lo, hi, ex.clone());
+                        assert!(lhs.span.lo <= hi, "parse_bottom_expr lbracket rbracket, lhs {} ({}) ex: {} ({})",
+                                pprust::expr_to_string(&*lhs),
+                                self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                                pprust::expr_to_string(&*ex),
+                                self.sess.span_diagnostic.cm.span_to_string(ex.span));
+                });
+
                 } else {
                     // Nonempty vector.
                     let first_expr = self.parse_expr();
@@ -2017,6 +2235,15 @@ impl<'a> Parser<'a> {
                         let count = self.parse_expr();
                         self.expect(&token::RBRACKET);
                         ex = ExprRepeat(first_expr, count);
+                        opt_lhs.map(|lhs| { return lhs;
+                            let ex = self.mk_expr(lo, hi, ex.clone());
+                            assert!(lhs.span.lo <= hi, "parse_bottom_expr lbracket comma dotdot, lhs {} ({}) ex: {} ({})",
+                                    pprust::expr_to_string(&*lhs),
+                                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                                    pprust::expr_to_string(&*ex),
+                                    self.sess.span_diagnostic.cm.span_to_string(ex.span));
+                        });
+
                     } else if self.token == token::COMMA {
                         // Vector with two or more elements.
                         self.bump();
@@ -2028,17 +2255,44 @@ impl<'a> Parser<'a> {
                         let mut exprs = vec!(first_expr);
                         exprs.push_all_move(remaining_exprs);
                         ex = ExprVec(exprs);
+                        opt_lhs.map(|lhs| { return lhs;
+                            let ex = self.mk_expr(lo, hi, ex.clone());
+                            assert!(lhs.span.lo <= hi, "parse_bottom_expr lbracket comma, lhs {} ({}) ex: {} ({})",
+                                    pprust::expr_to_string(&*lhs),
+                                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                                    pprust::expr_to_string(&*ex),
+                                    self.sess.span_diagnostic.cm.span_to_string(ex.span));
+                        });
+
                     } else {
                         // Vector with one element.
                         self.expect(&token::RBRACKET);
                         ex = ExprVec(vec!(first_expr));
+                        opt_lhs.map(|lhs| { return lhs;
+                            let ex = self.mk_expr(lo, hi, ex.clone());
+                            assert!(lhs.span.lo <= hi, "parse_bottom_expr lbracket elem rbracket, lhs {} ({}) ex: {} ({})",
+                                    pprust::expr_to_string(&*lhs),
+                                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                                    pprust::expr_to_string(&*ex),
+                                    self.sess.span_diagnostic.cm.span_to_string(ex.span));
+                        });
                     }
                 }
                 hi = self.last_span.hi;
             },
             _ => {
                 if self.eat_keyword(keywords::Ref) {
-                    return self.parse_lambda_expr(CaptureByRef);
+                    let ret = self.parse_lambda_expr(CaptureByRef);
+                            opt_lhs.map(|lhs| { return lhs;
+            assert!(lhs.span.lo <= ret.span.hi, "parse_bottom_expr ref, lhs {} ({}) ret: {} ({})",
+                    pprust::expr_to_string(&*lhs),
+                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                    pprust::expr_to_string(&*ret),
+                    self.sess.span_diagnostic.cm.span_to_string(ret.span));
+        });
+
+
+                    return ret;
                 }
                 if self.eat_keyword(keywords::Proc) {
                     let decl = self.parse_proc_decl();
@@ -2051,31 +2305,100 @@ impl<'a> Parser<'a> {
                             rules: DefaultBlock,
                             span: body.span,
                         });
-                    return self.mk_expr(lo, body.span.hi, ExprProc(decl, fakeblock));
+                    let ret = self.mk_expr(lo, body.span.hi, ExprProc(decl, fakeblock));
+                            opt_lhs.map(|lhs| { return lhs;
+            assert!(lhs.span.lo <= ret.span.hi, "parse_bottom_expr proc, lhs {} ({}) ret: {} ({})",
+                    pprust::expr_to_string(&*lhs),
+                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                    pprust::expr_to_string(&*ret),
+                    self.sess.span_diagnostic.cm.span_to_string(ret.span));
+        });
+
+
+                    return ret;
                 }
                 if self.eat_keyword(keywords::If) {
-                    return self.parse_if_expr();
+                    let ret = self.parse_if_expr();
+                            opt_lhs.map(|lhs| { return lhs;
+            assert!(lhs.span.lo <= ret.span.hi, "parse_bottom_expr if, lhs {} ({}) ret: {} ({})",
+                    pprust::expr_to_string(&*lhs),
+                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                    pprust::expr_to_string(&*ret),
+                    self.sess.span_diagnostic.cm.span_to_string(ret.span));
+        });
+
+
+                    return ret;
                 }
                 if self.eat_keyword(keywords::For) {
-                    return self.parse_for_expr(None);
+                    let ret = self.parse_for_expr(None);
+                            opt_lhs.map(|lhs| { return lhs;
+            assert!(lhs.span.lo <= ret.span.hi, "parse_bottom_expr for, lhs {} ({}) ret: {} ({})",
+                    pprust::expr_to_string(&*lhs),
+                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                    pprust::expr_to_string(&*ret),
+                    self.sess.span_diagnostic.cm.span_to_string(ret.span));
+        });
+
+
+                    return ret;
                 }
                 if self.eat_keyword(keywords::While) {
-                    return self.parse_while_expr();
+                    let ret = self.parse_while_expr();
+                            opt_lhs.map(|lhs| { return lhs;
+            assert!(lhs.span.lo <= ret.span.hi, "parse_bottom_expr while, lhs {} ({}) ret: {} ({})",
+                    pprust::expr_to_string(&*lhs),
+                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                    pprust::expr_to_string(&*ret),
+                    self.sess.span_diagnostic.cm.span_to_string(ret.span));
+        });
+
+                    return ret;
                 }
                 if Parser::token_is_lifetime(&self.token) {
                     let lifetime = self.get_lifetime();
                     self.bump();
                     self.expect(&token::COLON);
                     if self.eat_keyword(keywords::For) {
-                        return self.parse_for_expr(Some(lifetime))
+                        let ret = self.parse_for_expr(Some(lifetime));
+                                opt_lhs.map(|lhs| { return lhs;
+            assert!(lhs.span.lo <= ret.span.hi, "parse_bottom_expr lt colon, lhs {} ({}) ret: {} ({})",
+                    pprust::expr_to_string(&*lhs),
+                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                    pprust::expr_to_string(&*ret),
+                    self.sess.span_diagnostic.cm.span_to_string(ret.span));
+        });
+
+
+                        return ret;
                     }
                     if self.eat_keyword(keywords::Loop) {
-                        return self.parse_loop_expr(Some(lifetime))
+                        let ret = self.parse_loop_expr(Some(lifetime));
+                                opt_lhs.map(|lhs| { return lhs;
+            assert!(lhs.span.lo <= ret.span.hi, "parse_bottom_expr lt colon loop, lhs {} ({}) ret: {} ({})",
+                    pprust::expr_to_string(&*lhs),
+                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                    pprust::expr_to_string(&*ret),
+                    self.sess.span_diagnostic.cm.span_to_string(ret.span));
+        });
+
+
+                        return ret;
                     }
                     self.fatal("expected `for` or `loop` after a label")
                 }
                 if self.eat_keyword(keywords::Loop) {
-                    return self.parse_loop_expr(None);
+                    let ret = self.parse_loop_expr(None);
+                            opt_lhs.map(|lhs| { return lhs;
+            assert!(lhs.span.lo <= ret.span.hi, "parse_bottom_expr loop handoff, lhs {} ({}) ret: {} ({})",
+                    pprust::expr_to_string(&*lhs),
+                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                    pprust::expr_to_string(&*ret),
+                    self.sess.span_diagnostic.cm.span_to_string(ret.span));
+        });
+
+
+                    return ret;
                 }
                 if self.eat_keyword(keywords::Continue) {
                     let lo = self.span.lo;
@@ -2087,15 +2410,53 @@ impl<'a> Parser<'a> {
                         ExprAgain(None)
                     };
                     let hi = self.span.hi;
-                    return self.mk_expr(lo, hi, ex);
+                    opt_lhs.map(|lhs| { return lhs;
+                        let ex = self.mk_expr(lo, hi, ex.clone());
+                        assert!(lhs.span.lo <= hi, "parse_bottom_expr cont, lhs {} ({}) ex: {} ({})",
+                                pprust::expr_to_string(&*lhs),
+                                self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                                pprust::expr_to_string(&*ex),
+                                self.sess.span_diagnostic.cm.span_to_string(ex.span));
+                    });
+
+                    let ret = self.mk_expr(lo, hi, ex);
+                            opt_lhs.map(|lhs| { return lhs;
+            assert!(lhs.span.lo <= ret.span.hi, "parse_bottom_expr cont, lhs {} ({}) ret: {} ({})",
+                    pprust::expr_to_string(&*lhs),
+                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                    pprust::expr_to_string(&*ret),
+                    self.sess.span_diagnostic.cm.span_to_string(ret.span));
+        });
+
+
+                    return ret;
                 }
                 if self.eat_keyword(keywords::Match) {
-                    return self.parse_match_expr();
+                    let ret = self.parse_match_expr();
+                            opt_lhs.map(|lhs| { return lhs;
+            assert!(lhs.span.lo <= ret.span.hi, "parse_bottom_expr match, lhs {} ({}) ret: {} ({})",
+                    pprust::expr_to_string(&*lhs),
+                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                    pprust::expr_to_string(&*ret),
+                    self.sess.span_diagnostic.cm.span_to_string(ret.span));
+        });
+
+                    return ret;
                 }
                 if self.eat_keyword(keywords::Unsafe) {
-                    return self.parse_block_expr(
+                    let ret = self.parse_block_expr(
                         lo,
                         UnsafeBlock(ast::UserProvided));
+                            opt_lhs.map(|lhs| { return lhs;
+            assert!(lhs.span.lo <= ret.span.hi, "parse_bottom_expr unsafe, lhs {} ({}) ret: {} ({})",
+                    pprust::expr_to_string(&*lhs),
+                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                    pprust::expr_to_string(&*ret),
+                    self.sess.span_diagnostic.cm.span_to_string(ret.span));
+        });
+
+
+                    return ret;
                 }
                 if self.eat_keyword(keywords::Return) {
                     // RETURN expression
@@ -2103,8 +2464,26 @@ impl<'a> Parser<'a> {
                         let e = self.parse_expr();
                         hi = e.span.hi;
                         ex = ExprRet(Some(e));
+                        opt_lhs.map(|lhs| { return lhs;
+                            let ex = self.mk_expr(lo, hi, ex.clone());
+                            assert!(lhs.span.lo <= hi, "parse_bottom_expr return some, lhs {} ({}) ex: {} ({})",
+                                    pprust::expr_to_string(&*lhs),
+                                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                                    pprust::expr_to_string(&*ex),
+                                    self.sess.span_diagnostic.cm.span_to_string(ex.span));
+                    });
+
                     } else {
                         ex = ExprRet(None);
+                        opt_lhs.map(|lhs| { return lhs;
+                            let ex = self.mk_expr(lo, hi, ex.clone());
+                            assert!(lhs.span.lo <= hi, "parse_bottom_expr return none, lhs {} ({}) ex: {} ({})",
+                                    pprust::expr_to_string(&*lhs),
+                                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                                    pprust::expr_to_string(&*ex),
+                                self.sess.span_diagnostic.cm.span_to_string(ex.span));
+                    });
+
                     }
                 } else if self.eat_keyword(keywords::Break) {
                     // BREAK expression
@@ -2116,6 +2495,14 @@ impl<'a> Parser<'a> {
                         ex = ExprBreak(None);
                     }
                     hi = self.span.hi;
+                    opt_lhs.map(|lhs| { return lhs;
+                        let ex = self.mk_expr(lo, hi, ex.clone());
+                        assert!(lhs.span.lo <= hi, "parse_bottom_expr break, lhs {} ({}) ex: {} ({})",
+                                pprust::expr_to_string(&*lhs),
+                                self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                                pprust::expr_to_string(&*ex),
+                                self.sess.span_diagnostic.cm.span_to_string(ex.span));
+                    });
                 } else if self.token == token::MOD_SEP ||
                         is_ident(&self.token) &&
                         !self.is_keyword(keywords::True) &&
@@ -2140,11 +2527,21 @@ impl<'a> Parser<'a> {
                             |p| p.parse_token_tree());
                         let hi = self.span.hi;
 
-                        return self.mk_mac_expr(lo,
+                        let ret = self.mk_mac_expr(lo,
                                                 hi,
                                                 MacInvocTT(pth,
                                                            tts,
                                                            EMPTY_CTXT));
+                                opt_lhs.map(|lhs| { return lhs;
+            assert!(lhs.span.lo <= ret.span.hi, "parse_bottom_expr not, lhs {} ({}) ret: {} ({})",
+                    pprust::expr_to_string(&*lhs),
+                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                    pprust::expr_to_string(&*ret),
+                    self.sess.span_diagnostic.cm.span_to_string(ret.span));
+        });
+
+
+                        return ret;
                     }
                     if self.token == token::LBRACE {
                         // This is a struct literal, unless we're prohibited
@@ -2179,22 +2576,79 @@ impl<'a> Parser<'a> {
                             hi = self.span.hi;
                             self.expect(&token::RBRACE);
                             ex = ExprStruct(pth, fields, base);
-                            return self.mk_expr(lo, hi, ex);
+                            opt_lhs.map(|lhs| { return lhs;
+                                let ex = self.mk_expr(lo, hi, ex.clone());
+                                assert!(lhs.span.lo <= hi, "parse_bottom_expr rbrace, lhs {} ({}) ex: {} ({})",
+                                        pprust::expr_to_string(&*lhs),
+                                        self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                                        pprust::expr_to_string(&*ex),
+                                        self.sess.span_diagnostic.cm.span_to_string(ex.span));
+                            });
+
+                            let ret = self.mk_expr(lo, hi, ex);
+                                    opt_lhs.map(|lhs| { return lhs;
+            assert!(lhs.span.lo <= ret.span.hi, "parse_bottom_expr lbrace rbrace, lhs {} ({}) ret: {} ({})",
+                    pprust::expr_to_string(&*lhs),
+                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                    pprust::expr_to_string(&*ret),
+                    self.sess.span_diagnostic.cm.span_to_string(ret.span));
+        });
+
+
+                            return ret;
                         }
                     }
 
                     hi = pth.span.hi;
                     ex = ExprPath(pth);
+                    opt_lhs.map(|lhs| { return lhs;
+                        let ex = self.mk_expr(lo, hi, ex.clone());
+                        assert!(lhs.span.lo <= hi, "parse_bottom_expr mod_sep ident, lhs {} ({}) ex: {} ({})",
+                                pprust::expr_to_string(&*lhs),
+                                self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                                pprust::expr_to_string(&*ex),
+                                self.sess.span_diagnostic.cm.span_to_string(ex.span));
+                    });
                 } else {
                     // other literal expression
                     let lit = self.parse_lit();
                     hi = lit.span.hi;
                     ex = ExprLit(box(GC) lit);
+                    opt_lhs.map(|lhs| { return lhs;
+                        let ex = self.mk_expr(lo, hi, ex.clone());
+                        if false { assert!(lhs.span.lo <= hi, "parse_bottom_expr lit fallthru, lhs {} ({}) ex: {} ({}) lhs.span: {:?} ex.span: {:?}",
+                                pprust::expr_to_string(&*lhs),
+                                self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                                pprust::expr_to_string(&*ex),
+                                self.sess.span_diagnostic.cm.span_to_string(ex.span),
+                                lhs.span,
+                                ex.span); }
+                    });
+
                 }
             }
         }
 
-        return self.mk_expr(lo, hi, ex);
+        opt_lhs.map(|lhs| { return lhs;
+            let ex = self.mk_expr(lo, hi, ex.clone());
+            if false { assert!(lhs.span.lo <= hi, "parse_bottom_expr last ex, lhs {} ({}) ex: {} ({})",
+                    pprust::expr_to_string(&*lhs),
+                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                    pprust::expr_to_string(&*ex),
+                    self.sess.span_diagnostic.cm.span_to_string(ex.span)); }
+        });
+
+        let ret = self.mk_expr(lo, hi, ex);
+                opt_lhs.map(|lhs| { return lhs;
+            if false { assert!(lhs.span.lo <= ret.span.hi, "parse_bottom_expr last ret, lhs {} ({}) ret: {} ({})",
+                    pprust::expr_to_string(&*lhs),
+                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                    pprust::expr_to_string(&*ret),
+                    self.sess.span_diagnostic.cm.span_to_string(ret.span)); }
+        });
+
+
+        return ret;
     }
 
     /// Parse a block or unsafe block
@@ -2206,13 +2660,27 @@ impl<'a> Parser<'a> {
     }
 
     /// parse a.b or a(13) or a[4] or just a
-    pub fn parse_dot_or_call_expr(&mut self) -> Gc<Expr> {
-        let b = self.parse_bottom_expr();
-        self.parse_dot_or_call_expr_with(b)
+    pub fn parse_dot_or_call_expr(&mut self, opt_lhs: Option<Gc<Expr>>) -> Gc<Expr> {
+        let b = self.parse_bottom_expr(opt_lhs);
+        opt_lhs.map(|lhs| { return lhs;
+            assert!(lhs.span.lo <= b.span.hi, "parse_dot_or_call_expr handoff, lhs {} ({}) b: {} ({})",
+                    pprust::expr_to_string(&*lhs),
+                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                    pprust::expr_to_string(&*b),
+                    self.sess.span_diagnostic.cm.span_to_string(b.span));
+        });
+        self.parse_dot_or_call_expr_with(b, opt_lhs)
     }
 
-    pub fn parse_dot_or_call_expr_with(&mut self, e0: Gc<Expr>) -> Gc<Expr> {
+    pub fn parse_dot_or_call_expr_with(&mut self, e0: Gc<Expr>, opt_lhs: Option<Gc<Expr>>) -> Gc<Expr> {
         let mut e = e0;
+        opt_lhs.map(|lhs| { return lhs;
+            assert!(lhs.span.lo <= e.span.hi, "parse_dot_or_call_expr_with outset, lhs {} ({}) e: {} ({})",
+                    pprust::expr_to_string(&*lhs),
+                    self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                    pprust::expr_to_string(&*e),
+                    self.sess.span_diagnostic.cm.span_to_string(e.span));
+        });
         let lo = e.span.lo;
         let mut hi;
         loop {
@@ -2245,11 +2713,27 @@ impl<'a> Parser<'a> {
                             let id = spanned(dot, hi, i);
                             let nd = self.mk_method_call(id, tys, es);
                             e = self.mk_expr(lo, hi, nd);
+                            opt_lhs.map(|lhs| { return lhs;
+                      assert!(lhs.span.lo <= e.span.hi, "parse_dot_or_call_expr_with dot-lparen, lhs {} ({}) e: {} ({})",
+                              pprust::expr_to_string(&*lhs),
+                              self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                              pprust::expr_to_string(&*e),
+                              self.sess.span_diagnostic.cm.span_to_string(e.span));
+                  });
+
                         }
                         _ => {
                             let id = spanned(dot, hi, i);
                             let field = self.mk_field(e, id, tys);
-                            e = self.mk_expr(lo, hi, field)
+                            e = self.mk_expr(lo, hi, field);
+                            opt_lhs.map(|lhs| { return lhs;
+                      assert!(lhs.span.lo <= e.span.hi, "parse_dot_or_call_expr_with dot-ref, lhs {} ({}) e: {} ({})",
+                              pprust::expr_to_string(&*lhs),
+                              self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                              pprust::expr_to_string(&*e),
+                              self.sess.span_diagnostic.cm.span_to_string(e.span));
+                  });
+
                         }
                     }
                   }
@@ -2270,7 +2754,15 @@ impl<'a> Parser<'a> {
                 hi = self.last_span.hi;
 
                 let nd = self.mk_call(e, es);
-                e = self.mk_expr(lo, hi, nd);
+                  e = self.mk_expr(lo, hi, nd);
+                                    opt_lhs.map(|lhs| { return lhs;
+                      assert!(lhs.span.lo <= e.span.hi, "parse_dot_or_call_expr_with incomp-lparen, lhs {} ({}) e: {} ({})",
+                              pprust::expr_to_string(&*lhs),
+                              self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                              pprust::expr_to_string(&*e),
+                              self.sess.span_diagnostic.cm.span_to_string(e.span));
+                  });
+
               }
 
               // expr[...]
@@ -2280,13 +2772,32 @@ impl<'a> Parser<'a> {
                 hi = self.span.hi;
                 self.commit_expr_expecting(ix, token::RBRACKET);
                 let index = self.mk_index(e, ix);
-                e = self.mk_expr(lo, hi, index)
+                e = self.mk_expr(lo, hi, index);
+                opt_lhs.map(|lhs| { return lhs;
+                    assert!(lhs.span.lo <= e.span.hi, "parse_dot_or_call_expr_with incomp-lbracket, lhs {} ({}) e: {} ({})",
+                            pprust::expr_to_string(&*lhs),
+                            self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                            pprust::expr_to_string(&*e),
+                            self.sess.span_diagnostic.cm.span_to_string(e.span));
+                });
               }
 
-              _ => return e
+              _ => { 
+                  opt_lhs.map(|lhs| { return lhs;
+                      assert!(lhs.span.lo <= e.span.hi, "parse_dot_or_call_expr_with incomp-ref, lhs {} ({}) e: {} ({})",
+                              pprust::expr_to_string(&*lhs),
+                              self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                              pprust::expr_to_string(&*e),
+                              self.sess.span_diagnostic.cm.span_to_string(e.span));
+                  });
+                  return e;
+              }
             }
         }
-        return e;
+        let ret = e;
+        opt_lhs.map(|lhs| { return lhs;
+            assert!(lhs.span.lo <= ret.span.hi, "parse_dot_or_call_expr_with last, ret: {:s}", pprust::expr_to_string(&*ret)); });
+        return ret;
     }
 
     /// Parse an optional separator followed by a kleene-style
@@ -2360,6 +2871,7 @@ impl<'a> Parser<'a> {
                     let seq = match seq {
                         Spanned { node, .. } => node,
                     };
+                    assert!(sp.lo <= p.span.hi);
                     TTSeq(mk_sp(sp.lo, p.span.hi), Rc::new(seq), s, z)
                 } else {
                     TTNonterminal(sp, p.parse_ident())
@@ -2483,7 +2995,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a prefix-operator expr
-    pub fn parse_prefix_expr(&mut self) -> Gc<Expr> {
+    pub fn parse_prefix_expr(&mut self, opt_lhs: Option<Gc<Expr>>) -> Gc<Expr> {
         let lo = self.span.lo;
         let hi;
 
@@ -2491,26 +3003,26 @@ impl<'a> Parser<'a> {
         match self.token {
           token::NOT => {
             self.bump();
-            let e = self.parse_prefix_expr();
+            let e = self.parse_prefix_expr(opt_lhs);
             hi = e.span.hi;
             ex = self.mk_unary(UnNot, e);
           }
           token::BINOP(token::MINUS) => {
             self.bump();
-            let e = self.parse_prefix_expr();
+            let e = self.parse_prefix_expr(opt_lhs);
             hi = e.span.hi;
             ex = self.mk_unary(UnNeg, e);
           }
           token::BINOP(token::STAR) => {
             self.bump();
-            let e = self.parse_prefix_expr();
+            let e = self.parse_prefix_expr(opt_lhs);
             hi = e.span.hi;
             ex = self.mk_unary(UnDeref, e);
           }
           token::BINOP(token::AND) | token::ANDAND => {
             self.expect_and();
             let m = self.parse_mutability();
-            let e = self.parse_prefix_expr();
+            let e = self.parse_prefix_expr(opt_lhs);
             hi = e.span.hi;
             // HACK: turn &[...] into a &-vec
             ex = match e.node {
@@ -2527,14 +3039,14 @@ impl<'a> Parser<'a> {
             self.bump();
             let span = self.last_span;
             self.obsolete(span, ObsoleteManagedExpr);
-            let e = self.parse_prefix_expr();
+            let e = self.parse_prefix_expr(opt_lhs);
             hi = e.span.hi;
             ex = self.mk_unary(UnBox, e);
           }
           token::TILDE => {
             self.bump();
 
-            let e = self.parse_prefix_expr();
+            let e = self.parse_prefix_expr(opt_lhs);
             hi = e.span.hi;
             // HACK: turn ~[...] into a ~-vec
             let last_span = self.last_span;
@@ -2563,15 +3075,18 @@ impl<'a> Parser<'a> {
                     if !self.eat(&token::RPAREN) {
                         let place = self.parse_expr();
                         self.expect(&token::RPAREN);
-                        let subexpression = self.parse_prefix_expr();
+                        let subexpression = self.parse_prefix_expr(opt_lhs);
                         hi = subexpression.span.hi;
                         ex = ExprBox(place, subexpression);
-                        return self.mk_expr(lo, hi, ex);
+                        let ret = self.mk_expr(lo, hi, ex);
+                        opt_lhs.map(|lhs| { return lhs;
+                            assert!(lhs.span.lo <= ret.span.hi, "box lparen, ret: {:s}", pprust::expr_to_string(&*ret)); });
+                        return ret;
                     }
                 }
 
                 // Otherwise, we use the unique pointer default.
-                let subexpression = self.parse_prefix_expr();
+                let subexpression = self.parse_prefix_expr(opt_lhs);
                 hi = subexpression.span.hi;
                 // HACK: turn `box [...]` into a boxed-vec
                 ex = match subexpression.node {
@@ -2586,17 +3101,34 @@ impl<'a> Parser<'a> {
                     _ => self.mk_unary(UnUniq, subexpression)
                 };
               } else {
-                return self.parse_dot_or_call_expr()
+                let ret = self.parse_dot_or_call_expr(opt_lhs);
+                opt_lhs.map(|lhs| { return lhs;
+                    assert!(lhs.span.lo <= ret.span.hi, "ident nonbox, ret: {:s}", pprust::expr_to_string(&*ret)); });
+                return ret;
               }
           }
-          _ => return self.parse_dot_or_call_expr()
+          _ => {
+              let ret : Gc<Expr> = self.parse_dot_or_call_expr(opt_lhs);
+              opt_lhs.map(|lhs: Gc<Expr>| { return lhs;
+                  assert!(lhs.span.lo <= ret.span.hi,
+                          "parse_prefix_expr ref, lhs {} ({}) ret: {} ({})",
+                          pprust::expr_to_string(&*lhs),
+                          self.sess.span_diagnostic.cm.span_to_string(lhs.span),
+                          pprust::expr_to_string(&*ret),
+                          self.sess.span_diagnostic.cm.span_to_string(ret.span));
+              });
+              return ret;
+          }
         }
-        return self.mk_expr(lo, hi, ex);
+        let ret = self.mk_expr(lo, hi, ex);
+        opt_lhs.map(|lhs| { return lhs;
+            assert!(lhs.span.lo <= ret.span.hi, "parse_prefix_expr last, ret: {:s}", pprust::expr_to_string(&*ret)); });
+        return ret;
     }
 
     /// Parse an expression of binops
     pub fn parse_binops(&mut self) -> Gc<Expr> {
-        let prefix_expr = self.parse_prefix_expr();
+        let prefix_expr = self.parse_prefix_expr(None);
         self.parse_more_binops(prefix_expr, 0)
     }
 
@@ -2620,32 +3152,87 @@ impl<'a> Parser<'a> {
         }
 
         let cur_opt = token_to_binop(&self.token);
-        match cur_opt {
+        let ret = match cur_opt {
             Some(cur_op) => {
                 let cur_prec = operator_prec(cur_op);
                 if cur_prec > min_prec {
+                    let span_pre_bump_over_op = self.span;
                     self.bump();
-                    let expr = self.parse_prefix_expr();
+                    let span_post_bump_over_op = self.span;
+
+                    let expr = self.parse_prefix_expr(Some(lhs));
+
+                    let span_post_parse_op_expr = self.span;
+/*
+                    // FSK: This assertion was not directly derived; I inferred it
+                    // as "obvious" though my reasoning may be flawed.  In particular,
+                    // pnkfelix now thinks that thjs assertion is violated during
+                    // syntax expansion.
+                    assert!(lhs.span.lo <= expr.span.lo, "lhs {} lo <= expr {} lo cur_opt cur_prec > min_prec pre_bump_over_op: {:?} post_bump_over_op: {:?} post_parse_op_expr: {:?}", lhs.span, expr.span, span_pre_bump_over_op, span_post_bump_over_op, span_post_parse_op_expr);
+*/
                     let rhs = self.parse_more_binops(expr, cur_prec);
+                    let span_post_parse_op_expr_rhs = self.span;
                     let binary = self.mk_binary(cur_op, lhs, rhs);
-                    let bin = self.mk_expr(lhs.span.lo, rhs.span.hi, binary);
+                    let rhs_span_lo = span_post_bump_over_op.hi;
+                    let rhs_span_hi = match rhs.span.find_span_matching_lo(rhs_span_lo) {
+                        Some(sp) => sp.hi,
+                        // fallback, but I would like to know when the above is failing
+                        None => {
+                            debug!("find_span_matching_lo ret None for rhs {} {:?} span_post_bump_over_op: {} {:?}",
+                                   rhs.span,
+                                   rhs.span,
+                                   span_post_bump_over_op,
+                                   span_post_bump_over_op);
+                            rhs.span.hi
+                        }
+                    };
+                    let lhs_span_lo = lhs.span.find_span_with_hi_closest_to(span_pre_bump_over_op.lo).lo;
+                    assert!(lhs_span_lo <= rhs_span_hi, "lhs {} lo <= rhs {} hi cur_opt cur_prec > min_prec pre_bump_over_op: {:?} post_bump_over_op: {:?} post_parse_op_expr: {:?} post_parse_op_expr_rhs {:?}", lhs.span, rhs.span, span_pre_bump_over_op, span_post_bump_over_op, span_post_parse_op_expr, span_post_parse_op_expr_rhs);
+                    let bin = self.mk_expr(lhs_span_lo, rhs_span_hi, binary);
                     self.parse_more_binops(bin, min_prec)
                 } else {
+                    assert!(lhs.span.lo <= lhs.span.hi, "lhs lo <= lhs hi cur_opt cur_prec <= min_prec");
                     lhs
                 }
             }
             None => {
-                if as_prec > min_prec && self.eat_keyword(keywords::As) {
-                    let rhs = self.parse_ty(false);
-                    let _as = self.mk_expr(lhs.span.lo,
-                                           rhs.span.hi,
-                                           ExprCast(lhs, rhs));
-                    self.parse_more_binops(_as, min_prec)
+                if as_prec > min_prec {
+                    let span_pre_eat_as_keyword = self.span;
+                    if self.eat_keyword(keywords::As) {
+                        let span_post_eat_as_keyword = self.span;
+                        let rhs = self.parse_ty(false);
+                        let span_post_parse_ty = self.span;
+
+                        let rhs_span_lo = span_post_eat_as_keyword.hi;
+                        let rhs_span_hi = match rhs.span.find_span_matching_lo(rhs_span_lo) {
+                            Some(sp) => sp.hi,
+                            // fallback, but I would like to know when the above is failing
+                            None => {
+                                debug!("find_span_matching_lo ret None for rhs {} {:?} span_post_eat_as_keyword: {} {:?}",
+                                       rhs.span,
+                                       rhs.span,
+                                       span_post_eat_as_keyword,
+                                       span_post_eat_as_keyword);
+                                rhs.span.hi
+                            }
+                        };
+                        let lhs_span_lo = lhs.span.find_span_with_hi_closest_to(span_pre_eat_as_keyword.lo).lo;
+                        assert!(lhs_span_lo <= rhs_span_hi, "lhs lo <= rhs hi no cur_opt as prec");
+                        let _as = self.mk_expr(lhs_span_lo,
+                                               rhs_span_hi,
+                                               ExprCast(lhs, rhs));
+                        self.parse_more_binops(_as, min_prec)
+                    } else {
+                        assert!(lhs.span.lo <= lhs.span.hi, "lhs lo <= lhs hi no cur_opt other");
+                        lhs
+                    }
                 } else {
+                    assert!(lhs.span.lo <= lhs.span.hi, "lhs lo <= lhs hi no cur_opt other");
                     lhs
                 }
             }
-        }
+        };
+        ret
     }
 
     /// Parse an assignment expression....
@@ -2964,6 +3551,7 @@ impl<'a> Parser<'a> {
             self.bump();
             pat = PatWild(PatWildSingle);
             hi = self.last_span.hi;
+            assert!(lo <= hi, "lo <= hi parse_pat UNDERSCORE");
             return box(GC) ast::Pat {
                 id: ast::DUMMY_NODE_ID,
                 node: pat,
@@ -2978,6 +3566,7 @@ impl<'a> Parser<'a> {
             let last_span = self.last_span;
             hi = last_span.hi;
             self.obsolete(last_span, ObsoleteOwnedPattern);
+            assert!(lo <= hi, "lo <= hi parse_pat TILDE");
             return box(GC) ast::Pat {
                 id: ast::DUMMY_NODE_ID,
                 node: pat,
@@ -2991,6 +3580,7 @@ impl<'a> Parser<'a> {
             let sub = self.parse_pat();
             pat = PatRegion(sub);
             hi = self.last_span.hi;
+            assert!(lo <= hi, "lo <= hi parse_pat AND");
             return box(GC) ast::Pat {
                 id: ast::DUMMY_NODE_ID,
                 node: pat,
@@ -3003,6 +3593,7 @@ impl<'a> Parser<'a> {
             if self.token == token::RPAREN {
                 hi = self.span.hi;
                 self.bump();
+                assert!(lo <= hi, "lo <= hi parse_pat LPAREN RPAREN");
                 let lit = box(GC) codemap::Spanned {
                     node: LitNil,
                     span: mk_sp(lo, hi)};
@@ -3022,6 +3613,7 @@ impl<'a> Parser<'a> {
                 pat = PatTup(fields);
             }
             hi = self.last_span.hi;
+            assert!(lo <= hi, "lo <= hi parse_pat LPAREN ..");
             return box(GC) ast::Pat {
                 id: ast::DUMMY_NODE_ID,
                 node: pat,
@@ -3037,6 +3629,7 @@ impl<'a> Parser<'a> {
             self.expect(&token::RBRACKET);
             pat = ast::PatVec(before, slice, after);
             hi = self.last_span.hi;
+            assert!(lo <= hi, "lo <= hi parse_pat LBRACKET");
             return box(GC) ast::Pat {
                 id: ast::DUMMY_NODE_ID,
                 node: pat,
@@ -3082,6 +3675,7 @@ impl<'a> Parser<'a> {
             let sub = self.parse_pat();
             pat = PatBox(sub);
             hi = self.last_span.hi;
+            assert!(lo <= hi, "lo <= hi parse_pat Box");
             return box(GC) ast::Pat {
                 id: ast::DUMMY_NODE_ID,
                 node: pat,
@@ -3195,6 +3789,7 @@ impl<'a> Parser<'a> {
             }
         }
         hi = self.last_span.hi;
+        assert!(lo <= hi, "lo <= hi parse_pat fallthru");
         box(GC) ast::Pat {
             id: ast::DUMMY_NODE_ID,
             node: pat,
@@ -3243,6 +3838,7 @@ impl<'a> Parser<'a> {
         let lo = self.span.lo;
         let pat = self.parse_pat();
 
+        assert!(lo <= lo);
         let mut ty = P(Ty {
             id: ast::DUMMY_NODE_ID,
             node: TyInfer,
@@ -3252,6 +3848,7 @@ impl<'a> Parser<'a> {
             ty = self.parse_ty(true);
         }
         let init = self.parse_initializer();
+        assert!(lo <= self.last_span.hi);
         box(GC) ast::Local {
             ty: ty,
             pat: pat,
@@ -3542,6 +4139,7 @@ impl<'a> Parser<'a> {
 
         let hi = self.span.hi;
         self.bump();
+        assert!(lo <= hi, "lo <= hi parse_block_tail_");
         P(ast::Block {
             view_items: view_items,
             stmts: stmts,
@@ -3966,6 +4564,7 @@ impl<'a> Parser<'a> {
             _ => SelfStatic,
         };
 
+        assert!(lo <= self.span.hi);
         let explicit_self_sp = mk_sp(lo, self.span.hi);
 
         // shared fall-through for the three cases below. borrowing prevents simply
@@ -4105,6 +4704,7 @@ impl<'a> Parser<'a> {
     fn mk_item(&mut self, lo: BytePos, hi: BytePos, ident: Ident,
                node: Item_, vis: Visibility,
                attrs: Vec<Attribute>) -> Gc<Item> {
+        assert!(lo <= hi, "lo <= hi mk_item");
         box(GC) Item {
             ident: ident,
             attrs: attrs,
@@ -4156,6 +4756,7 @@ impl<'a> Parser<'a> {
                     None => self.fatal("expected open delimiter")
                 };
                 let m_ = ast::MacInvocTT(pth, tts, EMPTY_CTXT);
+                assert!(self.span.lo <= self.span.hi);
                 let m: ast::Mac = codemap::Spanned { node: m_,
                                                  span: mk_sp(self.span.lo,
                                                              self.span.hi) };
@@ -4191,6 +4792,7 @@ impl<'a> Parser<'a> {
                  body.span.hi, new_attrs)
             }
         };
+        assert!(lo <= hi, "lo <= hi parse_method");
         box(GC) ast::Method {
             attrs: new_attrs,
             id: ast::DUMMY_NODE_ID,
@@ -4480,6 +5082,7 @@ impl<'a> Parser<'a> {
             self.span_err(last_span, "expected item after attributes");
         }
 
+        assert!(inner_lo <= self.span.lo);
         ast::Mod {
             inner: mk_sp(inner_lo, self.span.lo),
             view_items: view_items,
@@ -4654,6 +5257,7 @@ impl<'a> Parser<'a> {
         let decl = self.parse_fn_decl(true);
         let hi = self.span.hi;
         self.expect(&token::SEMI);
+        assert!(lo <= hi, "lo <= hi parse_item_foreign_fn");
         box(GC) ast::ForeignItem { ident: ident,
                                    attrs: attrs,
                                    node: ForeignItemFn(decl, generics),
@@ -4675,6 +5279,7 @@ impl<'a> Parser<'a> {
         let ty = self.parse_ty(true);
         let hi = self.span.hi;
         self.expect(&token::SEMI);
+        assert!(lo <= hi, "lo <= hi parse_item_foreign_static");
         box(GC) ast::ForeignItem {
             ident: ident,
             attrs: attrs,
@@ -4755,6 +5360,7 @@ impl<'a> Parser<'a> {
             }
         };
 
+        assert!(lo <= self.last_span.hi);
         IoviViewItem(ast::ViewItem {
                 node: ViewItemExternCrate(ident, maybe_path, ast::DUMMY_NODE_ID),
                 attrs: attrs,
@@ -4940,8 +5546,14 @@ impl<'a> Parser<'a> {
                                attrs: Vec<Attribute> ,
                                macros_allowed: bool)
                                -> ItemOrViewItem {
+        let _opt_span = match self.token {
+            INTERPOLATED(token::NtItem(_), ref s) => {
+                s.as_ref().map(|s| **s)
+            }
+            _ => None,
+        };
         match self.token {
-            INTERPOLATED(token::NtItem(item)) => {
+            INTERPOLATED(token::NtItem(item), _) => {
                 self.bump();
                 let new_attrs = attrs.append(item.attrs.as_slice());
                 return IoviItem(box(GC) Item {
@@ -4961,6 +5573,7 @@ impl<'a> Parser<'a> {
             // USE ITEM (IoviViewItem)
             let view_item = self.parse_use();
             self.expect(&token::SEMI);
+            assert!(lo <= self.last_span.hi);
             return IoviViewItem(ast::ViewItem {
                 node: view_item,
                 attrs: attrs,
@@ -4975,6 +5588,7 @@ impl<'a> Parser<'a> {
             if next_is_mod || self.eat_keyword(keywords::Crate) {
                 if next_is_mod {
                     let last_span = self.last_span;
+                    assert!(lo <= last_span.hi);
                     self.span_err(mk_sp(lo, last_span.hi),
                                  format!("`extern mod` is obsolete, use \
                                           `extern crate` instead \
@@ -5205,6 +5819,7 @@ impl<'a> Parser<'a> {
             };
             // single-variant-enum... :
             let m = ast::MacInvocTT(pth, tts, EMPTY_CTXT);
+            assert!(self.span.lo <= self.span.hi);
             let m: ast::Mac = codemap::Spanned { node: m,
                                              span: mk_sp(self.span.lo,
                                                          self.span.hi) };
@@ -5270,6 +5885,7 @@ impl<'a> Parser<'a> {
                 &token::LBRACE, &token::RBRACE,
                 seq_sep_trailing_allowed(token::COMMA),
                 |p| p.parse_path_list_item());
+            assert!(lo <= self.span.hi);
             let path = ast::Path {
                 span: mk_sp(lo, self.span.hi),
                 global: false,
@@ -5292,6 +5908,7 @@ impl<'a> Parser<'a> {
                 let id = self.parse_ident();
                 path.push(id);
             }
+            assert!(path_lo <= self.span.hi);
             let path = ast::Path {
                 span: mk_sp(path_lo, self.span.hi),
                 global: false,
@@ -5327,6 +5944,7 @@ impl<'a> Parser<'a> {
                         seq_sep_trailing_allowed(token::COMMA),
                         |p| p.parse_path_list_item()
                     );
+                    assert!(lo <= self.span.hi);
                     let path = ast::Path {
                         span: mk_sp(lo, self.span.hi),
                         global: false,
@@ -5345,6 +5963,7 @@ impl<'a> Parser<'a> {
                   // foo::bar::*
                   token::BINOP(token::STAR) => {
                     self.bump();
+                    assert!(lo <= self.span.hi);
                     let path = ast::Path {
                         span: mk_sp(lo, self.span.hi),
                         global: false,
@@ -5367,6 +5986,7 @@ impl<'a> Parser<'a> {
           _ => ()
         }
         let last = *path.get(path.len() - 1u);
+        assert!(lo <= self.span.hi);
         let path = ast::Path {
             span: mk_sp(lo, self.span.hi),
             global: false,
@@ -5519,6 +6139,7 @@ impl<'a> Parser<'a> {
         // parse the items inside the crate:
         let m = self.parse_mod_items(token::EOF, first_item_outer_attrs, lo);
 
+        assert!(lo <= self.span.lo);
         ast::Crate {
             module: m,
             attrs: inner,

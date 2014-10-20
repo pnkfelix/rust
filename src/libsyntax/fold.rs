@@ -570,7 +570,9 @@ pub fn noop_fold_token<T: Folder>(t: &token::Token, fld: &mut T) -> token::Token
             token::IDENT(fld.fold_ident(id), followed_by_colons)
         }
         token::LIFETIME(id) => token::LIFETIME(fld.fold_ident(id)),
-        token::INTERPOLATED(ref nt) => token::INTERPOLATED(fld.fold_interpolated(nt)),
+        token::INTERPOLATED(ref nt, ref ei) =>
+            token::INTERPOLATED(fld.fold_interpolated(nt),
+                                ei.as_ref().map(|b| box **b)),
         _ => (*t).clone()
     }
 }

@@ -21,7 +21,7 @@ use std::rc::Rc;
 use std::collections::HashMap;
 
 ///an unzipping of `TokenTree`s
-#[deriving(Clone)]
+#[deriving(Clone, Show)]
 struct TtFrame {
     forest: Rc<Vec<ast::TokenTree>>,
     idx: uint,
@@ -150,6 +150,7 @@ pub fn tt_next_token(r: &mut TtReader) -> TokenAndSpan {
         let should_pop = match r.stack.last() {
             None => {
                 assert_eq!(ret_val.tok, EOF);
+                debug!("tt_next_token returning {}", ret_val);
                 return ret_val;
             }
             Some(frame) => {
@@ -167,6 +168,7 @@ pub fn tt_next_token(r: &mut TtReader) -> TokenAndSpan {
             match r.stack.mut_last() {
                 None => {
                     r.cur_tok = EOF;
+                    debug!("tt_next_token returning {}", ret_val);
                     return ret_val;
                 }
                 Some(frame) => {
@@ -182,7 +184,10 @@ pub fn tt_next_token(r: &mut TtReader) -> TokenAndSpan {
             r.stack.mut_last().unwrap().idx = 0;
             match r.stack.last().unwrap().sep.clone() {
                 Some(tk) => {
+                    debug!("tt_next_token: repeat setting r.cur_tok to {} leaving span as {}",
+                           tk, r.cur_span);
                     r.cur_tok = tk; /* repeat same span, I guess */
+                    debug!("tt_next_token returning {}", ret_val);
                     return ret_val;
                 }
                 None => {}
@@ -196,20 +201,27 @@ pub fn tt_next_token(r: &mut TtReader) -> TokenAndSpan {
             // FIXME(pcwalton): Bad copy.
             (*frame.forest.get(frame.idx)).clone()
         };
+        debug!("tt_next_token: loop inspecting t: {} with r.cur_tok {} r.cur_span {}",
+               t, r.cur_tok, r.cur_span);
         match t {
             TTDelim(tts) => {
-                r.stack.push(TtFrame {
+                let frame = TtFrame {
                     forest: tts,
                     idx: 0,
                     dotdotdoted: false,
                     sep: None
-                });
+                };
+                debug!("tt_next_token TTDelim pushing frame {} onto r.stack", frame);
+                r.stack.push(frame);
                 // if this could be 0-length, we'd need to potentially recur here
             }
             TTTok(sp, tok) => {
+                debug!("tt_next_token: TTTok setting r.cur_tok to {} r.span to {}",
+                       tok, sp);
                 r.cur_span = sp;
                 r.cur_tok = tok;
                 r.stack.mut_last().unwrap().idx += 1;
+                debug!("tt_next_token returning {}", ret_val);
                 return ret_val;
             }
             TTSeq(sp, tts, sep, zerok) => {
@@ -235,16 +247,20 @@ pub fn tt_next_token(r: &mut TtReader) -> TokenAndSpan {
                             }
 
                             r.stack.mut_last().unwrap().idx += 1;
-                            return tt_next_token(r);
+                            let ret_val = tt_next_token(r);
+                            debug!("tt_next_token returning {}", ret_val);
+                            return ret_val;
                         }
                         r.repeat_len.push(len);
                         r.repeat_idx.push(0);
-                        r.stack.push(TtFrame {
+                        let frame = TtFrame {
                             forest: tts,
                             idx: 0,
                             dotdotdoted: true,
                             sep: sep.clone()
-                        });
+                        };
+                        debug!("tt_next_token TTSeq pushing frame {} onto r.stack", frame);
+                        r.stack.push(frame);
                     }
                 }
             }
@@ -256,14 +272,22 @@ pub fn tt_next_token(r: &mut TtReader) -> TokenAndSpan {
                        (a) idents can be in lots of places, so it'd be a pain
                        (b) we actually can, since it's a token. */
                     MatchedNonterminal(NtIdent(box sn, b)) => {
+                        debug!("tt_next_token: MatchedNonterminal(NtIndent(..)) setting r.cur_tok to {} r.span to {}",
+                               IDENT(sn,b), sp);
                         r.cur_span = sp;
                         r.cur_tok = IDENT(sn,b);
+                        debug!("tt_next_token returning {}", ret_val);
                         return ret_val;
                     }
                     MatchedNonterminal(ref other_whole_nt) => {
                         // FIXME(pcwalton): Bad copy.
+                        let interpolated = INTERPOLATED((*other_whole_nt).clone(),
+                                                        other_whole_nt.opt_span().map(|x|box x));
+                        debug!("tt_next_token: MatchedNonterminal(other_nt) setting r.cur_tok to {} r.span to {}",
+                               interpolated, sp);
                         r.cur_span = sp;
-                        r.cur_tok = INTERPOLATED((*other_whole_nt).clone());
+                        r.cur_tok = interpolated;
+                        debug!("tt_next_token returning {}", ret_val);
                         return ret_val;
                     }
                     MatchedSeq(..) => {

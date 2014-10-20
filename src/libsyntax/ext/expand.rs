@@ -37,6 +37,7 @@ fn expand_expr(e: Gc<ast::Expr>, fld: &mut MacroExpander) -> Gc<ast::Expr> {
         // expr_mac should really be expr_ext or something; it's the
         // entry-point for all syntax extensions.
         ExprMac(ref mac) => {
+            debug!("expand_expr ExprMac e.span: {}", fld.cx.parse_sess.span_diagnostic.cm.span_to_filename(e.span));
             let expanded_expr = match expand_mac_invoc(mac,&e.span,
                                                        |r|{r.make_expr()},
                                                        |expr,fm|{mark_expr(expr,fm)},
@@ -63,11 +64,13 @@ fn expand_expr(e: Gc<ast::Expr>, fld: &mut MacroExpander) -> Gc<ast::Expr> {
         }
 
         ast::ExprLoop(loop_block, opt_ident) => {
+            debug!("expand_expr ExprLoop e.span: {}", fld.cx.parse_sess.span_diagnostic.cm.span_to_filename(e.span));
             let (loop_block, opt_ident) = expand_loop_block(loop_block, opt_ident, fld);
             fld.cx.expr(e.span, ast::ExprLoop(loop_block, opt_ident))
         }
 
         ast::ExprForLoop(pat, head, body, opt_ident) => {
+            debug!("expand_expr ExprForLoop e.span: {}", fld.cx.parse_sess.span_diagnostic.cm.span_to_filename(e.span));
             let pat = fld.fold_pat(pat);
             let head = fld.fold_expr(head);
             let (body, opt_ident) = expand_loop_block(body, opt_ident, fld);
@@ -75,6 +78,7 @@ fn expand_expr(e: Gc<ast::Expr>, fld: &mut MacroExpander) -> Gc<ast::Expr> {
         }
 
         ast::ExprFnBlock(capture_clause, fn_decl, block) => {
+            debug!("expand_expr ExprFnBlock e.span: {}", fld.cx.parse_sess.span_diagnostic.cm.span_to_filename(e.span));
             let (rewritten_fn_decl, rewritten_block)
                 = expand_and_rename_fn_decl_and_block(&*fn_decl, block, fld);
             let new_node = ast::ExprFnBlock(capture_clause,
@@ -84,13 +88,24 @@ fn expand_expr(e: Gc<ast::Expr>, fld: &mut MacroExpander) -> Gc<ast::Expr> {
         }
 
         ast::ExprProc(fn_decl, block) => {
+            debug!("expand_expr ExprProc e.span: {}", fld.cx.parse_sess.span_diagnostic.cm.span_to_filename(e.span));
             let (rewritten_fn_decl, rewritten_block)
                 = expand_and_rename_fn_decl_and_block(&*fn_decl, block, fld);
             let new_node = ast::ExprProc(rewritten_fn_decl, rewritten_block);
             box(GC) ast::Expr{id:e.id, node: new_node, span: fld.new_span(e.span)}
         }
 
-        _ => noop_fold_expr(e, fld)
+/*
+        ast::ExprPath(ref path) => {
+            let new_node = ast::ExprPath(path.clone());
+            box(GC) ast::Expr{id:e.id, node: new_node, span: fld.new_span(e.span)}
+        }
+*/
+
+        _ => {
+            debug!("expand_expr fallthru e.span: {}", fld.cx.parse_sess.span_diagnostic.cm.span_to_filename(e.span));
+            noop_fold_expr(e, fld)
+        }
     }
 }
 

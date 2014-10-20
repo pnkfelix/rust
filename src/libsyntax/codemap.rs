@@ -35,13 +35,13 @@ pub trait Pos {
 
 /// A byte offset. Keep this small (currently 32-bits), as AST contains
 /// a lot of them.
-#[deriving(Clone, PartialEq, Eq, Hash, PartialOrd, Show)]
+#[deriving(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Show)]
 pub struct BytePos(pub u32);
 
 /// A character offset. Because of multibyte utf8 characters, a byte offset
 /// is not equivalent to a character offset. The CodeMap will convert BytePos
 /// values to CharPos values as necessary.
-#[deriving(PartialEq, Hash, PartialOrd, Show)]
+#[deriving(PartialEq, Eq, Hash, PartialOrd, Ord, Show)]
 pub struct CharPos(pub uint);
 
 // FIXME: Lots of boilerplate in these impls, but so far my attempts to fix
@@ -96,6 +96,56 @@ pub struct Span {
     pub expn_info: Option<Gc<ExpnInfo>>
 }
 
+impl Span {
+    pub fn find_span_matching_lo(&self, lo: BytePos) -> Option<Span> {
+        if self.lo == lo {
+            Some(*self)
+        } else {
+            let mut opt_ei = self.expn_info;
+            loop {
+                match opt_ei {
+                    None => return None,
+                    Some(ei) => {
+                        if ei.call_site.lo == lo {
+                            return Some(ei.call_site)
+                        } else {
+                            opt_ei = ei.call_site.expn_info;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn find_span_with_hi_closest_to(&self, pos_on_right: BytePos) -> Span {
+        // Note: This deliberately returns an unsigned, even for
+        // negative distances.  The idea is that if you want to find
+        // the closest thing to the right, then it just works to treat
+        // negative distances as larger than all positive distances.
+        fn dist(left: BytePos, right: BytePos) -> uint {
+            right.to_uint() - left.to_uint()
+        }
+
+        let mut closest = *self;
+        let mut opt_ei = self.expn_info;
+        let mut distance = dist(self.hi, pos_on_right);
+        loop {
+            match opt_ei {
+                None => return closest,
+                Some(ei) => {
+                    let sp = ei.call_site;
+                    let new_dist : uint = dist(sp.hi, pos_on_right);
+                    if new_dist < distance {
+                        closest = sp;
+                        distance = new_dist;
+                    }
+                    opt_ei = sp.expn_info;
+                }
+            }
+        }
+    }
+}
+
 pub static DUMMY_SP: Span = Span { lo: BytePos(0), hi: BytePos(0), expn_info: None };
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
@@ -140,6 +190,7 @@ pub fn dummy_spanned<T>(t: T) -> Spanned<T> {
 
 /* assuming that we're not in macro expansion */
 pub fn mk_sp(lo: BytePos, hi: BytePos) -> Span {
+    assert!(lo <= hi, "lo <= hi mk_sp");
     Span {lo: lo, hi: hi, expn_info: None}
 }
 
@@ -179,7 +230,7 @@ pub struct FileMapAndLine { pub fm: Rc<FileMap>, pub line: uint }
 pub struct FileMapAndBytePos { pub fm: Rc<FileMap>, pub pos: BytePos }
 
 /// The syntax with which a macro was invoked.
-#[deriving(Clone, Hash, Show)]
+#[deriving(Clone, Encodable, Decodable, PartialEq, Eq, Hash, Show)]
 pub enum MacroFormat {
     /// e.g. #[deriving(...)] <item>
     MacroAttribute,
@@ -187,7 +238,7 @@ pub enum MacroFormat {
     MacroBang
 }
 
-#[deriving(Clone, Hash, Show)]
+#[deriving(Clone, Encodable, Decodable, PartialEq, Eq, Hash, Show)]
 pub struct NameAndSpan {
     /// The name of the macro that was invoked to create the thing
     /// with this Span.
@@ -201,7 +252,7 @@ pub struct NameAndSpan {
 }
 
 /// Extra information for tracking macro expansion of spans
-#[deriving(Hash, Show)]
+#[deriving(Clone, Encodable, Decodable, PartialEq, Eq, Hash, Show)]
 pub struct ExpnInfo {
     /// The location of the actual macro invocation, e.g. `let x =
     /// foo!();`
