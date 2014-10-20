@@ -18,7 +18,7 @@ export CFG_COMPILER_HOST_TRIPLE
 # be overridden during development temporarily. For stage0, we allow warnings
 # which may be bugs in stage0 (should be fixed in stage1+)
 WFLAGS_ST0 = -W warnings
-WFLAGS_ST1 = -D warnings
+WFLAGS_ST1 = -W warnings
 WFLAGS_ST2 = -D warnings
 
 # Macro that generates the full list of dependencies for a crate at a particular
@@ -79,6 +79,7 @@ $$(TLIB$(1)_T_$(2)_H_$(3))/stamp.$(4): \
 	    $$(dir $$@)$$(call CFG_LIB_GLOB_$(2),$(4)))
 	$$(call REMOVE_ALL_OLD_GLOB_MATCHES, \
 	    $$(dir $$@)$$(call CFG_RLIB_GLOB,$(4)))
+	env
 	$$(STAGE$(1)_T_$(2)_H_$(3)) \
 		$$(WFLAGS_ST$(1)) \
 		-L "$$(RT_OUTPUT_DIR_$(2))" \
