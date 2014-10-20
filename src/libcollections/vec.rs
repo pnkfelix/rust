@@ -1538,8 +1538,21 @@ impl<T> Drop for Vec<T> {
         // zeroed (when moving out, because of #[unsafe_no_drop_flag]).
         if self.cap != 0 {
             unsafe {
-                for x in self.as_mut_slice().iter() {
-                    ptr::read(x);
+                {
+                    let mut i = self.as_mut_slice().iter();
+                    loop {
+                        let n = i.next();
+                        let first_word : uint = {
+                            let p = &n as *const Option<&T>;
+                            let p : *const uint = mem::transmute(p);
+                            *p
+                        };
+                        assert!(first_word != 0xaaaaaaaaaaaaaaaau, "Yikes");
+                        match n {
+                            Some(x) => { ptr::read(x); }
+                            None => break,
+                        }
+                    }
                 }
                 dealloc(self.ptr, self.cap)
             }
