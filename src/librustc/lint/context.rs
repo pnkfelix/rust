@@ -156,6 +156,7 @@ impl LintStore {
                      UnusedMut,
                      UnnecessaryAllocation,
                      Stability,
+                     WhitespaceLessThanOrGreaterThan,
         )
 
         add_builtin_with_new!(sess,

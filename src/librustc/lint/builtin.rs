@@ -44,6 +44,7 @@ use syntax::ast_map;
 use syntax::attr::AttrMetaMethods;
 use syntax::attr;
 use syntax::codemap::Span;
+use syntax::codemap;
 use syntax::parse::token;
 use syntax::{ast, ast_util, visit};
 
@@ -1565,3 +1566,268 @@ impl LintPass for HardwiredLints {
         )
     }
 }
+
+declare_lint!(pub COMPARISON_WITHOUT_SURROUNDING_SPACE, Warn,
+              "less-than or greater-than without surrounding whitespace")
+
+declare_lint!(pub OPENING_GENERICS_WITH_LEADING_SPACE, Warn,
+              "opening generics list preceded by whitespace")
+
+declare_lint!(pub OPENING_GENERICS_WITH_TRAILING_SPACE, Warn,
+              "opening generics list followed by whitespace")
+
+declare_lint!(pub CLOSING_GENERICS_WITH_LEADING_SPACE, Warn,
+              "closing generics list preceded by whitespace")
+
+declare_lint!(pub CLOSING_GENERICS_WITH_TRAILING_SPACE, Warn,
+              "closing generics list followed by whitespace")
+
+/// Checks for occurrences of `<` or `>` in ways that would
+/// make it difficult to make those characters interpreation as
+/// comparison operators whitespace sensitive
+pub struct WhitespaceLessThanOrGreaterThan;
+
+impl LintPass for WhitespaceLessThanOrGreaterThan {
+    fn get_lints(&self) -> LintArray {
+        lint_array!(COMPARISON_WITHOUT_SURROUNDING_SPACE,
+                    OPENING_GENERICS_WITH_LEADING_SPACE,
+                    OPENING_GENERICS_WITH_TRAILING_SPACE,
+                    CLOSING_GENERICS_WITH_LEADING_SPACE,
+                    CLOSING_GENERICS_WITH_TRAILING_SPACE)
+    }
+
+    fn check_expr(&mut self, cx: &Context, e: &ast::Expr) {
+        let (_cmp_width, l, r) = match e.node {
+            ast::ExprBinary(_cmp @ ast::BiLt, l, r) |
+            ast::ExprBinary(_cmp @ ast::BiGt, l, r) => 
+                (1u32, l, r),
+            ast::ExprBinary(_cmp @ ast::BiLe, l, r) |
+            ast::ExprBinary(_cmp @ ast::BiGe, l, r) =>
+                (2u32, l, r),
+            _ => return,
+        };
+
+        // This is an attempt to narrow into the `___<op>____` portion
+        // of `<expr>___<op>____<expr>`.  It is trickier than you
+        // might think to do this, because the spans of the left or
+        // right expressions could point to the original expressions
+        // that have been fed into a macro that is expanding into
+        // `$orig_left < $orig_right`, and thus the spans of the left
+        // and right may bear no relation to the span of the input
+        // expression itself.
+        //
+        // However, my *theory* is that this tecnique suffices for
+        // differentiating the `<` and `>` that occur within an
+        // operator from the `<` and `>` that could occur within a
+        // path, since the only time that this logic "accidentally"
+        // includes a left- or right- expression, it is in macros
+        // where the accidentally-included expression must be of the
+        // form `$foo` (i.e. scanning the whole expression will not
+        // hit `<` nor `>` that are parts of path components, because
+        // you will never see those in macro template symbols.
+
+        if l.span.lo > l.span.hi {
+            cx.span_lint(COMPARISON_WITHOUT_SURROUNDING_SPACE,
+                         l.span,
+                         format!("unexpected lo > hi : {} > {}",
+                                 l.span.lo, l.span.hi).as_slice());
+            return;
+        }
+        if r.span.lo > r.span.hi {
+            cx.span_lint(COMPARISON_WITHOUT_SURROUNDING_SPACE,
+                         r.span,
+                         format!("unexpected lo > hi : {} > {}",
+                                 r.span.lo, r.span.hi).as_slice());
+            return;
+        }
+        let left = if e.span.lo == l.span.lo { l.span.hi } else { e.span.lo };
+        let right = if e.span.hi == r.span.hi { r.span.lo } else { e.span.hi };
+        assert!(left <= right);
+        let oper_span = codemap::Span { lo: left, hi: right, expn_info: None };
+
+        let s = cx.tcx.sess.codemap().span_to_snippet(oper_span);
+        let s = match s { Some(s) => s, None => return, };
+        let mut state = Naught;
+        let emitted_warn = |state: &State| -> bool {
+            match *state {
+                WsOp(_) | Op(_) | OpWs(_) => {
+                    cx.span_lint(COMPARISON_WITHOUT_SURROUNDING_SPACE,
+                                 e.span,
+                                 format!("saw compare op without surrounding whitespace in {:s}",
+                                         s).as_slice());
+                    true
+                }
+                Naught | Ws | WsOpWs(_) => {
+                    false
+                }
+            }
+        };
+        for c in s.as_slice().chars() {
+            if c == '$' {
+                // in cases like src/libcore/num/mod.rs:786:16: 810:95
+                // we report a left and right span that has nothing to do with the actual span
+                // of the comparsion itself.
+                break;
+            }
+            if is_whitespace(c) {
+                state = state.next_ws();
+            } else if is_operator_part(c) {
+                state = state.next_op(c, s.as_slice());
+            } else {
+                if emitted_warn(&state) {
+                    return;
+                }
+                state = Naught;
+            }
+        }
+        if emitted_warn(&state) {
+            return;
+        }
+    }
+
+    fn check_path(&mut self, cx: &Context, p: &ast::Path, _: ast::NodeId) {
+        let path_span = p.span;
+        let s = cx.tcx.sess.codemap().span_to_snippet(path_span);
+        let s = match s { Some(s) => s, None => return, };
+        let mut state = Naught;
+        let emitted_warn = |state: &State| {
+            let mut reported_something = false;
+            if state.matches_ws_op() && state.op_char() == Some('<') {
+                cx.span_lint(OPENING_GENERICS_WITH_LEADING_SPACE,
+                             p.span,
+                             format!("saw generics with whitespace before `<` in {:s}",
+                                     s).as_slice());
+                reported_something = true;
+            }
+            if state.matches_ws_op() && state.op_char() == Some('>') {
+                cx.span_lint(CLOSING_GENERICS_WITH_LEADING_SPACE,
+                             p.span,
+                             format!("saw generics with whitespace before `>` in {:s}",
+                                     s).as_slice());
+                reported_something = true;
+            }
+            if state.matches_op_ws() && state.op_char() == Some('<') {
+                cx.span_lint(OPENING_GENERICS_WITH_TRAILING_SPACE,
+                             p.span,
+                             format!("saw generics with whitespace after `<` in {:s}",
+                                     s).as_slice());
+                reported_something = true;
+            }
+            if state.matches_op_ws() && state.op_char() == Some('>') {
+                cx.span_lint(CLOSING_GENERICS_WITH_TRAILING_SPACE,
+                             p.span,
+                             format!("saw generics with whitespace after `>` in {:s}",
+                                     s).as_slice());
+                reported_something = true;
+            }
+            reported_something
+        };
+        for c in s.as_slice().chars() {
+            if c == '\"' {
+                if state != Naught {
+                    cx.span_lint(OPENING_GENERICS_WITH_LEADING_SPACE,
+                                 p.span,
+                                 "saw string literal opening in middle of path");
+                }
+                return; // if we see a string literal, give up
+            }
+            state = if is_whitespace(c) {
+                state.next_ws()
+            } else if is_operator_part(c) {
+                state.next_op(c, s.as_slice())
+            } else {
+                // This must be a colon or a alphanumeric character.
+                // Check whether current state is worth reporting; if
+                // so, report and return; else reset and continue.
+                if emitted_warn(&state) {
+                    return;
+                } else {
+                    Naught
+                }
+            };
+        }
+        if emitted_warn(&state) {
+            return;
+        }
+    }
+}
+
+#[deriving(PartialEq)]
+enum State {
+    Naught,
+    Ws,
+    WsOp(Option<char>),
+    WsOpWs(Option<char>),
+    Op(Option<char>),
+    OpWs(Option<char>),
+}
+
+impl State {
+    fn next_ws(self) -> State {
+        match self {
+            Ws | WsOpWs(_) | OpWs(_) => self,
+            Naught => Ws,
+            WsOp(c) => WsOpWs(c),
+            Op(c) => OpWs(c),
+        }
+    }
+
+    fn next_op(self, c: char, s: &str) -> State {
+        match self {
+            Ws => WsOp(State::fill_op(c)),
+            Naught => Op(State::fill_op(c)),
+            WsOpWs(_) | OpWs(_) => fail!("unexpected char {} in {:s}", c, s),
+            WsOp(None) => WsOp(State::fill_op(c)),
+            Op(None) => Op(State::fill_op(c)),
+            WsOp(Some(_)) | Op(Some(_)) => self,
+        }
+    }
+
+    fn fill_op(c: char) -> Option<char> {
+        if is_lt_or_gt(c) {
+            Some(c)
+        } else {
+            None
+        }
+    }
+
+    fn op_char(&self) -> Option<char> {
+        match *self {
+            Naught | Ws => None,
+            WsOp(c) | WsOpWs(c) | Op(c) | OpWs(c) => c,
+        }
+    }
+
+    fn matches_ws_op(&self) -> bool {
+        match *self {
+            Naught | Ws | Op(_) | OpWs(_) => false,
+            WsOp(_) | WsOpWs(_) => true,
+        }
+    }
+
+    fn matches_op_ws(&self) -> bool {
+        match *self {
+            Naught | Ws | Op(_) | WsOp(_) => false,
+            OpWs(_) | WsOpWs(_) => true,
+        }
+    }
+}
+
+fn is_whitespace(c: char) -> bool {
+    c == ' ' || ('\x09' <= c && c <= '\x0d')
+}
+
+fn is_operator_part(c: char) -> bool {
+    // counting ':' as a potnetial operator in order to match
+    // `::<` as if it were one unit, which better reflects the
+    // potential future where `space ::<` would be replaced with
+    // `space <` (which would then be a problem for us).
+    c == ':' ||
+
+        c == '!' || c == '<' || c == '>' || c == '='
+}
+
+fn is_lt_or_gt(c: char) -> bool {
+    c == '!' || c == '<' || c == '>' || c == '='
+}
+
