@@ -24,6 +24,8 @@ use sync::atomic;
 use unicode::char::UnicodeChar;
 
 pub use self::imp::write;
+pub use self::imp::walk;
+pub use self::imp::{FrameHandler,KeepWalking};
 
 // For now logging is turned off by default, and this function checks to see
 // whether the magical environment variable is present to see if it's turned on.
@@ -241,7 +243,7 @@ mod imp {
     use libc;
     use mem;
     use option::{Some, None, Option};
-    use result::{Ok, Err};
+    use result::{Result, Ok, Err};
     use rt::mutex::{StaticNativeMutex, NATIVE_MUTEX_INIT};
 
     /// As always - iOS on arm uses SjLj exceptions and
@@ -286,13 +288,50 @@ mod imp {
     #[cfg(not(target_os = "ios", target_arch = "arm"))]
     #[inline(never)] // if we know this is a function call, we can skip it when
                      // tracing
-    pub fn write(w: &mut Writer) -> IoResult<()> {
-        use io::IoError;
+    pub fn write(mut w: &mut Writer) -> IoResult<()> {
 
-        struct Context<'a> {
+        let frame : FrameHandler<_,_> = |w: &mut &mut Writer, idx, addr, opt_name| -> IoResult<KeepWalking> {
+            if idx > 100 {
+                match write!(w, " ... <frames omitted>\n") {
+                    Ok(()) => { return Ok(AbandonWalk) }
+                    Err(e) => return Err(e),
+                }
+            }
+
+            try!(write!(w, "  {:2}: {:2$} - ", idx, addr, super::HEX_WIDTH));
+            match opt_name() {
+                Some(string) => try!(super::demangle(*w, string)),
+                None => try!(write!(w, "<unknown>")),
+            }
+            try!(w.write(['\n' as u8]));
+            Ok(KeepWalking)
+        };
+
+        let outset = |w: &mut &mut &mut Writer| writeln!(*w, "stack backtrace:");
+        walk(&mut w, outset, frame)
+    }
+
+    pub enum KeepWalking { KeepWalking, AbandonWalk }
+
+    pub type FrameHandler<'a,C,E> = |ctxt: &'a mut C,
+                                     idx: int,
+                                     ip: *mut libc::c_void,
+                                     demangled: || -> Option<&str>
+                                    |:'a -> Result<KeepWalking,E>;
+
+    #[cfg(not(target_os = "ios", target_arch = "arm"))]
+    #[inline(never)] // if we know this is a function call, we can skip it when
+                     // tracing
+    pub fn walk<'a,C,E>(
+        ctxt: &'a mut C,
+        outset: |&mut &'a mut C| -> Result<(),E>,
+        frame: FrameHandler<'a,C,E>) -> Result<(),E> {
+
+        struct Context<'a,C,E> {
             idx: int,
-            writer: &'a mut Writer,
-            last_error: Option<IoError>,
+            client_ctxt: &'a mut C,
+            last_error: Option<E>,
+            frame: FrameHandler<'a,C,E>,
         }
 
         // When using libbacktrace, we use some necessary global state, so we
@@ -303,12 +342,17 @@ mod imp {
         static mut LOCK: StaticNativeMutex = NATIVE_MUTEX_INIT;
         let _g = unsafe { LOCK.lock() };
 
-        try!(writeln!(w, "stack backtrace:"));
+        let mut cx = Context::<C,E> {
+            client_ctxt: ctxt,
+            last_error: None,
+            idx: 0,
+            frame: frame,
+        };
 
-        let mut cx = Context { writer: w, last_error: None, idx: 0 };
+        let _init = try!(outset(&mut cx.client_ctxt));
         return match unsafe {
-            uw::_Unwind_Backtrace(trace_fn,
-                                  &mut cx as *mut Context as *mut libc::c_void)
+            uw::_Unwind_Backtrace(trace_fn::<C,E>,
+                                  &mut cx as *mut Context<C,E> as *mut libc::c_void)
         } {
             uw::_URC_NO_REASON => {
                 match cx.last_error {
@@ -319,9 +363,9 @@ mod imp {
             _ => Ok(()),
         };
 
-        extern fn trace_fn(ctx: *mut uw::_Unwind_Context,
-                           arg: *mut libc::c_void) -> uw::_Unwind_Reason_Code {
-            let cx: &mut Context = unsafe { mem::transmute(arg) };
+        extern fn trace_fn<C,E>(ctx: *mut uw::_Unwind_Context,
+                                arg: *mut libc::c_void) -> uw::_Unwind_Reason_Code {
+            let cx: &mut Context<C,E> = unsafe { mem::transmute(arg) };
             let ip = unsafe { uw::_Unwind_GetIP(ctx) as *mut libc::c_void };
             // dladdr() on osx gets whiny when we use FindEnclosingFunction, and
             // it appears to work fine without it, so we only use
@@ -342,25 +386,24 @@ mod imp {
             // Don't print out the first few frames (they're not user frames)
             cx.idx += 1;
             if cx.idx <= 0 { return uw::_URC_NO_REASON }
-            // Don't print ginormous backtraces
-            if cx.idx > 100 {
-                match write!(cx.writer, " ... <frames omitted>\n") {
-                    Ok(()) => {}
-                    Err(e) => { cx.last_error = Some(e); }
-                }
-                return uw::_URC_FAILURE
-            }
 
             // Once we hit an error, stop trying to print more frames
             if cx.last_error.is_some() { return uw::_URC_FAILURE }
 
-            match print(cx.writer, cx.idx, ip) {
-                Ok(()) => {}
-                Err(e) => { cx.last_error = Some(e); }
-            }
+            // Don't print ginormous backtraces
 
-            // keep going
-            return uw::_URC_NO_REASON
+            match (cx.frame)(cx.client_ctxt, cx.idx, ip, || None) {
+                Ok(KeepWalking) => {
+                    return uw::_URC_NO_REASON
+                }
+                Ok(AbandonWalk) => {
+                    return uw::_URC_FAILURE
+                }
+                Err(e) => {
+                    cx.last_error = Some(e);
+                    return uw::_URC_FAILURE
+                }
+            }
         }
     }
 
