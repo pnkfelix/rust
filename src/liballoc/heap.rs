@@ -129,11 +129,166 @@ unsafe fn closure_exchange_malloc(drop_glue: fn(*mut u8), size: uint,
 }
 
 #[cfg(jemalloc)]
-mod imp {
+pub mod imp {
     use core::option::{None, Option};
     use core::ptr::{RawPtr, mut_null, null};
     use core::num::Int;
     use libc::{c_char, c_int, c_void, size_t};
+    pub use self::loud_heap::{allocate, reallocate, deallocate};
+    pub use self::loud_heap::{reallocate_inplace};
+
+    pub mod loud_heap {
+        use core::option::{Option, None, Some};
+
+        pub struct AllocateStart {
+            pub size: uint, pub align: uint,
+        }
+        pub struct AllocateFinis {
+            pub size: uint, pub align: uint, pub ret: *mut u8,
+        }
+        impl AllocateStart {
+            fn new(size: uint, align: uint) -> AllocateStart {
+                AllocateStart { size: size, align: align }
+            }
+        }
+        impl AllocateFinis {
+            fn new(size: uint, align: uint, ret: *mut u8) -> AllocateFinis {
+                AllocateFinis { size: size, align: align, ret: ret }
+            }
+        }
+
+        pub struct ReallocateStart {
+            pub ptr: *mut u8, pub size: uint, pub align: uint, pub old_size: uint,
+        }
+        pub struct ReallocateFinis {
+            pub ptr: *mut u8, pub size: uint, pub align: uint, pub old_size: uint, pub ret: *mut u8,
+        }
+        impl ReallocateStart {
+            fn new(ptr: *mut u8, size: uint, align: uint, old_size: uint) -> ReallocateStart {
+                ReallocateStart { ptr: ptr, size: size, align: align, old_size: old_size }
+            }
+        }
+        impl ReallocateFinis {
+            fn new(ptr: *mut u8, size: uint, align: uint, old_size: uint, ret: *mut u8) -> ReallocateFinis {
+                ReallocateFinis { ptr: ptr, size: size, align: align, old_size: old_size, ret: ret }
+            }
+        }
+
+        pub struct ReallocateInPlaceStart {
+            pub ptr: *mut u8, pub size: uint, pub align: uint, pub old_size: uint,
+        }
+        pub struct ReallocateInPlaceFinis {
+            pub ptr: *mut u8, pub size: uint, pub align: uint, pub old_size: uint, pub ret: bool,
+        }
+        impl ReallocateInPlaceStart {
+            fn new(ptr: *mut u8, size: uint, align: uint, old_size: uint) -> ReallocateInPlaceStart {
+                ReallocateInPlaceStart { ptr: ptr, size: size, align: align, old_size: old_size }
+            }
+        }
+        impl ReallocateInPlaceFinis {
+            fn new(ptr: *mut u8, size: uint, align: uint, old_size: uint, ret: bool) -> ReallocateInPlaceFinis {
+                ReallocateInPlaceFinis { ptr: ptr, size: size, align: align, old_size: old_size, ret: ret }
+            }
+        }
+
+        pub struct Deallocate {
+            pub ptr: *mut u8, pub size: uint, pub align: uint,
+        }
+        impl Deallocate {
+            fn new(ptr: *mut u8, size: uint, align: uint) -> Deallocate {
+                Deallocate { ptr: ptr, size: size, align: align }
+            }
+        }
+
+        pub enum Msg {
+            As(AllocateStart),
+            Af(AllocateFinis),
+            Rs(ReallocateStart),
+            Rf(ReallocateFinis),
+            RIPs(ReallocateInPlaceStart),
+            RIPf(ReallocateInPlaceFinis),
+            D(Deallocate),
+        }
+
+        static mut cb: Option<fn(Msg)> = None;
+        pub fn register_messenger(callback: fn (Msg)) {
+            unsafe {
+                cb = Some(callback);
+            }
+        }
+
+        trait ToMsg { fn to_msg(self) -> Msg; }
+        impl ToMsg for AllocateStart { fn to_msg(self) -> Msg { As(self) } }
+        impl ToMsg for AllocateFinis { fn to_msg(self) -> Msg { Af(self) } }
+        impl ToMsg for ReallocateStart { fn to_msg(self) -> Msg { Rs(self) } }
+        impl ToMsg for ReallocateFinis { fn to_msg(self) -> Msg { Rf(self) } }
+        impl ToMsg for Deallocate { fn to_msg(self) -> Msg { D(self) } }
+        impl ToMsg for ReallocateInPlaceStart { fn to_msg(self) -> Msg { RIPs(self) } }
+        impl ToMsg for ReallocateInPlaceFinis { fn to_msg(self) -> Msg { RIPf(self) } }
+
+        struct PutBack { cb: fn(Msg) }
+        impl ::core::ops::Drop for PutBack {
+            fn drop(&mut self) {
+                unsafe { cb = Some(self.cb); }
+            }
+        }
+
+        fn msg<M:ToMsg>(m: M) {
+            let c = unsafe { cb };
+
+            let callback = match c {
+                Some(callback) => callback,
+                None => return,
+            };
+
+            let _pb = PutBack { cb: callback };
+            unsafe { cb = None; }
+            callback(m.to_msg());
+        }
+
+        static BOGUS_ALIGN : uint = 16;
+        pub unsafe fn allocate_noalign(size: uint) -> *mut u8 {
+            msg(AllocateStart::new(size, -1 as uint));
+            let ret = super::allocate_quiet(size, 16);
+            msg(AllocateFinis::new(size, -1 as uint, ret));
+            ret
+        }
+        pub unsafe fn allocate(size: uint, align: uint) -> *mut u8 {
+            msg(AllocateStart::new(size, align));
+            let ret = super::allocate_quiet(size, align);
+            msg(AllocateFinis::new(size, align, ret));
+            ret
+        }
+        pub unsafe fn reallocate_noalign(ptr: *mut u8, size: uint,
+                                         old_size: uint) -> *mut u8 {
+            msg(ReallocateStart::new(ptr, size, -1 as uint, old_size));
+            let ret = super::reallocate_quiet(ptr, size, BOGUS_ALIGN, old_size);
+            msg(ReallocateFinis::new(ptr, size, -1 as uint, old_size, ret));
+            ret
+        }
+        pub unsafe fn reallocate(ptr: *mut u8, size: uint, align: uint,
+                                 old_size: uint) -> *mut u8 {
+            msg(ReallocateStart::new(ptr, size, align, old_size));
+            let ret = super::reallocate_quiet(ptr, size, align, old_size);
+            msg(ReallocateFinis::new(ptr, size, align, old_size, ret));
+            ret
+        }
+        pub unsafe fn reallocate_inplace(ptr: *mut u8, size: uint, align: uint,
+                                         old_size: uint) -> bool {
+            msg(ReallocateInPlaceStart::new(ptr, size, align, old_size));
+            let ret = super::reallocate_inplace_quiet(ptr, size, align, old_size);
+            msg(ReallocateInPlaceFinis::new(ptr, size, align, old_size, ret));
+            ret
+        }
+        pub unsafe fn deallocate(ptr: *mut u8, _size: uint, _align: uint) {
+            msg(Deallocate::new(ptr, _size, _align));
+            super::deallocate_quiet(ptr, _size, _align);
+        }
+        pub unsafe fn deallocate_noalign(ptr: *mut u8, _size: uint) {
+            msg(Deallocate::new(ptr, _size, -1 as uint));
+            super::deallocate_quiet(ptr, _size, BOGUS_ALIGN);
+        }
+    }
 
     #[link(name = "jemalloc", kind = "static")]
     #[cfg(not(test))]
@@ -163,7 +318,7 @@ mod imp {
     fn mallocx_align(a: uint) -> c_int { a.trailing_zeros() as c_int }
 
     #[inline]
-    pub unsafe fn allocate(size: uint, align: uint) -> *mut u8 {
+    pub unsafe fn allocate_quiet(size: uint, align: uint) -> *mut u8 {
         let ptr = je_mallocx(size as size_t, mallocx_align(align)) as *mut u8;
         if ptr.is_null() {
             ::oom()
@@ -172,7 +327,7 @@ mod imp {
     }
 
     #[inline]
-    pub unsafe fn reallocate(ptr: *mut u8, size: uint, align: uint,
+    pub unsafe fn reallocate_quiet(ptr: *mut u8, size: uint, align: uint,
                              _old_size: uint) -> *mut u8 {
         let ptr = je_rallocx(ptr as *mut c_void, size as size_t,
                              mallocx_align(align)) as *mut u8;
@@ -183,14 +338,14 @@ mod imp {
     }
 
     #[inline]
-    pub unsafe fn reallocate_inplace(ptr: *mut u8, size: uint, align: uint,
+    pub unsafe fn reallocate_inplace_quiet(ptr: *mut u8, size: uint, align: uint,
                                      _old_size: uint) -> bool {
         je_xallocx(ptr as *mut c_void, size as size_t, 0,
                    mallocx_align(align)) == size as size_t
     }
 
     #[inline]
-    pub unsafe fn deallocate(ptr: *mut u8, _size: uint, align: uint) {
+    pub unsafe fn deallocate_quiet(ptr: *mut u8, _size: uint, align: uint) {
         je_dallocx(ptr as *mut c_void, mallocx_align(align))
     }
 
@@ -207,11 +362,149 @@ mod imp {
 }
 
 #[cfg(not(jemalloc), unix)]
-mod imp {
+pub mod imp {
+    use core::cmp;
     use core::mem;
     use core::ptr;
     use libc;
     use libc_heap;
+    pub use self::loud_heap::{allocate, reallocate, deallocate};
+
+    pub mod loud_heap {
+        use core::option::{Option, None, Some};
+
+        pub struct AllocateStart {
+            pub size: uint, pub align: uint,
+        }
+        pub struct AllocateFinis {
+            pub size: uint, pub align: uint, pub ret: *mut u8,
+        }
+        impl AllocateStart {
+            fn new(size: uint, align: uint) -> AllocateStart {
+                AllocateStart { size: size, align: align }
+            }
+        }
+        impl AllocateFinis {
+            fn new(size: uint, align: uint, ret: *mut u8) -> AllocateFinis {
+                AllocateFinis { size: size, align: align, ret: ret }
+            }
+        }
+
+        pub struct ReallocateStart {
+            pub ptr: *mut u8, pub size: uint, pub align: uint, pub old_size: uint,
+        }
+        pub struct ReallocateFinis {
+            pub ptr: *mut u8, pub size: uint, pub align: uint, pub old_size: uint, pub ret: *mut u8,
+        }
+        impl ReallocateStart {
+            fn new(ptr: *mut u8, size: uint, align: uint, old_size: uint) -> ReallocateStart {
+                ReallocateStart { ptr: ptr, size: size, align: align, old_size: old_size }
+            }
+        }
+        impl ReallocateFinis {
+            fn new(ptr: *mut u8, size: uint, align: uint, old_size: uint, ret: *mut u8) -> ReallocateFinis {
+                ReallocateFinis { ptr: ptr, size: size, align: align, old_size: old_size, ret: ret }
+            }
+        }
+
+        pub struct ReallocateInPlaceStart {
+            pub ptr: *mut u8, pub size: uint, pub align: uint, pub old_size: uint,
+        }
+        pub struct ReallocateInPlaceFinis {
+            pub ptr: *mut u8, pub size: uint, pub align: uint, pub old_size: uint, pub ret: bool,
+        }
+
+        pub struct Deallocate {
+            pub ptr: *mut u8, pub size: uint, pub align: uint,
+        }
+        impl Deallocate {
+            fn new(ptr: *mut u8, size: uint, align: uint) -> Deallocate {
+                Deallocate { ptr: ptr, size: size, align: align }
+            }
+        }
+
+        pub enum Msg {
+            As(AllocateStart),
+            Af(AllocateFinis),
+            Rs(ReallocateStart),
+            Rf(ReallocateFinis),
+            RIPs(ReallocateInPlaceStart),
+            RIPf(ReallocateInPlaceFinis),
+            D(Deallocate),
+        }
+
+        static mut cb: Option<fn(Msg)> = None;
+        pub fn register_messenger(callback: fn (Msg)) {
+            unsafe {
+                cb = Some(callback);
+            }
+        }
+
+        trait ToMsg { fn to_msg(self) -> Msg; }
+        impl ToMsg for AllocateStart { fn to_msg(self) -> Msg { As(self) } }
+        impl ToMsg for AllocateFinis { fn to_msg(self) -> Msg { Af(self) } }
+        impl ToMsg for ReallocateStart { fn to_msg(self) -> Msg { Rs(self) } }
+        impl ToMsg for ReallocateFinis { fn to_msg(self) -> Msg { Rf(self) } }
+        impl ToMsg for Deallocate { fn to_msg(self) -> Msg { D(self) } }
+        impl ToMsg for ReallocateInPlaceStart { fn to_msg(self) -> Msg { RIPs(self) } }
+        impl ToMsg for ReallocateInPlaceFinis { fn to_msg(self) -> Msg { RIPf(self) } }
+
+        struct PutBack { cb: fn(Msg) }
+        impl ::core::ops::Drop for PutBack {
+            fn drop(&mut self) {
+                unsafe { cb = Some(self.cb); }
+            }
+        }
+
+        fn msg<M:ToMsg>(m: M) {
+            let c = unsafe { cb };
+
+            let callback = match c {
+                Some(callback) => callback,
+                None => return,
+            };
+
+            let _pb = PutBack { cb: callback };
+            unsafe { cb = None; }
+            callback(m.to_msg());
+        }
+
+        static BOGUS_ALIGN : uint = 16;
+        pub unsafe fn allocate_noalign(size: uint) -> *mut u8 {
+            msg(AllocateStart::new(size, -1 as uint));
+            let ret = super::allocate_quiet(size, 16);
+            msg(AllocateFinis::new(size, -1 as uint, ret));
+            ret
+        }
+        pub unsafe fn allocate(size: uint, align: uint) -> *mut u8 {
+            msg(AllocateStart::new(size, align));
+            let ret = super::allocate_quiet(size, align);
+            msg(AllocateFinis::new(size, align, ret));
+            ret
+        }
+        pub unsafe fn reallocate_noalign(ptr: *mut u8, size: uint,
+                                         old_size: uint) -> *mut u8 {
+            msg(ReallocateStart::new(ptr, size, -1 as uint, old_size));
+            let ret = super::reallocate_quiet(ptr, size, BOGUS_ALIGN, old_size);
+            msg(ReallocateFinis::new(ptr, size, -1 as uint, old_size, ret));
+            ret
+        }
+        pub unsafe fn reallocate(ptr: *mut u8, size: uint, align: uint,
+                                 old_size: uint) -> *mut u8 {
+            msg(ReallocateStart::new(ptr, size, align, old_size));
+            let ret = super::reallocate_quiet(ptr, size, align, old_size);
+            msg(ReallocateFinis::new(ptr, size, align, old_size, ret));
+            ret
+        }
+        pub unsafe fn deallocate(ptr: *mut u8, _size: uint, _align: uint) {
+            msg(Deallocate::new(ptr, _size, _align));
+            super::deallocate_quiet(ptr, _size, _align);
+        }
+        pub unsafe fn deallocate_noalign(ptr: *mut u8, _size: uint) {
+            msg(Deallocate::new(ptr, _size, -1 as uint));
+            super::deallocate_quiet(ptr, _size, BOGUS_ALIGN);
+        }
+    }
 
     extern {
         fn posix_memalign(memptr: *mut *mut libc::c_void,
@@ -219,8 +512,8 @@ mod imp {
                           size: libc::size_t) -> libc::c_int;
     }
 
-    #[inline]
-    pub unsafe fn allocate(size: uint, align: uint) -> *mut u8 {
+    #[inline(never)]
+    pub unsafe fn allocate_quiet(size: uint, align: uint) -> *mut u8 {
         // The posix_memalign manpage states
         //
         //      alignment [...] must be a power of and a multiple of
@@ -230,7 +523,7 @@ mod imp {
         // a block of memory, so we special case everything under `*uint` to
         // just pass it to malloc, which is guaranteed to align to at least the
         // size of `*uint`.
-        if align < mem::size_of::<uint>() {
+        if true || align < mem::size_of::<uint>() {
             libc_heap::malloc_raw(size)
         } else {
             let mut out = 0 as *mut libc::c_void;
@@ -244,23 +537,23 @@ mod imp {
         }
     }
 
-    #[inline]
-    pub unsafe fn reallocate(ptr: *mut u8, size: uint, align: uint,
+    #[inline(never)]
+    pub unsafe fn reallocate_quiet(ptr: *mut u8, size: uint, align: uint,
                              old_size: uint) -> *mut u8 {
         let new_ptr = allocate(size, align);
-        ptr::copy_memory(new_ptr, ptr as *const u8, old_size);
+        ptr::copy_memory(new_ptr, ptr as *const u8, cmp::min(size, old_size));
         deallocate(ptr, old_size, align);
         return new_ptr;
     }
 
-    #[inline]
+    #[inline(never)]
     pub unsafe fn reallocate_inplace(_ptr: *mut u8, _size: uint, _align: uint,
                                      _old_size: uint) -> bool {
         false
     }
 
-    #[inline]
-    pub unsafe fn deallocate(ptr: *mut u8, _size: uint, _align: uint) {
+    #[inline(never)]
+    pub unsafe fn deallocate_quiet(ptr: *mut u8, _size: uint, _align: uint) {
         libc::free(ptr as *mut libc::c_void)
     }
 
