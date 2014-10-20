@@ -141,7 +141,7 @@ RUSTFLAGS_STAGE1 += -C prefer-dynamic
 
 # Landing pads require a lot of codegen. We can get through bootstrapping faster
 # by not emitting them.
-RUSTFLAGS_STAGE0 += -Z no-landing-pads
+# RUSTFLAGS_STAGE0 += -Z no-landing-pads
 
 # platform-specific auto-configuration
 include $(CFG_SRC_DIR)mk/platform.mk
