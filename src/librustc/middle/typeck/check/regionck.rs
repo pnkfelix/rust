@@ -2195,7 +2195,7 @@ fn iterate_over_potentially_unsafe_regions_in_type(
                     }
                     true
                 }
-                ty::ty_ptr(_) | ty::ty_box(_) | ty::ty_bare_fn(_) => {
+                ty::ty_ptr(_) | ty::ty_bare_fn(_) => {
                     // Don't recurse, since pointers, boxes, and bare
                     // functions don't own instances of the types appearing
                     // within them.
