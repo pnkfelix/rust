@@ -4727,9 +4727,12 @@ pub fn normalize_ty(cx: &ctxt, t: t) -> t {
         fn tcx(&self) -> &ctxt<'tcx> { let TypeNormalizer(c) = *self; c }
 
         fn fold_ty(&mut self, t: ty::t) -> ty::t {
-            match self.tcx().normalized_cache.borrow().find_copy(&t) {
-                None => {}
-                Some(u) => return u
+            {
+                let normalized_cache = self.tcx().normalized_cache.borrow();
+                match normalized_cache.find_copy(&t) {
+                    None => {}
+                    Some(u) => return u
+                }
             }
 
             let t_norm = ty_fold::super_fold_ty(self, t);

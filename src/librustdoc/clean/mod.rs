@@ -461,9 +461,20 @@ impl Clean<TyParam> for ast::TyParam {
 }
 
 impl Clean<TyParam> for ty::TypeParameterDef {
-    fn clean(&self, cx: &DocContext) -> TyParam {
-        cx.external_typarams.borrow_mut().as_mut().unwrap()
-          .insert(self.def_id, self.name.clean(cx));
+    fn clean(&self) -> TyParam {
+        {
+            let cx = get_cx();
+            {
+                let mut external_typarams = cx.external_typarams.borrow_mut();
+                {
+                    let external_typarams = external_typarams.get_mut_ref();
+                    {
+                        external_typarams.insert(self.def_id,
+                                                 self.name.clean());
+                    }
+                }
+            }
+        }
         TyParam {
             name: self.name.clean(cx),
             did: self.def_id,
@@ -1327,7 +1338,19 @@ impl Clean<Type> for ty::t {
                 };
                 let path = external_path(cx, fqn.last().unwrap().to_string().as_slice(),
                                          substs);
-                cx.external_paths.borrow_mut().as_mut().unwrap().insert(did, (fqn, kind));
+                {
+                    let cx = get_cx();
+                    {
+                        let mut external_paths = cx.external_paths
+                                                   .borrow_mut();
+                        {
+                            let external_paths = external_paths.get_mut_ref();
+                            {
+                                external_paths.insert(did, (fqn, kind));
+                            }
+                        }
+                    }
+                }
                 ResolvedPath {
                     path: path,
                     typarams: None,
@@ -2252,7 +2275,15 @@ fn lang_struct(cx: &DocContext, did: Option<ast::DefId>,
     let fqn: Vec<String> = fqn.into_iter().map(|i| {
         i.to_string()
     }).collect();
-    cx.external_paths.borrow_mut().as_mut().unwrap().insert(did, (fqn, TypeStruct));
+    {
+        let mut external_paths = cx.external_paths.borrow_mut();
+        {
+            let external_paths = external_paths.get_mut_ref();
+            {
+                external_paths.insert(did, (fqn, TypeStruct));
+            }
+        }
+    }
     ResolvedPath {
         typarams: None,
         did: did,
