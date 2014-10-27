@@ -324,6 +324,9 @@ fn parse_region(st: &mut PState, conv: conv_did) -> ty::Region {
       't' => {
         ty::ReStatic
       }
+      'n' => {
+        ty::ReFunction
+      }
       'e' => {
         ty::ReStatic
       }
