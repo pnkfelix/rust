@@ -219,6 +219,9 @@ pub enum SubregionOrigin {
 
     // An auto-borrow that does not enclose the expr where it occurs
     AutoBorrow(Span),
+
+    // Region constraint arriving from destructor safety
+    SafeDestructor(Span),
 }
 
 /// Reasons to create a region inference variable
@@ -1066,6 +1069,7 @@ impl SubregionOrigin {
             CallReturn(a) => a,
             AddrOf(a) => a,
             AutoBorrow(a) => a,
+            SafeDestructor(a) => a,
         }
     }
 }
@@ -1138,6 +1142,7 @@ impl Repr for SubregionOrigin {
             CallReturn(a) => format!("CallReturn({})", a.repr(tcx)),
             AddrOf(a) => format!("AddrOf({})", a.repr(tcx)),
             AutoBorrow(a) => format!("AutoBorrow({})", a.repr(tcx)),
+            SafeDestructor(a) => format!("SafeDestructor({})", a.repr(tcx)),
         }
     }
 }
