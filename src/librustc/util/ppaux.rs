@@ -84,7 +84,7 @@ fn item_scope_tag(item: &ast::Item) -> &'static str {
 pub fn explain_region_and_span(cx: &ctxt, region: ty::Region)
                             -> (String, Option<Span>) {
     return match region {
-      ReScope(scope) => {
+      ty::ReScope(scope) => {
         match cx.map.find(scope.node_id()) {
           Some(ast_map::NodeBlock(ref blk)) => {
             explain_span(cx, "block", blk.span)
@@ -117,7 +117,7 @@ pub fn explain_region_and_span(cx: &ctxt, region: ty::Region)
         }
       }
 
-      ReFree(ref fr) => {
+      ty::ReFree(ref fr) => {
         let prefix = match fr.bound_region {
           BrAnon(idx) => {
               format!("the anonymous lifetime #{} defined on", idx + 1)
@@ -146,11 +146,13 @@ pub fn explain_region_and_span(cx: &ctxt, region: ty::Region)
         }
       }
 
-      ReStatic => { ("the static lifetime".to_string(), None) }
+      ty::ReFunction => { ("the lifetime of the function".to_string(), None) }
 
-      ReEmpty => { ("the empty lifetime".to_string(), None) }
+      ty::ReStatic => { ("the static lifetime".to_string(), None) }
 
-      ReEarlyBound(_, _, _, name) => {
+      ty::ReEmpty => { ("the empty lifetime".to_string(), None) }
+
+      ty::ReEarlyBound(_, _, _, name) => {
         (format!("{}", token::get_name(name)), None)
       }
 
@@ -219,6 +221,7 @@ pub fn region_to_string(cx: &ctxt, prefix: &str, space: bool, region: Region) ->
             bound_region_to_string(cx, prefix, space, br)
         }
         ty::ReInfer(ReVar(_)) => prefix.to_string(),
+        ty::ReFunction => format!("{}'<function>{}", prefix, space_str),
         ty::ReStatic => format!("{}'static{}", prefix, space_str),
         ty::ReEmpty => format!("{}'<empty>{}", prefix, space_str),
     }
@@ -849,6 +852,10 @@ impl<'tcx> Repr<'tcx> for ty::Region {
 
             ty::ReScope(id) => {
                 format!("ReScope({})", id)
+            }
+
+            ty::ReFunction => {
+                "ReStatic".to_string()
             }
 
             ty::ReStatic => {

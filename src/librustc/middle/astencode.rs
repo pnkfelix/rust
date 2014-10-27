@@ -492,7 +492,7 @@ impl tr for ty::Region {
             ty::ReScope(scope) => {
                 ty::ReScope(scope.tr(dcx))
             }
-            ty::ReEmpty | ty::ReStatic | ty::ReInfer(..) => {
+            ty::ReEmpty | ty::ReStatic | ty::ReInfer(..) | ty::ReFunction => {
                 *self
             }
             ty::ReFree(ref fr) => {

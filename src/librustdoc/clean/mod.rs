@@ -660,7 +660,8 @@ impl Clean<Option<Lifetime>> for ty::Region {
             ty::ReFree(..) |
             ty::ReScope(..) |
             ty::ReInfer(..) |
-            ty::ReEmpty(..) => None
+            ty::ReEmpty(..) |
+            ty::ReFunction => None
         }
     }
 }

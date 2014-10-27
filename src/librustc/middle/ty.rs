@@ -832,19 +832,22 @@ pub enum Region {
     // function is called.
     ReLateBound(DebruijnIndex, BoundRegion),
 
+    /// Static data that has an "infinite" lifetime. Top in the region lattice.
+    ReStatic,
+
     /// When checking a function body, the types of all arguments and so forth
     /// that refer to bound region parameters are modified to refer to free
     /// region parameters.
     ReFree(FreeRegion),
 
+    /// The lifetime of the current function. This is a lifetime that is
+    /// conceptually shorter than free region variables but longer than the
+    /// function block. This is needed only when checking destructors for
+    /// safety.
+    ReFunction,
+
     /// A concrete region naming some expression within the current function.
     ReScope(region::CodeExtent),
-
-    /// Static data that has an "infinite" lifetime. Top in the region lattice.
-    ReStatic,
-
-    /// A region variable.  Should not exist after typeck.
-    ReInfer(InferRegion),
 
     /// Empty lifetime is for data that is never accessed.
     /// Bottom in the region lattice. We treat ReEmpty somewhat
@@ -854,6 +857,9 @@ pub enum Region {
     /// The only way to get an instance of ReEmpty is to have a region
     /// variable with no constraints.
     ReEmpty,
+
+    /// A region variable.  Should not exist after typeck.
+    ReInfer(InferRegion),
 }
 
 /**
@@ -5459,7 +5465,8 @@ pub fn hash_crate_independent(tcx: &ctxt, ty: Ty, svh: &Svh) -> u64 {
             ReLateBound(..) |
             ReFree(..) |
             ReScope(..) |
-            ReInfer(..) => {
+            ReInfer(..) |
+            ReFunction => {
                 tcx.sess.bug("non-static region found when hashing a type")
             }
         }

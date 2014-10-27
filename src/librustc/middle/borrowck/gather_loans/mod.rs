@@ -273,6 +273,12 @@ impl<'a, 'tcx> GatherLoanCtxt<'a, 'tcx> {
 
                     ty::ReFree(ref fr) => fr.scope,
 
+                    ty::ReFunction => {
+                        // For purposes of the borrow check, we can consider
+                        // this a loan for the outer function block.
+                        self.item_ub
+                    }
+
                     ty::ReStatic => {
                         // If we get here, an error must have been
                         // reported in
