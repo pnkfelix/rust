@@ -68,7 +68,7 @@ use middle::typeck;
 use util::nodemap::{DefIdMap, NodeMap};
 use util::ppaux::{ty_to_string, Repr};
 
-use syntax::ast::{MutImmutable, MutMutable};
+use syntax::ast::{MutImmutable, MutMutable, NodeId};
 use syntax::ast;
 use syntax::ast_map;
 use syntax::codemap::Span;
@@ -1533,3 +1533,31 @@ fn element_kind(t: ty::t) -> ElementKind {
         _ => OtherElement
     }
 }
+
+
+/// Returns the maximal region scope for the which the lvalue `cmt` is
+/// guaranteed to be valid without any rooting etc, and presuming `cmt`
+/// is not mutated. See the `SCOPE(LV)` function in `borrowck/doc.rs`.
+pub fn scope(tcx: &ty::ctxt, cmt: &cmt, item_scope_id: NodeId) -> ty::Region {
+    match cmt.cat {
+        cat_rvalue(temp_scope) => temp_scope,
+        cat_upvar(..) => ty::ReScope(item_scope_id),
+
+        cat_static_item => ty::ReStatic,
+
+        cat_local(local_id) => {
+            ty::ReScope(tcx.region_maps.var_scope(local_id))
+        }
+
+        cat_deref(_, _, UnsafePtr(..)) => ty::ReStatic,
+
+        cat_deref(_, _, BorrowedPtr(_, r)) |
+        cat_deref(_, _, Implicit(_, r)) => r,
+
+        cat_downcast(ref cmt) |
+        cat_deref(ref cmt, _, OwnedPtr) |
+        cat_interior(ref cmt, _) |
+        cat_discr(ref cmt, _) => scope(tcx, cmt, item_scope_id),
+    }
+}
+
