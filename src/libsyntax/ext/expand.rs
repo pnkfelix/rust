@@ -702,7 +702,7 @@ fn expand_non_macro_stmt(Spanned {node, span: stmt_span}: Stmt, fld: &mut MacroE
                         ty: expanded_ty,
                         pat: rewritten_pat,
                         // also, don't forget to expand the init:
-                        init: init.map(|e| fld.fold_expr(e)),
+                        init: init.map(|(e, id)| (fld.fold_expr(e), id)),
                         source: source,
                         span: span
                     }

@@ -4538,7 +4538,7 @@ pub fn check_decl_local(fcx: &FnCtxt, local: &ast::Local)  {
     fcx.write_ty(local.id, t);
 
     match local.init {
-        Some(ref init) => {
+        Some((ref init, _)) => {
             check_decl_initializer(fcx, local.id, &**init);
             let init_ty = fcx.expr_ty(&**init);
             if ty::type_is_error(init_ty) || ty::type_is_bot(init_ty) {

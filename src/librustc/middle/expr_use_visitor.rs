@@ -611,7 +611,7 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
                 })
             }
 
-            Some(ref expr) => {
+            Some((ref expr, _)) => {
                 // Variable declarations with
                 // initializers are considered
                 // "assigns", which is handled by

@@ -494,7 +494,7 @@ pub fn noop_fold_local<T: Folder>(l: P<Local>, fld: &mut T) -> P<Local> {
         id: fld.new_id(id),
         ty: fld.fold_ty(ty),
         pat: fld.fold_pat(pat),
-        init: init.map(|e| fld.fold_expr(e)),
+        init: init.map(|(e, id)| (fld.fold_expr(e), fld.new_id(id))),
         source: source,
         span: fld.new_span(span)
     })

@@ -3478,7 +3478,7 @@ impl<'a> Parser<'a> {
         P(ast::Local {
             ty: ty,
             pat: pat,
-            init: init,
+            init: init.map(|e|(e, ast::DUMMY_NODE_ID)),
             id: ast::DUMMY_NODE_ID,
             span: mk_sp(lo, self.last_span.hi),
             source: LocalLet,

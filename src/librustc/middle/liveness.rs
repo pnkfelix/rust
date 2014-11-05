@@ -928,7 +928,11 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
         // initialization, which is mildly more complex than checking
         // once at the func header but otherwise equivalent.
 
-        let succ = self.propagate_through_opt_expr(local.init.as_ref().map(|e| &**e), succ);
+        let succ = match local.init {
+            None => self.propagate_through_opt_expr(None, succ),
+            Some((ref e, _)) =>
+                self.propagate_through_opt_expr(Some(&**e), succ),
+        };
         self.define_bindings_in_pat(&*local.pat, succ)
     }
 

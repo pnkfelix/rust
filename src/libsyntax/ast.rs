@@ -455,11 +455,15 @@ pub enum LocalSource {
 pub struct Local {
     pub ty: P<Ty>,
     pub pat: P<Pat>,
-    pub init: Option<P<Expr>>,
+    /// This id's scope is just the init and its associated assignment.
+    pub init: Option<(P<Expr>, NodeId)>,
+    /// This id's scope includes the init and the remainder of the block.
     pub id: NodeId,
     pub span: Span,
     pub source: LocalSource,
 }
+
+    /// First node-id is scoped to the declaration and the remainder of the block; the second node-id is scoped to the right-hand side of the declaration and its implicit assignment.
 
 pub type Decl = Spanned<Decl_>;
 

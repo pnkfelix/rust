@@ -620,7 +620,7 @@ fn resolve_local(visitor: &mut RegionResolutionVisitor, local: &ast::Local) {
     // FIXME(#6308) -- Note that `[]` patterns work more smoothly post-DST.
 
     match local.init {
-        Some(ref expr) => {
+        Some((ref expr, _)) => {
             record_rvalue_scope_if_borrow_expr(visitor, &**expr, blk_id);
 
             if is_binding_pat(&*local.pat) || is_borrowed_ty(&*local.ty) {

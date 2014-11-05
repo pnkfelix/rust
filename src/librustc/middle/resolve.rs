@@ -4772,7 +4772,7 @@ impl<'a> Resolver<'a> {
             None => {
                 // Nothing to do.
             }
-            Some(ref initializer) => {
+            Some((ref initializer, _)) => {
                 self.resolve_expr(&**initializer);
             }
         }

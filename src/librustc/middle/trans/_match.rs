@@ -1436,7 +1436,7 @@ pub fn store_local<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     }
 
     match local.init {
-        Some(ref init_expr) => {
+        Some((ref init_expr, _)) => {
             // Optimize the "let x = expr" case. This just writes
             // the result of evaluating `expr` directly into the alloca
             // for `x`. Often the general path results in similar or the

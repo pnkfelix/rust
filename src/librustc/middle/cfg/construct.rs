@@ -97,7 +97,7 @@ impl<'a, 'tcx> CFGBuilder<'a, 'tcx> {
     fn decl(&mut self, decl: &ast::Decl, pred: CFGIndex) -> CFGIndex {
         match decl.node {
             ast::DeclLocal(ref local) => {
-                let init_exit = self.opt_expr(&local.init, pred);
+                let init_exit = self.opt_ref_expr(local.init.as_ref().map(|x|&**x.ref0()), pred);
                 self.pat(&*local.pat, init_exit)
             }
 
@@ -535,6 +535,13 @@ impl<'a, 'tcx> CFGBuilder<'a, 'tcx> {
                 pred: CFGIndex) -> CFGIndex {
         //! Constructs graph for `opt_expr` evaluated, if Some
         opt_expr.iter().fold(pred, |p, e| self.expr(&**e, p))
+    }
+
+    fn opt_ref_expr(&mut self,
+                    opt_ref_expr: Option<&ast::Expr>,
+                    pred: CFGIndex) -> CFGIndex {
+        //! Constructs graph for `opt_ref_expr` evaluated, if Some
+        opt_ref_expr.iter().fold(pred, |p, e| self.expr(&**e, p))
     }
 
     fn straightline<'a, I: Iterator<&'a ast::Expr>>(&mut self,

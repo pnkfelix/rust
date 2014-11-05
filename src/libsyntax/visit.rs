@@ -186,7 +186,10 @@ pub fn walk_view_item<'v, V: Visitor<'v>>(visitor: &mut V, vi: &'v ViewItem) {
 pub fn walk_local<'v, V: Visitor<'v>>(visitor: &mut V, local: &'v Local) {
     visitor.visit_pat(&*local.pat);
     visitor.visit_ty(&*local.ty);
-    walk_expr_opt(visitor, &local.init);
+    match local.init {
+        None => {}
+        Some((ref e, _)) => visitor.visit_expr(&**e),
+    }
 }
 
 pub fn walk_explicit_self<'v, V: Visitor<'v>>(visitor: &mut V,
@@ -654,6 +657,14 @@ pub fn walk_decl<'v, V: Visitor<'v>>(visitor: &mut V, declaration: &'v Decl) {
 pub fn walk_expr_opt<'v, V: Visitor<'v>>(visitor: &mut V,
                                          optional_expression: &'v Option<P<Expr>>) {
     match *optional_expression {
+        None => {}
+        Some(ref expression) => visitor.visit_expr(&**expression),
+    }
+}
+
+pub fn walk_expr_opt_ref<'v, V: Visitor<'v>>(visitor: &mut V,
+                                             optional_expression: Option<&'v Expr>) {
+    match optional_expression {
         None => {}
         Some(ref expression) => visitor.visit_expr(&**expression),
     }

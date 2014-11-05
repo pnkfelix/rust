@@ -1830,7 +1830,7 @@ impl<'a> State<'a> {
                     Some(ref init) => {
                         try!(self.nbsp());
                         try!(self.word_space("="));
-                        try!(self.print_expr(&**init));
+                        try!(self.print_expr(&**init.ref0()));
                     }
                     _ => {}
                 }

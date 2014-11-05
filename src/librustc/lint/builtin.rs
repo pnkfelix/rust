@@ -1097,7 +1097,7 @@ impl LintPass for UnusedParens {
         let (value, msg) = match s.node {
             ast::StmtDecl(ref decl, _) => match decl.node {
                 ast::DeclLocal(ref local) => match local.init {
-                    Some(ref value) => (value, "assigned value"),
+                    Some((ref value, _)) => (value, "assigned value"),
                     None => return
                 },
                 _ => return

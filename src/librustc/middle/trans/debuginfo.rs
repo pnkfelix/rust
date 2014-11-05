@@ -3233,7 +3233,7 @@ fn populate_scope_map(cx: &CrateContext,
 
                 walk_pattern(cx, &*local.pat, scope_stack, scope_map);
 
-                for exp in local.init.iter() {
+                for &(ref exp, _) in local.init.iter() {
                     walk_expr(cx, &**exp, scope_stack, scope_map);
                 }
             }
