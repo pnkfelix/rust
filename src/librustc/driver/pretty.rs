@@ -199,6 +199,29 @@ impl<'ast> pprust::PpAnn for IdentifiedAnnotation<'ast> {
                 try!(pp::space(&mut s.s));
                 s.synth_comment(format!("pat {}", pat.id))
             }
+            pprust::NodeStmt(st) => {
+                try!(pp::space(&mut s.s));
+                let opt_id = match st.node {
+                    ast::StmtDecl(_, id) |
+                    ast::StmtExpr(_, id) |
+                    ast::StmtSemi(_, id) => Some(id),
+                    ast::StmtMac(..) => None,
+                };
+                match opt_id {
+                    Some(id) => s.synth_comment(format!("stmt {}", id)),
+                    None => Ok(()),
+                }
+            }
+            pprust::NodeLocal(loc) => {
+                try!(pp::space(&mut s.s));
+                match loc.init {
+                    None =>
+                        s.synth_comment(format!("local scope {}", loc.id)),
+                    Some((_, init_id)) =>
+                        s.synth_comment(format!("local init {} scope {}",
+                                                init_id, loc.id)),
+                }
+            }
         }
     }
 }

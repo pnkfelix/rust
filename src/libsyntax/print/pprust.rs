@@ -40,6 +40,8 @@ pub enum AnnNode<'a> {
     NodeItem(&'a ast::Item),
     NodeExpr(&'a ast::Expr),
     NodePat(&'a ast::Pat),
+    NodeStmt(&'a ast::Stmt),
+    NodeLocal(&'a ast::Local),
 }
 
 pub trait PpAnn {
@@ -1216,6 +1218,7 @@ impl<'a> State<'a> {
 
     pub fn print_stmt(&mut self, st: &ast::Stmt) -> IoResult<()> {
         try!(self.maybe_print_comment(st.span.lo));
+        try!(self.ann.pre(self, NodeStmt(st)));
         match st.node {
             ast::StmtDecl(ref decl, _) => {
                 try!(self.print_decl(&**decl));
@@ -1240,6 +1243,7 @@ impl<'a> State<'a> {
         if parse::classify::stmt_ends_with_semi(&st.node) {
             try!(word(&mut self.s, ";"));
         }
+        try!(self.ann.post(self, NodeStmt(st)));
         self.maybe_print_trailing_comment(st.span, None)
     }
 
@@ -1821,6 +1825,7 @@ impl<'a> State<'a> {
             ast::DeclLocal(ref loc) => {
                 try!(self.space_if_not_bol());
                 try!(self.ibox(indent_unit));
+                try!(self.ann.pre(self, NodeLocal(&**loc)));
                 try!(self.word_nbsp("let"));
 
                 try!(self.ibox(indent_unit));
@@ -1834,6 +1839,7 @@ impl<'a> State<'a> {
                     }
                     _ => {}
                 }
+                try!(self.ann.post(self, NodeLocal(&**loc)));
                 self.end()
             }
             ast::DeclItem(ref item) => self.print_item(&**item)
