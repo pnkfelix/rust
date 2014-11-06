@@ -458,7 +458,24 @@ fn resolve_stmt(visitor: &mut RegionResolutionVisitor, stmt: &ast::Stmt) {
     let prev_parent = visitor.cx.parent;
     visitor.cx.parent = Some(stmt_id);
     visit::walk_stmt(visitor, stmt);
-    visitor.cx.parent = prev_parent;
+
+    match stmt.node {
+        ast::StmtDecl(ref decl, _) => {
+            // declarations (e.g. `let x = ...`) introduce a nested
+            // region structure, so leave the parent in place.
+            match decl.node {
+                ast::DeclLocal(ref loc) => {
+                    record_superlifetime(visitor, loc.id, stmt.span);
+                    visitor.cx.parent = Some(loc.id)
+                }
+                ast::DeclItem(..) =>
+                    visitor.cx.parent = prev_parent,
+            }
+        }
+        _ => {
+            visitor.cx.parent = prev_parent;
+        }
+    }
 }
 
 fn resolve_expr(visitor: &mut RegionResolutionVisitor, expr: &ast::Expr) {
@@ -544,7 +561,9 @@ fn resolve_local(visitor: &mut RegionResolutionVisitor, local: &ast::Local) {
     debug!("resolve_local(local.id={},local.init={})",
            local.id,local.init.is_some());
 
-    let blk_id = match visitor.cx.var_parent {
+    record_superlifetime(visitor, local.id, local.span);
+
+    let parent_id = match visitor.cx.var_parent {
         Some(id) => id,
         None => {
             visitor.sess.span_bug(
@@ -556,16 +575,17 @@ fn resolve_local(visitor: &mut RegionResolutionVisitor, local: &ast::Local) {
     // For convenience in trans, associate with the local-id the var
     // scope that will be used for any bindings declared in this
     // pattern.
-    visitor.region_maps.record_var_scope(local.id, blk_id);
+    visitor.region_maps.record_var_scope(local.id, parent_id);
 
     // As an exception to the normal rules governing temporary
-    // lifetimes, initializers in a let have a temporary lifetime
-    // of the enclosing block. This means that e.g. a program
-    // like the following is legal:
+    // lifetimes, initializers in a let have a temporary lifetime of
+    // the remainder of the enclosing block. This means that e.g. a
+    // program like the following is legal:
     //
     //     let ref x = HashMap::new();
     //
-    // Because the hash map will be freed in the enclosing block.
+    // Because the hash map will be freed at the end of the enclosing
+    // block.
     //
     // We express the rules more formally based on 3 grammars (defined
     // fully in the helpers below that implement them):
@@ -619,19 +639,26 @@ fn resolve_local(visitor: &mut RegionResolutionVisitor, local: &ast::Local) {
     //
     // FIXME(#6308) -- Note that `[]` patterns work more smoothly post-DST.
 
+    visitor.visit_pat(&*local.pat);
+    visitor.visit_ty(&*local.ty);
+
     match local.init {
-        Some((ref expr, _)) => {
-            record_rvalue_scope_if_borrow_expr(visitor, &**expr, blk_id);
+        Some((ref expr, init_id)) => {
+            let prev_cx = visitor.cx;
+            visitor.cx = Context {var_parent: Some(local.id), parent: Some(local.id)};
+            record_superlifetime(visitor, init_id, local.span);
+            record_rvalue_scope_if_borrow_expr(visitor, &**expr, local.id);
 
             if is_binding_pat(&*local.pat) || is_borrowed_ty(&*local.ty) {
-                record_rvalue_scope(visitor, &**expr, blk_id);
+                record_rvalue_scope(visitor, &**expr, local.id);
             }
+            visitor.cx = Context {var_parent: Some(init_id), parent: Some(init_id)};
+            visitor.visit_expr(&**expr);
+            visitor.cx = prev_cx;
         }
 
         None => { }
     }
-
-    visit::walk_local(visitor, local);
 
     fn is_binding_pat(pat: &ast::Pat) -> bool {
         /*!
@@ -747,7 +774,8 @@ fn resolve_local(visitor: &mut RegionResolutionVisitor, local: &ast::Local) {
          * owned or partially owned by `expr` -- is going to be
          * indirectly referenced by a variable in a let statement. In
          * that case, the "temporary lifetime" or `expr` is extended
-         * to be the block enclosing the `let` statement.
+         * to be the remainder of the block enclosing the `let`
+         * statement.
          *
          * More formally, if `expr` matches the grammar `ET`, record
          * the rvalue scope of the matching `<rvalue>` as `blk_id`:
