@@ -14,6 +14,7 @@
  */
 
 use llvm::{BasicBlockRef, ValueRef};
+use middle::region::{SkipPriorDecls, AcceptPriorDecl};
 use middle::trans::base;
 use middle::trans::build;
 use middle::trans::callee;
@@ -132,7 +133,7 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
             assert_eq!(self.ccx
                            .tcx()
                            .region_maps
-                           .opt_encl_scope(debug_loc.id),
+                           .opt_encl_scope(debug_loc.id, SkipPriorDecls),
                        top_scope);
         }
 

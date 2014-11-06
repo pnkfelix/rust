@@ -77,18 +77,40 @@ The region maps encode information about region relationships.
   for dynamic checks and/or arbitrary amounts of stack space.
 */
 pub struct RegionMaps {
-    scope_map: RefCell<NodeMap<ast::NodeId>>,
+    scope_map: RefCell<NodeMap<ParentScope>>,
     var_map: RefCell<NodeMap<ast::NodeId>>,
     free_region_map: RefCell<HashMap<FreeRegion, Vec<FreeRegion>>>,
     rvalue_scopes: RefCell<NodeMap<ast::NodeId>>,
     terminating_scopes: RefCell<HashSet<ast::NodeId>>,
 }
 
+#[deriving(Show)]
+pub enum ParentScope {
+    EnclosingParent(ast::NodeId),
+    PriorDeclInBlock(ast::NodeId),
+}
+
+impl ParentScope {
+    fn node_id(&self) -> ast::NodeId {
+        match *self {
+            EnclosingParent(id) => id,
+            PriorDeclInBlock(id) => id,
+        }
+    }
+}
+
+pub enum SoughtParentScope {
+    SkipPriorDecls,
+    AcceptPriorDecl,
+}
+
+type EnclosedBy = Option<ParentScope>;
+
 pub struct Context {
     var_parent: Option<ast::NodeId>,
 
     // Innermost enclosing expression
-    parent: Option<ast::NodeId>,
+    parent: EnclosedBy,
 }
 
 struct RegionResolutionVisitor<'a> {
@@ -117,9 +139,9 @@ impl RegionMaps {
         self.free_region_map.borrow_mut().insert(sub, vec!(sup));
     }
 
-    pub fn record_encl_scope(&self, sub: ast::NodeId, sup: ast::NodeId) {
+    pub fn record_encl_scope(&self, sub: ast::NodeId, sup: ParentScope) {
         debug!("record_encl_scope(sub={}, sup={})", sub, sup);
-        assert!(sub != sup);
+        assert!(sub != sup.node_id());
         self.scope_map.borrow_mut().insert(sub, sup);
     }
 
@@ -147,16 +169,36 @@ impl RegionMaps {
         self.terminating_scopes.borrow_mut().insert(scope_id);
     }
 
-    pub fn opt_encl_scope(&self, id: ast::NodeId) -> Option<ast::NodeId> {
+    pub fn opt_encl_scope(&self, id: ast::NodeId, s: SoughtParentScope) -> Option<ast::NodeId> {
         //! Returns the narrowest scope that encloses `id`, if any.
-        self.scope_map.borrow().find(&id).map(|x| *x)
+        match s {
+            AcceptPriorDecl =>
+                self.scope_map.borrow().find(&id).map(|x| x.node_id()),
+            MustEnclose => {
+                let mut saw_decl = false;
+                let mut curr_id = id;
+                loop {
+                    match self.scope_map.borrow().find(&curr_id).map(|x| *x) {
+                        Some(EnclosingParent(id)) => return Some(id),
+                        None => {
+                            assert!(!saw_decl);
+                            return None;
+                        }
+                        Some(PriorDeclInBlock(id)) => {
+                            saw_decl = true;
+                            curr_id = id
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[allow(dead_code)] // used in middle::cfg
-    pub fn encl_scope(&self, id: ast::NodeId) -> ast::NodeId {
+    pub fn encl_scope(&self, id: ast::NodeId, s: SoughtParentScope) -> ast::NodeId {
         //! Returns the narrowest scope that encloses `id`, if any.
-        match self.scope_map.borrow().find(&id) {
-            Some(&r) => r,
+        match self.opt_encl_scope(id, s) {
+            Some(r) => r,
             None => { fail!("no enclosing scope for id {}", id); }
         }
     }
@@ -187,13 +229,13 @@ impl RegionMaps {
         // if there's one. Static items, for instance, won't
         // have an enclosing scope, hence no scope will be
         // returned.
-        let mut id = match self.opt_encl_scope(expr_id) {
+        let mut id = match self.opt_encl_scope(expr_id, AcceptPriorDecl) {
             Some(i) => i,
             None => { return None; }
         };
 
         while !self.terminating_scopes.borrow().contains(&id) {
-            match self.opt_encl_scope(id) {
+            match self.opt_encl_scope(id, AcceptPriorDecl) {
                 Some(p) => {
                     id = p;
                 }
@@ -239,7 +281,7 @@ impl RegionMaps {
 
                     return false;
                 }
-                Some(&scope) => s = scope
+                Some(&scope) => s = scope.node_id()
             }
         }
 
@@ -361,8 +403,8 @@ impl RegionMaps {
                 match this.scope_map.borrow().find(&scope) {
                     None => return result,
                     Some(&superscope) => {
-                        result.push(superscope);
-                        scope = superscope;
+                        result.push(superscope.node_id());
+                        scope = superscope.node_id();
                     }
                 }
                 // debug!("ancestors_of_loop(scope={})", scope);
@@ -376,8 +418,8 @@ fn record_superlifetime(visitor: &mut RegionResolutionVisitor,
                         child_id: ast::NodeId,
                         _sp: Span) {
     match visitor.cx.parent {
-        Some(parent_id) => {
-            visitor.region_maps.record_encl_scope(child_id, parent_id);
+        Some(parent) => {
+            visitor.region_maps.record_encl_scope(child_id, parent);
         }
         None => {}
     }
@@ -415,7 +457,8 @@ fn resolve_block(visitor: &mut RegionResolutionVisitor, blk: &ast::Block) {
     //
 
     let prev_cx = visitor.cx;
-    visitor.cx = Context {var_parent: Some(blk.id), parent: Some(blk.id)};
+    visitor.cx = Context {var_parent: Some(blk.id),
+                          parent: Some(EnclosingParent(blk.id))};
     visit::walk_block(visitor, blk);
     visitor.cx = prev_cx;
 }
@@ -456,7 +499,7 @@ fn resolve_stmt(visitor: &mut RegionResolutionVisitor, stmt: &ast::Stmt) {
     record_superlifetime(visitor, stmt_id, stmt.span);
 
     let prev_parent = visitor.cx.parent;
-    visitor.cx.parent = Some(stmt_id);
+    visitor.cx.parent = Some(EnclosingParent(stmt_id));
     visit::walk_stmt(visitor, stmt);
 
     match stmt.node {
@@ -465,14 +508,16 @@ fn resolve_stmt(visitor: &mut RegionResolutionVisitor, stmt: &ast::Stmt) {
             // region structure, so leave the parent in place.
             match decl.node {
                 ast::DeclLocal(ref loc) => {
-                    record_superlifetime(visitor, loc.id, stmt.span);
-                    visitor.cx.parent = Some(loc.id)
+                    // FIXME (pnkfelix): Figure out whether we need to
+                    // do this here, or if the construction setup in
+                    // resolve_local suffices.
+                    visitor.cx.parent = Some(PriorDeclInBlock(loc.id))
                 }
                 ast::DeclItem(..) =>
                     visitor.cx.parent = prev_parent,
             }
         }
-        _ => {
+        ast::StmtExpr(..) | ast::StmtSemi(..) | ast::StmtMac(..) => {
             visitor.cx.parent = prev_parent;
         }
     }
@@ -484,7 +529,7 @@ fn resolve_expr(visitor: &mut RegionResolutionVisitor, expr: &ast::Expr) {
     record_superlifetime(visitor, expr.id, expr.span);
 
     let prev_cx = visitor.cx;
-    visitor.cx.parent = Some(expr.id);
+    visitor.cx.parent = Some(EnclosingParent(expr.id));
     match expr.node {
         // Conditional or repeating scopes are always terminating
         // scopes, meaning that temporaries cannot outlive them.
@@ -642,17 +687,22 @@ fn resolve_local(visitor: &mut RegionResolutionVisitor, local: &ast::Local) {
     visitor.visit_pat(&*local.pat);
     visitor.visit_ty(&*local.ty);
 
+    // FIXME (pnkfelix): Figure out whether we need to do this here,
+    // or if the construction setup in resolve_stmt suffices.
+    visitor.cx = Context {var_parent: Some(local.id),
+                          parent: Some(PriorDeclInBlock(local.id))};
+
     match local.init {
         Some((ref expr, init_id)) => {
-            let prev_cx = visitor.cx;
-            visitor.cx = Context {var_parent: Some(local.id), parent: Some(local.id)};
             record_superlifetime(visitor, init_id, local.span);
             record_rvalue_scope_if_borrow_expr(visitor, &**expr, local.id);
 
             if is_binding_pat(&*local.pat) || is_borrowed_ty(&*local.ty) {
                 record_rvalue_scope(visitor, &**expr, local.id);
             }
-            visitor.cx = Context {var_parent: Some(init_id), parent: Some(init_id)};
+            let prev_cx = visitor.cx;
+            visitor.cx = Context {var_parent: Some(init_id),
+                                  parent: Some(EnclosingParent(init_id))};
             visitor.visit_expr(&**expr);
             visitor.cx = prev_cx;
         }
@@ -845,7 +895,7 @@ fn resolve_fn(visitor: &mut RegionResolutionVisitor,
     let outer_cx = visitor.cx;
 
     // The arguments and `self` are parented to the body of the fn.
-    visitor.cx = Context { parent: Some(body.id),
+    visitor.cx = Context { parent: Some(EnclosingParent(body.id)),
                            var_parent: Some(body.id) };
     visit::walk_fn_decl(visitor, decl);
 

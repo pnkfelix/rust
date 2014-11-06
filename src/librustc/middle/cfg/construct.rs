@@ -11,6 +11,7 @@
 use middle::cfg::*;
 use middle::def;
 use middle::graph;
+use middle::region::{SkipPriorDecls, AcceptPriorDecl};
 use middle::typeck;
 use middle::ty;
 use syntax::ast;
@@ -588,7 +589,7 @@ impl<'a, 'tcx> CFGBuilder<'a, 'tcx> {
         while scope_id != to_loop.loop_id {
 
             data.exiting_scopes.push(scope_id);
-            scope_id = self.tcx.region_maps.encl_scope(scope_id);
+            scope_id = self.tcx.region_maps.encl_scope(scope_id, AcceptPriorDecl);
         }
         self.graph.add_edge(from_index, to_index, data);
     }

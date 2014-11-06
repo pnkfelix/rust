@@ -120,6 +120,7 @@ and report an error, and it just seems like more mess in the end.)
 
 use middle::def;
 use middle::mem_categorization as mc;
+use middle::region::AcceptPriorDecl;
 use middle::subst::{ErasedRegions, NonerasedRegions};
 use middle::traits;
 use middle::ty::{ReScope};
@@ -2080,7 +2081,7 @@ fn constrain_region_for_destructor_safety(rcx: &mut Rcx,
 
     // Get the parent scope.
     let parent_inner_region =
-        match rcx.fcx.tcx().region_maps.opt_encl_scope(inner_scope) {
+        match rcx.fcx.tcx().region_maps.opt_encl_scope(inner_scope, AcceptPriorDecl) {
             Some(parent_inner_scope) => ty::ReScope(parent_inner_scope),
             None => ty::ReFunction,
         };

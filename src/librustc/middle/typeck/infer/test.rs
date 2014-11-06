@@ -24,6 +24,7 @@ use driver::driver;
 use driver::session;
 use middle::lang_items;
 use middle::region;
+use middle::region::EnclosingParent;
 use middle::resolve;
 use middle::resolve_lifetime;
 use middle::stability;
@@ -150,7 +151,8 @@ impl<'a, 'tcx> Env<'a, 'tcx> {
     pub fn create_region_hierarchy(&self, rh: &RH) {
         for child_rh in rh.sub.iter() {
             self.create_region_hierarchy(child_rh);
-            self.infcx.tcx.region_maps.record_encl_scope(child_rh.id, rh.id);
+            self.infcx.tcx.region_maps
+                .record_encl_scope(child_rh.id, EnclosingParent(rh.id));
         }
     }
 
