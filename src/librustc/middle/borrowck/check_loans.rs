@@ -344,6 +344,8 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
         self.each_issued_loan(scope_id, |issued_loan| {
             for &new_loan_index in new_loan_indices.iter() {
                 let new_loan = &self.all_loans[new_loan_index];
+                assert!(self.tcx().region_maps.scopes_intersect(issued_loan.kill_scope,
+                                                                new_loan.kill_scope));
                 self.report_error_if_loans_conflict(issued_loan, new_loan);
             }
             true
@@ -353,6 +355,8 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
             let old_loan = &self.all_loans[x];
             for &y in new_loan_indices.slice_from(i+1).iter() {
                 let new_loan = &self.all_loans[y];
+                assert!(self.tcx().region_maps.scopes_intersect(old_loan.kill_scope,
+                                                                new_loan.kill_scope));
                 self.report_error_if_loans_conflict(old_loan, new_loan);
             }
         }

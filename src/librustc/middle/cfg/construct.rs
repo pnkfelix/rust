@@ -98,14 +98,19 @@ impl<'a, 'tcx> CFGBuilder<'a, 'tcx> {
     fn decl(&mut self, decl: &ast::Decl, pred: CFGIndex) -> CFGIndex {
         match decl.node {
             ast::DeclLocal(ref local) => {
-                let init_exit = self.opt_ref_expr(local.init.as_ref().map(|x|&**x.ref0()), pred);
-                self.pat(&*local.pat, init_exit)
+                self.local(&**local, pred)
             }
 
             ast::DeclItem(_) => {
                 pred
             }
         }
+    }
+
+    fn local(&mut self, local: &ast::Local, pred: CFGIndex) -> CFGIndex {
+        let init_exit = self.opt_ref_expr(local.init.as_ref().map(|x|&**x.ref0()), pred);
+        let pat_exit = self.pat(&*local.pat, init_exit);
+        self.add_node(local.id, [pat_exit])
     }
 
     fn pat(&mut self, pat: &ast::Pat, pred: CFGIndex) -> CFGIndex {

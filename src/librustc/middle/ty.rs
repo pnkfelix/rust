@@ -3367,20 +3367,23 @@ pub fn expr_span(cx: &ctxt, id: NodeId) -> Span {
 }
 
 pub fn local_var_name_str(cx: &ctxt, id: NodeId) -> InternedString {
-    match cx.map.find(id) {
-        Some(ast_map::NodeLocal(local)) => {
-            match local.pat.node {
-                ast::PatIdent(_, ref path1, _) => {
-                    token::get_ident(path1.node)
-                }
-                _ => {
-                    cx.sess.bug(
-                        format!("Variable id {} maps to {}, not local",
-                                id,
-                                local.pat).as_slice());
-                }
+    let pat_to_ident = |context: &str, pat: &ast::Pat| {
+        match pat.node {
+            ast::PatIdent(_, ref path1, _) => {
+                token::get_ident(path1.node)
+            }
+            _ => {
+                cx.sess.bug(
+                    format!("{} id {} maps to {}, not ident",
+                            context,
+                            id,
+                            pat).as_slice());
             }
         }
+    };
+    match cx.map.find(id) {
+        Some(ast_map::NodePat(pat)) => pat_to_ident("Pat", pat),
+        Some(ast_map::NodeLocal(local)) => pat_to_ident("Local", &*local.pat),
         r => {
             cx.sess.bug(format!("Variable id {} maps to {}, not local",
                                 id,
