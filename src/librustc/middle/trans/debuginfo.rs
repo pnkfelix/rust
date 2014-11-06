@@ -883,7 +883,23 @@ pub fn create_captured_var_metadata(bcx: Block,
         None => {
             cx.sess().span_bug(span, "debuginfo::create_captured_var_metadata: node not found");
         }
-        Some(ast_map::NodeLocal(pat)) | Some(ast_map::NodeArg(pat)) => {
+        Some(ast_map::NodeLocal(local)) => {
+            match local.pat.node {
+                ast::PatIdent(_, ref path1, _) => {
+                    path1.node
+                }
+                _ => {
+                    cx.sess()
+                      .span_bug(span,
+                                format!(
+                                "debuginfo::create_captured_var_metadata() - \
+                                 Captured var-id refers to unexpected \
+                                 ast_map variant: {}",
+                                 ast_item).as_slice());
+                }
+            }
+        }
+        Some(ast_map::NodeArg(pat)) => {
             match pat.node {
                 ast::PatIdent(_, ref path1, _) => {
                     path1.node

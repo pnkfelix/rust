@@ -107,6 +107,9 @@ pub fn explain_region_and_span(cx: &ctxt, region: ty::Region)
               let tag = item_scope_tag(&*it);
               explain_span(cx, tag, it.span)
           }
+          Some(ast_map::NodeLocal(local)) => {
+              explain_span(cx, "local", local.span)
+          }
           Some(_) | None => {
             // this really should not happen
             (format!("unknown scope: {}.  Please report a bug.", node_id), None)

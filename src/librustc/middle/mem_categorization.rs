@@ -319,18 +319,28 @@ impl MutabilityCategory {
     }
 
     fn from_local(tcx: &ty::ctxt, id: ast::NodeId) -> MutabilityCategory {
-        match tcx.map.get(id) {
-            ast_map::NodeLocal(p) | ast_map::NodeArg(p) => match p.node {
-                ast::PatIdent(bind_mode, _, _) => {
-                    if bind_mode == ast::BindByValue(ast::MutMutable) {
-                        McDeclared
-                    } else {
-                        McImmutable
-                    }
-                }
-                _ => tcx.sess.span_bug(p.span, "expected identifier pattern")
-            },
-            _ => tcx.sess.span_bug(tcx.map.span(id), "expected identifier pattern")
+        let pat_to_bind_mode = |p: &ast::Pat| {
+            match p.node {
+                ast::PatIdent(bind_mode, _, _) => bind_mode,
+                _ => tcx.sess.span_bug(p.span,
+                                       "expected identifier pattern in pat")
+            }
+        };
+        let bind_mode = match tcx.map.get(id) {
+            ast_map::NodeArg(p) => pat_to_bind_mode(p),
+            ast_map::NodePat(p) => pat_to_bind_mode(p),
+            ast_map::NodeLocal(&ast::Local{ pat: ref p, .. }) =>
+                pat_to_bind_mode(&**p),
+            ref node => {
+                let msg = format!("expected identifier pattern \
+                                   from id {}, got {}", id, *node);
+                tcx.sess.span_bug(tcx.map.span(id), msg.as_slice())
+            }
+        };
+        if bind_mode == ast::BindByValue(ast::MutMutable) {
+            McDeclared
+        } else {
+            McImmutable
         }
     }
 

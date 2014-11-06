@@ -106,7 +106,7 @@ pub enum Node<'ast> {
     NodeExpr(&'ast Expr),
     NodeStmt(&'ast Stmt),
     NodeArg(&'ast Pat),
-    NodeLocal(&'ast Pat),
+    NodeLocal(&'ast Local),
     NodePat(&'ast Pat),
     NodeBlock(&'ast Block),
 
@@ -132,7 +132,7 @@ enum MapEntry<'ast> {
     EntryExpr(NodeId, &'ast Expr),
     EntryStmt(NodeId, &'ast Stmt),
     EntryArg(NodeId, &'ast Pat),
-    EntryLocal(NodeId, &'ast Pat),
+    EntryLocal(NodeId, &'ast Local),
     EntryPat(NodeId, &'ast Pat),
     EntryBlock(NodeId, &'ast Block),
     EntryStructCtor(NodeId, &'ast StructDef),
@@ -522,7 +522,8 @@ impl<'ast> Map<'ast> {
             Some(NodeVariant(variant)) => variant.span,
             Some(NodeExpr(expr)) => expr.span,
             Some(NodeStmt(stmt)) => stmt.span,
-            Some(NodeArg(pat)) | Some(NodeLocal(pat)) => pat.span,
+            Some(NodeArg(pat)) => pat.span,
+            Some(NodeLocal(local)) => local.span,
             Some(NodePat(pat)) => pat.span,
             Some(NodeBlock(block)) => block.span,
             Some(NodeStructCtor(_)) => self.expect_item(self.get_parent(id)).span,
@@ -794,12 +795,13 @@ impl<'ast> Visitor<'ast> for NodeCollector<'ast> {
         self.parent = parent;
     }
 
+    fn visit_local(&mut self, local: &'ast Local) {
+        self.insert(local.id, NodeLocal(local));
+        visit::walk_local(self, local);
+    }
+
     fn visit_pat(&mut self, pat: &'ast Pat) {
-        self.insert(pat.id, match pat.node {
-            // Note: this is at least *potentially* a pattern...
-            PatIdent(..) => NodeLocal(pat),
-            _ => NodePat(pat)
-        });
+        self.insert(pat.id, NodePat(pat));
         visit::walk_pat(self, pat);
     }
 
@@ -1014,11 +1016,11 @@ impl<'a> NodePrinter for pprust::State<'a> {
             NodePat(a)         => self.print_pat(&*a),
             NodeBlock(a)       => self.print_block(&*a),
             NodeLifetime(a)    => self.print_lifetime(&*a),
+            NodeLocal(l)       => self.print_local(&*l),
 
             // these cases do not carry enough information in the
             // ast_map to reconstruct their full structure for pretty
             // printing.
-            NodeLocal(_)       => fail!("cannot print isolated Local"),
             NodeArg(_)         => fail!("cannot print isolated Arg"),
             NodeStructCtor(_)  => fail!("cannot print isolated StructCtor"),
         }
@@ -1100,8 +1102,8 @@ fn node_id_to_string(map: &Map, id: NodeId) -> String {
         Some(NodeArg(ref pat)) => {
             format!("arg {} (id={})", pprust::pat_to_string(&**pat), id)
         }
-        Some(NodeLocal(ref pat)) => {
-            format!("local {} (id={})", pprust::pat_to_string(&**pat), id)
+        Some(NodeLocal(ref local)) => {
+            format!("local {} (id={})", pprust::local_to_string(&**local), id)
         }
         Some(NodePat(ref pat)) => {
             format!("pat {} (id={})", pprust::pat_to_string(&**pat), id)

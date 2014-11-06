@@ -194,6 +194,10 @@ pub fn ty_to_string(ty: &ast::Ty) -> String {
     $to_string(|s| s.print_type(ty))
 }
 
+pub fn local_to_string(local: &ast::Local) -> String {
+    $to_string(|s| s.print_local(local))
+}
+
 pub fn pat_to_string(pat: &ast::Pat) -> String {
     $to_string(|s| s.print_pat(pat))
 }
@@ -1819,27 +1823,30 @@ impl<'a> State<'a> {
         }
     }
 
+    pub fn print_local(&mut self, loc: &ast::Local) -> IoResult<()> {
+        try!(self.ann.pre(self, NodeLocal(loc)));
+        try!(self.ibox(indent_unit));
+        try!(self.print_local_decl(loc));
+        try!(self.end());
+        match loc.init {
+            Some(ref init) => {
+                try!(self.nbsp());
+                try!(self.word_space("="));
+                try!(self.print_expr(&**init.ref0()));
+            }
+            _ => {}
+        }
+        self.ann.post(self, NodeLocal(loc))
+    }
+
     pub fn print_decl(&mut self, decl: &ast::Decl) -> IoResult<()> {
         try!(self.maybe_print_comment(decl.span.lo));
         match decl.node {
             ast::DeclLocal(ref loc) => {
                 try!(self.space_if_not_bol());
                 try!(self.ibox(indent_unit));
-                try!(self.ann.pre(self, NodeLocal(&**loc)));
                 try!(self.word_nbsp("let"));
-
-                try!(self.ibox(indent_unit));
-                try!(self.print_local_decl(&**loc));
-                try!(self.end());
-                match loc.init {
-                    Some(ref init) => {
-                        try!(self.nbsp());
-                        try!(self.word_space("="));
-                        try!(self.print_expr(&**init.ref0()));
-                    }
-                    _ => {}
-                }
-                try!(self.ann.post(self, NodeLocal(&**loc)));
+                try!(self.print_local(&**loc));
                 self.end()
             }
             ast::DeclItem(ref item) => self.print_item(&**item)
