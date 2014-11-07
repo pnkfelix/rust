@@ -108,7 +108,8 @@ impl<'a, 'tcx, O:DataFlowOperator> pprust::PpAnn for DataFlowContext<'a, 'tcx, O
             pprust::NodeExpr(expr) => expr.id,
             pprust::NodeBlock(blk) => blk.id,
             pprust::NodeItem(_) => 0,
-            pprust::NodePat(pat) => pat.id
+            pprust::NodePat(pat) => pat.id,
+            pprust::NodeLocal(local) => local.binding_id,
         };
 
         if self.has_bitset_for_nodeid(id) {
