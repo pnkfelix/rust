@@ -40,6 +40,7 @@ pub enum AnnNode<'a> {
     NodeItem(&'a ast::Item),
     NodeExpr(&'a ast::Expr),
     NodePat(&'a ast::Pat),
+    NodeLocal(&'a ast::Local),
 }
 
 pub trait PpAnn {
@@ -1821,6 +1822,7 @@ impl<'a> State<'a> {
             ast::DeclLocal(ref loc) => {
                 try!(self.space_if_not_bol());
                 try!(self.ibox(indent_unit));
+                try!(self.ann.pre(self, NodeLocal(&**loc)));
                 try!(self.word_nbsp("let"));
 
                 try!(self.ibox(indent_unit));
@@ -1830,10 +1832,11 @@ impl<'a> State<'a> {
                     Some(ref init) => {
                         try!(self.nbsp());
                         try!(self.word_space("="));
-                        try!(self.print_expr(&**init));
+                        try!(self.print_expr(&*init.expr));
                     }
                     _ => {}
                 }
+                try!(self.ann.post(self, NodeLocal(&**loc)));
                 self.end()
             }
             ast::DeclItem(ref item) => self.print_item(&**item)
