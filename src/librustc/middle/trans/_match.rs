@@ -1436,7 +1436,7 @@ pub fn store_local<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     }
 
     match local.init {
-        Some(ref init_expr) => {
+        Some(ref local_init) => {
             // Optimize the "let x = expr" case. This just writes
             // the result of evaluating `expr` directly into the alloca
             // for `x`. Often the general path results in similar or the
@@ -1449,10 +1449,10 @@ pub fn store_local<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
             // it assumes it is matching against a valid value.
             match simple_identifier(&*pat) {
                 Some(ident) => {
-                    let var_scope = cleanup::var_scope(tcx, local.id);
+                    let var_scope = cleanup::var_scope(tcx, local_init.id);
                     return mk_binding_alloca(
                         bcx, pat.id, ident, var_scope, (),
-                        |(), bcx, v, _| expr::trans_into(bcx, &**init_expr,
+                        |(), bcx, v, _| expr::trans_into(bcx, &*local_init.expr,
                                                          expr::SaveIn(v)));
                 }
 
@@ -1461,14 +1461,14 @@ pub fn store_local<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
 
             // General path.
             let init_datum =
-                unpack_datum!(bcx, expr::trans_to_lvalue(bcx, &**init_expr, "let"));
-            if ty::type_is_bot(expr_ty(bcx, &**init_expr)) {
+                unpack_datum!(bcx, expr::trans_to_lvalue(bcx, &*local_init.expr, "let"));
+            if ty::type_is_bot(expr_ty(bcx, &*local_init.expr)) {
                 create_dummy_locals(bcx, pat)
             } else {
                 if bcx.sess().asm_comments() {
                     add_comment(bcx, "creating zeroable ref llval");
                 }
-                let var_scope = cleanup::var_scope(tcx, local.id);
+                let var_scope = cleanup::var_scope(tcx, local_init.id);
                 bind_irrefutable_pat(bcx, pat, init_datum.val, var_scope)
             }
         }

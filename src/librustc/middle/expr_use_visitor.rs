@@ -607,13 +607,13 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
                 })
             }
 
-            Some(ref expr) => {
+            Some(ref local_init) => {
                 // Variable declarations with
                 // initializers are considered
                 // "assigns", which is handled by
                 // `walk_pat`:
-                self.walk_expr(&**expr);
-                let init_cmt = return_if_err!(self.mc.cat_expr(&**expr));
+                self.walk_expr(&*local_init.expr);
+                let init_cmt = return_if_err!(self.mc.cat_expr(&*local_init.expr));
                 self.walk_pat(init_cmt, &*local.pat);
             }
         }

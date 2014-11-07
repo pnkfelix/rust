@@ -3229,12 +3229,12 @@ fn populate_scope_map(cx: &CrateContext,
                  scope_map: &mut HashMap<ast::NodeId, DIScope>) {
         match *decl {
             codemap::Spanned { node: ast::DeclLocal(ref local), .. } => {
-                scope_map.insert(local.id, scope_stack.last().unwrap().scope_metadata);
 
                 walk_pattern(cx, &*local.pat, scope_stack, scope_map);
 
-                for exp in local.init.iter() {
-                    walk_expr(cx, &**exp, scope_stack, scope_map);
+                for local_init in local.init.iter() {
+                    scope_map.insert(local_init.id, scope_stack.last().unwrap().scope_metadata);
+                    walk_expr(cx, &*local_init.expr, scope_stack, scope_map);
                 }
             }
             _ => ()

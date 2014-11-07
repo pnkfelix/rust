@@ -1332,7 +1332,7 @@ fn link_local(rcx: &Rcx, local: &ast::Local) {
     debug!("regionck::for_local()");
     let init_expr = match local.init {
         None => { return; }
-        Some(ref expr) => &**expr,
+        Some(ref local_init) => &*local_init.expr,
     };
     let mc = mc::MemCategorizationContext::new(rcx);
     let discr_cmt = ignore_err!(mc.cat_expr(init_expr));

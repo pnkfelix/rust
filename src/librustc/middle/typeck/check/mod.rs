@@ -448,11 +448,11 @@ impl<'a, 'tcx, 'v> Visitor<'v> for GatherLocalsVisitor<'a, 'tcx> {
             ast::TyInfer => None,
             _ => Some(self.fcx.to_ty(&*local.ty))
         };
-        self.assign(local.span, local.id, o_ty);
+        self.assign(local.span, local.binding_id, o_ty);
         debug!("Local variable {} is assigned type {}",
                self.fcx.pat_to_string(&*local.pat),
                self.fcx.infcx().ty_to_string(
-                   self.fcx.inh.locals.borrow().get_copy(&local.id)));
+                   self.fcx.inh.locals.borrow().get_copy(&local.binding_id)));
         visit::walk_local(self, local);
     }
 
@@ -4534,15 +4534,15 @@ pub fn check_decl_initializer(fcx: &FnCtxt,
 pub fn check_decl_local(fcx: &FnCtxt, local: &ast::Local)  {
     let tcx = fcx.ccx.tcx;
 
-    let t = fcx.local_ty(local.span, local.id);
-    fcx.write_ty(local.id, t);
+    let t = fcx.local_ty(local.span, local.binding_id);
+    fcx.write_ty(local.binding_id, t);
 
     match local.init {
         Some(ref init) => {
-            check_decl_initializer(fcx, local.id, &**init);
-            let init_ty = fcx.expr_ty(&**init);
+            check_decl_initializer(fcx, local.binding_id, &*init.expr);
+            let init_ty = fcx.expr_ty(&*init.expr);
             if ty::type_is_error(init_ty) || ty::type_is_bot(init_ty) {
-                fcx.write_ty(local.id, init_ty);
+                fcx.write_ty(local.binding_id, init_ty);
             }
         }
         _ => {}
@@ -4555,7 +4555,7 @@ pub fn check_decl_local(fcx: &FnCtxt, local: &ast::Local)  {
     _match::check_pat(&pcx, &*local.pat, t);
     let pat_ty = fcx.node_ty(local.pat.id);
     if ty::type_is_error(pat_ty) || ty::type_is_bot(pat_ty) {
-        fcx.write_ty(local.id, pat_ty);
+        fcx.write_ty(local.binding_id, pat_ty);
     }
 }
 
@@ -4569,7 +4569,7 @@ pub fn check_stmt(fcx: &FnCtxt, stmt: &ast::Stmt)  {
         match decl.node {
           ast::DeclLocal(ref l) => {
               check_decl_local(fcx, &**l);
-              let l_t = fcx.node_ty(l.id);
+              let l_t = fcx.node_ty(l.binding_id);
               saw_bot = saw_bot || ty::type_is_bot(l_t);
               saw_err = saw_err || ty::type_is_error(l_t);
           }

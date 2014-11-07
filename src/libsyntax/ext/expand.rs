@@ -673,7 +673,7 @@ fn expand_non_macro_stmt(Spanned {node, span: stmt_span}: Stmt, fld: &mut MacroE
         StmtDecl(decl, node_id) => decl.and_then(|Spanned {node: decl, span}| match decl {
             DeclLocal(local) => {
                 // take it apart:
-                let rewritten_local = local.map(|Local {id, pat, ty, init, source, span}| {
+                let rewritten_local = local.map(|Local {binding_id, pat, ty, init, source, span}| {
                     // expand the ty since TyFixedLengthVec contains an Expr
                     // and thus may have a macro use
                     let expanded_ty = fld.fold_ty(ty);
@@ -698,11 +698,13 @@ fn expand_non_macro_stmt(Spanned {node, span: stmt_span}: Stmt, fld: &mut MacroE
                     fld.cx.syntax_env.info().pending_renames
                           .extend(new_pending_renames.into_iter());
                     Local {
-                        id: id,
+                        // FIXME(pnkfelix): should this be calling
+                        // fld.new_id(binding_id) instead?
+                        binding_id: binding_id,
                         ty: expanded_ty,
                         pat: rewritten_pat,
                         // also, don't forget to expand the init:
-                        init: init.map(|e| fld.fold_expr(e)),
+                        init: init.map(|li| fld.fold_local_init(li)),
                         source: source,
                         span: span
                     }

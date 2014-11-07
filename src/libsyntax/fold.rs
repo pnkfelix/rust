@@ -170,6 +170,10 @@ pub trait Folder {
         noop_fold_local(l, self)
     }
 
+    fn fold_local_init(&mut self, l: LocalInit) -> LocalInit {
+        noop_fold_local_init(l, self)
+    }
+
     fn fold_mac(&mut self, _macro: Mac) -> Mac {
         fail!("fold_mac disabled by default");
         // NB: see note about macros above.
@@ -490,14 +494,21 @@ pub fn noop_fold_path<T: Folder>(Path {global, segments, span}: Path, fld: &mut 
 }
 
 pub fn noop_fold_local<T: Folder>(l: P<Local>, fld: &mut T) -> P<Local> {
-    l.map(|Local {id, pat, ty, init, source, span}| Local {
-        id: fld.new_id(id),
+    l.map(|Local {binding_id, pat, ty, init, source, span}| Local {
+        binding_id: fld.new_id(binding_id),
         ty: fld.fold_ty(ty),
         pat: fld.fold_pat(pat),
-        init: init.map(|e| fld.fold_expr(e)),
+        init: init.map(|li| fld.fold_local_init(li)),
         source: source,
         span: fld.new_span(span)
     })
+}
+
+pub fn noop_fold_local_init<T: Folder>(li: LocalInit, fld: &mut T) -> LocalInit {
+    LocalInit {
+        id: fld.new_id(li.id),
+        expr: fld.fold_expr(li.expr),
+    }
 }
 
 pub fn noop_fold_attribute<T: Folder>(at: Attribute, fld: &mut T) -> Attribute {

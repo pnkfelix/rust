@@ -1462,7 +1462,10 @@ impl<'l, 'tcx, 'v> Visitor<'v> for DxrVisitor<'l, 'tcx> {
 
         // Just walk the initialiser and type (don't want to walk the pattern again).
         self.visit_ty(&*l.ty);
-        visit::walk_expr_opt(self, &l.init);
+        match l.init {
+            Some(ref li) => self.visit_expr(&*li.expr),
+            None => {}
+        }
     }
 }
 

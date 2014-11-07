@@ -455,10 +455,22 @@ pub enum LocalSource {
 pub struct Local {
     pub ty: P<Ty>,
     pub pat: P<Pat>,
-    pub init: Option<P<Expr>>,
-    pub id: NodeId,
+
+    /// The binding id of a local identifies its scope (which extends
+    /// from the introduction o the local(s) to the end of the parent
+    /// block).  Note this is distinct from the scope associated with
+    /// the id for the LocalInit (if any), which represents the scope
+    /// for the short-lived temporaries of the init expression.
+    pub binding_id: NodeId,
+    pub init: Option<LocalInit>,
     pub span: Span,
     pub source: LocalSource,
+}
+
+#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+pub struct LocalInit {
+    pub expr: P<Expr>,
+    pub id: NodeId,
 }
 
 pub type Decl = Spanned<Decl_>;

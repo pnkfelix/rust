@@ -426,8 +426,12 @@ impl<'a, 'v, O: IdVisitingOperation> Visitor<'v> for IdVisitor<'a, O> {
     }
 
     fn visit_local(&mut self, local: &Local) {
-        self.operation.visit_id(local.id);
         visit::walk_local(self, local)
+    }
+
+    fn visit_local_init(&mut self, local_init: &'v LocalInit) {
+        self.operation.visit_id(local_init.id);
+        visit::walk_local_init(self, local_init)
     }
 
     fn visit_block(&mut self, block: &Block) {

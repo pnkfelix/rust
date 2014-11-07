@@ -539,8 +539,7 @@ fn resolve_expr(visitor: &mut RegionResolutionVisitor, expr: &ast::Expr) {
 }
 
 fn resolve_local(visitor: &mut RegionResolutionVisitor, local: &ast::Local) {
-    debug!("resolve_local(local.id={},local.init={})",
-           local.id,local.init.is_some());
+    debug!("resolve_local(local.init={})", local.init);
 
     let blk_id = match visitor.cx.var_parent {
         Some(id) => id,
@@ -550,11 +549,6 @@ fn resolve_local(visitor: &mut RegionResolutionVisitor, local: &ast::Local) {
                 "local without enclosing block");
         }
     };
-
-    // For convenience in trans, associate with the local-id the var
-    // scope that will be used for any bindings declared in this
-    // pattern.
-    visitor.region_maps.record_var_scope(local.id, blk_id);
 
     // As an exception to the normal rules governing temporary
     // lifetimes, initializers in a let have a temporary lifetime
@@ -618,11 +612,11 @@ fn resolve_local(visitor: &mut RegionResolutionVisitor, local: &ast::Local) {
     // FIXME(#6308) -- Note that `[]` patterns work more smoothly post-DST.
 
     match local.init {
-        Some(ref expr) => {
-            record_rvalue_scope_if_borrow_expr(visitor, &**expr, blk_id);
+        Some(ref local_init) => {
+            record_rvalue_scope_if_borrow_expr(visitor, &*local_init.expr, blk_id);
 
             if is_binding_pat(&*local.pat) || is_borrowed_ty(&*local.ty) {
-                record_rvalue_scope(visitor, &**expr, blk_id);
+                record_rvalue_scope(visitor, &*local_init.expr, blk_id);
             }
         }
 

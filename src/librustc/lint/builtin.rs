@@ -1097,14 +1097,14 @@ impl LintPass for UnusedParens {
         let (value, msg) = match s.node {
             ast::StmtDecl(ref decl, _) => match decl.node {
                 ast::DeclLocal(ref local) => match local.init {
-                    Some(ref value) => (value, "assigned value"),
+                    Some(ref local_init) => (&*local_init.expr, "assigned value"),
                     None => return
                 },
                 _ => return
             },
             _ => return
         };
-        self.check_unnecessary_parens_core(cx, &**value, msg, false);
+        self.check_unnecessary_parens_core(cx, &*value, msg, false);
     }
 }
 

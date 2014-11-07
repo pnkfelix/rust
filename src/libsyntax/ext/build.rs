@@ -481,8 +481,9 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
         let local = P(ast::Local {
             ty: self.ty_infer(sp),
             pat: pat,
-            init: Some(ex),
-            id: ast::DUMMY_NODE_ID,
+            init: Some(ast::LocalInit { expr: ex,
+                                        id: ast::DUMMY_NODE_ID }),
+            binding_id: ast::DUMMY_NODE_ID,
             span: sp,
             source: ast::LocalLet,
         });
@@ -505,8 +506,9 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
         let local = P(ast::Local {
             ty: typ,
             pat: pat,
-            init: Some(ex),
-            id: ast::DUMMY_NODE_ID,
+            init: Some(ast::LocalInit { expr: ex,
+                                        id: ast::DUMMY_NODE_ID }),
+            binding_id: ast::DUMMY_NODE_ID,
             span: sp,
             source: ast::LocalLet,
         });

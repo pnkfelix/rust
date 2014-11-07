@@ -97,7 +97,11 @@ impl<'a, 'tcx> CFGBuilder<'a, 'tcx> {
     fn decl(&mut self, decl: &ast::Decl, pred: CFGIndex) -> CFGIndex {
         match decl.node {
             ast::DeclLocal(ref local) => {
-                let init_exit = self.opt_expr(&local.init, pred);
+                let init_exit = match local.init {
+                    Some(ref local_init) =>
+                        self.expr(&*local_init.expr, pred),
+                    None => pred
+                };
                 self.pat(&*local.pat, init_exit)
             }
 

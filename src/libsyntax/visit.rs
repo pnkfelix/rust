@@ -61,6 +61,8 @@ pub trait Visitor<'v> {
     fn visit_foreign_item(&mut self, i: &'v ForeignItem) { walk_foreign_item(self, i) }
     fn visit_item(&mut self, i: &'v Item) { walk_item(self, i) }
     fn visit_local(&mut self, l: &'v Local) { walk_local(self, l) }
+    fn visit_opt_local_init(&mut self, l: &'v Option<LocalInit>) { walk_opt_local_init(self, l) }
+    fn visit_local_init(&mut self, l: &'v LocalInit) { walk_local_init(self, l) }
     fn visit_block(&mut self, b: &'v Block) { walk_block(self, b) }
     fn visit_stmt(&mut self, s: &'v Stmt) { walk_stmt(self, s) }
     fn visit_arm(&mut self, a: &'v Arm) { walk_arm(self, a) }
@@ -186,7 +188,19 @@ pub fn walk_view_item<'v, V: Visitor<'v>>(visitor: &mut V, vi: &'v ViewItem) {
 pub fn walk_local<'v, V: Visitor<'v>>(visitor: &mut V, local: &'v Local) {
     visitor.visit_pat(&*local.pat);
     visitor.visit_ty(&*local.ty);
-    walk_expr_opt(visitor, &local.init);
+    visitor.visit_opt_local_init(&local.init);
+}
+
+pub fn walk_opt_local_init<'v, V: Visitor<'v>>(visitor: &mut V,
+                                               opt_local_init: &'v Option<LocalInit>) {
+    match *opt_local_init {
+        Some(ref l) => visitor.visit_expr(&*l.expr),
+        None => ()
+    }
+}
+
+pub fn walk_local_init<'v, V: Visitor<'v>>(visitor: &mut V, local_init: &'v LocalInit) {
+    walk_expr(visitor, &*local_init.expr);
 }
 
 pub fn walk_explicit_self<'v, V: Visitor<'v>>(visitor: &mut V,

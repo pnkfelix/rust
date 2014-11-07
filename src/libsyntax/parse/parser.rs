@@ -3474,12 +3474,16 @@ impl<'a> Parser<'a> {
         if self.eat(&token::COLON) {
             ty = self.parse_ty(true);
         }
-        let init = self.parse_initializer();
+        let init = self.parse_initializer()
+            .map(|expr| ast::LocalInit {
+                expr: expr,
+                id: ast::DUMMY_NODE_ID,
+            });
         P(ast::Local {
             ty: ty,
             pat: pat,
             init: init,
-            id: ast::DUMMY_NODE_ID,
+            binding_id: ast::DUMMY_NODE_ID,
             span: mk_sp(lo, self.last_span.hi),
             source: LocalLet,
         })
