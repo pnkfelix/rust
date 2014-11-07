@@ -199,6 +199,16 @@ impl<'ast> pprust::PpAnn for IdentifiedAnnotation<'ast> {
                 try!(pp::space(&mut s.s));
                 s.synth_comment(format!("pat {}", pat.id))
             }
+            pprust::NodeLocal(local) => {
+                try!(pp::space(&mut s.s));
+                s.synth_comment(format!(
+                    "local binding {} {}",
+                    local.binding_id, match local.init {
+                        Some(ref local_init) =>
+                            format!("init {}", local_init.id),
+                        None => format!(""),
+                    }))
+            }
         }
     }
 }
