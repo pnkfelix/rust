@@ -550,6 +550,9 @@ fn resolve_local(visitor: &mut RegionResolutionVisitor, local: &ast::Local) {
         }
     };
 
+    visitor.region_maps.record_encl_scope(local.binding_id, blk_id);
+    let blk_id = local.binding_id;
+
     // As an exception to the normal rules governing temporary
     // lifetimes, initializers in a let have a temporary lifetime
     // of the enclosing block. This means that e.g. a program
@@ -613,6 +616,7 @@ fn resolve_local(visitor: &mut RegionResolutionVisitor, local: &ast::Local) {
 
     match local.init {
         Some(ref local_init) => {
+            visitor.region_maps.record_var_scope(local_init.id, blk_id);
             record_rvalue_scope_if_borrow_expr(visitor, &*local_init.expr, blk_id);
 
             if is_binding_pat(&*local.pat) || is_borrowed_ty(&*local.ty) {
