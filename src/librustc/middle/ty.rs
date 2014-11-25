@@ -846,7 +846,9 @@ pub enum Region {
     /// safety.
     ReFunction,
 
-    /// A concrete region naming some expression within the current function.
+    /// A concrete region naming some statically determined extent
+    /// (e.g. an expression or sequence of statements) within the
+    /// current function.
     ReScope(region::CodeExtent),
 
     /// Empty lifetime is for data that is never accessed.
