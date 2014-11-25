@@ -1117,6 +1117,8 @@ fn constrain_callee(rcx: &mut Rcx,
                     callee_id: ast::NodeId,
                     call_expr: &ast::Expr,
                     callee_expr: &ast::Expr) {
+    debug!("constrain_callee callee_id: {} call_expr.id: {}",
+           callee_id, call_expr.id);
     let call_region = ty::ReScope(CodeExtent::from_node_id(call_expr.id));
 
     let callee_ty = rcx.resolve_node_type(callee_id);
@@ -1791,6 +1793,7 @@ fn adjust_borrow_kind_for_assignment_lhs(rcx: &Rcx,
      * for upvars that are assigned to in an assignment
      * expression.
      */
+    debug!("adjust_borrow_kind_for_assignment_lhs lhs.id: {}", lhs.id);
 
     let mc = mc::MemCategorizationContext::new(rcx);
     let cmt = ignore_err!(mc.cat_expr(lhs));
