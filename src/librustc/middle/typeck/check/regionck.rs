@@ -320,7 +320,10 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
         match resolve_type(self.fcx.infcx(), None, unresolved_ty,
                            resolve_and_force_all_but_regions) {
             Ok(t) => t,
-            Err(_) => ty::mk_err()
+            Err(e) => {
+                debug!("Rcx::resolved_type resolve_type err: {}", e);
+                ty::mk_err()
+            }
         }
     }
 
@@ -466,7 +469,12 @@ impl<'fcx, 'tcx> mc::Typer<'tcx> for Rcx<'fcx, 'tcx> {
 
     fn node_ty(&self, id: ast::NodeId) -> mc::McResult<Ty<'tcx>> {
         let t = self.resolve_node_type(id);
-        if ty::type_is_error(t) {Err(())} else {Ok(t)}
+        if ty::type_is_error(t) {
+            debug!("Rcx::node_ty Errd because type_is_error t: {}", t);
+            Err(())
+        } else {
+            Ok(t)
+        }
     }
 
     fn node_method_ty(&self, method_call: MethodCall) -> Option<Ty<'tcx>> {
@@ -583,6 +591,8 @@ fn constrain_bindings_in_pat(pat: &ast::Pat, rcx: &mut Rcx) {
             rcx, infer::BindingTypeIsNotValidAtDecl(span),
             id, var_region);
 
+        debug!("constrain_bindings_in_pat pat.id: {} calling var_scope(id: {})",
+               pat.id, id);
         let var_scope = tcx.region_maps.var_scope(id);
         let typ = rcx.resolve_node_type(id);
         check_safety_of_destructor_if_necessary(rcx, typ, span, var_scope);
@@ -1309,6 +1319,8 @@ fn check_safety_of_destructor_if_necessary<'a, 'tcx>(rcx: &mut Rcx<'a, 'tcx>,
 fn check_safety_of_rvalue_destructor_if_necessary<'a, 'tcx>(rcx: &mut Rcx<'a, 'tcx>,
                                                             cmt: mc::cmt<'tcx>,
                                                             span: Span) {
+    debug!("check_safety_of_rvalue_destructor_if_necessary cmt: {}",
+           cmt.repr(rcx.tcx()));
     match cmt.cat {
         mc::cat_rvalue(region) => {
             match region {
