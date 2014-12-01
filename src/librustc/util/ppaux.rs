@@ -855,7 +855,7 @@ impl<'tcx> Repr<'tcx> for ty::Region {
             }
 
             ty::ReFunction => {
-                "ReStatic".to_string()
+                "ReFunction".to_string()
             }
 
             ty::ReStatic => {
