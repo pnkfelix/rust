@@ -3826,9 +3826,15 @@ fn check_expr_with_unifier<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                   // places: the exchange heap and the managed heap.
                   let definition = lookup_def(fcx, path.span, place.id);
                   let def_id = definition.def_id();
-                  let referent_ty = fcx.expr_ty(&**subexpr);
+
+                  // FIXME (pnkfelix): prototype code courtesy of eddyb for
+                  // estimating impact of inferring type of `box <expr>`
+                  // from expression's context.
+
+                  // let referent_ty = fcx.expr_ty(&**subexpr);
                   if tcx.lang_items.exchange_heap() == Some(def_id) {
-                      fcx.write_ty(id, ty::mk_uniq(tcx, referent_ty));
+                      // fcx.write_ty(id, ty::mk_uniq(tcx, referent_ty));
+                      fcx.write_ty(id, fcx.infcx().next_ty_var());
                       checked = true
                   }
               }
@@ -3907,7 +3913,22 @@ fn check_expr_with_unifier<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
         if !ty::type_is_error(oprnd_t) {
             match unop {
                 ast::UnUniq => {
-                    oprnd_t = ty::mk_uniq(tcx, oprnd_t);
+                    // FIXME (pnkfelix): prototype code courtesy of eddyb for
+                    // estimating impact of inferring type of `box <expr>`
+                    // from expression's context.
+
+                    // oprnd_t = ty::mk_uniq(tcx, oprnd_t);
+                    let expected_uniq = expected.map_to_option(fcx, |sty| {
+                        match *sty {
+                            ty::ty_uniq(_) => Some(true),
+                            _ => None
+                        }
+                    }).unwrap_or(false);
+                    oprnd_t = if expected_uniq {
+                        ty::mk_uniq(tcx, oprnd_t)
+                    } else {
+                        fcx.infcx().next_ty_var()
+                    };
                 }
                 ast::UnDeref => {
                     oprnd_t = structurally_resolved_type(fcx, expr.span, oprnd_t);
