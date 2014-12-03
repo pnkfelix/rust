@@ -389,7 +389,10 @@ impl<E, S: Encoder<E>, Sized? T: Encodable<S, E>> Encodable<S, E> for Box<T> {
 
 impl<E, D:Decoder<E>, T: Decodable<D, E>> Decodable<D, E> for Box<T> {
     fn decode(d: &mut D) -> Result<Box<T>, E> {
-        Ok(box try!(Decodable::decode(d)))
+        // FIXME (pnkfelix): I am again surprised that this type
+        // instantiation is necessary. Maybe type inference does not
+        // unify within the arguments to parameterized types?
+        Ok::<Box<_>, _>(box try!(Decodable::decode(d)))
     }
 }
 

@@ -402,12 +402,12 @@ fn init() {
 
         assert!(FILTER.is_null());
         match filter {
-            Some(f) => FILTER = mem::transmute(box f),
+            Some(f) => FILTER = mem::transmute::<Box<_>, _>(box f),
             None => {}
         }
 
         assert!(DIRECTIVES.is_null());
-        DIRECTIVES = mem::transmute(box directives);
+        DIRECTIVES = mem::transmute::<Box<_>, _>(box directives);
 
         // Schedule the cleanup for the globals for when the runtime exits.
         rt::at_exit(proc() {
