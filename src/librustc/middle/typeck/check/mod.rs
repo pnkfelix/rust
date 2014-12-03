@@ -1406,7 +1406,7 @@ fn check_cast(fcx: &FnCtxt,
 
     // Supply the type as a hint so as to influence integer
     // literals and other things that might care.
-    check_expr_with_expectation(fcx, e, ExpectCastableToType(t_1))
+    check_expr_with_expectation(fcx, e, ExpectCastableToType(t_1));
 
     let t_e = fcx.expr_ty(e);
 
