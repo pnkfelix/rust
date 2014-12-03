@@ -1396,13 +1396,17 @@ fn check_cast(fcx: &FnCtxt,
     let t_1 = fcx.to_ty(t);
     let t_1 = structurally_resolved_type(fcx, span, t_1);
 
-    if ty::type_is_scalar(t_1) {
-        // Supply the type as a hint so as to influence integer
-        // literals and other things that might care.
-        check_expr_with_expectation(fcx, e, ExpectCastableToType(t_1))
-    } else {
-        check_expr(fcx, e)
-    }
+    // FIXME (pnkfelix): prototype code courtesy of eddyb for
+    // estimating impact of inferring type of `box <expr>` from
+    // expression's context.
+    //
+    // In this case, the change was to remove treating a scalar `t_1`
+    // as a special case, and instead every type goes through the
+    // check_expr_with_expectation path.
+
+    // Supply the type as a hint so as to influence integer
+    // literals and other things that might care.
+    check_expr_with_expectation(fcx, e, ExpectCastableToType(t_1))
 
     let t_e = fcx.expr_ty(e);
 
