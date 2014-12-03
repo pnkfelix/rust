@@ -13,6 +13,8 @@
 //! Concurrency-enabled mechanisms for sharing mutable and/or immutable state
 //! between tasks.
 
+use boxed::Box;
+
 use core::atomic;
 use core::clone::Clone;
 use core::fmt::{mod, Show};
@@ -86,7 +88,7 @@ impl<T: Sync + Send> Arc<T> {
     pub fn new(data: T) -> Arc<T> {
         // Start the weak pointer count as 1 which is the weak pointer that's
         // held by all the strong pointers (kinda), see std/rc.rs for more info
-        let x = box ArcInner {
+        let x: Box<_> = box ArcInner {
             strong: atomic::AtomicUint::new(1),
             weak: atomic::AtomicUint::new(1),
             data: data,

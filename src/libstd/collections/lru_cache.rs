@@ -107,7 +107,7 @@ impl<K: Hash + Eq, V> LruCache<K, V> {
         let cache = LruCache {
             map: HashMap::new(),
             max_size: capacity,
-            head: unsafe{ mem::transmute(box mem::uninitialized::<LruEntry<K, V>>()) },
+            head: unsafe{ mem::transmute::<Box<_>, _>(box mem::uninitialized::<LruEntry<K, V>>()) },
         };
         unsafe {
             (*cache.head).next = cache.head;
@@ -145,7 +145,7 @@ impl<K: Hash + Eq, V> LruCache<K, V> {
                 (node_ptr, None, Some(old_val))
             }
             None => {
-                let mut node = box LruEntry::new(k, v);
+                let mut node: Box<_> = box LruEntry::new(k, v);
                 let node_ptr: *mut LruEntry<K, V> = &mut *node;
                 (node_ptr, Some(node), None)
             }

@@ -110,7 +110,7 @@ impl<T: Send> Producer<T> {
 impl<T: Send> Node<T> {
     fn new() -> *mut Node<T> {
         unsafe {
-            mem::transmute(box Node {
+            mem::transmute::<Box<_>, _>(box Node {
                 value: None,
                 next: AtomicPtr::new(0 as *mut Node<T>),
             })

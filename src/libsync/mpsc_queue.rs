@@ -78,7 +78,7 @@ pub struct Queue<T> {
 
 impl<T> Node<T> {
     unsafe fn new(v: Option<T>) -> *mut Node<T> {
-        mem::transmute(box Node {
+        mem::transmute::<Box<_>, _>(box Node {
             next: AtomicPtr::new(0 as *mut Node<T>),
             value: v,
         })

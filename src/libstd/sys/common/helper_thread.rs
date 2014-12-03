@@ -72,7 +72,7 @@ impl<M: Send> Helper<M> {
             let _guard = self.lock.lock();
             if !*self.initialized.get() {
                 let (tx, rx) = channel();
-                *self.chan.get() = mem::transmute(box tx);
+                *self.chan.get() = mem::transmute::<Box<_>, _>(box tx);
                 let (receive, send) = helper_signal::new();
                 *self.signal.get() = send as uint;
 

@@ -145,7 +145,7 @@ pub fn start(argc: int, argv: *const *const u8, main: proc()) -> int {
     init(argc, argv);
     let mut exit_code = None;
     let mut main = Some(main);
-    let mut task = box Task::new(Some((my_stack_bottom, my_stack_top)),
+    let mut task : Box<_> = box Task::new(Some((my_stack_bottom, my_stack_top)),
                                  Some(rustrt::thread::main_guard_page()));
     task.name = Some(str::Slice("<main>"));
     drop(task.run(|| {

@@ -124,7 +124,7 @@ impl Thread<()> {
         // We need the address of the packet to fill in to be stable so when
         // `main` fills it in it's still valid, so allocate an extra box to do
         // so.
-        let packet = box None;
+        let packet : Box<_> = box None;
         let packet2: *mut Option<T> = unsafe {
             *mem::transmute::<&Box<Option<T>>, *const *mut Option<T>>(&packet)
         };

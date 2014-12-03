@@ -181,7 +181,7 @@ fn rust_panic(cause: Box<Any + Send>) -> ! {
     rtdebug!("begin_unwind()");
 
     unsafe {
-        let exception = box Exception {
+        let exception : Box<_> = box Exception {
             uwe: uw::_Unwind_Exception {
                 exception_class: rust_exception_class(),
                 exception_cleanup: exception_cleanup,
@@ -525,7 +525,14 @@ pub fn begin_unwind_fmt(msg: &fmt::Arguments, file_line: &(&'static str, uint)) 
     let mut v = Vec::new();
     let _ = write!(&mut VecWriter { v: &mut v }, "{}", msg);
 
-    let msg = box String::from_utf8_lossy(v.as_slice()).into_string();
+    // FIXME (pnkfelix): Try removing type hint after putting in
+    // trait-based type inference for `box <expr>`. Also, must put in
+    // a unit test for this scenario (i.e. infer `Box<Concrete>` in
+    // execution context of `box <expr_Concrete>` expecting type
+    // `Box<Trait>`
+
+    // NOTE(eddyb) causes LLVM assertion without type hint.
+    let msg: Box<String> = box String::from_utf8_lossy(v.as_slice()).into_string();
     begin_unwind_inner(msg, file_line)
 }
 

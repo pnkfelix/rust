@@ -164,7 +164,11 @@ impl<T: Send> BufferPool<T> {
             let mut pool = self.pool.lock();
             match pool.iter().position(|x| x.size() >= (1 << bits)) {
                 Some(i) => pool.remove(i).unwrap(),
-                None => box Buffer::new(bits)
+                // FIXME (pnkfelix): Figure out whether there is a way
+                // to make the `box <expr>` changes to type inference
+                // succiently smart to handle this case without the
+                // (added) hint below.
+                None => box Buffer::<T>::new(bits)
             }
         }
     }
@@ -317,7 +321,7 @@ impl<T: Send> Deque<T> {
     // continue to be read after we flag this buffer for reclamation.
     unsafe fn swap_buffer(&self, b: int, old: *mut Buffer<T>,
                           buf: Buffer<T>) -> *mut Buffer<T> {
-        let newbuf: *mut Buffer<T> = transmute(box buf);
+        let newbuf: *mut Buffer<T> = transmute::<Box<_>, _>(box buf);
         self.array.store(newbuf, SeqCst);
         let ss = (*newbuf).size();
         self.bottom.store(b + ss, SeqCst);

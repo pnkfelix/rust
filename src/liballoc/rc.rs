@@ -147,6 +147,8 @@
 
 #![stable]
 
+use boxed::Box;
+
 use core::cell::Cell;
 use core::clone::Clone;
 use core::cmp::{PartialEq, PartialOrd, Eq, Ord, Ordering};
@@ -190,7 +192,7 @@ impl<T> Rc<T> {
                 // destructor never frees the allocation while the
                 // strong destructor is running, even if the weak
                 // pointer is stored inside the strong one.
-                _ptr: transmute(box RcBox {
+                _ptr: transmute::<Box<_>, _>(box RcBox {
                     value: value,
                     strong: Cell::new(1),
                     weak: Cell::new(1)

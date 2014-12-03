@@ -123,7 +123,7 @@ impl Task {
     pub fn spawn(opts: TaskOpts, f: proc():Send) {
         let TaskOpts { name, stack_size, on_exit } = opts;
 
-        let mut task = box Task::new(None, None);
+        let mut task : Box<_> = box Task::new(None, None);
         task.name = name;
         task.death.on_exit = on_exit;
 
@@ -515,7 +515,7 @@ impl BlockedTask {
                 blocked_task_ptr
             }
             Shared(arc) => {
-                let blocked_task_ptr: uint = mem::transmute(box arc);
+                let blocked_task_ptr: uint = mem::transmute::<Box<_>, _>(box arc);
                 rtassert!(blocked_task_ptr & 0x1 == 0);
                 blocked_task_ptr | 0x1
             }
