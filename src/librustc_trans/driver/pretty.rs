@@ -76,7 +76,7 @@ pub fn parse_pretty(sess: &Session, name: &str) -> (PpMode, Option<UserIdentifie
 
         "flowgraph" |
         "graph,controlflow"         => PpmGraph(FlowGraph),
-        "graph,regions_constraints" => PpmGraph(RegionConstraintsGraph),
+        "graph,region_constraints" => PpmGraph(RegionConstraintsGraph),
         _ => {
             sess.fatal(format!(
                 "argument to `pretty` must be one of `normal`, \
