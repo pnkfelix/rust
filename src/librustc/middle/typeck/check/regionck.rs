@@ -147,23 +147,31 @@ use std::collections::hash_map::{Vacant, Occupied};
 ///////////////////////////////////////////////////////////////////////////
 // PUBLIC ENTRY POINTS
 
-pub fn regionck_expr(fcx: &FnCtxt, e: &ast::Expr) {
+pub fn regionck_expr_build_constraints(fcx: &FnCtxt, e: &ast::Expr) {
     let mut rcx = Rcx::new(fcx, e.id);
     if fcx.err_count_since_creation() == 0 {
         // regionck assumes typeck succeeded
         rcx.visit_expr(e);
         rcx.visit_region_obligations(e.id);
     }
+}
+
+pub fn regionck_expr(fcx: &FnCtxt, e: &ast::Expr) {
+    regionck_expr_build_constraints(fcx, e);
     fcx.infcx().resolve_regions_and_report_errors();
+}
+
+pub fn regionck_item_build_constraints(fcx: &FnCtxt, item: &ast::Item) {
+    let mut rcx = Rcx::new(fcx, item.id);
+    rcx.visit_region_obligations(item.id);
 }
 
 pub fn regionck_item(fcx: &FnCtxt, item: &ast::Item) {
-    let mut rcx = Rcx::new(fcx, item.id);
-    rcx.visit_region_obligations(item.id);
+    regionck_item_build_constraints(fcx, item);
     fcx.infcx().resolve_regions_and_report_errors();
 }
 
-pub fn regionck_fn(fcx: &FnCtxt, id: ast::NodeId, blk: &ast::Block) {
+pub fn regionck_fn_build_constraints(fcx: &FnCtxt, id: ast::NodeId, blk: &ast::Block) {
     let mut rcx = Rcx::new(fcx, blk.id);
     if fcx.err_count_since_creation() == 0 {
         // regionck assumes typeck succeeded
@@ -173,7 +181,10 @@ pub fn regionck_fn(fcx: &FnCtxt, id: ast::NodeId, blk: &ast::Block) {
     // Region checking a fn can introduce new trait obligations,
     // particularly around closure bounds.
     vtable::select_all_fcx_obligations_or_error(fcx);
+}
 
+pub fn regionck_fn(fcx: &FnCtxt, id: ast::NodeId, blk: &ast::Block) {
+    regionck_fn_build_constraints(fcx, id, blk);
     fcx.infcx().resolve_regions_and_report_errors();
 }
 
