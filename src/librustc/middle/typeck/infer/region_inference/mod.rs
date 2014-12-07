@@ -994,6 +994,14 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
         }
     }
 
+    pub fn constraints(&self) -> Vec<(Constraint, SubregionOrigin<'tcx>)> {
+        let mut v = vec![];
+        for (constraint, origin) in self.constraints.borrow().iter() {
+            v.push((*constraint, origin.clone()));
+        }
+        v
+    }
+
     fn expansion(&self, var_data: &mut [VarData]) {
         self.iterate_until_fixed_point("Expansion", |constraint| {
             debug!("expansion: constraint={} origin={}",
