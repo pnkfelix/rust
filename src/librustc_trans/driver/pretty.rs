@@ -13,6 +13,7 @@
 pub use self::UserIdentifiedItem::*;
 pub use self::PpSourceMode::*;
 pub use self::PpMode::*;
+pub use self::PpGraphMode::*;
 use self::NodesMatchingUII::*;
 
 use back::link;
@@ -50,9 +51,15 @@ pub enum PpSourceMode {
 }
 
 #[deriving(PartialEq, Show)]
+pub enum PpGraphMode {
+    FlowGraph,
+    RegionConstraintsGraph,
+}
+
+#[deriving(PartialEq, Show)]
 pub enum PpMode {
     PpmSource(PpSourceMode),
-    PpmFlowGraph,
+    PpmGraph(PpGraphMode),
 }
 
 pub fn parse_pretty(sess: &Session, name: &str) -> (PpMode, Option<UserIdentifiedItem>) {
@@ -66,7 +73,8 @@ pub fn parse_pretty(sess: &Session, name: &str) -> (PpMode, Option<UserIdentifie
         "expanded,identified" => PpmSource(PpmExpandedIdentified),
         "expanded,hygiene" => PpmSource(PpmExpandedHygiene),
         "identified"   => PpmSource(PpmIdentified),
-        "flowgraph"    => PpmFlowGraph,
+        "graph,controlflow"    => PpmGraph(FlowGraph),
+        "graph,regions_constraints" => PpmGraph(RegionConstraintsGraph),
         _ => {
             sess.fatal(format!(
                 "argument to `pretty` must be one of `normal`, \
@@ -390,7 +398,8 @@ fn needs_ast_map(ppm: &PpMode, opt_uii: &Option<UserIdentifiedItem>) -> bool {
         PpmSource(PpmExpandedIdentified) |
         PpmSource(PpmExpandedHygiene) |
         PpmSource(PpmTyped) |
-        PpmFlowGraph => true
+        PpmGraph(FlowGraph) |
+        PpmGraph(RegionConstraintsGraph) => true
     }
 }
 
@@ -403,7 +412,8 @@ fn needs_expansion(ppm: &PpMode) -> bool {
         PpmSource(PpmExpandedIdentified) |
         PpmSource(PpmExpandedHygiene) |
         PpmSource(PpmTyped) |
-        PpmFlowGraph => true
+        PpmGraph(FlowGraph) |
+        PpmGraph(RegionConstraintsGraph) => true
     }
 }
 
@@ -495,43 +505,51 @@ pub fn pretty_print_input(sess: Session,
                     pp::eof(&mut pp_state.s)
                 }),
 
-        (PpmFlowGraph, opt_uii) => {
-            debug!("pretty printing flow graph for {}", opt_uii);
+        (PpmGraph(graph_mode), opt_uii) => {
+            debug!("pretty printing graph for {}", opt_uii);
             let uii = opt_uii.unwrap_or_else(|| {
-                sess.fatal(format!("`pretty flowgraph=..` needs NodeId (int) or
+                sess.fatal(format!("`pretty graph=..` needs NodeId (int) or
                                      unique path suffix (b::c::d)").as_slice())
 
             });
-            let ast_map = ast_map.expect("--pretty flowgraph missing ast_map");
+            let ast_map = ast_map.expect("--pretty graph missing ast_map");
             let nodeid = uii.to_one_node_id("--pretty", &sess, &ast_map);
 
             let node = ast_map.find(nodeid).unwrap_or_else(|| {
-                sess.fatal(format!("--pretty flowgraph couldn't find id: {}",
+                sess.fatal(format!("--pretty graph couldn't find id: {}",
                                    nodeid).as_slice())
             });
 
-            let code = blocks::Code::from_node(node);
-            match code {
-                Some(code) => {
-                    let variants = gather_flowgraph_variants(&sess);
-                    let analysis = driver::phase_3_run_analysis_passes(sess, ast_map,
-                                                                       &type_arena, id);
-                    print_flowgraph(variants, analysis, code, out)
-                }
-                None => {
-                    let message = format!("--pretty=flowgraph needs \
-                                           block, fn, or method; got {}",
-                                          node);
+            match graph_mode {
+                FlowGraph => {
+                    let code = blocks::Code::from_node(node);
+                    match code {
+                        Some(code) => {
+                            let variants = gather_flowgraph_variants(&sess);
+                            let analysis = driver::phase_3_run_analysis_passes(sess, ast_map,
+                                                                               &type_arena, id);
+                            print_flowgraph(variants, analysis, code, out)
+                        }
+                        None => {
+                            let message = format!("--pretty=flowgraph needs \
+                                                   block, fn, or method; got {}",
+                                                  node);
 
-                    // point to what was found, if there's an
-                    // accessible span.
-                    match ast_map.opt_span(nodeid) {
-                        Some(sp) => sess.span_fatal(sp, message.as_slice()),
-                        None => sess.fatal(message.as_slice())
+                            // point to what was found, if there's an
+                            // accessible span.
+                            match ast_map.opt_span(nodeid) {
+                                Some(sp) => sess.span_fatal(sp, message.as_slice()),
+                                None => sess.fatal(message.as_slice())
+                            }
+                        }
                     }
+                }
+                RegionConstraintsGraph => {
+                    unimplemented!()
                 }
             }
         }
+
     }.unwrap()
 }
 
