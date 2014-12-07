@@ -71,14 +71,16 @@ pub fn parse_pretty(sess: &Session, name: &str) -> (PpMode, Option<UserIdentifie
         "expanded"     => PpmSource(PpmExpanded),
         "typed"        => PpmSource(PpmTyped),
         "expanded,identified" => PpmSource(PpmExpandedIdentified),
-        "expanded,hygiene" => PpmSource(PpmExpandedHygiene),
-        "identified"   => PpmSource(PpmIdentified),
-        "graph,controlflow"    => PpmGraph(FlowGraph),
+        "expanded,hygiene"    => PpmSource(PpmExpandedHygiene),
+        "identified"          => PpmSource(PpmIdentified),
+
+        "flowgraph" |
+        "graph,controlflow"         => PpmGraph(FlowGraph),
         "graph,regions_constraints" => PpmGraph(RegionConstraintsGraph),
         _ => {
             sess.fatal(format!(
                 "argument to `pretty` must be one of `normal`, \
-                 `expanded`, `flowgraph=<nodeid>`, `typed`, `identified`, \
+                 `expanded`, `graph,<graphtype>=<nodeid>`, `typed`, `identified`, \
                  or `expanded,identified`; got {}", name).as_slice());
         }
     };
