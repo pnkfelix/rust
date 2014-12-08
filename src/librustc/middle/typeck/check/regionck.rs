@@ -133,6 +133,7 @@ use middle::typeck::infer::resolve_type;
 use middle::typeck::infer;
 use middle::typeck::MethodCall;
 use middle::pat_util;
+use session::config::{mod, PrintRequest, PrintRequestKind};
 use util::nodemap::{DefIdMap, NodeMap, FnvHashMap};
 use util::ppaux::{ty_to_string, Repr};
 
@@ -185,6 +186,17 @@ pub fn regionck_fn_build_constraints(fcx: &FnCtxt, id: ast::NodeId, blk: &ast::B
 
 pub fn regionck_fn(fcx: &FnCtxt, id: ast::NodeId, blk: &ast::Block) {
     regionck_fn_build_constraints(fcx, id, blk);
+    let ref print_requests = fcx.infcx().tcx.sess.opts.print_requests;
+    if let Some(&PrintRequest { kind: PrintRequestKind::RegionConstraintsGraphviz,
+                                ref output_file }) = print_requests.borrow().get(&id) {
+        match fcx.infcx().dump_region_constraints_to(output_file.as_slice()) {
+            Ok(()) => {}
+            Err(e) => {
+                let msg = format!("io error dumping region constraints: {}", e);
+                fcx.tcx().sess.err(msg.as_slice())
+            }
+        }
+    }
     fcx.infcx().resolve_regions_and_report_errors();
 }
 

@@ -33,13 +33,15 @@ use util::nodemap::{FnvHashMap, FnvHashSet};
 use util::ppaux::Repr;
 
 use std::cell::{Cell, RefCell};
+use std::io;
 use std::uint;
 use syntax::ast;
 
 mod doc;
+mod graphviz;
 
 // A constraint that influences the inference process.
-#[deriving(PartialEq, Eq, Hash)]
+#[deriving(PartialEq, Eq, Hash, Show)]
 pub enum Constraint {
     // One region variable is subregion of another
     ConstrainVarSubVar(RegionVid, RegionVid),
@@ -932,6 +934,11 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
             Some(r_id) if scope_b == r_id => Ok(ReScope(scope_a)),
             _ => Err(ty::terr_regions_no_overlap(region_a, region_b))
         }
+    }
+
+    pub fn dump_region_constraints_to(&self, path: &str) -> io::IoResult<()> {
+        let constraints = &*self.constraints.borrow();
+        graphviz::dump_region_constraints_to(self.tcx, constraints, path)
     }
 }
 

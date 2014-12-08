@@ -73,13 +73,13 @@ pub enum OutputType {
     OutputTypeExe,
 }
 
-#[deriving(Clone, PartialEq, PartialOrd, Ord, Eq)]
+#[deriving(Clone, PartialEq, PartialOrd, Ord, Eq, Show)]
 pub struct PrintRequest {
-    output_file: String,
-    kind: PrintRequestKind,
+    pub output_file: String,
+    pub kind: PrintRequestKind,
 }
 
-#[deriving(Clone, PartialEq, PartialOrd, Ord, Eq)]
+#[deriving(Clone, PartialEq, PartialOrd, Ord, Eq, Show)]
 pub enum PrintRequestKind {
     RegionConstraintsGraphviz,
 }
@@ -834,6 +834,7 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
 
     let mut print_requests = NodeMap::new();
     for req in matches.opt_strs("print-request").into_iter() {
+        debug!("process print-request: {}", req);
         fn need(which: &str) -> String {
             format!("need {} in --print-request <id>=<kind>:<path>", which)
         }
@@ -852,7 +853,9 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
         let kind: PrintRequestKind = from_str(kind)
             .expect(must_be("<kind>", "print-request").as_slice());
 
-        print_requests.insert(key, PrintRequest { output_file: file, kind: kind });
+        let req = PrintRequest { output_file: file, kind: kind };
+        debug!("insert print-request: {}", req);
+        print_requests.insert(key, req);
     }
 
     let cg = build_codegen_options(matches);

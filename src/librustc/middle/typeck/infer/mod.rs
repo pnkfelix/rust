@@ -35,6 +35,7 @@ use middle::ty::replace_late_bound_regions;
 use middle::ty::{mod, Ty};
 use middle::ty_fold::{HigherRankedFoldable, TypeFolder, TypeFoldable};
 use std::cell::{RefCell};
+use std::io;
 use std::rc::Rc;
 use syntax::ast;
 use syntax::codemap;
@@ -707,6 +708,10 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
             };
             self.sub(a_is_expected, trace).trait_refs(&*a, &*b).to_ures()
         })
+    }
+
+    pub fn dump_region_constraints_to(&self, path: &str) -> io::IoResult<()> {
+        self.region_vars.dump_region_constraints_to(path)
     }
 }
 
