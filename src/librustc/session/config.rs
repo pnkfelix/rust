@@ -19,6 +19,7 @@ pub use self::OutputType::*;
 pub use self::DebugInfoLevel::*;
 
 use session::{early_error, early_warn, Session};
+use util::nodemap::NodeMap;
 
 use rustc_back::target::Target;
 use lint;
@@ -38,6 +39,7 @@ use getopts::{optopt, optmulti, optflag, optflagopt};
 use getopts;
 use std::cell::{RefCell};
 use std::fmt;
+use std::str::FromStr;
 
 use llvm;
 
@@ -69,6 +71,36 @@ pub enum OutputType {
     OutputTypeLlvmAssembly,
     OutputTypeObject,
     OutputTypeExe,
+}
+
+#[deriving(Clone, PartialEq, PartialOrd, Ord, Eq)]
+pub struct PrintRequest {
+    output_file: String,
+    kind: PrintRequestKind,
+}
+
+#[deriving(Clone, PartialEq, PartialOrd, Ord, Eq)]
+pub enum PrintRequestKind {
+    RegionConstraintsGraphviz,
+}
+
+impl FromStr for PrintRequestKind {
+    fn from_str(s: &str) -> Option<PrintRequestKind> {
+        let ret = match s {
+            "region_constraints" => PrintRequestKind::RegionConstraintsGraphviz,
+            _ => { return None }
+        };
+        assert_eq!(ret.opt_name(), s);
+        Some(ret)
+    }
+}
+
+impl PrintRequestKind {
+    pub fn opt_name(&self) -> &'static str {
+        match *self {
+            PrintRequestKind::RegionConstraintsGraphviz => "region_constraints",
+        }
+    }
 }
 
 #[deriving(Clone)]
@@ -104,6 +136,8 @@ pub struct Options {
     pub write_dependency_info: (bool, Option<Path>),
     /// Crate id-related things to maybe print. It's (crate_name, crate_file_name).
     pub print_metas: (bool, bool),
+    /// Maps node-ids to requested print outs of compiler internal structures.
+    pub print_requests: RefCell<NodeMap<PrintRequest>>,
     pub cg: CodegenOptions,
     pub color: ColorConfig,
     pub externs: HashMap<String, Vec<String>>,
@@ -148,6 +182,7 @@ pub fn basic_options() -> Options {
         debugging_opts: 0,
         write_dependency_info: (false, None),
         print_metas: (false, false),
+        print_requests: RefCell::new(NodeMap::new()),
         cg: basic_codegen_options(),
         color: Auto,
         externs: HashMap::new(),
@@ -567,6 +602,8 @@ pub fn optgroups() -> Vec<getopts::OptGroup> {
     vec!(
         optflag("h", "help", "Display this message"),
         optmulti("", "cfg", "Configure the compilation environment", "SPEC"),
+        optmulti("", "print-request", "Print rustc internal structures for node-id",
+                 "ID=KIND:PATH"),
         optmulti("L", "",   "Add a directory to the library search path", "PATH"),
         optmulti("l", "",   "Link the generated crate(s) to the specified native
                              library NAME. The optional KIND can be one of,
@@ -794,6 +831,30 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
         early_warn("the --crate-file-name argument has been renamed to \
                     --print-file-name");
     }
+
+    let mut print_requests = NodeMap::new();
+    for req in matches.opt_strs("print-request").into_iter() {
+        fn need(which: &str) -> String {
+            format!("need {} in --print-request <id>=<kind>:<path>", which)
+        }
+        fn must_be(which: &str, expect: &str) -> String {
+            format!("unknown {} (must be {}) in --print-request <id>=<kind>:<path>",
+                    which, expect)
+        }
+        let mut iter = req.as_slice().splitn(1, '=');
+        let key = iter.next().expect(need("<id>").as_slice());
+        let value = iter.next().expect(need("<kind>").as_slice());
+        let mut iter = value.as_slice().splitn(1, ':');
+        let kind = iter.next().expect(need("<kind>").as_slice());
+        let file = iter.next().expect(need("<path>").as_slice()).to_string();
+        let key: ast::NodeId = from_str(key)
+            .expect(must_be("<id>", "uint").as_slice());
+        let kind: PrintRequestKind = from_str(kind)
+            .expect(must_be("<kind>", "print-request").as_slice());
+
+        print_requests.insert(key, PrintRequest { output_file: file, kind: kind });
+    }
+
     let cg = build_codegen_options(matches);
 
     if !cg.remark.is_empty() && debuginfo == NoDebugInfo {
@@ -853,6 +914,7 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
         debugging_opts: debugging_opts,
         write_dependency_info: write_dependency_info,
         print_metas: print_metas,
+        print_requests: RefCell::new(print_requests),
         cg: cg,
         color: color,
         externs: externs,
