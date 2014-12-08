@@ -273,7 +273,7 @@ pub fn add_new_extension<'cx>(cx: &'cx mut ExtCtxt,
         _ => cx.span_bug(sp, "wrong-structured rhs")
     };
 
-    let exp = box MacroRulesMacroExpander {
+    let exp : Box<MacroRulesMacroExpander> = box MacroRulesMacroExpander {
         name: name,
         lhses: lhses,
         rhses: rhses,

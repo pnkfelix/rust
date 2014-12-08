@@ -1349,7 +1349,7 @@ pub fn create_function_debug_context<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
     });
 
     // Initialize fn debug context (including scope map and namespace map)
-    let fn_debug_context = box FunctionDebugContextData {
+    let fn_debug_context : Box<_> = box FunctionDebugContextData {
         scope_map: RefCell::new(NodeMap::new()),
         fn_metadata: fn_metadata,
         argument_counter: Cell::new(1),

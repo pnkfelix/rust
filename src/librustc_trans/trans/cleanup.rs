@@ -295,7 +295,7 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
     fn schedule_lifetime_end(&self,
                              cleanup_scope: ScopeId,
                              val: ValueRef) {
-        let drop = box LifetimeEnd {
+        let drop : Box<_> = box LifetimeEnd {
             ptr: val,
         };
 
@@ -316,7 +316,7 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
          */
 
         if !ty::type_needs_drop(self.ccx.tcx(), ty) { return; }
-        let drop = box DropValue {
+        let drop : Box<_> = box DropValue {
             is_immediate: false,
             must_unwind: ty::type_needs_unwind_cleanup(self.ccx.tcx(), ty),
             val: val,
@@ -342,7 +342,7 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
          */
 
         if !ty::type_needs_drop(self.ccx.tcx(), ty) { return; }
-        let drop = box DropValue {
+        let drop : Box<_> = box DropValue {
             is_immediate: false,
             must_unwind: ty::type_needs_unwind_cleanup(self.ccx.tcx(), ty),
             val: val,
@@ -368,7 +368,7 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
          */
 
         if !ty::type_needs_drop(self.ccx.tcx(), ty) { return; }
-        let drop = box DropValue {
+        let drop : Box<_> = box DropValue {
             is_immediate: true,
             must_unwind: ty::type_needs_unwind_cleanup(self.ccx.tcx(), ty),
             val: val,
@@ -394,7 +394,7 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
          * operation.
          */
 
-        let drop = box FreeValue { ptr: val, heap: heap, content_ty: content_ty };
+        let drop : Box<_> = box FreeValue { ptr: val, heap: heap, content_ty: content_ty };
 
         debug!("schedule_free_value({}, val={}, heap={})",
                cleanup_scope,
@@ -415,7 +415,7 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
          * operation.
          */
 
-        let drop = box FreeSlice { ptr: val, size: size, align: align, heap: heap };
+        let drop : Box<_> = box FreeSlice { ptr: val, size: size, align: align, heap: heap };
 
         debug!("schedule_free_slice({}, val={}, heap={})",
                cleanup_scope,

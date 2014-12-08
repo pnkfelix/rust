@@ -1518,7 +1518,7 @@ pub fn process_crate(sess: &Session,
     out_name.push_str(".csv");
     root_path.push(out_name);
     let output_file = match File::create(&root_path) {
-        Ok(f) => box f,
+        Ok(f) => { let f: Box<_> = box f; f }
         Err(e) => {
             let disp = root_path.display();
             sess.fatal(format!("Could not open {}: {}", disp, e).as_slice());
