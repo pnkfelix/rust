@@ -83,7 +83,6 @@ use self::IsBinopAssignment::*;
 use self::TupleArgumentsFlag::*;
 
 use session::Session;
-use session::config::PrintRequest;
 use middle::{const_eval, def, traits};
 use middle::lang_items::IteratorItem;
 use middle::mem_categorization::{mod, McResult};

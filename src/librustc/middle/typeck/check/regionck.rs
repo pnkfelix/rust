@@ -133,7 +133,7 @@ use middle::typeck::infer::resolve_type;
 use middle::typeck::infer;
 use middle::typeck::MethodCall;
 use middle::pat_util;
-use session::config::{mod, PrintRequest, PrintRequestKind};
+use session::config::{PrintRequest, PrintRequestKind};
 use util::nodemap::{DefIdMap, NodeMap, FnvHashMap};
 use util::ppaux::{ty_to_string, Repr};
 
