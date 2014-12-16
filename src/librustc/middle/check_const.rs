@@ -109,11 +109,6 @@ fn check_expr(v: &mut CheckCrateVisitor, e: &ast::Expr) -> bool {
 
     match e.node {
         ast::ExprUnary(ast::UnDeref, _) => {}
-        ast::ExprUnary(ast::UnUniq, _) => {
-            span_err!(v.tcx.sess, e.span, E0010,
-                      "cannot do allocations in constant expressions");
-            return false;
-        }
         ast::ExprLit(ref lit) if ast_util::lit_is_str(&**lit) => {}
         ast::ExprBinary(..) | ast::ExprUnary(..) => {
             let method_call = ty::MethodCall::expr(e.id);

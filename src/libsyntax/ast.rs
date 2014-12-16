@@ -585,7 +585,6 @@ pub enum BinOp {
 
 #[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum UnOp {
-    UnUniq,
     UnDeref,
     UnNot,
     UnNeg

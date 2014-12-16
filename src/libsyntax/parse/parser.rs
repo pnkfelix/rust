@@ -58,7 +58,7 @@ use ast::{TupleVariantKind, Ty, Ty_, TypeBinding};
 use ast::{TypeField, TyFixedLengthVec, TyClosure, TyBareFn};
 use ast::{TyTypeof, TyInfer, TypeMethod};
 use ast::{TyParam, TyParamBound, TyParen, TyPath, TyPolyTraitRef, TyPtr, TyQPath};
-use ast::{TyRptr, TyTup, TyU32, TyVec, UnUniq};
+use ast::{TyRptr, TyTup, TyU32, TyVec};
 use ast::{TypeImplItem, TypeTraitItem, Typedef, UnboxedClosureKind};
 use ast::{UnnamedField, UnsafeBlock};
 use ast::{ViewItem, ViewItem_, ViewItemExternCrate, ViewItemUse};
@@ -2862,7 +2862,7 @@ impl<'a> Parser<'a> {
 
             let e = self.parse_prefix_expr();
             hi = e.span.hi;
-            ex = self.mk_unary(UnUniq, e);
+            ex = ExprBox(None, e);
           }
           token::Ident(_, _) => {
             if !self.token.is_keyword(keywords::Box) {
@@ -2904,7 +2904,7 @@ impl<'a> Parser<'a> {
             // FIXME (pnkfelix): After working out kinks with box
             // desugaring, should be `ExprBox(None, subexpression)`
             // instead.
-            ex = self.mk_unary(UnUniq, subexpression);
+            ex = ExprBox(None, subexpression);
           }
           _ => return self.parse_dot_or_call_expr()
         }

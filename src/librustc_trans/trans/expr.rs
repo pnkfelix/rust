@@ -1571,9 +1571,6 @@ fn trans_unary<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
             };
             immediate_rvalue_bcx(bcx, llneg, un_ty).to_expr_datumblock()
         }
-        ast::UnUniq => {
-            trans_uniq_expr(bcx, un_ty, sub_expr, expr_ty(bcx, sub_expr))
-        }
         ast::UnDeref => {
             let datum = unpack_datum!(bcx, trans(bcx, sub_expr));
             deref_once(bcx, expr, datum, method_call)

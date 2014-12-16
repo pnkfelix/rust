@@ -1390,7 +1390,6 @@ impl LintPass for UnusedAllocation {
 
     fn check_expr(&mut self, cx: &Context, e: &ast::Expr) {
         match e.node {
-            ast::ExprUnary(ast::UnUniq, _) => (),
             _ => return
         }
 

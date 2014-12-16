@@ -105,7 +105,6 @@ pub fn is_by_value_unop(u: UnOp) -> bool {
 
 pub fn unop_to_string(op: UnOp) -> &'static str {
     match op {
-      UnUniq => "box() ",
       UnDeref => "*",
       UnNot => "!",
       UnNeg => "-",

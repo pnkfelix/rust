@@ -731,9 +731,6 @@ fn resolve_local(visitor: &mut RegionResolutionVisitor, local: &ast::Local) {
                         visitor, &**subexpr, blk_id);
                 }
             }
-            ast::ExprUnary(ast::UnUniq, ref subexpr) => {
-                record_rvalue_scope_if_borrow_expr(visitor, &**subexpr, blk_id);
-            }
             ast::ExprCast(ref subexpr, _) |
             ast::ExprParen(ref subexpr) => {
                 record_rvalue_scope_if_borrow_expr(visitor, &**subexpr, blk_id)

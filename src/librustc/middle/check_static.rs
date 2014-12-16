@@ -220,8 +220,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for CheckStaticVisitor<'a, 'tcx> {
                               self.msg());
                 }
             },
-            ast::ExprBox(..) |
-            ast::ExprUnary(ast::UnUniq, _) => {
+            ast::ExprBox(..) => {
                 span_err!(self.tcx.sess, e.span, E0022,
                           "{} are not allowed to have custom pointers",
                           self.msg());

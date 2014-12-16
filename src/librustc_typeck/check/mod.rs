@@ -3596,20 +3596,28 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
           check_expr(fcx, &**subexpr);
 
           let mut checked = false;
-          opt_place.as_ref().map(|place| match place.node {
-              ast::ExprPath(ref path) => {
-                  // FIXME(pcwalton): For now we hardcode the two permissible
-                  // places: the exchange heap and the managed heap.
-                  let definition = lookup_def(fcx, path.span, place.id);
-                  let def_id = definition.def_id();
-                  let referent_ty = fcx.expr_ty(&**subexpr);
-                  if tcx.lang_items.exchange_heap() == Some(def_id) {
-                      fcx.write_ty(id, ty::mk_uniq(tcx, referent_ty));
-                      checked = true
+
+          let referent_ty = fcx.expr_ty(&**subexpr);
+
+          match *opt_place {
+              None => {
+                  fcx.write_ty(id, ty::mk_uniq(tcx, referent_ty));
+                  checked = true;
+              }
+
+              Some(ref place) => {
+                  if let ast::ExprPath(ref path) = place.node {
+                      // FIXME(pcwalton,pnkfelix): For now we hardcode
+                      // the one permissible place: the exchange heap.
+                      let definition = lookup_def(fcx, path.span, place.id);
+                      let def_id = definition.def_id();
+                      if tcx.lang_items.exchange_heap() == Some(def_id) {
+                          fcx.write_ty(id, ty::mk_uniq(tcx, referent_ty));
+                          checked = true
+                      }
                   }
               }
-              _ => {}
-          });
+          }
 
           if !checked {
               span_err!(tcx.sess, expr.span, E0066,
@@ -3654,24 +3662,10 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
         }
       }
       ast::ExprUnary(unop, ref oprnd) => {
-        let expected_inner = expected.map(fcx, |ty| {
-            match unop {
-                ast::UnUniq => match ty.sty {
-                    ty::ty_uniq(ty) => {
-                        ExpectHasType(ty)
-                    }
-                    _ => {
-                        NoExpectation
-                    }
-                },
-                ast::UnNot | ast::UnNeg => {
-                    expected
-                }
-                ast::UnDeref => {
-                    NoExpectation
-                }
-            }
-        });
+        let expected_inner = match unop {
+            ast::UnNot | ast::UnNeg => expected,
+            ast::UnDeref => NoExpectation,
+        };
         let lvalue_pref = match unop {
             ast::UnDeref => lvalue_pref,
             _ => NoPreference
@@ -3682,9 +3676,6 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
 
         if !ty::type_is_error(oprnd_t) {
             match unop {
-                ast::UnUniq => {
-                    oprnd_t = ty::mk_uniq(tcx, oprnd_t);
-                }
                 ast::UnDeref => {
                     oprnd_t = structurally_resolved_type(fcx, expr.span, oprnd_t);
                     oprnd_t = match ty::deref(oprnd_t, true) {
