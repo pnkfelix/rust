@@ -1375,43 +1375,6 @@ impl LintPass for UnusedMut {
 }
 
 declare_lint! {
-    UNUSED_ALLOCATION,
-    Warn,
-    "detects unnecessary allocations that can be eliminated"
-}
-
-#[deriving(Copy)]
-pub struct UnusedAllocation;
-
-impl LintPass for UnusedAllocation {
-    fn get_lints(&self) -> LintArray {
-        lint_array!(UNUSED_ALLOCATION)
-    }
-
-    fn check_expr(&mut self, cx: &Context, e: &ast::Expr) {
-        match e.node {
-            _ => return
-        }
-
-        if let Some(adjustment) = cx.tcx.adjustments.borrow().get(&e.id) {
-            if let ty::AdjustDerefRef(ty::AutoDerefRef { ref autoref, .. }) = *adjustment {
-                match autoref {
-                    &Some(ty::AutoPtr(_, ast::MutImmutable, None)) => {
-                        cx.span_lint(UNUSED_ALLOCATION, e.span,
-                                     "unnecessary allocation, use & instead");
-                    }
-                    &Some(ty::AutoPtr(_, ast::MutMutable, None)) => {
-                        cx.span_lint(UNUSED_ALLOCATION, e.span,
-                                     "unnecessary allocation, use &mut instead");
-                    }
-                    _ => ()
-                }
-            }
-        }
-    }
-}
-
-declare_lint! {
     MISSING_DOCS,
     Allow,
     "detects missing documentation for public members"

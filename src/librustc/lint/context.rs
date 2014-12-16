@@ -201,7 +201,6 @@ impl LintStore {
                      UnusedUnsafe,
                      UnsafeBlocks,
                      UnusedMut,
-                     UnusedAllocation,
                      Stability,
                      MissingCopyImplementations,
         );
@@ -237,7 +236,6 @@ impl LintStore {
         self.register_renamed("unnecessary_parens", "unused_parens");
         self.register_renamed("unnecessary_import_braces", "unused_import_braces");
         self.register_renamed("unsafe_block", "unsafe_blocks");
-        self.register_renamed("unnecessary_allocation", "unused_allocation");
         self.register_renamed("missing_doc", "missing_docs");
         self.register_renamed("unused_extern_crate", "unused_extern_crates");
         self.register_renamed("unnecessary_qualification", "unused_qualifications");
