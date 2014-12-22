@@ -88,6 +88,29 @@ pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
             })
         }
 
+        // FIXME (pnkfelix): The code below is TEMPORARY: it desugars
+        // `box () <expr>` (and `box <expr>`) to `Box::new(<expr>)`
+        ast::ExprBox(None, value_expr) => {
+            let value_expr = fld.fold_expr(value_expr);
+
+            let box_new : ast::Path = {
+                let idents = ["std", "boxed", "box_new"];
+                let segments : Vec<ast::PathSegment> =
+                    idents.iter().map(|s| {
+                        ast::PathSegment {
+                            identifier: token::str_to_ident(*s),
+                            parameters: ast::PathParameters::none(),
+                        }
+                    }).collect();
+                ast::Path {
+                    span: span, global: true, segments: segments,
+                }
+            };
+
+            fld.cx.expr_call(
+                span, fld.cx.expr_path(box_new), vec![value_expr])
+        }
+
         ast::ExprWhile(cond, body, opt_ident) => {
             let cond = fld.fold_expr(cond);
             let (body, opt_ident) = expand_loop_block(body, opt_ident, fld);

@@ -122,4 +122,5 @@ pub fn fixme_14344_be_sure_to_link_to_collections() {}
 mod std {
     pub use core::fmt;
     pub use core::option;
+    pub use boxed; // for expansion of `box <expr>` to function
 }

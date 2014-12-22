@@ -10,6 +10,8 @@
 
 //! A unique pointer type.
 
+use heap;
+
 use core::any::{Any, AnyRefExt};
 use core::clone::Clone;
 use core::cmp::{PartialEq, PartialOrd, Eq, Ord, Ordering};
@@ -19,6 +21,7 @@ use core::hash::{mod, Hash};
 use core::kinds::Sized;
 use core::mem;
 use core::option::Option;
+use core::ptr::{mod, RawPtr};
 use core::raw::TraitObject;
 use core::result::Result;
 use core::result::Result::{Ok, Err};
@@ -45,6 +48,36 @@ pub static HEAP: () = ();
 #[lang = "owned_box"]
 #[unstable = "custom allocators will add an additional type parameter (with default)"]
 pub struct Box<T>(*mut T);
+
+// FIXME (pnkfelix): attempting to add `fn new` as a static method
+// directly on `Box` yields "error: no base type found for inherent
+// implementation; implement a trait or new type instead [E0118]"
+//
+// (I assume that this is occurring due to `Box` being a lang-item.)
+//
+// For now, working around this via a top-level function; but the body
+// of this should eventually be ported to `Box::new`.
+#[experimental = "temp code for box expression to function call experiment"]
+pub fn box_new<T>(t: T) -> Box<T> {
+    {
+        let size = mem::size_of::<T>();
+        let align = mem::align_of::<T>();
+
+        unsafe {
+            let p = if size == 0 {
+                heap::EMPTY as *mut T
+            } else {
+                let p = heap::allocate(size, align) as *mut T;
+                if p.is_null() {
+                    panic!("Box::new allocation failure.");
+                }
+                ptr::write(p, t);
+                p
+            };
+            mem::transmute(p)
+        }
+    }
+}
 
 #[stable]
 impl<T: Default> Default for Box<T> {
