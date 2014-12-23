@@ -58,6 +58,7 @@ pub struct Box<T>(*mut T);
 // For now, working around this via a top-level function; but the body
 // of this should eventually be ported to `Box::new`.
 #[experimental = "temp code for box expression to function call experiment"]
+#[inline(always)]
 pub fn box_new<T>(t: T) -> Box<T> {
     {
         let size = mem::size_of::<T>();
