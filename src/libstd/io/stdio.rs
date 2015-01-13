@@ -142,9 +142,10 @@ impl StdinReader {
     /// ```rust
     /// use std::io;
     ///
-    /// for line in io::stdin().lock().lines() {
+    /// let mut stdin = io::stdin();
+    /// for line in stdin.lock().lines() {
     ///     println!("{}", line.unwrap());
-    /// }
+    /// };
     /// ```
     pub fn lock<'a>(&'a mut self) -> StdinReaderGuard<'a> {
         StdinReaderGuard {
