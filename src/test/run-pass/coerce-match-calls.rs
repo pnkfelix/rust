@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// ignore-test
+
 // Check that coercions are propagated through match and if expressions.
 
 use std::boxed::Box;
