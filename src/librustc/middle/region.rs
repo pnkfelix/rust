@@ -560,28 +560,26 @@ fn resolve_block(visitor: &mut RegionResolutionVisitor, blk: &ast::Block) {
     // differently from the statements. The issue has to do with
     // temporary lifetimes. Consider the following:
     //
-    //  quux({
-    //      let inner = ... (&bar()) ...;
-    //      ... (&foo()) ...
-    //  }, other_argument());
+    //    quux({
+    //        let inner = ... (&bar()) ...;
     //
-    //  Here, the tail expression evaluates to a value that will be
-    //  assigned to `outer`.
+    //        (... (&foo()) ...) // (the tail expression)
+    //    }, other_argument());
     //
-    //  Each of the statements within the block is a terminating
-    //  scope, and thus a temporaries like the result of calling
-    //  `bar()` in the initalizer expression for `let inner = ...;`
-    //  will be cleaned up immediately after `let inner = ...;`
-    //  executes.
+    // Each of the statements within the block is a terminating
+    // scope, and thus a temporary (e.g. the result of calling
+    // `bar()` in the initalizer expression for `let inner = ...;`)
+    // will be cleaned up immediately after its corresponding
+    // statement (i.e. `let inner = ...;`) executes.
     //
-    //  On the other hand, temporaries associated with evaluating the
-    //  tail expression for the block are assigned lifetimes so that
-    //  they will be cleaned up as part of the terminating scope
-    //  *surrounding* the block expression. Here, the terminating
-    //  scope for the block expression is the `quux(..)` call; so
-    //  those temporaries will only be cleaned up *after* both
-    //  `other_argument()` has run and also the call to `quux(..)`
-    //  itself has returned.
+    // On the other hand, temporaries associated with evaluating the
+    // tail expression for the block are assigned lifetimes so that
+    // they will be cleaned up as part of the terminating scope
+    // *surrounding* the block expression. Here, the terminating
+    // scope for the block expression is the `quux(..)` call; so
+    // those temporaries will only be cleaned up *after* both
+    // `other_argument()` has run and also the call to `quux(..)`
+    // itself has returned.
 
     visitor.cx = Context {
         var_parent: InnermostDeclaringBlock::Block(blk.id),
