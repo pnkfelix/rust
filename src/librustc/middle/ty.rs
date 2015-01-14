@@ -1337,7 +1337,7 @@ impl Region {
 /// A "free" region `fr` can be interpreted as "some region
 /// at least as big as the scope `fr.scope`".
 pub struct FreeRegion {
-    pub scope: region::CodeExtent,
+    pub scope: region::DestructionScopeData,
     pub bound_region: BoundRegion
 }
 
@@ -4235,7 +4235,8 @@ pub fn ty_region(tcx: &ctxt,
     }
 }
 
-pub fn free_region_from_def(outlives_extent: region::CodeExtent, def: &RegionParameterDef)
+pub fn free_region_from_def(outlives_extent: region::DestructionScopeData,
+                            def: &RegionParameterDef)
     -> ty::Region
 {
     let ret =
@@ -6359,7 +6360,7 @@ pub fn construct_parameter_environment<'a,'tcx>(
     let mut types = VecPerParamSpace::empty();
     push_types_from_defs(tcx, &mut types, generics.types.as_slice());
 
-    let free_id_outlive = region::CodeExtent::DestructionScope(free_id);
+    let free_id_outlive = region::DestructionScopeData::new(free_id);
 
     // map bound 'a => free 'a
     let mut regions = VecPerParamSpace::empty();
@@ -6393,13 +6394,13 @@ pub fn construct_parameter_environment<'a,'tcx>(
     return ty::ParameterEnvironment {
         tcx: tcx,
         free_substs: free_substs,
-        implicit_region_bound: ty::ReScope(free_id_outlive),
+        implicit_region_bound: ty::ReScope(free_id_outlive.to_code_extent()),
         caller_bounds: bounds,
         selection_cache: traits::SelectionCache::new(),
     };
 
     fn push_region_params(regions: &mut VecPerParamSpace<ty::Region>,
-                          all_outlive_extent: region::CodeExtent,
+                          all_outlive_extent: region::DestructionScopeData,
                           region_params: &[RegionParameterDef])
     {
         for r in region_params.iter() {
@@ -6684,7 +6685,7 @@ impl<'tcx> AutoDerefRef<'tcx> {
 /// `scope_id`.
 pub fn liberate_late_bound_regions<'tcx, T>(
     tcx: &ty::ctxt<'tcx>,
-    all_outlive_scope: region::CodeExtent,
+    all_outlive_scope: region::DestructionScopeData,
     value: &Binder<T>)
     -> T
     where T : TypeFoldable<'tcx> + Repr<'tcx>

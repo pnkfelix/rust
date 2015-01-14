@@ -115,7 +115,7 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
             let variants = lookup_fields(fcx);
             let mut bounds_checker = BoundsChecker::new(fcx,
                                                         item.span,
-                                                        region::CodeExtent::from_node_id(item.id),
+                                                        item.id,
                                                         Some(&mut this.cache));
             debug!("check_type_defn at bounds_checker.scope: {:?}", bounds_checker.scope);
 
@@ -152,7 +152,7 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
         self.with_fcx(item, |this, fcx| {
             let mut bounds_checker = BoundsChecker::new(fcx,
                                                         item.span,
-                                                        region::CodeExtent::from_node_id(item.id),
+                                                        item.id,
                                                         Some(&mut this.cache));
             debug!("check_item_type at bounds_checker.scope: {:?}", bounds_checker.scope);
 
@@ -169,18 +169,9 @@ impl<'ccx, 'tcx> CheckTypeWellFormedVisitor<'ccx, 'tcx> {
                   item: &ast::Item)
     {
         self.with_fcx(item, |this, fcx| {
-
-            // FIXME (pnkfelix): what is the "extent" of an item impl?
-            // This seems fundamentally different from the dynamic
-            // extent represented by a block or a function body.
-            //
-            // For now, just leaving as the default you get via
-            // `fn CodeExtent::from_node_id`.
-            let item_scope = region::CodeExtent::from_node_id(item.id);
-
             let mut bounds_checker = BoundsChecker::new(fcx,
                                                         item.span,
-                                                        item_scope,
+                                                        item.id,
                                                         Some(&mut this.cache));
             debug!("check_impl at bounds_checker.scope: {:?}", bounds_checker.scope);
 
@@ -350,7 +341,12 @@ impl<'ccx, 'tcx, 'v> Visitor<'v> for CheckTypeWellFormedVisitor<'ccx, 'tcx> {
 pub struct BoundsChecker<'cx,'tcx:'cx> {
     fcx: &'cx FnCtxt<'cx,'tcx>,
     span: Span,
-    scope: region::CodeExtent,
+
+    // This field is often attached to item impls; it is not clear
+    // that `CodeExtent` is well-defined for such nodes, so pnkfelix
+    // has left it as a NodeId rather than porting to CodeExtent.
+    scope: ast::NodeId,
+
     binding_count: uint,
     cache: Option<&'cx mut HashSet<Ty<'tcx>>>,
 }
@@ -358,7 +354,7 @@ pub struct BoundsChecker<'cx,'tcx:'cx> {
 impl<'cx,'tcx> BoundsChecker<'cx,'tcx> {
     pub fn new(fcx: &'cx FnCtxt<'cx,'tcx>,
                span: Span,
-               scope: region::CodeExtent,
+               scope: ast::NodeId,
                cache: Option<&'cx mut HashSet<Ty<'tcx>>>)
                -> BoundsChecker<'cx,'tcx> {
         BoundsChecker { fcx: fcx, span: span, scope: scope,
@@ -413,7 +409,10 @@ impl<'cx,'tcx> TypeFolder<'tcx> for BoundsChecker<'cx,'tcx> {
         where T : TypeFoldable<'tcx> + Repr<'tcx>
     {
         self.binding_count += 1;
-        let value = liberate_late_bound_regions(self.fcx.tcx(), self.scope, binder);
+        let value = liberate_late_bound_regions(
+            self.fcx.tcx(),
+            region::DestructionScopeData::new(self.scope),
+            binder);
         debug!("BoundsChecker::fold_binder: late-bound regions replaced: {} at scope: {:?}",
                value.repr(self.tcx()), self.scope);
         let value = value.fold_with(self);

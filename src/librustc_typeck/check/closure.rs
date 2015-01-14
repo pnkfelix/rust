@@ -13,7 +13,7 @@
 use super::{check_fn, Expectation, FnCtxt};
 
 use astconv;
-use middle::region::CodeExtent;
+use middle::region;
 use middle::subst;
 use middle::ty::{self, ToPolyTraitRef, Ty};
 use rscope::RegionScope;
@@ -120,7 +120,7 @@ fn check_unboxed_closure<'a,'tcx>(fcx: &FnCtxt<'a,'tcx>,
 
     let fn_sig =
         ty::liberate_late_bound_regions(fcx.tcx(),
-                                        CodeExtent::DestructionScope(body.id),
+                                        region::DestructionScopeData::new(body.id),
                                         &fn_ty.sig);
 
     check_fn(fcx.ccx,

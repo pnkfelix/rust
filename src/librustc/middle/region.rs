@@ -45,6 +45,22 @@ pub enum CodeExtent {
     Remainder(BlockRemainder)
 }
 
+/// extent of destructors for temporaries of node-id
+#[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Hash, RustcEncodable,
+           RustcDecodable, Show, Copy)]
+pub struct DestructionScopeData {
+    pub node_id: ast::NodeId
+}
+
+impl DestructionScopeData {
+    pub fn new(node_id: ast::NodeId) -> DestructionScopeData {
+        DestructionScopeData { node_id: node_id }
+    }
+    pub fn to_code_extent(&self) -> CodeExtent {
+        CodeExtent::DestructionScope(self.node_id)
+    }
+}
+
 /// Represents a subscope of `block` for a binding that is introduced
 /// by `block.stmts[first_statement_index]`. Such subscopes represent
 /// a suffix of the block. Note that each subscope does not include
@@ -429,7 +445,7 @@ impl RegionMaps {
                 }
 
                 (ty::ReScope(sub_scope), ty::ReFree(ref fr)) => {
-                    self.is_subscope_of(sub_scope, fr.scope)
+                    self.is_subscope_of(sub_scope, fr.scope.to_code_extent())
                 }
 
                 (ty::ReFree(sub_fr), ty::ReFree(super_fr)) => {

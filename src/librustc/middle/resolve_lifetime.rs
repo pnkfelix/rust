@@ -41,7 +41,7 @@ pub enum DefRegion {
                         /* lifetime decl */ ast::NodeId),
     DefLateBoundRegion(ty::DebruijnIndex,
                        /* lifetime decl */ ast::NodeId),
-    DefFreeRegion(/* block scope */ region::CodeExtent,
+    DefFreeRegion(/* block scope */ region::DestructionScopeData,
                   /* lifetime decl */ ast::NodeId),
 }
 
@@ -65,7 +65,7 @@ enum ScopeChain<'a> {
     LateScope(&'a Vec<ast::LifetimeDef>, Scope<'a>),
     /// lifetimes introduced by items within a code block are scoped
     /// to that block.
-    BlockScope(region::CodeExtent, Scope<'a>),
+    BlockScope(region::DestructionScopeData, Scope<'a>),
     RootScope
 }
 
@@ -172,7 +172,8 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
     }
 
     fn visit_block(&mut self, b: &ast::Block) {
-        self.with(BlockScope(region::CodeExtent::from_node_id(b.id), self.scope),
+        self.with(BlockScope(region::DestructionScopeData::new(b.id),
+                             self.scope),
                   |_, this| visit::walk_block(this, b));
     }
 
@@ -351,7 +352,7 @@ impl<'a> LifetimeContext<'a> {
     }
 
     fn resolve_free_lifetime_ref(&mut self,
-                                 scope_data: region::CodeExtent,
+                                 scope_data: region::DestructionScopeData,
                                  lifetime_ref: &ast::Lifetime,
                                  scope: Scope) {
         debug!("resolve_free_lifetime_ref \
@@ -388,14 +389,6 @@ impl<'a> LifetimeContext<'a> {
                 }
             }
         }
-
-        // The free region in fact outlives not just the outermost
-        // scope, but also its corresponding DestructionScope.
-        let scope_data = if let CodeExtent::Misc(node_id) = scope_data {
-            CodeExtent::DestructionScope(node_id)
-        } else {
-            self.sess.bug("unexpected extent in resolve_free_lifetime_ref");
-        };
 
         match search_result {
             Some((_depth, lifetime)) => {

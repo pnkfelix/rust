@@ -693,7 +693,7 @@ impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
                 // The environment of a closure is guaranteed to
                 // outlive any bindings introduced in the body of the
                 // closure itself.
-                scope: region::CodeExtent::DestructionScope(fn_body_id),
+                scope: region::DestructionScopeData::new(fn_body_id),
                 bound_region: ty::BrEnv
             });
 

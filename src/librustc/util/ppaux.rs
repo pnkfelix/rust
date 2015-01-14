@@ -130,7 +130,7 @@ pub fn explain_region_and_span(cx: &ctxt, region: ty::Region)
           }
         };
 
-        match cx.map.find(fr.scope.node_id()) {
+        match cx.map.find(fr.scope.node_id) {
           Some(ast_map::NodeBlock(ref blk)) => {
               let (msg, opt_span) = explain_span(cx, "block", blk.span);
               (format!("{} {}", prefix, msg), opt_span)
@@ -917,6 +917,15 @@ impl<'tcx> Repr<'tcx> for region::CodeExtent {
                 format!("DestructionScope({})", node_id),
             region::CodeExtent::Remainder(rem) =>
                 format!("Remainder({}, {})", rem.block, rem.first_statement_index),
+        }
+    }
+}
+
+impl<'tcx> Repr<'tcx> for region::DestructionScopeData {
+    fn repr(&self, _tcx: &ctxt) -> String {
+        match *self {
+            region::DestructionScopeData{ node_id: node_id } =>
+                format!("DestructionScopeData {{ node_id: {} }}", node_id),
         }
     }
 }
