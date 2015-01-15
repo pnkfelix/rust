@@ -924,7 +924,7 @@ impl<'tcx> Repr<'tcx> for region::CodeExtent {
 impl<'tcx> Repr<'tcx> for region::DestructionScopeData {
     fn repr(&self, _tcx: &ctxt) -> String {
         match *self {
-            region::DestructionScopeData{ node_id: node_id } =>
+            region::DestructionScopeData{ node_id } =>
                 format!("DestructionScopeData {{ node_id: {} }}", node_id),
         }
     }
