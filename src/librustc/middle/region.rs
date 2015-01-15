@@ -26,6 +26,7 @@ use std::hash::{Hash};
 use syntax::codemap::Span;
 use syntax::{ast, visit};
 use syntax::ast::{Block, Item, FnDecl, NodeId, Arm, Pat, Stmt, Expr, Local};
+use syntax::ast_map;
 use syntax::ast_util::{stmt_id};
 use syntax::ptr::P;
 use syntax::visit::{Visitor, FnKind};
@@ -115,6 +116,31 @@ impl CodeExtent {
                 CodeExtent::Remainder(BlockRemainder { block: f_id(br.block), ..br }),
             CodeExtent::DestructionScope(node_id) =>
                 CodeExtent::DestructionScope(f_id(node_id)),
+        }
+    }
+
+    pub fn span(&self, ast_map: &ast_map::Map) -> Option<Span> {
+        match ast_map.find(self.node_id()) {
+            Some(ast_map::NodeBlock(ref blk)) => {
+                match *self {
+                    CodeExtent::Misc(_) |
+                    CodeExtent::DestructionScope(_) => Some(blk.span),
+                    CodeExtent::Remainder(r) => {
+                        assert_eq!(r.block, blk.id);
+
+                        // Want span for extent starting after the
+                        // indexed statement and ending at end of
+                        // `blk`; reuse span of `blk` and shift `lo`
+                        // forward to end of indexed statement.
+                        let stmt_span = blk.stmts[r.first_statement_index].span;
+                        Some(Span { lo: stmt_span.hi, ..blk.span })
+                    }
+                }
+            }
+            Some(ast_map::NodeExpr(ref expr)) => Some(expr.span),
+            Some(ast_map::NodeStmt(ref stmt)) => Some(stmt.span),
+            Some(ast_map::NodeItem(ref item)) => Some(item.span),
+            Some(_) | None => None,
         }
     }
 }
