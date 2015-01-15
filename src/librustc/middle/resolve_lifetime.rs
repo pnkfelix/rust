@@ -20,7 +20,7 @@ use self::ScopeChain::*;
 
 use session::Session;
 use middle::def::{self, DefMap};
-use middle::region::{self, CodeExtent};
+use middle::region;
 use middle::subst;
 use middle::ty;
 use std::fmt;
