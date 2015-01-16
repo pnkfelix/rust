@@ -215,13 +215,6 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
         self.fcx.ccx.tcx
     }
 
-    pub fn mk_subr(&self,
-                   origin: infer::SubregionOrigin<'tcx>,
-                   sub: ty::Region,
-                   sup: ty::Region) {
-        self.fcx.mk_subr(origin, sub, sup)
-    }
-
     pub fn set_repeating_scope(&mut self, scope: ast::NodeId) -> ast::NodeId {
         let old_scope = self.repeating_scope;
         self.repeating_scope = scope;
@@ -1504,7 +1497,7 @@ fn link_reborrowed_region<'a, 'tcx>(rcx: &Rcx<'a, 'tcx>,
 }
 
 /// Ensures that all borrowed data reachable via `ty` outlives `region`.
-fn type_must_outlive<'a, 'tcx>(rcx: &mut Rcx<'a, 'tcx>,
+pub fn type_must_outlive<'a, 'tcx>(rcx: &mut Rcx<'a, 'tcx>,
                                origin: infer::SubregionOrigin<'tcx>,
                                ty: Ty<'tcx>,
                                region: ty::Region)
