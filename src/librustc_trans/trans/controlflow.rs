@@ -288,7 +288,7 @@ pub fn trans_for<'fcx, 'blk, 'tcx>(mut bcx: Block<'fcx, 'blk, 'tcx>,
            ppaux::ty_to_string(bcx.tcx(), iterator_type),
            ppaux::ty_to_string(bcx.tcx(), iterator_datum.ty));
 
-    let lliterator = load_ty(bcx, iterator_datum.val, iterator_datum.ty);
+    let lliterator = [load_ty(bcx, iterator_datum.val, iterator_datum.ty)];
 
     // Create our basic blocks and set up our loop cleanups.
     let next_bcx_in = bcx.fcx.new_id_block("for_exit", loop_info.id);
@@ -337,7 +337,7 @@ pub fn trans_for<'fcx, 'blk, 'tcx>(mut bcx: Block<'fcx, 'blk, 'tcx>,
                                              None,
                                              arg_cleanup_scope)
                                      },
-                                     callee::ArgVals(&[lliterator]),
+                                     callee::ArgVals(&lliterator),
                                      Some(expr::SaveIn(lloption)));
         bcx
     }));
