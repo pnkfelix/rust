@@ -69,7 +69,7 @@ fn iterate_over_potentially_unsafe_regions_in_type<'a, 'tcx>(
             // borrowed data reachable via `typ` must outlive the
             // parent of `scope`. (It does not suffice for it to
             // outlive `scope` because that could imply that the
-            // borrowed data is torn town in between the end of
+            // borrowed data is torn down in between the end of
             // `scope` and when the destructor itself actually runs.
 
             let parent_region =
