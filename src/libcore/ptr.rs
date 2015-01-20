@@ -517,6 +517,15 @@ impl<T> PartialOrd for *mut T {
 #[unstable = "recently added to this module"]
 pub struct Unique<T>(pub *mut T);
 
+/// A wrapper around a raw `*const T` that indicates that the possessor
+/// of this wrapper owns the referent. This in turn implies that the
+/// `Unique<T>` is `Send`/`Sync` if `T` is `Send`/`Sync`, unlike a
+/// raw `*const T` (which conveys no particular ownership semantics).
+///
+/// Note that `UniqueConst<T>` is covariant with respect to `T`.
+#[unstable = "recently added to this module"]
+pub struct UniqueConst<T>(pub *const T);
+
 /// `Unique` pointers are `Send` if `T` is `Send` because the data they
 /// reference is unaliased. Note that this aliasing invariant is
 /// unenforced by the type system; the abstraction using the
@@ -524,12 +533,26 @@ pub struct Unique<T>(pub *mut T);
 #[unstable = "recently added to this module"]
 unsafe impl<T:Send> Send for Unique<T> { }
 
+/// `Unique` pointers are `Send` if `T` is `Send` because the data they
+/// reference is unaliased. Note that this aliasing invariant is
+/// unenforced by the type system; the abstraction using the
+/// `Unique` must enforce it.
+#[unstable = "recently added to this module"]
+unsafe impl<T:Send> Send for UniqueConst<T> { }
+
 /// `Unique` pointers are `Sync` if `T` is `Sync` because the data they
 /// reference is unaliased. Note that this aliasing invariant is
 /// unenforced by the type system; the abstraction using the
 /// `Unique` must enforce it.
 #[unstable = "recently added to this module"]
 unsafe impl<T:Sync> Sync for Unique<T> { }
+
+/// `UniqueCovariant` pointers are `Sync` if `T` is `Sync` because the data they
+/// reference is unaliased. Note that this aliasing invariant is
+/// unenforced by the type system; the abstraction using the
+/// `Unique` must enforce it.
+#[unstable = "recently added to this module"]
+unsafe impl<T:Sync> Sync for UniqueConst<T> { }
 
 impl<T> Unique<T> {
     /// Returns a null Unique.
@@ -541,6 +564,20 @@ impl<T> Unique<T> {
     /// Return an (unsafe) pointer into the memory owned by `self`.
     #[unstable = "recently added to this module"]
     pub unsafe fn offset(self, offset: int) -> *mut T {
+        self.0.offset(offset)
+    }
+}
+
+impl<T> UniqueConst<T> {
+    /// Returns a null UniqueConst.
+    #[unstable = "recently added to this module"]
+    pub fn null() -> UniqueConst<T> {
+        UniqueConst(null())
+    }
+
+    /// Return an (unsafe) pointer into the memory owned by `self`.
+    #[unstable = "recently added to this module"]
+    pub unsafe fn offset(self, offset: int) -> *const T {
         self.0.offset(offset)
     }
 }

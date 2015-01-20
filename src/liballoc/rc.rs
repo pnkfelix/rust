@@ -185,9 +185,16 @@ struct RcBox<T> {
 pub struct Rc<T> {
     // FIXME #12808: strange names to try to avoid interfering with field accesses of the contained
     // type via Deref
-    _ptr: NonZero<*mut RcBox<T>>,
+    //
+    // we use a `*const RcBox<T>` rather than a `*mut RcBox<T>` as a
+    // way to encode that `Rc<T>` is covariant with respect to `T`.
+    _ptr: NonZero<*const RcBox<T>>,
     _nosend: marker::NoSend,
     _noshare: marker::NoSync
+}
+
+fn ptr<T>(rc: &mut Rc<T>) -> *mut RcBox<T> {
+    *rc._ptr as *mut RcBox<T>
 }
 
 impl<T> Rc<T> {
@@ -322,7 +329,7 @@ pub fn try_unwrap<T>(rc: Rc<T>) -> Result<T, Rc<T>> {
 #[unstable]
 pub fn get_mut<'a, T>(rc: &'a mut Rc<T>) -> Option<&'a mut T> {
     if is_unique(rc) {
-        let inner = unsafe { &mut **rc._ptr };
+        let inner = unsafe { &mut *ptr(rc) };
         Some(&mut inner.value)
     } else {
         None
@@ -354,7 +361,7 @@ impl<T: Clone> Rc<T> {
         // pointer that will ever be returned to T. Our reference count is guaranteed to be 1 at
         // this point, and we required the `Rc<T>` itself to be `mut`, so we're returning the only
         // possible reference to the inner value.
-        let inner = unsafe { &mut **self._ptr };
+        let inner = unsafe { &mut *ptr(self) };
         &mut inner.value
     }
 }
@@ -647,7 +654,7 @@ impl<T: fmt::String> fmt::String for Rc<T> {
 pub struct Weak<T> {
     // FIXME #12808: strange names to try to avoid interfering with
     // field accesses of the contained type via Deref
-    _ptr: NonZero<*mut RcBox<T>>,
+    _ptr: NonZero<*const RcBox<T>>,
     _nosend: marker::NoSend,
     _noshare: marker::NoSync
 }

@@ -21,7 +21,7 @@ use core::hash::{self, Hash};
 use core::marker::Sized;
 use core::mem;
 use core::option::Option;
-use core::ptr::Unique;
+use core::ptr::UniqueConst;
 use core::raw::TraitObject;
 use core::result::Result;
 use core::result::Result::{Ok, Err};
@@ -50,7 +50,7 @@ pub static HEAP: () = ();
 /// A type that represents a uniquely-owned value.
 #[lang = "owned_box"]
 #[stable]
-pub struct Box<T>(Unique<T>);
+pub struct Box<T>(UniqueConst<T>);
 
 impl<T> Box<T> {
     /// Moves `x` into a freshly allocated box on the global exchange heap.
