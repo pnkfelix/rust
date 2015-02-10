@@ -224,7 +224,10 @@ pub fn write(w: &mut Write) -> io::Result<()> {
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 fn print(w: &mut Write, idx: int, addr: *mut libc::c_void,
          _symaddr: *mut libc::c_void) -> io::Result<()> {
-    use intrinsics;
+    #[cfg(stage0)]
+    unsafe fn init() -> Dl_info { use intrinsics; intrinsics::init() }
+    #[cfg(not(stage0))]
+    unsafe fn init() -> Dl_info { use intrinsics; intrinsics::init_zeroed() }
     #[repr(C)]
     struct Dl_info {
         dli_fname: *const libc::c_char,
@@ -236,8 +239,7 @@ fn print(w: &mut Write, idx: int, addr: *mut libc::c_void,
         fn dladdr(addr: *const libc::c_void,
                   info: *mut Dl_info) -> libc::c_int;
     }
-
-    let mut info: Dl_info = unsafe { intrinsics::init() };
+    let mut info: Dl_info = unsafe { init() };
     if unsafe { dladdr(addr, &mut info) == 0 } {
         output(w, idx,addr, None)
     } else {
