@@ -13,6 +13,7 @@
 use back::abi;
 use llvm;
 use llvm::{ValueRef};
+use trans::adt;
 use trans::base::*;
 use trans::base;
 use trans::build::*;
@@ -51,18 +52,29 @@ pub fn make_drop_glue_unboxed<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                           should_deallocate: bool)
                                           -> Block<'blk, 'tcx> {
     let not_null = IsNotNull(bcx, vptr);
-    with_cond(bcx, not_null, |bcx| {
+    let inttype = Type::int(bcx.ccx());
+    let vptr_as_usize = PtrToInt(bcx, vptr, inttype);
+    let dropped_pattern = C_integral(
+        inttype, adt::dtor_done_usize(bcx.fcx.ccx) as u64, false);
+    let not_done = ICmp(bcx, llvm::IntNE, vptr_as_usize, dropped_pattern, DebugLoc::None);
+    let neither_null_nor_dropped =
+        And(bcx, not_null, not_done, DebugLoc::None);
+    with_cond(bcx, neither_null_nor_dropped, |bcx| {
         let ccx = bcx.ccx();
         let _icx = push_ctxt("tvec::make_drop_glue_unboxed");
 
         let dataptr = get_dataptr(bcx, vptr);
+        let dataptr_as_usize = PtrToInt(bcx, dataptr, inttype);
+        let not_done = ICmp(bcx, llvm::IntNE, dataptr_as_usize, dropped_pattern, DebugLoc::None);
         let bcx = if bcx.fcx.type_needs_drop(unit_ty) {
-            let len = get_len(bcx, vptr);
-            iter_vec_raw(bcx,
-                         dataptr,
-                         unit_ty,
-                         len,
-                         |bb, vv, tt| glue::drop_ty(bb, vv, tt, DebugLoc::None))
+            with_cond(bcx, not_done, |bcx| {
+                let len = get_len(bcx, vptr);
+                iter_vec_raw(bcx,
+                             dataptr,
+                             unit_ty,
+                             len,
+                             |bb, vv, tt| glue::drop_ty(bb, vv, tt, DebugLoc::None))
+            })
         } else {
             bcx
         };
@@ -77,7 +89,14 @@ pub fn make_drop_glue_unboxed<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                      len,
                                      C_uint(ccx, 0_u32),
                                      DebugLoc::None);
-                with_cond(bcx, not_empty, |bcx| {
+                let not_done = ICmp(bcx,
+                                    llvm::IntNE,
+                                    len,
+                                    dropped_pattern,
+                                    DebugLoc::None);
+                let neither_empty_nor_dropped =
+                    And(bcx, not_empty, not_done, DebugLoc::None);
+                with_cond(bcx, neither_empty_nor_dropped, |bcx| {
                     let llalign = C_uint(ccx, machine::llalign_of_min(ccx, llty));
                     let size = Mul(bcx, C_uint(ccx, unit_size), len, DebugLoc::None);
                     glue::trans_exchange_free_dyn(bcx,

@@ -21,6 +21,7 @@ use middle::lang_items::ExchangeFreeFnLangItem;
 use middle::subst;
 use middle::subst::{Subst, Substs};
 use trans::adt;
+use trans::adt::GetDtorType; // for tcx.dtor_type()
 use trans::base::*;
 use trans::build::*;
 use trans::callee;
@@ -41,6 +42,7 @@ use util::ppaux;
 
 use arena::TypedArena;
 use libc::c_uint;
+use session::config::NoDebugInfo;
 use std::ffi::CString;
 use syntax::ast;
 use syntax::parse::token;
@@ -220,9 +222,31 @@ fn trans_struct_drop_flag<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
         Load(bcx, llval)
     };
     let drop_flag = unpack_datum!(bcx, adt::trans_drop_flag_ptr(bcx, &*repr, struct_data));
-    with_cond(bcx, load_ty(bcx, drop_flag.val, bcx.tcx().types.bool), |cx| {
+    let loaded = load_ty(bcx, drop_flag.val, bcx.tcx().dtor_type());
+    // FIXME (pnkfelix): need to properly map bcx.tcx().dtor_type() to int type below.
+    let init_val = C_integral(Type::i8(bcx.fcx.ccx), adt::DTOR_NEEDED as u64, false);
+
+    let bcx = if bcx.tcx().sess.opts.debuginfo == NoDebugInfo {
+        bcx
+    } else {
+        // FIXME (pnkfelix): need to properly map bcx.tcx().dtor_type() to int type below.
+        let done_val = C_integral(Type::i8(bcx.fcx.ccx), adt::DTOR_DONE as u64, false);
+        let not_init = ICmp(bcx, llvm::IntNE, loaded, init_val, DebugLoc::None);
+        let not_done = ICmp(bcx, llvm::IntNE, loaded, done_val, DebugLoc::None);
+        let drop_flag_neither_initialized_nor_cleared =
+            And(bcx, not_init, not_done, DebugLoc::None);
+        with_cond(bcx, drop_flag_neither_initialized_nor_cleared, |cx| {
+            let llfn = cx.ccx().get_intrinsic(&("llvm.debugtrap"));
+            Call(cx, llfn, &[], None, DebugLoc::None);
+            cx
+        })
+    };
+
+    let drop_flag_dtor_needed = ICmp(bcx, llvm::IntEQ, loaded, init_val, DebugLoc::None);
+    with_cond(bcx, drop_flag_dtor_needed, |cx| {
         trans_struct_drop(cx, t, v0, dtor_did, class_did, substs)
     })
+
 }
 
 fn trans_struct_drop<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
@@ -384,21 +408,43 @@ fn make_drop_glue<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, v0: ValueRef, t: Ty<'tcx>)
                               -> Block<'blk, 'tcx> {
     // NB: v0 is an *alias* of type t here, not a direct value.
     let _icx = push_ctxt("make_drop_glue");
+
+    // Only drop the value when it ... well, we used
+    // to check for non-null, (and maybe we need to
+    // continue doing so), but we now must definitely
+    // check for special bit-patterns corresponding to
+    // the special dtor markings.
+
+    // let dropped_pattern = C_integral(bcx.fcx.ccx.int_type(),
+    //                                  adt::dtor_done_usize(bcx.fcx.ccx) as u64,
+    //                                  false);
+    let inttype = Type::int(bcx.ccx());
+    let dropped_pattern = C_integral(
+        inttype, adt::dtor_done_usize(bcx.fcx.ccx) as u64, false);
+
     match t.sty {
         ty::ty_uniq(content_ty) => {
             match content_ty.sty {
                 ty::ty_vec(ty, None) => {
+                    debug!("make_drop_glue ty_uniq(ty_vec)");
                     tvec::make_drop_glue_unboxed(bcx, v0, ty, true)
                 }
                 ty::ty_str => {
+                    debug!("make_drop_glue ty_uniq(ty_str)");
                     let unit_ty = ty::sequence_element_type(bcx.tcx(), content_ty);
                     tvec::make_drop_glue_unboxed(bcx, v0, unit_ty, true)
                 }
                 ty::ty_trait(..) => {
+                    debug!("make_drop_glue ty_uniq(ty_trait)");
                     let lluniquevalue = GEPi(bcx, v0, &[0, abi::FAT_PTR_ADDR]);
-                    // Only drop the value when it is non-null
+
                     let concrete_ptr = Load(bcx, lluniquevalue);
-                    with_cond(bcx, IsNotNull(bcx, concrete_ptr), |bcx| {
+                    let concrete_ptr_as_usize = PtrToInt(bcx, concrete_ptr, Type::int(bcx.ccx()));
+                    let drop_flag_not_dropped_already =
+                        ICmp(bcx, llvm::IntNE, concrete_ptr_as_usize, dropped_pattern,
+                             DebugLoc::None);
+
+                    with_cond(bcx, drop_flag_not_dropped_already, |bcx| {
                         let dtor_ptr = Load(bcx, GEPi(bcx, v0, &[0, abi::FAT_PTR_EXTRA]));
                         let dtor = Load(bcx, dtor_ptr);
                         Call(bcx,
@@ -410,10 +456,13 @@ fn make_drop_glue<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, v0: ValueRef, t: Ty<'tcx>)
                     })
                 }
                 ty::ty_struct(..) if !type_is_sized(bcx.tcx(), content_ty) => {
+                    debug!("make_drop_glue ty_uniq(ty_struct)");
                     let llval = GEPi(bcx, v0, &[0, abi::FAT_PTR_ADDR]);
                     let llbox = Load(bcx, llval);
-                    let not_null = IsNotNull(bcx, llbox);
-                    with_cond(bcx, not_null, |bcx| {
+                    let llbox_as_usize = PtrToInt(bcx, llbox, Type::int(bcx.ccx()));
+                    let drop_flag_not_dropped_already =
+                        ICmp(bcx, llvm::IntNE, llbox_as_usize, dropped_pattern, DebugLoc::None);
+                    with_cond(bcx, drop_flag_not_dropped_already, |bcx| {
                         let bcx = drop_ty(bcx, v0, content_ty, DebugLoc::None);
                         let info = GEPi(bcx, v0, &[0, abi::FAT_PTR_EXTRA]);
                         let info = Load(bcx, info);
@@ -422,11 +471,25 @@ fn make_drop_glue<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, v0: ValueRef, t: Ty<'tcx>)
                     })
                 }
                 _ => {
+                    debug!("make_drop_glue ty_uniq(_other): {}", content_ty.repr(bcx.tcx()));
                     assert!(type_is_sized(bcx.tcx(), content_ty));
                     let llval = v0;
                     let llbox = Load(bcx, llval);
-                    let not_null = IsNotNull(bcx, llbox);
-                    with_cond(bcx, not_null, |bcx| {
+
+                    // FIXME: should not be playing guessing games about the type to use.
+                    // let lltype = Type::from_ref(unsafe { llvm::LLVMTypeOf(llbox) });
+                    // let inttype = Type::int(bcx.ccx());
+                    // debug!("make_drop_glue ty_uniq(_other): cast {} as {}",
+                    //        bcx.ccx().tn().type_to_string(lltype),
+                    //        bcx.ccx().tn().type_to_string(inttype));
+                    let llbox_as_usize = PtrToInt(bcx, llbox, inttype);
+                    debug!("make_drop_glue ty_uniq(_other): successful ptrtoint cxn");
+                    // let dropped_pattern = C_integral(
+                    //     inttype, adt::dtor_done_usize(bcx.fcx.ccx) as u64, false);
+
+                    let drop_flag_not_dropped_already =
+                        ICmp(bcx, llvm::IntNE, llbox_as_usize, dropped_pattern, DebugLoc::None);
+                    with_cond(bcx, drop_flag_not_dropped_already, |bcx| {
                         let bcx = drop_ty(bcx, llbox, content_ty, DebugLoc::None);
                         trans_exchange_free_ty(bcx, llbox, content_ty, DebugLoc::None)
                     })

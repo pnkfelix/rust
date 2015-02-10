@@ -329,7 +329,8 @@ impl<T: Sync + Send> Drop for Arc<T> {
         // This structure has #[unsafe_no_drop_flag], so this drop glue may run more than once (but
         // it is guaranteed to be zeroed after the first if it's run more than once)
         let ptr = *self._ptr;
-        if ptr.is_null() { return }
+        // if ptr.is_null() { return }
+        if ptr.is_null() || ptr as usize == mem::POST_DROP_USIZE { return }
 
         // Because `fetch_sub` is already atomic, we do not need to synchronize with other threads
         // unless we are going to delete the object. This same logic applies to the below
@@ -460,7 +461,7 @@ impl<T: Sync + Send> Drop for Weak<T> {
         let ptr = *self._ptr;
 
         // see comments above for why this check is here
-        if ptr.is_null() { return }
+        if ptr.is_null() || ptr as usize == mem::POST_DROP_USIZE { return }
 
         // If we find out that we were the last weak pointer, then its time to deallocate the data
         // entirely. See the discussion in Arc::drop() about the memory orderings
