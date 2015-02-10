@@ -21,6 +21,7 @@ use middle::lang_items::ExchangeFreeFnLangItem;
 use middle::subst;
 use middle::subst::{Subst, Substs};
 use trans::adt;
+use trans::adt::GetDtorType; // for tcx.dtor_type()
 use trans::base::*;
 use trans::build::*;
 use trans::callee;
@@ -220,7 +221,13 @@ fn trans_struct_drop_flag<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
         Load(bcx, llval)
     };
     let drop_flag = unpack_datum!(bcx, adt::trans_drop_flag_ptr(bcx, &*repr, struct_data));
-    with_cond(bcx, load_ty(bcx, drop_flag.val, bcx.tcx().types.bool), |cx| {
+    let loaded = load_ty(bcx, drop_flag.val, bcx.tcx().dtor_type());
+    let drop_flag_nonzero = {
+        // FIXME (pnkfelix): need to properly map bcx.tcx().dtor_type() to int type below.
+        let zero = C_integral(Type::i8(bcx.fcx.ccx), 0, false);
+        ICmp(bcx, llvm::IntNE, loaded, zero, DebugLoc::None)
+    };
+    with_cond(bcx, drop_flag_nonzero, |cx| {
         trans_struct_drop(cx, t, v0, dtor_did, class_did, substs)
     })
 }
