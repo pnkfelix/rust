@@ -155,10 +155,15 @@ pub fn represent_type<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
     repr
 }
 
-pub const DTOR_INIT: u8 = 0xd4;
+#[allow(dead_code)]
+pub const DTOR_NEEDED: u8 = 0xd4;
+#[allow(dead_code)]
+pub const DTOR_STARTED: u8 = 0x10;
+#[allow(dead_code)]
+pub const DTOR_DONE: u8 = 0xc1;
 
 fn dtor_to_init_u8(dtor: bool) -> u8 {
-    if dtor { DTOR_INIT } else { 0 }
+    if dtor { DTOR_NEEDED } else { 0 }
 }
 
 pub trait GetDtorType<'tcx> { fn dtor_type(&self) -> Ty<'tcx>; }
@@ -852,7 +857,7 @@ pub fn trans_set_discr<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, r: &Repr<'tcx>,
             if dtor_active(dtor) {
                 let ptr = trans_field_ptr(bcx, r, val, discr,
                                           cases[discr as uint].fields.len() - 2);
-                Store(bcx, C_u8(bcx.ccx(), DTOR_INIT as usize), ptr);
+                Store(bcx, C_u8(bcx.ccx(), DTOR_NEEDED as usize), ptr);
             }
             Store(bcx, C_integral(ll_inttype(bcx.ccx(), ity), discr as u64, true),
                   GEPi(bcx, val, &[0, 0]))
@@ -860,7 +865,7 @@ pub fn trans_set_discr<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, r: &Repr<'tcx>,
         Univariant(ref st, dtor) => {
             assert_eq!(discr, 0);
             if dtor_active(dtor) {
-                Store(bcx, C_u8(bcx.ccx(), DTOR_INIT as usize),
+                Store(bcx, C_u8(bcx.ccx(), DTOR_NEEDED as usize),
                     GEPi(bcx, val, &[0, st.fields.len() - 1]));
             }
         }
