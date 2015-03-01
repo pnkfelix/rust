@@ -368,7 +368,11 @@ pub fn trans_intrinsic_call<'a, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
             let tp_ty = *substs.types.get(FnSpace, 0);
             if !return_type_is_void(ccx, tp_ty) {
                 // Just zero out the stack slot. (See comment on base::memzero for explanation)
-                zero_mem(bcx, llresult, tp_ty);
+                //
+                // FIXME: This might need to conditionally call
+                // drop_done_fill_mem instead for types that might
+                // need drop.
+                init_zero_mem(bcx, llresult, tp_ty);
             }
             C_nil(ccx)
         }

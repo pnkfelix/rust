@@ -866,6 +866,12 @@ pub fn ICmp(cx: Block,
         if cx.unreachable.get() {
             return llvm::LLVMGetUndef(Type::i1(cx.ccx()).to_ref());
         }
+        let lhs_ty = Type::from_ref(llvm::LLVMTypeOf(lhs));
+        let rhs_ty = Type::from_ref(llvm::LLVMTypeOf(rhs));
+        assert!(lhs_ty == rhs_ty,
+                "ICmp: lhs_ty {} must be equal to rhs {}",
+                cx.ccx().tn().type_to_string(lhs_ty),
+                cx.ccx().tn().type_to_string(rhs_ty));
         debug_loc.apply(cx.fcx);
         B(cx).icmp(op, lhs, rhs)
     }
@@ -1048,6 +1054,15 @@ pub fn IsNull(cx: Block, val: ValueRef) -> ValueRef {
 }
 
 pub fn IsNotNull(cx: Block, val: ValueRef) -> ValueRef {
+    unsafe {
+        if cx.unreachable.get() {
+            return llvm::LLVMGetUndef(Type::i1(cx.ccx()).to_ref());
+        }
+        B(cx).is_not_null(val)
+    }
+}
+
+pub fn IsDropNeeded(cx: Block, val: ValueRef) -> ValueRef {
     unsafe {
         if cx.unreachable.get() {
             return llvm::LLVMGetUndef(Type::i1(cx.ccx()).to_ref());
