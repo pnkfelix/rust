@@ -291,6 +291,31 @@ pub fn replace<T>(dest: &mut T, mut src: T) -> T {
 #[stable(feature = "rust1", since = "1.0.0")]
 pub fn drop<T>(_x: T) { }
 
+macro_rules! repeat_u8_as_u32 {
+    ($name:expr) => { (($name as u32) << 24 |
+                       ($name as u32) << 16 |
+                       ($name as u32) <<  8 |
+                       ($name as u32)) }
+}
+macro_rules! repeat_u8_as_u64 {
+    ($name:expr) => { ((repeat_u8_as_u32!($name) as u64) << 32 |
+                       (repeat_u8_as_u32!($name) as u64)) }
+}
+
+#[cfg(not(stage0))] pub const POST_DROP_U8: u8 = 0xc1;
+#[cfg(not(stage0))] pub const POST_DROP_U32: u32 = repeat_u8_as_u32!(POST_DROP_U8);
+#[cfg(not(stage0))] pub const POST_DROP_U64: u64 = repeat_u8_as_u64!(POST_DROP_U8);
+
+#[cfg(target_pointer_width = "32")]
+#[cfg(not(stage0))] pub const POST_DROP_USIZE: usize = POST_DROP_U32 as usize;
+#[cfg(target_pointer_width = "64")]
+#[cfg(not(stage0))] pub const POST_DROP_USIZE: usize = POST_DROP_U64 as usize;
+
+#[cfg(stage0)] pub const POST_DROP_U8: u8 = 0;
+#[cfg(stage0)] pub const POST_DROP_U32: u32 = 0;
+#[cfg(stage0)] pub const POST_DROP_U64: u64 = 0;
+#[cfg(stage0)] pub const POST_DROP_USIZE: usize = 0;
+
 /// Interprets `src` as `&U`, and then reads `src` without moving the contained value.
 ///
 /// This function will unsafely assume the pointer `src` is valid for `sizeof(U)` bytes by
