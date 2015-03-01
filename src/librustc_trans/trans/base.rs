@@ -1144,12 +1144,18 @@ pub fn memcpy_ty<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     }
 }
 
-pub fn zero_mem<'blk, 'tcx>(cx: Block<'blk, 'tcx>, llptr: ValueRef, t: Ty<'tcx>) {
+pub fn drop_done_fill_mem<'blk, 'tcx>(cx: Block<'blk, 'tcx>, llptr: ValueRef, t: Ty<'tcx>) {
     if cx.unreachable.get() { return; }
-    let _icx = push_ctxt("zero_mem");
+    let _icx = push_ctxt("drop_done_fill_mem");
     let bcx = cx;
-    // memzero(&B(bcx), llptr, t);
     memfill(&B(bcx), llptr, t, adt::DTOR_DONE);
+}
+
+pub fn init_zero_mem<'blk, 'tcx>(cx: Block<'blk, 'tcx>, llptr: ValueRef, t: Ty<'tcx>) {
+    if cx.unreachable.get() { return; }
+    let _icx = push_ctxt("init_zero_mem");
+    let bcx = cx;
+    memfill(&B(bcx), llptr, t, 0);
 }
 
 fn memzero<'a, 'tcx>(b: &Builder<'a, 'tcx>, llptr: ValueRef, ty: Ty<'tcx>) {
