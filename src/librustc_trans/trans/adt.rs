@@ -157,7 +157,7 @@ pub fn represent_type<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
 
 #[allow(dead_code)]
 pub const DTOR_NEEDED: u8 = 0xd4;
-pub const DTOR_DONE: u8 = 0xc1;
+pub const DTOR_DONE: u8 = 0x1d;
 
 fn dtor_to_init_u8(dtor: bool) -> u8 {
     if dtor { DTOR_NEEDED } else { 0 }
