@@ -22,7 +22,11 @@ use core::ptr::PtrExt;
 /// size on the platform.
 #[inline]
 pub unsafe fn allocate(size: usize, align: usize) -> *mut u8 {
-    imp::allocate(size, align)
+    self::printf::print2("heap::allocate %d %d\n\0", size as u32, align as u32);
+    let ret = imp::allocate(size, align);
+    self::printf::print3("heap::allocate %d %d ret %p\n\0",
+                         size as u32, align as u32, ret as usize as u32);
+    ret
 }
 
 /// Resize the allocation referenced by `ptr` to `size` bytes.
@@ -38,7 +42,12 @@ pub unsafe fn allocate(size: usize, align: usize) -> *mut u8 {
 /// any value in range_inclusive(requested_size, usable_size).
 #[inline]
 pub unsafe fn reallocate(ptr: *mut u8, old_size: usize, size: usize, align: usize) -> *mut u8 {
-    imp::reallocate(ptr, old_size, size, align)
+    self::printf::print4("heap::reallocate %p %d %d %d\n\0",
+                         ptr as usize as u32, old_size as u32, size as u32, align as u32);
+    let ret = imp::reallocate(ptr, old_size, size, align);
+    self::printf::print2("heap::reallocate %p ret %p\n\0",
+                         ptr as usize as u32, ret as usize as u32);
+    ret
 }
 
 /// Resize the allocation referenced by `ptr` to `size` bytes.
@@ -56,7 +65,12 @@ pub unsafe fn reallocate(ptr: *mut u8, old_size: usize, size: usize, align: usiz
 #[inline]
 pub unsafe fn reallocate_inplace(ptr: *mut u8, old_size: usize, size: usize,
                                  align: usize) -> usize {
-    imp::reallocate_inplace(ptr, old_size, size, align)
+    self::printf::print4("heap::reallocate_inplace %p %d\n\0",
+                         ptr as usize as u32, old_size as u32, size as u32, align as u32);
+    let ret = imp::reallocate_inplace(ptr, old_size, size, align);
+    self::printf::print2("heap::reallocate_inplace %p ret %d\n\0",
+                         ptr as usize as u32, ret as usize as u32);
+    ret
 }
 
 /// Deallocates the memory referenced by `ptr`.
@@ -68,6 +82,8 @@ pub unsafe fn reallocate_inplace(ptr: *mut u8, old_size: usize, size: usize,
 /// any value in range_inclusive(requested_size, usable_size).
 #[inline]
 pub unsafe fn deallocate(ptr: *mut u8, old_size: usize, align: usize) {
+    self::printf::print3("heap::deallocate %p %d %d\n\0",
+                         ptr as usize as u32, old_size as u32, align as u32);
     imp::deallocate(ptr, old_size, align)
 }
 
@@ -98,21 +114,95 @@ pub const EMPTY: *mut () = 0x1 as *mut ();
 #[lang="exchange_malloc"]
 #[inline]
 unsafe fn exchange_malloc(size: usize, align: usize) -> *mut u8 {
-    if size == 0 {
+    self::printf::print2("exchange_malloc %d %d\n\0", size as u32, align as u32);
+    let ret = if size == 0 {
         EMPTY as *mut u8
     } else {
         let ptr = allocate(size, align);
         if ptr.is_null() { ::oom() }
         ptr
-    }
+    };
+
+    self::printf::print2("exchange_malloc %d ret 0x%p\n\0", size as u32, ret as usize as u32);
+
+    ret
 }
 
 #[cfg(not(test))]
 #[lang="exchange_free"]
 #[inline]
 unsafe fn exchange_free(ptr: *mut u8, old_size: usize, align: usize) {
+    self::printf::print2("exchange_free 0x%x %d\n\0", ptr as usize as u32, old_size as u32);
     deallocate(ptr, old_size, align);
 }
+
+#[cfg(stage0)]
+mod printf {
+    #![allow(dead_code)]
+    pub unsafe fn print0(s: &str) {
+        let _ = s;
+    }
+
+    pub unsafe fn print1(s: &str, arg1: u32) {
+        let _ = (s, arg1);
+    }
+
+    pub unsafe fn print2(s: &str, arg1: u32, arg2: u32) {
+        let _ = (s, arg1, arg2);
+    }
+    pub unsafe fn print3(s: &str, arg1: u32, arg2: u32, arg3: u32) {
+        let _ = (s, arg1, arg2, arg3);
+    }
+    pub unsafe fn print4(s: &str, arg1: u32, arg2: u32, arg3: u32, arg4: u32) {
+        let _ = (s, arg1, arg2, arg3, arg4);
+    }
+    pub unsafe fn print5(s: &str, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) {
+        let _ = (s, arg1, arg2, arg3, arg4, arg5);
+    }
+}
+
+#[cfg(not(stage0))]
+mod printf {
+    #![allow(dead_code)]
+    use self::intrinsics::transmute;
+
+    #[link(name="c")]
+    extern { fn printf(f: *const u8, ...); }
+
+    pub unsafe fn print0(s: &str) {
+        let (bytes, _len): (*const u8, usize) = transmute(s);
+        printf(bytes);
+    }
+
+    pub unsafe fn print1(s: &str, arg1: u32) {
+        let (bytes, _len): (*const u8, usize) = transmute(s);
+        printf(bytes, arg1);
+    }
+
+    pub unsafe fn print2(s: &str, arg1: u32, arg2: u32) {
+        let (bytes, _len): (*const u8, usize) = transmute(s);
+        printf(bytes, arg1, arg2);
+    }
+    pub unsafe fn print3(s: &str, arg1: u32, arg2: u32, arg3: u32) {
+        let (bytes, _len): (*const u8, usize) = transmute(s);
+        printf(bytes, arg1, arg2, arg3);
+    }
+    pub unsafe fn print4(s: &str, arg1: u32, arg2: u32, arg3: u32, arg4: u32) {
+        let (bytes, _len): (*const u8, usize) = transmute(s);
+        printf(bytes, arg1, arg2, arg3, arg4);
+    }
+    pub unsafe fn print5(s: &str, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) {
+        let (bytes, _len): (*const u8, usize) = transmute(s);
+        printf(bytes, arg1, arg2, arg3, arg4, arg5);
+    }
+
+    mod intrinsics {
+        extern "rust-intrinsic" {
+            pub fn transmute<T,U>(e: T) -> U;
+        }
+    }
+}
+
 
 // The minimum alignment guaranteed by the architecture. This value is used to
 // add fast paths for low alignment values. In practice, the alignment is a

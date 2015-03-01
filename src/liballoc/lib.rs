@@ -60,7 +60,7 @@
 #![cfg_attr(stage0, feature(custom_attribute))]
 #![crate_name = "alloc"]
 #![unstable(feature = "alloc")]
-#![feature(staged_api)]
+#![feature(staged_api, intrinsics)]
 #![staged_api]
 #![crate_type = "rlib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
