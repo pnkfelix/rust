@@ -98,6 +98,9 @@ bitflags! {
 
 type ItemInfo = (Ident, Item_, Option<Vec<Attribute> >);
 
+#[derive(Copy, PartialEq, Eq, Hash)]
+pub enum LoopingForm { For, Loop, While, WhileLet, }
+
 /// How to parse a path. There are four different kinds of paths, all of which
 /// are parsed somewhat differently.
 #[derive(Copy, PartialEq)]
@@ -2292,28 +2295,43 @@ impl<'a> Parser<'a> {
                     return self.parse_if_expr();
                 }
                 if self.eat_keyword(keywords::For) {
-                    return self.parse_for_expr(None);
+                    // return self.parse_for_expr(None);
+                    let span = self.last_span;
+                    return self.obsolete_expr(
+                        span, ObsoleteSyntax::LoopingExpr(LoopingForm::For));
                 }
                 if self.eat_keyword(keywords::While) {
-                    return self.parse_while_expr(None);
+                    // return self.parse_while_expr(None);
+                    let span = self.last_span;
+                    return self.obsolete_expr(
+                        span, ObsoleteSyntax::LoopingExpr(LoopingForm::While));
                 }
                 if self.token.is_lifetime() {
-                    let lifetime = self.get_lifetime();
+                    let _lifetime = self.get_lifetime();
                     self.bump();
                     self.expect(&token::Colon);
                     if self.eat_keyword(keywords::While) {
-                        return self.parse_while_expr(Some(lifetime))
+                        let span = self.last_span;
+                        return self.obsolete_expr(
+                            span, ObsoleteSyntax::LoopingExpr(LoopingForm::While));
                     }
                     if self.eat_keyword(keywords::For) {
-                        return self.parse_for_expr(Some(lifetime))
+                        let span = self.last_span;
+                        return self.obsolete_expr(
+                            span, ObsoleteSyntax::LoopingExpr(LoopingForm::For));
                     }
                     if self.eat_keyword(keywords::Loop) {
-                        return self.parse_loop_expr(Some(lifetime))
+                        let span = self.last_span;
+                        return self.obsolete_expr(
+                            span, ObsoleteSyntax::LoopingExpr(LoopingForm::Loop));
                     }
                     self.fatal("expected `while`, `for`, or `loop` after a label")
                 }
                 if self.eat_keyword(keywords::Loop) {
-                    return self.parse_loop_expr(None);
+                    let span = self.last_span;
+                    // return self.parse_loop_expr(None);
+                    return self.obsolete_expr(
+                        span, ObsoleteSyntax::LoopingExpr(LoopingForm::Loop));
                 }
                 if self.eat_keyword(keywords::Continue) {
                     let lo = self.span.lo;
@@ -3109,8 +3127,27 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parse a 'for' .. 'in' expression ('for' token already eaten)
-    pub fn parse_for_expr(&mut self, opt_ident: Option<ast::Ident>) -> P<Expr> {
+    fn check_looping_keyword(&mut self) -> bool {
+        self.check_keyword(keywords::For) ||
+            self.check_keyword(keywords::While) ||
+            self.check_keyword(keywords::Loop)
+    }
+
+    // Parse some looping form (the leading token has not yet been eaten)
+    fn parse_looping_stmt(&mut self, opt_ident: Option<ast::Ident>) -> P<Stmt> {
+        if self.eat_keyword(keywords::For) {
+            self.parse_for_stmt(opt_ident)
+        } else if self.eat_keyword(keywords::While) {
+            self.parse_while_stmt(opt_ident)
+        } else if self.eat_keyword(keywords::Loop) {
+            self.parse_loop_stmt(opt_ident)
+        } else {
+            self.fatal("unexpected leading keyword for looping statement")
+        }
+    }
+
+    /// Parse a 'for' .. 'in' statement ('for' token already eaten)
+    fn parse_for_stmt(&mut self, opt_ident: Option<ast::Ident>) -> P<Stmt> {
         // Parse: `for <src_pat> in <src_expr> <src_loop_block>`
 
         let lo = self.last_span.lo;
@@ -3120,23 +3157,25 @@ impl<'a> Parser<'a> {
         let loop_block = self.parse_block();
         let hi = self.span.hi;
 
-        self.mk_expr(lo, hi, ExprForLoop(pat, expr, loop_block, opt_ident))
+        let ex = self.mk_expr(lo, hi, ExprForLoop(pat, expr, loop_block, opt_ident));
+        P(spanned(lo, hi, StmtExpr(ex, ast::DUMMY_NODE_ID)))
     }
 
-    /// Parse a 'while' or 'while let' expression ('while' token already eaten)
-    pub fn parse_while_expr(&mut self, opt_ident: Option<ast::Ident>) -> P<Expr> {
+    /// Parse a 'while' or 'while let' statement ('while' token already eaten)
+    fn parse_while_stmt(&mut self, opt_ident: Option<ast::Ident>) -> P<Stmt> {
         if self.token.is_keyword(keywords::Let) {
-            return self.parse_while_let_expr(opt_ident);
+            return self.parse_while_let_stmt(opt_ident);
         }
         let lo = self.last_span.lo;
         let cond = self.parse_expr_res(RESTRICTION_NO_STRUCT_LITERAL);
         let body = self.parse_block();
         let hi = body.span.hi;
-        return self.mk_expr(lo, hi, ExprWhile(cond, body, opt_ident));
+        let ex = self.mk_expr(lo, hi, ExprWhile(cond, body, opt_ident));
+        P(spanned(lo, hi, StmtExpr(ex, ast::DUMMY_NODE_ID)))
     }
 
-    /// Parse a 'while let' expression ('while' token already eaten)
-    pub fn parse_while_let_expr(&mut self, opt_ident: Option<ast::Ident>) -> P<Expr> {
+    /// Parse a 'while let' statement ('while' token already eaten)
+    fn parse_while_let_stmt(&mut self, opt_ident: Option<ast::Ident>) -> P<Stmt> {
         let lo = self.last_span.lo;
         self.expect_keyword(keywords::Let);
         let pat = self.parse_pat();
@@ -3144,14 +3183,17 @@ impl<'a> Parser<'a> {
         let expr = self.parse_expr_res(RESTRICTION_NO_STRUCT_LITERAL);
         let body = self.parse_block();
         let hi = body.span.hi;
-        return self.mk_expr(lo, hi, ExprWhileLet(pat, expr, body, opt_ident));
+        let ex = self.mk_expr(lo, hi, ExprWhileLet(pat, expr, body, opt_ident));
+        P(spanned(lo, hi, StmtExpr(ex, ast::DUMMY_NODE_ID)))
     }
 
-    pub fn parse_loop_expr(&mut self, opt_ident: Option<ast::Ident>) -> P<Expr> {
+    /// Parse a 'loop' statement ('loop' token already eaten)
+    fn parse_loop_stmt(&mut self, opt_ident: Option<ast::Ident>) -> P<Stmt> {
         let lo = self.last_span.lo;
         let body = self.parse_block();
         let hi = body.span.hi;
-        self.mk_expr(lo, hi, ExprLoop(body, opt_ident))
+        let ex = self.mk_expr(lo, hi, ExprLoop(body, opt_ident));
+        P(spanned(lo, hi, StmtExpr(ex, ast::DUMMY_NODE_ID)))
     }
 
     fn parse_match_expr(&mut self) -> P<Expr> {
@@ -3722,6 +3764,16 @@ impl<'a> Parser<'a> {
             self.expect_keyword(keywords::Let);
             let decl = self.parse_let();
             P(spanned(lo, decl.span.hi, StmtDecl(decl, ast::DUMMY_NODE_ID)))
+        } else if self.check_looping_keyword() {
+            self.parse_looping_stmt(None)
+        } else if self.token.is_lifetime() {
+            let lifetime = self.get_lifetime();
+            self.bump();
+            self.expect(&token::Colon);
+            if self.check_looping_keyword() {
+                return self.parse_looping_stmt(Some(lifetime));
+            }
+            self.fatal("expected `while`, `for`, or `loop` after a label")
         } else if self.token.is_ident()
             && !self.token.is_any_keyword()
             && self.look_ahead(1, |t| *t == token::Not) {

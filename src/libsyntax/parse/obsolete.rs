@@ -29,6 +29,9 @@ pub enum ObsoleteSyntax {
     ClosureType,
     ClosureKind,
     EmptyIndex,
+
+    // these are all forced to be statements for now, see RFC XXX
+    LoopingExpr(parser::LoopingForm),
 }
 
 pub trait ParserObsoleteMethods {
@@ -85,6 +88,26 @@ impl<'a> ParserObsoleteMethods for parser::Parser<'a> {
             ObsoleteSyntax::EmptyIndex => (
                 "[]",
                 "write `[..]` instead",
+                false, // warning for now
+            ),
+            ObsoleteSyntax::LoopingExpr(parser::LoopingForm::For) => (
+                "for expression",
+                "write `{ for ... in ... { ... } }` instead",
+                false, // warning for now
+            ),
+            ObsoleteSyntax::LoopingExpr(parser::LoopingForm::Loop) => (
+                "loop expression",
+                "write `{ loop { ... } }` instead",
+                false, // warning for now
+            ),
+            ObsoleteSyntax::LoopingExpr(parser::LoopingForm::While) => (
+                "while expression",
+                "write `{ while ... { ... } }` instead",
+                false, // warning for now
+            ),
+            ObsoleteSyntax::LoopingExpr(parser::LoopingForm::WhileLet) => (
+                "while-let expression",
+                "write `{ while let ... = ... { ... } }` instead",
                 false, // warning for now
             ),
         };
