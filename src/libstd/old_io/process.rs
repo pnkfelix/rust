@@ -109,9 +109,11 @@ impl hash::Hash for EnvKey {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         let &EnvKey(ref x) = self;
         match str::from_utf8(x.as_bytes()) {
-            Ok(s) => for ch in s.chars() {
-                (ch as u8 as char).to_lowercase().hash(state);
-            },
+            Ok(s) => {
+                for ch in s.chars() {
+                    (ch as u8 as char).to_lowercase().hash(state);
+                }
+            }
             Err(..) => x.hash(state)
         }
     }

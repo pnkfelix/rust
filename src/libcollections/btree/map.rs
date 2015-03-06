@@ -1424,7 +1424,7 @@ macro_rules! range_impl {
             // |_39_|_40_|_41_|_42_|  (leaf, the last leftmost)
             //           \_________|  iterator at traversals[0]
             match min {
-                Included(key) | Excluded(key) =>
+                Included(key) | Excluded(key) => {
                     while let Some(left) = leftmost {
                         let is_leaf = left.is_leaf();
                         let mut iter = left.$as_slices_internal().slice_from(key).$iter();
@@ -1435,7 +1435,8 @@ macro_rules! range_impl {
                             iter.next_edge_item()
                         };
                         traversals.push_back(iter);
-                    },
+                    }
+                },
                 _ => {}
             }
             // If the leftmost iterator starts with an element, then it was an exact match.
@@ -1447,7 +1448,7 @@ macro_rules! range_impl {
 
             // The code for the right side is similar.
             match max {
-                Included(key) | Excluded(key) =>
+                Included(key) | Excluded(key) => {
                     while let Some(right) = rightmost {
                         let is_leaf = right.is_leaf();
                         let mut iter = right.$as_slices_internal().slice_to(key).$iter();
@@ -1457,7 +1458,8 @@ macro_rules! range_impl {
                             iter.next_edge_item_back()
                         };
                         traversals.push_front(iter);
-                    },
+                    }
+                }
                 _ => {}
             }
             if let (Excluded(_), Some(rightmost_iter)) = (max, traversals.front_mut()) {
