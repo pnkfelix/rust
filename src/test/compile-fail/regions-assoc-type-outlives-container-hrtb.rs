@@ -42,7 +42,7 @@ fn with_assoc<'a,'b>() {
     // We get no error here because the where clause has a higher-ranked assoc type,
     // which could not be projected from.
 
-    let _: &'a WithHrAssoc<TheType<'b>> = loop { };
+    let _: &'a WithHrAssoc<TheType<'b>> = { loop { } };
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -62,7 +62,7 @@ fn with_assoc_sub<'a,'b>() {
     // Same here, because although the where clause is not HR, it
     // extends a trait in a HR way.
 
-    let _: &'a WithHrAssocSub<TheType<'b>> = loop { };
+    let _: &'a WithHrAssocSub<TheType<'b>> = { loop { } };
 }
 
 #[rustc_error]

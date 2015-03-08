@@ -33,7 +33,7 @@ trait Add<RHS=Self> {
 }
 
 fn ice<A>(a: A) {
-    let r = loop {};
+    let r = { loop {} };
     r = r + a;
     //~^ ERROR binary operation `+` cannot be applied to type `A`
 }

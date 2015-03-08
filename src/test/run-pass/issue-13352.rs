@@ -15,8 +15,8 @@ use std::thunk::Thunk;
 fn foo(_: Thunk) {}
 
 fn main() {
-    foo(loop {
+    foo({ loop {
         unsafe { libc::exit(0 as libc::c_int); }
-    });
-    2_usize + (loop {});
+    }});
+    2_usize + {loop {}};
 }

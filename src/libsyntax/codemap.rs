@@ -371,9 +371,9 @@ impl Encodable for FileMap {
                                                     .map(|w| (w[1] - w[0]));
 
                         match bytes_per_diff {
-                            1 => for diff in diff_iter { try! { (diff.0 as u8).encode(s) } },
-                            2 => for diff in diff_iter { try! { (diff.0 as u16).encode(s) } },
-                            4 => for diff in diff_iter { try! { (diff.0 as u32).encode(s) } },
+                            1 => { for diff in diff_iter { try! { (diff.0 as u8).encode(s) } } }
+                            2 => { for diff in diff_iter { try! { (diff.0 as u16).encode(s) } } }
+                            4 => { for diff in diff_iter { try! { (diff.0 as u32).encode(s) } } }
                             _ => unreachable!()
                         }
                     }

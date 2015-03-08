@@ -506,10 +506,10 @@ fn highlight_lines(err: &mut EmitterWriter,
                         col += 8 - col%8;
                         s.push('\t');
                     },
-                    c => for _ in 0..c.width(false).unwrap_or(0) {
+                    c => { for _ in 0..c.width(false).unwrap_or(0) {
                         col += 1;
                         s.push(' ');
-                    },
+                    } }
                 }
             }
 
@@ -601,9 +601,9 @@ fn custom_highlight_lines(w: &mut EmitterWriter,
             // position.
             match ch {
                 '\t' => s.push('\t'),
-                c => for _ in 0..c.width(false).unwrap_or(0) {
+                c => { for _ in 0..c.width(false).unwrap_or(0) {
                     s.push(' ');
-                },
+                } }
             }
         }
     }

@@ -9,7 +9,7 @@
 // except according to those terms.
 
 fn f() {
-   let _x: uint = loop { loop { break; } };
+   let _x: uint = { loop { loop { break; } } };
 }
 
 pub fn main() {

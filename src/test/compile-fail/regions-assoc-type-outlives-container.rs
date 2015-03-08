@@ -47,7 +47,10 @@ fn with_assoc<'a,'b>() {
     // outlive 'a. In this case, that means TheType<'b>::TheAssocType,
     // which is &'b (), must outlive 'a.
 
-    let _: &'a WithAssoc<TheType<'b>> = loop { }; //~ ERROR cannot infer
+    let _: &'a WithAssoc<TheType<'b>> = { loop { } };
+    //~^ ERROR cannot infer
+    //~| ERROR cannot infer
+    //~| ERROR cannot infer
 }
 
 fn with_assoc1<'a,'b>() where 'b : 'a {
@@ -57,7 +60,7 @@ fn with_assoc1<'a,'b>() where 'b : 'a {
     // which is &'b (), must outlive 'a, so 'b : 'a must hold, and
     // that is in the where clauses, so we're fine.
 
-    let _: &'a WithAssoc<TheType<'b>> = loop { };
+    let _: &'a WithAssoc<TheType<'b>> = { loop { } };
 }
 
 fn without_assoc<'a,'b>() {
@@ -65,7 +68,7 @@ fn without_assoc<'a,'b>() {
     // `TheType<'b>` is purely covariant, so there is no requirement
     // that `'b:'a` holds.
 
-    let _: &'a WithoutAssoc<TheType<'b>> = loop { };
+    let _: &'a WithoutAssoc<TheType<'b>> = { loop { } };
 }
 
 fn call_with_assoc<'a,'b>() {
