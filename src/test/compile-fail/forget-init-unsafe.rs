@@ -8,7 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::intrinsics::{init, forget};
+#[cfg(not(stage0))]
+use std::intrinsics::init_zeroed as init;
+#[cfg(stage0)]
+use std::intrinsics::init;
+
+use std::intrinsics::forget;
 
 // Test that the `forget` and `init` intrinsics are really unsafe
 pub fn main() {
