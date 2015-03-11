@@ -30,6 +30,25 @@ pub trait WrappingOps {
     fn wrapping_add(self, rhs: Self) -> Self;
     fn wrapping_sub(self, rhs: Self) -> Self;
     fn wrapping_mul(self, rhs: Self) -> Self;
+    fn wrapping_div(self, rhs: Self) -> Self;
+    fn wrapping_rem(self, rhs: Self) -> Self;
+
+    fn wrapping_neg(self) -> Self;
+
+    fn wrapping_lshift(self, rhs: u32) -> Self;
+    fn wrapping_rshift(self, rhs: u32) -> Self;
+
+    fn wrapping_as_u8(self) -> u8;
+    fn wrapping_as_u16(self) -> u16;
+    fn wrapping_as_u32(self) -> u32;
+    fn wrapping_as_u64(self) -> u64;
+    fn wrapping_as_usize(self) -> usize;
+
+    fn wrapping_as_i8(self) -> i8;
+    fn wrapping_as_i16(self) -> i16;
+    fn wrapping_as_i32(self) -> i32;
+    fn wrapping_as_i64(self) -> i64;
+    fn wrapping_as_isize(self) -> isize;
 }
 
 #[unstable(feature = "core", reason = "may be removed, renamed, or relocated")]
@@ -37,10 +56,12 @@ pub trait OverflowingOps {
     fn overflowing_add(self, rhs: Self) -> (Self, bool);
     fn overflowing_sub(self, rhs: Self) -> (Self, bool);
     fn overflowing_mul(self, rhs: Self) -> (Self, bool);
+    fn overflowing_div(self, rhs: Self) -> (Self, bool);
+    fn overflowing_rem(self, rhs: Self) -> (Self, bool);
 }
 
-macro_rules! wrapping_impl {
-    ($($t:ty)*) => ($(
+macro_rules! wrapping_signed_impl {
+    ($($t:ident)*) => ($(
         impl WrappingOps for $t {
             #[inline(always)]
             fn wrapping_add(self, rhs: $t) -> $t {
@@ -60,11 +81,120 @@ macro_rules! wrapping_impl {
                     overflowing_mul(self, rhs)
                 }
             }
+            #[inline(always)]
+            fn wrapping_div(self, rhs: $t) -> $t {
+                if self == ::$t::MIN && rhs == -1 {
+                    1
+                } else {
+                    self / rhs
+                }
+            }
+            #[inline(always)]
+            fn wrapping_rem(self, rhs: $t) -> $t {
+                if self == ::$t::MIN && rhs == -1 {
+                    0
+                } else {
+                    self % rhs
+                }
+            }
+
+            #[inline(always)]
+            fn wrapping_neg(self) -> $t {
+                if self == ::$t::MIN {
+                    self
+                } else {
+                    -self
+                }
+            }
+
+            // FIXME: replace impls with LLVM intrinsic calls to directly bypass checks
+            #[inline(always)] fn wrapping_lshift(self, rhs: u32) -> $t { self << (rhs & 0x1f) }
+            #[inline(always)] fn wrapping_rshift(self, rhs: u32) -> $t { self >> (rhs & 0x1f) }
+
+            #[inline(always)] fn wrapping_as_u8(self) -> u8 { (self & 0xFF) as u8 }
+            #[inline(always)] fn wrapping_as_u16(self) -> u16 { (self & 0xFFFF) as u16 }
+            #[inline(always)] fn wrapping_as_u32(self) -> u32 { (self & 0xFFFF_FFFF) as u32 }
+            #[inline(always)] fn wrapping_as_u64(self) -> u64 { self as u64 }
+            #[cfg(target_pointer_width = "64")]
+            #[inline(always)] fn wrapping_as_usize(self) -> usize { self as usize }
+            #[cfg(target_pointer_width = "32")]
+            #[inline(always)] fn wrapping_as_usize(self) -> usize { (self & 0xFFFF_FFFF) as usize }
+
+            #[inline(always)] fn wrapping_as_i8(self) -> i8 { (self & 0xFF) as i8 }
+            #[inline(always)] fn wrapping_as_i16(self) -> i16 { (self & 0xFFFF) as i16 }
+            #[inline(always)] fn wrapping_as_i32(self) -> i32 { (self & 0xFFFF_FFFF) as i32 }
+            #[inline(always)] fn wrapping_as_i64(self) -> i64 { self as i64 }
+            #[cfg(target_pointer_width = "64")]
+            #[inline(always)] fn wrapping_as_isize(self) -> isize { self as isize }
+            #[cfg(target_pointer_width = "32")]
+            #[inline(always)] fn wrapping_as_isize(self) -> isize { (self & 0xFFFF_FFFF) as isize }
         }
     )*)
 }
 
-wrapping_impl! { uint u8 u16 u32 u64 int i8 i16 i32 i64 }
+macro_rules! wrapping_unsigned_impl {
+    ($($t:ident)*) => ($(
+        impl WrappingOps for $t {
+            #[inline(always)]
+            fn wrapping_add(self, rhs: $t) -> $t {
+                unsafe {
+                    overflowing_add(self, rhs)
+                }
+            }
+            #[inline(always)]
+            fn wrapping_sub(self, rhs: $t) -> $t {
+                unsafe {
+                    overflowing_sub(self, rhs)
+                }
+            }
+            #[inline(always)]
+            fn wrapping_mul(self, rhs: $t) -> $t {
+                unsafe {
+                    overflowing_mul(self, rhs)
+                }
+            }
+            #[inline(always)]
+            fn wrapping_div(self, rhs: $t) -> $t {
+                self / rhs
+            }
+            #[inline(always)]
+            fn wrapping_rem(self, rhs: $t) -> $t {
+                self % rhs
+            }
+
+            #[inline(always)]
+            fn wrapping_neg(self) -> $t {
+                // FIXME: what are we doing for unsigned things here?
+                -self
+            }
+
+            // FIXME: replace impls with LLVM intrinsic calls to directly bypass checks
+            #[inline(always)] fn wrapping_lshift(self, rhs: u32) -> $t { self << (rhs & 0x1f) }
+            #[inline(always)] fn wrapping_rshift(self, rhs: u32) -> $t { self >> (rhs & 0x1f) }
+
+            #[inline(always)] fn wrapping_as_u8(self) -> u8 { (self & 0xFF) as u8 }
+            #[inline(always)] fn wrapping_as_u16(self) -> u16 { (self & 0xFFFF) as u16 }
+            #[inline(always)] fn wrapping_as_u32(self) -> u32 { (self & 0xFFFF_FFFF) as u32 }
+            #[inline(always)] fn wrapping_as_u64(self) -> u64 { self as u64 }
+            #[cfg(target_pointer_width = "64")]
+            #[inline(always)] fn wrapping_as_usize(self) -> usize { self as usize }
+            #[cfg(target_pointer_width = "32")]
+            #[inline(always)] fn wrapping_as_usize(self) -> usize { (self & 0xFFFF_FFFF) as usize }
+
+            #[inline(always)] fn wrapping_as_i8(self) -> i8 { (self & 0xFF) as i8 }
+            #[inline(always)] fn wrapping_as_i16(self) -> i16 { (self & 0xFFFF) as i16 }
+            #[inline(always)] fn wrapping_as_i32(self) -> i32 { (self & 0xFFFF_FFFF) as i32 }
+            #[inline(always)] fn wrapping_as_i64(self) -> i64 { self as i64 }
+            #[cfg(target_pointer_width = "64")]
+            #[inline(always)] fn wrapping_as_isize(self) -> isize { self as isize }
+            #[cfg(target_pointer_width = "32")]
+            #[inline(always)] fn wrapping_as_isize(self) -> isize { (self & 0xFFFF_FFFF) as isize }
+        }
+    )*)
+}
+
+wrapping_unsigned_impl! { usize u8 u16 u32 u64 }
+wrapping_signed_impl! {   isize i8 i16 i32 i64 }
 
 #[unstable(feature = "core", reason = "may be removed, renamed, or relocated")]
 #[derive(PartialEq,Eq,PartialOrd,Ord,Clone,Copy)]
@@ -150,7 +280,7 @@ impl<T:WrappingOps+Shr<uint,Output=T>> Shr<uint> for Wrapping<T> {
     }
 }
 
-macro_rules! overflowing_impl {
+macro_rules! overflowing_signed_impl {
     ($($t:ident)*) => ($(
         impl OverflowingOps for $t {
             #[inline(always)]
@@ -171,11 +301,63 @@ macro_rules! overflowing_impl {
                     concat_idents!($t, _mul_with_overflow)(self, rhs)
                 }
             }
+            #[inline(always)]
+            fn overflowing_div(self, rhs: $t) -> ($t, bool) {
+                if self == ::$t::MIN && rhs == -1 {
+                    (1, true)
+                } else {
+                    (self / rhs, false)
+                }
+            }
+            #[inline(always)]
+            fn overflowing_rem(self, rhs: $t) -> ($t, bool) {
+                if self == ::$t::MIN && rhs == -1 {
+                    // FIXME: should oflo bit be true, despite
+                    // conceptually no overflow is occurring?
+                    (0, false)
+                } else {
+                    (self % rhs, false)
+                }
+            }
         }
     )*)
 }
 
-overflowing_impl! { u8 u16 u32 u64 i8 i16 i32 i64 }
+macro_rules! overflowing_unsigned_impl {
+    ($($t:ident)*) => ($(
+        impl OverflowingOps for $t {
+            #[inline(always)]
+            fn overflowing_add(self, rhs: $t) -> ($t, bool) {
+                unsafe {
+                    concat_idents!($t, _add_with_overflow)(self, rhs)
+                }
+            }
+            #[inline(always)]
+            fn overflowing_sub(self, rhs: $t) -> ($t, bool) {
+                unsafe {
+                    concat_idents!($t, _sub_with_overflow)(self, rhs)
+                }
+            }
+            #[inline(always)]
+            fn overflowing_mul(self, rhs: $t) -> ($t, bool) {
+                unsafe {
+                    concat_idents!($t, _mul_with_overflow)(self, rhs)
+                }
+            }
+            #[inline(always)]
+            fn overflowing_div(self, rhs: $t) -> ($t, bool) {
+                (self / rhs, false)
+            }
+            #[inline(always)]
+            fn overflowing_rem(self, rhs: $t) -> ($t, bool) {
+                (self % rhs, false)
+            }
+        }
+    )*)
+}
+
+overflowing_signed_impl! {   i8 i16 i32 i64 }
+overflowing_unsigned_impl! { u8 u16 u32 u64 }
 
 #[cfg(target_pointer_width = "64")]
 impl OverflowingOps for usize {
@@ -199,6 +381,14 @@ impl OverflowingOps for usize {
             let res = u64_mul_with_overflow(self as u64, rhs as u64);
             (res.0 as usize, res.1)
         }
+    }
+    #[inline(always)]
+    fn overflowing_div(self, rhs: usize) -> (usize, bool) {
+        (self / rhs, false)
+    }
+    #[inline(always)]
+    fn overflowing_rem(self, rhs: usize) -> (usize, bool) {
+        (self % rhs, false)
     }
 }
 
@@ -225,6 +415,14 @@ impl OverflowingOps for usize {
             (res.0 as usize, res.1)
         }
     }
+    #[inline(always)]
+    fn overflowing_div(self, rhs: usize) -> (usize, bool) {
+        (self / rhs, false)
+    }
+    #[inline(always)]
+    fn overflowing_rem(self, rhs: usize) -> (usize, bool) {
+        (self % rhs, false)
+    }
 }
 
 #[cfg(target_pointer_width = "64")]
@@ -250,6 +448,24 @@ impl OverflowingOps for isize {
             (res.0 as isize, res.1)
         }
     }
+    #[inline(always)]
+    fn overflowing_div(self, rhs: isize) -> (isize, bool) {
+        if self == ::isize::MIN && rhs == -1 {
+            (1, true)
+        } else {
+            (self / rhs, false)
+        }
+    }
+    #[inline(always)]
+    fn overflowing_rem(self, rhs: isize) -> (isize, bool) {
+        if self == ::isize::MIN && rhs == -1 {
+            // FIXME: should oflo bit be true, despite
+            // conceptually no overflow is occurring?
+            (0, false)
+        } else {
+            (self % rhs, false)
+        }
+    }
 }
 
 #[cfg(target_pointer_width = "32")]
@@ -273,6 +489,24 @@ impl OverflowingOps for isize {
         unsafe {
             let res = i32_mul_with_overflow(self as i32, rhs as i32);
             (res.0 as isize, res.1)
+        }
+    }
+    #[inline(always)]
+    fn overflowing_div(self, rhs: isize) -> (isize, bool) {
+        if self == ::isize::MIN && rhs == -1 {
+            (1, true)
+        } else {
+            (self / rhs, false)
+        }
+    }
+    #[inline(always)]
+    fn overflowing_rem(self, rhs: isize) -> (isize, bool) {
+        if self == ::isize::MIN && rhs == -1 {
+            // FIXME: should oflo bit be true, despite
+            // conceptually no overflow is occurring?
+            (0, false)
+        } else {
+            (self % rhs, false)
         }
     }
 }
