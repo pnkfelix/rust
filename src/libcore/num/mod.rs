@@ -404,6 +404,47 @@ pub trait Int
         }
         acc
     }
+
+    #[unstable(feature = "checked_arith_ops")]
+    fn checked_neg(self) -> Option<Self>;
+
+    #[unstable(feature = "checked_bit_ops")]
+    fn checked_lshift(self, rhs: u32) -> Option<Self> {
+        if rhs & !0x1F != 0 {
+            None
+        } else {
+            Some(self << (rhs as usize))
+        }
+    }
+    #[unstable(feature = "checked_bit_ops")]
+    fn checked_rshift(self, rhs: u32) -> Option<Self> {
+        if rhs & !0x1F != 0 {
+            None
+        } else {
+            Some(self >> (rhs as usize))
+        }
+    }
+    #[unstable(feature = "checked_bit_ops")]
+    fn checked_as_u8(self) -> Option<u8>;
+    #[unstable(feature = "checked_bit_ops")]
+    fn checked_as_u16(self) -> Option<u16>;
+    #[unstable(feature = "checked_bit_ops")]
+    fn checked_as_u32(self) -> Option<u32>;
+    #[unstable(feature = "checked_bit_ops")]
+    fn checked_as_u64(self) -> Option<u64>;
+    #[unstable(feature = "checked_bit_ops")]
+    fn checked_as_usize(self) -> Option<usize>;
+
+    #[unstable(feature = "checked_bit_ops")]
+    fn checked_as_i8(self) -> Option<i8>;
+    #[unstable(feature = "checked_bit_ops")]
+    fn checked_as_i16(self) -> Option<i16>;
+    #[unstable(feature = "checked_bit_ops")]
+    fn checked_as_i32(self) -> Option<i32>;
+    #[unstable(feature = "checked_bit_ops")]
+    fn checked_as_i64(self) -> Option<i64>;
+    #[unstable(feature = "checked_bit_ops")]
+    fn checked_as_isize(self) -> Option<isize>;
 }
 
 macro_rules! checked_op {
@@ -483,6 +524,80 @@ macro_rules! uint_impl {
                     0 => None,
                     v => Some(self / v),
                 }
+            }
+
+            #[inline]
+            fn checked_neg(self) -> Option<Self> {
+                #![allow(unsigned_negation)]
+                // FIXME: what are we doing for unsigned things?
+                // Negation always works, right?
+                Some(-self)
+            }
+
+            #[inline]
+            fn checked_as_u8(self) -> Option<u8> {
+                #![allow(exceeding_bitshifts)]
+                if (self >>  8) != 0 { None } else { Some(self as u8) }
+            }
+            #[inline]
+            fn checked_as_u16(self) -> Option<u16> {
+                #![allow(exceeding_bitshifts)]
+                if (self >> 16) != 0 { None } else { Some(self as u16) }
+            }
+            #[inline]
+            fn checked_as_u32(self) -> Option<u32> {
+                #![allow(exceeding_bitshifts)]
+                if (self >> 32) != 0 { None } else { Some(self as u32) }
+            }
+            #[inline]
+            fn checked_as_u64(self) -> Option<u64> {
+                // all current integer types are valid inputs
+                Some(self as u64)
+            }
+            #[inline]
+            #[cfg(target_pointer_width = "32")]
+            fn checked_as_usize(self) -> Option<usize> {
+                #![allow(exceeding_bitshifts)]
+                if (self >> 32) != 0 { None } else { Some(self as usize) }
+            }
+            #[inline]
+            #[cfg(target_pointer_width = "64")]
+            fn checked_as_usize(self) -> Option<usize> {
+                // all current integer types are valid inputs
+                Some(self as usize)
+            }
+
+            #[inline]
+            fn checked_as_i8(self) -> Option<i8> {
+                #![allow(exceeding_bitshifts)]
+                if (self >>  8) != 0 { None } else { Some(self as i8) }
+            }
+            #[inline]
+            fn checked_as_i16(self) -> Option<i16> {
+                #![allow(exceeding_bitshifts)]
+                if (self >> 16) != 0 { None } else { Some(self as i16) }
+            }
+            #[inline]
+            fn checked_as_i32(self) -> Option<i32> {
+                #![allow(exceeding_bitshifts)]
+                if (self >> 32) != 0 { None } else { Some(self as i32) }
+            }
+            #[inline]
+            fn checked_as_i64(self) -> Option<i64> {
+                // all current integer types are valid inputs
+                Some(self as i64)
+            }
+            #[inline]
+            #[cfg(target_pointer_width = "32")]
+            fn checked_as_isize(self) -> Option<isize> {
+                #![allow(exceeding_bitshifts)]
+                if (self >> 32) != 0 { None } else { Some(self as isize) }
+            }
+            #[inline]
+            #[cfg(target_pointer_width = "64")]
+            fn checked_as_isize(self) -> Option<isize> {
+                // all current integer types are valid inputs
+                Some(self as isize)
             }
         }
     }
@@ -609,6 +724,113 @@ macro_rules! int_impl {
                     v   => Some(self / v),
                 }
             }
+
+            #[inline]
+            fn checked_neg(self) -> Option<$T> {
+                if self == Int::min_value() {
+                    None
+                } else {
+                    Some(-self)
+                }
+            }
+
+            #[inline]
+            fn checked_as_u8(self) -> Option<u8> {
+                #![allow(exceeding_bitshifts, overflowing_literals)]
+                if (self >> 7) != -((self & 0x80) >> 7) {
+                    None
+                } else {
+                    Some(self as u8)
+                }
+            }
+            #[inline]
+            fn checked_as_u16(self) -> Option<u16> {
+                #![allow(exceeding_bitshifts, overflowing_literals)]
+                if (self >> 15) != -((self & 0x8000) >> 15) {
+                    None
+                } else {
+                    Some(self as u16)
+                }
+            }
+            #[inline]
+            fn checked_as_u32(self) -> Option<u32> {
+                #![allow(exceeding_bitshifts, overflowing_literals)]
+                if (self >> 31) != -((self & 0x8000_0000) >> 31) {
+                    None
+                } else {
+                    Some(self as u32)
+                }
+            }
+            #[inline]
+            fn checked_as_u64(self) -> Option<u64> {
+                // all current integer types are valid inputs
+                Some(self as u64)
+            }
+            #[inline]
+            #[cfg(target_pointer_width = "32")]
+            fn checked_as_usize(self) -> Option<usize> {
+                #![allow(exceeding_bitshifts, overflowing_literals)]
+                if (self >> 31) != -((self & 0x8000_0000) >> 31) {
+                    None
+                } else {
+                    Some(self as usize)
+                }
+            }
+            #[inline]
+            #[cfg(target_pointer_width = "64")]
+            fn checked_as_usize(self) -> Option<usize> {
+                // all current integer types are valid inputs
+                Some(self as usize)
+            }
+            #[inline]
+            fn checked_as_i8(self) -> Option<i8> {
+                #![allow(exceeding_bitshifts, overflowing_literals)]
+                if (self >> 7) != -((self & 0x80) >> 7) {
+                    None
+                } else {
+                    Some(self as i8)
+                }
+            }
+            #[inline]
+            fn checked_as_i16(self) -> Option<i16> {
+                #![allow(exceeding_bitshifts, overflowing_literals)]
+                if (self >> 15) != -((self & 0x8000) >> 15) {
+                    None
+                } else {
+                    Some(self as i16)
+                }
+            }
+            #[inline]
+            fn checked_as_i32(self) -> Option<i32> {
+                #![allow(exceeding_bitshifts, overflowing_literals)]
+                if (self >> 31) != -((self & 0x8000_0000) >> 31) {
+                    None
+                } else {
+                    Some(self as i32)
+                }
+            }
+            #[inline]
+            fn checked_as_i64(self) -> Option<i64> {
+                // all current integer types are valid inputs
+                Some(self as i64)
+            }
+            #[inline]
+            #[cfg(target_pointer_width = "32")]
+            fn checked_as_isize(self) -> Option<isize> {
+                #![allow(exceeding_bitshifts)]
+                if (self >> 31) != -((self & 0x8000_0000) >> 31) {
+                    None
+                } else {
+                    Some(self as isize)
+                }
+            }
+            #[inline]
+            #[cfg(target_pointer_width = "64")]
+            fn checked_as_isize(self) -> Option<isize> {
+                // all current integer types are valid inputs
+                Some(self as isize)
+            }
+
         }
     }
 }
