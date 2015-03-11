@@ -280,6 +280,7 @@ impl KindOps for Rvalue {
                               _val: ValueRef,
                               _ty: Ty<'tcx>)
                               -> Block<'blk, 'tcx> {
+        debug!("<Rvalue as KindOps>::post_store is_by_ref: {}", self.is_by_ref());
         // No cleanup is scheduled for an rvalue, so we don't have
         // to do anything after a move to cancel or duplicate it.
         if self.is_by_ref() {
@@ -330,6 +331,7 @@ impl KindOps for Expr {
                               val: ValueRef,
                               ty: Ty<'tcx>)
                               -> Block<'blk, 'tcx> {
+        debug!("<Expr as KindOps>::post_store");
         match *self {
             LvalueExpr => Lvalue.post_store(bcx, val, ty),
             RvalueExpr(ref r) => r.post_store(bcx, val, ty),
