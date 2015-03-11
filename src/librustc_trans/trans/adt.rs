@@ -185,9 +185,10 @@ pub const DTOR_STARTED_U32: u32 = repeat_u8_as_u32!(DTOR_STARTED);
 #[allow(dead_code)]
 pub const DTOR_STARTED_U64: u64 = repeat_u8_as_u64!(DTOR_STARTED);
 
-pub const DTOR_DONE: u8 = 0xc1;
+pub const DTOR_DONE: u8 = 0x1d;
 pub const DTOR_DONE_U32: u32 = repeat_u8_as_u32!(DTOR_DONE);
 pub const DTOR_DONE_U64: u64 = repeat_u8_as_u64!(DTOR_DONE);
+
 #[allow(dead_code)]
 pub fn dtor_done_usize(ccx: &CrateContext) -> usize {
     match &ccx.tcx().sess.target.target.target_pointer_width[..] {
