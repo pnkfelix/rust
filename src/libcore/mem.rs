@@ -18,6 +18,7 @@
 use marker::Sized;
 use intrinsics;
 use ptr;
+use ptr::PtrExt;
 
 #[stable(feature = "rust1", since = "1.0.0")]
 pub use intrinsics::transmute;
@@ -155,7 +156,37 @@ pub fn align_of_val<T>(_val: &T) -> usize {
 #[inline]
 #[stable(feature = "rust1", since = "1.0.0")]
 pub unsafe fn zeroed<T>() -> T {
-    intrinsics::init()
+    match () {
+        #[cfg(not(stage0))] () => intrinsics::init_zeroed(),
+        #[cfg(stage0)] () => intrinsics::init(),
+    }
+}
+
+/// Create a value initialized to an unspecified series of bytes.
+///
+/// The byte sequence usually indicates that the value at the memory
+/// in question has been dropped. Thus, *if* T carries a drop flag,
+/// any associated destructor will not be run when the value falls out
+/// of scope.
+///
+/// Some code at one time used the `zeroed` function above to
+/// accomplish this goal.
+///
+/// This function is expected to be deprecated with the transition
+/// to non-zeroing drop.
+#[inline]
+#[unstable(feature = "filling_drop")]
+pub unsafe fn dropped<T>() -> T {
+    // match () {
+    //     #[cfg(not(stage0))] () => intrinsics::init_dropped(),
+    //     #[cfg(stage0)] () => intrinsics::init(),
+    // }
+    let mut x: T = uninitialized();
+    let p: *mut u8 = transmute(&mut x as *mut T);
+    for i in 0..size_of::<T>() {
+        *p.offset(i as isize) = POST_DROP_U8;
+    }
+    x
 }
 
 /// Create an uninitialized value.
@@ -302,7 +333,16 @@ macro_rules! repeat_u8_as_u64 {
                        (repeat_u8_as_u32!($name) as u64)) }
 }
 
-#[cfg(not(stage0))] pub const POST_DROP_U8: u8 = 0xc1;
+// NOTE: Keep synchronized with values used in librustc_trans::trans::adt.
+//
+// In particular, the POST_DROP_U8 marker must never equal the
+// DTOR_NEEDED_U8 marker.
+//
+// For a while pnkfelix was using 0xc1 here.
+// But having the sign bit set is a pain, so 0x1d is probably better.
+//
+// And of course, 0x00 brings back the old world of zero'ing on drop.
+#[cfg(not(stage0))] pub const POST_DROP_U8: u8 = 0x1d;
 #[cfg(not(stage0))] pub const POST_DROP_U32: u32 = repeat_u8_as_u32!(POST_DROP_U8);
 #[cfg(not(stage0))] pub const POST_DROP_U64: u64 = repeat_u8_as_u64!(POST_DROP_U8);
 
