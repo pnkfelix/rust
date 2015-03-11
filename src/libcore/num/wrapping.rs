@@ -111,22 +111,30 @@ macro_rules! wrapping_signed_impl {
             #[inline(always)] fn wrapping_lshift(self, rhs: u32) -> $t { self << (rhs & 0x1f) }
             #[inline(always)] fn wrapping_rshift(self, rhs: u32) -> $t { self >> (rhs & 0x1f) }
 
+            #[allow(overflowing_literals)]
             #[inline(always)] fn wrapping_as_u8(self) -> u8 { (self & 0xFF) as u8 }
+            #[allow(overflowing_literals)]
             #[inline(always)] fn wrapping_as_u16(self) -> u16 { (self & 0xFFFF) as u16 }
+            #[allow(overflowing_literals)]
             #[inline(always)] fn wrapping_as_u32(self) -> u32 { (self & 0xFFFF_FFFF) as u32 }
             #[inline(always)] fn wrapping_as_u64(self) -> u64 { self as u64 }
             #[cfg(target_pointer_width = "64")]
             #[inline(always)] fn wrapping_as_usize(self) -> usize { self as usize }
             #[cfg(target_pointer_width = "32")]
+            #[allow(overflowing_literals)]
             #[inline(always)] fn wrapping_as_usize(self) -> usize { (self & 0xFFFF_FFFF) as usize }
 
+            #[allow(overflowing_literals)]
             #[inline(always)] fn wrapping_as_i8(self) -> i8 { (self & 0xFF) as i8 }
+            #[allow(overflowing_literals)]
             #[inline(always)] fn wrapping_as_i16(self) -> i16 { (self & 0xFFFF) as i16 }
+            #[allow(overflowing_literals)]
             #[inline(always)] fn wrapping_as_i32(self) -> i32 { (self & 0xFFFF_FFFF) as i32 }
             #[inline(always)] fn wrapping_as_i64(self) -> i64 { self as i64 }
             #[cfg(target_pointer_width = "64")]
             #[inline(always)] fn wrapping_as_isize(self) -> isize { self as isize }
             #[cfg(target_pointer_width = "32")]
+            #[allow(overflowing_literals)]
             #[inline(always)] fn wrapping_as_isize(self) -> isize { (self & 0xFFFF_FFFF) as isize }
         }
     )*)
@@ -164,6 +172,7 @@ macro_rules! wrapping_unsigned_impl {
 
             #[inline(always)]
             fn wrapping_neg(self) -> $t {
+                #![allow(unsigned_negation)]
                 // FIXME: what are we doing for unsigned things here?
                 -self
             }
@@ -173,21 +182,29 @@ macro_rules! wrapping_unsigned_impl {
             #[inline(always)] fn wrapping_rshift(self, rhs: u32) -> $t { self >> (rhs & 0x1f) }
 
             #[inline(always)] fn wrapping_as_u8(self) -> u8 { (self & 0xFF) as u8 }
+            #[allow(overflowing_literals)]
             #[inline(always)] fn wrapping_as_u16(self) -> u16 { (self & 0xFFFF) as u16 }
-            #[inline(always)] fn wrapping_as_u32(self) -> u32 { (self & 0xFFFF_FFFF) as u32 }
+            #[allow(overflowing_literals)]
+            #[inline(always)] fn wrapping_as_u32(self) -> u32 {
+                (self & 0xFFFF_FFFF) as u32 }
+            #[allow(overflowing_literals)]
             #[inline(always)] fn wrapping_as_u64(self) -> u64 { self as u64 }
             #[cfg(target_pointer_width = "64")]
             #[inline(always)] fn wrapping_as_usize(self) -> usize { self as usize }
             #[cfg(target_pointer_width = "32")]
+            #[allow(overflowing_literals)]
             #[inline(always)] fn wrapping_as_usize(self) -> usize { (self & 0xFFFF_FFFF) as usize }
 
             #[inline(always)] fn wrapping_as_i8(self) -> i8 { (self & 0xFF) as i8 }
+            #[allow(overflowing_literals)]
             #[inline(always)] fn wrapping_as_i16(self) -> i16 { (self & 0xFFFF) as i16 }
+            #[allow(overflowing_literals)]
             #[inline(always)] fn wrapping_as_i32(self) -> i32 { (self & 0xFFFF_FFFF) as i32 }
             #[inline(always)] fn wrapping_as_i64(self) -> i64 { self as i64 }
             #[cfg(target_pointer_width = "64")]
             #[inline(always)] fn wrapping_as_isize(self) -> isize { self as isize }
             #[cfg(target_pointer_width = "32")]
+            #[allow(overflowing_literals)]
             #[inline(always)] fn wrapping_as_isize(self) -> isize { (self & 0xFFFF_FFFF) as isize }
         }
     )*)
