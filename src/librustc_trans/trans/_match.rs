@@ -1507,7 +1507,7 @@ pub fn store_local<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
             let scope = cleanup::var_scope(tcx, p_id);
             bcx = mk_binding_alloca(
                 bcx, p_id, &path1.node, scope, (),
-                |(), bcx, llval, ty| { init_zero_mem(bcx, llval, ty); bcx });
+                |(), bcx, llval, ty| { drop_done_fill_mem(bcx, llval, ty); bcx });
         });
         bcx
     }

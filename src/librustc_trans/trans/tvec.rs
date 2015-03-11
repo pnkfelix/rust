@@ -64,13 +64,17 @@ pub fn make_drop_glue_unboxed<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
         let _icx = push_ctxt("tvec::make_drop_glue_unboxed");
 
         let dataptr = get_dataptr(bcx, vptr);
+        let dataptr_as_usize = PtrToInt(bcx, dataptr, inttype);
+        let not_done = ICmp(bcx, llvm::IntNE, dataptr_as_usize, dropped_pattern, DebugLoc::None);
         let bcx = if bcx.fcx.type_needs_drop(unit_ty) {
-            let len = get_len(bcx, vptr);
-            iter_vec_raw(bcx,
-                         dataptr,
-                         unit_ty,
-                         len,
-                         |bb, vv, tt| glue::drop_ty(bb, vv, tt, DebugLoc::None))
+            with_cond(bcx, not_done, |bcx| {
+                let len = get_len(bcx, vptr);
+                iter_vec_raw(bcx,
+                             dataptr,
+                             unit_ty,
+                             len,
+                             |bb, vv, tt| glue::drop_ty(bb, vv, tt, DebugLoc::None))
+            })
         } else {
             bcx
         };
