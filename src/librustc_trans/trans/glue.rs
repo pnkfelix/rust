@@ -477,15 +477,15 @@ fn make_drop_glue<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, v0: ValueRef, t: Ty<'tcx>)
                     let llbox = Load(bcx, llval);
 
                     // FIXME: should not be playing guessing games about the type to use.
-                    let lltype = Type::from_ref(unsafe { llvm::LLVMTypeOf(llbox) });
-                    let inttype = Type::int(bcx.ccx());
-                    debug!("make_drop_glue ty_uniq(_other): cast {} as {}",
-                           bcx.ccx().tn().type_to_string(lltype),
-                           bcx.ccx().tn().type_to_string(inttype));
+                    // let lltype = Type::from_ref(unsafe { llvm::LLVMTypeOf(llbox) });
+                    // let inttype = Type::int(bcx.ccx());
+                    // debug!("make_drop_glue ty_uniq(_other): cast {} as {}",
+                    //        bcx.ccx().tn().type_to_string(lltype),
+                    //        bcx.ccx().tn().type_to_string(inttype));
                     let llbox_as_usize = PtrToInt(bcx, llbox, inttype);
                     debug!("make_drop_glue ty_uniq(_other): successful ptrtoint cxn");
-                    let dropped_pattern = C_integral(
-                        inttype, adt::dtor_done_usize(bcx.fcx.ccx) as u64, false);
+                    // let dropped_pattern = C_integral(
+                    //     inttype, adt::dtor_done_usize(bcx.fcx.ccx) as u64, false);
 
                     let drop_flag_not_dropped_already =
                         ICmp(bcx, llvm::IntNE, llbox_as_usize, dropped_pattern, DebugLoc::None);
