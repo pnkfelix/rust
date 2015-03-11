@@ -136,7 +136,7 @@ unsafe fn exchange_free(ptr: *mut u8, old_size: usize, align: usize) {
     deallocate(ptr, old_size, align);
 }
 
-#[cfg(stage0)]
+#[cfg(any(stage0,not(instrumenting)))]
 mod printf {
     #![allow(dead_code)]
     pub unsafe fn print0(s: &str) {
@@ -161,39 +161,60 @@ mod printf {
     }
 }
 
-#[cfg(not(stage0))]
+#[cfg(all(instrumenting,not(stage0)))]
 mod printf {
     #![allow(dead_code)]
     use self::intrinsics::transmute;
+    use core::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 
     #[link(name="c")]
     extern { fn printf(f: *const u8, ...); }
 
+    static SPIN_LOCK: AtomicUsize = ATOMIC_USIZE_INIT;
+    fn lock() {
+        while 0 == SPIN_LOCK.compare_and_swap(0, 1, Ordering::SeqCst) {}
+    }
+    fn unlock() {
+        SPIN_LOCK.store(0, Ordering::SeqCst);
+    }
+
     pub unsafe fn print0(s: &str) {
         let (bytes, _len): (*const u8, usize) = transmute(s);
+        lock();
         printf(bytes);
+        unlock();
     }
 
     pub unsafe fn print1(s: &str, arg1: u32) {
         let (bytes, _len): (*const u8, usize) = transmute(s);
+        lock();
         printf(bytes, arg1);
+        unlock();
     }
 
     pub unsafe fn print2(s: &str, arg1: u32, arg2: u32) {
         let (bytes, _len): (*const u8, usize) = transmute(s);
+        lock();
         printf(bytes, arg1, arg2);
+        unlock();
     }
     pub unsafe fn print3(s: &str, arg1: u32, arg2: u32, arg3: u32) {
         let (bytes, _len): (*const u8, usize) = transmute(s);
+        lock();
         printf(bytes, arg1, arg2, arg3);
+        unlock();
     }
     pub unsafe fn print4(s: &str, arg1: u32, arg2: u32, arg3: u32, arg4: u32) {
         let (bytes, _len): (*const u8, usize) = transmute(s);
+        lock();
         printf(bytes, arg1, arg2, arg3, arg4);
+        unlock();
     }
     pub unsafe fn print5(s: &str, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) {
         let (bytes, _len): (*const u8, usize) = transmute(s);
+        lock();
         printf(bytes, arg1, arg2, arg3, arg4, arg5);
+        unlock();
     }
 
     mod intrinsics {
