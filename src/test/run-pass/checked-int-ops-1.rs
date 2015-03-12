@@ -31,21 +31,16 @@ fn main() {
     // - all-zeros except most-significant bit: 0x8000_0000 (aka `1 << N-1`)
     // - all-ones:                              0xFFFF_FFFF (aka `!0`)
 
-    // Note: the use of explicit sized arrays here is deliberate, to
-    // catch missing entries in the tables ASAP.
-    //
-    // If someone in the future decides to generalize this code to use
-    // unsized slices, please change the logic in run_xxx_tests to
-    // check that the lengths of the input slices match.
+    type Inputs<T> = &'static [T];
 
-    type Inputs<T> = [T; 8];
+    type Expected<T> = ((T, T),
+                        //        input.method(.0.0)  input.method(.0.1)
+                        &'static [(        Option<T>,          Option<T>)]);
 
-    //                            input.method(.0.0)  input.method(.0.1)
-    type Expected<T> = ((T, T), [(        Option<T>,          Option<T>); 8]);
+    fn run_add_sub_tests<T:Int+Neg<Output=T>+fmt::Debug>(inputs: Inputs<T>,
+                                                         for_add: Expected<T>) {
+        assert_eq!(inputs.len(), for_add.1.len()); // confirm test is well-formed
 
-
-    fn run_add_sub_tests<T:Int+Neg<Output=T>+fmt::Debug>(inputs: &Inputs<T>,
-                                                         for_add: &Expected<T>) {
         for (i, (n, &(p1, n1))) in inputs.iter().zip(for_add.1.iter()).enumerate() {
             let pos_one = (for_add.0).0;
             let neg_one = (for_add.0).1;
@@ -57,8 +52,10 @@ fn main() {
         }
     }
 
-    fn run_mul_tests<T:Int+Neg<Output=T>+fmt::Debug>(inputs: &Inputs<T>,
-                                                     for_mul: &Expected<T>) {
+    fn run_mul_tests<T:Int+Neg<Output=T>+fmt::Debug>(inputs: Inputs<T>,
+                                                     for_mul: Expected<T>) {
+        assert_eq!(inputs.len(), for_mul.1.len()); // confirm test is well-formed
+
         for (i, (n, &(p1, n1))) in inputs.iter().zip(for_mul.1.iter()).enumerate() {
             let pos_one = (for_mul.0).0;
             let neg_one = (for_mul.0).1;
@@ -67,8 +64,10 @@ fn main() {
         }
     }
 
-    fn run_div_tests<T:Int+Neg<Output=T>+fmt::Debug>(inputs: &Inputs<T>,
-                                                     for_div: &Expected<T>) {
+    fn run_div_tests<T:Int+Neg<Output=T>+fmt::Debug>(inputs: Inputs<T>,
+                                                     for_div: Expected<T>) {
+        assert_eq!(inputs.len(), for_div.1.len()); // confirm test is well-formed
+
         for (i, (n, &(p1, n1))) in inputs.iter().zip(for_div.1.iter()).enumerate() {
             let pos_one = (for_div.0).0;
             let neg_one = (for_div.0).1;
@@ -78,171 +77,171 @@ fn main() {
     }
 
     {
-        const NUMS: Inputs<i8> = [0x00, 0x3F,
-                                  0x40, 0x7F,
-                                  0x80, 0xFF,
-                                  std::i8::MIN, std::i8::MAX];
+        const NUMS: Inputs<i8> = &[0x00, 0x3F,
+                                   0x40, 0x7F,
+                                   0x80, 0xFF,
+                                   std::i8::MIN, std::i8::MAX];
 
         const EXPECT_ADD: Expected<i8> = ((         1,         -1),     // RHS; below is LHS INPUT
-                                          [(Some(0x01), Some(0xFF)),    // 0x00
-                                           (Some(0x40), Some(0x3E)),    // 0x3F
-                                           (Some(0x41), Some(0x3F)),    // 0x40
-                                           (None,       Some(0x7E)),    // 0x7F
-                                           (Some(0x81), None),          // 0x80
-                                           (Some(   0), Some(0xFE)),    // 0xFF
-                                           (Some(0x81), None),          // MIN
-                                           (None,       Some(0x7E))]);  // MAX
+                                          &[(Some(0x01), Some(0xFF)),    // 0x00
+                                            (Some(0x40), Some(0x3E)),    // 0x3F
+                                            (Some(0x41), Some(0x3F)),    // 0x40
+                                            (None,       Some(0x7E)),    // 0x7F
+                                            (Some(0x81), None),          // 0x80
+                                            (Some(   0), Some(0xFE)),    // 0xFF
+                                            (Some(0x81), None),          // MIN
+                                            (None,       Some(0x7E))]);  // MAX
 
         const EXPECT_MUL: Expected<i8> = ((         2,          -1),    // RHS; below is LHS INPUT
-                                          [(Some(   0), Some(    0)),   // 0x00
-                                           (Some(0x7E), Some(-0x3F)),   // 0x3F
-                                           (None,       Some(-0x40)),   // 0x40
-                                           (None,       Some(-0x7F)),   // 0x7F
-                                           (None,       None),          // 0x80
-                                           (Some(0xFE), Some(-0xFF)),   // 0xFF
-                                           (None,       None),          // MIN
-                                           (None,       Some(-0x7F))]); // MAX
+                                          &[(Some(   0), Some(    0)),   // 0x00
+                                            (Some(0x7E), Some(-0x3F)),   // 0x3F
+                                            (None,       Some(-0x40)),   // 0x40
+                                            (None,       Some(-0x7F)),   // 0x7F
+                                            (None,       None),          // 0x80
+                                            (Some(0xFE), Some(-0xFF)),   // 0xFF
+                                            (None,       None),          // MIN
+                                            (None,       Some(-0x7F))]); // MAX
 
         const EXPECT_DIV: Expected<i8> = ((         2,          -1),    // RHS; below is LHS INPUT
-                                          [(Some(   0), Some(    0)),   // 0x00
-                                           (Some(0x1F), Some(-0x3F)),   // 0x3F
-                                           (Some(0x20), Some(-0x40)),   // 0x40
-                                           (Some(0x3F), Some(-0x7F)),   // 0x7F
-                                           (Some(0xC0), None),          // 0x80
-                                           (Some(   0), Some( 0x01)),   // 0xFF
-                                           (Some(0xC0), None),          // MIN
-                                           (Some(0x3F), Some(-0x7F))]); // MAX
+                                          &[(Some(   0), Some(    0)),   // 0x00
+                                            (Some(0x1F), Some(-0x3F)),   // 0x3F
+                                            (Some(0x20), Some(-0x40)),   // 0x40
+                                            (Some(0x3F), Some(-0x7F)),   // 0x7F
+                                            (Some(0xC0), None),          // 0x80
+                                            (Some(   0), Some( 0x01)),   // 0xFF
+                                            (Some(0xC0), None),          // MIN
+                                            (Some(0x3F), Some(-0x7F))]); // MAX
 
-        run_add_sub_tests(&NUMS, &EXPECT_ADD);
-        run_mul_tests(&NUMS, &EXPECT_MUL);
-        run_div_tests(&NUMS, &EXPECT_DIV);
+        run_add_sub_tests(NUMS, EXPECT_ADD);
+        run_mul_tests(NUMS, EXPECT_MUL);
+        run_div_tests(NUMS, EXPECT_DIV);
     }
 
     {
-        const NUMS: Inputs<i16> = [0x0000, 0x3FFF,
-                                   0x4000, 0x7FFF,
-                                   0x8000, 0xFFFF,
-                                   std::i16::MIN, std::i16::MAX];
+        const NUMS: Inputs<i16> = &[0x0000, 0x3FFF,
+                                    0x4000, 0x7FFF,
+                                    0x8000, 0xFFFF,
+                                    std::i16::MIN, std::i16::MAX];
 
         const EXPECT_ADD: Expected<i16> = ((           1,           -1),    // RHS; below is LHS INPUT
-                                           [(Some(0x0001), Some(0xFFFF)),   // 0x0000
-                                            (Some(0x4000), Some(0x3FFE)),   // 0x3FFF
-                                            (Some(0x4001), Some(0x3FFF)),   // 0x4000
-                                            (None,         Some(0x7FFE)),   // 0x7FFF
-                                            (Some(0x8001), None),           // 0x8000
-                                            (Some(     0), Some(0xFFFE)),   // 0xFFFF
-                                            (Some(0x8001), None),           // MIN
-                                            (None,         Some(0x7FFE))]); // MAX
+                                           &[(Some(0x0001), Some(0xFFFF)),   // 0x0000
+                                             (Some(0x4000), Some(0x3FFE)),   // 0x3FFF
+                                             (Some(0x4001), Some(0x3FFF)),   // 0x4000
+                                             (None,         Some(0x7FFE)),   // 0x7FFF
+                                             (Some(0x8001), None),           // 0x8000
+                                             (Some(     0), Some(0xFFFE)),   // 0xFFFF
+                                             (Some(0x8001), None),           // MIN
+                                             (None,         Some(0x7FFE))]); // MAX
 
         const EXPECT_MUL: Expected<i16> = ((           2,           -1),    // RHS; below is LHS INPUT
-                                          [(Some(     0), Some(      0)),   // 0x0000
-                                           (Some(0x7FFE), Some(-0x3FFF)),   // 0x3FFF
-                                           (None,         Some(-0x4000)),   // 0x4000
-                                           (None,         Some(-0x7FFF)),   // 0x7FFF
-                                           (None,         None),            // 0x8000
-                                           (Some(0xFFFE), Some(-0xFFFF)),   // 0xFFFF
-                                           (None,         None),            // MIN
-                                           (None,         Some(-0x7FFF))]); // MAX
+                                          &[(Some(     0), Some(      0)),   // 0x0000
+                                            (Some(0x7FFE), Some(-0x3FFF)),   // 0x3FFF
+                                            (None,         Some(-0x4000)),   // 0x4000
+                                            (None,         Some(-0x7FFF)),   // 0x7FFF
+                                            (None,         None),            // 0x8000
+                                            (Some(0xFFFE), Some(-0xFFFF)),   // 0xFFFF
+                                            (None,         None),            // MIN
+                                            (None,         Some(-0x7FFF))]); // MAX
 
         const EXPECT_DIV: Expected<i16> = ((           2,            -1),    // RHS; below is LHS INPUT
-                                           [(Some(     0), Some(      0)),   // 0x0000
-                                            (Some(0x1FFF), Some(-0x3FFF)),   // 0x3FFF
-                                            (Some(0x2000), Some(-0x4000)),   // 0x4000
-                                            (Some(0x3FFF), Some(-0x7FFF)),   // 0x7FFF
-                                            (Some(0xC000), None),            // 0x8000
-                                            (Some(     0), Some( 0x0001)),   // 0xFFFF
-                                            (Some(0xC000), None),            // MIN
-                                            (Some(0x3FFF), Some(-0x7FFF))]); // MAX
+                                           &[(Some(     0), Some(      0)),   // 0x0000
+                                             (Some(0x1FFF), Some(-0x3FFF)),   // 0x3FFF
+                                             (Some(0x2000), Some(-0x4000)),   // 0x4000
+                                             (Some(0x3FFF), Some(-0x7FFF)),   // 0x7FFF
+                                             (Some(0xC000), None),            // 0x8000
+                                             (Some(     0), Some( 0x0001)),   // 0xFFFF
+                                             (Some(0xC000), None),            // MIN
+                                             (Some(0x3FFF), Some(-0x7FFF))]); // MAX
 
-        run_add_sub_tests(&NUMS, &EXPECT_ADD);
-        run_mul_tests(&NUMS, &EXPECT_MUL);
-        run_div_tests(&NUMS, &EXPECT_DIV);
+        run_add_sub_tests(&NUMS, EXPECT_ADD);
+        run_mul_tests(&NUMS, EXPECT_MUL);
+        run_div_tests(&NUMS, EXPECT_DIV);
 
     }
 
     {
-        const NUMS: Inputs<i32> = [0x0000_0000, 0x3FFF_FFFF,
-                                   0x4000_0000, 0x7FFF_FFFF,
-                                   0x8000_0000, 0xFFFF_FFFF,
-                                   std::i32::MIN, std::i32::MAX];
+        const NUMS: Inputs<i32> = &[0x0000_0000, 0x3FFF_FFFF,
+                                    0x4000_0000, 0x7FFF_FFFF,
+                                    0x8000_0000, 0xFFFF_FFFF,
+                                    std::i32::MIN, std::i32::MAX];
 
         const EXPECT_ADD: Expected<i32> = ((                1,                -1),
-                                           [(Some(0x0000_0001), Some(0xFFFF_FFFF)),
-                                            (Some(0x4000_0000), Some(0x3FFF_FFFE)),
-                                            (Some(0x4000_0001), Some(0x3FFF_FFFF)),
-                                            (None,              Some(0x7FFF_FFFE)),
-                                            (Some(0x8000_0001), None),
-                                            (Some(          0), Some(0xFFFF_FFFE)),
-                                            (Some(0x8000_0001), None),
-                                            (None,              Some(0x7FFF_FFFE))]);
+                                           &[(Some(0x0000_0001), Some(0xFFFF_FFFF)),
+                                             (Some(0x4000_0000), Some(0x3FFF_FFFE)),
+                                             (Some(0x4000_0001), Some(0x3FFF_FFFF)),
+                                             (None,              Some(0x7FFF_FFFE)),
+                                             (Some(0x8000_0001), None),
+                                             (Some(          0), Some(0xFFFF_FFFE)),
+                                             (Some(0x8000_0001), None),
+                                             (None,              Some(0x7FFF_FFFE))]);
 
         const EXPECT_MUL: Expected<i32> = ((                2,                 -1),
-                                           [(Some(0x0000_0000), Some( 0x0000_0000)),
+                                           &[(Some(0x0000_0000), Some( 0x0000_0000)),
                                             (Some(0x7FFF_FFFE), Some(-0x3FFF_FFFF)),
-                                            (None,              Some(-0x4000_0000)),
-                                            (None,              Some(-0x7FFF_FFFF)),
-                                            (None,              None),
-                                            (Some(0xFFFF_FFFE), Some(-0xFFFF_FFFF)),
-                                            (None,              None),
-                                            (None,              Some(-0x7FFF_FFFF))]);
+                                             (None,              Some(-0x4000_0000)),
+                                             (None,              Some(-0x7FFF_FFFF)),
+                                             (None,              None),
+                                             (Some(0xFFFF_FFFE), Some(-0xFFFF_FFFF)),
+                                             (None,              None),
+                                             (None,              Some(-0x7FFF_FFFF))]);
 
         const EXPECT_DIV: Expected<i32> = ((                2,                 -1),
-                                           [(Some(          0), Some(           0)),
-                                            (Some(0x1FFF_FFFF), Some(-0x3FFF_FFFF)),
-                                            (Some(0x2000_0000), Some(-0x4000_0000)),
-                                            (Some(0x3FFF_FFFF), Some(-0x7FFF_FFFF)),
-                                            (Some(0xC000_0000), None),
-                                            (Some(          0), Some( 0x0000_0001)),
-                                            (Some(0xC000_0000), None),
-                                            (Some(0x3FFF_FFFF), Some(-0x7FFF_FFFF))]);
+                                           &[(Some(          0), Some(           0)),
+                                             (Some(0x1FFF_FFFF), Some(-0x3FFF_FFFF)),
+                                             (Some(0x2000_0000), Some(-0x4000_0000)),
+                                             (Some(0x3FFF_FFFF), Some(-0x7FFF_FFFF)),
+                                             (Some(0xC000_0000), None),
+                                             (Some(          0), Some( 0x0000_0001)),
+                                             (Some(0xC000_0000), None),
+                                             (Some(0x3FFF_FFFF), Some(-0x7FFF_FFFF))]);
 
-        run_add_sub_tests(&NUMS, &EXPECT_ADD);
-        run_mul_tests(&NUMS, &EXPECT_MUL);
-        run_div_tests(&NUMS, &EXPECT_DIV);
+        run_add_sub_tests(NUMS, EXPECT_ADD);
+        run_mul_tests(NUMS, EXPECT_MUL);
+        run_div_tests(NUMS, EXPECT_DIV);
     }
 
     {
-        const NUMS: Inputs<i64> = [0x0000_0000_0000_0000, 0x3FFF_FFFF_FFFF_FFFF,
-                                   0x4000_0000_0000_0000, 0x7FFF_FFFF_FFFF_FFFF,
-                                   0x8000_0000_0000_0000, 0xFFFF_FFFF_FFFF_FFFF,
-                                   std::i64::MIN, std::i64::MAX];
+        const NUMS: Inputs<i64> = &[0x0000_0000_0000_0000, 0x3FFF_FFFF_FFFF_FFFF,
+                                    0x4000_0000_0000_0000, 0x7FFF_FFFF_FFFF_FFFF,
+                                    0x8000_0000_0000_0000, 0xFFFF_FFFF_FFFF_FFFF,
+                                    std::i64::MIN, std::i64::MAX];
 
         const EXPECT_ADD: Expected<i64> =
             ((                          1,                          -1),
-             [(Some(0x0000_0000_0000_0001), Some(0xFFFF_FFFF_FFFF_FFFF)),
-              (Some(0x4000_0000_0000_0000), Some(0x3FFF_FFFF_FFFF_FFFE)),
-              (Some(0x4000_0000_0000_0001), Some(0x3FFF_FFFF_FFFF_FFFF)),
-              (None,                        Some(0x7FFF_FFFF_FFFF_FFFE)),
-              (Some(0x8000_0000_0000_0001), None),
-              (Some(0x0000_0000_0000_0000), Some(0xFFFF_FFFF_FFFF_FFFE)),
-              (Some(0x8000_0000_0000_0001), None),
-              (None,                        Some(0x7FFF_FFFF_FFFF_FFFE))]);
+             &[(Some(0x0000_0000_0000_0001), Some(0xFFFF_FFFF_FFFF_FFFF)),
+               (Some(0x4000_0000_0000_0000), Some(0x3FFF_FFFF_FFFF_FFFE)),
+               (Some(0x4000_0000_0000_0001), Some(0x3FFF_FFFF_FFFF_FFFF)),
+               (None,                        Some(0x7FFF_FFFF_FFFF_FFFE)),
+               (Some(0x8000_0000_0000_0001), None),
+               (Some(0x0000_0000_0000_0000), Some(0xFFFF_FFFF_FFFF_FFFE)),
+               (Some(0x8000_0000_0000_0001), None),
+               (None,                        Some(0x7FFF_FFFF_FFFF_FFFE))]);
 
         const EXPECT_MUL: Expected<i64> =
             ((                          2,                           -1),
-             [(Some(0x0000_0000_0000_0000), Some( 0x0000_0000_0000_0000)),
-              (Some(0x7FFF_FFFF_FFFF_FFFE), Some(-0x3FFF_FFFF_FFFF_FFFF)),
-              (None,                        Some(-0x4000_0000_0000_0000)),
-              (None,                        Some(-0x7FFF_FFFF_FFFF_FFFF)),
-              (None,                        None),
-              (Some(0xFFFF_FFFF_FFFF_FFFE), Some(-0xFFFF_FFFF_FFFF_FFFF)),
-              (None,                        None),
-              (None,                        Some(-0x7FFF_FFFF_FFFF_FFFF))]);
+             &[(Some(0x0000_0000_0000_0000), Some( 0x0000_0000_0000_0000)),
+               (Some(0x7FFF_FFFF_FFFF_FFFE), Some(-0x3FFF_FFFF_FFFF_FFFF)),
+               (None,                        Some(-0x4000_0000_0000_0000)),
+               (None,                        Some(-0x7FFF_FFFF_FFFF_FFFF)),
+               (None,                        None),
+               (Some(0xFFFF_FFFF_FFFF_FFFE), Some(-0xFFFF_FFFF_FFFF_FFFF)),
+               (None,                        None),
+               (None,                        Some(-0x7FFF_FFFF_FFFF_FFFF))]);
 
         const EXPECT_DIV: Expected<i64> =
             ((                          2,                           -1),
-             [(Some(                    0), Some(                     0)),
-              (Some(0x1FFF_FFFF_FFFF_FFFF), Some(-0x3FFF_FFFF_FFFF_FFFF)),
-              (Some(0x2000_0000_0000_0000), Some(-0x4000_0000_0000_0000)),
-              (Some(0x3FFF_FFFF_FFFF_FFFF), Some(-0x7FFF_FFFF_FFFF_FFFF)),
-              (Some(0xC000_0000_0000_0000), None),
-              (Some(                    0), Some( 0x0000_0000_0000_0001)),
-              (Some(0xC000_0000_0000_0000), None),
-              (Some(0x3FFF_FFFF_FFFF_FFFF), Some(-0x7FFF_FFFF_FFFF_FFFF))]);
+             &[(Some(                    0), Some(                     0)),
+               (Some(0x1FFF_FFFF_FFFF_FFFF), Some(-0x3FFF_FFFF_FFFF_FFFF)),
+               (Some(0x2000_0000_0000_0000), Some(-0x4000_0000_0000_0000)),
+               (Some(0x3FFF_FFFF_FFFF_FFFF), Some(-0x7FFF_FFFF_FFFF_FFFF)),
+               (Some(0xC000_0000_0000_0000), None),
+               (Some(                    0), Some( 0x0000_0000_0000_0001)),
+               (Some(0xC000_0000_0000_0000), None),
+               (Some(0x3FFF_FFFF_FFFF_FFFF), Some(-0x7FFF_FFFF_FFFF_FFFF))]);
 
-        run_add_sub_tests(&NUMS, &EXPECT_ADD);
-        run_mul_tests(&NUMS, &EXPECT_MUL);
-        run_div_tests(&NUMS, &EXPECT_DIV);
+        run_add_sub_tests(NUMS, EXPECT_ADD);
+        run_mul_tests(NUMS, EXPECT_MUL);
+        run_div_tests(NUMS, EXPECT_DIV);
     }
 
     {
@@ -287,49 +286,49 @@ fn main() {
 
 
         #[cfg(target_pointer_width = "64")]
-        const NUMS: Inputs<isize> = [0x0000_0000_0000_0000, 0x3FFF_FFFF_FFFF_FFFF,
-                                     0x4000_0000_0000_0000, 0x7FFF_FFFF_FFFF_FFFF,
-                                     0x8000_0000_0000_0000, 0xFFFF_FFFF_FFFF_FFFF,
-                                     std::isize::MIN, std::isize::MAX];
+        const NUMS: Inputs<isize> = &[0x0000_0000_0000_0000, 0x3FFF_FFFF_FFFF_FFFF,
+                                      0x4000_0000_0000_0000, 0x7FFF_FFFF_FFFF_FFFF,
+                                      0x8000_0000_0000_0000, 0xFFFF_FFFF_FFFF_FFFF,
+                                      std::isize::MIN, std::isize::MAX];
 
         #[cfg(target_pointer_width = "64")]
         const EXPECT_ADD: Expected<isize> =
             ((                           1,                          -1),
-             [(Some(0x0000_0000_0000_0001), Some(0xFFFF_FFFF_FFFF_FFFF)),
-              (Some(0x4000_0000_0000_0000), Some(0x3FFF_FFFF_FFFF_FFFE)),
-              (Some(0x4000_0000_0000_0001), Some(0x3FFF_FFFF_FFFF_FFFF)),
-              (None,                        Some(0x7FFF_FFFF_FFFF_FFFE)),
-              (Some(0x8000_0000_0000_0001), None),
-              (Some(0x0000_0000_0000_0000), Some(0xFFFF_FFFF_FFFF_FFFE)),
-              (Some(0x8000_0000_0000_0001), None),
-              (None,                        Some(0x7FFF_FFFF_FFFF_FFFE))]);
+             &[(Some(0x0000_0000_0000_0001), Some(0xFFFF_FFFF_FFFF_FFFF)),
+               (Some(0x4000_0000_0000_0000), Some(0x3FFF_FFFF_FFFF_FFFE)),
+               (Some(0x4000_0000_0000_0001), Some(0x3FFF_FFFF_FFFF_FFFF)),
+               (None,                        Some(0x7FFF_FFFF_FFFF_FFFE)),
+               (Some(0x8000_0000_0000_0001), None),
+               (Some(0x0000_0000_0000_0000), Some(0xFFFF_FFFF_FFFF_FFFE)),
+               (Some(0x8000_0000_0000_0001), None),
+               (None,                        Some(0x7FFF_FFFF_FFFF_FFFE))]);
 
         #[cfg(target_pointer_width = "64")]
         const EXPECT_MUL: Expected<isize> =
             ((                          2,                           -1),
-             [(Some(0x0000_0000_0000_0000), Some( 0x0000_0000_0000_0000)),
-              (Some(0x7FFF_FFFF_FFFF_FFFE), Some(-0x3FFF_FFFF_FFFF_FFFF)),
-              (None,                        Some(-0x4000_0000_0000_0000)),
-              (None,                        Some(-0x7FFF_FFFF_FFFF_FFFF)),
-              (None,                        None),
-              (Some(0xFFFF_FFFF_FFFF_FFFE), Some(-0xFFFF_FFFF_FFFF_FFFF)),
-              (None,                        None),
-              (None,                        Some(-0x7FFF_FFFF_FFFF_FFFF))]);
+             &[(Some(0x0000_0000_0000_0000), Some( 0x0000_0000_0000_0000)),
+               (Some(0x7FFF_FFFF_FFFF_FFFE), Some(-0x3FFF_FFFF_FFFF_FFFF)),
+               (None,                        Some(-0x4000_0000_0000_0000)),
+               (None,                        Some(-0x7FFF_FFFF_FFFF_FFFF)),
+               (None,                        None),
+               (Some(0xFFFF_FFFF_FFFF_FFFE), Some(-0xFFFF_FFFF_FFFF_FFFF)),
+               (None,                        None),
+               (None,                        Some(-0x7FFF_FFFF_FFFF_FFFF))]);
 
         #[cfg(target_pointer_width = "64")]
         const EXPECT_DIV: Expected<isize> =
             ((                          2,                           -1),
-             [(Some(                    0), Some(                     0)),
-              (Some(0x1FFF_FFFF_FFFF_FFFF), Some(-0x3FFF_FFFF_FFFF_FFFF)),
-              (Some(0x2000_0000_0000_0000), Some(-0x4000_0000_0000_0000)),
-              (Some(0x3FFF_FFFF_FFFF_FFFF), Some(-0x7FFF_FFFF_FFFF_FFFF)),
-              (Some(0xC000_0000_0000_0000), None),
-              (Some(                    0), Some( 0x0000_0000_0000_0001)),
-              (Some(0xC000_0000_0000_0000), None),
-              (Some(0x3FFF_FFFF_FFFF_FFFF), Some(-0x7FFF_FFFF_FFFF_FFFF))]);
+             &[(Some(                    0), Some(                     0)),
+               (Some(0x1FFF_FFFF_FFFF_FFFF), Some(-0x3FFF_FFFF_FFFF_FFFF)),
+               (Some(0x2000_0000_0000_0000), Some(-0x4000_0000_0000_0000)),
+               (Some(0x3FFF_FFFF_FFFF_FFFF), Some(-0x7FFF_FFFF_FFFF_FFFF)),
+               (Some(0xC000_0000_0000_0000), None),
+               (Some(                    0), Some( 0x0000_0000_0000_0001)),
+               (Some(0xC000_0000_0000_0000), None),
+               (Some(0x3FFF_FFFF_FFFF_FFFF), Some(-0x7FFF_FFFF_FFFF_FFFF))]);
 
-        run_add_sub_tests(&NUMS, &EXPECT_ADD);
-        run_mul_tests(&NUMS, &EXPECT_MUL);
-        run_div_tests(&NUMS, &EXPECT_DIV);
+        run_add_sub_tests(NUMS, EXPECT_ADD);
+        run_mul_tests(NUMS, EXPECT_MUL);
+        run_div_tests(NUMS, EXPECT_DIV);
     }
 }
