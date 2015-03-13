@@ -1158,10 +1158,6 @@ pub fn init_zero_mem<'blk, 'tcx>(cx: Block<'blk, 'tcx>, llptr: ValueRef, t: Ty<'
     memfill(&B(bcx), llptr, t, 0);
 }
 
-fn memzero<'a, 'tcx>(b: &Builder<'a, 'tcx>, llptr: ValueRef, ty: Ty<'tcx>) {
-    memfill(b, llptr, ty, 0);
-}
-
 // Always use this function instead of storing a constant byte to the memory
 // in question. e.g. if you store a zero constant, LLVM will drown in vreg
 // allocation for large data structures, and the generated code will be
