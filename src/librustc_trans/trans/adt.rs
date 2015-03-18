@@ -614,18 +614,9 @@ fn ensure_struct_fits_in_address_space<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                                                  fields: &[Type],
                                                  packed: bool,
                                                  scapegoat: Ty<'tcx>) {
-    let mut offset = 0;
-    for &llty in fields {
+    let offsets = FieldOffsets::new(0, ccx, fields, packed);
+    for (_, offset, _) in offsets {
         // Invariant: offset < ccx.obj_size_bound() <= 1<<61
-        if !packed {
-            let type_align = machine::llalign_of_min(ccx, llty);
-            offset = roundup(offset, type_align);
-        }
-        // type_align is a power-of-2, so still offset < ccx.obj_size_bound()
-        // llsize_of_alloc(ccx, llty) is also less than ccx.obj_size_bound()
-        // so the sum is less than 1<<62 (and therefore can't overflow).
-        offset += machine::llsize_of_alloc(ccx, llty);
-
         if offset >= ccx.obj_size_bound() {
             ccx.report_overbig_object(scapegoat);
         }
@@ -1141,20 +1132,81 @@ pub fn trans_const<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>, r: &Repr<'tcx>, discr
     }
 }
 
+/// Iterator over the offsets for a series of fields
+pub struct FieldOffsets<'flds, 'blk, 'tcx> {
+    offset: u64,
+    ccx: &'blk CrateContext<'blk, 'tcx>,
+    fields: &'flds [Type],
+    packed: bool,
+    next: usize,
+}
+
+impl FieldOffsets {
+    pub fn new(initial_offset: u64,
+           ccx: &'blk CrateContext<'blk, 'tcx>,
+           fields: &'flds [Type],
+           packed: bool) -> FieldOffsets {
+        FieldOffsets {
+            ccx: ccx, fields: fields, packed: packed,
+            offset: initial_offset, next: 0
+        }
+    }
+
+}
+
+impl<'flds, 'blk, 'tcx> Iterator for FieldOffsets<'flds, 'blk, 'tcx> {
+    type Item = (&'flds Type, u64, u64);
+    fn next(&mut self) -> Option<(&'flds Type, u64, u64)> {
+        let i = self.next;
+        if i >= self.fields.len() {
+            return None;
+        }
+
+        let mut offset = self.offset;
+        if !self.packed {
+            let type_align = machine::llalign_of_min(self.ccx, llty);
+            offset = roundup(offset, type_align);
+        }
+
+        let size = machine::llsize_of_alloc(self.ccx, llty);
+        let ret = (&self.fields[i], offset, size);
+
+        // Global Invariants:
+        debug_assert!(self.ccx.obj_size_bounds <= (1 << 61));
+        debug_assert!(type_align.is_power_of_two());
+        debug_assert!(size < self.ccx.obj_size_bound());
+
+        // So if self.offset < ccx.obj_size_bound(), then:
+        // - offset <= 1<<61
+        // - offset + size is less than 1<<62
+        //
+        // Thus if self.offset < ccx.obj_size_bound(), then the
+        // summation will not overflow.
+
+        // (For now we assume that this iterator will not be invoked
+        //  with an offset that would cause the summation to
+        //  overflow.)
+        offset += size;
+
+        self.offset = offset;
+        self.next += 1;
+
+        return Some(ret);
+    }
+}
+
 /// Compute struct field offsets relative to struct begin.
+/// Assumes that `st` is sized.
 fn compute_struct_field_offsets<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                                           st: &Struct<'tcx>) -> Vec<u64> {
     let mut offsets = vec!();
 
-    let mut offset = 0;
-    for &ty in &st.fields {
-        let llty = type_of::sizing_type_of(ccx, ty);
-        if !st.packed {
-            let type_align = type_of::align_of(ccx, ty);
-            offset = roundup(offset, type_align);
-        }
+    let lltys: Vec<Type> = tys.iter()
+        .map(|&ty| type_of::sizing_type_of(cx, ty)).collect();
+
+    let field_offsets = FieldOffsets::new(0, ccx, &lltys[..], st.packed);
+    for (_, offset, _) in &field_offsets {
         offsets.push(offset);
-        offset += machine::llsize_of_alloc(ccx, llty);
     }
     assert_eq!(st.fields.len(), offsets.len());
     offsets
