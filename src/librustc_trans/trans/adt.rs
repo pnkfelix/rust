@@ -45,7 +45,8 @@
 
 pub use self::Repr::*;
 
-use std::num::Int;
+use std::borrow::{Cow, IntoCow};
+use std::num::{Int, UnsignedInt};
 use std::rc::Rc;
 
 use llvm::{ValueRef, True, IntEQ, IntNE};
@@ -614,8 +615,7 @@ fn ensure_struct_fits_in_address_space<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                                                  fields: &[Type],
                                                  packed: bool,
                                                  scapegoat: Ty<'tcx>) {
-    let offsets = FieldOffsets::new(0, ccx, fields, packed);
-    for (_, offset, _) in offsets {
+    for offset in FieldOffsets::new(0, ccx, fields, packed) {
         // Invariant: offset < ccx.obj_size_bound() <= 1<<61
         if offset >= ccx.obj_size_bound() {
             ccx.report_overbig_object(scapegoat);
@@ -1133,51 +1133,58 @@ pub fn trans_const<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>, r: &Repr<'tcx>, discr
 }
 
 /// Iterator over the offsets for a series of fields
-pub struct FieldOffsets<'flds, 'blk, 'tcx> {
+pub struct FieldsInfo<'flds, 'blk, 'tcx: 'blk> {
     offset: u64,
     ccx: &'blk CrateContext<'blk, 'tcx>,
-    fields: &'flds [Type],
+    fields: Cow<'flds, [Type]>,
     packed: bool,
     next: usize,
 }
 
-impl FieldOffsets {
-    pub fn new(initial_offset: u64,
-           ccx: &'blk CrateContext<'blk, 'tcx>,
-           fields: &'flds [Type],
-           packed: bool) -> FieldOffsets {
-        FieldOffsets {
-            ccx: ccx, fields: fields, packed: packed,
+impl<'flds, 'blk, 'tcx> FieldsInfo<'flds, 'blk, 'tcx> {
+    pub fn new<Types>(initial_offset: u64,
+                      ccx: &'blk CrateContext<'blk, 'tcx>,
+                      fields: Types,
+                      packed: bool) -> FieldsInfo<'flds, 'blk, 'tcx>
+        where Types: IntoCow<'flds, [Type]> {
+
+        FieldsInfo {
+            ccx: ccx, fields: fields.into_cow(), packed: packed,
             offset: initial_offset, next: 0
         }
     }
 
+    pub fn add_offset(self, offset: u64) -> FieldsInfo<'flds, 'blk, 'tcx> {
+        FieldsInfo { offset: self.offset + offset,
+                       ..self }
+    }
 }
 
-impl<'flds, 'blk, 'tcx> Iterator for FieldOffsets<'flds, 'blk, 'tcx> {
-    type Item = (&'flds Type, u64, u64);
-    fn next(&mut self) -> Option<(&'flds Type, u64, u64)> {
+impl<'flds, 'blk, 'tcx> Iterator for FieldsInfo<'flds, 'blk, 'tcx> {
+    type Item = (Type, u64, u64);
+    fn next(&mut self) -> Option<(Type, u64, u64)> {
         let i = self.next;
         if i >= self.fields.len() {
             return None;
         }
 
+        let llty = self.fields[i];
         let mut offset = self.offset;
+        let type_align = machine::llalign_of_min(self.ccx, llty);
         if !self.packed {
-            let type_align = machine::llalign_of_min(self.ccx, llty);
             offset = roundup(offset, type_align);
         }
 
         let size = machine::llsize_of_alloc(self.ccx, llty);
-        let ret = (&self.fields[i], offset, size);
+        let ret = (self.fields[i], offset, size);
 
         // Global Invariants:
-        debug_assert!(self.ccx.obj_size_bounds <= (1 << 61));
+        debug_assert!(self.ccx.obj_size_bound() <= (1 << 61));
         debug_assert!(type_align.is_power_of_two());
         debug_assert!(size < self.ccx.obj_size_bound());
 
         // So if self.offset < ccx.obj_size_bound(), then:
-        // - offset <= 1<<61
+        // - offset <= 1<<61 (even after rounding up)
         // - offset + size is less than 1<<62
         //
         // Thus if self.offset < ccx.obj_size_bound(), then the
@@ -1195,19 +1202,64 @@ impl<'flds, 'blk, 'tcx> Iterator for FieldOffsets<'flds, 'blk, 'tcx> {
     }
 }
 
+pub struct FieldOffsets<'flds, 'blk, 'tcx: 'blk> {
+    info: FieldsInfo<'flds, 'blk, 'tcx>
+}
+
+impl<'flds, 'blk, 'tcx> Iterator for FieldOffsets<'flds, 'blk, 'tcx> {
+    type Item = u64;
+    fn next(&mut self) -> Option<u64> {
+        self.info.next().map(|(_llty, offset, _size)| offset)
+    }
+}
+
+impl<'flds, 'blk, 'tcx> FieldOffsets<'flds, 'blk, 'tcx> {
+    pub fn add_offset(self, offset: u64) -> FieldOffsets<'flds, 'blk, 'tcx> {
+        FieldOffsets { info: self.info.add_offset(offset) }
+    }
+
+    pub fn new<Types>(initial_offset: u64,
+                      ccx: &'blk CrateContext<'blk, 'tcx>,
+                      fields: Types,
+                      packed: bool) -> FieldOffsets<'flds, 'blk, 'tcx>
+        where Types: IntoCow<'flds, [Type]>
+    {
+        FieldOffsets {
+            info: FieldsInfo::new(initial_offset, ccx, fields, packed)
+        }
+    }
+
+    pub fn for_struct(ccx: &'blk CrateContext<'blk, 'tcx>,
+                      st: &Struct<'tcx>) -> FieldOffsets<'flds, 'blk, 'tcx> {
+        let lltys: Vec<Type> = st.fields.iter()
+            .map(|&ty| type_of::sizing_type_of(ccx, ty)).collect();
+
+        FieldOffsets::new(0, ccx, lltys, st.packed)
+    }
+
+    pub fn for_struct_did(cx: Block<'blk, 'tcx>,
+                          struct_did: ast::DefId,
+                          substs: &'tcx subst::Substs<'tcx>)
+                          -> FieldOffsets<'flds, 'blk, 'tcx>
+    {
+        let fields = ty::lookup_struct_fields(cx.tcx(), struct_did);
+        let ftys = fields.iter().map(|field| {
+            let fty = ty::lookup_field_type(cx.tcx(), struct_did, field.id, substs);
+            monomorphize::normalize_associated_type(cx.tcx(), &fty)
+        }).collect::<Vec<_>>();
+        let packed = ty::lookup_packed(cx.tcx(), struct_did);
+        let scapegoat = ty::mk_struct(cx.tcx(), struct_did, substs);
+        let struct_ = mk_struct(cx.ccx(), &ftys[..], packed, scapegoat);
+        FieldOffsets::for_struct(cx.ccx(), &struct_)
+    }
+}
+
+
 /// Compute struct field offsets relative to struct begin.
 /// Assumes that `st` is sized.
 fn compute_struct_field_offsets<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                                           st: &Struct<'tcx>) -> Vec<u64> {
-    let mut offsets = vec!();
-
-    let lltys: Vec<Type> = tys.iter()
-        .map(|&ty| type_of::sizing_type_of(cx, ty)).collect();
-
-    let field_offsets = FieldOffsets::new(0, ccx, &lltys[..], st.packed);
-    for (_, offset, _) in &field_offsets {
-        offsets.push(offset);
-    }
+    let offsets: Vec<_> = FieldOffsets::for_struct(ccx, st).collect();
     assert_eq!(st.fields.len(), offsets.len());
     offsets
 }
