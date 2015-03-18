@@ -390,6 +390,11 @@ impl<T> Drop for Rc<T> {
     /// ```
     fn drop(&mut self) {
         unsafe {
+            // Because NonZero carries an invariant that the value is
+            // non-null, we explicitly cast it to `*mut *mut _` so that we
+            // can safely read and write a potentially zero value here
+            // without hitting undefined behavior.
+            let p_ptr: *mut *mut RcBox<T> = mem::transmute(&mut self._ptr);
             let ptr = *self._ptr;
             if !ptr.is_null() && ptr as usize != mem::POST_DROP_USIZE {
                 self.dec_strong();
@@ -406,6 +411,9 @@ impl<T> Drop for Rc<T> {
                     }
                 }
             }
+
+            // Set explicitly to accommodate partially-filling drop
+            *p_ptr = ptr::null_mut();
         }
     }
 }
@@ -696,6 +704,11 @@ impl<T> Drop for Weak<T> {
     /// ```
     fn drop(&mut self) {
         unsafe {
+            // Because NonZero carries an invariant that the value is
+            // non-null, we explicitly cast it to `*mut *mut _` so that we
+            // can safely read and write a potentially zero value here
+            // without hitting undefined behavior.
+            let p_ptr: *mut *mut RcBox<T> = mem::transmute(&mut self._ptr);
             let ptr = *self._ptr;
             if !ptr.is_null() && ptr as usize != mem::POST_DROP_USIZE {
                 self.dec_weak();
@@ -706,6 +719,9 @@ impl<T> Drop for Weak<T> {
                                min_align_of::<RcBox<T>>())
                 }
             }
+
+            // Set explicitly to accommodate partially-filling drop
+            *p_ptr = ptr::null_mut();
         }
     }
 }

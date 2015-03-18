@@ -1014,5 +1014,8 @@ impl<K, V> Drop for RawTable<K, V> {
             // Remember how everything was allocated out of one buffer
             // during initialization? We only need one call to free here.
         }
+
+        // Set explicitly to accommodate partially-filling drop
+        self.capacity = 0;
     }
 }

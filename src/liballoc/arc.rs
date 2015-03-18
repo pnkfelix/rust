@@ -328,7 +328,16 @@ impl<T: Sync + Send> Drop for Arc<T> {
     fn drop(&mut self) {
         // This structure has #[unsafe_no_drop_flag], so this drop glue may run more than once (but
         // it is guaranteed to be zeroed after the first if it's run more than once)
-        let ptr = *self._ptr;
+
+        // Because NonZero carries an invariant that the value is
+        // non-null, we explicitly transmute it to `*mut *mut _` so
+        // that we can read and write a potentially zero value here
+        // without hitting undefined behavior in LLVM.
+        let (p_ptr, ptr) = unsafe {
+            let p_ptr: *mut *mut ArcInner<T> = mem::transmute(&mut self._ptr);
+            let ptr = *p_ptr;
+            (p_ptr, ptr)
+        };
         // if ptr.is_null() { return }
         if ptr.is_null() || ptr as usize == mem::POST_DROP_USIZE { return }
 
@@ -362,6 +371,11 @@ impl<T: Sync + Send> Drop for Arc<T> {
             atomic::fence(Acquire);
             unsafe { deallocate(ptr as *mut u8, size_of::<ArcInner<T>>(),
                                 min_align_of::<ArcInner<T>>()) }
+        }
+
+        unsafe {
+            // Set explicitly to accommodate partially-filling drop
+            *p_ptr = ptr::null_mut();
         }
     }
 }
@@ -458,7 +472,15 @@ impl<T: Sync + Send> Drop for Weak<T> {
     /// } // implicit drop
     /// ```
     fn drop(&mut self) {
-        let ptr = *self._ptr;
+        // Because NonZero carries an invariant that the value is
+        // non-null, we explicitly cast it to `*mut *mut _` so that we
+        // can safely read and write a potentially zero value here
+        // without hitting undefined behavior.
+        let (p_ptr, ptr) = unsafe {
+            let p_ptr: *mut *mut ArcInner<T> = mem::transmute(&mut self._ptr);
+            let ptr = *p_ptr;
+            (p_ptr, ptr)
+        };
 
         // see comments above for why this check is here
         if ptr.is_null() || ptr as usize == mem::POST_DROP_USIZE { return }
@@ -469,6 +491,11 @@ impl<T: Sync + Send> Drop for Weak<T> {
             atomic::fence(Acquire);
             unsafe { deallocate(ptr as *mut u8, size_of::<ArcInner<T>>(),
                                 min_align_of::<ArcInner<T>>()) }
+        }
+
+        unsafe {
+            // Set explicitly to accommodate partially-filling drop
+            *p_ptr = ptr::null_mut();
         }
     }
 }

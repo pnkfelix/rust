@@ -1593,6 +1593,8 @@ impl<T> Drop for Vec<T> {
                 }
                 dealloc(*self.ptr, self.cap)
             }
+            // Set explicitly to accommodate partially-filling drop
+            self.cap = 0;
         }
     }
 }
@@ -1829,11 +1831,14 @@ impl<'a, T> ExactSizeIterator for Drain<'a, T> {}
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<'a, T> Drop for Drain<'a, T> {
     fn drop(&mut self) {
-        // self.ptr == self.end == mem::POST_DROP_USIZE if drop has already been called,
+        // self.ptr == self.end if drop has already been called,
         // so we can use #[unsafe_no_drop_flag].
 
         // destroy the remaining elements
         for _x in self.by_ref() {}
+        // Set explicitly to accommodate partially-filling drop
+        self.ptr = ptr::null();
+        self.end = ptr::null();
     }
 }
 

@@ -280,13 +280,17 @@ impl<T> Drop for RawItems<T> {
 #[unsafe_destructor]
 impl<K, V> Drop for Node<K, V> {
     fn drop(&mut self) {
-        if self.keys.is_null() ||
-            (unsafe { self.keys.get() as *const K as usize == mem::POST_DROP_USIZE })
+        // Because Unique carries an invariant that the value is
+        // non-null, we explicitly cast it to `*mut *mut _` so that we
+        // can safely read and write a potentially zero value here
+        // without hitting undefined behavior.
+        let (p_ptr, ptr) = unsafe {
+            let p_ptr: *mut *mut K = mem::transmute(&mut self.keys);
+            let ptr = *p_ptr;
+            (p_ptr, ptr)
+        };
+        if ptr.is_null() || (ptr as usize == mem::POST_DROP_USIZE)
         {
-            // Since we have #[unsafe_no_drop_flag], we have to watch
-            // out for the sentinel value being stored in self.keys. (Using
-            // null is technically a violation of the `Unique`
-            // requirements, though.)
             return;
         }
 
@@ -299,7 +303,10 @@ impl<K, V> Drop for Node<K, V> {
             self.destroy();
         }
 
-        self.keys = unsafe { Unique::new(0 as *mut K) };
+        unsafe {
+            // Set explicitly to accommodate partially-filling drop
+            *p_ptr = ptr::null_mut();
+        }
     }
 }
 
