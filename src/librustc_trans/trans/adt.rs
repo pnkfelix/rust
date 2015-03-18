@@ -615,7 +615,7 @@ fn ensure_struct_fits_in_address_space<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                                                  fields: &[Type],
                                                  packed: bool,
                                                  scapegoat: Ty<'tcx>) {
-    for offset in FieldOffsets::new(0, ccx, fields, packed) {
+    for offset in FieldOffsets::new(0, ccx, Some(scapegoat), fields, packed) {
         // Invariant: offset < ccx.obj_size_bound() <= 1<<61
         if offset >= ccx.obj_size_bound() {
             ccx.report_overbig_object(scapegoat);
@@ -1136,6 +1136,7 @@ pub fn trans_const<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>, r: &Repr<'tcx>, discr
 pub struct FieldsInfo<'flds, 'blk, 'tcx: 'blk> {
     offset: u64,
     ccx: &'blk CrateContext<'blk, 'tcx>,
+    scapegoat: Option<Ty<'tcx>>,
     fields: Cow<'flds, [Type]>,
     packed: bool,
     next: usize,
@@ -1144,16 +1145,19 @@ pub struct FieldsInfo<'flds, 'blk, 'tcx: 'blk> {
 impl<'flds, 'blk, 'tcx> FieldsInfo<'flds, 'blk, 'tcx> {
     pub fn new<Types>(initial_offset: u64,
                       ccx: &'blk CrateContext<'blk, 'tcx>,
+                      scapegoat: Option<Ty<'tcx>>,
                       fields: Types,
                       packed: bool) -> FieldsInfo<'flds, 'blk, 'tcx>
         where Types: IntoCow<'flds, [Type]> {
 
         FieldsInfo {
             ccx: ccx, fields: fields.into_cow(), packed: packed,
+            scapegoat: scapegoat,
             offset: initial_offset, next: 0
         }
     }
 
+    #[allow(dead_code)]
     pub fn add_offset(self, offset: u64) -> FieldsInfo<'flds, 'blk, 'tcx> {
         FieldsInfo { offset: self.offset + offset,
                        ..self }
@@ -1181,7 +1185,15 @@ impl<'flds, 'blk, 'tcx> Iterator for FieldsInfo<'flds, 'blk, 'tcx> {
         // Global Invariants:
         debug_assert!(self.ccx.obj_size_bound() <= (1 << 61));
         debug_assert!(type_align.is_power_of_two());
-        debug_assert!(size < self.ccx.obj_size_bound());
+        // and that size <= self.ccx.obj_size_bound():
+        match self.scapegoat {
+            None => assert!(size <= self.ccx.obj_size_bound()),
+            Some(scapegoat) => {
+                if size >= self.ccx.obj_size_bound() {
+                    self.ccx.report_overbig_object(scapegoat);
+                }
+            }
+        }
 
         // So if self.offset < ccx.obj_size_bound(), then:
         // - offset <= 1<<61 (even after rounding up)
@@ -1214,29 +1226,34 @@ impl<'flds, 'blk, 'tcx> Iterator for FieldOffsets<'flds, 'blk, 'tcx> {
 }
 
 impl<'flds, 'blk, 'tcx> FieldOffsets<'flds, 'blk, 'tcx> {
+    #[allow(dead_code)]
     pub fn add_offset(self, offset: u64) -> FieldOffsets<'flds, 'blk, 'tcx> {
         FieldOffsets { info: self.info.add_offset(offset) }
     }
 
     pub fn new<Types>(initial_offset: u64,
                       ccx: &'blk CrateContext<'blk, 'tcx>,
+                      scapegoat: Option<Ty<'tcx>>,
                       fields: Types,
                       packed: bool) -> FieldOffsets<'flds, 'blk, 'tcx>
         where Types: IntoCow<'flds, [Type]>
     {
         FieldOffsets {
-            info: FieldsInfo::new(initial_offset, ccx, fields, packed)
+            info: FieldsInfo::new(
+                initial_offset, ccx, scapegoat, fields, packed)
         }
     }
 
     pub fn for_struct(ccx: &'blk CrateContext<'blk, 'tcx>,
+                      scapegoat: Option<Ty<'tcx>>,
                       st: &Struct<'tcx>) -> FieldOffsets<'flds, 'blk, 'tcx> {
         let lltys: Vec<Type> = st.fields.iter()
             .map(|&ty| type_of::sizing_type_of(ccx, ty)).collect();
 
-        FieldOffsets::new(0, ccx, lltys, st.packed)
+        FieldOffsets::new(0, ccx, scapegoat, lltys, st.packed)
     }
 
+    #[allow(dead_code)]
     pub fn for_struct_did(cx: Block<'blk, 'tcx>,
                           struct_did: ast::DefId,
                           substs: &'tcx subst::Substs<'tcx>)
@@ -1250,16 +1267,16 @@ impl<'flds, 'blk, 'tcx> FieldOffsets<'flds, 'blk, 'tcx> {
         let packed = ty::lookup_packed(cx.tcx(), struct_did);
         let scapegoat = ty::mk_struct(cx.tcx(), struct_did, substs);
         let struct_ = mk_struct(cx.ccx(), &ftys[..], packed, scapegoat);
-        FieldOffsets::for_struct(cx.ccx(), &struct_)
+        FieldOffsets::for_struct(cx.ccx(), Some(scapegoat), &struct_)
     }
 }
 
 
 /// Compute struct field offsets relative to struct begin.
-/// Assumes that `st` is sized.
+/// Assumes `st` is sized, and that it fits into address space.
 fn compute_struct_field_offsets<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                                           st: &Struct<'tcx>) -> Vec<u64> {
-    let offsets: Vec<_> = FieldOffsets::for_struct(ccx, st).collect();
+    let offsets: Vec<_> = FieldOffsets::for_struct(ccx, None, st).collect();
     assert_eq!(st.fields.len(), offsets.len());
     offsets
 }
