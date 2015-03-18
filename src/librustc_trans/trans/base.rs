@@ -90,6 +90,7 @@ use std::ffi::{CStr, CString};
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::mem;
+use std::num::ToPrimitive; // for to_usize
 use std::rc::Rc;
 use std::str;
 use std::{i8, i16, i32, i64};
@@ -1144,11 +1145,90 @@ pub fn memcpy_ty<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     }
 }
 
+// Returns true only if the struct for `def_id` has a destructor (and
+// tbus *may* require some filling post-drop) but has no drop-flag.
+fn drops_without_flag<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, def_id: ast::DefId) -> bool {
+    match ty::ty_dtor(bcx.tcx(), def_id) {
+        ty::DtorKind::NoDtor => false,
+        ty::DtorKind::TraitDtor(_, drop_flag) => !drop_flag
+    }
+}
+
 pub fn drop_done_fill_mem<'blk, 'tcx>(cx: Block<'blk, 'tcx>, llptr: ValueRef, t: Ty<'tcx>) {
     if cx.unreachable.get() { return; }
     let _icx = push_ctxt("drop_done_fill_mem");
     let bcx = cx;
-    memfill(&B(bcx), llptr, t, adt::DTOR_DONE);
+    match t.sty {
+        ty::ty_struct(struct_did, substs) if drops_without_flag(cx, struct_did) => {
+            let info = FillMemInfo {
+                struct_did: struct_did,
+                substs: substs,
+                offset: 0
+            };
+            drop_done_scatter_fill_mem(cx, llptr, info);
+        }
+        ty::ty_enum(enum_did, _substs) if drops_without_flag(cx, enum_did) => {
+            // TODO
+            panic!("need to implement glue for no_drop_flag on enums \
+                    due to enum {}", t.repr(cx.tcx()));
+        }
+        _ => {
+            memfill(&B(bcx), llptr, t, adt::DTOR_DONE);
+        }
+    }
+}
+
+struct FillMemInfo<'tcx> {
+    struct_did: ast::DefId,
+    substs: &'tcx Substs<'tcx>,
+    offset: u64,
+}
+
+// Scattered memory filling after destructors have run; this can only
+// be invoked for structs/enums that have the `#[unsafe_no_drop_flag]`
+// attribute.
+fn drop_done_scatter_fill_mem<'blk, 'tcx>(cx: Block<'blk, 'tcx>,
+                                          llptr: ValueRef,
+                                          struct_info: FillMemInfo<'tcx>) {
+    let FillMemInfo { struct_did, substs, offset: init_offset } = struct_info;
+
+    debug!("drop_done_scatter_fill_mem struct_did: {} init_offset: {}",
+           struct_did.repr(cx.tcx()), init_offset);
+
+    assert!(drops_without_flag(cx, struct_did));
+
+    let offsets = adt::FieldOffsets::for_struct_did(cx, struct_did, substs);
+    let offsets = offsets.add_offset(init_offset);
+    let fields = ty::lookup_struct_fields(cx.tcx(), struct_did);
+    for (i, (offset, field)) in offsets.zip(fields.iter()).enumerate() {
+        debug!("drop_done_scatter_fill_mem field[{}]: {} offset: {}",
+               i, field.id.repr(cx.tcx()), offset);
+        let field_type =
+            ty::lookup_field_type(cx.tcx(), struct_did, field.id, substs);
+        let field_type =
+            monomorphize::normalize_associated_type(cx.tcx(), &field_type);
+        match field_type.sty {
+            ty::ty_struct(struct_did, substs) if drops_without_flag(cx, struct_did) => {
+                let info = FillMemInfo {
+                    struct_did: struct_did,
+                    substs: substs,
+                    offset: offset,
+                };
+                drop_done_scatter_fill_mem(cx, llptr, info);
+            }
+            ty::ty_enum(enum_did, _substs) if drops_without_flag(cx, enum_did) => {
+                // TODO
+                panic!("need to implement glue for no_drop_flag on enums \
+                        due to enum {}", field_type.repr(cx.tcx()));
+            }
+            _ => {
+                let builder = &B(cx);
+                let offset = offset.to_usize()
+                    .expect("compiler should not be using usize here");
+                memfill(builder, builder.gepi(llptr, &[offset]), field_type, adt::DTOR_DONE);
+            }
+        }
+    }
 }
 
 pub fn init_zero_mem<'blk, 'tcx>(cx: Block<'blk, 'tcx>, llptr: ValueRef, t: Ty<'tcx>) {
