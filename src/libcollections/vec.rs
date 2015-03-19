@@ -1597,6 +1597,10 @@ impl<T> Drop for Vec<T> {
             self.cap = 0;
         }
     }
+    fn forget(s: *mut Self) {
+        // Set explicitly to accommodate partially-filling drop
+        unsafe { (*s).cap = 0; }
+    }
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
@@ -1839,6 +1843,13 @@ impl<'a, T> Drop for Drain<'a, T> {
         // Set explicitly to accommodate partially-filling drop
         self.ptr = ptr::null();
         self.end = ptr::null();
+    }
+    fn forget(s: *mut Self) {
+        unsafe {
+            // Set explicitly to accommodate partially-filling drop
+            (*s).ptr = ptr::null();
+            (*s).end = ptr::null();
+        }
     }
 }
 

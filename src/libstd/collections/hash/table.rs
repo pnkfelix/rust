@@ -1018,4 +1018,8 @@ impl<K, V> Drop for RawTable<K, V> {
         // Set explicitly to accommodate partially-filling drop
         self.capacity = 0;
     }
+    fn forget(s: *mut Self) {
+        // Set explicitly to accommodate partially-filling drop
+        unsafe { (*s).capacity = 0; }
+    }
 }

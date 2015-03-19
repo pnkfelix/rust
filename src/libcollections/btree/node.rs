@@ -308,6 +308,16 @@ impl<K, V> Drop for Node<K, V> {
             *p_ptr = ptr::null_mut();
         }
     }
+    fn forget(s: *mut Self) {
+        // Because NonZero carries an invariant that the value is
+        // non-null, we explicitly transmute it to `*mut *mut _` so
+        // that we can read and write a potentially zero value here
+        // without hitting undefined behavior in LLVM.
+        unsafe {
+            let p_ptr: *mut *mut K = mem::transmute(&mut (*s).keys);
+            *p_ptr = ptr::null_mut();
+        }
+    }
 }
 
 impl<K, V> Node<K, V> {

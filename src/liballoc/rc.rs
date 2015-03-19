@@ -416,6 +416,16 @@ impl<T> Drop for Rc<T> {
             *p_ptr = ptr::null_mut();
         }
     }
+    fn forget(s: *mut Self) {
+        // Because NonZero carries an invariant that the value is
+        // non-null, we explicitly transmute it to `*mut *mut _` so
+        // that we can read and write a potentially zero value here
+        // without hitting undefined behavior in LLVM.
+        unsafe {
+            let p_ptr: *mut *mut RcBox<T> = mem::transmute(&mut (*s)._ptr);
+            *p_ptr = ptr::null_mut();
+        }
+    }
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
@@ -721,6 +731,16 @@ impl<T> Drop for Weak<T> {
             }
 
             // Set explicitly to accommodate partially-filling drop
+            *p_ptr = ptr::null_mut();
+        }
+    }
+    fn forget(s: *mut Self) {
+        // Because NonZero carries an invariant that the value is
+        // non-null, we explicitly transmute it to `*mut *mut _` so
+        // that we can read and write a potentially zero value here
+        // without hitting undefined behavior in LLVM.
+        unsafe {
+            let p_ptr: *mut *mut RcBox<T> = mem::transmute(&mut (*s)._ptr);
             *p_ptr = ptr::null_mut();
         }
     }

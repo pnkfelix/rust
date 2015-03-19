@@ -97,6 +97,22 @@ pub trait Drop {
     /// The `drop` method, called when the value goes out of scope.
     #[stable(feature = "rust1", since = "1.0.0")]
     fn drop(&mut self);
+
+    /// The `forget` method, called on the source location when the
+    /// value is moved to a new location but not dropped.
+    ///
+    /// Overriding this function is probably a bad idea if your struct
+    /// does not have the `#[unsafe_no_drop_flag]` attribute. (Or who
+    /// knows, maybe it could be a source for some amazing hacks.)
+    ///
+    /// This function takes `*mut Self` rather than `&mut self`
+    /// because it is invoked immediately after the state has been
+    /// copied to a new location and thus it does *not* have unique
+    /// access to the state held in `self`.
+    #[unstable(feature = "unsafe_no_drop_flag",
+               reason = "may or may not remain after transition to stack-local drop flags")]
+    #[inline]
+    fn forget(_: *mut Self) { }
 }
 
 // implements the unary operator "op &T"
