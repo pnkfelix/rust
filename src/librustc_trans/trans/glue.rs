@@ -133,13 +133,34 @@ pub fn drop_ty<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                            v: ValueRef,
                            t: Ty<'tcx>,
                            debug_loc: DebugLoc)
-                           -> Block<'blk, 'tcx> {
-    // NB: v is an *alias* of type t here, not a direct value.
+                           -> Block<'blk, 'tcx>
+{
     debug!("drop_ty(t={})", t.repr(bcx.tcx()));
     let _icx = push_ctxt("drop_ty");
+    drop_ty_core(bcx, v, t, debug_loc, DropGlueKind::Drop)
+}
+
+pub fn forget_ty<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
+                             v: ValueRef,
+                             t: Ty<'tcx>,
+                             debug_loc: DebugLoc)
+                             -> Block<'blk, 'tcx>
+{
+    debug!("forget_ty(t={})", t.repr(bcx.tcx()));
+    let _icx = push_ctxt("forget_ty");
+    drop_ty_core(bcx, v, t, debug_loc, DropGlueKind::Forget)
+}
+
+fn drop_ty_core<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
+                            v: ValueRef,
+                            t: Ty<'tcx>,
+                            debug_loc: DebugLoc,
+                            kind: DropGlueKind)
+                            -> Block<'blk, 'tcx> {
+    // NB: v is an *alias* of type t here, not a direct value.
     if bcx.fcx.type_needs_drop(t) {
         let ccx = bcx.ccx();
-        let glue = get_drop_glue(ccx, t);
+        let glue = get_drop_glue(ccx, t, kind);
         let glue_type = get_drop_glue_type(ccx, t);
         let ptr = if glue_type != t {
             PointerCast(bcx, v, type_of(ccx, glue_type).ptr_to())
@@ -163,11 +184,21 @@ pub fn drop_ty_immediate<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     drop_ty(bcx, vp, t, debug_loc)
 }
 
-pub fn get_drop_glue<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>, t: Ty<'tcx>) -> ValueRef {
-    debug!("make drop glue for {}", ppaux::ty_to_string(ccx.tcx(), t));
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum DropGlueKind {
+    Drop,
+    Forget,
+}
+
+pub fn get_drop_glue<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>, t: Ty<'tcx>, kind: DropGlueKind) -> ValueRef {
+    debug!("make drop glue for {} kind: {:?}", ppaux::ty_to_string(ccx.tcx(), t), kind);
     let t = get_drop_glue_type(ccx, t);
-    debug!("drop glue type {}", ppaux::ty_to_string(ccx.tcx(), t));
-    match ccx.drop_glues().borrow().get(&t) {
+    let name = match kind {
+        DropGlueKind::Drop => "drop",
+        DropGlueKind::Forget => "forget",
+    };
+    debug!("{} glue type {}", name, ppaux::ty_to_string(ccx.tcx(), t));
+    match ccx.drop_glues(kind).borrow().get(&t) {
         Some(&glue) => return glue,
         _ => { }
     }
@@ -180,26 +211,33 @@ pub fn get_drop_glue<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>, t: Ty<'tcx>) -> Val
 
     let llfnty = Type::glue_fn(ccx, llty);
 
-    let (glue, new_sym) = match ccx.available_drop_glues().borrow().get(&t) {
+    let (glue, new_sym) = match ccx.available_drop_glues(kind).borrow().get(&t) {
         Some(old_sym) => {
             let glue = decl_cdecl_fn(ccx, &old_sym[..], llfnty, ty::mk_nil(ccx.tcx()));
             (glue, None)
         },
         None => {
-            let (sym, glue) = declare_generic_glue(ccx, t, llfnty, "drop");
+            let (sym, glue) = declare_generic_glue(ccx, t, llfnty, name);
             (glue, Some(sym))
         },
     };
 
-    ccx.drop_glues().borrow_mut().insert(t, glue);
+    ccx.drop_glues(kind).borrow_mut().insert(t, glue);
 
     // To avoid infinite recursion, don't `make_drop_glue` until after we've
     // added the entry to the `drop_glues` cache.
     match new_sym {
         Some(sym) => {
-            ccx.available_drop_glues().borrow_mut().insert(t, sym);
+            ccx.available_drop_glues(kind).borrow_mut().insert(t, sym);
             // We're creating a new drop glue, so also generate a body.
-            make_generic_glue(ccx, t, glue, make_drop_glue, "drop");
+            match kind {
+                DropGlueKind::Drop => {
+                    make_generic_glue(ccx, t, glue, make_drop_glue, name);
+                }
+                DropGlueKind::Forget => {
+                    make_generic_glue(ccx, t, glue, make_forget_glue, name);
+                }
+            };
         },
         None => {},
     }
@@ -256,6 +294,35 @@ fn trans_struct_drop<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                  class_did: ast::DefId,
                                  substs: &subst::Substs<'tcx>)
                                  -> Block<'blk, 'tcx>
+{
+    trans_struct_drop_core(
+        bcx, t, v0, dtor_did, class_did, substs, DropGlueKind::Drop)
+}
+
+fn trans_struct_forget<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
+                                   t: Ty<'tcx>,
+                                   v0: ValueRef,
+                                   forgetter_did: ast::DefId,
+                                   class_did: ast::DefId,
+                                   substs: &subst::Substs<'tcx>)
+                                   -> Block<'blk, 'tcx>
+{
+    debug!("trans_struct_forget t: {} forgetter_did: {} class_did: {}",
+           t.repr(bcx.tcx()),
+           forgetter_did.repr(bcx.tcx()),
+           class_did.repr(bcx.tcx()));
+    trans_struct_drop_core(
+        bcx, t, v0, forgetter_did, class_did, substs, DropGlueKind::Forget)
+}
+
+fn trans_struct_drop_core<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
+                                      t: Ty<'tcx>,
+                                      v0: ValueRef,
+                                      dtor_did: ast::DefId,
+                                      class_did: ast::DefId,
+                                      substs: &subst::Substs<'tcx>,
+                                      _kind: DropGlueKind)
+                                      -> Block<'blk, 'tcx>
 {
     let repr = adt::represent_type(bcx.ccx(), t);
 
@@ -404,6 +471,57 @@ fn size_and_align_of_dst<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, t: Ty<'tcx>, info: 
     }
 }
 
+fn make_forget_glue<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
+                                v0: ValueRef,
+                                t: Ty<'tcx>)
+                                -> Block<'blk, 'tcx>
+{
+    // NB: v0 is an *alias* of type t here, not a direct value.
+    let _icx = push_ctxt("make_forget_glue");
+    match t.sty {
+        ty::ty_struct(did, substs) | ty::ty_enum(did, substs) => {
+            let tcx = bcx.tcx();
+            match ty::ty_dtor(tcx, did) {
+                ty::TraitDtor { forgetter_did: Some(forgetter), .. } => {
+                    trans_struct_forget(bcx, t, v0, forgetter, did, substs)
+                }
+
+                ty::TraitDtor { forgetter_did: None, .. } |
+                ty::NoDtor => {
+                    // No destructor or forgetter? Just the default case
+                    iter_structural_ty(bcx, v0, t,
+                                       |bb, vv, tt| forget_ty(bb, vv, tt, DebugLoc::None))
+                }
+            }
+        }
+
+        // TODO FIXME
+        #[cfg(not_now_fsk_thinks_this_is_subsumed_below)]
+        ty::ty_closure(..) => {
+            iter_structural_ty(bcx,
+                               v0,
+                               t,
+                               |bb, vv, tt| forget_ty(bb, vv, tt, DebugLoc::None))
+        }
+
+        ty::ty_trait(..) | ty::ty_vec(_, None) | ty::ty_str => {
+            // no forget glue necessary for these cases
+            bcx
+        }
+
+        _ if bcx.fcx.type_needs_drop(t) && ty::type_is_structural(t) => {
+            assert!(type_is_sized(bcx.tcx(), t));
+            iter_structural_ty(bcx,
+                               v0,
+                               t,
+                               |bb, vv, tt| forget_ty(bb, vv, tt, DebugLoc::None))
+        }
+
+        _ => bcx,
+    }
+}
+
+
 fn make_drop_glue<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, v0: ValueRef, t: Ty<'tcx>)
                               -> Block<'blk, 'tcx> {
     // NB: v0 is an *alias* of type t here, not a direct value.
@@ -499,7 +617,7 @@ fn make_drop_glue<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, v0: ValueRef, t: Ty<'tcx>)
         ty::ty_struct(did, substs) | ty::ty_enum(did, substs) => {
             let tcx = bcx.tcx();
             match ty::ty_dtor(tcx, did) {
-                ty::TraitDtor(dtor, true) => {
+                ty::TraitDtor { dtor_did: dtor, has_drop_flag: true, .. } => {
                     // FIXME(16758) Since the struct is unsized, it is hard to
                     // find the drop flag (which is at the end of the struct).
                     // Lets just ignore the flag and pretend everything will be
@@ -516,7 +634,7 @@ fn make_drop_glue<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, v0: ValueRef, t: Ty<'tcx>)
                         trans_struct_drop(bcx, t, v0, dtor, did, substs)
                     }
                 }
-                ty::TraitDtor(dtor, false) => {
+                ty::TraitDtor { dtor_did: dtor, has_drop_flag: false, .. } => {
                     trans_struct_drop(bcx, t, v0, dtor, did, substs)
                 }
                 ty::NoDtor => {
@@ -667,7 +785,8 @@ pub fn emit_tydescs(ccx: &CrateContext) {
         // before being put into the tydesc because we only have a singleton
         // tydesc type. Then we'll recast each function to its real type when
         // calling it.
-        let drop_glue = consts::ptrcast(get_drop_glue(ccx, ti.ty), glue_fn_ty);
+        let drop_glue = consts::ptrcast(get_drop_glue(ccx, ti.ty, DropGlueKind::Drop),
+                                        glue_fn_ty);
         ccx.stats().n_real_glues.set(ccx.stats().n_real_glues.get() + 1);
 
         let tydesc = C_named_struct(ccx.tydesc_type(),

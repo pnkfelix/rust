@@ -770,7 +770,7 @@ pub fn get_vtable<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 
     let components: Vec<_> = vec![
         // Generate a destructor for the vtable.
-        glue::get_drop_glue(ccx, box_ty),
+        glue::get_drop_glue(ccx, box_ty, glue::DropGlueKind::Drop),
         C_uint(ccx, size),
         C_uint(ccx, align)
     ].into_iter().chain(methods).collect();

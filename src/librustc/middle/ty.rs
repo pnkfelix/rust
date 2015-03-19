@@ -751,6 +751,12 @@ pub struct ctxt<'tcx> {
     /// populated during the coherence phase of typechecking.
     pub destructor_for_type: RefCell<DefIdMap<ast::DefId>>,
 
+    /// A mapping from the def ID of an enum or struct type to the def ID
+    /// of the method that implements its forgetter. If the type is not
+    /// present in this map, it does not have a forgetter. This map is
+    /// populated during the coherence phase of typechecking.
+    pub forgetter_for_type: RefCell<DefIdMap<ast::DefId>>,
+
     /// A method will be in this list if and only if it is a destructor.
     pub destructors: RefCell<DefIdSet>,
 
@@ -2589,6 +2595,7 @@ pub fn mk_ctxt<'tcx>(s: Session,
         provided_method_sources: RefCell::new(DefIdMap()),
         struct_fields: RefCell::new(DefIdMap()),
         destructor_for_type: RefCell::new(DefIdMap()),
+        forgetter_for_type: RefCell::new(DefIdMap()),
         destructors: RefCell::new(DefIdSet()),
         trait_impls: RefCell::new(DefIdMap()),
         traits_with_default_impls: RefCell::new(DefIdMap()),
@@ -5391,13 +5398,17 @@ pub fn item_path_str(cx: &ctxt, id: ast::DefId) -> String {
 #[derive(Copy)]
 pub enum DtorKind {
     NoDtor,
-    TraitDtor(DefId, bool)
+    TraitDtor {
+        dtor_did: DefId,
+        has_drop_flag: bool,
+        forgetter_did: Option<DefId>
+    }
 }
 
 impl DtorKind {
     pub fn is_present(&self) -> bool {
         match *self {
-            TraitDtor(..) => true,
+            TraitDtor { .. } => true,
             _ => false
         }
     }
@@ -5405,7 +5416,7 @@ impl DtorKind {
     pub fn has_drop_flag(&self) -> bool {
         match self {
             &NoDtor => false,
-            &TraitDtor(_, flag) => flag
+            &TraitDtor { has_drop_flag: flag, .. } => flag
         }
     }
 }
@@ -5413,11 +5424,17 @@ impl DtorKind {
 /* If struct_id names a struct with a dtor, return Some(the dtor's id).
    Otherwise return none. */
 pub fn ty_dtor(cx: &ctxt, struct_id: DefId) -> DtorKind {
-    match cx.destructor_for_type.borrow().get(&struct_id) {
+    let destructor_for_type = cx.destructor_for_type.borrow();
+    let forgetter_for_type = cx.forgetter_for_type.borrow();
+    let dtor = destructor_for_type.get(&struct_id);
+    let fter = forgetter_for_type.get(&struct_id);
+    match dtor {
         Some(&method_def_id) => {
             let flag = !has_attr(cx, struct_id, "unsafe_no_drop_flag");
 
-            TraitDtor(method_def_id, flag)
+            TraitDtor { dtor_did: method_def_id,
+                        has_drop_flag: flag,
+                        forgetter_did: fter.map(|x|*x), }
         }
         None => NoDtor,
     }

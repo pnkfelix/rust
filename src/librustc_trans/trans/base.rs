@@ -1150,7 +1150,7 @@ pub fn memcpy_ty<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
 fn drops_without_flag<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, def_id: ast::DefId) -> bool {
     match ty::ty_dtor(bcx.tcx(), def_id) {
         ty::DtorKind::NoDtor => false,
-        ty::DtorKind::TraitDtor(_, drop_flag) => !drop_flag
+        ty::DtorKind::TraitDtor { has_drop_flag: drop_flag, .. } => !drop_flag
     }
 }
 
@@ -1222,10 +1222,12 @@ fn drop_done_scatter_fill_mem<'blk, 'tcx>(cx: Block<'blk, 'tcx>,
                         due to enum {}", field_type.repr(cx.tcx()));
             }
             _ => {
-                let builder = &B(cx);
-                let offset = offset.to_usize()
-                    .expect("compiler should not be using usize here");
-                memfill(builder, builder.gepi(llptr, &[offset]), field_type, adt::DTOR_DONE);
+                if cx.fcx.type_needs_drop(field_type) {
+                    let builder = &B(cx);
+                    let offset = offset.to_usize()
+                        .expect("compiler should not be using usize here");
+                    memfill(builder, builder.gepi(llptr, &[offset]), field_type, adt::DTOR_DONE);
+                }
             }
         }
     }

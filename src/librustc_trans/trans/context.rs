@@ -20,6 +20,7 @@ use trans::base;
 use trans::builder::Builder;
 use trans::common::{ExternMap,tydesc_info,BuilderRef_res};
 use trans::debuginfo;
+use trans::glue::DropGlueKind;
 use trans::monomorphize::MonoId;
 use trans::type_::{Type, TypeNames};
 use middle::subst::Substs;
@@ -73,6 +74,7 @@ pub struct SharedCrateContext<'tcx> {
 
     available_monomorphizations: RefCell<FnvHashSet<String>>,
     available_drop_glues: RefCell<FnvHashMap<Ty<'tcx>, String>>,
+    available_forget_glues: RefCell<FnvHashMap<Ty<'tcx>, String>>,
 }
 
 /// The local portion of a `CrateContext`.  There is one `LocalCrateContext`
@@ -89,6 +91,7 @@ pub struct LocalCrateContext<'tcx> {
     needs_unwind_cleanup_cache: RefCell<FnvHashMap<Ty<'tcx>, bool>>,
     fn_pointer_shims: RefCell<FnvHashMap<Ty<'tcx>, ValueRef>>,
     drop_glues: RefCell<FnvHashMap<Ty<'tcx>, ValueRef>>,
+    forget_glues: RefCell<FnvHashMap<Ty<'tcx>, ValueRef>>,
     tydescs: RefCell<FnvHashMap<Ty<'tcx>, Rc<tydesc_info<'tcx>>>>,
     /// Set when running emit_tydescs to enforce that no more tydescs are
     /// created.
@@ -279,6 +282,7 @@ impl<'tcx> SharedCrateContext<'tcx> {
             check_overflow: check_overflow,
             available_monomorphizations: RefCell::new(FnvHashSet()),
             available_drop_glues: RefCell::new(FnvHashMap()),
+            available_forget_glues: RefCell::new(FnvHashMap()),
         };
 
         for i in 0..local_count {
@@ -399,6 +403,7 @@ impl<'tcx> LocalCrateContext<'tcx> {
                 needs_unwind_cleanup_cache: RefCell::new(FnvHashMap()),
                 fn_pointer_shims: RefCell::new(FnvHashMap()),
                 drop_glues: RefCell::new(FnvHashMap()),
+                forget_glues: RefCell::new(FnvHashMap()),
                 tydescs: RefCell::new(FnvHashMap()),
                 finished_tydescs: Cell::new(false),
                 external: RefCell::new(DefIdMap()),
@@ -586,8 +591,11 @@ impl<'b, 'tcx> CrateContext<'b, 'tcx> {
         &self.local.fn_pointer_shims
     }
 
-    pub fn drop_glues<'a>(&'a self) -> &'a RefCell<FnvHashMap<Ty<'tcx>, ValueRef>> {
-        &self.local.drop_glues
+    pub fn drop_glues<'a>(&'a self, kind: DropGlueKind) -> &'a RefCell<FnvHashMap<Ty<'tcx>, ValueRef>> {
+        match kind {
+            DropGlueKind::Drop => &self.local.drop_glues,
+            DropGlueKind::Forget => &self.local.forget_glues,
+        }
     }
 
     pub fn tydescs<'a>(&'a self) -> &'a RefCell<FnvHashMap<Ty<'tcx>, Rc<tydesc_info<'tcx>>>> {
@@ -685,8 +693,14 @@ impl<'b, 'tcx> CrateContext<'b, 'tcx> {
         &self.shared.available_monomorphizations
     }
 
-    pub fn available_drop_glues<'a>(&'a self) -> &'a RefCell<FnvHashMap<Ty<'tcx>, String>> {
-        &self.shared.available_drop_glues
+    pub fn available_drop_glues<'a>(&'a self,
+                                    kind: DropGlueKind)
+                                    -> &'a RefCell<FnvHashMap<Ty<'tcx>, String>>
+    {
+        match kind {
+            DropGlueKind::Drop => &self.shared.available_drop_glues,
+            DropGlueKind::Forget => &self.shared.available_forget_glues,
+        }
     }
 
     pub fn int_type(&self) -> Type {

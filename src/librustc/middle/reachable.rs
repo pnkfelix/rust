@@ -348,6 +348,12 @@ impl<'a, 'tcx> ReachableContext<'a, 'tcx> {
                 self.reachable_symbols.insert(destructor_def_id.node);
             }
         }
+
+        for (_, forgetter_def_id) in &*self.tcx.forgetter_for_type.borrow() {
+            if forgetter_def_id.krate == ast::LOCAL_CRATE {
+                self.reachable_symbols.insert(forgetter_def_id.node);
+            }
+        }
     }
 }
 

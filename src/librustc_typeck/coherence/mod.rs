@@ -390,7 +390,11 @@ impl<'a, 'tcx> CoherenceChecker<'a, 'tcx> {
                 // We'll error out later. For now, just don't ICE.
                 continue;
             }
-            let method_def_id = items[0];
+
+            // TODO FIXME: This needs to actually figure out which of
+            // the two items is which.
+            let drop_method_def_id = items[0];
+            let forget_method_def_id = items[1];
 
             let self_type = self.get_self_type_for_implementation(impl_did);
             match self_type.ty.sty {
@@ -399,10 +403,13 @@ impl<'a, 'tcx> CoherenceChecker<'a, 'tcx> {
                 ty::ty_closure(type_def_id, _) => {
                     tcx.destructor_for_type
                        .borrow_mut()
-                       .insert(type_def_id, method_def_id.def_id());
+                       .insert(type_def_id, drop_method_def_id.def_id());
+                    tcx.forgetter_for_type
+                       .borrow_mut()
+                       .insert(type_def_id, forget_method_def_id.def_id());
                     tcx.destructors
                        .borrow_mut()
-                       .insert(method_def_id.def_id());
+                       .insert(drop_method_def_id.def_id());
                 }
                 _ => {
                     // Destructors only work on nominal types.

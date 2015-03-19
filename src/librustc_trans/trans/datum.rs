@@ -105,11 +105,13 @@ pub use self::RvalueMode::*;
 
 use llvm::ValueRef;
 use trans::base::*;
-use trans::build::Load;
+use trans::build::{Call, Load, PointerCast};
 use trans::common::*;
 use trans::cleanup;
 use trans::cleanup::CleanupMethods;
+use trans::debuginfo::DebugLoc;
 use trans::expr;
+use trans::glue::{self, DropGlueKind};
 use trans::tvec;
 use trans::type_of;
 use middle::ty::{self, Ty};
@@ -307,7 +309,22 @@ impl KindOps for Lvalue {
                               -> Block<'blk, 'tcx> {
         let _icx = push_ctxt("<Lvalue as KindOps>::post_store");
         if bcx.fcx.type_needs_drop(ty) {
-            // cancel cleanup of affine values by drop-filling the memory
+            // First, call the forget method so that structs with no
+            // drop flag get a chance to record that their destructors
+            // should not run.
+            let ccx = bcx.ccx();
+            let glue = glue::get_drop_glue(ccx, ty, DropGlueKind::Forget);
+            let glue_type = glue::get_drop_glue_type(ccx, ty);
+            let ptr = if glue_type != ty {
+                PointerCast(bcx, val, type_of::type_of(ccx, glue_type).ptr_to())
+            } else {
+                val
+            };
+            Call(bcx, glue, &[ptr], None, DebugLoc::None);
+
+            // Second, cancel cleanup of affine values by drop-filling
+            // the memory (this filling is partial for structs with no
+            // drop flag).
             let () = drop_done_fill_mem(bcx, val, ty);
             bcx
         } else {
