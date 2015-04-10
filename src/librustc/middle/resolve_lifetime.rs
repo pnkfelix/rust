@@ -363,8 +363,7 @@ fn extract_labels<'v, 'a>(ctxt: &mut LifetimeContext<'a>, b: &'v ast::Block) {
         fn visit_expr(&mut self, ex: &'v ast::Expr) {
             if let Some(label) = expression_label(ex) {
                 for &(prior, prior_span) in &self.labels_in_fn[..] {
-                    // FIXME (#24278): non-hygienic comparision
-                    if label.name == prior.name {
+                    if label == prior {
                         signal_shadowing_error(self.sess,
                                                label.name,
                                                original_label(prior_span),
