@@ -16,7 +16,6 @@ use codemap::{Span, respan};
 use ext::base::*;
 use ext::base;
 use ext::build::AstBuilder;
-use fold::Folder;
 use fmt_macros as parse;
 use fold::Folder;
 use parse::token::special_idents;
@@ -640,6 +639,7 @@ pub fn ensure_not_fmt_string_literal<'cx>(cx: &'cx mut ExtCtxt,
                                           sp: Span,
                                           tts: &[ast::TokenTree])
                                           -> Box<base::MacResult+'cx> {
+    use fold::Folder;
     let takes_two_args = |cx: &ExtCtxt, rest| {
         cx.span_err(sp, &format!("`ensure_not_fmt_string_literal!` \
                                   takes 2 arguments, {}", rest));
@@ -648,8 +648,8 @@ pub fn ensure_not_fmt_string_literal<'cx>(cx: &'cx mut ExtCtxt,
     let mut p = cx.new_parser_from_tts(tts);
     if p.token == token::Eof { return takes_two_args(cx, "given 0"); }
     let arg1 = cx.expander().fold_expr(p.parse_expr());
-    if p.token != token::Comma { return takes_two_args(cx, "comma-separated"); }
-    p.bump();
+    if p.token == token::Eof { return takes_two_args(cx, "given 1"); }
+    if !panictry!(p.eat(&token::Comma)) { return takes_two_args(cx, "comma-separated"); }
     if p.token == token::Eof { return takes_two_args(cx, "given 1"); }
     let arg2 = cx.expander().fold_expr(p.parse_expr());
     if p.token != token::Eof {
