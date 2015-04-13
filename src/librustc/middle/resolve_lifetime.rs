@@ -341,6 +341,19 @@ fn signal_shadowing_error(
                             orig.kind.desc(), name));
 }
 
+fn idents_hygienically_eq(a: ast::Ident, b: ast::Ident) -> bool {
+    if a.ctxt == b.ctxt {
+        a == b
+    } else {
+        // FIXME: Issue 6993 gives the impression that all Idents
+        // visible at this point in control flow should have matching
+        // ctxt fields.  This claim apparently does not hold. For now,
+        // just assume the two differ; but there may be a latent bug
+        // upstream that this is otherwise exposing.
+        false
+    }
+}
+
 // Adds all labels in `b` to `ctxt.labels_in_fn`, signalling an error
 // if one of the label shadows a lifetime or another label.
 fn extract_labels<'v, 'a>(ctxt: &mut LifetimeContext<'a>, b: &'v ast::Block) {
@@ -363,7 +376,7 @@ fn extract_labels<'v, 'a>(ctxt: &mut LifetimeContext<'a>, b: &'v ast::Block) {
         fn visit_expr(&mut self, ex: &'v ast::Expr) {
             if let Some(label) = expression_label(ex) {
                 for &(prior, prior_span) in &self.labels_in_fn[..] {
-                    if label == prior {
+                    if idents_hygienically_eq(label, prior) {
                         signal_shadowing_error(self.sess,
                                                label.name,
                                                original_label(prior_span),
