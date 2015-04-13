@@ -110,6 +110,10 @@ pub trait Folder : Sized {
         noop_fold_fn_decl(d, self)
     }
 
+    fn fold_fn_body(&mut self, b: P<Block>) -> P<Block> {
+        self.fold_block(b, self)
+    }
+
     fn fold_block(&mut self, b: P<Block>) -> P<Block> {
         noop_fold_block(b, self)
     }
@@ -913,7 +917,7 @@ pub fn noop_fold_item_underscore<T: Folder>(i: Item_, folder: &mut T) -> Item_ {
                 unsafety,
                 abi,
                 folder.fold_generics(generics),
-                folder.fold_block(body)
+                folder.fold_fn_body(body)
             )
         }
         ItemMod(m) => ItemMod(folder.fold_mod(m)),
@@ -975,7 +979,7 @@ pub fn noop_fold_trait_item<T: Folder>(i: P<TraitItem>, folder: &mut T)
         node: match node {
             MethodTraitItem(sig, body) => {
                 MethodTraitItem(noop_fold_method_sig(sig, folder),
-                                body.map(|x| folder.fold_block(x)))
+                                body.map(|x| folder.fold_fn_body(x)))
             }
             TypeTraitItem(bounds, default) => {
                 TypeTraitItem(folder.fold_bounds(bounds),
@@ -996,7 +1000,7 @@ pub fn noop_fold_impl_item<T: Folder>(i: P<ImplItem>, folder: &mut T)
         node: match node  {
             MethodImplItem(sig, body) => {
                 MethodImplItem(noop_fold_method_sig(sig, folder),
-                               folder.fold_block(body))
+                               folder.fold_fn_body(body))
             }
             TypeImplItem(ty) => TypeImplItem(folder.fold_ty(ty)),
             MacImplItem(mac) => MacImplItem(folder.fold_mac(mac))
@@ -1233,7 +1237,7 @@ pub fn noop_fold_expr<T: Folder>(Expr {id, node, span}: Expr, folder: &mut T) ->
             ExprClosure(capture_clause, decl, body) => {
                 ExprClosure(capture_clause,
                             folder.fold_fn_decl(decl),
-                            folder.fold_block(body))
+                            folder.fold_fn_body(body))
             }
             ExprBlock(blk) => ExprBlock(folder.fold_block(blk)),
             ExprAssign(el, er) => {
