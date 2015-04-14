@@ -111,7 +111,7 @@ pub trait Folder : Sized {
     }
 
     fn fold_fn_body(&mut self, b: P<Block>) -> P<Block> {
-        self.fold_block(b, self)
+        self.fold_block(b)
     }
 
     fn fold_block(&mut self, b: P<Block>) -> P<Block> {
