@@ -421,39 +421,13 @@ fn expand_mac_invoc<T, F, G>(mac: ast::Mac, span: codemap::Span,
     }
 }
 
-/// Rename loop label and expand its loop body
-///
-/// The renaming procedure for loop is different in the sense that the loop
-/// body is in a block enclosed by loop head so the renaming of loop label
-/// must be propagated to the enclosed context.
+/// Expand loop body
 fn expand_loop_block(loop_block: P<Block>,
                      opt_ident: Option<Ident>,
                      fld: &mut MacroExpander) -> (P<Block>, Option<Ident>) {
-    match opt_ident {
-        Some(label) => {
-            let new_label = fresh_name(&label);
-            let rename = (label, new_label);
-
-            // The rename *must not* be added to the pending list of current
-            // syntax context otherwise an unrelated `break` or `continue` in
-            // the same context will pick that up in the deferred renaming pass
-            // and be renamed incorrectly.
-            let mut rename_list = vec!(rename);
-            let mut rename_fld = IdentRenamer{renames: &mut rename_list};
-            let renamed_ident = rename_fld.fold_ident(label);
-
-            // The rename *must* be added to the enclosed syntax context for
-            // `break` or `continue` to pick up because by definition they are
-            // in a block enclosed by loop head.
-            fld.cx.syntax_env.push_frame();
-            fld.cx.syntax_env.info().pending_renames.push(rename);
-            let expanded_block = expand_block_elts(loop_block, fld);
-            fld.cx.syntax_env.pop_frame();
-
-            (expanded_block, Some(renamed_ident))
-        }
-        None => (fld.fold_block(loop_block), opt_ident)
-    }
+    let opt_ident = opt_ident.map(|ident| fld.fold_ident(ident));
+    let loop_block = fld.fold_block(loop_block);
+    (loop_block, opt_ident)
 }
 
 // eval $e with a new exts frame.
@@ -902,6 +876,13 @@ fn fn_decl_arg_bindings(fn_decl: &ast::FnDecl) -> Vec<ast::Ident> {
         pat_idents.visit_pat(&*arg.pat);
     }
     pat_idents.ident_accumulator
+}
+
+pub fn expand_fn_body(body: P<Block>, fld: &mut MacroExpander) -> P<Block> {
+    debug!("expand_fn_body: freshly marking to rename labels");
+    let body = expand_block(body, fld);
+    let fm = fresh_mark();
+    mark_block(body, fm)
 }
 
 // expand a block. pushes a new exts_frame, then calls expand_block_elts
@@ -1370,6 +1351,10 @@ impl<'a, 'b> Folder for MacroExpander<'a, 'b> {
         expand_stmt(stmt, self)
     }
 
+    fn fold_fn_body(&mut self, block: P<Block>) -> P<Block> {
+        expand_fn_body(block, self)
+    }
+
     fn fold_block(&mut self, block: P<Block>) -> P<Block> {
         expand_block(block, self)
     }
@@ -1501,6 +1486,11 @@ impl Folder for Marker {
 // apply a given mark to the given token trees. Used prior to expansion of a macro.
 fn mark_tts(tts: &[TokenTree], m: Mrk) -> Vec<TokenTree> {
     noop_fold_tts(tts, &mut Marker{mark:m})
+}
+
+// apply a given mark to the given block. Used following the expansion of a macro.
+fn mark_block(block: P<ast::Block>, m: Mrk) -> P<ast::Block> {
+    Marker{mark:m}.fold_block(block)
 }
 
 // apply a given mark to the given expr. Used following the expansion of a macro.
