@@ -655,6 +655,35 @@ if [ -n "$CFG_ENABLE_DEBUG" ]; then
     CFG_ENABLE_DEBUG_JEMALLOC=1
 fi
 
+at_most_one_opt() {
+    local ARG=$1
+    OP=$(echo $ARG | tr 'a-z-' 'A-Z_')
+    DISABLE_NAME=\$CFG_DISABLE_${OP}
+    ENABLE_NAME=\$CFG_ENABLE_${OP}
+    eval VD=$DISABLE_NAME
+    eval VE=$ENABLE_NAME
+    if [ -n "${VD}" ] && [ -n "${VE}" ]; then
+        msg "configure script bug: at most one of"
+        msg "$DISABLE_NAME and $ENABLE_NAME may be set;"
+        msg "you should report this as a bug, supplying your"
+        msg "CFG_CONFIGURE_ARGS=$CFG_CONFIGURE_ARGS"
+        err "configure script bug, at_most_one_opt $ARG"
+    fi
+}
+
+# At most one of each of the following enable/disable option pairs
+# should be set. Check that. (i.e. if we are going to have some
+# prioritization scheme, e.g. based on order of inputs to configure,
+# then such prioritization should be explicitly applied before this
+# point.)
+at_most_one_opt optimize
+at_most_one_opt optimize-cxx
+at_most_one_opt optimize-llvm
+at_most_one_opt llvm-assertions
+at_most_one_opt debug-assertions
+at_most_one_opt debuginfo
+at_most_one_opt debug-jemalloc
+
 # OK, now write the debugging options
 if [ -n "$CFG_DISABLE_OPTIMIZE" ]; then putvar CFG_DISABLE_OPTIMIZE; fi
 if [ -n "$CFG_DISABLE_OPTIMIZE_CXX" ]; then putvar CFG_DISABLE_OPTIMIZE_CXX; fi
