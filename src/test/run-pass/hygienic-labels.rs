@@ -31,23 +31,36 @@ macro_rules! while_x {
 }
 
 pub fn main() {
+    f1();
+    f2();
+    f3();
+    f4();
+}
+
+fn f1() {
     'x: for _ in 0..1 {
         // this 'x should refer to the outer loop, lexically
         loop_x!(break 'x);
         panic!("break doesn't act hygienically inside for loop");
     }
+}
 
+fn f2() {
     'x: loop {
         // ditto
         loop_x!(break 'x);
         panic!("break doesn't act hygienically inside infinite loop");
     }
+}
 
+fn f3() {
     'x: while 1 + 1 == 2 {
         while_x!(break 'x);
         panic!("break doesn't act hygienically inside infinite while loop");
     }
+}
 
+fn f4() {
     'x: for _ in 0..1 {
         // ditto
         run_once!(continue 'x);

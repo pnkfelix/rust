@@ -10,6 +10,8 @@
 
 // ignore-pretty: pprust doesn't print hygiene output
 
+#![allow(unreachable_code)]
+
 macro_rules! loop_x {
     ($e: expr) => {
         // $e shouldn't be able to interact with this 'x
@@ -32,43 +34,58 @@ macro_rules! run_once {
 }
 
 pub fn main() {
-    let mut i = 0;
+    f1();
+    f2();
+    f3();
+    f4();
+}
 
+fn f1() {
+    let i = 0;
     let j: isize = {
         'x: loop {
             // this 'x should refer to the outer loop, lexically
             loop_x!(break 'x);
-            i += 1;
+            panic!("break doesn't act hygienically inside loop in let");
         }
         i + 1
     };
     assert_eq!(j, 1);
+}
 
+fn f2() {
+    let i = 0;
     let k: isize = {
         'x: for _ in 0..1 {
             // ditto
             loop_x!(break 'x);
-            i += 1;
+            panic!("break doesn't act hygienically inside for loop in let");
         }
         i + 1
     };
     assert_eq!(k, 1);
+}
 
+fn f3() {
+    let i = 0;
     let l: isize = {
         'x: for _ in 0..1 {
             // ditto
             while_true!(break 'x);
-            i += 1;
+            panic!("break doesn't act hygienically inside for loop in let");
         }
         i + 1
     };
     assert_eq!(l, 1);
+}
 
+fn f4() {
+    let i = 0;
     let n: isize = {
         'x: for _ in 0..1 {
             // ditto
             run_once!(continue 'x);
-            i += 1;
+            panic!("break doesn't act hygienically inside for loop in let");
         }
         i + 1
     };
