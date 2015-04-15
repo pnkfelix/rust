@@ -13,7 +13,7 @@
 // Issue 22932: `panic!("{}");` should not compile.
 
 pub fn f1() { panic!("this does not work {}");
-              //~^ WARN unary panic! literal argument contains `{`
+              //~^ WARN unary `panic!` literal argument contains `{`
               //~| NOTE Is it meant to be a `format!` string?
               //~| HELP You can wrap the argument in parentheses to sidestep this warning
 }
@@ -28,25 +28,25 @@ pub fn workaround_2() {
 }
 
 pub fn f2() { panic!("this does not work {");
-              //~^ WARN unary panic! literal argument contains `{`
+              //~^ WARN unary `panic!` literal argument contains `{`
               //~| NOTE Is it meant to be a `format!` string?
               //~| HELP You can wrap the argument in parentheses to sidestep this warning
 }
 
 pub fn f3() { panic!("nor this }");
-              //~^ WARN unary panic! literal argument contains `}`
+              //~^ WARN unary `panic!` literal argument contains `}`
               //~| NOTE Is it meant to be a `format!` string?
               //~| HELP You can wrap the argument in parentheses to sidestep this warning
 }
 
 pub fn f4() { panic!("nor this {{");
-              //~^ WARN unary panic! literal argument contains `{`
+              //~^ WARN unary `panic!` literal argument contains `{`
               //~| NOTE Is it meant to be a `format!` string?
               //~| HELP You can wrap the argument in parentheses to sidestep this warning
 }
 
 pub fn f5() { panic!("nor this }}");
-              //~^ WARN unary panic! literal argument contains `}`
+              //~^ WARN unary `panic!` literal argument contains `}`
               //~| NOTE Is it meant to be a `format!` string?
               //~| HELP You can wrap the argument in parentheses to sidestep this warning
 }
