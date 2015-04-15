@@ -8,10 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(rustc_attrs)]
+
 // Issue 22932: `panic!("{}");` should not compile.
 
 pub fn f1() { panic!("this does not work {}");
-              //~^ ERROR panic! input cannot be format string literal
+              //~^ WARN unary panic! literal argument contains `{`
+              //~| NOTE Is it meant to be a `format!` string?
+              //~| HELP You can wrap the argument in parentheses to sidestep this warning
 }
 
 pub fn workaround_1() {
@@ -24,28 +28,49 @@ pub fn workaround_2() {
 }
 
 pub fn f2() { panic!("this does not work {");
-              //~^ ERROR panic! input cannot be format string literal
+              //~^ WARN unary panic! literal argument contains `{`
+              //~| NOTE Is it meant to be a `format!` string?
+              //~| HELP You can wrap the argument in parentheses to sidestep this warning
 }
 
 pub fn f3() { panic!("nor this }");
-              //~^ ERROR panic! input cannot be format string literal
+              //~^ WARN unary panic! literal argument contains `}`
+              //~| NOTE Is it meant to be a `format!` string?
+              //~| HELP You can wrap the argument in parentheses to sidestep this warning
 }
 
 pub fn f4() { panic!("nor this {{");
-              //~^ ERROR panic! input cannot be format string literal
+              //~^ WARN unary panic! literal argument contains `{`
+              //~| NOTE Is it meant to be a `format!` string?
+              //~| HELP You can wrap the argument in parentheses to sidestep this warning
 }
 
 pub fn f5() { panic!("nor this }}");
-              //~^ ERROR panic! input cannot be format string literal
+              //~^ WARN unary panic! literal argument contains `}`
+              //~| NOTE Is it meant to be a `format!` string?
+              //~| HELP You can wrap the argument in parentheses to sidestep this warning
 }
 
 pub fn f0_a() {
     ensure_not_fmt_string_literal!("`f0_a`", "this does not work {}");
-    //~^ ERROR `f0_a` input cannot be format string literal
+    //~^ WARN `f0_a` literal argument contains `{`
+    //~| NOTE Is it meant to be a `format!` string?
+    //~| HELP You can wrap the argument in parentheses to sidestep this warning
 }
 
 pub fn f0_b() {
     println!(ensure_not_fmt_string_literal!("`f0_b`", "this does work"));
 }
 
-pub fn main() {}
+pub fn f0_c() {
+    println!("{}",
+             ensure_not_fmt_string_literal!("`f0_c`", ("so does this {}")));
+}
+
+// This test is just checking that we get all the right warnings; none
+// of them are outright errors, so use the special `rustc_error`
+// attribute to force a compile error.
+#[rustc_error]
+pub fn main() {
+    //~^ ERROR compilation successful
+}
