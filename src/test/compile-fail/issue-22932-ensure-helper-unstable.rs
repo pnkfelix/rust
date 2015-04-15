@@ -13,11 +13,13 @@
 // up in the expanded output) without the appropriate feature.
 
 pub fn f0() {
-    println!(panic!("this should work"));
+    panic!("this should work");
 }
 
 pub fn main() {
-    println!(__unstable_rustc_ensure_not_fmt_string_literal!(
-        "`main`", "this should work, but its unstable"));
+    __unstable_rustc_ensure_not_fmt_string_literal!(
+        "`main`", "this should work, but its unstable");
+    //~^^ ERROR use of unstable library feature 'ensure_not_fmt_string_literal'
+    //~| HELP add #![feature(ensure_not_fmt_string_literal)] to the crate attributes to enable
     f0();
 }

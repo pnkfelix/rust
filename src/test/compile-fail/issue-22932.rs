@@ -9,6 +9,7 @@
 // except according to those terms.
 
 #![feature(rustc_attrs)]
+#![feature(ensure_not_fmt_string_literal)]
 
 // Issue 22932: `panic!("{}");` should not compile.
 
@@ -52,19 +53,18 @@ pub fn f5() { panic!("nor this }}");
 }
 
 pub fn f0_a() {
-    ensure_not_fmt_string_literal!("`f0_a`", "this does not work {}");
+    __unstable_rustc_ensure_not_fmt_string_literal!("`f0_a`", "this does not work {}");
     //~^ WARN `f0_a` literal argument contains `{`
     //~| NOTE Is it meant to be a `format!` string?
     //~| HELP You can wrap the argument in parentheses to sidestep this warning
 }
 
 pub fn f0_b() {
-    println!(ensure_not_fmt_string_literal!("`f0_b`", "this does work"));
+    __unstable_rustc_ensure_not_fmt_string_literal!("`f0_b`", "this does work");
 }
 
 pub fn f0_c() {
-    println!("{}",
-             ensure_not_fmt_string_literal!("`f0_c`", ("so does this {}")));
+    __unstable_rustc_ensure_not_fmt_string_literal!("`f0_c`", ("so does this {}"));
 }
 
 // This test is just checking that we get all the right warnings; none
