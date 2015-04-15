@@ -446,3 +446,6 @@ pub fn format(args: Arguments) -> string::String {
     let _ = write!(&mut output, "{}", args);
     output
 }
+
+#[unstable(feature = "ensure_not_fmt_string_literal")]
+pub use ::core::fmt::ENSURE_NOT_FMT_STRING_LITERAL_IS_UNSTABLE;
