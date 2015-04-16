@@ -651,7 +651,8 @@ pub fn ensure_not_fmt_string_literal<'cx>(cx: &'cx mut ExtCtxt,
     if p.token == token::Eof { return takes_two_args(cx, "given 1"); }
     if !panictry!(p.eat(&token::Comma)) { return takes_two_args(cx, "comma-separated"); }
     if p.token == token::Eof { return takes_two_args(cx, "given 1"); }
-    let arg2 = cx.expander().fold_expr(p.parse_expr());
+    // do not expand the `<expr>`; just inspect it as a black box.
+    let arg2 = p.parse_expr();
     if p.token != token::Eof {
         takes_two_args(cx, "given too many");
         // (but do not return; handle two provided, nonetheless)
