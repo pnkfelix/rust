@@ -2030,21 +2030,27 @@ foo_module!();
     #[test]
     fn label_ident_renamer_test () {
         let the_crate = string_to_crate(
-            "fn f(x: i32){ \
+            "fn f(x: i32) {         \
              'a: loop { break 'a; } \
+             let x = x; x;          \
              'a: loop { break 'a; } \
              }".to_string());
         let f_ident = token::str_to_ident("f");
         let x_ident = token::str_to_ident("x");
         let int_ident = token::str_to_ident("i32");
-        let a_ident = token::str_to_ident("a");
+        let a_ident = token::str_to_ident("'a");
         let renames = vec!((x_ident,Name(16)));
         let mut renamer = IdentRenamer{renames: &renames};
         let renamed_crate = renamer.fold_crate(the_crate);
         let idents = crate_idents(&renamed_crate);
         let resolved : Vec<ast::Name> = idents.iter().map(|id| mtwt::resolve(*id)).collect();
         let x_name = x_ident.name;
-        assert_eq!(resolved, [f_ident.name ,Name(16), int_ident.name, Name(16), x_name, x_name]);
+        assert_eq!(resolved,
+                   [f_ident.name, Name(16), int_ident.name,
+                    a_ident.name, a_ident.name,
+                    Name(16), x_name, x_name,
+                    a_ident.name, a_ident.name,
+                    ]);
     }
 
 }

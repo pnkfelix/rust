@@ -770,7 +770,11 @@ pub fn walk_expr<'v, V: Visitor<'v>>(visitor: &mut V, expression: &'v Expr) {
             visitor.visit_block(&**if_block);
             walk_expr_opt(visitor, optional_else)
         }
-        ExprWhile(ref subexpression, ref block, _) => {
+        ExprWhile(ref subexpression, ref block, ref opt_ident) => {
+            opt_ident.map(|ident| {
+                // FIXME expression.span is not as narrow as the ident's span.
+                visitor.visit_ident(expression.span, ident)
+            });
             visitor.visit_expr(&**subexpression);
             visitor.visit_block(&**block)
         }
@@ -780,17 +784,31 @@ pub fn walk_expr<'v, V: Visitor<'v>>(visitor: &mut V, expression: &'v Expr) {
             visitor.visit_block(&**if_block);
             walk_expr_opt(visitor, optional_else);
         }
-        ExprWhileLet(ref pattern, ref subexpression, ref block, _) => {
+        ExprWhileLet(ref pattern, ref subexpression, ref block, ref opt_ident) => {
+            opt_ident.map(|ident| {
+                // FIXME expression.span is not as narrow as the ident's span.
+                visitor.visit_ident(expression.span, ident)
+            });
             visitor.visit_pat(&**pattern);
             visitor.visit_expr(&**subexpression);
             visitor.visit_block(&**block);
         }
-        ExprForLoop(ref pattern, ref subexpression, ref block, _) => {
+        ExprForLoop(ref pattern, ref subexpression, ref block, ref opt_ident) => {
+            opt_ident.map(|ident| {
+                // FIXME expression.span is not as narrow as the ident's span.
+                visitor.visit_ident(expression.span, ident)
+            });
             visitor.visit_pat(&**pattern);
             visitor.visit_expr(&**subexpression);
             visitor.visit_block(&**block)
         }
-        ExprLoop(ref block, _) => visitor.visit_block(&**block),
+        ExprLoop(ref block, ref opt_ident) => {
+            opt_ident.map(|ident| {
+                // FIXME expression.span is not as narrow as the ident's span.
+                visitor.visit_ident(expression.span, ident)
+            });
+            visitor.visit_block(&**block)
+        }
         ExprMatch(ref subexpression, ref arms, _) => {
             visitor.visit_expr(&**subexpression);
             for arm in arms {
