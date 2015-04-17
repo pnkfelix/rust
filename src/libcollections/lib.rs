@@ -41,7 +41,6 @@
 #![feature(slice_patterns)]
 #![feature(debug_builders)]
 #![feature(utf8_error)]
-#![feature(ensure_not_fmt_string_literal)] // (referenced in expansions)
 #![cfg_attr(test, feature(rand, rustc_private, test, hash, collections))]
 #![cfg_attr(test, allow(deprecated))] // rand
 

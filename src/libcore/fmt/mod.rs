@@ -1084,16 +1084,20 @@ impl<'b, T: Debug> Debug for RefMut<'b, T> {
     }
 }
 
-/// This constant is a trick to force `ensure_not_fmt_string_literal!`
-/// to be treated as unstable whenever it occurs outside a macro
-/// marked with `#[allow_internal_unstable]`.
+/// This type is a trick to force `ensure_not_fmt_string_literal!`
+/// to be treated as unstable.
 ///
-/// This constant really should not ever be stabilized; if we ever
+/// This type really should not ever be stabilized; if we ever
 /// decide to stabilize the `ensure_not_fmt_string_literal!` macro
-/// itself, then we should remove its use of this constant (and then
-/// remove this constant).
-#[unstable(feature = "ensure_not_fmt_string_literal")]
-pub const ENSURE_NOT_FMT_STRING_LITERAL_IS_UNSTABLE: () = ();
+/// itself, then we should remove its use of this type (and then
+/// remove this type).
+#[unstable(feature = "core")]
+pub enum EnsureNotFmtStringLiteralIsUnstable {
+    /// This is the single instance of this enum.  If you dare to
+    /// invoke the `ensure_not_fmt_string_literal!` macro, then this
+    /// is the value you pass in.
+    Hack
+}
 
 // If you expected tests to be here, look instead at the run-pass/ifmt.rs test,
 // it's a lot easier than creating all of the rt::Piece structures here.

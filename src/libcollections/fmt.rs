@@ -447,5 +447,5 @@ pub fn format(args: Arguments) -> string::String {
     output
 }
 
-#[unstable(feature = "ensure_not_fmt_string_literal")]
-pub use ::core::fmt::ENSURE_NOT_FMT_STRING_LITERAL_IS_UNSTABLE;
+#[unstable(feature = "core")]
+pub use ::core::fmt::EnsureNotFmtStringLiteralIsUnstable;

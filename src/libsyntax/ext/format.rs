@@ -632,30 +632,38 @@ impl<'a, 'b> Context<'a, 'b> {
     }
 }
 
-/// Expands `ensure_not_fmt_string_literal!(<where-literal>, <expr>)`
-/// into `<expr>`, but ensures that if `<expr>` is a string-literal,
+/// Expands `ensure_not_fmt_string_literal!(<where-literal>, <expr>, <hack>)`
+/// into:
+/// ```rust
+/// { const _HACK: core::fmt::EnsureNotFmtStringLiteralIsUnstable = hack;
+///   <expr>
+/// }`,
+///
+/// but ensures that if `<expr>` is a string-literal,
 /// then it is not a potential format string literal.
 pub fn ensure_not_fmt_string_literal<'cx>(cx: &'cx mut ExtCtxt,
                                           sp: Span,
-                                          tts: &[ast::TokenTree])
-                                          -> Box<base::MacResult+'cx> {
+                                          tts: &[ast::TokenTree]) -> Box<base::MacResult+'cx> {
     use fold::Folder;
-    let takes_two_args = |cx: &ExtCtxt, rest| {
+    let takes_three_args = |cx: &ExtCtxt, rest| {
         cx.span_err(sp, &format!("`ensure_not_fmt_string_literal!` \
-                                  takes 2 arguments, {}", rest));
+                                  takes 3 arguments, {}", rest));
         DummyResult::expr(sp)
     };
     let mut p = cx.new_parser_from_tts(tts);
-    if p.token == token::Eof { return takes_two_args(cx, "given 0"); }
+    if p.token == token::Eof { return takes_three_args(cx, "given 0"); }
     let arg1 = cx.expander().fold_expr(p.parse_expr());
-    if p.token == token::Eof { return takes_two_args(cx, "given 1"); }
-    if !panictry!(p.eat(&token::Comma)) { return takes_two_args(cx, "comma-separated"); }
-    if p.token == token::Eof { return takes_two_args(cx, "given 1"); }
+    if p.token == token::Eof { return takes_three_args(cx, "given 1"); }
+    if !panictry!(p.eat(&token::Comma)) { return takes_three_args(cx, "comma-separated"); }
+    if p.token == token::Eof { return takes_three_args(cx, "given 2"); }
     // do not expand the `<expr>`; just inspect it as a black box.
     let arg2 = p.parse_expr();
+    if !panictry!(p.eat(&token::Comma)) { return takes_three_args(cx, "comma-separated"); }
+    // do not expand the `<expr>`; just inspect it as a black box.
+    let arg3 = p.parse_expr();
     if p.token != token::Eof {
-        takes_two_args(cx, "given too many");
-        // (but do not return; handle two provided, nonetheless)
+        takes_three_args(cx, "given too many");
+        // (but do not return; handle args provided, nonetheless)
     }
 
     // First argument is name of where this was invoked (for error messages).
@@ -702,39 +710,22 @@ pub fn ensure_not_fmt_string_literal<'cx>(cx: &'cx mut ExtCtxt,
         }
     };
 
-    let unstable_marker = cx.expr_path(cx.path_global(sp, vec![
+    // Third argument is the token that ensures any invocation
+    // site is treated as unstable.
+
+    let unstable_marker_type = cx.path_global(sp, vec![
         cx.ident_of_std("core"),
         cx.ident_of("fmt"),
-        cx.ident_of("ENSURE_NOT_FMT_STRING_LITERAL_IS_UNSTABLE")]));
+        cx.ident_of("EnsureNotFmtStringLiteralIsUnstable")]);
 
-    // Total hack: We do not (yet) have hygienic-marking of stabilty.
-    // Thus an unstable macro (like `ensure_not_fmt_string!`) can leak
-    // through another macro (like `panic!`), where the latter is just
-    // using the former as an implementation detail.
-    //
-    // The `#[allow_internal_unstable]` system does not suffice to
-    // address this; it explicitly (as described on Issue #22899)
-    // disallows the use of unstable functionality via a helper macro
-    // like `ensure_not_fmt_string!`, by design.
-    //
-    // So, the hack: the `ensure_not_fmt_string!` macro has just one
-    // stable client: `panic!`.  So we give `panic!` a backdoor: we
-    // allow its name literal string to give it stable access. Any
-    // other argument that is passed in will cause us to emit the
-    // unstable-marker, which will then be checked against the enabled
-    // feature-set.
-    //
-    // This, combined with the awkward actual name of the unstable
-    // macro (hint: the real name is far more awkward than the one
-    // given in this comment) should suffice to ensure that people do
-    // not accidentally commit to using it.
-    let marker = if name == "unary `panic!`" {
-        cx.expr_tuple(sp, vec![]) // i.e. `()`
-    } else {
-        unstable_marker
-    };
-    let expr = cx.expr_tuple(sp, vec![marker, expr]);
+    let const_hack =
+        cx.stmt_item(
+            sp, cx.item_const(sp,
+                              cx.ident_of("_HACK"),
+                              cx.ty_path(unstable_marker_type),
+                              arg3));
 
+    let expr = cx.expr_block(cx.block_all(sp, vec![const_hack], Some(expr)));
     MacEager::expr(expr)
 }
 

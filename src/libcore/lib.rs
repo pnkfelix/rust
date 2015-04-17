@@ -74,6 +74,7 @@
 #![feature(concat_idents)]
 #![feature(reflect)]
 #![feature(custom_attribute)]
+#![feature(allow_internal_unstable)]
 
 #[macro_use]
 mod macros;
