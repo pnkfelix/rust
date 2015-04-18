@@ -766,6 +766,8 @@ pub struct Iter<'a, T: 'a> {
 
 unsafe impl<'a, T: Sync> Sync for Iter<'a, T> {}
 unsafe impl<'a, T: Sync> Send for Iter<'a, T> {}
+//unsafe impl<'a, T> SizeBoundedIterator for Iter<'a, T> {}
+impl<'a, T> SizeBoundedIterator for Iter<'a, T> {}
 
 #[unstable(feature = "core")]
 impl<'a, T> ops::Index<ops::Range<usize>> for Iter<'a, T> {

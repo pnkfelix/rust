@@ -57,7 +57,7 @@ use core::default::Default;
 use core::fmt;
 use core::hash::{self, Hash};
 use core::intrinsics::assume;
-use core::iter::{repeat, FromIterator, IntoIterator};
+use core::iter::{self, repeat, FromIterator, IntoIterator};
 use core::marker::PhantomData;
 use core::mem;
 use core::ops::{Index, IndexMut, Deref, Add};
@@ -1739,6 +1739,9 @@ impl<T> IntoIter<T> {
     }
 }
 
+//unsafe impl<T> iter::SizeBoundedIterator for IntoIter<T> { }
+impl<T> iter::SizeBoundedIterator for IntoIter<T> { }
+
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<T> Iterator for IntoIter<T> {
     type Item = T;
@@ -1829,6 +1832,8 @@ pub struct Drain<'a, T:'a> {
 
 unsafe impl<'a, T: Sync> Sync for Drain<'a, T> {}
 unsafe impl<'a, T: Send> Send for Drain<'a, T> {}
+//unsafe impl<'a, T> iter::SizeBoundedIterator for Drain<'a, T> { }
+impl<'a, T> iter::SizeBoundedIterator for Drain<'a, T> { }
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<'a, T> Iterator for Drain<'a, T> {

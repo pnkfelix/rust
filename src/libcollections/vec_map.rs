@@ -1046,6 +1046,9 @@ impl<'a, V> DoubleEndedIterator for Values<'a, V> {
     fn next_back(&mut self) -> Option<(&'a V)> { self.iter.next_back() }
 }
 
+//unsafe impl<V> iter::SizeBoundedIterator for IntoIter<V> { }
+impl<V> iter::SizeBoundedIterator for IntoIter<V> { }
+
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<V> Iterator for IntoIter<V> {
     type Item = (usize, V);

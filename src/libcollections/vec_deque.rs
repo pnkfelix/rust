@@ -1473,6 +1473,9 @@ impl<'a, T> Clone for Iter<'a, T> {
     }
 }
 
+//unsafe impl<'a, T> iter::SizeBoundedIterator for Iter<'a, T> { }
+impl<'a, T> iter::SizeBoundedIterator for Iter<'a, T> { }
+
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<'a, T> Iterator for Iter<'a, T> {
     type Item = &'a T;

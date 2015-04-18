@@ -27,6 +27,7 @@ use default::Default;
 use fmt;
 use iter::ExactSizeIterator;
 use iter::{Map, Iterator, DoubleEndedIterator};
+use iter::SizeBoundedIterator;
 use marker::Sized;
 use mem;
 use ops::{Fn, FnMut, FnOnce};
@@ -254,6 +255,8 @@ pub fn next_code_point_reverse(bytes: &mut slice::Iter<u8>) -> Option<u32> {
     Some(ch)
 }
 
+impl<'a> SizeBoundedIterator for Chars<'a> {}
+
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<'a> Iterator for Chars<'a> {
     type Item = char;
@@ -372,6 +375,8 @@ impl<'a> FnOnce<(&'a u8,)> for BytesDeref {
         Fn::call(&self, (ptr,))
     }
 }
+
+impl<'a> SizeBoundedIterator for Bytes<'a> {}
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<'a> Iterator for Bytes<'a> {

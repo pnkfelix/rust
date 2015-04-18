@@ -68,9 +68,34 @@ use num::{Int, Zero, One};
 use ops::{self, Add, Sub, FnMut, Mul, RangeFrom};
 use option::Option::{self, Some, None};
 use marker::Sized;
+#[cfg(stage0)] #[allow(deprecated)]
+use marker::MarkerTrait;
 use usize;
 
 fn _assert_is_object_safe(_: &Iterator<Item=()>) {}
+
+#[cfg(not(stage0))]
+/// A marker trait for iterators that are guaranteed to never traverse
+/// more than `usize` elements.
+///
+/// For example, the iterator over a slice or a single vec will never
+/// traverse more than `usize` elements, while chaining together
+/// iterators from slices that are all borrowed from one large vector
+/// *could* traverse more than `usize` elements.
+pub trait SizeBoundedIterator {}
+
+#[cfg(stage0)]
+#[allow(deprecated)]
+/// A marker trait for iterators that are guaranteed to never traverse
+/// more than `usize` elements.
+///
+/// For example, the iterator over a slice or a single vec will never
+/// traverse more than `usize` elements, while chaining together
+/// iterators from slices that are all borrowed from one large vector
+/// *could* traverse more than `usize` elements.
+pub trait SizeBoundedIterator: MarkerTrait {}
+
+// unsafe impl SizeBoundedIterator for .. { }
 
 /// An interface for dealing with "external iterators". These types of iterators
 /// can be resumed at any time as all state is stored internally as opposed to
@@ -114,7 +139,7 @@ pub trait Iterator {
     /// ```
     #[inline]
     #[stable(feature = "rust1", since = "1.0.0")]
-    fn count(self) -> usize where Self: Sized {
+    fn count(self) -> usize where Self: Sized + SizeBoundedIterator {
         self.fold(0, |cnt, _x| cnt + 1)
     }
 
@@ -686,7 +711,7 @@ pub trait Iterator {
     #[inline]
     #[stable(feature = "rust1", since = "1.0.0")]
     fn position<P>(&mut self, mut predicate: P) -> Option<usize> where
-        Self: Sized,
+        Self: Sized + SizeBoundedIterator,
         P: FnMut(Self::Item) -> bool,
     {
         let mut i = 0;
@@ -717,7 +742,7 @@ pub trait Iterator {
     #[stable(feature = "rust1", since = "1.0.0")]
     fn rposition<P>(&mut self, mut predicate: P) -> Option<usize> where
         P: FnMut(Self::Item) -> bool,
-        Self: Sized + ExactSizeIterator + DoubleEndedIterator
+        Self: Sized + ExactSizeIterator + DoubleEndedIterator + SizeBoundedIterator
     {
         let mut i = self.len();
 
@@ -1253,6 +1278,9 @@ pub struct Rev<T> {
     iter: T
 }
 
+// unsafe impl<I: SizeBoundedIterator> SizeBoundedIterator for Rev<I> {}
+impl<I: SizeBoundedIterator> SizeBoundedIterator for Rev<I> {}
+
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<I> Iterator for Rev<I> where I: DoubleEndedIterator {
     type Item = <I as Iterator>::Item;
@@ -1343,6 +1371,9 @@ pub struct Cloned<I> {
     it: I,
 }
 
+// unsafe impl<I: SizeBoundedIterator> SizeBoundedIterator for Cloned<I> {}
+impl<I: SizeBoundedIterator> SizeBoundedIterator for Cloned<I> {}
+
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<'a, I, T: 'a> Iterator for Cloned<I>
     where I: Iterator<Item=&'a T>, T: Clone
@@ -1395,6 +1426,8 @@ pub struct Cycle<I> {
     orig: I,
     iter: I,
 }
+
+//impl<I> !SizeBoundedIterator for Cycle<I> { }
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<I> Iterator for Cycle<I> where I: Clone + Iterator {
@@ -1455,6 +1488,8 @@ pub struct Chain<A, B> {
     b: B,
     flag: bool,
 }
+
+//impl<A, B> !SizeBoundedIterator for Chain<A, B> { }
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<A, B> Iterator for Chain<A, B> where
@@ -1537,6 +1572,13 @@ pub struct Zip<A, B> {
     a: A,
     b: B
 }
+
+//unsafe impl<A: SizeBoundedIterator, B> SizeBoundedIterator for Zip<A, B> {}
+impl<A: SizeBoundedIterator, B> SizeBoundedIterator for Zip<A, B> {}
+
+// Unfortunately we cannot even have multiple impls of *marker* traits. :(
+
+// unsafe impl<A, B: SizeBoundedIterator> SizeBoundedIterator for Zip<A, B> {}
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<A, B> Iterator for Zip<A, B> where A: Iterator, B: Iterator
@@ -1624,6 +1666,9 @@ pub struct Map<I, F> {
     f: F,
 }
 
+//unsafe impl<I: SizeBoundedIterator, F> SizeBoundedIterator for Map<I, F> {}
+impl<I: SizeBoundedIterator, F> SizeBoundedIterator for Map<I, F> {}
+
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<B, I: Iterator, F> Iterator for Map<I, F> where F: FnMut(I::Item) -> B {
     type Item = B;
@@ -1673,6 +1718,9 @@ pub struct Filter<I, P> {
     predicate: P,
 }
 
+//unsafe impl<I: SizeBoundedIterator, P> SizeBoundedIterator for Filter<I, P> {}
+impl<I: SizeBoundedIterator, P> SizeBoundedIterator for Filter<I, P> {}
+
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<I: Iterator, P> Iterator for Filter<I, P> where P: FnMut(&I::Item) -> bool {
     type Item = I::Item;
@@ -1717,6 +1765,9 @@ pub struct FilterMap<I, F> {
     iter: I,
     f: F,
 }
+
+//unsafe impl<I: SizeBoundedIterator, F> SizeBoundedIterator for FilterMap<I, F> {}
+impl<I: SizeBoundedIterator, F> SizeBoundedIterator for FilterMap<I, F> {}
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<B, I: Iterator, F> Iterator for FilterMap<I, F>
@@ -1764,6 +1815,9 @@ pub struct Enumerate<I> {
     iter: I,
     count: usize
 }
+
+//unsafe impl<I: SizeBoundedIterator> SizeBoundedIterator for Enumerate<I> {}
+impl<I: SizeBoundedIterator> SizeBoundedIterator for Enumerate<I> {}
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<I> Iterator for Enumerate<I> where I: Iterator {
@@ -1827,6 +1881,9 @@ impl<I: Iterator + Clone> Clone for Peekable<I> where I::Item: Clone {
     }
 }
 
+//unsafe impl<I: SizeBoundedIterator> SizeBoundedIterator for Peekable<I> {}
+impl<I: SizeBoundedIterator> SizeBoundedIterator for Peekable<I> {}
+
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<I: Iterator> Iterator for Peekable<I> {
     type Item = I::Item;
@@ -1888,6 +1945,9 @@ pub struct SkipWhile<I, P> {
     predicate: P,
 }
 
+//unsafe impl<I: SizeBoundedIterator, P> SizeBoundedIterator for SkipWhile<I, P> {}
+impl<I: SizeBoundedIterator, P> SizeBoundedIterator for SkipWhile<I, P> {}
+
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<I: Iterator, P> Iterator for SkipWhile<I, P>
     where P: FnMut(&I::Item) -> bool
@@ -1921,6 +1981,9 @@ pub struct TakeWhile<I, P> {
     flag: bool,
     predicate: P,
 }
+
+//unsafe impl<I: SizeBoundedIterator, P> SizeBoundedIterator for TakeWhile<I, P> {}
+impl<I: SizeBoundedIterator, P> SizeBoundedIterator for TakeWhile<I, P> {}
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<I: Iterator, P> Iterator for TakeWhile<I, P>
@@ -1959,6 +2022,9 @@ pub struct Skip<I> {
     iter: I,
     n: usize
 }
+
+//unsafe impl<I: SizeBoundedIterator> SizeBoundedIterator for Skip<I> {}
+impl<I: SizeBoundedIterator> SizeBoundedIterator for Skip<I> {}
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<I> Iterator for Skip<I> where I: Iterator {
@@ -2029,6 +2095,9 @@ pub struct Take<I> {
     n: usize
 }
 
+// Note: `Take` transforms even a non SizeBoundedIterator into a size bounded one!
+impl<I> SizeBoundedIterator for Take<I> {}
+
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<I> Iterator for Take<I> where I: Iterator{
     type Item = <I as Iterator>::Item;
@@ -2091,6 +2160,9 @@ pub struct Scan<I, St, F> {
     #[unstable(feature = "core")]
     pub state: St,
 }
+
+//unsafe impl<I: SizeBoundedIterator, S, F> SizeBoundedIterator for Scan<I, S, F> {}
+impl<I: SizeBoundedIterator, S, F> SizeBoundedIterator for Scan<I, S, F> {}
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<B, I, St, F> Iterator for Scan<I, St, F> where
@@ -2189,6 +2261,9 @@ pub struct Fuse<I> {
     done: bool
 }
 
+//unsafe impl<I: SizeBoundedIterator> SizeBoundedIterator for Fuse<I> {}
+impl<I: SizeBoundedIterator> SizeBoundedIterator for Fuse<I> {}
+
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<I> Iterator for Fuse<I> where I: Iterator {
     type Item = <I as Iterator>::Item;
@@ -2276,6 +2351,9 @@ impl<I: Iterator, F> Inspect<I, F> where F: FnMut(&I::Item) {
         elt
     }
 }
+
+//unsafe impl<I: SizeBoundedIterator, F> SizeBoundedIterator for Inspect<I, F> {}
+impl<I: SizeBoundedIterator, F> SizeBoundedIterator for Inspect<I, F> {}
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<I: Iterator, F> Iterator for Inspect<I, F> where F: FnMut(&I::Item) {
@@ -2564,6 +2642,8 @@ pub fn range_inclusive<A>(start: A, stop: A) -> RangeInclusive<A>
     }
 }
 
+//impl<A> !SizeBoundedIterator for RangeInclusive<A> { }
+
 #[unstable(feature = "core",
            reason = "likely to be replaced by range notation and adapters")]
 impl<A> Iterator for RangeInclusive<A> where
@@ -2699,6 +2779,8 @@ pub fn range_step_inclusive<A: Int>(start: A, stop: A, step: A) -> RangeStepIncl
     }
 }
 
+//impl<A> !SizeBoundedIterator for RangeStepInclusive<A> { }
+
 #[unstable(feature = "core",
            reason = "likely to be replaced by range notation and adapters")]
 #[allow(deprecated)]
@@ -2727,6 +2809,14 @@ macro_rules! range_exact_iter_impl {
         impl ExactSizeIterator for ops::Range<$t> { }
     )*)
 }
+
+impl SizeBoundedIterator for ops::Range<u8> { }
+impl SizeBoundedIterator for ops::Range<i8> { }
+impl SizeBoundedIterator for ops::Range<u16> { }
+impl SizeBoundedIterator for ops::Range<i16> { }
+impl SizeBoundedIterator for ops::Range<u32> { }
+impl SizeBoundedIterator for ops::Range<i32> { }
+// no impl for ops::Range<u64> or ops::Range<i64>, since those can overflow
 
 #[stable(feature = "rust1", since = "1.0.0")]
 #[allow(deprecated)]
