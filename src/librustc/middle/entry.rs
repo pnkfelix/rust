@@ -81,7 +81,7 @@ fn find_item(item: &Item, ctxt: &mut EntryContext) {
         ItemFn(..) => {
             if item.ident.name == ctxt.main_name {
                  ctxt.ast_map.with_path(item.id, |path| {
-                        if path.count() == 1 {
+                        if path.skip(1).next().is_none() {
                             // This is a top-level function so can be 'main'
                             if ctxt.main_fn.is_none() {
                                 ctxt.main_fn = Some((item.id, item.span));
