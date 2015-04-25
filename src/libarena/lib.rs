@@ -47,7 +47,7 @@ use std::marker;
 use std::mem;
 use std::ptr;
 use std::rc::Rc;
-use std::rt::heap::{allocate, deallocate};
+use std::rt::heap::{self, allocate, deallocate};
 
 // The way arena uses arrays is really deeply awful. The arrays are
 // allocated, and have capacities reserved, but the fill for the array
@@ -362,7 +362,7 @@ fn test_arena_destructors_fail() {
 }
 
 /// A faster arena that can hold objects of only one type.
-pub struct TypedArena<T> {
+pub struct TypedArena<T:heap::Raw> {
     /// A pointer to the next object to be allocated.
     ptr: Cell<*const T>,
 
@@ -378,7 +378,7 @@ pub struct TypedArena<T> {
     _own: marker::PhantomData<T>,
 }
 
-struct TypedArenaChunk<T> {
+struct TypedArenaChunk<T:heap::Raw> {
     marker: marker::PhantomData<T>,
 
     /// Pointer to the next arena segment.
@@ -390,7 +390,7 @@ struct TypedArenaChunk<T> {
     // Objects follow here, suitably aligned.
 }
 
-fn calculate_size<T>(capacity: usize) -> usize {
+fn calculate_size<T:heap::Raw>(capacity: usize) -> usize {
     let mut size = mem::size_of::<TypedArenaChunk<T>>();
     size = round_up(size, mem::min_align_of::<T>());
     let elem_size = mem::size_of::<T>();
@@ -399,13 +399,13 @@ fn calculate_size<T>(capacity: usize) -> usize {
     size
 }
 
-impl<T> TypedArenaChunk<T> {
+impl<T:heap::Raw> TypedArenaChunk<T> {
     #[inline]
     unsafe fn new(next: *mut TypedArenaChunk<T>, capacity: usize)
            -> *mut TypedArenaChunk<T> {
         let size = calculate_size::<T>(capacity);
-        let chunk = allocate(size, mem::min_align_of::<TypedArenaChunk<T>>())
-                    as *mut TypedArenaChunk<T>;
+        let chunk: *mut TypedArenaChunk<T>;
+        chunk = allocate(size, mem::min_align_of::<TypedArenaChunk<T>>());
         if chunk.is_null() { alloc::oom() }
         (*chunk).next = next;
         (*chunk).capacity = capacity;
@@ -457,7 +457,7 @@ impl<T> TypedArenaChunk<T> {
     }
 }
 
-impl<T> TypedArena<T> {
+impl<T:heap::Raw> TypedArena<T> {
     /// Creates a new `TypedArena` with preallocated space for eight objects.
     #[inline]
     pub fn new() -> TypedArena<T> {
@@ -511,7 +511,7 @@ impl<T> TypedArena<T> {
 }
 
 #[unsafe_destructor]
-impl<T> Drop for TypedArena<T> {
+impl<T:heap::Raw> Drop for TypedArena<T> {
     fn drop(&mut self) {
         unsafe {
             // Determine how much was filled.
