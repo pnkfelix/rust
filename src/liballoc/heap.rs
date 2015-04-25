@@ -8,6 +8,22 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use core::mem;
+#[cfg(stage0)]
+use core::marker::MarkerTrait;
+
+/// Types do not require any runtime integration should implement
+/// `Raw`. Examples:
+/// 1. Slice of bytes, e.g. `[u8]`, should implement `Raw`.
+/// 2. types with roots for GC-allocated objects should opt-out of `Raw`.
+#[cfg(not(stage0))]
+pub unsafe trait Raw { }
+/// dox
+#[cfg(stage0)]
+pub unsafe trait Raw: MarkerTrait { }
+
+unsafe impl Raw for .. { }
+
 // FIXME: #13996: mark the `allocate` and `reallocate` return value as `noalias`
 
 /// Return a pointer to `size` bytes of memory aligned to `align`.
@@ -18,7 +34,15 @@
 /// power of 2. The alignment must be no larger than the largest supported page
 /// size on the platform.
 #[inline]
-pub unsafe fn allocate(size: usize, align: usize) -> *mut u8 {
+pub unsafe fn allocate<T:Raw>(size: usize, align: usize) -> *mut T {
+    debug_assert!(size >= mem::size_of::<T>());
+    debug_assert!(align >= mem::min_align_of::<T>());
+    mem::transmute(allocate_bytes(size, align))
+}
+
+/// dox
+#[inline]
+pub unsafe fn allocate_bytes(size: usize, align: usize) -> *mut u8 {
     imp::allocate(size, align)
 }
 
@@ -37,7 +61,16 @@ pub unsafe fn allocate(size: usize, align: usize) -> *mut u8 {
 /// create the allocation referenced by `ptr`. The `old_size` parameter may be
 /// any value in range_inclusive(requested_size, usable_size).
 #[inline]
-pub unsafe fn reallocate(ptr: *mut u8, old_size: usize, size: usize, align: usize) -> *mut u8 {
+pub unsafe fn reallocate<T:Raw>(ptr: *mut T, old_size: usize, size: usize, align: usize) -> *mut T {
+    debug_assert!(old_size >= mem::size_of::<T>());
+    debug_assert!(size >= mem::size_of::<T>());
+    debug_assert!(align >= mem::min_align_of::<T>());
+    mem::transmute(reallocate_bytes(mem::transmute(ptr), old_size, size, align))
+}
+
+/// dox
+#[inline]
+pub unsafe fn reallocate_bytes(ptr: *mut u8, old_size: usize, size: usize, align: usize) -> *mut u8 {
     imp::reallocate(ptr, old_size, size, align)
 }
 
@@ -54,8 +87,18 @@ pub unsafe fn reallocate(ptr: *mut u8, old_size: usize, size: usize, align: usiz
 /// create the allocation referenced by `ptr`. The `old_size` parameter may be
 /// any value in range_inclusive(requested_size, usable_size).
 #[inline]
-pub unsafe fn reallocate_inplace(ptr: *mut u8, old_size: usize, size: usize,
-                                 align: usize) -> usize {
+pub unsafe fn reallocate_inplace<T:Raw>(ptr: *mut T, old_size: usize, size: usize,
+                                        align: usize) -> usize {
+    debug_assert!(old_size >= mem::size_of::<T>());
+    debug_assert!(size >= mem::size_of::<T>());
+    debug_assert!(align >= mem::min_align_of::<T>());
+    reallocate_inplace_bytes(mem::transmute(ptr), old_size, size, align)
+}
+
+/// dox
+#[inline]
+pub unsafe fn reallocate_inplace_bytes(ptr: *mut u8, old_size: usize, size: usize,
+                                       align: usize) -> usize {
     imp::reallocate_inplace(ptr, old_size, size, align)
 }
 
@@ -67,10 +110,17 @@ pub unsafe fn reallocate_inplace(ptr: *mut u8, old_size: usize, size: usize,
 /// create the allocation referenced by `ptr`. The `old_size` parameter may be
 /// any value in range_inclusive(requested_size, usable_size).
 #[inline]
-pub unsafe fn deallocate(ptr: *mut u8, old_size: usize, align: usize) {
-    imp::deallocate(ptr, old_size, align)
+pub unsafe fn deallocate<T:Raw>(ptr: *mut T, old_size: usize, align: usize) {
+    debug_assert!(old_size >= mem::size_of::<T>());
+    debug_assert!(align >= mem::min_align_of::<T>());
+    deallocate_bytes(mem::transmute(ptr), old_size, align)
 }
 
+/// dox
+#[inline]
+pub unsafe fn deallocate_bytes(ptr: *mut u8, old_size: usize, align: usize) {
+    imp::deallocate(ptr, old_size, align)
+}
 /// Returns the usable size of an allocation created with the specified the
 /// `size` and `align`.
 #[inline]
