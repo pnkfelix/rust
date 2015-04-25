@@ -309,7 +309,7 @@ impl<K, V> Node<K, V> {
     unsafe fn new_internal(capacity: usize) -> Node<K, V> {
         let (alignment, size) = calculate_allocation_generic::<K, V>(capacity, false);
 
-        let buffer = heap::allocate(size, alignment);
+        let buffer = heap::allocate_bytes(size, alignment);
         if buffer.is_null() { ::alloc::oom(); }
 
         let (vals_offset, edges_offset) = calculate_offsets_generic::<K, V>(capacity, false);
@@ -327,7 +327,7 @@ impl<K, V> Node<K, V> {
     fn new_leaf(capacity: usize) -> Node<K, V> {
         let (alignment, size) = calculate_allocation_generic::<K, V>(capacity, true);
 
-        let buffer = unsafe { heap::allocate(size, alignment) };
+        let buffer = unsafe { heap::allocate_bytes(size, alignment) };
         if buffer.is_null() { ::alloc::oom(); }
 
         let (vals_offset, _) = calculate_offsets_generic::<K, V>(capacity, true);

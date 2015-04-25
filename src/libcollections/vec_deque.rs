@@ -173,7 +173,7 @@ impl<T> VecDeque<T> {
 
         let ptr = unsafe {
             if mem::size_of::<T>() != 0 {
-                let ptr = heap::allocate(size, mem::min_align_of::<T>())  as *mut T;;
+                let ptr = heap::allocate_bytes(size, mem::min_align_of::<T>())  as *mut T;;
                 if ptr.is_null() { ::alloc::oom() }
                 Unique::new(ptr)
             } else {

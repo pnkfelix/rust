@@ -22,7 +22,7 @@ use ops::{Deref, DerefMut, Drop};
 use option::Option;
 use option::Option::{Some, None};
 use ptr::{self, Unique};
-use rt::heap::{allocate, deallocate, EMPTY};
+use rt::heap::{allocate_bytes, deallocate_bytes, EMPTY};
 use collections::hash_state::HashState;
 
 const EMPTY_BUCKET: u64 = 0;
@@ -609,7 +609,7 @@ impl<K, V> RawTable<K, V> {
                                 .expect("capacity overflow"),
                 "capacity overflow");
 
-        let buffer = allocate(size, malloc_alignment);
+        let buffer = allocate_bytes(size, malloc_alignment);
         if buffer.is_null() { ::alloc::oom() }
 
         let hashes = buffer.offset(hash_offset as isize) as *mut u64;
@@ -1013,7 +1013,7 @@ impl<K, V> Drop for RawTable<K, V> {
         debug_assert!(!oflo, "should be impossible");
 
         unsafe {
-            deallocate(*self.hashes as *mut u8, size, align);
+            deallocate_bytes(*self.hashes as *mut u8, size, align);
             // Remember how everything was allocated out of one buffer
             // during initialization? We only need one call to free here.
         }

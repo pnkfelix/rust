@@ -50,7 +50,7 @@
 use core::prelude::*;
 
 use alloc::boxed::Box;
-use alloc::heap::{EMPTY, allocate, reallocate, deallocate};
+use alloc::heap::{EMPTY, allocate_bytes, reallocate_bytes, deallocate_bytes};
 use core::cmp::max;
 use core::cmp::Ordering;
 use core::fmt;
@@ -207,7 +207,7 @@ impl<T> Vec<T> {
         } else {
             let size = capacity.checked_mul(mem::size_of::<T>())
                                .expect("capacity overflow");
-            let ptr = unsafe { allocate(size, mem::min_align_of::<T>()) };
+            let ptr = unsafe { allocate_bytes(size, mem::min_align_of::<T>()) };
             if ptr.is_null() { ::alloc::oom() }
             unsafe { Vec::from_raw_parts(ptr as *mut T, 0, capacity) }
         }
@@ -377,10 +377,10 @@ impl<T> Vec<T> {
             unsafe {
                 // Overflow check is unnecessary as the vector is already at
                 // least this large.
-                let ptr = reallocate(*self.ptr as *mut u8,
-                                     self.cap * mem::size_of::<T>(),
-                                     self.len * mem::size_of::<T>(),
-                                     mem::min_align_of::<T>()) as *mut T;
+                let ptr = reallocate_bytes(*self.ptr as *mut u8,
+                                           self.cap * mem::size_of::<T>(),
+                                           self.len * mem::size_of::<T>(),
+                                           mem::min_align_of::<T>()) as *mut T;
                 if ptr.is_null() { ::alloc::oom() }
                 self.ptr = Unique::new(ptr);
             }
@@ -1229,18 +1229,18 @@ impl<T> Vec<T> {
 #[inline(never)]
 unsafe fn alloc_or_realloc<T>(ptr: *mut T, old_size: usize, size: usize) -> *mut T {
     if old_size == 0 {
-        allocate(size, mem::min_align_of::<T>()) as *mut T
+        allocate_bytes(size, mem::min_align_of::<T>()) as *mut T
     } else {
-        reallocate(ptr as *mut u8, old_size, size, mem::min_align_of::<T>()) as *mut T
+        reallocate_bytes(ptr as *mut u8, old_size, size, mem::min_align_of::<T>()) as *mut T
     }
 }
 
 #[inline]
 unsafe fn dealloc<T>(ptr: *mut T, len: usize) {
     if mem::size_of::<T>() != 0 {
-        deallocate(ptr as *mut u8,
-                   len * mem::size_of::<T>(),
-                   mem::min_align_of::<T>())
+        deallocate_bytes(ptr as *mut u8,
+                         len * mem::size_of::<T>(),
+                         mem::min_align_of::<T>())
     }
 }
 
