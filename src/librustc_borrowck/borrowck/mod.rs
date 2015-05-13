@@ -169,7 +169,7 @@ fn borrowck_fn(this: &mut BorrowckCtxt,
 
     check_loans::check_loans(this,
                              &loan_dfcx,
-                             flowed_moves,
+                             &flowed_moves,
                              &all_loans[..],
                              id,
                              decl,
