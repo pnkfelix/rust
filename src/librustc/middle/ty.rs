@@ -832,6 +832,13 @@ pub struct ctxt<'tcx> {
     /// Maps a cast expression to its kind. This is keyed on the
     /// *from* expression of the cast, not the cast itself.
     pub cast_kinds: RefCell<NodeMap<cast::CastKind>>,
+
+    /// Maps Fn items to a set of NodeId's for variables whose
+    /// subparts are not moved (i.e. their state is *unfragmented*).
+    ///
+    /// Unfragmented values can have their destructor driven by a
+    /// single stack-local drop-flag.
+    pub unfragmented: RefCell<DefIdMap<Vec<ast::NodeId>>>,
 }
 
 impl<'tcx> ctxt<'tcx> {
@@ -2823,6 +2830,7 @@ pub fn mk_ctxt<'tcx>(s: Session,
         const_qualif_map: RefCell::new(NodeMap()),
         custom_coerce_unsized_kinds: RefCell::new(DefIdMap()),
         cast_kinds: RefCell::new(NodeMap()),
+        unfragmented: RefCell::new(DefIdMap()),
    }
 }
 
