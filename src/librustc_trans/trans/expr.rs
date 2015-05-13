@@ -228,7 +228,9 @@ pub fn trans<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
             let const_ty = expr_ty_adjusted(bcx, expr);
             let llty = type_of::type_of(bcx.ccx(), const_ty);
             let global = PointerCast(bcx, global, llty.ptr_to());
-            let datum = Datum::new(global, const_ty, Lvalue);
+            let datum = Datum::new(global,
+                                   const_ty,
+                                   Lvalue::new("trans const static borrows"));
             return DatumBlock::new(bcx, datum.to_expr_datum());
         }
 
@@ -809,10 +811,11 @@ fn trans_index<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                                Some(SaveIn(scratch.val)),
                                                false));
             let datum = scratch.to_expr_datum();
+            let lvalue = LvalueExpr(Lvalue::new("trans_index"));
             if type_is_sized(bcx.tcx(), elt_ty) {
-                Datum::new(datum.to_llscalarish(bcx), elt_ty, LvalueExpr)
+                Datum::new(datum.to_llscalarish(bcx), elt_ty, lvalue)
             } else {
-                Datum::new(datum.val, elt_ty, LvalueExpr)
+                Datum::new(datum.val, elt_ty, lvalue)
             }
         }
         None => {
@@ -866,7 +869,8 @@ fn trans_index<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
             });
             let elt = InBoundsGEP(bcx, base, &[ix_val]);
             let elt = PointerCast(bcx, elt, type_of::type_of(ccx, unit_ty).ptr_to());
-            Datum::new(elt, unit_ty, LvalueExpr)
+            let lvalue = Lvalue::new("trans_index");
+            Datum::new(elt, unit_ty, LvalueExpr(lvalue))
         }
     };
 
@@ -911,7 +915,8 @@ fn trans_def<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                 // Case 2.
                 base::get_extern_const(bcx.ccx(), did, const_ty)
             };
-            DatumBlock::new(bcx, Datum::new(val, const_ty, LvalueExpr))
+            let lvalue_expr = LvalueExpr(Lvalue::new("trans_def"));
+            DatumBlock::new(bcx, Datum::new(val, const_ty, lvalue_expr))
         }
         def::DefConst(_) => {
             bcx.sess().span_bug(ref_expr.span,
@@ -1295,8 +1300,9 @@ pub fn trans_local_var<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
         def::DefUpvar(nid, _) => {
             // Can't move upvars, so this is never a ZeroMemLastUse.
             let local_ty = node_id_type(bcx, nid);
+            let lvalue = Lvalue::upvar("trans_local_var");
             match bcx.fcx.llupvars.borrow().get(&nid) {
-                Some(&val) => Datum::new(val, local_ty, Lvalue),
+                Some(&val) => Datum::new(val, local_ty, lvalue),
                 None => {
                     bcx.sess().bug(&format!(
                         "trans_local_var: no llval for upvar {} found",
@@ -2265,13 +2271,15 @@ fn deref_once<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                 // object code path for running drop glue and free. Instead,
                 // we schedule cleanup for `e`, turning it into an lvalue.
 
-                let datum = Datum::new(datum.val, content_ty, LvalueExpr);
+                let lvalue_expr = LvalueExpr(Lvalue::new("deref_once uniq"));
+                let datum = Datum::new(datum.val, content_ty, lvalue_expr);
                 DatumBlock::new(bcx, datum)
             }
         }
 
         ty::ty_ptr(ty::mt { ty: content_ty, .. }) |
         ty::ty_rptr(_, ty::mt { ty: content_ty, .. }) => {
+            let lvalue_expr = LvalueExpr(Lvalue::new("deref_once ptr"));
             if type_is_sized(bcx.tcx(), content_ty) {
                 let ptr = datum.to_llscalarish(bcx);
 
@@ -2280,11 +2288,11 @@ fn deref_once<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                 // rvalue for non-owning pointers like &T or *T, in which
                 // case cleanup *is* scheduled elsewhere, by the true
                 // owner (or, in the case of *T, by the user).
-                DatumBlock::new(bcx, Datum::new(ptr, content_ty, LvalueExpr))
+                DatumBlock::new(bcx, Datum::new(ptr, content_ty, lvalue_expr))
             } else {
                 // A fat pointer and a DST lvalue have the same representation
                 // just different types.
-                DatumBlock::new(bcx, Datum::new(datum.val, content_ty, LvalueExpr))
+                DatumBlock::new(bcx, Datum::new(datum.val, content_ty, lvalue_expr))
             }
         }
 

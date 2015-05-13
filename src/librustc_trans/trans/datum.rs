@@ -139,11 +139,55 @@ pub enum Expr {
     /// `val` is a pointer into memory for which a cleanup is scheduled
     /// (and thus has type *T). If you move out of an Lvalue, you must
     /// zero out the memory (FIXME #5016).
-    LvalueExpr,
+    LvalueExpr(Lvalue),
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Lvalue;
+pub struct DropFlagInfo {
+    stack_flag_index: usize,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Lvalue {
+    pub drop_flag_info: Option<DropFlagInfo>
+}
+
+impl Lvalue {
+    pub fn binding<'blk, 'tcx>(source: &'static str,
+                               bcx: Block<'blk, 'tcx>,
+                               id: ast::NodeId,
+                               name: ast::Name) -> Lvalue {
+        debug!("binding Lvalue from {}", source);
+        // FIXME
+        Lvalue { drop_flag_info: None }
+    }
+    pub fn copy(source: &'static str) -> Lvalue {
+        debug!("copy Lvalue from {}", source);
+        Lvalue { drop_flag_info: None }
+    }
+
+    pub fn upvar(source: &'static str) -> Lvalue {
+        debug!("upvar Lvalue from {}", source);
+        Lvalue { drop_flag_info: None }
+    }
+
+    pub fn with_flag(source: &'static str,
+                     flag: DropFlagInfo) -> Lvalue {
+        debug!("creating Lvalue from {} with flag: {:?}",
+               source, flag);
+        Lvalue { drop_flag_info: Some(flag) }
+    }
+
+    pub fn new(source: &'static str) -> Lvalue {
+        debug!("new Lvalue from {}", source);
+        Lvalue { drop_flag_info: None }
+    }
+
+    pub fn deref_owned(self, source: &'static str) -> Lvalue {
+        debug!("deref_owned Lvalue from {}", source);
+        Lvalue { drop_flag_info: None }
+    }
+}
 
 #[derive(Debug)]
 pub struct Rvalue {
@@ -202,7 +246,7 @@ pub fn lvalue_scratch_datum<'blk, 'tcx, A, F>(bcx: Block<'blk, 'tcx>,
     bcx.fcx.schedule_lifetime_end(scope, scratch);
     bcx.fcx.schedule_drop_mem(scope, scratch, ty);
 
-    DatumBlock::new(bcx, Datum::new(scratch, ty, Lvalue))
+    DatumBlock::new(bcx, Datum::new(scratch, ty, Lvalue::new("lvalue_scratch_datum")))
 }
 
 /// Allocates temporary space on the stack using alloca() and returns a by-ref Datum pointing to
@@ -286,6 +330,10 @@ impl KindOps for Rvalue {
     }
 }
 
+impl Lvalue {
+
+}
+
 impl KindOps for Lvalue {
     /// If an lvalue is moved, we must zero out the memory in which it resides so as to cancel
     /// cleanup. If an @T lvalue is copied, we must increment the reference count.
@@ -309,7 +357,7 @@ impl KindOps for Lvalue {
     }
 
     fn to_expr_kind(self) -> Expr {
-        LvalueExpr
+        LvalueExpr(self)
     }
 }
 
@@ -320,14 +368,14 @@ impl KindOps for Expr {
                               ty: Ty<'tcx>)
                               -> Block<'blk, 'tcx> {
         match *self {
-            LvalueExpr => Lvalue.post_store(bcx, val, ty),
+            LvalueExpr(ref l) => l.post_store(bcx, val, ty),
             RvalueExpr(ref r) => r.post_store(bcx, val, ty),
         }
     }
 
     fn is_by_ref(&self) -> bool {
         match *self {
-            LvalueExpr => Lvalue.is_by_ref(),
+            LvalueExpr(ref l) => l.is_by_ref(),
             RvalueExpr(ref r) => r.is_by_ref()
         }
     }
@@ -361,7 +409,9 @@ impl<'tcx> Datum<'tcx, Rvalue> {
         match self.kind.mode {
             ByRef => {
                 add_rvalue_clean(ByRef, fcx, scope, self.val, self.ty);
-                DatumBlock::new(bcx, Datum::new(self.val, self.ty, Lvalue))
+                DatumBlock::new(bcx, Datum::new(self.val,
+                                                self.ty,
+                                                Lvalue::new("to_lvalue_datum_in_scope")))
             }
 
             ByValue => {
@@ -418,7 +468,7 @@ impl<'tcx> Datum<'tcx, Expr> {
     {
         let Datum { val, ty, kind } = self;
         match kind {
-            LvalueExpr => if_lvalue(Datum::new(val, ty, Lvalue)),
+            LvalueExpr(l) => if_lvalue(Datum::new(val, ty, l)),
             RvalueExpr(r) => if_rvalue(Datum::new(val, ty, r)),
         }
     }
@@ -529,7 +579,7 @@ impl<'tcx> Datum<'tcx, Lvalue> {
         };
         Datum {
             val: val,
-            kind: Lvalue,
+            kind: Lvalue::new("get_element"),
             ty: ty,
         }
     }

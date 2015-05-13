@@ -651,7 +651,7 @@ fn extract_variant_args<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
 /// Helper for converting from the ValueRef that we pass around in the match code, which is always
 /// an lvalue, into a Datum. Eventually we should just pass around a Datum and be done with it.
 fn match_datum<'tcx>(val: ValueRef, left_ty: Ty<'tcx>) -> Datum<'tcx, Lvalue> {
-    Datum::new(val, left_ty, Lvalue)
+    Datum::new(val, left_ty, Lvalue::new("match_datum"))
 }
 
 fn bind_subslice_pat(bcx: Block,
@@ -899,7 +899,10 @@ fn insert_lllocals<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
             // into the matched value and copy to our alloca
             TrByCopy(llbinding) => {
                 let llval = Load(bcx, binding_info.llmatch);
-                let datum = Datum::new(llval, binding_info.ty, Lvalue);
+                let datum = Datum::new(
+                    llval,
+                    binding_info.ty,
+                    Lvalue::copy("insert_lllocals"));
                 call_lifetime_start(bcx, llbinding);
                 bcx = datum.store_to(bcx, llbinding);
                 if let Some(cs) = cs {
@@ -916,7 +919,9 @@ fn insert_lllocals<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
             TrByRef => binding_info.llmatch
         };
 
-        let datum = Datum::new(llval, binding_info.ty, Lvalue);
+        let datum = Datum::new(llval,
+                               binding_info.ty,
+                               Lvalue::new("insert_lllocals"));
         if let Some(cs) = cs {
             bcx.fcx.schedule_lifetime_end(cs, binding_info.llmatch);
             bcx.fcx.schedule_drop_and_fill_mem(cs, llval, binding_info.ty);
@@ -1633,7 +1638,10 @@ pub fn store_arg<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
                 // we emit extra-debug-info, which requires local allocas :(.
                 let arg_val = arg.add_clean(bcx.fcx, arg_scope);
                 bcx.fcx.lllocals.borrow_mut()
-                   .insert(pat.id, Datum::new(arg_val, arg_ty, Lvalue));
+                        .insert(pat.id, Datum::new(
+                            arg_val,
+                            arg_ty,
+                            Lvalue::new("store_arg")));
                 bcx
             } else {
                 mk_binding_alloca(
@@ -1674,7 +1682,10 @@ fn mk_binding_alloca<'blk, 'tcx, A, F>(bcx: Block<'blk, 'tcx>,
 
     // Now that memory is initialized and has cleanup scheduled,
     // create the datum and insert into the local variable map.
-    let datum = Datum::new(llval, var_ty, Lvalue);
+    let datum = Datum::new(llval,
+                           var_ty,
+                           Lvalue::binding("mk_binding_alloca",
+                                           bcx, p_id, name));
     bcx.fcx.lllocals.borrow_mut().insert(p_id, datum);
     bcx
 }
@@ -1724,7 +1735,12 @@ fn bind_irrefutable_pat<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                             ast::BindByValue(_) => {
                                 // By value binding: move the value that `val`
                                 // points at into the binding's stack slot.
-                                let d = Datum::new(val, ty, Lvalue);
+                                let lval = Lvalue::binding(
+                                    "bind_irrefutable_pat",
+                                    bcx,
+                                    pat.id,
+                                    path1.node.name);
+                                let d = Datum::new(val, ty, lval);
                                 d.store_to(bcx, llval)
                             }
 
