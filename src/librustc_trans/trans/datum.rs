@@ -93,8 +93,9 @@ pub use self::Expr::*;
 pub use self::RvalueMode::*;
 
 use llvm::ValueRef;
+use trans::adt;
 use trans::base::*;
-use trans::build::Load;
+use trans::build::{Load, Store};
 use trans::common::*;
 use trans::cleanup;
 use trans::cleanup::CleanupMethods;
@@ -144,7 +145,7 @@ pub enum Expr {
 
 #[derive(Clone, Copy, Debug)]
 pub struct DropFlagInfo {
-    stack_flag_index: usize,
+    node_id: ast::NodeId,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -157,25 +158,27 @@ impl Lvalue {
                                bcx: Block<'blk, 'tcx>,
                                id: ast::NodeId,
                                name: ast::Name) -> Lvalue {
-        debug!("binding Lvalue from {}", source);
-        // FIXME
-        Lvalue { drop_flag_info: None }
+        let hints = bcx.fcx.lldropflag_hints.borrow();
+        let hint = hints.get(&id);
+        let info = hint.map(|_datum| DropFlagInfo { node_id: id });
+        debug!("binding Lvalue from {}, name {} hint: {:?}",
+               source, name, info);
+        Lvalue { drop_flag_info: info }
     }
+
     pub fn copy(source: &'static str) -> Lvalue {
         debug!("copy Lvalue from {}", source);
+        Lvalue { drop_flag_info: None }
+    }
+
+    pub fn dropflag_hint() -> Lvalue {
+        debug!("dropflag hint Lvalue");
         Lvalue { drop_flag_info: None }
     }
 
     pub fn upvar(source: &'static str) -> Lvalue {
         debug!("upvar Lvalue from {}", source);
         Lvalue { drop_flag_info: None }
-    }
-
-    pub fn with_flag(source: &'static str,
-                     flag: DropFlagInfo) -> Lvalue {
-        debug!("creating Lvalue from {} with flag: {:?}",
-               source, flag);
-        Lvalue { drop_flag_info: Some(flag) }
     }
 
     pub fn new(source: &'static str) -> Lvalue {
@@ -343,6 +346,13 @@ impl KindOps for Lvalue {
                               ty: Ty<'tcx>)
                               -> Block<'blk, 'tcx> {
         let _icx = push_ctxt("<Lvalue as KindOps>::post_store");
+        if let Some(info) = self.drop_flag_info {
+            let hint_datum = bcx.fcx.lldropflag_hints.borrow()[&info.node_id];
+            debug!("post_store mark {} as moved", info.node_id);
+            Store(bcx,
+                  C_u8(bcx.fcx.ccx, adt::DTOR_MOVED_HINT as usize),
+                  hint_datum.val);
+        }
         if bcx.fcx.type_needs_drop(ty) {
             // cancel cleanup of affine values by drop-filling the memory
             let () = drop_done_fill_mem(bcx, val, ty);

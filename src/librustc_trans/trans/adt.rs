@@ -166,6 +166,7 @@ macro_rules! repeat_u8_as_u64 {
                        (repeat_u8_as_u32!($name) as u64)) }
 }
 
+pub const DTOR_NEEDED_HINT: u8 = 0x3d;
 pub const DTOR_NEEDED: u8 = 0xd4;
 pub const DTOR_NEEDED_U32: u32 = repeat_u8_as_u32!(DTOR_NEEDED);
 pub const DTOR_NEEDED_U64: u64 = repeat_u8_as_u64!(DTOR_NEEDED);
@@ -178,6 +179,7 @@ pub fn dtor_needed_usize(ccx: &CrateContext) -> usize {
     }
 }
 
+pub const DTOR_MOVED_HINT: u8 = 0x2d;
 pub const DTOR_DONE: u8 = 0x1d;
 pub const DTOR_DONE_U32: u32 = repeat_u8_as_u32!(DTOR_DONE);
 pub const DTOR_DONE_U64: u64 = repeat_u8_as_u64!(DTOR_DONE);
