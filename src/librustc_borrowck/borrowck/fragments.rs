@@ -14,6 +14,7 @@
 
 use self::Fragment::*;
 
+use borrowck;
 use borrowck::InteriorKind::{InteriorField, InteriorElement};
 use borrowck::LoanPath;
 use borrowck::LoanPathKind::{LpVar, LpUpvar, LpDowncast, LpExtend};
@@ -61,6 +62,42 @@ impl Fragment {
     }
 }
 
+pub fn build_unfragmented_map(this: &mut borrowck::BorrowckCtxt,
+                              move_data: &MoveData,
+                              id: ast::NodeId) {
+    let fr = &move_data.fragments.borrow();
+
+    // For now, don't care about other kinds of fragments; the precise
+    // classfication of all paths for non-zeroing *drop* needs them,
+    // but the loose approximation used by non-zeroing moves does not.
+    let moved_leaf_paths = fr.moved_leaf_paths();
+
+    let mut unfragmented_ids = Vec::with_capacity(moved_leaf_paths.len());
+    for move_path_index in moved_leaf_paths {
+        let lp = move_data.path_loan_path(*move_path_index);
+        match lp.kind {
+            LpVar(var_id) => { unfragmented_ids.push(var_id); }
+            LpUpvar(ty::UpvarId { var_id, closure_expr_id }) => {
+                // The `var_id` is unique *relative to* the current function.
+                // (Check that we are indeed talking about the same function.)
+                assert_eq!(id, closure_expr_id);
+                unfragmented_ids.push(var_id);
+            }
+            LpDowncast(..) | LpExtend(..) => {
+                // This simple implementation of non-zeroing move does
+                // not attempt to deal with tracking substructure
+                // accurately in the general case.
+            }
+        }
+    }
+
+    let mut unfragmented_map = this.tcx.unfragmented.borrow_mut();
+    let fn_did = ast::DefId { krate: ast::LOCAL_CRATE, node: id };
+    let prev = unfragmented_map.insert(fn_did, unfragmented_ids);
+    assert!(prev.is_none());
+}
+
+
 pub struct FragmentSets {
     /// During move_data construction, `moved_leaf_paths` tracks paths
     /// that have been used directly by being moved out of.  When
@@ -103,6 +140,10 @@ impl FragmentSets {
             assigned_leaf_paths: Vec::new(),
             parents_of_fragments: Vec::new(),
         }
+    }
+
+    pub fn moved_leaf_paths(&self) -> &[MovePathIndex] {
+        &self.moved_leaf_paths
     }
 
     pub fn add_move(&mut self, path_index: MovePathIndex) {
