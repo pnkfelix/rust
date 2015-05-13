@@ -1208,6 +1208,7 @@ pub fn new_fn_ctxt<'a, 'tcx>(ccx: &'a CrateContext<'a, 'tcx>,
           caller_expects_out_pointer: uses_outptr,
           lllocals: RefCell::new(NodeMap()),
           llupvars: RefCell::new(NodeMap()),
+          lldropflag_hints: RefCell::new(NodeMap()),
           id: id,
           param_substs: param_substs,
           span: sp,
@@ -1253,6 +1254,24 @@ pub fn init_function<'a, 'tcx>(fcx: &'a FunctionContext<'a, 'tcx>,
                 // values.
                 fcx.llretslotptr.set(Some(make_return_slot_pointer(fcx, substd_output_type)));
             }
+        }
+    }
+
+    // Create the drop-flag hints for every unfragmented path in the function.
+    let tcx = fcx.ccx.tcx();
+    let fn_did = ast::DefId { krate: ast::LOCAL_CRATE, node: fcx.id };
+    let mut hints = fcx.lldropflag_hints.borrow_mut();
+    let unfragmented = tcx.unfragmented.borrow();
+    if let Some(unfragmented_ids) = unfragmented.get(&fn_did) {
+        for &id in unfragmented_ids {
+            let init_val = C_u8(fcx.ccx, adt::DTOR_NEEDED_HINT as usize);
+            let llname = &format!("dropflag_hint{}", id);
+            let ptr = alloc_ty(entry_bcx, tcx.types.u8, llname);
+            Store(entry_bcx, init_val, ptr);
+            let ty = ty::mk_ptr(tcx, ty::mt { ty: tcx.types.u8,
+                                              mutbl: ast::MutMutable });
+            let flag = datum::Lvalue::dropflag_hint();
+            hints.insert(id, datum::Datum::new(ptr, ty, flag));
         }
     }
 
