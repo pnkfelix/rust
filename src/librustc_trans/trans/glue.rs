@@ -131,15 +131,18 @@ pub fn get_drop_glue_type<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 pub fn drop_ty<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                            v: ValueRef,
                            t: Ty<'tcx>,
-                           debug_loc: DebugLoc) -> Block<'blk, 'tcx> {
-    drop_ty_core(bcx, v, t, debug_loc, false)
+                           debug_loc: DebugLoc,
+                           drop_hint: Option<ValueRef>) -> Block<'blk, 'tcx> {
+    drop_ty_core(bcx, v, t, debug_loc, false, drop_hint)
 }
 
 pub fn drop_ty_core<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                 v: ValueRef,
                                 t: Ty<'tcx>,
                                 debug_loc: DebugLoc,
-                                skip_dtor: bool) -> Block<'blk, 'tcx> {
+                                skip_dtor: bool,
+                                drop_hint: Option<ValueRef>)
+                                -> Block<'blk, 'tcx> {
     // NB: v is an *alias* of type t here, not a direct value.
     debug!("drop_ty_core(t={}, skip_dtor={})", t.repr(bcx.tcx()), skip_dtor);
     let _icx = push_ctxt("drop_ty");
@@ -159,6 +162,21 @@ pub fn drop_ty_core<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
         };
 
         Call(bcx, glue, &[ptr], None, debug_loc);
+        // if let Some(drop_hint) = drop_hint {
+        //     let hint_val = load_ty(bcx, drop_hint, bcx.tcx().types.u8);
+        //     let moved_val =
+        //         C_integral(Type::i8(bcx.ccx()), adt::DTOR_MOVED_HINT as u64, false);
+        //     let may_need_drop =
+        //         ICmp(bcx, llvm::IntNE, hint_val, moved_val, DebugLoc::None);
+        //     with_cond(bcx, may_need_drop, |cx| {
+        //         Call(cx, glue, &[ptr], None, debug_loc);
+        //         cx
+        //     })
+        // } else {
+        //     Call(bcx, glue, &[ptr], None, debug_loc);
+        //     bcx
+        // }
+
     }
     bcx
 }
@@ -172,7 +190,8 @@ pub fn drop_ty_immediate<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     let _icx = push_ctxt("drop_ty_immediate");
     let vp = alloca(bcx, type_of(bcx.ccx(), t), "");
     store_ty(bcx, v, vp, t);
-    drop_ty_core(bcx, vp, t, debug_loc, skip_dtor)
+    // FIXME: is any immediate eligible for dropflag hint?
+    drop_ty_core(bcx, vp, t, debug_loc, skip_dtor, None)
 }
 
 pub fn get_drop_glue<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>, t: Ty<'tcx>) -> ValueRef {
@@ -478,7 +497,7 @@ fn make_drop_glue<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, v0: ValueRef, g: DropGlueK
                 let drop_flag_not_dropped_already =
                     ICmp(bcx, llvm::IntNE, llbox_as_usize, dropped_pattern, DebugLoc::None);
                 with_cond(bcx, drop_flag_not_dropped_already, |bcx| {
-                    let bcx = drop_ty(bcx, v0, content_ty, DebugLoc::None);
+                    let bcx = drop_ty(bcx, v0, content_ty, DebugLoc::None, None);
                     let info = GEPi(bcx, v0, &[0, abi::FAT_PTR_EXTRA]);
                     let info = Load(bcx, info);
                     let (llsize, llalign) = size_and_align_of_dst(bcx, content_ty, info);
@@ -500,7 +519,7 @@ fn make_drop_glue<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, v0: ValueRef, g: DropGlueK
                 let drop_flag_not_dropped_already =
                     ICmp(bcx, llvm::IntNE, llbox_as_usize, dropped_pattern, DebugLoc::None);
                 with_cond(bcx, drop_flag_not_dropped_already, |bcx| {
-                    let bcx = drop_ty(bcx, llbox, content_ty, DebugLoc::None);
+                    let bcx = drop_ty(bcx, llbox, content_ty, DebugLoc::None, None);
                     trans_exchange_free_ty(bcx, llbox, content_ty, DebugLoc::None)
                 })
             }
@@ -530,7 +549,7 @@ fn make_drop_glue<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, v0: ValueRef, g: DropGlueK
                 }
                 (ty::NoDtor, _) | (_, true) => {
                     // No dtor? Just the default case
-                    iter_structural_ty(bcx, v0, t, |bb, vv, tt| drop_ty(bb, vv, tt, DebugLoc::None))
+                    iter_structural_ty(bcx, v0, t, |bb, vv, tt| drop_ty(bb, vv, tt, DebugLoc::None, None))
                 }
             }
         }
@@ -554,7 +573,7 @@ fn make_drop_glue<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, v0: ValueRef, g: DropGlueK
                 iter_structural_ty(bcx,
                                    v0,
                                    t,
-                                   |bb, vv, tt| drop_ty(bb, vv, tt, DebugLoc::None))
+                                   |bb, vv, tt| drop_ty(bb, vv, tt, DebugLoc::None, None))
             } else {
                 bcx
             }

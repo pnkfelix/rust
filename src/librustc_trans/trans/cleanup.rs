@@ -125,6 +125,7 @@ use trans::build;
 use trans::callee;
 use trans::common;
 use trans::common::{Block, FunctionContext, ExprId, NodeIdAndSpan};
+use trans::datum::{Datum, Lvalue};
 use trans::debuginfo::{DebugLoc, ToDebugLoc};
 use trans::declare;
 use trans::glue;
@@ -386,8 +387,10 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
     fn schedule_drop_mem(&self,
                          cleanup_scope: ScopeId,
                          val: ValueRef,
-                         ty: Ty<'tcx>) {
+                         ty: Ty<'tcx>,
+                         drop_hint: Option<Datum<'tcx, Lvalue>>) {
         if !self.type_needs_drop(ty) { return; }
+        let drop_hint = drop_hint.map(|datum|datum.val);
         let drop = box DropValue {
             is_immediate: false,
             must_unwind: common::type_needs_unwind_cleanup(self.ccx, ty),
@@ -395,6 +398,7 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
             ty: ty,
             fill_on_drop: false,
             skip_dtor: false,
+            drop_hint: drop_hint,
         };
 
         debug!("schedule_drop_mem({:?}, val={}, ty={}) fill_on_drop={} skip_dtor={}",
@@ -411,9 +415,11 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
     fn schedule_drop_and_fill_mem(&self,
                                   cleanup_scope: ScopeId,
                                   val: ValueRef,
-                                  ty: Ty<'tcx>) {
+                                  ty: Ty<'tcx>,
+                                  drop_hint: Option<Datum<'tcx, Lvalue>>) {
         if !self.type_needs_drop(ty) { return; }
 
+        let drop_hint = drop_hint.map(|datum|datum.val);
         let drop = box DropValue {
             is_immediate: false,
             must_unwind: common::type_needs_unwind_cleanup(self.ccx, ty),
@@ -421,14 +427,16 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
             ty: ty,
             fill_on_drop: true,
             skip_dtor: false,
+            drop_hint: drop_hint,
         };
 
-        debug!("schedule_drop_and_fill_mem({:?}, val={}, ty={}, fill_on_drop={}, skip_dtor={})",
+        debug!("schedule_drop_and_fill_mem({:?}, val={}, ty={}, fill_on_drop={}, skip_dtor={} has_drop_hint={})",
                cleanup_scope,
                self.ccx.tn().val_to_string(val),
                ty.repr(self.ccx.tcx()),
                drop.fill_on_drop,
-               drop.skip_dtor);
+               drop.skip_dtor,
+               drop_hint.is_some());
 
         self.schedule_clean(cleanup_scope, drop as CleanupObj);
     }
@@ -453,6 +461,7 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
             ty: ty,
             fill_on_drop: false,
             skip_dtor: true,
+            drop_hint: None,
         };
 
         debug!("schedule_drop_adt_contents({:?}, val={}, ty={}) fill_on_drop={} skip_dtor={}",
@@ -479,6 +488,7 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
             ty: ty,
             fill_on_drop: false,
             skip_dtor: false,
+            drop_hint: None,
         };
 
         debug!("schedule_drop_immediate({:?}, val={}, ty={:?}) fill_on_drop={} skip_dtor={}",
@@ -1012,6 +1022,7 @@ pub struct DropValue<'tcx> {
     ty: Ty<'tcx>,
     fill_on_drop: bool,
     skip_dtor: bool,
+    drop_hint: Option<ValueRef>,
 }
 
 impl<'tcx> Cleanup<'tcx> for DropValue<'tcx> {
@@ -1040,10 +1051,10 @@ impl<'tcx> Cleanup<'tcx> for DropValue<'tcx> {
         let bcx = if self.is_immediate {
             glue::drop_ty_immediate(bcx, self.val, self.ty, debug_loc, self.skip_dtor)
         } else {
-            glue::drop_ty_core(bcx, self.val, self.ty, debug_loc, self.skip_dtor)
+            glue::drop_ty_core(bcx, self.val, self.ty, debug_loc, self.skip_dtor, self.drop_hint)
         };
         if self.fill_on_drop {
-            base::drop_done_fill_mem(bcx, self.val, self.ty);
+            base::drop_done_fill_mem(bcx, self.val, self.ty, self.drop_hint);
         }
         bcx
     }
@@ -1181,11 +1192,13 @@ pub trait CleanupMethods<'blk, 'tcx> {
     fn schedule_drop_mem(&self,
                          cleanup_scope: ScopeId,
                          val: ValueRef,
-                         ty: Ty<'tcx>);
+                         ty: Ty<'tcx>,
+                         drop_hint: Option<Datum<'tcx, Lvalue>>);
     fn schedule_drop_and_fill_mem(&self,
                                   cleanup_scope: ScopeId,
                                   val: ValueRef,
-                                  ty: Ty<'tcx>);
+                                  ty: Ty<'tcx>,
+                                  drop_hint: Option<Datum<'tcx, Lvalue>>);
     fn schedule_drop_adt_contents(&self,
                                   cleanup_scope: ScopeId,
                                   val: ValueRef,

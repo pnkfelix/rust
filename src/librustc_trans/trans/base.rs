@@ -948,11 +948,23 @@ pub fn memcpy_ty<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     }
 }
 
-pub fn drop_done_fill_mem<'blk, 'tcx>(cx: Block<'blk, 'tcx>, llptr: ValueRef, t: Ty<'tcx>) {
+pub fn drop_done_fill_mem<'blk, 'tcx>(cx: Block<'blk, 'tcx>, llptr: ValueRef, t: Ty<'tcx>, drop_hint: Option<ValueRef>) {
     if cx.unreachable.get() { return; }
     let _icx = push_ctxt("drop_done_fill_mem");
     let bcx = cx;
-    memfill(&B(bcx), llptr, t, adt::DTOR_DONE);
+
+    let do_memfill = |cx| { memfill(&B(cx), llptr, t, adt::DTOR_DONE); cx };
+
+    // if let Some(hint) = drop_hint {
+    //     let hint_val = load_ty(bcx, hint, bcx.tcx().types.u8);
+    //     let moved_val =
+    //         C_integral(Type::i8(bcx.ccx()), adt::DTOR_MOVED_HINT as u64, false);
+    //     let may_need_drop =
+    //         ICmp(bcx, llvm::IntNE, hint_val, moved_val, DebugLoc::None);
+    //     with_cond(bcx, may_need_drop, do_memfill);
+    // } else {
+    //     do_memfill(bcx);
+    // }
 }
 
 pub fn init_zero_mem<'blk, 'tcx>(cx: Block<'blk, 'tcx>, llptr: ValueRef, t: Ty<'tcx>) {
@@ -1721,7 +1733,7 @@ pub fn trans_named_tuple_constructor<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
     let bcx = match dest {
         expr::SaveIn(_) => bcx,
         expr::Ignore => {
-            let bcx = glue::drop_ty(bcx, llresult, result_ty, debug_loc);
+            let bcx = glue::drop_ty(bcx, llresult, result_ty, debug_loc, None);
             if !type_is_zero_size(ccx, result_ty) {
                 call_lifetime_end(bcx, llresult);
             }

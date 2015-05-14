@@ -893,6 +893,7 @@ fn insert_lllocals<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
                                bindings_map: &BindingsMap<'tcx>,
                                cs: Option<cleanup::ScopeId>)
                                -> Block<'blk, 'tcx> {
+    let hints = bcx.fcx.lldropflag_hints.borrow();
     for (&ident, &binding_info) in bindings_map {
         let llval = match binding_info.trmode {
             // By value mut binding for a copy type: load from the ptr
@@ -923,8 +924,12 @@ fn insert_lllocals<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
                                binding_info.ty,
                                Lvalue::new("insert_lllocals"));
         if let Some(cs) = cs {
+            let opt_datum = hints.get(&binding_info.id).cloned();
             bcx.fcx.schedule_lifetime_end(cs, binding_info.llmatch);
-            bcx.fcx.schedule_drop_and_fill_mem(cs, llval, binding_info.ty);
+            bcx.fcx.schedule_drop_and_fill_mem(cs,
+                                               llval,
+                                               binding_info.ty,
+                                               opt_datum);
         }
 
         debug!("binding {} to {}", binding_info.id, bcx.val_to_string(llval));
@@ -1565,7 +1570,12 @@ pub fn store_local<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
             let scope = cleanup::var_scope(tcx, p_id);
             bcx = mk_binding_alloca(
                 bcx, p_id, path1.node.name, scope, (),
-                |(), bcx, llval, ty| { drop_done_fill_mem(bcx, llval, ty); bcx });
+                |(), bcx, llval, ty| {
+                    let hints = bcx.fcx.lldropflag_hints.borrow();
+                    let hint = hints.get(&p_id).map(|datum|datum.val);
+                    drop_done_fill_mem(bcx, llval, ty, hint);
+                    bcx
+                });
         });
         bcx
     }
@@ -1677,8 +1687,10 @@ fn mk_binding_alloca<'blk, 'tcx, A, F>(bcx: Block<'blk, 'tcx>,
     // Subtle: be sure that we *populate* the memory *before*
     // we schedule the cleanup.
     let bcx = populate(arg, bcx, llval, var_ty);
+    let hints = bcx.fcx.lldropflag_hints.borrow();
+    let opt_hint = hints.get(&p_id).cloned();
     bcx.fcx.schedule_lifetime_end(cleanup_scope, llval);
-    bcx.fcx.schedule_drop_mem(cleanup_scope, llval, var_ty);
+    bcx.fcx.schedule_drop_mem(cleanup_scope, llval, var_ty, opt_hint);
 
     // Now that memory is initialized and has cleanup scheduled,
     // create the datum and insert into the local variable map.

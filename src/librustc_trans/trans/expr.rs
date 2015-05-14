@@ -985,6 +985,8 @@ fn trans_rvalue_stmt_unadjusted<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
             let src_datum = unpack_datum!(bcx, trans(bcx, &**src));
             let dst_datum = unpack_datum!(bcx, trans_to_lvalue(bcx, &**dst, "assign"));
 
+            let hints = bcx.fcx.lldropflag_hints.borrow();
+            let hint = hints.get(&dst.id).map(|datum|datum.val);
             if bcx.fcx.type_needs_drop(dst_datum.ty) {
                 // If there are destructors involved, make sure we
                 // are copying from an rvalue, since that cannot possible
@@ -1008,7 +1010,12 @@ fn trans_rvalue_stmt_unadjusted<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                 bcx = glue::drop_ty(bcx,
                                     dst_datum.val,
                                     dst_datum.ty,
-                                    expr.debug_loc());
+                                    expr.debug_loc(),
+                                    hint);
+                if let Some(drop_hint) = hint {
+                    let new_val = C_u8(bcx.fcx.ccx, adt::DTOR_NEEDED_HINT as usize);
+                    Store(bcx, new_val, drop_hint);
+                }
                 src_datum.store_to(bcx, dst_datum.val)
             } else {
                 src_datum.store_to(bcx, dst_datum.val)
@@ -1562,7 +1569,8 @@ pub fn trans_adt<'a, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
             bcx = trans_into(bcx, &**e, SaveIn(dest));
             let scope = cleanup::CustomScope(custom_cleanup_scope);
             fcx.schedule_lifetime_end(scope, dest);
-            fcx.schedule_drop_mem(scope, dest, e_ty);
+            // FIXME: nonzeroing move should generalize to fields
+            fcx.schedule_drop_mem(scope, dest, e_ty, None);
         }
     }
 
@@ -1574,7 +1582,8 @@ pub fn trans_adt<'a, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
     match dest {
         SaveIn(_) => bcx,
         Ignore => {
-            bcx = glue::drop_ty(bcx, addr, ty, debug_location);
+            // FIXME: make drop-hint for ret val?
+            bcx = glue::drop_ty(bcx, addr, ty, debug_location, None);
             base::call_lifetime_end(bcx, addr);
             bcx
         }

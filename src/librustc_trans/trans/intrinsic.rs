@@ -400,7 +400,8 @@ pub fn trans_intrinsic_call<'a, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
         }
         (_, "drop_in_place") => {
             let tp_ty = *substs.types.get(FnSpace, 0);
-            glue::drop_ty(bcx, llargs[0], tp_ty, call_debug_location);
+            // FIXME: can drophint apply here?
+            glue::drop_ty(bcx, llargs[0], tp_ty, call_debug_location, None);
             C_nil(ccx)
         }
         (_, "type_name") => {
@@ -418,7 +419,8 @@ pub fn trans_intrinsic_call<'a, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
         (_, "init_dropped") => {
             let tp_ty = *substs.types.get(FnSpace, 0);
             if !return_type_is_void(ccx, tp_ty) {
-                drop_done_fill_mem(bcx, llresult, tp_ty);
+                // FIXME: can drophint apply here?
+                drop_done_fill_mem(bcx, llresult, tp_ty, None);
             }
             C_nil(ccx)
         }
@@ -870,7 +872,8 @@ pub fn trans_intrinsic_call<'a, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
     // If we made a temporary stack slot, let's clean it up
     match dest {
         expr::Ignore => {
-            bcx = glue::drop_ty(bcx, llresult, ret_ty, call_debug_location);
+            // FIXME: is dropflag hint applicable here?
+            bcx = glue::drop_ty(bcx, llresult, ret_ty, call_debug_location, None);
         }
         expr::SaveIn(_) => {}
     }
