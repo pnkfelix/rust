@@ -420,7 +420,7 @@ pub fn trans_intrinsic_call<'a, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
             let tp_ty = *substs.types.get(FnSpace, 0);
             if !return_type_is_void(ccx, tp_ty) {
                 // FIXME: can drophint apply here?
-                drop_done_fill_mem(bcx, llresult, tp_ty, None);
+                bcx = drop_done_fill_mem(bcx, llresult, tp_ty, None);
             }
             C_nil(ccx)
         }

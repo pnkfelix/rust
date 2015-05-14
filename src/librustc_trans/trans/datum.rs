@@ -355,8 +355,7 @@ impl KindOps for Lvalue {
         }
         if bcx.fcx.type_needs_drop(ty) {
             // cancel cleanup of affine values by drop-filling the memory
-            let () = drop_done_fill_mem(bcx, val, ty, None);
-            bcx
+            drop_done_fill_mem(bcx, val, ty, None)
         } else {
             bcx
         }
@@ -382,9 +381,10 @@ impl KindOps for Lvalue {
             }
             // cancel cleanup of affine values by drop-filling the memory
             let hint = hint_datum.map(|datum|datum.val);
-            let () = drop_done_fill_mem(bcx, val, ty, hint);
+            drop_done_fill_mem(bcx, val, ty, hint)
+        } else {
+            bcx
         }
-        bcx
     }
 
     fn is_by_ref(&self) -> bool {

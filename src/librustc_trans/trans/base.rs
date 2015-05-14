@@ -948,23 +948,23 @@ pub fn memcpy_ty<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     }
 }
 
-pub fn drop_done_fill_mem<'blk, 'tcx>(cx: Block<'blk, 'tcx>, llptr: ValueRef, t: Ty<'tcx>, drop_hint: Option<ValueRef>) {
-    if cx.unreachable.get() { return; }
+pub fn drop_done_fill_mem<'blk, 'tcx>(cx: Block<'blk, 'tcx>, llptr: ValueRef, t: Ty<'tcx>, drop_hint: Option<ValueRef>) -> Block<'blk, 'tcx> {
+    if cx.unreachable.get() { return cx; }
     let _icx = push_ctxt("drop_done_fill_mem");
     let bcx = cx;
 
     let do_memfill = |cx| { memfill(&B(cx), llptr, t, adt::DTOR_DONE); cx };
 
-    // if let Some(hint) = drop_hint {
-    //     let hint_val = load_ty(bcx, hint, bcx.tcx().types.u8);
-    //     let moved_val =
-    //         C_integral(Type::i8(bcx.ccx()), adt::DTOR_MOVED_HINT as u64, false);
-    //     let may_need_drop =
-    //         ICmp(bcx, llvm::IntNE, hint_val, moved_val, DebugLoc::None);
-    //     with_cond(bcx, may_need_drop, do_memfill);
-    // } else {
-    //     do_memfill(bcx);
-    // }
+    if let Some(hint) = drop_hint {
+        let hint_val = load_ty(bcx, hint, bcx.tcx().types.u8);
+        let moved_val =
+            C_integral(Type::i8(bcx.ccx()), adt::DTOR_MOVED_HINT as u64, false);
+        let may_need_drop =
+            ICmp(bcx, llvm::IntNE, hint_val, moved_val, DebugLoc::None);
+        with_cond(bcx, may_need_drop, do_memfill)
+    } else {
+        do_memfill(bcx)
+    }
 }
 
 pub fn init_zero_mem<'blk, 'tcx>(cx: Block<'blk, 'tcx>, llptr: ValueRef, t: Ty<'tcx>) {
