@@ -877,7 +877,9 @@ pub fn trans_call_inner<'a, 'blk, 'tcx, F>(bcx: Block<'blk, 'tcx>,
             bcx = glue::drop_ty(bcx,
                                 llretslot,
                                 ret_ty,
-                                debug_loc);
+                                debug_loc,
+                                // FIXME: make drop-hint for ret val?
+                                None);
             call_lifetime_end(bcx, llretslot);
         }
         _ => {}

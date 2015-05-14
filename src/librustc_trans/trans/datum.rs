@@ -247,7 +247,7 @@ pub fn lvalue_scratch_datum<'blk, 'tcx, A, F>(bcx: Block<'blk, 'tcx>,
     // Subtle. Populate the scratch memory *before* scheduling cleanup.
     let bcx = populate(arg, bcx, scratch);
     bcx.fcx.schedule_lifetime_end(scope, scratch);
-    bcx.fcx.schedule_drop_mem(scope, scratch, ty);
+    bcx.fcx.schedule_drop_mem(scope, scratch, ty, None);
 
     DatumBlock::new(bcx, Datum::new(scratch, ty, Lvalue::new("lvalue_scratch_datum")))
 }
@@ -286,7 +286,7 @@ fn add_rvalue_clean<'a, 'tcx>(mode: RvalueMode,
         ByValue => { fcx.schedule_drop_immediate(scope, val, ty); }
         ByRef => {
             fcx.schedule_lifetime_end(scope, val);
-            fcx.schedule_drop_mem(scope, val, ty);
+            fcx.schedule_drop_mem(scope, val, ty, None);
         }
     }
 }
@@ -355,11 +355,36 @@ impl KindOps for Lvalue {
         }
         if bcx.fcx.type_needs_drop(ty) {
             // cancel cleanup of affine values by drop-filling the memory
-            let () = drop_done_fill_mem(bcx, val, ty);
+            let () = drop_done_fill_mem(bcx, val, ty, None);
             bcx
         } else {
             bcx
         }
+    }
+
+    // (trying to track down codegen breakage for libcore)
+    #[cfg(not_now)]
+    fn post_store<'blk, 'tcx>(&self,
+                              bcx: Block<'blk, 'tcx>,
+                              val: ValueRef,
+                              ty: Ty<'tcx>)
+                              -> Block<'blk, 'tcx> {
+        let _icx = push_ctxt("<Lvalue as KindOps>::post_store");
+        if bcx.fcx.type_needs_drop(ty) {
+            let mut hint_datum = None;
+            if let Some(info) = self.drop_flag_info {
+                let hints = bcx.fcx.lldropflag_hints.borrow();
+                hint_datum = hints.get(&info.node_id).cloned();
+                debug!("post_store mark {} as moved", info.node_id);
+                Store(bcx,
+                      C_u8(bcx.fcx.ccx, adt::DTOR_MOVED_HINT as usize),
+                      hint_datum.unwrap().val);
+            }
+            // cancel cleanup of affine values by drop-filling the memory
+            let hint = hint_datum.map(|datum|datum.val);
+            let () = drop_done_fill_mem(bcx, val, ty, hint);
+        }
+        bcx
     }
 
     fn is_by_ref(&self) -> bool {
