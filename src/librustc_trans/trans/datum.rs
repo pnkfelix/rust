@@ -338,8 +338,8 @@ impl Lvalue {
 }
 
 impl KindOps for Lvalue {
-    /// If an lvalue is moved, we must zero out the memory in which it resides so as to cancel
-    /// cleanup. If an @T lvalue is copied, we must increment the reference count.
+    // (trying to track down codegen breakage for libcore)
+    #[cfg(not_now)]
     fn post_store<'blk, 'tcx>(&self,
                               bcx: Block<'blk, 'tcx>,
                               val: ValueRef,
@@ -361,8 +361,8 @@ impl KindOps for Lvalue {
         }
     }
 
-    // (trying to track down codegen breakage for libcore)
-    #[cfg(not_now)]
+    /// If an lvalue is moved, we must zero out the memory in which it resides so as to cancel
+    /// cleanup. If an @T lvalue is copied, we must increment the reference count.
     fn post_store<'blk, 'tcx>(&self,
                               bcx: Block<'blk, 'tcx>,
                               val: ValueRef,

@@ -136,7 +136,7 @@ pub fn drop_ty<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     drop_ty_core(bcx, v, t, debug_loc, false, drop_hint)
 }
 
-pub fn drop_ty_core<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
+pub fn drop_ty_core<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
                                 v: ValueRef,
                                 t: Ty<'tcx>,
                                 debug_loc: DebugLoc,
@@ -161,22 +161,19 @@ pub fn drop_ty_core<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
             v
         };
 
-        Call(bcx, glue, &[ptr], None, debug_loc);
-        // if let Some(drop_hint) = drop_hint {
-        //     let hint_val = load_ty(bcx, drop_hint, bcx.tcx().types.u8);
-        //     let moved_val =
-        //         C_integral(Type::i8(bcx.ccx()), adt::DTOR_MOVED_HINT as u64, false);
-        //     let may_need_drop =
-        //         ICmp(bcx, llvm::IntNE, hint_val, moved_val, DebugLoc::None);
-        //     with_cond(bcx, may_need_drop, |cx| {
-        //         Call(cx, glue, &[ptr], None, debug_loc);
-        //         cx
-        //     })
-        // } else {
-        //     Call(bcx, glue, &[ptr], None, debug_loc);
-        //     bcx
-        // }
-
+        if let Some(drop_hint) = drop_hint {
+            let hint_val = load_ty(bcx, drop_hint, bcx.tcx().types.u8);
+            let moved_val =
+                C_integral(Type::i8(bcx.ccx()), adt::DTOR_MOVED_HINT as u64, false);
+            let may_need_drop =
+                ICmp(bcx, llvm::IntNE, hint_val, moved_val, DebugLoc::None);
+            bcx = with_cond(bcx, may_need_drop, |cx| {
+                Call(cx, glue, &[ptr], None, debug_loc);
+                cx
+            })
+        } else {
+            Call(bcx, glue, &[ptr], None, debug_loc);
+        }
     }
     bcx
 }
