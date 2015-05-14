@@ -1054,9 +1054,10 @@ impl<'tcx> Cleanup<'tcx> for DropValue<'tcx> {
             glue::drop_ty_core(bcx, self.val, self.ty, debug_loc, self.skip_dtor, self.drop_hint)
         };
         if self.fill_on_drop {
-            base::drop_done_fill_mem(bcx, self.val, self.ty, self.drop_hint);
+            base::drop_done_fill_mem(bcx, self.val, self.ty, self.drop_hint)
+        } else {
+            bcx
         }
-        bcx
     }
 }
 

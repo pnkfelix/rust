@@ -1572,8 +1572,7 @@ pub fn store_local<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                 |(), bcx, llval, ty| {
                     let hints = bcx.fcx.lldropflag_hints.borrow();
                     let hint = hints.get(&p_id).map(|datum|datum.val);
-                    drop_done_fill_mem(bcx, llval, ty, hint);
-                    bcx
+                    drop_done_fill_mem(bcx, llval, ty, hint)
                 });
         });
         bcx
