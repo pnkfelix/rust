@@ -338,29 +338,6 @@ impl Lvalue {
 }
 
 impl KindOps for Lvalue {
-    // (trying to track down codegen breakage for libcore)
-    #[cfg(not_now)]
-    fn post_store<'blk, 'tcx>(&self,
-                              bcx: Block<'blk, 'tcx>,
-                              val: ValueRef,
-                              ty: Ty<'tcx>)
-                              -> Block<'blk, 'tcx> {
-        let _icx = push_ctxt("<Lvalue as KindOps>::post_store");
-        if let Some(info) = self.drop_flag_info {
-            let hint_datum = bcx.fcx.lldropflag_hints.borrow()[&info.node_id];
-            debug!("post_store mark {} as moved", info.node_id);
-            Store(bcx,
-                  C_u8(bcx.fcx.ccx, adt::DTOR_MOVED_HINT as usize),
-                  hint_datum.val);
-        }
-        if bcx.fcx.type_needs_drop(ty) {
-            // cancel cleanup of affine values by drop-filling the memory
-            drop_done_fill_mem(bcx, val, ty, None)
-        } else {
-            bcx
-        }
-    }
-
     /// If an lvalue is moved, we must zero out the memory in which it resides so as to cancel
     /// cleanup. If an @T lvalue is copied, we must increment the reference count.
     fn post_store<'blk, 'tcx>(&self,
