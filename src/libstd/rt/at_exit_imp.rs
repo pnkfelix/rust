@@ -22,7 +22,7 @@ use vec::Vec;
 use thunk::Thunk;
 use sys_common::mutex::Mutex;
 
-type Queue = Vec<Thunk<'static>>;
+pub type Queue = Vec<(Thunk<'static>, &'static str)>;
 
 // NB these are specifically not types from `std::sync` as they currently rely
 // on poisoning and this module needs to operate at a lower level than requiring
@@ -35,9 +35,9 @@ static mut QUEUE: *mut Queue = 0 as *mut Queue;
 // the at_exit closures new ones may be registered, and this count is the number
 // of times the new closures will be allowed to register successfully. After
 // this number of iterations all new registrations will return `false`.
-const ITERS: usize = 10;
+pub const ITERS: usize = 10;
 
-unsafe fn init() -> bool {
+pub unsafe fn init() -> bool {
     if QUEUE.is_null() {
         let state: Box<Queue> = box Vec::new();
         QUEUE = boxed::into_raw(state);
@@ -64,19 +64,19 @@ pub fn cleanup() {
             if queue as usize != 0 {
                 let queue: Box<Queue> = Box::from_raw(queue);
                 for to_run in *queue {
-                    to_run();
+                    (to_run.0)();
                 }
             }
         }
     }
 }
 
-pub fn push(f: Thunk<'static>) -> bool {
+pub fn push(f: Thunk<'static>, name: &'static str) -> bool {
     let mut ret = true;
     unsafe {
         LOCK.lock();
         if init() {
-            (*QUEUE).push(f);
+            (*QUEUE).push((f, name));
         } else {
             ret = false;
         }

@@ -134,7 +134,7 @@
 #![no_std]
 
 #![allow(trivial_casts)]
-#![deny(missing_docs)]
+#![allow(missing_docs)]
 
 #[cfg(test)] extern crate test;
 #[cfg(test)] #[macro_use] extern crate log;
@@ -267,17 +267,20 @@ pub mod process;
 pub mod sync;
 pub mod time;
 
+#[unstable(feature = "fsk_hack")]
 #[macro_use]
-#[path = "sys/common/mod.rs"] mod sys_common;
+#[path = "sys/common/mod.rs"] pub mod sys_common;
 
+#[unstable(feature = "fsk_hack")]
 #[cfg(unix)]
-#[path = "sys/unix/mod.rs"] mod sys;
+#[path = "sys/unix/mod.rs"] pub mod sys;
+#[unstable(feature = "fsk_hack")]
 #[cfg(windows)]
-#[path = "sys/windows/mod.rs"] mod sys;
+#[path = "sys/windows/mod.rs"] pub mod sys;
 
 pub mod rt;
-mod panicking;
-mod rand;
+pub mod panicking;
+pub mod rand;
 
 // Some external utilities of the standard library rely on randomness (aka
 // rustc_back::TempDir and tests) and need a way to get at the OS rng we've got
@@ -292,10 +295,11 @@ pub mod __rand {
 
 // Modules that exist purely to document + host impl docs for primitive types
 
-mod array;
-mod bool;
-mod unit;
-mod tuple;
+#[unstable(feature = "fsk_hack")]
+pub mod array;
+pub mod bool;
+pub mod unit;
+pub mod tuple;
 
 // A curious inner-module that's not exported that contains the binding
 // 'std' so that macro-expanded references to std::error and such

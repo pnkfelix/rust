@@ -22,7 +22,7 @@ use sys_common::remutex::{ReentrantMutex, ReentrantMutexGuard};
 
 /// Stdout used by print! and println! macros
 thread_local! {
-    static LOCAL_STDOUT: RefCell<Option<Box<Write + Send>>> = {
+    pub static LOCAL_STDOUT: RefCell<Option<Box<Write + Send>>> = {
         RefCell::new(None)
     }
 }
@@ -31,19 +31,19 @@ thread_local! {
 ///
 /// This handle is not synchronized or buffered in any fashion. Constructed via
 /// the `std::io::stdio::stdin_raw` function.
-struct StdinRaw(stdio::Stdin);
+pub struct StdinRaw(pub stdio::Stdin);
 
 /// A handle to a raw instance of the standard output stream of this process.
 ///
 /// This handle is not synchronized or buffered in any fashion. Constructed via
 /// the `std::io::stdio::stdout_raw` function.
-struct StdoutRaw(stdio::Stdout);
+pub struct StdoutRaw(pub stdio::Stdout);
 
 /// A handle to a raw instance of the standard output stream of this process.
 ///
 /// This handle is not synchronized or buffered in any fashion. Constructed via
 /// the `std::io::stdio::stderr_raw` function.
-struct StderrRaw(stdio::Stderr);
+pub struct StderrRaw(pub stdio::Stderr);
 
 /// Constructs a new raw handle to the standard input of this process.
 ///
@@ -52,7 +52,7 @@ struct StderrRaw(stdio::Stderr);
 /// handles is **not** available to raw handles returned from this function.
 ///
 /// The returned handle has no external synchronization or buffering.
-fn stdin_raw() -> StdinRaw { StdinRaw(stdio::Stdin::new()) }
+pub fn stdin_raw() -> StdinRaw { StdinRaw(stdio::Stdin::new()) }
 
 /// Constructs a new raw handle to the standard input stream of this process.
 ///
@@ -63,7 +63,7 @@ fn stdin_raw() -> StdinRaw { StdinRaw(stdio::Stdin::new()) }
 ///
 /// The returned handle has no external synchronization or buffering layered on
 /// top.
-fn stdout_raw() -> StdoutRaw { StdoutRaw(stdio::Stdout::new()) }
+pub fn stdout_raw() -> StdoutRaw { StdoutRaw(stdio::Stdout::new()) }
 
 /// Constructs a new raw handle to the standard input stream of this process.
 ///
@@ -72,7 +72,7 @@ fn stdout_raw() -> StdoutRaw { StdoutRaw(stdio::Stdout::new()) }
 ///
 /// The returned handle has no external synchronization or buffering layered on
 /// top.
-fn stderr_raw() -> StderrRaw { StderrRaw(stdio::Stderr::new()) }
+pub fn stderr_raw() -> StderrRaw { StderrRaw(stdio::Stderr::new()) }
 
 impl Read for StdinRaw {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> { self.0.read(buf) }
@@ -99,7 +99,7 @@ impl Write for StderrRaw {
 /// Created by the function `io::stdin()`.
 #[stable(feature = "rust1", since = "1.0.0")]
 pub struct Stdin {
-    inner: Arc<Mutex<BufReader<StdinRaw>>>,
+    pub inner: Arc<Mutex<BufReader<StdinRaw>>>,
 }
 
 /// A locked reference to the a `Stdin` handle.
@@ -108,7 +108,7 @@ pub struct Stdin {
 /// constructed via the `lock` method on `Stdin`.
 #[stable(feature = "rust1", since = "1.0.0")]
 pub struct StdinLock<'a> {
-    inner: MutexGuard<'a, BufReader<StdinRaw>>,
+    pub inner: MutexGuard<'a, BufReader<StdinRaw>>,
 }
 
 /// Creates a new handle to the global standard input stream of this process.
@@ -215,7 +215,7 @@ pub struct Stdout {
     // FIXME: this should be LineWriter or BufWriter depending on the state of
     //        stdout (tty or not). Note that if this is not line buffered it
     //        should also flush-on-panic or some form of flush-on-abort.
-    inner: Arc<ReentrantMutex<RefCell<LineWriter<StdoutRaw>>>>,
+    pub inner: Arc<ReentrantMutex<RefCell<LineWriter<StdoutRaw>>>>,
 }
 
 /// A locked reference to the a `Stdout` handle.
@@ -224,7 +224,7 @@ pub struct Stdout {
 /// method on `Stdout`.
 #[stable(feature = "rust1", since = "1.0.0")]
 pub struct StdoutLock<'a> {
-    inner: ReentrantMutexGuard<'a, RefCell<LineWriter<StdoutRaw>>>,
+    pub inner: ReentrantMutexGuard<'a, RefCell<LineWriter<StdoutRaw>>>,
 }
 
 /// Constructs a new reference to the standard output of the current process.
@@ -236,14 +236,23 @@ pub struct StdoutLock<'a> {
 /// The returned handle implements the `Write` trait.
 #[stable(feature = "rust1", since = "1.0.0")]
 pub fn stdout() -> Stdout {
+<<<<<<< HEAD
     static INSTANCE: Lazy<ReentrantMutex<RefCell<LineWriter<StdoutRaw>>>> = Lazy::new(stdout_init);
+||||||| merged common ancestors
+    static INSTANCE: Lazy<ReentrantMutex<RefCell<LineWriter<StdoutRaw>>>> = lazy_init!(stdout_init);
+=======
+>>>>>>> make a TON of stuff `pub` in effort to debug mutex corruption from change.
     return Stdout {
-        inner: INSTANCE.get().expect("cannot access stdout during shutdown"),
+        inner: STDOUT_INSTANCE.get().expect("cannot access stdout during shutdown"),
     };
 
-    fn stdout_init() -> Arc<ReentrantMutex<RefCell<LineWriter<StdoutRaw>>>> {
-        Arc::new(ReentrantMutex::new(RefCell::new(LineWriter::new(stdout_raw()))))
-    }
+}
+
+#[unstable(feature="fsk_hack")]
+pub static STDOUT_INSTANCE: Lazy<ReentrantMutex<RefCell<LineWriter<StdoutRaw>>>> = lazy_init!(stdout_init, "stdout");
+
+fn stdout_init() -> Arc<ReentrantMutex<RefCell<LineWriter<StdoutRaw>>>> {
+    Arc::new(ReentrantMutex::new(RefCell::new(LineWriter::new(stdout_raw()))))
 }
 
 impl Stdout {
@@ -288,7 +297,7 @@ impl<'a> Write for StdoutLock<'a> {
 /// For more information, see `stderr`
 #[stable(feature = "rust1", since = "1.0.0")]
 pub struct Stderr {
-    inner: Arc<ReentrantMutex<RefCell<StderrRaw>>>,
+    pub inner: Arc<ReentrantMutex<RefCell<StderrRaw>>>,
 }
 
 /// A locked reference to the a `Stderr` handle.
@@ -297,7 +306,7 @@ pub struct Stderr {
 /// method on `Stderr`.
 #[stable(feature = "rust1", since = "1.0.0")]
 pub struct StderrLock<'a> {
-    inner: ReentrantMutexGuard<'a, RefCell<StderrRaw>>,
+    pub inner: ReentrantMutexGuard<'a, RefCell<StderrRaw>>,
 }
 
 /// Constructs a new reference to the standard error stream of a process.
@@ -308,7 +317,13 @@ pub struct StderrLock<'a> {
 /// The returned handle implements the `Write` trait.
 #[stable(feature = "rust1", since = "1.0.0")]
 pub fn stderr() -> Stderr {
+<<<<<<< HEAD
     static INSTANCE: Lazy<ReentrantMutex<RefCell<StderrRaw>>> = Lazy::new(stderr_init);
+||||||| merged common ancestors
+    static INSTANCE: Lazy<ReentrantMutex<RefCell<StderrRaw>>> = lazy_init!(stderr_init);
+=======
+    static INSTANCE: Lazy<ReentrantMutex<RefCell<StderrRaw>>> = lazy_init!(stderr_init, "stderr");
+>>>>>>> make a TON of stuff `pub` in effort to debug mutex corruption from change.
     return Stderr {
         inner: INSTANCE.get().expect("cannot access stderr during shutdown"),
     };

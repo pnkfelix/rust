@@ -46,7 +46,7 @@ impl<T: Send + Sync + 'static> Lazy<T> {
         }
     }
 
-    unsafe fn init(&'static self) -> Arc<T> {
+    pub unsafe fn init(&'static self) -> Arc<T> {
         // If we successfully register an at exit handler, then we cache the
         // `Arc` allocation in our own internal box (it will get deallocated by
         // the at exit handler). Otherwise we just return the freshly allocated
@@ -57,7 +57,7 @@ impl<T: Send + Sync + 'static> Lazy<T> {
             self.ptr.set(1 as *mut _);
             drop(g);
             drop(Box::from_raw(ptr))
-        });
+        }, self.name);
         let ret = (self.init)();
         if registered.is_ok() {
             self.ptr.set(boxed::into_raw(Box::new(ret.clone())));
