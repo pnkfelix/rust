@@ -122,7 +122,7 @@ use heap::deallocate;
 pub struct Arc<T: ?Sized> {
     // FIXME #12808: strange name to try to avoid interfering with
     // field accesses of the contained type via Deref
-    _ptr: NonZero<*mut ArcInner<T>>,
+    pub _ptr: NonZero<*mut ArcInner<T>>,
 }
 
 unsafe impl<T: ?Sized + Sync + Send> Send for Arc<T> { }
@@ -153,10 +153,10 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for Weak<T> {
     }
 }
 
-struct ArcInner<T: ?Sized> {
-    strong: atomic::AtomicUsize,
-    weak: atomic::AtomicUsize,
-    data: T,
+pub struct ArcInner<T: ?Sized> {
+    pub strong: atomic::AtomicUsize,
+    pub weak: atomic::AtomicUsize,
+    pub data: T,
 }
 
 unsafe impl<T: ?Sized + Sync + Send> Send for ArcInner<T> {}

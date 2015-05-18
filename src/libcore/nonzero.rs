@@ -36,7 +36,7 @@ unsafe impl Zeroable for u64 {}
 #[lang = "non_zero"]
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug, Hash)]
 #[unstable(feature = "core")]
-pub struct NonZero<T: Zeroable>(T);
+pub struct NonZero<T: Zeroable>(pub T);
 
 impl<T: Zeroable> NonZero<T> {
     /// Creates an instance of NonZero with the provided value.

@@ -35,15 +35,15 @@ pub mod backtrace;
 
 // Internals
 #[macro_use]
-mod macros;
+pub mod macros;
 
 // These should be refactored/moved/made private over time
 pub mod util;
 pub mod unwind;
 pub mod args;
 
-mod at_exit_imp;
-mod libunwind;
+pub mod at_exit_imp;
+pub mod libunwind;
 
 /// The default error code of the rust runtime if the main thread panics instead
 /// of exiting cleanly.
@@ -151,8 +151,10 @@ fn lang_start(main: *const u8, argc: isize, argv: *const *const u8) -> isize {
 /// closure will be run once the main thread exits. Returns `Err` to indicate
 /// that the closure could not be registered, meaning that it is not scheduled
 /// to be rune.
-pub fn at_exit<F: FnOnce() + Send + 'static>(f: F) -> Result<(), ()> {
-    if at_exit_imp::push(Box::new(f)) {Ok(())} else {Err(())}
+pub fn at_exit<F>(f: F, name: &'static str) -> Result<(), ()> where
+    F: FnOnce() + Send + 'static
+{
+    if at_exit_imp::push(Box::new(f), name) {Ok(())} else {Err(())}
 }
 
 /// One-time runtime cleanup.

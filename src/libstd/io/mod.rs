@@ -36,15 +36,23 @@ pub use self::stdio::{StdoutLock, StderrLock, StdinLock};
 #[doc(no_inline, hidden)]
 pub use self::stdio::{set_panic, set_print};
 
-#[macro_use] mod lazy;
+#[unstable(feature = "fsk_hack")]
+#[macro_use]
+pub mod lazy;
 
 pub mod prelude;
-mod buffered;
-mod cursor;
-mod error;
-mod impls;
-mod util;
-mod stdio;
+#[unstable(feature = "fsk_hack")]
+pub mod buffered;
+#[unstable(feature = "fsk_hack")]
+pub mod cursor;
+#[unstable(feature = "fsk_hack")]
+pub mod error;
+#[unstable(feature = "fsk_hack")]
+pub mod impls;
+#[unstable(feature = "fsk_hack")]
+pub mod util;
+#[unstable(feature = "fsk_hack")]
+pub mod stdio;
 
 const DEFAULT_BUF_SIZE: usize = 64 * 1024;
 

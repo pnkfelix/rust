@@ -23,9 +23,9 @@ use sys::mutex as sys;
 /// available. The thread which has already locked the mutex can lock it
 /// multiple times without blocking, preventing a common source of deadlocks.
 pub struct ReentrantMutex<T> {
-    inner: Box<sys::ReentrantMutex>,
-    poison: poison::Flag,
-    data: T,
+    pub inner: Box<sys::ReentrantMutex>,
+    pub poison: poison::Flag,
+    pub data: T,
 }
 
 unsafe impl<T: Send> Send for ReentrantMutex<T> {}
@@ -41,8 +41,8 @@ unsafe impl<T: Send> Sync for ReentrantMutex<T> {}
 pub struct ReentrantMutexGuard<'a, T: 'a> {
     // funny underscores due to how Deref/DerefMut currently work (they
     // disregard field privacy).
-    __lock: &'a ReentrantMutex<T>,
-    __poison: poison::Guard,
+    pub __lock: &'a ReentrantMutex<T>,
+    pub __poison: poison::Guard,
 }
 
 impl<'a, T> !marker::Send for ReentrantMutexGuard<'a, T> {}

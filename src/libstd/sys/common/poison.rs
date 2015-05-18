@@ -16,7 +16,7 @@ use error::{Error};
 use fmt;
 use thread;
 
-pub struct Flag { failed: UnsafeCell<bool> }
+pub struct Flag { pub failed: UnsafeCell<bool> }
 
 // This flag is only ever accessed with a lock previously held. Note that this
 // a totally private structure.
@@ -50,7 +50,7 @@ impl Flag {
 }
 
 pub struct Guard {
-    panicking: bool,
+    pub panicking: bool,
 }
 
 /// A type of error which can be returned whenever a lock is acquired.
@@ -61,7 +61,7 @@ pub struct Guard {
 /// return this error.
 #[stable(feature = "rust1", since = "1.0.0")]
 pub struct PoisonError<T> {
-    guard: T,
+    pub guard: T,
 }
 
 /// An enumeration of possible errors which can occur while calling the

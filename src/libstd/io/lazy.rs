@@ -16,6 +16,7 @@ use rt;
 use sync::{StaticMutex, Arc};
 
 pub struct Lazy<T> {
+    pub name: &'static str,
     pub lock: StaticMutex,
     pub ptr: UnsafeCell<*mut Arc<T>>,
     pub init: fn() -> Arc<T>,
@@ -24,7 +25,8 @@ pub struct Lazy<T> {
 unsafe impl<T> Sync for Lazy<T> {}
 
 macro_rules! lazy_init {
-    ($init:expr) => (::io::lazy::Lazy {
+    ($init:expr, $name:expr) => (::io::lazy::Lazy {
+        name: $name,
         lock: ::sync::MUTEX_INIT,
         ptr: ::cell::UnsafeCell { value: 0 as *mut _ },
         init: $init,
@@ -46,7 +48,7 @@ impl<T: Send + Sync + 'static> Lazy<T> {
         }
     }
 
-    unsafe fn init(&'static self) -> Arc<T> {
+    pub unsafe fn init(&'static self) -> Arc<T> {
         // If we successfully register an at exit handler, then we cache the
         // `Arc` allocation in our own internal box (it will get deallocated by
         // the at exit handler). Otherwise we just return the freshly allocated
@@ -57,7 +59,7 @@ impl<T: Send + Sync + 'static> Lazy<T> {
             *self.ptr.get() = 1 as *mut _;
             drop(g);
             drop(Box::from_raw(ptr))
-        });
+        }, self.name);
         let ret = (self.init)();
         if registered.is_ok() {
             *self.ptr.get() = boxed::into_raw(Box::new(ret.clone()));

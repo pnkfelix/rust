@@ -61,7 +61,7 @@
 #![feature(no_std)]
 #![no_std]
 #![allow(raw_pointer_derive)]
-#![deny(missing_docs)]
+#![allow(missing_docs)]
 
 #![feature(intrinsics, lang_items)]
 #![feature(on_unimplemented)]

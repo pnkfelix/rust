@@ -452,7 +452,7 @@ fn init() {
                 let _filter = Box::from_raw(FILTER);
                 FILTER = 1 as *mut _;
             }
-        });
+        }, "liblog");
     }
 }
 
