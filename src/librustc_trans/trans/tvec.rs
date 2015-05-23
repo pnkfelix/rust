@@ -59,7 +59,7 @@ pub fn trans_fixed_vstore<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     // generate the content.
 
     debug!("trans_fixed_vstore(expr={}, dest={})",
-           bcx.expr_to_string(expr), dest.to_string(bcx.ccx()));
+           bcx.expr_to_string(expr), dest.dest_to_string(bcx.ccx()));
 
     let vt = vec_types_from_expr(bcx, expr);
 
@@ -141,7 +141,7 @@ pub fn trans_lit_str<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                  -> Block<'blk, 'tcx> {
     debug!("trans_lit_str(lit_expr={}, dest={})",
            bcx.expr_to_string(lit_expr),
-           dest.to_string(bcx.ccx()));
+           dest.dest_to_string(bcx.ccx()));
 
     match dest {
         Ignore => bcx,
@@ -169,7 +169,7 @@ fn write_content<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
 
     debug!("write_content(vt={}, dest={}, vstore_expr={})",
            vt.to_string(bcx.ccx()),
-           dest.to_string(bcx.ccx()),
+           dest.dest_to_string(bcx.ccx()),
            bcx.expr_to_string(vstore_expr));
 
     match content_expr.node {
