@@ -72,6 +72,11 @@ impl<T: Eq + Hash + Clone + 'static> Interner<T> {
         (*vect)[idx.usize()].clone()
     }
 
+    pub fn checked_get(&self, idx: Name) -> Option<T> {
+        let vect = self.vect.borrow();
+        (*vect).get(idx.usize()).cloned()
+    }
+
     pub fn len(&self) -> usize {
         let vect = self.vect.borrow();
         (*vect).len()
@@ -203,6 +208,11 @@ impl StrInterner {
 
     pub fn get(&self, idx: Name) -> RcStr {
         (*self.vect.borrow())[idx.usize()].clone()
+    }
+
+    pub fn checked_get(&self, idx: Name) -> Option<RcStr> {
+        let vect = self.vect.borrow();
+        (*vect).get(idx.usize()).cloned()
     }
 
     pub fn len(&self) -> usize {

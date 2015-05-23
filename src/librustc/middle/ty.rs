@@ -1840,6 +1840,9 @@ impl RegionParameterDef {
         })
     }
     pub fn to_bound_region(&self) -> ty::BoundRegion {
+        if let None = token::checked_get_name(self.name) {
+            println!("uninterned name on RegionParameterDef");
+        }
         ty::BoundRegion::BrNamed(self.def_id, self.name)
     }
 }
@@ -4611,6 +4614,9 @@ pub fn free_region_from_def(outlives_extent: region::DestructionScopeData,
                             def: &RegionParameterDef)
     -> ty::Region
 {
+    if let None = token::checked_get_name(def.name) {
+        println!("uninterned name on RegionParameterDef");
+    }
     let ret =
         ty::ReFree(ty::FreeRegion { scope: outlives_extent,
                                     bound_region: ty::BrNamed(def.def_id,
