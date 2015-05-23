@@ -154,7 +154,7 @@ pub fn trans_if<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                             -> Block<'blk, 'tcx> {
     debug!("trans_if(bcx={}, if_id={}, cond={}, thn={}, dest={})",
            bcx.to_str(), if_id, bcx.expr_to_string(cond), thn.id,
-           dest.to_string(bcx.ccx()));
+           dest.dest_to_string(bcx.ccx()));
     let _icx = push_ctxt("trans_if");
 
     if bcx.unreachable.get() {
