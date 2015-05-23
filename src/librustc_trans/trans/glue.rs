@@ -28,7 +28,7 @@ use trans::base::*;
 use trans::build::*;
 use trans::callee;
 use trans::cleanup;
-use trans::cleanup::CleanupMethods;
+use trans::cleanup::{CleanupMethods, DropHint};
 use trans::common::*;
 use trans::debuginfo::DebugLoc;
 use trans::declare;
@@ -132,7 +132,7 @@ pub fn drop_ty<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                            v: ValueRef,
                            t: Ty<'tcx>,
                            debug_loc: DebugLoc,
-                           drop_hint: Option<ValueRef>) -> Block<'blk, 'tcx> {
+                           drop_hint: Option<cleanup::DropHintValue>) -> Block<'blk, 'tcx> {
     drop_ty_core(bcx, v, t, debug_loc, false, drop_hint)
 }
 
@@ -141,10 +141,11 @@ pub fn drop_ty_core<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
                                 t: Ty<'tcx>,
                                 debug_loc: DebugLoc,
                                 skip_dtor: bool,
-                                drop_hint: Option<ValueRef>)
+                                drop_hint: Option<cleanup::DropHintValue>)
                                 -> Block<'blk, 'tcx> {
     // NB: v is an *alias* of type t here, not a direct value.
-    debug!("drop_ty_core(t={}, skip_dtor={})", t.repr(bcx.tcx()), skip_dtor);
+    debug!("drop_ty_core(t={}, skip_dtor={} drop_hint={:?})",
+           t.repr(bcx.tcx()), skip_dtor, drop_hint);
     let _icx = push_ctxt("drop_ty");
     if bcx.fcx.type_needs_drop(t) {
         let ccx = bcx.ccx();
@@ -161,18 +162,22 @@ pub fn drop_ty_core<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
             v
         };
 
-        if let Some(drop_hint) = drop_hint {
-            let hint_val = load_ty(bcx, drop_hint, bcx.tcx().types.u8);
-            let moved_val =
-                C_integral(Type::i8(bcx.ccx()), adt::DTOR_MOVED_HINT as u64, false);
-            let may_need_drop =
-                ICmp(bcx, llvm::IntNE, hint_val, moved_val, DebugLoc::None);
-            bcx = with_cond(bcx, may_need_drop, |cx| {
-                Call(cx, glue, &[ptr], None, debug_loc);
-                cx
-            })
-        } else {
-            Call(bcx, glue, &[ptr], None, debug_loc);
+        match drop_hint {
+            Some(drop_hint) => {
+                let hint_val = load_ty(bcx, drop_hint.value(), bcx.tcx().types.u8);
+                let moved_val =
+                    C_integral(Type::i8(bcx.ccx()), adt::DTOR_MOVED_HINT as u64, false);
+                let may_need_drop =
+                    ICmp(bcx, llvm::IntNE, hint_val, moved_val, DebugLoc::None);
+                bcx = with_cond(bcx, may_need_drop, |cx| {
+                    Call(cx, glue, &[ptr], None, debug_loc);
+                    cx
+                })
+            }
+            None => {
+                // No drop-hint ==> call standard drop glue
+                Call(bcx, glue, &[ptr], None, debug_loc);
+            }
         }
     }
     bcx

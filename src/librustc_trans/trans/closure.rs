@@ -17,7 +17,7 @@ use trans::attributes;
 use trans::base::*;
 use trans::build::*;
 use trans::callee::{self, ArgVals, Callee, TraitItem, MethodData};
-use trans::cleanup::{CleanupMethods, CustomScope, ScopeId};
+use trans::cleanup::{CleanupMethods, CustomScope, DropHintKind, ScopeId};
 use trans::common::*;
 use trans::datum::{self, Datum, rvalue_scratch_datum, Rvalue, ByValue};
 use trans::debuginfo::{self, DebugLoc};
@@ -83,8 +83,12 @@ fn load_closure_environment<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
         let def_id = freevar.def.def_id();
         bcx.fcx.llupvars.borrow_mut().insert(def_id.node, upvar_ptr);
         let hint = bcx.fcx.lldropflag_hints.borrow().get(&upvar_id.var_id).cloned();
-
         if kind == ty::FnOnceClosureKind && !captured_by_ref {
+            let hint = if let Some((DropHintKind::Assigned, h)) = hint {
+                Some(h)
+            } else {
+                None
+            };
             bcx.fcx.schedule_drop_mem(arg_scope_id,
                                       upvar_ptr,
                                       node_id_type(bcx, def_id.node),
