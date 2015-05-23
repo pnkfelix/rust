@@ -98,7 +98,7 @@ use trans::base::*;
 use trans::build::{Load, Store};
 use trans::common::*;
 use trans::cleanup;
-use trans::cleanup::CleanupMethods;
+use trans::cleanup::{CleanupMethods, DropHint, DropHintKind, DropHintMethods};
 use trans::expr;
 use trans::tvec;
 use trans::type_of;
@@ -316,6 +316,7 @@ impl KindOps for Rvalue {
                               _val: ValueRef,
                               _ty: Ty<'tcx>)
                               -> Block<'blk, 'tcx> {
+        let _icx = push_ctxt("<Rvalue as KindOps>::post_store");
         // No cleanup is scheduled for an rvalue, so we don't have
         // to do anything after a move to cancel or duplicate it.
         if self.is_by_ref() {
@@ -347,18 +348,32 @@ impl KindOps for Lvalue {
                               -> Block<'blk, 'tcx> {
         let _icx = push_ctxt("<Lvalue as KindOps>::post_store");
         if bcx.fcx.type_needs_drop(ty) {
-            let mut hint_datum = None;
             if let Some(info) = self.drop_flag_info {
                 let hints = bcx.fcx.lldropflag_hints.borrow();
-                hint_datum = hints.get(&info.node_id).cloned();
-                debug!("post_store mark {} as moved", info.node_id);
-                Store(bcx,
-                      C_u8(bcx.fcx.ccx, adt::DTOR_MOVED_HINT as usize),
-                      hint_datum.unwrap().val);
+                let hint_datum = hints.get(&info.node_id).cloned();
+                match hint_datum {
+                    Some((DropHintKind::Moved, DropHint(node, datum))) => {
+                        let moved_hint = adt::DTOR_MOVED_HINT as usize;
+                        debug!("store moved_hint={} to hint for node={}, due to expr node={}",
+                               moved_hint, node, info.node_id);
+                        Store(bcx, C_u8(bcx.fcx.ccx, moved_hint), datum.val);
+                        bcx
+                    }
+                    Some((DropHintKind::Assigned, DropHint(node, datum))) => {
+                        let assigned_hint = adt::DTOR_NEEDED_HINT as usize;
+                        debug!("store assigned_hint={} to hint for node={}, due to expr node={}",
+                               assigned_hint, node, info.node_id);
+                        Store(bcx, C_u8(bcx.fcx.ccx, assigned_hint), datum.val);
+                        bcx
+                    }
+                    None => {
+                        bcx.tcx().sess.bug("No hint_datum found for lvalue");
+                    }
+                }
+            } else {
+                // cancel cleanup of affine values by drop-filling the memory
+                drop_done_fill_mem(bcx, val, ty, None)
             }
-            // cancel cleanup of affine values by drop-filling the memory
-            let hint = hint_datum.map(|datum|datum.val);
-            drop_done_fill_mem(bcx, val, ty, hint)
         } else {
             bcx
         }
@@ -584,6 +599,7 @@ impl<'tcx> Datum<'tcx, Lvalue> {
                                 -> Datum<'tcx, Lvalue> where
         F: FnOnce(ValueRef) -> ValueRef,
     {
+        debug!("get_element self.kind={:?}", self.kind);
         let val = if type_is_sized(bcx.tcx(), self.ty) {
             gep(self.val)
         } else {

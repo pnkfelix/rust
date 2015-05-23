@@ -62,7 +62,7 @@ use middle::traits;
 use trans::{_match, adt, asm, base, callee, closure, consts, controlflow};
 use trans::base::*;
 use trans::build::*;
-use trans::cleanup::{self, CleanupMethods};
+use trans::cleanup::{self, CleanupMethods, DropHint, DropHintKind, DropHintMethods};
 use trans::common::*;
 use trans::datum::*;
 use trans::debuginfo::{self, DebugLoc, ToDebugLoc};
@@ -938,6 +938,8 @@ fn trans_rvalue_stmt_unadjusted<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
         return bcx;
     }
 
+    // debug!("trans_rvalue_stmt expr={}", expr.repr(bcx.tcx()));
+
     debuginfo::set_source_location(bcx.fcx, expr.id, expr.span);
 
     match expr.node {
@@ -986,7 +988,12 @@ fn trans_rvalue_stmt_unadjusted<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
             let dst_datum = unpack_datum!(bcx, trans_to_lvalue(bcx, &**dst, "assign"));
 
             let hints = bcx.fcx.lldropflag_hints.borrow();
-            let hint = hints.get(&dst.id).map(|datum|datum.val);
+            let dst_hint = hints.get(&dst.id).map(|hint|hint.to_value());
+
+            // XXX do we need to do anything here with a drop-hint (if
+            // any) for the `src`? For now assume that is handled
+            // under-the-covers by the Lvalue abstraction.
+
             if bcx.fcx.type_needs_drop(dst_datum.ty) {
                 // If there are destructors involved, make sure we
                 // are copying from an rvalue, since that cannot possible
@@ -1007,14 +1014,29 @@ fn trans_rvalue_stmt_unadjusted<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                 debuginfo::set_source_location(bcx.fcx, expr.id, expr.span);
                 let src_datum = unpack_datum!(
                     bcx, src_datum.to_rvalue_datum(bcx, "ExprAssign"));
-                bcx = glue::drop_ty(bcx,
-                                    dst_datum.val,
-                                    dst_datum.ty,
-                                    expr.debug_loc(),
-                                    hint);
-                if let Some(drop_hint) = hint {
-                    let new_val = C_u8(bcx.fcx.ccx, adt::DTOR_NEEDED_HINT as usize);
-                    Store(bcx, new_val, drop_hint);
+                debug!("trans_rvalue_stmt ExprAssign dst.id={} dst_hint={:?}",
+                       dst.id, dst_hint);
+                match dst_hint {
+                    Some((DropHintKind::Assigned, drop_hint)) => {
+                        bcx = glue::drop_ty(bcx,
+                                            dst_datum.val,
+                                            dst_datum.ty,
+                                            expr.debug_loc(),
+                                            Some(drop_hint));
+                        // We are initializing or overwriting the
+                        // destination, so we need to write "drop
+                        // needed" into the hint.
+                        let new_val = C_u8(bcx.fcx.ccx, adt::DTOR_NEEDED_HINT as usize);
+                        Store(bcx, new_val, drop_hint.value());
+                    }
+                    Some((DropHintKind::Moved, _)) => {
+                        bcx.tcx().sess.span_bug(
+                            expr.span,
+                            "associated DropHint::Moved with an assigned dest");
+                    }
+                    None => {
+                        // no hint ==> no invariants to maintain.
+                    }
                 }
                 src_datum.store_to(bcx, dst_datum.val)
             } else {

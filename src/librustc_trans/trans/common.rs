@@ -404,10 +404,16 @@ pub struct FunctionContext<'a, 'tcx: 'a> {
     // Same as above, but for closure upvars
     pub llupvars: RefCell<NodeMap<ValueRef>>,
 
-    // Maps NodeId for unfragmented state to its drop-flag "hint."  (A
-    // stack-local hint indicates either that (1.) it is certain that
-    // no-drop is needed, or (2.) inline drop-flag must be consulted.
-    pub lldropflag_hints: RefCell<NodeMap<LvalueDatum<'tcx>>>,
+    // Maps NodeId for expressions that read/write unfragmented state
+    // to that state's drop-flag "hint."  (A stack-local hint
+    // indicates either that (1.) it is certain that no-drop is
+    // needed, or (2.)  inline drop-flag must be consulted.)
+    //
+    // When a stack-local hint is present, then it must be
+    // appropriately updated to match with assignments or moves of the
+    // unfragmented state; that is what the `DropHintKind` is for.
+    pub lldropflag_hints: RefCell<NodeMap<(cleanup::DropHintKind,
+                                           cleanup::DropHintDatum<'tcx>)>>,
 
     // The NodeId of the function, or -1 if it doesn't correspond to
     // a user-defined function.

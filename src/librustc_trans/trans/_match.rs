@@ -204,7 +204,7 @@ use trans::build::{AddCase, And, Br, CondBr, GEPi, InBoundsGEP, Load, PointerCas
 use trans::build::{Not, Store, Sub, add_comment};
 use trans::build;
 use trans::callee;
-use trans::cleanup::{self, CleanupMethods};
+use trans::cleanup::{self, CleanupMethods, DropHintMethods};
 use trans::common::*;
 use trans::consts;
 use trans::datum::*;
@@ -925,6 +925,7 @@ fn insert_lllocals<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
                                Lvalue::new("insert_lllocals"));
         if let Some(cs) = cs {
             let opt_datum = hints.get(&binding_info.id).cloned();
+            let opt_datum = opt_datum.map(|d|d.1);
             bcx.fcx.schedule_lifetime_end(cs, binding_info.llmatch);
             bcx.fcx.schedule_drop_and_fill_mem(cs,
                                                llval,
@@ -1571,9 +1572,20 @@ pub fn store_local<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
             bcx = mk_binding_alloca(
                 bcx, p_id, path1.node.name, scope, (),
                 |(), bcx, llval, ty| {
+                    // Dummy-locals are uninitialized, so set their
+                    // drop hints, if any, to "moved"
                     let hints = bcx.fcx.lldropflag_hints.borrow();
-                    let hint = hints.get(&p_id).map(|datum|datum.val);
-                    drop_done_fill_mem(bcx, llval, ty, hint)
+                    let hint = hints.get(&p_id).map(|hint| hint.to_value());
+                    if let Some(hint) = hint {
+                        let moved_hint = adt::DTOR_MOVED_HINT as usize;
+                        debug!("store moved_hint={} for hint={:?}, uninitialized dummy",
+                               moved_hint, hint);
+                        Store(bcx, C_u8(bcx.fcx.ccx, moved_hint), hint.1.value());
+                        bcx
+                    } else {
+                        // if it has no drop hint, fill the memory.
+                        drop_done_fill_mem(bcx, llval, ty, None)
+                    }
                 });
         });
         bcx
@@ -1688,6 +1700,7 @@ fn mk_binding_alloca<'blk, 'tcx, A, F>(bcx: Block<'blk, 'tcx>,
     let bcx = populate(arg, bcx, llval, var_ty);
     let hints = bcx.fcx.lldropflag_hints.borrow();
     let opt_hint = hints.get(&p_id).cloned();
+    let opt_hint = opt_hint.map(|hint| hint.1);
     bcx.fcx.schedule_lifetime_end(cleanup_scope, llval);
     bcx.fcx.schedule_drop_mem(cleanup_scope, llval, var_ty, opt_hint);
 

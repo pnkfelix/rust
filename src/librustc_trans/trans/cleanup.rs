@@ -217,6 +217,42 @@ pub enum ScopeId {
     CustomScope(CustomScopeIndex)
 }
 
+#[derive(Copy, Clone, Debug)]
+pub enum DropHintKind { Moved, Assigned }
+
+#[derive(Copy, Clone, Debug)]
+pub struct DropHint<K>(pub ast::NodeId, pub K);
+
+pub type DropHintDatum<'tcx> = DropHint<Datum<'tcx, Lvalue>>;
+pub type DropHintValue = DropHint<ValueRef>;
+
+impl<K> DropHint<K> {
+    pub fn node_id(&self) -> ast::NodeId { self.0 }
+    pub fn new(id: ast::NodeId, k: K) -> DropHint<K> { DropHint(id, k) }
+}
+impl<'tcx> DropHint<Datum<'tcx, Lvalue>> {
+    pub fn datum(&self) -> Datum<'tcx, Lvalue> { self.1 }
+}
+impl DropHint<ValueRef> {
+    pub fn value(&self) -> ValueRef { self.1 }
+}
+
+pub trait DropHintMethods {
+    type ValueKind;
+    fn to_value(&self) -> Self::ValueKind;
+}
+impl<'tcx> DropHintMethods for DropHintDatum<'tcx> {
+    type ValueKind = DropHintValue;
+    fn to_value(&self) -> DropHintValue { DropHint(self.0, self.1.val) }
+}
+
+impl<'tcx> DropHintMethods for (DropHintKind, DropHintDatum<'tcx>) {
+    type ValueKind = (DropHintKind, DropHintValue);
+    fn to_value(&self) -> (DropHintKind, DropHintValue) {
+        (self.0, self.1.to_value())
+    }
+}
+
 impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
     /// Invoked when we start to trans the code contained within a new cleanup scope.
     fn push_ast_cleanup_scope(&self, debug_loc: NodeIdAndSpan) {
@@ -388,9 +424,9 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
                          cleanup_scope: ScopeId,
                          val: ValueRef,
                          ty: Ty<'tcx>,
-                         drop_hint: Option<Datum<'tcx, Lvalue>>) {
+                         drop_hint: Option<DropHintDatum<'tcx>>) {
         if !self.type_needs_drop(ty) { return; }
-        let drop_hint = drop_hint.map(|datum|datum.val);
+        let drop_hint = drop_hint.map(|hint|hint.to_value());
         let drop = box DropValue {
             is_immediate: false,
             must_unwind: common::type_needs_unwind_cleanup(self.ccx, ty),
@@ -416,10 +452,10 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
                                   cleanup_scope: ScopeId,
                                   val: ValueRef,
                                   ty: Ty<'tcx>,
-                                  drop_hint: Option<Datum<'tcx, Lvalue>>) {
+                                  drop_hint: Option<DropHintDatum<'tcx>>) {
         if !self.type_needs_drop(ty) { return; }
 
-        let drop_hint = drop_hint.map(|datum|datum.val);
+        let drop_hint = drop_hint.map(|datum|datum.to_value());
         let drop = box DropValue {
             is_immediate: false,
             must_unwind: common::type_needs_unwind_cleanup(self.ccx, ty),
@@ -1022,7 +1058,7 @@ pub struct DropValue<'tcx> {
     ty: Ty<'tcx>,
     fill_on_drop: bool,
     skip_dtor: bool,
-    drop_hint: Option<ValueRef>,
+    drop_hint: Option<DropHintValue>,
 }
 
 impl<'tcx> Cleanup<'tcx> for DropValue<'tcx> {
@@ -1194,12 +1230,12 @@ pub trait CleanupMethods<'blk, 'tcx> {
                          cleanup_scope: ScopeId,
                          val: ValueRef,
                          ty: Ty<'tcx>,
-                         drop_hint: Option<Datum<'tcx, Lvalue>>);
+                         drop_hint: Option<DropHintDatum<'tcx>>);
     fn schedule_drop_and_fill_mem(&self,
                                   cleanup_scope: ScopeId,
                                   val: ValueRef,
                                   ty: Ty<'tcx>,
-                                  drop_hint: Option<Datum<'tcx, Lvalue>>);
+                                  drop_hint: Option<DropHintDatum<'tcx>>);
     fn schedule_drop_adt_contents(&self,
                                   cleanup_scope: ScopeId,
                                   val: ValueRef,

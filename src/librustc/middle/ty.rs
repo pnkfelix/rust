@@ -777,11 +777,19 @@ pub struct ctxt<'tcx> {
     pub cast_kinds: RefCell<NodeMap<cast::CastKind>>,
 
     /// Maps Fn items to a set of NodeId's for variables whose
-    /// subparts are not moved (i.e. their state is *unfragmented*).
+    /// subparts are not moved (i.e. their state is *unfragmented*)
+    /// and corresponding ast nodes where the variable is moved
+    /// or assigned.
     ///
     /// Unfragmented values can have their destructor driven by a
     /// single stack-local drop-flag.
-    pub unfragmented: RefCell<DefIdMap<Vec<ast::NodeId>>>,
+    pub unfragmented: RefCell<DefIdMap<Vec<FragmentInfo>>>,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum FragmentInfo {
+    Moved { var: NodeId, move_expr: NodeId },
+    Assigned { var: NodeId, assign_expr: NodeId, assignee_id: NodeId },
 }
 
 impl<'tcx> ctxt<'tcx> {

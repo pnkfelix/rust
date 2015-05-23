@@ -49,7 +49,7 @@ use trans::attributes;
 use trans::build::*;
 use trans::builder::{Builder, noname};
 use trans::callee;
-use trans::cleanup::CleanupMethods;
+use trans::cleanup::{CleanupMethods, DropHint, DropHintKind, DropHintValue};
 use trans::cleanup;
 use trans::closure;
 use trans::common::{Block, C_bool, C_bytes_in_context, C_i32, C_int, C_integral};
@@ -87,7 +87,7 @@ use arena::TypedArena;
 use libc::c_uint;
 use std::ffi::{CStr, CString};
 use std::cell::{Cell, RefCell};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::mem;
 use std::str;
 use std::{i8, i16, i32, i64};
@@ -948,15 +948,19 @@ pub fn memcpy_ty<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     }
 }
 
-pub fn drop_done_fill_mem<'blk, 'tcx>(cx: Block<'blk, 'tcx>, llptr: ValueRef, t: Ty<'tcx>, drop_hint: Option<ValueRef>) -> Block<'blk, 'tcx> {
+pub fn drop_done_fill_mem<'blk, 'tcx>(cx: Block<'blk, 'tcx>,
+                                      llptr: ValueRef,
+                                      t: Ty<'tcx>,
+                                      drop_hint_value: Option<DropHintValue>)
+                                      -> Block<'blk, 'tcx> {
     if cx.unreachable.get() { return cx; }
     let _icx = push_ctxt("drop_done_fill_mem");
     let bcx = cx;
 
     let do_memfill = |cx| { memfill(&B(cx), llptr, t, adt::DTOR_DONE); cx };
 
-    if let Some(hint) = drop_hint {
-        let hint_val = load_ty(bcx, hint, bcx.tcx().types.u8);
+    if let Some(hint_val) = drop_hint_value {
+        let hint_val = load_ty(bcx, hint_val.value(), bcx.tcx().types.u8);
         let moved_val =
             C_integral(Type::i8(bcx.ccx()), adt::DTOR_MOVED_HINT as u64, false);
         let may_need_drop =
@@ -1274,16 +1278,44 @@ pub fn init_function<'a, 'tcx>(fcx: &'a FunctionContext<'a, 'tcx>,
     let fn_did = ast::DefId { krate: ast::LOCAL_CRATE, node: fcx.id };
     let mut hints = fcx.lldropflag_hints.borrow_mut();
     let unfragmented = tcx.unfragmented.borrow();
+    let mut seen = HashMap::new();
     if let Some(unfragmented_ids) = unfragmented.get(&fn_did) {
-        for &id in unfragmented_ids {
-            let init_val = C_u8(fcx.ccx, adt::DTOR_NEEDED_HINT as usize);
-            let llname = &format!("dropflag_hint{}", id);
-            let ptr = alloc_ty(entry_bcx, tcx.types.u8, llname);
-            Store(entry_bcx, init_val, ptr);
-            let ty = ty::mk_ptr(tcx, ty::mt { ty: tcx.types.u8,
-                                              mutbl: ast::MutMutable });
-            let flag = datum::Lvalue::dropflag_hint();
-            hints.insert(id, datum::Datum::new(ptr, ty, flag));
+        for &info in unfragmented_ids {
+
+            let make_datum = |id| {
+                let init_val = C_u8(fcx.ccx, adt::DTOR_NEEDED_HINT as usize);
+                let llname = &format!("dropflag_hint_{}", id);
+                debug!("adding hint {}", llname);
+                let ptr = alloc_ty(entry_bcx, tcx.types.u8, llname);
+                Store(entry_bcx, init_val, ptr);
+                let ty = ty::mk_ptr(tcx, ty::mt { ty: tcx.types.u8,
+                                                  mutbl: ast::MutMutable });
+                let flag = datum::Lvalue::dropflag_hint();
+                let datum = datum::Datum::new(ptr, ty, flag);
+                datum
+            };
+
+            let (var, datum) = match info {
+                ty::FragmentInfo::Moved { var, .. } |
+                ty::FragmentInfo::Assigned { var, .. } => {
+                    let datum = seen.get(&var).cloned().unwrap_or_else(|| {
+                        let datum = make_datum(var);
+                        seen.insert(var, datum);
+                        datum
+                    });
+                    (var, datum)
+                }
+            };
+            match info {
+                ty::FragmentInfo::Moved { move_expr: expr_id, .. } => {
+                    debug!("FragmentInfo::Moved insert drop hint for {}", expr_id);
+                    hints.insert(expr_id, (DropHintKind::Moved, DropHint::new(var, datum)));
+                }
+                ty::FragmentInfo::Assigned { assignee_id: expr_id, .. } => {
+                    debug!("FragmentInfo::Assigned insert drop hint for {}", expr_id);
+                    hints.insert(expr_id, (DropHintKind::Assigned, DropHint::new(var, datum)));
+                }
+            }
         }
     }
 
