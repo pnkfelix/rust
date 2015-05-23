@@ -9,6 +9,8 @@
 // except according to those terms.
 
 use core::{isize, usize};
+use core::option::Option::{self, Some, None};
+use core::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
 
 #[inline(always)]
 fn check_size_and_alignment(size: usize, align: usize) {
@@ -143,6 +145,40 @@ const MIN_ALIGN: usize = 8;
               target_arch = "aarch64")))]
 const MIN_ALIGN: usize = 16;
 
+#[allow(raw_pointer_derive)]
+#[derive(Copy, Clone)]
+pub enum Event {
+    Alloc { size: usize, align: usize, ret: *mut u8 },
+    Dealloc { ptr: *mut u8, old_size: usize, align: usize },
+    Realloc { ptr: *mut u8, old_size: usize, size: usize, align: usize,
+              ret: *mut u8 },
+    ReallocInplace { ptr: *mut u8, old_size: usize, size: usize, align: usize,
+                     ret: usize },
+    None,
+}
+pub static LOG_LOCK: AtomicUsize = ATOMIC_USIZE_INIT;
+pub const LOG_LEN: usize = 4096;
+pub static mut EVENT_COUNTER: u64 = 0;
+pub static mut LOG_IDX: usize = 0;
+pub static mut LOG: [(u64, Event); LOG_LEN] = [(0, Event::None); LOG_LEN];
+
+fn add_entry(e: Event) {
+    while 0 != LOG_LOCK.compare_and_swap(0, 1, Ordering::Relaxed) { }
+    unsafe {
+        LOG[LOG_IDX] = (EVENT_COUNTER, e);
+        LOG_IDX = (LOG_IDX + 1) % LOG_LEN;
+        EVENT_COUNTER += 1;
+    }
+    LOG_LOCK.compare_and_swap(1, 0, Ordering::Relaxed);
+    unsafe {
+        if let Some(f) = EVENT_CALLBACK {
+            f();
+        }
+    }
+}
+
+pub static mut EVENT_CALLBACK: Option<fn()> = None;
+
 #[cfg(feature = "external_funcs")]
 mod imp {
     #[allow(improper_ctypes)]
@@ -156,25 +192,40 @@ mod imp {
         fn rust_stats_print();
     }
 
-    #[inline]
+    // #[inline]
     pub unsafe fn allocate(size: usize, align: usize) -> *mut u8 {
-        rust_allocate(size, align)
+        let ret = rust_allocate(size, align);
+        add_entry(Event::Alloc {
+            size: size, align: align, ret: ret
+        });
+        ret
     }
 
-    #[inline]
+    // #[inline]
     pub unsafe fn deallocate(ptr: *mut u8, old_size: usize, align: usize) {
-        rust_deallocate(ptr, old_size, align)
+        rust_deallocate(ptr, old_size, align);
+        add_entry(Event::Dealloc {
+            ptr: ptr, old_size: old_size, align: align
+        });
     }
 
-    #[inline]
+    // #[inline]
     pub unsafe fn reallocate(ptr: *mut u8, old_size: usize, size: usize, align: usize) -> *mut u8 {
-        rust_reallocate(ptr, old_size, size, align)
+        let ret = rust_reallocate(ptr, old_size, size, align);
+        add_entry(Event::Realloc {
+            ptr: ptr, old_size: old_size, size: size, align: align, ret: ret
+        });
+        ret
     }
 
-    #[inline]
+    // #[inline]
     pub unsafe fn reallocate_inplace(ptr: *mut u8, old_size: usize, size: usize,
                                      align: usize) -> usize {
-        rust_reallocate_inplace(ptr, old_size, size, align)
+        let ret = rust_reallocate_inplace(ptr, old_size, size, align);
+        add_entry(Event::ReallocInplace {
+            ptr: ptr, old_size: old_size, size: size, align: align, ret: ret
+        });
+        ret
     }
 
     #[inline]
@@ -204,6 +255,7 @@ mod imp {
     use core::ptr::{null_mut, null};
     use libc::{c_char, c_int, c_void, size_t};
     use super::MIN_ALIGN;
+    use super::{add_entry, Event};
 
     #[link(name = "jemalloc", kind = "static")]
     #[cfg(not(test))]
@@ -241,26 +293,41 @@ mod imp {
     #[inline]
     pub unsafe fn allocate(size: usize, align: usize) -> *mut u8 {
         let flags = align_to_flags(align);
-        je_mallocx(size as size_t, flags) as *mut u8
+        let ret = je_mallocx(size as size_t, flags) as *mut u8;
+        add_entry(Event::Alloc {
+            size: size, align: align, ret: ret
+        });
+        ret
     }
 
     #[inline]
     pub unsafe fn reallocate(ptr: *mut u8, _old_size: usize, size: usize, align: usize) -> *mut u8 {
         let flags = align_to_flags(align);
-        je_rallocx(ptr as *mut c_void, size as size_t, flags) as *mut u8
+        let ret = je_rallocx(ptr as *mut c_void, size as size_t, flags) as *mut u8;
+        add_entry(Event::Realloc {
+            ptr: ptr, old_size: _old_size, size: size, align: align, ret: ret
+        });
+        ret
     }
 
     #[inline]
     pub unsafe fn reallocate_inplace(ptr: *mut u8, _old_size: usize, size: usize,
                                      align: usize) -> usize {
         let flags = align_to_flags(align);
-        je_xallocx(ptr as *mut c_void, size as size_t, 0, flags) as usize
+        let ret = je_xallocx(ptr as *mut c_void, size as size_t, 0, flags) as usize;
+        add_entry(Event::ReallocInplace {
+            ptr: ptr, old_size: _old_size, size: size, align: align, ret: ret
+        });
+        ret
     }
 
     #[inline]
     pub unsafe fn deallocate(ptr: *mut u8, old_size: usize, align: usize) {
         let flags = align_to_flags(align);
-        je_sdallocx(ptr as *mut c_void, old_size as size_t, flags)
+        je_sdallocx(ptr as *mut c_void, old_size as size_t, flags);
+        add_entry(Event::Dealloc {
+            ptr: ptr, old_size: old_size, align: align
+        });
     }
 
     #[inline]
