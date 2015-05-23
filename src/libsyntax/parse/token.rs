@@ -708,6 +708,12 @@ pub fn get_name(name: ast::Name) -> InternedString {
     InternedString::new_from_rc_str(interner.get(name))
 }
 
+pub fn checked_get_name(name: ast::Name) -> Option<InternedString> {
+    let interner = get_ident_interner();
+    let opt_s = interner.checked_get(name);
+    opt_s.map(|s| InternedString::new_from_rc_str(s))
+}
+
 /// Returns the string contents of an identifier, using the thread-local
 /// interner.
 #[inline]

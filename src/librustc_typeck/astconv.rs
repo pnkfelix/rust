@@ -157,6 +157,9 @@ pub fn ast_region_to_region(tcx: &ty::ctxt, lifetime: &ast::Lifetime)
         }
 
         Some(&rl::DefLateBoundRegion(debruijn, id)) => {
+            if let None = token::checked_get_name(lifetime.name) {
+                tcx.sess.note("uninterned lifetime.name in DefLateBoundRegion");
+            }
             ty::ReLateBound(debruijn, ty::BrNamed(ast_util::local_def(id), lifetime.name))
         }
 
@@ -170,6 +173,9 @@ pub fn ast_region_to_region(tcx: &ty::ctxt, lifetime: &ast::Lifetime)
         }
 
         Some(&rl::DefFreeRegion(scope, id)) => {
+            if let None = token::checked_get_name(lifetime.name) {
+                tcx.sess.note("uninterned lifetime.name in DefFreeRegion");
+            }
             ty::ReFree(ty::FreeRegion {
                     scope: scope,
                     bound_region: ty::BrNamed(ast_util::local_def(id),

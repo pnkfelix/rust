@@ -106,13 +106,25 @@ impl fmt::Display for Ident {
 impl fmt::Debug for Name {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let Name(nm) = *self;
-        write!(f, "{:?}({})", token::get_name(*self), nm)
+        match token::checked_get_name(*self) {
+            Some(s) => write!(f, "{:?}({})", s, nm),
+            None => {
+                println!("uninterned Name as Debug in ast.rs");
+                write!(f, "{:?}({})", "!uninterned", nm)
+            }
+        }
     }
 }
 
 impl fmt::Display for Name {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(&token::get_name(*self), f)
+        match token::checked_get_name(*self) {
+            Some(s) => fmt::Display::fmt(&s, f),
+            None => {
+                println!("uninterned Name as Display in ast.rs");
+                fmt::Display::fmt("!uninterned", f)
+            }
+        }
     }
 }
 

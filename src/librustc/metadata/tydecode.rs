@@ -301,6 +301,9 @@ fn parse_bound_region_<F>(st: &mut PState, conv: &mut F) -> ty::BoundRegion wher
         '[' => {
             let def = parse_def_(st, RegionParameter, conv);
             let ident = token::str_to_ident(&parse_str(st, ']'));
+            if let None = token::checked_get_name(ident.name) {
+                println!("intern fail in parse_bound_region_");
+            }
             ty::BrNamed(def, ident.name)
         }
         'f' => {

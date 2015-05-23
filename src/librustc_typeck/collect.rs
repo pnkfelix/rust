@@ -2249,6 +2249,9 @@ fn check_method_self_type<'a, 'tcx, RS:RegionScope>(
             match region {
                 ty::ReEarlyBound(data) => {
                     let def_id = local_def(data.param_id);
+                    if let None = token::checked_get_name(data.name) {
+                        tcx.sess.note("uninterned data.name in ReEarlyBound");
+                    }
                     ty::ReFree(ty::FreeRegion { scope: scope,
                                                 bound_region: ty::BrNamed(def_id, data.name) })
                 }
