@@ -411,7 +411,13 @@ pub struct FunctionContext<'a, 'tcx: 'a> {
     //
     // When a stack-local hint is present, then it must be
     // appropriately updated to match with assignments or moves of the
-    // unfragmented state; that is what the `DropHintKind` is for.
+    // unfragmented state; that is what the `DropHintKind` is for:
+    //
+    // - An expression that moves the node is mapped to a
+    //   `DropHintKind::Moved`.
+    //
+    // - A path that was the target for an assignment (i.e. an lvalue
+    //   expression path) is mapped to a `DropHintKind::Assigned`.
     pub lldropflag_hints: RefCell<NodeMap<(cleanup::DropHintKind,
                                            cleanup::DropHintDatum<'tcx>)>>,
 
