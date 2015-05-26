@@ -734,7 +734,7 @@ fn trans_field<'blk, 'tcx, F>(bcx: Block<'blk, 'tcx>,
 
             // Always generate an lvalue datum, because this pointer doesn't own
             // the data and cleanup is scheduled elsewhere.
-            DatumBlock::new(bcx, Datum::new(scratch.val, scratch.ty, LvalueExpr))
+            DatumBlock::new(bcx, Datum::new(scratch.val, scratch.ty, LvalueExpr(d.kind)))
         }
     })
 
@@ -938,7 +938,7 @@ fn trans_rvalue_stmt_unadjusted<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
         return bcx;
     }
 
-    // debug!("trans_rvalue_stmt expr={}", expr.repr(bcx.tcx()));
+    debug!("trans_rvalue_stmt expr={}", expr.repr(bcx.tcx()));
 
     debuginfo::set_source_location(bcx.fcx, expr.id, expr.span);
 
@@ -1032,7 +1032,8 @@ fn trans_rvalue_stmt_unadjusted<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                     Some((DropHintKind::Moved, _)) => {
                         bcx.tcx().sess.span_bug(
                             expr.span,
-                            "associated DropHint::Moved with an assigned dest");
+                            &format!("associated dst_hint={:?} with an assigned dest",
+                                     dst_hint));
                     }
                     None => {
                         // no hint ==> no invariants to maintain.
@@ -2292,7 +2293,7 @@ fn deref_once<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
 
             if type_is_sized(bcx.tcx(), content_ty) {
                 let ptr = load_ty(bcx, datum.val, datum.ty);
-                DatumBlock::new(bcx, Datum::new(ptr, content_ty, LvalueExpr))
+                DatumBlock::new(bcx, Datum::new(ptr, content_ty, LvalueExpr(datum.kind)))
             } else {
                 // A fat pointer and a DST lvalue have the same representation
                 // just different types. Since there is no temporary for `*e`
