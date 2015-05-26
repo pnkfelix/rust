@@ -113,7 +113,7 @@ use syntax::codemap::DUMMY_SP;
 /// describes where the value is stored, what Rust type the value has,
 /// whether it is addressed by reference, and so forth. Please refer
 /// the section on datums in `README.md` for more details.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Datum<'tcx, K> {
     /// The llvm value.  This is either a pointer to the Rust value or
     /// the value itself, depending on `kind` below.
@@ -148,26 +148,33 @@ pub struct DropFlagInfo {
     node_id: ast::NodeId,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Lvalue {
     pub drop_flag_info: Option<DropFlagInfo>
 }
 
 impl Lvalue {
+    pub fn targetting<'blk, 'tcx>(source: &'static str,
+                                  bcx: Block<'blk, 'tcx>,
+                                  into_id: ast::NodeId,
+                                  name: ast::Name) -> Lvalue {
+        debug!("targetting Lvalue at {} into {}, name {}",
+               source, into_id, name);
+        Lvalue { drop_flag_info: None }
+    }
+
     pub fn binding<'blk, 'tcx>(source: &'static str,
                                bcx: Block<'blk, 'tcx>,
                                id: ast::NodeId,
                                name: ast::Name) -> Lvalue {
-        let hints = bcx.fcx.lldropflag_hints.borrow();
-        let hint = hints.get(&id);
-        let info = hint.map(|_datum| DropFlagInfo { node_id: id });
-        debug!("binding Lvalue from {}, name {} hint: {:?}",
-               source, name, info);
+        let info = Lvalue::opt_dropflag_hint(bcx, id);
+        debug!("binding Lvalue at {}, id: {} name: {} info: {:?}",
+               source, id, name, info);
         Lvalue { drop_flag_info: info }
     }
 
     pub fn copy(source: &'static str) -> Lvalue {
-        debug!("copy Lvalue from {}", source);
+        debug!("copy Lvalue at {}", source);
         Lvalue { drop_flag_info: None }
     }
 
@@ -177,18 +184,36 @@ impl Lvalue {
     }
 
     pub fn upvar(source: &'static str) -> Lvalue {
-        debug!("upvar Lvalue from {}", source);
+        debug!("upvar Lvalue at {}", source);
         Lvalue { drop_flag_info: None }
     }
 
+    pub fn local<'blk, 'tcx>(source: &'static str,
+                             bcx: Block<'blk, 'tcx>,
+                             id: ast::NodeId)
+                             -> Lvalue
+    {
+        let info = Lvalue::opt_dropflag_hint(bcx, id);
+        debug!("local Lvalue at {}, id: {} hint: {:?}",
+               source, id, info);
+        Lvalue { drop_flag_info: info }
+    }
+
     pub fn new(source: &'static str) -> Lvalue {
-        debug!("new Lvalue from {}", source);
+        debug!("new Lvalue at {}", source);
         Lvalue { drop_flag_info: None }
     }
 
     pub fn deref_owned(self, source: &'static str) -> Lvalue {
-        debug!("deref_owned Lvalue from {}", source);
+        debug!("deref_owned Lvalue source: {}", source);
         Lvalue { drop_flag_info: None }
+    }
+
+    fn opt_dropflag_hint<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
+                                     id: ast::NodeId) -> Option<DropFlagInfo> {
+        let hints = bcx.fcx.lldropflag_hints.borrow();
+        let hint = hints.get(&id);
+        hint.map(|_datum| DropFlagInfo { node_id: id })
     }
 }
 
@@ -351,25 +376,30 @@ impl KindOps for Lvalue {
             if let Some(info) = self.drop_flag_info {
                 let hints = bcx.fcx.lldropflag_hints.borrow();
                 let hint_datum = hints.get(&info.node_id).cloned();
-                match hint_datum {
-                    Some((DropHintKind::Moved, DropHint(node, datum))) => {
-                        let moved_hint = adt::DTOR_MOVED_HINT as usize;
-                        debug!("store moved_hint={} to hint for node={}, due to expr node={}",
-                               moved_hint, node, info.node_id);
-                        Store(bcx, C_u8(bcx.fcx.ccx, moved_hint), datum.val);
-                        bcx
+                let moved_hint = adt::DTOR_MOVED_HINT as usize;
+                let DropHint(_node, datum) = match hint_datum {
+                    Some((DropHintKind::Moved, drop_hint)) => {
+                        debug!("store moved_hint={} to hint for moved node={}, \
+                                due to expr node={}",
+                               moved_hint, drop_hint.node_id(), info.node_id);
+                        drop_hint
                     }
-                    Some((DropHintKind::Assigned, DropHint(node, datum))) => {
-                        let assigned_hint = adt::DTOR_NEEDED_HINT as usize;
-                        debug!("store assigned_hint={} to hint for node={}, due to expr node={}",
-                               assigned_hint, node, info.node_id);
-                        Store(bcx, C_u8(bcx.fcx.ccx, assigned_hint), datum.val);
-                        bcx
+                    Some((DropHintKind::Assigned, drop_hint)) => {
+                        // This L-value was previously assigned, but now it is
+                        // being moved
+                        debug!("store moved_hint={} to prev assigned node={}, \
+                                due to expr node={}",
+                               moved_hint, drop_hint.node_id(), info.node_id);
+                        drop_hint
                     }
                     None => {
-                        bcx.tcx().sess.bug("No hint_datum found for lvalue");
+                        bcx.tcx().sess.bug(
+                            &format!("No hint_datum found for lvalue with drop_flag_info={:?}", info));
                     }
-                }
+                };
+                Store(bcx, C_u8(bcx.fcx.ccx, moved_hint), datum.val);
+                bcx
+
             } else {
                 // cancel cleanup of affine values by drop-filling the memory
                 drop_done_fill_mem(bcx, val, ty, None)

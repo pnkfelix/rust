@@ -922,7 +922,9 @@ fn insert_lllocals<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
 
         let datum = Datum::new(llval,
                                binding_info.ty,
-                               Lvalue::new("insert_lllocals"));
+                               Lvalue::local("insert_lllocals",
+                                             bcx,
+                                             binding_info.id));
         if let Some(cs) = cs {
             let opt_datum = hints.get(&binding_info.id).cloned();
             let opt_datum = opt_datum.map(|d|d.1);
@@ -1759,7 +1761,7 @@ fn bind_irrefutable_pat<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                             ast::BindByValue(_) => {
                                 // By value binding: move the value that `val`
                                 // points at into the binding's stack slot.
-                                let lval = Lvalue::binding(
+                                let lval = Lvalue::targetting(
                                     "bind_irrefutable_pat",
                                     bcx,
                                     pat.id,
