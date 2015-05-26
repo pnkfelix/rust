@@ -1341,7 +1341,7 @@ pub fn trans_local_var<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
         }
         def::DefLocal(nid) => {
             let datum = match bcx.fcx.lllocals.borrow().get(&nid) {
-                Some(&v) => v,
+                Some(&ref v) => v.clone(),
                 None => {
                     bcx.sess().bug(&format!(
                         "trans_local_var: no datum for local/arg {} found",
