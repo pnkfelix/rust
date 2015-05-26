@@ -106,6 +106,9 @@ pub fn build_unfragmented_map(this: &mut borrowck::BorrowckCtxt,
                 var: var_id,
                 move_expr: moves[move_index.get()].id,
             };
+            debug!("unfragmented_info push({:?} \
+                    due to move_path_index: {} move_index: {}",
+                   info, move_path_index.get(), move_index.get());
             unfragmented_info.push(info);
             true
         });
@@ -121,6 +124,7 @@ pub fn build_unfragmented_map(this: &mut borrowck::BorrowckCtxt,
             assign_expr: var_assignment.id,
             assignee_id: var_assignment.assignee_id,
         };
+        debug!("unfragmented_info push({:?} due to var_assignment", info);
         unfragmented_info.push(info);
     }
 
