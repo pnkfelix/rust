@@ -231,7 +231,7 @@ impl<K> DropHint<K> {
     pub fn new(id: ast::NodeId, k: K) -> DropHint<K> { DropHint(id, k) }
 }
 impl<'tcx> DropHint<Datum<'tcx, Lvalue>> {
-    pub fn datum(&self) -> Datum<'tcx, Lvalue> { self.1 }
+    pub fn datum(&self) -> Datum<'tcx, Lvalue> { self.1.clone() }
 }
 impl DropHint<ValueRef> {
     pub fn value(&self) -> ValueRef { self.1 }

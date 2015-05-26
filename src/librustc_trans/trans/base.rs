@@ -1300,7 +1300,7 @@ pub fn init_function<'a, 'tcx>(fcx: &'a FunctionContext<'a, 'tcx>,
                 ty::FragmentInfo::Assigned { var, .. } => {
                     let datum = seen.get(&var).cloned().unwrap_or_else(|| {
                         let datum = make_datum(var);
-                        seen.insert(var, datum);
+                        seen.insert(var, datum.clone());
                         datum
                     });
                     (var, datum)
