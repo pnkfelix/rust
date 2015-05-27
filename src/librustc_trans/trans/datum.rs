@@ -145,7 +145,7 @@ pub enum Expr {
 
 #[derive(Clone, Copy, Debug)]
 pub struct DropFlagInfo {
-    node_id: ast::NodeId,
+    pub node_id: ast::NodeId,
 }
 
 #[derive(Clone, Debug)]
@@ -202,6 +202,12 @@ impl Lvalue {
     pub fn new(source: &'static str) -> Lvalue {
         debug!("new Lvalue at {}", source);
         Lvalue { drop_flag_info: None }
+    }
+
+    pub fn new_with_flag(source: &'static str,
+                         opt_flag: Option<DropFlagInfo>) -> Lvalue {
+        debug!("new Lvalue at {}", source);
+        Lvalue { drop_flag_info: opt_flag }
     }
 
     pub fn deref_owned(self, source: &'static str) -> Lvalue {
