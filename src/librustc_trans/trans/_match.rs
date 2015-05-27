@@ -934,6 +934,15 @@ fn compare_values<'blk, 'tcx>(cx: Block<'blk, 'tcx>,
     }
 }
 
+impl<'a, 'tcx:'a> FunctionContext<'a, 'tcx> {
+    fn insert_lllocal(&self, id: ast::NodeId, datum: Datum<'tcx, Lvalue>) {
+        self.lllocals.borrow_mut().insert(id, datum);
+    }
+    fn remove_lllocal(&self, id: ast::NodeId) {
+        self.lllocals.borrow_mut().remove(&id);
+    }
+}
+
 /// For each binding in `data.bindings_map`, adds an appropriate entry into the `fcx.lllocals` map
 fn insert_lllocals<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
                                bindings_map: &BindingsMap<'tcx>,
@@ -982,7 +991,7 @@ fn insert_lllocals<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
         }
 
         debug!("binding {} to {}", binding_info.id, bcx.val_to_string(llval));
-        bcx.fcx.lllocals.borrow_mut().insert(binding_info.id, datum);
+        bcx.fcx.insert_lllocal(binding_info.id, datum);
         debuginfo::create_match_binding_metadata(bcx, ident.name, binding_info);
     }
     bcx
@@ -1015,7 +1024,7 @@ fn compile_guard<'a, 'p, 'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     }
 
     for (_, &binding_info) in &data.bindings_map {
-        bcx.fcx.lllocals.borrow_mut().remove(&binding_info.id);
+        bcx.fcx.remove_lllocal(binding_info.id);
     }
 
     with_cond(bcx, Not(bcx, val, guard_expr.debug_loc()), |bcx| {
@@ -1713,11 +1722,9 @@ pub fn store_arg<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
                 // already put it in a temporary alloca and gave it up, unless
                 // we emit extra-debug-info, which requires local allocas :(.
                 let arg_val = arg.add_clean(bcx.fcx, arg_scope);
-                bcx.fcx.lllocals.borrow_mut()
-                        .insert(pat.id, Datum::new(
-                            arg_val,
-                            arg_ty,
-                            Lvalue::new("store_arg")));
+                bcx.fcx.insert_lllocal(pat.id, Datum::new(arg_val,
+                                                          arg_ty,
+                                                          Lvalue::new("store_arg")));
                 bcx
             } else {
                 mk_binding_alloca(
@@ -1765,7 +1772,7 @@ fn mk_binding_alloca<'blk, 'tcx, A, F>(bcx: Block<'blk, 'tcx>,
                            var_ty,
                            Lvalue::binding("mk_binding_alloca",
                                            bcx, p_id, name));
-    bcx.fcx.lllocals.borrow_mut().insert(p_id, datum);
+    bcx.fcx.insert_lllocal(p_id, datum);
     bcx
 }
 
