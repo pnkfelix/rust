@@ -210,31 +210,64 @@ impl Lvalue {
         Lvalue { source: source, drop_flag_info: DropFlagInfo::None }
     }
 
-    pub fn upvar(source: &'static str) -> Lvalue {
-        debug!("upvar Lvalue at {}", source);
-        Lvalue { source: source, drop_flag_info: DropFlagInfo::None }
-    }
-
-    pub fn match_part(source: &'static str) -> Lvalue
-    {
-        debug!("discrim Lvalue at {}", source);
-        Lvalue { source: source, drop_flag_info: DropFlagInfo::None }
-    }
-
-    pub fn local<'blk, 'tcx>(source: &'static str,
+    pub fn upvar<'blk, 'tcx>(source: &'static str,
                              bcx: Block<'blk, 'tcx>,
-                             id: ast::NodeId)
-                             -> Lvalue
-    {
+                             id: ast::NodeId) -> Lvalue {
         let info = if Lvalue::has_dropflag_hint(bcx, id) {
-            // FIXME: Some (many?) locals shouid be able to use the
-            // drop flag alone via DontZeroJustUse.
             DropFlagInfo::ZeroAndMaintain(id)
         } else {
             DropFlagInfo::None
         };
-        debug!("local Lvalue at {}, id: {} hint: {:?}",
-               source, id, info);
+        debug!("upvar Lvalue at {}, id: {} info: {:?}", source, id, info);
+        Lvalue { source: source, drop_flag_info: info }
+    }
+
+    pub fn match_input<'blk, 'tcx>(source: &'static str,
+                                   bcx: Block<'blk, 'tcx>,
+                                   id: ast::NodeId) -> Lvalue
+    {
+        let info = if Lvalue::has_dropflag_hint(bcx, id) {
+            // match_input is used to move from the input into a
+            // separate stack slot; it must zero (at least until we
+            // improve things to track drop flags for the fragmented
+            // parent match input expression).
+            DropFlagInfo::ZeroAndMaintain(id)
+        } else {
+            DropFlagInfo::None
+        };
+        debug!("match_input Lvalue at {}, id: {} info: {:?}", source, id, info);
+        Lvalue { source: source, drop_flag_info: info }
+    }
+
+    pub fn local<'blk, 'tcx>(source: &'static str,
+                             bcx: Block<'blk, 'tcx>,
+                             id: ast::NodeId,
+                             aliases_other_state: bool)
+                             -> Lvalue
+    {
+        let info = if Lvalue::has_dropflag_hint(bcx, id) {
+            if aliases_other_state {
+                DropFlagInfo::ZeroAndMaintain(id)
+            } else {
+                DropFlagInfo::DontZeroJustUse(id)
+            }
+        } else {
+            DropFlagInfo::None
+        };
+        debug!("local Lvalue at {}, id: {} info: {:?}", source, id, info);
+        Lvalue { source: source, drop_flag_info: info }
+    }
+
+    pub fn store_arg<'blk, 'tcx>(source: &'static str,
+                                 bcx: Block<'blk, 'tcx>,
+                                 id: ast::NodeId) -> Lvalue
+    {
+        let info = if Lvalue::has_dropflag_hint(bcx, id) {
+            DropFlagInfo::DontZeroJustUse(id)
+        } else {
+            DropFlagInfo::None
+        };
+        debug!("store_arg Lvalue at {}, id: {} info: {:?}", source, id, info);
         Lvalue { source: source, drop_flag_info: info }
     }
 
@@ -245,7 +278,7 @@ impl Lvalue {
 
     pub fn new_with_flag(source: &'static str,
                          flag: DropFlagInfo) -> Lvalue {
-        debug!("new Lvalue at {}", source);
+        debug!("new Lvalue at {} with info: {:?}", source, flag);
         Lvalue { source: source, drop_flag_info: flag }
     }
 

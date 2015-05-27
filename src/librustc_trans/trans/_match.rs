@@ -937,7 +937,7 @@ fn insert_lllocals<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
                                -> Block<'blk, 'tcx> {
     let hints = bcx.fcx.lldropflag_hints.borrow();
     for (&ident, &binding_info) in bindings_map {
-        let llval = match binding_info.trmode {
+        let (llval, aliases_other_state) = match binding_info.trmode {
             // By value mut binding for a copy type: load from the ptr
             // into the matched value and copy to our alloca
             TrByCopy(llbinding) |
@@ -946,7 +946,9 @@ fn insert_lllocals<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
                     TrByCopy(..) =>
                         Lvalue::copy("insert_lllocals"),
                     TrByMoveWithFresh(..) =>
-                        Lvalue::match_part("insert_lllocals"),
+                        Lvalue::match_input("insert_lllocals",
+                                            bcx,
+                                            binding_info.id),
                     _ => unreachable!(),
                 };
                 let llval = Load(bcx, binding_info.llmatch);
@@ -957,21 +959,22 @@ fn insert_lllocals<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
                     bcx.fcx.schedule_lifetime_end(cs, llbinding);
                 }
 
-                llbinding
+                (llbinding, false)
             },
 
             // By value move bindings: load from the ptr into the matched value
-            TrByMove => Load(bcx, binding_info.llmatch),
+            TrByMove => (Load(bcx, binding_info.llmatch), true),
 
             // By ref binding: use the ptr into the matched value
-            TrByRef => binding_info.llmatch
+            TrByRef => (binding_info.llmatch, true),
         };
 
         let datum = Datum::new(llval,
                                binding_info.ty,
                                Lvalue::local("insert_lllocals",
                                              bcx,
-                                             binding_info.id));
+                                             binding_info.id,
+                                             aliases_other_state));
         if let Some(cs) = cs {
             let opt_datum = hints.get(&binding_info.id).cloned();
             let opt_datum = opt_datum.map(|d|d.1);
@@ -1725,9 +1728,12 @@ pub fn store_arg<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
                 // already put it in a temporary alloca and gave it up, unless
                 // we emit extra-debug-info, which requires local allocas :(.
                 let arg_val = arg.add_clean(bcx.fcx, arg_scope);
+                let lvalue = Lvalue::store_arg("_match::store_arg",
+                                               bcx,
+                                               pat.id);
                 bcx.fcx.insert_lllocal(pat.id, Datum::new(arg_val,
                                                           arg_ty,
-                                                          Lvalue::new("store_arg")));
+                                                          lvalue));
                 bcx
             } else {
                 mk_binding_alloca(
