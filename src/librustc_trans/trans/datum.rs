@@ -98,7 +98,7 @@ use trans::base::*;
 use trans::build::{Load, Store};
 use trans::common::*;
 use trans::cleanup;
-use trans::cleanup::{CleanupMethods, DropHint, DropHintKind, DropHintMethods};
+use trans::cleanup::{CleanupMethods, DropHint, DropHintKind};
 use trans::expr;
 use trans::tvec;
 use trans::type_of;
@@ -175,8 +175,9 @@ pub struct Lvalue {
 }
 
 impl Lvalue {
+    #![allow(dead_code)]
     pub fn targetting<'blk, 'tcx>(source: &'static str,
-                                  bcx: Block<'blk, 'tcx>,
+                                  _bcx: Block<'blk, 'tcx>,
                                   into_id: ast::NodeId,
                                   name: ast::Name) -> Lvalue {
         debug!("targetting Lvalue at {} into {}, name {}",
@@ -285,11 +286,6 @@ impl Lvalue {
                          flag: DropFlagInfo) -> Lvalue {
         debug!("new Lvalue at {} with info: {:?}", source, flag);
         Lvalue { source: source, drop_flag_info: flag }
-    }
-
-    pub fn deref_owned(self, source: &'static str) -> Lvalue {
-        debug!("deref_owned Lvalue source: {}", source);
-        Lvalue { source: source, drop_flag_info: DropFlagInfo::None }
     }
 
     fn has_dropflag_hint<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
