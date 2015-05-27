@@ -95,7 +95,7 @@ pub fn build_unfragmented_map(this: &mut borrowck::BorrowckCtxt,
     };
 
     let moves = move_data.moves.borrow();
-    for &move_path_index in moved_leaf_paths.iter().chain(assigned_leaf_paths.iter()) {
+    for &move_path_index in moved_leaf_paths {
         let var_id = match find_var_id(move_path_index) {
             None => continue,
             Some(var_id) => var_id,
@@ -114,18 +114,24 @@ pub fn build_unfragmented_map(this: &mut borrowck::BorrowckCtxt,
         });
     }
 
-    for var_assignment in &*move_data.var_assignments.borrow() {
-        let var_id = match find_var_id(var_assignment.path) {
-            None => panic!("non-var in var_assignments?"),
+    for &move_path_index in assigned_leaf_paths {
+        let var_id = match find_var_id(move_path_index) {
+            None => continue,
             Some(var_id) => var_id,
         };
-        let info = ty::FragmentInfo::Assigned {
-            var: var_id,
-            assign_expr: var_assignment.id,
-            assignee_id: var_assignment.assignee_id,
-        };
-        debug!("unfragmented_info push({:?} due to var_assignment", info);
-        unfragmented_info.push(info);
+
+        let var_assigns = move_data.var_assignments.borrow();
+        for var_assign in var_assigns.iter()
+            .filter(|&assign| assign.path == move_path_index)
+        {
+            let info = ty::FragmentInfo::Assigned {
+                var: var_id,
+                assign_expr: var_assign.id,
+                assignee_id: var_assign.assignee_id,
+            };
+            debug!("unfragmented_info push({:?} due to var_assignment", info);
+            unfragmented_info.push(info);
+        }
     }
 
     // When we generalize non-zeroing move to nontrivial paths, we
