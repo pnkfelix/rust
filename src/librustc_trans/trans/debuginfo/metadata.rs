@@ -28,7 +28,7 @@ use middle::pat_util;
 use middle::subst::{self, Substs};
 use trans::{type_of, adt, machine, monomorphize};
 use trans::common::{self, CrateContext, FunctionContext, NormalizingClosureTyper, Block};
-use trans::_match::{BindingInfo, TrByCopy, TrByMove, TrByRef};
+use trans::_match::{BindingInfo, TrByCopy, TrByMove, TrByMoveWithFresh, TrByRef};
 use trans::type_::Type;
 use middle::ty::{self, Ty, ClosureTyper};
 use session::config::{self, FullDebugInfo};
@@ -2068,7 +2068,8 @@ pub fn create_match_binding_metadata<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     // dereference once more. For ByCopy we just use the stack slot we created
     // for the binding.
     let var_access = match binding.trmode {
-        TrByCopy(llbinding) => VariableAccess::DirectVariable {
+        TrByCopy(llbinding) |
+        TrByMoveWithFresh(llbinding) => VariableAccess::DirectVariable {
             alloca: llbinding
         },
         TrByMove => VariableAccess::IndirectVariable {
