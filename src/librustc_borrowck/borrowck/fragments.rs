@@ -72,8 +72,9 @@ pub fn build_unfragmented_map(this: &mut borrowck::BorrowckCtxt,
     // but the loose approximation used by non-zeroing moves does not.
     let moved_leaf_paths = fr.moved_leaf_paths();
     let assigned_leaf_paths = fr.assigned_leaf_paths();
+    let ancestors_of_leaf_paths = fr.ancestors_of_leaf_paths();
 
-    let mut unfragmented_info = Vec::with_capacity(moved_leaf_paths.len());
+    let mut fragment_infos = Vec::with_capacity(moved_leaf_paths.len());
 
     let find_var_id = |move_path_index: MovePathIndex| -> Option<ast::NodeId> {
         let lp = move_data.path_loan_path(move_path_index);
@@ -106,10 +107,10 @@ pub fn build_unfragmented_map(this: &mut borrowck::BorrowckCtxt,
                 var: var_id,
                 move_expr: moves[move_index.get()].id,
             };
-            debug!("unfragmented_info push({:?} \
+            debug!("fragment_infos push({:?} \
                     due to move_path_index: {} move_index: {}",
                    info, move_path_index.get(), move_index.get());
-            unfragmented_info.push(info);
+            fragment_infos.push(info);
             true
         });
     }
@@ -129,18 +130,28 @@ pub fn build_unfragmented_map(this: &mut borrowck::BorrowckCtxt,
                 assign_expr: var_assign.id,
                 assignee_id: var_assign.assignee_id,
             };
-            debug!("unfragmented_info push({:?} due to var_assignment", info);
-            unfragmented_info.push(info);
+            debug!("fragment_infos push({:?} due to var_assignment", info);
+            fragment_infos.push(info);
         }
     }
 
-    // When we generalize non-zeroing move to nontrivial paths, we
-    // will need to iterate over move_data.path_assignments as well.
-    // But for now var_assignments should suffice.
+    for &move_path_index in ancestors_of_leaf_paths {
+        let var_id = match find_var_id(move_path_index) {
+            None => continue,
+            Some(var_id) => var_id,
+        };
 
-    let mut unfragmented_map = this.tcx.unfragmented.borrow_mut();
+        let info = ty::FragmentInfo::Parent {
+            var: var_id,
+        };
+
+        debug!("fragment_infos push({:?} due to parent", info);
+        fragment_infos.push(info);
+    }
+
+    let mut fraginfo_map = this.tcx.fragment_infos.borrow_mut();
     let fn_did = ast::DefId { krate: ast::LOCAL_CRATE, node: id };
-    let prev = unfragmented_map.insert(fn_did, unfragmented_info);
+    let prev = fraginfo_map.insert(fn_did, fragment_infos);
     assert!(prev.is_none());
 }
 
@@ -195,6 +206,10 @@ impl FragmentSets {
 
     pub fn assigned_leaf_paths(&self) -> &[MovePathIndex] {
         &self.assigned_leaf_paths
+    }
+
+    pub fn ancestors_of_leaf_paths(&self) -> &[MovePathIndex] {
+        &self.parents_of_fragments
     }
 
     pub fn add_move(&mut self, path_index: MovePathIndex) {

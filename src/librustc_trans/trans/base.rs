@@ -1277,10 +1277,10 @@ pub fn init_function<'a, 'tcx>(fcx: &'a FunctionContext<'a, 'tcx>,
     let tcx = fcx.ccx.tcx();
     let fn_did = ast::DefId { krate: ast::LOCAL_CRATE, node: fcx.id };
     let mut hints = fcx.lldropflag_hints.borrow_mut();
-    let unfragmented = tcx.unfragmented.borrow();
+    let fragment_infos = tcx.fragment_infos.borrow();
     let mut seen = HashMap::new();
-    if let Some(unfragmented_ids) = unfragmented.get(&fn_did) {
-        for &info in unfragmented_ids {
+    if let Some(fragment_infos) = fragment_infos.get(&fn_did) {
+        for &info in fragment_infos {
 
             let make_datum = |id| {
                 let init_val = C_u8(fcx.ccx, adt::DTOR_NEEDED_HINT as usize);
@@ -1296,6 +1296,7 @@ pub fn init_function<'a, 'tcx>(fcx: &'a FunctionContext<'a, 'tcx>,
             };
 
             let (var, datum) = match info {
+                ty::FragmentInfo::Parent { .. } => continue,
                 ty::FragmentInfo::Moved { var, .. } |
                 ty::FragmentInfo::Assigned { var, .. } => {
                     let datum = seen.get(&var).cloned().unwrap_or_else(|| {
@@ -1307,6 +1308,7 @@ pub fn init_function<'a, 'tcx>(fcx: &'a FunctionContext<'a, 'tcx>,
                 }
             };
             match info {
+                ty::FragmentInfo::Parent { .. } => unreachable!(),
                 ty::FragmentInfo::Moved { move_expr: expr_id, .. } => {
                     debug!("FragmentInfo::Moved insert drop hint for {}", expr_id);
                     hints.insert(expr_id, (DropHintKind::Moved, DropHint::new(var, datum)));
