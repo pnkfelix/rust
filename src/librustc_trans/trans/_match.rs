@@ -329,6 +329,7 @@ pub enum OptResult<'blk, 'tcx: 'blk> {
 #[derive(Clone, Copy, PartialEq)]
 pub enum TransBindingMode {
     TrByCopy(/* llbinding */ ValueRef),
+    TrByMoveWithFresh(/* llbinding */ ValueRef),
     TrByMove,
     TrByRef,
 }
@@ -355,19 +356,6 @@ struct ArmData<'p, 'blk, 'tcx: 'blk> {
     bodycx: Block<'blk, 'tcx>,
     arm: &'p ast::Arm,
     bindings_map: BindingsMap<'tcx>
-}
-
-impl<'p, 'blk, 'tcx: 'blk> ArmData<'p, 'blk, 'tcx> {
-    fn binds_by_move(&self) -> bool {
-        for (_, binding_info) in self.bindings_map.iter() {
-            match binding_info.trmode {
-                TrByCopy(..) => continue,
-                TrByMove => return true,
-                TrByRef => return false,
-            }
-        }
-        return false;
-    }
 }
 
 /// Info about Match.
@@ -952,12 +940,17 @@ fn insert_lllocals<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
         let llval = match binding_info.trmode {
             // By value mut binding for a copy type: load from the ptr
             // into the matched value and copy to our alloca
-            TrByCopy(llbinding) => {
+            TrByCopy(llbinding) |
+            TrByMoveWithFresh(llbinding) => {
+                let lvalue = match binding_info.trmode {
+                    TrByCopy(..) =>
+                        Lvalue::copy("insert_lllocals"),
+                    TrByMoveWithFresh(..) =>
+                        Lvalue::match_part("insert_lllocals"),
+                    _ => unreachable!(),
+                };
                 let llval = Load(bcx, binding_info.llmatch);
-                let datum = Datum::new(
-                    llval,
-                    binding_info.ty,
-                    Lvalue::copy("insert_lllocals"));
+                let datum = Datum::new(llval, binding_info.ty, lvalue);
                 call_lifetime_start(bcx, llbinding);
                 bcx = datum.store_to(bcx, llbinding);
                 if let Some(cs) = cs {
@@ -1017,8 +1010,12 @@ fn compile_guard<'a, 'p, 'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     let val = val.to_llbool(bcx);
 
     for (_, &binding_info) in &data.bindings_map {
-        if let TrByCopy(llbinding) = binding_info.trmode {
-            call_lifetime_end(bcx, llbinding);
+        match binding_info.trmode {
+            TrByCopy(llbinding) |
+            TrByMoveWithFresh(llbinding) => {
+                call_lifetime_end(bcx, llbinding);
+            }
+            TrByMove | TrByRef => {}
         }
     }
 
@@ -1489,16 +1486,23 @@ fn create_bindings_map<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, pat: &ast::Pat,
 
         let llmatch;
         let trmode;
+        let moves_by_default =
+            ty::type_moves_by_default(&param_env, span, variable_ty);
+
         match bm {
-            ast::BindByValue(_)
-                if !ty::type_moves_by_default(&param_env, span, variable_ty) || reassigned =>
+            ast::BindByValue(_) if !moves_by_default || reassigned =>
             {
                 llmatch = alloca_no_lifetime(bcx,
-                                 llvariable_ty.ptr_to(),
-                                 "__llmatch");
-                trmode = TrByCopy(alloca_no_lifetime(bcx,
-                                         llvariable_ty,
-                                         &bcx.name(name)));
+                                             llvariable_ty.ptr_to(),
+                                             "__llmatch");
+                let llval = alloca_no_lifetime(bcx,
+                                               llvariable_ty,
+                                               &bcx.name(name));
+                trmode = if !moves_by_default {
+                    TrByCopy(llval)
+                } else {
+                    TrByMoveWithFresh(llval)
+                };
             }
             ast::BindByValue(_) => {
                 // in this case, the final type of the variable will be T,

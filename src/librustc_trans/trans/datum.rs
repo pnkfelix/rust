@@ -214,6 +214,12 @@ impl Lvalue {
         Lvalue { drop_flag_info: DropFlagInfo::None }
     }
 
+    pub fn match_part(source: &'static str) -> Lvalue
+    {
+        debug!("discrim Lvalue at {}", source);
+        Lvalue { drop_flag_info: DropFlagInfo::None }
+    }
+
     pub fn local<'blk, 'tcx>(source: &'static str,
                              bcx: Block<'blk, 'tcx>,
                              id: ast::NodeId)
