@@ -410,7 +410,7 @@ fn has_nested_bindings(m: &[Match], col: usize) -> bool {
 // `MatchInput` struct will serve -- it has everything `Datum` does
 // except for the type field.
 #[derive(Copy, Clone)]
-struct MatchInput { val: ValueRef, drop_flag_info: Option<DropFlagInfo> }
+struct MatchInput { val: ValueRef, drop_flag_info: DropFlagInfo }
 
 impl<'tcx> Datum<'tcx, Lvalue> {
     fn match_input(&self) -> MatchInput {
@@ -425,7 +425,7 @@ impl MatchInput {
     fn from_val(val: ValueRef) -> MatchInput {
         MatchInput {
             val: val,
-            drop_flag_info: None,
+            drop_flag_info: DropFlagInfo::None,
         }
     }
 
@@ -1598,9 +1598,8 @@ fn trans_match_inner<'blk, 'tcx>(scope_cx: Block<'blk, 'tcx>,
         bcx = insert_lllocals(bcx, &arm_data.bindings_map, Some(cleanup::CustomScope(cs)));
 
         if arm_data.binds_by_move() {
-            if let Some(drop_flag_info) = discr_datum.kind.drop_flag_info {
+            if let Some(node_id) = discr_datum.kind.drop_flag_info.hint_to_maintain() {
                 let hints = bcx.fcx.lldropflag_hints.borrow();
-                let node_id = drop_flag_info.node_id;
                 let hint = hints.get(&node_id);
                 if let Some(hint) = hint.clone() {
                     let hint = hint.to_value();
