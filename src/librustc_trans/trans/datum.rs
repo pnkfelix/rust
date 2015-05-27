@@ -170,6 +170,7 @@ impl DropFlagInfo {
 
 #[derive(Clone, Debug)]
 pub struct Lvalue {
+    pub source: &'static str,
     pub drop_flag_info: DropFlagInfo
 }
 
@@ -180,7 +181,7 @@ impl Lvalue {
                                   name: ast::Name) -> Lvalue {
         debug!("targetting Lvalue at {} into {}, name {}",
                source, into_id, name);
-        Lvalue { drop_flag_info: DropFlagInfo::None }
+        Lvalue { source: source, drop_flag_info: DropFlagInfo::None }
     }
 
     pub fn binding<'blk, 'tcx>(source: &'static str,
@@ -196,28 +197,28 @@ impl Lvalue {
         };
         debug!("binding Lvalue at {}, id: {} name: {} info: {:?}",
                source, id, name, info);
-        Lvalue { drop_flag_info: info }
+        Lvalue { source: source, drop_flag_info: info }
     }
 
     pub fn copy(source: &'static str) -> Lvalue {
         debug!("copy Lvalue at {}", source);
-        Lvalue { drop_flag_info: DropFlagInfo::None }
+        Lvalue { source: source, drop_flag_info: DropFlagInfo::None }
     }
 
-    pub fn dropflag_hint() -> Lvalue {
-        debug!("dropflag hint Lvalue");
-        Lvalue { drop_flag_info: DropFlagInfo::None }
+    pub fn dropflag_hint(source: &'static str) -> Lvalue {
+        debug!("dropflag hint Lvalue at {}", source);
+        Lvalue { source: source, drop_flag_info: DropFlagInfo::None }
     }
 
     pub fn upvar(source: &'static str) -> Lvalue {
         debug!("upvar Lvalue at {}", source);
-        Lvalue { drop_flag_info: DropFlagInfo::None }
+        Lvalue { source: source, drop_flag_info: DropFlagInfo::None }
     }
 
     pub fn match_part(source: &'static str) -> Lvalue
     {
         debug!("discrim Lvalue at {}", source);
-        Lvalue { drop_flag_info: DropFlagInfo::None }
+        Lvalue { source: source, drop_flag_info: DropFlagInfo::None }
     }
 
     pub fn local<'blk, 'tcx>(source: &'static str,
@@ -234,23 +235,23 @@ impl Lvalue {
         };
         debug!("local Lvalue at {}, id: {} hint: {:?}",
                source, id, info);
-        Lvalue { drop_flag_info: info }
+        Lvalue { source: source, drop_flag_info: info }
     }
 
     pub fn new(source: &'static str) -> Lvalue {
         debug!("new Lvalue at {}", source);
-        Lvalue { drop_flag_info: DropFlagInfo::None }
+        Lvalue { source: source, drop_flag_info: DropFlagInfo::None }
     }
 
     pub fn new_with_flag(source: &'static str,
                          flag: DropFlagInfo) -> Lvalue {
         debug!("new Lvalue at {}", source);
-        Lvalue { drop_flag_info: flag }
+        Lvalue { source: source, drop_flag_info: flag }
     }
 
     pub fn deref_owned(self, source: &'static str) -> Lvalue {
         debug!("deref_owned Lvalue source: {}", source);
-        Lvalue { drop_flag_info: DropFlagInfo::None }
+        Lvalue { source: source, drop_flag_info: DropFlagInfo::None }
     }
 
     fn has_dropflag_hint<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,

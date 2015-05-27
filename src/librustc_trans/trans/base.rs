@@ -1290,7 +1290,7 @@ pub fn init_function<'a, 'tcx>(fcx: &'a FunctionContext<'a, 'tcx>,
                 Store(entry_bcx, init_val, ptr);
                 let ty = ty::mk_ptr(tcx, ty::mt { ty: tcx.types.u8,
                                                   mutbl: ast::MutMutable });
-                let flag = datum::Lvalue::dropflag_hint();
+                let flag = datum::Lvalue::dropflag_hint("base::init_function");
                 let datum = datum::Datum::new(ptr, ty, flag);
                 datum
             };
