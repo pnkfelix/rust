@@ -143,14 +143,34 @@ pub enum Expr {
     LvalueExpr(Lvalue),
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct DropFlagInfo {
-    pub node_id: ast::NodeId,
+#[derive(Copy, Clone, Debug)]
+pub enum DropFlagInfo {
+    DontZeroJustUse(ast::NodeId),
+    ZeroAndMaintain(ast::NodeId),
+    None,
+}
+
+impl DropFlagInfo {
+    pub fn must_zero(&self) -> bool {
+        match *self {
+            DropFlagInfo::DontZeroJustUse(..) => false,
+            DropFlagInfo::ZeroAndMaintain(..) => true,
+            DropFlagInfo::None => true,
+        }
+    }
+
+    pub fn hint_to_maintain(&self) -> Option<ast::NodeId> {
+        match *self {
+            DropFlagInfo::DontZeroJustUse(id) => Some(id),
+            DropFlagInfo::ZeroAndMaintain(id) => Some(id),
+            DropFlagInfo::None => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct Lvalue {
-    pub drop_flag_info: Option<DropFlagInfo>
+    pub drop_flag_info: DropFlagInfo
 }
 
 impl Lvalue {
@@ -160,14 +180,20 @@ impl Lvalue {
                                   name: ast::Name) -> Lvalue {
         debug!("targetting Lvalue at {} into {}, name {}",
                source, into_id, name);
-        Lvalue { drop_flag_info: None }
+        Lvalue { drop_flag_info: DropFlagInfo::None }
     }
 
     pub fn binding<'blk, 'tcx>(source: &'static str,
                                bcx: Block<'blk, 'tcx>,
                                id: ast::NodeId,
                                name: ast::Name) -> Lvalue {
-        let info = Lvalue::opt_dropflag_hint(bcx, id);
+        let info = if Lvalue::has_dropflag_hint(bcx, id) {
+            // FIXME: Some (many?) bindings shouid be able to use the
+            // drop flag alone via DontZeroJustUse.
+            DropFlagInfo::ZeroAndMaintain(id)
+        } else {
+            DropFlagInfo::None
+        };
         debug!("binding Lvalue at {}, id: {} name: {} info: {:?}",
                source, id, name, info);
         Lvalue { drop_flag_info: info }
@@ -175,17 +201,17 @@ impl Lvalue {
 
     pub fn copy(source: &'static str) -> Lvalue {
         debug!("copy Lvalue at {}", source);
-        Lvalue { drop_flag_info: None }
+        Lvalue { drop_flag_info: DropFlagInfo::None }
     }
 
     pub fn dropflag_hint() -> Lvalue {
         debug!("dropflag hint Lvalue");
-        Lvalue { drop_flag_info: None }
+        Lvalue { drop_flag_info: DropFlagInfo::None }
     }
 
     pub fn upvar(source: &'static str) -> Lvalue {
         debug!("upvar Lvalue at {}", source);
-        Lvalue { drop_flag_info: None }
+        Lvalue { drop_flag_info: DropFlagInfo::None }
     }
 
     pub fn local<'blk, 'tcx>(source: &'static str,
@@ -193,7 +219,13 @@ impl Lvalue {
                              id: ast::NodeId)
                              -> Lvalue
     {
-        let info = Lvalue::opt_dropflag_hint(bcx, id);
+        let info = if Lvalue::has_dropflag_hint(bcx, id) {
+            // FIXME: Some (many?) locals shouid be able to use the
+            // drop flag alone via DontZeroJustUse.
+            DropFlagInfo::ZeroAndMaintain(id)
+        } else {
+            DropFlagInfo::None
+        };
         debug!("local Lvalue at {}, id: {} hint: {:?}",
                source, id, info);
         Lvalue { drop_flag_info: info }
@@ -201,25 +233,24 @@ impl Lvalue {
 
     pub fn new(source: &'static str) -> Lvalue {
         debug!("new Lvalue at {}", source);
-        Lvalue { drop_flag_info: None }
+        Lvalue { drop_flag_info: DropFlagInfo::None }
     }
 
     pub fn new_with_flag(source: &'static str,
-                         opt_flag: Option<DropFlagInfo>) -> Lvalue {
+                         flag: DropFlagInfo) -> Lvalue {
         debug!("new Lvalue at {}", source);
-        Lvalue { drop_flag_info: opt_flag }
+        Lvalue { drop_flag_info: flag }
     }
 
     pub fn deref_owned(self, source: &'static str) -> Lvalue {
         debug!("deref_owned Lvalue source: {}", source);
-        Lvalue { drop_flag_info: None }
+        Lvalue { drop_flag_info: DropFlagInfo::None }
     }
 
-    fn opt_dropflag_hint<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
-                                     id: ast::NodeId) -> Option<DropFlagInfo> {
+    fn has_dropflag_hint<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
+                                     id: ast::NodeId) -> bool {
         let hints = bcx.fcx.lldropflag_hints.borrow();
-        let hint = hints.get(&id);
-        hint.map(|_datum| DropFlagInfo { node_id: id })
+        hints.contains_key(&id)
     }
 }
 
@@ -379,15 +410,18 @@ impl KindOps for Lvalue {
                               -> Block<'blk, 'tcx> {
         let _icx = push_ctxt("<Lvalue as KindOps>::post_store");
         if bcx.fcx.type_needs_drop(ty) {
-            if let Some(info) = self.drop_flag_info {
+            // FIXME can this be simplified, call drop_done_fill_mem?
+            // Doesn't drop_done_fill_mem already handle all this?
+            if let Some(info_node_id) = self.drop_flag_info.hint_to_maintain() {
+                debug!("Lvalue::post_store maintain hint for {}", info_node_id);
                 let hints = bcx.fcx.lldropflag_hints.borrow();
-                let hint_datum = hints.get(&info.node_id).cloned();
+                let hint_datum = hints.get(&info_node_id).cloned();
                 let moved_hint = adt::DTOR_MOVED_HINT as usize;
                 let DropHint(_node, datum) = match hint_datum {
                     Some((DropHintKind::Moved, drop_hint)) => {
                         debug!("store moved_hint={} to hint for moved node={}, \
                                 due to expr node={}",
-                               moved_hint, drop_hint.node_id(), info.node_id);
+                               moved_hint, drop_hint.node_id(), info_node_id);
                         drop_hint
                     }
                     Some((DropHintKind::Assigned, drop_hint)) => {
@@ -395,20 +429,24 @@ impl KindOps for Lvalue {
                         // being moved
                         debug!("store moved_hint={} to prev assigned node={}, \
                                 due to expr node={}",
-                               moved_hint, drop_hint.node_id(), info.node_id);
+                               moved_hint, drop_hint.node_id(), info_node_id);
                         drop_hint
                     }
                     None => {
                         bcx.tcx().sess.bug(
-                            &format!("No hint_datum found for lvalue with drop_flag_info={:?}", info));
+                            &format!("No hint_datum found for lvalue with drop_flag_info={:?}", self.drop_flag_info));
                     }
                 };
                 Store(bcx, C_u8(bcx.fcx.ccx, moved_hint), datum.val);
-                bcx
+            }
 
-            } else {
+            if self.drop_flag_info.must_zero() {
+                debug!("Lvalue::post_store zero backing state for drop_flag_info={:?}",
+                       self.drop_flag_info);
                 // cancel cleanup of affine values by drop-filling the memory
                 drop_done_fill_mem(bcx, val, ty, None)
+            } else {
+                bcx
             }
         } else {
             bcx
