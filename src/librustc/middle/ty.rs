@@ -833,20 +833,29 @@ pub struct ctxt<'tcx> {
     /// *from* expression of the cast, not the cast itself.
     pub cast_kinds: RefCell<NodeMap<cast::CastKind>>,
 
-    /// Maps Fn items to a set of NodeId's for variables whose
-    /// subparts are not moved (i.e. their state is *unfragmented*)
-    /// and corresponding ast nodes where the variable is moved
-    /// or assigned.
+    /// Maps Fn items to a collection of fragment infos.
     ///
-    /// Unfragmented values can have their destructor driven by a
-    /// single stack-local drop-flag.
-    pub unfragmented: RefCell<DefIdMap<Vec<FragmentInfo>>>,
+    /// The main goal is to identify data whose subparts are not moved
+    /// (i.e. their state is *unfragmented*) and corresponding ast
+    /// nodes where the path to that data is moved or assigned.
+    ///
+    /// In the long term, unfragmented values will have their
+    /// destructor entirely driven by a single stack-local drop-flag.
+    ///
+    /// (However, in the short term that is not the case; e.g. some
+    /// unfragmented paths still need to be zeroed, namely when they
+    /// reference parent data from an outer scope that was not
+    /// entirely moved, and therefore that needs to be zeroed so that
+    /// we do not get double-drop when we hit the end of the parent
+    /// scope.)
+    pub fragment_infos: RefCell<DefIdMap<Vec<FragmentInfo>>>,
 }
 
 #[derive(Copy, Clone, Debug)]
 pub enum FragmentInfo {
     Moved { var: NodeId, move_expr: NodeId },
     Assigned { var: NodeId, assign_expr: NodeId, assignee_id: NodeId },
+    Parent { var: NodeId },
 }
 
 impl<'tcx> ctxt<'tcx> {
@@ -2841,7 +2850,7 @@ pub fn mk_ctxt<'tcx>(s: Session,
         const_qualif_map: RefCell::new(NodeMap()),
         custom_coerce_unsized_kinds: RefCell::new(DefIdMap()),
         cast_kinds: RefCell::new(NodeMap()),
-        unfragmented: RefCell::new(DefIdMap()),
+        fragment_infos: RefCell::new(DefIdMap()),
    }
 }
 
