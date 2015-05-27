@@ -62,7 +62,7 @@ use middle::traits;
 use trans::{_match, adt, asm, base, callee, closure, consts, controlflow};
 use trans::base::*;
 use trans::build::*;
-use trans::cleanup::{self, CleanupMethods, DropHint, DropHintKind, DropHintMethods};
+use trans::cleanup::{self, CleanupMethods, DropHintKind, DropHintMethods};
 use trans::common::*;
 use trans::datum::*;
 use trans::debuginfo::{self, DebugLoc, ToDebugLoc};

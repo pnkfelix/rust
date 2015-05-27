@@ -28,7 +28,7 @@ use trans::base::*;
 use trans::build::*;
 use trans::callee;
 use trans::cleanup;
-use trans::cleanup::{CleanupMethods, DropHint};
+use trans::cleanup::{CleanupMethods};
 use trans::common::*;
 use trans::debuginfo::DebugLoc;
 use trans::declare;
