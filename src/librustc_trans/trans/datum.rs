@@ -195,7 +195,7 @@ impl Lvalue {
         } else {
             DropFlagInfo::None
         };
-        let info = if bcx.tcx.sess.nonzeroing_move_hints() { info } else { DropFlagInfo::None };
+        let info = if bcx.tcx().sess.nonzeroing_move_hints() { info } else { DropFlagInfo::None };
         debug!("binding Lvalue at {}, id: {} name: {} info: {:?}",
                source, id, name, info);
         Lvalue { source: source, drop_flag_info: info }
@@ -219,7 +219,7 @@ impl Lvalue {
         } else {
             DropFlagInfo::None
         };
-        let info = if bcx.tcx.sess.nonzeroing_move_hints() { info } else { DropFlagInfo::None };
+        let info = if bcx.tcx().sess.nonzeroing_move_hints() { info } else { DropFlagInfo::None };
         debug!("upvar Lvalue at {}, id: {} info: {:?}", source, id, info);
         Lvalue { source: source, drop_flag_info: info }
     }
@@ -237,7 +237,7 @@ impl Lvalue {
         } else {
             DropFlagInfo::None
         };
-        let info = if bcx.tcx.sess.nonzeroing_move_hints() { info } else { DropFlagInfo::None };
+        let info = if bcx.tcx().sess.nonzeroing_move_hints() { info } else { DropFlagInfo::None };
         debug!("match_input Lvalue at {}, id: {} info: {:?}", source, id, info);
         Lvalue { source: source, drop_flag_info: info }
     }
@@ -257,7 +257,7 @@ impl Lvalue {
         } else {
             DropFlagInfo::None
         };
-        let info = if bcx.tcx.sess.nonzeroing_move_hints() { info } else { DropFlagInfo::None };
+        let info = if bcx.tcx().sess.nonzeroing_move_hints() { info } else { DropFlagInfo::None };
         debug!("local Lvalue at {}, id: {} info: {:?}", source, id, info);
         Lvalue { source: source, drop_flag_info: info }
     }
@@ -271,7 +271,7 @@ impl Lvalue {
         } else {
             DropFlagInfo::None
         };
-        let info = if bcx.tcx.sess.nonzeroing_move_hints() { info } else { DropFlagInfo::None };
+        let info = if bcx.tcx().sess.nonzeroing_move_hints() { info } else { DropFlagInfo::None };
         debug!("store_arg Lvalue at {}, id: {} info: {:?}", source, id, info);
         Lvalue { source: source, drop_flag_info: info }
     }
