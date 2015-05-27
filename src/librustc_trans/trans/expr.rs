@@ -1328,9 +1328,10 @@ pub fn trans_local_var<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
 
     match def {
         def::DefUpvar(nid, _) => {
+            // FIXME: is this comment really still true?
             // Can't move upvars, so this is never a ZeroMemLastUse.
             let local_ty = node_id_type(bcx, nid);
-            let lvalue = Lvalue::upvar("trans_local_var");
+            let lvalue = Lvalue::upvar("trans_local_var", bcx, nid);
             match bcx.fcx.llupvars.borrow().get(&nid) {
                 Some(&val) => Datum::new(val, local_ty, lvalue),
                 None => {
