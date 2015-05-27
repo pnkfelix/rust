@@ -1596,21 +1596,6 @@ fn trans_match_inner<'blk, 'tcx>(scope_cx: Block<'blk, 'tcx>,
         // insert bindings into the lllocals map and add cleanups
         let cs = fcx.push_custom_cleanup_scope();
         bcx = insert_lllocals(bcx, &arm_data.bindings_map, Some(cleanup::CustomScope(cs)));
-
-        if arm_data.binds_by_move() {
-            if let Some(node_id) = discr_datum.kind.drop_flag_info.hint_to_maintain() {
-                let hints = bcx.fcx.lldropflag_hints.borrow();
-                let hint = hints.get(&node_id);
-                if let Some(hint) = hint.clone() {
-                    let hint = hint.to_value();
-                    let moved_hint = adt::DTOR_MOVED_HINT as usize;
-                    debug!("store moved_hint={} for match input node={} on some arm",
-                           moved_hint, node_id);
-                    Store(bcx, C_u8(bcx.fcx.ccx, moved_hint), hint.1.value());
-                }
-            }
-        }
-
         bcx = expr::trans_into(bcx, &*arm_data.arm.body, dest);
         bcx = fcx.pop_and_trans_custom_cleanup_scope(bcx, cs);
         arm_cxs.push(bcx);
