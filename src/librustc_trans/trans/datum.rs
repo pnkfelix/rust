@@ -192,7 +192,7 @@ impl Lvalue {
         let info = if Lvalue::has_dropflag_hint(bcx, id) {
             // FIXME: Some (many?) bindings shouid be able to use the
             // drop flag alone via DontZeroJustUse.
-            DropFlagInfo::ZeroAndMaintain(id)
+            DropFlagInfo::DontZeroJustUse(id)
         } else {
             DropFlagInfo::None
         };
