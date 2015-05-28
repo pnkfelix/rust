@@ -1641,6 +1641,7 @@ pub fn store_local<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
             let scope = cleanup::var_scope(tcx, p_id);
             bcx = mk_binding_alloca(
                 bcx, p_id, path1.node.name, scope, (),
+                "_match::store_local::create_dummy_locals",
                 |(), bcx, llval, ty| {
                     // Dummy-locals are uninitialized, so set their
                     // drop hints, if any, to "moved"
@@ -1678,6 +1679,7 @@ pub fn store_local<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                     let var_scope = cleanup::var_scope(tcx, local.id);
                     return mk_binding_alloca(
                         bcx, pat.id, ident.name, var_scope, (),
+                        "_match::store_local",
                         |(), bcx, v, _| expr::trans_into(bcx, &**init_expr,
                                                          expr::SaveIn(v)));
                 }
@@ -1738,6 +1740,7 @@ pub fn store_arg<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
             } else {
                 mk_binding_alloca(
                     bcx, pat.id, ident.name, arg_scope, arg,
+                    "_match::store_arg",
                     |arg, bcx, llval, _| arg.store_to(bcx, llval))
             }
         }
@@ -1757,6 +1760,7 @@ fn mk_binding_alloca<'blk, 'tcx, A, F>(bcx: Block<'blk, 'tcx>,
                                        name: ast::Name,
                                        cleanup_scope: cleanup::ScopeId,
                                        arg: A,
+                                       caller_name: &'static str,
                                        populate: F)
                                        -> Block<'blk, 'tcx> where
     F: FnOnce(A, Block<'blk, 'tcx>, ValueRef, Ty<'tcx>) -> Block<'blk, 'tcx>,
@@ -1779,7 +1783,7 @@ fn mk_binding_alloca<'blk, 'tcx, A, F>(bcx: Block<'blk, 'tcx>,
     // create the datum and insert into the local variable map.
     let datum = Datum::new(llval,
                            var_ty,
-                           Lvalue::binding("mk_binding_alloca",
+                           Lvalue::binding(caller_name,
                                            bcx, p_id, name));
     bcx.fcx.insert_lllocal(p_id, datum);
     bcx
@@ -1825,6 +1829,7 @@ fn bind_irrefutable_pat<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                 // map.
                 bcx = mk_binding_alloca(
                     bcx, pat.id, path1.node.name, cleanup_scope, (),
+                    "_match::bind_irrefutable_pat",
                     |(), bcx, llval, ty| {
                         match pat_binding_mode {
                             ast::BindByValue(_) => {
