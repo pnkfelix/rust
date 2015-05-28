@@ -263,7 +263,7 @@ impl Lvalue {
                                  id: ast::NodeId) -> Lvalue
     {
         let info = if Lvalue::has_dropflag_hint(bcx, id) {
-            DropFlagInfo::DontZeroJustUse(id)
+            DropFlagInfo::ZeroAndMaintain(id)
         } else {
             DropFlagInfo::None
         };
