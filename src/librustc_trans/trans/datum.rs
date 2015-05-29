@@ -450,6 +450,23 @@ impl KindOps for Lvalue {
                               ty: Ty<'tcx>)
                               -> Block<'blk, 'tcx> {
         let _icx = push_ctxt("<Lvalue as KindOps>::post_store");
+        let c = if bcx.fcx.type_needs_drop(ty) {
+            match self.drop_flag_info {
+                DropFlagInfo::DontZeroJustUse(..) => {
+                    &bcx.ccx().stats().post_store_dontzerojustuse
+                }
+                DropFlagInfo::ZeroAndMaintain(..) => {
+                    &bcx.ccx().stats().post_store_zeroandmaintain
+                }
+                DropFlagInfo::None => {
+                    &bcx.ccx().stats().post_store_no_dropflaginfo
+                }
+            }
+        } else {
+            &bcx.ccx().stats().post_store_no_need_to_drop
+        };
+        c.set(c.get() + 1);
+
         if bcx.fcx.type_needs_drop(ty) {
             // FIXME can this be simplified, call drop_done_fill_mem?
             // Doesn't drop_done_fill_mem already handle all this?

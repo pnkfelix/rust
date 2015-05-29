@@ -2758,6 +2758,12 @@ pub fn trans_crate<'tcx>(analysis: ty::CrateAnalysis<'tcx>)
         println!("n_monos: {}", stats.n_monos.get());
         println!("n_inlines: {}", stats.n_inlines.get());
         println!("n_closures: {}", stats.n_closures.get());
+
+        println!("post_store_dontzerojustuse: {}", stats.post_store_dontzerojustuse.get());
+        println!("post_store_zeroandmaintain: {}", stats.post_store_zeroandmaintain.get());
+        println!("post_store_no_dropflaginfo: {}", stats.post_store_no_dropflaginfo.get());
+        println!("post_store_no_need_to_drop: {}", stats.post_store_no_need_to_drop.get());
+
         println!("fn stats:");
         stats.fn_stats.borrow_mut().sort_by(|&(_, insns_a), &(_, insns_b)| {
             insns_b.cmp(&insns_a)

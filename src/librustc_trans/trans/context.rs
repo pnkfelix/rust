@@ -51,6 +51,11 @@ pub struct Stats {
     pub llvm_insns: RefCell<FnvHashMap<String, usize>>,
     // (ident, llvm-instructions)
     pub fn_stats: RefCell<Vec<(String, usize)> >,
+
+    pub post_store_dontzerojustuse: Cell<usize>,
+    pub post_store_zeroandmaintain: Cell<usize>,
+    pub post_store_no_dropflaginfo: Cell<usize>,
+    pub post_store_no_need_to_drop: Cell<usize>,
 }
 
 /// The shared portion of a `CrateContext`.  There is one `SharedCrateContext`
@@ -318,6 +323,11 @@ impl<'tcx> SharedCrateContext<'tcx> {
                 n_llvm_insns: Cell::new(0),
                 llvm_insns: RefCell::new(FnvHashMap()),
                 fn_stats: RefCell::new(Vec::new()),
+
+                post_store_dontzerojustuse: Cell::new(0),
+                post_store_zeroandmaintain: Cell::new(0),
+                post_store_no_dropflaginfo: Cell::new(0),
+                post_store_no_need_to_drop: Cell::new(0),
             },
             check_overflow: check_overflow,
             check_drop_flag_for_sanity: check_drop_flag_for_sanity,
