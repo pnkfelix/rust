@@ -151,10 +151,10 @@ fn lang_start(main: *const u8, argc: isize, argv: *const *const u8) -> isize {
 /// closure will be run once the main thread exits. Returns `Err` to indicate
 /// that the closure could not be registered, meaning that it is not scheduled
 /// to be rune.
-pub fn at_exit<F>(f: F, name: &'static str) -> Result<(), ()> where
+pub fn at_exit<F>(f: F) -> Result<(), ()> where
     F: FnOnce() + Send + 'static
 {
-    if at_exit_imp::push(Box::new(f), name) {Ok(())} else {Err(())}
+    if at_exit_imp::push(Box::new(f)) {Ok(())} else {Err(())}
 }
 
 /// One-time runtime cleanup.
