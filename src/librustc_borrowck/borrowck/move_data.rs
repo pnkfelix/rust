@@ -147,7 +147,6 @@ pub struct Move {
 
     /// Next node in linked list of moves from `path`, or `InvalidMoveIndex`
     pub next_move: MoveIndex
-
 }
 
 #[derive(Copy, Clone)]
