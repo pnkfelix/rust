@@ -22,7 +22,7 @@ use vec::Vec;
 use thunk::Thunk;
 use sys_common::mutex::Mutex;
 
-pub type Queue = Vec<(Thunk<'static>, &'static str)>;
+pub type Queue = Vec<Thunk<'static>>;
 
 // NB these are specifically not types from `std::sync` as they currently rely
 // on poisoning and this module needs to operate at a lower level than requiring
@@ -64,19 +64,19 @@ pub fn cleanup() {
             if queue as usize != 0 {
                 let queue: Box<Queue> = Box::from_raw(queue);
                 for to_run in *queue {
-                    (to_run.0)();
+                    (to_run)();
                 }
             }
         }
     }
 }
 
-pub fn push(f: Thunk<'static>, name: &'static str) -> bool {
+pub fn push(f: Thunk<'static>) -> bool {
     let mut ret = true;
     unsafe {
         LOCK.lock();
         if init() {
-            (*QUEUE).push((f, name));
+            (*QUEUE).push(f);
         } else {
             ret = false;
         }
