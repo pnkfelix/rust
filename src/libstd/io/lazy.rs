@@ -57,7 +57,7 @@ impl<T: Send + Sync + 'static> Lazy<T> {
             self.ptr.set(1 as *mut _);
             drop(g);
             drop(Box::from_raw(ptr))
-        }, self.name);
+        });
         let ret = (self.init)();
         if registered.is_ok() {
             self.ptr.set(boxed::into_raw(Box::new(ret.clone())));
