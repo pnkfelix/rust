@@ -532,7 +532,7 @@ pub struct Ref<'b, T: ?Sized + 'b> {
     // FIXME #12808: strange name to try to avoid interfering with
     // field accesses of the contained type via Deref
     pub _value: &'b T,
-    pub _borrow: BorrowRef<'b>,
+    _borrow: BorrowRef<'b>,
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
