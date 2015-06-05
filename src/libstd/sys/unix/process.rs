@@ -176,7 +176,7 @@ impl Process {
                 Err(e) => {
                     assert!(p.wait().is_ok(),
                             "wait() should either return Ok or panic");
-                    panic!("the CLOEXEC pipe failed: {:?} {:?} {}", e, e.kind(), e)
+                    panic!("the CLOEXEC pipe failed: {:?}", e)
                 },
                 Ok(..) => { // pipe I/O up to PIPE_BUF bytes should be atomic
                     assert!(p.wait().is_ok(),
