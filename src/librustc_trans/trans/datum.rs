@@ -437,10 +437,6 @@ impl KindOps for Rvalue {
     }
 }
 
-impl Lvalue {
-
-}
-
 impl KindOps for Lvalue {
     /// If an lvalue is moved, we must zero out the memory in which it resides so as to cancel
     /// cleanup. If an @T lvalue is copied, we must increment the reference count.
