@@ -197,11 +197,7 @@ pub fn bound_region_to_string(cx: &ctxt,
 
     match br {
         BrNamed(_, name) => {
-            if let Some(s) = token::checked_get_name(name) {
-                format!("{}{}{}", prefix, s, space_str)
-            } else {
-                format!("{}{}{}", prefix, "!uninterned", space_str)
-            }
+            format!("{}{}{}", prefix, token::get_name(name), space_str)
         }
         BrAnon(_) | BrFresh(_) | BrEnv => prefix.to_string()
     }
@@ -1302,9 +1298,6 @@ impl<'tcx, T> UserString<'tcx> for ty::Binder<T>
                 ty::BrEnv => {
                     let name = token::gensym("'r");
                     names.push(token::get_name(name));
-                    if let None = token::checked_get_name(name) {
-                        println!("gensym uninterned");
-                    }
                     ty::BrNamed(ast_util::local_def(ast::DUMMY_NODE_ID), name)
                 }
             })
