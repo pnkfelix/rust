@@ -271,8 +271,8 @@ impl<T:Eq + Copy> Eq for Cell<T> {}
 /// See the [module-level documentation](index.html) for more.
 #[stable(feature = "rust1", since = "1.0.0")]
 pub struct RefCell<T: ?Sized> {
-    pub borrow: Cell<BorrowFlag>,
-    pub value: UnsafeCell<T>,
+    borrow: Cell<BorrowFlag>,
+    value: UnsafeCell<T>,
 }
 
 /// An enumeration of values returned from the `state` method on a `RefCell<T>`.
@@ -289,9 +289,9 @@ pub enum BorrowState {
 
 // Values [1, MAX-1] represent the number of `Ref` active
 // (will not outgrow its range since `usize` is the size of the address space)
-pub type BorrowFlag = usize;
-pub const UNUSED: BorrowFlag = 0;
-pub const WRITING: BorrowFlag = !0;
+type BorrowFlag = usize;
+const UNUSED: BorrowFlag = 0;
+const WRITING: BorrowFlag = !0;
 
 impl<T> RefCell<T> {
     /// Creates a new `RefCell` containing `value`.
@@ -531,7 +531,7 @@ impl<'b> Clone for BorrowRef<'b> {
 pub struct Ref<'b, T: ?Sized + 'b> {
     // FIXME #12808: strange name to try to avoid interfering with
     // field accesses of the contained type via Deref
-    pub _value: &'b T,
+    _value: &'b T,
     _borrow: BorrowRef<'b>,
 }
 
@@ -709,8 +709,8 @@ impl<'b, T: ?Sized> RefMut<'b, T> {
     }
 }
 
-pub struct BorrowRefMut<'b> {
-    pub _borrow: &'b Cell<BorrowFlag>,
+struct BorrowRefMut<'b> {
+    _borrow: &'b Cell<BorrowFlag>,
 }
 
 impl<'b> Drop for BorrowRefMut<'b> {

@@ -52,7 +52,7 @@ impl Flag {
 }
 
 pub struct Guard {
-    pub panicking: bool,
+    panicking: bool,
 }
 
 /// A type of error which can be returned whenever a lock is acquired.
@@ -63,7 +63,7 @@ pub struct Guard {
 /// return this error.
 #[stable(feature = "rust1", since = "1.0.0")]
 pub struct PoisonError<T> {
-    pub guard: T,
+    guard: T,
 }
 
 /// An enumeration of possible errors which can occur while calling the

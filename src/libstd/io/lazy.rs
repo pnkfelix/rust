@@ -46,7 +46,7 @@ impl<T: Send + Sync + 'static> Lazy<T> {
         }
     }
 
-    pub unsafe fn init(&'static self) -> Arc<T> {
+    unsafe fn init(&'static self) -> Arc<T> {
         // If we successfully register an at exit handler, then we cache the
         // `Arc` allocation in our own internal box (it will get deallocated by
         // the at exit handler). Otherwise we just return the freshly allocated

@@ -64,7 +64,7 @@ impl Mutex {
     }
 }
 
-pub struct ReentrantMutex { pub inner: UnsafeCell<ffi::pthread_mutex_t> }
+pub struct ReentrantMutex { inner: UnsafeCell<ffi::pthread_mutex_t> }
 
 unsafe impl Send for ReentrantMutex {}
 unsafe impl Sync for ReentrantMutex {}
