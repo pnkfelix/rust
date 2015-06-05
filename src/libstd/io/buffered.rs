@@ -47,10 +47,10 @@ use iter;
 /// ```
 #[stable(feature = "rust1", since = "1.0.0")]
 pub struct BufReader<R> {
-    pub inner: R,
-    pub buf: Vec<u8>,
-    pub pos: usize,
-    pub cap: usize,
+    inner: R,
+    buf: Vec<u8>,
+    pos: usize,
+    cap: usize,
 }
 
 impl<R: Read> BufReader<R> {
@@ -193,8 +193,8 @@ impl<R: Seek> Seek for BufReader<R> {
 /// The buffer will be written out when the writer is dropped.
 #[stable(feature = "rust1", since = "1.0.0")]
 pub struct BufWriter<W: Write> {
-    pub inner: Option<W>,
-    pub buf: Vec<u8>,
+    inner: Option<W>,
+    buf: Vec<u8>,
 }
 
 /// An error returned by `into_inner` which combines an error that
@@ -360,7 +360,7 @@ impl<W> fmt::Display for IntoInnerError<W> {
 /// The buffer will be written out when the writer is dropped.
 #[stable(feature = "rust1", since = "1.0.0")]
 pub struct LineWriter<W: Write> {
-    pub inner: BufWriter<W>,
+    inner: BufWriter<W>,
 }
 
 impl<W: Write> LineWriter<W> {
@@ -428,7 +428,7 @@ impl<W: Write> fmt::Debug for LineWriter<W> where W: fmt::Debug {
     }
 }
 
-pub struct InternalBufWriter<W: Write>(pub BufWriter<W>);
+struct InternalBufWriter<W: Write>(BufWriter<W>);
 
 impl<W: Read + Write> InternalBufWriter<W> {
     fn get_mut(&mut self) -> &mut BufWriter<W> {
@@ -455,7 +455,7 @@ impl<W: Read + Write> Read for InternalBufWriter<W> {
            reason = "unsure about semantics of buffering two directions, \
                      leading to issues like #17136")]
 pub struct BufStream<S: Write> {
-    pub inner: BufReader<InternalBufWriter<S>>
+    inner: BufReader<InternalBufWriter<S>>
 }
 
 #[unstable(feature = "buf_stream",
