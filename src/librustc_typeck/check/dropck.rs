@@ -232,19 +232,16 @@ fn ensure_drop_predicates_are_implied_by_item_defn<'tcx>(
 ///
 /// ----
 ///
-/// The Drop Check Rule is the following:
+/// The simplified (*) Drop Check Rule is the following:
 ///
 /// Let `v` be some value (either temporary or named) and 'a be some
 /// lifetime (scope). If the type of `v` owns data of type `D`, where
 ///
-/// * (1.) `D` has a lifetime- or type-parametric Drop implementation, and
-/// * (2.) the structure of `D` can reach a reference of type `&'a _`, and
-/// * (3.) either:
-///   * (A.) the Drop impl for `D` instantiates `D` at 'a directly,
-///          i.e. `D<'a>`, or,
-///   * (B.) the Drop impl for `D` has some type parameter with a
-///          trait bound `T` where `T` is a trait that has at least
-///          one method,
+/// * (1.) `D` has a lifetime- or type-parametric Drop implementation,
+///        (where that `Drop` implementation does not opt-out of
+///         this check via the `unsafe_destructor_blind_to_params`
+///         attribute), and
+/// * (2.) the structure of `D` can reach a reference of type `&'a _`,
 ///
 /// then 'a must strictly outlive the scope of v.
 ///
@@ -252,6 +249,35 @@ fn ensure_drop_predicates_are_implied_by_item_defn<'tcx>(
 ///
 /// This function is meant to by applied to the type for every
 /// expression in the program.
+///
+/// ----
+///
+/// (*) The qualifier "simplified" is attached to the above
+/// definition of the Drop Check Rule, because it is a simplification
+/// of the original Drop Check rule, which attempted to prove that
+/// some `Drop` implementations could not possibly access data even if
+/// it was technically reachable, due to parametricity.
+///
+/// However, (1.) parametricity on its own turned out to be a
+/// necessary but insufficient condition, and (2.)  future changes to
+/// the language are expected to make it impossible to ensure that a
+/// `Drop` implementation is actually parametric with respect to any
+/// particular type parameter. (In particular, impl specialization is
+/// expected to break the needed parametricity property beyond
+/// repair.)
+///
+/// Therefore we have scaled back Drop-Check to a more conservative
+/// rule that does not attempt to deduce whether a `Drop`
+/// implementation could not possible access data of a given lifetime;
+/// instead Drop-Check now simply assumes that if a destructor has
+/// access (direct or indirect) to a lifetime parameter, then that
+/// lifetime must be forced to outlive that destructor's dynamic
+/// extent. We then provide the `unsafe_destructor_blind_to_params`
+/// attribute as a way for destructor implementations to opt-out of
+/// this conservative assumption (and thus assume the obligation of
+/// ensuring that they do not access data nor invoke methods of
+/// values that have been previously dropped).
+///
 pub fn check_safety_of_destructor_if_necessary<'a, 'tcx>(rcx: &mut Rcx<'a, 'tcx>,
                                                      typ: ty::Ty<'tcx>,
                                                      span: Span,
@@ -349,8 +375,6 @@ fn iterate_over_potentially_unsafe_regions_in_type<'a, 'tcx>(
     let mut walker = ty_root.walk();
     let opt_phantom_data_def_id = rcx.tcx().lang_items.phantom_data();
 
-    let destructor_for_type = rcx.tcx().destructor_for_type.borrow();
-
     let xref_depth_orig = xref_depth;
 
     while let Some(typ) = walker.next() {
@@ -395,9 +419,10 @@ fn iterate_over_potentially_unsafe_regions_in_type<'a, 'tcx>(
         let dtor_kind = match typ.sty {
             ty::TyEnum(def_id, _) |
             ty::TyStruct(def_id, _) => {
-                match destructor_for_type.get(&def_id) {
-                    Some(def_id) => DtorKind::KnownDropMethod(*def_id),
-                    None => DtorKind::PureRecur,
+                match rcx.tcx().ty_dtor(def_id) {
+                    ty::TraitDtor(def_id, _drop_flag, is_blind) =>
+                        DtorKind::KnownDropMethod(def_id, is_blind),
+                    ty::NoDtor => DtorKind::PureRecur,
                 }
             }
             ty::TyTrait(ref ty_trait) => {
@@ -415,11 +440,10 @@ fn iterate_over_potentially_unsafe_regions_in_type<'a, 'tcx>(
         // borrowed data reachable via `typ` must outlive the parent
         // of `scope`. This is handled below.
         //
-        // However, there is an important special case: by
-        // parametricity, any generic type parameters have *no* trait
-        // bounds in the Drop impl can not be used in any way (apart
-        // from being dropped), and thus we can treat data borrowed
-        // via such type parameters remains unreachable.
+        // However, there is an important special case: for any Drop
+        // impl that is tagged as "blind" to their parameters,
+        // we assume that data borrowed via such type parameters
+        // remains unreachable via that Drop impl.
         //
         // For example, consider `impl<T> Drop for Vec<T> { ... }`,
         // which does have to be able to drop instances of `T`, but
@@ -429,16 +453,6 @@ fn iterate_over_potentially_unsafe_regions_in_type<'a, 'tcx>(
         // unbounded type parameter `T`, we must resume the recursive
         // analysis on `T` (since it would be ignored by
         // type_must_outlive).
-        //
-        // FIXME (pnkfelix): Long term, we could be smart and actually
-        // feed which generic parameters can be ignored *into* `fn
-        // type_must_outlive` (or some generalization thereof). But
-        // for the short term, it probably covers most cases of
-        // interest to just special case Drop impls where: (1.) there
-        // are no generic lifetime parameters and (2.)  *all* generic
-        // type parameters are unbounded.  If both conditions hold, we
-        // simply skip the `type_must_outlive` call entirely (but
-        // resume the recursive checking of the type-substructure).
 
         if has_dtor_of_interest(rcx.tcx(), dtor_kind, typ, span) {
             // If `typ` has a destructor, then we must ensure that all
@@ -459,7 +473,7 @@ fn iterate_over_potentially_unsafe_regions_in_type<'a, 'tcx>(
             regionck::type_must_outlive(rcx, origin(), typ, parent_region);
 
         } else {
-            // Okay, `typ` itself is itself not reachable by a
+            // Okay, `typ` itself is assumed not reachable by a
             // destructor; but it may contain substructure that has a
             // destructor.
 
@@ -544,7 +558,7 @@ fn iterate_over_potentially_unsafe_regions_in_type<'a, 'tcx>(
 
 enum DtorKind<'tcx> {
     // Type has an associated drop method with this def id
-    KnownDropMethod(ast::DefId),
+    KnownDropMethod(ast::DefId, ty::BlindToParams),
 
     // Type has no destructor (or its dtor is known to be pure
     // with respect to lifetimes), though its *substructure*
@@ -556,10 +570,10 @@ enum DtorKind<'tcx> {
     Unknown(ty::ExistentialBounds<'tcx>),
 }
 
-fn has_dtor_of_interest<'tcx>(tcx: &ty::ctxt<'tcx>,
+fn has_dtor_of_interest<'tcx>(_tcx: &ty::ctxt<'tcx>,
                               dtor_kind: DtorKind,
                               typ: ty::Ty<'tcx>,
-                              span: Span) -> bool {
+                              _span: Span) -> bool {
     let has_dtor_of_interest: bool;
 
     match dtor_kind {
@@ -587,92 +601,18 @@ fn has_dtor_of_interest<'tcx>(tcx: &ty::ctxt<'tcx>,
                 }
             }
         }
-        DtorKind::KnownDropMethod(dtor_method_did) => {
-            let impl_did = tcx.impl_of_method(dtor_method_did)
-                .unwrap_or_else(|| {
-                    tcx.sess.span_bug(
-                        span, "no Drop impl found for drop method")
-                });
 
-            let dtor_typescheme = tcx.lookup_item_type(impl_did);
-            let dtor_generics = dtor_typescheme.generics;
+        DtorKind::KnownDropMethod(_, ty::BlindToParams::IsBlindToParams) => {
+            debug!("typ: {:?} has dtor, but it claims to be blind to its params, and thus we assume it uninteresting",
+                   typ);
+            has_dtor_of_interest = false;
+        }
 
-            let mut has_pred_of_interest = false;
+        DtorKind::KnownDropMethod(_, ty::BlindToParams::AssumeParamsAccessed) => {
 
-            let mut seen_items = Vec::new();
-            let mut items_to_inspect = vec![impl_did];
-            'items: while let Some(item_def_id) = items_to_inspect.pop() {
-                if seen_items.contains(&item_def_id) {
-                    continue;
-                }
-
-                for pred in tcx.lookup_predicates(item_def_id).predicates {
-                    let result = match pred {
-                        ty::Predicate::Equate(..) |
-                        ty::Predicate::RegionOutlives(..) |
-                        ty::Predicate::TypeOutlives(..) |
-                        ty::Predicate::Projection(..) => {
-                            // For now, assume all these where-clauses
-                            // may give drop implementation capabilty
-                            // to access borrowed data.
-                            true
-                        }
-
-                        ty::Predicate::Trait(ty::Binder(ref t_pred)) => {
-                            let def_id = t_pred.trait_ref.def_id;
-                            if tcx.trait_items(def_id).len() != 0 {
-                                // If trait has items, assume it adds
-                                // capability to access borrowed data.
-                                true
-                            } else {
-                                // Trait without items is itself
-                                // uninteresting from POV of dropck.
-                                //
-                                // However, may have parent w/ items;
-                                // so schedule checking of predicates,
-                                items_to_inspect.push(def_id);
-                                // and say "no capability found" for now.
-                                false
-                            }
-                        }
-                    };
-
-                    if result {
-                        has_pred_of_interest = true;
-                        debug!("typ: {:?} has interesting dtor due to generic preds, e.g. {:?}",
-                               typ, pred);
-                        break 'items;
-                    }
-                }
-
-                seen_items.push(item_def_id);
-            }
-
-            // In `impl<'a> Drop ...`, we automatically assume
-            // `'a` is meaningful and thus represents a bound
-            // through which we could reach borrowed data.
-            //
-            // FIXME (pnkfelix): In the future it would be good to
-            // extend the language to allow the user to express,
-            // in the impl signature, that a lifetime is not
-            // actually used (something like `where 'a: ?Live`).
-            let has_region_param_of_interest =
-                dtor_generics.has_region_params(subst::TypeSpace);
-
-            has_dtor_of_interest =
-                has_region_param_of_interest ||
-                has_pred_of_interest;
-
-            if has_dtor_of_interest {
-                debug!("typ: {:?} has interesting dtor, due to \
-                        region params: {} or pred: {}",
-                       typ,
-                       has_region_param_of_interest,
-                       has_pred_of_interest);
-            } else {
-                debug!("typ: {:?} has dtor, but it is uninteresting",
-                       typ);
-            }
+            debug!("typ: {:?} has dtor; assumed interesting",
+                   typ);
+            has_dtor_of_interest = true;
         }
     }
 
