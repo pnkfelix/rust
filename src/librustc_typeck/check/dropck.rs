@@ -454,7 +454,7 @@ fn iterate_over_potentially_unsafe_regions_in_type<'a, 'tcx>(
         // analysis on `T` (since it would be ignored by
         // type_must_outlive).
 
-        if has_dtor_of_interest(rcx.tcx(), dtor_kind, typ, span) {
+        if has_dtor_of_interest(dtor_kind, typ) {
             // If `typ` has a destructor, then we must ensure that all
             // borrowed data reachable via `typ` must outlive the
             // parent of `scope`. (It does not suffice for it to
@@ -570,10 +570,8 @@ enum DtorKind<'tcx> {
     Unknown(ty::ExistentialBounds<'tcx>),
 }
 
-fn has_dtor_of_interest<'tcx>(_tcx: &ty::ctxt<'tcx>,
-                              dtor_kind: DtorKind,
-                              typ: ty::Ty<'tcx>,
-                              _span: Span) -> bool {
+fn has_dtor_of_interest<'tcx>(dtor_kind: DtorKind,
+                              typ: ty::Ty<'tcx>) -> bool {
     let has_dtor_of_interest: bool;
 
     match dtor_kind {
