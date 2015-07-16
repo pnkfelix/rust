@@ -266,7 +266,10 @@ pub const KNOWN_ATTRIBUTES: &'static [(&'static str, AttributeType)] = &[
     ("unsafe_no_drop_flag", Gated("unsafe_no_drop_flag",
                                   "unsafe_no_drop_flag has unstable semantics \
                                    and may be removed in the future")),
-
+    ("unsafe_destructor_blind_to_params",
+     Gated("unsafe_destructor_blind_to_params",
+           "unsafe_destructor_blind_to_params has unstable semantics \
+            and may be removed in the future")),
     // used in resolve
     ("prelude_import", Gated("prelude_import",
                              "`#[prelude_import]` is for use by rustc only")),

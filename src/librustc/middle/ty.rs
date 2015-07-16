@@ -187,9 +187,14 @@ impl<'tcx> VariantInfo<'tcx> {
 }
 
 #[derive(Copy, Clone)]
+pub enum DropFlag { HasDropFlag, None }
+#[derive(Copy, Clone)]
+pub enum BlindToParams { IsBlindToParams, AssumeParamsAccessed }
+
+#[derive(Copy, Clone)]
 pub enum DtorKind {
     NoDtor,
-    TraitDtor(DefId, bool)
+    TraitDtor(DefId, DropFlag, BlindToParams)
 }
 
 impl DtorKind {
@@ -203,7 +208,8 @@ impl DtorKind {
     pub fn has_drop_flag(&self) -> bool {
         match self {
             &NoDtor => false,
-            &TraitDtor(_, flag) => flag
+            &TraitDtor(_, DropFlag::HasDropFlag, _) => true,
+            &TraitDtor(_, DropFlag::None, _) => false,
         }
     }
 }
@@ -5661,13 +5667,23 @@ impl<'tcx> ctxt<'tcx> {
         self.with_path(id, |path| ast_map::path_to_string(path))
     }
 
+    fn flag<T>(&self, def_id: DefId, attr: &str, present: T, absent: T) -> T {
+        if self.has_attr(def_id, attr) { present } else { absent }
+    }
+
     /* If struct_id names a struct with a dtor. */
     pub fn ty_dtor(&self, struct_id: DefId) -> DtorKind {
         match self.destructor_for_type.borrow().get(&struct_id) {
             Some(&method_def_id) => {
-                let flag = !self.has_attr(struct_id, "unsafe_no_drop_flag");
-
-                TraitDtor(method_def_id, flag)
+                let dflag = self.flag(struct_id,
+                                      "unsafe_no_drop_flag",
+                                      DropFlag::None,
+                                      DropFlag::HasDropFlag);
+                let bflag = self.flag(method_def_id,
+                                      "unsafe_destructor_blind_to_params",
+                                      BlindToParams::IsBlindToParams,
+                                      BlindToParams::AssumeParamsAccessed);
+                TraitDtor(method_def_id, dflag, bflag)
             }
             None => NoDtor,
         }
