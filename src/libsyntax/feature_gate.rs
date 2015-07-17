@@ -127,6 +127,10 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Status)] = &[
     // switch to Accepted; see RFC 320)
     ("unsafe_no_drop_flag", "1.0.0", Active),
 
+    // Allows using the unsafe_destructor_blind_to_params attribute
+    // (Needs an RFC link)
+    ("unsafe_destructor_blind_to_params", "1.3.0", Active),
+
     // Allows the use of custom attributes; RFC 572
     ("custom_attribute", "1.0.0", Active),
 
