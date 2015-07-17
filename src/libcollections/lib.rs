@@ -30,6 +30,11 @@
 #![allow(trivial_casts)]
 #![cfg_attr(test, allow(deprecated))] // rand
 
+// SNAP ba0e1cd
+#![allow(unused_features)]
+// SNAP ba0e1cd
+#![allow(unused_attributes)]
+
 #![feature(alloc)]
 #![feature(box_patterns)]
 #![feature(box_raw)]
@@ -59,6 +64,7 @@
 #![feature(unboxed_closures)]
 #![feature(unicode)]
 #![feature(unique)]
+#![feature(unsafe_destructor_blind_to_params)]
 #![feature(unsafe_no_drop_flag, filling_drop)]
 #![feature(utf8_error)]
 #![cfg_attr(test, feature(rand, test))]
