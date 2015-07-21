@@ -103,6 +103,11 @@
        test(no_crate_inject, attr(deny(warnings))),
        test(attr(allow(dead_code, deprecated, unused_variables, unused_mut))))]
 
+// SNAP ba0e1cd
+#![allow(unused_features)]
+// SNAP ba0e1cd
+#![allow(unused_attributes)]
+
 #![feature(alloc)]
 #![feature(allow_internal_unstable)]
 #![feature(associated_consts)]
@@ -145,6 +150,7 @@
 #![feature(unboxed_closures)]
 #![feature(unicode)]
 #![feature(unique)]
+#![feature(unsafe_destructor_blind_to_params)]
 #![feature(unsafe_no_drop_flag, filling_drop)]
 #![feature(vec_push_all)]
 #![feature(vec_resize)]
