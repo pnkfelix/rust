@@ -552,13 +552,13 @@ impl<'d,'t,'a,'tcx> ExprUseVisitor<'d,'t,'a,'tcx> {
                 self.walk_captures(expr)
             }
 
-            ast::ExprBox(ref place, ref base) => {
-                match *place {
-                    Some(ref place) => self.consume_expr(&**place),
-                    None => {}
+            ast::ExprBox(ref kind, ref base) => {
+                match *kind {
+                    ast::BoxKind::Place(_, ref place) => self.consume_expr(&**place),
+                    ast::BoxKind::BoxExpr => {}
                 }
                 self.consume_expr(&**base);
-                if place.is_some() {
+                if kind.is_placement() {
                     self.tcx().sess.span_bug(
                         expr.span,
                         "box with explicit place remains after expansion");

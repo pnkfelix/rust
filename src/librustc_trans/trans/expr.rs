@@ -2719,14 +2719,14 @@ fn expr_kind(tcx: &ty::ctxt, expr: &ast::Expr) -> ExprKind {
 
         ast::ExprLit(_) | // Note: LitStr is carved out above
         ast::ExprUnary(..) |
-        ast::ExprBox(None, _) |
+        ast::ExprBox(ast::BoxKind::BoxExpr, _) |
         ast::ExprAddrOf(..) |
         ast::ExprBinary(..) |
         ast::ExprCast(..) => {
             ExprKind::RvalueDatum
         }
 
-        ast::ExprBox(Some(ref place), _) => {
+        ast::ExprBox(ast::BoxKind::Place(_, ref place), _) => {
             // Special case `Box<T>` for now:
             let def_id = match tcx.def_map.borrow().get(&place.id) {
                 Some(def) => def.def_id(),

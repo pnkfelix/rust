@@ -824,10 +824,44 @@ impl fmt::Debug for Expr {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
+pub enum PlaceSyntax {
+    Box,
+    In,
+    LeftArrow,
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
+pub enum BoxKind<E> {
+    BoxExpr,
+    Place(PlaceSyntax, E),
+}
+
+impl<E> BoxKind<E> {
+    pub fn is_placement(&self) -> bool {
+        match *self {
+            BoxKind::BoxExpr => false,
+            BoxKind::Place(_, _) => true,
+        }
+    }
+    pub fn as_ref<'r>(&'r self) -> BoxKind<&'r E> {
+        match *self {
+            BoxKind::BoxExpr => BoxKind::BoxExpr,
+            BoxKind::Place(p, ref e) => BoxKind::Place(p, e),
+        }
+    }
+    pub fn map<O, F: FnOnce(E) -> O>(self, f: F) -> BoxKind<O> {
+        match self {
+            BoxKind::BoxExpr => BoxKind::BoxExpr,
+            BoxKind::Place(p, e) => BoxKind::Place(p, f(e)),
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
 pub enum Expr_ {
     /// First expr is the place; second expr is the value.
-    ExprBox(Option<P<Expr>>, P<Expr>),
+    ExprBox(BoxKind<P<Expr>>, P<Expr>),
     /// An array (`[a, b, c, d]`)
     ExprVec(Vec<P<Expr>>),
     /// A function call

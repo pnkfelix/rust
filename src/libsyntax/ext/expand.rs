@@ -95,7 +95,7 @@ pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
         }
 
         // Desugar ExprBox: `in (PLACE) EXPR`
-        ast::ExprBox(Some(placer), value_expr) => {
+        ast::ExprBox(ast::BoxKind::Place(_, placer), value_expr) => {
             // to:
             //
             // let p = PLACE;

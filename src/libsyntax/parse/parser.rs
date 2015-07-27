@@ -12,6 +12,7 @@ pub use self::PathParsingMode::*;
 
 use abi;
 use ast::BareFnTy;
+use ast::BoxKind;
 use ast::{RegionTyParamBound, TraitTyParamBound, TraitBoundModifier};
 use ast::{Public, Unsafety};
 use ast::{Mod, BiAdd, Arg, Arm, Attribute, BindByRef, BindByValue};
@@ -43,6 +44,7 @@ use ast::{MethodImplItem, NamedField, UnNeg, NoReturn, UnNot};
 use ast::{Pat, PatBox, PatEnum, PatIdent, PatLit, PatQPath, PatMac, PatRange};
 use ast::{PatRegion, PatStruct, PatTup, PatVec, PatWild, PatWildMulti};
 use ast::PatWildSingle;
+use ast::PlaceSyntax;
 use ast::{PolyTraitRef, QSelf};
 use ast::{Return, BiShl, BiShr, Stmt, StmtDecl};
 use ast::{StmtExpr, StmtSemi, StmtMac, StructDef, StructField};
@@ -2627,7 +2629,8 @@ impl<'a> Parser<'a> {
               let blk = try!(self.parse_block());
               hi = blk.span.hi;
               let blk_expr = self.mk_expr(blk.span.lo, blk.span.hi, ExprBlock(blk));
-              ex = ExprBox(Some(place), blk_expr);
+              ex = ExprBox(BoxKind::Place(PlaceSyntax::In, place),
+                           blk_expr);
               return Ok(self.mk_expr(lo, hi, ex));
             }
 
@@ -2672,7 +2675,8 @@ impl<'a> Parser<'a> {
                     }
                     let subexpression = try!(self.parse_prefix_expr());
                     hi = subexpression.span.hi;
-                    ex = ExprBox(Some(place), subexpression);
+                    ex = ExprBox(BoxKind::Place(PlaceSyntax::In, place),
+                                 subexpression);
                     return Ok(self.mk_expr(lo, hi, ex));
                 }
             }
@@ -2796,6 +2800,14 @@ impl<'a> Parser<'a> {
               try!(self.bump());
               let rhs = try!(self.parse_expr_res(restrictions));
               Ok(self.mk_expr(lhs.span.lo, rhs.span.hi, ExprAssign(lhs, rhs)))
+          }
+          // A place-in expression, `expr <- expr`
+          token::LArrow => {
+              try!(self.bump());
+              let rhs = try!(self.parse_expr_res(restrictions));
+              let (lo, hi) = (lhs.span.lo, rhs.span.hi);
+              let place = BoxKind::Place(PlaceSyntax::LeftArrow, lhs);
+              Ok(self.mk_expr(lo, hi, ExprBox(place, rhs)))
           }
           token::BinOpEq(op) => {
               try!(self.bump());

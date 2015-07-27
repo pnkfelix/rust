@@ -27,7 +27,7 @@ use self::AttributeType::*;
 
 use abi::Abi;
 use ast::NodeId;
-use ast;
+use ast::{self, BoxKind, PlaceSyntax};
 use attr;
 use attr::AttrMetaMethods;
 use codemap::{CodeMap, Span};
@@ -81,6 +81,7 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Status)] = &[
     ("slicing_syntax", "1.0.0", Accepted),
     ("box_syntax", "1.0.0", Active),
     ("placement_in_syntax", "1.0.0", Active),
+    ("place_left_arrow_syntax", "1.3.0", Active),
     ("pushpop_unsafe", "1.2.0", Active),
     ("on_unimplemented", "1.0.0", Active),
     ("simd_ffi", "1.0.0", Active),
@@ -321,6 +322,7 @@ pub enum AttributeType {
 }
 
 /// A set of features to be used by later passes.
+#[derive(Debug)]
 pub struct Features {
     pub unboxed_closures: bool,
     pub rustc_diagnostic_macros: bool,
@@ -333,6 +335,7 @@ pub struct Features {
     pub allow_internal_unstable: bool,
     pub allow_custom_derive: bool,
     pub allow_placement_in: bool,
+    pub allow_place_left_arrow: bool,
     pub allow_box: bool,
     pub allow_pushpop_unsafe: bool,
     pub simd_ffi: bool,
@@ -361,6 +364,7 @@ impl Features {
             allow_internal_unstable: false,
             allow_custom_derive: false,
             allow_placement_in: false,
+            allow_place_left_arrow: false,
             allow_box: false,
             allow_pushpop_unsafe: false,
             simd_ffi: false,
@@ -381,6 +385,9 @@ const EXPLAIN_BOX_SYNTAX: &'static str =
 const EXPLAIN_PLACEMENT_IN: &'static str =
     "placement-in expression syntax is experimental and subject to change.";
 
+const EXPLAIN_PLACE_LEFT_ARROW: &'static str =
+    "placement left-arrow expression syntax is experimental and subject to change.";
+
 const EXPLAIN_PUSHPOP_UNSAFE: &'static str =
     "push/pop_unsafe macros are experimental and subject to change.";
 
@@ -396,6 +403,13 @@ pub fn check_for_placement_in(f: Option<&Features>, diag: &SpanHandler, span: Sp
         return;
     }
     emit_feature_err(diag, "placement_in_syntax", span, EXPLAIN_PLACEMENT_IN);
+}
+
+pub fn check_for_place_left_arrow(f: Option<&Features>, diag: &SpanHandler, span: Span) {
+    if let Some(&Features { allow_place_left_arrow: true, .. }) = f {
+        return;
+    }
+    emit_feature_err(diag, "place_left_arrow_syntax", span, EXPLAIN_PLACE_LEFT_ARROW);
 }
 
 pub fn check_for_pushpop_syntax(f: Option<&Features>, diag: &SpanHandler, span: Span) {
@@ -550,12 +564,16 @@ impl<'a, 'v> Visitor<'v> for MacroVisitor<'a> {
         // But we keep these checks as a pre-expansion check to catch
         // uses in e.g. conditionalized code.
 
-        if let ast::ExprBox(None, _) = e.node {
+        if let ast::ExprBox(BoxKind::BoxExpr, _) = e.node {
             self.context.gate_feature("box_syntax", e.span, EXPLAIN_BOX_SYNTAX);
         }
 
-        if let ast::ExprBox(Some(_), _) = e.node {
+        if let ast::ExprBox(BoxKind::Place(_, _), _) = e.node {
             self.context.gate_feature("placement_in_syntax", e.span, EXPLAIN_PLACEMENT_IN);
+        }
+
+        if let ast::ExprBox(BoxKind::Place(PlaceSyntax::LeftArrow, _), _) = e.node {
+            self.context.gate_feature("place_left_arrow_syntax", e.span, EXPLAIN_PLACE_LEFT_ARROW);
         }
 
         visit::walk_expr(self, e);
@@ -848,7 +866,7 @@ fn check_crate_inner<F>(cm: &CodeMap, span_handler: &SpanHandler,
     // FIXME (pnkfelix): Before adding the 99th entry below, change it
     // to a single-pass (instead of N calls to `.has_feature`).
 
-    Features {
+    let f = Features {
         unboxed_closures: cx.has_feature("unboxed_closures"),
         rustc_diagnostic_macros: cx.has_feature("rustc_diagnostic_macros"),
         visible_private_types: cx.has_feature("visible_private_types"),
@@ -860,6 +878,7 @@ fn check_crate_inner<F>(cm: &CodeMap, span_handler: &SpanHandler,
         allow_internal_unstable: cx.has_feature("allow_internal_unstable"),
         allow_custom_derive: cx.has_feature("custom_derive"),
         allow_placement_in: cx.has_feature("placement_in_syntax"),
+        allow_place_left_arrow: cx.has_feature("place_left_arrow_syntax"),
         allow_box: cx.has_feature("box_syntax"),
         allow_pushpop_unsafe: cx.has_feature("pushpop_unsafe"),
         simd_ffi: cx.has_feature("simd_ffi"),
@@ -870,7 +889,9 @@ fn check_crate_inner<F>(cm: &CodeMap, span_handler: &SpanHandler,
         const_fn: cx.has_feature("const_fn"),
         static_recursion: cx.has_feature("static_recursion"),
         default_type_parameter_fallback: cx.has_feature("default_type_parameter_fallback"),
-    }
+    };
+    debug!("check_crate_inner f={:?}", f);
+    f
 }
 
 pub fn check_crate_macros(cm: &CodeMap, span_handler: &SpanHandler, krate: &ast::Crate)

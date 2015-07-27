@@ -1565,13 +1565,35 @@ impl<'a> State<'a> {
     }
 
     fn print_expr_box(&mut self,
-                      place: &Option<P<ast::Expr>>,
+                      place: &ast::BoxKind<P<ast::Expr>>,
                       expr: &ast::Expr) -> io::Result<()> {
-        try!(word(&mut self.s, "box"));
-        try!(word(&mut self.s, "("));
-        try!(place.as_ref().map_or(Ok(()), |e|self.print_expr(&**e)));
-        try!(self.word_space(")"));
-        self.print_expr(expr)
+        match *place {
+            ast::BoxKind::BoxExpr => {
+                try!(word(&mut self.s, "box"));
+                try!(word(&mut self.s, "("));
+                try!(self.word_space(")"));
+                self.print_expr(expr)
+            }
+            ast::BoxKind::Place(ast::PlaceSyntax::Box, ref place) => {
+                try!(word(&mut self.s, "box"));
+                try!(word(&mut self.s, "("));
+                try!(self.print_expr(&*place));
+                try!(self.word_space(")"));
+                self.print_expr(expr)
+            }
+            ast::BoxKind::Place(ast::PlaceSyntax::In, ref place) => {
+                try!(word(&mut self.s, "in"));
+                try!(self.print_expr(&*place));
+                try!(word(&mut self.s, "{"));
+                try!(self.print_expr(expr));
+                word(&mut self.s, "}")
+            }
+            ast::BoxKind::Place(ast::PlaceSyntax::LeftArrow, ref place) => {
+                try!(self.print_expr(&*place));
+                try!(word(&mut self.s, "<-"));
+                self.print_expr(expr)
+            }
+        }
     }
 
     fn print_expr_vec(&mut self, exprs: &[P<ast::Expr>]) -> io::Result<()> {
