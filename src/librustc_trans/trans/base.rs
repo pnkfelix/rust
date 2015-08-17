@@ -1295,7 +1295,7 @@ pub fn init_function<'a, 'tcx>(fcx: &'a FunctionContext<'a, 'tcx>,
         for &info in fragment_infos {
 
             let make_datum = |id| {
-                let init_val = C_u8(fcx.ccx, adt::DTOR_NEEDED_HINT);
+                let init_val = C_u8(fcx.ccx, adt::DTOR_UNKNOWN_HINT);
                 let llname = &format!("dropflag_hint_{}", id);
                 debug!("adding hint {}", llname);
                 let ty = tcx.types.u8;

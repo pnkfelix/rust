@@ -164,8 +164,16 @@ pub fn drop_ty_core<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                 let hint_val = load_ty(bcx, drop_hint.value(), bcx.tcx().types.u8);
                 let moved_val =
                     C_integral(Type::i8(bcx.ccx()), adt::DTOR_MOVED_HINT as u64, false);
+                let uninit_val =
+                    C_integral(Type::i8(bcx.ccx()), adt::DTOR_UNINIT_HINT as u64, false);
+
+                let moved =
+                    ICmp(bcx, llvm::IntEQ, hint_val, moved_val, DebugLoc::None);
+                let uninit =
+                    ICmp(bcx, llvm::IntEQ, hint_val, uninit_val, DebugLoc::None);
                 let may_need_drop =
-                    ICmp(bcx, llvm::IntNE, hint_val, moved_val, DebugLoc::None);
+                    Not(bcx, Or(bcx, moved, uninit, DebugLoc::None), DebugLoc::None);
+
                 bcx = with_cond(bcx, may_need_drop, |cx| {
                     Call(cx, glue, &[ptr], None, debug_loc);
                     cx

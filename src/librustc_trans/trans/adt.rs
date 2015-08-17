@@ -191,7 +191,24 @@ macro_rules! repeat_u8_as_u64 {
 /// `DTOR_NEEDED_HINT` is a stack-local hint that just means
 /// "we do not know whether the destructor has run or not; check the
 /// drop-flag embedded in the value itself."
-pub const DTOR_NEEDED_HINT: u8 = 0x3d;
+enum DtorState {
+    // Hint flags for "no destructor run necessary"
+    Uninit = 0x1, Moved = 0x5,
+    // Hint flags for "path init'ed; dtor needed"
+    Inited = 0x2, Assigned = 0x6,
+    // Hint flag for "unknown state; is either function argument, or
+    // drop flag has not been seen properly set yet."
+    Unknown = 0xe,
+
+    // Actual embedded flag values for dtor needed versus dtor already done.
+    // NOTE: Keep `Done` synchronized with value used in libcore::mem
+    Needed = 0x04, Done = 0x1d,
+}
+
+pub const DTOR_UNINIT_HINT: u8 = DtorState::Uninit as u8;
+pub const DTOR_INITED_HINT: u8 = DtorState::Inited as u8;
+pub const DTOR_ASSIGNED_HINT: u8 = DtorState::Assigned as u8;
+pub const DTOR_UNKNOWN_HINT: u8 = DtorState::Unknown as u8;
 
 /// `DTOR_MOVED_HINT` is a stack-local hint that means "this value has
 /// definitely been moved; you do not need to run its destructor."
@@ -200,9 +217,9 @@ pub const DTOR_NEEDED_HINT: u8 = 0x3d;
 /// zeroed by the generated code; this is the distinction between
 /// `datum::DropFlagInfo::ZeroAndMaintain` versus
 /// `datum::DropFlagInfo::DontZeroJustUse`.)
-pub const DTOR_MOVED_HINT: u8 = 0x2d;
+pub const DTOR_MOVED_HINT: u8 = DtorState::Moved as u8;
 
-pub const DTOR_NEEDED: u8 = 0xd4;
+pub const DTOR_NEEDED: u8 = DtorState::Needed as u8;
 pub const DTOR_NEEDED_U32: u32 = repeat_u8_as_u32!(DTOR_NEEDED);
 pub const DTOR_NEEDED_U64: u64 = repeat_u8_as_u64!(DTOR_NEEDED);
 #[allow(dead_code)]
@@ -214,7 +231,7 @@ pub fn dtor_needed_usize(ccx: &CrateContext) -> usize {
     }
 }
 
-pub const DTOR_DONE: u8 = 0x1d;
+pub const DTOR_DONE: u8 = DtorState::Done as u8;
 pub const DTOR_DONE_U32: u32 = repeat_u8_as_u32!(DTOR_DONE);
 pub const DTOR_DONE_U64: u64 = repeat_u8_as_u64!(DTOR_DONE);
 #[allow(dead_code)]

@@ -1652,7 +1652,7 @@ fn trans_match_inner<'blk, 'tcx>(scope_cx: Block<'blk, 'tcx>,
         // insert bindings into the lllocals map and add cleanups
         let cs = fcx.push_custom_cleanup_scope();
         bcx = insert_lllocals(bcx, &arm_data.bindings_map, Some(cleanup::CustomScope(cs)));
-        bcx = set_lllocals_hints(bcx, &arm_data.bindings_map, adt::DTOR_NEEDED_HINT);
+        bcx = set_lllocals_hints(bcx, &arm_data.bindings_map, adt::DTOR_INITED_HINT);
         bcx = expr::trans_into(bcx, &*arm_data.arm.body, dest);
         bcx = fcx.pop_and_trans_custom_cleanup_scope(bcx, cs);
         arm_cxs.push(bcx);
@@ -1686,7 +1686,7 @@ pub fn store_local<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                 "_match::store_local::create_dummy_locals",
                 // Dummy-locals start out uninitialized, so set their
                 // drop-flag hints (if any) to "moved."
-                adt::DTOR_MOVED_HINT,
+                adt::DTOR_UNINIT_HINT,
                 |(), bcx, Datum { val: llval, ty, kind }| {
                     if kind.drop_flag_info.must_zero() {
                         // if no drop-flag hint, or the hint requires
@@ -1721,7 +1721,7 @@ pub fn store_local<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                         "_match::store_local",
                         // Issue #27401: `let x = expr;` means drop
                         // flag hint needs to be (re-)initialized.
-                        adt::DTOR_NEEDED_HINT,
+                        adt::DTOR_INITED_HINT,
                         |(), bcx, Datum { val: v, .. }| expr::trans_into(bcx, &**init_expr,
                                                                          expr::SaveIn(v)));
                 }
@@ -1827,7 +1827,7 @@ pub fn bind_irrefutable_pat<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                     // Issue #27401: `match ... { PAT[x] => ... }`
                     // means drop flag hint for `x` needs to be
                     // (re-)initialized.
-                    adt::DTOR_NEEDED_HINT,
+                    adt::DTOR_INITED_HINT,
                     |(), bcx, Datum { val: llval, ty, kind: _ }| {
                         match pat_binding_mode {
                             ast::BindByValue(_) => {
