@@ -150,11 +150,20 @@ pub enum DropFlagInfo {
 }
 
 impl DropFlagInfo {
-    pub fn must_zero(&self) -> bool {
+    pub fn handle_drop<'blk, 'tcx>(&self,
+                                   bcx: Block<'blk, 'tcx>,
+                                   llval: ValueRef,
+                                   ty: Ty<'tcx>) {
         match *self {
-            DropFlagInfo::DontZeroJustUse(..) => false,
-            DropFlagInfo::ZeroAndMaintain(..) => true,
-            DropFlagInfo::None => true,
+            DropFlagInfo::DontZeroJustUse(..) => {
+                if bcx.ccx().check_drop_flag_for_sanity() {
+                    drop_hinted_fill_mem(bcx, llval, ty);
+                }
+            }
+            DropFlagInfo::ZeroAndMaintain(..) |
+            DropFlagInfo::None => {
+                drop_done_fill_mem(bcx, llval, ty);
+            }
         }
     }
 
@@ -414,9 +423,7 @@ impl KindOps for Lvalue {
                 Store(bcx, C_u8(bcx.fcx.ccx, moved_hint_byte), hint_llval);
             }
             // 2. if the drop info says its necessary, drop-fill the memory.
-            if self.drop_flag_info.must_zero() {
-                let () = drop_done_fill_mem(bcx, val, ty);
-            }
+            let () = self.drop_flag_info.handle_drop(bcx, val, ty);
             bcx
         } else {
             // FIXME (#5016) would be nice to assert this, but we have

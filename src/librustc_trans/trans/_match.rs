@@ -1688,13 +1688,7 @@ pub fn store_local<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                 // drop-flag hints (if any) to "moved."
                 adt::DTOR_UNINIT_HINT,
                 |(), bcx, Datum { val: llval, ty, kind }| {
-                    if kind.drop_flag_info.must_zero() {
-                        // if no drop-flag hint, or the hint requires
-                        // we maintain the embedded drop-flag, then
-                        // mark embedded drop-flag(s) as moved
-                        // (i.e. "already dropped").
-                        drop_done_fill_mem(bcx, llval, ty);
-                    }
+                    kind.drop_flag_info.handle_drop(bcx, llval, ty);
                     bcx
                 });
         });

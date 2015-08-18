@@ -202,7 +202,7 @@ enum DtorState {
 
     // Actual embedded flag values for dtor needed versus dtor already done.
     // NOTE: Keep `Done` synchronized with value used in libcore::mem
-    Needed = 0x04, Done = 0x1d,
+    Needed = 0x04, Done = 0x1d, Hinted = 0x3d,
 }
 
 pub const DTOR_UNINIT_HINT: u8 = DtorState::Uninit as u8;
@@ -230,6 +230,8 @@ pub fn dtor_needed_usize(ccx: &CrateContext) -> usize {
         tws => panic!("Unsupported target word size for int: {}", tws),
     }
 }
+
+pub const DTOR_HINTED: u8 = DtorState::Hinted as u8;
 
 pub const DTOR_DONE: u8 = DtorState::Done as u8;
 pub const DTOR_DONE_U32: u32 = repeat_u8_as_u32!(DTOR_DONE);

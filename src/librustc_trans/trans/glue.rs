@@ -307,6 +307,7 @@ fn trans_struct_drop_flag<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
     let loaded = load_ty(bcx, drop_flag.val, bcx.tcx().dtor_type());
     let drop_flag_llty = type_of(bcx.fcx.ccx, bcx.tcx().dtor_type());
     let init_val = C_integral(drop_flag_llty, adt::DTOR_NEEDED as u64, false);
+    let hinted_val = C_integral(drop_flag_llty, adt::DTOR_HINTED as u64, false);
 
     let bcx = if !bcx.ccx().check_drop_flag_for_sanity() {
         bcx
@@ -315,8 +316,10 @@ fn trans_struct_drop_flag<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
         let done_val = C_integral(drop_flag_llty, adt::DTOR_DONE as u64, false);
         let not_init = ICmp(bcx, llvm::IntNE, loaded, init_val, DebugLoc::None);
         let not_done = ICmp(bcx, llvm::IntNE, loaded, done_val, DebugLoc::None);
+        let not_hinted = ICmp(bcx, llvm::IntNE, loaded, hinted_val, DebugLoc::None);
         let drop_flag_neither_initialized_nor_cleared =
-            And(bcx, not_init, not_done, DebugLoc::None);
+            And(bcx, not_hinted, And(bcx, not_init, not_done, DebugLoc::None),
+                DebugLoc::None);
         with_cond(bcx, drop_flag_neither_initialized_nor_cleared, |cx| {
             let llfn = cx.ccx().get_intrinsic(&("llvm.debugtrap"));
             Call(cx, llfn, &[], None, DebugLoc::None);

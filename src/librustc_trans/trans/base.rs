@@ -969,6 +969,13 @@ pub fn memcpy_ty<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     }
 }
 
+pub fn drop_hinted_fill_mem<'blk, 'tcx>(cx: Block<'blk, 'tcx>, llptr: ValueRef, t: Ty<'tcx>) {
+    if cx.unreachable.get() { return; }
+    let _icx = push_ctxt("drop_done_fill_mem");
+    let bcx = cx;
+    memfill(&B(bcx), llptr, t, adt::DTOR_HINTED);
+}
+
 pub fn drop_done_fill_mem<'blk, 'tcx>(cx: Block<'blk, 'tcx>, llptr: ValueRef, t: Ty<'tcx>) {
     if cx.unreachable.get() { return; }
     let _icx = push_ctxt("drop_done_fill_mem");
