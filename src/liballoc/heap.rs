@@ -149,6 +149,8 @@ unsafe fn exchange_free(ptr: *mut u8, old_size: usize, align: usize) {
 
 use api::{self, Address, Capacity, Kind, MemoryExhausted, Size};
 use core::nonzero::NonZero;
+
+#[derive(Copy, Clone, Debug)]
 pub struct Allocator;
 impl api::Allocator for Allocator {
     type Error = ::api::MemoryExhausted;
