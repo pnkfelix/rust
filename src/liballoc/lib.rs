@@ -119,6 +119,12 @@ extern crate std;
 #[macro_use]
 extern crate log;
 
+// API for parameterizing over high-level allocator
+pub use api::{Address, Alignment, Capacity, Size};
+pub use api::{Allocator, Excess, Kind};
+pub use api::{AllocErr, AllocError, MemoryExhausted};
+mod api;
+
 // Heaps provided for low-level allocation strategies
 
 pub mod heap;

@@ -147,6 +147,33 @@ unsafe fn exchange_free(ptr: *mut u8, old_size: usize, align: usize) {
     deallocate(ptr, old_size, align);
 }
 
+use api::{self, Address, Capacity, Kind, MemoryExhausted, Size};
+use core::nonzero::NonZero;
+pub struct Allocator;
+impl api::Allocator for Allocator {
+    type Error = ::api::MemoryExhausted;
+
+    unsafe fn alloc(&mut self, kind: Kind) -> Result<Address, Self::Error> {
+        let ptr = allocate(kind.size(), kind.align());
+        if ptr.is_null() { return Err(MemoryExhausted) };
+        Ok(NonZero::new(ptr))
+    }
+
+    unsafe fn dealloc(&mut self, ptr: Address, kind: Kind) {
+        deallocate(*ptr, kind.size(), kind.align())
+    }
+
+    unsafe fn usable_size(&self, kind: Kind) -> Capacity {
+        NonZero::new(usable_size(kind.size(), kind.align()))
+    }
+
+    unsafe fn realloc(&mut self, ptr: Address, kind: Kind, new_size: Size) -> Result<Address, Self::Error> {
+        let ptr = reallocate(*ptr, kind.size(), *new_size, kind.align());
+        if ptr.is_null() { return Err(::api::MemoryExhausted); }
+        Ok(NonZero::new(ptr))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     extern crate test;
