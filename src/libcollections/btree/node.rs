@@ -281,10 +281,25 @@ impl<T> Drop for RawItems<T> {
     }
 }
 
+/// Abstraction for types with a isolated sentinel value that
+/// is not allowed to arise in "normal" usage, but is still
+/// legal in terms of representation invariants.
+trait Sentinel {
+    /// Returns an instance of the sentinel value.
+    fn sentinel() -> Self;
+    /// Returns true if and only if `*self` is an instance of the sentinel.
+    fn is_sentinel(&self) -> bool;
+}
+
+impl<K> Sentinel for Unique<K> {
+    fn sentinel() -> Self { unsafe { Unique::new(EMPTY as *mut K) } }
+    fn is_sentinel(&self) -> bool { **self == (EMPTY as *mut K) }
+}
+
 impl<K, V> Drop for Node<K, V> {
     #[unsafe_destructor_blind_to_params]
     fn drop(&mut self) {
-        if self.keys.is_null() ||
+        if self.keys.is_sentinel() ||
             (unsafe { self.keys.get() as *const K as usize == mem::POST_DROP_USIZE })
         {
             // Since we have #[unsafe_no_drop_flag], we have to watch
@@ -303,7 +318,7 @@ impl<K, V> Drop for Node<K, V> {
             self.destroy();
         }
 
-        self.keys = unsafe { Unique::new(ptr::null_mut()) };
+        self.keys = Sentinel::sentinel();
     }
 }
 
