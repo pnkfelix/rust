@@ -17,20 +17,27 @@ use marker::Sized;
 use ops::{CoerceUnsized, Deref};
 
 /// Unsafe trait to indicate what types are usable with the NonZero struct
-pub unsafe trait Zeroable {}
+pub unsafe trait Zeroable {
+    /// Returns true if and only if `*self` is a zero value.
+    fn is_zero(&self) -> bool;
+}
 
-unsafe impl<T:?Sized> Zeroable for *const T {}
-unsafe impl<T:?Sized> Zeroable for *mut T {}
-unsafe impl Zeroable for isize {}
-unsafe impl Zeroable for usize {}
-unsafe impl Zeroable for i8 {}
-unsafe impl Zeroable for u8 {}
-unsafe impl Zeroable for i16 {}
-unsafe impl Zeroable for u16 {}
-unsafe impl Zeroable for i32 {}
-unsafe impl Zeroable for u32 {}
-unsafe impl Zeroable for i64 {}
-unsafe impl Zeroable for u64 {}
+unsafe impl<T:?Sized> Zeroable for *const T {
+    fn is_zero(&self) -> bool { (*self as *const u8).is_null() }
+}
+unsafe impl<T:?Sized> Zeroable for *mut T {
+    fn is_zero(&self) -> bool { (*self as *mut u8).is_null() }
+}
+unsafe impl Zeroable for isize { fn is_zero(&self) -> bool { *self == 0 } }
+unsafe impl Zeroable for usize { fn is_zero(&self) -> bool { *self == 0 } }
+unsafe impl Zeroable for i8 { fn is_zero(&self) -> bool { *self == 0 } }
+unsafe impl Zeroable for u8 { fn is_zero(&self) -> bool { *self == 0 } }
+unsafe impl Zeroable for i16 { fn is_zero(&self) -> bool { *self == 0 } }
+unsafe impl Zeroable for u16 { fn is_zero(&self) -> bool { *self == 0 } }
+unsafe impl Zeroable for i32 { fn is_zero(&self) -> bool { *self == 0 } }
+unsafe impl Zeroable for u32 { fn is_zero(&self) -> bool { *self == 0 } }
+unsafe impl Zeroable for i64 { fn is_zero(&self) -> bool { *self == 0 } }
+unsafe impl Zeroable for u64 { fn is_zero(&self) -> bool { *self == 0 } }
 
 /// A wrapper type for raw pointers and integers that will never be
 /// NULL or 0 that might allow certain optimizations.
@@ -42,7 +49,8 @@ impl<T: Zeroable> NonZero<T> {
     /// Creates an instance of NonZero with the provided value.
     /// You must indeed ensure that the value is actually "non-zero".
     #[inline(always)]
-    pub const unsafe fn new(inner: T) -> NonZero<T> {
+    pub unsafe fn new(inner: T) -> NonZero<T> {
+        debug_assert!(!inner.is_zero());
         NonZero(inner)
     }
 }
