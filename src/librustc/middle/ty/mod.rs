@@ -603,6 +603,10 @@ pub struct TypeParameterDef<'tcx> {
     pub default_def_id: DefId, // for use in error reporing about defaults
     pub default: Option<Ty<'tcx>>,
     pub object_lifetime_default: ObjectLifetimeDefault,
+
+    /// `unsafe_destructor_blind_to(T)` attribute says data behind
+    /// param `T` won't be accessed during parent type's Drop impl.
+    pub opaque_to_dropck: bool,
 }
 
 #[derive(Clone)]
@@ -1513,6 +1517,38 @@ pub struct AdtDefData<'tcx, 'container: 'tcx> {
     flags: Cell<AdtFlags>,
 }
 
+/// Indicates what kind of dropck analysis we need for a given ADT.
+pub enum DtorckKind<'tcx> {
+    /// The "safe" kind; i.e. conservatively assume any borrow
+    /// accessed by dtor, and therefore such data must strictly
+    /// outlive self.
+    ///
+    /// Equivalent to a BlindTo with an empty list ... (maybe).
+    ///
+    /// FIXME: this name may not be general enough; it should be
+    /// talking about Phantom lifetimes rather than just borrows.
+    /// (actually, pnkfelix is not 100% sure that's the right
+    /// viewpoint.  If I'm holding a phantom lifetime just to
+    /// constrain a reference type that occurs solely in *negative*
+    /// type positions, then my destructor cannot itself ever actually
+    /// access such references, right? And don't we end up essentially
+    /// requring people to put a fake borrow inside a PhantomData in
+    /// order to make phantom lifetimes work anyway?)
+    BorrowedDataMustStrictlyOutliveSelf,
+
+    /// The nearly completely-unsafe kind.
+    ///
+    /// Equivalent to BlindTo with all type params ... (maybe).
+    NoBorrowedDataAccessedInMyDtor,
+
+    /// Assume all borrowed data access by dtor, *except* we can also
+    /// assume that the dtor cannot see the instantiation of any type
+    /// parameter named in this list, and therefore any borrow that is
+    /// solely exposed by types in this list do not need to strictly
+    /// outlive self.
+    BlindTo(Vec<TypeParameterDef<'tcx>>),
+}
+
 impl<'tcx, 'container> PartialEq for AdtDefData<'tcx, 'container> {
     // AdtDefData are always interned and this is part of TyS equality
     #[inline]
@@ -1582,15 +1618,43 @@ impl<'tcx, 'container> AdtDefData<'tcx, 'container> {
         }
     }
 
-    /// Returns whether this is a dtorck type. If this returns
-    /// true, this type being safe for destruction requires it to be
-    /// alive; Otherwise, only the contents are required to be.
+    /// Returns whether this is a dtorck type. If this returns true,
+    /// this type being safe for destruction requires its borrowed
+    /// data to strictly outlive its owner; Otherwise, only the
+    /// contents are required to be.
     #[inline]
-    pub fn is_dtorck(&'tcx self, tcx: &ctxt<'tcx>) -> bool {
+    pub fn is_dtorck(&'tcx self, tcx: &ctxt<'tcx>) -> DtorckKind<'tcx> {
         if !self.flags.get().intersects(AdtFlags::IS_DTORCK_VALID) {
             self.calculate_dtorck(tcx)
         }
-        self.flags.get().intersects(AdtFlags::IS_DTORCK)
+
+        let is_dtorck = self.flags.get().intersects(AdtFlags::IS_DTORCK);
+
+        debug!("is_dtorck: {}", is_dtorck);
+
+
+        if is_dtorck {
+            // Note the generics here are looked up on def_id of the
+            // ADT; if we eventually move the attribute to Drop impl
+            // or method, should likewise look at the generics on the
+            // type scheme attached there instead.
+            let generics = tcx.lookup_item_type(self.did).generics;
+            let params: Vec<TypeParameterDef> = generics.types.iter()
+                .filter(move |param_def| param_def.opaque_to_dropck)
+                .map(move |param_def| param_def.clone())
+                .collect();
+
+            if params.len() > 0 {
+                debug!("is_dtorck: BlindTo({:?})", params);
+                DtorckKind::BlindTo(params)
+            } else {
+                debug!("is_dtorck: BorrowedDataMustStrictlyOutliveSelf");
+                DtorckKind::BorrowedDataMustStrictlyOutliveSelf
+            }
+        } else {
+            debug!("is_dtorck: NoBorrowedDataAccessInMyDtor");
+            DtorckKind::NoBorrowedDataAccessedInMyDtor
+        }
     }
 
     /// Returns whether this type is #[fundamental] for the purposes

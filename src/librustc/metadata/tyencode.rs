@@ -404,6 +404,7 @@ pub fn enc_type_param_def<'a, 'tcx>(w: &mut Encoder, cx: &ctxt<'a, 'tcx>,
              v.space.to_uint(), v.index, (cx.ds)(v.default_def_id));
     enc_opt(w, v.default, |w, t| enc_ty(w, cx, t));
     enc_object_lifetime_default(w, cx, v.object_lifetime_default);
+    if v.opaque_to_dropck { mywrite!(w, "o"); } else { mywrite!(w, "t"); };
 }
 
 pub fn enc_region_param_def(w: &mut Encoder, cx: &ctxt,

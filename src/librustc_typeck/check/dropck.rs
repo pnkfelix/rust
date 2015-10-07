@@ -16,7 +16,8 @@ use middle::infer;
 use middle::region;
 use middle::subst::{self, Subst};
 use middle::traits;
-use middle::ty::{self, Ty};
+use middle::ty::{self, Ty, DtorckKind};
+use middle::ty::DtorckKind::*;
 use util::nodemap::FnvHashSet;
 
 use syntax::ast;
@@ -383,36 +384,61 @@ fn iterate_over_potentially_unsafe_regions_in_type<'a, 'b, 'tcx>(
     // of `scope`. This is handled below.
     //
     // However, there is an important special case: for any Drop
-    // impl that is tagged as "blind" to their parameters,
+    // impl that is tagged as "blind" to some of their parameters,
     // we assume that data borrowed via such type parameters
     // remains unreachable via that Drop impl.
     //
     // For example, consider:
     //
     // ```rust
-    // #[unsafe_destructor_blind_to_params]
-    // impl<T> Drop for Vec<T> { ... }
+    // #[unsafe_destructor_blind_to(Elem)]
+    // impl<T> Drop for Bag<Elem, Store> { ... }
     // ```
     //
-    // which does have to be able to drop instances of `T`, but
-    // otherwise cannot read data from `T`.
+    // which does have to be able to drop instances of `Elem`, but
+    // otherwise cannot read data from `Elem`.
     //
-    // Of course, for the type expression passed in for any such
-    // unbounded type parameter `T`, we must resume the recursive
-    // analysis on `T` (since it would be ignored by
-    // type_must_outlive).
-    if has_dtor_of_interest(tcx, ty) {
-        debug!("iterate_over_potentially_unsafe_regions_in_type \
-                {}ty: {} - is a dtorck type!",
-               (0..depth).map(|_| ' ').collect::<String>(),
-               ty);
+    // Note 1. In the example above, we assume the destructor may
+    // still read from instances of `Store`. Therefore: borrowed data
+    // reachable via `Store` *must* outlive the parent of `scope`.
+    //
+    // Note 2. The type expression passed in for `Elem` may itself be
+    // a type (or own some type) that has a destructor of
+    // interest. Therefore we must resume the recursive analysis on
+    // the type instantiated for `Elem` itself.
+    match has_dtor_of_interest(tcx, ty) {
+        (NoBorrowedDataAccessedInMyDtor, _) => {}
+        (BorrowedDataMustStrictlyOutliveSelf, ty) => {
+            debug!("iterate_over_potentially_unsafe_regions_in_type \
+                    {}ty: {} - is a dtorck type!",
+                   (0..depth).map(|_| ' ').collect::<String>(),
+                   ty);
 
-        regionck::type_must_outlive(cx.rcx,
-                                    infer::SubregionOrigin::SafeDestructor(cx.span),
-                                    ty,
-                                    ty::ReScope(cx.parent_scope));
+            regionck::type_must_outlive(cx.rcx,
+                                        infer::SubregionOrigin::SafeDestructor(cx.span),
+                                        ty,
+                                        ty::ReScope(cx.parent_scope));
 
-        return Ok(());
+
+            return Ok(());
+        }
+
+        (BlindTo(type_params), revised_ty) => {
+            debug!("iterate_over_potentially_unsafe_regions_in_type \
+                    {}ty: {} revised_ty: {}- is a dtorck type but blind to {:?}",
+                   (0..depth).map(|_| ' ').collect::<String>(),
+                   ty, revised_ty, type_params);
+
+            regionck::type_must_outlive(cx.rcx,
+                                        infer::SubregionOrigin::SafeDestructor(cx.span),
+                                        revised_ty,
+                                        ty::ReScope(cx.parent_scope));
+
+            // we need to recur on the interior (of the original type)
+            // in this case, since there may be substructure that can
+            // access regions that are *not* hidden by the type
+            // parameters that we are blind to.
+        }
     }
 
     debug!("iterate_over_potentially_unsafe_regions_in_type \
@@ -496,15 +522,50 @@ fn iterate_over_potentially_unsafe_regions_in_type<'a, 'b, 'tcx>(
 }
 
 fn has_dtor_of_interest<'tcx>(tcx: &ty::ctxt<'tcx>,
-                              ty: ty::Ty<'tcx>) -> bool {
+                              ty: ty::Ty<'tcx>) -> (DtorckKind<'tcx>, ty::Ty<'tcx>) {
+    let revise_substs = |blind_to_params: &[ty::TypeParameterDef], substs: &subst::Substs<'tcx>| {
+        // (This yields quadratic behavior for what should be a linear scan.
+        //  But, I do not expect the list of blind_to types to ever be long.)
+        let revised_type_mapping = substs.types.map_enumerated(|(space_, index_, &original)| {
+            if blind_to_params.iter()
+                .any(|&ty::TypeParameterDef { space, index , .. }| {
+                    space == space_ && index as usize == index_ })
+            {
+                tcx.mk_nil()
+            } else {
+                original
+            }
+        });
+        tcx.mk_substs(subst::Substs { types: revised_type_mapping,
+                                      regions: substs.regions.clone(), })
+    };
     match ty.sty {
-        ty::TyEnum(def, _) | ty::TyStruct(def, _) => {
-            def.is_dtorck(tcx)
+        ty::TyEnum(def, substs) => {
+            let kind = def.is_dtorck(tcx);
+            let revised_ty = if let BlindTo(ref params) = kind {
+                let revised_substs = revise_substs(params, substs);
+                let revised_ty = tcx.mk_enum(def, &revised_substs);
+                revised_ty
+            } else {
+                ty
+            };
+            (kind, revised_ty)
+        }
+        ty::TyStruct(def, substs) => {
+            let kind = def.is_dtorck(tcx);
+            let revised_ty = if let BlindTo(ref params) = kind {
+                let revised_substs = revise_substs(params, substs);
+                let revised_ty = tcx.mk_struct(def, &revised_substs);
+                revised_ty
+            } else {
+                ty
+            };
+            (kind, revised_ty)
         }
         ty::TyTrait(..) | ty::TyProjection(..) => {
             debug!("ty: {:?} isn't known, and therefore is a dropck type", ty);
-            true
+            (BorrowedDataMustStrictlyOutliveSelf, ty)
         },
-        _ => false
+        _ => (NoBorrowedDataAccessedInMyDtor, ty),
     }
 }

@@ -93,7 +93,7 @@ use std::rc::Rc;
 
 use syntax::abi;
 use syntax::ast;
-use syntax::attr;
+use syntax::attr::{self, AttrMetaMethods};
 use syntax::codemap::Span;
 use syntax::parse::token::special_idents;
 use syntax::ptr::P;
@@ -1746,6 +1746,7 @@ fn ty_generics_for_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
         default_def_id: ccx.tcx.map.local_def_id(parent),
         default: None,
         object_lifetime_default: ty::ObjectLifetimeDefault::BaseDefault,
+        opaque_to_dropck: false,
     };
 
     ccx.tcx.ty_param_defs.borrow_mut().insert(param_id, def.clone());
@@ -2014,15 +2015,26 @@ fn get_or_create_type_parameter_def<'a,'tcx>(ccx: &CrateCtxt<'a,'tcx>,
                                         &param.bounds, &ast_generics.where_clause);
 
     let parent = tcx.map.get_parent(param.id);
+    let parent_def_id = ccx.tcx.map.local_def_id(parent);
+
+    let opaque_to_dropck = tcx.get_attrs(parent_def_id).iter()
+        .filter(|attr| attr.check_name("unsafe_destructor_blind_to"))
+        .map(|attr| attr.meta_item_list())
+        .find(|args| {
+            if let Some(args) = *args {
+                args.len() == 1 && args[0].name() == param.name.as_str()
+            } else { false }
+        }).is_some();
 
     let def = ty::TypeParameterDef {
         space: space,
         index: index,
         name: param.name,
         def_id: ccx.tcx.map.local_def_id(param.id),
-        default_def_id: ccx.tcx.map.local_def_id(parent),
+        default_def_id: parent_def_id,
         default: default,
         object_lifetime_default: object_lifetime_default,
+        opaque_to_dropck: opaque_to_dropck,
     };
 
     tcx.ty_param_defs.borrow_mut().insert(param.id, def.clone());

@@ -684,6 +684,7 @@ impl<'tcx> TypeFoldable<'tcx> for ty::TypeParameterDef<'tcx> {
             default: self.default.fold_with(folder),
             default_def_id: self.default_def_id,
             object_lifetime_default: self.object_lifetime_default.fold_with(folder),
+            opaque_to_dropck: self.opaque_to_dropck,
         }
     }
 }
