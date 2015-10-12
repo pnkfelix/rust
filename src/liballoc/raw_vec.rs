@@ -10,12 +10,15 @@
 
 use core::ptr::Unique;
 use core::mem;
+use core::nonzero::NonZero;
 use core::slice::{self, SliceExt};
 use heap;
 use super::oom;
 use super::boxed::Box;
 use core::ops::Drop;
 use core;
+
+use api::{Allocator, AllocKind};
 
 /// A low-level utility for more ergonomically allocating, reallocating, and deallocating a
 /// a buffer of memory on the heap without having to worry about all the corner cases
@@ -45,9 +48,10 @@ use core;
 /// field. This allows zero-sized types to not be special-cased by consumers of
 /// this type.
 #[unsafe_no_drop_flag]
-pub struct RawVec<T> {
+pub struct RawVec<T, A=heap::Allocator> where A:Allocator {
     ptr: Unique<T>,
     cap: usize,
+    a: A,
 }
 
 impl<T> RawVec<T> {
@@ -56,17 +60,7 @@ impl<T> RawVec<T> {
     /// it makes a RawVec with capacity `usize::MAX`. Useful for implementing
     /// delayed allocation.
     pub fn new() -> Self {
-        unsafe {
-            // !0 is usize::MAX. This branch should be stripped at compile time.
-            let cap = if mem::size_of::<T>() == 0 {
-                !0
-            } else {
-                0
-            };
-
-            // heap::EMPTY doubles as "unallocated" and "zero-sized allocation"
-            RawVec { ptr: Unique::new(heap::EMPTY as *mut T), cap: cap }
-        }
+        RawVec::new_in(heap::Allocator)
     }
 
     /// Creates a RawVec with exactly the capacity and alignment requirements
@@ -84,26 +78,7 @@ impl<T> RawVec<T> {
     ///
     /// Aborts on OOM
     pub fn with_capacity(cap: usize) -> Self {
-        unsafe {
-            let elem_size = mem::size_of::<T>();
-
-            let alloc_size = cap.checked_mul(elem_size).expect("capacity overflow");
-            alloc_guard(alloc_size);
-
-            // handles ZSTs and `cap = 0` alike
-            let ptr = if alloc_size == 0 {
-                heap::EMPTY as *mut u8
-            } else {
-                let align = mem::align_of::<T>();
-                let ptr = heap::allocate(alloc_size, align);
-                if ptr.is_null() {
-                    oom()
-                }
-                ptr
-            };
-
-            RawVec { ptr: Unique::new(ptr as *mut _), cap: cap }
-        }
+        RawVec::with_capacity_in(cap, heap::Allocator)
     }
 
     /// Reconstitutes a RawVec from a pointer and capacity.
@@ -114,7 +89,7 @@ impl<T> RawVec<T> {
     /// capacity cannot exceed `isize::MAX` (only a concern on 32-bit systems).
     /// If the ptr and capacity come from a RawVec, then this is guaranteed.
     pub unsafe fn from_raw_parts(ptr: *mut T, cap: usize) -> Self {
-        RawVec { ptr: Unique::new(ptr), cap: cap }
+        RawVec::from_raw_parts_in(ptr, cap, heap::Allocator)
     }
 
     /// Converts a `Box<[T]>` into a `RawVec<T>`.
@@ -127,7 +102,72 @@ impl<T> RawVec<T> {
     }
 }
 
-impl<T> RawVec<T> {
+impl<T, A> RawVec<T, A> where A:Allocator {
+    /// Creates the biggest possible RawVec (via allocator `a`) without allocating. If T has positive
+    /// size, then this makes a RawVec with capacity 0. If T has 0 size, then it
+    /// it makes a RawVec with capacity `usize::MAX`. Useful for implementing
+    /// delayed allocation.
+    pub fn new_in(a: A) -> Self {
+        unsafe {
+            // !0 is usize::MAX. This branch should be stripped at compile time.
+            let cap = if mem::size_of::<T>() == 0 {
+                !0
+            } else {
+                0
+            };
+
+            // heap::EMPTY doubles as "unallocated" and "zero-sized allocation"
+            RawVec { ptr: Unique::new(heap::EMPTY as *mut T), cap: cap, a: a }
+        }
+    }
+
+    /// Creates a RawVec (via allocator `a`) with exactly the capacity and alignment requirements
+    /// for a `[T; cap]`. This is equivalent to calling RawVec::new when `cap` is 0
+    /// or T is zero-sized. Note that if `T` is zero-sized this means you will *not*
+    /// get a RawVec with the requested capacity!
+    ///
+    /// # Panics
+    ///
+    /// * Panics if the requested capacity exceeds `usize::MAX` bytes.
+    /// * Panics on 32-bit platforms if the requested capacity exceeds
+    ///   `isize::MAX` bytes.
+    ///
+    /// # Aborts
+    ///
+    /// Aborts on OOM
+    pub fn with_capacity_in(cap: usize, mut a: A) -> Self {
+        unsafe {
+            let elem_size = mem::size_of::<T>();
+            let alloc_size = cap.checked_mul(elem_size).expect("capacity overflow");
+            alloc_guard(alloc_size);
+
+            // handles ZSTs and `cap = 0` alike
+            let ptr = if alloc_size == 0 {
+                Unique::new(heap::EMPTY as *mut _)
+            } else {
+                match a.alloc_array_unchecked::<T>(cap) {
+                    Ok(ptr) => ptr,
+                    Err(_) => a.oom(),
+                }
+            };
+
+            RawVec { a: a, ptr: ptr, cap: cap }
+        }
+    }
+
+    /// Reconstitutes a RawVec from a pointer and capacity.
+    ///
+    /// # Undefined Behaviour
+    ///
+    /// The ptr must be allocated, and with the given capacity. The
+    /// capacity cannot exceed `isize::MAX` (only a concern on 32-bit systems).
+    /// If the ptr and capacity come from a RawVec, then this is guaranteed.
+    pub unsafe fn from_raw_parts_in(ptr: *mut T, cap: usize, a: A) -> Self {
+        RawVec { a: a, ptr: Unique::new(ptr), cap: cap }
+    }
+}
+
+impl<T, A> RawVec<T, A> where A: Allocator {
     /// Gets a raw pointer to the start of the allocation. Note that this is
     /// heap::EMPTY if `cap = 0` or T is zero-sized. In the former case, you must
     /// be careful.
@@ -402,7 +442,14 @@ impl<T> RawVec<T> {
                 "Tried to shrink to a larger capacity");
 
         if amount == 0 {
-            mem::replace(self, RawVec::new());
+            // This replace with uninitialized is safe because of the forget below.
+            let a = mem::replace(&mut self.a, unsafe { mem::uninitialized() });
+            let mut old = mem::replace(self, RawVec::new_in(a));
+
+            // Manually tear down the vector contents to avoid an attempt to
+            // drop the uninitialized allocator field.
+            self.a.teardown(&mut old.ptr, old.cap);
+            mem::forget(old);
         } else if self.cap != amount {
             unsafe {
                 // Overflow check is unnecessary as the vector is already at
@@ -444,21 +491,34 @@ impl<T> RawVec<T> {
     }
 }
 
-impl<T> Drop for RawVec<T> {
+impl<T, A> Drop for RawVec<T, A> where A:Allocator {
+    // FIXME: this attribute is now unsound here because we must
+    // ensure that `A` (which we use here) strictly outlives self.
     #[unsafe_destructor_blind_to_params]
     /// Frees the memory owned by the RawVec *without* trying to Drop its contents.
     fn drop(&mut self) {
-        let elem_size = mem::size_of::<T>();
-        if elem_size != 0 && self.cap != 0 && self.unsafe_no_drop_flag_needs_drop() {
-            let align = mem::align_of::<T>();
+        let mut a = &mut self.a;
+        a.teardown(&mut self.ptr, self.cap);
+    }
+}
 
-            let num_bytes = elem_size * self.cap;
+trait TearDown: Allocator {
+    fn teardown<T>(&mut self, ptr: &mut Unique<T>, cap: usize);
+}
+impl<A:Allocator> TearDown for A {
+    fn teardown<T>(&mut self, ptr: &mut Unique<T>, cap: usize) {
+        let elem_kind = A::Kind::new::<T>();
+        if elem_kind.size() != 0 && cap != 0 && cap != mem::POST_DROP_USIZE {
+            // Since we must have previously built this kind when we made the vec, we can
+            // use the unchecked path as we tear it down.
             unsafe {
-                heap::deallocate(*self.ptr as *mut _, num_bytes, align);
+                let array_kind = elem_kind.array_unchecked(cap);
+                self.dealloc(NonZero::new(**ptr as *mut _), array_kind);
             }
         }
     }
 }
+
 
 
 

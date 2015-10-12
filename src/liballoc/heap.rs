@@ -147,12 +147,13 @@ unsafe fn exchange_free(ptr: *mut u8, old_size: usize, align: usize) {
     deallocate(ptr, old_size, align);
 }
 
-use api::{self, Address, Capacity, Kind, MemoryExhausted, Size};
+use api::{self, Address, AllocKind, Capacity, Kind, MemoryExhausted, Size};
 use core::nonzero::NonZero;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Allocator;
 impl api::Allocator for Allocator {
+    type Kind = ::api::Kind;
     type Error = ::api::MemoryExhausted;
 
     unsafe fn alloc(&mut self, kind: Kind) -> Result<Address, Self::Error> {
