@@ -74,8 +74,7 @@
 #![no_std]
 #![cfg_attr(not(stage0), needs_allocator)]
 
-#![feature(allocator)]
-#![feature(box_syntax)]
+#![feature(allocator)]#![feature(box_syntax)]
 #![feature(coerce_unsized)]
 #![feature(core)]
 #![feature(core_intrinsics)]
@@ -145,6 +144,12 @@ mod boxed {
 mod boxed_test;
 pub mod arc;
 pub mod rc;
+
+#[cfg(stage0)]
+#[path="raw_vec_stage0.rs"]
+pub mod raw_vec;
+
+#[cfg(not(stage0))]
 pub mod raw_vec;
 
 /// Common out-of-memory routine
