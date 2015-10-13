@@ -132,6 +132,12 @@ mod boxed {
 mod boxed_test;
 pub mod arc;
 pub mod rc;
+
+#[cfg(stage0)]
+#[path="raw_vec_stage0.rs"]
+pub mod raw_vec;
+
+#[cfg(not(stage0))]
 pub mod raw_vec;
 
 /// Common out-of-memory routine
