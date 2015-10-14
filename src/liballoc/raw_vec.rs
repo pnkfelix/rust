@@ -630,8 +630,9 @@ trait TearDown: Allocator {
 }
 impl<A:Allocator> TearDown for A {
     fn teardown<T>(&mut self, ptr: &mut Unique<T>, cap: usize) {
+        if mem::size_of::<T>() == 0 { return; }
         let elem_kind = A::Kind::new::<T>();
-        if elem_kind.size() != 0 && cap != 0 && cap != mem::POST_DROP_USIZE {
+        if cap != 0 && cap != mem::POST_DROP_USIZE {
             // Since we must have previously built this kind when we made the vec, we can
             // use the unchecked path as we tear it down.
             unsafe {
