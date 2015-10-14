@@ -10,7 +10,6 @@
 
 use core::ptr::Unique;
 use core::mem;
-use core::nonzero::NonZero;
 use core::slice::{self, SliceExt};
 use heap;
 use super::oom;
