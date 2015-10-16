@@ -30,6 +30,7 @@
 #![cfg_attr(test, allow(deprecated))] // rand
 
 #![feature(alloc)]
+#![feature(allocator_api)]
 #![feature(box_patterns)]
 #![feature(box_syntax)]
 #![feature(clone_from_slice)]
@@ -94,6 +95,10 @@ pub mod range;
 pub mod slice;
 pub mod str;
 pub mod string;
+#[cfg(not(stage0))]
+pub mod vec;
+#[cfg(stage0)]
+#[path="vec_stage0.rs"]
 pub mod vec;
 pub mod vec_deque;
 

@@ -85,6 +85,7 @@
 // It's cleaner to just turn off the unused_imports warning than to fix them.
 #![allow(unused_imports)]
 
+use alloc::{self, heap};
 use alloc::boxed::Box;
 use core::clone::Clone;
 use core::cmp::Ordering::{self, Greater, Less};
@@ -135,6 +136,7 @@ pub use self::hack::to_vec;
 // `core::slice::SliceExt` - we need to supply these functions for the
 // `test_permutations` test
 mod hack {
+    use alloc::{self, heap};
     use alloc::boxed::Box;
     use core::clone::Clone;
     #[cfg(test)]
@@ -147,6 +149,8 @@ mod hack {
     use string::ToString;
     use vec::Vec;
 
+    // pnkfelix: Until `Box<T>` is generalized to `Box<T, A>`, this needs
+    // to stay specialized to the heap::Allocator.
     pub fn into_vec<T>(mut b: Box<[T]>) -> Vec<T> {
         unsafe {
             let xs = Vec::from_raw_parts(b.as_mut_ptr(), b.len(), b.len());
@@ -155,12 +159,27 @@ mod hack {
         }
     }
 
+    #[cfg(not(stage0))]
+    #[inline]
+    pub fn to_vec<T>(s: &[T]) -> Vec<T> where T: Clone {
+        to_vec_in(s, Default::default())
+    }
+
+    #[cfg(stage0)]
     #[inline]
     pub fn to_vec<T>(s: &[T]) -> Vec<T>
         where T: Clone
     {
         let mut vector = Vec::with_capacity(s.len());
         vector.extend_from_slice(s);
+        vector
+    }
+
+    #[cfg(not(stage0))]
+    #[inline]
+    pub fn to_vec_in<T, A>(s: &[T], a: A) -> Vec<T, A> where T: Clone, A:alloc::Allocator {
+        let mut vector = Vec::with_capacity_in(s.len(), a);
+        vector.push_all(s);
         vector
     }
 }
@@ -872,6 +891,17 @@ impl<T> [T] {
         // NB see hack module in this file
         hack::into_vec(self)
     }
+
+    // We cannot have `fn into_vec_in` until we have `Box<T, A>`
+
+    /// Copies `self` into a new `Vec` with allocator `a`.
+    #[cfg(not(stage0))]
+    #[unstable(feature = "alloc", issue="27700")]
+    #[inline]
+    pub fn to_vec_in<A>(&self, a: A) -> Vec<T, A> where T: Clone, A: alloc::Allocator {
+        // NB see hack module in this file
+        hack::to_vec_in(self, a)
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -969,6 +999,10 @@ impl<T> BorrowMut<[T]> for Vec<T> {
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<T: Clone> ToOwned for [T] {
+
+    // pnkfelix: cannot generalize below to `Vec<T, A>` (where
+    // `A:alloc::Allocator+Default`), b/c `impl<A> Tr for Ty` requires
+    // that `A` occur in either the trait `Ty` or in the type `Ty`.
     type Owned = Vec<T>;
     #[cfg(not(test))]
     fn to_owned(&self) -> Vec<T> {
