@@ -150,7 +150,7 @@ unsafe fn exchange_free(ptr: *mut u8, old_size: usize, align: usize) {
 use api::{self, Address, AllocKind, Capacity, Kind, MemoryExhausted, Size};
 use core::nonzero::NonZero;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct Allocator;
 impl api::Allocator for Allocator {
     type Kind = ::api::Kind;
