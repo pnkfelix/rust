@@ -157,7 +157,7 @@ impl<T, A> RawVec<T, A> where A:Allocator {
             };
 
             RawVec {
-                ptr: Unique::new(ptr as *mut _),
+                ptr: Unique::new(*ptr as *mut _),
                 cap: cap,
                 a: a,
             }
@@ -176,15 +176,6 @@ impl<T, A> RawVec<T, A> where A:Allocator {
             ptr: Unique::new(ptr),
             cap: cap,
             a: a,
-        }
-    }
-
-    /// Converts a `Box<[T]>` into a `RawVec<T>`.
-    pub fn from_box(mut slice: Box<[T]>) -> Self {
-        unsafe {
-            let result = RawVec::from_raw_parts(slice.as_mut_ptr(), slice.len());
-            mem::forget(slice);
-            result
         }
     }
 }
