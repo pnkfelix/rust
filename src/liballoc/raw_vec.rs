@@ -638,7 +638,7 @@ impl<A:Allocator> TearDown for A {
             // use the unchecked path as we tear it down.
             unsafe {
                 let array_kind = elem_kind.array_unchecked(cap);
-                self.dealloc(NonZero::new(**ptr as *mut _), array_kind);
+                self.dealloc(NonZero::new(**ptr as *mut _), &array_kind);
             }
         }
     }

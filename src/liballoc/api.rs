@@ -22,7 +22,7 @@ use core::ptr::{self, Unique};
 
 pub type Size = NonZero<usize>;
 pub type Capacity = NonZero<usize>;
-pub type Alignment = usize;
+pub type Alignment = NonZero<usize>;
 
 pub type Address = NonZero<*mut u8>;
 
@@ -32,26 +32,28 @@ pub struct Excess(Address, Capacity);
 
 pub trait AllocKind: Sized {
     /// Returns size of the requested block of memory, measured in bytes.
-    ///
-    /// Returned size is guaranteed to be positive.
-    fn size(&self) -> usize;
+    fn size(&self) -> NonZero<usize>;
 
     /// Returns alignment of the requested block of memory, measured in bytes.
-    fn align(&self) -> usize;
+    fn align(&self) -> NonZero<usize>;
 
-    /// Creates a `Kind` describing the record for a single instance of `T`.
+    /// Creates kind describing the record for a single instance of `T`.
     /// Requires `T` has non-zero size.
-    fn new<T>() -> Kind;
+    fn new<T>() -> Self;
 
-    /// Produces the `Kind` describing a record that could be used to
+    /// Produces kind describing a record that could be used to
     /// allocate the backing structure for `T`, which could be a trait
     /// or other unsized type.
     ///
     /// Returns `None` if there is no backing memory for `*t`, e.g. if
     /// the size of the backing structure for `*t` has zero size.
-    unsafe fn for_value<T: ?Sized>(t: &T) -> Option<Kind>;
+    unsafe fn for_value<T: ?Sized>(t: &T) -> Option<Self>;
 
-    /// Creates a `Kind` describing the record that can hold a value
+    /// Creates a kind describing the record that can hold a value of
+    /// the same kind as `self` except with size `new_size` bytes.
+    fn resize(&self, new_size: Size) -> Self;
+
+    /// Creates a kind describing the record that can hold a value
     /// of the same kind as `self`, but that also is aligned to
     /// alignment `align` (measured in bytes).
     ///
@@ -63,8 +65,8 @@ pub trait AllocKind: Sized {
     /// Note that this method does not add any padding to the overall
     /// size, regardless of whether the returned kind has a different
     /// alignment. You should be able to get that effect by passing
-    /// an appropriately aligned zero-sized type to `Kind::extend`.
-    fn align_to(self, align: Alignment) -> Kind;
+    /// an appropriately aligned zero-sized type to `fn extend`.
+    fn align_to(&self, align: Alignment) -> Self;
 
     /// Returns the amount of padding we must insert after `self`
     /// to ensure that the following address will satisfy `align`
@@ -75,16 +77,16 @@ pub trait AllocKind: Sized {
     /// Note that for this to make sense, `align <= self.align`
     /// otherwise, the amount of inserted padding would need to depend
     /// on the particular starting address for the whole record.
-    fn pad_to(self, align: Alignment) -> usize {
-        debug_assert!(align <= self.align());
-        let len = self.size();
-        let len_rounded_up = (len + align - 1) & !(align - 1);
+    fn pad_to(&self, align: Alignment) -> usize {
+        debug_assert!(*align <= *self.align());
+        let len = *self.size();
+        let len_rounded_up = (len + *align - 1) & !(*align - 1);
         return len_rounded_up - len;
     }
 
-    /// Creates a `Kind` describing the record for `self` followed by
+    /// Creates a kind describing the record for `self` followed by
     /// `next`, including any necessary padding to ensure that `next`
-    /// will be properly aligned. Note that the result `Kind` will
+    /// will be properly aligned. Note that the result kind will
     /// satisfy the alignment properties of both `self` and `next`.
     ///
     /// Returns `Some((k, offset))`, where `k` is kind of the concatenated
@@ -93,24 +95,24 @@ pub trait AllocKind: Sized {
     /// (assuming that the record itself starts at offset 0).
     ///
     /// On arithmetic overflow, returns `None`.
-    fn extend(self, next: Kind) -> Option<(Kind, usize)>;
+    fn extend(&self, next: Self) -> Option<(Self, usize)>;
 
-    /// Creates a `Kind` describing the record for `n` instances of
+    /// Creates a kind describing the record for `n` instances of
     /// `self`, with a suitable amount of padding between each.
     ///
     /// On zero `n` or arithmetic overflow, returns `None`.
-    fn array(self, n: usize) -> Option<Kind>;
+    fn array(&self, n: usize) -> Option<Self>;
 
-    /// Creates a `Kind` describing the record for `n` instances of
+    /// Creates a kind describing the record for `n` instances of
     /// `self`, with no padding between each instance.
     ///
     /// On zero `n` or overflow, returns `None`.
-    fn array_packed(self, n: usize) -> Option<Kind>;
+    fn array_packed(&self, n: usize) -> Option<Self>;
 
-    /// Creates a `Kind` describing the record for `self` followed by
+    /// Creates a kind describing the record for `self` followed by
     /// `next` with no additional padding between the two. Since no
     /// padding is inserted, the alignment of `next` is irrelevant,
-    /// and is not incoporated *at all* into the resulting `Kind`.
+    /// and is not incoporated *at all* into the resulting kind.
     ///
     /// Returns `(k, offset)`, where `k` is kind of the concatenated
     /// record and `offset` is the relative location, in bytes, of the
@@ -119,13 +121,13 @@ pub trait AllocKind: Sized {
     ///
     /// (The `offset` is always the same as `self.size()`; we use this
     ///  signature out of convenience in matching the signature of
-    ///  `Kind::extend`.)
+    ///  `fn extend`.)
     ///
     /// On arithmetic overflow, returns `None`.
-    fn extend_packed(self, next: Kind) -> Option<(Kind, usize)>;
+    fn extend_packed(&self, next: Self) -> Option<(Self, usize)>;
 
     // Below family of methods *assume* inputs are pre- or
-    // post-validated in some manner; thus `Kind` impls may override
+    // post-validated in some manner; thus `AllocKind` impls may override
     // them with variants that bypass the slower checked arithmetic
     // operations.
     //
@@ -136,9 +138,9 @@ pub trait AllocKind: Sized {
     // *not* use the below methods and thus most Allocator
     // implementations need not implement fast-paths for them.)
 
-    /// Creates a `Kind` describing the record for `self` followed by
+    /// Creates a kind describing the record for `self` followed by
     /// `next`, including any necessary padding to ensure that `next`
-    /// will be properly aligned. Note that the result `Kind` will
+    /// will be properly aligned. Note that the result kind will
     /// satisfy the alignment properties of both `self` and `next`.
     ///
     /// Returns `(k, offset)`, where `k` is kind of the concatenated
@@ -147,30 +149,32 @@ pub trait AllocKind: Sized {
     /// (assuming that the record itself starts at offset 0).
     ///
     /// Requires no arithmetic overflow from inputs.
-    unsafe fn extend_unchecked(self, next: Kind) -> (Kind, usize) {
+    unsafe fn extend_unchecked(&self, next: Self) -> (Self, usize) {
         self.extend(next).unwrap()
     }
 
-    /// Creates a `Kind` describing the record for `n` instances of
+    /// Creates a kind describing the record for `n` instances of
     /// `self`, with a suitable amount of padding between each.
     ///
     /// Requires non-zero `n` and no arithmetic overflow from inputs.
-    unsafe fn array_unchecked(self, n: usize) -> Kind {
+    /// (See also the `fn array` checked variant.)
+    unsafe fn array_unchecked(&self, n: usize) -> Self {
         self.array(n).unwrap()
     }
 
-    /// Creates a `Kind` describing the record for `n` instances of
+    /// Creates a kind describing the record for `n` instances of
     /// `self`, with no padding between each instance.
     ///
     /// Requires non-zero `n` and no arithmetic overflow from inputs.
-    unsafe fn array_packed_unchecked(self, n: usize) -> Kind {
+    /// (See also the `fn array_packed` checked variant.)
+    unsafe fn array_packed_unchecked(&self, n: usize) -> Self {
         self.array_packed(n).unwrap()
     }
 
-    /// Creates a `Kind` describing the record for `self` followed by
+    /// Creates a kind describing the record for `self` followed by
     /// `next` with no additional padding between the two. Since no
     /// padding is inserted, the alignment of `next` is irrelevant,
-    /// and is not incoporated *at all* into the resulting `Kind`.
+    /// and is not incoporated *at all* into the resulting kind.
     ///
     /// Returns `(k, offset)`, where `k` is kind of the concatenated
     /// record and `offset` is the relative location, in bytes, of the
@@ -179,10 +183,11 @@ pub trait AllocKind: Sized {
     ///
     /// (The `offset` is always the same as `self.size()`; we use this
     ///  signature out of convenience in matching the signature of
-    ///  `Kind::extend`.)
+    ///  `fn extend`.)
     ///
     /// Requires no arithmetic overflow from inputs.
-    unsafe fn extend_packed_unchecked(self, next: Kind) -> (Kind, usize) {
+    /// (See also the `fn extend_packed` checked variant.)
+    unsafe fn extend_packed_unchecked(&self, next: Self) -> (Self, usize) {
         self.extend_packed(next).unwrap()
     }
 }
@@ -207,6 +212,7 @@ fn size_align<T>() -> (usize, usize) {
 impl Kind {
     fn from_size_align(size: usize, align: usize) -> Kind {
         let size = unsafe { assert!(size > 0); NonZero::new(size) };
+        let align = unsafe { assert!(align > 0); NonZero::new(align) };
         Kind { size: size, align: align }
     }
 }
@@ -217,9 +223,9 @@ impl Kind {
 impl AllocKind for Kind {
     // Accessor methods
 
-    fn size(&self) -> usize { *self.size }
+    fn size(&self) -> NonZero<usize> { self.size }
 
-    fn align(&self) -> usize { self.align }
+    fn align(&self) -> NonZero<usize> { self.align }
 
     // public constructor methods
 
@@ -237,24 +243,28 @@ impl AllocKind for Kind {
         }
     }
 
-    fn align_to(self, align: Alignment) -> Kind {
+    fn resize(&self, new_size: Size) -> Kind {
+        Kind { size: new_size, ..*self }
+    }
+
+    fn align_to(&self, align: Alignment) -> Kind {
         if align > self.align {
-            Kind { align: align, ..self }
+            Kind { align: align, ..*self }
         } else {
-            self
+            *self
         }
     }
 
-    fn extend(self, next: Kind) -> Option<(Kind, usize)> {
-        let new_align = cmp::max(self.align, next.align);
-        let realigned = Kind { align: new_align, ..self };
+    fn extend(&self, next: Self) -> Option<(Kind, usize)> {
+        let new_align = unsafe { NonZero::new(cmp::max(*self.align, *next.align)) };
+        let realigned = Kind { align: new_align, ..*self };
         let pad = realigned.pad_to(new_align);
-        let offset = self.size() + pad;
-        let new_size = offset + next.size();
-        Some((Kind::from_size_align(new_size, new_align), offset))
+        let offset = *self.size() + pad;
+        let new_size = offset + *next.size();
+        Some((Kind::from_size_align(new_size, *new_align), offset))
     }
 
-    fn array(self, n: usize) -> Option<Kind> {
+    fn array(&self, n: usize) -> Option<Kind> {
         let padded_size = match self.size.checked_add(self.pad_to(self.align)) {
             None => return None,
             Some(padded_size) => padded_size,
@@ -263,10 +273,10 @@ impl AllocKind for Kind {
             None => return None,
             Some(alloc_size) => alloc_size,
         };
-        Some(Kind::from_size_align(alloc_size, self.align))
+        Some(Kind::from_size_align(alloc_size, *self.align))
     }
 
-    fn array_packed(self, n: usize) -> Option<Kind> {
+    fn array_packed(&self, n: usize) -> Option<Kind> {
         let scaled = match self.size().checked_mul(n) {
             None => return None,
             Some(scaled) => scaled,
@@ -275,13 +285,13 @@ impl AllocKind for Kind {
         Some(Kind { size: size, align: self.align })
     }
 
-    fn extend_packed(self, next: Kind) -> Option<(Kind, usize)> {
-        let new_size = match self.size().checked_add(next.size()) {
+    fn extend_packed(&self, next: Self) -> Option<(Self, usize)> {
+        let new_size = match self.size().checked_add(*next.size()) {
             None => return None,
             Some(new_size) => new_size,
         };
         let new_size = unsafe { NonZero::new(new_size) };
-        Some((Kind { size: new_size, ..self }, self.size()))
+        Some((Kind { size: new_size, ..*self }, *self.size()))
     }
 }
 
@@ -391,13 +401,13 @@ pub trait Allocator {
     ///
     /// Behavior undefined if `kind.size()` is 0 or if `kind.align()`
     /// is larger than the largest platform-supported page size.
-    unsafe fn alloc(&mut self, kind: Kind) -> Result<Address, Self::Error>;
+    unsafe fn alloc(&mut self, kind: &Self::Kind) -> Result<Address, Self::Error>;
 
     /// Deallocate the memory referenced by `ptr`.
     ///
     /// `ptr` must have previously been provided via this allocator,
     /// and `kind` must *fit* the provided block.
-    unsafe fn dealloc(&mut self, ptr: Address, kind: Kind);
+    unsafe fn dealloc(&mut self, ptr: Address, kind: &Self::Kind);
 
     /// Returns the minimum guaranteed usable size of a successful
     /// allocation created with the specified `kind`.
@@ -411,7 +421,7 @@ pub trait Allocator {
     /// However, for clients that do not wish to track the capacity
     /// returned by `alloc_excess` locally, this method is likely to
     /// produce useful results.
-    unsafe fn usable_size(&self, kind: Kind) -> Capacity { kind.size }
+    unsafe fn usable_size(&self, kind: &Self::Kind) -> Capacity { kind.size() }
 
     /// Extends or shrinks the allocation referenced by `ptr` to
     /// `new_size` bytes of memory, retaining the alignment `align`
@@ -429,13 +439,13 @@ pub trait Allocator {
     ///
     /// Behavior undefined if above constraints are unmet. Behavior
     /// also undefined if `new_size` is 0.
-    unsafe fn realloc(&mut self, ptr: Address, kind: Kind, new_size: Size) -> Result<Address, Self::Error> {
+    unsafe fn realloc(&mut self, ptr: Address, kind: &Self::Kind, new_size: Size) -> Result<Address, Self::Error> {
         if new_size <= self.usable_size(kind) {
             return Ok(ptr);
         } else {
-            let result = self.alloc(Kind { size: new_size, ..kind });
+            let result = self.alloc(&kind.resize(new_size));
             if let Ok(new_ptr) = result {
-                ptr::copy(*ptr as *const u8, *new_ptr, cmp::min(kind.size(), *new_size));
+                ptr::copy(*ptr as *const u8, *new_ptr, cmp::min(*kind.size(), *new_size));
                 self.dealloc(ptr, kind);
             }
             result
@@ -445,7 +455,7 @@ pub trait Allocator {
     /// Behaves like `fn alloc`, but also returns the whole size of
     /// the returned block. For some `kind` inputs, like arrays, this
     /// may include extra storage usable for additional data.
-    unsafe fn alloc_excess(&mut self, kind: Kind) -> Result<Excess, Self::Error> {
+    unsafe fn alloc_excess(&mut self, kind: &Self::Kind) -> Result<Excess, Self::Error> {
         self.alloc(kind).map(|p| Excess(p, self.usable_size(kind)))
     }
 
@@ -454,17 +464,17 @@ pub trait Allocator {
     /// may include extra storage usable for additional data.
     unsafe fn realloc_excess(&mut self,
                              ptr: Address,
-                             kind: Kind,
+                             kind: &Self::Kind,
                              new_size: Size) -> Result<Excess, Self::Error> {
         self.realloc(ptr, kind, new_size)
-            .map(|p| Excess(p, self.usable_size(Kind { size: new_size, ..kind })))
+            .map(|p| Excess(p, self.usable_size(&kind.resize(new_size))))
     }
 
     /// Allocates a block suitable for holding an instance of `T`.
     ///
     /// Captures a common usage pattern for allocators.
     unsafe fn alloc_one<T>(&mut self) -> Result<Unique<T>, Self::Error> {
-        self.alloc(Kind::new::<T>())
+        self.alloc(&Self::Kind::new::<T>())
             .map(|p|Unique::new(*p as *mut T))
     }
 
@@ -473,15 +483,15 @@ pub trait Allocator {
     /// Captures a common usage pattern for allocators.
     unsafe fn dealloc_one<T>(&mut self, mut ptr: Unique<T>) {
         let raw_ptr = NonZero::new(ptr.get_mut() as *mut T as *mut u8);
-        self.dealloc(raw_ptr, Kind::new::<T>());
+        self.dealloc(raw_ptr, &Self::Kind::new::<T>());
     }
 
     /// Allocates a block suitable for holding `n` instances of `T`.
     ///
     /// Captures a common usage pattern for allocators.
     unsafe fn alloc_array<T>(&mut self, n: usize) -> Result<Unique<T>, Self::Error> {
-        match Kind::new::<T>().array(n) {
-            Some(kind) => self.alloc(kind).map(|p|Unique::new(*p as *mut T)),
+        match Self::Kind::new::<T>().array(n) {
+            Some(kind) => self.alloc(&kind).map(|p|Unique::new(*p as *mut T)),
             None => Err(Self::Error::invalid_input()),
         }
     }
@@ -491,7 +501,7 @@ pub trait Allocator {
     /// Captures a common usage pattern for allocators.
     unsafe fn dealloc_array<T>(&mut self, ptr: Unique<T>, n: usize) {
         let raw_ptr = NonZero::new(*ptr as *mut u8);
-        self.dealloc(raw_ptr, Kind::new::<T>().array(n).unwrap());
+        self.dealloc(raw_ptr, &Self::Kind::new::<T>().array(n).unwrap());
     }
 
     /// Allocates a block suitable for holding `n` instances of `T`.
@@ -500,8 +510,8 @@ pub trait Allocator {
     ///
     /// Requires inputs are non-zero and do not cause arithmetic overflow.
     unsafe fn alloc_array_unchecked<T>(&mut self, n: usize) -> Result<Unique<T>, Self::Error> {
-        let kind = Kind::new::<T>().array_unchecked(n);
-        self.alloc(kind).map(|p|Unique::new(*p as *mut T))
+        let kind = Self::Kind::new::<T>().array_unchecked(n);
+        self.alloc(&kind).map(|p|Unique::new(*p as *mut T))
     }
 
     /// Deallocates a block suitable for holding `n` instances of `T`.
@@ -510,8 +520,8 @@ pub trait Allocator {
     ///
     /// Requires inputs are non-zero and do not overflow.
     unsafe fn dealloc_array_unchecked<T>(&mut self, ptr: Unique<T>, n: usize) {
-        let kind = Kind::new::<T>().array_unchecked(n);
-        self.dealloc(NonZero::new(*ptr as *mut u8), kind);
+        let kind = Self::Kind::new::<T>().array_unchecked(n);
+        self.dealloc(NonZero::new(*ptr as *mut u8), &kind);
     }
 
     /// Allocator-specific method for signalling an out-of-memory
