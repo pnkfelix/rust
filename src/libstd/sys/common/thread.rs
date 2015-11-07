@@ -13,11 +13,15 @@ use prelude::v1::*;
 use alloc::boxed::FnBox;
 use libc;
 use sys::stack_overflow;
+use super::at_start_imp;
 
 pub unsafe fn start_thread(main: *mut libc::c_void) {
     // Next, set up our stack overflow handler which may get triggered if we run
     // out of stack.
     let _handler = stack_overflow::Handler::new();
+
+    // Next, run all the registered thread_start procedures.
+    at_start_imp::run_all();
 
     // Finally, let's run some code.
     Box::from_raw(main as *mut Box<FnBox()>)()

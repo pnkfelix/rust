@@ -168,6 +168,7 @@ use fmt;
 use io;
 use sync::{Mutex, Condvar, Arc};
 use sys::thread as imp;
+use sys_common;
 use sys_common::thread_info;
 use sys_common::unwind;
 use sys_common::util;
@@ -289,6 +290,21 @@ impl Builder {
 ////////////////////////////////////////////////////////////////////////////////
 // Free functions
 ////////////////////////////////////////////////////////////////////////////////
+
+
+/// Enqueues a procedure to run when a thread is started.
+///
+/// Returns `Ok` if the handler was successfully registered, meaning
+/// that the closure will be run sometime after each subsequent thread
+/// is constructed, but before it starts running its associated main
+/// routine.  Returns `Err` to indicate that the closure could not be
+/// registered, meaning that it is not scheduled to be run.
+///
+/// FIXME: Should we also provide some way to unregister a function?
+#[unstable(feature = "TODO_unnamed_feature", reason = "recent API addition", issue="99999999")]
+pub fn at_start<F: Fn() + Send + 'static>(f: F) -> ::result::Result<(), ()> {
+    sys_common::at_thread_start(f)
+}
 
 /// Spawns a new thread, returning a `JoinHandle` for it.
 ///

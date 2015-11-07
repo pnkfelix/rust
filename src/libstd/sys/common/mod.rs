@@ -28,6 +28,7 @@ macro_rules! rtassert {
 
 pub mod args;
 pub mod at_exit_imp;
+pub mod at_start_imp;
 pub mod backtrace;
 pub mod condvar;
 pub mod dwarf;
@@ -87,6 +88,17 @@ pub trait FromInner<Inner> {
 /// to be run.
 pub fn at_exit<F: FnOnce() + Send + 'static>(f: F) -> Result<(), ()> {
     if at_exit_imp::push(Box::new(f)) {Ok(())} else {Err(())}
+}
+
+/// Enqueues a procedure to run when a thread is started.
+///
+/// Returns `Ok` if the handler was successfully registered, meaning
+/// that the closure will be run sometime after each subsequent thread
+/// is constructed, but before it starts running its associated main
+/// routine.  Returns `Err` to indicate that the closure could not be
+/// registered, meaning that it is not scheduled to be run.
+pub fn at_thread_start<F: Fn() + Send + 'static>(f: F) -> Result<(), ()> {
+    if at_start_imp::push(Box::new(f)) {Ok(())} else {Err(())}
 }
 
 /// One-time runtime cleanup.
