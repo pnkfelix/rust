@@ -81,6 +81,7 @@ impl Thread {
 }
 
 pub mod guard {
-    pub unsafe fn current() -> Option<usize> { None }
-    pub unsafe fn init() -> Option<usize> { None }
+    pub struct Extent { cold_end: usize, guard: usize }
+    pub unsafe fn current() -> Option<Extent> { None }
+    pub unsafe fn init() -> Option<Extent> { None }
 }

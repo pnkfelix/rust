@@ -15,6 +15,37 @@ use libc;
 use sys::stack_overflow;
 use super::at_start_imp;
 
+/// A stack extent represents the area covered by the thread's stack.
+///
+/// A stack has a "hot end" where all the pushing/popping is currently
+/// happening and a "cold end" that is the opposite side.  (The "cold
+/// end" is sometimes called the "base" of the stack, though that is
+/// also sometimes used to refer to the end with low-valued
+/// addresses). The hot end changes frequently as the stack grows and
+/// shrinks, but the cold end is constant (as long as the stack itself
+/// is not replaced).
+///
+/// ```
+/// cold end        hot end        guard
+///    |               |             |
+///
+///    +-----------------------------+
+///    |                             |
+///    | stack grows ===>            |
+///    |                             |
+///    +-----------------------------+
+/// ```
+#[derive(Copy, Clone)]
+pub struct Extent { pub cold_end: usize, pub guard: usize }
+
+#[allow(dead_code)]
+impl Extent {
+    fn low_address_end(&self) -> usize { debug_assert!(self.guard < self.cold_end); self.guard }
+    fn high_address_end(&self) -> usize { debug_assert!(self.guard < self.cold_end); self.cold_end }
+    fn cold_end(&self) -> usize { self.cold_end }
+    fn guard_end(&self) -> usize { self.guard }
+}
+
 pub unsafe fn start_thread(main: *mut libc::c_void) {
     // Next, set up our stack overflow handler which may get triggered if we run
     // out of stack.

@@ -14,9 +14,10 @@ use cell::RefCell;
 use string::String;
 use thread::Thread;
 use thread::LocalKeyState;
+use sys_common::thread::Extent;
 
 struct ThreadInfo {
-    stack_guard: Option<usize>,
+    extent: Option<Extent>,
     thread: Thread,
 }
 
@@ -31,7 +32,7 @@ impl ThreadInfo {
         THREAD_INFO.with(move |c| {
             if c.borrow().is_none() {
                 *c.borrow_mut() = Some(ThreadInfo {
-                    stack_guard: None,
+                    extent: None,
                     thread: NewThread::new(None),
                 })
             }
@@ -44,14 +45,18 @@ pub fn current_thread() -> Option<Thread> {
     ThreadInfo::with(|info| info.thread.clone())
 }
 
-pub fn stack_guard() -> Option<usize> {
-    ThreadInfo::with(|info| info.stack_guard).and_then(|o| o)
+pub fn stack_cold_end() -> Option<usize> {
+    ThreadInfo::with(|info| info.extent.map(|e|e.cold_end)).and_then(|o| o)
 }
 
-pub fn set(stack_guard: Option<usize>, thread: Thread) {
+pub fn stack_guard() -> Option<usize> {
+    ThreadInfo::with(|info| info.extent.map(|e|e.guard)).and_then(|o| o)
+}
+
+pub fn set(extent: Option<Extent>, thread: Thread) {
     THREAD_INFO.with(|c| assert!(c.borrow().is_none()));
     THREAD_INFO.with(move |c| *c.borrow_mut() = Some(ThreadInfo{
-        stack_guard: stack_guard,
+        extent: extent,
         thread: thread,
     }));
 }

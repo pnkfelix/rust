@@ -182,7 +182,7 @@ impl Drop for Thread {
           not(all(target_os = "netbsd", not(target_vendor = "rumprun"))),
           not(target_os = "openbsd")))]
 pub mod guard {
-    pub unsafe fn current() -> Option<usize> { None }
+    pub unsafe fn current() -> Option<Extent> { None }
     pub unsafe fn init() -> Option<usize> { None }
 }
 
@@ -206,17 +206,18 @@ pub mod guard {
     use mem;
     use ptr;
     use super::{pthread_self, pthread_attr_destroy};
+    use sys_common::thread::Extent;
     use sys::os;
 
     #[cfg(any(target_os = "macos",
               target_os = "bitrig",
               target_os = "openbsd"))]
-    unsafe fn get_stack_start() -> Option<*mut libc::c_void> {
-        current().map(|s| s as *mut libc::c_void)
+    unsafe fn get_stack_extent() -> Option<Extent> {
+        current()
     }
 
     #[cfg(any(target_os = "linux", target_os = "android", target_os = "netbsd"))]
-    unsafe fn get_stack_start() -> Option<*mut libc::c_void> {
+    unsafe fn get_stack_extent() -> Option<Extent> {
         use super::pthread_attr_init;
 
         let mut ret = None;
@@ -227,16 +228,17 @@ pub mod guard {
             let mut stacksize = 0;
             assert_eq!(pthread_attr_getstack(&attr, &mut stackaddr,
                                              &mut stacksize), 0);
-            ret = Some(stackaddr);
+            let cold_end = guard + stacksize;
+            ret = Some(Extent { cold_end: cold_end, guard: stackaddr });
         }
         assert_eq!(pthread_attr_destroy(&mut attr), 0);
         ret
     }
 
-    pub unsafe fn init() -> Option<usize> {
+    pub unsafe fn init() -> Option<Extent> {
         let psize = os::page_size();
-        let mut stackaddr = match get_stack_start() {
-            Some(addr) => addr,
+        let Extent { cold_end, guard: mut stackaddr } = match get_stack_extent() {
+            Some(extent) => extent,
             None => return None,
         };
 
@@ -248,9 +250,9 @@ pub mod guard {
         // new_page_aligned_stackaddr < stackaddr + stacksize
         let remainder = (stackaddr as usize) % psize;
         if remainder != 0 {
-            stackaddr = ((stackaddr as usize) + psize - remainder)
-                as *mut libc::c_void;
+            stackaddr = (stackaddr as usize) + psize - remainder;
         }
+        let stackaddr = stackaddr as *mut libc::c_void;
 
         // Rellocate the last page of the stack.
         // This ensures SIGBUS will be raised on
@@ -267,22 +269,23 @@ pub mod guard {
         }
 
         let offset = if cfg!(target_os = "linux") {2} else {1};
-
-        Some(stackaddr as usize + offset * psize)
+        let guard = stackaddr as usize + offset * psize;
+        Some(Extent { cold_end: cold_end, guard: guard })
     }
 
     #[cfg(target_os = "macos")]
-    pub unsafe fn current() -> Option<usize> {
+    pub unsafe fn current() -> Option<Extent> {
         extern {
             fn pthread_get_stackaddr_np(thread: pthread_t) -> *mut libc::c_void;
             fn pthread_get_stacksize_np(thread: pthread_t) -> libc::size_t;
         }
-        Some((pthread_get_stackaddr_np(pthread_self()) as libc::size_t -
-              pthread_get_stacksize_np(pthread_self())) as usize)
+        let cold_end = pthread_get_stackaddr_np(pthread_self()) as usize;
+        let guard = (cold_end as libc::size_t - pthread_get_stacksize_np(pthread_self())) as usize;
+        Some(Extent { cold_end: cold_end, guard: guard })
     }
 
     #[cfg(any(target_os = "openbsd", target_os = "bitrig"))]
-    pub unsafe fn current() -> Option<usize> {
+    pub unsafe fn current() -> Option<Extent> {
         #[repr(C)]
         struct stack_t {
             ss_sp: *mut libc::c_void,
@@ -299,17 +302,19 @@ pub mod guard {
         assert_eq!(pthread_stackseg_np(pthread_self(), &mut current_stack), 0);
 
         let extra = if cfg!(target_os = "bitrig") {3} else {1} * os::page_size();
-        Some(if pthread_main_np() == 1 {
+        let cold_end = current_stack.ss_sp as usize;
+        let guard = if pthread_main_np() == 1 {
             // main thread
-            current_stack.ss_sp as usize - current_stack.ss_size as usize + extra
+            cold_end - current_stack.ss_size as usize + extra
         } else {
             // new thread
-            current_stack.ss_sp as usize - current_stack.ss_size as usize
-        })
+            cold_end - current_stack.ss_size as usize
+        };
+        Some(Extent { cold_end: cold_end, guard: guard })
     }
 
     #[cfg(any(target_os = "linux", target_os = "android", target_os = "netbsd"))]
-    pub unsafe fn current() -> Option<usize> {
+    pub unsafe fn current() -> Option<Extent> {
         use super::pthread_attr_init;
 
         let mut ret = None;
@@ -325,11 +330,13 @@ pub mod guard {
             let mut size = 0;
             assert_eq!(pthread_attr_getstack(&attr, &mut stackaddr, &mut size), 0);
 
-            ret = if cfg!(target_os = "netbsd") {
-                Some(stackaddr as usize)
+            let guard = if cfg!(target_os = "netbsd") {
+                stackaddr as usize
             } else {
-                Some(stackaddr as usize + guardsize as usize)
+                stackaddr as usize + guardsize as usize
             };
+            let cold_end = guard + size;
+            ret = Some(Extent { cold_end: cold_end, guard: guard });
         }
         assert_eq!(pthread_attr_destroy(&mut attr), 0);
         ret
