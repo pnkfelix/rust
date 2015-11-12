@@ -26,7 +26,6 @@ use util::small_vector::SmallVector;
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::iter::once;
 
 struct ParserAnyMacro<'a> {
     parser: RefCell<Parser<'a>>,
@@ -333,11 +332,14 @@ fn check_matcher<'a, I>(cx: &mut ExtCtxt, matcher: I, follow: &Token)
 -> Option<(Span, Token)> where I: Iterator<Item=&'a TokenTree> {
     use print::pprust::token_to_string;
 
+    debug!("check_matcher with follow: {:?}", follow);
     let mut last = None;
 
     // 2. For each token T in M:
-    let mut tokens = matcher.peekable();
-    while let Some(token) = tokens.next() {
+    let mut tokens = matcher.enumerate().peekable();
+    while let Some((i, token)) = tokens.next() {
+        debug!("check_matcher token_{i}: {t:?} with follow: {f:?}",
+               i=i, t=token, f=follow);
         last = match *token {
             TokenTree::Token(sp, MatchNt(ref name, ref frag_spec, _, _)) => {
                 // ii. If T is a simple NT, look ahead to the next token T' in
@@ -345,11 +347,15 @@ fn check_matcher<'a, I>(cx: &mut ExtCtxt, matcher: I, follow: &Token)
                 if can_be_followed_by_any(&frag_spec.name.as_str()) {
                     continue
                 } else {
+                    if let Some(&(i2, p)) = tokens.peek() {
+                        debug!("check_matcher token_{i}: {t:?} token_{i2}: {p:?} with follow: {f:?}",
+                               i=i, i2=i2, t=token, p=p, f=follow);
+                    }
                     let next_token = match tokens.peek() {
                         // If T' closes a complex NT, replace T' with F
-                        Some(&&TokenTree::Token(_, CloseDelim(_))) => follow.clone(),
-                        Some(&&TokenTree::Token(_, ref tok)) => tok.clone(),
-                        Some(&&TokenTree::Sequence(sp, _)) => {
+                        Some(&(_, &TokenTree::Token(_, CloseDelim(_)))) => follow.clone(),
+                        Some(&(_, &TokenTree::Token(_, ref tok))) => tok.clone(),
+                        Some(&(_, &TokenTree::Sequence(sp, _))) => {
                             // Be conservative around sequences: to be
                             // more specific, we would need to
                             // consider FIRST sets, but also the
@@ -367,7 +373,7 @@ fn check_matcher<'a, I>(cx: &mut ExtCtxt, matcher: I, follow: &Token)
                             Eof
                         },
                         // die next iteration
-                        Some(&&TokenTree::Delimited(_, ref delim)) => delim.close_token(),
+                        Some(&(_, &TokenTree::Delimited(_, ref delim))) => delim.close_token(),
                         // else, we're at the end of the macro or sequence
                         None => follow.clone()
                     };
@@ -398,54 +404,38 @@ fn check_matcher<'a, I>(cx: &mut ExtCtxt, matcher: I, follow: &Token)
             },
             TokenTree::Sequence(sp, ref seq) => {
                 // iii. Else, T is a complex NT.
-                match seq.separator {
+                if let Some(ref u) = seq.separator {
                     // If T has the form $(...)U+ or $(...)U* for some token U,
                     // run the algorithm on the contents with F set to U. If it
                     // accepts, continue, else, reject.
-                    Some(ref u) => {
-                        let last = check_matcher(cx, seq.tts.iter(), u);
-                        match last {
-                            // Since the delimiter isn't required after the last
-                            // repetition, make sure that the *next* token is
-                            // sane. This doesn't actually compute the FIRST of
-                            // the rest of the matcher yet, it only considers
-                            // single tokens and simple NTs. This is imprecise,
-                            // but conservatively correct.
-                            Some((span, tok)) => {
-                                let fol = match tokens.peek() {
-                                    Some(&&TokenTree::Token(_, ref tok)) => tok.clone(),
-                                    Some(&&TokenTree::Delimited(_, ref delim)) =>
-                                        delim.close_token(),
-                                    Some(_) => {
-                                        cx.span_err(sp, "sequence repetition followed by \
-                                                another sequence repetition, which is not allowed");
-                                        Eof
-                                    },
-                                    None => Eof
-                                };
-                                check_matcher(cx, once(&TokenTree::Token(span, tok.clone())),
-                                              &fol)
-                            },
-                            None => last,
-                        }
-                    },
-                    // If T has the form $(...)+ or $(...)*, run the algorithm
-                    // on the contents with F set to the token following the
-                    // sequence. If it accepts, continue, else, reject.
-                    None => {
-                        let fol = match tokens.peek() {
-                            Some(&&TokenTree::Token(_, ref tok)) => tok.clone(),
-                            Some(&&TokenTree::Delimited(_, ref delim)) => delim.close_token(),
-                            Some(_) => {
-                                cx.span_err(sp, "sequence repetition followed by another \
-                                             sequence repetition, which is not allowed");
-                                Eof
-                            },
-                            None => Eof
-                        };
-                        check_matcher(cx, seq.tts.iter(), &fol)
-                    }
+                    check_matcher(cx, seq.tts.iter(), u);
+
+                    // Since the delimiter U isn't required after the
+                    // last repetition, fall through to check that
+                    // sequence compatible with follow.
+                    debug!("check_matcher falling through with follow: {f:?}", f=follow);
+                } else {
+                    // If $(...)+ or $(...)*, just fall through.
                 }
+
+                // run the algorithm on the contents with F set to the
+                // token following the sequence. If it accepts,
+                // continue, else, reject.
+                if let Some(&(i2, p)) = tokens.peek() {
+                    debug!("check_matcher token_{i}: {t:?} token_{i2}: {p:?} with follow: {f:?}",
+                           i=i, i2=i2, t=token, p=p, f=follow);
+                }
+                let fol = match tokens.peek() {
+                    Some(&(_, &TokenTree::Token(_, ref tok))) => tok.clone(),
+                    Some(&(_, &TokenTree::Delimited(_, ref delim))) => delim.close_token(),
+                    Some(_) => {
+                        cx.span_err(sp, "sequence repetition followed by another \
+                                             sequence repetition, which is not allowed");
+                        Eof
+                    },
+                    None => Eof
+                };
+                check_matcher(cx, seq.tts.iter(), &fol)
             },
             TokenTree::Token(..) => {
                 // i. If T is not an NT, continue.
@@ -458,6 +448,7 @@ fn check_matcher<'a, I>(cx: &mut ExtCtxt, matcher: I, follow: &Token)
             }
         }
     }
+    debug!("check_matcher with follow: {:?} returns last: {:?}", follow, last);
     last
 }
 
