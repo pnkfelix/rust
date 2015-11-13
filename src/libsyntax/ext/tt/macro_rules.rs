@@ -348,8 +348,8 @@ fn check_matcher<'a, I>(cx: &mut ExtCtxt, matcher: I, follow: &Token)
                     continue
                 } else {
                     if let Some(&(i2, p)) = tokens.peek() {
-                        debug!("check_matcher token_{i}: {t:?} token_{i2}: {p:?} with follow: {f:?}",
-                               i=i, i2=i2, t=token, p=p, f=follow);
+                        debug!("check_matcher token_{}: {:?} token_{}: {:?} with follow: {:?}",
+                               i, token, i2, p, follow);
                     }
                     let next_token = match tokens.peek() {
                         // If T' closes a complex NT, replace T' with F
