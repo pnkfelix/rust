@@ -23,7 +23,7 @@
 // gdb-check:$1 = &[i32](len: 4) = {0, 1, 2, 3}
 
 // gdb-command: print vec
-// gdb-check:$2 = Vec<u64>(len: 4, cap: [...]) = {4, 5, 6, 7}
+// gdb-check:$2 = Vec<u64, alloc::heap::Allocator>(len: 4, cap: [...]) = {4, 5, 6, 7}
 
 // gdb-command: print str_slice
 // gdb-check:$3 = "IAMA string slice!"
