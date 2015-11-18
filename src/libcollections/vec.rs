@@ -1255,8 +1255,8 @@ impl<T: Clone, A: alloc::Allocator + Clone> Clone for Vec<T, A> {
     // `slice::to_vec`  function which is only available with cfg(test)
     // NB see the slice::hack module in slice.rs for more information
     #[cfg(test)]
-    fn clone(&self) -> Vec<T> {
-        let a = self.a.clone();
+    fn clone(&self) -> Vec<T, A> {
+        let a = self.buf.allocator().clone();
         ::slice::to_vec_in(&**self, a)
     }
 
