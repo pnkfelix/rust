@@ -129,7 +129,7 @@ pub use self::hack::into_vec;
 // HACK(japaric) needed for the implementation of `Vec::clone` during testing
 // NB see the hack module in this file for more details
 #[cfg(test)]
-pub use self::hack::to_vec;
+pub use self::hack::to_vec_in;
 
 // HACK(japaric): With cfg(test) `impl [T]` is not available, these three
 // functions are actually methods that are in `impl [T]` but not in

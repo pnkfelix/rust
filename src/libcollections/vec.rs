@@ -1647,7 +1647,7 @@ impl<'a, T: Clone, A:alloc::Allocator+Default> From<&'a [T]> for Vec<T, A> {
     }
     #[cfg(test)]
     fn from(s: &'a [T]) -> Vec<T, A> {
-        ::slice::to_vec(s)
+        ::slice::to_vec_in(s, Default::default())
     }
 }
 
