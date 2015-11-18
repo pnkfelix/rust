@@ -1524,7 +1524,9 @@ macro_rules! __impl_slice_eq3 {
     };
     ( impl ($($Param:ident),*) $Lhs: ty, $Rhs: ty, $Bound: ident) => {
         #[stable(feature = "rust1", since = "1.0.0")]
-        impl<'a, 'b, A: $Bound, B, $($Param:alloc::Allocator),*> PartialEq<$Rhs> for $Lhs where A: PartialEq<B> {
+        impl<'a, 'b, A: $Bound, B, $($Param),*> PartialEq<$Rhs> for $Lhs
+            where A: PartialEq<B>, $($Param:alloc::Allocator),*
+        {
             #[inline]
             fn eq(&self, other: &$Rhs) -> bool { self[..] == other[..] }
             #[inline]
