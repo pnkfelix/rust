@@ -338,6 +338,7 @@ pub mod error;
 pub use alloc::boxed;
 #[stable(feature = "rust1", since = "1.0.0")]
 pub use alloc::rc;
+pub use alloc::heap::Allocator as HeapAllocator;
 
 #[stable(feature = "rust1", since = "1.0.0")]
 pub use core_collections::borrow;

@@ -353,7 +353,9 @@ impl<T, A:alloc::Allocator> Vec<T, A> {
     /// # Examples
     ///
     /// ```
-    /// let mut vec: Vec<i32> = Vec::new_in(heap::Allocator);
+    /// #![feature(alloc, heap_api)]
+    /// use std::HeapAllocator;
+    /// let mut vec: Vec<i32> = Vec::new_in(HeapAllocator);
     /// ```
     #[inline]
     #[unstable(feature = "alloc", issue="27700")]
@@ -377,7 +379,9 @@ impl<T, A:alloc::Allocator> Vec<T, A> {
     /// # Examples
     ///
     /// ```
-    /// let mut vec = Vec::with_capacity_in(10, heap::Allocator);
+    /// #![feature(alloc, heap_api)]
+    /// use std::HeapAllocator;
+    /// let mut vec = Vec::with_capacity_in(10, HeapAllocator);
     ///
     /// // The vector contains no items, even though it has capacity for more
     /// assert_eq!(vec.len(), 0);
