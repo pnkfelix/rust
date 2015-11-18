@@ -105,8 +105,8 @@ impl<T> RawVec<T> {
 }
 
 impl<T, A> RawVec<T, A> where A:Allocator {
-    /// Creates the biggest possible RawVec (via allocator `a`) without allocating. If T has positive
-    /// size, then this makes a RawVec with capacity 0. If T has 0 size, then it
+    /// Creates the biggest possible RawVec (via allocator `a`) without allocating.
+    /// If T has size > 0, then this makes a RawVec with capacity 0. If T has 0 size,
     /// it makes a RawVec with capacity `usize::MAX`. Useful for implementing
     /// delayed allocation.
     pub fn new_in(a: A) -> Self {

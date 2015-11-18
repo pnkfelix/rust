@@ -170,7 +170,10 @@ impl api::Allocator for Allocator {
         NonZero::new(usable_size(*kind.size(), *kind.align()))
     }
 
-    unsafe fn realloc(&mut self, ptr: Address, kind: &Kind, new_size: Size) -> Result<Address, Self::Error> {
+    unsafe fn realloc(&mut self,
+                      ptr: Address,
+                      kind: &Kind,
+                      new_size: Size) -> Result<Address, Self::Error> {
         let ptr = reallocate(*ptr, *kind.size(), *new_size, *kind.align());
         if ptr.is_null() { return Err(::api::MemoryExhausted); }
         Ok(NonZero::new(ptr))

@@ -439,7 +439,10 @@ pub trait Allocator {
     ///
     /// Behavior undefined if above constraints are unmet. Behavior
     /// also undefined if `new_size` is 0.
-    unsafe fn realloc(&mut self, ptr: Address, kind: &Self::Kind, new_size: Size) -> Result<Address, Self::Error> {
+    unsafe fn realloc(&mut self,
+                      ptr: Address,
+                      kind: &Self::Kind,
+                      new_size: Size) -> Result<Address, Self::Error> {
         if new_size <= self.usable_size(kind) {
             return Ok(ptr);
         } else {
