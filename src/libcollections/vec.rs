@@ -354,6 +354,7 @@ impl<T, A:alloc::Allocator> Vec<T, A> {
     ///
     /// ```
     /// #![feature(alloc, heap_api)]
+    /// # #![allow(unused_mut)]
     /// use std::HeapAllocator;
     /// let mut vec: Vec<i32> = Vec::new_in(HeapAllocator);
     /// ```
