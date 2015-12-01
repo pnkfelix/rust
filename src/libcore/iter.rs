@@ -2417,6 +2417,7 @@ impl<'a, I: Iterator + ?Sized> Iterator for &'a mut I {
 /// Basic usage:
 ///
 /// ```
+/// # #![feature(default_type_parameter_fallback)]
 /// use std::iter::FromIterator;
 ///
 /// let five_fives = std::iter::repeat(5).take(5);
@@ -2500,6 +2501,7 @@ pub trait FromIterator<A>: Sized {
     /// Basic usage:
     ///
     /// ```
+    /// # #![feature(default_type_parameter_fallback)]
     /// use std::iter::FromIterator;
     ///
     /// let five_fives = std::iter::repeat(5).take(5);
