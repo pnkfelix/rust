@@ -338,6 +338,8 @@ pub mod error;
 pub use alloc::boxed;
 #[stable(feature = "rust1", since = "1.0.0")]
 pub use alloc::rc;
+
+#[unstable(feature = "allocator_api", reason = "Allocator API is not stabilized", issue = "99999")]
 pub use alloc::heap::Allocator as HeapAllocator;
 
 #[stable(feature = "rust1", since = "1.0.0")]
