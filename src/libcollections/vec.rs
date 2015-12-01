@@ -1586,7 +1586,7 @@ impl<T: Ord, A: alloc::Allocator> Ord for Vec<T, A> {
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<T, A: alloc::Allocator> Drop for Vec<T, A> {
-    #[unsafe_destructor_blind_to_params]
+    #[unsafe_destructor_blind_to_params] // broken: should be pointed at T
     fn drop(&mut self) {
         if self.buf.unsafe_no_drop_flag_needs_drop() {
             unsafe {
@@ -1783,6 +1783,7 @@ impl<T> ExactSizeIterator for IntoIter<T> {}
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<T, A> Drop for IntoIter<T, A> where A:alloc::Allocator{
+    #[unsafe_destructor_blind_to_params] // broken: should be pointed at T
     fn drop(&mut self) {
         // destroy the remaining elements
         for _x in self {}
@@ -1832,6 +1833,7 @@ impl<'a, T, A: alloc::Allocator> DoubleEndedIterator for Drain<'a, T, A> {
 
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<'a, T, A: alloc::Allocator> Drop for Drain<'a, T, A> {
+    #[unsafe_destructor_blind_to_params] // broken: should be pointed at T
     fn drop(&mut self) {
         // exhaust self first
         while let Some(_) = self.next() {}
