@@ -502,7 +502,7 @@ unsafe impl<T: Sync + ?Sized> Sync for Unique<T> { }
 #[unstable(feature = "unique", issue = "27730")]
 impl<T: ?Sized> Unique<T> {
     /// Creates a new `Unique`.
-    pub const unsafe fn new(ptr: *mut T) -> Unique<T> {
+    pub unsafe fn new(ptr: *mut T) -> Unique<T> {
         Unique { pointer: NonZero::new(ptr), _marker: PhantomData }
     }
 
