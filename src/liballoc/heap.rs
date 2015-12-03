@@ -147,34 +147,34 @@ unsafe fn exchange_free(ptr: *mut u8, old_size: usize, align: usize) {
     deallocate(ptr, old_size, align);
 }
 
-use api::{self, Address, AllocKind, Capacity, Kind, MemoryExhausted, Size};
+use api::{self, Address, Capacity, Kind, MemoryExhausted};
 use core::nonzero::NonZero;
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Allocator;
-impl api::Allocator for Allocator {
-    type Kind = ::api::Kind;
+unsafe impl api::Allocator for Allocator {
     type Error = ::api::MemoryExhausted;
 
-    unsafe fn alloc(&mut self, kind: &Kind) -> Result<Address, Self::Error> {
+    unsafe fn alloc(&mut self, kind: Kind) -> Result<Address, Self::Error> {
         let ptr = allocate(*kind.size(), *kind.align());
         if ptr.is_null() { return Err(MemoryExhausted) };
         Ok(NonZero::new(ptr))
     }
 
-    unsafe fn dealloc(&mut self, ptr: Address, kind: &Kind) {
-        deallocate(*ptr, *kind.size(), *kind.align())
+    unsafe fn dealloc(&mut self, ptr: Address, kind: Kind) -> Result<(), Self::Error> {
+        deallocate(*ptr, *kind.size(), *kind.align()); Ok(())
     }
 
-    unsafe fn usable_size(&self, kind: &Kind) -> Capacity {
+    unsafe fn usable_size(&self, kind: Kind) -> Capacity {
         NonZero::new(usable_size(*kind.size(), *kind.align()))
     }
 
     unsafe fn realloc(&mut self,
                       ptr: Address,
-                      kind: &Kind,
-                      new_size: Size) -> Result<Address, Self::Error> {
-        let ptr = reallocate(*ptr, *kind.size(), *new_size, *kind.align());
+                      kind: Kind,
+                      new_kind: Kind) -> Result<Address, Self::Error> {
+        if new_kind.align() > kind.align() { return Err(::api::MemoryExhausted); }
+        let ptr = reallocate(*ptr, *kind.size(), *new_kind.size(), *kind.align());
         if ptr.is_null() { return Err(::api::MemoryExhausted); }
         Ok(NonZero::new(ptr))
     }

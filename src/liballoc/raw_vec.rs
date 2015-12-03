@@ -20,7 +20,7 @@ use core::ops::Drop;
 use core::cmp;
 use core;
 
-use api::{Allocator, AllocKind};
+use api::{Allocator, Kind};
 
 /// A low-level utility for more ergonomically allocating, reallocating, and deallocating a
 /// a buffer of memory on the heap without having to worry about all the corner cases
@@ -152,8 +152,8 @@ impl<T, A> RawVec<T, A> where A:Allocator {
                 Unique::new(HEAP_EMPTY as *mut _)
             } else {
                 match a.alloc_array_unchecked::<T>(cap) {
-                    Ok(ptr) => ptr,
-                    Err(_) => a.oom(),
+                    Some(ptr) => ptr,
+                    None => a.oom(),
                 }
             };
 
@@ -267,8 +267,8 @@ impl<T, A> RawVec<T, A> where A: Allocator {
                 } else {
                     4
                 };
-                let kind = A::Kind::new::<T>().array(new_cap).unwrap();
-                let ptr = self.a.alloc(&kind);
+                let kind = Kind::array::<T>(new_cap).unwrap();
+                let ptr = self.a.alloc(kind);
                 (new_cap, ptr)
             } else {
                 // Since we guarantee that we never allocate more than isize::MAX bytes,
@@ -276,11 +276,12 @@ impl<T, A> RawVec<T, A> where A: Allocator {
                 let new_cap = 2 * self.cap;
                 let new_alloc_size = new_cap * elem_size;
                 alloc_guard(new_alloc_size);
-                let old_kind = A::Kind::new::<T>().array(self.cap).unwrap();
+                let old_kind = Kind::array::<T>(self.cap).unwrap();
                 let ptr = self.ptr();
+                let new_kind = Kind::array::<T>(new_cap).unwrap();
                 let ptr = self.a.realloc(NonZero::new(ptr as *mut _),
-                                         &old_kind,
-                                         NonZero::new(new_alloc_size));
+                                         old_kind,
+                                         new_kind);
                 (new_cap, ptr)
             };
 
@@ -372,14 +373,15 @@ impl<T, A> RawVec<T, A> where A: Allocator {
             alloc_guard(new_alloc_size);
 
             let ptr = if self.cap == 0 {
-                let kind = A::Kind::new::<T>().array(new_cap).unwrap();
-                self.a.alloc(&kind)
+                let kind = Kind::array::<T>(new_cap).unwrap();
+                self.a.alloc(kind)
             } else {
-                let old_kind = A::Kind::new::<T>().array(self.cap).unwrap();
+                let old_kind = Kind::array::<T>(self.cap).unwrap();
                 let ptr = self.ptr();
+                let new_kind = Kind::array::<T>(new_cap).unwrap();
                 self.a.realloc(NonZero::new(ptr as *mut _),
-                               &old_kind,
-                               NonZero::new(new_alloc_size))
+                               old_kind,
+                               new_kind)
             };
 
             let ptr = if let Ok(ptr) = ptr { ptr } else { self.a.oom() };
@@ -468,14 +470,15 @@ impl<T, A> RawVec<T, A> where A: Allocator {
             alloc_guard(new_alloc_size);
 
             let ptr = if self.cap == 0 {
-                let kind = A::Kind::new::<T>().array(new_cap).unwrap();
-                self.a.alloc(&kind)
+                let kind = Kind::array::<T>(new_cap).unwrap();
+                self.a.alloc(kind)
             } else {
-                let old_kind = A::Kind::new::<T>().array(self.cap).unwrap();
+                let old_kind = Kind::array::<T>(self.cap).unwrap();
+                let new_kind = Kind::array::<T>(new_cap).unwrap();
                 let ptr = self.ptr();
                 self.a.realloc(NonZero::new(ptr as *mut _),
-                               &old_kind,
-                               NonZero::new(new_alloc_size))
+                               old_kind,
+                               new_kind)
             };
 
             let ptr = if let Ok(ptr) = ptr { ptr } else { self.a.oom() };
@@ -568,11 +571,12 @@ impl<T, A> RawVec<T, A> where A: Allocator {
             unsafe {
                 // Overflow check is unnecessary as the vector is already at
                 // least this large.
-                let old_kind = A::Kind::new::<T>().array(self.cap).unwrap();
+                let old_kind = Kind::array::<T>(self.cap).unwrap();
+                let new_kind = Kind::array::<T>(amount).unwrap();
                 let ptr = *self.ptr;
                 let ptr = self.a.realloc(NonZero::new(ptr as *mut _),
-                                         &old_kind,
-                                         NonZero::new(amount * elem_size));
+                                         old_kind,
+                                         new_kind);
                 let ptr = if let Ok(ptr) = ptr { ptr } else { self.a.oom() };
                 self.ptr = Unique::new(*ptr as *mut _);
             }
@@ -621,13 +625,12 @@ trait TearDown: Allocator {
 impl<A:Allocator> TearDown for A {
     fn teardown<T>(&mut self, ptr: &mut Unique<T>, cap: usize) {
         if mem::size_of::<T>() == 0 { return; }
-        let elem_kind = A::Kind::new::<T>();
         if cap != 0 && cap != mem::POST_DROP_USIZE {
             // Since we must have previously built this kind when we made the vec, we can
             // use the unchecked path as we tear it down.
             unsafe {
-                let array_kind = elem_kind.array_unchecked(cap);
-                self.dealloc(NonZero::new(**ptr as *mut _), &array_kind);
+                let array_kind = Kind::array_unchecked::<T>(cap);
+                self.dealloc(NonZero::new(**ptr as *mut _), array_kind).ok();
             }
         }
     }
