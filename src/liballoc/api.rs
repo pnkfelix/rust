@@ -59,7 +59,7 @@ pub struct Kind {
 impl Kind {
     // (private constructor)
     fn from_size_align(size: usize, align: usize) -> Kind {
-        assert!(align.is_power_of_two()); 
+        assert!(align.is_power_of_two());
         let size = unsafe { assert!(size > 0); NonZero::new(size) };
         let align = unsafe { assert!(align > 0); NonZero::new(align) };
         Kind { size: size, align: align }
@@ -523,7 +523,7 @@ pub unsafe trait Allocator {
 
     // == METHODS FOR MEMORY REUSE ==
     // realloc. alloc_excess, realloc_excess
-    
+
     /// Returns a pointer suitable for holding data described by
     /// `new_kind`, meeting its size and alignment guarantees. To
     /// accomplish this, this may extend or shrink the allocation
@@ -614,7 +614,7 @@ pub unsafe trait Allocator {
 
     // == COMMON USAGE PATTERNS ==
     // alloc_one, dealloc_one, alloc_array, realloc_array. dealloc_array
-    
+
     /// Allocates a block suitable for holding an instance of `T`.
     ///
     /// Captures a common usage pattern for allocators.
@@ -749,7 +749,7 @@ pub unsafe trait Allocator {
     }
 
     /// Behaves like `fn alloc_unchecked`, but also returns the whole
-    /// size of the returned block. 
+    /// size of the returned block.
     unsafe fn alloc_excess_unchecked(&mut self, kind: Kind) -> Option<Excess> {
         self.alloc_excess(kind).ok()
     }
