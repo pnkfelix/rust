@@ -555,4 +555,16 @@ extern "rust-intrinsic" {
     /// the data pointer `data`, returning the exception payload if an exception
     /// is thrown (aka the thread panics).
     pub fn try(f: fn(*mut u8), data: *mut u8) -> *mut u8;
+
+    #[cfg(not(stage0))]
+    /// Records locations of all tracked values in scope at callsite
+    /// of intrinsic.
+    ///
+    /// (This is totally experimental, and it may be removed to switch
+    /// exclusively to something with `patchpoint`.  However, the
+    /// latter does not immediately lend itself to encoding as an
+    /// intrinsic, while `stackmap` *does*.)
+    #[unstable(feature="stackmap_intrinsic", reason="experimental", issue="17668")]
+    pub fn stackmap(id: i64, num_shadow_bytes: i32);
+
 }

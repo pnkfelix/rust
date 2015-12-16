@@ -296,6 +296,8 @@ pub fn check_intrinsic_type(ccx: &CrateCtxt, it: &hir::ForeignItem) {
                 (0, vec![tcx.mk_fn(None, fn_ty), mut_u8], mut_u8)
             }
 
+            "stackmap" => (0, vec![tcx.types.i64, tcx.types.i32], tcx.mk_nil()),
+
             ref other => {
                 span_err!(tcx.sess, it.span, E0093,
                           "unrecognized intrinsic function: `{}`", *other);
