@@ -719,8 +719,8 @@ impl<'a> Context<'a> {
 
 fn find_lang_feature_issue(feature: &str) -> Option<u32> {
     let info = KNOWN_FEATURES.iter()
-                              .find(|t| t.0 == feature)
-                              .unwrap();
+        .find(|t| t.0 == feature)
+        .unwrap_or_else(|| panic!("feature {} is not in KNOWN_FEATURES", feature));
     let issue = info.2;
     if let Active = info.3 {
         // FIXME (#28244): enforce that active features have issue numbers
