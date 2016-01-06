@@ -24,6 +24,11 @@ use trans::debuginfo::DebugLoc;
 
 use libc::{c_uint, c_char};
 
+pub enum ViaPatchpoint<'a> {
+    None,
+    KeepAlive(&'a [ValueRef]),
+}
+
 pub fn terminate(cx: Block, _: &str) {
     debug!("terminate({})", cx.to_str());
     cx.terminated.set(true);
