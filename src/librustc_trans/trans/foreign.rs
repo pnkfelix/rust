@@ -89,7 +89,7 @@ pub fn llvm_calling_convention(ccx: &CrateContext,
             ccx.sess().bug("asked to register platform intrinsic fn");
         }
 
-        Rust => {
+        Rust | Abi::RustPatchpoint | Abi::RustNonPatchpoint => {
             // FIXME(#3678) Implement linking to foreign fns with Rust ABI
             ccx.sess().unimpl("foreign functions with Rust ABI");
         }
