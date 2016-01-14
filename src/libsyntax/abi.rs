@@ -53,6 +53,18 @@ pub enum Abi {
     RustNonPatchpoint,
 }
 
+impl Abi {
+    pub fn is_foreign_abi(&self) -> bool {
+        match *self {
+            Abi::RustIntrinsic | Abi::PlatformIntrinsic => false,
+            Abi::Rust => false,
+            Abi::RustPatchpoint | Abi::RustNonPatchpoint => false,
+            Abi::RustCall => false,
+            _ => true,
+        }
+    }
+}
+
 #[allow(non_camel_case_types)]
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum Architecture {

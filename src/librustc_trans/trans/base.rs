@@ -2750,9 +2750,15 @@ pub fn get_item_val(ccx: &CrateContext, id: ast::NodeId) -> ValueRef {
 
                 hir::ItemFn(_, _, _, abi, _, _) => {
                     let sym = sym();
-                    let llfn = if abi == Rust {
+
+                    assert!(abi != Abi::RustCall, "maybe RustCall never arises; see FIXME below");
+
+                    let llfn = if !abi.is_foreign_abi() {
                         register_fn(ccx, i.span, sym, i.id, ty)
                     } else {
+                        // FIXME: is_foreign_abi says false for
+                        // RustCall; original code went through this
+                        // branch. (Does that case not arise?)
                         foreign::register_rust_fn_with_foreign_abi(ccx, i.span, sym, i.id)
                     };
                     attributes::from_fn_attrs(ccx, &i.attrs, llfn);
