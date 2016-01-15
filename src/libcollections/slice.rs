@@ -179,7 +179,7 @@ mod hack {
     #[inline]
     pub fn to_vec_in<T, A>(s: &[T], a: A) -> Vec<T, A> where T: Clone, A:alloc::Allocator {
         let mut vector = Vec::with_capacity_in(s.len(), a);
-        vector.push_all(s);
+        vector.extend_from_slice(s);
         vector
     }
 }

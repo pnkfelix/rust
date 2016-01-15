@@ -78,6 +78,7 @@
 #![feature(custom_attribute)]
 #![feature(fundamental)]
 #![feature(lang_items)]
+#![feature(nonzero)]
 #![feature(num_bits_bytes)]
 #![feature(optin_builtin_traits)]
 #![feature(placement_in_syntax)]

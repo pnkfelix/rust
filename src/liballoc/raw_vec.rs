@@ -452,8 +452,6 @@ impl<T, A> RawVec<T, A> where A: Allocator {
     /// ```
     pub fn reserve(&mut self, used_cap: usize, needed_extra_cap: usize) {
         unsafe {
-            let elem_size = mem::size_of::<T>();
-
             // NOTE: we don't early branch on ZSTs here because we want this
             // to actually catch "asking for more than usize::MAX" in that case.
             // If we make it past the first branch then we are guaranteed to

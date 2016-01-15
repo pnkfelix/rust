@@ -292,8 +292,8 @@ trait Sentinel {
 }
 
 impl<K> Sentinel for Unique<K> {
-    fn sentinel() -> Self { unsafe { Unique::new(EMPTY as *mut K) } }
-    fn is_sentinel(&self) -> bool { **self == (EMPTY as *mut K) }
+    fn sentinel() -> Self { unsafe { Unique::new(heap::EMPTY as *mut K) } }
+    fn is_sentinel(&self) -> bool { **self == (heap::EMPTY as *mut K) }
 }
 
 impl<K, V> Drop for Node<K, V> {
