@@ -68,7 +68,7 @@ use core::hash::{self, Hash};
 use core::intrinsics::{arith_offset, assume, needs_drop};
 use core::iter::FromIterator;
 use core::mem;
-use core::ops::{Index, IndexMut, Deref};
+use core::ops::{Index, IndexMut};
 use core::ops;
 use core::ptr;
 use core::slice;
@@ -725,10 +725,12 @@ impl<T> Vec<T> {
     }
 
     /// Create a draining iterator that removes the specified range in the vector
-    /// and yields the removed items from start to end. The element range is
-    /// removed even if the iterator is not consumed until the end.
+    /// and yields the removed items.
     ///
-    /// Note: It is unspecified how many elements are removed from the vector,
+    /// Note 1: The element range is removed even if the iterator is not
+    /// consumed until the end.
+    ///
+    /// Note 2: It is unspecified how many elements are removed from the vector,
     /// if the `Drain` value is leaked.
     ///
     /// # Panics
@@ -739,17 +741,16 @@ impl<T> Vec<T> {
     /// # Examples
     ///
     /// ```
-    /// #![feature(drain)]
-    ///
-    /// // Draining using `..` clears the whole vector.
     /// let mut v = vec![1, 2, 3];
-    /// let u: Vec<_> = v.drain(..).collect();
+    /// let u: Vec<_> = v.drain(1..).collect();
+    /// assert_eq!(v, &[1]);
+    /// assert_eq!(u, &[2, 3]);
+    ///
+    /// // A full range clears the vector
+    /// v.drain(..);
     /// assert_eq!(v, &[]);
-    /// assert_eq!(u, &[1, 2, 3]);
     /// ```
-    #[unstable(feature = "drain",
-               reason = "recently added, matches RFC",
-               issue = "27711")]
+    #[stable(feature = "drain", since = "1.6.0")]
     pub fn drain<R>(&mut self, range: R) -> Drain<T>
         where R: RangeArgument<usize>
     {
@@ -924,25 +925,36 @@ impl<T: Clone> Vec<T> {
         }
     }
 
+    #[allow(missing_docs)]
+    #[inline]
+    #[unstable(feature = "vec_push_all",
+               reason = "likely to be replaced by a more optimized extend",
+               issue = "27744")]
+    #[rustc_deprecated(reason = "renamed to extend_from_slice",
+                       since = "1.6.0")]
+    pub fn push_all(&mut self, other: &[T]) {
+        self.extend_from_slice(other)
+    }
+
     /// Appends all elements in a slice to the `Vec`.
     ///
     /// Iterates over the slice `other`, clones each element, and then appends
     /// it to this `Vec`. The `other` vector is traversed in-order.
     ///
+    /// Note that this function is same as `extend` except that it is
+    /// specialized to work with slices instead. If and when Rust gets
+    /// specialization this function will likely be deprecated (but still
+    /// available).
+    ///
     /// # Examples
     ///
     /// ```
-    /// #![feature(vec_push_all)]
-    ///
     /// let mut vec = vec![1];
-    /// vec.push_all(&[2, 3, 4]);
+    /// vec.extend_from_slice(&[2, 3, 4]);
     /// assert_eq!(vec, [1, 2, 3, 4]);
     /// ```
-    #[inline]
-    #[unstable(feature = "vec_push_all",
-               reason = "likely to be replaced by a more optimized extend",
-               issue = "27744")]
-    pub fn push_all(&mut self, other: &[T]) {
+    #[stable(feature = "vec_extend_from_slice", since = "1.6.0")]
+    pub fn extend_from_slice(&mut self, other: &[T]) {
         self.reserve(other.len());
 
         for i in 0..other.len() {
@@ -1103,7 +1115,7 @@ impl<T: Clone> Clone for Vec<T> {
 
         // self.len <= other.len due to the truncate above, so the
         // slice here is always in-bounds.
-        self.push_all(&other[len..]);
+        self.extend_from_slice(&other[len..]);
     }
 }
 
@@ -1347,6 +1359,21 @@ impl<T> Vec<T> {
 impl<'a, T: 'a + Copy> Extend<&'a T> for Vec<T> {
     fn extend<I: IntoIterator<Item = &'a T>>(&mut self, iter: I) {
         self.extend(iter.into_iter().cloned());
+    }
+}
+
+macro_rules! __impl_slice_eq1 {
+    ($Lhs: ty, $Rhs: ty) => {
+        __impl_slice_eq1! { $Lhs, $Rhs, Sized }
+    };
+    ($Lhs: ty, $Rhs: ty, $Bound: ident) => {
+        #[stable(feature = "rust1", since = "1.0.0")]
+        impl<'a, 'b, A: $Bound, B> PartialEq<$Rhs> for $Lhs where A: PartialEq<B> {
+            #[inline]
+            fn eq(&self, other: &$Rhs) -> bool { self[..] == other[..] }
+            #[inline]
+            fn ne(&self, other: &$Rhs) -> bool { self[..] != other[..] }
+        }
     }
 }
 
@@ -1605,7 +1632,7 @@ impl<T> Drop for IntoIter<T> {
 }
 
 /// A draining iterator for `Vec<T>`.
-#[unstable(feature = "drain", reason = "recently added", issue = "27711")]
+#[stable(feature = "drain", since = "1.6.0")]
 pub struct Drain<'a, T: 'a> {
     /// Index of tail to preserve
     tail_start: usize,
@@ -1616,9 +1643,9 @@ pub struct Drain<'a, T: 'a> {
     vec: *mut Vec<T>,
 }
 
-#[unstable(feature = "drain", reason = "recently added", issue = "27711")]
+#[stable(feature = "drain", since = "1.6.0")]
 unsafe impl<'a, T: Sync> Sync for Drain<'a, T> {}
-#[unstable(feature = "drain", reason = "recently added", issue = "27711")]
+#[stable(feature = "drain", since = "1.6.0")]
 unsafe impl<'a, T: Send> Send for Drain<'a, T> {}
 
 #[stable(feature = "rust1", since = "1.0.0")]
