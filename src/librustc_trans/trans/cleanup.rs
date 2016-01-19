@@ -531,55 +531,6 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
         self.schedule_clean(cleanup_scope, drop as CleanupObj);
     }
 
-    fn schedule_clean(&self,
-                      cleanup_scope: ScopeId,
-                      cleanup: CleanupObj<'tcx>) {
-        match cleanup_scope {
-            AstScope(id) => self.schedule_clean_in_ast_scope(id, cleanup),
-            CustomScope(id) => self.schedule_clean_in_custom_scope(id, cleanup),
-        }
-    }
-
-    /// Schedules a cleanup to occur upon exit from `cleanup_scope`. If `cleanup_scope` is not
-    /// provided, then the cleanup is scheduled in the topmost scope, which must be a temporary
-    /// scope.
-    fn schedule_clean_in_ast_scope(&self,
-                                   cleanup_scope: ast::NodeId,
-                                   cleanup: CleanupObj<'tcx>) {
-        debug!("schedule_clean_in_ast_scope(cleanup_scope={})",
-               cleanup_scope);
-
-        for scope in self.scopes.borrow_mut().iter_mut().rev() {
-            if scope.kind.is_ast_with_id(cleanup_scope) {
-                scope.cleanups.push(cleanup);
-                scope.clear_cached_exits();
-                return;
-            } else {
-                // will be adding a cleanup to some enclosing scope
-                scope.clear_cached_exits();
-            }
-        }
-
-        self.ccx.sess().bug(
-            &format!("no cleanup scope {} found",
-                    self.ccx.tcx().map.node_to_string(cleanup_scope)));
-    }
-
-    /// Schedules a cleanup to occur in the top-most scope, which must be a temporary scope.
-    fn schedule_clean_in_custom_scope(&self,
-                                      custom_scope: CustomScopeIndex,
-                                      cleanup: CleanupObj<'tcx>) {
-        debug!("schedule_clean_in_custom_scope(custom_scope={})",
-               custom_scope.index);
-
-        assert!(self.is_valid_custom_scope(custom_scope));
-
-        let mut scopes = self.scopes.borrow_mut();
-        let scope = &mut (*scopes)[custom_scope.index];
-        scope.cleanups.push(cleanup);
-        scope.clear_cached_exits();
-    }
-
     /// Returns true if there are pending cleanups that should execute on panic.
     fn needs_invoke(&self) -> bool {
         self.scopes.borrow().iter().rev().any(|s| s.needs_invoke())
@@ -660,6 +611,55 @@ impl<'blk, 'tcx> CleanupHelperMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx
             }
         }
         bcx
+    }
+
+    fn schedule_clean(&self,
+                      cleanup_scope: ScopeId,
+                      cleanup: CleanupObj<'tcx>) {
+        match cleanup_scope {
+            AstScope(id) => self.schedule_clean_in_ast_scope(id, cleanup),
+            CustomScope(id) => self.schedule_clean_in_custom_scope(id, cleanup),
+        }
+    }
+
+    /// Schedules a cleanup to occur upon exit from `cleanup_scope`. If `cleanup_scope` is not
+    /// provided, then the cleanup is scheduled in the topmost scope, which must be a temporary
+    /// scope.
+    fn schedule_clean_in_ast_scope(&self,
+                                   cleanup_scope: ast::NodeId,
+                                   cleanup: CleanupObj<'tcx>) {
+        debug!("schedule_clean_in_ast_scope(cleanup_scope={})",
+               cleanup_scope);
+
+        for scope in self.scopes.borrow_mut().iter_mut().rev() {
+            if scope.kind.is_ast_with_id(cleanup_scope) {
+                scope.cleanups.push(cleanup);
+                scope.clear_cached_exits();
+                return;
+            } else {
+                // will be adding a cleanup to some enclosing scope
+                scope.clear_cached_exits();
+            }
+        }
+
+        self.ccx.sess().bug(
+            &format!("no cleanup scope {} found",
+                    self.ccx.tcx().map.node_to_string(cleanup_scope)));
+    }
+
+    /// Schedules a cleanup to occur in the top-most scope, which must be a temporary scope.
+    fn schedule_clean_in_custom_scope(&self,
+                                      custom_scope: CustomScopeIndex,
+                                      cleanup: CleanupObj<'tcx>) {
+        debug!("schedule_clean_in_custom_scope(custom_scope={})",
+               custom_scope.index);
+
+        assert!(self.is_valid_custom_scope(custom_scope));
+
+        let mut scopes = self.scopes.borrow_mut();
+        let scope = &mut (*scopes)[custom_scope.index];
+        scope.cleanups.push(cleanup);
+        scope.clear_cached_exits();
     }
 
     fn scopes_len(&self) -> usize {
@@ -1183,15 +1183,6 @@ pub trait CleanupMethods<'blk, 'tcx> {
                            val: ValueRef,
                            heap: Heap,
                            content_ty: Ty<'tcx>);
-    fn schedule_clean(&self,
-                      cleanup_scope: ScopeId,
-                      cleanup: CleanupObj<'tcx>);
-    fn schedule_clean_in_ast_scope(&self,
-                                   cleanup_scope: ast::NodeId,
-                                   cleanup: CleanupObj<'tcx>);
-    fn schedule_clean_in_custom_scope(&self,
-                                    custom_scope: CustomScopeIndex,
-                                    cleanup: CleanupObj<'tcx>);
     fn needs_invoke(&self) -> bool;
     fn get_landing_pad(&'blk self) -> BasicBlockRef;
 }
@@ -1208,6 +1199,15 @@ trait CleanupHelperMethods<'blk, 'tcx> {
                                     label: EarlyExitLabel)
                                     -> BasicBlockRef;
     fn get_or_create_landing_pad(&'blk self) -> BasicBlockRef;
+    fn schedule_clean(&self,
+                      cleanup_scope: ScopeId,
+                      cleanup: CleanupObj<'tcx>);
+    fn schedule_clean_in_ast_scope(&self,
+                                   cleanup_scope: ast::NodeId,
+                                   cleanup: CleanupObj<'tcx>);
+    fn schedule_clean_in_custom_scope(&self,
+                                    custom_scope: CustomScopeIndex,
+                                    cleanup: CleanupObj<'tcx>);
     fn scopes_len(&self) -> usize;
     fn push_scope(&self, scope: CleanupScope<'blk, 'tcx>);
     fn pop_scope(&self) -> CleanupScope<'blk, 'tcx>;
