@@ -1071,6 +1071,9 @@ pub enum Heap {
     HeapExchange
 }
 
+/// FreeValue is the cleanup that handles shallowly freeing the space
+/// created for a boxed value in the event that the runtime unwinds
+/// before the contents of the box have been initialized.
 #[derive(Copy, Clone)]
 pub struct FreeValue<'tcx> {
     ptr: ValueRef,
