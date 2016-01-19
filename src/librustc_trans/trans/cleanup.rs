@@ -221,9 +221,9 @@ impl<'tcx> CleanupObj<'tcx> {
             CleanupObj::LifetimeEnd(ref o) => &**o,
         }
     }
-    pub fn must_unwind(&self) -> bool { self.obj().must_unwind() }
-    pub fn is_lifetime_end(&self) -> bool { self.obj().is_lifetime_end() }
-    pub fn trans<'blk>(&self,
+    fn must_unwind(&self) -> bool { self.obj().must_unwind() }
+    fn is_lifetime_end(&self) -> bool { self.obj().is_lifetime_end() }
+    fn trans<'blk>(&self,
                        bcx: Block<'blk, 'tcx>,
                        debug_loc: DebugLoc)
                        -> Block<'blk, 'tcx> { self.obj().trans(bcx, debug_loc) }
