@@ -196,7 +196,7 @@ pub struct CachedEarlyExit {
     cleanup_block: BasicBlockRef,
 }
 
-pub trait Cleanup<'tcx> {
+trait Cleanup<'tcx> {
     fn must_unwind(&self) -> bool;
     fn is_lifetime_end(&self) -> bool;
     fn trans<'blk>(&self,
@@ -205,7 +205,29 @@ pub trait Cleanup<'tcx> {
                    -> Block<'blk, 'tcx>;
 }
 
-pub type CleanupObj<'tcx> = Box<Cleanup<'tcx>+'tcx>;
+// pub type CleanupObj<'tcx> = Box<Cleanup<'tcx>+'tcx>;
+
+pub enum CleanupObj<'tcx> {
+    DropValue(Box<DropValue<'tcx>>),
+    FreeValue(Box<FreeValue<'tcx>>),
+    LifetimeEnd(Box<LifetimeEnd>),
+}
+
+impl<'tcx> CleanupObj<'tcx> {
+    fn obj(&self) -> &Cleanup<'tcx> {
+        match *self {
+            CleanupObj::DropValue(ref o) => &**o,
+            CleanupObj::FreeValue(ref o) => &**o,
+            CleanupObj::LifetimeEnd(ref o) => &**o,
+        }
+    }
+    pub fn must_unwind(&self) -> bool { self.obj().must_unwind() }
+    pub fn is_lifetime_end(&self) -> bool { self.obj().is_lifetime_end() }
+    pub fn trans<'blk>(&self,
+                       bcx: Block<'blk, 'tcx>,
+                       debug_loc: DebugLoc)
+                       -> Block<'blk, 'tcx> { self.obj().trans(bcx, debug_loc) }
+}
 
 #[derive(Copy, Clone, Debug)]
 pub enum ScopeId {
@@ -397,7 +419,7 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
                cleanup_scope,
                self.ccx.tn().val_to_string(val));
 
-        self.schedule_clean(cleanup_scope, drop as CleanupObj);
+        self.schedule_clean(cleanup_scope, CleanupObj::LifetimeEnd(drop));
     }
 
     /// Schedules a (deep) drop of `val`, which is a pointer to an instance of `ty`
@@ -424,7 +446,7 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
                drop.fill_on_drop,
                drop.skip_dtor);
 
-        self.schedule_clean(cleanup_scope, drop as CleanupObj);
+        self.schedule_clean(cleanup_scope, CleanupObj::DropValue(drop));
     }
 
     /// Schedules a (deep) drop and filling of `val`, which is a pointer to an instance of `ty`
@@ -454,7 +476,7 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
                drop.skip_dtor,
                drop_hint.is_some());
 
-        self.schedule_clean(cleanup_scope, drop as CleanupObj);
+        self.schedule_clean(cleanup_scope, CleanupObj::DropValue(drop));
     }
 
     /// Issue #23611: Schedules a (deep) drop of the contents of
@@ -486,7 +508,7 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
                drop.fill_on_drop,
                drop.skip_dtor);
 
-        self.schedule_clean(cleanup_scope, drop as CleanupObj);
+        self.schedule_clean(cleanup_scope, CleanupObj::DropValue(drop));
     }
 
     /// Schedules a (deep) drop of `val`, which is an instance of `ty`
@@ -512,7 +534,7 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
                drop.fill_on_drop,
                drop.skip_dtor);
 
-        self.schedule_clean(cleanup_scope, drop as CleanupObj);
+        self.schedule_clean(cleanup_scope, CleanupObj::DropValue(drop));
     }
 
     /// Schedules a call to `free(val)`. Note that this is a shallow operation.
@@ -528,7 +550,7 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
                self.ccx.tn().val_to_string(val),
                heap);
 
-        self.schedule_clean(cleanup_scope, drop as CleanupObj);
+        self.schedule_clean(cleanup_scope, CleanupObj::FreeValue(drop));
     }
 
     /// Returns true if there are pending cleanups that should execute on panic.
