@@ -140,7 +140,10 @@ pub struct CleanupScope<'blk, 'tcx: 'blk> {
     // more details.
     kind: CleanupScopeKind<'blk, 'tcx>,
 
-    // Cleanups to run upon scope exit.
+    // Cleanups to run upon scope exit. The cleanups are emitted in
+    // reverse order from how they are stored here; i.e. they are run
+    // in last-in-first-out (LIFO) fashion. (This explains why we see
+    // lifetime_end's scheduled (i.e. "pushed") *before* drop_mem's.)
     cleanups: Vec<CleanupObj<'tcx>>,
 
     // The debug location any drop calls generated for this scope will be
@@ -196,6 +199,8 @@ pub struct CachedEarlyExit {
 }
 
 trait Cleanup<'tcx> {
+    // Returns true if this cleanup should still execute in response
+    // to a panic (and thus require proper unwinding support).
     fn must_unwind(&self) -> bool;
     fn is_lifetime_end(&self) -> bool;
     fn trans<'blk>(&self,
