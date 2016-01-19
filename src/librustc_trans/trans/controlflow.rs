@@ -53,7 +53,7 @@ pub fn trans_stmt<'blk, 'tcx>(cx: Block<'blk, 'tcx>,
     let id = ast_util::stmt_id(s);
     let cleanup_debug_loc =
         debuginfo::get_cleanup_debug_loc_for_ast_node(bcx.ccx(), id, s.span, false);
-    fcx.push_ast_cleanup_scope(cleanup_debug_loc);
+    let scope = fcx.push_ast_cleanup_scope(cleanup_debug_loc);
 
     match s.node {
         hir::StmtExpr(ref e, _) | hir::StmtSemi(ref e, _) => {
@@ -71,7 +71,7 @@ pub fn trans_stmt<'blk, 'tcx>(cx: Block<'blk, 'tcx>,
         }
     }
 
-    bcx = fcx.pop_and_trans_ast_cleanup_scope(bcx, ast_util::stmt_id(s));
+    bcx = fcx.pop_and_trans_ast_cleanup_scope(bcx, scope);
 
     return bcx;
 }
@@ -107,7 +107,7 @@ pub fn trans_block<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
 
     let cleanup_debug_loc =
         debuginfo::get_cleanup_debug_loc_for_ast_node(bcx.ccx(), b.id, b.span, true);
-    fcx.push_ast_cleanup_scope(cleanup_debug_loc);
+    let scope = fcx.push_ast_cleanup_scope(cleanup_debug_loc);
 
     for s in &b.stmts {
         bcx = trans_stmt(bcx, s);
@@ -140,7 +140,7 @@ pub fn trans_block<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
         }
     }
 
-    bcx = fcx.pop_and_trans_ast_cleanup_scope(bcx, b.id);
+    bcx = fcx.pop_and_trans_ast_cleanup_scope(bcx, scope);
 
     return bcx;
 }
@@ -240,7 +240,7 @@ pub fn trans_while<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     let cond_bcx_in = fcx.new_id_block("while_cond", cond.id);
     let body_bcx_in = fcx.new_id_block("while_body", body.id);
 
-    fcx.push_loop_cleanup_scope(loop_expr.id, [next_bcx_in, cond_bcx_in]);
+    let scope = fcx.push_loop_cleanup_scope(loop_expr.id, [next_bcx_in, cond_bcx_in]);
 
     Br(bcx, cond_bcx_in.llbb, loop_expr.debug_loc());
 
@@ -257,7 +257,7 @@ pub fn trans_while<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     let body_bcx_out = trans_block(body_bcx_in, body, expr::Ignore);
     Br(body_bcx_out, cond_bcx_in.llbb, DebugLoc::None);
 
-    fcx.pop_loop_cleanup_scope(loop_expr.id);
+    fcx.pop_loop_cleanup_scope(scope);
     return next_bcx_in;
 }
 
@@ -287,13 +287,13 @@ pub fn trans_loop<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     let next_bcx_in = bcx.fcx.new_id_block("loop_exit", loop_expr.id);
     let body_bcx_in = bcx.fcx.new_id_block("loop_body", body.id);
 
-    fcx.push_loop_cleanup_scope(loop_expr.id, [next_bcx_in, body_bcx_in]);
+    let scope = fcx.push_loop_cleanup_scope(loop_expr.id, [next_bcx_in, body_bcx_in]);
 
     Br(bcx, body_bcx_in.llbb, loop_expr.debug_loc());
     let body_bcx_out = trans_block(body_bcx_in, body, expr::Ignore);
     Br(body_bcx_out, body_bcx_in.llbb, DebugLoc::None);
 
-    fcx.pop_loop_cleanup_scope(loop_expr.id);
+    fcx.pop_loop_cleanup_scope(scope);
 
     // If there are no predecessors for the next block, we just translated an endless loop and the
     // next block is unreachable

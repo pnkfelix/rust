@@ -393,7 +393,7 @@ fn trans_fn_once_adapter_shim<'a, 'tcx>(
 
     // the first argument (`self`) will be the (by value) closure env.
     let self_scope = fcx.push_custom_cleanup_scope();
-    let self_scope_id = CustomScope(self_scope);
+    let self_scope_id = CustomScope(self_scope.0);
     let rvalue_mode = datum::appropriate_rvalue_mode(ccx, closure_ty);
     let self_idx = fcx.arg_offset();
     let llself = llargs[self_idx];

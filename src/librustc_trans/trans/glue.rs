@@ -344,7 +344,7 @@ fn trans_struct_drop<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
 
     // Issue #23611: schedule cleanup of contents, re-inspecting the
     // discriminant (if any) in case of variant swap in drop code.
-    bcx.fcx.schedule_drop_adt_contents(cleanup::CustomScope(contents_scope), v0, t);
+    bcx.fcx.schedule_drop_adt_contents(cleanup::CustomScope(contents_scope.0), v0, t);
 
     let (sized_args, unsized_args);
     let args: &[ValueRef] = if type_is_sized(tcx, t) {

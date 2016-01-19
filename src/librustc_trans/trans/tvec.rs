@@ -218,7 +218,7 @@ fn write_content<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                i, bcx.val_to_string(lleltptr));
                         bcx = expr::trans_into(bcx, &**element,
                                                SaveIn(lleltptr));
-                        let scope = cleanup::CustomScope(temp_scope);
+                        let scope = cleanup::CustomScope(temp_scope.0);
                         // Issue #30822: mark memory as dropped after running destructor
                         fcx.schedule_drop_and_fill_mem(scope, lleltptr, vt.unit_ty, None);
                     }

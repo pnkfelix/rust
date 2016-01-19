@@ -601,7 +601,7 @@ pub fn trans_call_inner<'a, 'blk, 'tcx, F>(bcx: Block<'blk, 'tcx>,
     let ccx = fcx.ccx;
     let arg_cleanup_scope = fcx.push_custom_cleanup_scope();
 
-    let callee = get_callee(bcx, cleanup::CustomScope(arg_cleanup_scope));
+    let callee = get_callee(bcx, cleanup::CustomScope(arg_cleanup_scope.0));
     let mut bcx = callee.bcx;
 
     let (abi, ret_ty) = match callee.ty.sty {
@@ -720,7 +720,7 @@ pub fn trans_call_inner<'a, 'blk, 'tcx, F>(bcx: Block<'blk, 'tcx>,
                          args,
                          callee.ty,
                          &mut llargs,
-                         cleanup::CustomScope(arg_cleanup_scope),
+                         cleanup::CustomScope(arg_cleanup_scope.0),
                          llself.is_some(),
                          abi);
 
@@ -761,7 +761,7 @@ pub fn trans_call_inner<'a, 'blk, 'tcx, F>(bcx: Block<'blk, 'tcx>,
                          args,
                          callee.ty,
                          &mut llargs,
-                         cleanup::CustomScope(arg_cleanup_scope),
+                         cleanup::CustomScope(arg_cleanup_scope.0),
                          false,
                          abi);
         fcx.scopes.borrow_mut().last_mut().unwrap().drop_non_lifetime_clean();

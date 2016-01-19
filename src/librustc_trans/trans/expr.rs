@@ -199,7 +199,7 @@ pub fn trans_into<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                                                           expr.id,
                                                                           expr.span,
                                                                           false);
-    bcx.fcx.push_ast_cleanup_scope(cleanup_debug_loc);
+    let scope = bcx.fcx.push_ast_cleanup_scope(cleanup_debug_loc);
 
     let kind = expr_kind(bcx.tcx(), expr);
     bcx = match kind {
@@ -214,7 +214,7 @@ pub fn trans_into<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
         }
     };
 
-    bcx.fcx.pop_and_trans_ast_cleanup_scope(bcx, expr.id)
+    bcx.fcx.pop_and_trans_ast_cleanup_scope(bcx, scope)
 }
 
 /// Translates an expression, returning a datum (and new block) encapsulating the result. When
@@ -299,7 +299,7 @@ pub fn trans<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                                                           expr.id,
                                                                           expr.span,
                                                                           false);
-    fcx.push_ast_cleanup_scope(cleanup_debug_loc);
+    let scope = fcx.push_ast_cleanup_scope(cleanup_debug_loc);
     let datum = match global {
         Some(rvalue) => rvalue.to_expr_datum(),
         None => unpack_datum!(bcx, trans_unadjusted(bcx, expr))
@@ -309,7 +309,7 @@ pub fn trans<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     } else {
         unpack_datum!(bcx, apply_adjustments(bcx, expr, datum))
     };
-    bcx = fcx.pop_and_trans_ast_cleanup_scope(bcx, expr.id);
+    bcx = fcx.pop_and_trans_ast_cleanup_scope(bcx, scope);
     return DatumBlock::new(bcx, datum);
 }
 
@@ -700,10 +700,10 @@ fn trans_datum_unadjusted<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                                                       x.id,
                                                                       x.span,
                                                                       false);
-                    fcx.push_ast_cleanup_scope(cleanup_debug_loc);
+                    let scope = fcx.push_ast_cleanup_scope(cleanup_debug_loc);
                     let datum = unpack_datum!(
                         bcx, tvec::trans_slice_vec(bcx, expr, &**x));
-                    bcx = fcx.pop_and_trans_ast_cleanup_scope(bcx, x.id);
+                    bcx = fcx.pop_and_trans_ast_cleanup_scope(bcx, scope);
                     DatumBlock::new(bcx, datum)
                 }
                 _ => {
@@ -1566,7 +1566,7 @@ pub fn trans_adt<'a, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
             let dest = adt::trans_field_ptr(bcx, &*repr, addr, discr, i);
             let e_ty = expr_ty_adjusted(bcx, &**e);
             bcx = trans_into(bcx, &**e, SaveIn(dest));
-            let scope = cleanup::CustomScope(custom_cleanup_scope);
+            let scope = cleanup::CustomScope(custom_cleanup_scope.0);
             fcx.schedule_lifetime_end(scope, dest);
             // FIXME: nonzeroing move should generalize to fields
             fcx.schedule_drop_mem(scope, dest, e_ty, None);
@@ -1686,7 +1686,7 @@ fn trans_uniq_expr<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
         trans_into(bcx, contents, SaveIn(val))
     } else {
         let custom_cleanup_scope = fcx.push_custom_cleanup_scope();
-        fcx.schedule_free_value(cleanup::CustomScope(custom_cleanup_scope),
+        fcx.schedule_free_value(cleanup::CustomScope(custom_cleanup_scope.0),
                                 val, contents_ty);
         let bcx = trans_into(bcx, contents, SaveIn(val));
         fcx.pop_custom_cleanup_scope(custom_cleanup_scope);

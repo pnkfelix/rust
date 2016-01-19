@@ -159,7 +159,7 @@ pub fn check_intrinsics(ccx: &CrateContext) {
 pub fn trans_intrinsic_call<'a, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
                                             node: ast::NodeId,
                                             callee_ty: Ty<'tcx>,
-                                            cleanup_scope: cleanup::CustomScopeIndex,
+                                            cleanup_scope: cleanup::PendingCustomCleanup,
                                             args: callee::CallArgs<'a, 'tcx>,
                                             dest: expr::Dest,
                                             substs: subst::Substs<'tcx>,
@@ -359,7 +359,7 @@ pub fn trans_intrinsic_call<'a, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
                              args,
                              callee_ty,
                              &mut llargs,
-                             cleanup::CustomScope(cleanup_scope),
+                             cleanup::CustomScope(cleanup_scope.0),
                              false,
                              RustIntrinsic);
 
@@ -450,7 +450,7 @@ pub fn trans_intrinsic_call<'a, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
                 let scratch = rvalue_scratch_datum(bcx, tp_ty, "tmp");
                 Store(bcx, llargs[0], expr::get_dataptr(bcx, scratch.val));
                 Store(bcx, llargs[1], expr::get_meta(bcx, scratch.val));
-                fcx.schedule_lifetime_end(cleanup::CustomScope(cleanup_scope), scratch.val);
+                fcx.schedule_lifetime_end(cleanup::CustomScope(cleanup_scope.0), scratch.val);
                 scratch.val
             };
             glue::drop_ty(bcx, ptr, tp_ty, call_debug_location);

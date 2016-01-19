@@ -49,7 +49,7 @@ pub fn trans_inline_asm<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, ia: &ast::InlineAsm)
             bcx = callee::trans_arg_datum(bcx,
                                           expr_ty(bcx, &*out.expr),
                                           out_datum,
-                                          cleanup::CustomScope(temp_scope),
+                                          cleanup::CustomScope(temp_scope.0),
                                           callee::DontAutorefArg,
                                           &mut inputs);
             if out.is_rw {
@@ -63,7 +63,7 @@ pub fn trans_inline_asm<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, ia: &ast::InlineAsm)
                 bcx = callee::trans_arg_datum(bcx,
                                               expr_ty(bcx, &*out.expr),
                                               out_datum,
-                                              cleanup::CustomScope(temp_scope),
+                                              cleanup::CustomScope(temp_scope.0),
                                               callee::DontAutorefArg,
                                               &mut ext_inputs);
                 ext_constraints.push(i.to_string());
@@ -79,7 +79,7 @@ pub fn trans_inline_asm<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, ia: &ast::InlineAsm)
         bcx = callee::trans_arg_datum(bcx,
                                     expr_ty(bcx, &**input),
                                     in_datum,
-                                    cleanup::CustomScope(temp_scope),
+                                    cleanup::CustomScope(temp_scope.0),
                                     callee::DontAutorefArg,
                                     &mut inputs);
     }

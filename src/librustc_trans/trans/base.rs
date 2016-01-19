@@ -2022,9 +2022,9 @@ pub fn trans_closure<'a, 'b, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                                     &decl.inputs,
                                     &monomorphized_arg_types,
                                     has_tupled_arg,
-                                    arg_scope);
+                                    arg_scope.0);
 
-    bcx = closure_env.load(bcx, cleanup::CustomScope(arg_scope));
+    bcx = closure_env.load(bcx, cleanup::CustomScope(arg_scope.0));
 
     // Up until here, IR instructions for this function have explicitly not been annotated with
     // source code location, so we don't step into call setup code. From here on, source location
