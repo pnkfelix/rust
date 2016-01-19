@@ -117,7 +117,6 @@
 pub use self::ScopeId::*;
 pub use self::CleanupScopeKind::*;
 pub use self::EarlyExitLabel::*;
-pub use self::Heap::*;
 
 use llvm::{BasicBlockRef, ValueRef};
 use trans::base;
@@ -541,14 +540,12 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
     fn schedule_free_value(&self,
                            cleanup_scope: ScopeId,
                            val: ValueRef,
-                           heap: Heap,
                            content_ty: Ty<'tcx>) {
-        let drop = box FreeValue { ptr: val, heap: heap, content_ty: content_ty };
+        let drop = box FreeValue { ptr: val, content_ty: content_ty };
 
-        debug!("schedule_free_value({:?}, val={}, heap={:?})",
+        debug!("schedule_free_value({:?}, val={}",
                cleanup_scope,
-               self.ccx.tn().val_to_string(val),
-               heap);
+               self.ccx.tn().val_to_string(val));
 
         self.schedule_clean(cleanup_scope, CleanupObj::FreeValue(drop));
     }
@@ -1066,18 +1063,12 @@ impl<'tcx> Cleanup<'tcx> for DropValue<'tcx> {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
-pub enum Heap {
-    HeapExchange
-}
-
 /// FreeValue is the cleanup that handles shallowly freeing the space
 /// created for a boxed value in the event that the runtime unwinds
 /// before the contents of the box have been initialized.
 #[derive(Copy, Clone)]
 pub struct FreeValue<'tcx> {
     ptr: ValueRef,
-    heap: Heap,
     content_ty: Ty<'tcx>
 }
 
@@ -1094,14 +1085,10 @@ impl<'tcx> Cleanup<'tcx> for FreeValue<'tcx> {
                    bcx: Block<'blk, 'tcx>,
                    debug_loc: DebugLoc)
                    -> Block<'blk, 'tcx> {
-        match self.heap {
-            HeapExchange => {
-                glue::trans_exchange_free_ty(bcx,
-                                             self.ptr,
-                                             self.content_ty,
-                                             debug_loc)
-            }
-        }
+        glue::trans_exchange_free_ty(bcx,
+                                     self.ptr,
+                                     self.content_ty,
+                                     debug_loc)
     }
 }
 
@@ -1206,7 +1193,6 @@ pub trait CleanupMethods<'blk, 'tcx> {
     fn schedule_free_value(&self,
                            cleanup_scope: ScopeId,
                            val: ValueRef,
-                           heap: Heap,
                            content_ty: Ty<'tcx>);
     fn needs_invoke(&self) -> bool;
     fn get_landing_pad(&'blk self) -> BasicBlockRef;
