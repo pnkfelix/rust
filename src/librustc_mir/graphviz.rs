@@ -39,16 +39,25 @@ pub fn write_mir_graphviz<W: Write>(mir: &Mir, w: &mut W) -> io::Result<()> {
     writeln!(w, "}}")
 }
 
-/// Write a graphviz DOT node for the given basic block.
-fn write_node<W: Write>(block: BasicBlock, mir: &Mir, w: &mut W) -> io::Result<()> {
+/// Write a graphviz HTML-styled label for the given basic block, with
+/// all necessary escaping already performed. (This is suitable for
+/// emitting directly, as is done in this module, or for use with the
+/// LabelText::HtmlStr from libgraphviz.)
+///
+/// `init` and `fini` are callbacks for emitting additional rows of
+/// data (using HTML enclosed with `<tr>` in the emitted text).
+pub fn write_node_label<W: Write, INIT, FINI>(block: BasicBlock, mir: &Mir, w: &mut W, num_cols: u32, init: INIT, fini: FINI) -> io::Result<()>
+    where INIT: Fn(&mut W) -> io::Result<()>,
+          FINI: Fn(&mut W) -> io::Result<()>
+{
     let data = mir.basic_block_data(block);
 
-    // Start a new node with the label to follow, in one of DOT's pseudo-HTML tables.
-    try!(write!(w, r#"    {} [shape="none", label=<"#, node(block)));
     try!(write!(w, r#"<table border="0" cellborder="1" cellspacing="0">"#));
 
     // Basic block number at the top.
-    try!(write!(w, r#"<tr><td bgcolor="gray" align="center">{}</td></tr>"#, block.index()));
+    try!(write!(w, r#"<tr><td bgcolor="gray" align="center" colspan="{}">{}</td></tr>"#, num_cols, block.index()));
+
+    try!(init(w));
 
     // List of statements in the middle.
     if !data.statements.is_empty() {
@@ -65,8 +74,19 @@ fn write_node<W: Write>(block: BasicBlock, mir: &Mir, w: &mut W) -> io::Result<(
     data.terminator().fmt_head(&mut terminator_head).unwrap();
     try!(write!(w, r#"<tr><td align="left">{}</td></tr>"#, dot::escape_html(&terminator_head)));
 
-    // Close the table, node label, and the node itself.
-    writeln!(w, "</table>>];")
+    try!(fini(w));
+
+    // Close the table
+    writeln!(w, "</table>")
+}
+
+/// Write a graphviz DOT node for the given basic block.
+fn write_node<W: Write>(block: BasicBlock, mir: &Mir, w: &mut W) -> io::Result<()> {
+    // Start a new node with the label to follow, in one of DOT's pseudo-HTML tables.
+    try!(write!(w, r#"    {} [shape="none", label=<"#, node(block)));
+    try!(write_node_label(block, mir, w, 1, |_| Ok(()), |_| Ok(())));
+    // Close the node label and the node itself.
+    writeln!(w, ">];")
 }
 
 /// Write graphviz DOT edges with labels between the given basic block and all of its successors.

@@ -23,7 +23,9 @@
 #![feature(rustc_diagnostic_macros)]
 #![feature(rustc_private)]
 #![feature(staged_api)]
-
+#![feature(associated_consts)]
+#![feature(braced_empty_structs)]
+#![feature(num_bits_bytes)] // for usize::BITS in dataflow
 #[macro_use] extern crate log;
 #[macro_use] extern crate syntax;
 
@@ -32,6 +34,7 @@
 extern crate graphviz as dot;
 extern crate rustc;
 extern crate rustc_front;
+extern crate rustc_mir;
 
 pub use borrowck::check_crate;
 pub use borrowck::build_borrowck_dataflow_data_for_fn;
