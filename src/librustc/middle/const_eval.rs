@@ -231,10 +231,10 @@ pub fn lookup_const_fn_by_id<'tcx>(tcx: &ty::ctxt<'tcx>, def_id: DefId)
     };
 
     match fn_like.kind() {
-        FnKind::ItemFn(_, _, _, hir::Constness::Const, _, _) => {
+        FnKind::ItemFn(_, _, _, hir::Constness::Const, _, _, _) => {
             Some(fn_like)
         }
-        FnKind::Method(_, m, _) => {
+        FnKind::Method(_, m, _, _) => {
             if m.constness == hir::Constness::Const {
                 Some(fn_like)
             } else {

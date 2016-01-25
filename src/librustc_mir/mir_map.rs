@@ -137,7 +137,7 @@ impl<'a, 'm, 'tcx> Visitor<'tcx> for InnerDump<'a,'m,'tcx> {
                 span: Span,
                 id: ast::NodeId) {
         let (prefix, implicit_arg_tys) = match fk {
-            intravisit::FnKind::Closure =>
+            intravisit::FnKind::Closure(..) =>
                 (format!("{}-", id), vec![closure_self_ty(&self.tcx, id, body.id)]),
             _ =>
                 (format!(""), vec![]),
