@@ -447,45 +447,48 @@ impl<'a> Id<'a> {
 /// The graph instance is responsible for providing the DOT compatible
 /// identifiers for the nodes and (optionally) rendered labels for the nodes and
 /// edges, as well as an identifier for the graph itself.
-pub trait Labeller<'a,N,E> {
+pub trait Labeller<'a> {
+    type Node;
+    type Edge;
+
     /// Must return a DOT compatible identifier naming the graph.
     fn graph_id(&'a self) -> Id<'a>;
 
     /// Maps `n` to a unique identifier with respect to `self`. The
     /// implementor is responsible for ensuring that the returned name
     /// is a valid DOT identifier.
-    fn node_id(&'a self, n: &N) -> Id<'a>;
+    fn node_id(&'a self, n: &Self::Node) -> Id<'a>;
 
     /// Maps `n` to one of the [graphviz `shape` names][1]. If `None`
     /// is returned, no `shape` attribute is specified.
     ///
     /// [1]: http://www.graphviz.org/content/node-shapes
-    fn node_shape(&'a self, _node: &N) -> Option<LabelText<'a>> {
+    fn node_shape(&'a self, _node: &Self::Node) -> Option<LabelText<'a>> {
         None
     }
 
     /// Maps `n` to a label that will be used in the rendered output.
     /// The label need not be unique, and may be the empty string; the
     /// default is just the output from `node_id`.
-    fn node_label(&'a self, n: &N) -> LabelText<'a> {
+    fn node_label(&'a self, n: &Self::Node) -> LabelText<'a> {
         LabelStr(self.node_id(n).name)
     }
 
     /// Maps `e` to a label that will be used in the rendered output.
     /// The label need not be unique, and may be the empty string; the
     /// default is in fact the empty string.
-    fn edge_label(&'a self, e: &E) -> LabelText<'a> {
+    fn edge_label(&'a self, e: &Self::Edge) -> LabelText<'a> {
         let _ignored = e;
         LabelStr("".into_cow())
     }
 
     /// Maps `n` to a style that will be used in the rendered output.
-    fn node_style(&'a self, _n: &N) -> Style {
+    fn node_style(&'a self, _n: &Self::Node) -> Style {
         Style::None
     }
 
     /// Maps `e` to a style that will be used in the rendered output.
-    fn edge_style(&'a self, _e: &E) -> Style {
+    fn edge_style(&'a self, _e: &Self::Edge) -> Style {
         Style::None
     }
 }
@@ -596,15 +599,18 @@ pub type Edges<'a,E> = Cow<'a,[E]>;
 /// `Cow<[T]>` to leave implementors the freedom to create
 /// entirely new vectors or to pass back slices into internally owned
 /// vectors.
-pub trait GraphWalk<'a, N: Clone, E: Clone> {
+pub trait GraphWalk<'a> {
+    type Node: Clone;
+    type Edge: Clone;
+
     /// Returns all the nodes in this graph.
-    fn nodes(&'a self) -> Nodes<'a, N>;
+    fn nodes(&'a self) -> Nodes<'a, Self::Node>;
     /// Returns all of the edges in this graph.
-    fn edges(&'a self) -> Edges<'a, E>;
+    fn edges(&'a self) -> Edges<'a, Self::Edge>;
     /// The source node for `edge`.
-    fn source(&'a self, edge: &E) -> N;
+    fn source(&'a self, edge: &Self::Edge) -> Self::Node;
     /// The target node for `edge`.
-    fn target(&'a self, edge: &E) -> N;
+    fn target(&'a self, edge: &Self::Edge) -> Self::Node;
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -622,28 +628,26 @@ pub fn default_options() -> Vec<RenderOption> {
 
 /// Renders directed graph `g` into the writer `w` in DOT syntax.
 /// (Simple wrapper around `render_opts` that passes a default set of options.)
-pub fn render<'a,
-              N: Clone + 'a,
-              E: Clone + 'a,
-              G: Labeller<'a, N, E> + GraphWalk<'a, N, E>,
-              W: Write>
-    (g: &'a G,
-     w: &mut W)
-     -> io::Result<()> {
+pub fn render<'a,N,E,G,W>(g: &'a G, w: &mut W) -> io::Result<()>
+    where N: Clone + 'a,
+          E: Clone + 'a,
+          G: Labeller<'a, Node=N, Edge=E> + GraphWalk<'a, Node=N, Edge=E>,
+          W: Write
+{
     render_opts(g, w, &[])
 }
 
 /// Renders directed graph `g` into the writer `w` in DOT syntax.
 /// (Main entry point for the library.)
-pub fn render_opts<'a,
-                   N: Clone + 'a,
-                   E: Clone + 'a,
-                   G: Labeller<'a, N, E> + GraphWalk<'a, N, E>,
-                   W: Write>
-    (g: &'a G,
-     w: &mut W,
-     options: &[RenderOption])
-     -> io::Result<()> {
+pub fn render_opts<'a, N, E, G, W>(g: &'a G,
+                                   w: &mut W,
+                                   options: &[RenderOption])
+                                   -> io::Result<()>
+    where N: Clone + 'a,
+          E: Clone + 'a,
+          G: Labeller<'a, Node=N, Edge=E> + GraphWalk<'a, Node=N, Edge=E>,
+          W: Write
+{
     fn writeln<W: Write>(w: &mut W, arg: &[&str]) -> io::Result<()> {
         for &s in arg {
             try!(w.write_all(s.as_bytes()));
