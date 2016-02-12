@@ -1860,6 +1860,7 @@ impl<'a> Parser<'a> {
 
         let mut res = Vec::new();
         loop {
+            let attrs = try!(self.parse_outer_attributes());
             match self.token {
                 token::Lifetime(_) => {
                     let lifetime = try!(self.parse_lifetime());
@@ -1869,7 +1870,8 @@ impl<'a> Parser<'a> {
                         } else {
                             Vec::new()
                         };
-                    res.push(ast::LifetimeDef { lifetime: lifetime,
+                    res.push(ast::LifetimeDef { attrs: attrs,
+                                                lifetime: lifetime,
                                                 bounds: bounds });
                 }
 
@@ -4020,6 +4022,7 @@ impl<'a> Parser<'a> {
     /// Matches typaram = IDENT (`?` unbound)? optbounds ( EQ ty )?
     fn parse_ty_param(&mut self) -> PResult<'a, TyParam> {
         let span = self.span;
+        let attrs = try!(self.parse_outer_attributes());
         let ident = try!(self.parse_ident());
 
         let bounds = try!(self.parse_colon_then_ty_param_bounds(BoundParsingMode::Modified));
@@ -4032,6 +4035,7 @@ impl<'a> Parser<'a> {
         };
 
         Ok(TyParam {
+            attrs: attrs,
             ident: ident,
             id: ast::DUMMY_NODE_ID,
             bounds: bounds,

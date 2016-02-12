@@ -74,6 +74,7 @@ pub trait AstBuilder {
     fn typaram(&self,
                span: Span,
                id: ast::Ident,
+               attrs: Vec<ast::Attribute>,
                bounds: ast::TyParamBounds,
                default: Option<P<ast::Ty>>) -> ast::TyParam;
 
@@ -84,6 +85,7 @@ pub trait AstBuilder {
     fn lifetime_def(&self,
                     span: Span,
                     name: ast::Name,
+                    attrs: Vec<ast::Attribute>,
                     bounds: Vec<ast::Lifetime>)
                     -> ast::LifetimeDef;
 
@@ -446,9 +448,11 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
     fn typaram(&self,
                span: Span,
                id: ast::Ident,
+               attrs: Vec<ast::Attribute>,
                bounds: ast::TyParamBounds,
                default: Option<P<ast::Ty>>) -> ast::TyParam {
         ast::TyParam {
+            attrs: attrs,
             ident: id,
             id: ast::DUMMY_NODE_ID,
             bounds: bounds,
@@ -497,9 +501,11 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
     fn lifetime_def(&self,
                     span: Span,
                     name: ast::Name,
+                    attrs: Vec<ast::Attribute>,
                     bounds: Vec<ast::Lifetime>)
                     -> ast::LifetimeDef {
         ast::LifetimeDef {
+            attrs: attrs,
             lifetime: self.lifetime(span, name),
             bounds: bounds
         }
