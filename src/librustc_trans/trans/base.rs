@@ -976,7 +976,7 @@ pub fn avoid_invoke(bcx: Block) -> bool {
     }
 }
 
-pub fn need_invoke(bcx: Block) -> bool {
+fn need_invoke(bcx: Block) -> bool {
     if avoid_invoke(bcx) {
         false
     } else {
@@ -1120,7 +1120,7 @@ pub fn init_local<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, local: &hir::Local) -> Blo
     _match::store_local(bcx, local)
 }
 
-pub fn raw_block<'blk, 'tcx>(fcx: &'blk FunctionContext<'blk, 'tcx>,
+fn raw_block<'blk, 'tcx>(fcx: &'blk FunctionContext<'blk, 'tcx>,
                              is_lpad: bool,
                              llbb: BasicBlockRef)
                              -> Block<'blk, 'tcx> {
@@ -1388,7 +1388,7 @@ pub fn alloca(cx: Block, ty: Type, name: &str) -> ValueRef {
     Alloca(cx, ty, name)
 }
 
-pub fn set_value_name(val: ValueRef, name: &str) {
+fn set_value_name(val: ValueRef, name: &str) {
     unsafe {
         let name = CString::new(name).unwrap();
         llvm::LLVMSetValueName(val, name.as_ptr());
@@ -1396,7 +1396,7 @@ pub fn set_value_name(val: ValueRef, name: &str) {
 }
 
 // Creates the alloca slot which holds the pointer to the slot for the final return value
-pub fn make_return_slot_pointer<'a, 'tcx>(fcx: &FunctionContext<'a, 'tcx>,
+fn make_return_slot_pointer<'a, 'tcx>(fcx: &FunctionContext<'a, 'tcx>,
                                           output_type: Ty<'tcx>)
                                           -> ValueRef {
     let lloutputtype = type_of::type_of(fcx.ccx, output_type);
@@ -1714,7 +1714,7 @@ pub fn init_function<'a, 'tcx>(fcx: &'a FunctionContext<'a, 'tcx>,
 //  - new_fn_ctxt
 //  - trans_args
 
-pub fn arg_kind<'a, 'tcx>(cx: &FunctionContext<'a, 'tcx>, t: Ty<'tcx>) -> datum::Rvalue {
+fn arg_kind<'a, 'tcx>(cx: &FunctionContext<'a, 'tcx>, t: Ty<'tcx>) -> datum::Rvalue {
     use trans::datum::{ByRef, ByValue};
 
     datum::Rvalue {
@@ -1724,7 +1724,7 @@ pub fn arg_kind<'a, 'tcx>(cx: &FunctionContext<'a, 'tcx>, t: Ty<'tcx>) -> datum:
 
 // create_datums_for_fn_args: creates lvalue datums for each of the
 // incoming function arguments.
-pub fn create_datums_for_fn_args<'a, 'tcx>(mut bcx: Block<'a, 'tcx>,
+fn create_datums_for_fn_args<'a, 'tcx>(mut bcx: Block<'a, 'tcx>,
                                            args: &[hir::Arg],
                                            arg_tys: &[Ty<'tcx>],
                                            has_tupled_arg: bool,
