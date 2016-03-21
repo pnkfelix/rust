@@ -20,7 +20,6 @@ use std::fmt;
 use std::iter;
 use std::ops::Index;
 
-use super::dataflow::BitDenotation;
 use super::abs_domain::{AbstractElem, Lift};
 
 // This submodule holds some newtype'd Index wrappers that are using
@@ -733,15 +732,5 @@ impl<'b, 'a: 'b, 'tcx: 'a> BlockContext<'b, 'a, 'tcx> {
                 self.on_move_out_lval(stmt_kind, lval, source);
             }
         }
-    }
-}
-
-impl<'tcx> BitDenotation for MoveData<'tcx>{
-    type Bit = MoveOut;
-    fn bits_per_block(&self) -> usize {
-        self.moves.len()
-    }
-    fn interpret(&self, idx: usize) -> &Self::Bit {
-        &self.moves[idx]
     }
 }

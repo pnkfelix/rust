@@ -466,6 +466,16 @@ impl<'tcx> DataflowState<MoveData<'tcx>> {
     }
 }
 
+impl<'tcx> BitDenotation for MoveData<'tcx>{
+    type Bit = MoveOut;
+    fn bits_per_block(&self) -> usize {
+        self.moves.len()
+    }
+    fn interpret(&self, idx: usize) -> &Self::Bit {
+        &self.moves[idx]
+    }
+}
+
 impl<'tcx> BitwiseOperator for MoveData<'tcx> {
     #[inline]
     fn join(&self, pred1: usize, pred2: usize) -> usize {
