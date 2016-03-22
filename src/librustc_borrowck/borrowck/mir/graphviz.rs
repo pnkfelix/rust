@@ -19,14 +19,16 @@ use std::fs::File;
 use std::io;
 use std::io::prelude::*;
 
-use super::MirBorrowckCtxt;
+use super::MirBorrowckCtxtPreDataflow;
 use bitslice::bits_to_string;
 use super::gather_moves::MoveOut;
 
-struct Graph<'c, 'b:'c, 'a:'b, 'tcx:'a> { mbcx: &'c MirBorrowckCtxt<'b, 'a, 'tcx>,
-                                          context: &'b str }
+struct Graph<'c, 'b:'c, 'a:'b, 'tcx:'a> {
+    mbcx: &'c MirBorrowckCtxtPreDataflow<'b, 'a, 'tcx>,
+    context: &'b str,
+}
 
-pub fn print_borrowck_graph_to(mbcx: &MirBorrowckCtxt,
+pub fn print_borrowck_graph_to(mbcx: &MirBorrowckCtxtPreDataflow,
                                context: &str,
                                path: &str) -> io::Result<()> {
     let g = Graph { mbcx: mbcx, context: context };

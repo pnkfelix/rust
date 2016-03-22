@@ -23,7 +23,7 @@ mod dataflow;
 mod gather_moves;
 mod graphviz;
 
-use self::dataflow::{Dataflow, DataflowState};
+use self::dataflow::{Dataflow, DataflowState, DataflowStateBuilder};
 use self::gather_moves::{MoveData};
 
 pub fn borrowck_mir<'b, 'a: 'b, 'tcx: 'a>(
@@ -45,21 +45,41 @@ pub fn borrowck_mir<'b, 'a: 'b, 'tcx: 'a>(
         }
     }
 
-    let mut mbcx = MirBorrowckCtxt {
+    let mut mbcx = MirBorrowckCtxtPreDataflow {
         bcx: bcx,
         mir: mir,
         node_id: id,
         attributes: attributes,
-        flow_state: DataflowState::new_move_analysis(mir, bcx.tcx),
+        flow_state: DataflowStateBuilder::new_move_analysis(mir, bcx.tcx),
     };
+
+    mbcx.dataflow();
+
+    let (flow_state, move_data) = mbcx.flow_state.unpack();
+
+    let mut mbcx = MirBorrowckCtxt {
+        bcx: mbcx.bcx,
+        mir: mbcx.mir,
+        node_id: mbcx.node_id,
+        attributes: mbcx.attributes,
+        move_data: move_data,
+        flow_state: flow_state
+    };
+
 
     for bb in mir.all_basic_blocks() {
         mbcx.process_basic_block(bb);
     }
 
-    mbcx.dataflow();
-
     debug!("borrowck_mir done");
+}
+
+pub struct MirBorrowckCtxtPreDataflow<'b, 'a: 'b, 'tcx: 'a> {
+    bcx: &'b mut BorrowckCtxt<'a, 'tcx>,
+    mir: &'b Mir<'tcx>,
+    node_id: ast::NodeId,
+    attributes: &'b [ast::Attribute],
+    flow_state: DataflowStateBuilder<MoveData<'tcx>>,
 }
 
 pub struct MirBorrowckCtxt<'b, 'a: 'b, 'tcx: 'a> {
@@ -67,6 +87,7 @@ pub struct MirBorrowckCtxt<'b, 'a: 'b, 'tcx: 'a> {
     mir: &'b Mir<'tcx>,
     node_id: ast::NodeId,
     attributes: &'b [ast::Attribute],
+    move_data: MoveData<'tcx>,
     flow_state: DataflowState<MoveData<'tcx>>,
 }
 
