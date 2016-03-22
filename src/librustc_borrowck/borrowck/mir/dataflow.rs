@@ -18,7 +18,8 @@ use std::mem;
 use std::usize;
 
 use super::MirBorrowckCtxt;
-use super::gather_moves::{Location, MoveData, MovePathData, MovePathIndex, MoveOutIndex, PathMap};
+use super::gather_moves::{Location, MoveData, MoveOut};
+use super::gather_moves::{MovePathData, MovePathIndex, MoveOutIndex, PathMap};
 use super::graphviz;
 use bitslice::BitSlice; // adds set_bit/get_bit to &[usize] bitvector rep.
 
