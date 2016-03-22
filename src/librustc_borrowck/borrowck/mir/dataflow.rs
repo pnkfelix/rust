@@ -14,10 +14,11 @@ use rustc::ty::TyCtxt;
 use rustc::mir::repr::{self, Mir};
 
 use std::io;
+use std::marker::PhantomData;
 use std::mem;
 use std::usize;
 
-use super::MirBorrowckCtxt;
+use super::MirBorrowckCtxtPreDataflow;
 use super::gather_moves::{Location, MoveData, MoveOut};
 use super::gather_moves::{MovePathData, MovePathIndex, MoveOutIndex, PathMap};
 use super::graphviz;
@@ -27,7 +28,7 @@ pub trait Dataflow {
     fn dataflow(&mut self);
 }
 
-impl<'b, 'a: 'b, 'tcx: 'a> Dataflow for MirBorrowckCtxt<'b, 'a, 'tcx> {
+impl<'b, 'a: 'b, 'tcx: 'a> Dataflow for MirBorrowckCtxtPreDataflow<'b, 'a, 'tcx> {
     fn dataflow(&mut self) {
         self.build_gen_and_kill_sets();
         self.pre_dataflow_instrumentation().unwrap();
@@ -39,12 +40,12 @@ impl<'b, 'a: 'b, 'tcx: 'a> Dataflow for MirBorrowckCtxt<'b, 'a, 'tcx> {
 struct PropagationContext<'c, 'b: 'c, 'a: 'b, 'tcx: 'a, OnReturn>
     where OnReturn: Fn(&MoveData, &mut [usize], &repr::Lvalue)
 {
-    mbcx: &'c mut MirBorrowckCtxt<'b, 'a, 'tcx>,
+    mbcx: &'c mut MirBorrowckCtxtPreDataflow<'b, 'a, 'tcx>,
     changed: bool,
     on_return: OnReturn
 }
 
-impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
+impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxtPreDataflow<'b, 'a, 'tcx> {
     fn propagate(&mut self) {
         let mut temp = vec![0; self.flow_state.sets.words_per_block];
         let mut propcx = PropagationContext {
@@ -160,14 +161,16 @@ impl<'c, 'b: 'c, 'a: 'b, 'tcx: 'a, OnReturn> PropagationContext<'c, 'b, 'a, 'tcx
     where OnReturn: Fn(&MoveData, &mut [usize], &repr::Lvalue)
 {
     fn reset(&mut self, bits: &mut [usize]) {
-        let e = if self.mbcx.flow_state.operator.initial_value() {usize::MAX} else {0};
+        let e = if MoveData::initial_value() {usize::MAX} else {0};
         for b in bits {
             *b = e;
         }
     }
 
     fn walk_cfg(&mut self, in_out: &mut [usize]) {
-        let &mut MirBorrowckCtxt { ref mir, ref mut flow_state, .. } = self.mbcx;
+        let &mut MirBorrowckCtxtPreDataflow {
+            ref mir, ref mut flow_state, ..
+        } = self.mbcx;
         for (idx, bb) in mir.basic_blocks.iter().enumerate() {
             {
                 let sets = flow_state.sets.for_block(idx);
@@ -184,7 +187,7 @@ impl<'c, 'b: 'c, 'a: 'b, 'tcx: 'a, OnReturn> PropagationContext<'c, 'b, 'a, 'tcx
     }
 }
 
-impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
+impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxtPreDataflow<'b, 'a, 'tcx> {
     fn pre_dataflow_instrumentation(&self) -> io::Result<()> {
         self.if_attr_meta_name_found(
             "borrowck_graphviz_preflow",
@@ -239,7 +242,7 @@ impl Bits {
     }
 }
 
-pub struct DataflowState<O: BitDenotation>
+pub struct DataflowStateBuilder<O: BitDenotation>
 {
     /// All the sets for the analysis. (Factored into its
     /// own structure so that we can borrow it mutably
@@ -248,6 +251,24 @@ pub struct DataflowState<O: BitDenotation>
 
     /// operator used to initialize, combine, and interpret bits.
     operator: O,
+}
+
+pub struct DataflowState<O: BitDenotation>
+{
+    /// All the sets for the analysis. (Factored into its
+    /// own structure so that we can borrow it mutably
+    /// on its own separate from other fields.)
+    pub sets: AllSets,
+
+    /// operator used to initialize, combine, and interpret bits.
+    operator: PhantomData<for <'a> Fn(&'a O)>,
+}
+
+impl<O: BitDenotation> DataflowStateBuilder<O> {
+    pub fn unpack(self) -> (DataflowState<O>, O) {
+        let DataflowStateBuilder { sets, operator } = self;
+        (DataflowState { sets: sets, operator: PhantomData }, operator)
+    }
 }
 
 pub struct AllSets {
@@ -306,41 +327,59 @@ impl AllSets {
     }
 }
 
-impl<O: BitDenotation> DataflowState<O> {
-    fn each_bit<F>(&self, words: &[usize], mut f: F)
-        where F: FnMut(usize) {
-        //! Helper for iterating over the bits in a bitvector.
+fn for_each_bit<F>(bits_per_block: usize, words: &[usize], mut f: F)
+    where F: FnMut(usize) {
+    //! Helper for iterating over the bits in a bitvector.
 
-        for (word_index, &word) in words.iter().enumerate() {
-            if word != 0 {
-                let usize_bits: usize = mem::size_of::<usize>();
-                let base_index = word_index * usize_bits;
-                for offset in 0..usize_bits {
-                    let bit = 1 << offset;
-                    if (word & bit) != 0 {
-                        // NB: we round up the total number of bits
-                        // that we store in any given bit set so that
-                        // it is an even multiple of usize::BITS. This
-                        // means that there may be some stray bits at
-                        // the end that do not correspond to any
-                        // actual value; that's why we first check
-                        // that we are in range of bits_per_block.
-                        let bit_index = base_index + offset as usize;
-                        if bit_index >= self.sets.bits_per_block() {
-                            return;
-                        } else {
-                            f(bit_index);
-                        }
+    for (word_index, &word) in words.iter().enumerate() {
+        if word != 0 {
+            let usize_bits: usize = mem::size_of::<usize>();
+            let base_index = word_index * usize_bits;
+            for offset in 0..usize_bits {
+                let bit = 1 << offset;
+                if (word & bit) != 0 {
+                    // NB: we round up the total number of bits
+                    // that we store in any given bit set so that
+                    // it is an even multiple of usize::BITS. This
+                    // means that there may be some stray bits at
+                    // the end that do not correspond to any
+                    // actual value; that's why we first check
+                    // that we are in range of bits_per_block.
+                    let bit_index = base_index + offset as usize;
+                    if bit_index >= bits_per_block {
+                        return;
+                    } else {
+                        f(bit_index);
                     }
                 }
             }
         }
+    }
+}
+
+impl<O: BitDenotation> DataflowStateBuilder<O> {
+    pub fn each_bit<F>(&self, words: &[usize], f: F) where F: FnMut(usize) {
+        for_each_bit(self.operator.bits_per_block(), words, f)
     }
 
     pub fn interpret_set(&self, words: &[usize]) -> Vec<&O::Bit> {
         let mut v = Vec::new();
         self.each_bit(words, |i| {
             v.push(self.operator.interpret(i));
+        });
+        v
+    }
+}
+
+impl<O: BitDenotation> DataflowState<O> {
+    pub fn each_bit<F>(&self, o: &O, words: &[usize], f: F) where F: FnMut(usize) {
+        for_each_bit(o.bits_per_block(), words, f)
+    }
+
+    pub fn interpret_set<'a>(&self, o: &'a O, words: &[usize]) -> Vec<&'a O::Bit> {
+        let mut v = Vec::new();
+        self.each_bit(o, words, |i| {
+            v.push(o.interpret(i));
         });
         v
     }
@@ -354,7 +393,7 @@ pub trait BitwiseOperator {
 /// Parameterization for the precise form of data flow that is used.
 pub trait DataflowOperator : BitwiseOperator {
     /// Specifies the initial value for each bit in the `on_entry` set
-    fn initial_value(&self) -> bool;
+    fn initial_value() -> bool;
 }
 
 pub trait BitDenotation: DataflowOperator {
@@ -367,7 +406,7 @@ pub trait BitDenotation: DataflowOperator {
     fn interpret(&self, idx: usize) -> &Self::Bit;
 }
 
-impl<D: BitDenotation> DataflowState<D> {
+impl<D: BitDenotation> DataflowStateBuilder<D> {
     pub fn new(mir: &Mir, denotation: D) -> Self {
         let bits_per_block = denotation.bits_per_block();
         let usize_bits = mem::size_of::<usize>() * 8;
@@ -375,12 +414,12 @@ impl<D: BitDenotation> DataflowState<D> {
         let num_blocks = mir.basic_blocks.len();
         let num_words = num_blocks * words_per_block;
 
-        let entry = if denotation.initial_value() { usize::MAX } else {0};
+        let entry = if D::initial_value() { usize::MAX } else {0};
 
         let zeroes = Bits::new(0, num_words);
         let on_entry = Bits::new(entry, num_words);
 
-        DataflowState {
+        DataflowStateBuilder {
             sets: AllSets {
                 bits_per_block: bits_per_block,
                 words_per_block: words_per_block,
@@ -393,7 +432,7 @@ impl<D: BitDenotation> DataflowState<D> {
     }
 }
 
-impl<D: BitDenotation> DataflowState<D> {
+impl<D: BitDenotation> DataflowStateBuilder<D> {
     /// Propagates the bits of `in_out` into all the successors of `bb`,
     /// using bitwise operator denoted by `self.operator`.
     ///
@@ -459,10 +498,10 @@ impl<D: BitDenotation> DataflowState<D> {
 }
 
 
-impl<'tcx> DataflowState<MoveData<'tcx>> {
+impl<'tcx> DataflowStateBuilder<MoveData<'tcx>> {
     pub fn new_move_analysis(mir: &Mir<'tcx>, tcx: &TyCtxt<'tcx>) -> Self {
         let move_data = MoveData::gather_moves(mir, tcx);
-        DataflowState::new(mir, move_data)
+        DataflowStateBuilder::new(mir, move_data)
     }
 }
 
@@ -485,7 +524,7 @@ impl<'tcx> BitwiseOperator for MoveData<'tcx> {
 
 impl<'tcx> DataflowOperator for MoveData<'tcx> {
     #[inline]
-    fn initial_value(&self) -> bool {
+    fn initial_value() -> bool {
         false // no loans in scope by default
     }
 }
