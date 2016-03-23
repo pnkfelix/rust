@@ -30,7 +30,7 @@ pub trait Dataflow {
 
 impl<'b, 'a: 'b, 'tcx: 'a> Dataflow for MirBorrowckCtxtPreDataflow<'b, 'a, 'tcx> {
     fn dataflow(&mut self) {
-        self.build_gen_and_kill_sets();
+        self.flow_state.build_gen_and_kill_sets();
         self.pre_dataflow_instrumentation().unwrap();
         self.propagate();
         self.post_dataflow_instrumentation().unwrap();
@@ -68,7 +68,9 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxtPreDataflow<'b, 'a, 'tcx> {
             propcx.walk_cfg(&mut temp);
         }
     }
+}
 
+impl<'a, 'tcx: 'a> DataflowStateBuilder<'a, 'tcx, MoveData<'tcx>> {
     fn build_gen_and_kill_sets(&mut self) {
         // First we need to build the gen- and kill-sets. The
         // gather_moves information provides a high-level mapping from
@@ -76,7 +78,7 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxtPreDataflow<'b, 'a, 'tcx> {
         // directly to gen-sets here). But we still need to figure out
         // the kill-sets.
 
-        let move_data = &self.flow_state.operator;
+        let move_data = &self.operator;
         let move_paths = &move_data.move_paths;
         let loc_map = &move_data.loc_map;
         let path_map = &move_data.path_map;
@@ -88,7 +90,7 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxtPreDataflow<'b, 'a, 'tcx> {
                                         is_cleanup: _ } =
                 self.mir.basic_block_data(bb);
 
-            let mut sets = self.flow_state.sets.for_block(bb.index());
+            let mut sets = self.sets.for_block(bb.index());
             for (j, stmt) in statements.iter().enumerate() {
                 let loc = Location { block: bb, index: j };
                 debug!("stmt {:?} at loc {:?} moves out of move_indexes {:?}",
@@ -242,7 +244,7 @@ impl Bits {
     }
 }
 
-pub struct DataflowStateBuilder<O: BitDenotation>
+pub struct DataflowStateBuilder<'a, 'tcx: 'a, O: BitDenotation>
 {
     /// All the sets for the analysis. (Factored into its
     /// own structure so that we can borrow it mutably
@@ -251,6 +253,8 @@ pub struct DataflowStateBuilder<O: BitDenotation>
 
     /// operator used to initialize, combine, and interpret bits.
     operator: O,
+
+    mir: &'a Mir<'tcx>,
 }
 
 pub struct DataflowState<O: BitDenotation>
@@ -264,9 +268,9 @@ pub struct DataflowState<O: BitDenotation>
     operator: PhantomData<for <'a> Fn(&'a O)>,
 }
 
-impl<O: BitDenotation> DataflowStateBuilder<O> {
+impl<'a, 'tcx: 'a, O: BitDenotation> DataflowStateBuilder<'a, 'tcx, O> {
     pub fn unpack(self) -> (DataflowState<O>, O) {
-        let DataflowStateBuilder { sets, operator } = self;
+        let DataflowStateBuilder { sets, operator, .. } = self;
         (DataflowState { sets: sets, operator: PhantomData }, operator)
     }
 }
@@ -357,7 +361,7 @@ fn for_each_bit<F>(bits_per_block: usize, words: &[usize], mut f: F)
     }
 }
 
-impl<O: BitDenotation> DataflowStateBuilder<O> {
+impl<'a, 'tcx: 'a, O: BitDenotation> DataflowStateBuilder<'a, 'tcx, O> {
     pub fn each_bit<F>(&self, words: &[usize], f: F) where F: FnMut(usize) {
         for_each_bit(self.operator.bits_per_block(), words, f)
     }
@@ -406,8 +410,8 @@ pub trait BitDenotation: DataflowOperator {
     fn interpret(&self, idx: usize) -> &Self::Bit;
 }
 
-impl<D: BitDenotation> DataflowStateBuilder<D> {
-    pub fn new(mir: &Mir, denotation: D) -> Self {
+impl<'a, 'tcx: 'a, D: BitDenotation> DataflowStateBuilder<'a, 'tcx, D> {
+    pub fn new(mir: &'a Mir<'tcx>, denotation: D) -> Self {
         let bits_per_block = denotation.bits_per_block();
         let usize_bits = mem::size_of::<usize>() * 8;
         let words_per_block = (bits_per_block + usize_bits - 1) / usize_bits;
@@ -428,11 +432,12 @@ impl<D: BitDenotation> DataflowStateBuilder<D> {
                 on_entry_sets: on_entry,
             },
             operator: denotation,
+            mir: mir,
         }
     }
 }
 
-impl<D: BitDenotation> DataflowStateBuilder<D> {
+impl<'a, 'tcx: 'a, D: BitDenotation> DataflowStateBuilder<'a, 'tcx, D> {
     /// Propagates the bits of `in_out` into all the successors of `bb`,
     /// using bitwise operator denoted by `self.operator`.
     ///
@@ -499,8 +504,9 @@ impl<D: BitDenotation> DataflowStateBuilder<D> {
 }
 
 
-impl<'tcx> DataflowStateBuilder<MoveData<'tcx>> {
-    pub fn new_move_analysis(mir: &Mir<'tcx>, tcx: &ty::TyCtxt<'tcx>) -> Self {
+impl<'a, 'tcx: 'a> DataflowStateBuilder<'a, 'tcx, MoveData<'tcx>> {
+    pub fn new_move_analysis(mir: &'a Mir<'tcx>,
+                             tcx: &ty::TyCtxt<'tcx>) -> Self {
         let move_data = MoveData::gather_moves(mir, tcx);
         DataflowStateBuilder::new(mir, move_data)
     }
