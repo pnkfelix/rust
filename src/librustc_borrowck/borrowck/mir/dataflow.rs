@@ -37,10 +37,10 @@ impl<'b, 'a: 'b, 'tcx: 'a> Dataflow for MirBorrowckCtxtPreDataflow<'b, 'a, 'tcx>
     }
 }
 
-struct PropagationContext<'c, 'b: 'c, 'a: 'b, 'tcx: 'a, OnReturn>
+struct PropagationContext<'c, 'b: 'c, 'tcx: 'b, OnReturn>
     where OnReturn: Fn(&MoveData, &mut [usize], &repr::Lvalue)
 {
-    mbcx: &'c mut MirBorrowckCtxtPreDataflow<'b, 'a, 'tcx>,
+    flow_state: &'c mut DataflowStateBuilder<'b, 'tcx, MoveData<'tcx>>,
     changed: bool,
     on_return: OnReturn
 }
@@ -49,7 +49,7 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxtPreDataflow<'b, 'a, 'tcx> {
     fn propagate(&mut self) {
         let mut temp = vec![0; self.flow_state.sets.words_per_block];
         let mut propcx = PropagationContext {
-            mbcx: &mut *self,
+            flow_state: &mut self.flow_state,
             changed: true,
             on_return: |move_data, in_out, dest_lval| {
                 let move_path_index = move_data.rev_lookup.find(dest_lval);
@@ -159,7 +159,7 @@ fn on_all_children_bits<Each>(set: &mut [usize],
     }
 }
 
-impl<'c, 'b: 'c, 'a: 'b, 'tcx: 'a, OnReturn> PropagationContext<'c, 'b, 'a, 'tcx, OnReturn>
+impl<'c, 'b: 'c, 'tcx: 'b, OnReturn> PropagationContext<'c, 'b, 'tcx, OnReturn>
     where OnReturn: Fn(&MoveData, &mut [usize], &repr::Lvalue)
 {
     fn reset(&mut self, bits: &mut [usize]) {
@@ -170,9 +170,8 @@ impl<'c, 'b: 'c, 'a: 'b, 'tcx: 'a, OnReturn> PropagationContext<'c, 'b, 'a, 'tcx
     }
 
     fn walk_cfg(&mut self, in_out: &mut [usize]) {
-        let &mut MirBorrowckCtxtPreDataflow {
-            ref mir, ref mut flow_state, ..
-        } = self.mbcx;
+        let ref mut flow_state = &mut self.flow_state;
+        let mir = flow_state.mir;
         for (idx, bb) in mir.basic_blocks.iter().enumerate() {
             {
                 let sets = flow_state.sets.for_block(idx);
