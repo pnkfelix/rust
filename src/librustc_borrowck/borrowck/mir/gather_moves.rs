@@ -206,6 +206,10 @@ pub struct MovePathData<'tcx> {
     move_paths: Vec<MovePath<'tcx>>,
 }
 
+impl<'tcx> MovePathData<'tcx> {
+    pub fn len(&self) -> usize { self.move_paths.len() }
+}
+
 impl<'tcx> Index<MovePathIndex> for MovePathData<'tcx> {
     type Output = MovePath<'tcx>;
     fn index(&self, i: MovePathIndex) -> &MovePath<'tcx> {

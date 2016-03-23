@@ -10,17 +10,17 @@
 
 use syntax::attr::AttrMetaMethods;
 
-use rustc::middle::ty;
 use rustc::mir::repr::{self, Mir};
 
+use std::fmt::Debug;
 use std::io;
 use std::marker::PhantomData;
 use std::mem;
 use std::usize;
 
-use super::MirBorrowckCtxtPreDataflow;
+use super::{MirBorrowckCtxtPreDataflow};
 use super::gather_moves::{Location, MoveData, MoveOut};
-use super::gather_moves::{MovePathData, MovePathIndex, MoveOutIndex, PathMap};
+use super::gather_moves::{MovePath, MovePathData, MovePathIndex, MoveOutIndex, PathMap};
 use super::graphviz;
 use bitslice::BitSlice; // adds set_bit/get_bit to &[usize] bitvector rep.
 
@@ -28,7 +28,8 @@ pub trait Dataflow {
     fn dataflow(&mut self);
 }
 
-impl<'b, 'a: 'b, 'tcx: 'a> Dataflow for MirBorrowckCtxtPreDataflow<'b, 'a, 'tcx> {
+impl<'b, 'a: 'b, 'tcx: 'a> Dataflow for MirBorrowckCtxtPreDataflow<'b, 'a, 'tcx, MovingOutStatements<'tcx>>
+{
     fn dataflow(&mut self) {
         self.flow_state.build_gen_and_kill_sets();
         self.pre_dataflow_instrumentation().unwrap();
@@ -37,19 +38,21 @@ impl<'b, 'a: 'b, 'tcx: 'a> Dataflow for MirBorrowckCtxtPreDataflow<'b, 'a, 'tcx>
     }
 }
 
-struct PropagationContext<'c, 'b: 'c, 'tcx: 'b, OnReturn>
-    where OnReturn: Fn(&MoveData, &mut [usize], &repr::Lvalue)
+struct PropagationContext<'c, 'b: 'c, 'tcx: 'b, O, OnReturn>
+    where O: 'c + BitDenotation<Ctxt=MoveData<'tcx>>,
+          OnReturn: Fn(&MoveData, &mut [usize], &repr::Lvalue)
 {
-    flow_state: &'c mut DataflowStateBuilder<'b, 'tcx, MoveData<'tcx>>,
+    builder: &'c mut DataflowStateBuilder<'b, 'tcx, O>,
     changed: bool,
     on_return: OnReturn
 }
 
-impl<'a, 'tcx: 'a> DataflowStateBuilder<'a, 'tcx, MoveData<'tcx>> {
+impl<'a, 'tcx: 'a> DataflowStateBuilder<'a, 'tcx, MovingOutStatements<'tcx>>
+{
     fn propagate(&mut self) {
-        let mut temp = vec![0; self.sets.words_per_block];
+        let mut temp = vec![0; self.flow_state.sets.words_per_block];
         let mut propcx = PropagationContext {
-            flow_state: self,
+            builder: self,
             changed: true,
             on_return: |move_data, in_out, dest_lval| {
                 let move_path_index = move_data.rev_lookup.find(dest_lval);
@@ -76,7 +79,7 @@ impl<'a, 'tcx: 'a> DataflowStateBuilder<'a, 'tcx, MoveData<'tcx>> {
         // directly to gen-sets here). But we still need to figure out
         // the kill-sets.
 
-        let move_data = &self.operator;
+        let move_data = &self.move_data;
         let move_paths = &move_data.move_paths;
         let loc_map = &move_data.loc_map;
         let path_map = &move_data.path_map;
@@ -88,7 +91,7 @@ impl<'a, 'tcx: 'a> DataflowStateBuilder<'a, 'tcx, MoveData<'tcx>> {
                                         is_cleanup: _ } =
                 self.mir.basic_block_data(bb);
 
-            let mut sets = self.sets.for_block(bb.index());
+            let mut sets = self.flow_state.sets.for_block(bb.index());
             for (j, stmt) in statements.iter().enumerate() {
                 let loc = Location { block: bb, index: j };
                 debug!("stmt {:?} at loc {:?} moves out of move_indexes {:?}",
@@ -157,28 +160,29 @@ fn on_all_children_bits<Each>(set: &mut [usize],
     }
 }
 
-impl<'c, 'b: 'c, 'tcx: 'b, OnReturn> PropagationContext<'c, 'b, 'tcx, OnReturn>
-    where OnReturn: Fn(&MoveData, &mut [usize], &repr::Lvalue)
+impl<'c, 'b: 'c, 'tcx: 'b, O, OnReturn> PropagationContext<'c, 'b, 'tcx, O, OnReturn>
+    where O: BitDenotation<Ctxt=MoveData<'tcx>>,
+          OnReturn: Fn(&MoveData, &mut [usize], &repr::Lvalue)
 {
     fn reset(&mut self, bits: &mut [usize]) {
-        let e = if MoveData::initial_value() {usize::MAX} else {0};
+        let e = if O::initial_value() {usize::MAX} else {0};
         for b in bits {
             *b = e;
         }
     }
 
     fn walk_cfg(&mut self, in_out: &mut [usize]) {
-        let ref mut flow_state = &mut self.flow_state;
-        let mir = flow_state.mir;
+        let mir = self.builder.mir;
         for (idx, bb) in mir.basic_blocks.iter().enumerate() {
+            let ref mut builder = &mut self.builder;
             {
-                let sets = flow_state.sets.for_block(idx);
+                let sets = builder.flow_state.sets.for_block(idx);
                 debug_assert!(in_out.len() == sets.on_entry.len());
                 in_out.clone_from_slice(sets.on_entry);
                 bitwise(in_out, sets.gen_set, &Union);
                 bitwise(in_out, sets.kill_set, &Subtract);
             }
-            flow_state.propagate_bits_into_graph_successors_of(in_out,
+            builder.propagate_bits_into_graph_successors_of(in_out,
                                                                &mut self.changed,
                                                                bb,
                                                                &self.on_return);
@@ -186,7 +190,10 @@ impl<'c, 'b: 'c, 'tcx: 'b, OnReturn> PropagationContext<'c, 'b, 'tcx, OnReturn>
     }
 }
 
-impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxtPreDataflow<'b, 'a, 'tcx> {
+impl<'b, 'a: 'b, 'tcx: 'a, BD> MirBorrowckCtxtPreDataflow<'b, 'a, 'tcx, BD>
+    where BD: BitDenotation<Ctxt=MoveData<'tcx>>,
+          BD::Bit: Debug
+{
     fn pre_dataflow_instrumentation(&self) -> io::Result<()> {
         self.if_attr_meta_name_found(
             "borrowck_graphviz_preflow",
@@ -241,17 +248,12 @@ impl Bits {
     }
 }
 
-pub struct DataflowStateBuilder<'a, 'tcx: 'a, O: BitDenotation>
+pub struct DataflowStateBuilder<'a, 'tcx: 'a, O>
+    where O: BitDenotation<Ctxt=MoveData<'tcx>>
 {
-    /// All the sets for the analysis. (Factored into its
-    /// own structure so that we can borrow it mutably
-    /// on its own separate from other fields.)
-    pub sets: AllSets,
-
-    /// operator used to initialize, combine, and interpret bits.
-    operator: O,
-
-    mir: &'a Mir<'tcx>,
+    pub flow_state: DataflowState<O>,
+    pub move_data: MoveData<'tcx>,
+    pub mir: &'a Mir<'tcx>,
 }
 
 pub struct DataflowState<O: BitDenotation>
@@ -262,13 +264,14 @@ pub struct DataflowState<O: BitDenotation>
     pub sets: AllSets,
 
     /// operator used to initialize, combine, and interpret bits.
-    operator: PhantomData<for <'a> Fn(&'a O)>,
+    operator: O,
 }
 
-impl<'a, 'tcx: 'a, O: BitDenotation> DataflowStateBuilder<'a, 'tcx, O> {
-    pub fn unpack(self) -> (DataflowState<O>, O) {
-        let DataflowStateBuilder { sets, operator, .. } = self;
-        (DataflowState { sets: sets, operator: PhantomData }, operator)
+impl<'a, 'tcx: 'a, O> DataflowStateBuilder<'a, 'tcx, O>
+    where O: BitDenotation<Ctxt=MoveData<'tcx>>
+{
+    pub fn unpack(self) -> (DataflowState<O>, MoveData<'tcx>) {
+        (self.flow_state, self.move_data)
     }
 }
 
@@ -301,7 +304,6 @@ pub struct BlockSets<'a> {
 }
 
 impl AllSets {
-    pub fn bits_per_block(&self) -> usize { self.bits_per_block }
     pub fn bytes_per_block(&self) -> usize { (self.bits_per_block + 7) / 8 }
     pub fn for_block(&mut self, block_idx: usize) -> BlockSets {
         let offset = self.words_per_block * block_idx;
@@ -358,29 +360,17 @@ fn for_each_bit<F>(bits_per_block: usize, words: &[usize], mut f: F)
     }
 }
 
-impl<'a, 'tcx: 'a, O: BitDenotation> DataflowStateBuilder<'a, 'tcx, O> {
-    pub fn each_bit<F>(&self, words: &[usize], f: F) where F: FnMut(usize) {
-        for_each_bit(self.operator.bits_per_block(), words, f)
+impl<O> DataflowState<O>
+    where O: BitDenotation
+{
+    pub fn each_bit<F>(&self, ctxt: &O::Ctxt, words: &[usize], f: F) where F: FnMut(usize) {
+        for_each_bit(self.operator.bits_per_block(ctxt), words, f)
     }
 
-    pub fn interpret_set(&self, words: &[usize]) -> Vec<&O::Bit> {
+    pub fn interpret_set<'c>(&self, ctxt: &'c O::Ctxt, words: &[usize]) -> Vec<&'c O::Bit> {
         let mut v = Vec::new();
-        self.each_bit(words, |i| {
-            v.push(self.operator.interpret(i));
-        });
-        v
-    }
-}
-
-impl<O: BitDenotation> DataflowState<O> {
-    pub fn each_bit<F>(&self, o: &O, words: &[usize], f: F) where F: FnMut(usize) {
-        for_each_bit(o.bits_per_block(), words, f)
-    }
-
-    pub fn interpret_set<'a>(&self, o: &'a O, words: &[usize]) -> Vec<&'a O::Bit> {
-        let mut v = Vec::new();
-        self.each_bit(o, words, |i| {
-            v.push(o.interpret(i));
+        self.each_bit(ctxt, words, |i| {
+            v.push(self.operator.interpret(ctxt, i));
         });
         v
     }
@@ -400,16 +390,41 @@ pub trait DataflowOperator : BitwiseOperator {
 pub trait BitDenotation: DataflowOperator {
     /// Specifies what is represented by each bit in the dataflow bitvector.
     type Bit;
+    /// Specifies what, if any, separate context needs to be supplied for methods below.
+    type Ctxt;
     /// Size of each bivector allocated for each block in the analysis.
-    fn bits_per_block(&self) -> usize;
+    fn bits_per_block(&self, &Self::Ctxt) -> usize;
     /// Provides the meaning of each entry in the dataflow bitvector.
     /// (Mostly intended for use for better debug instrumentation.)
-    fn interpret(&self, idx: usize) -> &Self::Bit;
+    fn interpret<'a>(&self, &'a Self::Ctxt, idx: usize) -> &'a Self::Bit;
 }
 
-impl<'a, 'tcx: 'a, D: BitDenotation> DataflowStateBuilder<'a, 'tcx, D> {
-    pub fn new(mir: &'a Mir<'tcx>, denotation: D) -> Self {
-        let bits_per_block = denotation.bits_per_block();
+impl<'a, BO: BitwiseOperator> BitwiseOperator for &'a BO {
+    fn join(&self, pred1: usize, pred2: usize) -> usize { (*self).join(pred1, pred2) }
+}
+
+impl<'a, DO: DataflowOperator> DataflowOperator for &'a DO {
+    fn initial_value() -> bool { DO::initial_value() }
+}
+
+impl<'a, BD: BitDenotation> BitDenotation for &'a BD {
+    type Bit = BD::Bit;
+    type Ctxt = BD::Ctxt;
+    fn bits_per_block(&self, ctxt: &Self::Ctxt) -> usize {
+        (*self).bits_per_block(ctxt)
+    }
+    fn interpret<'b>(&self, ctxt: &'b Self::Ctxt, idx: usize) -> &'b Self::Bit {
+        (*self).interpret(ctxt, idx)
+    }
+}
+
+impl<'a, 'tcx: 'a, D> DataflowStateBuilder<'a, 'tcx, D>
+    where D: BitDenotation<Ctxt=MoveData<'tcx>>
+{
+    pub fn new(mir: &'a Mir<'tcx>,
+               move_data: MoveData<'tcx>,
+               denotation: D) -> Self {
+        let bits_per_block = denotation.bits_per_block(&move_data);
         let usize_bits = mem::size_of::<usize>() * 8;
         let words_per_block = (bits_per_block + usize_bits - 1) / usize_bits;
         let num_blocks = mir.basic_blocks.len();
@@ -421,20 +436,25 @@ impl<'a, 'tcx: 'a, D: BitDenotation> DataflowStateBuilder<'a, 'tcx, D> {
         let on_entry = Bits::new(entry, num_words);
 
         DataflowStateBuilder {
-            sets: AllSets {
-                bits_per_block: bits_per_block,
-                words_per_block: words_per_block,
-                gen_sets: zeroes.clone(),
-                kill_sets: zeroes,
-                on_entry_sets: on_entry,
+            flow_state: DataflowState {
+                sets: AllSets {
+                    bits_per_block: bits_per_block,
+                    words_per_block: words_per_block,
+                    gen_sets: zeroes.clone(),
+                    kill_sets: zeroes,
+                    on_entry_sets: on_entry,
+                },
+                operator: denotation,
             },
-            operator: denotation,
+            move_data: move_data,
             mir: mir,
         }
     }
 }
 
-impl<'a, 'tcx: 'a, D: BitDenotation> DataflowStateBuilder<'a, 'tcx, D> {
+impl<'a, 'tcx: 'a, D> DataflowStateBuilder<'a, 'tcx, D>
+    where D: BitDenotation<Ctxt=MoveData<'tcx>>
+{
     /// Propagates the bits of `in_out` into all the successors of `bb`,
     /// using bitwise operator denoted by `self.operator`.
     ///
@@ -450,7 +470,7 @@ impl<'a, 'tcx: 'a, D: BitDenotation> DataflowStateBuilder<'a, 'tcx, D> {
         in_out: &mut [usize],
         changed: &mut bool,
         bb: &repr::BasicBlockData,
-        on_return: OnReturn) where OnReturn: Fn(&D, &mut [usize], &repr::Lvalue)
+        on_return: OnReturn) where OnReturn: Fn(&MoveData, &mut [usize], &repr::Lvalue)
     {
         let term = if let Some(ref term) = bb.terminator { term } else { return };
         match *term {
@@ -481,7 +501,7 @@ impl<'a, 'tcx: 'a, D: BitDenotation> DataflowStateBuilder<'a, 'tcx, D> {
                 if let Some((ref dest_lval, ref dest_bb)) = *destination {
                     // N.B.: This must be done *last*, after all other
                     // propagation, as documented in comment above.
-                    on_return(&self.operator, in_out, dest_lval);
+                    on_return(&self.move_data, in_out, dest_lval);
                     self.propagate_bits_into_entry_set_for(in_out, changed, dest_bb);
                 }
             }
@@ -492,45 +512,187 @@ impl<'a, 'tcx: 'a, D: BitDenotation> DataflowStateBuilder<'a, 'tcx, D> {
                                          in_out: &[usize],
                                          changed: &mut bool,
                                          bb: &repr::BasicBlock) {
-        let entry_set = self.sets.for_block(bb.index()).on_entry;
-        let set_changed = bitwise(entry_set, in_out, &self.operator);
+        let entry_set = self.flow_state.sets.for_block(bb.index()).on_entry;
+        let set_changed = bitwise(entry_set, in_out, &self.flow_state.operator);
         if set_changed {
             *changed = true;
         }
     }
 }
 
-
-impl<'a, 'tcx: 'a> DataflowStateBuilder<'a, 'tcx, MoveData<'tcx>> {
-    pub fn new_move_analysis(mir: &'a Mir<'tcx>,
-                             tcx: &ty::TyCtxt<'tcx>) -> Self {
-        let move_data = MoveData::gather_moves(mir, tcx);
-        DataflowStateBuilder::new(mir, move_data)
-    }
+/// `MaybeInitializedLvals` tracks all l-values that might be
+/// initialized upon reaching a particular point in the control flow
+/// for a function.
+///
+/// For example, in code like the following, we have corresponding
+/// dataflow information shown in the right-hand comments.
+///
+/// ```rust
+/// struct S;
+/// fn foo(pred: bool) {                       // maybe-init:
+///                                            // {}
+///     let a = S; let b = S; let c; let d;    // {a, b}
+///
+///     if pred {
+///         drop(a);                           // {   b}
+///         b = S;                             // {   b}
+///
+///     } else {
+///         drop(b);                           // {a}
+///         d = S;                             // {a,       d}
+///
+///     }                                      // {a, b,    d}
+///
+///     c = S;                                 // {a, b, c, d}
+/// }
+/// ```
+///
+/// To determine whether an l-value *must* be initialized at a
+/// particular control-flow point, one can take the set-difference
+/// between this data and the data from `MaybeUninitializedLvals` at the
+/// corresponding control-flow point.
+///
+/// Similarly, at a given `drop` statement, the set-intersection
+/// between this data and `MaybeUninitializedLvals` yields the set of
+/// l-values that would require a dynamic drop-flag at that statement.
+#[derive(Default)]
+pub struct MaybeInitializedLvals<'tcx> {
+    // We need to attach a `'tcx` to this (zero-sized) structure so
+    // that its `impl BitDenotation` can use `'tcx` when instantiating
+    // its associated types. But all of the uses of `'tcx` are just
+    // in MoveData context parameters that are passed to its methods,
+    // so capture that usage here.
+    phantom: PhantomData<for <'a> Fn(&'a MoveData<'tcx>)>,
 }
 
-impl<'tcx> BitDenotation for MoveData<'tcx>{
+/// `MaybeUninitializedLvals` tracks all l-values that might be
+/// uninitialized upon reaching a particular point in the control flow
+/// for a function.
+///
+/// For example, in code like the following, we have corresponding
+/// dataflow information shown in the right-hand comments.
+///
+/// ```rust
+/// struct S;
+/// fn foo(pred: bool) {                       // maybe-uninit:
+///                                            // {a, b, c, d}
+///     let a = S; let b = S; let c; let d;    // {      c, d}
+///
+///     if pred {
+///         drop(a);                           // {a,    c, d}
+///         b = S;                             // {a,    c, d}
+///
+///     } else {
+///         drop(b);                           // {   b, c, d}
+///         d = S;                             // {   b, c   }
+///
+///     }                                      // {a, b, c, d}
+///
+///     c = S;                                 // {a, b,    d}
+/// }
+/// ```
+///
+/// To determine whether an l-value *must* be uninitialized at a
+/// particular control-flow point, one can take the set-difference
+/// between this data and the data from `MaybeInitializedLvals` at the
+/// corresponding control-flow point.
+///
+/// Similarly, at a given `drop` statement, the set-intersection
+/// between this data and `MaybeInitializedLvals` yields the set of
+/// l-values that would require a dynamic drop-flag at that statement.
+#[derive(Default)]
+pub struct MaybeUninitializedLvals<'tcx> {
+    // We need to attach a `'tcx` to this (zero-sized) structure so
+    // that its `impl BitDenotation` can use `'tcx` when instantiating
+    // its associated types. But all of the uses of `'tcx` are just
+    // in MoveData context parameters that are passed to its methods,
+    // so capture that usage here.
+    phantom: PhantomData<for <'a> Fn(&'a MoveData<'tcx>)>,
+}
+
+/// `MovingOutStatements` tracks the statements that perform moves out
+/// of particular l-values. More precisely, it tracks whether the
+/// *effect* of such moves (namely, the uninitialization of the
+/// l-value in question) can reach some point in the control-flow of
+/// the function, or if that effect is "killed" by some intervening
+/// operation reinitializing that l-value.
+///
+/// The resulting dataflow is a more enriched version of
+/// `MaybeUninitializedLvals`. Both structures on their own only tell
+/// you if an l-value *might* be uninitialized at a given point in the
+/// control flow. But `MovingOutStatements` also includes the added
+/// data of *which* particular statement causing the deinitialization
+/// that the borrow checker's error meessage may need to report.
+#[derive(Default)]
+pub struct MovingOutStatements<'tcx> {
+    // We need to attach a `'tcx` to this (zero-sized) structure so
+    // that its `impl BitDenotation` can use `'tcx` when instantiating
+    // its associated types. But all of the uses of `'tcx` are just
+    // in MoveData context parameters that are passed to its methods,
+    // so capture that usage here.
+    phantom: PhantomData<for <'a> Fn(&'a MoveData<'tcx>)>,
+}
+
+trait MoveDataCarrier<'tcx> {
+    fn move_data(&self) -> &MoveData<'tcx>;
+}
+
+impl<'tcx> BitDenotation for MovingOutStatements<'tcx> {
     type Bit = MoveOut;
-    fn bits_per_block(&self) -> usize {
-        self.moves.len()
+    type Ctxt = MoveData<'tcx>;
+    fn bits_per_block(&self, ctxt: &MoveData<'tcx>) -> usize {
+        ctxt.moves.len()
     }
-    fn interpret(&self, idx: usize) -> &Self::Bit {
-        &self.moves[idx]
+    fn interpret<'c>(&self, ctxt: &'c MoveData<'tcx>, idx: usize) -> &'c Self::Bit {
+        &ctxt.moves[idx]
     }
 }
 
-impl<'tcx> BitwiseOperator for MoveData<'tcx> {
+impl<'tcx> BitDenotation for MaybeInitializedLvals<'tcx> {
+    type Bit = MovePath<'tcx>;
+    type Ctxt = MoveData<'tcx>;
+    fn bits_per_block(&self, ctxt: &Self::Ctxt) -> usize { ctxt.move_paths.len() }
+    fn interpret<'c>(&self, ctxt: &'c Self::Ctxt, idx: usize) -> &'c Self::Bit { &ctxt.move_paths[MovePathIndex::new(idx)] }
+}
+
+impl<'tcx> BitDenotation for MaybeUninitializedLvals<'tcx> {
+    type Bit = MovePath<'tcx>;
+    type Ctxt = MoveData<'tcx>;
+    fn bits_per_block(&self, ctxt: &Self::Ctxt) -> usize { ctxt.move_paths.len() }
+    fn interpret<'c>(&self, ctxt: &'c Self::Ctxt, idx: usize) -> &'c Self::Bit { &ctxt.move_paths[MovePathIndex::new(idx)] }
+}
+
+impl<'tcx> BitwiseOperator for MovingOutStatements<'tcx> {
     #[inline]
     fn join(&self, pred1: usize, pred2: usize) -> usize {
         pred1 | pred2 // moves from both preds are in scope
     }
 }
 
-impl<'tcx> DataflowOperator for MoveData<'tcx> {
+impl<'tcx> BitwiseOperator for MaybeInitializedLvals<'tcx> {
     #[inline]
-    fn initial_value() -> bool {
-        false // no loans in scope by default
+    fn join(&self, pred1: usize, pred2: usize) -> usize {
+        pred1 | pred2 // "maybe" means we union effects of both preds
     }
+}
+
+impl<'tcx> BitwiseOperator for MaybeUninitializedLvals<'tcx> {
+    #[inline]
+    fn join(&self, pred1: usize, pred2: usize) -> usize {
+        pred1 | pred2 // "maybe" means we union effects of both preds
+    }
+}
+
+impl<'tcx> DataflowOperator for MovingOutStatements<'tcx> {
+    #[inline] fn initial_value() -> bool { false } // no loans in scope by default
+}
+
+impl<'tcx> DataflowOperator for MaybeInitializedLvals<'tcx> {
+    #[inline] fn initial_value() -> bool { false } // lvalues start uninitialized
+}
+
+impl<'tcx> DataflowOperator for MaybeUninitializedLvals<'tcx> {
+    #[inline] fn initial_value() -> bool { true } // lvalues start uninitialized
 }
 
 #[inline]
