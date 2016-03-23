@@ -79,7 +79,7 @@ pub struct MirBorrowckCtxtPreDataflow<'b, 'a: 'b, 'tcx: 'a> {
     mir: &'b Mir<'tcx>,
     node_id: ast::NodeId,
     attributes: &'b [ast::Attribute],
-    flow_state: DataflowStateBuilder<MoveData<'tcx>>,
+    flow_state: DataflowStateBuilder<'b, 'tcx, MoveData<'tcx>>,
 }
 
 pub struct MirBorrowckCtxt<'b, 'a: 'b, 'tcx: 'a> {
