@@ -32,7 +32,7 @@ impl<'b, 'a: 'b, 'tcx: 'a> Dataflow for MirBorrowckCtxtPreDataflow<'b, 'a, 'tcx>
     fn dataflow(&mut self) {
         self.flow_state.build_gen_and_kill_sets();
         self.pre_dataflow_instrumentation().unwrap();
-        self.propagate();
+        self.flow_state.propagate();
         self.post_dataflow_instrumentation().unwrap();
     }
 }
@@ -45,11 +45,11 @@ struct PropagationContext<'c, 'b: 'c, 'tcx: 'b, OnReturn>
     on_return: OnReturn
 }
 
-impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxtPreDataflow<'b, 'a, 'tcx> {
+impl<'a, 'tcx: 'a> DataflowStateBuilder<'a, 'tcx, MoveData<'tcx>> {
     fn propagate(&mut self) {
-        let mut temp = vec![0; self.flow_state.sets.words_per_block];
+        let mut temp = vec![0; self.sets.words_per_block];
         let mut propcx = PropagationContext {
-            flow_state: &mut self.flow_state,
+            flow_state: self,
             changed: true,
             on_return: |move_data, in_out, dest_lval| {
                 let move_path_index = move_data.rev_lookup.find(dest_lval);
@@ -68,9 +68,7 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxtPreDataflow<'b, 'a, 'tcx> {
             propcx.walk_cfg(&mut temp);
         }
     }
-}
 
-impl<'a, 'tcx: 'a> DataflowStateBuilder<'a, 'tcx, MoveData<'tcx>> {
     fn build_gen_and_kill_sets(&mut self) {
         // First we need to build the gen- and kill-sets. The
         // gather_moves information provides a high-level mapping from
