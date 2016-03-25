@@ -77,6 +77,7 @@ pub fn run(input: &str,
                                                                None,
                                                                true,
                                                                false,
+                                                               false,
                                                                codemap.clone());
 
     let cstore = Rc::new(CStore::new(token::get_ident_interner()));
@@ -235,7 +236,7 @@ fn runtest(test: &str, cratename: &str, cfgs: Vec<String>, libs: SearchPaths,
     let _bomb = Bomb(data, old.unwrap_or(box io::stdout()));
 
     // Compile the code
-    let diagnostic_handler = errors::Handler::with_emitter(true, false, box emitter);
+    let diagnostic_handler = errors::Handler::with_emitter(true, false, false, box emitter);
 
     let cstore = Rc::new(CStore::new(token::get_ident_interner()));
     let sess = session::build_session_(sessopts,

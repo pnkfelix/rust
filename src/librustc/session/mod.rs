@@ -414,6 +414,7 @@ pub fn build_session(sopts: config::Options,
         .last()
         .unwrap_or(true);
     let treat_err_as_bug = sopts.treat_err_as_bug;
+    let continue_parse_after_error = sopts.continue_parse_after_error;
 
     let codemap = Rc::new(codemap::CodeMap::new());
     let emitter: Box<Emitter> = match sopts.error_format {
@@ -428,6 +429,7 @@ pub fn build_session(sopts: config::Options,
     let diagnostic_handler =
         errors::Handler::with_emitter(can_print_warnings,
                                       treat_err_as_bug,
+                                      continue_parse_after_error,
                                       emitter);
 
     build_session_(sopts, local_crate_source_file, diagnostic_handler, codemap, cstore)

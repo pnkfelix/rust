@@ -370,6 +370,7 @@ pub struct Handler {
     emit: RefCell<Box<Emitter>>,
     pub can_emit_warnings: bool,
     treat_err_as_bug: bool,
+    continue_parse_after_err: bool,
     delayed_span_bug: RefCell<Option<(MultiSpan, String)>>,
 }
 
@@ -378,20 +379,26 @@ impl Handler {
                             registry: Option<diagnostics::registry::Registry>,
                             can_emit_warnings: bool,
                             treat_err_as_bug: bool,
+                            continue_parse_after_err: bool,
                             cm: Rc<codemap::CodeMap>)
                             -> Handler {
         let emitter = Box::new(EmitterWriter::stderr(color_config, registry, cm));
-        Handler::with_emitter(can_emit_warnings, treat_err_as_bug, emitter)
+        Handler::with_emitter(can_emit_warnings,
+                              treat_err_as_bug,
+                              continue_parse_after_err,
+                              emitter)
     }
 
     pub fn with_emitter(can_emit_warnings: bool,
                         treat_err_as_bug: bool,
+                        continue_parse_after_err: bool,
                         e: Box<Emitter>) -> Handler {
         Handler {
             err_count: Cell::new(0),
             emit: RefCell::new(e),
             can_emit_warnings: can_emit_warnings,
             treat_err_as_bug: treat_err_as_bug,
+            continue_parse_after_err: continue_parse_after_err,
             delayed_span_bug: RefCell::new(None),
         }
     }
@@ -572,7 +579,13 @@ impl Handler {
         self.bug(&format!("unimplemented {}", msg));
     }
 
-    pub fn bump_err_count(&self) {
+    pub fn abort_if_no_parse_recovery(&self) {
+        if !self.continue_parse_after_err {
+            self.abort_if_errors();
+        }
+    }
+
+    fn bump_err_count(&self) {
         self.err_count.set(self.err_count.get() + 1);
     }
 

@@ -123,6 +123,7 @@ pub fn run_core(search_paths: SearchPaths, cfgs: Vec<String>, externs: Externs,
                                                                None,
                                                                true,
                                                                false,
+                                                               false,
                                                                codemap.clone());
 
     let cstore = Rc::new(CStore::new(token::get_ident_interner()));
