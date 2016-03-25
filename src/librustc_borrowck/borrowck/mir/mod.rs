@@ -10,7 +10,7 @@
 
 use borrowck::BorrowckCtxt;
 
-use syntax::ast;
+use syntax::ast::{self, NodeId};
 use syntax::codemap::Span;
 
 use rustc::hir;
@@ -25,8 +25,10 @@ mod graphviz;
 
 use self::dataflow::{BitDenotation};
 use self::dataflow::{Dataflow, DataflowState, DataflowStateBuilder};
-use self::dataflow::{MovingOutStatements};
+use self::dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
 use self::gather_moves::{MoveData};
+
+use std::fmt::Debug;
 
 pub fn borrowck_mir<'b, 'a: 'b, 'tcx: 'a>(
     bcx: &'b mut BorrowckCtxt<'a, 'tcx>,
@@ -49,18 +51,10 @@ pub fn borrowck_mir<'b, 'a: 'b, 'tcx: 'a>(
 
     let move_data = MoveData::gather_moves(mir, bcx.tcx);
 
-    let (moving_statements_flow, move_data) = {
-        let mut mbcx = MirBorrowckCtxtPreDataflow {
-            bcx: bcx,
-            mir: mir,
-            node_id: id,
-            attributes: attributes,
-            flow_state: DataflowStateBuilder::new(mir, move_data, MovingOutStatements::default()),
-        };
-
-        mbcx.dataflow();
-        mbcx.flow_state.unpack()
-    };
+    let (move_data, flow_inits) =
+        do_dataflow(bcx, mir, id, attributes, move_data, MaybeInitializedLvals::default());
+    let (move_data, flow_uninits) =
+        do_dataflow(bcx, mir, id, attributes, move_data, MaybeUninitializedLvals::default());
 
     let mut mbcx = MirBorrowckCtxt {
         bcx: bcx,
@@ -68,7 +62,8 @@ pub fn borrowck_mir<'b, 'a: 'b, 'tcx: 'a>(
         node_id: id,
         attributes: attributes,
         move_data: move_data,
-        flow_state: moving_statements_flow,
+        flow_inits: flow_inits,
+        flow_uninits: flow_uninits,
     };
 
     for bb in mir.all_basic_blocks() {
@@ -76,6 +71,26 @@ pub fn borrowck_mir<'b, 'a: 'b, 'tcx: 'a>(
     }
 
     debug!("borrowck_mir done");
+
+    fn do_dataflow<'a, 'tcx, BD>(bcx: &mut BorrowckCtxt<'a, 'tcx>,
+                                 mir: &'a Mir<'tcx>,
+                                 node_id: NodeId,
+                                 attributes: &[ast::Attribute],
+                                 move_data: MoveData<'tcx>,
+                                 bd: BD) -> (MoveData<'tcx>, DataflowState<BD>)
+        where BD: BitDenotation<Ctxt=MoveData<'tcx>>, BD::Bit: Debug
+    {
+        let mut mbcx = MirBorrowckCtxtPreDataflow {
+            bcx: bcx,
+            mir: mir,
+            node_id: node_id,
+            attributes: attributes,
+            flow_state: DataflowStateBuilder::new(mir, move_data, bd),
+        };
+
+        mbcx.dataflow();
+        mbcx.flow_state.unpack()
+    }
 }
 
 pub struct MirBorrowckCtxtPreDataflow<'b, 'a: 'b, 'tcx: 'a, BD>
@@ -94,7 +109,8 @@ pub struct MirBorrowckCtxt<'b, 'a: 'b, 'tcx: 'a> {
     node_id: ast::NodeId,
     attributes: &'b [ast::Attribute],
     move_data: MoveData<'tcx>,
-    flow_state: DataflowState<MovingOutStatements<'tcx>>,
+    flow_inits: DataflowState<MaybeInitializedLvals<'tcx>>,
+    flow_uninits: DataflowState<MaybeUninitializedLvals<'tcx>>,
 }
 
 impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
