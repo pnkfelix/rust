@@ -9,8 +9,9 @@
 // except according to those terms.
 
 
-use rustc::ty::TyCtxt;
-use rustc::mir::repr::*;
+use rustc::middle::ty::{self, FnOutput, TyCtxt, TypeVariants};
+use rustc::mir::repr::{self, Mir, BasicBlock, Lvalue, Rvalue};
+use rustc::mir::repr::{StatementKind, Terminator};
 use rustc::util::nodemap::FnvHashMap;
 
 use std::cell::{Cell};
@@ -89,7 +90,7 @@ pub enum MovePathContent<'tcx> {
 /// During construction of the MovePath's, we use PreMovePath to
 /// represent accumulated state while we are gathering up all the
 /// children of each path.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct PreMovePath<'tcx> {
     pub next_sibling: Option<MovePathIndex>,
     pub first_child: Cell<Option<MovePathIndex>>,
@@ -221,6 +222,7 @@ impl<'tcx> Index<MovePathIndex> for MovePathData<'tcx> {
 type MovePathInverseMap = Vec<Option<MovePathIndex>>;
 
 struct MovePathDataBuilder<'a, 'tcx: 'a> {
+    tcx: &'a ty::TyCtxt<'tcx>,
     mir: &'a Mir<'tcx>,
     pre_move_paths: Vec<PreMovePath<'tcx>>,
     rev_lookup: MovePathLookup<'tcx>,
@@ -422,6 +424,11 @@ impl<'a, 'tcx> MovePathDataBuilder<'a, 'tcx> {
         self.rev_lookup.lookup_proj(proj, base_index)
     }
 
+    fn create_move_path(&mut self, lval: &Lvalue<'tcx>) {
+        // Create MovePath for `lval`, discarding returned index.
+        self.move_path_for(lval);
+    }
+
     fn move_path_for(&mut self, lval: &Lvalue<'tcx>) -> MovePathIndex {
         let lookup: Lookup<MovePathIndex> = self.lookup(lval);
 
@@ -509,6 +516,7 @@ fn gather_moves<'tcx>(mir: &Mir<'tcx>, tcx: &TyCtxt<'tcx>) -> MoveData<'tcx> {
     // BlockContexts constructed on each iteration. (Moving is more
     // straight-forward than mutable borrows in this instance.)
     let mut builder = MovePathDataBuilder {
+        tcx: tcx,
         mir: mir,
         pre_move_paths: Vec::new(),
         rev_lookup: MovePathLookup::new(),
@@ -535,8 +543,7 @@ fn gather_moves<'tcx>(mir: &Mir<'tcx>, tcx: &TyCtxt<'tcx>) -> MoveData<'tcx> {
             let source = Location { block: bb, index: i };
             match stmt.kind {
                 StatementKind::Assign(ref lval, ref rval) => {
-                    // ensure MovePath created for `lval`.
-                    bb_ctxt.builder.move_path_for(lval);
+                    bb_ctxt.builder.create_move_path(lval);
 
                     match *rval {
                         Rvalue::Use(ref operand) => {
@@ -585,8 +592,7 @@ fn gather_moves<'tcx>(mir: &Mir<'tcx>, tcx: &TyCtxt<'tcx>) -> MoveData<'tcx> {
             TerminatorKind::Return => {
                 let source = Location { block: bb,
                                         index: bb_data.statements.len() };
-                let lval = &Lvalue::ReturnPointer.deref();
-                bb_ctxt.on_move_out_lval(SK::Return, lval, source);
+                bb_ctxt.on_move_out_lval(SK::Return, &Lvalue::ReturnPointer;, source);
             }
 
             TerminatorKind::If { ref cond, targets: _ } => {
@@ -618,9 +624,7 @@ fn gather_moves<'tcx>(mir: &Mir<'tcx>, tcx: &TyCtxt<'tcx>) -> MoveData<'tcx> {
                     bb_ctxt.on_operand(SK::CallArg, arg, source);
                 }
                 if let Some((ref destination, _bb)) = *destination {
-                    // Create MovePath for `destination`, then
-                    // discard returned index.
-                    bb_ctxt.builder.move_path_for(destination);
+                    bb_ctxt.builder.create_move_path(destination);
                 }
             }
         }
@@ -631,14 +635,18 @@ fn gather_moves<'tcx>(mir: &Mir<'tcx>, tcx: &TyCtxt<'tcx>) -> MoveData<'tcx> {
     // At this point, we may have created some MovePaths that do not
     // have corresponding entries in the path map.
     //
-    // (For example, creating the path `a.b.c` may, as a side-effect,
-    // create a path for the parent path `a.b`.)
+    // (For example, a `Return` may create a MovePath for the mir
+    // ReturnPointer.)
     //
-    // All such paths were not referenced ...
-    //
-    // well you know, lets actually try just asserting that the path map *is* complete.
+    // ...
+    if path_map.len() < builder.pre_move_paths.len() {
+        debug!("path_map: {:?}", path_map);
+        debug!("pre_move_paths: {:?}", builder.pre_move_paths);
+        debug!("pre_move_paths uncovered suffix: {:?}", &builder.pre_move_paths[path_map.len()..]);
+    }
+    // well you know, lets actually try just asserting that the path
+    // map *is* complete.
     assert_eq!(path_map.len(), builder.pre_move_paths.len());
-    path_map.fill_to(builder.pre_move_paths.len() - 1);
 
     let pre_move_paths = builder.pre_move_paths;
     let move_paths: Vec<_> = pre_move_paths.into_iter()
@@ -688,13 +696,17 @@ impl<'b, 'a: 'b, 'tcx: 'a> BlockContext<'b, 'a, 'tcx> {
         // FIXME: does lvalue_ty ever return TyError, or is it
         // guaranteed to always return non-Infer/non-Error values?
 
-        // This code is just trying to avoid creating a MoveOut
+        // This code is (was) just trying to avoid creating a MoveOut
         // entry for values that do not need move semantics.
         //
         // type_contents is imprecise (may claim needs drop for
         // types that in fact have no destructor). But that is
         // still usable for our purposes here.
-        let consumed = lval_ty.to_ty(tcx).type_contents(tcx).needs_drop(tcx);
+        //
+        // Update: I have removed the filter in an attempt to
+        // establish broader invariants about MoveOut's, and
+        // corresponding PathMap entries, existing when expected.
+        let consumed = true; // lval_ty.to_ty(tcx).type_contents(tcx).needs_drop(tcx);
 
         if !consumed {
             debug!("ctxt: {:?} no consume of lval: {:?} of type {:?}",
