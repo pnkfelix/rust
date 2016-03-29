@@ -160,6 +160,7 @@ pub enum TypeVariants<'tcx> {
     TyClosure(DefId, ClosureSubsts<'tcx>),
 
     /// A tuple type.  For example, `(i32, bool)`.
+    /// A TyTuple with an empty Vec represents unit (aka nil) type `()`.
     TyTuple(&'tcx [Ty<'tcx>]),
 
     /// The projection of an associated type.  For example,
