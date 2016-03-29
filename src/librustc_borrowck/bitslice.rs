@@ -90,7 +90,16 @@ pub fn bits_to_string(words: &[usize], bytes: usize) -> String {
         for _ in 0..mem::size_of::<usize>() {
             let byte = v & 0xFF;
             if i >= bytes {
-                assert!(byte == 0);
+                // If an index is out of range, then the byte should
+                // take on one of the default values for a bitvector:
+                // 0x00 (all zeros) or 0xFF (all ones).
+                let valid = byte == 0x00 || byte == 0xFF;
+                if !valid {
+                    debug!("bits_to_string \
+                            i: {} bytes: {} byte: {:x} word: {:x} words: {:?}",
+                           i, bytes, byte, word, words);
+                }
+                assert!(valid);
             } else {
                 result.push(sep);
                 result.push_str(&format!("{:02x}", byte));
