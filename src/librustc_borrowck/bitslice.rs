@@ -90,7 +90,7 @@ pub fn bits_to_string(words: &[usize], bits: usize) -> String {
         loop {
             let remain = bits - i;
             let mask = if remain >= 8 { 0xFF } else { (1 << remain) - 1 };
-            assert!(mask < 0xFF);
+            assert!(mask <= 0xFF);
             let byte = v & mask;
             result.push(sep);
             result.push_str(&format!("{:02x}", byte));
