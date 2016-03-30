@@ -56,6 +56,12 @@ mod indexes {
 pub use self::indexes::MovePathIndex;
 pub use self::indexes::MoveOutIndex;
 
+impl self::indexes::MoveOutIndex {
+    pub fn move_path_index(&self, move_data: &MoveData) -> MovePathIndex {
+        move_data.moves[self.idx()].path
+    }
+}
+
 /// `MovePath` is a canonicalized representation of a path that is
 /// moved or assigned to.
 ///
