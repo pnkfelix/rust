@@ -277,6 +277,7 @@ pub struct BlockSets<'a> {
 }
 
 impl AllSets {
+    pub fn bits_per_block(&self) -> usize { self.bits_per_block }
     pub fn bytes_per_block(&self) -> usize { (self.bits_per_block + 7) / 8 }
     pub fn for_block(&mut self, block_idx: usize) -> BlockSets {
         let offset = self.words_per_block * block_idx;
@@ -376,7 +377,7 @@ pub trait BitDenotation: DataflowOperator {
     /// plugged into a filename.
     fn name() -> &'static str;
 
-    /// Size of each bivector allocated for each block in the analysis.
+    /// Size of each bitvector allocated for each block in the analysis.
     fn bits_per_block(&self,
                       ctxt: &Self::Ctxt) -> usize;
 

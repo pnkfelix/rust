@@ -78,7 +78,7 @@ fn bit_str(bit: usize) -> String {
     format!("[{}:{}-{:02x}]", bit, byte, lobits)
 }
 
-pub fn bits_to_string(words: &[usize], bytes: usize) -> String {
+pub fn bits_to_string(words: &[usize], bits: usize) -> String {
     let mut result = String::new();
     let mut sep = '[';
 
@@ -87,25 +87,17 @@ pub fn bits_to_string(words: &[usize], bytes: usize) -> String {
     let mut i = 0;
     for &word in words.iter() {
         let mut v = word;
-        for _ in 0..mem::size_of::<usize>() {
-            let byte = v & 0xFF;
-            if i >= bytes {
-                // If an index is out of range, then the byte should
-                // take on one of the default values for a bitvector:
-                // 0x00 (all zeros) or 0xFF (all ones).
-                let valid = byte == 0x00 || byte == 0xFF;
-                if !valid {
-                    debug!("bits_to_string \
-                            i: {} bytes: {} byte: {:x} word: {:x} words: {:?}",
-                           i, bytes, byte, word, words);
-                }
-                assert!(valid);
-            } else {
-                result.push(sep);
-                result.push_str(&format!("{:02x}", byte));
-            }
+        loop {
+            let remain = bits - i;
+            let mask = if remain >= 8 { 0xFF } else { (1 << remain) - 1 };
+            assert!(mask < 0xFF);
+            let byte = v & mask;
+            result.push(sep);
+            result.push_str(&format!("{:02x}", byte));
+
+            if remain < 8 { break; }
             v >>= 8;
-            i += 1;
+            i += 8;
             sep = '-';
         }
     }

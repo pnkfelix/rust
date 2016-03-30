@@ -179,15 +179,15 @@ impl<'a, 'tcx, MWF> dot::Labeller<'a> for Graph<'a, 'tcx, MWF>
                 let flow = self.mbcx.flow_state();
                 let entry_interp = flow.interpret_set(ctxt, flow.sets.on_entry_set_for(i));
                 chunked_present_left(w, &entry_interp[..], chunk_size)?;
-                let bytes_per_block = flow.sets.bytes_per_block();
+                let bits_per_block = flow.sets.bits_per_block();
                 let entry = flow.sets.on_entry_set_for(i);
-                debug!("entry set for i={I} bytes_per_block: {BPB} entry: {E:?} interp: {EI:?}",
-                       I=i, E=entry, BPB=bytes_per_block, EI=entry_interp);
+                debug!("entry set for i={I} bits_per_block: {BPB} entry: {E:?} interp: {EI:?}",
+                       I=i, E=entry, BPB=bits_per_block, EI=entry_interp);
                 write!(w, "= ENTRY:</td><td {bg}><FONT {face}>{entrybits:?}</FONT></td>\
                                         <td></td></tr>",
                        bg = BG_FLOWCONTENT,
                        face = FACE_MONOSPACE,
-                       entrybits=bits_to_string(entry, bytes_per_block))
+                       entrybits=bits_to_string(entry, bits_per_block))
             },
             |w| {
                 let ctxt = self.mbcx.move_data();
@@ -195,28 +195,28 @@ impl<'a, 'tcx, MWF> dot::Labeller<'a> for Graph<'a, 'tcx, MWF>
                 let gen_interp = flow.interpret_set(ctxt, flow.sets.gen_set_for(i));
                 let kill_interp = flow.interpret_set(ctxt, flow.sets.kill_set_for(i));
                 chunked_present_left(w, &gen_interp[..], chunk_size)?;
-                let bytes_per_block = flow.sets.bytes_per_block();
+                let bits_per_block = flow.sets.bits_per_block();
                 {
                     let gen = flow.sets.gen_set_for(i);
-                    debug!("gen set for i={I} bytes_per_block: {BPB} gen: {G:?} interp: {GI:?}",
-                           I=i, G=gen, BPB=bytes_per_block, GI=gen_interp);
+                    debug!("gen set for i={I} bits_per_block: {BPB} gen: {G:?} interp: {GI:?}",
+                           I=i, G=gen, BPB=bits_per_block, GI=gen_interp);
                     write!(w, " = GEN:</td><td {bg}><FONT {face}>{genbits:?}</FONT></td>\
                                            <td></td></tr>",
                            bg = BG_FLOWCONTENT,
                            face = FACE_MONOSPACE,
-                           genbits=bits_to_string(gen, bytes_per_block))?;
+                           genbits=bits_to_string(gen, bits_per_block))?;
                 }
 
                 {
                     let kill = flow.sets.kill_set_for(i);
-                    debug!("kill set for i={I} bytes_per_block: {BPB} kill: {K:?} interp: {KI:?}",
-                           I=i, K=kill, BPB=bytes_per_block, KI=kill_interp);
+                    debug!("kill set for i={I} bits_per_block: {BPB} kill: {K:?} interp: {KI:?}",
+                           I=i, K=kill, BPB=bits_per_block, KI=kill_interp);
                     write!(w, "<tr><td></td><td {bg} {align}>KILL:</td>\
                                             <td {bg}><FONT {face}>{killbits:?}</FONT></td>",
                            bg = BG_FLOWCONTENT,
                            align = ALIGN_RIGHT,
                            face = FACE_MONOSPACE,
-                           killbits=bits_to_string(kill, bytes_per_block))?;
+                           killbits=bits_to_string(kill, bits_per_block))?;
                 }
 
                 // (chunked_present_right)
