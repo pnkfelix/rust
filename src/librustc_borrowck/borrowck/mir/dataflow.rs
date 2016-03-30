@@ -35,9 +35,9 @@ impl<'b, 'a: 'b, 'tcx: 'a, BD> Dataflow for MirBorrowckCtxtPreDataflow<'b, 'a, '
 {
     fn dataflow(&mut self) {
         self.flow_state.build_gen_and_kill_sets();
-        self.pre_dataflow_instrumentation().unwrap();
+        self.pre_dataflow_instrumentation(BD::name()).unwrap();
         self.flow_state.propagate();
-        self.post_dataflow_instrumentation().unwrap();
+        self.post_dataflow_instrumentation(BD::name()).unwrap();
     }
 }
 
@@ -166,19 +166,21 @@ impl<'b, 'a: 'b, 'tcx: 'a, BD> MirBorrowckCtxtPreDataflow<'b, 'a, 'tcx, BD>
     where BD: BitDenotation<Ctxt=MoveData<'tcx>>,
           BD::Bit: Debug
 {
-    fn pre_dataflow_instrumentation(&self) -> io::Result<()> {
+    fn pre_dataflow_instrumentation(&self, context: &str) -> io::Result<()> {
         self.if_attr_meta_name_found(
             "borrowck_graphviz_preflow",
             |this, path: &str| {
-                graphviz::print_borrowck_graph_to(this, "preflow", path)
+                let c = format!("{}_preflow", context);
+                graphviz::print_borrowck_graph_to(this, &c, path)
             })
     }
 
-    fn post_dataflow_instrumentation(&self) -> io::Result<()> {
+    fn post_dataflow_instrumentation(&self, context: &str) -> io::Result<()> {
         self.if_attr_meta_name_found(
             "borrowck_graphviz_postflow",
             |this, path: &str| {
-                graphviz::print_borrowck_graph_to(this, "postflow", path)
+                let c = format!("{}_postflow", context);
+                graphviz::print_borrowck_graph_to(this, &c, path)
             })
     }
 
@@ -365,6 +367,15 @@ pub trait BitDenotation: DataflowOperator {
 
     /// Specifies what, if any, separate context needs to be supplied for methods below.
     type Ctxt;
+
+    /// A name describing the dataflow analysis that this
+    /// BitDenotation is supporting.  The name should be something
+    /// suitable for plugging in as part of a filename e.g. avoid
+    /// space-characters or other things that tend to look bad on a
+    /// file system, like slashes or periods. It is also better for
+    /// the name to be reasonably short, again because it will be
+    /// plugged into a filename.
+    fn name() -> &'static str;
 
     /// Size of each bivector allocated for each block in the analysis.
     fn bits_per_block(&self,
@@ -680,6 +691,7 @@ trait MoveDataCarrier<'tcx> {
 impl<'tcx> BitDenotation for MovingOutStatements<'tcx> {
     type Bit = MoveOut;
     type Ctxt = MoveData<'tcx>;
+    fn name() -> &'static str { "moving_out" }
     fn bits_per_block(&self, ctxt: &MoveData<'tcx>) -> usize {
         ctxt.moves.len()
     }
@@ -705,6 +717,7 @@ impl<'tcx> BitDenotation for MovingOutStatements<'tcx> {
             // here, in dataflow vector
             zero_to_one(&mut sets.gen_set, *move_index);
         }
+        let bits_per_block = self.bits_per_block(move_data);
         match stmt.kind {
             repr::StatementKind::Assign(ref lvalue, _) => {
                 // assigning into this `lvalue` kills all
@@ -717,6 +730,7 @@ impl<'tcx> BitDenotation for MovingOutStatements<'tcx> {
                                      move_paths,
                                      move_path_index,
                                      &|kill_set, mpi| {
+                                         assert!(mpi.idx() < bits_per_block);
                                          kill_set.set_bit(mpi.idx());
                                      });
             }
@@ -735,7 +749,9 @@ impl<'tcx> BitDenotation for MovingOutStatements<'tcx> {
         let loc = Location { block: bb, index: statements_len };
         debug!("terminator {:?} at loc {:?} moves out of move_indexes {:?}",
                term, loc, &loc_map[loc]);
+        let bits_per_block = self.bits_per_block(move_data);
         for move_index in &loc_map[loc] {
+            assert!(move_index.idx() < bits_per_block);
             zero_to_one(&mut sets.gen_set, *move_index);
         }
     }
@@ -747,17 +763,19 @@ impl<'tcx> BitDenotation for MovingOutStatements<'tcx> {
                              dest_bb: repr::BasicBlock,
                              dest_lval: &repr::Lvalue) {
         let move_path_index = move_data.rev_lookup.find(dest_lval);
+        let bits_per_block = self.bits_per_block(move_data);
         on_all_children_bits(in_out,
                              &move_data.path_map,
                              &move_data.move_paths,
                              move_path_index,
                              &|in_out, mpi| {
+                                 assert!(mpi.idx() < bits_per_block);
                                  in_out.clear_bit(mpi.idx());
                              });
     }
 }
-fn zero_to_one(gen_set: &mut [usize], move_index: MoveOutIndex) {
-    let retval = gen_set.set_bit(move_index.idx());
+fn zero_to_one(bitvec: &mut [usize], move_index: MoveOutIndex) {
+    let retval = bitvec.set_bit(move_index.idx());
     assert!(retval);
 }
 
@@ -770,7 +788,8 @@ fn move_outs_paths(move_data: &MoveData,
 
 impl<'tcx> BitDenotation for MaybeInitializedLvals<'tcx> {
     type Bit = MovePath<'tcx>;
-    type Ctxt = MoveData<'tcx>;
+    type Ctxt = MoveData<'tcx>; 
+    fn name() -> &'static str { "maybe_init" }
     fn bits_per_block(&self, ctxt: &Self::Ctxt) -> usize {
         ctxt.move_paths.len()
     }
@@ -799,13 +818,20 @@ impl<'tcx> BitDenotation for MaybeInitializedLvals<'tcx> {
         let paths = move_outs_paths(move_data, &move_outs[..]);
         debug!("stmt {:?} at loc {:?} moves out of paths {:?}",
                stmt, loc, paths);
+        let bits_per_block = self.bits_per_block(move_data);
         for &move_path_index in &paths {
             // (don't use zero_to_one since bit may already be set to 1.)
             on_all_children_bits(sets.kill_set,
                                  path_map,
                                  move_paths,
                                  move_path_index,
-                                 &|kill_set, mpi| {
+                                 &|kill_set, moi| {
+                                     let mpi = moi.move_path_index(move_data);
+                                     if mpi.idx() >= bits_per_block {
+                                         debug!("child bit {} is out of range {}",
+                                                mpi.idx(), bits_per_block);
+                                     }
+                                     assert!(mpi.idx() < bits_per_block);
                                      kill_set.set_bit(mpi.idx());
                                  });
         }
@@ -825,7 +851,9 @@ impl<'tcx> BitDenotation for MaybeInitializedLvals<'tcx> {
                                      path_map,
                                      move_paths,
                                      move_path_index,
-                                     &|gen_set, mpi| {
+                                     &|gen_set, moi| {
+                                         let mpi = moi.move_path_index(move_data);
+                                         assert!(mpi.idx() < bits_per_block);
                                          gen_set.set_bit(mpi.idx());
                                      });
 
@@ -833,7 +861,9 @@ impl<'tcx> BitDenotation for MaybeInitializedLvals<'tcx> {
                                      path_map,
                                      move_paths,
                                      move_path_index,
-                                     &|kill_set, mpi| {
+                                     &|kill_set, moi| {
+                                         let mpi = moi.move_path_index(move_data);
+                                         assert!(mpi.idx() < bits_per_block);
                                          kill_set.clear_bit(mpi.idx());
                                      });
             }
@@ -853,13 +883,16 @@ impl<'tcx> BitDenotation for MaybeInitializedLvals<'tcx> {
         let paths = move_outs_paths(move_data, &loc_map[loc]);
         debug!("terminator {:?} at loc {:?} moves out of paths {:?}",
                term, loc, &paths);
+        let bits_per_block = self.bits_per_block(move_data);
         for &move_path_index in &paths {
             // (don't use zero_to_one since bit may already be set to 1.)
             on_all_children_bits(sets.kill_set,
                                  path_map,
                                  move_paths,
                                  move_path_index,
-                                 &|kill_set, mpi| {
+                                 &|kill_set, moi| {
+                                     let mpi = moi.move_path_index(move_data);
+                                     assert!(mpi.idx() < bits_per_block);
                                      kill_set.set_bit(mpi.idx());
                                  });
         }
@@ -870,15 +903,18 @@ impl<'tcx> BitDenotation for MaybeInitializedLvals<'tcx> {
                              in_out: &mut [usize],
                              call_bb: repr::BasicBlock,
                              dest_bb: repr::BasicBlock,
-                             dest_lval: &repr::Lvalue) { 
+                             dest_lval: &repr::Lvalue) {
         // when a call returns successfully, that means we need to set
         // the bits for that dest_lval to 1 (initialized).
         let move_path_index = move_data.rev_lookup.find(dest_lval);
+        let bits_per_block = self.bits_per_block(move_data);
         on_all_children_bits(in_out,
                              &move_data.path_map,
                              &move_data.move_paths,
                              move_path_index,
-                             &|in_out, mpi| {
+                             &|in_out, moi| {
+                                 let mpi = moi.move_path_index(move_data);
+                                 assert!(mpi.idx() < bits_per_block);
                                  in_out.set_bit(mpi.idx());
                              });
     }
@@ -887,8 +923,13 @@ impl<'tcx> BitDenotation for MaybeInitializedLvals<'tcx> {
 impl<'tcx> BitDenotation for MaybeUninitializedLvals<'tcx> {
     type Bit = MovePath<'tcx>;
     type Ctxt = MoveData<'tcx>;
-    fn bits_per_block(&self, ctxt: &Self::Ctxt) -> usize { ctxt.move_paths.len() }
-    fn interpret<'c>(&self, ctxt: &'c Self::Ctxt, idx: usize) -> &'c Self::Bit { &ctxt.move_paths[MovePathIndex::new(idx)] }
+    fn name() -> &'static str { "maybe_uninit" }
+    fn bits_per_block(&self, ctxt: &Self::Ctxt) -> usize {
+        ctxt.move_paths.len()
+    }
+    fn interpret<'c>(&self, ctxt: &'c Self::Ctxt, idx: usize) -> &'c Self::Bit {
+        &ctxt.move_paths[MovePathIndex::new(idx)]
+    }
 
     // gens bits for lvalues moved-out by statement
     // kills bits for lvalues initialized by statement
@@ -911,13 +952,16 @@ impl<'tcx> BitDenotation for MaybeUninitializedLvals<'tcx> {
         let paths = move_outs_paths(move_data, &move_outs[..]);
         debug!("stmt {:?} at loc {:?} moves out of paths {:?}",
                stmt, loc, paths);
+        let bits_per_block = self.bits_per_block(move_data);
         for &move_path_index in &paths {
             // (don't use zero_to_one since bit may already be set to 1.)
             on_all_children_bits(sets.gen_set,
                                  path_map,
                                  move_paths,
                                  move_path_index,
-                                 &|gen_set, mpi| {
+                                 &|gen_set, moi| {
+                                     let mpi = moi.move_path_index(move_data);
+                                     assert!(mpi.idx() < bits_per_block);
                                      gen_set.set_bit(mpi.idx());
                                  });
         }
@@ -935,7 +979,9 @@ impl<'tcx> BitDenotation for MaybeUninitializedLvals<'tcx> {
                                      path_map,
                                      move_paths,
                                      move_path_index,
-                                     &|kill_set, mpi| {
+                                     &|kill_set, moi| {
+                                         let mpi = moi.move_path_index(move_data);
+                                         assert!(mpi.idx() < bits_per_block);
                                          kill_set.set_bit(mpi.idx());
                                      });
             }
@@ -955,13 +1001,16 @@ impl<'tcx> BitDenotation for MaybeUninitializedLvals<'tcx> {
         let paths = move_outs_paths(move_data, &loc_map[loc]);
         debug!("terminator {:?} at loc {:?} moves out of paths {:?}",
                term, loc, paths);
+        let bits_per_block = self.bits_per_block(move_data);
         for &move_path_index in &paths[..] {
             // (don't use zero_to_one since bit may already be set to 1.)
             on_all_children_bits(sets.kill_set,
                                  path_map,
                                  move_paths,
                                  move_path_index,
-                                 &|kill_set, mpi| {
+                                 &|kill_set, moi| {
+                                     let mpi = moi.move_path_index(move_data);
+                                     assert!(mpi.idx() < bits_per_block);
                                      kill_set.set_bit(mpi.idx());
                                  });
         }
@@ -977,11 +1026,14 @@ impl<'tcx> BitDenotation for MaybeUninitializedLvals<'tcx> {
         // when a call returns successfully, that means we need to
         // clear the bits for that (definitely initialized) dest_lval.
         let move_path_index = move_data.rev_lookup.find(dest_lval);
+        let bits_per_block = self.bits_per_block(move_data);
         on_all_children_bits(in_out,
                              &move_data.path_map,
                              &move_data.move_paths,
                              move_path_index,
-                             &|in_out, mpi| {
+                             &|in_out, moi| {
+                                 let mpi = moi.move_path_index(move_data);
+                                 assert!(mpi.idx() < bits_per_block);
                                  in_out.clear_bit(mpi.idx());
                              });
     }
