@@ -689,8 +689,7 @@ impl<'a> Parser<'a> {
     pub fn check_reserved_keywords(&mut self) {
         if self.token.is_reserved_keyword() {
             let token_str = self.this_token_to_string();
-            self.fatal(&format!("`{}` is a reserved keyword", token_str)).emit();
-            self.sess.span_diagnostic.abort_if_no_parse_recovery();
+            self.fatal(&format!("`{}` is a reserved keyword", token_str)).emit()
         }
     }
 
@@ -870,7 +869,7 @@ impl<'a> Parser<'a> {
         self.parse_seq_to_before_tokens(kets,
                                         SeqSep::none(),
                                         |p| p.parse_token_tree(),
-                                        |_self, mut e| e.cancel());
+                                        |mut e| e.cancel());
     }
 
     /// Parse a sequence, including the closing delimiter. The function
@@ -898,10 +897,7 @@ impl<'a> Parser<'a> {
                                          -> Vec<T>
         where F: FnMut(&mut Parser<'a>) -> PResult<'a,  T>,
     {
-        self.parse_seq_to_before_tokens(&[ket], sep, f, |s, mut e| {
-            e.emit();
-            s.sess.span_diagnostic.abort_if_no_parse_recovery();
-        })
+        self.parse_seq_to_before_tokens(&[ket], sep, f, |mut e| e.emit())
     }
 
     // `fe` is an error handler.
@@ -912,7 +908,7 @@ impl<'a> Parser<'a> {
                                             mut fe: Fe)
                                             -> Vec<T>
         where F: FnMut(&mut Parser<'a>) -> PResult<'a,  T>,
-              Fe: FnMut(&mut Parser<'a>, DiagnosticBuilder)
+              Fe: FnMut(DiagnosticBuilder)
     {
         let mut first: bool = true;
         let mut v = vec!();
@@ -923,7 +919,7 @@ impl<'a> Parser<'a> {
                         first = false;
                     } else {
                         if let Err(e) = self.expect(t) {
-                            fe(self, e);
+                            fe(e);
                             break;
                         }
                     }
@@ -937,7 +933,7 @@ impl<'a> Parser<'a> {
             match f(self) {
                 Ok(t) => v.push(t),
                 Err(e) => {
-                    fe(self, e);
+                    fe(e);
                     break;
                 }
             }
@@ -1095,8 +1091,7 @@ impl<'a> Parser<'a> {
         self.sess.span_diagnostic.span_warn(sp, m)
     }
     pub fn span_err(&self, sp: Span, m: &str) {
-        self.sess.span_diagnostic.span_err(sp, m);
-        self.sess.span_diagnostic.abort_if_no_parse_recovery();
+        self.sess.span_diagnostic.span_err(sp, m)
     }
     pub fn span_bug(&self, sp: Span, m: &str) -> ! {
         self.sess.span_diagnostic.span_bug(sp, m)
@@ -2380,7 +2375,6 @@ impl<'a> Parser<'a> {
                                         }
                                         Err(mut e) => {
                                             e.emit();
-                                            self.sess.span_diagnostic.abort_if_no_parse_recovery();
                                             self.recover_stmt();
                                         }
                                     }
@@ -2391,7 +2385,6 @@ impl<'a> Parser<'a> {
                                     Ok(f) => fields.push(f),
                                     Err(mut e) => {
                                         e.emit();
-                                        self.sess.span_diagnostic.abort_if_no_parse_recovery();
                                         self.recover_stmt();
                                         break;
                                     }
@@ -2403,7 +2396,6 @@ impl<'a> Parser<'a> {
                                     Ok(()) => {}
                                     Err(mut e) => {
                                         e.emit();
-                                        self.sess.span_diagnostic.abort_if_no_parse_recovery();
                                         self.recover_stmt();
                                         break;
                                     }
@@ -2712,10 +2704,8 @@ impl<'a> Parser<'a> {
     pub fn check_unknown_macro_variable(&mut self) {
         if self.quote_depth == 0 {
             match self.token {
-                token::SubstNt(name, _) => {
-                    self.fatal(&format!("unknown macro variable `{}`", name)).emit();
-                    self.sess.span_diagnostic.abort_if_no_parse_recovery();
-                }
+                token::SubstNt(name, _) =>
+                    self.fatal(&format!("unknown macro variable `{}`", name)).emit(),
                 _ => {}
             }
         }
@@ -3086,7 +3076,6 @@ impl<'a> Parser<'a> {
                         "use `::<...>` instead of `<...>` if you meant to specify type arguments");
                 }
                 err.emit();
-                self.sess.span_diagnostic.abort_if_no_parse_recovery();
             }
             _ => {}
         }
@@ -3295,7 +3284,6 @@ impl<'a> Parser<'a> {
                 Err(mut e) => {
                     // Recover by skipping to the end of the block.
                     e.emit();
-                    self.sess.span_diagnostic.abort_if_no_parse_recovery();
                     self.recover_stmt();
                     let hi = self.span.hi;
                     if self.token == token::CloseDelim(token::Brace) {
@@ -3664,7 +3652,6 @@ impl<'a> Parser<'a> {
                         self.bump();
                         let (fields, etc) = self.parse_pat_fields().unwrap_or_else(|mut e| {
                             e.emit();
-                            self.sess.span_diagnostic.abort_if_no_parse_recovery();
                             self.recover_stmt();
                             (vec![], false)
                         });
@@ -3881,7 +3868,6 @@ impl<'a> Parser<'a> {
     fn parse_stmt_(&mut self) -> Option<Stmt> {
         self.parse_stmt_without_recovery().unwrap_or_else(|mut e| {
             e.emit();
-            self.sess.span_diagnostic.abort_if_no_parse_recovery();
             self.recover_stmt_(SemiColonMode::Break);
             None
         })
@@ -4153,7 +4139,6 @@ impl<'a> Parser<'a> {
                 self.commit_stmt(&[], &[token::Semi, token::CloseDelim(token::Brace)])
             {
                 e.emit();
-                self.sess.span_diagnostic.abort_if_no_parse_recovery();
                 self.recover_stmt();
             }
         }
@@ -4544,7 +4529,6 @@ impl<'a> Parser<'a> {
                             Ok(arg) => Ok(Some(arg)),
                             Err(mut e) => {
                                 e.emit();
-                                p.sess.span_diagnostic.abort_if_no_parse_recovery();
                                 p.eat_to_tokens(&[&token::Comma, &token::CloseDelim(token::Paren)]);
                                 Ok(None)
                             }
@@ -4933,7 +4917,6 @@ impl<'a> Parser<'a> {
                                                            inside the invocation")
                                      .emit();
                 }
-                self.sess.span_diagnostic.abort_if_no_parse_recovery();
             }
             Visibility::Inherited => (),
         }
@@ -5795,7 +5778,6 @@ impl<'a> Parser<'a> {
                 self.diagnostic().struct_span_err(last_span, "const globals cannot be mutable")
                                  .fileline_help(last_span, "did you mean to declare a static?")
                                  .emit();
-                self.sess.span_diagnostic.abort_if_no_parse_recovery();
             }
             let (ident, item_, extra_attrs) = self.parse_item_const(None)?;
             let last_span = self.last_span;

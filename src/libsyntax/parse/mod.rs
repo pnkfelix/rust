@@ -49,8 +49,7 @@ pub struct ParseSess {
 impl ParseSess {
     pub fn new() -> ParseSess {
         let cm = Rc::new(CodeMap::new());
-        let handler = Handler::with_tty_emitter(
-            ColorConfig::Auto, None, true, false, true, cm.clone());
+        let handler = Handler::with_tty_emitter(ColorConfig::Auto, None, true, false, cm.clone());
         ParseSess::with_span_handler(handler, cm)
     }
 
