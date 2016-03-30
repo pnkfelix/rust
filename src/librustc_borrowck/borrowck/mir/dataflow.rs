@@ -310,7 +310,7 @@ fn for_each_bit<F>(bits_per_block: usize, words: &[usize], mut f: F)
 
     for (word_index, &word) in words.iter().enumerate() {
         if word != 0 {
-            let usize_bits: usize = mem::size_of::<usize>();
+            let usize_bits: usize = mem::size_of::<usize>() * 8;
             let base_index = word_index * usize_bits;
             for offset in 0..usize_bits {
                 let bit = 1 << offset;
