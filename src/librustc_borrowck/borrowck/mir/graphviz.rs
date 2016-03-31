@@ -181,8 +181,8 @@ impl<'a, 'tcx, MWF> dot::Labeller<'a> for Graph<'a, 'tcx, MWF>
                 chunked_present_left(w, &entry_interp[..], chunk_size)?;
                 let bits_per_block = flow.sets.bits_per_block();
                 let entry = flow.sets.on_entry_set_for(i);
-                debug!("entry set for i={I} bits_per_block: {BPB} entry: {E:?} interp: {EI:?}",
-                       I=i, E=entry, BPB=bits_per_block, EI=entry_interp);
+                debug!("entry set for i={i} bits_per_block: {bpb} entry: {e:?} interp: {ei:?}",
+                       i=i, e=entry, bpb=bits_per_block, ei=entry_interp);
                 write!(w, "= ENTRY:</td><td {bg}><FONT {face}>{entrybits:?}</FONT></td>\
                                         <td></td></tr>",
                        bg = BG_FLOWCONTENT,
@@ -198,8 +198,8 @@ impl<'a, 'tcx, MWF> dot::Labeller<'a> for Graph<'a, 'tcx, MWF>
                 let bits_per_block = flow.sets.bits_per_block();
                 {
                     let gen = flow.sets.gen_set_for(i);
-                    debug!("gen set for i={I} bits_per_block: {BPB} gen: {G:?} interp: {GI:?}",
-                           I=i, G=gen, BPB=bits_per_block, GI=gen_interp);
+                    debug!("gen set for i={i} bits_per_block: {bpb} gen: {g:?} interp: {gi:?}",
+                           i=i, g=gen, bpb=bits_per_block, gi=gen_interp);
                     write!(w, " = GEN:</td><td {bg}><FONT {face}>{genbits:?}</FONT></td>\
                                            <td></td></tr>",
                            bg = BG_FLOWCONTENT,
@@ -209,8 +209,8 @@ impl<'a, 'tcx, MWF> dot::Labeller<'a> for Graph<'a, 'tcx, MWF>
 
                 {
                     let kill = flow.sets.kill_set_for(i);
-                    debug!("kill set for i={I} bits_per_block: {BPB} kill: {K:?} interp: {KI:?}",
-                           I=i, K=kill, BPB=bits_per_block, KI=kill_interp);
+                    debug!("kill set for i={i} bits_per_block: {bpb} kill: {k:?} interp: {ki:?}",
+                           i=i, k=kill, bpb=bits_per_block, ki=kill_interp);
                     write!(w, "<tr><td></td><td {bg} {align}>KILL:</td>\
                                             <td {bg}><FONT {face}>{killbits:?}</FONT></td>",
                            bg = BG_FLOWCONTENT,
