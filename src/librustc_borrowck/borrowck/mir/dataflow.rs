@@ -171,46 +171,21 @@ impl<'b, 'a: 'b, 'tcx: 'a, BD> MirBorrowckCtxtPreDataflow<'b, 'a, 'tcx, BD>
           BD::Bit: Debug
 {
     fn pre_dataflow_instrumentation(&self, context: &str) -> io::Result<()> {
-        self.if_attr_meta_name_found(
-            "borrowck_graphviz_preflow",
-            |this, path: &str| {
-                let c = format!("{}_preflow", context);
-                graphviz::print_borrowck_graph_to(this, &c, path)
-            })
+        if let Some(ref path) = self.print_preflow_to {
+            let c = format!("{}_preflow", context);
+            graphviz::print_borrowck_graph_to(self, &c, path)
+        } else {
+            Ok(())
+        }
     }
 
     fn post_dataflow_instrumentation(&self, context: &str) -> io::Result<()> {
-        self.if_attr_meta_name_found(
-            "borrowck_graphviz_postflow",
-            |this, path: &str| {
-                let c = format!("{}_postflow", context);
-                graphviz::print_borrowck_graph_to(this, &c, path)
-            })
-    }
-
-    fn if_attr_meta_name_found<F>(&self,
-                                  name: &str,
-                                  callback: F) -> io::Result<()>
-        where F: for <'aa, 'bb> FnOnce(&'aa Self, &'bb str) -> io::Result<()>
-    {
-        for attr in self.attributes {
-            if attr.check_name("rustc_mir") {
-                let items = attr.meta_item_list();
-                for item in items.iter().flat_map(|l| l.iter()) {
-                    if item.check_name(name) {
-                        if let Some(s) = item.value_str() {
-                            return callback(self, &s);
-                        } else {
-                            self.bcx.tcx.sess.span_err(
-                                item.span,
-                                &format!("{} attribute requires a path", item.name()));
-                        }
-                    }
-                }
-            }
+        if let Some(ref path) = self.print_postflow_to {
+            let c = format!("{}_postflow", context);
+            graphviz::print_borrowck_graph_to(self, &c, path)
+        } else {
+            Ok(())
         }
-
-        Ok(())
     }
 }
 
