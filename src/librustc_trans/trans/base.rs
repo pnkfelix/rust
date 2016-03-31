@@ -1910,6 +1910,27 @@ pub fn trans_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                           llfndecl: ValueRef,
                           param_substs: &'tcx Substs<'tcx>,
                           id: ast::NodeId) {
+
+    // FIXME: of course this doesn't belong here (it is in fact
+    // already present in `rustc_borrowck::borrowck`), but I do not
+    // want to take the time right now to thread it back out of that
+    // module.
+    //
+    // (Such threading, due to overall control flow such as doing
+    // borrowck for a whole crate before moving on to trans, would
+    // also requiring save this analysis data somewhere for every
+    // function in the crate)
+    //
+    // So instead we "just" run the analysis redundantly a second
+    // time.
+//     {
+//         let mir = this.mir_map.unwrap().map.get(&id).unwrap();
+//         this.with_temp_region_map(id, |this| {
+//             mir::borrowck_mir(this, fk, decl, mir, body, sp, id, attributes)
+//         });
+//     };
+
+
     let _s = StatRecorder::new(ccx, ccx.tcx().map.path_to_string(id).to_string());
     debug!("trans_fn(param_substs={:?})", param_substs);
     let _icx = push_ctxt("trans_fn");
