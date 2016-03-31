@@ -348,6 +348,12 @@ pub fn trans_intrinsic_call<'a, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
                                 call_debug_location);
             C_nil(ccx)
         }
+        (_, "patchpoint_call") => {
+            bcx = patchpoint_call_intrinsic(
+                bcx, llargs[0], llargs[1], llargs[2], llargs[3], llresult,
+                call_debug_location);
+            C_nil(ccx)
+        }
         (_, "breakpoint") => {
             let llfn = ccx.get_intrinsic(&("llvm.debugtrap"));
             Call(bcx, llfn, &[], call_debug_location)
@@ -1062,6 +1068,24 @@ fn try_intrinsic<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     } else {
         trans_gnu_try(bcx, func, data, local_ptr, dest, dloc)
     }
+}
+
+fn patchpoint_call_intrinsic<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
+                                         id: ValueRef,
+                                         num_shadow_bytes: ValueRef,
+                                         func: ValueRef,
+                                         data: ValueRef,
+                                         dest: ValueRef,
+                                         dloc: DebugLoc) -> Block<'blk, 'tcx> {
+    // This behaves like `Call(bcx, func, &[data], dloc)` but it also
+    // emits a stack-map entry for the given call-site, indicating the
+    // locations of all live l-values.
+    let ccx = bcx.ccx();
+    let llfn = ccx.get_intrinsic("llvm.experimental.patchpoint.void");
+    let call_args = vec![id, num_shadow_bytes, func, C_i32(ccx, 1), data];
+
+    Call(bcx, llfn, &call_args[..], dloc);
+    bcx
 }
 
 // MSVC's definition of the `rust_try` function.

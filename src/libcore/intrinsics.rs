@@ -602,4 +602,10 @@ extern "rust-intrinsic" {
     /// on MSVC it's `*mut [usize; 2]`. For more information see the compiler's
     /// source as well as std's catch implementation.
     pub fn try(f: fn(*mut u8), data: *mut u8, local_ptr: *mut u8) -> i32;
+
+    #[cfg(not(stage0))]
+    /// Records locations of all live tracked values at callsite of intrinsic,
+    /// then calls the given function.
+    #[unstable(feature="patchpoint_call_intrinsic", reason="experimental", issue="17668")]
+    pub fn patchpoint_call(id: i64, num_shadow_bytes: i32, target_fn: fn (*mut u8), data: *mut u8);
 }

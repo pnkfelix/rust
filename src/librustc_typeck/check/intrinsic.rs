@@ -298,6 +298,22 @@ pub fn check_intrinsic_type(ccx: &CrateCtxt, it: &hir::ForeignItem) {
                 (0, vec![tcx.mk_fn_ptr(fn_ty), mut_u8, mut_u8], tcx.types.i32)
             }
 
+            "patchpoint_call" => {
+                let mut_u8 = tcx.mk_mut_ptr(tcx.types.u8);
+                let fn_ty = tcx.mk_bare_fn(ty::BareFnTy {
+                    unsafety: hir::Unsafety::Normal,
+                    abi: Abi::Rust,
+                    sig: ty::Binder(FnSig {
+                        inputs: vec![mut_u8],
+                        output: ty::FnOutput::FnConverging(tcx.mk_nil()),
+                        variadic: false,
+                    }),
+                });
+                (0,
+                 vec![tcx.types.i64, tcx.types.i32, tcx.mk_fn_ptr(fn_ty), mut_u8],
+                 tcx.mk_nil())
+            }
+            
             ref other => {
                 span_err!(tcx.sess, it.span, E0093,
                           "unrecognized intrinsic function: `{}`", *other);
