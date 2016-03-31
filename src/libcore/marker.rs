@@ -462,3 +462,22 @@ pub trait Reflect {}
            reason = "requires RFC and more experience",
            issue = "27749")]
 impl Reflect for .. { }
+
+/// Implement this trait to indicate that the type in question should
+/// be "tracked", in the sense that a scan over a thread's call-stack
+/// should include the set of such values on the stack.
+///
+/// Long-term, pnkfelix (or at least nmatsakis) expects this trait to
+/// be implemented by default. But for the short-term, pnkfelix
+/// expects it to be easier to get something up-and-running by opting
+/// *in* via this marker trait.
+#[unstable(feature = "patchpoint_tracking", issue="17668")]
+#[lang = "patchpoint_tracked"]
+pub trait PatchpointTracked {}
+
+/// Implement this trait to indicate that the type in question should
+/// not be "tracked", in the sense that a scan over a thread's
+/// call-stack need not include such values.
+#[unstable(feature = "patchpoint_tracking", issue="17668")]
+#[lang = "patchpoint_untracked"]
+pub trait PatchpointUntracked {}
