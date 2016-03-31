@@ -254,6 +254,16 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Option<u32>, Status
 
     // impl specialization (RFC 1210)
     ("specialization", "1.7.0", Some(31844), Active),
+
+    // Allows using the patchpoint_fn attribute, which indicates that
+    // calls/invocations of such a function/method may emit a
+    // patchpoint.
+    //
+    // (It will probably emit a patchpoint unconditionally in the
+    // first iteration, but I may later constrain that so that it only
+    // emits a patchpoint if there are a positive number of tracked
+    // values in scope at the call site.)
+    ("patchpoint_fn", "1.7.0", Some(17668), Active),
 ];
 // (changing above list without updating src/doc/reference.md makes @cmr sad)
 
