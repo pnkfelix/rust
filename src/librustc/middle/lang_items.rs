@@ -380,4 +380,7 @@ lets_do_this! {
     NonZeroItem,                     "non_zero",                non_zero;
 
     DebugTraitLangItem,              "debug_trait",             debug_trait;
+
+    PatchpointTrackedLangItem,       "patchpoint_tracked",      patchpoint_tracked_trait;
+    PatchpointUntrackedLangItem,     "patchpoint_untracked",    patchpoint_untracked_trait;
 }
