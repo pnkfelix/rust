@@ -348,6 +348,12 @@ pub fn trans_intrinsic_call<'a, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
                                 call_debug_location);
             C_nil(ccx)
         }
+        (_, "stackmap_call") => {
+            bcx = stackmap_call_intrinsic(
+                bcx, llargs[0], llargs[1], llargs[2], llargs[3], llresult,
+                call_debug_location);
+            C_nil(ccx)
+        }
         (_, "patchpoint_call") => {
             bcx = patchpoint_call_intrinsic(
                 bcx, llargs[0], llargs[1], llargs[2], llargs[3], llresult,
@@ -1070,21 +1076,68 @@ fn try_intrinsic<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     }
 }
 
+fn stackmap_call_intrinsic<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
+                                       id: ValueRef,
+                                       num_shadow_bytes: ValueRef,
+                                       func: ValueRef,
+                                       data: ValueRef,
+                                       dest: ValueRef,
+                                       dloc: DebugLoc) -> Block<'blk, 'tcx> {
+    debug!("stackmap_call_intrinsic start");
+
+    // This emits a stack-map entry associated with the address of the
+    // immediately following instruction (which we will ensure is a
+    // Call to `func(data)`); the emitted stack-map entry indicates
+    // the locations of all live l-values.
+    let ccx = bcx.ccx();
+    let llfn = ccx.get_intrinsic("llvm.experimental.stackmap");
+    let mut stackmap_args = vec![id, num_shadow_bytes];
+
+    // FIXME: push all live values to end of `stackmap_args`.
+    // (for now, just trying to push `data` to see if I can
+    // withness *some* effect)
+    stackmap_args.push(data);
+    
+    Call(bcx, llfn, &stackmap_args[..], dloc);
+    Call(bcx, func, &[data], dloc);
+    
+    debug!("stackmap_call_intrinsic finis");
+    bcx
+}
+
 fn patchpoint_call_intrinsic<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                          id: ValueRef,
-                                         num_shadow_bytes: ValueRef,
+                                         num_bytes: ValueRef,
                                          func: ValueRef,
                                          data: ValueRef,
                                          dest: ValueRef,
                                          dloc: DebugLoc) -> Block<'blk, 'tcx> {
+    debug!("patchpoint_call_intrinsic start");
+
     // This behaves like `Call(bcx, func, &[data], dloc)` but it also
     // emits a stack-map entry for the given call-site, indicating the
     // locations of all live l-values.
     let ccx = bcx.ccx();
     let llfn = ccx.get_intrinsic("llvm.experimental.patchpoint.void");
-    let call_args = vec![id, num_shadow_bytes, func, C_i32(ccx, 1), data];
+    let func_arg_count = 1;
 
-    Call(bcx, llfn, &call_args[..], dloc);
+    // N.B.: `num_bytes` here must be >= the number of bytes emitted
+    // for the call to `func`, which is target dependant.
+    let mut patchpoint_args = vec![id,
+                                   num_bytes,
+                                   BitCast(bcx, func, Type::i8p(ccx)),
+                                   C_i32(ccx, func_arg_count),
+                                   data];
+    // FIXME: push all live values to end of `patchpoint_args`.
+    // (for now, just trying to push `data` to see if I can
+    // withness *some* effect)
+    patchpoint_args.push(data);
+
+    debug!("patchpoint_call_intrinsic emit Call");
+
+    Call(bcx, llfn, &patchpoint_args[..], dloc);
+
+    debug!("patchpoint_call_intrinsic finis");
     bcx
 }
 

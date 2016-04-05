@@ -1117,6 +1117,7 @@ fn declare_intrinsic(ccx: &CrateContext, key: &str) -> Option<ValueRef> {
         ifn!("llvm.dbg.value", fn(Type::metadata(ccx), t_i64, Type::metadata(ccx)) -> void);
     }
 
+    variadic_ifn!("llvm.experimental.stackmap", fn(t_i64, t_i32) -> void);
     variadic_ifn!("llvm.experimental.patchpoint.void", fn(t_i64, t_i32, i8p, t_i32) -> void);
     variadic_ifn!("llvm.experimental.patchpoint.i64", fn(t_i64, t_i32, i8p, t_i32) -> t_i64);
 
