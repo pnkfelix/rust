@@ -31,7 +31,7 @@ use syntax::attr::ThinAttributesExt;
 use syntax::codemap::Span;
 use hir::*;
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum FnKind<'a> {
     /// fn foo() or extern "Abi" fn foo()
     ItemFn(Name, &'a Generics, Unsafety, Constness, Abi, Visibility, &'a [Attribute]),

@@ -115,7 +115,7 @@ DEPS_rustc_plugin := rustc rustc_metadata syntax rustc_mir
 DEPS_rustc_privacy := rustc rustc_front log syntax
 DEPS_rustc_trans := arena flate getopts graphviz libc rustc rustc_back rustc_mir \
                     log syntax serialize rustc_llvm rustc_front rustc_platform_intrinsics \
-					rustc_const_eval
+					rustc_const_eval rustc_borrowck
 DEPS_rustc_typeck := rustc syntax rustc_front rustc_platform_intrinsics rustc_const_eval
 
 DEPS_rustdoc := rustc rustc_driver native:hoedown serialize getopts \

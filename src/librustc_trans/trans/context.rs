@@ -76,7 +76,7 @@ pub struct SharedCrateContext<'a, 'tcx: 'a> {
     stats: Stats,
     check_overflow: bool,
     check_drop_flag_for_sanity: bool,
-    mir_map: &'a MirMap<'tcx>,
+    pub mir_map: &'a MirMap<'tcx>,
     mir_cache: RefCell<DefIdMap<Rc<mir::Mir<'tcx>>>>,
 
     available_drop_glues: RefCell<FnvHashMap<DropGlueKind<'tcx>, String>>,

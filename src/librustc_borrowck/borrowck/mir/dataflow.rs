@@ -209,6 +209,7 @@ pub struct DataflowStateBuilder<'a, 'tcx: 'a, O>
     pub mir: &'a Mir<'tcx>,
 }
 
+#[derive(Debug)]
 pub struct DataflowState<O: BitDenotation>
 {
     /// All the sets for the analysis. (Factored into its
@@ -228,6 +229,7 @@ impl<'a, 'tcx: 'a, O> DataflowStateBuilder<'a, 'tcx, O>
     }
 }
 
+#[derive(Debug)]
 pub struct AllSets {
     /// Analysis bitwidth for each block.
     bits_per_block: usize,
@@ -601,7 +603,7 @@ impl<'a, 'tcx: 'a, D> DataflowStateBuilder<'a, 'tcx, D>
 /// Similarly, at a given `drop` statement, the set-intersection
 /// between this data and `MaybeUninitializedLvals` yields the set of
 /// l-values that would require a dynamic drop-flag at that statement.
-#[derive(Default)]
+#[derive(Debug,Default)]
 pub struct MaybeInitializedLvals<'tcx> {
     // We need to attach a `'tcx` to this (zero-sized) structure so
     // that its `impl BitDenotation` can use `'tcx` when instantiating
@@ -646,7 +648,7 @@ pub struct MaybeInitializedLvals<'tcx> {
 /// Similarly, at a given `drop` statement, the set-intersection
 /// between this data and `MaybeInitializedLvals` yields the set of
 /// l-values that would require a dynamic drop-flag at that statement.
-#[derive(Default)]
+#[derive(Debug,Default)]
 pub struct MaybeUninitializedLvals<'tcx> {
     // We need to attach a `'tcx` to this (zero-sized) structure so
     // that its `impl BitDenotation` can use `'tcx` when instantiating
@@ -669,7 +671,7 @@ pub struct MaybeUninitializedLvals<'tcx> {
 /// control flow. But `MovingOutStatements` also includes the added
 /// data of *which* particular statement causing the deinitialization
 /// that the borrow checker's error meessage may need to report.
-#[derive(Default)]
+#[derive(Debug,Default)]
 pub struct MovingOutStatements<'tcx> {
     // We need to attach a `'tcx` to this (zero-sized) structure so
     // that its `impl BitDenotation` can use `'tcx` when instantiating

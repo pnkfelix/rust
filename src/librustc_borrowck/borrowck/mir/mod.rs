@@ -31,6 +31,7 @@ use self::gather_moves::{MoveData};
 
 use std::fmt::Debug;
 
+#[derive(Debug)]
 pub struct BorrowckMirData<'tcx> {
     move_data: MoveData<'tcx>,
     flow_inits: DataflowState<MaybeInitializedLvals<'tcx>>,

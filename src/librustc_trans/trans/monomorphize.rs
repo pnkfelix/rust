@@ -127,14 +127,14 @@ pub fn monomorphic_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
         });
     match map_node {
         hir_map::NodeItem(&hir::Item {
-            ref attrs, node: hir::ItemFn(ref decl, _, _, _, _, ref body), ..
+            ref attrs, span, node: hir::ItemFn(ref decl, _, _, _, _, ref body), ..
         }) |
         hir_map::NodeTraitItem(&hir::TraitItem {
-            ref attrs, node: hir::MethodTraitItem(
+            ref attrs, span, node: hir::MethodTraitItem(
                 hir::MethodSig { ref decl, .. }, Some(ref body)), ..
         }) |
         hir_map::NodeImplItem(&hir::ImplItem {
-            ref attrs, node: hir::ImplItemKind::Method(
+            ref attrs, span, node: hir::ImplItemKind::Method(
                 hir::MethodSig { ref decl, .. }, ref body), ..
         }) => {
             base::update_linkage(ccx, lldecl, None, base::OriginalTranslation);
@@ -145,13 +145,15 @@ pub fn monomorphic_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                 ccx.available_monomorphizations().borrow_mut().insert(s.clone());
             }
 
+            let fk = hir_map::blocks::FnLikeNode::from_node(map_node)
+                .unwrap().to_fn_parts().kind;
             let trans_everywhere = attr::requests_inline(attrs);
             if trans_everywhere && !is_first {
                 llvm::SetLinkage(lldecl, llvm::AvailableExternallyLinkage);
             }
 
             if trans_everywhere || is_first {
-                trans_fn(ccx, decl, body, lldecl, psubsts, fn_node_id);
+                trans_fn(ccx, fk, decl, body, lldecl, psubsts, span, fn_node_id);
             }
         }
 
