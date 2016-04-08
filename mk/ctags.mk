@@ -16,7 +16,7 @@
 .PHONY: TAGS.emacs TAGS.vi
 
 CTAGS_LOCATIONS=$(wildcard ${CFG_SRC_DIR}src/lib*)
-CTAGS_LOCATIONS=$(patsubst ${CFG_SRC_DIR}src/librust%,, \
+CTAGS_LOCATIONS=$(patsubst ${CFG_SRC_DIR}src/librustNO%,, \
                 $(patsubst ${CFG_SRC_DIR}src/lib%test,, \
 				$(wildcard ${CFG_SRC_DIR}src/lib*))) ${CFG_SRC_DIR}src/libtest
 CTAGS_OPTS=--options="${CFG_SRC_DIR}src/etc/ctags.rust" --languages=Rust --recurse ${CTAGS_LOCATIONS}

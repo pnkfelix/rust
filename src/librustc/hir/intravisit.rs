@@ -34,7 +34,7 @@ use hir::*;
 use std::cmp;
 use std::u32;
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum FnKind<'a> {
     /// fn foo() or extern "Abi" fn foo()
     ItemFn(Name, &'a Generics, Unsafety, Constness, Abi, &'a Visibility, &'a [Attribute]),

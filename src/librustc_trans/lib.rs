@@ -45,6 +45,7 @@ extern crate graphviz;
 extern crate libc;
 #[macro_use] extern crate rustc;
 extern crate rustc_back;
+extern crate rustc_borrowck;
 extern crate rustc_data_structures;
 extern crate rustc_incremental;
 pub extern crate rustc_llvm as llvm;

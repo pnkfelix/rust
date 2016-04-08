@@ -45,7 +45,7 @@ pub use borrowck::{AnalysisData, BorrowckCtxt};
 // registered before they are used.
 pub mod diagnostics;
 
-mod borrowck;
+pub mod borrowck;
 mod bitslice;
 
 pub mod graphviz;

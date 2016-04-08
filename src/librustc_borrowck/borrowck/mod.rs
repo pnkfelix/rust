@@ -57,7 +57,7 @@ pub mod gather_loans;
 
 pub mod move_data;
 
-mod mir;
+pub mod mir;
 
 #[derive(Clone, Copy)]
 pub struct LoanDataFlowOperator;
@@ -101,18 +101,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for BorrowckCtxt<'a, 'tcx> {
 }
 
 pub fn check_crate<'tcx>(tcx: &TyCtxt<'tcx>, mir_map: &MirMap<'tcx>) {
-    let mut bccx = BorrowckCtxt {
-        tcx: tcx,
-        mir_map: Some(mir_map),
-        free_region_map: FreeRegionMap::new(),
-        stats: BorrowStats {
-            loaned_paths_same: 0,
-            loaned_paths_imm: 0,
-            stable_paths: 0,
-            guaranteed_paths: 0
-        }
-    };
-
+    let mut bccx = BorrowckCtxt::new(tcx, Some(mir_map));
     tcx.visit_all_items_in_krate(DepNode::BorrowCheck, &mut bccx);
 
     if tcx.sess.borrowck_stats() {
@@ -251,17 +240,7 @@ pub fn build_borrowck_dataflow_data_for_fn<'a, 'tcx>(
     -> (BorrowckCtxt<'a, 'tcx>, AnalysisData<'a, 'tcx>)
 {
 
-    let mut bccx = BorrowckCtxt {
-        tcx: tcx,
-        mir_map: mir_map,
-        free_region_map: FreeRegionMap::new(),
-        stats: BorrowStats {
-            loaned_paths_same: 0,
-            loaned_paths_imm: 0,
-            stable_paths: 0,
-            guaranteed_paths: 0
-        }
-    };
+    let mut bccx = BorrowckCtxt::new(tcx, mir_map);
 
     let dataflow_data = build_borrowck_dataflow_data(&mut bccx,
                                                      fn_parts.kind,
@@ -299,7 +278,7 @@ pub struct BorrowckCtxt<'a, 'tcx: 'a> {
     mir_map: Option<&'a MirMap<'tcx>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct BorrowStats {
     loaned_paths_same: usize,
     loaned_paths_imm: usize,
@@ -592,7 +571,22 @@ pub enum MovedValueUseKind {
 // Misc
 
 impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
-    fn with_temp_region_map<F>(&mut self, id: ast::NodeId, f: F)
+    pub fn new(tcx: &'a TyCtxt<'tcx>,
+               mir_map: Option<&'a MirMap<'tcx>>) -> Self {
+        BorrowckCtxt {
+            tcx: tcx,
+            mir_map: mir_map,
+            free_region_map: FreeRegionMap::new(),
+            stats: BorrowStats {
+                loaned_paths_same: 0,
+                loaned_paths_imm: 0,
+                stable_paths: 0,
+                guaranteed_paths: 0
+            }
+        }
+    }
+
+    pub fn with_temp_region_map<F>(&mut self, id: ast::NodeId, f: F)
         where F: for <'b> FnOnce(&'b mut BorrowckCtxt<'a, 'tcx>)
     {
         let new_free_region_map = self.tcx.free_region_map(id);

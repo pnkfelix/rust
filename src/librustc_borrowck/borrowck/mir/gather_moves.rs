@@ -132,6 +132,7 @@ impl<'tcx> fmt::Debug for MovePath<'tcx> {
     }
 }
 
+#[derive(Debug)]
 pub struct MoveData<'tcx> {
     pub move_paths: MovePathData<'tcx>,
     pub moves: Vec<MoveOut>,
@@ -140,6 +141,7 @@ pub struct MoveData<'tcx> {
     pub rev_lookup: MovePathLookup<'tcx>,
 }
 
+#[derive(Debug)]
 pub struct LocMap {
     /// Location-indexed (BasicBlock for outer index, index within BB
     /// for inner index) map to list of MoveOutIndex's.
@@ -160,6 +162,7 @@ impl Index<Location> for LocMap {
     }
 }
 
+#[derive(Debug)]
 pub struct PathMap {
     /// Path-indexed map to list of MoveOutIndex's.
     ///
@@ -209,6 +212,7 @@ impl fmt::Debug for Location {
     }
 }
 
+#[derive(Debug)]
 pub struct MovePathData<'tcx> {
     move_paths: Vec<MovePath<'tcx>>,
 }
@@ -236,6 +240,7 @@ struct MovePathDataBuilder<'a, 'tcx: 'a> {
 }
 
 /// Tables mapping from an l-value to its MovePathIndex.
+#[derive(Debug)]
 pub struct MovePathLookup<'tcx> {
     vars: MovePathInverseMap,
     temps: MovePathInverseMap,
@@ -284,6 +289,7 @@ impl<T:Clone> FillTo for Vec<T> {
 
 #[derive(Clone, Debug)]
 enum LookupKind { Generate, Reuse }
+#[derive(Clone, Debug)]
 struct Lookup<T>(LookupKind, T);
 
 impl Lookup<MovePathIndex> {
@@ -441,6 +447,8 @@ impl<'a, 'tcx> MovePathDataBuilder<'a, 'tcx> {
 
         // `lookup` is either the previously assigned index or a
         // newly-allocated one.
+        debug!("move_path_for lookup start: {:?} pre_move_paths len: {}",
+               lookup, self.pre_move_paths.len());
         debug_assert!(lookup.idx() <= self.pre_move_paths.len());
 
         if let Lookup(LookupKind::Generate, mpi) = lookup {
@@ -495,6 +503,9 @@ impl<'a, 'tcx> MovePathDataBuilder<'a, 'tcx> {
             self.pre_move_paths.push(move_path);
         }
 
+        debug!("move_path_for lookup finis: {:?} pre_move_paths len: {}",
+               lookup, self.pre_move_paths.len());
+
         return lookup.1;
     }
 }
@@ -508,7 +519,7 @@ impl<'tcx> MoveData<'tcx> {
 #[derive(Debug)]
 enum StmtKind {
     Use, Repeat, Cast, BinaryOp, UnaryOp, Box,
-    Aggregate, Drop, CallFn, CallArg, Return,
+    Aggregate, Drop, CallFn, CallArg, Return, If,
 }
 
 fn gather_moves<'tcx>(mir: &Mir<'tcx>, tcx: &TyCtxt<'tcx>) -> MoveData<'tcx> {
@@ -551,6 +562,11 @@ fn gather_moves<'tcx>(mir: &Mir<'tcx>, tcx: &TyCtxt<'tcx>) -> MoveData<'tcx> {
             match stmt.kind {
                 StatementKind::Assign(ref lval, ref rval) => {
                     bb_ctxt.builder.create_move_path(lval);
+
+                    // Ensure that the path_map contains entries even
+                    // if the lvalue is assigned and never read.
+                    let assigned_path = bb_ctxt.builder.move_path_for(lval);
+                    bb_ctxt.path_map.fill_to(assigned_path.idx());
 
                     match *rval {
                         Rvalue::Use(ref operand) => {
@@ -599,13 +615,15 @@ fn gather_moves<'tcx>(mir: &Mir<'tcx>, tcx: &TyCtxt<'tcx>) -> MoveData<'tcx> {
             TerminatorKind::Return => {
                 let source = Location { block: bb,
                                         index: bb_data.statements.len() };
+                debug!("gather_moves Return on_move_out_lval return {:?}", source);
                 bb_ctxt.on_move_out_lval(SK::Return, &Lvalue::ReturnPointer, source);
             }
 
             TerminatorKind::If { ref cond, targets: _ } => {
-                // The `cond` is always of (copyable) type `bool`,
-                // so there will never be anything to move.
-                let _ = cond;
+                let source = Location { block: bb,
+                                        index: bb_data.statements.len() };
+                debug!("gather_moves If on_operand {:?} {:?}", cond, source);
+                bb_ctxt.on_operand(SK::If, cond, source);
             }
 
             TerminatorKind::SwitchInt { switch_ty: _, values: _, targets: _, ref discr } |
@@ -620,6 +638,7 @@ fn gather_moves<'tcx>(mir: &Mir<'tcx>, tcx: &TyCtxt<'tcx>) -> MoveData<'tcx> {
             TerminatorKind::Drop { value: ref lval, target: _, unwind: _ } => {
                 let source = Location { block: bb,
                                         index: bb_data.statements.len() };
+                debug!("gather_moves Drop on_move_out_lval {:?} {:?}", lval, source);
                 bb_ctxt.on_move_out_lval(SK::Drop, lval, source);
             }
 
@@ -628,9 +647,17 @@ fn gather_moves<'tcx>(mir: &Mir<'tcx>, tcx: &TyCtxt<'tcx>) -> MoveData<'tcx> {
                                         index: bb_data.statements.len() };
                 bb_ctxt.on_operand(SK::CallFn, func, source);
                 for arg in args {
+                    debug!("gather_moves Call on_operand {:?} {:?}", arg, source);
                     bb_ctxt.on_operand(SK::CallArg, arg, source);
                 }
                 if let Some((ref destination, _bb)) = *destination {
+                    debug!("gather_moves Call create_move_path {:?} {:?}", destination, source);
+
+                    // Ensure that the path_map contains entries even
+                    // if the lvalue is assigned and never read.
+                    let assigned_path = bb_ctxt.builder.move_path_for(destination);
+                    bb_ctxt.path_map.fill_to(assigned_path.idx());
+
                     bb_ctxt.builder.create_move_path(destination);
                 }
             }
@@ -647,9 +674,10 @@ fn gather_moves<'tcx>(mir: &Mir<'tcx>, tcx: &TyCtxt<'tcx>) -> MoveData<'tcx> {
     //
     // ...
     if path_map.len() < builder.pre_move_paths.len() {
-        debug!("path_map: {:?}", path_map);
-        debug!("pre_move_paths: {:?}", builder.pre_move_paths);
-        debug!("pre_move_paths uncovered suffix: {:?}", &builder.pre_move_paths[path_map.len()..]);
+        println!("path_map: {:?}", path_map);
+        println!("pre_move_paths: {:?}", builder.pre_move_paths);
+        println!("pre_move_paths uncovered suffix: {:?}", &builder.pre_move_paths[path_map.len()..]);
+        println!("mir span: {:?}", mir.span);
     }
     // well you know, lets actually try just asserting that the path
     // map *is* complete.
