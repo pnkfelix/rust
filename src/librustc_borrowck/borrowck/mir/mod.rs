@@ -57,6 +57,7 @@ pub struct MoveDataParamEnv<'tcx> {
     param_env: ty::ParameterEnvironment<'tcx>,
 }
 
+#[derive(Debug)]
 pub struct BorrowckMirData<'a, 'tcx: 'a> {
     move_data: MoveData<'tcx>,
     flow_inits: DataflowAnalysis<'a, 'tcx, MaybeInitializedLvals<'a, 'tcx>>,

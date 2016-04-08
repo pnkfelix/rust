@@ -446,6 +446,8 @@ impl<'a, 'tcx> MovePathDataBuilder<'a, 'tcx> {
 
         // `lookup` is either the previously assigned index or a
         // newly-allocated one.
+        debug!("move_path_for lookup start: {:?} pre_move_paths len: {}",
+               lookup, self.pre_move_paths.len());
         debug_assert!(lookup.index() <= self.pre_move_paths.len());
 
         if let Lookup(LookupKind::Generate, mpi) = lookup {
@@ -499,6 +501,9 @@ impl<'a, 'tcx> MovePathDataBuilder<'a, 'tcx> {
 
             self.pre_move_paths.push(move_path);
         }
+
+        debug!("move_path_for lookup finis: {:?} pre_move_paths len: {}",
+               lookup, self.pre_move_paths.len());
 
         return lookup.1;
     }
@@ -640,6 +645,7 @@ fn gather_moves<'a, 'tcx>(mir: &Mir<'tcx>, tcx: TyCtxt<'a, 'tcx, 'tcx>) -> MoveD
             TerminatorKind::If { ref cond, targets: _ } => {
                 let source = Location { block: bb,
                                         index: bb_data.statements.len() };
+                debug!("gather_moves If on_operand {:?} {:?}", cond, source);
                 bb_ctxt.on_operand(SK::If, cond, source);
             }
 
@@ -671,6 +677,7 @@ fn gather_moves<'a, 'tcx>(mir: &Mir<'tcx>, tcx: TyCtxt<'a, 'tcx, 'tcx>) -> MoveD
             TerminatorKind::Drop { ref location, target: _, unwind: _ } => {
                 let source = Location { block: bb,
                                         index: bb_data.statements.len() };
+                debug!("gather_moves Drop on_move_out_lval {:?} {:?}", lval, source);
                 bb_ctxt.on_move_out_lval(SK::Drop, location, source);
             }
             TerminatorKind::DropAndReplace { ref location, ref value, .. } => {

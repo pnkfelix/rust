@@ -46,7 +46,7 @@ pub use borrowck::{AnalysisData, BorrowckCtxt, ElaborateDrops};
 // registered before they are used.
 pub mod diagnostics;
 
-mod borrowck;
+pub mod borrowck;
 mod bitslice;
 mod indexed_set;
 

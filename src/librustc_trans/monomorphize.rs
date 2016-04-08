@@ -109,14 +109,14 @@ pub fn monomorphic_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
         });
     match map_node {
         hir_map::NodeItem(&hir::Item {
-            ref attrs, node: hir::ItemFn(ref decl, _, _, _, _, ref body), ..
+            ref attrs, span, node: hir::ItemFn(ref decl, _, _, _, _, ref body), ..
         }) |
         hir_map::NodeTraitItem(&hir::TraitItem {
-            ref attrs, node: hir::MethodTraitItem(
+            ref attrs, span, node: hir::MethodTraitItem(
                 hir::MethodSig { ref decl, .. }, Some(ref body)), ..
         }) |
         hir_map::NodeImplItem(&hir::ImplItem {
-            ref attrs, node: hir::ImplItemKind::Method(
+            ref attrs, span, node: hir::ImplItemKind::Method(
                 hir::MethodSig { ref decl, .. }, ref body), ..
         }) => {
             attributes::from_fn_attrs(ccx, attrs, lldecl);
@@ -127,11 +127,13 @@ pub fn monomorphic_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                 ccx.available_monomorphizations().borrow_mut().insert(symbol.clone());
             }
 
+            let fk = hir_map::blocks::FnLikeNode::from_node(map_node)
+                .unwrap().to_fn_parts().kind;
             let trans_everywhere = attr::requests_inline(attrs);
             if trans_everywhere || is_first {
                 let origin = if is_first { base::OriginalTranslation } else { base::InlinedCopy };
                 base::update_linkage(ccx, lldecl, None, origin);
-                trans_fn(ccx, decl, body, lldecl, psubsts, fn_node_id);
+                trans_fn(ccx, fk, decl, body, lldecl, psubsts, span, fn_node_id);
             } else {
                 // We marked the value as using internal linkage earlier, but that is illegal for
                 // declarations, so switch back to external linkage.
