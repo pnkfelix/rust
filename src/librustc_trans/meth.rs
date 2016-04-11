@@ -96,7 +96,7 @@ pub fn trans_object_shim<'a, 'tcx>(ccx: &'a CrateContext<'a, 'tcx>,
 
     let (block_arena, fcx): (TypedArena<_>, FunctionContext);
     block_arena = TypedArena::new();
-    fcx = FunctionContext::new(ccx, llfn, fn_ty, None, &block_arena);
+    fcx = FunctionContext::new(ccx, llfn, fn_ty, None, None, &block_arena);
     let mut bcx = fcx.init(false, None);
     assert!(!fcx.needs_ret_allocas);
 
