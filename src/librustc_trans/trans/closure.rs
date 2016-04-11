@@ -249,6 +249,7 @@ pub fn trans_closure_expr<'a, 'tcx>(dest: Dest<'a, 'tcx>,
                   id,
                   fn_ty,
                   Abi::RustCall,
+                  None,
                   ClosureEnv::Closure(closure_def_id, id));
 
     // Don't hoist this to the top of the function. It's perfectly legitimate
