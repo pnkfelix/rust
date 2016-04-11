@@ -386,7 +386,7 @@ pub fn trans_fn_pointer_shim<'a, 'tcx>(
     let empty_substs = tcx.mk_substs(Substs::trans_empty());
     let (block_arena, fcx): (TypedArena<_>, FunctionContext);
     block_arena = TypedArena::new();
-    fcx = FunctionContext::new(ccx, llfn, fn_ty, None, empty_substs, &block_arena);
+    fcx = FunctionContext::new(ccx, llfn, fn_ty, None, None, empty_substs, &block_arena);
     let mut bcx = fcx.init(false, None);
 
     let llargs = get_params(fcx.llfn);

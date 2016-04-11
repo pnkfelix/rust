@@ -1378,7 +1378,7 @@ fn gen_fn<'a, 'tcx>(fcx: &FunctionContext<'a, 'tcx>,
     let empty_substs = ccx.tcx().mk_substs(Substs::trans_empty());
     let (fcx, block_arena);
     block_arena = TypedArena::new();
-    fcx = FunctionContext::new(ccx, llfn, fn_ty, None, empty_substs, &block_arena);
+    fcx = FunctionContext::new(ccx, llfn, fn_ty, None, None, empty_substs, &block_arena);
     let bcx = fcx.init(true, None);
     trans(bcx);
     fcx.cleanup();

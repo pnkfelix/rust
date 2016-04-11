@@ -41,6 +41,7 @@ use middle::ty::{self, Ty, TyCtxt};
 use middle::traits::{self, SelectionContext, ProjectionMode};
 use middle::ty::fold::{TypeFolder, TypeFoldable};
 use rustc_front::hir;
+use rustc_borrowck::borrowck::mir::BorrowckMirData;
 use util::nodemap::NodeMap;
 
 use arena::TypedArena;
@@ -275,6 +276,10 @@ pub struct FunctionContext<'a, 'tcx: 'a> {
     // crate.
     pub mir: Option<CachedMir<'a, 'tcx>>,
 
+    /// Move and Dataflow data for the MIR for this function.
+    /// Optional as well (see above).
+    pub borrowck_mir_data: Option<BorrowckMirData<'tcx>>,
+    
     // The ValueRef returned from a call to llvm::LLVMAddFunction; the
     // address of the first instruction in the sequence of
     // instructions for this function that will go in the .text

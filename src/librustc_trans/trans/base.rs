@@ -1407,6 +1407,7 @@ impl<'blk, 'tcx> FunctionContext<'blk, 'tcx> {
                llfndecl: ValueRef,
                fn_ty: FnType,
                def_id: Option<DefId>,
+               borrowck_mir_data: Option<BorrowckMirData<'tcx>>,
                param_substs: &'tcx Substs<'tcx>,
                block_arena: &'blk TypedArena<common::BlockS<'blk, 'tcx>>)
                -> FunctionContext<'blk, 'tcx> {
@@ -1456,6 +1457,7 @@ impl<'blk, 'tcx> FunctionContext<'blk, 'tcx> {
         FunctionContext {
             needs_ret_allocas: nested_returns && mir.is_none(),
             mir: mir,
+            borrowck_mir_data: borrowck_mir_data,
             llfn: llfndecl,
             llretslotptr: Cell::new(None),
             param_env: ccx.tcx().empty_parameter_environment(),
@@ -1841,7 +1843,10 @@ pub fn trans_closure<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 
     let (arena, fcx): (TypedArena<_>, FunctionContext);
     arena = TypedArena::new();
-    fcx = FunctionContext::new(ccx, llfndecl, fn_ty, Some(def_id), param_substs, &arena);
+    fcx = FunctionContext::new(
+        ccx, llfndecl, fn_ty, Some(def_id),
+        borrowck_mir_data,
+        param_substs, &arena);
 
     if fcx.mir.is_some() {
         return mir::trans_mir(&fcx);
@@ -2060,9 +2065,11 @@ pub fn trans_ctor_shim<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 
     let (arena, fcx): (TypedArena<_>, FunctionContext);
     arena = TypedArena::new();
-    fcx = FunctionContext::new(ccx, llfndecl, fn_ty,
-                               Some(ccx.tcx().map.local_def_id(ctor_id)),
-                               param_substs, &arena);
+    fcx = FunctionContext::new(
+        ccx, llfndecl, fn_ty,
+        Some(ccx.tcx().map.local_def_id(ctor_id)),
+        None,
+        param_substs, &arena);
     let bcx = fcx.init(false, None);
 
     assert!(!fcx.needs_ret_allocas);
