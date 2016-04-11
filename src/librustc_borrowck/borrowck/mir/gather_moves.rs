@@ -296,11 +296,11 @@ impl Lookup<MovePathIndex> {
 }
 
 impl<'tcx> MovePathLookup<'tcx> {
-    fn new() -> Self {
+    fn new(mir: &Mir<'tcx>) -> Self {
         MovePathLookup {
-            vars: vec![],
-            temps: vec![],
-            args: vec![],
+            vars: Vec::with_capacity(mir.var_decls.len()),
+            temps: Vec::with_capacity(mir.temp_decls.len()),
+            args: Vec::with_capacity(mir.arg_decls.len()),
             statics: None,
             return_ptr: None,
             projections: vec![],
@@ -308,6 +308,27 @@ impl<'tcx> MovePathLookup<'tcx> {
         }
     }
 
+    fn post_build_sanity_check(&self, tcx: &ty::TyCtxt<'tcx>, mir: &Mir<'tcx>) {
+        if (self.vars.len() != mir.var_decls.len()) ||
+            (self.temps.len() != mir.temp_decls.len()) ||
+            (self.args.len() != mir.arg_decls.len())
+        {
+            debug!("{}", {
+                let mut out = Vec::new();
+                {
+                    use std::io::Write;
+                    use rustc_mir::pretty::write_mir_named;
+                    let mut w: &mut Write = &mut out;
+                    write_mir_named(tcx, "boo_invalid_move_data", mir, &mut w).unwrap();
+                }
+                String::from_utf8(out).unwrap()
+            });
+        }
+        assert_eq!(self.vars.len(), mir.var_decls.len());
+        assert_eq!(self.temps.len(), mir.temp_decls.len());
+        assert_eq!(self.args.len(), mir.arg_decls.len());
+    }
+    
     fn next_index(next: &mut MovePathIndex) -> MovePathIndex {
         let i = *next;
         *next = MovePathIndex::new(i.idx() + 1);
@@ -446,8 +467,8 @@ impl<'a, 'tcx> MovePathDataBuilder<'a, 'tcx> {
 
         // `lookup` is either the previously assigned index or a
         // newly-allocated one.
-        debug!("move_path_for lookup start: {:?} pre_move_paths len: {}",
-               lookup, self.pre_move_paths.len());
+        debug!("move_path_for lookup start: {:?} pre_move_paths len: {} lval: {:?}",
+               lookup, self.pre_move_paths.len(), lval);
         debug_assert!(lookup.idx() <= self.pre_move_paths.len());
 
         if let Lookup(LookupKind::Generate, mpi) = lookup {
@@ -536,9 +557,30 @@ fn gather_moves<'tcx>(mir: &Mir<'tcx>, tcx: &ty::TyCtxt<'tcx>) -> MoveData<'tcx>
         tcx: tcx,
         mir: mir,
         pre_move_paths: Vec::new(),
-        rev_lookup: MovePathLookup::new(),
+        rev_lookup: MovePathLookup::new(mir),
     };
 
+    // Before we analyze the program text, we create the MovePath's
+    // for all of the vars, args, and temps. (This enforces a basic
+    // property that even if the MIR body doesn't contain any
+    // references to a var/arg/temp, it will still be a valid
+    // operation to lookup the MovePath associated with it.)
+    assert!(mir.var_decls.len() <= ::std::u32::MAX as usize);
+    assert!(mir.arg_decls.len() <= ::std::u32::MAX as usize);
+    assert!(mir.temp_decls.len() <= ::std::u32::MAX as usize);
+    for var_idx in 0..mir.var_decls.len() {
+        let path_idx = builder.move_path_for(&Lvalue::Var(var_idx as u32));
+        path_map.fill_to(path_idx.idx());
+    }
+    for arg_idx in 0..mir.arg_decls.len() {
+        let path_idx = builder.move_path_for(&Lvalue::Arg(arg_idx as u32));
+        path_map.fill_to(path_idx.idx());
+    }
+    for temp_idx in 0..mir.temp_decls.len() {
+        let path_idx = builder.move_path_for(&Lvalue::Temp(temp_idx as u32));
+        path_map.fill_to(path_idx.idx());
+    }
+    
     for bb in bbs {
         let loc_map_bb = &mut loc_map[bb.index()];
         let bb_data = mir.basic_block_data(bb);
@@ -615,8 +657,13 @@ fn gather_moves<'tcx>(mir: &Mir<'tcx>, tcx: &ty::TyCtxt<'tcx>) -> MoveData<'tcx>
                 Terminator::Return => {
                     let source = Location { block: bb,
                                             index: bb_data.statements.len() };
-                    debug!("gather_moves Return on_move_out_lval return {:?}", source);
-                    bb_ctxt.on_move_out_lval(SK::Return, &Lvalue::ReturnPointer, source)
+
+                    if let FnOutput::FnConverging(_) = bb_ctxt.builder.mir.return_ty {
+                        debug!("gather_moves Return on_move_out_lval return {:?}", source);
+                        bb_ctxt.on_move_out_lval(SK::Return, &Lvalue::ReturnPointer, source);
+                    } else {
+                        debug!("gather_moves Return on_move_out_lval assuming unreachable return {:?}", source);
+                    }
                 }
 
                 Terminator::If { ref cond, targets: _ } => {
@@ -704,6 +751,8 @@ fn gather_moves<'tcx>(mir: &Mir<'tcx>, tcx: &ty::TyCtxt<'tcx>) -> MoveData<'tcx>
         "done dumping MovePathData"
     });
 
+    builder.rev_lookup.post_build_sanity_check(builder.tcx, builder.mir);
+    
     MoveData {
         move_paths: MovePathData { move_paths: move_paths, },
         moves: moves,
