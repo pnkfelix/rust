@@ -295,7 +295,7 @@ impl Lookup<MovePathIndex> {
 }
 
 impl<'tcx> MovePathLookup<'tcx> {
-    fn new(mir: &Mir) -> Self {
+    fn new(mir: &Mir<'tcx>) -> Self {
         MovePathLookup {
             vars: IndexVec::from_elem(None, &mir.var_decls),
             temps: IndexVec::from_elem(None, &mir.temp_decls),
@@ -305,6 +305,27 @@ impl<'tcx> MovePathLookup<'tcx> {
             projections: vec![],
             next_index: MovePathIndex::new(0),
         }
+    }
+
+    fn post_build_sanity_check(&self, tcx: &ty::TyCtxt<'tcx>, mir: &Mir<'tcx>) {
+        if (self.vars.len() != mir.var_decls.len()) ||
+            (self.temps.len() != mir.temp_decls.len()) ||
+            (self.args.len() != mir.arg_decls.len())
+        {
+            debug!("{}", {
+                let mut out = Vec::new();
+                {
+                    use std::io::Write;
+                    use rustc_mir::pretty::write_mir_named;
+                    let mut w: &mut Write = &mut out;
+                    write_mir_named(tcx, "boo_invalid_move_data", mir, &mut w).unwrap();
+                }
+                String::from_utf8(out).unwrap()
+            });
+        }
+        assert_eq!(self.vars.len(), mir.var_decls.len());
+        assert_eq!(self.temps.len(), mir.temp_decls.len());
+        assert_eq!(self.args.len(), mir.arg_decls.len());
     }
 
     fn next_index(next: &mut MovePathIndex) -> MovePathIndex {
@@ -446,8 +467,8 @@ impl<'a, 'tcx> MovePathDataBuilder<'a, 'tcx> {
 
         // `lookup` is either the previously assigned index or a
         // newly-allocated one.
-        debug!("move_path_for lookup start: {:?} pre_move_paths len: {}",
-               lookup, self.pre_move_paths.len());
+        debug!("move_path_for lookup start: {:?} pre_move_paths len: {} lval: {:?}",
+               lookup, self.pre_move_paths.len(), lval);
         debug_assert!(lookup.index() <= self.pre_move_paths.len());
 
         if let Lookup(LookupKind::Generate, mpi) = lookup {
@@ -742,6 +763,8 @@ fn gather_moves<'a, 'tcx>(mir: &Mir<'tcx>, tcx: TyCtxt<'a, 'tcx, 'tcx>) -> MoveD
         }
         "done dumping MovePathData"
     });
+
+    builder.rev_lookup.post_build_sanity_check(builder.tcx, builder.mir);
 
     MoveData {
         move_paths: MovePathData { move_paths: move_paths, },
