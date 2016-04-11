@@ -47,13 +47,37 @@ fn write_basic_block<W: Write>(block: BasicBlock, mir: &Mir, w: &mut W) -> io::R
     writeln!(w, "{}}}", INDENT)
 }
 
+pub fn write_mir_named<W: Write>(tcx: &ty::TyCtxt, name: &str, mir: &Mir, w: &mut W)
+-> io::Result<()> {
+    write_mir_intro_named(tcx, name, mir, w)?;
+    for block in mir.all_basic_blocks() {
+        write_basic_block(block, mir, w)?;
+    }
+    writeln!(w, "}}")
+}
+
+/// Write out a human-readable textual representation of the MIR's
+/// `fn` type and the types of its local variables (both user-defined
+/// bindings and compiler temporaries). Assumes the function
+/// represented by `mir` is named `name`. Note: Generated output
+/// introduces an open curly that needs to be closed.
+pub fn write_mir_intro_named<W: Write>(tcx: &ty::TyCtxt, name: &str, mir: &Mir, w: &mut W)
+-> io::Result<()> {
+    write_mir_fn_sig(tcx, name, mir, w)?;
+    write_mir_fn_body(tcx, mir, w)
+}
+
 /// Write out a human-readable textual representation of the MIR's `fn` type and the types of its
-/// local variables (both user-defined bindings and compiler temporaries).
+/// local variables (both user-defined bindings and compiler temporaries). Assumes `nid` is
+/// the node-id for the given `mir`.
 fn write_mir_intro<W: Write>(tcx: &ty::TyCtxt, nid: NodeId, mir: &Mir, w: &mut W)
 -> io::Result<()> {
+    write_mir_intro_named(tcx, &tcx.map.path_to_string(nid), mir, w)
+}
 
-    write!(w, "fn {}(", tcx.map.path_to_string(nid))?;
-
+fn write_mir_fn_sig<W: Write>(tcx: &ty::TyCtxt, name: &str, mir: &Mir, w: &mut W)
+-> io::Result<()> {
+    write!(w, "fn {}(", name)?;
     // fn argument types.
     for (i, arg) in mir.arg_decls.iter().enumerate() {
         if i > 0 {
@@ -66,10 +90,13 @@ fn write_mir_intro<W: Write>(tcx: &ty::TyCtxt, nid: NodeId, mir: &Mir, w: &mut W
 
     // fn return type.
     match mir.return_ty {
-        ty::FnOutput::FnConverging(ty) => write!(w, "{}", ty)?,
-        ty::FnOutput::FnDiverging => write!(w, "!")?,
+        ty::FnOutput::FnConverging(ty) => write!(w, "{}", ty),
+        ty::FnOutput::FnDiverging => write!(w, "!"),
     }
+}
 
+fn write_mir_fn_body<W: Write>(tcx: &ty::TyCtxt, mir: &Mir, w: &mut W)
+-> io::Result<()> {
     writeln!(w, " {{")?;
 
     // User variable types (including the user's name in a comment).
