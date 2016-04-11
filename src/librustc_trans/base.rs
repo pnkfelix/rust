@@ -1950,13 +1950,14 @@ pub fn trans_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
     {
         let mir_map = ccx.shared().mir_map;
         let mut bcx = BorrowckCtxt::new(ccx.tcx(), Some(mir_map));
-        let mir = mir_map.map.get(&id).unwrap();
-        bcx.with_temp_region_map(id, |this| {
-            let my_borrowck_mir_data =
-                borrowck::mir::borrowck_mir(
-                    this, fk, decl, mir, body, sp, id, fk.attrs());
-            borrowck_mir_data = Some(my_borrowck_mir_data);
-        });
+        if let Some(mir) = mir_map.map.get(&id) {
+            bcx.with_temp_region_map(id, |this| {
+                let my_borrowck_mir_data =
+                    borrowck::mir::borrowck_mir(
+                        this, fk, decl, mir, body, sp, id, fk.attrs());
+                borrowck_mir_data = Some(my_borrowck_mir_data);
+            });
+        }
     }
     debug!("trans_fn borrowck_mir_data: {:?}", borrowck_mir_data);
 
