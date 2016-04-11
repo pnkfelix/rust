@@ -109,6 +109,7 @@ use rustc::hir::intravisit::{self, FnKind, Visitor};
 use rustc::hir;
 use rustc::middle::free_region::FreeRegionMap;
 use rustc_borrowck::borrowck::{self, BorrowckCtxt};
+use rustc_borrowck::borrowck::mir::BorrowckMirData;
 use syntax::ast;
 
 thread_local! {
@@ -1824,6 +1825,7 @@ pub fn trans_closure<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                                inlined_id: ast::NodeId,
                                sig: &ty::FnSig<'tcx>,
                                abi: Abi,
+                               borrowck_mir_data: Option<BorrowckMirData<'tcx>>,
                                closure_env: closure::ClosureEnv) {
     ccx.stats().n_closures.set(ccx.stats().n_closures.get() + 1);
 
@@ -1967,6 +1969,7 @@ pub fn trans_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                   id,
                   &sig,
                   abi,
+                  borrowck_mir_data,
                   closure::ClosureEnv::NotClosure);
 }
 
