@@ -24,18 +24,20 @@ mod dataflow;
 mod gather_moves;
 mod graphviz;
 
-use self::dataflow::{BitDenotation};
+pub use self::dataflow::{BitDenotation};
 use self::dataflow::{Dataflow, DataflowState, DataflowStateBuilder};
 use self::dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
 use self::gather_moves::{MoveData};
+
+pub use self::gather_moves::{MovePathContent};
 
 use std::fmt::Debug;
 
 #[derive(Debug)]
 pub struct BorrowckMirData<'tcx> {
-    move_data: MoveData<'tcx>,
-    flow_inits: DataflowState<MaybeInitializedLvals<'tcx>>,
-    flow_uninits: DataflowState<MaybeUninitializedLvals<'tcx>>,
+    pub move_data: MoveData<'tcx>,
+    pub flow_inits: DataflowState<MaybeInitializedLvals<'tcx>>,
+    pub flow_uninits: DataflowState<MaybeUninitializedLvals<'tcx>>,
 }
 
 pub fn borrowck_mir<'b, 'a: 'b, 'tcx: 'a>(
