@@ -749,6 +749,10 @@ impl<'blk, 'tcx> BlockAndBuilder<'blk, 'tcx> {
         self.bcx.unreachable.get()
     }
 
+    pub fn bcx(&self) -> &Block<'blk, 'tcx> {
+        &self.bcx
+    }
+
     pub fn ccx(&self) -> &'blk CrateContext<'blk, 'tcx> {
         self.bcx.ccx()
     }
