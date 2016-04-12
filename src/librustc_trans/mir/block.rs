@@ -35,6 +35,11 @@ use syntax::parse::token;
 use super::{MirContext, TempRef};
 use super::analyze::CleanupKind;
 use super::constant::Const;
+use super::{MirContext, TempRef, drop};
+
+use rustc_borrowck::borrowck::mir::BitDenotation;
+use rustc_borrowck::borrowck::mir::{BorrowckMirData, MovePathContent};
+
 use super::lvalue::{LvalueRef, load_fat_ptr};
 use super::operand::OperandRef;
 use super::operand::OperandValue::*;
@@ -440,6 +445,22 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                                                   &mut idx, &mut callee.data)
                 }
 
+                if intrinsic == Some("stackmap_call") {
+                    debug!("stackmap_call bb: {:?} func: {:?} args: {:?} \
+                            destination: {:?} cleanup: {:?}",
+                           bb, func, args, destination, cleanup);
+                    self.stackmap_call_intrinsic(&bcx, bb, &mut llargs);
+                    return;
+                }
+
+                if intrinsic == Some("patchpoint_call") {
+                    debug!("patchpoint_call bb: {:?} func: {:?} args: {:?} \
+                            destination: {:?} cleanup: {:?}",
+                           bb, func, args, destination, cleanup);
+                    self.patchpoint_call_intrinsic(&bcx, bb, &mut llargs);
+                    return;
+                }
+
                 let fn_ptr = match callee.data {
                     NamedTupleConstructor(_) => {
                         // FIXME translate this like mir::Rvalue::Aggregate.
@@ -680,6 +701,79 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
             }
         }
 
+    }
+
+    fn stackmap_call_intrinsic(&mut self,
+                               bcx: &BlockAndBuilder<'bcx, 'tcx>,
+                               bb: mir::BasicBlock,
+                               llargs: &mut [ValueRef]) {
+        debug!("stackmap_call_intrinsic start bb: {:?}", bb);
+
+        let id = llargs[0];
+        let num_shadow_bytes = llargs[1];
+        let func = llargs[2];
+        let data = llargs[3];
+        let bmd = if let Some(ref bmd) = self.fcx.borrowck_mir_data {
+            bmd
+        } else {
+            bcx.tcx().sess.fatal("stackmap intrinsic requires MIR. \
+                                  (Try `-Z orbit`?)");
+        };
+
+        let BorrowckMirData { ref move_data,
+                              ref flow_inits,
+                              ref flow_uninits } = *bmd;
+
+        // "mb" stands for "maybe"
+        let mut mb_inited_state = flow_inits.sets.on_exit_set_for(bb.index());
+        let mut mb_uninited_state = flow_uninits.sets.on_exit_set_for(bb.index());
+
+        debug!("stackmap_call_intrinsic inited_state {:?} uninited_state {:?}",
+               mb_inited_state, mb_uninited_state);
+
+        // Both flow_inits and flow_uninits have the same interpretation
+        // for their bitvectors.
+        let mut definitely_inited = mb_inited_state;
+        for (init, uninit) in definitely_inited.iter_mut().zip(mb_uninited_state.iter()) {
+            // definitely_inited = inited \ uninited = inited & !uninited
+            *init &= !*uninit;
+        }
+        let denotation = &flow_inits.operator;
+        debug!("stackmap_call_intrinsic definitely_inited {:?}",
+               definitely_inited);
+
+        let ccx = bcx.ccx();
+        let llfn = ccx.get_intrinsic("llvm.experimental.stackmap");
+        let mut stackmap_args = vec![id, num_shadow_bytes];
+
+        denotation.each(
+            move_data,
+            &definitely_inited[..],
+            |move_path| {
+                match move_path.content {
+                    MovePathContent::Lvalue(ref lvalue) => {
+                        let tr_live = self.trans_lvalue(bcx, lvalue);
+                        // FIXME should assert llextra is null or something
+                        stackmap_args.push(tr_live.llval);
+                    }
+                    MovePathContent::Static => {
+                        unimplemented!()
+                    }
+                }
+            });
+
+        // FIXME
+        let dloc = DebugLoc::None;
+        build::Call(bcx.bcx(), llfn, &stackmap_args[..], dloc);
+        build::Call(bcx.bcx(), func, &[data], dloc);
+
+        debug!("stackmap_call_intrinsic finis");
+    }
+    fn patchpoint_call_intrinsic(&mut self,
+                                 bcx: &BlockAndBuilder<'bcx, 'tcx>,
+                                 bb: mir::BasicBlock,
+                                 llargs: &mut [ValueRef]) {
+        unimplemented!()
     }
 
     fn get_personality_slot(&mut self, bcx: &BlockAndBuilder<'bcx, 'tcx>) -> ValueRef {
