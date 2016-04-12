@@ -260,6 +260,14 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                             destination: {:?} cleanup: {:?}",
                            bb, func, args, destination, cleanup);
                     self.stackmap_call_intrinsic(&bcx, bb, &mut llargs);
+                    if let Some((_, target)) = *destination {
+                        for op in args {
+                            self.set_operand_dropped(&bcx, op);
+                        }
+                        funclet_br(bcx, self.llblock(target));
+                    } else {
+                        bcx.unreachable();
+                    }
                     return;
                 }
 
@@ -268,6 +276,14 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                             destination: {:?} cleanup: {:?}",
                            bb, func, args, destination, cleanup);
                     self.patchpoint_call_intrinsic(&bcx, bb, &mut llargs);
+                    if let Some((_, target)) = *destination {
+                        for op in args {
+                            self.set_operand_dropped(&bcx, op);
+                        }
+                        funclet_br(bcx, self.llblock(target));
+                    } else {
+                        bcx.unreachable();
+                    }
                     return;
                 }
 
@@ -558,11 +574,12 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                 }
             });
 
-        // FIXME
-        let dloc = DebugLoc::None;
-        build::Call(bcx.bcx(), llfn, &stackmap_args[..], dloc);
-        build::Call(bcx.bcx(), func, &[data], dloc);
-
+        bcx.with_block(|bcx| {
+            // FIXME
+            let dloc = DebugLoc::None;
+            build::Call(bcx, llfn, &stackmap_args[..], dloc);
+            build::Call(bcx, func, &[data], dloc);
+        });
         debug!("stackmap_call_intrinsic finis");
     }
     fn patchpoint_call_intrinsic(&mut self,
