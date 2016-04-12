@@ -218,8 +218,9 @@ pub struct DataflowState<O: BitDenotation>
     /// on its own separate from other fields.)
     pub sets: AllSets,
 
+    // FIXME should not be pub
     /// operator used to initialize, combine, and interpret bits.
-    operator: O,
+    pub operator: O,
 }
 
 impl<'a, 'tcx: 'a, O> DataflowStateBuilder<'a, 'tcx, O>
