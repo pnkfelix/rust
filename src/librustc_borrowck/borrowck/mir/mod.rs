@@ -30,13 +30,16 @@ mod gather_moves;
 mod patch;
 // mod graphviz;
 
-use self::dataflow::{BitDenotation};
+pub use self::dataflow::{BitDenotation};
 use self::dataflow::{DataflowOperator};
 use self::dataflow::{Dataflow, DataflowAnalysis, DataflowResults};
 use self::dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
 use self::dataflow::{DefinitelyInitializedLvals};
 use self::gather_moves::{MoveData, MovePathIndex, Location};
-use self::gather_moves::{MovePathContent, MovePathData};
+use self::gather_moves::{MovePathData};
+pub use self::gather_moves::{MovePathContent};
+
+use std::fmt::Debug;
 
 fn has_rustc_mir_with(attrs: &[ast::Attribute], name: &str) -> Option<P<MetaItem>> {
     for attr in attrs {
@@ -59,9 +62,9 @@ pub struct MoveDataParamEnv<'tcx> {
 
 #[derive(Debug)]
 pub struct BorrowckMirData<'a, 'tcx: 'a> {
-    move_data: MoveData<'tcx>,
-    flow_inits: DataflowAnalysis<'a, 'tcx, MaybeInitializedLvals<'a, 'tcx>>,
-    flow_uninits: DataflowAnalysis<'a, 'tcx, MaybeUninitializedLvals<'a, 'tcx>>,
+    pub move_data: MoveData<'tcx>,
+    pub flow_inits: DataflowAnalysis<'a, 'tcx, MaybeInitializedLvals<'a, 'tcx>>,
+    pub flow_uninits: DataflowAnalysis<'a, 'tcx, MaybeUninitializedLvals<'a, 'tcx>>,
 }
 
 pub fn borrowck_mir<'a, 'tcx: 'a>(
