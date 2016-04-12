@@ -285,6 +285,14 @@ impl AllSets {
     pub fn on_entry_set_for(&self, block_idx: usize) -> &[usize] {
         self.lookup_set_for(&self.on_entry_sets, block_idx)
     }
+    pub fn on_exit_set_for(&self, block_idx: usize) -> Vec<usize> {
+        let mut set: Vec<_> = self.on_entry_set_for(block_idx).iter()
+            .map(|x|*x)
+            .collect();
+        bitwise(&mut set[..], self.gen_set_for(block_idx), &Union);
+        bitwise(&mut set[..], self.kill_set_for(block_idx), &Subtract);
+        return set;
+    }
 }
 
 fn for_each_bit<F>(bits_per_block: usize, words: &[usize], mut f: F)
@@ -363,6 +371,13 @@ pub trait BitDenotation: DataflowOperator {
     /// Size of each bitvector allocated for each block in the analysis.
     fn bits_per_block(&self,
                       ctxt: &Self::Ctxt) -> usize;
+
+    // FIXME should probably not be on this trait.
+    /// Calls `f` on each set bit in `words`, assuming it FIXME
+    fn each<F>(&self, ctxt: &Self::Ctxt, words: &[usize], mut f: F) where F: FnMut(&Self::Bit) {
+        for_each_bit(self.bits_per_block(ctxt), words,
+                     |idx| f(self.interpret(ctxt, idx)))
+    }
 
     /// Provides the meaning of each entry in the dataflow bitvector.
     /// (Mostly intended for use for better debug instrumentation.)
