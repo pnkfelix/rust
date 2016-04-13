@@ -747,13 +747,14 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
         debug!("stackmap_call_intrinsic inited_state {:?} uninited_state {:?}",
                mb_inited_state, mb_uninited_state);
 
-        // Both flow_inits and flow_uninits have the same interpretation
-        // for their bitvectors.
-        let mut definitely_inited = mb_inited_state;
-        for (init, uninit) in definitely_inited.iter_mut().zip(mb_uninited_state.iter()) {
-            // definitely_inited = inited \ uninited = inited & !uninited
-            *init &= !*uninit;
-        }
+        // FIXME when mb_uninited_state is fixed, I should calculate
+        // inited = mb_inited \ mb_uninited = mb_inited & !mb_uninited
+        //
+        // (Both flow_inits and flow_uninits have the same
+        // interpretation for their bitvectors, so we can apply
+        // bitwise operations like the above directly on the bitvector
+        // representation.)
+        let inited = mb_inited_state;
         let denotation = &flow_inits.operator;
         debug!("stackmap_call_intrinsic definitely_inited {:?}",
                definitely_inited);
@@ -764,10 +765,12 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
 
         denotation.each(
             move_data,
-            &definitely_inited[..],
+            &inited[..],
             |move_path| {
                 match move_path.content {
                     MovePathContent::Lvalue(ref lvalue) => {
+                        debug!("stackmap_call_intrinsic add lvalue {:?}",
+                               lvalue);
                         let tr_live = self.trans_lvalue(bcx, lvalue);
                         // FIXME should assert llextra is null or something
                         stackmap_args.push(tr_live.llval);
