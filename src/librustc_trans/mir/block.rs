@@ -747,7 +747,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
         debug!("stackmap_call_intrinsic inited_state {:?} uninited_state {:?}",
                mb_inited_state, mb_uninited_state);
 
-        // FIXME when mb_uninited_state is fixed, I should calculate
+        // FIXME when mb_uninited_state is fixed, I could calculate
         // inited = mb_inited \ mb_uninited = mb_inited & !mb_uninited
         //
         // (Both flow_inits and flow_uninits have the same
@@ -789,11 +789,83 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
         });
         debug!("stackmap_call_intrinsic finis");
     }
+
     fn patchpoint_call_intrinsic(&mut self,
                                  bcx: &BlockAndBuilder<'bcx, 'tcx>,
                                  bb: mir::BasicBlock,
                                  llargs: &mut [ValueRef]) {
-        unimplemented!()
+        debug!("patchpoint_call_intrinsic start bb: {:?}", bb);
+
+        let id = llargs[0];
+        let num_bytes = llargs[1];
+        let func = llargs[2];
+        let data = llargs[3];
+        let bmd = if let Some(ref bmd) = self.fcx.borrowck_mir_data {
+            bmd
+        } else {
+            bcx.tcx().sess.fatal("patchpoint intrinsic requires MIR. \
+                                  (Try `-Z orbit`?)");
+        };
+
+        let BorrowckMirData { ref move_data,
+                              ref flow_inits,
+                              ref flow_uninits } = *bmd;
+
+        // "mb" stands for "maybe"
+        let mut mb_inited_state = flow_inits.sets.on_exit_set_for(bb.index());
+        let mut mb_uninited_state = flow_uninits.sets.on_exit_set_for(bb.index());
+
+        debug!("patchpoint_call_intrinsic inited_state {:?} uninited_state {:?}",
+               mb_inited_state, mb_uninited_state);
+
+        // FIXME when mb_uninited_state is fixed, I could calculate
+        // inited = mb_inited \ mb_uninited = mb_inited & !mb_uninited
+        //
+        // (Both flow_inits and flow_uninits have the same
+        // interpretation for their bitvectors, so we can apply
+        // bitwise operations like the above directly on the bitvector
+        // representation.)
+        let inited = mb_inited_state;
+        let denotation = &flow_inits.operator;
+        let ccx = bcx.ccx();
+        let llfn = ccx.get_intrinsic("llvm.experimental.patchpoint.void");
+        let func_arg_count = 1;
+
+        let func_as_ptr = bcx.with_block(|bcx| {
+            build::BitCast(bcx, func, Type::i8p(ccx))
+        });
+
+        let mut patchpoint_args = vec![id,
+                                       num_bytes,
+                                       func_as_ptr,
+                                       C_i32(ccx, func_arg_count),
+                                       data];
+
+        denotation.each(
+            move_data,
+            &inited[..],
+            |move_path| {
+                match move_path.content {
+                    MovePathContent::Lvalue(ref lvalue) => {
+                        debug!("patchpoint_call_intrinsic add lvalue {:?}",
+                               lvalue);
+                        let tr_live = self.trans_lvalue(bcx, lvalue);
+                        // FIXME should assert llextra is null or something
+                        patchpoint_args.push(tr_live.llval);
+                    }
+                    MovePathContent::Static => {
+                        unimplemented!()
+                    }
+                }
+            });
+
+        bcx.with_block(|bcx| {
+            // FIXME
+            let dloc = DebugLoc::None;
+            build::Call(bcx, llfn, &patchpoint_args[..], dloc);
+        });
+
+        debug!("patchpoint_call_intrinsic finis");
     }
 
     fn get_personality_slot(&mut self, bcx: &BlockAndBuilder<'bcx, 'tcx>) -> ValueRef {
