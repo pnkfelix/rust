@@ -782,10 +782,22 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
             });
 
         bcx.with_block(|bcx| {
-            // FIXME
+            // Note on ordering: should we emit the stackmap call
+            // first and the call to `func` second, or vice versa?
+            //
+            // The argument for `stackmap; func` is that it most
+            // closely matches semantics of the patchpoint intrinsic.
+            //
+            // The argument for `func; stackmap` is that then then
+            // stackmap entry should carry the return address attached
+            // to the continuation during the call to `func`, which
+            // greatly eases *finding* the entry in the stackmap when
+            // scanning the stack backtrace.
+
+            // FIXME: need to attach proper debug information
             let dloc = DebugLoc::None;
-            build::Call(bcx, llfn, &stackmap_args[..], dloc);
             build::Call(bcx, func, &[data], dloc);
+            build::Call(bcx, llfn, &stackmap_args[..], dloc);
         });
         debug!("stackmap_call_intrinsic finis");
     }
