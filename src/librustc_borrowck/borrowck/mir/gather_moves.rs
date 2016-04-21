@@ -598,7 +598,7 @@ fn gather_moves<'tcx>(mir: &Mir<'tcx>, tcx: &TyCtxt<'tcx>) -> MoveData<'tcx> {
             TerminatorKind::Return => {
                 let source = Location { block: bb,
                                         index: bb_data.statements.len() };
-                bb_ctxt.on_move_out_lval(SK::Return, &Lvalue::ReturnPointer;, source);
+                bb_ctxt.on_move_out_lval(SK::Return, &Lvalue::ReturnPointer, source);
             }
 
             TerminatorKind::If { ref cond, targets: _ } => {
