@@ -9,9 +9,10 @@
 // except according to those terms.
 
 
-use rustc::middle::ty::{self, FnOutput, TyCtxt, TypeVariants};
+use rustc::ty::{self, FnOutput, TyCtxt, TypeVariants};
 use rustc::mir::repr::{self, Mir, BasicBlock, Lvalue, Rvalue};
-use rustc::mir::repr::{StatementKind, Terminator};
+use rustc::mir::repr::{LvalueProjection, Operand, Projection, ProjectionElem};
+use rustc::mir::repr::{StatementKind, Terminator, TerminatorKind};
 use rustc::util::nodemap::FnvHashMap;
 
 use std::cell::{Cell};
