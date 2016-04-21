@@ -2321,7 +2321,7 @@ pub fn trans_item(ccx: &CrateContext, item: &hir::Item) {
                 for (ref ccx, is_origin) in ccx.maybe_iter(!from_external && trans_everywhere) {
                     let def_id = tcx.map.local_def_id(item.id);
                     let empty_substs = ccx.empty_substs_for_def_id(def_id);
-                    let fk = FnKind::ItemFn(item.name, generics, unsafety, constness, abi, item.vis, &item.attrs[..]);
+                    let fk = FnKind::ItemFn(item.name, generics, unsafety, constness, abi, &item.vis, &item.attrs[..]);
                     let llfn = Callee::def(ccx, def_id, empty_substs).reify(ccx).val;
                     trans_fn(ccx, fk, &decl, &body, llfn, empty_substs, item.span, item.id);
                     set_global_section(ccx, llfn, item);
@@ -2361,7 +2361,7 @@ pub fn trans_item(ccx: &CrateContext, item: &hir::Item) {
                         for (ref ccx, is_origin) in ccx.maybe_iter(trans_everywhere) {
                             let def_id = tcx.map.local_def_id(impl_item.id);
                             let empty_substs = ccx.empty_substs_for_def_id(def_id);
-                            let fk = FnKind::Method(item.name, sig, Some(item.vis), &item.attrs[..]);
+                            let fk = FnKind::Method(item.name, sig, Some(&item.vis), &item.attrs[..]);
                             let llfn = Callee::def(ccx, def_id, empty_substs).reify(ccx).val;
                             trans_fn(ccx, fk, &sig.decl, body, llfn, empty_substs, impl_item.span, impl_item.id);
                             update_linkage(ccx, llfn, Some(impl_item.id),

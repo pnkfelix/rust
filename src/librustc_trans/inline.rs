@@ -150,7 +150,7 @@ fn instantiate_inline(ccx: &CrateContext, fn_id: DefId) -> Option<DefId> {
                     let def_id = tcx.map.local_def_id(impl_item.id);
                     let empty_substs = ccx.empty_substs_for_def_id(def_id);
                     let llfn = Callee::def(ccx, def_id, empty_substs).reify(ccx).val;
-                    let fk = FnKind::Method(impl_item.name, sig, Some(impl_item.vis), &impl_item.attrs[..]);
+                    let fk = FnKind::Method(impl_item.name, sig, Some(&impl_item.vis), &impl_item.attrs[..]);
                     trans_fn(ccx,
                              fk,
                              &sig.decl,
