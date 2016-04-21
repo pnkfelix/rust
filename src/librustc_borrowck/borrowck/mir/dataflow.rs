@@ -543,7 +543,7 @@ impl<'a, 'tcx: 'a, D> DataflowStateBuilder<'a, 'tcx, D>
         (bb, bb_data): (repr::BasicBlock, &repr::BasicBlockData),
         on_return: OnReturn) where OnReturn: Fn(&MoveData, &mut [usize], &repr::Lvalue)
     {
-        match bb.terminator().kind {
+        match bb_data.terminator().kind {
             repr::TerminatorKind::Return |
             repr::TerminatorKind::Resume => {}
             repr::TerminatorKind::Goto { ref target } |
