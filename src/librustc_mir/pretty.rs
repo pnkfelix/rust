@@ -87,12 +87,8 @@ enum Annotation {
     ExitScope(ScopeId),
 }
 
-pub fn write_mir_fn<'tcx>(tcx: &TyCtxt<'tcx>,
-                          node_id: NodeId,
-                          mir: &Mir<'tcx>,
-                          w: &mut Write,
-                          auxiliary: Option<&ScopeAuxiliaryVec>)
-                          -> io::Result<()> {
+fn scope_entry_exit_annotations(auxiliary: Option<&ScopeAuxiliaryVec>)
+                                -> FnvHashMap<Location, Vec<Annotation>> {
     // compute scope/entry exit annotations
     let mut annotations = FnvHashMap();
     if let Some(auxiliary) = auxiliary {
@@ -110,7 +106,16 @@ pub fn write_mir_fn<'tcx>(tcx: &TyCtxt<'tcx>,
             }
         }
     }
+    annotations
+}
 
+pub fn write_mir_fn<'tcx>(tcx: &TyCtxt<'tcx>,
+                          node_id: NodeId,
+                          mir: &Mir<'tcx>,
+                          w: &mut Write,
+                          auxiliary: Option<&ScopeAuxiliaryVec>)
+                          -> io::Result<()> {
+    let annotations = scope_entry_exit_annotations(auxiliary);
     write_mir_intro(tcx, node_id, mir, w)?;
     for block in mir.all_basic_blocks() {
         write_basic_block(tcx, block, mir, w, &annotations)?;
@@ -212,11 +217,12 @@ fn write_scope_tree(tcx: &TyCtxt,
     Ok(())
 }
 
-pub fn write_mir_named<W: Write>(tcx: &ty::TyCtxt, name: &str, mir: &Mir, w: &mut W)
+pub fn write_mir_named(tcx: &ty::TyCtxt, name: &str, mir: &Mir, w: &mut Write, auxiliary: Option<&ScopeAuxiliaryVec>)
 -> io::Result<()> {
+    let annotations = scope_entry_exit_annotations(auxiliary);
     write_mir_intro_named(tcx, name, mir, w)?;
     for block in mir.all_basic_blocks() {
-        write_basic_block(block, mir, w)?;
+        write_basic_block(tcx, block, mir, w, &annotations)?;
     }
     writeln!(w, "}}")
 }
@@ -237,7 +243,7 @@ pub fn write_mir_intro_named(tcx: &ty::TyCtxt, name: &str, mir: &Mir, w: &mut Wr
 /// the node-id for the given `mir`.
 fn write_mir_intro(tcx: &ty::TyCtxt, nid: NodeId, mir: &Mir, w: &mut Write)
                    -> io::Result<()> {
-    write_mir_intro_named(tcx, &tcx.map.path_to_string(nid), mir, w)
+    write_mir_intro_named(tcx, &tcx.map.node_to_string(nid), mir, w)
 }
 
 fn write_mir_fn_sig(tcx: &ty::TyCtxt, name: &str, mir: &Mir, w: &mut Write)
