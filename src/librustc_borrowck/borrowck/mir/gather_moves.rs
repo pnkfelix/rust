@@ -318,7 +318,7 @@ impl<'tcx> MovePathLookup<'tcx> {
                     use std::io::Write;
                     use rustc_mir::pretty::write_mir_named;
                     let mut w: &mut Write = &mut out;
-                    write_mir_named(tcx, "boo_invalid_move_data", mir, &mut w).unwrap();
+                    write_mir_named(tcx, "boo_invalid_move_data", mir, &mut w, None).unwrap();
                 }
                 String::from_utf8(out).unwrap()
             });
