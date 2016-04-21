@@ -463,6 +463,7 @@ pub trait Reflect {}
            issue = "27749")]
 impl Reflect for .. { }
 
+#[cfg(not(stage0))]
 /// Implement this trait to indicate that the type in question should
 /// be "tracked", in the sense that a scan over a thread's call-stack
 /// should include the set of such values on the stack.
@@ -475,6 +476,7 @@ impl Reflect for .. { }
 #[lang = "patchpoint_tracked"]
 pub trait PatchpointTracked {}
 
+#[cfg(not(stage0))]
 /// Implement this trait to indicate that the type in question should
 /// not be "tracked", in the sense that a scan over a thread's
 /// call-stack need not include such values.
