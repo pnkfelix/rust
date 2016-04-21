@@ -43,6 +43,8 @@ use rustc::ty::fold::{TypeFolder, TypeFoldable};
 use rustc::hir;
 use util::nodemap::NodeMap;
 
+use rustc_borrowck::borrowck::mir::BorrowckMirData;
+
 use arena::TypedArena;
 use libc::{c_uint, c_char};
 use std::ops::Deref;

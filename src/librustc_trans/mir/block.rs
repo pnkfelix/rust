@@ -16,7 +16,7 @@ use adt;
 use base;
 use build;
 use callee::{Callee, CalleeData, Fn, Intrinsic, NamedTupleConstructor, Virtual};
-use common::{self, type_is_fat_ptr, Block, BlockAndBuilder, C_undef};
+use common::{self, type_is_fat_ptr, Block, BlockAndBuilder, C_undef, C_i32};
 use debuginfo::DebugLoc;
 use Disr;
 use machine::{llalign_of_min, llbitsize_of_real};
@@ -552,8 +552,6 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
         // representation.)
         let inited = mb_inited_state;
         let denotation = &flow_inits.operator;
-        debug!("stackmap_call_intrinsic definitely_inited {:?}",
-               definitely_inited);
 
         let ccx = bcx.ccx();
         let llfn = ccx.get_intrinsic("llvm.experimental.stackmap");
