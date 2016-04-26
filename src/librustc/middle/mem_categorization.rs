@@ -753,6 +753,8 @@ impl<'t, 'a,'tcx> MemCategorizationContext<'t, 'a, 'tcx> {
         // away with stuffing a `TyError` in there
         // instead of bothering to construct a proper
         // one.
+        debug!("env_deref constructing fake TyError for ref of {:?}",
+               cmt_result);
         let cmt_result = cmt_ {
             mutbl: McImmutable,
             ty: self.tcx().types.err,
