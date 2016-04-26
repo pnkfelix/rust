@@ -24,6 +24,7 @@ use rustc::dep_graph::DepNode;
 use rustc::hir::map as hir_map;
 use rustc::hir::map::blocks::FnParts;
 use rustc::cfg;
+use rustc::lint;
 use rustc::middle::dataflow::DataFlowContext;
 use rustc::middle::dataflow::BitwiseOperator;
 use rustc::middle::dataflow::DataFlowOperator;
@@ -559,21 +560,27 @@ pub fn opt_loan_path<'tcx>(cmt: &mc::cmt<'tcx>) -> Option<Rc<LoanPath<'tcx>>> {
 // Errors
 
 // Errors that can occur
-#[derive(PartialEq)]
-pub enum bckerr_code {
+#[derive(Clone, PartialEq, Debug)]
+pub enum bckerr_code<'tcx> {
     err_mutbl,
     err_out_of_scope(ty::Region, ty::Region), // superscope, subscope
+    err_out_of_scope_dtor {
+        superscope: ty::Region,
+        subscope: ty::Region,
+        owner: mc::cmt<'tcx>,
+        dtor_ty: ty::Ty<'tcx>,
+    },
     err_borrowed_pointer_too_short(ty::Region, ty::Region), // loan, ptr
 }
 
 // Combination of an error code and the categorization of the expression
 // that caused it
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct BckError<'tcx> {
     span: Span,
     cause: AliasableViolationKind,
     cmt: mc::cmt<'tcx>,
-    code: bckerr_code
+    code: bckerr_code<'tcx>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -610,6 +617,14 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
     pub fn report(&self, err: BckError<'tcx>) {
         // Catch and handle some particular cases.
         match (&err.code, &err.cause) {
+            (&err_out_of_scope_dtor { .. }, _cause) => {
+                // Issue #31567: remove special case code post warning cycle
+                self.tcx.sess.add_lint(lint::builtin::BORROW_OUTLIVES_OWNER_WITH_DTOR,
+                                       err.cmt.id,
+                                       err.span,
+                                       self.bckerr_to_string(&err));
+                return;
+            }
             (&err_out_of_scope(ty::ReScope(_), ty::ReStatic),
              &BorrowViolation(euv::ClosureCapture(span))) |
             (&err_out_of_scope(ty::ReScope(_), ty::ReFree(..)),
@@ -893,6 +908,18 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
                     }
                 }
             }
+            err_out_of_scope_dtor { ref dtor_ty, .. } => {
+                let msg = match opt_loan_path(&err.cmt) {
+                    None => "borrowed value".to_string(),
+                    Some(lp) => {
+                        format!("`{}`", self.loan_path_to_string(&lp))
+                    }
+                };
+                format!("owner of {} does not live long enough; \
+                         it carries a type {} with a destructor \
+                         capable of modifying the borrowed data",
+                        msg, dtor_ty)
+            }
             err_out_of_scope(..) => {
                 let msg = match opt_loan_path(&err.cmt) {
                     None => "borrowed value".to_string(),
@@ -1052,6 +1079,7 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
                 }
             }
 
+            err_out_of_scope_dtor { superscope: super_scope, subscope: sub_scope, .. } |
             err_out_of_scope(super_scope, sub_scope) => {
                 self.tcx.note_and_explain_region(
                     db,
