@@ -14,7 +14,17 @@
 //! compiler code, rather than using their own custom pass. Those
 //! lints are all available in `rustc_lint::builtin`.
 
+// Note that declare_lint! alone is not enough; you need to also
+// register the lint, which you can do by adding it to the lint_array!
+// list in `impl LintPass for HardwiredLints` below.
+
 use lint::{LintPass, LateLintPass, LintArray};
+
+declare_lint! {
+    pub BORROW_OUTLIVES_OWNER_WITH_DTOR,
+    Warn,
+    "borrows that may interfere with destructor of owner"
+}
 
 declare_lint! {
     pub CONST_ERR,
@@ -193,6 +203,7 @@ pub struct HardwiredLints;
 impl LintPass for HardwiredLints {
     fn get_lints(&self) -> LintArray {
         lint_array!(
+            BORROW_OUTLIVES_OWNER_WITH_DTOR,
             UNUSED_IMPORTS,
             UNUSED_EXTERN_CRATES,
             UNUSED_QUALIFICATIONS,
