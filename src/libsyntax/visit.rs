@@ -195,7 +195,8 @@ pub fn walk_lifetime<'v, V: Visitor<'v>>(visitor: &mut V, lifetime: &'v Lifetime
 }
 
 pub fn walk_lifetime_def<'v, V: Visitor<'v>>(visitor: &mut V,
-                                              lifetime_def: &'v LifetimeDef) {
+                                             lifetime_def: &'v LifetimeDef) {
+    walk_list!(visitor, visit_attribute, lifetime_def.attrs.as_attr_slice());
     visitor.visit_lifetime(&lifetime_def.lifetime);
     walk_list!(visitor, visit_lifetime, &lifetime_def.bounds);
 }
@@ -476,6 +477,7 @@ pub fn walk_ty_param_bound<'v, V: Visitor<'v>>(visitor: &mut V,
 
 pub fn walk_generics<'v, V: Visitor<'v>>(visitor: &mut V, generics: &'v Generics) {
     for param in &generics.ty_params {
+        walk_list!(visitor, visit_attribute, param.attrs.as_attr_slice());
         visitor.visit_ident(param.span, param.ident);
         walk_list!(visitor, visit_ty_param_bound, &param.bounds);
         walk_list!(visitor, visit_ty, &param.default);
