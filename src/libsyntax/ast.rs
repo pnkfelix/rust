@@ -178,6 +178,7 @@ impl fmt::Debug for Lifetime {
 /// A lifetime definition, eg `'a: 'b+'c+'d`
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
 pub struct LifetimeDef {
+    pub attrs: ThinAttributes,
     pub lifetime: Lifetime,
     pub bounds: Vec<Lifetime>
 }
@@ -392,6 +393,7 @@ pub type TyParamBounds = P<[TyParamBound]>;
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
 pub struct TyParam {
+    pub attrs: ThinAttributes,
     pub ident: Ident,
     pub id: NodeId,
     pub bounds: TyParamBounds,

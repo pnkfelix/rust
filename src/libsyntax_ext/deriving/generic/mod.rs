@@ -516,6 +516,7 @@ impl<'a> TraitDef<'a> {
 
             cx.typaram(self.span,
                        ty_param.ident,
+                       vec![],
                        P::from_vec(bounds),
                        None)
         }));

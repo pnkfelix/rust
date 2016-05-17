@@ -10,7 +10,7 @@
 
 use abi::Abi;
 use ast::{self, Ident, Generics, Expr, BlockCheckMode, UnOp, PatKind};
-use attr;
+use attr::{self, AttributesExt};
 use codemap::{Span, respan, Spanned, DUMMY_SP, Pos};
 use ext::base::ExtCtxt;
 use parse::token::{self, keywords, InternedString};
@@ -72,6 +72,7 @@ pub trait AstBuilder {
     fn typaram(&self,
                span: Span,
                id: ast::Ident,
+               attrs: Vec<ast::Attribute>,
                bounds: ast::TyParamBounds,
                default: Option<P<ast::Ty>>) -> ast::TyParam;
 
@@ -82,6 +83,7 @@ pub trait AstBuilder {
     fn lifetime_def(&self,
                     span: Span,
                     name: ast::Name,
+                    attrs: Vec<ast::Attribute>,
                     bounds: Vec<ast::Lifetime>)
                     -> ast::LifetimeDef;
 
@@ -448,11 +450,13 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
     fn typaram(&self,
                span: Span,
                id: ast::Ident,
+               attrs: Vec<ast::Attribute>,
                bounds: ast::TyParamBounds,
                default: Option<P<ast::Ty>>) -> ast::TyParam {
         ast::TyParam {
             ident: id,
             id: ast::DUMMY_NODE_ID,
+            attrs: attrs.into_thin_attrs(),
             bounds: bounds,
             default: default,
             span: span
@@ -499,9 +503,11 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
     fn lifetime_def(&self,
                     span: Span,
                     name: ast::Name,
+                    attrs: Vec<ast::Attribute>,
                     bounds: Vec<ast::Lifetime>)
                     -> ast::LifetimeDef {
         ast::LifetimeDef {
+            attrs: attrs.into_thin_attrs(),
             lifetime: self.lifetime(span, name),
             bounds: bounds
         }
