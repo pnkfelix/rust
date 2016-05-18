@@ -526,13 +526,14 @@ pub fn noop_fold_ty_param_bound<T>(tpb: TyParamBound, fld: &mut T) -> TyParamBou
 }
 
 pub fn noop_fold_ty_param<T: Folder>(tp: TyParam, fld: &mut T) -> TyParam {
-    let TyParam {id, name, bounds, default, span} = tp;
+    let TyParam {id, name, bounds, default, span, pure_wrt_drop} = tp;
     TyParam {
         id: fld.new_id(id),
         name: name,
         bounds: fld.fold_bounds(bounds),
         default: default.map(|x| fld.fold_ty(x)),
         span: span,
+        pure_wrt_drop: pure_wrt_drop,
     }
 }
 
@@ -554,6 +555,7 @@ pub fn noop_fold_lifetime_def<T: Folder>(l: LifetimeDef, fld: &mut T) -> Lifetim
     LifetimeDef {
         lifetime: fld.fold_lifetime(l.lifetime),
         bounds: fld.fold_lifetimes(l.bounds),
+        pure_wrt_drop: l.pure_wrt_drop,
     }
 }
 
