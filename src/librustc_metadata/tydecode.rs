@@ -589,6 +589,11 @@ impl<'a,'tcx> TyDecoder<'a,'tcx> {
         let default_def_id = self.parse_def();
         let default = self.parse_opt(|this| this.parse_ty());
         let object_lifetime_default = self.parse_object_lifetime_default();
+        let pure_wrt_drop = match self.next() {
+            'p' => true,
+            'i' => false,
+            c => panic!("parse_type_param_def: bad pure_wrt_drop ('{}')", c),
+        };
 
         ty::TypeParameterDef {
             name: name,
@@ -598,6 +603,7 @@ impl<'a,'tcx> TyDecoder<'a,'tcx> {
             default_def_id: default_def_id,
             default: default,
             object_lifetime_default: object_lifetime_default,
+            pure_wrt_drop: pure_wrt_drop,
         }
     }
 

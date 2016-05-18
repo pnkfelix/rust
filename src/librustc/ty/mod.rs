@@ -719,6 +719,11 @@ pub struct TypeParameterDef<'tcx> {
     pub default_def_id: DefId, // for use in error reporing about defaults
     pub default: Option<Ty<'tcx>>,
     pub object_lifetime_default: ObjectLifetimeDefault,
+
+    /// `pure_wrt_drop`, set by the (unsafe) `#[may_dangle]` attribute
+    /// on generic parameter `T`, asserts data behind the parameter
+    /// `T` won't be accessed during the parent type's `Drop` impl.
+    pub pure_wrt_drop: bool,
 }
 
 #[derive(Clone)]

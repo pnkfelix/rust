@@ -1668,6 +1668,7 @@ fn ty_generics_for_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
         default_def_id: ccx.tcx.map.local_def_id(parent),
         default: None,
         object_lifetime_default: ty::ObjectLifetimeDefault::BaseDefault,
+        pure_wrt_drop: false,
     };
 
     ccx.tcx.ty_param_defs.borrow_mut().insert(param_id, def.clone());
@@ -1957,6 +1958,7 @@ fn get_or_create_type_parameter_def<'a,'tcx>(ccx: &CrateCtxt<'a,'tcx>,
         default_def_id: ccx.tcx.map.local_def_id(parent),
         default: default,
         object_lifetime_default: object_lifetime_default,
+        pure_wrt_drop: param.pure_wrt_drop,
     };
 
     tcx.ty_param_defs.borrow_mut().insert(param.id, def.clone());

@@ -412,6 +412,7 @@ pub fn enc_type_param_def<'a, 'tcx>(w: &mut Cursor<Vec<u8>>, cx: &ctxt<'a, 'tcx>
              v.space.to_uint(), v.index, (cx.ds)(cx.tcx, v.default_def_id));
     enc_opt(w, v.default, |w, t| enc_ty(w, cx, t));
     enc_object_lifetime_default(w, cx, v.object_lifetime_default);
+    write!(w, "{}", if v.pure_wrt_drop { "p" } else { "i" });
 }
 
 pub fn enc_region_param_def(w: &mut Cursor<Vec<u8>>, cx: &ctxt,
