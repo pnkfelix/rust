@@ -306,7 +306,7 @@ pub fn check_intrinsic_type(ccx: &CrateCtxt, it: &hir::ForeignItem) {
                 let mut_u8 = tcx.mk_mut_ptr(tcx.types.u8);
                 let fn_ty = ty::BareFnTy {
                     unsafety: hir::Unsafety::Normal,
-                    abi: Abi::Rust,
+                    abi: Abi::C,
                     sig: ty::Binder(FnSig {
                         inputs: vec![mut_u8],
                         output: ty::FnOutput::FnConverging(tcx.mk_nil()),
