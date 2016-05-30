@@ -613,7 +613,7 @@ extern "rust-intrinsic" {
     /// Note that `num_bytes` must be >= the space occupied by a
     /// function call on the target.
     #[unstable(feature="patchpoint_call_intrinsic", reason="experimental", issue="17668")]
-    pub fn patchpoint_call(id: i64, num_bytes: i32, target_fn: fn (*mut u8), data: *mut u8);
+    pub fn patchpoint_call(id: i64, num_bytes: i32, target_fn: extern "C" fn (*mut u8), data: *mut u8);
 
     #[cfg(not(stage0))]
     /// Records locations of all live tracked values at callsite of intrinsic,
@@ -633,6 +633,6 @@ extern "rust-intrinsic" {
     /// that the address of the call itself *is* the entry that is
     /// entered into the stack map.
     #[unstable(feature="stackmap_call_intrinsic", reason="experimental", issue="17668")]
-    pub fn stackmap_call(id: i64, num_shadow_bytes: i32, target_fn: fn (*mut u8), data: *mut u8);
+    pub fn stackmap_call(id: i64, num_shadow_bytes: i32, target_fn: extern "C" fn (*mut u8), data: *mut u8);
 
 }
