@@ -1874,7 +1874,9 @@ fn ty_generics<'a,'tcx>(ccx: &CrateCtxt<'a,'tcx>,
                                            space: space,
                                            index: i as u32,
                                            def_id: ccx.tcx.map.local_def_id(l.lifetime.id),
-                                           bounds: bounds };
+                                           bounds: bounds,
+                                           pure_wrt_drop: l.pure_wrt_drop,
+        };
         result.regions.push(space, def);
     }
 

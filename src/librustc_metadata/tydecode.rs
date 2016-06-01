@@ -614,6 +614,12 @@ impl<'a,'tcx> TyDecoder<'a,'tcx> {
         assert_eq!(self.next(), '|');
         let index = self.parse_u32();
         assert_eq!(self.next(), '|');
+        let pure_wrt_drop = match self.next() {
+            'p' => true,
+            'i' => false,
+            c => bug!("parse_region_param_def: bad bounds ('{}')", c),
+        };
+        assert_eq!(self.next(), '|');
         let mut bounds = vec![];
         loop {
             match self.next() {
@@ -629,7 +635,8 @@ impl<'a,'tcx> TyDecoder<'a,'tcx> {
             def_id: def_id,
             space: space,
             index: index,
-            bounds: bounds
+            bounds: bounds,
+            pure_wrt_drop: pure_wrt_drop,
         }
     }
 

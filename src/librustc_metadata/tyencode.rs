@@ -417,9 +417,10 @@ pub fn enc_type_param_def<'a, 'tcx>(w: &mut Cursor<Vec<u8>>, cx: &ctxt<'a, 'tcx>
 
 pub fn enc_region_param_def(w: &mut Cursor<Vec<u8>>, cx: &ctxt,
                             v: &ty::RegionParameterDef) {
-    write!(w, "{}:{}|{}|{}|",
+    write!(w, "{}:{}|{}|{}|{}|",
              v.name, (cx.ds)(cx.tcx, v.def_id),
-             v.space.to_uint(), v.index);
+           v.space.to_uint(), v.index,
+           if v.pure_wrt_drop { "p" } else { "i" });
     for &r in &v.bounds {
         write!(w, "R");
         enc_region(w, cx, r);

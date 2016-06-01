@@ -1676,6 +1676,13 @@ fn doc_generics<'a, 'tcx>(base_doc: rbml::Doc,
         let doc = reader::get_doc(rp_doc, tag_region_param_def_index);
         let index = reader::doc_as_u64(doc) as u32;
 
+        let doc = reader::get_doc(rp_doc, tag_region_param_def_pure_wrt_drop);
+        let pure_wrt_drop = match reader::doc_as_u64(doc) {
+            1 => true,
+            0 => false,
+            c => bug!("invalid value `{}` for region_param_def pure_wrt_drop", c),
+        };
+
         let bounds = reader::tagged_docs(rp_doc, tag_items_data_region).map(|p| {
             TyDecoder::with_doc(tcx, cdata.cnum, p,
                                 &mut |did| translate_def_id(cdata, did))
@@ -1686,7 +1693,9 @@ fn doc_generics<'a, 'tcx>(base_doc: rbml::Doc,
                                                      def_id: def_id,
                                                      space: space,
                                                      index: index,
-                                                     bounds: bounds });
+                                                     bounds: bounds,
+                                                     pure_wrt_drop: pure_wrt_drop,
+        });
     }
 
     ty::Generics { types: types, regions: regions }

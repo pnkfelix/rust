@@ -733,6 +733,11 @@ pub struct RegionParameterDef {
     pub space: subst::ParamSpace,
     pub index: u32,
     pub bounds: Vec<ty::Region>,
+
+    /// `pure_wrt_drop`, set by the (unsafe) `#[may_dangle]` attribute
+    /// on generic parameter `'a`, asserts data of lifetime `'a`
+    /// won't be accessed during the parent type's `Drop` impl.
+    pub pure_wrt_drop: bool,
 }
 
 impl RegionParameterDef {
