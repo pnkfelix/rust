@@ -2753,6 +2753,7 @@ impl<'a> State<'a> {
                               lifetime: &ast::LifetimeDef)
                               -> io::Result<()>
     {
+        self.print_outer_attributes_inline(lifetime.attrs.as_attr_slice())?;
         self.print_lifetime(&lifetime.lifetime)?;
         let mut sep = ":";
         for v in &lifetime.bounds {
@@ -2795,6 +2796,7 @@ impl<'a> State<'a> {
     }
 
     pub fn print_ty_param(&mut self, param: &ast::TyParam) -> io::Result<()> {
+        self.print_outer_attributes_inline(param.attrs.as_attr_slice())?;
         self.print_ident(param.ident)?;
         self.print_bounds(":", &param.bounds)?;
         match param.default {
