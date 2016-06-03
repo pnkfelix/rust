@@ -47,7 +47,6 @@ struct PropagationContext<'c, 'b: 'c, 'tcx: 'b, O, OnReturn>
 {
     builder: &'c mut DataflowStateBuilder<'b, 'tcx, O>,
     changed: bool,
-    on_return: OnReturn
 }
 
 impl<'a, 'tcx: 'a, BD> DataflowStateBuilder<'a, 'tcx, BD>
@@ -58,16 +57,6 @@ impl<'a, 'tcx: 'a, BD> DataflowStateBuilder<'a, 'tcx, BD>
         let mut propcx = PropagationContext {
             builder: self,
             changed: true,
-            on_return: |move_data, in_out, dest_lval| {
-                let move_path_index = move_data.rev_lookup.find(dest_lval);
-                on_all_children_bits(in_out,
-                                     &move_data.path_map,
-                                     &move_data.move_paths,
-                                     move_path_index,
-                                     &|in_out, mpi| {
-                                         in_out.clear_bit(mpi.idx());
-                                     });
-            },
         };
         while propcx.changed {
             propcx.changed = false;
@@ -161,8 +150,7 @@ impl<'c, 'b: 'c, 'tcx: 'b, O, OnReturn> PropagationContext<'c, 'b, 'tcx, O, OnRe
             }
             builder.propagate_bits_into_graph_successors_of(in_out,
                                                             &mut self.changed,
-                                                            (repr::BasicBlock::new(bb_idx), bb_data),
-                                                            &self.on_return);
+                                                            (repr::BasicBlock::new(bb_idx), bb_data));
         }
     }
 }
@@ -525,16 +513,18 @@ impl<'a, 'tcx: 'a, D> DataflowStateBuilder<'a, 'tcx, D>
     /// For most blocks, this is entirely uniform. However, for blocks
     /// that end with a call terminator, the effect of the call on the
     /// dataflow state may depend on whether the call returned
-    /// successfully or unwound. To reflect this, the `on_return`
-    /// callback mutates `in_out` when propagating `in_out` via a call
-    /// terminator; such mutation is performed *last*, to ensure its
-    /// side-effects do not leak elsewhere (e.g. into unwind target).
+    /// successfully or unwound.
+    ///
+    /// To reflect this, the `propagate_call_return` method of the
+    /// `BitDenotation` mutates `in_out` when propagating `in_out` via
+    /// a call terminator; such mutation is performed *last*, to
+    /// ensure its side-effects do not leak elsewhere (e.g. into
+    /// unwind target).
     fn propagate_bits_into_graph_successors_of<OnReturn>(
         &mut self,
         in_out: &mut [usize],
         changed: &mut bool,
-        (bb, bb_data): (repr::BasicBlock, &repr::BasicBlockData),
-        on_return: OnReturn) where OnReturn: Fn(&MoveData, &mut [usize], &repr::Lvalue)
+        (bb, bb_data): (repr::BasicBlock, &repr::BasicBlockData))
     {
         match bb_data.terminator().kind {
             repr::TerminatorKind::Return |
