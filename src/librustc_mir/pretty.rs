@@ -246,7 +246,7 @@ fn write_mir_intro(tcx: &ty::TyCtxt, nid: NodeId, mir: &Mir, w: &mut Write)
     write_mir_intro_named(tcx, &tcx.map.node_to_string(nid), mir, w)
 }
 
-fn write_mir_fn_sig(tcx: &ty::TyCtxt, name: &str, mir: &Mir, w: &mut Write)
+fn write_mir_fn_sig(_tcx: &ty::TyCtxt, name: &str, mir: &Mir, w: &mut Write)
                     -> io::Result<()> {
     write!(w, "fn {}(", name)?;
 
