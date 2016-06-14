@@ -45,7 +45,7 @@ use syntax::errors::DiagnosticBuilder;
 use util::nodemap::{FnvHashMap, FnvHashSet, NodeMap};
 
 use self::combine::CombineFields;
-use self::higher_ranked::HrMatchResult;
+pub use self::higher_ranked::HrMatchResult;
 use self::region_inference::{RegionVarBindings, RegionSnapshot};
 use self::unify_key::ToType;
 
@@ -576,7 +576,7 @@ macro_rules! impl_trans_normalize {
             fn trans_normalize<'a, 'tcx>(&self,
                                          infcx: &InferCtxt<'a, $lt_gcx, 'tcx>)
                                          -> Self {
-                infcx.normalize_projections_in(self)
+                infcx.normalize_projections_in(self, true)
             }
         })+);
     }
@@ -645,10 +645,14 @@ impl<'a, 'tcx> TyCtxt<'a, 'tcx, 'tcx> {
 }
 
 impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
-    fn normalize_projections_in<T>(&self, value: &T) -> T::Lifted
+    fn normalize_projections_in<T>(&self, value: &T, within_trans: bool) -> T::Lifted
         where T: TypeFoldable<'tcx> + ty::Lift<'gcx>
     {
-        let mut selcx = traits::SelectionContext::new(self);
+        let mut selcx = if within_trans {
+            traits::SelectionContext::within_trans(self)
+        } else {
+            traits::SelectionContext::new(self)
+        };
         let cause = traits::ObligationCause::dummy();
         let traits::Normalized { value: result, obligations } =
             traits::normalize(&mut selcx, cause, value);
@@ -808,6 +812,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             trace: trace,
             cause: None,
             obligations: PredicateObligations::new(),
+            within_trans: false,
         }
     }
 
@@ -1636,7 +1641,8 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     pub fn match_poly_projection_predicate(&self,
                                            origin: TypeOrigin,
                                            match_a: ty::PolyProjectionPredicate<'tcx>,
-                                           match_b: ty::TraitRef<'tcx>)
+                                           match_b: ty::TraitRef<'tcx>,
+                                           within_trans: bool)
                                            -> InferResult<'tcx, HrMatchResult<Ty<'tcx>>>
     {
         let span = origin.span();
@@ -1647,7 +1653,8 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         };
 
         let match_pair = match_a.map_bound(|p| (p.projection_ty.trait_ref, p.ty));
-        let combine = self.combine_fields(true, trace);
+        let mut combine = self.combine_fields(true, trace);
+        combine.within_trans |= within_trans;
         let result = combine.higher_ranked_match(span, &match_pair, &match_b)?;
         Ok(InferOk { value: result, obligations: combine.obligations })
     }
@@ -1788,7 +1795,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                 return closure_ty;
             }
 
-            self.normalize_projections_in(&closure_ty)
+            self.normalize_projections_in(&closure_ty, false)
         } else {
             closure_ty
         }

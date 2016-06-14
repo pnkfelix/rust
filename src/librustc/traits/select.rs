@@ -87,6 +87,17 @@ pub struct SelectionContext<'cx, 'gcx: 'cx+'tcx, 'tcx: 'cx> {
     /// would satisfy it. This avoids crippling inference, basically.
     intercrate: bool,
 
+    /// If the SelectionContext is being used within trans, then
+    /// that means we do not have to actually confirm candidates
+    /// once they have been selected; the candidate *must* be
+    /// correct according to typeck.
+    ///
+    /// FIXME: this is a bit of a hack to deal with issue #33364, and
+    /// arguably we should not be trying to avoid candidate
+    /// confirmation, but instead should be employing lazy
+    /// normalization as the way to deal with #33364.
+    pub within_trans: bool,
+
     inferred_obligations: SnapshotVec<InferredObligationsSnapshotVecDelegate<'tcx>>,
 }
 
@@ -315,16 +326,20 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             freshener: infcx.freshener(),
             intercrate: false,
             inferred_obligations: SnapshotVec::new(),
+            within_trans: false,
         }
     }
 
+    pub fn within_trans(infcx: &'cx InferCtxt<'cx, 'gcx, 'tcx>) -> SelectionContext<'cx, 'gcx, 'tcx> {
+        let mut selcx = Self::new(infcx);
+        selcx.within_trans = true;
+        selcx
+    }
+
     pub fn intercrate(infcx: &'cx InferCtxt<'cx, 'gcx, 'tcx>) -> SelectionContext<'cx, 'gcx, 'tcx> {
-        SelectionContext {
-            infcx: infcx,
-            freshener: infcx.freshener(),
-            intercrate: true,
-            inferred_obligations: SnapshotVec::new(),
-        }
+        let mut selcx = Self::new(infcx);
+        selcx.intercrate = true;
+        selcx
     }
 
     pub fn infcx(&self) -> &'cx InferCtxt<'cx, 'gcx, 'tcx> {
@@ -2402,18 +2417,21 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
             mut obligations
         } = self.closure_trait_ref(obligation, closure_def_id, substs);
 
-        debug!("confirm_closure_candidate(closure_def_id={:?}, trait_ref={:?}, obligations={:?})",
+        debug!("confirm_closure_candidate(closure_def_id={:?}, trait_ref={:?}, obligations={:?}, within_trans={})",
                closure_def_id,
                trait_ref,
-               obligations);
+               obligations,
+               self.within_trans);
 
-        self.confirm_poly_trait_refs(obligation.cause.clone(),
-                                     obligation.predicate.to_poly_trait_ref(),
-                                     trait_ref)?;
+        if !self.within_trans {
+            self.confirm_poly_trait_refs(obligation.cause.clone(),
+                                         obligation.predicate.to_poly_trait_ref(),
+                                         trait_ref)?;
 
-        obligations.push(Obligation::new(
+            obligations.push(Obligation::new(
                 obligation.cause.clone(),
                 ty::Predicate::ClosureKind(closure_def_id, kind)));
+        }
 
         Ok(VtableClosureData {
             closure_def_id: closure_def_id,
@@ -2453,6 +2471,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                                expected_trait_ref: ty::PolyTraitRef<'tcx>)
                                -> Result<(), SelectionError<'tcx>>
     {
+        if self.within_trans { return Ok(()); }
         let origin = TypeOrigin::RelateOutputImplTypes(obligation_cause.span);
 
         let obligation_trait_ref = obligation_trait_ref.clone();

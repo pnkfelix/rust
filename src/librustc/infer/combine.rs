@@ -58,6 +58,7 @@ pub struct CombineFields<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
     pub trace: TypeTrace<'tcx>,
     pub cause: Option<ty::relate::Cause>,
     pub obligations: PredicateObligations<'tcx>,
+    pub within_trans: bool,
 }
 
 impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {

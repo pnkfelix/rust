@@ -129,7 +129,10 @@ impl<'a, 'gcx, 'tcx> CombineFields<'a, 'gcx, 'tcx> {
             debug!("higher_ranked_match: skol_map={:?}", skol_map);
 
             // Equate types now that bound regions have been replaced.
-            try!(self.equate().relate(&a_match, &b_match));
+            if !self.within_trans
+            {
+                try!(self.equate().relate(&a_match, &b_match));
+            }
 
             // Map each skolemized region to a vector of other regions that it
             // must be equated with. (Note that this vector may include other

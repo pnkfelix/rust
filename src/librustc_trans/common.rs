@@ -1147,7 +1147,7 @@ pub fn fulfill_obligation<'a, 'tcx>(scx: &SharedCrateContext<'a, 'tcx>,
         // Do the initial selection for the obligation. This yields the
         // shallow result we are looking for -- that is, what specific impl.
         tcx.normalizing_infer_ctxt(ProjectionMode::Any).enter(|infcx| {
-            let mut selcx = SelectionContext::new(&infcx);
+            let mut selcx = SelectionContext::within_trans(&infcx);
 
             let obligation_cause = traits::ObligationCause::misc(span,
                                                              ast::DUMMY_NODE_ID);
@@ -1206,7 +1206,7 @@ pub fn normalize_and_test_predicates<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
            predicates);
 
     tcx.normalizing_infer_ctxt(ProjectionMode::Any).enter(|infcx| {
-        let mut selcx = SelectionContext::new(&infcx);
+        let mut selcx = SelectionContext::within_trans(&infcx);
         let mut fulfill_cx = traits::FulfillmentContext::new();
         let cause = traits::ObligationCause::dummy();
         let traits::Normalized { value: predicates, obligations } =

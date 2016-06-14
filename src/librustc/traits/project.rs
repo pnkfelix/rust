@@ -1267,7 +1267,7 @@ fn confirm_param_env_candidate<'cx, 'gcx, 'tcx>(
     let infcx = selcx.infcx();
     let origin = TypeOrigin::RelateOutputImplTypes(obligation.cause.span);
     let trait_ref = obligation.predicate.trait_ref;
-    match infcx.match_poly_projection_predicate(origin, poly_projection, trait_ref) {
+    match infcx.match_poly_projection_predicate(origin, poly_projection, trait_ref, selcx.within_trans) {
         Ok(InferOk { value: ty_match, obligations }) => {
             // FIXME(#32730) once obligations are generated in inference, drop this assertion
             assert!(obligations.is_empty());
