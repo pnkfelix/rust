@@ -2407,9 +2407,16 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                trait_ref,
                obligations);
 
-        self.confirm_poly_trait_refs(obligation.cause.clone(),
-                                     obligation.predicate.to_poly_trait_ref(),
-                                     trait_ref)?;
+        // self.confirm_poly_trait_refs(obligation.cause.clone(),
+        //                              obligation.predicate.to_poly_trait_ref(),
+        //                              trait_ref)?;
+
+        obligations.push(Obligation::new(
+            obligation.cause.clone(),
+            ty::Predicate::SubPolyTraitRefs(ty::SubPolyTraitRefsPredicate {
+                obligation_trait_ref: obligation.predicate.to_poly_trait_ref(),
+                expected_trait_ref: trait_ref
+            })));
 
         obligations.push(Obligation::new(
                 obligation.cause.clone(),
@@ -2447,11 +2454,11 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     /// because these output type parameters should not affect the
     /// selection of the impl. Therefore, if there is a mismatch, we
     /// report an error to the user.
-    fn confirm_poly_trait_refs(&mut self,
-                               obligation_cause: ObligationCause,
-                               obligation_trait_ref: ty::PolyTraitRef<'tcx>,
-                               expected_trait_ref: ty::PolyTraitRef<'tcx>)
-                               -> Result<(), SelectionError<'tcx>>
+    pub fn confirm_poly_trait_refs(&mut self,
+                                   obligation_cause: ObligationCause,
+                                   obligation_trait_ref: ty::PolyTraitRef<'tcx>,
+                                   expected_trait_ref: ty::PolyTraitRef<'tcx>)
+                                   -> Result<(), SelectionError<'tcx>>
     {
         let origin = TypeOrigin::RelateOutputImplTypes(obligation_cause.span);
 

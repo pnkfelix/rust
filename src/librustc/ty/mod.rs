@@ -838,6 +838,17 @@ pub enum Predicate<'tcx> {
     /// substitutions `...` and T being a closure type.  Satisfied (or refuted) once we know the
     /// closure's kind.
     ClosureKind(DefId, ClosureKind),
+
+    /// no syntax: T1 <: T2.
+    ///
+    /// Issue #33364: confirms that actual types of parameters to a
+    /// closure (or fn pointer) conform to the expected types. See
+    /// discussion in `fn confirm_poly_trait_refs` documentation.
+    ///
+    /// This is not a constraint that can be writen by the user.
+    /// Thus some checks (e.g. relating free regions from predicates)
+    /// will never encounter it.
+    SubPolyTraitRefs(SubPolyTraitRefsPredicate<'tcx>),
 }
 
 impl<'a, 'gcx, 'tcx> Predicate<'tcx> {
@@ -997,6 +1008,12 @@ pub struct EquatePredicate<'tcx>(pub Ty<'tcx>, pub Ty<'tcx>); // `0 == 1`
 pub type PolyEquatePredicate<'tcx> = ty::Binder<EquatePredicate<'tcx>>;
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct SubPolyTraitRefsPredicate<'tcx> { // `0 <: 1`
+    pub obligation_trait_ref: PolyTraitRef<'tcx>,
+    pub expected_trait_ref: PolyTraitRef<'tcx>,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct OutlivesPredicate<A,B>(pub A, pub B); // `A : B`
 pub type PolyOutlivesPredicate<A,B> = ty::Binder<OutlivesPredicate<A,B>>;
 pub type PolyRegionOutlivesPredicate = PolyOutlivesPredicate<ty::Region, ty::Region>;
@@ -1021,6 +1038,8 @@ pub struct ProjectionPredicate<'tcx> {
 }
 
 pub type PolyProjectionPredicate<'tcx> = Binder<ProjectionPredicate<'tcx>>;
+
+
 
 impl<'tcx> PolyProjectionPredicate<'tcx> {
     pub fn item_name(&self) -> Name {

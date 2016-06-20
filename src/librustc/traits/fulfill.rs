@@ -527,6 +527,17 @@ fn process_predicate<'a, 'gcx, 'tcx>(
             }
         }
 
+        ty::Predicate::SubPolyTraitRefs(ref data) => {
+            // FIXME
+            selcx.confirm_poly_trait_refs(obligation.cause.clone(),
+                                          data.obligation_trait_ref,
+                                          data.expected_trait_ref)
+                .map_err(|selection_error| {
+                    FulfillmentErrorCode::CodeSelectionError(selection_error)
+                })?;
+            Ok(Some(vec![]))
+        }
+
         ty::Predicate::Rfc1592(ref inner) => {
             rfc1592_obligations.push(PredicateObligation {
                 predicate: ty::Predicate::clone(inner),

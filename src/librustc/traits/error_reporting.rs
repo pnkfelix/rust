@@ -515,6 +515,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                                 predicate, err)
                         }
 
+                        ty::Predicate::SubPolyTraitRefs(..) |
                         ty::Predicate::Projection(..) | ty::Predicate::TypeOutlives(..) => {
                             let predicate =
                                 self.resolve_type_vars_if_possible(&obligation.predicate);
@@ -552,7 +553,6 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                             err.emit();
                             return;
                         }
-
                         ty::Predicate::WellFormed(ty) => {
                             // WF predicates cannot themselves make
                             // errors. They can only block due to

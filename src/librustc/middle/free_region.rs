@@ -63,6 +63,16 @@ impl FreeRegionMap {
                 ty::Predicate::TypeOutlives(..) => {
                     // No region bounds here
                 }
+                ty::Predicate::SubPolyTraitRefs(_pred) => {
+                    // let ty::SubPolyTraitRefsPredicate(pt_a, pt_b) = _pred;
+
+                    // let ty::Binder(ty::TraitRef(def_a, substs_a)) =
+                    //     _pred.obligation_trait_ref;
+                    // let ty::Binder(ty::TraitRef(def_b, substs_b)) =
+                    //     _pred.expected_trait_ref;
+
+                    unimplemented!()
+                }
                 ty::Predicate::RegionOutlives(ty::Binder(ty::OutlivesPredicate(r_a, r_b))) => {
                     match (r_a, r_b) {
                         (ty::ReStatic, ty::ReFree(_)) => {},
