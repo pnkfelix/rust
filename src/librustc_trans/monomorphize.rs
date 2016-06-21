@@ -170,7 +170,7 @@ pub struct Instance<'tcx> {
 impl<'tcx> fmt::Display for Instance<'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         ppaux::parameterized(f, &self.substs, self.def, ppaux::Ns::Value, &[],
-                             |tcx| Some(tcx.lookup_item_type(self.def).generics))
+                             |tcx| tcx.opt_lookup_item_type(self.def).map(|ts| ts.generics))
     }
 }
 
