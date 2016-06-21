@@ -937,6 +937,8 @@ impl<'a, 'gcx, 'tcx> Predicate<'tcx> {
                 Predicate::Projection(ty::Binder(data.subst(tcx, substs))),
             Predicate::WellFormed(data) =>
                 Predicate::WellFormed(data.subst(tcx, substs)),
+            Predicate::SubPolyTraitRefs(ref data) =>
+                Predicate::SubPolyTraitRefs(data.subst(tcx, substs)),
             Predicate::ObjectSafe(trait_def_id) =>
                 Predicate::ObjectSafe(trait_def_id),
             Predicate::ClosureKind(closure_def_id, kind) =>
@@ -1163,6 +1165,14 @@ impl<'tcx> Predicate<'tcx> {
             ty::Predicate::ClosureKind(_closure_def_id, _kind) => {
                 vec![]
             }
+            ty::Predicate::SubPolyTraitRefs(ref pred) => {
+                let o = pred.obligation_trait_ref.0.substs.types.as_slice();
+                let e = pred.expected_trait_ref.0.substs.types.as_slice();
+                o.iter()
+                    .cloned()
+                    .chain(e.iter().cloned())
+                    .collect()
+            }
         };
 
         // The only reason to collect into a vector here is that I was
@@ -1177,6 +1187,14 @@ impl<'tcx> Predicate<'tcx> {
         match *self {
             Predicate::Trait(ref t) => {
                 Some(t.to_poly_trait_ref())
+            }
+            Predicate::SubPolyTraitRefs(..) => {
+                // FIXME: variant carries two PolyTraitPredicates, so
+                // no obvious choice for which one to return here.
+                //
+                // (But its not clear how the uses of this function
+                // would even interact with this predicate anyway.)
+                None
             }
             Predicate::Rfc1592(..) |
             Predicate::Projection(..) |

@@ -156,6 +156,20 @@ impl<'a, 'tcx> Lift<'tcx> for ty::Predicate<'a> {
             ty::Predicate::Rfc1592(box ref a) => {
                 tcx.lift(a).map(|a| ty::Predicate::Rfc1592(Box::new(a)))
             }
+            ty::Predicate::SubPolyTraitRefs(ref p) => {
+                let o = tcx.lift(&p.obligation_trait_ref);
+                let e = tcx.lift(&p.expected_trait_ref);
+                match (o, e) {
+                    (Some(o), Some(e)) =>
+                        Some(ty::Predicate::SubPolyTraitRefs(
+                            ty::SubPolyTraitRefsPredicate {
+                                obligation_trait_ref: o,
+                                expected_trait_ref: e,
+                            })),
+                    (None, _) | (_, None) =>
+                        None,
+                }
+            }
             ty::Predicate::ClosureKind(closure_def_id, kind) => {
                 Some(ty::Predicate::ClosureKind(closure_def_id, kind))
             }
@@ -882,6 +896,14 @@ impl<'tcx> TypeFoldable<'tcx> for ty::Predicate<'tcx> {
                 ty::Predicate::ClosureKind(closure_def_id, kind),
             ty::Predicate::ObjectSafe(trait_def_id) =>
                 ty::Predicate::ObjectSafe(trait_def_id),
+            ty::Predicate::SubPolyTraitRefs(ref pred) => {
+                let o = pred.obligation_trait_ref.fold_with(folder);
+                let e = pred.expected_trait_ref.fold_with(folder);
+                ty::Predicate::SubPolyTraitRefs(ty::SubPolyTraitRefsPredicate {
+                    obligation_trait_ref: o,
+                    expected_trait_ref: e,
+                })
+            }
         }
     }
 
@@ -894,6 +916,9 @@ impl<'tcx> TypeFoldable<'tcx> for ty::Predicate<'tcx> {
             ty::Predicate::TypeOutlives(ref binder) => binder.visit_with(visitor),
             ty::Predicate::Projection(ref binder) => binder.visit_with(visitor),
             ty::Predicate::WellFormed(data) => data.visit_with(visitor),
+            ty::Predicate::SubPolyTraitRefs(ref pred) =>
+                pred.obligation_trait_ref.visit_with(visitor) ||
+                pred.expected_trait_ref.visit_with(visitor),
             ty::Predicate::ClosureKind(_closure_def_id, _kind) => false,
             ty::Predicate::ObjectSafe(_trait_def_id) => false,
         }
@@ -972,6 +997,20 @@ impl<'tcx,T,U> TypeFoldable<'tcx> for ty::OutlivesPredicate<T,U>
 
     fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
         self.0.visit_with(visitor) || self.1.visit_with(visitor)
+    }
+}
+
+impl<'tcx> TypeFoldable<'tcx> for ty::SubPolyTraitRefsPredicate<'tcx> {
+    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
+        ty::SubPolyTraitRefsPredicate {
+            obligation_trait_ref: self.obligation_trait_ref.fold_with(folder),
+            expected_trait_ref: self.expected_trait_ref.fold_with(folder),
+        }
+    }
+
+    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
+        self.obligation_trait_ref.visit_with(visitor) ||
+            self.expected_trait_ref.visit_with(visitor)
     }
 }
 

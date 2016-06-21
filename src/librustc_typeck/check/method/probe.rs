@@ -491,6 +491,13 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                             _ => None
                         }
                     }
+                    ty::Predicate::SubPolyTraitRefs(..) => {
+                        // These predicates, which are just an
+                        // artifact of checking closure soundness
+                        // after the fact, should not influence impl
+                        // selection.
+                        None
+                    }
                     ty::Predicate::Equate(..) |
                     ty::Predicate::Projection(..) |
                     ty::Predicate::RegionOutlives(..) |

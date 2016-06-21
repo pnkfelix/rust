@@ -59,18 +59,16 @@ impl FreeRegionMap {
                 ty::Predicate::Equate(..) |
                 ty::Predicate::WellFormed(..) |
                 ty::Predicate::ObjectSafe(..) |
-                ty::Predicate::ClosureKind(..) |
                 ty::Predicate::TypeOutlives(..) => {
                     // No region bounds here
                 }
-                ty::Predicate::SubPolyTraitRefs(_pred) => {
-                    // let ty::SubPolyTraitRefsPredicate(pt_a, pt_b) = _pred;
-
-                    // let ty::Binder(ty::TraitRef(def_a, substs_a)) =
-                    //     _pred.obligation_trait_ref;
-                    // let ty::Binder(ty::TraitRef(def_b, substs_b)) =
-                    //     _pred.expected_trait_ref;
-
+                ty::Predicate::ClosureKind(..) |
+                ty::Predicate::SubPolyTraitRefs(..) => {
+                    // Note: discussed with Niko. This code is solely
+                    // used when processing explicit where clauses, which
+                    // means variants like `ClosureKind` or `SubPolyTraitRefs`
+                    // that are not expressible via predicates cannot
+                    // ever be reached from this code.
                     unimplemented!()
                 }
                 ty::Predicate::RegionOutlives(ty::Binder(ty::OutlivesPredicate(r_a, r_b))) => {

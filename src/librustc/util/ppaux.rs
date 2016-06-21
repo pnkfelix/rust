@@ -478,6 +478,9 @@ impl<'tcx> fmt::Debug for ty::Predicate<'tcx> {
             ty::Predicate::ClosureKind(closure_def_id, kind) => {
                 write!(f, "ClosureKind({:?}, {:?})", closure_def_id, kind)
             }
+            ty::Predicate::SubPolyTraitRefs(ref pred) => {
+                write!(f, "SubPolyTraitRefs({:?})", pred)
+            }
         }
     }
 }
@@ -1051,6 +1054,14 @@ impl<'tcx> fmt::Display for ty::ProjectionPredicate<'tcx> {
     }
 }
 
+impl<'tcx> fmt::Display for ty::SubPolyTraitRefsPredicate<'tcx> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?} <: {:?}",
+               self.obligation_trait_ref,
+               self.expected_trait_ref)
+    }
+}
+
 impl<'tcx> fmt::Display for ty::ProjectionTy<'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}::{}",
@@ -1079,6 +1090,7 @@ impl<'tcx> fmt::Display for ty::Predicate<'tcx> {
             ty::Predicate::TypeOutlives(ref predicate) => write!(f, "{}", predicate),
             ty::Predicate::Projection(ref predicate) => write!(f, "{}", predicate),
             ty::Predicate::WellFormed(ty) => write!(f, "{} well-formed", ty),
+            ty::Predicate::SubPolyTraitRefs(ref predicate) => write!(f, "{}", predicate),
             ty::Predicate::ObjectSafe(trait_def_id) =>
                 ty::tls::with(|tcx| {
                     write!(f, "the trait `{}` is object-safe", tcx.item_path_str(trait_def_id))

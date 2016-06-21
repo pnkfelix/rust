@@ -309,6 +309,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
                     ty::Predicate::WellFormed(..) |
                     ty::Predicate::ObjectSafe(..) |
                     ty::Predicate::ClosureKind(..) |
+                    ty::Predicate::SubPolyTraitRefs(..) |
                     ty::Predicate::RegionOutlives(..) => {
                         None
                     }

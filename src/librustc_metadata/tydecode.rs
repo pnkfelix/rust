@@ -563,6 +563,14 @@ impl<'a,'tcx> TyDecoder<'a,'tcx> {
                 assert_eq!(self.next(), '|');
                 ty::Predicate::ObjectSafe(def_id)
             }
+            's' => {
+                let obligation_trait_ref = ty::Binder(self.parse_trait_ref());
+                let expected_trait_ref = ty::Binder(self.parse_trait_ref());
+                ty::Predicate::SubPolyTraitRefs(ty::SubPolyTraitRefsPredicate {
+                    obligation_trait_ref: obligation_trait_ref,
+                    expected_trait_ref: expected_trait_ref,
+                })
+            }
             'c' => {
                 let def_id = self.parse_def();
                 assert_eq!(self.next(), '|');

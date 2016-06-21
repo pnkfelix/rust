@@ -492,6 +492,11 @@ pub fn enc_predicate<'a, 'tcx>(w: &mut Cursor<Vec<u8>>,
         ty::Predicate::ObjectSafe(trait_def_id) => {
             write!(w, "O{}|", (cx.ds)(cx.tcx, trait_def_id));
         }
+        ty::Predicate::SubPolyTraitRefs(ref pred) => {
+            write!(w, "s");
+            enc_trait_ref(w, cx, pred.obligation_trait_ref.0);
+            enc_trait_ref(w, cx, pred.expected_trait_ref.0);
+        }
         ty::Predicate::ClosureKind(closure_def_id, kind) => {
             let kind_char = match kind {
                 ty::ClosureKind::Fn => 'f',

@@ -94,6 +94,9 @@ pub fn predicate_obligations<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
         }
         ty::Predicate::ClosureKind(..) => {
         }
+        ty::Predicate::SubPolyTraitRefs(_) => {
+            // wfcheck does not care about these
+        }
         ty::Predicate::Rfc1592(ref data) => {
             bug!("RFC1592 predicate `{:?}` in predicate_obligations", data);
         }
@@ -162,6 +165,7 @@ pub fn implied_bounds<'a, 'gcx, 'tcx>(
                     ty::Predicate::Equate(..) |
                     ty::Predicate::Projection(..) |
                     ty::Predicate::ClosureKind(..) |
+                    ty::Predicate::SubPolyTraitRefs(..) |
                     ty::Predicate::ObjectSafe(..) =>
                         vec![],
 

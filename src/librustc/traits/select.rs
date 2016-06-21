@@ -514,6 +514,15 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         match obligation.predicate {
             ty::Predicate::Rfc1592(..) => EvaluatedToOk,
 
+            ty::Predicate::SubPolyTraitRefs(ref p) => {
+                match self.confirm_poly_trait_refs(&obligation.cause,
+                                                   p.obligation_trait_ref,
+                                                   p.expected_trait_ref) {
+                    Ok(_) => EvaluatedToOk,
+                    Err(_) => EvaluatedToErr,
+                }
+            }
+            
             ty::Predicate::Trait(ref t) => {
                 assert!(!t.has_escaping_regions());
                 let obligation = obligation.with(t.clone());
@@ -2378,7 +2387,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
                                                          util::TupleArgumentsFlag::Yes)
             .map_bound(|(trait_ref, _)| trait_ref);
 
-        self.confirm_poly_trait_refs(obligation.cause.clone(),
+        self.confirm_poly_trait_refs(&obligation.cause,
                                      obligation.predicate.to_poly_trait_ref(),
                                      trait_ref)?;
         Ok(VtableFnPointerData { fn_ty: self_ty, nested: vec![] })
@@ -2455,7 +2464,7 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
     /// selection of the impl. Therefore, if there is a mismatch, we
     /// report an error to the user.
     pub fn confirm_poly_trait_refs(&mut self,
-                                   obligation_cause: ObligationCause,
+                                   obligation_cause: &ObligationCause,
                                    obligation_trait_ref: ty::PolyTraitRef<'tcx>,
                                    expected_trait_ref: ty::PolyTraitRef<'tcx>)
                                    -> Result<(), SelectionError<'tcx>>

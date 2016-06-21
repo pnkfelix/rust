@@ -47,7 +47,17 @@ fn anonymize_predicate<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
             ty::Predicate::ObjectSafe(data),
 
         ty::Predicate::ClosureKind(closure_def_id, kind) =>
-            ty::Predicate::ClosureKind(closure_def_id, kind)
+            ty::Predicate::ClosureKind(closure_def_id, kind),
+
+        ty::Predicate::SubPolyTraitRefs(ref data) => {
+            let o = tcx.anonymize_late_bound_regions(&data.obligation_trait_ref);
+            let e = tcx.anonymize_late_bound_regions(&data.expected_trait_ref);
+            ty::Predicate::SubPolyTraitRefs(
+                ty::SubPolyTraitRefsPredicate {
+                    obligation_trait_ref: o,
+                    expected_trait_ref: e,
+                })
+        }
     }
 }
 
@@ -167,6 +177,13 @@ impl<'cx, 'gcx, 'tcx> Elaborator<'cx, 'gcx, 'tcx> {
                 // Currently, we do not "elaborate" predicates like
                 // `X == Y`, though conceivably we might. For example,
                 // `&X == &Y` implies that `X == Y`.
+            }
+            ty::Predicate::SubPolyTraitRefs(..) => {
+                // Currently, nothing to elaborate from T1 <: T2.
+                //
+                // (In theory we might attempt to do something smart
+                // on parameters, though that would need to take
+                // variance into account.)
             }
             ty::Predicate::Projection(..) => {
                 // Nothing to elaborate in a projection predicate.
