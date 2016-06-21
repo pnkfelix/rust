@@ -1093,6 +1093,9 @@ fn confirm_select_candidate<'cx, 'gcx, 'tcx>(
         }
     };
 
+    debug!("confirm_select_candidate trait_obligation: {:?} selected vtable: {:?}",
+           trait_obligation, vtable);
+
     match vtable {
         super::VtableImpl(data) =>
             confirm_impl_candidate(selcx, obligation, data),
