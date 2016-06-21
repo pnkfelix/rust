@@ -584,7 +584,7 @@ impl<'tcx, N> Vtable<'tcx, N> {
         }
     }
 
-    fn nested_obligations_mut(&mut self) -> &mut Vec<N> {
+    pub fn nested_obligations_mut(&mut self) -> &mut Vec<N> {
         match self {
             &mut VtableImpl(ref mut i) => &mut i.nested,
             &mut VtableParam(ref mut n) => n,

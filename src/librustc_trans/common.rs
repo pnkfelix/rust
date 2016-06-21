@@ -1144,7 +1144,7 @@ pub fn fulfill_obligation<'a, 'tcx>(scx: &SharedCrateContext<'a, 'tcx>,
             let obligation = traits::Obligation::new(obligation_cause,
                                                      trait_ref.to_poly_trait_predicate());
 
-            let selection = match selcx.select(&obligation) {
+            let mut selection = match selcx.select(&obligation) {
                 Ok(Some(selection)) => selection,
                 Ok(None) => {
                     // Ambiguity can happen when monomorphizing during trans
@@ -1172,6 +1172,10 @@ pub fn fulfill_obligation<'a, 'tcx>(scx: &SharedCrateContext<'a, 'tcx>,
             // all nested obligations. This is because they can inform the
             // inference of the impl's type parameters.
             let mut fulfill_cx = traits::FulfillmentContext::new();
+            selection.nested_obligations_mut().retain(|o| match o.predicate {
+                ty::Predicate::SubPolyTraitRefs(..) => false,
+                _ => true,
+            });
             let vtable = selection.map(|predicate| {
                 debug!("fulfill_obligation: register_predicate_obligation {:?}", predicate);
                 fulfill_cx.register_predicate_obligation(&infcx, predicate);
