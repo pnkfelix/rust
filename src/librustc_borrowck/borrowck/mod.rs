@@ -171,7 +171,7 @@ fn borrowck_fn(this: &mut BorrowckCtxt,
     if attributes.iter().any(|item| item.check_name("rustc_mir_borrowck")) {
         let mir = this.mir_map.unwrap().map.get(&id).unwrap();
         this.with_temp_region_map(id, |this| {
-            mir::borrowck_mir(this, fk, decl, mir, body, sp, id, attributes)
+            mir::borrowck_mir(this, fk, decl, mir, body, sp, id, attributes);
         });
     }
 

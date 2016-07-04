@@ -57,6 +57,12 @@ pub struct MoveDataParamEnv<'tcx> {
     param_env: ty::ParameterEnvironment<'tcx>,
 }
 
+pub struct BorrowckMirData<'a, 'tcx: 'a> {
+    move_data: MoveData<'tcx>,
+    flow_inits: DataflowAnalysis<'a, 'tcx, MaybeInitializedLvals<'a, 'tcx>>,
+    flow_uninits: DataflowAnalysis<'a, 'tcx, MaybeUninitializedLvals<'a, 'tcx>>,
+}
+
 pub fn borrowck_mir<'a, 'tcx: 'a>(
     bcx: &mut BorrowckCtxt<'a, 'tcx>,
     fk: FnKind,
@@ -65,7 +71,7 @@ pub fn borrowck_mir<'a, 'tcx: 'a>(
     body: &hir::Block,
     _sp: Span,
     id: ast::NodeId,
-    attributes: &[ast::Attribute]) {
+    attributes: &[ast::Attribute]) /* -> BorrowckMirData<'a, 'tcx> */ {
     match fk {
         FnKind::ItemFn(name, _, _, _, _, _, _) |
         FnKind::Method(name, _, _, _) => {
@@ -126,8 +132,6 @@ fn do_dataflow<'a, 'tcx, BD>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                              bd: BD) -> DataflowResults<BD>
     where BD: BitDenotation<Idx=MovePathIndex, Ctxt=MoveDataParamEnv<'tcx>> + DataflowOperator
 {
-    use syntax::attr::AttrMetaMethods;
-
     let name_found = |sess: &Session, attrs: &[ast::Attribute], name| -> Option<String> {
         if let Some(item) = has_rustc_mir_with(attrs, name) {
             if let Some(s) = item.value_str() {
