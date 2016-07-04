@@ -277,7 +277,17 @@ declare_features! (
     (active, cfg_target_has_atomic, "1.9.0", Some(32976)),
 
     // Allows `..` in tuple (struct) patterns
-    (active, dotdot_in_tuple_patterns, "1.10.0", Some(33627))
+    (active, dotdot_in_tuple_patterns, "1.10.0", Some(33627)),
+
+    // Allows using the patchpoint_fn attribute, which indicates that
+    // calls/invocations of such a function/method may emit a
+    // patchpoint.
+    //
+    // (It will probably emit a patchpoint unconditionally in the
+    // first iteration, but I may later constrain that so that it only
+    // emits a patchpoint if there are a positive number of tracked
+    // values in scope at the call site.)
+    (active, patchpoint_fn, "1.7.0", Some(17668))
 );
 
 declare_features! (
