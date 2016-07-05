@@ -28,6 +28,7 @@ use syntax_pos::Span;
 
 use hir::*;
 use hir::fold::Folder;
+use hir::intravisit::FnKind;
 use hir::print as pprust;
 
 use arena::TypedArena;
@@ -58,6 +59,32 @@ pub enum Node<'ast> {
 
     NodeLifetime(&'ast Lifetime),
     NodeTyParam(&'ast TyParam)
+}
+
+impl<'ast> Node<'ast> {
+    pub fn to_fn_kind(&self) -> Option<FnKind<'ast>> {
+        match *self {
+            NodeTraitItem(&TraitItem {
+                name, ref attrs,
+                node: MethodTraitItem(ref sig, Some(_)), ..
+            }) => {
+                Some(FnKind::Method(name, sig, None, attrs))
+            }
+            NodeImplItem(&ImplItem {
+                name, ref attrs, ref vis,
+                node: ImplItemKind::Method(ref sig, _), ..
+            }) => {
+                Some(FnKind::Method(name, sig, Some(vis), attrs))
+            }
+            NodeItem(&Item {
+                name, ref attrs, ref vis,
+                node: ItemFn(_, safe, cness, abi, ref generics, _), ..
+            }) => {
+                Some(FnKind::ItemFn(name, generics, safe, cness, abi, vis, attrs))
+            }
+            _ => None,
+        }
+    }
 }
 
 /// Represents an entry and its parent NodeID.
