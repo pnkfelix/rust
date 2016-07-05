@@ -58,7 +58,8 @@ impl<'a, 'gcx, 'tcx> Cx<'a, 'gcx, 'tcx> {
                     _ => hir::Constness::NotConst
                 }
             }
-            MirSource::Promoted(..) => bug!()
+            MirSource::Promoted(..) |
+            MirSource::DebugInternal(..) => bug!()
         };
 
         let attrs = infcx.tcx.map.attrs(src.item_id());

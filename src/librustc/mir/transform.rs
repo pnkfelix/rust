@@ -15,7 +15,7 @@ use hir::def_id::DefId;
 use mir::mir_map::MirMap;
 use mir::repr::Mir;
 use ty::TyCtxt;
-use syntax::ast::NodeId;
+use syntax::ast::{self, NodeId};
 
 use std::fmt;
 
@@ -32,7 +32,10 @@ pub enum MirSource {
     Static(NodeId, hir::Mutability),
 
     /// Promoted rvalues within a function.
-    Promoted(NodeId, usize)
+    Promoted(NodeId, usize),
+
+    /// A debugging call within the compiler
+    DebugInternal(&'static str),
 }
 
 impl<'a, 'tcx> MirSource {
@@ -65,7 +68,8 @@ impl<'a, 'tcx> MirSource {
             MirSource::Fn(id) |
             MirSource::Const(id) |
             MirSource::Static(id, _) |
-            MirSource::Promoted(id, _) => id
+            MirSource::Promoted(id, _) => id,
+            MirSource::DebugInternal(_) => ast::DUMMY_NODE_ID,
         }
     }
 }

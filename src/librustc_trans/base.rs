@@ -1414,7 +1414,7 @@ impl<'blk, 'tcx> FunctionContext<'blk, 'tcx> {
                llfndecl: ValueRef,
                fn_ty: FnType,
                definition: Option<(Instance<'tcx>, &ty::FnSig<'tcx>, Abi)>,
-               borrowck_mir_data: Option<BorrowckMirData<'tcx>>,
+               borrowck_mir_data: Option<BorrowckMirData<'blk, 'tcx>>,
                block_arena: &'blk TypedArena<common::BlockS<'blk, 'tcx>>)
                -> FunctionContext<'blk, 'tcx> {
         let (param_substs, def_id) = match definition {
@@ -1837,7 +1837,7 @@ pub fn trans_closure<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                                inlined_id: ast::NodeId,
                                sig: &ty::FnSig<'tcx>,
                                abi: Abi,
-                               borrowck_mir_data: Option<BorrowckMirData<'tcx>>,
+                               borrowck_mir_data: Option<BorrowckMirData<'a, 'tcx>>,
                                closure_env: closure::ClosureEnv) {
     ccx.stats().n_closures.set(ccx.stats().n_closures.get() + 1);
 
@@ -1964,8 +1964,6 @@ pub fn trans_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
             });
         }
     }
-    debug!("trans_fn borrowck_mir_data: {:?}", borrowck_mir_data);
-
 
     debug!("trans_fn(param_substs={:?})", param_substs);
     let _icx = push_ctxt("trans_fn");

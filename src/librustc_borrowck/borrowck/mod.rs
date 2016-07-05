@@ -573,7 +573,7 @@ pub enum MovedValueUseKind {
 // Misc
 
 impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
-    pub fn new(tcx: &'a TyCtxt<'tcx>,
+    pub fn new(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                mir_map: Option<&'a MirMap<'tcx>>) -> Self {
         BorrowckCtxt {
             tcx: tcx,

@@ -335,7 +335,7 @@ pub struct FunctionContext<'a, 'tcx: 'a> {
 
     /// Move and Dataflow data for the MIR for this function.
     /// Optional as well (see above).
-    pub borrowck_mir_data: Option<BorrowckMirData<'tcx>>,
+    pub borrowck_mir_data: Option<BorrowckMirData<'a, 'tcx>>,
     
     // The ValueRef returned from a call to llvm::LLVMAddFunction; the
     // address of the first instruction in the sequence of

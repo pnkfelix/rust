@@ -944,7 +944,8 @@ impl<'tcx> MirMapPass<'tcx> for QualifyAndPromoteConstants {
                 MirSource::Const(_) => continue,
                 MirSource::Static(_, hir::MutImmutable) => Mode::Static,
                 MirSource::Static(_, hir::MutMutable) => Mode::StaticMut,
-                MirSource::Promoted(..) => bug!()
+                MirSource::Promoted(..) |
+                MirSource::DebugInternal(..) => bug!()
             };
             let param_env = ty::ParameterEnvironment::for_item(tcx, id);
 

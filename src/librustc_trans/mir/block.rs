@@ -31,12 +31,12 @@ use glue;
 use type_::Type;
 
 use rustc_data_structures::fnv::FnvHashMap;
+use rustc_data_structures::indexed_vec::Idx;
 use syntax::parse::token;
 
 use super::{MirContext, TempRef};
 use super::analyze::CleanupKind;
 use super::constant::Const;
-use super::{MirContext, TempRef, drop};
 
 use rustc_borrowck::borrowck::mir::BitDenotation;
 use rustc_borrowck::borrowck::mir::{BorrowckMirData, MovePathContent};
@@ -452,10 +452,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                            bb, func, args, destination, cleanup);
                     self.stackmap_call_intrinsic(&bcx, bb, &mut llargs);
                     if let Some((_, target)) = *destination {
-                        for op in args {
-                            self.set_operand_dropped(&bcx, op);
-                        }
-                        funclet_br(bcx, self.llblock(target));
+                        funclet_br(self, bcx, target);
                     } else {
                         bcx.unreachable();
                     }
@@ -468,10 +465,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                            bb, func, args, destination, cleanup);
                     self.patchpoint_call_intrinsic(&bcx, bb, &mut llargs);
                     if let Some((_, target)) = *destination {
-                        for op in args {
-                            self.set_operand_dropped(&bcx, op);
-                        }
-                        funclet_br(bcx, self.llblock(target));
+                        funclet_br(self, bcx, target);
                     } else {
                         bcx.unreachable();
                     }
@@ -742,8 +736,8 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                               ref flow_uninits } = *bmd;
 
         // "mb" stands for "maybe"
-        let mut mb_inited_state = flow_inits.sets.on_exit_set_for(bb.index());
-        let mut mb_uninited_state = flow_uninits.sets.on_exit_set_for(bb.index());
+        let mut mb_inited_state = flow_inits.sets().on_exit_set_for(bb.index());
+        let mut mb_uninited_state = flow_uninits.sets().on_exit_set_for(bb.index());
 
         debug!("stackmap_call_intrinsic inited_state {:?} uninited_state {:?}",
                mb_inited_state, mb_uninited_state);
@@ -755,30 +749,26 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
         // interpretation for their bitvectors, so we can apply
         // bitwise operations like the above directly on the bitvector
         // representation.)
-        let inited = mb_inited_state;
-        let denotation = &flow_inits.operator;
 
         let ccx = bcx.ccx();
         let llfn = ccx.get_intrinsic("llvm.experimental.stackmap");
         let mut stackmap_args = vec![id, num_shadow_bytes];
 
-        denotation.each(
-            move_data,
-            &inited[..],
-            |move_path| {
-                match move_path.content {
-                    MovePathContent::Lvalue(ref lvalue) => {
-                        debug!("stackmap_call_intrinsic add lvalue {:?}",
-                               lvalue);
-                        let tr_live = self.trans_lvalue(bcx, lvalue);
-                        // FIXME should assert llextra is null or something
-                        stackmap_args.push(tr_live.llval);
-                    }
-                    MovePathContent::Static => {
-                        unimplemented!()
-                    }
+        for move_path_idx in mb_inited_state.iter() {
+            let move_path = &move_data.move_paths[move_path_idx];
+            match move_path.content {
+                MovePathContent::Lvalue(ref lvalue) => {
+                    debug!("stackmap_call_intrinsic add lvalue {:?}",
+                           lvalue);
+                    let tr_live = self.trans_lvalue(bcx, lvalue);
+                    // FIXME should assert llextra is null or something
+                    stackmap_args.push(tr_live.llval);
                 }
-            });
+                MovePathContent::Static => {
+                    unimplemented!()
+                }
+            }
+        }
 
         bcx.with_block(|bcx| {
             // Note on ordering: should we emit the stackmap call
@@ -823,8 +813,8 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                               ref flow_uninits } = *bmd;
 
         // "mb" stands for "maybe"
-        let mut mb_inited_state = flow_inits.sets.on_exit_set_for(bb.index());
-        let mut mb_uninited_state = flow_uninits.sets.on_exit_set_for(bb.index());
+        let mut mb_inited_state = flow_inits.sets().on_exit_set_for(bb.index());
+        let mut mb_uninited_state = flow_uninits.sets().on_exit_set_for(bb.index());
 
         debug!("patchpoint_call_intrinsic inited_state {:?} uninited_state {:?}",
                mb_inited_state, mb_uninited_state);
@@ -836,8 +826,6 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
         // interpretation for their bitvectors, so we can apply
         // bitwise operations like the above directly on the bitvector
         // representation.)
-        let inited = mb_inited_state;
-        let denotation = &flow_inits.operator;
         let ccx = bcx.ccx();
         let llfn = ccx.get_intrinsic("llvm.experimental.patchpoint.void");
         let func_arg_count = 1;
@@ -852,23 +840,21 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                                        C_i32(ccx, func_arg_count),
                                        data];
 
-        denotation.each(
-            move_data,
-            &inited[..],
-            |move_path| {
-                match move_path.content {
-                    MovePathContent::Lvalue(ref lvalue) => {
-                        debug!("patchpoint_call_intrinsic add lvalue {:?}",
-                               lvalue);
-                        let tr_live = self.trans_lvalue(bcx, lvalue);
-                        // FIXME should assert llextra is null or something
-                        patchpoint_args.push(tr_live.llval);
-                    }
-                    MovePathContent::Static => {
-                        unimplemented!()
-                    }
+        for move_path_idx in mb_inited_state.iter() {
+            let move_path = &move_data.move_paths[move_path_idx];
+            match move_path.content {
+                MovePathContent::Lvalue(ref lvalue) => {
+                    debug!("patchpoint_call_intrinsic add lvalue {:?}",
+                           lvalue);
+                    let tr_live = self.trans_lvalue(bcx, lvalue);
+                    // FIXME should assert llextra is null or something
+                    patchpoint_args.push(tr_live.llval);
                 }
-            });
+                MovePathContent::Static => {
+                    unimplemented!()
+                }
+            }
+        }
 
         bcx.with_block(|bcx| {
             // FIXME

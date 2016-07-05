@@ -287,7 +287,8 @@ fn write_mir_sig(tcx: TyCtxt, src: MirSource, mir: &Mir, w: &mut Write)
         MirSource::Const(_) => write!(w, "const")?,
         MirSource::Static(_, hir::MutImmutable) => write!(w, "static")?,
         MirSource::Static(_, hir::MutMutable) => write!(w, "static mut")?,
-        MirSource::Promoted(_, i) => write!(w, "promoted{} in", i)?
+        MirSource::Promoted(_, i) => write!(w, "promoted{} in", i)?,
+        MirSource::DebugInternal(s) => write!(w, "internal {}", s)?
     }
 
     write!(w, " {}", tcx.node_path_str(src.item_id()))?;

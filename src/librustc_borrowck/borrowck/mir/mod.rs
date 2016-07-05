@@ -39,8 +39,6 @@ use self::gather_moves::{MoveData, MovePathIndex, Location};
 use self::gather_moves::{MovePathData};
 pub use self::gather_moves::{MovePathContent};
 
-use std::fmt::Debug;
-
 fn has_rustc_mir_with(attrs: &[ast::Attribute], name: &str) -> Option<P<MetaItem>> {
     for attr in attrs {
         if attr.check_name("rustc_mir") {
@@ -60,11 +58,10 @@ pub struct MoveDataParamEnv<'tcx> {
     param_env: ty::ParameterEnvironment<'tcx>,
 }
 
-#[derive(Debug)]
 pub struct BorrowckMirData<'a, 'tcx: 'a> {
     pub move_data: MoveData<'tcx>,
-    pub flow_inits: DataflowAnalysis<'a, 'tcx, MaybeInitializedLvals<'a, 'tcx>>,
-    pub flow_uninits: DataflowAnalysis<'a, 'tcx, MaybeUninitializedLvals<'a, 'tcx>>,
+    pub flow_inits: DataflowResults<MaybeInitializedLvals<'a, 'tcx>>,
+    pub flow_uninits: DataflowResults<MaybeUninitializedLvals<'a, 'tcx>>,
 }
 
 pub fn borrowck_mir<'a, 'tcx: 'a>(
@@ -75,7 +72,7 @@ pub fn borrowck_mir<'a, 'tcx: 'a>(
     body: &hir::Block,
     _sp: Span,
     id: ast::NodeId,
-    attributes: &[ast::Attribute]) /* -> BorrowckMirData<'a, 'tcx> */ {
+    attributes: &[ast::Attribute]) -> BorrowckMirData<'a, 'tcx> {
     match fk {
         FnKind::ItemFn(name, _, _, _, _, _, _) |
         FnKind::Method(name, _, _, _) => {
@@ -126,6 +123,12 @@ pub fn borrowck_mir<'a, 'tcx: 'a>(
     }
 
     debug!("borrowck_mir done");
+
+    BorrowckMirData {
+        move_data: mbcx.move_data,
+        flow_inits: mbcx.flow_inits,
+        flow_uninits: mbcx.flow_uninits,
+    }
 }
 
 fn do_dataflow<'a, 'tcx, BD>(tcx: TyCtxt<'a, 'tcx, 'tcx>,

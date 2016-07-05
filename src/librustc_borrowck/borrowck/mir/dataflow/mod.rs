@@ -205,6 +205,9 @@ impl<O: BitDenotation> DataflowResults<O> {
     pub fn sets(&self) -> &AllSets<O::Idx> {
         &self.0.sets
     }
+    pub fn operator(&self) -> &O {
+        &self.0.operator
+    }
 }
 
 // FIXME: This type shouldn't be public, but the graphviz::MirWithFlowState trait
@@ -285,6 +288,12 @@ impl<E:Idx> AllSets<E> {
     }
     pub fn on_entry_set_for(&self, block_idx: usize) -> &IdxSet<E> {
         self.lookup_set_for(&self.on_entry_sets, block_idx)
+    }
+    pub fn on_exit_set_for(&self, block_idx: usize) -> IdxSetBuf<E> {
+        let mut set = self.on_entry_set_for(block_idx).to_owned();
+        set.union(self.gen_set_for(block_idx));
+        set.subtract(self.kill_set_for(block_idx));
+        return set;
     }
 }
 

@@ -9,8 +9,9 @@
 // except according to those terms.
 
 
-use rustc::ty::{FnOutput, TyCtxt};
+use rustc::ty::{self, FnOutput, TyCtxt};
 use rustc::mir::repr::*;
+use rustc::mir::transform::MirSource;
 use rustc::util::nodemap::FnvHashMap;
 use rustc_data_structures::indexed_vec::{Idx, IndexVec};
 
@@ -307,7 +308,7 @@ impl<'tcx> MovePathLookup<'tcx> {
         }
     }
 
-    fn post_build_sanity_check(&self, tcx: &ty::TyCtxt<'tcx>, mir: &Mir<'tcx>) {
+    fn post_build_sanity_check<'a>(&self, tcx: ty::TyCtxt<'a, 'tcx, 'tcx>, mir: &Mir<'tcx>) {
         if (self.vars.len() != mir.var_decls.len()) ||
             (self.temps.len() != mir.temp_decls.len()) ||
             (self.args.len() != mir.arg_decls.len())
@@ -316,9 +317,10 @@ impl<'tcx> MovePathLookup<'tcx> {
                 let mut out = Vec::new();
                 {
                     use std::io::Write;
-                    use rustc_mir::pretty::write_mir_named;
+                    use rustc_mir::pretty::write_mir_fn;
                     let mut w: &mut Write = &mut out;
-                    write_mir_named(tcx, "boo_invalid_move_data", mir, &mut w, None).unwrap();
+                    let source = MirSource::DebugInternal("invalid_move_data");
+                    write_mir_fn(tcx, source, mir, &mut w, None).unwrap();
                 }
                 String::from_utf8(out).unwrap()
             });
@@ -698,7 +700,7 @@ fn gather_moves<'a, 'tcx>(mir: &Mir<'tcx>, tcx: TyCtxt<'a, 'tcx, 'tcx>) -> MoveD
             TerminatorKind::Drop { ref location, target: _, unwind: _ } => {
                 let source = Location { block: bb,
                                         index: bb_data.statements.len() };
-                debug!("gather_moves Drop on_move_out_lval {:?} {:?}", lval, source);
+                debug!("gather_moves Drop on_move_out_lval {:?} {:?}", location, source);
                 bb_ctxt.on_move_out_lval(SK::Drop, location, source);
             }
             TerminatorKind::DropAndReplace { ref location, ref value, .. } => {
@@ -764,7 +766,7 @@ fn gather_moves<'a, 'tcx>(mir: &Mir<'tcx>, tcx: TyCtxt<'a, 'tcx, 'tcx>) -> MoveD
         "done dumping MovePathData"
     });
 
-    builder.rev_lookup.post_build_sanity_check(builder.tcx, builder.mir);
+    builder.rev_lookup.post_build_sanity_check(tcx, builder.mir);
 
     MoveData {
         move_paths: MovePathData { move_paths: move_paths, },

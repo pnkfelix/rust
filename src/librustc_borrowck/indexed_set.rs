@@ -26,12 +26,17 @@ use rustc_data_structures::indexed_vec::Idx;
 /// this type uses to represent the set of object it holds.
 pub struct IdxSetBuf<T: Idx> {
     _pd: PhantomData<fn(&T)>,
+    universe_size: usize,
     bits: Vec<Word>,
 }
 
 impl<T: Idx> Clone for IdxSetBuf<T> {
     fn clone(&self) -> Self {
-        IdxSetBuf { _pd: PhantomData, bits: self.bits.clone() }
+        IdxSetBuf {
+            _pd: PhantomData,
+            universe_size: self.universe_size,
+            bits: self.bits.clone()
+        }
     }
 }
 
@@ -49,6 +54,7 @@ impl<T: Idx> Clone for IdxSetBuf<T> {
 /// this type uses to represent the set of object it holds.
 pub struct IdxSet<T: Idx> {
     _pd: PhantomData<fn(&T)>,
+    universe_size: usize,
     bits: [Word],
 }
 
@@ -66,6 +72,7 @@ impl<T: Idx> IdxSetBuf<T> {
         let num_words = (universe_size + (bits_per_word - 1)) / bits_per_word;
         IdxSetBuf {
             _pd: Default::default(),
+            universe_size: universe_size,
             bits: vec![init; num_words],
         }
     }
@@ -104,12 +111,39 @@ impl<T: Idx> DerefMut for IdxSetBuf<T> {
     }
 }
 
+pub struct Iter<'a, T: Idx> { curr: usize, idx_set: &'a IdxSet<T> }
+
+impl<'a, T: Idx> Iterator for Iter<'a, T> {
+    type Item = T;
+    fn next(&mut self) -> Option<T> {
+        let mut curr = self.curr;
+        loop {
+            if curr >= self.idx_set.universe_size {
+                self.curr = curr;
+                return None;
+            }
+            let idx = Idx::new(curr);
+            if self.idx_set.contains(&idx) {
+                self.curr = curr + 1;
+                return Some(idx);
+            } else {
+                curr += 1;
+            }
+        }
+    }
+}
+
 impl<T: Idx> IdxSet<T> {
     pub fn to_owned(&self) -> IdxSetBuf<T> {
         IdxSetBuf {
             _pd: Default::default(),
+            universe_size: self.universe_size,
             bits: self.bits.to_owned(),
         }
+    }
+
+    pub fn iter(&self) -> Iter<T> {
+        Iter { idx_set: self, curr: 0, }
     }
 
     /// Removes `elem` from the set `self`; returns true iff this changed `self`.
