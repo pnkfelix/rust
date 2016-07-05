@@ -65,7 +65,7 @@ pub fn borrowck_mir<'a, 'tcx: 'a>(
     body: &hir::Block,
     _sp: Span,
     id: ast::NodeId,
-    attributes: &[ast::Attribute]) {
+    attributes: &[ast::Attribute]) -> MirBorrowckResults<'a, 'tcx> {
     match fk {
         FnKind::ItemFn(name, _, _, _, _, _, _) |
         FnKind::Method(name, _, _, _) => {
@@ -116,6 +116,13 @@ pub fn borrowck_mir<'a, 'tcx: 'a>(
     }
 
     debug!("borrowck_mir done");
+
+    return MirBorrowckResults {
+        node_id: mbcx.node_id,
+        move_data: mbcx.move_data,
+        flow_inits: mbcx.flow_inits,
+        flow_uninits: mbcx.flow_uninits,
+    };
 }
 
 fn do_dataflow<'a, 'tcx, BD>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
@@ -172,6 +179,13 @@ pub struct MirBorrowckCtxtPreDataflow<'a, 'tcx: 'a, BD>
 pub struct MirBorrowckCtxt<'b, 'a: 'b, 'tcx: 'a> {
     bcx: &'b mut BorrowckCtxt<'a, 'tcx>,
     mir: &'b Mir<'tcx>,
+    node_id: ast::NodeId,
+    move_data: MoveData<'tcx>,
+    flow_inits: DataflowResults<MaybeInitializedLvals<'a, 'tcx>>,
+    flow_uninits: DataflowResults<MaybeUninitializedLvals<'a, 'tcx>>
+}
+
+pub struct MirBorrowckResults<'a, 'tcx: 'a> {
     node_id: ast::NodeId,
     move_data: MoveData<'tcx>,
     flow_inits: DataflowResults<MaybeInitializedLvals<'a, 'tcx>>,
