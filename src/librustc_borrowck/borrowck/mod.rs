@@ -594,7 +594,7 @@ pub enum MovedValueUseKind {
 // Misc
 
 impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
-    fn with_temp_region_map<F>(&mut self, id: ast::NodeId, f: F)
+    pub fn with_temp_region_map<F>(&mut self, id: ast::NodeId, f: F)
         where F: for <'b> FnOnce(&'b mut BorrowckCtxt<'a, 'tcx>)
     {
         let new_free_region_map = self.tcx.free_region_map(id);
