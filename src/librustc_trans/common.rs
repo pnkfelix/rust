@@ -43,6 +43,7 @@ use rustc::ty::layout::Layout;
 use rustc::traits::{self, SelectionContext, ProjectionMode};
 use rustc::ty::fold::TypeFoldable;
 use rustc::hir;
+use rustc_borrowck::MirFlowResults;
 use util::nodemap::NodeMap;
 
 use arena::TypedArena;
@@ -330,6 +331,10 @@ pub struct FunctionContext<'a, 'tcx: 'a> {
     // we only have MIR available for things that are local to the
     // crate.
     pub mir: Option<CachedMir<'a, 'tcx>>,
+
+    /// Move and Dataflow data for the MIR for this function.
+    /// Optional because the MIR is optional (see `self.mir` field).
+    pub flow_results: Option<MirFlowResults<'a, 'tcx>>,
 
     // The ValueRef returned from a call to llvm::LLVMAddFunction; the
     // address of the first instruction in the sequence of

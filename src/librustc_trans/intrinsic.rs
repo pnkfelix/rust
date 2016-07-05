@@ -1267,7 +1267,7 @@ fn gen_fn<'a, 'tcx>(fcx: &FunctionContext<'a, 'tcx>,
     let llfn = declare::define_internal_fn(ccx, name, rust_fn_ty);
     let (fcx, block_arena);
     block_arena = TypedArena::new();
-    fcx = FunctionContext::new(ccx, llfn, fn_ty, None, &block_arena);
+    fcx = FunctionContext::new(ccx, llfn, fn_ty, None, None, &block_arena);
     let bcx = fcx.init(true, None);
     trans(bcx);
     fcx.cleanup();

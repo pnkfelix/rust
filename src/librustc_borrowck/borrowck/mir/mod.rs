@@ -57,6 +57,40 @@ pub struct MoveDataParamEnv<'tcx> {
     param_env: ty::ParameterEnvironment<'tcx>,
 }
 
+pub fn flow_results<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
+                              mir: &'a Mir<'tcx>,
+                              id: ast::NodeId,
+                              attrs: &[ast::Attribute]) -> MirFlowResults<'a, 'tcx>
+{
+    let move_data = MoveData::gather_moves(mir, tcx);
+    let param_env = ty::ParameterEnvironment::for_item(tcx, id);
+
+    let mdpe = MoveDataParamEnv { move_data: move_data, param_env: param_env };
+    let flow_inits =
+        do_dataflow(tcx, mir, id, attrs, &mdpe, MaybeInitializedLvals::new(tcx, mir));
+    let flow_uninits =
+        do_dataflow(tcx, mir, id, attrs, &mdpe, MaybeUninitializedLvals::new(tcx, mir));
+    let flow_def_inits =
+        do_dataflow(tcx, mir, id, attrs, &mdpe, DefinitelyInitializedLvals::new(tcx, mir));
+
+    if has_rustc_mir_with(attrs, "rustc_peek_maybe_init").is_some() {
+        dataflow::sanity_check_via_rustc_peek(tcx, mir, id, attrs, &mdpe, &flow_inits);
+    }
+    if has_rustc_mir_with(attrs, "rustc_peek_maybe_uninit").is_some() {
+        dataflow::sanity_check_via_rustc_peek(tcx, mir, id, attrs, &mdpe, &flow_uninits);
+    }
+    if has_rustc_mir_with(attrs, "rustc_peek_definite_init").is_some() {
+        dataflow::sanity_check_via_rustc_peek(tcx, mir, id, attrs, &mdpe, &flow_def_inits);
+    }
+
+    MirFlowResults {
+        node_id: id,
+        move_data: mdpe.move_data,
+        flow_inits: flow_inits,
+        flow_uninits: flow_uninits,
+    }
+}
+
 pub fn borrowck_mir<'a, 'tcx: 'a>(
     bcx: &mut BorrowckCtxt<'a, 'tcx>,
     fk: FnKind,
@@ -65,7 +99,7 @@ pub fn borrowck_mir<'a, 'tcx: 'a>(
     body: &hir::Block,
     _sp: Span,
     id: ast::NodeId,
-    attributes: &[ast::Attribute]) -> MirBorrowckResults<'a, 'tcx> {
+    attributes: &[ast::Attribute]) {
     match fk {
         FnKind::ItemFn(name, _, _, _, _, _, _) |
         FnKind::Method(name, _, _, _) => {
@@ -78,26 +112,7 @@ pub fn borrowck_mir<'a, 'tcx: 'a>(
 
     let tcx = bcx.tcx;
 
-    let move_data = MoveData::gather_moves(mir, tcx);
-    let param_env = ty::ParameterEnvironment::for_item(tcx, id);
-    let mdpe = MoveDataParamEnv { move_data: move_data, param_env: param_env };
-    let flow_inits =
-        do_dataflow(tcx, mir, id, attributes, &mdpe, MaybeInitializedLvals::new(tcx, mir));
-    let flow_uninits =
-        do_dataflow(tcx, mir, id, attributes, &mdpe, MaybeUninitializedLvals::new(tcx, mir));
-    let flow_def_inits =
-        do_dataflow(tcx, mir, id, attributes, &mdpe, DefinitelyInitializedLvals::new(tcx, mir));
-
-    if has_rustc_mir_with(attributes, "rustc_peek_maybe_init").is_some() {
-        dataflow::sanity_check_via_rustc_peek(bcx.tcx, mir, id, attributes, &mdpe, &flow_inits);
-    }
-    if has_rustc_mir_with(attributes, "rustc_peek_maybe_uninit").is_some() {
-        dataflow::sanity_check_via_rustc_peek(bcx.tcx, mir, id, attributes, &mdpe, &flow_uninits);
-    }
-    if has_rustc_mir_with(attributes, "rustc_peek_definite_init").is_some() {
-        dataflow::sanity_check_via_rustc_peek(bcx.tcx, mir, id, attributes, &mdpe, &flow_def_inits);
-    }
-
+    let flow_results = flow_results(tcx, mir, id, attributes);
     if has_rustc_mir_with(attributes, "stop_after_dataflow").is_some() {
         bcx.tcx.sess.fatal("stop_after_dataflow ended compilation");
     }
@@ -106,9 +121,9 @@ pub fn borrowck_mir<'a, 'tcx: 'a>(
         bcx: bcx,
         mir: mir,
         node_id: id,
-        move_data: mdpe.move_data,
-        flow_inits: flow_inits,
-        flow_uninits: flow_uninits,
+        move_data: flow_results.move_data,
+        flow_inits: flow_results.flow_inits,
+        flow_uninits: flow_results.flow_uninits,
     };
 
     for bb in mir.basic_blocks().indices() {
@@ -116,13 +131,6 @@ pub fn borrowck_mir<'a, 'tcx: 'a>(
     }
 
     debug!("borrowck_mir done");
-
-    return MirBorrowckResults {
-        node_id: mbcx.node_id,
-        move_data: mbcx.move_data,
-        flow_inits: mbcx.flow_inits,
-        flow_uninits: mbcx.flow_uninits,
-    };
 }
 
 fn do_dataflow<'a, 'tcx, BD>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
@@ -185,7 +193,7 @@ pub struct MirBorrowckCtxt<'b, 'a: 'b, 'tcx: 'a> {
     flow_uninits: DataflowResults<MaybeUninitializedLvals<'a, 'tcx>>
 }
 
-pub struct MirBorrowckResults<'a, 'tcx: 'a> {
+pub struct MirFlowResults<'a, 'tcx: 'a> {
     node_id: ast::NodeId,
     move_data: MoveData<'tcx>,
     flow_inits: DataflowResults<MaybeInitializedLvals<'a, 'tcx>>,

@@ -578,9 +578,9 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
     }
 
     fn stackmap_call_intrinsic(&mut self,
-                               bcx: &BlockAndBuilder<'bcx, 'tcx>,
+                               _bcx: &BlockAndBuilder<'bcx, 'tcx>,
                                bb: mir::BasicBlock,
-                               llargs: &mut [ValueRef]) {
+                               _llargs: &mut [ValueRef]) {
         debug!("stackmap_call_intrinsic start bb: {:?}", bb);
         unimplemented!()
     }

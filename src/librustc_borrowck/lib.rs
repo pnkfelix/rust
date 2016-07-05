@@ -43,6 +43,7 @@ extern crate core; // for NonZero
 pub use borrowck::check_crate;
 pub use borrowck::build_borrowck_dataflow_data_for_fn;
 pub use borrowck::{AnalysisData, BorrowckCtxt, ElaborateDrops};
+pub use borrowck::{MirFlowResults, flow_results, borrowck_mir};
 
 // NB: This module needs to be declared first so diagnostics are
 // registered before they are used.

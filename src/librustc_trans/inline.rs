@@ -18,6 +18,7 @@ use common::*;
 
 use rustc::dep_graph::DepNode;
 use rustc::hir;
+use rustc::hir::intravisit::{FnKind};
 
 fn instantiate_inline(ccx: &CrateContext, fn_id: DefId) -> Option<DefId> {
     debug!("instantiate_inline({:?})", fn_id);
@@ -149,7 +150,12 @@ fn instantiate_inline(ccx: &CrateContext, fn_id: DefId) -> Option<DefId> {
                     let def_id = tcx.map.local_def_id(impl_item.id);
                     let empty_substs = ccx.empty_substs_for_def_id(def_id);
                     let llfn = Callee::def(ccx, def_id, empty_substs).reify(ccx).val;
+                    let kind = FnKind::Method(impl_item.name,
+                                              sig,
+                                              Some(&impl_item.vis),
+                                              &impl_item.attrs);
                     trans_fn(ccx,
+                             kind,
                              &sig.decl,
                              body,
                              llfn,

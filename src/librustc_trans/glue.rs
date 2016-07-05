@@ -281,7 +281,7 @@ fn get_drop_glue_core<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 
     let (arena, fcx): (TypedArena<_>, FunctionContext);
     arena = TypedArena::new();
-    fcx = FunctionContext::new(ccx, llfn, fn_ty, None, &arena);
+    fcx = FunctionContext::new(ccx, llfn, fn_ty, None, None, &arena);
 
     let bcx = fcx.init(false, None);
 

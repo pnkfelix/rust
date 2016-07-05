@@ -131,7 +131,8 @@ pub fn monomorphic_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
             if trans_everywhere || is_first {
                 let origin = if is_first { base::OriginalTranslation } else { base::InlinedCopy };
                 base::update_linkage(ccx, lldecl, None, origin);
-                trans_fn(ccx, decl, body, lldecl, psubsts, fn_node_id);
+                let kind = map_node.to_fn_kind().unwrap();
+                trans_fn(ccx, kind, decl, body, lldecl, psubsts, fn_node_id);
             } else {
                 // We marked the value as using internal linkage earlier, but that is illegal for
                 // declarations, so switch back to external linkage.

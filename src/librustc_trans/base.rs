@@ -105,8 +105,9 @@ use syntax_pos::{Span, DUMMY_SP};
 use syntax::parse::token::InternedString;
 use syntax::attr::AttrMetaMethods;
 use syntax::attr;
-use rustc::hir::intravisit::{self, Visitor};
+use rustc::hir::intravisit::{self, FnKind, Visitor};
 use rustc::hir;
+use rustc_borrowck::{MirFlowResults, flow_results};
 use syntax::ast;
 
 thread_local! {
@@ -1408,6 +1409,7 @@ impl<'blk, 'tcx> FunctionContext<'blk, 'tcx> {
                llfndecl: ValueRef,
                fn_ty: FnType,
                definition: Option<(Instance<'tcx>, &ty::FnSig<'tcx>, Abi)>,
+               flow_results: Option<MirFlowResults<'blk, 'tcx>>,
                block_arena: &'blk TypedArena<common::BlockS<'blk, 'tcx>>)
                -> FunctionContext<'blk, 'tcx> {
         let (param_substs, def_id) = match definition {
@@ -1463,6 +1465,7 @@ impl<'blk, 'tcx> FunctionContext<'blk, 'tcx> {
         FunctionContext {
             needs_ret_allocas: nested_returns && mir.is_none(),
             mir: mir,
+            flow_results: flow_results,
             llfn: llfndecl,
             llretslotptr: Cell::new(None),
             param_env: ccx.tcx().empty_parameter_environment(),
@@ -1822,6 +1825,7 @@ impl<'blk, 'tcx> FunctionContext<'blk, 'tcx> {
 ///
 /// If the function closes over its environment a closure will be returned.
 pub fn trans_closure<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
+                               fk: FnKind,
                                decl: &hir::FnDecl,
                                body: &hir::Block,
                                llfndecl: ValueRef,
@@ -1850,7 +1854,31 @@ pub fn trans_closure<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 
     let (arena, fcx): (TypedArena<_>, FunctionContext);
     arena = TypedArena::new();
-    fcx = FunctionContext::new(ccx, llfndecl, fn_ty, Some((instance, sig, abi)), &arena);
+
+    debug!("trans_closure redundant borrowck");
+    // FIXME: of course this doesn't belong here (it is in fact
+    // already present in `rustc_borrowck::borrowck`), but I do not
+    // want to take the time right now to thread it back out of that
+    // module.
+    //
+    // (Such threading, due to overall control flow such as doing
+    // borrowck for a whole crate before moving on to trans, would
+    // also requiring save this analysis data somewhere for every
+    // function in the crate)
+    //
+    // So instead we "just" run the analysis redundantly a second
+    // time.
+    let mut mir_flow_results = None;
+    {
+        let id = inlined_id;
+        let mir_map = ccx.shared().mir_map();
+        if let Some(mir) = mir_map.map.get(&id) {
+            mir_flow_results = Some(flow_results(ccx.tcx(), mir, id, fk.attrs()));
+        }
+    }
+
+    fcx = FunctionContext::new(
+        ccx, llfndecl, fn_ty, Some((instance, sig, abi)), mir_flow_results, &arena);
 
     if fcx.mir.is_some() {
         return mir::trans_mir(&fcx);
@@ -1918,12 +1946,14 @@ pub fn trans_closure<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 
 /// Creates an LLVM function corresponding to a source language function.
 pub fn trans_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
+                          fk: FnKind,
                           decl: &hir::FnDecl,
                           body: &hir::Block,
                           llfndecl: ValueRef,
                           param_substs: &'tcx Substs<'tcx>,
                           id: ast::NodeId) {
     let _s = StatRecorder::new(ccx, ccx.tcx().node_path_str(id));
+
     debug!("trans_fn(param_substs={:?})", param_substs);
     let _icx = push_ctxt("trans_fn");
     let def_id = if let Some(&def_id) = ccx.external_srcs().borrow().get(&id) {
@@ -1937,6 +1967,7 @@ pub fn trans_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
     let sig = ccx.tcx().normalize_associated_type(&sig);
     let abi = fn_ty.fn_abi();
     trans_closure(ccx,
+                  fk,
                   decl,
                   body,
                   llfndecl,
@@ -2033,7 +2064,7 @@ pub fn trans_ctor_shim<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 
     let (arena, fcx): (TypedArena<_>, FunctionContext);
     arena = TypedArena::new();
-    fcx = FunctionContext::new(ccx, llfndecl, fn_ty, None, &arena);
+    fcx = FunctionContext::new(ccx, llfndecl, fn_ty, None, None, &arena);
     let bcx = fcx.init(false, None);
 
     assert!(!fcx.needs_ret_allocas);
@@ -2267,7 +2298,7 @@ pub fn trans_item(ccx: &CrateContext, item: &hir::Item) {
     let from_external = ccx.external_srcs().borrow().contains_key(&item.id);
 
     match item.node {
-        hir::ItemFn(ref decl, _, _, _, ref generics, ref body) => {
+        hir::ItemFn(ref decl, usafe, cness, abi, ref generics, ref body) => {
             if !generics.is_type_parameterized() {
                 let trans_everywhere = attr::requests_inline(&item.attrs);
                 // Ignore `trans_everywhere` for cross-crate inlined items
@@ -2278,7 +2309,14 @@ pub fn trans_item(ccx: &CrateContext, item: &hir::Item) {
                     let def_id = tcx.map.local_def_id(item.id);
                     let empty_substs = ccx.empty_substs_for_def_id(def_id);
                     let llfn = Callee::def(ccx, def_id, empty_substs).reify(ccx).val;
-                    trans_fn(ccx, &decl, &body, llfn, empty_substs, item.id);
+                    let kind = FnKind::ItemFn(item.name,
+                                              generics,
+                                              usafe,
+                                              cness,
+                                              abi,
+                                              &item.vis,
+                                              &item.attrs);
+                    trans_fn(ccx, kind, &decl, &body, llfn, empty_substs, item.id);
                     set_global_section(ccx, llfn, item);
                     update_linkage(ccx,
                                    llfn,
@@ -2317,7 +2355,12 @@ pub fn trans_item(ccx: &CrateContext, item: &hir::Item) {
                             let def_id = tcx.map.local_def_id(impl_item.id);
                             let empty_substs = ccx.empty_substs_for_def_id(def_id);
                             let llfn = Callee::def(ccx, def_id, empty_substs).reify(ccx).val;
-                            trans_fn(ccx, &sig.decl, body, llfn, empty_substs, impl_item.id);
+                            let kind = FnKind::Method(impl_item.name,
+                                                      sig,
+                                                      Some(&impl_item.vis),
+                                                      &impl_item.attrs);
+                            let id = impl_item.id;
+                            trans_fn(ccx, kind, &sig.decl, body, llfn, empty_substs, id);
                             update_linkage(ccx, llfn, Some(impl_item.id),
                                 if is_origin {
                                     OriginalTranslation

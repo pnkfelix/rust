@@ -34,6 +34,7 @@ use session::config::FullDebugInfo;
 use syntax::ast;
 
 use rustc::hir;
+use rustc::hir::intravisit::FnKind;
 
 use libc::c_uint;
 
@@ -232,6 +233,7 @@ pub fn trans_closure_expr<'a, 'tcx>(dest: Dest<'a, 'tcx>,
     };
 
     trans_closure(ccx,
+                  FnKind::Closure(&[]),
                   decl,
                   body,
                   llfn,
@@ -382,7 +384,7 @@ fn trans_fn_once_adapter_shim<'a, 'tcx>(
 
     let (block_arena, fcx): (TypedArena<_>, FunctionContext);
     block_arena = TypedArena::new();
-    fcx = FunctionContext::new(ccx, lloncefn, fn_ty, None, &block_arena);
+    fcx = FunctionContext::new(ccx, lloncefn, fn_ty, None, None, &block_arena);
     let mut bcx = fcx.init(false, None);
 
 
