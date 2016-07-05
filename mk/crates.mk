@@ -129,6 +129,7 @@ DEPS_rustc_plugin := rustc rustc_metadata syntax syntax_pos rustc_errors
 DEPS_rustc_privacy := rustc log syntax syntax_pos
 DEPS_rustc_trans := arena flate getopts graphviz libc rustc rustc_back \
                     log syntax serialize rustc_llvm rustc_platform_intrinsics \
+                    rustc_borrowck \
                     rustc_const_math rustc_const_eval rustc_incremental rustc_errors syntax_pos
 DEPS_rustc_incremental := rbml rustc syntax_pos serialize rustc_data_structures
 DEPS_rustc_save_analysis := rustc log syntax syntax_pos serialize
