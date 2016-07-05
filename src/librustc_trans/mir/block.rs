@@ -477,6 +477,14 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                                                   &mut idx, &mut callee.data)
                 }
 
+                if intrinsic == Some("stackmap_call") {
+                    debug!("stackmap_call bb: {:?} func: {:?} args: {:?} \
+                            destination: {:?} cleanup: {:?}",
+                           bb, func, args, destination, cleanup);
+                    self.stackmap_call_intrinsic(&bcx, bb, &mut llargs);
+                    return;
+                }
+
                 let fn_ptr = match callee.data {
                     NamedTupleConstructor(_) => {
                         // FIXME translate this like mir::Rvalue::Aggregate.
@@ -569,6 +577,14 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
         }
     }
 
+    fn stackmap_call_intrinsic(&mut self,
+                               bcx: &BlockAndBuilder<'bcx, 'tcx>,
+                               bb: mir::BasicBlock,
+                               llargs: &mut [ValueRef]) {
+        debug!("stackmap_call_intrinsic start bb: {:?}", bb);
+        unimplemented!()
+    }
+    
     fn trans_argument(&mut self,
                       bcx: &BlockAndBuilder<'bcx, 'tcx>,
                       op: OperandRef<'tcx>,
