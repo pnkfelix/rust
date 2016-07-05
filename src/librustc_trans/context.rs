@@ -966,6 +966,19 @@ fn declare_intrinsic(ccx: &CrateContext, key: &str) -> Option<ValueRef> {
             }
         );
     }
+    macro_rules! variadic_ifn {
+        ($name:expr, fn($($arg:expr),*) -> $ret:expr) => {
+            if key == $name {
+                let f = declare::declare_cfn(
+                    ccx,
+                    $name,
+                    Type::variadic_func(&[$($arg),*], &$ret));
+                llvm::SetUnnamedAddr(f, false);
+                ccx.intrinsics().borrow_mut().insert($name, f.clone());
+                return Some(f);
+            }
+        }
+    }
     macro_rules! mk_struct {
         ($($field_ty:expr),*) => (Type::struct_(ccx, &[$($field_ty),*], false))
     }
@@ -1103,5 +1116,9 @@ fn declare_intrinsic(ccx: &CrateContext, key: &str) -> Option<ValueRef> {
         ifn!("llvm.dbg.declare", fn(Type::metadata(ccx), Type::metadata(ccx)) -> void);
         ifn!("llvm.dbg.value", fn(Type::metadata(ccx), t_i64, Type::metadata(ccx)) -> void);
     }
+
+    variadic_ifn!("llvm.experimental.patchpoint.void", fn(t_i64, t_i32, i8p, t_i32) -> void);
+    variadic_ifn!("llvm.experimental.patchpoint.i64", fn(t_i64, t_i32, i8p, t_i32) -> t_i64);
+
     return None;
 }
