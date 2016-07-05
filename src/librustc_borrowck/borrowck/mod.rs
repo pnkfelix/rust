@@ -594,6 +594,21 @@ pub enum MovedValueUseKind {
 // Misc
 
 impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
+    pub fn new(&tcx: &'a TyCtxt<'tcx>,
+               mir_map: Option<&'a MirMap<'tcx>>) -> Self {
+        BorrowckCtxt {
+            tcx: tcx,
+            mir_map: mir_map,
+            free_region_map: FreeRegionMap::new(),
+            stats: BorrowStats {
+                loaned_paths_same: 0,
+                loaned_paths_imm: 0,
+                stable_paths: 0,
+                guaranteed_paths: 0
+            }
+        }
+    }
+
     pub fn with_temp_region_map<F>(&mut self, id: ast::NodeId, f: F)
         where F: for <'b> FnOnce(&'b mut BorrowckCtxt<'a, 'tcx>)
     {
