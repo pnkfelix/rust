@@ -145,12 +145,12 @@ impl<T: Idx> IdxSet<T> {
         self.bits.set_bit(elem.index())
     }
 
-    pub fn range(&self, elems: &Range<T>) -> &Self {
-        let elems = elems.start.index()..elems.end.index();
+    pub fn range(&self, elems: &Range<usize>) -> &Self {
+        let elems = elems.start..elems.end;
         unsafe { Self::from_slice(&self.bits[elems]) }
     }
 
-    pub fn range_mut(&mut self, elems: &Range<T>) -> &mut Self {
+    pub fn range_mut(&mut self, elems: &Range<usize>) -> &mut Self {
         let elems = elems.start.index()..elems.end.index();
         unsafe { Self::from_slice_mut(&mut self.bits[elems]) }
     }

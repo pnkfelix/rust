@@ -264,7 +264,7 @@ impl<E:Idx> AllSets<E> {
     pub fn bits_per_block(&self) -> usize { self.bits_per_block }
     pub fn for_block(&mut self, block_idx: usize) -> BlockSets<E> {
         let offset = self.words_per_block * block_idx;
-        let range = E::new(offset)..E::new(offset + self.words_per_block);
+        let range = offset..(offset + self.words_per_block);
         BlockSets {
             on_entry: self.on_entry_sets.bits.range_mut(&range),
             gen_set: self.gen_sets.bits.range_mut(&range),
@@ -274,7 +274,7 @@ impl<E:Idx> AllSets<E> {
 
     fn lookup_set_for<'a>(&self, sets: &'a Bits<E>, block_idx: usize) -> &'a IdxSet<E> {
         let offset = self.words_per_block * block_idx;
-        let range = E::new(offset)..E::new(offset + self.words_per_block);
+        let range = offset..(offset + self.words_per_block);
         sets.bits.range(&range)
     }
     pub fn gen_set_for(&self, block_idx: usize) -> &IdxSet<E> {
