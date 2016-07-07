@@ -24,23 +24,21 @@ use rustc_data_structures::indexed_vec::Idx;
 ///
 /// In other words, `T` is the type used to index into the bitvector
 /// this type uses to represent the set of object it holds.
+#[derive(Clone)]
 pub struct IdxSetBuf<T: Idx> {
     _pd: PhantomData<fn(&T)>,
     bits: Vec<Word>,
-}
-
-impl<T: Idx> Clone for IdxSetBuf<T> {
-    fn clone(&self) -> Self {
-        IdxSetBuf { _pd: PhantomData, bits: self.bits.clone() }
-    }
 }
 
 // pnkfelix wants to have this be `IdxSet<T>([Word]) and then pass
 // around `&mut IdxSet<T>` or `&IdxSet<T>`.
 //
 // WARNING: Mapping a `&IdxSetBuf<T>` to `&IdxSet<T>` (at least today)
-// requires a transmute relying on representation guarantees that may
-// not hold in the future.
+// requires a transmute of the underlying `&[Word]` that relies on
+// representation guarantees that may not hold in the future.
+//
+// (Also, the limitations on its representation mean we cannot add
+// other fields to `IdxSet` and `IdxSetBuf`.)
 
 /// Represents a set (or packed family of sets), of some element type
 /// E, where each E is identified by some unique index type `T`.
