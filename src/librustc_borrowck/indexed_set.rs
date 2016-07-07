@@ -58,6 +58,31 @@ impl<T: Idx> fmt::Debug for IdxSet<T> {
     fn fmt(&self, w: &mut fmt::Formatter) -> fmt::Result { self.bits.fmt(w) }
 }
 
+pub struct Iter<'a, T: Idx> { set: &'a IdxSet<T>, curr: usize, limit: usize }
+
+impl<T: Idx> IdxSet<T> {
+    pub fn iter(&self, limit: usize) -> Iter<T> {
+        Iter { set: self, curr: 0, limit: limit }
+    }
+}
+
+impl<'a, T: Idx> Iterator for Iter<'a, T> {
+    type Item=T;
+    fn next(&mut self) -> Option<T> {
+        loop {
+            if self.curr >= self.limit {
+                return None;
+            }
+            let c = self.curr;
+            self.curr += 1;
+            let elem = T::new(c);
+            if self.set.contains(&elem) {
+                return Some(elem);
+            }
+        }
+    }
+}
+
 impl<T: Idx> IdxSetBuf<T> {
     fn new(init: Word, universe_size: usize) -> Self {
         let bits_per_word = mem::size_of::<Word>() * 8;
