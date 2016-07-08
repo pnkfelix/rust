@@ -602,4 +602,24 @@ extern "rust-intrinsic" {
     /// on MSVC it's `*mut [usize; 2]`. For more information see the compiler's
     /// source as well as std's catch implementation.
     pub fn try(f: fn(*mut u8), data: *mut u8, local_ptr: *mut u8) -> i32;
+
+    #[cfg(not(stage0))]
+    /// Records locations of all live tracked values at callsite of intrinsic,
+    /// then calls the given function. The `num_shadow_bytes` argument is
+    /// used to define the "shadow" of the intrinsic: a shadow of instructions
+    /// following the intrinsic during which neither the end of the basic
+    /// block nor another call to `stackmap` nor `patchpoint` may occur.
+    ///
+    /// (If necessary the compiler will emit NOP instructions to
+    /// ensure the above guarantee, but note that actual code, such as
+    /// a call, *can* fall in the shadow of a stackmap.)
+    ///
+    /// This intrinsic *also* emits a Call at the site of the stackmap
+    /// intrinsic, because for our purposes we only want to use this
+    /// in connection with stack-scanning from some called subroutine,
+    /// so we are building in the Call into this intrinsic to ensure
+    /// that the address of the call itself *is* the entry that is
+    /// entered into the stack map.
+    #[unstable(feature="stackmap_call_intrinsic", reason="experimental", issue="17668")]
+    pub fn stackmap_call(id: i64, num_shadow_bytes: i32, target_fn: extern "C" fn (*mut u8), data: *mut u8);
 }
