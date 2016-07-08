@@ -621,5 +621,5 @@ extern "rust-intrinsic" {
     /// that the address of the call itself *is* the entry that is
     /// entered into the stack map.
     #[unstable(feature="stackmap_call_intrinsic", reason="experimental", issue="17668")]
-    pub fn stackmap_call(id: i64, num_shadow_bytes: i32, target_fn: extern "C" fn (*mut u8), data: *mut u8);
+    pub fn stackmap_call(id: i64, num_shadow_bytes: i32, target_fn: fn (*mut u8), data: *mut u8);
 }
