@@ -43,7 +43,7 @@ use rustc::ty::layout::Layout;
 use rustc::traits::{self, SelectionContext, ProjectionMode};
 use rustc::ty::fold::TypeFoldable;
 use rustc::hir;
-use rustc_borrowck::MirFlowResults;
+use rustc_borrowck::mir::MirFlowResults;
 use util::nodemap::NodeMap;
 
 use arena::TypedArena;

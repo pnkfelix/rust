@@ -107,7 +107,7 @@ use syntax::attr::AttrMetaMethods;
 use syntax::attr;
 use rustc::hir::intravisit::{self, FnKind, Visitor};
 use rustc::hir;
-use rustc_borrowck::{MirFlowResults, flow_results};
+use rustc_borrowck::mir::{MirFlowResults, flow_results};
 use syntax::ast;
 
 thread_local! {

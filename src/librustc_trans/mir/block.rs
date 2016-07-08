@@ -29,7 +29,9 @@ use type_of;
 use glue;
 use type_::Type;
 
+use rustc_borrowck::mir::{MovePath, MovePathContent};
 use rustc_data_structures::fnv::FnvHashMap;
+use rustc_data_structures::indexed_vec::Idx;
 use syntax::parse::token;
 
 use super::{MirContext, LocalRef};
@@ -482,6 +484,11 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                             destination: {:?} cleanup: {:?}",
                            bb, func, args, destination, cleanup);
                     self.stackmap_call_intrinsic(&bcx, bb, &mut llargs);
+                    if let Some((_, target)) = *destination {
+                        funclet_br(self, bcx, target);
+                    } else {
+                        bcx.unreachable();
+                    }
                     return;
                 }
 
@@ -578,11 +585,90 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
     }
 
     fn stackmap_call_intrinsic(&mut self,
-                               _bcx: &BlockAndBuilder<'bcx, 'tcx>,
+                               bcx: &BlockAndBuilder<'bcx, 'tcx>,
                                bb: mir::BasicBlock,
-                               _llargs: &mut [ValueRef]) {
+                               llargs: &mut [ValueRef]) {
         debug!("stackmap_call_intrinsic start bb: {:?}", bb);
-        unimplemented!()
+
+        let id = llargs[0];
+        let num_shadow_bytes = llargs[1];
+        let func = llargs[2];
+        let data = llargs[3];
+        let flow = self.fcx.flow_results
+            .as_ref()
+            .unwrap_or_else(|| {
+                bcx.tcx().sess.fatal("stackmap intrinsic requires MIR.");
+            });
+
+        let init_sets = flow.flow_inits().sets();
+        let maybe_initialized = init_sets.on_exit_set_for(bb.index());
+
+        debug!("stackmap_call_intrinsic maybe_initialized {:?}", maybe_initialized);
+
+        let ccx = bcx.ccx();
+        let llfn = ccx.get_intrinsic("llvm.experimental.stackmap");
+        let mut stackmap_args = vec![id, num_shadow_bytes];
+
+        for elem in maybe_initialized.iter(init_sets.bits_per_block()) {
+            debug!("stackmap_call_intrinsic add lvalue {:?}", elem);
+            let move_path: &MovePath = &flow.move_data().move_paths[elem];
+            match move_path.content {
+                MovePathContent::Lvalue(ref lvalue) => {
+                    let temp_base;
+                    {
+                        let mut lvalue = lvalue;
+                        loop {
+                            match *lvalue {
+                                mir::Lvalue::Temp(_) => {
+                                    temp_base = true;
+                                    break;
+                                }
+                                mir::Lvalue::Var(_) |
+                                mir::Lvalue::Arg(_) |
+                                mir::Lvalue::Static(_) |
+                                mir::Lvalue::ReturnPointer => {
+                                    temp_base = false;
+                                    break;
+                                }
+                                mir::Lvalue::Projection(ref lvalue_proj) => {
+                                    lvalue = &lvalue_proj.base;
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                    if temp_base { continue; } // temps cannot be scanned
+                    let tr_live = self.trans_lvalue(bcx, lvalue);
+                    // FIXME should assert llextra is null or somthing
+                    stackmap_args.push(tr_live.llval);
+                }
+                MovePathContent::Static => {
+                    unimplemented!()
+                }
+            }
+        }
+
+        bcx.with_block(|bcx| {
+            // Note on ordering: should we emit the stackmap call
+            // first and the call to `func` second, or vice versa?
+            //
+            // The argument for `stackmap(); func();` is that it most
+            // closes matches the semantics (AIUI) of the patchpoint
+            // intrinsic.
+            //
+            // The argument for `func(); stackmap();` is that then the
+            // stackmap entry should carry the return address attached
+            // to the continuation during the call to `func`, which
+            // greatly eases *finding* the entry in the stackmap when
+            // scanning the stack backtrace.
+
+            // FIXME need to attach proper debug info, right?
+            let dloc = DebugLoc::None;
+            build::Call(bcx, func, &[data], dloc);
+            build::Call(bcx, llfn, &stackmap_args[..], dloc);
+        });
+
+        debug!("stackmap_call_intrinsic finis");
     }
     
     fn trans_argument(&mut self,

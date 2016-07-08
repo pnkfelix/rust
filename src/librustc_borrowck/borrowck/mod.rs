@@ -59,8 +59,9 @@ pub mod gather_loans;
 
 pub mod move_data;
 
-mod mir;
-pub use self::mir::{MirFlowResults, flow_results, borrowck_mir};
+pub mod mir;
+use self::mir::{MovePath, MovePathContent};
+use self::mir::{MirFlowResults, flow_results, borrowck_mir};
 
 #[derive(Clone, Copy)]
 pub struct LoanDataFlowOperator;

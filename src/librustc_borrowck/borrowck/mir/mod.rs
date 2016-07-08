@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+pub use self::gather_moves::{MovePath, MovePathContent};
+
 use borrowck::BorrowckCtxt;
 
 use syntax::ast::{self, MetaItem};
@@ -36,7 +38,7 @@ use self::dataflow::{Dataflow, DataflowAnalysis, DataflowResults};
 use self::dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
 use self::dataflow::{DefinitelyInitializedLvals};
 use self::gather_moves::{MoveData, MovePathIndex, Location};
-use self::gather_moves::{MovePathContent, MovePathData};
+use self::gather_moves::{MovePathData};
 
 fn has_rustc_mir_with(attrs: &[ast::Attribute], name: &str) -> Option<P<MetaItem>> {
     for attr in attrs {
@@ -184,16 +186,27 @@ pub struct MirBorrowckCtxtPreDataflow<'a, 'tcx: 'a, BD>
 }
 
 #[allow(dead_code)]
-pub struct MirBorrowckCtxt<'b, 'a: 'b, 'tcx: 'a> {
-    bcx: &'b mut BorrowckCtxt<'a, 'tcx>,
-    mir: &'b Mir<'tcx>,
+pub struct MirFlowResults<'a, 'tcx: 'a> {
     node_id: ast::NodeId,
     move_data: MoveData<'tcx>,
     flow_inits: DataflowResults<MaybeInitializedLvals<'a, 'tcx>>,
     flow_uninits: DataflowResults<MaybeUninitializedLvals<'a, 'tcx>>
 }
 
-pub struct MirFlowResults<'a, 'tcx: 'a> {
+impl<'a, 'tcx> MirFlowResults<'a, 'tcx> {
+    pub fn node_id(&self) -> ast::NodeId { self.node_id }
+    pub fn move_data(&self) -> &MoveData<'tcx> { &self.move_data }
+    pub fn flow_inits(&self) -> &DataflowResults<MaybeInitializedLvals<'a, 'tcx>> {
+        &self.flow_inits
+    }
+    pub fn flow_uninits(&self) -> &DataflowResults<MaybeUninitializedLvals<'a, 'tcx>> {
+        &self.flow_uninits
+    }
+}
+
+pub struct MirBorrowckCtxt<'b, 'a: 'b, 'tcx: 'a> {
+    bcx: &'b mut BorrowckCtxt<'a, 'tcx>,
+    mir: &'b Mir<'tcx>,
     node_id: ast::NodeId,
     move_data: MoveData<'tcx>,
     flow_inits: DataflowResults<MaybeInitializedLvals<'a, 'tcx>>,
