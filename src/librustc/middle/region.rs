@@ -1001,37 +1001,42 @@ fn resolve_local(visitor: &mut RegionResolutionVisitor, local: &hir::Local) {
     fn record_rvalue_scope_if_borrow_expr(visitor: &mut RegionResolutionVisitor,
                                           expr: &hir::Expr,
                                           blk_id: CodeExtent) {
-        match expr.node {
-            hir::ExprAddrOf(_, ref subexpr) => {
-                record_rvalue_scope_if_borrow_expr(visitor, &subexpr, blk_id);
-                record_rvalue_scope(visitor, &subexpr, blk_id);
-            }
-            hir::ExprStruct(_, ref fields, _) => {
-                for field in fields {
-                    record_rvalue_scope_if_borrow_expr(
-                        visitor, &field.expr, blk_id);
+        debug!("record_rvalue_scope_if_borrow_expr recur on \
+                expr: {:?} blk_id: {:?}", expr, blk_id);
+        return recur(visitor, expr, blk_id);
+
+        fn recur(visitor: &mut RegionResolutionVisitor,
+                 expr: &hir::Expr,
+                 blk_id: CodeExtent) {
+            match expr.node {
+                hir::ExprAddrOf(_, ref subexpr) => {
+                    recur(visitor, &subexpr, blk_id);
+                    record_rvalue_scope(visitor, &subexpr, blk_id);
                 }
-            }
-            hir::ExprVec(ref subexprs) |
-            hir::ExprTup(ref subexprs) => {
-                for subexpr in subexprs {
-                    record_rvalue_scope_if_borrow_expr(
-                        visitor, &subexpr, blk_id);
-                }
-            }
-            hir::ExprCast(ref subexpr, _) => {
-                record_rvalue_scope_if_borrow_expr(visitor, &subexpr, blk_id)
-            }
-            hir::ExprBlock(ref block) => {
-                match block.expr {
-                    Some(ref subexpr) => {
-                        record_rvalue_scope_if_borrow_expr(
-                            visitor, &subexpr, blk_id);
+                hir::ExprStruct(_, ref fields, _) => {
+                    for field in fields {
+                        recur(visitor, &field.expr, blk_id);
                     }
-                    None => { }
                 }
-            }
-            _ => {
+                hir::ExprVec(ref subexprs) |
+                hir::ExprTup(ref subexprs) => {
+                    for subexpr in subexprs {
+                        recur(visitor, &subexpr, blk_id);
+                    }
+                }
+                hir::ExprCast(ref subexpr, _) => {
+                    recur(visitor, &subexpr, blk_id)
+                }
+                hir::ExprBlock(ref block) => {
+                    match block.expr {
+                        Some(ref subexpr) => {
+                            recur(visitor, &subexpr, blk_id);
+                        }
+                        None => { }
+                    }
+                }
+                _ => {
+                }
             }
         }
     }
@@ -1054,6 +1059,8 @@ fn resolve_local(visitor: &mut RegionResolutionVisitor, local: &hir::Local) {
     fn record_rvalue_scope<'a>(visitor: &mut RegionResolutionVisitor,
                                expr: &'a hir::Expr,
                                blk_scope: CodeExtent) {
+        debug!("record_rvalue_scope loop on \
+                expr: {:?} blk_scope: {:?}", expr, blk_scope);
         let mut expr = expr;
         loop {
             // Note: give all the expressions matching `ET` with the
