@@ -19,7 +19,7 @@ use base;
 use build;
 use callee::{Callee, CalleeData, Fn, Intrinsic, NamedTupleConstructor, Virtual};
 use common::{self, Block, BlockAndBuilder, LandingPad};
-use common::{C_bool, C_str_slice, C_struct, C_u32, C_undef};
+use common::{C_bool, C_str_slice, C_struct, C_u32, C_u64, C_undef};
 use consts;
 use debuginfo::DebugLoc;
 use Disr;
@@ -641,6 +641,14 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                     let tr_live = self.trans_lvalue(bcx, lvalue);
                     // FIXME should assert llextra is null or somthing
                     stackmap_args.push(tr_live.llval);
+                    // FIXME this is where an lvalue for the drop-flag should go.
+                    // (And we'll write `0` only when there is no drop flag.)
+                    stackmap_args.push(C_u64(bcx.ccx(), 0));
+                    let tcx = bcx.tcx();
+                    let ty = self.mir.lvalue_ty(tcx, lvalue);
+                    let crate_hash = &ccx.link_meta().crate_hash;
+                    let hash = tcx.hash_crate_independent(ty.to_ty(tcx), crate_hash);
+                    stackmap_args.push(C_u64(bcx.ccx(), hash));
                 }
                 MovePathContent::Static => {
                     unimplemented!()
