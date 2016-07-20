@@ -204,6 +204,7 @@ impl<'a, 'tcx> MirFlowResults<'a, 'tcx> {
     }
 }
 
+#[allow(warnings)]
 pub struct MirBorrowckCtxt<'b, 'a: 'b, 'tcx: 'a> {
     bcx: &'b mut BorrowckCtxt<'a, 'tcx>,
     mir: &'b Mir<'tcx>,

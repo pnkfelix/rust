@@ -60,7 +60,9 @@ pub mod gather_loans;
 pub mod move_data;
 
 pub mod mir;
+#[allow(unused_imports)]
 use self::mir::{MovePath, MovePathContent};
+#[allow(unused_imports)]
 use self::mir::{MirFlowResults, flow_results, borrowck_mir};
 
 #[derive(Clone, Copy)]
