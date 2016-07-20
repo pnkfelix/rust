@@ -11,7 +11,7 @@
 use llvm::{self, ValueRef};
 use rustc_const_eval::ErrKind;
 use rustc::middle::lang_items;
-use rustc::ty;
+use rustc::ty::{self, Ty};
 use rustc::mir::repr as mir;
 use abi::{Abi, FnType, ArgType};
 use adt;
@@ -21,6 +21,7 @@ use callee::{Callee, CalleeData, Fn, Intrinsic, NamedTupleConstructor, Virtual};
 use common::{self, Block, BlockAndBuilder, LandingPad};
 use common::{C_bool, C_str_slice, C_struct, C_u32, C_u64, C_undef};
 use consts;
+use context::{CrateContext};
 use debuginfo::DebugLoc;
 use Disr;
 use machine::{llalign_of_min, llbitsize_of_real};
@@ -40,6 +41,8 @@ use super::constant::Const;
 use super::lvalue::{LvalueRef, load_fat_ptr};
 use super::operand::OperandRef;
 use super::operand::OperandValue::*;
+
+use std::collections::HashMap;
 
 impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
     pub fn trans_block(&mut self, bb: mir::BasicBlock) {
@@ -609,6 +612,14 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
         let llfn = ccx.get_intrinsic("llvm.experimental.stackmap");
         let mut stackmap_args = vec![id, num_shadow_bytes];
 
+        #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+        struct LayoutId(usize);
+        #[allow(dead_code)]
+        enum LayoutKind { Root = 0x1, Ptr = 0x2, Rec = 0x3, Array = 0x4, }
+        let mut ty_to_layout_id: HashMap<Ty, LayoutId> = HashMap::new();
+        let layout_data_offset =
+            maybe_initialized.iter(init_sets.bits_per_block()).count() * 3;
+        let mut layout_data: Vec<u64> = vec![];
         for elem in maybe_initialized.iter(init_sets.bits_per_block()) {
             debug!("stackmap_call_intrinsic add lvalue {:?}", elem);
             let move_path: &MovePath = &flow.move_data().move_paths[elem];
@@ -644,17 +655,28 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                     // FIXME this is where an lvalue for the drop-flag should go.
                     // (And we'll write `0` only when there is no drop flag.)
                     stackmap_args.push(C_u64(bcx.ccx(), 0));
+                    // FIXME eventually all of the layouts should be
+                    // stored elsewhere, since embedding the layout at
+                    // each call site is redundant. But for now this
+                    // is a little simpler than trying to create a
+                    // separate data section.
                     let tcx = bcx.tcx();
-                    let ty = self.mir.lvalue_ty(tcx, lvalue);
-                    let crate_hash = &ccx.link_meta().crate_hash;
-                    let hash = tcx.hash_crate_independent(ty.to_ty(tcx), crate_hash);
-                    stackmap_args.push(C_u64(bcx.ccx(), hash));
+                    let ty = self.mir.lvalue_ty(tcx, lvalue).to_ty(tcx);
+                    if !ty_to_layout_id.contains_key(ty) {
+                        insert_layout_description(
+                            ccx, &mut ty_to_layout_id, &mut layout_data, layout_data_offset, ty);
+                    }
+                    let layout_id = ty_to_layout_id[ty];
+                    stackmap_args.push(C_u64(bcx.ccx(), layout_id.0 as u64));
                 }
                 MovePathContent::Static => {
                     unimplemented!()
                 }
             }
         }
+
+        stackmap_args.extend(layout_data.into_iter()
+                             .map(|datum| C_u64(bcx.ccx(), datum)));
 
         bcx.with_block(|bcx| {
             // Note on ordering: should we emit the stackmap call
@@ -677,8 +699,28 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
         });
 
         debug!("stackmap_call_intrinsic finis");
+        return;
+
+        fn insert_layout_description<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
+                                               ty_to_layout_id: &mut HashMap<Ty<'tcx>, LayoutId>,
+                                               layout_data: &mut Vec<u64>,
+                                               layout_data_offset: usize,
+                                               ty: Ty<'tcx>)
+        {
+            assert!(!ty_to_layout_id.contains_key(ty));
+            let idx = layout_data.len();
+            let layout_id = LayoutId(idx + layout_data_offset);
+            ty_to_layout_id.insert(ty, layout_id);
+            // FIXME: this should recursively traverse the type,
+            // producing an appropriate LayoutKind and adding/reusing
+            // any necessary referenced LayoutKinds accordingly.
+            let crate_hash = &ccx.link_meta().crate_hash;
+            let hash = ccx.tcx().hash_crate_independent(ty, crate_hash);
+            layout_data.push(LayoutKind::Root as u64);
+            layout_data.push(hash);
+        }
     }
-    
+
     fn trans_argument(&mut self,
                       bcx: &BlockAndBuilder<'bcx, 'tcx>,
                       op: OperandRef<'tcx>,
