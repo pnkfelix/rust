@@ -380,4 +380,7 @@ language_item_table! {
     NonZeroItem,                     "non_zero",                non_zero;
 
     DebugTraitLangItem,              "debug_trait",             debug_trait;
+
+    ReflectRootTraitItem,            "reflect_root",            reflect_root_trait;
+    ReflectScanTraitItem,            "reflect_scan",            reflect_scan_trait;
 }

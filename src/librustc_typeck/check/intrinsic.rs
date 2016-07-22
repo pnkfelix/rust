@@ -108,6 +108,7 @@ pub fn check_intrinsic_type(ccx: &CrateCtxt, it: &hir::ForeignItem) {
     } else {
         let (n_tps, inputs, output) = match &name[..] {
             "breakpoint" => (0, Vec::new(), tcx.mk_nil()),
+            "may_own_roots" => (1, Vec::new(), ccx.tcx.types.bool),
             "size_of" |
             "pref_align_of" | "min_align_of" => (1, Vec::new(), ccx.tcx.types.usize),
             "size_of_val" |  "min_align_of_val" => {
