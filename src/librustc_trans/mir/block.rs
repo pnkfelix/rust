@@ -21,7 +21,6 @@ use callee::{Callee, CalleeData, Fn, Intrinsic, NamedTupleConstructor, Virtual};
 use common::{self, Block, BlockAndBuilder, LandingPad};
 use common::{C_bool, C_str_slice, C_struct, C_u32, C_u64, C_undef};
 use consts;
-use context::{CrateContext};
 use debuginfo::DebugLoc;
 use Disr;
 use machine::{llalign_of_min, llbitsize_of_real};
@@ -591,7 +590,18 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                                bcx: &BlockAndBuilder<'bcx, 'tcx>,
                                bb: mir::BasicBlock,
                                llargs: &mut [ValueRef]) {
+        use rustc::ty::ToPredicate;
+        use rustc::ty::trait_def::TraitDef;
+        use rustc::ty::subst::Substs;
+
         debug!("stackmap_call_intrinsic start bb: {:?}", bb);
+
+        let ccx = bcx.ccx();
+        let scan_trait: &TraitDef = ccx.tcx().lang_items.reflect_scan_trait()
+            .map(|id| ccx.tcx().lookup_trait_def(id))
+            .unwrap_or_else(|| bug!("stackmap intrinsic requires Scan trait"));
+        let scan_method_did = ccx.tcx().trait_item_def_ids(scan_trait.def_id())
+            .iter().next().unwrap().def_id();
 
         let id = llargs[0];
         let num_shadow_bytes = llargs[1];
@@ -608,7 +618,6 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
 
         debug!("stackmap_call_intrinsic maybe_initialized {:?}", maybe_initialized);
 
-        let ccx = bcx.ccx();
         let llfn = ccx.get_intrinsic("llvm.experimental.stackmap");
         let mut stackmap_args = vec![id, num_shadow_bytes];
 
@@ -616,10 +625,9 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
         struct LayoutId(usize);
         #[allow(dead_code)]
         enum LayoutKind { Root = 0x1, Ptr = 0x2, Rec = 0x3, Array = 0x4, }
-        let mut ty_to_layout_id: HashMap<Ty, LayoutId> = HashMap::new();
-        let layout_data_offset =
+        let mut _ty_to_layout_id: HashMap<Ty, LayoutId> = HashMap::new();
+        let _layout_data_offset =
             maybe_initialized.iter(init_sets.bits_per_block()).count() * 3;
-        let mut layout_data: Vec<u64> = vec![];
         for elem in maybe_initialized.iter(init_sets.bits_per_block()) {
             debug!("stackmap_call_intrinsic add lvalue {:?}", elem);
             let move_path: &MovePath = &flow.move_data().move_paths[elem];
@@ -648,35 +656,59 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                             }
                         }
                     }
-                    if temp_base { continue; } // temps cannot be scanned
+                    if temp_base {
+                        // temps cannot be scanned
+                        debug!("not including {:?} in stackmap; based off temp",
+                               move_path.content);
+                        continue;
+                    }
+                    let tcx = bcx.tcx();
+                    let ty = self.mir.lvalue_ty(tcx, lvalue).to_ty(tcx);
+                    let substs = tcx.mk_substs(Substs::empty().with_self_ty(ty));
+                    let scan_trait_ref = ty::Binder(ty::TraitRef {
+                        def_id: tcx.lang_items.reflect_scan_trait().unwrap(),
+                        substs: substs,
+                    });
+                    let implements_scan = common::normalize_and_test_predicates(
+                        tcx, vec![scan_trait_ref.to_predicate()]);
+                    if !implements_scan {
+                        debug!("not including {:?} in stackmap; base ty: {:?} is non Scan",
+                               move_path.content, ty);
+                        continue;
+                    }
+                    debug!("including {:?} in stackmap; base ty: {:?}",
+                           move_path.content, ty);
+
                     let tr_live = self.trans_lvalue(bcx, lvalue);
                     // FIXME should assert llextra is null or somthing
                     stackmap_args.push(tr_live.llval);
                     // FIXME this is where an lvalue for the drop-flag should go.
                     // (And we'll write `0` only when there is no drop flag.)
-                    stackmap_args.push(C_u64(bcx.ccx(), 0));
-                    // FIXME eventually all of the layouts should be
-                    // stored elsewhere, since embedding the layout at
-                    // each call site is redundant. But for now this
-                    // is a little simpler than trying to create a
-                    // separate data section.
-                    let tcx = bcx.tcx();
-                    let ty = self.mir.lvalue_ty(tcx, lvalue).to_ty(tcx);
-                    if !ty_to_layout_id.contains_key(ty) {
-                        insert_layout_description(
-                            ccx, &mut ty_to_layout_id, &mut layout_data, layout_data_offset, ty);
-                    }
-                    let layout_id = ty_to_layout_id[ty];
-                    stackmap_args.push(C_u64(bcx.ccx(), layout_id.0 as u64));
+                    stackmap_args.push(C_u64(ccx, 0));
+
+                    // For now the typeid is a useful thing to include
+                    // when analyzing the stack map results. It might
+                    // be reasonable to just leave it in for the
+                    // future as well; I am not yet sure.
+                    let crate_hash = &ccx.link_meta().crate_hash;
+                    let hash = ccx.tcx().hash_crate_independent(ty, crate_hash);
+                    stackmap_args.push(C_u64(ccx, hash as u64));
+
+                    // FIXME this is where pointer to the appropriate
+                    // `<T as Scan>::scan` method is being pushed on.
+                    //
+                    // Note that if we ever change the Scan trait or
+                    // scan method to be generic over the GC, we will
+                    // have to adjust the `substs` construction above
+                    // accordingly.
+                    let fn_rval = Callee::def(ccx, scan_method_did, substs).reify(ccx);
+                    stackmap_args.push(fn_rval.val);
                 }
                 MovePathContent::Static => {
                     unimplemented!()
                 }
             }
         }
-
-        stackmap_args.extend(layout_data.into_iter()
-                             .map(|datum| C_u64(bcx.ccx(), datum)));
 
         bcx.with_block(|bcx| {
             // Note on ordering: should we emit the stackmap call
@@ -701,6 +733,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
         debug!("stackmap_call_intrinsic finis");
         return;
 
+        #[cfg(not_now)]
         fn insert_layout_description<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                                                ty_to_layout_id: &mut HashMap<Ty<'tcx>, LayoutId>,
                                                layout_data: &mut Vec<u64>,
