@@ -16,6 +16,8 @@
 
 #![stable(feature = "rust1", since = "1.0.0")]
 
+#[cfg(not(stage0))]
+use any::Any;
 use clone::Clone;
 use cmp;
 use default::Default;
@@ -462,3 +464,39 @@ pub trait Reflect {}
            reason = "requires RFC and more experience",
            issue = "27749")]
 impl Reflect for .. { }
+
+
+#[cfg(not(stage0))]
+/// A Root marks a type as something that is of interested when
+/// reflectively scanning all of the values owned by the stack.
+#[unstable(feature = "stack_reflection",
+           reason = "requires RFC and more experience",
+           issue = "11778")]
+#[lang = "reflect_root"]
+pub trait Root { }
+
+#[cfg(not(stage0))]
+/// `Scan` defines how a given value should be traversed when
+/// searching for a `Root`. This trait must be implemented by any
+/// type that owns a `Root`.
+#[unstable(feature = "stack_reflection",
+           reason = "requires RFC and more experience",
+           issue = "11778")]
+#[lang = "reflect_scan"]
+pub trait Scan {
+    /// 1. If `Self` implements `Root`, then invokes appropriate
+    ///    (scanner-specific) code to handle that root; the root is
+    ///    responsible for extracting the scanner via a downcast from
+    ///    `Any`.
+    ///
+    ///    For example, a Gc scanner will enqueue the root for traversal.
+    ///
+    /// 2. Otherwise, recursively (?) calls `scan` on all roots in
+    ///    `self`. More specifically, if `self` owns a value `V` of
+    ///    type `T`, and `may_own_roots::<T>()`, then some point in the
+    ///    execution of `fn scan` will call `<V as Scan>.scan(gc);`.
+    ///
+    /// Note that the same value may be scanned multiple times, due to
+    /// shared ownership in types like `Rc<T>`.
+    fn scan(&self, scanner: &mut Any);
+}

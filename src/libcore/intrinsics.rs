@@ -604,6 +604,13 @@ extern "rust-intrinsic" {
     pub fn try(f: fn(*mut u8), data: *mut u8, local_ptr: *mut u8) -> i32;
 
     #[cfg(not(stage0))]
+    /// Returns false only if `T` does not own any roots via
+    /// transitive traversal of its type structure (including any
+    /// `PhantomData<U>` members, but not including any `&U` nor
+    /// `*U` members.
+    pub fn may_own_roots<T: ?Sized>() -> bool;
+
+    #[cfg(not(stage0))]
     /// Records locations of all live tracked values at callsite of intrinsic,
     /// then calls the given function. The `num_shadow_bytes` argument is
     /// used to define the "shadow" of the intrinsic: a shadow of instructions
