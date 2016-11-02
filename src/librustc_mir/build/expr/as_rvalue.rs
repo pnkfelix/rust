@@ -21,7 +21,7 @@ use build::expr::category::{Category, RvalueFunc};
 use hair::*;
 use rustc_const_math::{ConstInt, ConstIsize};
 use rustc::middle::const_val::ConstVal;
-use rustc::ty;
+use rustc::ty::{self, Region};
 use rustc::mir::*;
 use syntax::ast;
 use syntax_pos::Span;
@@ -47,7 +47,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
 
         match expr.kind {
             ExprKind::Scope { extent, value } => {
-                this.in_scope(extent, block, |this| this.as_rvalue(block, value))
+                this.in_scope((extent, source_info), block, |this| this.as_rvalue(block, value))
             }
             ExprKind::InlineAsm { asm, outputs, inputs } => {
                 let outputs = outputs.into_iter().map(|output| {
@@ -69,6 +69,9 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 block.and(Rvalue::Repeat(value_operand, count))
             }
             ExprKind::Borrow { region, borrow_kind, arg } => {
+                if let Region::ReScope(extent) = *region {
+                    this.seen_borrows.insert(extent);
+                }
                 let arg_lvalue = unpack!(block = this.as_lvalue(block, arg));
                 block.and(Rvalue::Ref(region, borrow_kind, arg_lvalue))
             }
@@ -101,7 +104,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 let result = this.temp(expr.ty);
                 // to start, malloc some memory of suitable type (thus far, uninitialized):
                 this.cfg.push_assign(block, source_info, &result, Rvalue::Box(value.ty));
-                this.in_scope(value_extents, block, |this| {
+                this.in_scope((value_extents, source_info), block, |this| {
                     // schedule a shallow free of that memory, lest we unwind:
                     this.schedule_box_free(expr_span, value_extents, &result, value.ty);
                     // initialize the box contents:

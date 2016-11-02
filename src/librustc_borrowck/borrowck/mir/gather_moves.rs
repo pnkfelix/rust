@@ -412,6 +412,7 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
                 span_bug!(stmt.source_info.span,
                           "SetDiscriminant should not exist during borrowck");
             }
+            StatementKind::EndRegion(_) |
             StatementKind::Nop => {}
         }
     }
