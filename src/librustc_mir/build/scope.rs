@@ -268,13 +268,20 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
 
     /// Convenience wrapper that pushes a scope and then executes `f`
     /// to build its contents, popping the scope afterwards.
-    pub(crate) fn in_scope<F, R>(&mut self, extent: CodeExtent, mut block: BasicBlock, f: F) -> BlockAnd<R>
+    pub(crate) fn in_scope<F, R>(&mut self,
+                                 extent: (CodeExtent, SourceInfo),
+                                 mut block: BasicBlock,
+                                 f: F)
+                                 -> BlockAnd<R>
         where F: FnOnce(&mut Builder<'a, 'gcx, 'tcx>) -> BlockAnd<R>
     {
         debug!("in_scope(extent={:?}, block={:?})", extent, block);
-        self.push_scope(extent);
+        self.push_scope(extent.0);
         let rv = unpack!(block = f(self));
-        unpack!(block = self.pop_scope(extent, block));
+        unpack!(block = self.pop_scope(extent.0, block));
+        if self.seen_borrows.contains(&extent.0) {
+            self.cfg.push_end_region(block, extent.1, extent.0);
+        }
         debug!("in_scope: exiting extent={:?} block={:?}", extent, block);
         block.and(rv)
     }

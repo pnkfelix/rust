@@ -10,6 +10,7 @@
 
 use graphviz::IntoCow;
 use middle::const_val::ConstVal;
+use middle::region::CodeExtent;
 use rustc_const_math::{ConstUsize, ConstInt, ConstMathErr};
 use rustc_data_structures::indexed_vec::{IndexVec, Idx};
 use rustc_data_structures::control_flow_graph::dominators::{Dominators, dominators};
@@ -783,6 +784,10 @@ pub enum StatementKind<'tcx> {
         inputs: Vec<Operand<'tcx>>
     },
 
+    /// Mark the end of a set of extents, i.e. static regions.
+    /// (The starts of such extents arise implicitly from borrows.)
+    EndRegion(Vec<CodeExtent>),
+
     /// No-op. Useful for deleting instructions without affecting statement indices.
     Nop,
 }
@@ -792,6 +797,7 @@ impl<'tcx> Debug for Statement<'tcx> {
         use self::StatementKind::*;
         match self.kind {
             Assign(ref lv, ref rv) => write!(fmt, "{:?} = {:?}", lv, rv),
+            EndRegion(ref rgns) => write!(fmt, "EndRegion({:?})", rgns),
             StorageLive(ref lv) => write!(fmt, "StorageLive({:?})", lv),
             StorageDead(ref lv) => write!(fmt, "StorageDead({:?})", lv),
             SetDiscriminant{lvalue: ref lv, variant_index: index} => {

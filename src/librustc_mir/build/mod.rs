@@ -22,6 +22,7 @@ use syntax::symbol::keywords;
 use syntax_pos::Span;
 
 use rustc_data_structures::indexed_vec::{IndexVec, Idx};
+use rustc_data_structures::fx::{FxHashSet};
 
 use std::u32;
 
@@ -31,6 +32,10 @@ pub struct Builder<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
 
     fn_span: Span,
     arg_count: usize,
+
+    /// set of extents (statically-delimited regions) that we have seen borrows of
+    /// (and thus require explicit termination).
+    seen_borrows: FxHashSet<CodeExtent>,
 
     /// the current set of scopes, updated as we traverse;
     /// see the `scope` module for more details
@@ -143,8 +148,11 @@ pub fn construct_fn<'a, 'gcx, 'tcx, A>(hir: Cx<'a, 'gcx, 'tcx>,
         tcx.region_maps.lookup_code_extent(
             CodeExtentData::ParameterScope { fn_id: fn_id, body_id: body.value.id });
     let mut block = START_BLOCK;
-    unpack!(block = builder.in_scope(call_site_extent, block, |builder| {
-        unpack!(block = builder.in_scope(arg_extent, block, |builder| {
+    let source_info = builder.source_info(span);
+    unpack!(block = builder.in_scope((call_site_extent, source_info),
+                                     block,
+                                     |builder| {
+        unpack!(block = builder.in_scope((arg_extent, source_info), block, |builder| {
             builder.args_and_body(block, &arguments, arg_extent, &body.value)
         }));
         // Attribute epilogue to function's closing brace
@@ -206,11 +214,11 @@ pub fn construct_const<'a, 'gcx, 'tcx>(hir: Cx<'a, 'gcx, 'tcx>,
     let extent = tcx.region_maps.temporary_scope(ast_expr.id)
                     .unwrap_or(ROOT_CODE_EXTENT);
     let mut block = START_BLOCK;
-    let _ = builder.in_scope(extent, block, |builder| {
+    let source_info = builder.source_info(span);
+    let _ = builder.in_scope((extent, source_info), block, |builder| {
         let expr = builder.hir.mirror(ast_expr);
         unpack!(block = builder.into(&Lvalue::Local(RETURN_POINTER), block, expr));
 
-        let source_info = builder.source_info(span);
         let return_block = builder.return_block();
         builder.cfg.terminate(block, source_info,
                               TerminatorKind::Goto { target: return_block });
@@ -243,6 +251,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         let mut builder = Builder {
             hir: hir,
             cfg: CFG { basic_blocks: IndexVec::new() },
+            seen_borrows: FxHashSet(),
             fn_span: span,
             arg_count: arg_count,
             scopes: vec![],
