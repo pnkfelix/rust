@@ -392,6 +392,7 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
                     }
                 }
             }
+            StatementKind::EndRegion(_) => {}
             StatementKind::Nop => {}
         }
     }

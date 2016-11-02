@@ -785,6 +785,9 @@ pub enum StatementKind<'tcx> {
     /// End the current live range for the storage of the local.
     StorageDead(Lvalue<'tcx>),
 
+    /// Mark the end of a set of regions
+    EndRegion(Vec<&'tcx Region>),
+
     /// No-op. Useful for deleting instructions without affecting statement indices.
     Nop,
 }
@@ -794,6 +797,7 @@ impl<'tcx> Debug for Statement<'tcx> {
         use self::StatementKind::*;
         match self.kind {
             Assign(ref lv, ref rv) => write!(fmt, "{:?} = {:?}", lv, rv),
+            EndRegion(ref rgns) => write!(fmt, "EndRegion({:?})", rgns),
             StorageLive(ref lv) => write!(fmt, "StorageLive({:?})", lv),
             StorageDead(ref lv) => write!(fmt, "StorageDead({:?})", lv),
             SetDiscriminant{lvalue: ref lv, variant_index: index} => {
