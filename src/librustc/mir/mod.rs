@@ -10,6 +10,7 @@
 
 use graphviz::IntoCow;
 use middle::const_val::ConstVal;
+use middle::region::CodeExtent;
 use rustc_const_math::{ConstUsize, ConstInt, ConstMathErr};
 use rustc_data_structures::indexed_vec::{IndexVec, Idx};
 use rustc_data_structures::control_flow_graph::dominators::{Dominators, dominators};
@@ -785,8 +786,9 @@ pub enum StatementKind<'tcx> {
     /// End the current live range for the storage of the local.
     StorageDead(Lvalue<'tcx>),
 
-    /// Mark the end of a set of regions
-    EndRegion(Vec<&'tcx Region>),
+    /// Mark the end of a set of extents, i.e. static regions.
+    /// (The starts of such extents arise implicitly from borrows.)
+    EndRegion(Vec<CodeExtent>),
 
     /// No-op. Useful for deleting instructions without affecting statement indices.
     Nop,
