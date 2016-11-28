@@ -17,30 +17,30 @@ use build::CFG;
 use rustc::mir::*;
 
 impl<'tcx> CFG<'tcx> {
-    pub fn block_data(&self, blk: BasicBlock) -> &BasicBlockData<'tcx> {
+    pub(crate) fn block_data(&self, blk: BasicBlock) -> &BasicBlockData<'tcx> {
         &self.basic_blocks[blk]
     }
 
-    pub fn block_data_mut(&mut self, blk: BasicBlock) -> &mut BasicBlockData<'tcx> {
+    pub(crate) fn block_data_mut(&mut self, blk: BasicBlock) -> &mut BasicBlockData<'tcx> {
         &mut self.basic_blocks[blk]
     }
 
-    pub fn start_new_block(&mut self) -> BasicBlock {
+    pub(crate) fn start_new_block(&mut self) -> BasicBlock {
         self.basic_blocks.push(BasicBlockData::new(None))
     }
 
-    pub fn start_new_cleanup_block(&mut self) -> BasicBlock {
+    pub(crate) fn start_new_cleanup_block(&mut self) -> BasicBlock {
         let bb = self.start_new_block();
         self.block_data_mut(bb).is_cleanup = true;
         bb
     }
 
-    pub fn push(&mut self, block: BasicBlock, statement: Statement<'tcx>) {
+    pub(crate) fn push(&mut self, block: BasicBlock, statement: Statement<'tcx>) {
         debug!("push({:?}, {:?})", block, statement);
         self.block_data_mut(block).statements.push(statement);
     }
 
-    pub fn push_assign(&mut self,
+    pub(crate) fn push_assign(&mut self,
                        block: BasicBlock,
                        source_info: SourceInfo,
                        lvalue: &Lvalue<'tcx>,
@@ -51,7 +51,7 @@ impl<'tcx> CFG<'tcx> {
         });
     }
 
-    pub fn push_assign_constant(&mut self,
+    pub(crate) fn push_assign_constant(&mut self,
                                 block: BasicBlock,
                                 source_info: SourceInfo,
                                 temp: &Lvalue<'tcx>,
@@ -60,7 +60,7 @@ impl<'tcx> CFG<'tcx> {
                          Rvalue::Use(Operand::Constant(constant)));
     }
 
-    pub fn push_assign_unit(&mut self,
+    pub(crate) fn push_assign_unit(&mut self,
                             block: BasicBlock,
                             source_info: SourceInfo,
                             lvalue: &Lvalue<'tcx>) {
@@ -69,7 +69,7 @@ impl<'tcx> CFG<'tcx> {
         ));
     }
 
-    pub fn terminate(&mut self,
+    pub(crate) fn terminate(&mut self,
                      block: BasicBlock,
                      source_info: SourceInfo,
                      kind: TerminatorKind<'tcx>) {
