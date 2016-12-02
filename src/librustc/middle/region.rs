@@ -22,6 +22,8 @@ use session::Session;
 use util::nodemap::{FxHashMap, NodeMap, NodeSet};
 use ty;
 
+use rustc_data_structures::indexed_vec::Idx;
+
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::fmt;
@@ -37,6 +39,11 @@ use hir::{Block, Item, FnDecl, Arm, Pat, PatKind, Stmt, Expr, Local};
 #[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Hash, RustcEncodable,
            RustcDecodable, Copy)]
 pub struct CodeExtent(u32);
+
+impl Idx for CodeExtent {
+    fn new(i: usize) -> Self { CodeExtent(Idx::new(i)) }
+    fn index(self) -> usize { self.0.index() }
+}
 
 impl fmt::Debug for CodeExtent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
