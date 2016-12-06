@@ -11,6 +11,7 @@
 use super::gather_moves::{HasMoveData, MoveData, MovePathIndex, LookupResult};
 use super::dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
 use super::dataflow::{DataflowResults};
+use super::dataflow::{MODebug};
 use super::{drop_flag_effects_for_location, on_all_children_bits};
 use super::on_lookup_result_bits;
 use super::{DropFlagState, MoveDataParamEnv};
@@ -54,11 +55,11 @@ impl<'tcx> MirPass<'tcx> for ElaborateDrops {
             let flow_inits =
                 super::do_dataflow(tcx, mir, id, &[],
                                    MaybeInitializedLvals::new(tcx, mir, &env),
-                                   |bd, p| &bd.move_data().move_paths[p]);
+                                   |bd, p| MODebug::Borrowed(&bd.move_data().move_paths[p]));
             let flow_uninits =
                 super::do_dataflow(tcx, mir, id, &[],
                                    MaybeUninitializedLvals::new(tcx, mir, &env),
-                                   |bd, p| &bd.move_data().move_paths[p]);
+                                   |bd, p| MODebug::Borrowed(&bd.move_data().move_paths[p]));
 
             ElaborateDropsCtxt {
                 tcx: tcx,
