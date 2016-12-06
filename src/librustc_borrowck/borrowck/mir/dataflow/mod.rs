@@ -15,7 +15,6 @@ use rustc_data_structures::bitslice::{bitwise, BitwiseOperator};
 use rustc::ty::TyCtxt;
 use rustc::mir::{self, Mir};
 
-use std::fmt::Debug;
 use std::io;
 use std::mem;
 use std::path::PathBuf;
@@ -27,18 +26,20 @@ pub use self::sanity_check::sanity_check_via_rustc_peek;
 pub use self::impls::{MaybeInitializedLvals, MaybeUninitializedLvals};
 pub use self::impls::{DefinitelyInitializedLvals, MovingOutStatements};
 
+pub use self::graphviz::MODebug;
+
 mod graphviz;
 mod sanity_check;
 mod impls;
 
 pub trait Dataflow<BD: BitDenotation> {
-    fn dataflow<P>(&mut self, p: P) where P: Fn(&BD, BD::Idx) -> &Debug;
+    fn dataflow<P>(&mut self, p: P) where P: Fn(&BD, BD::Idx) -> MODebug;
 }
 
 impl<'a, 'tcx: 'a, BD> Dataflow<BD> for MirBorrowckCtxtPreDataflow<'a, 'tcx, BD>
     where BD: BitDenotation + DataflowOperator
 {
-    fn dataflow<P>(&mut self, p: P) where P: Fn(&BD, BD::Idx) -> &Debug {
+    fn dataflow<P>(&mut self, p: P) where P: Fn(&BD, BD::Idx) -> MODebug {
         self.flow_state.build_sets();
         self.pre_dataflow_instrumentation(|c,i| p(c,i)).unwrap();
         self.flow_state.propagate();
@@ -139,7 +140,7 @@ impl<'a, 'tcx: 'a, BD> MirBorrowckCtxtPreDataflow<'a, 'tcx, BD>
     where BD: BitDenotation
 {
     fn pre_dataflow_instrumentation<P>(&self, p: P) -> io::Result<()>
-        where P: Fn(&BD, BD::Idx) -> &Debug
+        where P: Fn(&BD, BD::Idx) -> MODebug
     {
         if let Some(ref path_str) = self.print_preflow_to {
             let path = dataflow_path(BD::name(), "preflow", path_str);
@@ -150,7 +151,7 @@ impl<'a, 'tcx: 'a, BD> MirBorrowckCtxtPreDataflow<'a, 'tcx, BD>
     }
 
     fn post_dataflow_instrumentation<P>(&self, p: P) -> io::Result<()>
-        where P: Fn(&BD, BD::Idx) -> &Debug
+        where P: Fn(&BD, BD::Idx) -> MODebug
     {
         if let Some(ref path_str) = self.print_postflow_to {
             let path = dataflow_path(BD::name(), "postflow", path_str);

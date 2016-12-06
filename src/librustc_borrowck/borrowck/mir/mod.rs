@@ -31,7 +31,7 @@ use self::dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
 use self::dataflow::{DefinitelyInitializedLvals};
 use self::gather_moves::{HasMoveData, MoveData, MovePathIndex, LookupResult};
 
-use std::fmt;
+use self::dataflow::MODebug;
 
 fn has_rustc_mir_with(attrs: &[ast::Attribute], name: &str) -> Option<MetaItem> {
     for attr in attrs {
@@ -66,13 +66,13 @@ pub fn borrowck_mir(bcx: &mut BorrowckCtxt,
     let mdpe = MoveDataParamEnv { move_data: move_data, param_env: param_env };
     let flow_inits =
         do_dataflow(tcx, mir, id, attributes, MaybeInitializedLvals::new(tcx, mir, &mdpe),
-                    |bd, i| &bd.move_data().move_paths[i]);
+                    |bd, i| MODebug::Borrowed(&bd.move_data().move_paths[i]));
     let flow_uninits =
         do_dataflow(tcx, mir, id, attributes, MaybeUninitializedLvals::new(tcx, mir, &mdpe),
-                    |bd, i| &bd.move_data().move_paths[i]);
+                    |bd, i| MODebug::Borrowed(&bd.move_data().move_paths[i]));
     let flow_def_inits =
         do_dataflow(tcx, mir, id, attributes, DefinitelyInitializedLvals::new(tcx, mir, &mdpe),
-                    |bd, i| &bd.move_data().move_paths[i]);
+                    |bd, i| MODebug::Borrowed(&bd.move_data().move_paths[i]));
 
     if has_rustc_mir_with(attributes, "rustc_peek_maybe_init").is_some() {
         dataflow::sanity_check_via_rustc_peek(bcx.tcx, mir, id, attributes, &flow_inits);
@@ -112,7 +112,7 @@ fn do_dataflow<'a, 'tcx, BD, P>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                 p: P)
                                 -> DataflowResults<BD>
     where BD: BitDenotation<Idx=MovePathIndex> + DataflowOperator,
-          P: Fn(&BD, BD::Idx) -> &fmt::Debug
+          P: Fn(&BD, BD::Idx) -> MODebug
 {
     let name_found = |sess: &Session, attrs: &[ast::Attribute], name| -> Option<String> {
         if let Some(item) = has_rustc_mir_with(attrs, name) {
