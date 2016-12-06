@@ -369,6 +369,12 @@ impl RegionMaps {
     pub fn opt_destruction_extent(&self, n: ast::NodeId) -> Option<CodeExtent> {
         self.code_extent_interner.borrow().get(&CodeExtentData::DestructionScope(n)).cloned()
     }
+    pub fn code_extents_len(&self) -> usize {
+        // borrow the interner immutably, ensuring no one ever interns
+        // a new extent here.
+        ::std::mem::forget(self.code_extent_interner.borrow());
+        self.code_extents.borrow().len()
+    }
     pub fn intern_code_extent(&self,
                               e: CodeExtentData,
                               parent: CodeExtent) -> CodeExtent {

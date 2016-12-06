@@ -8,7 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use rustc::ty::TyCtxt;
+use rustc::ty::{Region, TyCtxt};
+use rustc::middle::region::CodeExtent;
 use rustc::mir::{self, Mir, Location};
 use rustc_data_structures::bitslice::BitSlice; // adds set_bit/get_bit to &[usize] bitvector rep.
 use rustc_data_structures::bitslice::{BitwiseOperator};
@@ -221,6 +222,20 @@ pub struct MovingOutStatements<'a, 'tcx: 'a> {
 
 impl<'a, 'tcx> HasMoveData<'tcx> for MovingOutStatements<'a, 'tcx> {
     fn move_data(&self) -> &MoveData<'tcx> { &self.mdpe.move_data }
+}
+
+/// `Extents` tracks the code extents (i.e. statically determined
+/// regions). Extents are introduced by borrows and are terminated by
+/// `EndRegion` statements.
+pub struct Extents<'a, 'tcx: 'a> {
+    tcx: TyCtxt<'a, 'tcx, 'tcx>,
+    mir: &'a Mir<'tcx>,
+}
+
+impl<'a, 'tcx> Extents<'a, 'tcx> {
+    pub fn new(tcx: TyCtxt<'a, 'tcx, 'tcx>, mir: &'a Mir<'tcx>) -> Self {
+        Extents { tcx: tcx, mir: mir }
+    }
 }
 
 impl<'a, 'tcx> MaybeInitializedLvals<'a, 'tcx> {
@@ -516,6 +531,75 @@ impl<'a, 'tcx> BitDenotation for MovingOutStatements<'a, 'tcx> {
     }
 }
 
+impl<'a, 'tcx> BitDenotation for Extents<'a, 'tcx> {
+    type Idx = CodeExtent;
+    type Ctxt = ();
+    fn name() -> &'static str { "extents" }
+    fn bits_per_block(&self, ctxt: &Self::Ctxt) -> usize {
+        self.tcx.region_maps.code_extents_len()
+    }
+
+    fn start_block_effect(&self, _ctxt: &Self::Ctxt, _sets: &mut BlockSets<CodeExtent>) {
+        // no code extents have been entered prior to function
+        // execution, so this method has no effect on `_sets`.
+        //
+        // FIXME: is the above true? Shouldn't we at least initiate
+        // the CallSiteScope, and perhaps also the ParameterScope?
+    }
+
+    fn statement_effect(&self,
+                        ctxt: &Self::Ctxt,
+                        sets: &mut BlockSets<CodeExtent>,
+                        bb: mir::BasicBlock,
+                        stmt_idx: usize) {
+        let block = &self.mir[bb];
+        let stmt = block.statements.get(stmt_idx).unwrap();
+        match stmt.kind {
+            mir::StatementKind::Assign(
+                _ /*lvalue_dest*/,
+                ref rvalue) =>
+            {
+                if let mir::Rvalue::Ref(&Region::ReScope(ref extent),
+                                        _ /*borrow_kind*/,
+                                        _ /*lvalue_source*/) = *rvalue {
+                    sets.gen(extent);
+                }
+            }
+
+            mir::StatementKind::EndRegion(ref extents) =>
+            {
+                for extent in extents {
+                    sets.kill(extent);
+                }
+            }
+
+            mir::StatementKind::StorageLive(..) |
+            mir::StatementKind::StorageDead(..) |
+            mir::StatementKind::Nop |
+            mir::StatementKind::SetDiscriminant { lvalue: _, variant_index: _ } => {
+                // no borrows occur in these cases
+            }
+        }
+    }
+
+    fn terminator_effect(&self,
+                         _ctxt: &Self::Ctxt,
+                         _sets: &mut BlockSets<CodeExtent>,
+                         _bb: mir::BasicBlock,
+                         _statements_len: usize) {
+        // no terminators start nor end code extents.
+    }
+
+    fn propagate_call_return(&self,
+                             ctxt: &Self::Ctxt,
+                             in_out: &mut IdxSet<CodeExtent>,
+                             _call_bb: mir::BasicBlock,
+                             _dest_bb: mir::BasicBlock,
+                             _dest_lval: &mir::Lvalue) {
+        // there are no effects on the extents from method calls.
+    }
+}
+
 fn zero_to_one(bitvec: &mut [usize], move_index: MoveOutIndex) {
     let retval = bitvec.set_bit(move_index.index());
     assert!(retval);
@@ -546,6 +630,13 @@ impl<'a, 'tcx> BitwiseOperator for DefinitelyInitializedLvals<'a, 'tcx> {
     #[inline]
     fn join(&self, pred1: usize, pred2: usize) -> usize {
         pred1 & pred2 // "definitely" means we intersect effects of both preds
+    }
+}
+
+impl<'a, 'tcx> BitwiseOperator for Extents<'a, 'tcx> {
+    #[inline]
+    fn join(&self, pred1: usize, pred2: usize) -> usize {
+        pred1 | pred2 // union effects of preds when computing extents
     }
 }
 
@@ -584,5 +675,12 @@ impl<'a, 'tcx> DataflowOperator for DefinitelyInitializedLvals<'a, 'tcx> {
     #[inline]
     fn bottom_value() -> bool {
         true // bottom = initialized (start_block_effect counters this at outset)
+    }
+}
+
+impl<'a, 'tcx> DataflowOperator for Extents<'a, 'tcx> {
+    #[inline]
+    fn bottom_value() -> bool {
+        false // bottom = no regions borrowed by default
     }
 }
