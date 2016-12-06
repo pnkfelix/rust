@@ -27,9 +27,14 @@ use syntax::abi::Abi;
 use syntax::ast::CRATE_NODE_ID;
 use syntax::symbol::Symbol;
 use hir;
+use rustc_data_structures::indexed_vec::Idx;
 
 pub fn verbose() -> bool {
     ty::tls::with(|tcx| tcx.sess.verbose())
+}
+
+fn identify_regions() -> bool {
+    ty::tls::with(|tcx| tcx.sess.opts.debugging_opts.identify_regions)
 }
 
 fn fn_sig(f: &mut fmt::Formatter,
@@ -533,6 +538,12 @@ impl fmt::Display for ty::Region {
             ty::ReFree(ty::FreeRegion { bound_region: br, .. }) |
             ty::ReSkolemized(_, br) => {
                 write!(f, "{}", br)
+            }
+            ty::ReScope(code_extent) if identify_regions() => {
+                write!(f, "'{}ce", code_extent.index())
+            }
+            ty::ReVar(region_vid) if identify_regions() => {
+                write!(f, "'{}rv", region_vid.index)
             }
             ty::ReScope(_) |
             ty::ReVar(_) |

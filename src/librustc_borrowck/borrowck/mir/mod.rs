@@ -29,9 +29,11 @@ use self::dataflow::{DataflowOperator};
 use self::dataflow::{Dataflow, DataflowAnalysis, DataflowResults};
 use self::dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
 use self::dataflow::{DefinitelyInitializedLvals};
-use self::gather_moves::{HasMoveData, MoveData, MovePathIndex, LookupResult};
+use self::dataflow::{Borrows};
+use self::gather_moves::{HasMoveData, MoveData, DataPathIndex, LookupResult};
+pub(self) use self::gather_moves::{BorrowIndex};
 
-use std::fmt;
+use self::dataflow::MODebug;
 
 fn has_rustc_mir_with(attrs: &[ast::Attribute], name: &str) -> Option<MetaItem> {
     for attr in attrs {
@@ -64,15 +66,20 @@ pub fn borrowck_mir(bcx: &mut BorrowckCtxt,
     let param_env = ty::ParameterEnvironment::for_item(tcx, id);
     let move_data = MoveData::gather_moves(mir, tcx, &param_env);
     let mdpe = MoveDataParamEnv { move_data: move_data, param_env: param_env };
+
+    let _flow_borrows =
+        do_dataflow(tcx, mir, id, attributes, Borrows::new(tcx, mir),
+                    |bd, i| MODebug::Borrowed(bd.location(i)));
+
     let flow_inits =
         do_dataflow(tcx, mir, id, attributes, MaybeInitializedLvals::new(tcx, mir, &mdpe),
-                    |bd, i| &bd.move_data().move_paths[i]);
+                    |bd, i| MODebug::Borrowed(&bd.move_data().data_paths[i]));
     let flow_uninits =
         do_dataflow(tcx, mir, id, attributes, MaybeUninitializedLvals::new(tcx, mir, &mdpe),
-                    |bd, i| &bd.move_data().move_paths[i]);
+                    |bd, i| MODebug::Borrowed(&bd.move_data().data_paths[i]));
     let flow_def_inits =
         do_dataflow(tcx, mir, id, attributes, DefinitelyInitializedLvals::new(tcx, mir, &mdpe),
-                    |bd, i| &bd.move_data().move_paths[i]);
+                    |bd, i| MODebug::Borrowed(&bd.move_data().data_paths[i]));
 
     if has_rustc_mir_with(attributes, "rustc_peek_maybe_init").is_some() {
         dataflow::sanity_check_via_rustc_peek(bcx.tcx, mir, id, attributes, &flow_inits);
@@ -111,8 +118,8 @@ fn do_dataflow<'a, 'tcx, BD, P>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                 bd: BD,
                                 p: P)
                                 -> DataflowResults<BD>
-    where BD: BitDenotation<Idx=MovePathIndex> + DataflowOperator,
-          P: Fn(&BD, BD::Idx) -> &fmt::Debug
+    where BD: BitDenotation + DataflowOperator,
+          P: Fn(&BD, BD::Idx) -> MODebug
 {
     let name_found = |sess: &Session, attrs: &[ast::Attribute], name| -> Option<String> {
         if let Some(item) = has_rustc_mir_with(attrs, name) {
@@ -145,7 +152,8 @@ fn do_dataflow<'a, 'tcx, BD, P>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 }
 
 
-pub struct MirBorrowckCtxtPreDataflow<'a, 'tcx: 'a, BD> where BD: BitDenotation
+pub struct MirBorrowckCtxtPreDataflow<'a, 'tcx: 'a, BD>
+    where BD: BitDenotation
 {
     node_id: ast::NodeId,
     flow_state: DataflowAnalysis<'a, 'tcx, BD>,
@@ -184,14 +192,14 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
 }
 
 fn move_path_children_matching<'tcx, F>(move_data: &MoveData<'tcx>,
-                                        path: MovePathIndex,
+                                        path: DataPathIndex,
                                         mut cond: F)
-                                        -> Option<MovePathIndex>
+                                        -> Option<DataPathIndex>
     where F: FnMut(&mir::LvalueProjection<'tcx>) -> bool
 {
-    let mut next_child = move_data.move_paths[path].first_child;
+    let mut next_child = move_data.data_paths[path].first_child;
     while let Some(child_index) = next_child {
-        match move_data.move_paths[child_index].lvalue {
+        match move_data.data_paths[child_index].lvalue {
             mir::Lvalue::Projection(ref proj) => {
                 if cond(proj) {
                     return Some(child_index)
@@ -199,7 +207,7 @@ fn move_path_children_matching<'tcx, F>(move_data: &MoveData<'tcx>,
             }
             _ => {}
         }
-        next_child = move_data.move_paths[child_index].next_sibling;
+        next_child = move_data.data_paths[child_index].next_sibling;
     }
 
     None
@@ -250,7 +258,7 @@ fn on_lookup_result_bits<'a, 'tcx, F>(
     move_data: &MoveData<'tcx>,
     lookup_result: LookupResult,
     each_child: F)
-    where F: FnMut(MovePathIndex)
+    where F: FnMut(DataPathIndex)
 {
     match lookup_result {
         LookupResult::Parent(..) => {
@@ -266,27 +274,27 @@ fn on_all_children_bits<'a, 'tcx, F>(
     tcx: TyCtxt<'a, 'tcx, 'tcx>,
     mir: &Mir<'tcx>,
     move_data: &MoveData<'tcx>,
-    move_path_index: MovePathIndex,
+    move_path_index: DataPathIndex,
     mut each_child: F)
-    where F: FnMut(MovePathIndex)
+    where F: FnMut(DataPathIndex)
 {
     fn is_terminal_path<'a, 'tcx>(
         tcx: TyCtxt<'a, 'tcx, 'tcx>,
         mir: &Mir<'tcx>,
         move_data: &MoveData<'tcx>,
-        path: MovePathIndex) -> bool
+        path: DataPathIndex) -> bool
     {
         lvalue_contents_drop_state_cannot_differ(
-            tcx, mir, &move_data.move_paths[path].lvalue)
+            tcx, mir, &move_data.data_paths[path].lvalue)
     }
 
     fn on_all_children_bits<'a, 'tcx, F>(
         tcx: TyCtxt<'a, 'tcx, 'tcx>,
         mir: &Mir<'tcx>,
         move_data: &MoveData<'tcx>,
-        move_path_index: MovePathIndex,
+        move_path_index: DataPathIndex,
         each_child: &mut F)
-        where F: FnMut(MovePathIndex)
+        where F: FnMut(DataPathIndex)
     {
         each_child(move_path_index);
 
@@ -294,10 +302,10 @@ fn on_all_children_bits<'a, 'tcx, F>(
             return
         }
 
-        let mut next_child_index = move_data.move_paths[move_path_index].first_child;
+        let mut next_child_index = move_data.data_paths[move_path_index].first_child;
         while let Some(child_index) = next_child_index {
             on_all_children_bits(tcx, mir, move_data, child_index, each_child);
-            next_child_index = move_data.move_paths[child_index].next_sibling;
+            next_child_index = move_data.data_paths[child_index].next_sibling;
         }
     }
     on_all_children_bits(tcx, mir, move_data, move_path_index, &mut each_child);
@@ -308,7 +316,7 @@ fn drop_flag_effects_for_function_entry<'a, 'tcx, F>(
     mir: &Mir<'tcx>,
     ctxt: &MoveDataParamEnv<'tcx>,
     mut callback: F)
-    where F: FnMut(MovePathIndex, DropFlagState)
+    where F: FnMut(DataPathIndex, DropFlagState)
 {
     let move_data = &ctxt.move_data;
     for arg in mir.args_iter() {
@@ -326,7 +334,7 @@ fn drop_flag_effects_for_location<'a, 'tcx, F>(
     ctxt: &MoveDataParamEnv<'tcx>,
     loc: Location,
     mut callback: F)
-    where F: FnMut(MovePathIndex, DropFlagState)
+    where F: FnMut(DataPathIndex, DropFlagState)
 {
     let move_data = &ctxt.move_data;
     let param_env = &ctxt.param_env;
@@ -334,11 +342,11 @@ fn drop_flag_effects_for_location<'a, 'tcx, F>(
 
     // first, move out of the RHS
     for mi in &move_data.loc_map[loc] {
-        let path = mi.move_path_index(move_data);
-        debug!("moving out of path {:?}", move_data.move_paths[path]);
+        let path = mi.data_path_index(move_data);
+        debug!("moving out of path {:?}", move_data.data_paths[path]);
 
         // don't move out of non-Copy things
-        let lvalue = &move_data.move_paths[path].lvalue;
+        let lvalue = &move_data.data_paths[path].lvalue;
         let ty = lvalue.ty(mir, tcx).to_ty(tcx);
         if !ty.moves_by_default(tcx, param_env, DUMMY_SP) {
             continue;
@@ -364,6 +372,7 @@ fn drop_flag_effects_for_location<'a, 'tcx, F>(
             mir::StatementKind::StorageLive(_) |
             mir::StatementKind::StorageDead(_) |
             mir::StatementKind::InlineAsm { .. } |
+            mir::StatementKind::EndRegion(_) |
             mir::StatementKind::Nop => {}
         },
         None => {

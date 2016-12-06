@@ -16,7 +16,7 @@ use rustc::ty::{self, TyCtxt};
 use rustc::mir::{self, Mir};
 use rustc_data_structures::indexed_vec::Idx;
 
-use super::super::gather_moves::{MovePathIndex, LookupResult};
+use super::super::gather_moves::{DataPathIndex, LookupResult};
 use super::BitDenotation;
 use super::DataflowResults;
 use super::super::gather_moves::HasMoveData;
@@ -42,7 +42,7 @@ pub fn sanity_check_via_rustc_peek<'a, 'tcx, O>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                                 id: ast::NodeId,
                                                 _attributes: &[ast::Attribute],
                                                 results: &DataflowResults<O>)
-    where O: BitDenotation<Idx=MovePathIndex> + HasMoveData<'tcx>
+    where O: BitDenotation<Idx=DataPathIndex> + HasMoveData<'tcx>
 {
     debug!("sanity_check_via_rustc_peek id: {:?}", id);
     // FIXME: this is not DRY. Figure out way to abstract this and
@@ -58,7 +58,7 @@ fn each_block<'a, 'tcx, O>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                            mir: &Mir<'tcx>,
                            results: &DataflowResults<O>,
                            bb: mir::BasicBlock) where
-    O: BitDenotation<Idx=MovePathIndex> + HasMoveData<'tcx>
+    O: BitDenotation<Idx=DataPathIndex> + HasMoveData<'tcx>
 {
     let move_data = results.0.operator.move_data();
     let mir::BasicBlockData { ref statements, ref terminator, is_cleanup: _ } = mir[bb];
@@ -105,6 +105,7 @@ fn each_block<'a, 'tcx, O>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
             mir::StatementKind::StorageLive(_) |
             mir::StatementKind::StorageDead(_) |
             mir::StatementKind::InlineAsm { .. } |
+            mir::StatementKind::EndRegion(_) |
             mir::StatementKind::Nop => continue,
             mir::StatementKind::SetDiscriminant{ .. } =>
                 span_bug!(stmt.source_info.span,

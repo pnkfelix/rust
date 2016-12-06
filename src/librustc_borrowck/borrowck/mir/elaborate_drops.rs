@@ -8,9 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::gather_moves::{HasMoveData, MoveData, MovePathIndex, LookupResult};
+use super::gather_moves::{HasMoveData, MoveData, DataPathIndex, LookupResult};
 use super::dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
 use super::dataflow::{DataflowResults};
+use super::dataflow::{MODebug};
 use super::{drop_flag_effects_for_location, on_all_children_bits};
 use super::on_lookup_result_bits;
 use super::MoveDataParamEnv;
@@ -52,11 +53,11 @@ impl<'tcx> MirPass<'tcx> for ElaborateDrops {
             let flow_inits =
                 super::do_dataflow(tcx, mir, id, &[],
                                    MaybeInitializedLvals::new(tcx, mir, &env),
-                                   |bd, p| &bd.move_data().move_paths[p]);
+                                   |bd, p| MODebug::Borrowed(&bd.move_data().data_paths[p]));
             let flow_uninits =
                 super::do_dataflow(tcx, mir, id, &[],
                                    MaybeUninitializedLvals::new(tcx, mir, &env),
-                                   |bd, p| &bd.move_data().move_paths[p]);
+                                   |bd, p| MODebug::Borrowed(&bd.move_data().data_paths[p]));
 
             ElaborateDropsCtxt {
                 tcx: tcx,
@@ -75,8 +76,8 @@ impl<'tcx> MirPass<'tcx> for ElaborateDrops {
 impl Pass for ElaborateDrops {}
 
 struct InitializationData {
-    live: IdxSetBuf<MovePathIndex>,
-    dead: IdxSetBuf<MovePathIndex>
+    live: IdxSetBuf<DataPathIndex>,
+    dead: IdxSetBuf<DataPathIndex>
 }
 
 impl InitializationData {
@@ -102,7 +103,7 @@ impl InitializationData {
         });
     }
 
-    fn state(&self, path: MovePathIndex) -> (bool, bool) {
+    fn state(&self, path: DataPathIndex) -> (bool, bool) {
         (self.live.contains(&path), self.dead.contains(&path))
     }
 }
@@ -119,7 +120,7 @@ impl<'a, 'b, 'tcx> fmt::Debug for Elaborator<'a, 'b, 'tcx> {
 }
 
 impl<'a, 'b, 'tcx> DropElaborator<'a, 'tcx> for Elaborator<'a, 'b, 'tcx> {
-    type Path = MovePathIndex;
+    type Path = DataPathIndex;
 
     fn patch(&mut self) -> &mut MirPatch<'tcx> {
         &mut self.ctxt.patch
@@ -223,7 +224,7 @@ struct ElaborateDropsCtxt<'a, 'tcx: 'a> {
     env: &'a MoveDataParamEnv<'tcx>,
     flow_inits: DataflowResults<MaybeInitializedLvals<'a, 'tcx>>,
     flow_uninits:  DataflowResults<MaybeUninitializedLvals<'a, 'tcx>>,
-    drop_flags: FxHashMap<MovePathIndex, Local>,
+    drop_flags: FxHashMap<DataPathIndex, Local>,
     patch: MirPatch<'tcx>,
 }
 
@@ -247,7 +248,7 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
         data
     }
 
-    fn create_drop_flag(&mut self, index: MovePathIndex) {
+    fn create_drop_flag(&mut self, index: DataPathIndex) {
         let tcx = self.tcx;
         let patch = &mut self.patch;
         debug!("create_drop_flag({:?})", self.mir.span);
@@ -256,7 +257,7 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
         });
     }
 
-    fn drop_flag(&mut self, index: MovePathIndex) -> Option<Lvalue<'tcx>> {
+    fn drop_flag(&mut self, index: DataPathIndex) -> Option<Lvalue<'tcx>> {
         self.drop_flags.get(&index).map(|t| Lvalue::Local(*t))
     }
 
@@ -276,9 +277,9 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
         self.patch
     }
 
-    fn path_needs_drop(&self, path: MovePathIndex) -> bool
+    fn path_needs_drop(&self, path: DataPathIndex) -> bool
     {
-        let lvalue = &self.move_data().move_paths[path].lvalue;
+        let lvalue = &self.move_data().data_paths[path].lvalue;
         let ty = lvalue.ty(self.mir, self.tcx).to_ty(self.tcx);
         debug!("path_needs_drop({:?}, {:?} : {:?})", path, lvalue, ty);
 
@@ -475,7 +476,7 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
         }))
     }
 
-    fn set_drop_flag(&mut self, loc: Location, path: MovePathIndex, val: DropFlagState) {
+    fn set_drop_flag(&mut self, loc: Location, path: DataPathIndex, val: DropFlagState) {
         if let Some(&flag) = self.drop_flags.get(&path) {
             let span = self.patch.source_info_for_location(self.mir, loc).span;
             let val = self.constant_bool(span, val.value());
@@ -536,6 +537,11 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
                             // drop elaboration should handle that by itself
                             continue
                         }
+                        TerminatorKind::Resume => {
+                            // We can replace resumes with gotos
+                            // jumping to a canonical resume.
+                            continue;
+                        }
                         TerminatorKind::DropAndReplace { .. } => {
                             // this contains the move of the source and
                             // the initialization of the destination. We
@@ -545,8 +551,10 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
                             assert!(self.patch.is_patched(bb));
                             allow_initializations = false;
                         }
-                        _ => {
-                            assert!(!self.patch.is_patched(bb));
+                        ref kind => {
+                            assert!(!self.patch.is_patched(bb),
+                                    "kind {:?} on bb {:?} should not have been patched.",
+                                    kind, bb);
                         }
                     }
                 }

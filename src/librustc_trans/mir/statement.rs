@@ -87,6 +87,7 @@ impl<'a, 'tcx> MirContext<'a, 'tcx> {
                 asm::trans_inline_asm(&bcx, asm, outputs, input_vals);
                 bcx
             }
+            mir::StatementKind::EndRegion(_) |
             mir::StatementKind::Nop => bcx,
         }
     }

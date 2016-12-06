@@ -143,8 +143,11 @@ pub fn construct_fn<'a, 'gcx, 'tcx, A>(hir: Cx<'a, 'gcx, 'tcx>,
         tcx.region_maps.lookup_code_extent(
             CodeExtentData::ParameterScope { fn_id: fn_id, body_id: body.value.id });
     let mut block = START_BLOCK;
-    unpack!(block = builder.in_scope(call_site_extent, block, |builder| {
-        unpack!(block = builder.in_scope(arg_extent, block, |builder| {
+    let source_info = builder.source_info(span);
+    unpack!(block = builder.in_scope((call_site_extent, source_info),
+                                     block,
+                                     |builder| {
+        unpack!(block = builder.in_scope((arg_extent, source_info), block, |builder| {
             builder.args_and_body(block, &arguments, arg_extent, &body.value)
         }));
         // Attribute epilogue to function's closing brace
@@ -169,7 +172,7 @@ pub fn construct_fn<'a, 'gcx, 'tcx, A>(hir: Cx<'a, 'gcx, 'tcx>,
     let upvar_decls: Vec<_> = tcx.with_freevars(fn_id, |freevars| {
         freevars.iter().map(|fv| {
             let var_id = tcx.hir.as_local_node_id(fv.def.def_id()).unwrap();
-            let by_ref = hir.tables().upvar_capture(ty::UpvarId {
+            let by_ref = builder.hir.tables().upvar_capture(ty::UpvarId {
                 var_id: var_id,
                 closure_expr_id: fn_id
             }).map_or(false, |capture| match capture {
@@ -206,11 +209,11 @@ pub fn construct_const<'a, 'gcx, 'tcx>(hir: Cx<'a, 'gcx, 'tcx>,
     let extent = tcx.region_maps.temporary_scope(ast_expr.id)
                     .unwrap_or(ROOT_CODE_EXTENT);
     let mut block = START_BLOCK;
-    let _ = builder.in_scope(extent, block, |builder| {
+    let source_info = builder.source_info(span);
+    let _ = builder.in_scope((extent, source_info), block, |builder| {
         let expr = builder.hir.mirror(ast_expr);
         unpack!(block = builder.into(&Lvalue::Local(RETURN_POINTER), block, expr));
 
-        let source_info = builder.source_info(span);
         let return_block = builder.return_block();
         builder.cfg.terminate(block, source_info,
                               TerminatorKind::Goto { target: return_block });
@@ -239,7 +242,8 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
            span: Span,
            arg_count: usize,
            return_ty: Ty<'tcx>)
-           -> Builder<'a, 'gcx, 'tcx> {
+           -> Builder<'a, 'gcx, 'tcx>
+    {
         let mut builder = Builder {
             hir: hir,
             cfg: CFG { basic_blocks: IndexVec::new() },

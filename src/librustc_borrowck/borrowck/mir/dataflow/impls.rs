@@ -8,16 +8,20 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use rustc::ty::TyCtxt;
+use rustc::ty::{self, TyCtxt};
+use rustc::middle::region::CodeExtent;
 use rustc::mir::{self, Mir, Location};
+use rustc::mir::visit::Visitor;
+use rustc::util::nodemap::{FxHashMap, FxHashSet};
 use rustc_data_structures::bitslice::BitSlice; // adds set_bit/get_bit to &[usize] bitvector rep.
 use rustc_data_structures::bitslice::{BitwiseOperator};
 use rustc_data_structures::indexed_set::{IdxSet};
-use rustc_data_structures::indexed_vec::Idx;
+use rustc_data_structures::indexed_vec::{Idx, IndexVec};
 use rustc_mir::util::elaborate_drops::DropFlagState;
 
-use super::super::gather_moves::{HasMoveData, MoveData, MoveOutIndex, MovePathIndex};
+use super::super::gather_moves::{HasMoveData, MoveData, MoveOutIndex, DataPathIndex};
 use super::super::MoveDataParamEnv;
+use super::super::BorrowIndex;
 use super::super::drop_flag_effects_for_function_entry;
 use super::super::drop_flag_effects_for_location;
 use super::super::on_lookup_result_bits;
@@ -223,8 +227,58 @@ impl<'a, 'tcx> HasMoveData<'tcx> for MovingOutStatements<'a, 'tcx> {
     fn move_data(&self) -> &MoveData<'tcx> { &self.mdpe.move_data }
 }
 
+
+
+// `Borrows` maps each dataflow bit to an `Rvalue::Ref`, which can be
+// uniquely identified in the MIR by the `Location` of the assigment
+// statement in which it appears on the right hand side.
+pub struct Borrows<'a, 'tcx: 'a> {
+    #[allow(dead_code)]
+    tcx: TyCtxt<'a, 'tcx, 'tcx>,
+    mir: &'a Mir<'tcx>,
+    locations: IndexVec<BorrowIndex, Location>,
+    loc_map: FxHashMap<Location, BorrowIndex>,
+    ext_map: FxHashMap<CodeExtent, FxHashSet<BorrowIndex>>,
+}
+
+impl<'a, 'tcx> Borrows<'a, 'tcx> {
+    pub fn new(tcx: TyCtxt<'a, 'tcx, 'tcx>, mir: &'a Mir<'tcx>) -> Self {
+        let mut visitor = GatherBorrows { idx_vec: IndexVec::new(),
+                                          loc_map: FxHashMap(),
+                                          ext_map: FxHashMap(), };
+        visitor.visit_mir(mir);
+        return Borrows { tcx: tcx,
+                         mir: mir,
+                         locations: visitor.idx_vec,
+                         loc_map: visitor.loc_map,
+                         ext_map: visitor.ext_map, };
+
+        struct GatherBorrows {
+            idx_vec: IndexVec<BorrowIndex, Location>,
+            loc_map: FxHashMap<Location, BorrowIndex>,
+            ext_map: FxHashMap<CodeExtent, FxHashSet<BorrowIndex>>,
+        }
+        impl<'tcx> Visitor<'tcx> for GatherBorrows {
+            fn visit_rvalue(&mut self,
+                            rvalue: &mir::Rvalue,
+                            location: mir::Location) {
+                if let mir::Rvalue::Ref(&ty::Region::ReScope(ref extent), _, _) = *rvalue {
+                    let idx = self.idx_vec.push(location);
+                    self.loc_map.insert(location, idx);
+                    let mut borrows = self.ext_map.entry(*extent).or_insert(FxHashSet());
+                    borrows.insert(idx);
+                }
+            }
+        }
+    }
+
+    pub fn location(&self, idx: BorrowIndex) -> &Location {
+        &self.locations[idx]
+    }
+}
+
 impl<'a, 'tcx> MaybeInitializedLvals<'a, 'tcx> {
-    fn update_bits(sets: &mut BlockSets<MovePathIndex>, path: MovePathIndex,
+    fn update_bits(sets: &mut BlockSets<DataPathIndex>, path: DataPathIndex,
                    state: DropFlagState)
     {
         match state {
@@ -235,7 +289,7 @@ impl<'a, 'tcx> MaybeInitializedLvals<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> MaybeUninitializedLvals<'a, 'tcx> {
-    fn update_bits(sets: &mut BlockSets<MovePathIndex>, path: MovePathIndex,
+    fn update_bits(sets: &mut BlockSets<DataPathIndex>, path: DataPathIndex,
                    state: DropFlagState)
     {
         match state {
@@ -246,7 +300,7 @@ impl<'a, 'tcx> MaybeUninitializedLvals<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> DefinitelyInitializedLvals<'a, 'tcx> {
-    fn update_bits(sets: &mut BlockSets<MovePathIndex>, path: MovePathIndex,
+    fn update_bits(sets: &mut BlockSets<DataPathIndex>, path: DataPathIndex,
                    state: DropFlagState)
     {
         match state {
@@ -257,13 +311,13 @@ impl<'a, 'tcx> DefinitelyInitializedLvals<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> BitDenotation for MaybeInitializedLvals<'a, 'tcx> {
-    type Idx = MovePathIndex;
+    type Idx = DataPathIndex;
     fn name() -> &'static str { "maybe_init" }
     fn bits_per_block(&self) -> usize {
-        self.move_data().move_paths.len()
+        self.move_data().data_paths.len()
     }
 
-    fn start_block_effect(&self, sets: &mut BlockSets<MovePathIndex>)
+    fn start_block_effect(&self, sets: &mut BlockSets<DataPathIndex>)
     {
         drop_flag_effects_for_function_entry(
             self.tcx, self.mir, self.mdpe,
@@ -274,7 +328,7 @@ impl<'a, 'tcx> BitDenotation for MaybeInitializedLvals<'a, 'tcx> {
     }
 
     fn statement_effect(&self,
-                        sets: &mut BlockSets<MovePathIndex>,
+                        sets: &mut BlockSets<DataPathIndex>,
                         bb: mir::BasicBlock,
                         idx: usize)
     {
@@ -286,7 +340,7 @@ impl<'a, 'tcx> BitDenotation for MaybeInitializedLvals<'a, 'tcx> {
     }
 
     fn terminator_effect(&self,
-                         sets: &mut BlockSets<MovePathIndex>,
+                         sets: &mut BlockSets<DataPathIndex>,
                          bb: mir::BasicBlock,
                          statements_len: usize)
     {
@@ -298,7 +352,7 @@ impl<'a, 'tcx> BitDenotation for MaybeInitializedLvals<'a, 'tcx> {
     }
 
     fn propagate_call_return(&self,
-                             in_out: &mut IdxSet<MovePathIndex>,
+                             in_out: &mut IdxSet<DataPathIndex>,
                              _call_bb: mir::BasicBlock,
                              _dest_bb: mir::BasicBlock,
                              dest_lval: &mir::Lvalue) {
@@ -311,14 +365,14 @@ impl<'a, 'tcx> BitDenotation for MaybeInitializedLvals<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> BitDenotation for MaybeUninitializedLvals<'a, 'tcx> {
-    type Idx = MovePathIndex;
+    type Idx = DataPathIndex;
     fn name() -> &'static str { "maybe_uninit" }
     fn bits_per_block(&self) -> usize {
-        self.move_data().move_paths.len()
+        self.move_data().data_paths.len()
     }
 
     // sets on_entry bits for Arg lvalues
-    fn start_block_effect(&self, sets: &mut BlockSets<MovePathIndex>) {
+    fn start_block_effect(&self, sets: &mut BlockSets<DataPathIndex>) {
         // set all bits to 1 (uninit) before gathering counterevidence
         for e in sets.on_entry.words_mut() { *e = !0; }
 
@@ -331,7 +385,7 @@ impl<'a, 'tcx> BitDenotation for MaybeUninitializedLvals<'a, 'tcx> {
     }
 
     fn statement_effect(&self,
-                        sets: &mut BlockSets<MovePathIndex>,
+                        sets: &mut BlockSets<DataPathIndex>,
                         bb: mir::BasicBlock,
                         idx: usize)
     {
@@ -343,7 +397,7 @@ impl<'a, 'tcx> BitDenotation for MaybeUninitializedLvals<'a, 'tcx> {
     }
 
     fn terminator_effect(&self,
-                         sets: &mut BlockSets<MovePathIndex>,
+                         sets: &mut BlockSets<DataPathIndex>,
                          bb: mir::BasicBlock,
                          statements_len: usize)
     {
@@ -355,7 +409,7 @@ impl<'a, 'tcx> BitDenotation for MaybeUninitializedLvals<'a, 'tcx> {
     }
 
     fn propagate_call_return(&self,
-                             in_out: &mut IdxSet<MovePathIndex>,
+                             in_out: &mut IdxSet<DataPathIndex>,
                              _call_bb: mir::BasicBlock,
                              _dest_bb: mir::BasicBlock,
                              dest_lval: &mir::Lvalue) {
@@ -368,14 +422,14 @@ impl<'a, 'tcx> BitDenotation for MaybeUninitializedLvals<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> BitDenotation for DefinitelyInitializedLvals<'a, 'tcx> {
-    type Idx = MovePathIndex;
+    type Idx = DataPathIndex;
     fn name() -> &'static str { "definite_init" }
     fn bits_per_block(&self) -> usize {
-        self.move_data().move_paths.len()
+        self.move_data().data_paths.len()
     }
 
     // sets on_entry bits for Arg lvalues
-    fn start_block_effect(&self, sets: &mut BlockSets<MovePathIndex>) {
+    fn start_block_effect(&self, sets: &mut BlockSets<DataPathIndex>) {
         for e in sets.on_entry.words_mut() { *e = 0; }
 
         drop_flag_effects_for_function_entry(
@@ -387,7 +441,7 @@ impl<'a, 'tcx> BitDenotation for DefinitelyInitializedLvals<'a, 'tcx> {
     }
 
     fn statement_effect(&self,
-                        sets: &mut BlockSets<MovePathIndex>,
+                        sets: &mut BlockSets<DataPathIndex>,
                         bb: mir::BasicBlock,
                         idx: usize)
     {
@@ -399,7 +453,7 @@ impl<'a, 'tcx> BitDenotation for DefinitelyInitializedLvals<'a, 'tcx> {
     }
 
     fn terminator_effect(&self,
-                         sets: &mut BlockSets<MovePathIndex>,
+                         sets: &mut BlockSets<DataPathIndex>,
                          bb: mir::BasicBlock,
                          statements_len: usize)
     {
@@ -411,7 +465,7 @@ impl<'a, 'tcx> BitDenotation for DefinitelyInitializedLvals<'a, 'tcx> {
     }
 
     fn propagate_call_return(&self,
-                             in_out: &mut IdxSet<MovePathIndex>,
+                             in_out: &mut IdxSet<DataPathIndex>,
                              _call_bb: mir::BasicBlock,
                              _dest_bb: mir::BasicBlock,
                              dest_lval: &mir::Lvalue) {
@@ -474,6 +528,7 @@ impl<'a, 'tcx> BitDenotation for MovingOutStatements<'a, 'tcx> {
             mir::StatementKind::StorageLive(_) |
             mir::StatementKind::StorageDead(_) |
             mir::StatementKind::InlineAsm { .. } |
+            mir::StatementKind::EndRegion(_) |
             mir::StatementKind::Nop => {}
         }
     }
@@ -516,6 +571,65 @@ impl<'a, 'tcx> BitDenotation for MovingOutStatements<'a, 'tcx> {
     }
 }
 
+impl<'a, 'tcx> BitDenotation for Borrows<'a, 'tcx> {
+    type Idx = BorrowIndex;
+    fn name() -> &'static str { "borrows" }
+    fn bits_per_block(&self) -> usize {
+        self.locations.len()
+    }
+    fn start_block_effect(&self, _sets: &mut BlockSets<BorrowIndex>)  {
+        // no borrows of code extents have been taken prior to
+        // function execution, so this method has no effect on
+        // `_sets`.
+    }
+    fn statement_effect(&self,
+                        sets: &mut BlockSets<BorrowIndex>,
+                        bb: mir::BasicBlock,
+                        stmt_idx: usize) {
+        let block = &self.mir[bb];
+        let stmt = block.statements.get(stmt_idx).unwrap();
+        match stmt.kind {
+            mir::StatementKind::EndRegion(ref extents) => {
+                for ext in extents {
+                    for idx in &self.ext_map[ext] {
+                        sets.kill(&idx);
+                    }
+                }
+            }
+
+            mir::StatementKind::Assign(_, ref rhs) => {
+                if let mir::Rvalue::Ref(&ty::Region::ReScope(extent), _, _) = *rhs {
+                    let loc = mir::Location { block: bb, statement_index: stmt_idx };
+                    let idx = self.loc_map[&loc];
+                    assert!(self.ext_map.get(&extent).unwrap().contains(&idx));
+                    sets.gen(&idx);
+                }
+            }
+
+            mir::StatementKind::InlineAsm { .. } |
+            mir::StatementKind::SetDiscriminant { .. } |
+            mir::StatementKind::StorageLive(..) |
+            mir::StatementKind::StorageDead(..) |
+            mir::StatementKind::Nop => {}
+
+        }
+    }
+    fn terminator_effect(&self,
+                         _sets: &mut BlockSets<BorrowIndex>,
+                         _bb: mir::BasicBlock,
+                         _statements_len: usize) {
+        // no terminators start nor end code extents.
+    }
+
+    fn propagate_call_return(&self,
+                             _in_out: &mut IdxSet<BorrowIndex>,
+                             _call_bb: mir::BasicBlock,
+                             _dest_bb: mir::BasicBlock,
+                             _dest_lval: &mir::Lvalue) {
+        // there are no effects on the extents from method calls.
+    }
+}
+
 fn zero_to_one(bitvec: &mut [usize], move_index: MoveOutIndex) {
     let retval = bitvec.set_bit(move_index.index());
     assert!(retval);
@@ -546,6 +660,13 @@ impl<'a, 'tcx> BitwiseOperator for DefinitelyInitializedLvals<'a, 'tcx> {
     #[inline]
     fn join(&self, pred1: usize, pred2: usize) -> usize {
         pred1 & pred2 // "definitely" means we intersect effects of both preds
+    }
+}
+
+impl<'a, 'tcx> BitwiseOperator for Borrows<'a, 'tcx> {
+    #[inline]
+    fn join(&self, pred1: usize, pred2: usize) -> usize {
+        pred1 | pred2 // union effects of preds when computing borrows
     }
 }
 
@@ -584,5 +705,12 @@ impl<'a, 'tcx> DataflowOperator for DefinitelyInitializedLvals<'a, 'tcx> {
     #[inline]
     fn bottom_value() -> bool {
         true // bottom = initialized (start_block_effect counters this at outset)
+    }
+}
+
+impl<'a, 'tcx> DataflowOperator for Borrows<'a, 'tcx> {
+    #[inline]
+    fn bottom_value() -> bool {
+        false // bottom = no Rvalue::Refs are active by default
     }
 }

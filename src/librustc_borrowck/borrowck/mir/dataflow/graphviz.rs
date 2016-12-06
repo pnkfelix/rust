@@ -20,7 +20,7 @@ use rustc_mir::util as mir_util;
 use dot;
 use dot::IntoCow;
 
-use std::fmt::Debug;
+use std::fmt::{self, Debug};
 use std::fs::File;
 use std::io;
 use std::io::prelude::*;
@@ -30,6 +30,24 @@ use std::path::Path;
 
 use super::super::MirBorrowckCtxtPreDataflow;
 use super::{BitDenotation, DataflowState};
+
+/// MODebug means "maybe owned Debug." This is meant to be similar to
+/// Cow<'r, T> except that the owned case is a boxed Debug object that
+/// we can pass around.
+pub enum MODebug<'a> {
+    Borrowed(&'a Debug),
+    #[allow(dead_code)]
+    Boxed(Box<Debug>),
+}
+
+impl<'a> Debug for MODebug<'a> {
+    fn fmt(&self, w: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            MODebug::Borrowed(ref r) => r.fmt(w),
+            MODebug::Boxed(ref r) => r.fmt(w),
+        }
+    }
+}
 
 impl<O: BitDenotation> DataflowState<O> {
     fn each_bit<F>(&self, words: &IdxSet<O::Idx>, mut f: F)
@@ -68,8 +86,8 @@ impl<O: BitDenotation> DataflowState<O> {
                                 o: &'c O,
                                 words: &IdxSet<O::Idx>,
                                 render_idx: &P)
-                                -> Vec<&'c Debug>
-        where P: Fn(&O, O::Idx) -> &Debug
+                                -> Vec<MODebug<'c>>
+        where P: Fn(&O, O::Idx) -> MODebug
     {
         let mut v = Vec::new();
         self.each_bit(words, |i| {
@@ -109,7 +127,7 @@ pub fn print_borrowck_graph_to<'a, 'tcx, BD, P>(
     render_idx: P)
     -> io::Result<()>
     where BD: BitDenotation,
-          P: Fn(&BD, BD::Idx) -> &Debug
+          P: Fn(&BD, BD::Idx) -> MODebug
 {
     let g = Graph { mbcx: mbcx, phantom: PhantomData, render_idx: render_idx };
     let mut v = Vec::new();
@@ -131,7 +149,7 @@ fn outgoing(mir: &Mir, bb: BasicBlock) -> Vec<Edge> {
 
 impl<'a, 'tcx, MWF, P> dot::Labeller<'a> for Graph<'a, 'tcx, MWF, P>
     where MWF: MirWithFlowState<'tcx>,
-          P: for <'b> Fn(&'b MWF::BD, <MWF::BD as BitDenotation>::Idx) -> &'b Debug,
+          P: for <'b> Fn(&'b MWF::BD, <MWF::BD as BitDenotation>::Idx) -> MODebug<'b>
 {
     type Node = Node;
     type Edge = Edge;
@@ -191,7 +209,7 @@ impl<'a, 'tcx, MWF, P> dot::Labeller<'a> for Graph<'a, 'tcx, MWF, P>
         const ALIGN_RIGHT: &'static str = r#"align="right""#;
         const FACE_MONOSPACE: &'static str = r#"FACE="Courier""#;
         fn chunked_present_left<W:io::Write>(w: &mut W,
-                                             interpreted: &[&Debug],
+                                             interpreted: &[MODebug],
                                              chunk_size: usize)
                                              -> io::Result<()>
         {

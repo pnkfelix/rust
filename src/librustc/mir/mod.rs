@@ -10,6 +10,7 @@
 
 use graphviz::IntoCow;
 use middle::const_val::ConstVal;
+use middle::region::CodeExtent;
 use rustc_const_math::{ConstUsize, ConstInt, ConstMathErr};
 use rustc_data_structures::indexed_vec::{IndexVec, Idx};
 use rustc_data_structures::control_flow_graph::dominators::{Dominators, dominators};
@@ -783,6 +784,10 @@ pub enum StatementKind<'tcx> {
         inputs: Vec<Operand<'tcx>>
     },
 
+    /// Mark the end of a set of extents, i.e. static regions.
+    /// (The starts of such extents arise implicitly from borrows.)
+    EndRegion(Vec<CodeExtent>),
+
     /// No-op. Useful for deleting instructions without affecting statement indices.
     Nop,
 }
@@ -792,6 +797,17 @@ impl<'tcx> Debug for Statement<'tcx> {
         use self::StatementKind::*;
         match self.kind {
             Assign(ref lv, ref rv) => write!(fmt, "{:?} = {:?}", lv, rv),
+            EndRegion(ref code_extents) => {
+                write!(fmt, "EndRegion(")?;
+                let mut wrote_one = false;
+                for ce in code_extents {
+                    if wrote_one { write!(fmt, ", ")?; }
+                    // (reuse lifetime rendering policy from ppaux.)
+                    write!(fmt, "{}", ty::ReScope(*ce))?;
+                    wrote_one = true;
+                }
+                write!(fmt, ")")
+            }
             StorageLive(ref lv) => write!(fmt, "StorageLive({:?})", lv),
             StorageDead(ref lv) => write!(fmt, "StorageDead({:?})", lv),
             SetDiscriminant{lvalue: ref lv, variant_index: index} => {
@@ -1147,11 +1163,13 @@ impl<'tcx> Debug for Rvalue<'tcx> {
                     BorrowKind::Shared => "",
                     BorrowKind::Mut | BorrowKind::Unique => "mut ",
                 };
-                if ppaux::verbose() {
-                    write!(fmt, "&{:?}{}{:?}", region, kind_str, lv)
+                let rgn_str = if ppaux::verbose() {
+                    format!("{:?}", region)
                 } else {
-                    write!(fmt, "&{}{:?}", kind_str, lv)
-                }
+                    format!("{}", region)
+                };
+                let sep = if rgn_str.is_empty() { "" } else { " " };
+                write!(fmt, "&{}{}{}{:?}", region, sep, kind_str, lv)
             }
 
             Aggregate(ref kind, ref lvs) => {
@@ -1431,6 +1449,13 @@ impl<'tcx> TypeFoldable<'tcx> for Statement<'tcx> {
                 outputs: outputs.fold_with(folder),
                 inputs: inputs.fold_with(folder)
             },
+
+            // Note for future: If we want to expose the extents
+            // during the fold, we need to either generalize EndRegion
+            // to carry `[ty::Region]`, or extend the `TypeFolder`
+            // trait with a `fn fold_extent`.
+            EndRegion(ref extents) => EndRegion(extents.clone()),
+
             Nop => Nop,
         };
         Statement {
@@ -1449,6 +1474,13 @@ impl<'tcx> TypeFoldable<'tcx> for Statement<'tcx> {
             StorageDead(ref lvalue) => lvalue.visit_with(visitor),
             InlineAsm { ref outputs, ref inputs, .. } =>
                 outputs.visit_with(visitor) || inputs.visit_with(visitor),
+
+            // Note for future: If we want to expose the extents
+            // during the visit, we need to either generalize EndRegion
+            // to carry `[ty::Region]`, or extend the `TypeVisitor`
+            // trait with a `fn visit_extent`.
+            EndRegion(ref _extents) => false,
+
             Nop => false,
         }
     }
