@@ -535,7 +535,7 @@ impl<'a, 'tcx> BitDenotation for Extents<'a, 'tcx> {
     type Idx = CodeExtent;
     type Ctxt = ();
     fn name() -> &'static str { "extents" }
-    fn bits_per_block(&self, ctxt: &Self::Ctxt) -> usize {
+    fn bits_per_block(&self, _ctxt: &Self::Ctxt) -> usize {
         self.tcx.region_maps.code_extents_len()
     }
 
@@ -548,7 +548,7 @@ impl<'a, 'tcx> BitDenotation for Extents<'a, 'tcx> {
     }
 
     fn statement_effect(&self,
-                        ctxt: &Self::Ctxt,
+                        _ctxt: &Self::Ctxt,
                         sets: &mut BlockSets<CodeExtent>,
                         bb: mir::BasicBlock,
                         stmt_idx: usize) {
@@ -591,8 +591,8 @@ impl<'a, 'tcx> BitDenotation for Extents<'a, 'tcx> {
     }
 
     fn propagate_call_return(&self,
-                             ctxt: &Self::Ctxt,
-                             in_out: &mut IdxSet<CodeExtent>,
+                             _ctxt: &Self::Ctxt,
+                             _in_out: &mut IdxSet<CodeExtent>,
                              _call_bb: mir::BasicBlock,
                              _dest_bb: mir::BasicBlock,
                              _dest_lval: &mir::Lvalue) {

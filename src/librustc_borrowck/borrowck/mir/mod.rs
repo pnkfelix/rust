@@ -13,12 +13,9 @@ use borrowck::BorrowckCtxt;
 use syntax::ast::{self, MetaItem};
 use syntax_pos::DUMMY_SP;
 
-use rustc::middle::region::{CodeExtent};
 use rustc::mir::{self, BasicBlock, BasicBlockData, Mir, Statement, Terminator, Location};
 use rustc::session::Session;
 use rustc::ty::{self, TyCtxt};
-
-use rustc_data_structures::indexed_vec::Idx;
 
 mod abs_domain;
 pub mod elaborate_drops;
