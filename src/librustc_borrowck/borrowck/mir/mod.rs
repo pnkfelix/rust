@@ -29,9 +29,8 @@ use self::dataflow::{DataflowOperator};
 use self::dataflow::{Dataflow, DataflowAnalysis, DataflowResults};
 use self::dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
 use self::dataflow::{DefinitelyInitializedLvals};
+use self::dataflow::{Extents};
 use self::gather_moves::{HasMoveData, MoveData, MovePathIndex, LookupResult};
-
-use std::fmt;
 
 use self::dataflow::MODebug;
 
@@ -66,6 +65,11 @@ pub fn borrowck_mir(bcx: &mut BorrowckCtxt,
     let param_env = ty::ParameterEnvironment::for_item(tcx, id);
     let move_data = MoveData::gather_moves(mir, tcx, &param_env);
     let mdpe = MoveDataParamEnv { move_data: move_data, param_env: param_env };
+
+    let _flow_extents =
+        do_dataflow(tcx, mir, id, attributes, &(), Extents::new(tcx, mir),
+                    |_ctxt, i| MODebug::Boxed(Box::new(i)));
+
     let flow_inits =
         do_dataflow(tcx, mir, id, attributes, MaybeInitializedLvals::new(tcx, mir, &mdpe),
                     |bd, i| MODebug::Borrowed(&bd.move_data().move_paths[i]));
