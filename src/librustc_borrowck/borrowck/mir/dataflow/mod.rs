@@ -25,6 +25,7 @@ use super::MirBorrowckCtxtPreDataflow;
 pub use self::sanity_check::sanity_check_via_rustc_peek;
 pub use self::impls::{MaybeInitializedLvals, MaybeUninitializedLvals};
 pub use self::impls::{DefinitelyInitializedLvals, MovingOutStatements};
+pub use self::impls::{Borrows};
 
 pub use self::graphviz::MODebug;
 
@@ -41,9 +42,9 @@ impl<'a, 'tcx: 'a, BD> Dataflow<BD> for MirBorrowckCtxtPreDataflow<'a, 'tcx, BD>
 {
     fn dataflow<P>(&mut self, p: P) where P: Fn(&BD, BD::Idx) -> MODebug {
         self.flow_state.build_sets();
-        self.pre_dataflow_instrumentation(|c,i| p(c,i)).unwrap();
+        self.pre_dataflow_instrumentation(|bd,i| p(bd,i)).unwrap();
         self.flow_state.propagate();
-        self.post_dataflow_instrumentation(|c,i| p(c,i)).unwrap();
+        self.post_dataflow_instrumentation(|bd,i| p(bd,i)).unwrap();
     }
 }
 
