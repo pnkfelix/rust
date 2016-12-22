@@ -29,7 +29,7 @@ use self::dataflow::{DataflowOperator};
 use self::dataflow::{Dataflow, DataflowAnalysis, DataflowResults};
 use self::dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
 use self::dataflow::{DefinitelyInitializedLvals};
-use self::dataflow::{Extents};
+use self::dataflow::{Borrows, Extents};
 use self::gather_moves::{HasMoveData, MoveData, MovePathIndex, LookupResult};
 
 use self::dataflow::MODebug;
@@ -68,6 +68,9 @@ pub fn borrowck_mir(bcx: &mut BorrowckCtxt,
 
     let _flow_extents =
         do_dataflow(tcx, mir, id, attributes, &(), Extents::new(tcx, mir),
+                    |_ctxt, i| MODebug::Boxed(Box::new(i)));
+    let _flow_borrows =
+        do_dataflow(tcx, mir, id, attributes, &(), Borrows::new(tcx, mir),
                     |_ctxt, i| MODebug::Boxed(Box::new(i)));
 
     let flow_inits =

@@ -25,7 +25,7 @@ use super::MirBorrowckCtxtPreDataflow;
 pub use self::sanity_check::sanity_check_via_rustc_peek;
 pub use self::impls::{MaybeInitializedLvals, MaybeUninitializedLvals};
 pub use self::impls::{DefinitelyInitializedLvals, MovingOutStatements};
-pub use self::impls::{Extents};
+pub use self::impls::{Borrows, Extents};
 
 pub use self::graphviz::MODebug;
 
