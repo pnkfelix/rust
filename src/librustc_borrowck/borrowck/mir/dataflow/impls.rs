@@ -589,13 +589,12 @@ impl<'a, 'tcx> BitDenotation for MovingOutStatements<'a, 'tcx> {
 
 impl<'a, 'tcx> BitDenotation for Extents<'a, 'tcx> {
     type Idx = CodeExtent;
-    type Ctxt = ();
     fn name() -> &'static str { "extents" }
-    fn bits_per_block(&self, _ctxt: &Self::Ctxt) -> usize {
+    fn bits_per_block(&self) -> usize {
         self.tcx.region_maps.code_extents_len()
     }
 
-    fn start_block_effect(&self, _ctxt: &Self::Ctxt, _sets: &mut BlockSets<CodeExtent>) {
+    fn start_block_effect(&self, _sets: &mut BlockSets<CodeExtent>) {
         // no code extents have been entered prior to function
         // execution, so this method has no effect on `_sets`.
         //
@@ -604,7 +603,6 @@ impl<'a, 'tcx> BitDenotation for Extents<'a, 'tcx> {
     }
 
     fn statement_effect(&self,
-                        _ctxt: &Self::Ctxt,
                         sets: &mut BlockSets<CodeExtent>,
                         bb: mir::BasicBlock,
                         stmt_idx: usize) {
@@ -639,7 +637,6 @@ impl<'a, 'tcx> BitDenotation for Extents<'a, 'tcx> {
     }
 
     fn terminator_effect(&self,
-                         _ctxt: &Self::Ctxt,
                          _sets: &mut BlockSets<CodeExtent>,
                          _bb: mir::BasicBlock,
                          _statements_len: usize) {
@@ -647,7 +644,6 @@ impl<'a, 'tcx> BitDenotation for Extents<'a, 'tcx> {
     }
 
     fn propagate_call_return(&self,
-                             _ctxt: &Self::Ctxt,
                              _in_out: &mut IdxSet<CodeExtent>,
                              _call_bb: mir::BasicBlock,
                              _dest_bb: mir::BasicBlock,
@@ -658,18 +654,16 @@ impl<'a, 'tcx> BitDenotation for Extents<'a, 'tcx> {
 
 impl<'a, 'tcx> BitDenotation for Borrows<'a, 'tcx> {
     type Idx = BorrowIdx;
-    type Ctxt = ();
     fn name() -> &'static str { "borrows" }
-    fn bits_per_block(&self, _ctxt: &Self::Ctxt) -> usize {
+    fn bits_per_block(&self) -> usize {
         self.locations.len()
     }
-    fn start_block_effect(&self, _ctxt: &Self::Ctxt, _sets: &mut BlockSets<BorrowIdx>)  {
+    fn start_block_effect(&self, _sets: &mut BlockSets<BorrowIdx>)  {
         // no borrows of code extents have been taken prior to
         // function execution, so this method has no effect on
         // `_sets`.
     }
     fn statement_effect(&self,
-                        _ctxt: &Self::Ctxt,
                         sets: &mut BlockSets<BorrowIdx>,
                         bb: mir::BasicBlock,
                         stmt_idx: usize) {
@@ -701,7 +695,6 @@ impl<'a, 'tcx> BitDenotation for Borrows<'a, 'tcx> {
         }
     }
     fn terminator_effect(&self,
-                         _ctxt: &Self::Ctxt,
                          _sets: &mut BlockSets<BorrowIdx>,
                          _bb: mir::BasicBlock,
                          _statements_len: usize) {
@@ -709,7 +702,6 @@ impl<'a, 'tcx> BitDenotation for Borrows<'a, 'tcx> {
     }
 
     fn propagate_call_return(&self,
-                             _ctxt: &Self::Ctxt,
                              _in_out: &mut IdxSet<BorrowIdx>,
                              _call_bb: mir::BasicBlock,
                              _dest_bb: mir::BasicBlock,

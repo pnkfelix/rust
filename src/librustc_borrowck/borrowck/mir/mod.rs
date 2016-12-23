@@ -67,11 +67,11 @@ pub fn borrowck_mir(bcx: &mut BorrowckCtxt,
     let mdpe = MoveDataParamEnv { move_data: move_data, param_env: param_env };
 
     let _flow_extents =
-        do_dataflow(tcx, mir, id, attributes, &(), Extents::new(tcx, mir),
-                    |_ctxt, i| MODebug::Boxed(Box::new(i)));
+        do_dataflow(tcx, mir, id, attributes, Extents::new(tcx, mir),
+                    |_bd, i| MODebug::Boxed(Box::new(i)));
     let _flow_borrows =
-        do_dataflow(tcx, mir, id, attributes, &(), Borrows::new(tcx, mir),
-                    |_ctxt, i| MODebug::Boxed(Box::new(i)));
+        do_dataflow(tcx, mir, id, attributes, Borrows::new(tcx, mir),
+                    |_bd, i| MODebug::Boxed(Box::new(i)));
 
     let flow_inits =
         do_dataflow(tcx, mir, id, attributes, MaybeInitializedLvals::new(tcx, mir, &mdpe),
@@ -120,7 +120,7 @@ fn do_dataflow<'a, 'tcx, BD, P>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                 bd: BD,
                                 p: P)
                                 -> DataflowResults<BD>
-    where BD: BitDenotation<Idx=MovePathIndex> + DataflowOperator,
+    where BD: BitDenotation + DataflowOperator,
           P: Fn(&BD, BD::Idx) -> MODebug
 {
     let name_found = |sess: &Session, attrs: &[ast::Attribute], name| -> Option<String> {
@@ -154,7 +154,8 @@ fn do_dataflow<'a, 'tcx, BD, P>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 }
 
 
-pub struct MirBorrowckCtxtPreDataflow<'a, 'tcx: 'a, BD> where BD: BitDenotation
+pub struct MirBorrowckCtxtPreDataflow<'a, 'tcx: 'a, BD>
+    where BD: BitDenotation
 {
     node_id: ast::NodeId,
     flow_state: DataflowAnalysis<'a, 'tcx, BD>,

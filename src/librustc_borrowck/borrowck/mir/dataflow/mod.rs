@@ -42,9 +42,9 @@ impl<'a, 'tcx: 'a, BD> Dataflow<BD> for MirBorrowckCtxtPreDataflow<'a, 'tcx, BD>
 {
     fn dataflow<P>(&mut self, p: P) where P: Fn(&BD, BD::Idx) -> MODebug {
         self.flow_state.build_sets();
-        self.pre_dataflow_instrumentation(|c,i| p(c,i)).unwrap();
+        self.pre_dataflow_instrumentation(|bd,i| p(bd,i)).unwrap();
         self.flow_state.propagate();
-        self.post_dataflow_instrumentation(|c,i| p(c,i)).unwrap();
+        self.post_dataflow_instrumentation(|bd,i| p(bd,i)).unwrap();
     }
 }
 
