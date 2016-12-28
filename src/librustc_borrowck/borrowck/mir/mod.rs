@@ -66,9 +66,10 @@ pub fn borrowck_mir(bcx: &mut BorrowckCtxt,
     let param_env = ty::ParameterEnvironment::for_item(tcx, id);
     let move_data = MoveData::gather_moves(mir, tcx, &param_env);
     let mdpe = MoveDataParamEnv { move_data: move_data, param_env: param_env };
+
     let _flow_borrows =
         do_dataflow(tcx, mir, id, attributes, Borrows::new(tcx, mir),
-                    |_bd, i| MODebug::Boxed(Box::new(i)));
+                    |bd, i| MODebug::Borrowed(bd.location(i)));
 
     let flow_inits =
         do_dataflow(tcx, mir, id, attributes, MaybeInitializedLvals::new(tcx, mir, &mdpe),
