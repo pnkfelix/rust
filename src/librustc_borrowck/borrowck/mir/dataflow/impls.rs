@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use rustc::ty::{Region, TyCtxt};
-use rustc::middle::region::CodeExtent;
+use rustc::middle::region::{CodeExtent, CodeExtentData};
 use rustc::mir::{self, Mir, Location};
 use rustc::mir::visit::Visitor;
 use rustc::util::nodemap::{FxHashMap, FxHashSet};
@@ -238,6 +238,9 @@ impl<'a, 'tcx> Extents<'a, 'tcx> {
     pub fn new(tcx: TyCtxt<'a, 'tcx, 'tcx>, mir: &'a Mir<'tcx>) -> Self {
         Extents { tcx: tcx, mir: mir }
     }
+    pub fn code_extent_data(&self, e: CodeExtent) -> CodeExtentData {
+        self.tcx.region_maps.code_extent_data(e)
+    }
 }
 
 // (In principle BorrowIdx need not be pub, but since it is associated
@@ -291,6 +294,9 @@ impl<'a, 'tcx> Borrows<'a, 'tcx> {
                 }
             }
         }
+    }
+    pub fn location(&self, idx: BorrowIdx) -> &Location {
+        &self.locations[idx]
     }
 }
 

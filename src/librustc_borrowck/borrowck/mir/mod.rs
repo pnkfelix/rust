@@ -68,10 +68,10 @@ pub fn borrowck_mir(bcx: &mut BorrowckCtxt,
 
     let _flow_extents =
         do_dataflow(tcx, mir, id, attributes, Extents::new(tcx, mir),
-                    |_bd, i| MODebug::Boxed(Box::new(i)));
+                    |bd, i| MODebug::Boxed(Box::new(bd.code_extent_data(i))));
     let _flow_borrows =
         do_dataflow(tcx, mir, id, attributes, Borrows::new(tcx, mir),
-                    |_bd, i| MODebug::Boxed(Box::new(i)));
+                    |bd, i| MODebug::Borrowed(bd.location(i)));
 
     let flow_inits =
         do_dataflow(tcx, mir, id, attributes, MaybeInitializedLvals::new(tcx, mir, &mdpe),
