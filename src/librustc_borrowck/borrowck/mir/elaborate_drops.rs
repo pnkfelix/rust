@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::gather_moves::{HasMoveData, MoveData, MovePathIndex, LookupResult};
+use super::gather_moves::{HasMoveData, MoveData, DataPathIndex, LookupResult};
 use super::dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
 use super::dataflow::{DataflowResults};
 use super::dataflow::{MODebug};
@@ -55,11 +55,11 @@ impl<'tcx> MirPass<'tcx> for ElaborateDrops {
             let flow_inits =
                 super::do_dataflow(tcx, mir, id, &[],
                                    MaybeInitializedLvals::new(tcx, mir, &env),
-                                   |bd, p| MODebug::Borrowed(&bd.move_data().move_paths[p]));
+                                   |bd, p| MODebug::Borrowed(&bd.move_data().data_paths[p]));
             let flow_uninits =
                 super::do_dataflow(tcx, mir, id, &[],
                                    MaybeUninitializedLvals::new(tcx, mir, &env),
-                                   |bd, p| MODebug::Borrowed(&bd.move_data().move_paths[p]));
+                                   |bd, p| MODebug::Borrowed(&bd.move_data().data_paths[p]));
 
             ElaborateDropsCtxt {
                 tcx: tcx,
@@ -78,8 +78,8 @@ impl<'tcx> MirPass<'tcx> for ElaborateDrops {
 impl Pass for ElaborateDrops {}
 
 struct InitializationData {
-    live: IdxSetBuf<MovePathIndex>,
-    dead: IdxSetBuf<MovePathIndex>
+    live: IdxSetBuf<DataPathIndex>,
+    dead: IdxSetBuf<DataPathIndex>
 }
 
 impl InitializationData {
@@ -105,7 +105,7 @@ impl InitializationData {
         });
     }
 
-    fn state(&self, path: MovePathIndex) -> (bool, bool) {
+    fn state(&self, path: DataPathIndex) -> (bool, bool) {
         (self.live.contains(&path), self.dead.contains(&path))
     }
 }
@@ -122,7 +122,7 @@ struct ElaborateDropsCtxt<'a, 'tcx: 'a> {
     env: &'a MoveDataParamEnv<'tcx>,
     flow_inits: DataflowResults<MaybeInitializedLvals<'a, 'tcx>>,
     flow_uninits:  DataflowResults<MaybeUninitializedLvals<'a, 'tcx>>,
-    drop_flags: FxHashMap<MovePathIndex, Local>,
+    drop_flags: FxHashMap<DataPathIndex, Local>,
     patch: MirPatch<'tcx>,
 }
 
@@ -134,7 +134,7 @@ struct DropCtxt<'a, 'tcx: 'a> {
     init_data: &'a InitializationData,
 
     lvalue: &'a Lvalue<'tcx>,
-    path: MovePathIndex,
+    path: DataPathIndex,
     succ: BasicBlock,
     unwind: Option<BasicBlock>
 }
@@ -159,7 +159,7 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
         data
     }
 
-    fn create_drop_flag(&mut self, index: MovePathIndex) {
+    fn create_drop_flag(&mut self, index: DataPathIndex) {
         let tcx = self.tcx;
         let patch = &mut self.patch;
         debug!("create_drop_flag({:?})", self.mir.span);
@@ -168,7 +168,7 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
         });
     }
 
-    fn drop_flag(&mut self, index: MovePathIndex) -> Option<Lvalue<'tcx>> {
+    fn drop_flag(&mut self, index: DataPathIndex) -> Option<Lvalue<'tcx>> {
         self.drop_flags.get(&index).map(|t| Lvalue::Local(*t))
     }
 
@@ -188,9 +188,9 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
         self.patch
     }
 
-    fn path_needs_drop(&self, path: MovePathIndex) -> bool
+    fn path_needs_drop(&self, path: DataPathIndex) -> bool
     {
-        let lvalue = &self.move_data().move_paths[path].lvalue;
+        let lvalue = &self.move_data().data_paths[path].lvalue;
         let ty = lvalue.ty(self.mir, self.tcx).to_ty(self.tcx);
         debug!("path_needs_drop({:?}, {:?} : {:?})", path, lvalue, ty);
 
@@ -446,10 +446,10 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
     /// (the move path is `None` if the field is a rest field).
     fn move_paths_for_fields(&self,
                              base_lv: &Lvalue<'tcx>,
-                             variant_path: MovePathIndex,
+                             variant_path: DataPathIndex,
                              variant: &'tcx ty::VariantDef,
                              substs: &'tcx Substs<'tcx>)
-                             -> Vec<(Lvalue<'tcx>, Option<MovePathIndex>)>
+                             -> Vec<(Lvalue<'tcx>, Option<DataPathIndex>)>
     {
         variant.fields.iter().enumerate().map(|(i, f)| {
             let subpath =
@@ -482,7 +482,7 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
                            c: &DropCtxt<'a, 'tcx>,
                            unwind_ladder: Option<Vec<BasicBlock>>,
                            succ: BasicBlock,
-                           fields: &[(Lvalue<'tcx>, Option<MovePathIndex>)],
+                           fields: &[(Lvalue<'tcx>, Option<DataPathIndex>)],
                            is_cleanup: bool)
                            -> Vec<BasicBlock>
     {
@@ -554,7 +554,7 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
     ///     ELAB(drop location.2 [target=`c.unwind])
     fn drop_ladder<'a>(&mut self,
                        c: &DropCtxt<'a, 'tcx>,
-                       fields: Vec<(Lvalue<'tcx>, Option<MovePathIndex>)>)
+                       fields: Vec<(Lvalue<'tcx>, Option<DataPathIndex>)>)
                        -> BasicBlock
     {
         debug!("drop_ladder({:?}, {:?})", c, fields);
@@ -922,7 +922,7 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
         }))
     }
 
-    fn set_drop_flag(&mut self, loc: Location, path: MovePathIndex, val: DropFlagState) {
+    fn set_drop_flag(&mut self, loc: Location, path: DataPathIndex, val: DropFlagState) {
         if let Some(&flag) = self.drop_flags.get(&path) {
             let span = self.patch.source_info_for_location(self.mir, loc).span;
             let val = self.constant_bool(span, val.value());
