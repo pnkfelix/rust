@@ -18,7 +18,7 @@ use rustc_data_structures::bitslice::{BitwiseOperator};
 use rustc_data_structures::indexed_set::{IdxSet};
 use rustc_data_structures::indexed_vec::{Idx, IndexVec};
 
-use super::super::gather_moves::{HasMoveData, MoveData, MoveOutIndex, MovePathIndex};
+use super::super::gather_moves::{HasMoveData, MoveData, MoveOutIndex, DataPathIndex};
 use super::super::MoveDataParamEnv;
 use super::super::DropFlagState;
 use super::super::{BorrowIndex};
@@ -277,7 +277,7 @@ impl<'a, 'tcx> Borrows<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> MaybeInitializedLvals<'a, 'tcx> {
-    fn update_bits(sets: &mut BlockSets<MovePathIndex>, path: MovePathIndex,
+    fn update_bits(sets: &mut BlockSets<DataPathIndex>, path: DataPathIndex,
                    state: DropFlagState)
     {
         match state {
@@ -288,7 +288,7 @@ impl<'a, 'tcx> MaybeInitializedLvals<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> MaybeUninitializedLvals<'a, 'tcx> {
-    fn update_bits(sets: &mut BlockSets<MovePathIndex>, path: MovePathIndex,
+    fn update_bits(sets: &mut BlockSets<DataPathIndex>, path: DataPathIndex,
                    state: DropFlagState)
     {
         match state {
@@ -299,7 +299,7 @@ impl<'a, 'tcx> MaybeUninitializedLvals<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> DefinitelyInitializedLvals<'a, 'tcx> {
-    fn update_bits(sets: &mut BlockSets<MovePathIndex>, path: MovePathIndex,
+    fn update_bits(sets: &mut BlockSets<DataPathIndex>, path: DataPathIndex,
                    state: DropFlagState)
     {
         match state {
@@ -310,13 +310,13 @@ impl<'a, 'tcx> DefinitelyInitializedLvals<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> BitDenotation for MaybeInitializedLvals<'a, 'tcx> {
-    type Idx = MovePathIndex;
+    type Idx = DataPathIndex;
     fn name() -> &'static str { "maybe_init" }
     fn bits_per_block(&self) -> usize {
-        self.move_data().move_paths.len()
+        self.move_data().data_paths.len()
     }
 
-    fn start_block_effect(&self, sets: &mut BlockSets<MovePathIndex>)
+    fn start_block_effect(&self, sets: &mut BlockSets<DataPathIndex>)
     {
         drop_flag_effects_for_function_entry(
             self.tcx, self.mir, self.mdpe,
@@ -327,7 +327,7 @@ impl<'a, 'tcx> BitDenotation for MaybeInitializedLvals<'a, 'tcx> {
     }
 
     fn statement_effect(&self,
-                        sets: &mut BlockSets<MovePathIndex>,
+                        sets: &mut BlockSets<DataPathIndex>,
                         bb: mir::BasicBlock,
                         idx: usize)
     {
@@ -339,7 +339,7 @@ impl<'a, 'tcx> BitDenotation for MaybeInitializedLvals<'a, 'tcx> {
     }
 
     fn terminator_effect(&self,
-                         sets: &mut BlockSets<MovePathIndex>,
+                         sets: &mut BlockSets<DataPathIndex>,
                          bb: mir::BasicBlock,
                          statements_len: usize)
     {
@@ -351,7 +351,7 @@ impl<'a, 'tcx> BitDenotation for MaybeInitializedLvals<'a, 'tcx> {
     }
 
     fn propagate_call_return(&self,
-                             in_out: &mut IdxSet<MovePathIndex>,
+                             in_out: &mut IdxSet<DataPathIndex>,
                              _call_bb: mir::BasicBlock,
                              _dest_bb: mir::BasicBlock,
                              dest_lval: &mir::Lvalue) {
@@ -364,14 +364,14 @@ impl<'a, 'tcx> BitDenotation for MaybeInitializedLvals<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> BitDenotation for MaybeUninitializedLvals<'a, 'tcx> {
-    type Idx = MovePathIndex;
+    type Idx = DataPathIndex;
     fn name() -> &'static str { "maybe_uninit" }
     fn bits_per_block(&self) -> usize {
-        self.move_data().move_paths.len()
+        self.move_data().data_paths.len()
     }
 
     // sets on_entry bits for Arg lvalues
-    fn start_block_effect(&self, sets: &mut BlockSets<MovePathIndex>) {
+    fn start_block_effect(&self, sets: &mut BlockSets<DataPathIndex>) {
         // set all bits to 1 (uninit) before gathering counterevidence
         for e in sets.on_entry.words_mut() { *e = !0; }
 
@@ -384,7 +384,7 @@ impl<'a, 'tcx> BitDenotation for MaybeUninitializedLvals<'a, 'tcx> {
     }
 
     fn statement_effect(&self,
-                        sets: &mut BlockSets<MovePathIndex>,
+                        sets: &mut BlockSets<DataPathIndex>,
                         bb: mir::BasicBlock,
                         idx: usize)
     {
@@ -396,7 +396,7 @@ impl<'a, 'tcx> BitDenotation for MaybeUninitializedLvals<'a, 'tcx> {
     }
 
     fn terminator_effect(&self,
-                         sets: &mut BlockSets<MovePathIndex>,
+                         sets: &mut BlockSets<DataPathIndex>,
                          bb: mir::BasicBlock,
                          statements_len: usize)
     {
@@ -408,7 +408,7 @@ impl<'a, 'tcx> BitDenotation for MaybeUninitializedLvals<'a, 'tcx> {
     }
 
     fn propagate_call_return(&self,
-                             in_out: &mut IdxSet<MovePathIndex>,
+                             in_out: &mut IdxSet<DataPathIndex>,
                              _call_bb: mir::BasicBlock,
                              _dest_bb: mir::BasicBlock,
                              dest_lval: &mir::Lvalue) {
@@ -421,14 +421,14 @@ impl<'a, 'tcx> BitDenotation for MaybeUninitializedLvals<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> BitDenotation for DefinitelyInitializedLvals<'a, 'tcx> {
-    type Idx = MovePathIndex;
+    type Idx = DataPathIndex;
     fn name() -> &'static str { "definite_init" }
     fn bits_per_block(&self) -> usize {
-        self.move_data().move_paths.len()
+        self.move_data().data_paths.len()
     }
 
     // sets on_entry bits for Arg lvalues
-    fn start_block_effect(&self, sets: &mut BlockSets<MovePathIndex>) {
+    fn start_block_effect(&self, sets: &mut BlockSets<DataPathIndex>) {
         for e in sets.on_entry.words_mut() { *e = 0; }
 
         drop_flag_effects_for_function_entry(
@@ -440,7 +440,7 @@ impl<'a, 'tcx> BitDenotation for DefinitelyInitializedLvals<'a, 'tcx> {
     }
 
     fn statement_effect(&self,
-                        sets: &mut BlockSets<MovePathIndex>,
+                        sets: &mut BlockSets<DataPathIndex>,
                         bb: mir::BasicBlock,
                         idx: usize)
     {
@@ -452,7 +452,7 @@ impl<'a, 'tcx> BitDenotation for DefinitelyInitializedLvals<'a, 'tcx> {
     }
 
     fn terminator_effect(&self,
-                         sets: &mut BlockSets<MovePathIndex>,
+                         sets: &mut BlockSets<DataPathIndex>,
                          bb: mir::BasicBlock,
                          statements_len: usize)
     {
@@ -464,7 +464,7 @@ impl<'a, 'tcx> BitDenotation for DefinitelyInitializedLvals<'a, 'tcx> {
     }
 
     fn propagate_call_return(&self,
-                             in_out: &mut IdxSet<MovePathIndex>,
+                             in_out: &mut IdxSet<DataPathIndex>,
                              _call_bb: mir::BasicBlock,
                              _dest_bb: mir::BasicBlock,
                              dest_lval: &mir::Lvalue) {

@@ -57,8 +57,8 @@ mod indexes {
         }
     }
 
-    /// Index into MovePathData.move_paths
-    new_index!(MovePathIndex, "mp");
+    /// Index into MovePathData.data_paths
+    new_index!(DataPathIndex, "dp");
 
     /// Index into MoveData.moves.
     new_index!(MoveOutIndex, "mo");
@@ -67,12 +67,12 @@ mod indexes {
     new_index!(BorrowIndex, "bw");
 }
 
-pub use self::indexes::MovePathIndex;
+pub use self::indexes::DataPathIndex;
 pub use self::indexes::MoveOutIndex;
 pub use self::indexes::BorrowIndex;
 
 impl self::indexes::MoveOutIndex {
-    pub fn move_path_index(&self, move_data: &MoveData) -> MovePathIndex {
+    pub fn data_path_index(&self, move_data: &MoveData) -> DataPathIndex {
         move_data.moves[*self].path
     }
 }
@@ -91,9 +91,9 @@ impl self::indexes::MoveOutIndex {
 /// they both have the MovePath representing `x` as their parent.
 #[derive(Clone)]
 pub struct MovePath<'tcx> {
-    pub next_sibling: Option<MovePathIndex>,
-    pub first_child: Option<MovePathIndex>,
-    pub parent: Option<MovePathIndex>,
+    pub next_sibling: Option<DataPathIndex>,
+    pub first_child: Option<DataPathIndex>,
+    pub parent: Option<DataPathIndex>,
     pub lvalue: Lvalue<'tcx>,
 }
 
@@ -115,14 +115,14 @@ impl<'tcx> fmt::Debug for MovePath<'tcx> {
 
 #[derive(Debug)]
 pub struct MoveData<'tcx> {
-    pub move_paths: IndexVec<MovePathIndex, MovePath<'tcx>>,
+    pub data_paths: IndexVec<DataPathIndex, MovePath<'tcx>>,
     pub moves: IndexVec<MoveOutIndex, MoveOut>,
     /// Each Location `l` is mapped to the MoveOut's that are effects
     /// of executing the code at `l`. (There can be multiple MoveOut's
     /// for a given `l` because each MoveOut is associated with one
     /// particular path being moved.)
     pub loc_map: LocationMap<Vec<MoveOutIndex>>,
-    pub path_map: IndexVec<MovePathIndex, Vec<MoveOutIndex>>,
+    pub path_map: IndexVec<DataPathIndex, Vec<MoveOutIndex>>,
     pub rev_lookup: MovePathLookup<'tcx>,
 }
 
@@ -169,7 +169,7 @@ impl<T> LocationMap<T> where T: Default + Clone {
 #[derive(Copy, Clone)]
 pub struct MoveOut {
     /// path being moved
-    pub path: MovePathIndex,
+    pub path: DataPathIndex,
     /// location of move
     pub source: Location,
 }
@@ -183,7 +183,7 @@ impl fmt::Debug for MoveOut {
 /// Tables mapping from an l-value to its MovePathIndex.
 #[derive(Debug)]
 pub struct MovePathLookup<'tcx> {
-    locals: IndexVec<Local, MovePathIndex>,
+    locals: IndexVec<Local, DataPathIndex>,
 
     /// projections are made from a base-lvalue and a projection
     /// elem. The base-lvalue will have a unique MovePathIndex; we use
@@ -191,7 +191,7 @@ pub struct MovePathLookup<'tcx> {
     /// subsequent search so that it is solely relative to that
     /// base-lvalue). For the remaining lookup, we map the projection
     /// elem to the associated MovePathIndex.
-    projections: FxHashMap<(MovePathIndex, AbstractElem<'tcx>), MovePathIndex>
+    projections: FxHashMap<(DataPathIndex, AbstractElem<'tcx>), DataPathIndex>
 }
 
 struct MoveDataBuilder<'a, 'tcx: 'a> {
@@ -203,7 +203,7 @@ struct MoveDataBuilder<'a, 'tcx: 'a> {
 
 pub enum MovePathError {
     IllegalMove,
-    UnionMove { path: MovePathIndex },
+    UnionMove { path: DataPathIndex },
 }
 
 impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
@@ -211,7 +211,7 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
            tcx: TyCtxt<'a, 'tcx, 'tcx>,
            param_env: &'a ParameterEnvironment<'tcx>)
            -> Self {
-        let mut move_paths = IndexVec::new();
+        let mut data_paths = IndexVec::new();
         let mut path_map = IndexVec::new();
 
         MoveDataBuilder {
@@ -223,21 +223,21 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
                 loc_map: LocationMap::new(mir),
                 rev_lookup: MovePathLookup {
                     locals: mir.local_decls.indices().map(Lvalue::Local).map(|v| {
-                        Self::new_move_path(&mut move_paths, &mut path_map, None, v)
+                        Self::new_move_path(&mut data_paths, &mut path_map, None, v)
                     }).collect(),
                     projections: FxHashMap(),
                 },
-                move_paths: move_paths,
+                data_paths: data_paths,
                 path_map: path_map,
             }
         }
     }
 
-    fn new_move_path(move_paths: &mut IndexVec<MovePathIndex, MovePath<'tcx>>,
-                     path_map: &mut IndexVec<MovePathIndex, Vec<MoveOutIndex>>,
-                     parent: Option<MovePathIndex>,
+    fn new_move_path(move_paths: &mut IndexVec<DataPathIndex, MovePath<'tcx>>,
+                     path_map: &mut IndexVec<DataPathIndex, Vec<MoveOutIndex>>,
+                     parent: Option<DataPathIndex>,
                      lvalue: Lvalue<'tcx>)
-                     -> MovePathIndex
+                     -> DataPathIndex
     {
         let move_path = move_paths.push(MovePath {
             next_sibling: None,
@@ -265,7 +265,7 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
     ///
     /// Maybe we should have seperate "borrowck" and "moveck" modes.
     fn move_path_for(&mut self, lval: &Lvalue<'tcx>)
-                     -> Result<MovePathIndex, MovePathError>
+                     -> Result<DataPathIndex, MovePathError>
     {
         debug!("lookup({:?})", lval);
         match *lval {
@@ -287,7 +287,7 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
     fn move_path_for_projection(&mut self,
                                 lval: &Lvalue<'tcx>,
                                 proj: &LvalueProjection<'tcx>)
-                                -> Result<MovePathIndex, MovePathError>
+                                -> Result<DataPathIndex, MovePathError>
     {
         let base = try!(self.move_path_for(&proj.base));
         let lv_ty = proj.base.ty(self.mir, self.tcx).to_ty(self.tcx);
@@ -316,7 +316,7 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
             Entry::Occupied(ent) => Ok(*ent.get()),
             Entry::Vacant(ent) => {
                 let path = Self::new_move_path(
-                    &mut self.data.move_paths,
+                    &mut self.data.data_paths,
                     &mut self.data.path_map,
                     Some(base),
                     lval.clone()
@@ -334,7 +334,7 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
                 debug!("    {:?} = {:?}", j, mo);
             }
             debug!("move paths for {:?}:", self.mir.span);
-            for (j, path) in self.data.move_paths.iter_enumerated() {
+            for (j, path) in self.data.data_paths.iter_enumerated() {
                 debug!("    {:?} = {:?}", j, path);
             }
             "done dumping moves"
@@ -345,8 +345,8 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
 
 #[derive(Copy, Clone, Debug)]
 pub enum LookupResult {
-    Exact(MovePathIndex),
-    Parent(Option<MovePathIndex>)
+    Exact(DataPathIndex),
+    Parent(Option<DataPathIndex>)
 }
 
 impl<'tcx> MovePathLookup<'tcx> {
