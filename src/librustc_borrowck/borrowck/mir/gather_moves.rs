@@ -77,29 +77,29 @@ impl self::indexes::MoveOutIndex {
     }
 }
 
-/// `MovePath` is a canonicalized representation of a path that is
-/// moved or assigned to.
+/// `DataPath` is a canonicalized representation of a path that is
+/// moved, borrowed, or assigned to.
 ///
 /// It follows a tree structure.
 ///
 /// Given `struct X { m: M, n: N }` and `x: X`, moves like `drop x.m;`
 /// move *out* of the l-value `x.m`.
 ///
-/// The MovePaths representing `x.m` and `x.n` are siblings (that is,
+/// The DataPaths representing `x.m` and `x.n` are siblings (that is,
 /// one of them will link to the other via the `next_sibling` field,
 /// and the other will have no entry in its `next_sibling` field), and
-/// they both have the MovePath representing `x` as their parent.
+/// they both have the DataPath representing `x` as their parent.
 #[derive(Clone)]
-pub struct MovePath<'tcx> {
+pub struct DataPath<'tcx> {
     pub next_sibling: Option<DataPathIndex>,
     pub first_child: Option<DataPathIndex>,
     pub parent: Option<DataPathIndex>,
     pub lvalue: Lvalue<'tcx>,
 }
 
-impl<'tcx> fmt::Debug for MovePath<'tcx> {
+impl<'tcx> fmt::Debug for DataPath<'tcx> {
     fn fmt(&self, w: &mut fmt::Formatter) -> fmt::Result {
-        write!(w, "MovePath {{")?;
+        write!(w, "DataPath {{")?;
         if let Some(parent) = self.parent {
             write!(w, " parent: {:?},", parent)?;
         }
@@ -115,7 +115,7 @@ impl<'tcx> fmt::Debug for MovePath<'tcx> {
 
 #[derive(Debug)]
 pub struct MoveData<'tcx> {
-    pub data_paths: IndexVec<DataPathIndex, MovePath<'tcx>>,
+    pub data_paths: IndexVec<DataPathIndex, DataPath<'tcx>>,
     pub moves: IndexVec<MoveOutIndex, MoveOut>,
     /// Each Location `l` is mapped to the MoveOut's that are effects
     /// of executing the code at `l`. (There can be multiple MoveOut's
@@ -123,7 +123,7 @@ pub struct MoveData<'tcx> {
     /// particular path being moved.)
     pub loc_map: LocationMap<Vec<MoveOutIndex>>,
     pub path_map: IndexVec<DataPathIndex, Vec<MoveOutIndex>>,
-    pub rev_lookup: MovePathLookup<'tcx>,
+    pub rev_lookup: DataPathLookup<'tcx>,
 }
 
 pub trait HasMoveData<'tcx> {
@@ -180,17 +180,17 @@ impl fmt::Debug for MoveOut {
     }
 }
 
-/// Tables mapping from an l-value to its MovePathIndex.
+/// Tables mapping from an l-value to its DataPathIndex.
 #[derive(Debug)]
-pub struct MovePathLookup<'tcx> {
+pub struct DataPathLookup<'tcx> {
     locals: IndexVec<Local, DataPathIndex>,
 
     /// projections are made from a base-lvalue and a projection
-    /// elem. The base-lvalue will have a unique MovePathIndex; we use
+    /// elem. The base-lvalue will have a unique DataPathIndex; we use
     /// the latter as the index into the outer vector (narrowing
     /// subsequent search so that it is solely relative to that
     /// base-lvalue). For the remaining lookup, we map the projection
-    /// elem to the associated MovePathIndex.
+    /// elem to the associated DataPathIndex.
     projections: FxHashMap<(DataPathIndex, AbstractElem<'tcx>), DataPathIndex>
 }
 
@@ -201,7 +201,7 @@ struct MoveDataBuilder<'a, 'tcx: 'a> {
     data: MoveData<'tcx>,
 }
 
-pub enum MovePathError {
+pub enum DataPathError {
     IllegalMove,
     UnionMove { path: DataPathIndex },
 }
@@ -221,7 +221,7 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
             data: MoveData {
                 moves: IndexVec::new(),
                 loc_map: LocationMap::new(mir),
-                rev_lookup: MovePathLookup {
+                rev_lookup: DataPathLookup {
                     locals: mir.local_decls.indices().map(Lvalue::Local).map(|v| {
                         Self::new_move_path(&mut data_paths, &mut path_map, None, v)
                     }).collect(),
@@ -233,13 +233,13 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
         }
     }
 
-    fn new_move_path(move_paths: &mut IndexVec<DataPathIndex, MovePath<'tcx>>,
+    fn new_move_path(data_paths: &mut IndexVec<DataPathIndex, DataPath<'tcx>>,
                      path_map: &mut IndexVec<DataPathIndex, Vec<MoveOutIndex>>,
                      parent: Option<DataPathIndex>,
                      lvalue: Lvalue<'tcx>)
                      -> DataPathIndex
     {
-        let move_path = move_paths.push(MovePath {
+        let move_path = data_paths.push(DataPath {
             next_sibling: None,
             first_child: None,
             parent: parent,
@@ -248,8 +248,8 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
 
         if let Some(parent) = parent {
             let next_sibling =
-                mem::replace(&mut move_paths[parent].first_child, Some(move_path));
-            move_paths[move_path].next_sibling = next_sibling;
+                mem::replace(&mut data_paths[parent].first_child, Some(move_path));
+            data_paths[move_path].next_sibling = next_sibling;
         }
 
         let path_map_ent = path_map.push(vec![]);
@@ -257,55 +257,55 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
         move_path
     }
 
-    /// This creates a MovePath for a given lvalue, returning an `MovePathError`
+    /// This creates a DataPath for a given lvalue, returning an `DataPathError`
     /// if that lvalue can't be moved from.
     ///
     /// NOTE: lvalues behind references *do not* get a move path, which is
     /// problematic for borrowck.
     ///
     /// Maybe we should have seperate "borrowck" and "moveck" modes.
-    fn move_path_for(&mut self, lval: &Lvalue<'tcx>)
-                     -> Result<DataPathIndex, MovePathError>
+    fn data_path_for(&mut self, lval: &Lvalue<'tcx>)
+                     -> Result<DataPathIndex, DataPathError>
     {
         debug!("lookup({:?})", lval);
         match *lval {
             Lvalue::Local(local) => Ok(self.data.rev_lookup.locals[local]),
             // error: can't move out of a static
-            Lvalue::Static(..) => Err(MovePathError::IllegalMove),
+            Lvalue::Static(..) => Err(DataPathError::IllegalMove),
             Lvalue::Projection(ref proj) => {
-                self.move_path_for_projection(lval, proj)
+                self.data_path_for_projection(lval, proj)
             }
         }
     }
 
-    fn create_move_path(&mut self, lval: &Lvalue<'tcx>) {
+    fn create_data_path(&mut self, lval: &Lvalue<'tcx>) {
         // This is an assignment, not a move, so this not being a valid
         // move path is OK.
-        let _ = self.move_path_for(lval);
+        let _ = self.data_path_for(lval);
     }
 
-    fn move_path_for_projection(&mut self,
+    fn data_path_for_projection(&mut self,
                                 lval: &Lvalue<'tcx>,
                                 proj: &LvalueProjection<'tcx>)
-                                -> Result<DataPathIndex, MovePathError>
+                                -> Result<DataPathIndex, DataPathError>
     {
-        let base = try!(self.move_path_for(&proj.base));
+        let base = try!(self.data_path_for(&proj.base));
         let lv_ty = proj.base.ty(self.mir, self.tcx).to_ty(self.tcx);
         match lv_ty.sty {
             // error: can't move out of borrowed content
-            ty::TyRef(..) | ty::TyRawPtr(..) => return Err(MovePathError::IllegalMove),
+            ty::TyRef(..) | ty::TyRawPtr(..) => return Err(DataPathError::IllegalMove),
             // error: can't move out of struct with destructor
             ty::TyAdt(adt, _) if adt.has_dtor(self.tcx) && !adt.is_box() =>
-                return Err(MovePathError::IllegalMove),
+                return Err(DataPathError::IllegalMove),
             // move out of union - always move the entire union
             ty::TyAdt(adt, _) if adt.is_union() =>
-                return Err(MovePathError::UnionMove { path: base }),
+                return Err(DataPathError::UnionMove { path: base }),
             // error: can't move out of a slice
             ty::TySlice(..) =>
-                return Err(MovePathError::IllegalMove),
+                return Err(DataPathError::IllegalMove),
             ty::TyArray(..) => match proj.elem {
                 // error: can't move out of an array
-                ProjectionElem::Index(..) => return Err(MovePathError::IllegalMove),
+                ProjectionElem::Index(..) => return Err(DataPathError::IllegalMove),
                 _ => {
                     // FIXME: still badly broken
                 }
@@ -349,9 +349,9 @@ pub enum LookupResult {
     Parent(Option<DataPathIndex>)
 }
 
-impl<'tcx> MovePathLookup<'tcx> {
-    // Unlike the builder `fn move_path_for` below, this lookup
-    // alternative will *not* create a MovePath on the fly for an
+impl<'tcx> DataPathLookup<'tcx> {
+    // Unlike the builder `fn data_path_for`, this lookup
+    // alternative will *not* create a DataPath on the fly for an
     // unknown l-value, but will rather return the nearest available
     // parent.
     pub fn find(&self, lval: &Lvalue<'tcx>) -> LookupResult {
@@ -409,7 +409,7 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
         debug!("gather_statement({:?}, {:?})", loc, stmt);
         match stmt.kind {
             StatementKind::Assign(ref lval, ref rval) => {
-                self.create_move_path(lval);
+                self.create_data_path(lval);
                 self.gather_rvalue(loc, rval);
             }
             StatementKind::StorageLive(_) |
@@ -480,7 +480,7 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
                 self.gather_move(loc, location);
             }
             TerminatorKind::DropAndReplace { ref location, ref value, .. } => {
-                self.create_move_path(location);
+                self.create_data_path(location);
                 self.gather_operand(loc, value);
             }
             TerminatorKind::Call { ref func, ref args, ref destination, cleanup: _ } => {
@@ -489,7 +489,7 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
                     self.gather_operand(loc, arg);
                 }
                 if let Some((ref destination, _bb)) = *destination {
-                    self.create_move_path(destination);
+                    self.create_data_path(destination);
                 }
             }
         }
@@ -513,9 +513,9 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
             return
         }
 
-        let path = match self.move_path_for(lval) {
-            Ok(path) | Err(MovePathError::UnionMove { path }) => path,
-            Err(MovePathError::IllegalMove) => {
+        let path = match self.data_path_for(lval) {
+            Ok(path) | Err(DataPathError::UnionMove { path }) => path,
+            Err(DataPathError::IllegalMove) => {
                 // Moving out of a bad path. Eventually, this should be a MIR
                 // borrowck error instead of a bug.
                 span_bug!(self.mir.span,
