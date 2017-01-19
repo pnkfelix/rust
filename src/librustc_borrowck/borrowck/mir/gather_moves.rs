@@ -200,6 +200,13 @@ pub enum DataPathError {
     UnionMove { path: DataPathIndex },
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+enum DataOp {
+    Move,
+    Borrow,
+    Overwrite,
+}
+
 impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
     fn new(mir: &'a Mir<'tcx>,
            tcx: TyCtxt<'a, 'tcx, 'tcx>,
@@ -258,7 +265,7 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
     /// problematic for borrowck.
     ///
     /// Maybe we should have seperate "borrowck" and "moveck" modes.
-    fn data_path_for(&mut self, lval: &Lvalue<'tcx>)
+    fn data_path_for(&mut self, lval: &Lvalue<'tcx>, op: DataOp)
                      -> Result<DataPathIndex, DataPathError>
     {
         debug!("lookup({:?})", lval);
@@ -267,7 +274,7 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
             // error: can't move out of a static
             Lvalue::Static(..) => Err(DataPathError::IllegalMove),
             Lvalue::Projection(ref proj) => {
-                self.data_path_for_projection(lval, proj)
+                self.data_path_for_projection(lval, proj, op)
             }
         }
     }
@@ -275,37 +282,41 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
     fn create_data_path(&mut self, lval: &Lvalue<'tcx>) {
         // This is an assignment, not a move, so this not being a valid
         // move path is OK.
-        let _ = self.data_path_for(lval);
+        let _ = self.data_path_for(lval, DataOp::Overwrite);
     }
 
     fn data_path_for_projection(&mut self,
                                 lval: &Lvalue<'tcx>,
-                                proj: &LvalueProjection<'tcx>)
+                                proj: &LvalueProjection<'tcx>,
+                                op: DataOp)
                                 -> Result<DataPathIndex, DataPathError>
     {
-        let base = try!(self.data_path_for(&proj.base));
-        let lv_ty = proj.base.ty(self.mir, self.tcx).to_ty(self.tcx);
-        match lv_ty.sty {
-            // error: can't move out of borrowed content
-            ty::TyRef(..) | ty::TyRawPtr(..) => return Err(DataPathError::IllegalMove),
-            // error: can't move out of struct with destructor
-            ty::TyAdt(adt, _) if adt.has_dtor() =>
-                return Err(DataPathError::IllegalMove),
-            // move out of union - always move the entire union
-            ty::TyAdt(adt, _) if adt.is_union() =>
-                return Err(DataPathError::UnionMove { path: base }),
-            // error: can't move out of a slice
-            ty::TySlice(..) =>
-                return Err(DataPathError::IllegalMove),
-            ty::TyArray(..) => match proj.elem {
-                // error: can't move out of an array
-                ProjectionElem::Index(..) => return Err(DataPathError::IllegalMove),
-                _ => {
-                    // FIXME: still badly broken
-                }
-            },
-            _ => {}
-        };
+        let base = try!(self.data_path_for(&proj.base, op));
+        if op == DataOp::Move {
+            let lv_ty = proj.base.ty(self.mir, self.tcx).to_ty(self.tcx);
+            match lv_ty.sty {
+                // error: can't move out of borrowed content
+                ty::TyRef(..) | ty::TyRawPtr(..) => return Err(DataPathError::IllegalMove),
+                // error: can't move out of struct with destructor
+                ty::TyAdt(adt, _) if adt.has_dtor() =>
+                    return Err(DataPathError::IllegalMove),
+                // move out of union - always move the entire union
+                ty::TyAdt(adt, _) if adt.is_union() =>
+                    return Err(DataPathError::UnionMove { path: base }),
+                // error: can't move out of a slice
+                ty::TySlice(..) =>
+                    return Err(DataPathError::IllegalMove),
+                ty::TyArray(..) => match proj.elem {
+                    // error: can't move out of an array
+                    ProjectionElem::Index(..) => return Err(DataPathError::IllegalMove),
+                    _ => {
+                        // FIXME: still badly broken
+                    }
+                },
+                _ => {}
+            };
+        }
+
         match self.data.rev_lookup.projections.entry((base, proj.elem.lift())) {
             Entry::Occupied(ent) => Ok(*ent.get()),
             Entry::Vacant(ent) => {
@@ -508,7 +519,7 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
             return
         }
 
-        let path = match self.data_path_for(lval) {
+        let path = match self.data_path_for(lval, DataOp::Move) {
             Ok(path) | Err(DataPathError::UnionMove { path }) => path,
             Err(DataPathError::IllegalMove) => {
                 // Moving out of a bad path. Eventually, this should be a MIR
