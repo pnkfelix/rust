@@ -209,6 +209,7 @@ pub enum DataPathError {
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum DataOp {
     Move,
+    #[allow(dead_code)]
     Borrow,
     Overwrite,
 }

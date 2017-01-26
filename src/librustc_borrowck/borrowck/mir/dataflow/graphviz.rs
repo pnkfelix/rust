@@ -35,6 +35,7 @@ use super::{BitDenotation, DataflowState};
 /// we can pass around.
 pub enum MODebug<'a> {
     Borrowed(&'a Debug),
+    #[allow(dead_code)]
     Boxed(Box<Debug>),
 }
 
