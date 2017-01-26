@@ -258,6 +258,7 @@ impl Idx for BorrowIdx {
 // uniquely identified in the MIR by the `Location` of the assigment
 // statement in which it appears on the right hand side.
 pub struct Borrows<'a, 'tcx: 'a> {
+    #[allow(dead_code)]
     tcx: TyCtxt<'a, 'tcx, 'tcx>,
     mir: &'a Mir<'tcx>,
     locations: IndexVec<BorrowIdx, Location>,
