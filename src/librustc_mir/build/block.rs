@@ -79,8 +79,10 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                             if let Some(de) = opt_destruction_extent {
                                 this.push_scope(de);
                             }
-                            unpack!(block = this.in_scope((init_scope, source_info), block, move |this| {
-                                // FIXME #30046                                             ^~~~
+
+                            let init_scope = (init_scope, source_info);
+                            unpack!(block = this.in_scope(init_scope, block, move |this| {
+                                // FIXME #30046                              ^~~~
                                 this.expr_into_pattern(block, pattern, init)
                             }));
 
