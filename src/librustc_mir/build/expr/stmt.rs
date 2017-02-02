@@ -79,7 +79,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             ExprKind::Continue { label } => {
                 let LoopScope { continue_block, extent, .. } =
                     *this.find_loop_scope(expr_span, label);
-                this.exit_scope(expr_span, extent, block, continue_block);
+                this.exit_scope(expr_span, (extent, source_info), block, continue_block);
                 this.cfg.start_new_block().unit()
             }
             ExprKind::Break { label, value } => {
@@ -97,7 +97,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 } else {
                     this.cfg.push_assign_unit(block, source_info, &destination)
                 }
-                this.exit_scope(expr_span, extent, block, break_block);
+                this.exit_scope(expr_span, (extent, source_info), block, break_block);
                 this.cfg.start_new_block().unit()
             }
             ExprKind::Return { value } => {
@@ -114,7 +114,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 };
                 let extent = this.extent_of_return_scope();
                 let return_block = this.return_block();
-                this.exit_scope(expr_span, extent, block, return_block);
+                this.exit_scope(expr_span, (extent, source_info), block, return_block);
                 this.cfg.start_new_block().unit()
             }
             ExprKind::InlineAsm { asm, outputs, inputs } => {
