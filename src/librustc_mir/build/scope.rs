@@ -331,11 +331,11 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
     /// module comment for details.
     pub(crate) fn exit_scope(&mut self,
                       span: Span,
-                      extent: CodeExtent,
+                      extent: (CodeExtent, SourceInfo),
                       mut block: BasicBlock,
                       target: BasicBlock) {
         debug!("exit_scope(extent={:?}, block={:?}, target={:?})", extent, block, target);
-        let scope_count = 1 + self.scopes.iter().rev().position(|scope| scope.extent == extent)
+        let scope_count = 1 + self.scopes.iter().rev().position(|scope| scope.extent == extent.0)
                                                       .unwrap_or_else(||{
             span_bug!(span, "extent {:?} does not enclose", extent)
         });
@@ -346,7 +346,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         let mut rest = &mut self.scopes[(len - scope_count)..];
         while let Some((scope, rest_)) = {rest}.split_last_mut() {
             rest = rest_;
-            block = if let Some(&e) = scope.cached_exits.get(&(target, extent)) {
+            block = if let Some(&e) = scope.cached_exits.get(&(target, extent.0)) {
                 self.cfg.terminate(block, scope.source_info(span),
                                    TerminatorKind::Goto { target: e });
                 return;
@@ -354,7 +354,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 let b = self.cfg.start_new_block();
                 self.cfg.terminate(block, scope.source_info(span),
                                    TerminatorKind::Goto { target: b });
-                scope.cached_exits.insert((target, extent), b);
+                scope.cached_exits.insert((target, extent.0), b);
                 b
             };
             unpack!(block = build_scope_drops(&mut self.cfg,
@@ -362,6 +362,9 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                                               rest,
                                               block,
                                               self.arg_count));
+            if self.seen_borrows.contains((&scope.extent)) {
+                self.cfg.push_end_region(block, extent.1, scope.extent);
+            }
             if let Some(ref free_data) = scope.free {
                 let next = self.cfg.start_new_block();
                 let free = build_free(self.hir.tcx(), &tmp, free_data, next);
