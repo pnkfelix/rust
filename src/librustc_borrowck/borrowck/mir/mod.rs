@@ -31,6 +31,7 @@ use self::dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
 use self::dataflow::{DefinitelyInitializedLvals};
 use self::dataflow::{Borrows};
 use self::gather_moves::{HasMoveData, MoveData, MovePathIndex, LookupResult};
+pub(self) use self::gather_moves::{BorrowIndex};
 
 use self::dataflow::MODebug;
 
