@@ -19,6 +19,7 @@
 
 #![allow(non_camel_case_types)]
 
+#![feature(pub_restricted)]
 #![feature(quote)]
 #![feature(rustc_diagnostic_macros)]
 #![feature(rustc_private)]

@@ -21,6 +21,7 @@ use rustc_data_structures::indexed_vec::{Idx, IndexVec};
 use super::super::gather_moves::{HasMoveData, MoveData, MoveOutIndex, MovePathIndex};
 use super::super::MoveDataParamEnv;
 use super::super::DropFlagState;
+use super::super::{BorrowIndex};
 use super::super::drop_flag_effects_for_function_entry;
 use super::super::drop_flag_effects_for_location;
 use super::super::on_lookup_result_bits;
@@ -226,16 +227,7 @@ impl<'a, 'tcx> HasMoveData<'tcx> for MovingOutStatements<'a, 'tcx> {
     fn move_data(&self) -> &MoveData<'tcx> { &self.mdpe.move_data }
 }
 
-// (In principle BorrowIdx need not be pub, but since it is associated
-// type of BitDenotation impl, hand is forced by privacy rules.)
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
-pub struct BorrowIdx(usize);
-
-impl Idx for BorrowIdx {
-    fn new(idx: usize) -> Self { BorrowIdx(idx) }
-    fn index(self) -> usize { self.0 }
-}
 
 // `Borrows` maps each dataflow bit to an `Rvalue::Ref`, which can be
 // uniquely identified in the MIR by the `Location` of the assigment
@@ -243,9 +235,9 @@ impl Idx for BorrowIdx {
 pub struct Borrows<'a, 'tcx: 'a> {
     tcx: TyCtxt<'a, 'tcx, 'tcx>,
     mir: &'a Mir<'tcx>,
-    locations: IndexVec<BorrowIdx, Location>,
-    loc_map: FxHashMap<Location, BorrowIdx>,
-    ext_map: FxHashMap<CodeExtent, FxHashSet<BorrowIdx>>,
+    locations: IndexVec<BorrowIndex, Location>,
+    loc_map: FxHashMap<Location, BorrowIndex>,
+    ext_map: FxHashMap<CodeExtent, FxHashSet<BorrowIndex>>,
 }
 
 impl<'a, 'tcx> Borrows<'a, 'tcx> {
@@ -261,9 +253,9 @@ impl<'a, 'tcx> Borrows<'a, 'tcx> {
                          ext_map: visitor.ext_map, };
 
         struct GatherBorrows {
-            idx_vec: IndexVec<BorrowIdx, Location>,
-            loc_map: FxHashMap<Location, BorrowIdx>,
-            ext_map: FxHashMap<CodeExtent, FxHashSet<BorrowIdx>>,
+            idx_vec: IndexVec<BorrowIndex, Location>,
+            loc_map: FxHashMap<Location, BorrowIndex>,
+            ext_map: FxHashMap<CodeExtent, FxHashSet<BorrowIndex>>,
         }
         impl<'tcx> Visitor<'tcx> for GatherBorrows {
             fn visit_rvalue(&mut self,
@@ -277,6 +269,10 @@ impl<'a, 'tcx> Borrows<'a, 'tcx> {
                 }
             }
         }
+    }
+
+    pub fn location(&self, idx: BorrowIndex) -> &Location {
+        &self.locations[idx]
     }
 }
 
@@ -575,18 +571,18 @@ impl<'a, 'tcx> BitDenotation for MovingOutStatements<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> BitDenotation for Borrows<'a, 'tcx> {
-    type Idx = BorrowIdx;
+    type Idx = BorrowIndex;
     fn name() -> &'static str { "borrows" }
     fn bits_per_block(&self) -> usize {
         self.locations.len()
     }
-    fn start_block_effect(&self, _sets: &mut BlockSets<BorrowIdx>)  {
+    fn start_block_effect(&self, _sets: &mut BlockSets<BorrowIndex>)  {
         // no borrows of code extents have been taken prior to
         // function execution, so this method has no effect on
         // `_sets`.
     }
     fn statement_effect(&self,
-                        sets: &mut BlockSets<BorrowIdx>,
+                        sets: &mut BlockSets<BorrowIndex>,
                         bb: mir::BasicBlock,
                         stmt_idx: usize) {
         let block = &self.mir[bb];
@@ -617,14 +613,14 @@ impl<'a, 'tcx> BitDenotation for Borrows<'a, 'tcx> {
         }
     }
     fn terminator_effect(&self,
-                         _sets: &mut BlockSets<BorrowIdx>,
+                         _sets: &mut BlockSets<BorrowIndex>,
                          _bb: mir::BasicBlock,
                          _statements_len: usize) {
         // no terminators start nor end code extents.
     }
 
     fn propagate_call_return(&self,
-                             _in_out: &mut IdxSet<BorrowIdx>,
+                             _in_out: &mut IdxSet<BorrowIndex>,
                              _call_bb: mir::BasicBlock,
                              _dest_bb: mir::BasicBlock,
                              _dest_lval: &mir::Lvalue) {

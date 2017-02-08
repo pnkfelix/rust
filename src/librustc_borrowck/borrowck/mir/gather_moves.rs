@@ -23,6 +23,8 @@ use std::ops::{Index, IndexMut};
 
 use super::abs_domain::{AbstractElem, Lift};
 
+// FIXME: move this `mod indexes` to parent mod.
+
 // This submodule holds some newtype'd Index wrappers that are using
 // NonZero to ensure that Option<Index> occupies only a single word.
 // They are in a submodule to impose privacy restrictions; namely, to
@@ -60,10 +62,14 @@ mod indexes {
 
     /// Index into MoveData.moves.
     new_index!(MoveOutIndex, "mo");
+
+    /// Index into Borrows.locations
+    new_index!(BorrowIndex, "bw");
 }
 
 pub use self::indexes::MovePathIndex;
 pub use self::indexes::MoveOutIndex;
+pub use self::indexes::BorrowIndex;
 
 impl self::indexes::MoveOutIndex {
     pub fn move_path_index(&self, move_data: &MoveData) -> MovePathIndex {
