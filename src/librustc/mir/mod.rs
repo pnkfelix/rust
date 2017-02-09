@@ -802,11 +802,8 @@ impl<'tcx> Debug for Statement<'tcx> {
                 let mut wrote_one = false;
                 for ce in code_extents {
                     if wrote_one { write!(fmt, ", ")?; }
-                    if ppaux::verbose() {
-                        write!(fmt, "{:?}", ce)?;
-                    } else {
-                        write!(fmt, "'{}ce", ce.index())?;
-                    }
+                    // (reuse lifetime rendering policy from ppaux.)
+                    write!(fmt, "{}", ty::ReScope(*ce))?;
                     wrote_one = true;
                 }
                 write!(fmt, ")")

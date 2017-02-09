@@ -33,6 +33,10 @@ pub fn verbose() -> bool {
     ty::tls::with(|tcx| tcx.sess.verbose())
 }
 
+fn identify_regions() -> bool {
+    ty::tls::with(|tcx| tcx.sess.opts.debugging_opts.identify_regions)
+}
+
 fn fn_sig(f: &mut fmt::Formatter,
           inputs: &[Ty],
           variadic: bool,
@@ -535,12 +539,14 @@ impl fmt::Display for ty::Region {
             ty::ReSkolemized(_, br) => {
                 write!(f, "{}", br)
             }
-            ty::ReScope(code_extent) => {
+            ty::ReScope(code_extent) if identify_regions() => {
                 write!(f, "'{}ce", code_extent.index())
             }
-            ty::ReVar(region_vid) => {
+            ty::ReVar(region_vid) if identify_regions() => {
                 write!(f, "'{}rv", region_vid.index)
             }
+            ty::ReScope(_) |
+            ty::ReVar(_) |
             ty::ReErased => Ok(()),
             ty::ReStatic => write!(f, "'static"),
             ty::ReEmpty => write!(f, "'<empty>"),
