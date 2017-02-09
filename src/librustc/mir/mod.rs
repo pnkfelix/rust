@@ -797,7 +797,20 @@ impl<'tcx> Debug for Statement<'tcx> {
         use self::StatementKind::*;
         match self.kind {
             Assign(ref lv, ref rv) => write!(fmt, "{:?} = {:?}", lv, rv),
-            EndRegion(ref rgns) => write!(fmt, "EndRegion({:?})", rgns),
+            EndRegion(ref code_extents) => {
+                write!(fmt, "EndRegion(")?;
+                let mut wrote_one = false;
+                for ce in code_extents {
+                    if wrote_one { write!(fmt, ", ")?; }
+                    if ppaux::verbose() {
+                        write!(fmt, "{:?}", ce)?;
+                    } else {
+                        write!(fmt, "'{}ce", ce.index())?;
+                    }
+                    wrote_one = true;
+                }
+                write!(fmt, ")")
+            }
             StorageLive(ref lv) => write!(fmt, "StorageLive({:?})", lv),
             StorageDead(ref lv) => write!(fmt, "StorageDead({:?})", lv),
             SetDiscriminant{lvalue: ref lv, variant_index: index} => {
@@ -1137,11 +1150,13 @@ impl<'tcx> Debug for Rvalue<'tcx> {
                     BorrowKind::Shared => "",
                     BorrowKind::Mut | BorrowKind::Unique => "mut ",
                 };
-                if ppaux::verbose() {
-                    write!(fmt, "&{:?}{}{:?}", region, kind_str, lv)
+                let rgn_str = if ppaux::verbose() {
+                    format!("{:?}", region)
                 } else {
-                    write!(fmt, "&{}{:?}", kind_str, lv)
-                }
+                    format!("{}", region)
+                };
+                let sep = if rgn_str.is_empty() { "" } else { " " };
+                write!(fmt, "&{}{}{}{:?}", region, sep, kind_str, lv)
             }
 
             Aggregate(ref kind, ref lvs) => {

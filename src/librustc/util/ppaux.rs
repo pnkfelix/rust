@@ -27,6 +27,7 @@ use syntax::abi::Abi;
 use syntax::ast::CRATE_NODE_ID;
 use syntax::symbol::Symbol;
 use hir;
+use rustc_data_structures::indexed_vec::Idx;
 
 pub fn verbose() -> bool {
     ty::tls::with(|tcx| tcx.sess.verbose())
@@ -534,8 +535,12 @@ impl fmt::Display for ty::Region {
             ty::ReSkolemized(_, br) => {
                 write!(f, "{}", br)
             }
-            ty::ReScope(_) |
-            ty::ReVar(_) |
+            ty::ReScope(code_extent) => {
+                write!(f, "'{}ce", code_extent.index())
+            }
+            ty::ReVar(region_vid) => {
+                write!(f, "'{}rv", region_vid.index)
+            }
             ty::ReErased => Ok(()),
             ty::ReStatic => write!(f, "'static"),
             ty::ReEmpty => write!(f, "'<empty>"),
