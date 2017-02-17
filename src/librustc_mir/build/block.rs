@@ -21,8 +21,13 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                      ast_block: &'tcx hir::Block,
                      source_info: SourceInfo)
                      -> BlockAnd<()> {
-        let Block { extent, span, stmts, expr, targeted_by_break } = self.hir.mirror(ast_block);
-        self.in_scope(extent, block, move |this| {
+        let Block { extent, opt_destruction_extent, span, stmts, expr, targeted_by_break } =
+            self.hir.mirror(ast_block);
+        if let Some(de) = opt_destruction_extent {
+            self.push_scope(de);
+        }
+
+        let block_and = self.in_scope(extent, block, move |this| {
             if targeted_by_break {
                 // This is a `break`-able block (currently only `catch { ... }`)
                 let exit_block = this.cfg.start_new_block();
@@ -37,6 +42,12 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 this.ast_block_stmts(destination, block, span, stmts, expr)
             }
         })
+
+        if let Some(de) = opt_destruction_extent {
+            self.pop_scope(de, unpack!(block_and))
+        } else {
+            block_and
+        }
     }
 
     fn ast_block_stmts(&mut self,
