@@ -32,6 +32,7 @@ pub use rustc_const_eval::pattern::{BindingMode, Pattern, PatternKind, FieldPatt
 #[derive(Clone, Debug)]
 pub struct Block<'tcx> {
     pub extent: CodeExtent,
+    pub opt_destruction_extent: Option<CodeExtent>,
     pub span: Span,
     pub stmts: Vec<StmtRef<'tcx>>,
     pub expr: Option<ExprRef<'tcx>>,
@@ -46,6 +47,7 @@ pub enum StmtRef<'tcx> {
 pub struct Stmt<'tcx> {
     pub span: Span,
     pub kind: StmtKind<'tcx>,
+    pub opt_destruction_extent: Option<CodeExtent>,
 }
 
 #[derive(Clone, Debug)]
