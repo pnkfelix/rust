@@ -22,8 +22,10 @@ impl<'tcx> Mirror<'tcx> for &'tcx hir::Block {
         // We have to eagerly translate the "spine" of the statements
         // in order to get the lexical scoping correctly.
         let stmts = mirror_stmts(cx, self.id, &*self.stmts);
+        let opt_destruction_extent = cx.tcx.region_maps.opt_destruction_extent(self.id);
         Block {
             extent: cx.tcx.region_maps.node_extent(self.id),
+            opt_destruction_extent: opt_destruction_extent,
             span: self.span,
             stmts: stmts,
             expr: self.expr.to_ref(),
@@ -37,6 +39,7 @@ fn mirror_stmts<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                                 -> Vec<StmtRef<'tcx>> {
     let mut result = vec![];
     for (index, stmt) in stmts.iter().enumerate() {
+        let opt_dxn_ext = cx.tcx.region_maps.opt_destruction_extent(stmt.node.id());
         match stmt.node {
             hir::StmtExpr(ref expr, id) |
             hir::StmtSemi(ref expr, id) => {
@@ -46,6 +49,7 @@ fn mirror_stmts<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                         scope: cx.tcx.region_maps.node_extent(id),
                         expr: expr.to_ref(),
                     },
+                    opt_destruction_extent: opt_dxn_ext,
                 })))
             }
             hir::StmtDecl(ref decl, id) => {
@@ -70,6 +74,7 @@ fn mirror_stmts<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                                 pattern: pattern,
                                 initializer: local.init.to_ref(),
                             },
+                            opt_destruction_extent: opt_dxn_ext,
                         })));
                     }
                 }
