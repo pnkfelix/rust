@@ -19,8 +19,12 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                      mut block: BasicBlock,
                      ast_block: &'tcx hir::Block)
                      -> BlockAnd<()> {
-        let Block { extent, span, stmts, expr } = self.hir.mirror(ast_block);
-        self.in_scope(extent, block, move |this| {
+        let Block { extent, opt_destruction_extent, span, stmts, expr } =
+            self.hir.mirror(ast_block);
+        if let Some(de) = opt_destruction_extent {
+            self.push_scope(de);
+        }
+        let block_and = self.in_scope(extent, block, move |this| {
             // This convoluted structure is to avoid using recursion as we walk down a list
             // of statements. Basically, the structure we get back is something like:
             //
@@ -40,13 +44,21 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             let mut let_extent_stack = Vec::with_capacity(8);
             let outer_visibility_scope = this.visibility_scope;
             for stmt in stmts {
-                let Stmt { span: _, kind } = this.hir.mirror(stmt);
+                let Stmt { span: _, kind, opt_destruction_extent } = this.hir.mirror(stmt);
                 match kind {
                     StmtKind::Expr { scope, expr } => {
+                        if let Some(de) = opt_destruction_extent {
+                            this.push_scope(de);
+                        }
+
                         unpack!(block = this.in_scope(scope, block, |this| {
                             let expr = this.hir.mirror(expr);
                             this.stmt_expr(block, expr)
                         }));
+
+                        if let Some(de) = opt_destruction_extent {
+                            unpack!(block = this.pop_scope(de, block));
+                        }
                     }
                     StmtKind::Let { remainder_scope, init_scope, pattern, initializer } => {
                         let tcx = this.hir.tcx();
@@ -62,10 +74,18 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
 
                         // Evaluate the initializer, if present.
                         if let Some(init) = initializer {
+                            if let Some(de) = opt_destruction_extent {
+                                this.push_scope(de);
+                            }
+
                             unpack!(block = this.in_scope(init_scope, block, move |this| {
                                 // FIXME #30046                              ^~~~
                                 this.expr_into_pattern(block, pattern, init)
                             }));
+
+                            if let Some(de) = opt_destruction_extent {
+                                unpack!(block = this.pop_scope(de, block));
+                            }
                         } else {
                             this.visit_bindings(&pattern, &mut |this, _, _, node, span, _| {
                                 this.storage_live_binding(block, node, span);
@@ -96,6 +116,12 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             // Restore the original visibility scope.
             this.visibility_scope = outer_visibility_scope;
             block.unit()
-        })
+        });
+
+        if let Some(de) = opt_destruction_extent {
+            self.pop_scope(de, unpack!(block_and))
+        } else {
+            block_and
+        }
     }
 }
