@@ -11,9 +11,13 @@
 // compile-flags: -Z identify_regions
 // ignore-tidy-linelength
 
+// Binding the borrow's subject outside the loop does not increase the
+// scope of the borrow.
+
 fn main() {
-    let a = true;
+    let mut a;
     loop {
+        a = true;
         let b = &a;
         if a { break; }
         let c = &a;
@@ -24,30 +28,30 @@ fn main() {
 // START rustc.node4.TypeckMir.before.mir
 //     bb0: {
 //         StorageLive(_1);
-//         _1 = const true;
 //         goto -> bb1;
 //     }
 //     bb1: {
+//         _1 = const true;
 //         StorageLive(_3);
-//         _3 = &'17ce _1;
+//         _3 = &'21ce _1;
 //         StorageLive(_5);
 //         _5 = _1;
 //         StorageDead(_5); // (see issue #38669)
 //         if(_5) -> [true: bb2, false: bb3];
 //     }
-//     bb2: {
+//     bb2: { // breaking out of loop ends the `let b = &a` borrow.
 //         StorageDead(_3);
-//         EndRegion('17ce);
+//         EndRegion('21ce);
 //         StorageDead(_1);
 //         return;
 //     }
 //     bb3: {
 //         StorageLive(_8);
-//         _8 = &'33ce _1;
+//         _8 = &'37ce _1;
 //         StorageDead(_8);
-//         EndRegion('33ce);
+//         EndRegion('37ce);
 //         StorageDead(_3);
-//         EndRegion('17ce);
+//         EndRegion('21ce);
 //         goto -> bb1;
 //     }
 // END rustc.node4.TypeckMir.before.mir
