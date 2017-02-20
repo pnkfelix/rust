@@ -11,27 +11,60 @@
 // compile-flags: -Z identify_regions
 // ignore-tidy-linelength
 
-struct D(i32);
-impl Drop for D { fn drop(&mut self) { println!("dropping D({})", self.0); } }
+// Unwinding should EndRegion for in-scope borrows.
 
 fn main() {
     let d = D(0);
-    let a = 3;
+    let a = 0;
     let b = &a;
     foo(*b);
     let c = &a;
 }
 
+struct D(i32);
+impl Drop for D { fn drop(&mut self) { println!("dropping D({})", self.0); } }
+
 fn foo(i: i32) {
-    if i > 3 { panic!("im positive"); }
+    if i > 0 { panic!("im positive"); }
 }
 
 // END RUST SOURCE
 // START rustc.node4.TypeckMir.before.mir
 //     bb0: {
 //         StorageLive(_1);
-//         _1 = const 0usize;
-//         StorageLive(_2);
-//         _2 = &'14ce _1;
+//         _1 = D::{{constructor}}(const 0i32,);
+//         StorageLive(_3);
+//         _3 = const 0i32;
+//         StorageLive(_4);
+//         _4 = &'21ce _3;
+//         StorageLive(_6);
+//         _6 = (*_4);
+//         _5 = foo(_6) -> [return: bb3, unwind: bb2];
+//     }
+//
+//     bb1: {
+//         resume;
+//     }
+//
+//     bb2: {
+//         EndRegion('21ce);
+//         drop(_1) -> bb1;
+//     }
+//
+//     bb3: {
+//         StorageDead(_6);
+//         StorageLive(_7);
+//         _7 = &'33ce _3;
+//         StorageDead(_7);
+//         EndRegion('33ce);
+//         StorageDead(_4);
+//         EndRegion('21ce);
+//         StorageDead(_3);
+//         drop(_1) -> bb4;
+//     }
+//
+//     bb4: {
+//         StorageDead(_1);
+//         return;
 //     }
 // END rustc.node4.TypeckMir.before.mir
