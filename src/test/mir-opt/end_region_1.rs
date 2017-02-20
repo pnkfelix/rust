@@ -11,6 +11,8 @@
 // compile-flags: -Z identify_regions
 // ignore-tidy-linelength
 
+// This is just about the simplest program that exhibits an EndRegion.
+
 fn main() {
     let a = 3;
     let b = &a;

@@ -11,6 +11,9 @@
 // compile-flags: -Z identify_regions
 // ignore-tidy-linelength
 
+// We will EndRegion for borrows in a loop that occur before break but
+// not those after break.
+
 fn main() {
     loop {
         let a = true;
