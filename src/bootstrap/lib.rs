@@ -434,14 +434,25 @@ impl Build {
              cmd: &str) -> Command {
         let mut cargo = Command::new(&self.cargo);
         let out_dir = self.stage_out(compiler, mode);
-        cargo.env("CARGO_TARGET_DIR", out_dir)
+
+        // Using macro instead of closure b/c `env` method is polymorphic in K + V.
+        macro_rules! env {
+            ($k:expr, $v: expr) => { {
+                let k = $k;
+                let v = $v;
+                self.verbose(&format!("cargo env {}={:?}", k, v));
+                cargo.env(k, v)
+            } }
+        }
+
+        env!("CARGO_TARGET_DIR", out_dir)
              .arg(cmd)
              .arg("-j").arg(self.jobs().to_string())
              .arg("--target").arg(target);
 
         // FIXME: Temporary fix for https://github.com/rust-lang/cargo/issues/3005
         // Force cargo to output binaries with disambiguating hashes in the name
-        cargo.env("__CARGO_DEFAULT_LIB_METADATA", "1");
+        env!("__CARGO_DEFAULT_LIB_METADATA", "1");
 
         let stage;
         if compiler.stage == 0 && self.local_rebuild {
@@ -457,25 +468,23 @@ impl Build {
         //
         // These variables are primarily all read by
         // src/bootstrap/bin/{rustc.rs,rustdoc.rs}
-        cargo.env("RUSTBUILD_NATIVE_DIR", self.native_dir(target))
-             .env("RUSTC", self.out.join("bootstrap/debug/rustc"))
-             .env("RUSTC_REAL", self.compiler_path(compiler))
-             .env("RUSTC_STAGE", stage.to_string())
-             .env("RUSTC_DEBUGINFO", self.config.rust_debuginfo.to_string())
-             .env("RUSTC_DEBUGINFO_LINES", self.config.rust_debuginfo_lines.to_string())
-             .env("RUSTC_CODEGEN_UNITS",
-                  self.config.rust_codegen_units.to_string())
-             .env("RUSTC_DEBUG_ASSERTIONS",
-                  self.config.rust_debug_assertions.to_string())
-             .env("RUSTC_SYSROOT", self.sysroot(compiler))
-             .env("RUSTC_LIBDIR", self.rustc_libdir(compiler))
-             .env("RUSTC_RPATH", self.config.rust_rpath.to_string())
-             .env("RUSTDOC", self.out.join("bootstrap/debug/rustdoc"))
-             .env("RUSTDOC_REAL", self.rustdoc(compiler))
-             .env("RUSTC_FLAGS", self.rustc_flags(target).join(" "));
+        env!("RUSTBUILD_NATIVE_DIR", self.native_dir(target));
+        env!("RUSTC", self.out.join("bootstrap/debug/rustc"));
+        env!("RUSTC_REAL", self.compiler_path(compiler));
+        env!("RUSTC_STAGE", stage.to_string());
+        env!("RUSTC_DEBUGINFO", self.config.rust_debuginfo.to_string());
+        env!("RUSTC_DEBUGINFO_LINES", self.config.rust_debuginfo_lines.to_string());
+        env!("RUSTC_CODEGEN_UNITS", self.config.rust_codegen_units.to_string());
+        env!("RUSTC_DEBUG_ASSERTIONS", self.config.rust_debug_assertions.to_string());
+        env!("RUSTC_SYSROOT", self.sysroot(compiler));
+        env!("RUSTC_LIBDIR", self.rustc_libdir(compiler));
+        env!("RUSTC_RPATH", self.config.rust_rpath.to_string());
+        env!("RUSTDOC", self.out.join("bootstrap/debug/rustdoc"));
+        env!("RUSTDOC_REAL", self.rustdoc(compiler));
+        env!("RUSTC_FLAGS", self.rustc_flags(target).join(" "));
 
         // Enable usage of unstable features
-        cargo.env("RUSTC_BOOTSTRAP", "1");
+        env!("RUSTC_BOOTSTRAP", "1");
         self.add_rust_test_threads(&mut cargo);
 
         // Almost all of the crates that we compile as part of the bootstrap may
@@ -525,7 +534,7 @@ impl Build {
         // is changing under your feet.`
         if self.flags.incremental && compiler.stage == 0 {
             let incr_dir = self.incremental_dir(compiler);
-            cargo.env("RUSTC_INCREMENTAL", incr_dir);
+            env!("RUSTC_INCREMENTAL", incr_dir);
         }
 
         if let Some(ref on_fail) = self.flags.on_fail {
@@ -533,26 +542,26 @@ impl Build {
         }
 
         let verbose = cmp::max(self.config.verbose, self.flags.verbose);
-        cargo.env("RUSTC_VERBOSE", format!("{}", verbose));
+        env!("RUSTC_VERBOSE", format!("{}", verbose));
 
         // Specify some various options for build scripts used throughout
         // the build.
         //
         // FIXME: the guard against msvc shouldn't need to be here
         if !target.contains("msvc") {
-            cargo.env(format!("CC_{}", target), self.cc(target))
-                 .env(format!("AR_{}", target), self.ar(target).unwrap()) // only msvc is None
-                 .env(format!("CFLAGS_{}", target), self.cflags(target).join(" "));
+            env!(format!("CC_{}", target), self.cc(target));
+            env!(format!("AR_{}", target), self.ar(target).unwrap()); // only msvc is None
+            env!(format!("CFLAGS_{}", target), self.cflags(target).join(" "));
         }
 
         if self.config.rust_save_analysis && compiler.is_final_stage(self) {
-            cargo.env("RUSTC_SAVE_ANALYSIS", "api".to_string());
+            env!("RUSTC_SAVE_ANALYSIS", "api".to_string());
         }
 
         // Environment variables *required* needed throughout the build
         //
         // FIXME: should update code to not require this env var
-        cargo.env("CFG_COMPILER_HOST_TRIPLE", target);
+        env!("CFG_COMPILER_HOST_TRIPLE", target);
 
         if self.config.verbose() || self.flags.verbose() {
             cargo.arg("-v");
