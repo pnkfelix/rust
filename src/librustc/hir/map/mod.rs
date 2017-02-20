@@ -438,6 +438,21 @@ impl<'hir> Map<'hir> {
         }
     }
 
+    /// Returns `(owner, body)` where `owner` is nearest closure or
+    /// item that contains `node_id`, and `body` is owner's body.
+    pub fn node_owner(&self, mut node_id: NodeId) -> (NodeId, NodeId) {
+        let mut parent = self.get_parent_node(node_id);
+        assert!(parent != node_id); // if parent == node_id { return parent; }
+        loop {
+            if self.map[parent.as_usize()].is_body_owner(node_id) {
+                return (parent, node_id);
+            }
+            node_id = parent;
+            parent = self.get_parent_node(node_id);
+            assert!(node_id != parent);
+        }
+    }
+
     pub fn body_owner_def_id(&self, id: BodyId) -> DefId {
         self.local_def_id(self.body_owner(id))
     }

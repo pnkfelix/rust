@@ -67,8 +67,30 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             }
             ExprKind::Borrow { region, borrow_kind, arg } => {
                 if let Region::ReScope(extent) = *region {
-                    this.seen_borrows.insert(extent);
+                    let tcx = this.hir.tcx();
+
+                    // Find extent for the body of the immediately enclosing closure or fn.
+                    let expr_code_extent = match expr.temp_lifetime {
+                        None => panic!("should not see ReScope borrows outside of closures/fns"),
+                        Some(expr_code_extent) => expr_code_extent,
+                    };
+                    let expr_id = expr_code_extent.node_id(&tcx.region_maps);
+                    let (_owner_id, body_id) = tcx.hir.node_owner(expr_id);
+                    // FIXME: should this be destruction scope of
+                    // `body_id` (or a CallSiteScope)?
+                    let body_extent = tcx.region_maps.node_extent(body_id);
+                    assert!(tcx.region_maps.is_subscope_of(expr_code_extent, body_extent));
+
+                    if tcx.region_maps.is_subscope_of(extent, body_extent) {
+                        // extent of borrow ends during this execution
+                        this.seen_borrows.insert(extent);
+                        this.mark_borrowed(extent, expr_span);
+                    } else {
+                        // must be borrow of region outside closure; do nothing.
+                        debug!("extent {:?} is outside of body extent: {:?}", extent, body_extent);
+                    }
                 }
+
                 let arg_lvalue = unpack!(block = this.as_lvalue(block, arg));
                 block.and(Rvalue::Ref(region, borrow_kind, arg_lvalue))
             }
