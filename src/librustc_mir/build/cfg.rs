@@ -45,6 +45,7 @@ impl<'tcx> CFG<'tcx> {
                                   block: BasicBlock,
                                   source_info: SourceInfo,
                                   extent: CodeExtent) {
+        debug!("push_end_region({:?}, {:?}, {:?})", block, source_info, extent);
         self.push(block, Statement {
             source_info: source_info,
             kind: StatementKind::EndRegion(vec![extent]),
