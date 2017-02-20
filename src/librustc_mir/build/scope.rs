@@ -96,6 +96,7 @@ use syntax_pos::Span;
 use rustc_data_structures::indexed_vec::Idx;
 use rustc_data_structures::fx::FxHashMap;
 
+#[derive(Debug)]
 pub(crate) struct Scope<'tcx> {
     /// The visibility scope this scope was created in.
     visibility_scope: VisibilityScope,
@@ -139,6 +140,7 @@ pub(crate) struct Scope<'tcx> {
     cached_exits: FxHashMap<(BasicBlock, CodeExtent), BasicBlock>,
 }
 
+#[derive(Debug)]
 struct DropData<'tcx> {
     /// span where drop obligation was incurred (typically where lvalue was declared)
     span: Span,
@@ -150,6 +152,7 @@ struct DropData<'tcx> {
     kind: DropKind
 }
 
+#[derive(Debug)]
 enum DropKind {
     Value {
         /// The cached block for the cleanups-on-diverge path. This block
@@ -161,6 +164,7 @@ enum DropKind {
     Storage
 }
 
+#[derive(Debug)]
 struct FreeData<'tcx> {
     /// span where free obligation was incurred
     span: Span,
