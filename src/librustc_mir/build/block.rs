@@ -25,7 +25,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         if let Some(de) = opt_destruction_extent {
             self.push_scope(de);
         }
-        let block_and = self.in_scope(extent, block, move |this| {
+        let block_and = self.in_scope((extent, source_info), block, move |this| {
             // This convoluted structure is to avoid using recursion as we walk down a list
             // of statements. Basically, the structure we get back is something like:
             //
