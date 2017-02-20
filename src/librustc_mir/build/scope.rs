@@ -781,6 +781,12 @@ fn build_diverge_scope<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
     for drop_data in &mut scope.drops {
         // Only full value drops are emitted in the diverging path,
         // not StorageDead.
+        //
+        // Note: This may not actually be what we desire (are we
+        // "freeing" stack storage as we unwind, or merely observing a
+        // frozen stack)? In particular, the intent may have been to
+        // match the behavior of clang, but on inspection eddyb says
+        // this is not what clang does.
         let cached_block = match drop_data.kind {
             DropKind::Value { ref mut cached_block } => cached_block,
             DropKind::Storage => continue
