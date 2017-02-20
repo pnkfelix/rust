@@ -282,7 +282,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         debug!("in_scope(extent={:?}, block={:?})", extent, block);
         self.push_scope(extent.0);
         let rv = unpack!(block = f(self));
-        unpack!(block = self.pop_scope(extent.0, block));
+        unpack!(block = self.pop_scope(extent, block));
         if self.seen_borrows.contains(&extent.0) {
             self.cfg.push_end_region(block, extent.1, extent.0);
         }
@@ -311,7 +311,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
     /// drops onto the end of `block` that are needed.  This must
     /// match 1-to-1 with `push_scope`.
     pub(crate) fn pop_scope(&mut self,
-                     extent: CodeExtent,
+                     extent: (CodeExtent, SourceInfo),
                      mut block: BasicBlock)
                      -> BlockAnd<()> {
         debug!("pop_scope({:?}, {:?})", extent, block);
@@ -319,7 +319,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         // to make sure all the `cached_block`s are filled in.
         self.diverge_cleanup();
         let scope = self.scopes.pop().unwrap();
-        assert_eq!(scope.extent, extent);
+        assert_eq!(scope.extent, extent.0);
         unpack!(block = build_scope_drops(&mut self.cfg,
                                           &scope,
                                           &self.scopes,

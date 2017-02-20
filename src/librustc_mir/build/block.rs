@@ -58,7 +58,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                         }));
 
                         if let Some(de) = opt_destruction_extent {
-                            unpack!(block = this.pop_scope(de, block));
+                            unpack!(block = this.pop_scope((de, source_info), block));
                         }
                     }
                     StmtKind::Let { remainder_scope, init_scope, pattern, initializer } => {
@@ -87,7 +87,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                             }));
 
                             if let Some(de) = opt_destruction_extent {
-                                unpack!(block = this.pop_scope(de, block));
+                                unpack!(block = this.pop_scope((de, source_info), block));
                             }
                         } else {
                             this.visit_bindings(&pattern, &mut |this, _, _, node, span, _| {
@@ -114,7 +114,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             // Finally, we pop all the let scopes before exiting out from the scope of block
             // itself.
             for (extent, source_info) in let_extent_stack.into_iter().rev() {
-                unpack!(block = this.pop_scope(extent, block));
+                unpack!(block = this.pop_scope((extent, source_info), block));
                 if this.seen_borrows.contains(&extent) {
                     this.cfg.push_end_region(block, source_info, extent);
                 }
@@ -125,7 +125,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         });
 
         if let Some(de) = opt_destruction_extent {
-            self.pop_scope(de, unpack!(block_and))
+            self.pop_scope((de, source_info), unpack!(block_and))
         } else {
             block_and
         }
