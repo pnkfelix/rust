@@ -160,7 +160,9 @@ impl EmitterWriter {
 
                 // If the span is long multi-line, simplify down to the span of one character
                 let max_multiline_span_length = 8;
-                if lo.line != hi.line && (hi.line - lo.line) > max_multiline_span_length {
+                assert!(hi.line >= lo.line, "failed assert hi.line >= lo.line, \
+                                             hi: {:?} lo: {:?}", hi, lo);
+                if lo.line < hi.line && (hi.line - lo.line) > max_multiline_span_length {
                     hi.line = lo.line;
                     hi.col = CharPos(lo.col.0 + 1);
                     is_minimized = true;
