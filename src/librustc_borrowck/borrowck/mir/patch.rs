@@ -45,6 +45,7 @@ impl<'tcx> MirPatch<'tcx> {
         for (bb, block) in mir.basic_blocks().iter_enumerated() {
             if let TerminatorKind::Resume = block.terminator().kind {
                 if block.statements.len() > 0 {
+                    assert!(resume_stmt_block.is_none());
                     resume_stmt_block = Some(bb);
                 } else {
                     resume_block = Some(bb);
@@ -66,6 +67,8 @@ impl<'tcx> MirPatch<'tcx> {
             })});
         result.resume_block = resume_block;
         if let Some(resume_stmt_block) = resume_stmt_block {
+            debug!("patching given statement-ful resume block {:?} to now goto target {:?}",
+                   resume_stmt_block, resume_block);
             result.patch_terminator(resume_stmt_block, TerminatorKind::Goto {
                 target: resume_block
             });
