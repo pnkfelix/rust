@@ -115,7 +115,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             // itself.
             for (extent, source_info) in let_extent_stack.into_iter().rev() {
                 unpack!(block = this.pop_scope((extent, source_info), block));
-                if this.seen_borrows.contains(&extent) {
+                if this.hir.seen_borrows().contains(&extent) {
                     this.cfg.push_end_region(block, source_info, extent);
                 }
             }

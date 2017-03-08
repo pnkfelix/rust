@@ -18,6 +18,7 @@ use hair::*;
 use rustc::mir::transform::MirSource;
 
 use rustc::middle::const_val::ConstVal;
+use rustc::middle::region::CodeExtent;
 use rustc_const_eval::{ConstContext, fatal_const_eval_err};
 use rustc_data_structures::indexed_vec::Idx;
 use rustc::hir::def_id::DefId;
@@ -29,7 +30,9 @@ use syntax::symbol::{Symbol, InternedString};
 use rustc::hir;
 use rustc_const_math::{ConstInt, ConstUsize};
 
-#[derive(Copy, Clone)]
+use rustc_data_structures::fx::FxHashSet;
+
+#[derive(Clone)]
 pub struct Cx<'a, 'gcx: 'a + 'tcx, 'tcx: 'a> {
     tcx: TyCtxt<'a, 'gcx, 'tcx>,
     infcx: &'a InferCtxt<'a, 'gcx, 'tcx>,
@@ -37,6 +40,10 @@ pub struct Cx<'a, 'gcx: 'a + 'tcx, 'tcx: 'a> {
 
     /// True if this constant/function needs overflow checks.
     check_overflow: bool,
+
+    /// Collects all CodeExtents for which we have generated a hair
+    /// Borrow expression.
+    seen_borrows: FxHashSet<CodeExtent>,
 }
 
 impl<'a, 'gcx, 'tcx> Cx<'a, 'gcx, 'tcx> {
@@ -70,11 +77,57 @@ impl<'a, 'gcx, 'tcx> Cx<'a, 'gcx, 'tcx> {
             infcx: infcx,
             constness: constness,
             check_overflow: check_overflow,
+            seen_borrows: FxHashSet(),
         }
     }
 }
 
 impl<'a, 'gcx, 'tcx> Cx<'a, 'gcx, 'tcx> {
+    pub(crate) fn seen_borrows(&self) -> &FxHashSet<CodeExtent> {
+        &self.seen_borrows
+    }
+
+    pub(crate) fn build_borrow(&mut self,
+                               region: &'tcx Region,
+                               borrow_kind: BorrowKind,
+                               arg: ExprRef<'tcx>,
+                               expr_code_extent: CodeExtent)
+                               -> ExprKind<'tcx>
+    {
+        self.saw_borrow(region, expr_code_extent);
+        ExprKind::Borrow {
+            region: region,
+            borrow_kind: borrow_kind,
+            arg: arg,
+        }
+    }
+
+    pub(crate) fn saw_borrow(&mut self, region: &Region, expr_code_extent: CodeExtent) {
+        if let Region::ReScope(extent) = *region {
+            let tcx = self.tcx;
+
+            // Find extent for the body of the immediately enclosing closure or fn.
+            let expr_id = expr_code_extent.node_id(&tcx.region_maps);
+            let (_owner_id, body_id) = tcx.hir.node_owner(expr_id);
+            // FIXME: should this be destruction scope of
+            // `body_id` (or a CallSiteScope)?
+            let body_extent = tcx.region_maps.node_extent(body_id);
+            assert!(tcx.region_maps.is_subscope_of(expr_code_extent, body_extent));
+
+            if tcx.region_maps.is_subscope_of(extent, body_extent) {
+                // extent of borrow ends during this execution; record that so that
+                // we know to emit an EndRegion for this extent.
+                self.seen_borrows.insert(extent);
+
+                // #[cfg(not_anymore)]
+                // this.mark_borrowed(extent, expr_span);
+            } else {
+                // must be borrow of region outside closure; do nothing.
+                debug!("extent {:?} is outside of body extent: {:?}", extent, body_extent);
+            }
+        }
+    }
+
     /// Normalizes `ast` into the appropriate `mirror` type.
     pub fn mirror<M: Mirror<'tcx>>(&mut self, ast: M) -> M::Output {
         ast.make_mirror(self)

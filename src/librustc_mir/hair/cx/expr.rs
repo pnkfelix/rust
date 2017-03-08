@@ -118,11 +118,7 @@ impl<'tcx> Mirror<'tcx> for &'tcx hir::Expr {
                                                   mutbl: mutbl,
                                               }),
                             span: expr.span,
-                            kind: ExprKind::Borrow {
-                                region: region,
-                                borrow_kind: to_borrow_kind(mutbl),
-                                arg: expr.to_ref(),
-                            },
+                            kind: cx.build_borrow(region, to_borrow_kind(mutbl), expr.to_ref(), expr_extent),
                         };
 
                         overloaded_lvalue(cx,
@@ -153,11 +149,10 @@ impl<'tcx> Mirror<'tcx> for &'tcx hir::Expr {
                                 temp_lifetime_was_shrunk: was_shrunk,
                                 ty: adjusted_ty,
                                 span: self.span,
-                                kind: ExprKind::Borrow {
-                                    region: r,
-                                    borrow_kind: to_borrow_kind(m),
-                                    arg: expr.to_ref(),
-                                },
+                                kind: cx.build_borrow(r,
+                                                      to_borrow_kind(m),
+                                                      expr.to_ref(),
+                                                      expr_extent),
                             };
                         }
                         ty::adjustment::AutoBorrow::RawPtr(m) => {
@@ -175,11 +170,10 @@ impl<'tcx> Mirror<'tcx> for &'tcx hir::Expr {
                                                       mutbl: m,
                                                   }),
                                 span: self.span,
-                                kind: ExprKind::Borrow {
-                                    region: region,
-                                    borrow_kind: to_borrow_kind(m),
-                                    arg: expr.to_ref(),
-                                },
+                                kind: cx.build_borrow(region,
+                                                      to_borrow_kind(m),
+                                                      expr.to_ref(),
+                                                      expr_extent),
                             };
                             expr = Expr {
                                 temp_lifetime: temp_lifetime,
@@ -239,6 +233,7 @@ fn make_mirror_unadjusted<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                                           expr: &'tcx hir::Expr)
                                           -> Expr<'tcx> {
     let expr_ty = cx.tables().expr_ty(expr);
+    let expr_extent = cx.tcx.region_maps.node_extent(expr.id);
     let (temp_lifetime, was_shrunk) = cx.tcx.region_maps.temporary_scope2(expr.id);
 
     let kind = match expr.node {
@@ -337,11 +332,10 @@ fn make_mirror_unadjusted<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                 ty::TyRef(r, _) => r,
                 _ => span_bug!(expr.span, "type of & not region"),
             };
-            ExprKind::Borrow {
-                region: region,
-                borrow_kind: to_borrow_kind(mutbl),
-                arg: expr.to_ref(),
-            }
+            cx.build_borrow(region,
+                            to_borrow_kind(mutbl),
+                            expr.to_ref(),
+                            expr_extent)
         }
 
         hir::ExprBlock(ref blk) => ExprKind::Block { body: &blk },
@@ -976,6 +970,7 @@ fn overloaded_operator<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                 cx.tcx.region_maps.temporary_scope2(expr.id);
             argrefs.extend(args.iter()
                 .map(|arg| {
+                    let arg_extent = cx.tcx.region_maps.node_extent(arg.id);
                     let arg_ty = cx.tables().expr_ty_adjusted(arg);
                     let adjusted_ty = cx.tcx.mk_ref(region,
                                                     ty::TypeAndMut {
@@ -987,11 +982,7 @@ fn overloaded_operator<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                         temp_lifetime_was_shrunk: was_shrunk,
                         ty: adjusted_ty,
                         span: expr.span,
-                        kind: ExprKind::Borrow {
-                            region: region,
-                            borrow_kind: BorrowKind::Shared,
-                            arg: arg.to_ref(),
-                        },
+                        kind: cx.build_borrow(region, BorrowKind::Shared, arg.to_ref(), arg_extent),
                     }
                     .to_ref()
                 }))
@@ -1052,6 +1043,7 @@ fn capture_freevar<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
     let upvar_capture = cx.tables().upvar_capture(upvar_id).unwrap();
     let (temp_lifetime, was_shrunk) = cx.tcx.region_maps.temporary_scope2(closure_expr.id);
     let var_ty = cx.tables().node_id_to_type(id_var);
+    let var_extent = cx.tcx.region_maps.node_extent(id_var);
     let captured_var = Expr {
         temp_lifetime: temp_lifetime,
         temp_lifetime_was_shrunk: was_shrunk,
@@ -1072,11 +1064,15 @@ fn capture_freevar<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                 temp_lifetime_was_shrunk: was_shrunk,
                 ty: freevar_ty,
                 span: closure_expr.span,
-                kind: ExprKind::Borrow {
-                    region: upvar_borrow.region,
-                    borrow_kind: borrow_kind,
-                    arg: captured_var.to_ref(),
-                },
+                kind: cx.build_borrow(upvar_borrow.region,
+                                      borrow_kind,
+                                      captured_var.to_ref(),
+                                      // FIXME: consider passing in
+                                      // fact that this is upvar by
+                                      // ref capture, since closures
+                                      // do not emit EndRegions for
+                                      // their upvars anyway.
+                                      var_extent),
             }.to_ref()
         }
     }

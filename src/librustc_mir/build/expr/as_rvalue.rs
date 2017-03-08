@@ -83,11 +83,27 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
 
                     if tcx.region_maps.is_subscope_of(extent, body_extent) {
                         // extent of borrow ends during this execution
-                        this.seen_borrows.insert(extent);
-                        this.mark_borrowed(extent, expr_span);
+
+                        // find the scope associated with this extent,
+                        // and emit an EndRegion on its diverge_path.
+                        let mut scopes = this.scopes.iter_mut();
+                        let mut saw_it = false;
+                        for scope in &mut scopes {
+                            if scope.code_extent() == extent {
+                                if !scope.diverge_path.end_region_emitted {
+                                    this.cfg.push_end_region(scope.diverge_path.block, source_info, extent);
+                                    scope.diverge_path.end_region_emitted = true;
+                                }
+                                saw_it = true;
+                                break;
+                            }
+                        }
+                        assert!(saw_it);
+                        for scope in scopes { assert!(scope.code_extent() != extent); }
                     } else {
                         // must be borrow of region outside closure; do nothing.
                         debug!("extent {:?} is outside of body extent: {:?}", extent, body_extent);
+                        for scope in &this.scopes { assert!(scope.code_extent() != extent); }
                     }
                 }
 

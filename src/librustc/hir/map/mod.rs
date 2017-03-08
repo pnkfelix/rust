@@ -441,6 +441,7 @@ impl<'hir> Map<'hir> {
     /// Returns `(owner, body)` where `owner` is nearest closure or
     /// item that contains `node_id`, and `body` is owner's body.
     pub fn node_owner(&self, mut node_id: NodeId) -> (NodeId, NodeId) {
+        let orig_node_id = node_id;
         let mut parent = self.get_parent_node(node_id);
         assert!(parent != node_id); // if parent == node_id { return parent; }
         loop {
@@ -449,6 +450,12 @@ impl<'hir> Map<'hir> {
             }
             node_id = parent;
             parent = self.get_parent_node(node_id);
+
+            if node_id == parent {
+                span_bug!(self.span(orig_node_id),
+                          "expr {:?} ends up with owner {:?} with no distinct body",
+                          orig_node_id, node_id);
+            }
             assert!(node_id != parent);
         }
     }

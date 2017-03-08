@@ -22,7 +22,6 @@ use syntax::symbol::keywords;
 use syntax_pos::Span;
 
 use rustc_data_structures::indexed_vec::{IndexVec, Idx};
-use rustc_data_structures::fx::{FxHashSet};
 
 use std::u32;
 
@@ -32,10 +31,6 @@ pub struct Builder<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
 
     fn_span: Span,
     arg_count: usize,
-
-    /// set of extents (statically-delimited regions) that we have seen borrows of
-    /// (and thus require explicit termination).
-    seen_borrows: FxHashSet<CodeExtent>,
 
     /// the current set of scopes, updated as we traverse;
     /// see the `scope` module for more details
@@ -177,7 +172,7 @@ pub fn construct_fn<'a, 'gcx, 'tcx, A>(hir: Cx<'a, 'gcx, 'tcx>,
     let upvar_decls: Vec<_> = tcx.with_freevars(fn_id, |freevars| {
         freevars.iter().map(|fv| {
             let var_id = tcx.hir.as_local_node_id(fv.def.def_id()).unwrap();
-            let by_ref = hir.tables().upvar_capture(ty::UpvarId {
+            let by_ref = builder.hir.tables().upvar_capture(ty::UpvarId {
                 var_id: var_id,
                 closure_expr_id: fn_id
             }).map_or(false, |capture| match capture {
@@ -247,11 +242,11 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
            span: Span,
            arg_count: usize,
            return_ty: Ty<'tcx>)
-           -> Builder<'a, 'gcx, 'tcx> {
+           -> Builder<'a, 'gcx, 'tcx>
+    {
         let mut builder = Builder {
             hir: hir,
             cfg: CFG { basic_blocks: IndexVec::new() },
-            seen_borrows: FxHashSet(),
             fn_span: span,
             arg_count: arg_count,
             scopes: vec![],
