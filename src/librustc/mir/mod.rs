@@ -1429,6 +1429,13 @@ impl<'tcx> TypeFoldable<'tcx> for Statement<'tcx> {
                 outputs: outputs.fold_with(folder),
                 inputs: inputs.fold_with(folder)
             },
+
+            // Note for future: If we want to expose the extents
+            // during the fold, we need to either generalize EndRegion
+            // to carry `[ty::Region]`, or extend the `TypeFolder`
+            // trait with a `fn fold_extent`.
+            EndRegion(ref extents) => EndRegion(extents.clone()),
+
             Nop => Nop,
         };
         Statement {
@@ -1447,6 +1454,13 @@ impl<'tcx> TypeFoldable<'tcx> for Statement<'tcx> {
             StorageDead(ref lvalue) => lvalue.visit_with(visitor),
             InlineAsm { ref outputs, ref inputs, .. } =>
                 outputs.visit_with(visitor) || inputs.visit_with(visitor),
+
+            // Note for future: If we want to expose the extents
+            // during the visit, we need to either generalize EndRegion
+            // to carry `[ty::Region]`, or extend the `TypeVisitor`
+            // trait with a `fn visit_extent`.
+            EndRegion(ref _extents) => false,
+
             Nop => false,
         }
     }
