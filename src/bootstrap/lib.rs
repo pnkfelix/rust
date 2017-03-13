@@ -468,7 +468,6 @@ impl Build {
         //
         // These variables are primarily all read by
         // src/bootstrap/bin/{rustc.rs,rustdoc.rs}
-<<<<<<< HEAD
         env!("RUSTBUILD_NATIVE_DIR", self.native_dir(target));
         env!("RUSTC", self.out.join("bootstrap/debug/rustc"));
         env!("RUSTC_REAL", self.compiler_path(compiler));
