@@ -11,6 +11,7 @@
 use hair::*;
 use rustc_data_structures::indexed_vec::Idx;
 use rustc_const_math::ConstInt;
+use hair::cx::BorrowSource;
 use hair::cx::Cx;
 use hair::cx::block;
 use hair::cx::to_ref::ToRef;
@@ -118,7 +119,11 @@ impl<'tcx> Mirror<'tcx> for &'tcx hir::Expr {
                                                   mutbl: mutbl,
                                               }),
                             span: expr.span,
-                            kind: cx.build_borrow(region, to_borrow_kind(mutbl), expr.to_ref(), expr_extent),
+                            kind: cx.build_borrow(region,
+                                                  (BorrowSource::AutoRef,
+                                                   to_borrow_kind(mutbl)),
+                                                  expr.to_ref(),
+                                                  expr_extent),
                         };
 
                         overloaded_lvalue(cx,
@@ -150,7 +155,8 @@ impl<'tcx> Mirror<'tcx> for &'tcx hir::Expr {
                                 ty: adjusted_ty,
                                 span: self.span,
                                 kind: cx.build_borrow(r,
-                                                      to_borrow_kind(m),
+                                                      (BorrowSource::AutoRef,
+                                                       to_borrow_kind(m)),
                                                       expr.to_ref(),
                                                       expr_extent),
                             };
@@ -171,7 +177,8 @@ impl<'tcx> Mirror<'tcx> for &'tcx hir::Expr {
                                                   }),
                                 span: self.span,
                                 kind: cx.build_borrow(region,
-                                                      to_borrow_kind(m),
+                                                      (BorrowSource::AutoRef,
+                                                       to_borrow_kind(m)),
                                                       expr.to_ref(),
                                                       expr_extent),
                             };
@@ -333,7 +340,7 @@ fn make_mirror_unadjusted<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                 _ => span_bug!(expr.span, "type of & not region"),
             };
             cx.build_borrow(region,
-                            to_borrow_kind(mutbl),
+                            (BorrowSource::ExprAddrOf, to_borrow_kind(mutbl)),
                             expr.to_ref(),
                             expr_extent)
         }
@@ -982,7 +989,10 @@ fn overloaded_operator<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                         temp_lifetime_was_shrunk: was_shrunk,
                         ty: adjusted_ty,
                         span: expr.span,
-                        kind: cx.build_borrow(region, BorrowKind::Shared, arg.to_ref(), arg_extent),
+                        kind: cx.build_borrow(region,
+                                              (BorrowSource::ByRefOperator, BorrowKind::Shared),
+                                              arg.to_ref(),
+                                              arg_extent),
                     }
                     .to_ref()
                 }))
@@ -1065,7 +1075,8 @@ fn capture_freevar<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                 ty: freevar_ty,
                 span: closure_expr.span,
                 kind: cx.build_borrow(upvar_borrow.region,
-                                      borrow_kind,
+                                      (BorrowSource::UpVarCaptureByRef,
+                                       borrow_kind),
                                       captured_var.to_ref(),
                                       // FIXME: consider passing in
                                       // fact that this is upvar by

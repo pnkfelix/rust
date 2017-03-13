@@ -438,25 +438,43 @@ impl<'hir> Map<'hir> {
         }
     }
 
-    /// Returns `(owner, body)` where `owner` is nearest closure or
-    /// item that contains `node_id`, and `body` is owner's body.
-    pub fn node_owner(&self, mut node_id: NodeId) -> (NodeId, NodeId) {
-        let orig_node_id = node_id;
+    /// Returns `Some((owner, child))` where `owner` is nearest
+    /// closure or item that contains `node_id`, and `child` is
+    /// next-to-last node on the ancestral path from `node_id` to
+    /// `owner`.
+    ///
+    /// If `node_id` has no parent at all, then returns `None`.
+    ///
+    /// A returned `child` will always either be `node_id` itself or
+    /// an ancestor of `node_id`.
+    ///
+    /// A returned `child` will often (but not always) be the owner's
+    /// body when owner is a fn item or closure. (One example where
+    /// `child` is not a body: when `node_id` is a parameter to some
+    /// fn item.)
+    pub fn ancestral_owner(&self, node_id: NodeId) -> Option<(NodeId, NodeId)> {
+        let mut prev = node_id;
         let mut parent = self.get_parent_node(node_id);
-        assert!(parent != node_id); // if parent == node_id { return parent; }
+        if parent == node_id { return None; }
         loop {
-            if self.map[parent.as_usize()].is_body_owner(node_id) {
-                return (parent, node_id);
-            }
-            node_id = parent;
-            parent = self.get_parent_node(node_id);
+            match self.find(parent).unwrap() {
+                // Items
+                NodeItem(_) | NodeTraitItem(_) | NodeImplItem(_) => {
+                    return Some((parent, prev));
+                }
 
-            if node_id == parent {
-                span_bug!(self.span(orig_node_id),
-                          "expr {:?} ends up with owner {:?} with no distinct body",
-                          orig_node_id, node_id);
+                // Closures
+                NodeExpr(e) => {
+                    if let ExprClosure(..) = e.node {
+                        return Some((parent, prev));
+                    }
+                }
+
+                _ => {}
             }
-            assert!(node_id != parent);
+            // neither item nor closure; continue search.
+            prev = parent;
+            parent = self.get_parent_node(prev);
         }
     }
 

@@ -89,42 +89,31 @@ impl<'a, 'gcx, 'tcx> Cx<'a, 'gcx, 'tcx> {
 
     pub(crate) fn build_borrow(&mut self,
                                region: &'tcx Region,
-                               borrow_kind: BorrowKind,
+                               borrow_kind: (BorrowSource, BorrowKind),
                                arg: ExprRef<'tcx>,
                                expr_code_extent: CodeExtent)
                                -> ExprKind<'tcx>
     {
-        self.saw_borrow(region, expr_code_extent);
+        self.saw_borrow(borrow_kind.0, region, expr_code_extent);
         ExprKind::Borrow {
             region: region,
-            borrow_kind: borrow_kind,
+            borrow_source: borrow_kind.0,
+            borrow_kind: borrow_kind.1,
             arg: arg,
         }
     }
 
-    pub(crate) fn saw_borrow(&mut self, region: &Region, expr_code_extent: CodeExtent) {
+    pub(crate) fn saw_borrow(&mut self,
+                             borrow_source: BorrowSource,
+                             region: &Region,
+                             _expr_code_extent: CodeExtent) {
+        if borrow_source == BorrowSource::UpVarCaptureByRef {
+            return;
+        }
         if let Region::ReScope(extent) = *region {
-            let tcx = self.tcx;
-
-            // Find extent for the body of the immediately enclosing closure or fn.
-            let expr_id = expr_code_extent.node_id(&tcx.region_maps);
-            let (_owner_id, body_id) = tcx.hir.node_owner(expr_id);
-            // FIXME: should this be destruction scope of
-            // `body_id` (or a CallSiteScope)?
-            let body_extent = tcx.region_maps.node_extent(body_id);
-            assert!(tcx.region_maps.is_subscope_of(expr_code_extent, body_extent));
-
-            if tcx.region_maps.is_subscope_of(extent, body_extent) {
-                // extent of borrow ends during this execution; record that so that
-                // we know to emit an EndRegion for this extent.
-                self.seen_borrows.insert(extent);
-
-                // #[cfg(not_anymore)]
-                // this.mark_borrowed(extent, expr_span);
-            } else {
-                // must be borrow of region outside closure; do nothing.
-                debug!("extent {:?} is outside of body extent: {:?}", extent, body_extent);
-            }
+            // extent of borrow ends during this execution; record that so that
+            // we know to emit an EndRegion for this extent.
+            self.seen_borrows.insert(extent);
         }
     }
 

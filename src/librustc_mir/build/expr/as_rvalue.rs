@@ -65,46 +65,56 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 let value_operand = unpack!(block = this.as_operand(block, scope, value));
                 block.and(Rvalue::Repeat(value_operand, count))
             }
-            ExprKind::Borrow { region, borrow_kind, arg } => {
+            ExprKind::Borrow { region, borrow_source: _, borrow_kind, arg } => {
                 if let Region::ReScope(extent) = *region {
-                    let tcx = this.hir.tcx();
+                    // NOTE: borrows of regions outside closures can
+                    // occur. Furthermore, they aren't solely
+                    // associated with borrows of upvars (which
+                    // surprised me).
+                    //
+                    // For such cases, we simply let the region extend
+                    // past the end of the closure.
 
-                    // Find extent for the body of the immediately enclosing closure or fn.
-                    let expr_code_extent = match expr.temp_lifetime {
-                        None => panic!("should not see ReScope borrows outside of closures/fns"),
-                        Some(expr_code_extent) => expr_code_extent,
-                    };
-                    let expr_id = expr_code_extent.node_id(&tcx.region_maps);
-                    let (_owner_id, body_id) = tcx.hir.node_owner(expr_id);
-                    // FIXME: should this be destruction scope of
-                    // `body_id` (or a CallSiteScope)?
-                    let body_extent = tcx.region_maps.node_extent(body_id);
-                    assert!(tcx.region_maps.is_subscope_of(expr_code_extent, body_extent));
-
-                    if tcx.region_maps.is_subscope_of(extent, body_extent) {
-                        // extent of borrow ends during this execution
-
+                    // `extent` should occur at most once on scopes.
+                    let mut _saw_count = 0;
+                    {
                         // find the scope associated with this extent,
                         // and emit an EndRegion on its diverge_path.
                         let mut scopes = this.scopes.iter_mut();
-                        let mut saw_it = false;
+
                         for scope in &mut scopes {
                             if scope.code_extent() == extent {
                                 if !scope.diverge_path.end_region_emitted {
                                     this.cfg.push_end_region(scope.diverge_path.block, source_info, extent);
                                     scope.diverge_path.end_region_emitted = true;
                                 }
-                                saw_it = true;
+                                _saw_count += 1;
                                 break;
                             }
                         }
-                        assert!(saw_it);
-                        for scope in scopes { assert!(scope.code_extent() != extent); }
-                    } else {
-                        // must be borrow of region outside closure; do nothing.
-                        debug!("extent {:?} is outside of body extent: {:?}", extent, body_extent);
-                        for scope in &this.scopes { assert!(scope.code_extent() != extent); }
+
+                        // finish confirming `extent` occurs *exactly* once on scopes
+                        for scope in scopes {
+                            if scope.code_extent() == extent {
+                                _saw_count += 1;
+                            }
+                        }
                     }
+
+                    // FIXME
+                    //
+                    // (discussed with niko; we think its due to
+                    // translation of `box <expr>`)
+                    //
+                    // // YIKES: `_saw_count <= 1` invariant does not hold ...!
+                    // if _saw_count > 1 {
+                    //     span_bug!(expr_span,
+                    //               "borrow {:?} saw scope matching extent: {:?} \
+                    //                multiply on chain of scopes: {:?}",
+                    //               (region, borrow_source, borrow_kind, arg),
+                    //               extent,
+                    //               this.scopes);
+                    // }
                 }
 
                 let arg_lvalue = unpack!(block = this.as_lvalue(block, arg));
