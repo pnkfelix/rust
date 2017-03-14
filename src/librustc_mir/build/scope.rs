@@ -690,24 +690,6 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
 
         success_block
     }
-
-    #[cfg(not_anymore)]
-    pub(crate) fn mark_borrowed(&mut self, extent: CodeExtent, span: Span) {
-        let opt_scope = self.scopes
-            .iter_mut()
-            .find(|s| s.extent == extent);
-        match opt_scope {
-            None => {
-                self.hir.tcx().sess.span_note_without_error(
-                    span,
-                    &format!("extent {:?} not found for borrow", extent));
-            }
-            Some(scope) => {
-                // borrowed scopes will need to emit an EndRegion.
-                scope.needs_cleanup = true;
-            }
-        }
-    }
 }
 
 /// Builds drops for pop_scope and exit_scope.
