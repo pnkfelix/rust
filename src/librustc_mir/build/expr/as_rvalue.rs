@@ -67,54 +67,24 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             }
             ExprKind::Borrow { region, borrow_kind, arg } => {
                 if let Region::ReScope(extent) = *region {
-                    // NOTE: borrows of regions outside closures can
-                    // occur. Furthermore, they aren't solely
-                    // associated with borrows of upvars (which
-                    // surprised me).
+                    // borrows of regions outside closures can
+                    // occur. For such cases, we simply let the region
+                    // extend past the end of the closure.
                     //
-                    // For such cases, we simply let the region extend
-                    // past the end of the closure.
+                    // (Also, in principle `extent` should occur at
+                    // most once on scopes, but that invariant does
+                    // not currently hold.)
 
-                    // `extent` should occur at most once on scopes.
-                    let mut _saw_count = 0;
-                    {
-                        // find the scope associated with this extent,
-                        // and emit an EndRegion on its diverge_path.
-                        let mut scopes = this.scopes.iter_mut();
-
-                        for scope in &mut scopes {
-                            if scope.code_extent() == extent {
-                                if !scope.diverge_path.end_region_emitted {
-                                    this.cfg.push_end_region(scope.diverge_path.block, source_info, extent);
-                                    scope.diverge_path.end_region_emitted = true;
-                                }
-                                _saw_count += 1;
-                                break;
-                            }
+                    // find the scope associated with this extent, and
+                    // emit an EndRegion on its diverge_path.
+                    for scope in this.scopes.iter_mut() {
+                        if scope.code_extent() == extent && !scope.diverge_path.end_region_emitted
+                        {
+                            this.cfg.push_end_region(scope.diverge_path.block, source_info, extent);
+                            scope.diverge_path.end_region_emitted = true;
                         }
-
-                        // finish confirming `extent` occurs *exactly* once on scopes
-                        for scope in scopes {
-                            if scope.code_extent() == extent {
-                                _saw_count += 1;
-                            }
-                        }
+                        break;
                     }
-
-                    // FIXME
-                    //
-                    // (discussed with niko; we think its due to
-                    // translation of `box <expr>`)
-                    //
-                    // // YIKES: `_saw_count <= 1` invariant does not hold ...!
-                    // if _saw_count > 1 {
-                    //     span_bug!(expr_span,
-                    //               "borrow {:?} saw scope matching extent: {:?} \
-                    //                multiply on chain of scopes: {:?}",
-                    //               (region, borrow_source, borrow_kind, arg),
-                    //               extent,
-                    //               this.scopes);
-                    // }
                 }
 
                 let arg_lvalue = unpack!(block = this.as_lvalue(block, arg));
