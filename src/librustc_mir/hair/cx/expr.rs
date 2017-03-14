@@ -1073,11 +1073,6 @@ fn capture_freevar<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                 kind: cx.build_borrow(upvar_borrow.region,
                                       borrow_kind,
                                       captured_var.to_ref(),
-                                      // FIXME: consider passing in
-                                      // fact that this is upvar by
-                                      // ref capture, since closures
-                                      // do not emit EndRegions for
-                                      // their upvars anyway.
                                       var_extent),
             }.to_ref()
         }
