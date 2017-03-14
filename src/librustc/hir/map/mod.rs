@@ -438,46 +438,6 @@ impl<'hir> Map<'hir> {
         }
     }
 
-    /// Returns `Some((owner, child))` where `owner` is nearest
-    /// closure or item that contains `node_id`, and `child` is
-    /// next-to-last node on the ancestral path from `node_id` to
-    /// `owner`.
-    ///
-    /// If `node_id` has no parent at all, then returns `None`.
-    ///
-    /// A returned `child` will always either be `node_id` itself or
-    /// an ancestor of `node_id`.
-    ///
-    /// A returned `child` will often (but not always) be the owner's
-    /// body when owner is a fn item or closure. (One example where
-    /// `child` is not a body: when `node_id` is a parameter to some
-    /// fn item.)
-    pub fn ancestral_owner(&self, node_id: NodeId) -> Option<(NodeId, NodeId)> {
-        let mut prev = node_id;
-        let mut parent = self.get_parent_node(node_id);
-        if parent == node_id { return None; }
-        loop {
-            match self.find(parent).unwrap() {
-                // Items
-                NodeItem(_) | NodeTraitItem(_) | NodeImplItem(_) => {
-                    return Some((parent, prev));
-                }
-
-                // Closures
-                NodeExpr(e) => {
-                    if let ExprClosure(..) = e.node {
-                        return Some((parent, prev));
-                    }
-                }
-
-                _ => {}
-            }
-            // neither item nor closure; continue search.
-            prev = parent;
-            parent = self.get_parent_node(prev);
-        }
-    }
-
     pub fn body_owner_def_id(&self, id: BodyId) -> DefId {
         self.local_def_id(self.body_owner(id))
     }
