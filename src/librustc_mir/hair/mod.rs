@@ -110,14 +110,6 @@ pub struct Expr<'tcx> {
     pub kind: ExprKind<'tcx>,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum BorrowSource {
-    ExprAddrOf,
-    ByRefOperator,
-    UpVarCaptureByRef,
-    AutoRef,
-}
-
 #[derive(Clone, Debug)]
 pub enum ExprKind<'tcx> {
     Scope {
@@ -215,7 +207,6 @@ pub enum ExprKind<'tcx> {
     },
     Borrow {
         region: &'tcx Region,
-        borrow_source: BorrowSource,
         borrow_kind: BorrowKind,
         arg: ExprRef<'tcx>,
     },

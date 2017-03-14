@@ -65,7 +65,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 let value_operand = unpack!(block = this.as_operand(block, scope, value));
                 block.and(Rvalue::Repeat(value_operand, count))
             }
-            ExprKind::Borrow { region, borrow_source: _, borrow_kind, arg } => {
+            ExprKind::Borrow { region, borrow_kind, arg } => {
                 if let Region::ReScope(extent) = *region {
                     // NOTE: borrows of regions outside closures can
                     // occur. Furthermore, they aren't solely

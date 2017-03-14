@@ -89,27 +89,22 @@ impl<'a, 'gcx, 'tcx> Cx<'a, 'gcx, 'tcx> {
 
     pub(crate) fn build_borrow(&mut self,
                                region: &'tcx Region,
-                               borrow_kind: (BorrowSource, BorrowKind),
+                               borrow_kind: BorrowKind,
                                arg: ExprRef<'tcx>,
                                expr_code_extent: CodeExtent)
                                -> ExprKind<'tcx>
     {
-        self.saw_borrow(borrow_kind.0, region, expr_code_extent);
+        self.saw_borrow(region, expr_code_extent);
         ExprKind::Borrow {
             region: region,
-            borrow_source: borrow_kind.0,
-            borrow_kind: borrow_kind.1,
+            borrow_kind: borrow_kind,
             arg: arg,
         }
     }
 
     pub(crate) fn saw_borrow(&mut self,
-                             borrow_source: BorrowSource,
                              region: &Region,
                              _expr_code_extent: CodeExtent) {
-        if borrow_source == BorrowSource::UpVarCaptureByRef {
-            return;
-        }
         if let Region::ReScope(extent) = *region {
             // extent of borrow ends during this execution; record that so that
             // we know to emit an EndRegion for this extent.
