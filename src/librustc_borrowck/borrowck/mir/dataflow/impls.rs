@@ -606,6 +606,7 @@ impl<'a, 'tcx> BitDenotation for Borrows<'a, 'tcx> {
                 }
             }
 
+            mir::StatementKind::InlineAsm { .. } |
             mir::StatementKind::SetDiscriminant { .. } |
             mir::StatementKind::StorageLive(..) |
             mir::StatementKind::StorageDead(..) |
