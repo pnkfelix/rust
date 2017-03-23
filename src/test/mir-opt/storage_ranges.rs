@@ -20,6 +20,12 @@ fn main() {
 
 // END RUST SOURCE
 // START rustc.node4.TypeckMir.before.mir
+//     let _1: i32;
+//     let _3: &std::option::Option<i32>;
+//     let _7: i32;
+//     let mut _4: std::option::Option<i32>;
+//     let mut _5: i32;
+//
 //     bb0: {
 //         StorageLive(_1);
 //         _1 = const 0i32;
@@ -33,10 +39,10 @@ fn main() {
 //         _2 = ();
 //         StorageDead(_3);
 //         StorageDead(_4);
-//         StorageLive(_6);
-//         _6 = const 1i32;
+//         StorageLive(_7);
+//         _7 = const 1i32;
 //         _0 = ();
-//         StorageDead(_6);
+//         StorageDead(_7);
 //         StorageDead(_1);
 //      }
 // END rustc.node4.TypeckMir.before.mir

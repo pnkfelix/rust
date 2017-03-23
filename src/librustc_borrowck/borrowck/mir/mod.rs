@@ -64,6 +64,7 @@ pub fn borrowck_mir(bcx: &mut BorrowckCtxt,
     let param_env = ty::ParameterEnvironment::for_item(tcx, id);
     let move_data = MoveData::gather_moves(mir, tcx, &param_env);
     let mdpe = MoveDataParamEnv { move_data: move_data, param_env: param_env };
+
     let flow_inits =
         do_dataflow(tcx, mir, id, attributes, MaybeInitializedLvals::new(tcx, mir, &mdpe),
                     |bd, i| &bd.move_data().move_paths[i]);
@@ -364,6 +365,7 @@ fn drop_flag_effects_for_location<'a, 'tcx, F>(
             mir::StatementKind::StorageLive(_) |
             mir::StatementKind::StorageDead(_) |
             mir::StatementKind::InlineAsm { .. } |
+            mir::StatementKind::EndRegion(_) |
             mir::StatementKind::Nop => {}
         },
         None => {
