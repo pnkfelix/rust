@@ -60,10 +60,14 @@ mod indexes {
 
     /// Index into MoveData.moves.
     new_index!(MoveOutIndex, "mo");
+
+    /// Index into Borrows.locations
+    new_index!(BorrowIndex, "bw");
 }
 
 pub use self::indexes::MovePathIndex;
 pub use self::indexes::MoveOutIndex;
+pub use self::indexes::BorrowIndex;
 
 impl self::indexes::MoveOutIndex {
     pub fn move_path_index(&self, move_data: &MoveData) -> MovePathIndex {
