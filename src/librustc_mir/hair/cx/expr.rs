@@ -117,11 +117,9 @@ impl<'tcx> Mirror<'tcx> for &'tcx hir::Expr {
                                                   mutbl: mutbl,
                                               }),
                             span: expr.span,
-                            kind: ExprKind::Borrow {
-                                region: region,
-                                borrow_kind: to_borrow_kind(mutbl),
-                                arg: expr.to_ref(),
-                            },
+                            kind: cx.build_borrow(region,
+                                                  to_borrow_kind(mutbl),
+                                                  expr.to_ref()),
                         };
 
                         overloaded_lvalue(cx,
@@ -152,11 +150,9 @@ impl<'tcx> Mirror<'tcx> for &'tcx hir::Expr {
                                 temp_lifetime_was_shrunk: was_shrunk,
                                 ty: adjusted_ty,
                                 span: self.span,
-                                kind: ExprKind::Borrow {
-                                    region: r,
-                                    borrow_kind: to_borrow_kind(m),
-                                    arg: expr.to_ref(),
-                                },
+                                kind: cx.build_borrow(r,
+                                                      to_borrow_kind(m),
+                                                      expr.to_ref()),
                             };
                         }
                         ty::adjustment::AutoBorrow::RawPtr(m) => {
@@ -174,11 +170,9 @@ impl<'tcx> Mirror<'tcx> for &'tcx hir::Expr {
                                                       mutbl: m,
                                                   }),
                                 span: self.span,
-                                kind: ExprKind::Borrow {
-                                    region: region,
-                                    borrow_kind: to_borrow_kind(m),
-                                    arg: expr.to_ref(),
-                                },
+                                kind: cx.build_borrow(region,
+                                                      to_borrow_kind(m),
+                                                      expr.to_ref()),
                             };
                             expr = Expr {
                                 temp_lifetime: temp_lifetime,
@@ -336,11 +330,9 @@ fn make_mirror_unadjusted<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                 ty::TyRef(r, _) => r,
                 _ => span_bug!(expr.span, "type of & not region"),
             };
-            ExprKind::Borrow {
-                region: region,
-                borrow_kind: to_borrow_kind(mutbl),
-                arg: expr.to_ref(),
-            }
+            cx.build_borrow(region,
+                            to_borrow_kind(mutbl),
+                            expr.to_ref())
         }
 
         hir::ExprBlock(ref blk) => ExprKind::Block { body: &blk },
@@ -992,11 +984,9 @@ fn overloaded_operator<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                         temp_lifetime_was_shrunk: was_shrunk,
                         ty: adjusted_ty,
                         span: expr.span,
-                        kind: ExprKind::Borrow {
-                            region: region,
-                            borrow_kind: BorrowKind::Shared,
-                            arg: arg.to_ref(),
-                        },
+                        kind: cx.build_borrow(region,
+                                              BorrowKind::Shared,
+                                              arg.to_ref()),
                     }
                     .to_ref()
                 }))
@@ -1077,11 +1067,9 @@ fn capture_freevar<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                 temp_lifetime_was_shrunk: was_shrunk,
                 ty: freevar_ty,
                 span: closure_expr.span,
-                kind: ExprKind::Borrow {
-                    region: upvar_borrow.region,
-                    borrow_kind: borrow_kind,
-                    arg: captured_var.to_ref(),
-                },
+                kind: cx.build_borrow(upvar_borrow.region,
+                                      borrow_kind,
+                                      captured_var.to_ref()),
             }.to_ref()
         }
     }

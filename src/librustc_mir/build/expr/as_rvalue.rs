@@ -22,7 +22,7 @@ use hair::*;
 use rustc_const_math::{ConstInt, ConstIsize};
 use rustc::middle::const_val::ConstVal;
 use rustc::middle::region::CodeExtent;
-use rustc::ty;
+use rustc::ty::{self, Region};
 use rustc::mir::*;
 use syntax::ast;
 use syntax_pos::Span;
@@ -59,6 +59,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
 
         match expr.kind {
             ExprKind::Scope { extent, value } => {
+                let extent = (extent, source_info);
                 this.in_scope(extent, block, |this| this.as_rvalue(block, scope, value))
             }
             ExprKind::Repeat { value, count } => {
@@ -66,6 +67,30 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 block.and(Rvalue::Repeat(value_operand, count))
             }
             ExprKind::Borrow { region, borrow_kind, arg } => {
+                if let Region::ReScope(extent) = *region {
+                    // borrows of regions outside closures can
+                    // occur. For such cases, we simply let the region
+                    // extend past the end of the closure.
+                    //
+                    // (Also, in principle `extent` should occur at
+                    // most once on scopes, but that invariant does
+                    // not currently hold.)
+
+                    // find the scope associated with this extent, and
+                    // emit an EndRegion on its diverge_path.
+                    if let Some(scope) = this.scopes.iter_mut().find(|s| s.code_extent() == extent)
+                    {
+                        if !scope.diverge_path.end_region_emitted {
+                            this.cfg.push_end_region(scope.diverge_path.block, source_info, extent);
+                            scope.diverge_path.end_region_emitted = true;
+                            scope.needs_cleanup = true;
+                        }
+
+                        assert!(scope.diverge_path.end_region_emitted);
+                        assert!(scope.needs_cleanup);
+                    }
+                }
+
                 let arg_lvalue = unpack!(block = this.as_lvalue(block, arg));
                 block.and(Rvalue::Ref(region, borrow_kind, arg_lvalue))
             }
@@ -98,7 +123,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 let result = this.temp(expr.ty, expr_span);
                 // to start, malloc some memory of suitable type (thus far, uninitialized):
                 this.cfg.push_assign(block, source_info, &result, Rvalue::Box(value.ty));
-                this.in_scope(value_extents, block, |this| {
+                this.in_scope((value_extents, source_info), block, |this| {
                     // schedule a shallow free of that memory, lest we unwind:
                     this.schedule_box_free(expr_span, value_extents, &result, value.ty);
                     // initialize the box contents:

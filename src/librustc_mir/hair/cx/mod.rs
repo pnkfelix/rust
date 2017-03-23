@@ -18,6 +18,7 @@ use hair::*;
 use rustc::mir::transform::MirSource;
 
 use rustc::middle::const_val::{ConstEvalErr, ConstVal};
+use rustc::middle::region::CodeExtent;
 use rustc_const_eval::ConstContext;
 use rustc_data_structures::indexed_vec::Idx;
 use rustc::hir::def_id::DefId;
@@ -29,7 +30,9 @@ use syntax::symbol::{Symbol, InternedString};
 use rustc::hir;
 use rustc_const_math::{ConstInt, ConstUsize};
 
-#[derive(Copy, Clone)]
+use rustc_data_structures::fx::FxHashSet;
+
+#[derive(Clone)]
 pub struct Cx<'a, 'gcx: 'a + 'tcx, 'tcx: 'a> {
     tcx: TyCtxt<'a, 'gcx, 'tcx>,
     infcx: &'a InferCtxt<'a, 'gcx, 'tcx>,
@@ -37,6 +40,10 @@ pub struct Cx<'a, 'gcx: 'a + 'tcx, 'tcx: 'a> {
 
     /// True if this constant/function needs overflow checks.
     check_overflow: bool,
+
+    /// Collects all CodeExtents for which we have generated a hair
+    /// Borrow expression.
+    seen_borrows: FxHashSet<CodeExtent>,
 }
 
 impl<'a, 'gcx, 'tcx> Cx<'a, 'gcx, 'tcx> {
@@ -70,11 +77,38 @@ impl<'a, 'gcx, 'tcx> Cx<'a, 'gcx, 'tcx> {
             infcx: infcx,
             constness: constness,
             check_overflow: check_overflow,
+            seen_borrows: FxHashSet(),
         }
     }
 }
 
 impl<'a, 'gcx, 'tcx> Cx<'a, 'gcx, 'tcx> {
+    pub(crate) fn seen_borrows(&self) -> &FxHashSet<CodeExtent> {
+        &self.seen_borrows
+    }
+
+    pub(crate) fn build_borrow(&mut self,
+                               region: &'tcx Region,
+                               borrow_kind: BorrowKind,
+                               arg: ExprRef<'tcx>)
+                               -> ExprKind<'tcx>
+    {
+        self.saw_borrow(region);
+        ExprKind::Borrow {
+            region: region,
+            borrow_kind: borrow_kind,
+            arg: arg,
+        }
+    }
+
+    fn saw_borrow(&mut self, region: &Region) {
+        if let Region::ReScope(extent) = *region {
+            // extent of borrow ends during this execution; record that so that
+            // we know to emit an EndRegion for this extent.
+            self.seen_borrows.insert(extent);
+        }
+    }
+
     /// Normalizes `ast` into the appropriate `mirror` type.
     pub fn mirror<M: Mirror<'tcx>>(&mut self, ast: M) -> M::Output {
         ast.make_mirror(self)

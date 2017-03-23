@@ -406,6 +406,7 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
                 }
             }
             StatementKind::InlineAsm { .. } |
+            StatementKind::EndRegion(_) |
             StatementKind::Nop => {}
         }
     }
