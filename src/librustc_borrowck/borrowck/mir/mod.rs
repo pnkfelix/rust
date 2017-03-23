@@ -31,6 +31,9 @@ use self::dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
 use self::dataflow::{DefinitelyInitializedLvals};
 use self::gather_moves::{HasMoveData, MoveData, MovePathIndex, LookupResult};
 
+pub use self::dataflow::{Borrows};
+pub(self) use self::gather_moves::{BorrowIndex};
+
 use std::fmt;
 
 fn has_rustc_mir_with(attrs: &[ast::Attribute], name: &str) -> Option<MetaItem> {
@@ -64,6 +67,10 @@ pub fn borrowck_mir(bcx: &mut BorrowckCtxt,
     let param_env = ty::ParameterEnvironment::for_item(tcx, id);
     let move_data = MoveData::gather_moves(mir, tcx, &param_env);
     let mdpe = MoveDataParamEnv { move_data: move_data, param_env: param_env };
+
+    let _flow_borrows =
+        do_dataflow(tcx, mir, id, attributes, Borrows::new(tcx, mir),
+                    |bd, i| bd.location(i));
 
     let flow_inits =
         do_dataflow(tcx, mir, id, attributes, MaybeInitializedLvals::new(tcx, mir, &mdpe),
@@ -112,7 +119,7 @@ fn do_dataflow<'a, 'tcx, BD, P>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                 bd: BD,
                                 p: P)
                                 -> DataflowResults<BD>
-    where BD: BitDenotation<Idx=MovePathIndex> + DataflowOperator,
+    where BD: BitDenotation + DataflowOperator,
           P: Fn(&BD, BD::Idx) -> &fmt::Debug
 {
     let name_found = |sess: &Session, attrs: &[ast::Attribute], name| -> Option<String> {

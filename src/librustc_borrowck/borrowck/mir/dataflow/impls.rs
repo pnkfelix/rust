@@ -8,16 +8,20 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use rustc::ty::TyCtxt;
+use rustc::ty::{self, TyCtxt};
+use rustc::middle::region::CodeExtent;
 use rustc::mir::{self, Mir, Location};
+use rustc::mir::visit::Visitor;
+use rustc::util::nodemap::{FxHashMap, FxHashSet};
 use rustc_data_structures::bitslice::BitSlice; // adds set_bit/get_bit to &[usize] bitvector rep.
 use rustc_data_structures::bitslice::{BitwiseOperator};
 use rustc_data_structures::indexed_set::{IdxSet};
-use rustc_data_structures::indexed_vec::Idx;
+use rustc_data_structures::indexed_vec::{Idx, IndexVec};
 use rustc_mir::util::elaborate_drops::DropFlagState;
 
 use super::super::gather_moves::{HasMoveData, MoveData, MoveOutIndex, MovePathIndex};
 use super::super::MoveDataParamEnv;
+use super::super::BorrowIndex;
 use super::super::drop_flag_effects_for_function_entry;
 use super::super::drop_flag_effects_for_location;
 use super::super::on_lookup_result_bits;
@@ -221,6 +225,68 @@ pub struct MovingOutStatements<'a, 'tcx: 'a> {
 
 impl<'a, 'tcx> HasMoveData<'tcx> for MovingOutStatements<'a, 'tcx> {
     fn move_data(&self) -> &MoveData<'tcx> { &self.mdpe.move_data }
+}
+
+// temporarily allow some dead fields: `kind` and `region` will be
+// needed by borrowck; `lvalue` will probably be a MovePathIndex when
+// that is extended to include borrowed data paths.
+#[allow(dead_code)]
+pub struct BorrowData<'tcx> {
+    location: Location,
+    kind: mir::BorrowKind,
+    region: CodeExtent,
+    lvalue: mir::Lvalue<'tcx>,
+}
+
+// `Borrows` maps each dataflow bit to an `Rvalue::Ref`, which can be
+// uniquely identified in the MIR by the `Location` of the assigment
+// statement in which it appears on the right hand side.
+pub struct Borrows<'a, 'tcx: 'a> {
+    #[allow(dead_code)]
+    tcx: TyCtxt<'a, 'tcx, 'tcx>,
+    mir: &'a Mir<'tcx>,
+    borrows: IndexVec<BorrowIndex, BorrowData<'tcx>>,
+    loc_map: FxHashMap<Location, BorrowIndex>,
+    ext_map: FxHashMap<CodeExtent, FxHashSet<BorrowIndex>>,
+}
+
+impl<'a, 'tcx> Borrows<'a, 'tcx> {
+    pub fn new(tcx: TyCtxt<'a, 'tcx, 'tcx>, mir: &'a Mir<'tcx>) -> Self {
+        let mut visitor = GatherBorrows { idx_vec: IndexVec::new(),
+                                          loc_map: FxHashMap(),
+                                          ext_map: FxHashMap(), };
+        visitor.visit_mir(mir);
+        return Borrows { tcx: tcx,
+                         mir: mir,
+                         borrows: visitor.idx_vec,
+                         loc_map: visitor.loc_map,
+                         ext_map: visitor.ext_map, };
+
+        struct GatherBorrows<'tcx> {
+            idx_vec: IndexVec<BorrowIndex, BorrowData<'tcx>>,
+            loc_map: FxHashMap<Location, BorrowIndex>,
+            ext_map: FxHashMap<CodeExtent, FxHashSet<BorrowIndex>>,
+        }
+        impl<'tcx> Visitor<'tcx> for GatherBorrows<'tcx> {
+            fn visit_rvalue(&mut self,
+                            rvalue: &mir::Rvalue<'tcx>,
+                            location: mir::Location) {
+                if let mir::Rvalue::Ref(&ty::Region::ReScope(extent), kind, ref lvalue) = *rvalue {
+                    let borrow = BorrowData {
+                        location: location, kind: kind, region: extent, lvalue: lvalue.clone(),
+                    };
+                    let idx = self.idx_vec.push(borrow);
+                    self.loc_map.insert(location, idx);
+                    let mut borrows = self.ext_map.entry(extent).or_insert(FxHashSet());
+                    borrows.insert(idx);
+                }
+            }
+        }
+    }
+
+    pub fn location(&self, idx: BorrowIndex) -> &Location {
+        &self.borrows[idx].location
+    }
 }
 
 impl<'a, 'tcx> MaybeInitializedLvals<'a, 'tcx> {
@@ -517,6 +583,65 @@ impl<'a, 'tcx> BitDenotation for MovingOutStatements<'a, 'tcx> {
     }
 }
 
+impl<'a, 'tcx> BitDenotation for Borrows<'a, 'tcx> {
+    type Idx = BorrowIndex;
+    fn name() -> &'static str { "borrows" }
+    fn bits_per_block(&self) -> usize {
+        self.borrows.len()
+    }
+    fn start_block_effect(&self, _sets: &mut BlockSets<BorrowIndex>)  {
+        // no borrows of code extents have been taken prior to
+        // function execution, so this method has no effect on
+        // `_sets`.
+    }
+    fn statement_effect(&self,
+                        sets: &mut BlockSets<BorrowIndex>,
+                        bb: mir::BasicBlock,
+                        stmt_idx: usize) {
+        let block = &self.mir[bb];
+        let stmt = block.statements.get(stmt_idx).unwrap();
+        match stmt.kind {
+            mir::StatementKind::EndRegion(ref extents) => {
+                for ext in extents {
+                    for idx in &self.ext_map[ext] {
+                        sets.kill(&idx);
+                    }
+                }
+            }
+
+            mir::StatementKind::Assign(_, ref rhs) => {
+                if let mir::Rvalue::Ref(&ty::Region::ReScope(extent), _, _) = *rhs {
+                    let loc = mir::Location { block: bb, statement_index: stmt_idx };
+                    let idx = self.loc_map[&loc];
+                    assert!(self.ext_map.get(&extent).unwrap().contains(&idx));
+                    sets.gen(&idx);
+                }
+            }
+
+            mir::StatementKind::InlineAsm { .. } |
+            mir::StatementKind::SetDiscriminant { .. } |
+            mir::StatementKind::StorageLive(..) |
+            mir::StatementKind::StorageDead(..) |
+            mir::StatementKind::Nop => {}
+
+        }
+    }
+    fn terminator_effect(&self,
+                         _sets: &mut BlockSets<BorrowIndex>,
+                         _bb: mir::BasicBlock,
+                         _statements_len: usize) {
+        // no terminators start nor end code extents.
+    }
+
+    fn propagate_call_return(&self,
+                             _in_out: &mut IdxSet<BorrowIndex>,
+                             _call_bb: mir::BasicBlock,
+                             _dest_bb: mir::BasicBlock,
+                             _dest_lval: &mir::Lvalue) {
+        // there are no effects on the extents from method calls.
+    }
+}
+
 fn zero_to_one(bitvec: &mut [usize], move_index: MoveOutIndex) {
     let retval = bitvec.set_bit(move_index.index());
     assert!(retval);
@@ -547,6 +672,13 @@ impl<'a, 'tcx> BitwiseOperator for DefinitelyInitializedLvals<'a, 'tcx> {
     #[inline]
     fn join(&self, pred1: usize, pred2: usize) -> usize {
         pred1 & pred2 // "definitely" means we intersect effects of both preds
+    }
+}
+
+impl<'a, 'tcx> BitwiseOperator for Borrows<'a, 'tcx> {
+    #[inline]
+    fn join(&self, pred1: usize, pred2: usize) -> usize {
+        pred1 | pred2 // union effects of preds when computing borrows
     }
 }
 
@@ -585,5 +717,12 @@ impl<'a, 'tcx> DataflowOperator for DefinitelyInitializedLvals<'a, 'tcx> {
     #[inline]
     fn bottom_value() -> bool {
         true // bottom = initialized (start_block_effect counters this at outset)
+    }
+}
+
+impl<'a, 'tcx> DataflowOperator for Borrows<'a, 'tcx> {
+    #[inline]
+    fn bottom_value() -> bool {
+        false // bottom = no Rvalue::Refs are active by default
     }
 }
