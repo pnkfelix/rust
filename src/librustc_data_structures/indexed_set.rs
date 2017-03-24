@@ -153,4 +153,8 @@ impl<T: Idx> IdxSet<T> {
     pub fn subtract(&mut self, other: &IdxSet<T>) -> bool {
         bitwise(self.words_mut(), other.words(), &Subtract)
     }
+
+    pub fn reset_to_empty(&mut self) {
+        for word in self.words_mut() { *word = 0; }
+    }
 }
