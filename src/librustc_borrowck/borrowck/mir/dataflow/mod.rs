@@ -13,7 +13,7 @@ use rustc_data_structures::indexed_vec::Idx;
 use rustc_data_structures::bitslice::{bitwise, BitwiseOperator};
 
 use rustc::ty::TyCtxt;
-use rustc::mir::{self, Mir};
+use rustc::mir::{self, Mir, BasicBlock, BasicBlockData, Statement, Terminator};
 
 use std::fmt::Debug;
 use std::io;
@@ -201,6 +201,66 @@ pub struct DataflowResults<O>(DataflowState<O>) where O: BitDenotation;
 impl<O: BitDenotation> DataflowResults<O> {
     pub fn sets(&self) -> &AllSets<O::Idx> {
         &self.0.sets
+    }
+}
+
+impl<O: BitDenotation> DataflowResults<O> {
+    /// Visits each node of the control-flow graph in the given MIR
+    /// passing along the dataflow state on entry to each such point.
+    /// Assumes that the given MIR is the same one from which these
+    /// data flow results were obtained.
+    #[allow(dead_code)]
+    pub fn feed_results_into_mir<B,S,T>(&self,
+                                        mir: &Mir,
+                                        start_block: B,
+                                        start_stmt: S,
+                                        start_term: T) where
+        B: Fn(BasicBlock, &BasicBlockData, &IdxSet<O::Idx>),
+        S: Fn(BasicBlock, usize, &Statement, &IdxSet<O::Idx>),
+        T: Fn(BasicBlock, usize, &Terminator, &IdxSet<O::Idx>),
+    {
+        let bits_per_block = self.sets().bits_per_block;
+        let mut temp = IdxSetBuf::new_empty(bits_per_block);
+        let mut temp_gen = IdxSetBuf::new_empty(bits_per_block);
+        let mut temp_kill = IdxSetBuf::new_empty(bits_per_block);
+        let mut temp_entry = IdxSetBuf::new_empty(bits_per_block);
+
+        let mut sets = BlockSets {
+            on_entry: &mut temp_entry,
+            gen_set: &mut temp_gen,
+            kill_set: &mut temp_kill,
+        };
+
+        for (bb, bb_data) in mir.basic_blocks().iter_enumerated() {
+            // copy the on-entry state into temp set.
+            (*temp).clone_from(self.sets().on_entry_set_for(bb.index()));
+            start_block(bb, bb_data, &temp);
+
+            let BasicBlockData { ref statements, ref terminator, is_cleanup: _ } = *bb_data;
+            let mut j = 0;
+            for stmt in statements {
+                // visit current state
+                start_stmt(bb, j, stmt, &temp);
+
+                // reconstruct effect of statement on dataflow state.
+                sets.gen_set.reset_to_empty();
+                sets.kill_set.reset_to_empty();
+                self.0.operator.statement_effect(&mut sets, bb, j);
+
+                // apply effect to current state
+                temp.union(sets.gen_set);
+                temp.subtract(sets.kill_set);
+                j += 1;
+            }
+
+            // finally, visit the terminator
+            if let Some(ref term) = *terminator {
+                start_term(bb, j, term, &temp);
+                // (we don't need to reconstruct the effect of the
+                // terminator, since we are only visiting dataflow
+                // state on control flow entry to the various nodes.)
+            }
+        }
     }
 }
 
