@@ -201,6 +201,79 @@ impl<O: BitDenotation> DataflowResults<O> {
     pub fn sets(&self) -> &AllSets<O::Idx> {
         &self.0.sets
     }
+
+    pub fn operator(&self) -> &O {
+        &self.0.operator
+    }
+}
+
+/// DataflowResultsConsumer abstracts over walking the MIR with some
+/// already constructed dataflow results.
+///
+/// It abstracts over the FlowState and also completely hides the
+/// underlying flow analysis results, because it needs to handle cases
+/// where we are combining the results of *multiple* flow analyses
+/// (e.g. borrows + inits + uninits).
+pub trait DataflowResultsConsumer<'a, 'tcx: 'a> {
+    type FlowState;
+
+    // Observation Hooks: override (at least one of) these to get analysis feedback.
+    fn visit_block_entry(&mut self,
+                         _bb: BasicBlock,
+                         _flow_state: &Self::FlowState) {}
+
+    fn visit_statement_entry(&mut self,
+                             _bb: BasicBlock,
+                             _stmt_idx: usize,
+                             _stmt: &Statement<'tcx>,
+                             _flow_state: &Self::FlowState) {}
+
+    fn visit_terminator_entry(&mut self,
+                              _bb: BasicBlock,
+                              _stmt_idx: usize,
+                              _term: &Terminator<'tcx>,
+                              _flow_state: &Self::FlowState) {}
+
+    // Main entry point: this drives the processing of results.
+
+    fn analyze_results(&mut self, flow_uninit: &mut Self::FlowState) {
+        let mut flow = flow_uninit;
+        for bb in self.mir().basic_blocks().indices() {
+            self.reset_to_entry_of(bb, flow);
+            self.process_basic_block(bb, flow);
+        }
+    }
+
+    fn process_basic_block(&mut self, bb: BasicBlock, flow_state: &mut Self::FlowState) {
+        let BasicBlockData { ref statements, ref terminator, is_cleanup: _ } =
+            self.mir()[bb];
+        let mut j = 0;
+        for stmt in statements.iter() {
+            self.visit_statement_entry(bb, j, stmt, flow_state);
+            self.apply_statement_effect(bb, j, flow_state);
+            j += 1;
+        }
+
+        if let Some(ref term) = *terminator {
+            self.visit_terminator_entry(bb, j, term, flow_state);
+            // (we don't need to reconstruct the effect of the
+            // terminator, since we are only visiting dataflow state
+            // on control flow entry to the various nodes.)
+        }
+    }
+
+    // Delegated Hooks: Provide access to the MIR and process the flow state.
+
+    fn mir(&self) -> &'a Mir<'tcx>;
+
+    fn reset_to_entry_of(&mut self,
+                         bb: BasicBlock,
+                         flow_state: &mut Self::FlowState);
+
+    fn apply_statement_effect(&mut self,
+                              bb: BasicBlock,
+                              stmt_idx: usize,
+                              flow_state: &mut Self::FlowState);
 }
 
 impl<O: BitDenotation> DataflowResults<O> {
@@ -300,9 +373,9 @@ pub struct AllSets<E: Idx> {
 }
 
 pub struct BlockSets<'a, E: Idx> {
-    on_entry: &'a mut IdxSet<E>,
-    gen_set: &'a mut IdxSet<E>,
-    kill_set: &'a mut IdxSet<E>,
+    pub(super) on_entry: &'a mut IdxSet<E>,
+    pub(super) gen_set: &'a mut IdxSet<E>,
+    pub(super) kill_set: &'a mut IdxSet<E>,
 }
 
 impl<'a, E:Idx> BlockSets<'a, E> {

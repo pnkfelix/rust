@@ -13,10 +13,12 @@ use borrowck::BorrowckCtxt;
 use syntax::ast::{self, MetaItem};
 use syntax_pos::DUMMY_SP;
 
-use rustc::mir::{self, BasicBlock, BasicBlockData, Mir, Statement, Terminator, Location};
+use rustc::mir::{self, BasicBlock, Mir, Statement, Terminator, Location};
 use rustc::session::Session;
 use rustc::ty::{self, TyCtxt};
 use rustc_mir::util::elaborate_drops::DropFlagState;
+use rustc_data_structures::indexed_set::{IdxSetBuf, IdxSet};
+use rustc_data_structures::indexed_vec::{Idx};
 
 mod abs_domain;
 pub mod elaborate_drops;
@@ -24,9 +26,10 @@ mod dataflow;
 mod gather_moves;
 // mod graphviz;
 
-use self::dataflow::{BitDenotation};
+use self::dataflow::{BitDenotation, BlockSets};
 use self::dataflow::{DataflowOperator};
 use self::dataflow::{Dataflow, DataflowAnalysis, DataflowResults};
+use self::dataflow::{DataflowResultsConsumer};
 use self::dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
 use self::dataflow::{DefinitelyInitializedLvals};
 use self::gather_moves::{HasMoveData, MoveData, MovePathIndex, LookupResult};
@@ -35,6 +38,7 @@ pub use self::dataflow::{Borrows};
 pub(self) use self::gather_moves::{BorrowIndex};
 
 use std::fmt;
+use std::mem;
 
 fn has_rustc_mir_with(attrs: &[ast::Attribute], name: &str) -> Option<MetaItem> {
     for attr in attrs {
@@ -68,9 +72,20 @@ pub fn borrowck_mir(bcx: &mut BorrowckCtxt,
     let move_data = MoveData::gather_moves(mir, tcx, &param_env);
     let mdpe = MoveDataParamEnv { move_data: move_data, param_env: param_env };
 
-    let _flow_borrows =
+    let flow_borrows =
         do_dataflow(tcx, mir, id, attributes, Borrows::new(tcx, mir),
                     |bd, i| bd.location(i));
+    flow_borrows.feed_results_into_mir(
+        mir,
+        |_block, _block_data, _state| {
+            // block
+        },
+        |_block, _idx, _stmt, _state| {
+            // statement
+        },
+        |_block, _idx, _term, _state| {
+            // terminator
+        });
 
     let flow_inits =
         do_dataflow(tcx, mir, id, attributes, MaybeInitializedLvals::new(tcx, mir, &mdpe),
@@ -101,13 +116,15 @@ pub fn borrowck_mir(bcx: &mut BorrowckCtxt,
         mir: mir,
         node_id: id,
         move_data: &mdpe.move_data,
-        flow_inits: flow_inits,
-        flow_uninits: flow_uninits,
     };
 
-    for bb in mir.basic_blocks().indices() {
-        mbcx.process_basic_block(bb);
-    }
+    let mut state = InProgress {
+        borrows: FlowInProgress::new(flow_borrows),
+        inits: FlowInProgress::new(flow_inits),
+        uninits: FlowInProgress::new(flow_uninits),
+    };
+
+    mbcx.analyze_results(&mut state);
 
     debug!("borrowck_mir done");
 }
@@ -152,7 +169,6 @@ fn do_dataflow<'a, 'tcx, BD, P>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     mbcx.flow_state.results()
 }
 
-
 pub struct MirBorrowckCtxtPreDataflow<'a, 'tcx: 'a, BD> where BD: BitDenotation
 {
     node_id: ast::NodeId,
@@ -161,33 +177,185 @@ pub struct MirBorrowckCtxtPreDataflow<'a, 'tcx: 'a, BD> where BD: BitDenotation
     print_postflow_to: Option<String>,
 }
 
+struct FlowInProgress<BD> where BD: BitDenotation {
+    base_results: DataflowResults<BD>,
+    curr_state: IdxSetBuf<BD::Idx>,
+    stmt_gen: IdxSetBuf<BD::Idx>,
+    stmt_kill: IdxSetBuf<BD::Idx>,
+}
+
+impl<BD> FlowInProgress<BD> where BD: BitDenotation {
+    fn each_bit<F>(&self, f: F) where F: FnMut(BD::Idx) {
+        each_bit(&self.curr_state, self.base_results.operator().bits_per_block(), f)
+    }
+}
+
+impl<BD> FlowInProgress<BD> where BD: BitDenotation {
+    fn new(results: DataflowResults<BD>) -> Self {
+        let bits_per_block = results.sets().bits_per_block();
+        let curr_state = IdxSetBuf::new_empty(bits_per_block);
+        let stmt_gen = IdxSetBuf::new_empty(bits_per_block);
+        let stmt_kill = IdxSetBuf::new_empty(bits_per_block);
+        FlowInProgress {
+            base_results: results,
+            curr_state: curr_state,
+            stmt_gen: stmt_gen,
+            stmt_kill: stmt_kill,
+        }
+    }
+
+    fn reset_to_entry_of(&mut self, bb: BasicBlock) {
+        (*self.curr_state).clone_from(self.base_results.sets().on_entry_set_for(bb.index()));
+    }
+
+    fn reconstruct_statement_effect(&mut self, bb: BasicBlock, stmt_idx: usize) {
+        self.stmt_gen.reset_to_empty();
+        self.stmt_kill.reset_to_empty();
+        let mut ignored = IdxSetBuf::new_empty(0);
+        let mut sets = BlockSets {
+            on_entry: &mut ignored, gen_set: &mut self.stmt_gen, kill_set: &mut self.stmt_kill,
+        };
+        self.base_results.operator().statement_effect(&mut sets, bb, stmt_idx);
+    }
+
+    fn apply_statement_effect(&mut self) {
+        self.curr_state.union(&self.stmt_gen);
+        self.curr_state.subtract(&self.stmt_kill);
+    }
+}
+
 #[allow(dead_code)]
 pub struct MirBorrowckCtxt<'b, 'a: 'b, 'tcx: 'a> {
     bcx: &'b mut BorrowckCtxt<'a, 'tcx>,
     mir: &'b Mir<'tcx>,
     node_id: ast::NodeId,
     move_data: &'b MoveData<'tcx>,
-    flow_inits: DataflowResults<MaybeInitializedLvals<'b, 'tcx>>,
-    flow_uninits: DataflowResults<MaybeUninitializedLvals<'b, 'tcx>>
 }
 
-impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
-    fn process_basic_block(&mut self, bb: BasicBlock) {
-        let BasicBlockData { ref statements, ref terminator, is_cleanup: _ } =
-            self.mir[bb];
-        for stmt in statements {
-            self.process_statement(bb, stmt);
+// (forced to be `pub` due to its use as an associated type below.)
+pub struct InProgress<'b, 'tcx: 'b> {
+    borrows: FlowInProgress<Borrows<'b, 'tcx>>,
+    inits: FlowInProgress<MaybeInitializedLvals<'b, 'tcx>>,
+    uninits: FlowInProgress<MaybeUninitializedLvals<'b, 'tcx>>,
+}
+
+impl<'b, 'tcx: 'b> InProgress<'b, 'tcx> {
+    fn each_flow<XB, XI, XU>(&mut self,
+                             mut xform_borrows: XB,
+                             mut xform_inits: XI,
+                             mut xform_uninits: XU) where
+        XB: FnMut(&mut FlowInProgress<Borrows<'b, 'tcx>>),
+        XI: FnMut(&mut FlowInProgress<MaybeInitializedLvals<'b, 'tcx>>),
+        XU: FnMut(&mut FlowInProgress<MaybeUninitializedLvals<'b, 'tcx>>),
+    {
+        xform_borrows(&mut self.borrows);
+        xform_inits(&mut self.inits);
+        xform_uninits(&mut self.uninits);
+    }
+
+    fn summary(&self) -> String {
+        let mut s = String::new();
+
+        s.push_str("borrows: [");
+        self.borrows.each_bit(|borrow| {
+            let borrow_data = &self.borrows.base_results.operator().borrows()[borrow];
+            s.push_str(&format!("{:?}, ", borrow_data));
+        });
+        s.push_str("] ");
+
+        s.push_str("inits: [");
+        self.inits.each_bit(|mpi_init| {
+            let move_path =
+                &self.inits.base_results.operator().move_data().move_paths[mpi_init];
+            s.push_str(&format!("{:?}, ", move_path));
+        });
+        s.push_str("] ");
+
+        s.push_str("uninits: [");
+        self.uninits.each_bit(|mpi_uninit| {
+            let move_path =
+                &self.uninits.base_results.operator().move_data().move_paths[mpi_uninit];
+            s.push_str(&format!("{:?}, ", move_path));
+        });
+        s.push_str("]");
+
+        return s;
+    }
+}
+
+fn each_bit<I: Idx, F>(words: &IdxSet<I>, max_bits: usize, mut f: F) where F: FnMut(I) {
+    let usize_bits: usize = mem::size_of::<usize>() * 8;
+
+    for (word_index, &word) in words.words().iter().enumerate() {
+        if word != 0 {
+            let base_index = word_index * usize_bits;
+            for offset in 0..usize_bits {
+                let bit = 1 << offset;
+                if (word & bit) != 0 {
+                    // NB: we round up the total number of bits
+                    // that we store in any given bit set so that
+                    // it is an even multiple of usize::BITS. This
+                    // means that there may be some stray bits at
+                    // the end that do not correspond to any
+                    // actual value; that's why we first check
+                    // that we are in range of `max_bits`.
+                    let bit_index = base_index + offset as usize;
+                    if bit_index >= max_bits {
+                        return;
+                    } else {
+                        f(Idx::new(bit_index));
+                    }
+                }
+            }
         }
+    }
+}
 
-        self.process_terminator(bb, terminator);
+impl<'b, 'a: 'b, 'tcx: 'a> DataflowResultsConsumer<'b, 'tcx> for MirBorrowckCtxt<'b, 'a, 'tcx> {
+    type FlowState = InProgress<'b, 'tcx>;
+
+    fn mir(&self) -> &'b Mir<'tcx> { self.mir }
+
+    fn reset_to_entry_of(&mut self, bb: BasicBlock, flow_state: &mut Self::FlowState) {
+        flow_state.each_flow(|b| b.reset_to_entry_of(bb),
+                             |i| i.reset_to_entry_of(bb),
+                             |u| u.reset_to_entry_of(bb));
     }
 
-    fn process_statement(&mut self, bb: BasicBlock, stmt: &Statement<'tcx>) {
-        debug!("MirBorrowckCtxt::process_statement({:?}, {:?}", bb, stmt);
+    fn apply_statement_effect(&mut self,
+                              bb: BasicBlock,
+                              stmt_idx: usize,
+                              flow_state: &mut Self::FlowState) {
+        flow_state.each_flow(|b| b.reconstruct_statement_effect(bb, stmt_idx),
+                             |i| i.reconstruct_statement_effect(bb, stmt_idx),
+                             |u| u.reconstruct_statement_effect(bb, stmt_idx));
+        flow_state.each_flow(|b| b.apply_statement_effect(),
+                             |i| i.apply_statement_effect(),
+                             |u| u.apply_statement_effect());
     }
 
-    fn process_terminator(&mut self, bb: BasicBlock, term: &Option<Terminator<'tcx>>) {
-        debug!("MirBorrowckCtxt::process_terminator({:?}, {:?})", bb, term);
+    fn visit_block_entry(&mut self,
+                         bb: BasicBlock,
+                         flow_state: &Self::FlowState) {
+        let summary = flow_state.summary();
+        debug!("MirBorrowckCtxt::process_block({:?}): {}", bb, summary);
+    }
+
+    fn visit_statement_entry(&mut self,
+                             bb: BasicBlock,
+                             _: usize,
+                             stmt: &Statement<'tcx>,
+                             flow_state: &Self::FlowState) {
+        let summary = flow_state.summary();
+        debug!("MirBorrowckCtxt::process_statement({:?}, {:?}): {}", bb, stmt, summary);
+    }
+    fn visit_terminator_entry(&mut self,
+                              bb: BasicBlock,
+                              _: usize,
+                              term: &Terminator<'tcx>,
+                              flow_state: &Self::FlowState) {
+        let summary = flow_state.summary();
+        debug!("MirBorrowckCtxt::process_terminator({:?}, {:?}): {}", bb, term, summary);
     }
 }
 
