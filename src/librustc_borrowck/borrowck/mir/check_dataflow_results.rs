@@ -104,7 +104,7 @@ impl<'b, 'tcx: 'b> InProgress<'b, 'tcx> {
         s.push_str("borrows: [");
         self.borrows.each_bit(|borrow| {
             let borrow_data = &self.borrows.base_results.operator().borrows()[borrow];
-            s.push_str(&format!("{:?}, ", borrow_data));
+            s.push_str(&format!("{}, ", borrow_data));
         });
         s.push_str("] ");
 
@@ -112,7 +112,7 @@ impl<'b, 'tcx: 'b> InProgress<'b, 'tcx> {
         self.inits.each_bit(|mpi_init| {
             let move_path =
                 &self.inits.base_results.operator().move_data().move_paths[mpi_init];
-            s.push_str(&format!("{:?}, ", move_path));
+            s.push_str(&format!("{}, ", move_path));
         });
         s.push_str("] ");
 
@@ -120,7 +120,7 @@ impl<'b, 'tcx: 'b> InProgress<'b, 'tcx> {
         self.uninits.each_bit(|mpi_uninit| {
             let move_path =
                 &self.uninits.base_results.operator().move_data().move_paths[mpi_uninit];
-            s.push_str(&format!("{:?}, ", move_path));
+            s.push_str(&format!("{}, ", move_path));
         });
         s.push_str("]");
 
