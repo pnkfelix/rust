@@ -28,6 +28,8 @@ use super::super::on_lookup_result_bits;
 
 use super::{BitDenotation, BlockSets, DataflowOperator};
 
+use std::fmt;
+
 // Dataflow analyses are built upon some interpretation of the
 // bitvectors attached to each basic block, represented via a
 // zero-sized structure.
@@ -237,6 +239,19 @@ pub struct BorrowData<'tcx> {
     kind: mir::BorrowKind,
     region: CodeExtent,
     lvalue: mir::Lvalue<'tcx>,
+}
+
+impl<'tcx> fmt::Display for BorrowData<'tcx> {
+    fn fmt(&self, w: &mut fmt::Formatter) -> fmt::Result {
+        let kind = match self.kind {
+            mir::BorrowKind::Shared => "",
+            mir::BorrowKind::Unique => "uniq ",
+            mir::BorrowKind::Mut => "mut ",
+        };
+        let region = format!("{}", ty::ReScope(self.region));
+        let region = if region.len() > 0 { format!("{} ", region) } else { region };
+        write!(w, "&{}{}{:?}", region, kind, self.lvalue)
+    }
 }
 
 // `Borrows` maps each dataflow bit to an `Rvalue::Ref`, which can be
