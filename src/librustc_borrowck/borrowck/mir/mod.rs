@@ -79,18 +79,6 @@ pub fn borrowck_mir(bcx: &mut BorrowckCtxt,
     let flow_borrows =
         do_dataflow(tcx, mir, id, attributes, Borrows::new(tcx, mir),
                     |bd, i| bd.location(i));
-    flow_borrows.feed_results_into_mir(
-        mir,
-        |_block, _block_data, _state| {
-            // block
-        },
-        |_block, _idx, _stmt, _state| {
-            // statement
-        },
-        |_block, _idx, _term, _state| {
-            // terminator
-        });
-
     let flow_inits =
         do_dataflow(tcx, mir, id, attributes, &dead_unwinds,
                     MaybeInitializedLvals::new(tcx, mir, &mdpe),
