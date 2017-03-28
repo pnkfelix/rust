@@ -7,6 +7,10 @@ how it works, and then proceed to dive into the theoretical
 background. Finally, they go into detail on some of the more subtle
 aspects.
 
+NOTE: This README is out of date. In particular, we no longer track a
+set of restricted actions; we just track loans and their restricted
+paths. See PR #14947.
+
 # Table of contents
 
 These docs are long. Search for the section you are interested in.
