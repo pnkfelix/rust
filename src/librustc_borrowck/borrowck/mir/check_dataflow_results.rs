@@ -102,25 +102,34 @@ impl<'b, 'tcx: 'b> InProgress<'b, 'tcx> {
         let mut s = String::new();
 
         s.push_str("borrows: [");
+        let mut saw_one = false;
         self.borrows.each_bit(|borrow| {
+            if saw_one { s.push_str(", "); };
+            saw_one = true;
             let borrow_data = &self.borrows.base_results.operator().borrows()[borrow];
-            s.push_str(&format!("{}, ", borrow_data));
+            s.push_str(&format!("{}", borrow_data));
         });
         s.push_str("] ");
 
         s.push_str("inits: [");
+        let mut saw_one = false;
         self.inits.each_bit(|mpi_init| {
+            if saw_one { s.push_str(", "); };
+            saw_one = true;
             let move_path =
                 &self.inits.base_results.operator().move_data().move_paths[mpi_init];
-            s.push_str(&format!("{}, ", move_path));
+            s.push_str(&format!("{}", move_path));
         });
         s.push_str("] ");
 
         s.push_str("uninits: [");
+        let mut saw_one = false;
         self.uninits.each_bit(|mpi_uninit| {
+            if saw_one { s.push_str(", "); };
+            saw_one = true;
             let move_path =
                 &self.uninits.base_results.operator().move_data().move_paths[mpi_uninit];
-            s.push_str(&format!("{}, ", move_path));
+            s.push_str(&format!("{}", move_path));
         });
         s.push_str("]");
 
