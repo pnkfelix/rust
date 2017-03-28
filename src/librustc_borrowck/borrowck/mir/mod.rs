@@ -119,7 +119,7 @@ pub fn borrowck_mir(bcx: &mut BorrowckCtxt,
         uninits: FlowInProgress::new(flow_uninits),
     };
 
-    mbcx.analyze_results(&mut state);
+    mbcx.analyze_results(&mut state); // entry point for DataflowResultsConsumer
 
     debug!("borrowck_mir done");
 }
