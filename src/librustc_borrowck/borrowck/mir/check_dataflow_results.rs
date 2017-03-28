@@ -28,8 +28,12 @@ struct FlowInProgress<BD> where BD: BitDenotation {
 }
 
 impl<BD> FlowInProgress<BD> where BD: BitDenotation {
-    fn each_bit<F>(&self, f: F) where F: FnMut(BD::Idx) {
+    fn each_state_bit<F>(&self, f: F) where F: FnMut(BD::Idx) {
         each_bit(&self.curr_state, self.base_results.operator().bits_per_block(), f)
+    }
+
+    fn each_gen_bit<F>(&self, f: F) where F: FnMut(BD::Idx) {
+        each_bit(&self.stmt_gen, self.base_results.operator().bits_per_block(), f)
     }
 }
 
@@ -61,7 +65,17 @@ impl<BD> FlowInProgress<BD> where BD: BitDenotation {
         self.base_results.operator().statement_effect(&mut sets, bb, stmt_idx);
     }
 
-    fn apply_statement_effect(&mut self) {
+    fn reconstruct_terminator_effect(&mut self, bb: BasicBlock, stmts_len: usize) {
+        self.stmt_gen.reset_to_empty();
+        self.stmt_kill.reset_to_empty();
+        let mut ignored = IdxSetBuf::new_empty(0);
+        let mut sets = BlockSets {
+            on_entry: &mut ignored, gen_set: &mut self.stmt_gen, kill_set: &mut self.stmt_kill,
+        };
+        self.base_results.operator().terminator_effect(&mut sets, bb, stmts_len);
+    }
+
+    fn apply_local_effect(&mut self) {
         self.curr_state.union(&self.stmt_gen);
         self.curr_state.subtract(&self.stmt_kill);
     }
@@ -101,9 +115,19 @@ impl<'b, 'tcx: 'b> InProgress<'b, 'tcx> {
     fn summary(&self) -> String {
         let mut s = String::new();
 
-        s.push_str("borrows: [");
+        s.push_str("borrows in effect: [");
         let mut saw_one = false;
-        self.borrows.each_bit(|borrow| {
+        self.borrows.each_state_bit(|borrow| {
+            if saw_one { s.push_str(", "); };
+            saw_one = true;
+            let borrow_data = &self.borrows.base_results.operator().borrows()[borrow];
+            s.push_str(&format!("{}", borrow_data));
+        });
+        s.push_str("] ");
+
+        s.push_str("borrows generated: [");
+        let mut saw_one = false;
+        self.borrows.each_gen_bit(|borrow| {
             if saw_one { s.push_str(", "); };
             saw_one = true;
             let borrow_data = &self.borrows.base_results.operator().borrows()[borrow];
@@ -113,7 +137,7 @@ impl<'b, 'tcx: 'b> InProgress<'b, 'tcx> {
 
         s.push_str("inits: [");
         let mut saw_one = false;
-        self.inits.each_bit(|mpi_init| {
+        self.inits.each_state_bit(|mpi_init| {
             if saw_one { s.push_str(", "); };
             saw_one = true;
             let move_path =
@@ -124,7 +148,7 @@ impl<'b, 'tcx: 'b> InProgress<'b, 'tcx> {
 
         s.push_str("uninits: [");
         let mut saw_one = false;
-        self.uninits.each_bit(|mpi_uninit| {
+        self.uninits.each_state_bit(|mpi_uninit| {
             if saw_one { s.push_str(", "); };
             saw_one = true;
             let move_path =
@@ -148,16 +172,31 @@ impl<'b, 'a: 'b, 'tcx: 'a> DataflowResultsConsumer<'b, 'tcx> for MirBorrowckCtxt
                              |u| u.reset_to_entry_of(bb));
     }
 
-    fn apply_statement_effect(&mut self,
-                              bb: BasicBlock,
-                              stmt_idx: usize,
-                              flow_state: &mut Self::FlowState) {
+    fn reconstruct_statement_effect(&mut self,
+                                    bb: BasicBlock,
+                                    stmt_idx: usize,
+                                    flow_state: &mut Self::FlowState) {
         flow_state.each_flow(|b| b.reconstruct_statement_effect(bb, stmt_idx),
                              |i| i.reconstruct_statement_effect(bb, stmt_idx),
                              |u| u.reconstruct_statement_effect(bb, stmt_idx));
-        flow_state.each_flow(|b| b.apply_statement_effect(),
-                             |i| i.apply_statement_effect(),
-                             |u| u.apply_statement_effect());
+    }
+
+    fn apply_local_effect(&mut self,
+                              _bb: BasicBlock,
+                              _stmt_idx: usize,
+                              flow_state: &mut Self::FlowState) {
+        flow_state.each_flow(|b| b.apply_local_effect(),
+                             |i| i.apply_local_effect(),
+                             |u| u.apply_local_effect());
+    }
+
+    fn reconstruct_terminator_effect(&mut self,
+                                     bb: BasicBlock,
+                                     stmts_len: usize,
+                                    flow_state: &mut Self::FlowState) {
+        flow_state.each_flow(|b| b.reconstruct_terminator_effect(bb, stmts_len),
+                             |i| i.reconstruct_terminator_effect(bb, stmts_len),
+                             |u| u.reconstruct_terminator_effect(bb, stmts_len));
     }
 
     fn visit_block_entry(&mut self,
@@ -175,6 +214,7 @@ impl<'b, 'a: 'b, 'tcx: 'a> DataflowResultsConsumer<'b, 'tcx> for MirBorrowckCtxt
         let summary = flow_state.summary();
         debug!("MirBorrowckCtxt::process_statement({:?}, {:?}): {}", bb, stmt, summary);
     }
+
     fn visit_terminator_entry(&mut self,
                               bb: BasicBlock,
                               _: usize,

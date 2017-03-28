@@ -250,16 +250,21 @@ pub trait DataflowResultsConsumer<'a, 'tcx: 'a> {
             self.mir()[bb];
         let mut j = 0;
         for stmt in statements.iter() {
+            self.reconstruct_statement_effect(bb, j, flow_state);
             self.visit_statement_entry(bb, j, stmt, flow_state);
-            self.apply_statement_effect(bb, j, flow_state);
+            self.apply_local_effect(bb, j, flow_state);
             j += 1;
         }
 
         if let Some(ref term) = *terminator {
+            self.reconstruct_terminator_effect(bb, j, flow_state);
             self.visit_terminator_entry(bb, j, term, flow_state);
-            // (we don't need to reconstruct the effect of the
-            // terminator, since we are only visiting dataflow state
-            // on control flow entry to the various nodes.)
+
+            // We don't need to apply the effect of the terminator,
+            // since we are only visiting dataflow state on control
+            // flow entry to the various nodes. (But we still need to
+            // reconstruct the effect, because the visit method might
+            // inspect it.)
         }
     }
 
@@ -267,14 +272,32 @@ pub trait DataflowResultsConsumer<'a, 'tcx: 'a> {
 
     fn mir(&self) -> &'a Mir<'tcx>;
 
+    // reset the state bitvector to represent the entry to block `bb`.
     fn reset_to_entry_of(&mut self,
                          bb: BasicBlock,
                          flow_state: &mut Self::FlowState);
 
-    fn apply_statement_effect(&mut self,
-                              bb: BasicBlock,
-                              stmt_idx: usize,
-                              flow_state: &mut Self::FlowState);
+    // build gen + kill sets for statement at `bb[stmt_idx]`.
+    fn reconstruct_statement_effect(&mut self,
+                                    bb: BasicBlock,
+                                    stmt_idx: usize,
+                                    flow_state: &mut Self::FlowState);
+
+    // build gen + kill sets for terminator for `bb`.
+    fn reconstruct_terminator_effect(&mut self,
+                                     bb: BasicBlock,
+                                     stmts_len: usize,
+                                     flow_state: &mut Self::FlowState);
+
+    // apply current gen + kill sets to `flow_state`.
+    //
+    // (`bb` and `stmt_idx` parameters can be ignored if desired by
+    // client. For the terminator, the `stmt_idx` will be the number
+    // of statements in the block.)
+    fn apply_local_effect(&mut self,
+                          bb: BasicBlock,
+                          stmt_idx: usize,
+                          flow_state: &mut Self::FlowState);
 }
 
 // FIXME: This type shouldn't be public, but the graphviz::MirWithFlowState trait
