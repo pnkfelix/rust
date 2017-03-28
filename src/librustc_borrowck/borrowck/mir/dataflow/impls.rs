@@ -231,6 +231,7 @@ impl<'a, 'tcx> HasMoveData<'tcx> for MovingOutStatements<'a, 'tcx> {
 // needed by borrowck; `lvalue` will probably be a MovePathIndex when
 // that is extended to include borrowed data paths.
 #[allow(dead_code)]
+#[derive(Debug)]
 pub struct BorrowData<'tcx> {
     location: Location,
     kind: mir::BorrowKind,
@@ -283,6 +284,8 @@ impl<'a, 'tcx> Borrows<'a, 'tcx> {
             }
         }
     }
+
+    pub fn borrows(&self) -> &IndexVec<BorrowIndex, BorrowData<'tcx>> { &self.borrows }
 
     pub fn location(&self, idx: BorrowIndex) -> &Location {
         &self.borrows[idx].location
