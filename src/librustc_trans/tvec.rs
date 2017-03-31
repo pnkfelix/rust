@@ -21,6 +21,29 @@ pub fn slice_for_each<'a, 'tcx, F>(
     len: ValueRef,
     f: F
 ) -> Builder<'a, 'tcx> where F: FnOnce(&Builder<'a, 'tcx>, ValueRef, BasicBlockRef) {
+    slice_for_each_gen(bcx, data_ptr, unit_ty, len, f, Dir::Fwd)
+}
+
+pub fn slice_for_each_rev<'a, 'tcx, F>(
+    bcx: &Builder<'a, 'tcx>,
+    data_ptr: ValueRef,
+    unit_ty: Ty<'tcx>,
+    len: ValueRef,
+    f: F
+) -> Builder<'a, 'tcx> where F: FnOnce(&Builder<'a, 'tcx>, ValueRef, BasicBlockRef) {
+    slice_for_each_gen(bcx, data_ptr, unit_ty, len, f, Dir::Rev)
+}
+
+enum Dir { Fwd, Rev }
+
+fn slice_for_each_gen<'a, 'tcx, F>(
+    bcx: &Builder<'a, 'tcx>,
+    data_ptr: ValueRef,
+    unit_ty: Ty<'tcx>,
+    len: ValueRef,
+    f: F,
+    direction: Dir
+) -> Builder<'a, 'tcx> where F: FnOnce(&Builder<'a, 'tcx>, ValueRef, BasicBlockRef) {
     // Special-case vectors with elements of size 0  so they don't go out of bounds (#9890)
     let zst = type_is_zero_size(bcx.ccx, unit_ty);
     let add = |bcx: &Builder, a, b| if zst {
@@ -33,21 +56,35 @@ pub fn slice_for_each<'a, 'tcx, F>(
     let next_bcx = bcx.build_sibling_block("slice_loop_next");
     let header_bcx = bcx.build_sibling_block("slice_loop_header");
 
-    let start = if zst {
-        C_uint(bcx.ccx, 0usize)
-    } else {
-        data_ptr
+    // For non-zst, Dir::Fwd generates:
+    //   c = &data[0]; f = &data[len]; while (c != f) { n = c+1; visit(c); c = n; }
+    //
+    // while Dir::Rev generates:
+    //   c = &data[len]; f = &data[0]; while (c > f)  { n = c-1; visit(n); c = n; }
+
+    let (init, fini, cmp_op, stride) = {
+        let start = if zst {
+            C_uint(bcx.ccx, 0usize)
+        } else {
+            data_ptr
+        };
+        let end = add(&bcx, start, len);
+
+        match direction {
+            Dir::Fwd => (start, end, llvm::IntNE, 1isize),
+            Dir::Rev => (end, start, llvm::IntUGT, -1isize),
+        }
     };
-    let end = add(&bcx, start, len);
 
     bcx.br(header_bcx.llbb());
-    let current = header_bcx.phi(val_ty(start), &[start], &[bcx.llbb()]);
+    let current = header_bcx.phi(val_ty(init), &[init], &[bcx.llbb()]);
 
-    let keep_going = header_bcx.icmp(llvm::IntNE, current, end);
+    let keep_going = header_bcx.icmp(cmp_op, current, fini);
     header_bcx.cond_br(keep_going, body_bcx.llbb(), next_bcx.llbb());
 
-    let next = add(&body_bcx, current, C_uint(bcx.ccx, 1usize));
-    f(&body_bcx, if zst { data_ptr } else { current }, header_bcx.llbb());
+    let next = add(&body_bcx, current, C_uint(bcx.ccx, stride as usize));
+    let visit_target = match direction { Dir::Fwd => current, Dir::Rev => next };
+    f(&body_bcx, if zst { data_ptr } else { visit_target }, header_bcx.llbb());
     header_bcx.add_incoming_to_phi(current, next, body_bcx.llbb());
     next_bcx
 }

@@ -226,7 +226,7 @@ impl<'a, 'tcx> MirContext<'a, 'tcx> {
                         let drop_fn = monomorphize::resolve_drop_in_place(
                             bcx.ccx.shared(), ety);
                         let drop_fn = callee::get_fn(bcx.ccx, drop_fn);
-                        let bcx = tvec::slice_for_each(
+                        let bcx = tvec::slice_for_each_rev(
                             &bcx,
                             lvalue.project_index(&bcx, C_uint(bcx.ccx, 0u64)),
                             ety,
