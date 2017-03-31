@@ -50,7 +50,7 @@ fn main() {
     // in essence, I would not be surprised if we change the ordering
     // given in `expect` in the future.
 
-    let expect = 0x__A_9__5_6_7_8__1_2_3_4;
+    let expect = 0x__A_9__8_7_6_5__4_3_2_1;
     let actual = LOG.load(Ordering::SeqCst);
     assert!(actual == expect, "expect: 0x{:x} actual: 0x{:x}", expect, actual);
 }

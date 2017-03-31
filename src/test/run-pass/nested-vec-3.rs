@@ -57,7 +57,7 @@ fn main() {
     // that is, we would still drop 9+10 first, since they belong to
     // the more deeply nested expression when the panic occurs.
 
-    let expect = 0x__A_9__5_6_7_8__1_2_3_4;
+    let expect = 0x__A_9__8_7_6_5__4_3_2_1;
     let actual = LOG.load(Ordering::SeqCst);
     assert!(actual == expect, "expect: 0x{:x} actual: 0x{:x}", expect, actual);
 }

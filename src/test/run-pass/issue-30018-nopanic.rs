@@ -86,7 +86,7 @@ fn break_after_whole() {
                   D(log, 12)];
         break;
     }
-    assert_eq!(&log.borrow()[..], &[10, 11, 12]);
+    assert_eq!(&log.borrow()[..], &[12, 11, 10]);
     log.borrow_mut().clear();
 
     // CASE 2: Slice (borrow of array) is stored in _r slot.
@@ -96,7 +96,7 @@ fn break_after_whole() {
                    D(log, 22)];
         break;
     }
-    assert_eq!(&log.borrow()[..], &[20, 21, 22]);
+    assert_eq!(&log.borrow()[..], &[22, 21, 20]);
     log.borrow_mut().clear();
 
     // CASE 3: (Borrow of) slice-index of array is stored in _r slot.
@@ -106,6 +106,6 @@ fn break_after_whole() {
                    D(log, 32)][..];
         break;
     }
-    assert_eq!(&log.borrow()[..], &[30, 31, 32]);
+    assert_eq!(&log.borrow()[..], &[32, 31, 30]);
     log.borrow_mut().clear();
 }
