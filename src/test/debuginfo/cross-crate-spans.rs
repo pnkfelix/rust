@@ -10,6 +10,7 @@
 
 #![feature(omit_gdb_pretty_printer_section)]
 #![omit_gdb_pretty_printer_section]
+#![crate_name="cross_crate_spans_test"]
 
 // min-lldb-version: 310
 
