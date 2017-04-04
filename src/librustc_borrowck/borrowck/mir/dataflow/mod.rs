@@ -13,7 +13,7 @@ use rustc_data_structures::indexed_vec::Idx;
 use rustc_data_structures::bitslice::{bitwise, BitwiseOperator};
 
 use rustc::ty::TyCtxt;
-use rustc::mir::{self, Mir, BasicBlock, BasicBlockData, Statement, Terminator};
+use rustc::mir::{self, Mir, BasicBlock, BasicBlockData, Location, Statement, Terminator};
 
 use std::fmt::Debug;
 use std::io;
@@ -26,7 +26,7 @@ use super::MirBorrowckCtxtPreDataflow;
 pub use self::sanity_check::sanity_check_via_rustc_peek;
 pub use self::impls::{MaybeInitializedLvals, MaybeUninitializedLvals};
 pub use self::impls::{DefinitelyInitializedLvals, MovingOutStatements};
-pub use self::impls::{Borrows};
+pub use self::impls::{Borrows, BorrowData};
 
 mod graphviz;
 mod sanity_check;
@@ -87,12 +87,13 @@ impl<'a, 'tcx: 'a, BD> DataflowAnalysis<'a, 'tcx, BD>
 
             let sets = &mut self.flow_state.sets.for_block(bb.index());
             for j_stmt in 0..statements.len() {
-                self.flow_state.operator.statement_effect(sets, bb, j_stmt);
+                let location = Location { block: bb, statement_index: j_stmt };
+                self.flow_state.operator.statement_effect(sets, location);
             }
 
             if terminator.is_some() {
-                let stmts_len = statements.len();
-                self.flow_state.operator.terminator_effect(sets, bb, stmts_len);
+                let location = Location { block: bb, statement_index: statements.len() };
+                self.flow_state.operator.terminator_effect(sets, location);
             }
         }
     }
@@ -224,14 +225,12 @@ pub trait DataflowResultsConsumer<'a, 'tcx: 'a> {
                          _flow_state: &Self::FlowState) {}
 
     fn visit_statement_entry(&mut self,
-                             _bb: BasicBlock,
-                             _stmt_idx: usize,
+                             _loc: Location,
                              _stmt: &Statement<'tcx>,
                              _flow_state: &Self::FlowState) {}
 
     fn visit_terminator_entry(&mut self,
-                              _bb: BasicBlock,
-                              _stmt_idx: usize,
+                              _loc: Location,
                               _term: &Terminator<'tcx>,
                               _flow_state: &Self::FlowState) {}
 
@@ -248,17 +247,17 @@ pub trait DataflowResultsConsumer<'a, 'tcx: 'a> {
     fn process_basic_block(&mut self, bb: BasicBlock, flow_state: &mut Self::FlowState) {
         let BasicBlockData { ref statements, ref terminator, is_cleanup: _ } =
             self.mir()[bb];
-        let mut j = 0;
+        let mut location = Location { block: bb, statement_index: 0 };
         for stmt in statements.iter() {
-            self.reconstruct_statement_effect(bb, j, flow_state);
-            self.visit_statement_entry(bb, j, stmt, flow_state);
-            self.apply_local_effect(bb, j, flow_state);
-            j += 1;
+            self.reconstruct_statement_effect(location, flow_state);
+            self.visit_statement_entry(location, stmt, flow_state);
+            self.apply_local_effect(location, flow_state);
+            location.statement_index += 1;
         }
 
         if let Some(ref term) = *terminator {
-            self.reconstruct_terminator_effect(bb, j, flow_state);
-            self.visit_terminator_entry(bb, j, term, flow_state);
+            self.reconstruct_terminator_effect(location, flow_state);
+            self.visit_terminator_entry(location, term, flow_state);
 
             // We don't need to apply the effect of the terminator,
             // since we are only visiting dataflow state on control
@@ -277,16 +276,14 @@ pub trait DataflowResultsConsumer<'a, 'tcx: 'a> {
                          bb: BasicBlock,
                          flow_state: &mut Self::FlowState);
 
-    // build gen + kill sets for statement at `bb[stmt_idx]`.
+    // build gen + kill sets for statement at `loc`.
     fn reconstruct_statement_effect(&mut self,
-                                    bb: BasicBlock,
-                                    stmt_idx: usize,
+                                    loc: Location,
                                     flow_state: &mut Self::FlowState);
 
-    // build gen + kill sets for terminator for `bb`.
+    // build gen + kill sets for terminator for `loc`.
     fn reconstruct_terminator_effect(&mut self,
-                                     bb: BasicBlock,
-                                     stmts_len: usize,
+                                     loc: Location,
                                      flow_state: &mut Self::FlowState);
 
     // apply current gen + kill sets to `flow_state`.
@@ -295,8 +292,7 @@ pub trait DataflowResultsConsumer<'a, 'tcx: 'a> {
     // client. For the terminator, the `stmt_idx` will be the number
     // of statements in the block.)
     fn apply_local_effect(&mut self,
-                          bb: BasicBlock,
-                          stmt_idx: usize,
+                          loc: Location,
                           flow_state: &mut Self::FlowState);
 }
 
@@ -426,8 +422,7 @@ pub trait BitDenotation {
     /// the MIR.
     fn statement_effect(&self,
                         sets: &mut BlockSets<Self::Idx>,
-                        bb: mir::BasicBlock,
-                        idx_stmt: usize);
+                        loc: mir::Location);
 
     /// Mutates the block-sets (the flow sets for the given
     /// basic block) according to the effects of evaluating
@@ -441,8 +436,7 @@ pub trait BitDenotation {
     /// terminator took.
     fn terminator_effect(&self,
                          sets: &mut BlockSets<Self::Idx>,
-                         bb: mir::BasicBlock,
-                         idx_term: usize);
+                         loc: mir::Location);
 
     /// Mutates the block-sets according to the (flow-dependent)
     /// effect of a successful return from a Call terminator.
