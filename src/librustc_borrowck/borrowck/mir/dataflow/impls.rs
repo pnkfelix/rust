@@ -218,11 +218,20 @@ impl<'a, 'tcx: 'a> HasMoveData<'tcx> for DefinitelyInitializedLvals<'a, 'tcx> {
 /// control flow. But `MovingOutStatements` also includes the added
 /// data of *which* particular statement causing the deinitialization
 /// that the borrow checker's error meessage may need to report.
-#[allow(dead_code)]
 pub struct MovingOutStatements<'a, 'tcx: 'a> {
     tcx: TyCtxt<'a, 'tcx, 'tcx>,
     mir: &'a Mir<'tcx>,
     mdpe: &'a MoveDataParamEnv<'tcx>,
+}
+
+impl<'a, 'tcx: 'a> MovingOutStatements<'a, 'tcx> {
+    pub fn new(tcx: TyCtxt<'a, 'tcx, 'tcx>,
+               mir: &'a Mir<'tcx>,
+               mdpe: &'a MoveDataParamEnv<'tcx>)
+               -> Self
+    {
+        MovingOutStatements { tcx: tcx, mir: mir, mdpe: mdpe }
+    }
 }
 
 impl<'a, 'tcx> HasMoveData<'tcx> for MovingOutStatements<'a, 'tcx> {
@@ -359,24 +368,22 @@ impl<'a, 'tcx> BitDenotation for MaybeInitializedLvals<'a, 'tcx> {
 
     fn statement_effect(&self,
                         sets: &mut BlockSets<MovePathIndex>,
-                        bb: mir::BasicBlock,
-                        idx: usize)
+                        location: Location)
     {
         drop_flag_effects_for_location(
             self.tcx, self.mir, self.mdpe,
-            Location { block: bb, statement_index: idx },
+            location,
             |path, s| Self::update_bits(sets, path, s)
         )
     }
 
     fn terminator_effect(&self,
                          sets: &mut BlockSets<MovePathIndex>,
-                         bb: mir::BasicBlock,
-                         statements_len: usize)
+                         location: Location)
     {
         drop_flag_effects_for_location(
             self.tcx, self.mir, self.mdpe,
-            Location { block: bb, statement_index: statements_len },
+            location,
             |path, s| Self::update_bits(sets, path, s)
         )
     }
@@ -416,24 +423,22 @@ impl<'a, 'tcx> BitDenotation for MaybeUninitializedLvals<'a, 'tcx> {
 
     fn statement_effect(&self,
                         sets: &mut BlockSets<MovePathIndex>,
-                        bb: mir::BasicBlock,
-                        idx: usize)
+                        location: Location)
     {
         drop_flag_effects_for_location(
             self.tcx, self.mir, self.mdpe,
-            Location { block: bb, statement_index: idx },
+            location,
             |path, s| Self::update_bits(sets, path, s)
         )
     }
 
     fn terminator_effect(&self,
                          sets: &mut BlockSets<MovePathIndex>,
-                         bb: mir::BasicBlock,
-                         statements_len: usize)
+                         location: Location)
     {
         drop_flag_effects_for_location(
             self.tcx, self.mir, self.mdpe,
-            Location { block: bb, statement_index: statements_len },
+            location,
             |path, s| Self::update_bits(sets, path, s)
         )
     }
@@ -472,24 +477,22 @@ impl<'a, 'tcx> BitDenotation for DefinitelyInitializedLvals<'a, 'tcx> {
 
     fn statement_effect(&self,
                         sets: &mut BlockSets<MovePathIndex>,
-                        bb: mir::BasicBlock,
-                        idx: usize)
+                        location: Location)
     {
         drop_flag_effects_for_location(
             self.tcx, self.mir, self.mdpe,
-            Location { block: bb, statement_index: idx },
+            location,
             |path, s| Self::update_bits(sets, path, s)
         )
     }
 
     fn terminator_effect(&self,
                          sets: &mut BlockSets<MovePathIndex>,
-                         bb: mir::BasicBlock,
-                         statements_len: usize)
+                         location: Location)
     {
         drop_flag_effects_for_location(
             self.tcx, self.mir, self.mdpe,
-            Location { block: bb, statement_index: statements_len },
+            location,
             |path, s| Self::update_bits(sets, path, s)
         )
     }
@@ -520,15 +523,13 @@ impl<'a, 'tcx> BitDenotation for MovingOutStatements<'a, 'tcx> {
     }
     fn statement_effect(&self,
                         sets: &mut BlockSets<MoveOutIndex>,
-                        bb: mir::BasicBlock,
-                        idx: usize) {
+                        loc: Location) {
         let (tcx, mir, move_data) = (self.tcx, self.mir, self.move_data());
-        let stmt = &mir[bb].statements[idx];
+        let stmt = &mir[loc.block].statements[loc.statement_index];
         let loc_map = &move_data.loc_map;
         let path_map = &move_data.path_map;
         let rev_lookup = &move_data.rev_lookup;
 
-        let loc = Location { block: bb, statement_index: idx };
         debug!("stmt {:?} at loc {:?} moves out of move_indexes {:?}",
                stmt, loc, &loc_map[loc]);
         for move_index in &loc_map[loc] {
@@ -565,13 +566,11 @@ impl<'a, 'tcx> BitDenotation for MovingOutStatements<'a, 'tcx> {
 
     fn terminator_effect(&self,
                          sets: &mut BlockSets<MoveOutIndex>,
-                         bb: mir::BasicBlock,
-                         statements_len: usize)
+                         loc: Location)
     {
         let (mir, move_data) = (self.mir, self.move_data());
-        let term = mir[bb].terminator();
+        let term = mir[loc.block].terminator();
         let loc_map = &move_data.loc_map;
-        let loc = Location { block: bb, statement_index: statements_len };
         debug!("terminator {:?} at loc {:?} moves out of move_indexes {:?}",
                term, loc, &loc_map[loc]);
         let bits_per_block = self.bits_per_block();
@@ -614,10 +613,9 @@ impl<'a, 'tcx> BitDenotation for Borrows<'a, 'tcx> {
     }
     fn statement_effect(&self,
                         sets: &mut BlockSets<BorrowIndex>,
-                        bb: mir::BasicBlock,
-                        stmt_idx: usize) {
-        let block = &self.mir[bb];
-        let stmt = block.statements.get(stmt_idx).unwrap();
+                        location: Location) {
+        let block = &self.mir[location.block];
+        let stmt = block.statements.get(location.statement_index).unwrap();
         match stmt.kind {
             mir::StatementKind::EndRegion(ref extents) => {
                 for ext in extents {
@@ -629,7 +627,7 @@ impl<'a, 'tcx> BitDenotation for Borrows<'a, 'tcx> {
 
             mir::StatementKind::Assign(_, ref rhs) => {
                 if let mir::Rvalue::Ref(&ty::Region::ReScope(extent), _, _) = *rhs {
-                    let loc = mir::Location { block: bb, statement_index: stmt_idx };
+                    let loc = location;
                     let idx = self.loc_map[&loc];
                     assert!(self.ext_map.get(&extent).unwrap().contains(&idx));
                     sets.gen(&idx);
@@ -646,8 +644,7 @@ impl<'a, 'tcx> BitDenotation for Borrows<'a, 'tcx> {
     }
     fn terminator_effect(&self,
                          _sets: &mut BlockSets<BorrowIndex>,
-                         _bb: mir::BasicBlock,
-                         _statements_len: usize) {
+                         _location: Location) {
         // no terminators start nor end code extents.
     }
 

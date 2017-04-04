@@ -13,6 +13,7 @@ use borrowck::BorrowckCtxt;
 use syntax::ast::{self, MetaItem};
 use syntax_pos::DUMMY_SP;
 
+use rustc::infer::{InferCtxt};
 use rustc::mir::{self, Mir, Location};
 use rustc::session::Session;
 use rustc::ty::{self, TyCtxt};
@@ -36,7 +37,7 @@ use self::dataflow::{DefinitelyInitializedLvals};
 use self::check_dataflow_results::{InProgress};
 use self::gather_moves::{HasMoveData, MoveData, MovePathIndex, LookupResult};
 
-pub use self::dataflow::{Borrows};
+pub use self::dataflow::{Borrows, MovingOutStatements};
 pub(self) use self::gather_moves::{BorrowIndex};
 
 use std::fmt;
@@ -77,6 +78,10 @@ pub fn borrowck_mir(bcx: &mut BorrowckCtxt,
     let flow_borrows =
         do_dataflow(tcx, mir, id, attributes, Borrows::new(tcx, mir),
                     |bd, i| bd.location(i));
+    let flow_move_outs =
+        do_dataflow(tcx, mir, id, attributes, MovingOutStatements::new(tcx, mir, &mdpe),
+                    |bd, i| &bd.move_data().moves[i]);
+
     let flow_inits =
         do_dataflow(tcx, mir, id, attributes, MaybeInitializedLvals::new(tcx, mir, &mdpe),
                     |bd, i| &bd.move_data().move_paths[i]);
@@ -86,6 +91,7 @@ pub fn borrowck_mir(bcx: &mut BorrowckCtxt,
     let flow_def_inits =
         do_dataflow(tcx, mir, id, attributes, DefinitelyInitializedLvals::new(tcx, mir, &mdpe),
                     |bd, i| &bd.move_data().move_paths[i]);
+
 
     if has_rustc_mir_with(attributes, "rustc_peek_maybe_init").is_some() {
         dataflow::sanity_check_via_rustc_peek(bcx.tcx, mir, id, attributes, &flow_inits);
@@ -101,16 +107,20 @@ pub fn borrowck_mir(bcx: &mut BorrowckCtxt,
         bcx.tcx.sess.fatal("stop_after_dataflow ended compilation");
     }
 
+    // FIXME: would be better to revise interface to avoid clone (and fake_infer_ctxt in general?)
+    let fake_infer_ctxt = bcx.tcx.borrowck_fake_infer_ctxt((tcx.item_tables(def_id), mdpe.param_env.clone()));
     let mut mbcx = MirBorrowckCtxt {
         bcx: bcx,
         mir: mir,
         node_id: id,
         move_data: &mdpe.move_data,
+        fake_infer_ctxt: fake_infer_ctxt,
     };
 
     let mut state = InProgress::new(flow_borrows,
                                     flow_inits,
-                                    flow_uninits);
+                                    flow_uninits,
+                                    flow_move_outs);
 
     mbcx.analyze_results(&mut state); // entry point for DataflowResultsConsumer
 
@@ -172,6 +182,7 @@ pub struct MirBorrowckCtxt<'b, 'a: 'b, 'tcx: 'a> {
     mir: &'b Mir<'tcx>,
     node_id: ast::NodeId,
     move_data: &'b MoveData<'tcx>,
+    fake_infer_ctxt: InferCtxt<'a, 'tcx, 'tcx>,
 }
 
 fn each_bit<I: Idx, F>(words: &IdxSet<I>, max_bits: usize, mut f: F) where F: FnMut(I) {

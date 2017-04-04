@@ -12,13 +12,19 @@ use super::{MirBorrowckCtxt, each_bit};
 
 use super::dataflow::{BitDenotation, BlockSets};
 use super::dataflow::{DataflowResults, DataflowResultsConsumer};
-use super::dataflow::{Borrows, MaybeInitializedLvals, MaybeUninitializedLvals};
-use super::gather_moves::{HasMoveData};
+use super::dataflow::{Borrows, BorrowData, MovingOutStatements};
+use super::dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
+use super::gather_moves::{HasMoveData, BorrowIndex};
 
-use rustc::mir::{BasicBlock, Mir, Statement, Terminator};
+use self::MutateMode::{JustWrite, WriteAndRead};
+
+use rustc::mir::{AssertMessage, BasicBlock, BorrowKind, Mir, Location};
+use rustc::mir::{Lvalue, Rvalue, Operand};
+use rustc::mir::{Statement, StatementKind, Terminator, TerminatorKind};
 
 use rustc_data_structures::indexed_set::{IdxSetBuf};
 use rustc_data_structures::indexed_vec::{Idx};
+use syntax_pos::DUMMY_SP;
 
 struct FlowInProgress<BD> where BD: BitDenotation {
     base_results: DataflowResults<BD>,
@@ -55,24 +61,24 @@ impl<BD> FlowInProgress<BD> where BD: BitDenotation {
         (*self.curr_state).clone_from(self.base_results.sets().on_entry_set_for(bb.index()));
     }
 
-    fn reconstruct_statement_effect(&mut self, bb: BasicBlock, stmt_idx: usize) {
+    fn reconstruct_statement_effect(&mut self, loc: Location) {
         self.stmt_gen.reset_to_empty();
         self.stmt_kill.reset_to_empty();
         let mut ignored = IdxSetBuf::new_empty(0);
         let mut sets = BlockSets {
             on_entry: &mut ignored, gen_set: &mut self.stmt_gen, kill_set: &mut self.stmt_kill,
         };
-        self.base_results.operator().statement_effect(&mut sets, bb, stmt_idx);
+        self.base_results.operator().statement_effect(&mut sets, loc);
     }
 
-    fn reconstruct_terminator_effect(&mut self, bb: BasicBlock, stmts_len: usize) {
+    fn reconstruct_terminator_effect(&mut self, loc: Location) {
         self.stmt_gen.reset_to_empty();
         self.stmt_kill.reset_to_empty();
         let mut ignored = IdxSetBuf::new_empty(0);
         let mut sets = BlockSets {
             on_entry: &mut ignored, gen_set: &mut self.stmt_gen, kill_set: &mut self.stmt_kill,
         };
-        self.base_results.operator().terminator_effect(&mut sets, bb, stmts_len);
+        self.base_results.operator().terminator_effect(&mut sets, loc);
     }
 
     fn apply_local_effect(&mut self) {
@@ -86,16 +92,19 @@ pub struct InProgress<'b, 'tcx: 'b> {
     borrows: FlowInProgress<Borrows<'b, 'tcx>>,
     inits: FlowInProgress<MaybeInitializedLvals<'b, 'tcx>>,
     uninits: FlowInProgress<MaybeUninitializedLvals<'b, 'tcx>>,
+    move_outs: FlowInProgress<MovingOutStatements<'b, 'tcx>>,
 }
 
 impl<'b, 'tcx: 'b> InProgress<'b, 'tcx> {
     pub(super) fn new(borrows: DataflowResults<Borrows<'b, 'tcx>>,
                       inits: DataflowResults<MaybeInitializedLvals<'b, 'tcx>>,
-                      uninits: DataflowResults<MaybeUninitializedLvals<'b, 'tcx>>) -> Self {
+                      uninits: DataflowResults<MaybeUninitializedLvals<'b, 'tcx>>,
+                      move_outs: DataflowResults<MovingOutStatements<'b, 'tcx>>) -> Self {
         InProgress {
             borrows: FlowInProgress::new(borrows),
             inits: FlowInProgress::new(inits),
             uninits: FlowInProgress::new(uninits),
+            move_outs: FlowInProgress::new(move_outs),
         }
     }
 
@@ -161,6 +170,11 @@ impl<'b, 'tcx: 'b> InProgress<'b, 'tcx> {
     }
 }
 
+// Check that:
+// 1. assignments are always made to mutable locations (FIXME: does that still really go here?)
+// 2. loans made in overlapping scopes do not conflict
+// 3. assignments do not affect things loaned out as immutable
+// 4. moves do not affect things loaned out in any way
 impl<'b, 'a: 'b, 'tcx: 'a> DataflowResultsConsumer<'b, 'tcx> for MirBorrowckCtxt<'b, 'a, 'tcx> {
     type FlowState = InProgress<'b, 'tcx>;
 
@@ -173,30 +187,27 @@ impl<'b, 'a: 'b, 'tcx: 'a> DataflowResultsConsumer<'b, 'tcx> for MirBorrowckCtxt
     }
 
     fn reconstruct_statement_effect(&mut self,
-                                    bb: BasicBlock,
-                                    stmt_idx: usize,
+                                    location: Location,
                                     flow_state: &mut Self::FlowState) {
-        flow_state.each_flow(|b| b.reconstruct_statement_effect(bb, stmt_idx),
-                             |i| i.reconstruct_statement_effect(bb, stmt_idx),
-                             |u| u.reconstruct_statement_effect(bb, stmt_idx));
+        flow_state.each_flow(|b| b.reconstruct_statement_effect(location),
+                             |i| i.reconstruct_statement_effect(location),
+                             |u| u.reconstruct_statement_effect(location));
     }
 
     fn apply_local_effect(&mut self,
-                              _bb: BasicBlock,
-                              _stmt_idx: usize,
-                              flow_state: &mut Self::FlowState) {
+                          _location: Location,
+                          flow_state: &mut Self::FlowState) {
         flow_state.each_flow(|b| b.apply_local_effect(),
                              |i| i.apply_local_effect(),
                              |u| u.apply_local_effect());
     }
 
     fn reconstruct_terminator_effect(&mut self,
-                                     bb: BasicBlock,
-                                     stmts_len: usize,
+                                     location: Location,
                                     flow_state: &mut Self::FlowState) {
-        flow_state.each_flow(|b| b.reconstruct_terminator_effect(bb, stmts_len),
-                             |i| i.reconstruct_terminator_effect(bb, stmts_len),
-                             |u| u.reconstruct_terminator_effect(bb, stmts_len));
+        flow_state.each_flow(|b| b.reconstruct_terminator_effect(location),
+                             |i| i.reconstruct_terminator_effect(location),
+                             |u| u.reconstruct_terminator_effect(location));
     }
 
     fn visit_block_entry(&mut self,
@@ -207,20 +218,237 @@ impl<'b, 'a: 'b, 'tcx: 'a> DataflowResultsConsumer<'b, 'tcx> for MirBorrowckCtxt
     }
 
     fn visit_statement_entry(&mut self,
-                             bb: BasicBlock,
-                             _: usize,
+                             location: Location,
                              stmt: &Statement<'tcx>,
                              flow_state: &Self::FlowState) {
         let summary = flow_state.summary();
-        debug!("MirBorrowckCtxt::process_statement({:?}, {:?}): {}", bb, stmt, summary);
+        debug!("MirBorrowckCtxt::process_statement({:?}, {:?}): {}", location, stmt, summary);
+        match stmt.kind {
+            StatementKind::Assign(ref lhs, ref rhs) => {
+                self.mutate_lvalue(lhs, JustWrite, flow_state);
+                self.consume_rvalue(rhs, location, flow_state);
+            }
+            StatementKind::SetDiscriminant { ref lvalue, variant_index: _ } => {
+                // FIXME: should this count as a mutate from borrowck POV?
+                self.mutate_lvalue(lvalue, JustWrite, flow_state);
+            }
+            StatementKind::InlineAsm { ref asm, ref outputs, ref inputs } => {
+                for (o, output) in asm.outputs.iter().zip(outputs) {
+                    if o.is_indirect {
+                        self.consume_lvalue(output, flow_state);
+                    } else {
+                        self.mutate_lvalue(output, if o.is_rw { WriteAndRead } else { JustWrite }, flow_state);
+                    }
+                }
+                for input in inputs {
+                    self.consume_operand(input, flow_state);
+                }
+            }
+            StatementKind::EndRegion(ref _rgn) => {
+                // ignored when consuming results (update to
+                // flow_state already handled).
+            }
+            StatementKind::Nop |
+            StatementKind::StorageLive(..) |
+            StatementKind::StorageDead(..) => {
+                // ignored by borrowck
+            }
+        }
     }
 
     fn visit_terminator_entry(&mut self,
-                              bb: BasicBlock,
-                              _: usize,
+                              location: Location,
                               term: &Terminator<'tcx>,
                               flow_state: &Self::FlowState) {
         let summary = flow_state.summary();
-        debug!("MirBorrowckCtxt::process_terminator({:?}, {:?}): {}", bb, term, summary);
+        debug!("MirBorrowckCtxt::process_terminator({:?}, {:?}): {}", location, term, summary);
+        match term.kind {
+            TerminatorKind::SwitchInt { ref discr, switch_ty: _, values: _, targets: _ } => {
+                self.consume_operand(discr, flow_state);
+            }
+            TerminatorKind::Drop { ref location, target: _, unwind: _ } => {
+                self.consume_lvalue(location, flow_state);
+            }
+            TerminatorKind::DropAndReplace { ref location, ref value, target: _, unwind: _ } => {
+                self.mutate_lvalue(location, JustWrite, flow_state);
+                self.consume_operand(value, flow_state);
+            }
+            TerminatorKind::Call { ref func, ref args, ref destination, cleanup: _ } => {
+                self.consume_operand(func, flow_state);
+                for arg in args { self.consume_operand(arg, flow_state); }
+                if let Some((ref dest, _/*bb*/)) = *destination {
+                    self.mutate_lvalue(dest, JustWrite, flow_state);
+                }
+            }
+            TerminatorKind::Assert { ref cond, expected: _, ref msg, target: _, cleanup: _ } => {
+                self.consume_operand(cond, flow_state);
+                match *msg {
+                    AssertMessage::BoundsCheck { ref len, ref index } => {
+                        self.consume_operand(len, flow_state);
+                        self.consume_operand(index, flow_state);
+                    }
+                    AssertMessage::Math(_/*const_math_err*/) => {}
+                }
+            }
+
+            TerminatorKind::Goto { target: _ } |
+            TerminatorKind::Resume |
+            TerminatorKind::Return |
+            TerminatorKind::Unreachable => {
+                // no data used, thus irrelevant to borrowck
+            }
+        }
+    }
+}
+
+enum MutateMode { JustWrite, WriteAndRead }
+
+impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
+    fn mutate_lvalue(&mut self,
+                     lvalue: &Lvalue<'tcx>,
+                     mode: MutateMode,
+                     flow_state: &InProgress<'b, 'tcx>) {
+        // Write of P[i] or *P, or WriteAndRead of any P, requires P init'd.
+        match mode {
+            MutateMode::WriteAndRead => {
+                self.check_if_path_is_moved(lvalue, flow_state);
+            }
+            MutateMode::JustWrite => {
+                self.check_if_assigned_path_is_moved(lvalue, flow_state);
+            }
+        }
+
+        // check we don't invalidate any outstanding loans
+        if true { unimplemented!(); }
+
+        // check for reassignments to immutable local variables
+        if true { unimplemented!(); }
+    }
+
+    fn consume_rvalue(&mut self,
+                      rvalue: &Rvalue<'tcx>,
+                      _location: Location,
+                      flow_state: &InProgress<'b, 'tcx>) {
+        match *rvalue {
+            Rvalue::Ref(_/*rgn*/, BorrowKind::Shared, ref lvalue) => {
+                self.borrow_shared(lvalue, flow_state)
+            }
+
+            Rvalue::Ref(_/*rgn*/, BorrowKind::Mut, ref lvalue) |
+            Rvalue::Ref(_/*rgn*/, BorrowKind::Unique, ref lvalue) => {
+                self.borrow_mut(lvalue, flow_state)
+            }
+
+            Rvalue::Use(ref operand) |
+            Rvalue::Repeat(ref operand, _) |
+            Rvalue::UnaryOp(_/*un_op*/, ref operand) |
+            Rvalue::Cast(_/*cast_kind*/, ref operand, _/*ty*/) => {
+                self.consume_operand(operand, flow_state)
+            }
+
+            Rvalue::Len(ref lvalue) |
+            Rvalue::Discriminant(ref lvalue) => {
+                self.consume_lvalue(lvalue, flow_state)
+            }
+
+            Rvalue::BinaryOp(_bin_op, ref operand1, ref operand2) |
+            Rvalue::CheckedBinaryOp(_bin_op, ref operand1, ref operand2) => {
+                self.consume_operand(operand1, flow_state);
+                self.consume_operand(operand2, flow_state);
+            }
+
+            Rvalue::Box(_ty) => {
+                // creates an uninitialized box; no borrowck effect.
+            }
+
+            Rvalue::Aggregate(ref _aggregate_kind, ref operands) => {
+                for operand in operands {
+                    self.consume_operand(operand, flow_state);
+                }
+            }
+        }
+    }
+
+    fn consume_operand(&mut self,
+                       operand: &Operand<'tcx>,
+                       flow_state: &InProgress<'b, 'tcx>) {
+        match *operand {
+            Operand::Consume(ref lvalue) => self.consume_lvalue(lvalue, flow_state),
+            Operand::Constant(_) => {}
+        }
+    }
+
+    fn consume_lvalue(&mut self,
+                      lvalue: &Lvalue<'tcx>,
+                      flow_state: &InProgress<'b, 'tcx>) {
+        let ty = lvalue.ty(self.mir, self.bcx.tcx).to_ty(self.bcx.tcx);
+        let moves_by_default = self.fake_infer_ctxt.type_moves_by_default(ty, DUMMY_SP);
+        if moves_by_default {
+            // move of lvalue: check if this is move of borrowed path
+            flow_state.each_borrow_involving_path(lvalue, |_idx, borrow| {
+                if !borrow.compatible_with_mut_borrow() { self.report_use_while_borrowed(); }
+            });
+        } else {
+            // copy of lvalue: check if this is "copy of frozen path" (FIXME: see check_loans.rs)
+            flow_state.each_borrow_involving_path(lvalue, |_idx, borrow| {
+                if !borrow.compatible_with_imm_borrow() { self.report_use_while_borrowed(); }
+            });
+        }
+
+        // Finally, check if path was already moved.
+        self.check_if_path_is_moved(lvalue, flow_state);
+    }
+
+    fn borrow_shared(&mut self, lvalue: &Lvalue<'tcx>, flow_state: &InProgress<'b, 'tcx>) {
+        self.check_if_path_is_moved(lvalue, flow_state);
+        self.check_for_conflicting_loan(lvalue, flow_state);
+    }
+
+    fn borrow_mut(&mut self, _lvalue: &Lvalue<'tcx>, _flow_state: &InProgress<'b, 'tcx>) {
+        unimplemented!()
+    }
+}
+
+impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
+    fn check_if_path_is_moved(&mut self,
+                              _lvalue: &Lvalue<'tcx>,
+                              flow_state: &InProgress<'b, 'tcx>) {
+        // for each move in flow_state.move_outs ...
+        &flow_state.move_outs;
+        unimplemented!()
+    }
+
+    fn check_if_assigned_path_is_moved(&mut self,
+                                       _lvalue: &Lvalue<'tcx>,
+                                       _flow_state: &InProgress<'b, 'tcx>) {
+        // recur over lvalue to find if any cases need to to dispatch to check_if_path_is_moved
+        unimplemented!()
+    }
+
+    fn check_for_conflicting_loan(&mut self,
+                                  _lvalue: &Lvalue<'tcx>,
+                                  _flow_state: &InProgress<'b, 'tcx>) {
+        // for each borrow in flow_state, ...
+        unimplemented!()
+    }
+}
+
+impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
+    fn report_use_while_borrowed(&mut self) {
+        unimplemented!()
+    }
+}
+
+impl<'tcx> BorrowData<'tcx> {
+    fn compatible_with_mut_borrow(&self) -> bool { unimplemented!() }
+
+    fn compatible_with_imm_borrow(&self) -> bool { unimplemented!() }
+}
+
+impl<'b, 'tcx> InProgress<'b, 'tcx> {
+    fn each_borrow_involving_path<F>(&self, _lvalue: &Lvalue, _op: F)
+        where F: FnMut(BorrowIndex, &BorrowData)
+    {
+        unimplemented!()
     }
 }
