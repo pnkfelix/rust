@@ -350,7 +350,6 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'gcx> {
             global_tcx: self,
             arena: DroplessArena::new(),
             fresh_tables: None,
-
         }
     }
 }
