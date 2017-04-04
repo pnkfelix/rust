@@ -490,9 +490,9 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'gcx> {
     /// Fake InferCtxt with the global tcx. Used by pre-MIR borrowck
     /// for MemCategorizationContext/ExprUseVisitor.
     /// If any inference functionality is used, ICEs will occur.
-    pub fn borrowck_fake_infer_ctxt(self, body: hir::BodyId)
+    pub fn borrowck_fake_infer_ctxt<IE:InferEnv<'a, 'gcx>>(self, env: IE)
                                     -> InferCtxt<'a, 'gcx, 'gcx> {
-        let (tables, _, param_env) = body.to_parts(self);
+        let (tables, _, param_env) = env.to_parts(self);
         InferCtxt {
             tcx: self,
             tables: InferTables::Interned(tables.unwrap()),
