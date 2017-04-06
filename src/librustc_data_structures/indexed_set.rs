@@ -158,3 +158,86 @@ impl<T: Idx> IdxSet<T> {
         for word in self.words_mut() { *word = 0; }
     }
 }
+
+impl<T: Idx> IdxSet<T> {
+    pub fn elems(&self, universe_size: usize) -> Elems<T> {
+        Elems { i: 0, set: self, universe_size: universe_size }
+    }
+
+    pub fn pairs(&self, universe_size: usize) -> Pairs<T> {
+        Pairs { i: 0, j: 1, set: self, universe_size: universe_size }
+    }
+}
+
+pub struct Elems<'a, T: Idx> { i: usize, set: &'a IdxSet<T>, universe_size: usize }
+
+pub struct Pairs<'a, T: Idx> { i: usize, j: usize, set: &'a IdxSet<T>, universe_size: usize }
+
+impl<'a, T: Idx> Iterator for Elems<'a, T> {
+    type Item = T;
+    fn next(&mut self) -> Option<T> {
+        if self.i >= self.universe_size { return None; }
+        let mut i = self.i;
+        loop {
+            if i >= self.universe_size {
+                self.i = i; // (mark iteration as complete.)
+                return None;
+            }
+            if self.set.contains(&T::new(i)) {
+                self.i = i + 1; // (next element to start at.)
+                return Some(T::new(i));
+            }
+            i = i + 1;
+        }
+    }
+}
+
+impl<'a, T: Idx> Iterator for Pairs<'a, T> {
+    type Item = (T, T);
+    fn next(&mut self) -> Option<(T, T)> {
+        if self.i >= self.universe_size { return None; }
+        let mut i = self.i;
+        let mut j = self.j;
+
+        // first, try incrementing j alone (if i present)
+        if self.set.contains(&T::new(i)) {
+            loop {
+                if j >= self.universe_size { break; }
+                if self.set.contains(&T::new(j)) {
+                    self.i = i;
+                    if j + 1 < self.universe_size {
+                        self.j = j + 1;
+                    } else {
+                        self.i = i + 1;
+                        self.j = 0;
+                    }
+                    return Some((T::new(i), T::new(j)));
+                }
+                j = j + 1;
+            }
+        }
+
+        // otherwise, we need to search for a new i entirely.
+
+        loop {
+            if i >= self.universe_size { self.i = i; return None; }
+            if self.set.contains(&T::new(i)) { break; }
+            i += 1;
+        }
+
+        // if we find an i, then start search for j immediately after i.
+        j = i + 1;
+
+        loop {
+            // but if we cannot find a j now, then no pair exists for any remaining i.
+            if j >= self.universe_size { self.i = j; return None; }
+            if self.set.contains(&T::new(j)) {
+                self.i = i;
+                self.j = j + 1;
+                return Some((T::new(i), T::new(j)));
+            }
+            j += 1;
+        }
+    }
+}
+
