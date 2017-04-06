@@ -14,15 +14,17 @@ use super::dataflow::{BitDenotation, BlockSets};
 use super::dataflow::{DataflowResults, DataflowResultsConsumer};
 use super::dataflow::{Borrows, BorrowData, MovingOutStatements};
 use super::dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
-use super::gather_moves::{HasMoveData, BorrowIndex};
+use super::gather_moves::{HasMoveData, BorrowIndex, LookupResult};
 
 use self::MutateMode::{JustWrite, WriteAndRead};
 
+use rustc::hir;
 use rustc::mir::{AssertMessage, BasicBlock, BorrowKind, Mir, Location};
-use rustc::mir::{Lvalue, Rvalue, Operand};
+use rustc::mir::{Lvalue, Rvalue, Mutability, Operand, Projection, ProjectionElem};
 use rustc::mir::{Statement, StatementKind, Terminator, TerminatorKind};
+use rustc::ty::{self, TyCtxt};
 
-use rustc_data_structures::indexed_set::{IdxSetBuf};
+use rustc_data_structures::indexed_set::{self, IdxSetBuf};
 use rustc_data_structures::indexed_vec::{Idx};
 use syntax_pos::DUMMY_SP;
 
@@ -93,6 +95,23 @@ pub struct InProgress<'b, 'tcx: 'b> {
     inits: FlowInProgress<MaybeInitializedLvals<'b, 'tcx>>,
     uninits: FlowInProgress<MaybeUninitializedLvals<'b, 'tcx>>,
     move_outs: FlowInProgress<MovingOutStatements<'b, 'tcx>>,
+}
+
+impl<BD: BitDenotation> FlowInProgress<BD> {
+    fn elems_generated(&self) -> indexed_set::Elems<BD::Idx> {
+        let univ = self.base_results.sets().bits_per_block();
+        self.stmt_gen.elems(univ)
+    }
+
+    fn pairs_generated(&self) -> indexed_set::Pairs<BD::Idx> {
+        let univ = self.base_results.sets().bits_per_block();
+        self.stmt_gen.pairs(univ)
+    }
+
+    fn elems_incoming(&self) -> indexed_set::Elems<BD::Idx> {
+        let univ = self.base_results.sets().bits_per_block();
+        self.curr_state.elems(univ)
+    }
 }
 
 impl<'b, 'tcx: 'b> InProgress<'b, 'tcx> {
@@ -204,7 +223,7 @@ impl<'b, 'a: 'b, 'tcx: 'a> DataflowResultsConsumer<'b, 'tcx> for MirBorrowckCtxt
 
     fn reconstruct_terminator_effect(&mut self,
                                      location: Location,
-                                    flow_state: &mut Self::FlowState) {
+                                     flow_state: &mut Self::FlowState) {
         flow_state.each_flow(|b| b.reconstruct_terminator_effect(location),
                              |i| i.reconstruct_terminator_effect(location),
                              |u| u.reconstruct_terminator_effect(location));
@@ -319,24 +338,21 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
         }
 
         // check we don't invalidate any outstanding loans
-        if true { unimplemented!(); }
+        self.each_borrow_involving_path(lvalue, flow_state, |this, _index, _data| {
+            this.report_illegal_mutation();
+        });
 
         // check for reassignments to immutable local variables
-        if true { unimplemented!(); }
+        self.check_if_reassignment_to_immutable_state(lvalue, flow_state);
     }
 
     fn consume_rvalue(&mut self,
                       rvalue: &Rvalue<'tcx>,
-                      _location: Location,
+                      location: Location,
                       flow_state: &InProgress<'b, 'tcx>) {
         match *rvalue {
-            Rvalue::Ref(_/*rgn*/, BorrowKind::Shared, ref lvalue) => {
-                self.borrow_shared(lvalue, flow_state)
-            }
-
-            Rvalue::Ref(_/*rgn*/, BorrowKind::Mut, ref lvalue) |
-            Rvalue::Ref(_/*rgn*/, BorrowKind::Unique, ref lvalue) => {
-                self.borrow_mut(lvalue, flow_state)
+            Rvalue::Ref(_/*rgn*/, bk, ref lvalue) => {
+                self.borrow(location, bk, lvalue, flow_state)
             }
 
             Rvalue::Use(ref operand) |
@@ -384,14 +400,18 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
         let ty = lvalue.ty(self.mir, self.bcx.tcx).to_ty(self.bcx.tcx);
         let moves_by_default = self.fake_infer_ctxt.type_moves_by_default(ty, DUMMY_SP);
         if moves_by_default {
-            // move of lvalue: check if this is move of borrowed path
-            flow_state.each_borrow_involving_path(lvalue, |_idx, borrow| {
-                if !borrow.compatible_with_mut_borrow() { self.report_use_while_borrowed(); }
+            // move of lvalue: check if this is move of already borrowed path
+            self.each_borrow_involving_path(lvalue, flow_state, |this, _idx, borrow| {
+                if !borrow.compatible_with(BorrowKind::Mut) {
+                    this.report_use_while_borrowed();
+                }
             });
         } else {
             // copy of lvalue: check if this is "copy of frozen path" (FIXME: see check_loans.rs)
-            flow_state.each_borrow_involving_path(lvalue, |_idx, borrow| {
-                if !borrow.compatible_with_imm_borrow() { self.report_use_while_borrowed(); }
+            self.each_borrow_involving_path(lvalue, flow_state, |this, _idx, borrow| {
+                if !borrow.compatible_with(BorrowKind::Shared) {
+                    this.report_use_while_borrowed();
+                }
             });
         }
 
@@ -399,56 +419,455 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
         self.check_if_path_is_moved(lvalue, flow_state);
     }
 
-    fn borrow_shared(&mut self, lvalue: &Lvalue<'tcx>, flow_state: &InProgress<'b, 'tcx>) {
+    fn borrow(&mut self,
+              location: Location,
+              bk: BorrowKind,
+              lvalue: &Lvalue<'tcx>,
+              flow_state: &InProgress<'b, 'tcx>) {
         self.check_if_path_is_moved(lvalue, flow_state);
-        self.check_for_conflicting_loan(lvalue, flow_state);
-    }
-
-    fn borrow_mut(&mut self, _lvalue: &Lvalue<'tcx>, _flow_state: &InProgress<'b, 'tcx>) {
-        unimplemented!()
+        self.check_for_conflicting_loan(location, bk, lvalue, flow_state);
     }
 }
 
 impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
+    fn check_if_reassignment_to_immutable_state(&mut self,
+                                                lvalue: &Lvalue<'tcx>,
+                                                flow_state: &InProgress<'b, 'tcx>) {
+        let move_data = flow_state.inits.base_results.operator().move_data();
+
+        // determine if this path has a non-mut owner (and thus needs checking).
+        let mut l = lvalue;
+        loop {
+            match *l {
+                Lvalue::Projection(ref proj) => {
+                    l = &proj.base;
+                    continue;
+                }
+                Lvalue::Local(local) => {
+                    match self.mir.local_decls[local].mutability {
+                        Mutability::Not => return,
+                        Mutability::Mut => break, // needs check
+                    }
+                }
+                Lvalue::Static(_) => {
+                    // mutation of non-mut static is always
+                    // illegal, but its checked earlier,
+                    // independent of dataflow.
+                    panic!("why are we checking about reassignment to static");
+                }
+            }
+        }
+
+        let mpi = match move_data.rev_lookup.find(lvalue) {
+            LookupResult::Exact(mpi) => mpi,
+            LookupResult::Parent(_) => panic!("why mpi not found?"),
+        };
+        if flow_state.inits.curr_state.contains(&mpi) {
+            // may already be assigned before reaching this statement;
+            // report error.
+            self.report_illegal_mutation();
+        }
+    }
+
     fn check_if_path_is_moved(&mut self,
-                              _lvalue: &Lvalue<'tcx>,
+                              lvalue: &Lvalue<'tcx>,
                               flow_state: &InProgress<'b, 'tcx>) {
-        // for each move in flow_state.move_outs ...
-        &flow_state.move_outs;
-        unimplemented!()
+        // FIXME: analogous code in check_loans first maps `lvalue` to
+        // its base_path ... but is that what we want here?
+        let lvalue = self.base_path(lvalue);
+
+        let maybe_uninits = &flow_state.uninits;
+        let move_data = maybe_uninits.base_results.operator().move_data();
+        let mpi = match move_data.rev_lookup.find(lvalue) {
+            LookupResult::Parent(_) => panic!("could not find mpi for lvalue: {:?}", lvalue),
+            LookupResult::Exact(mpi) => mpi,
+        };
+
+        if maybe_uninits.curr_state.contains(&mpi) {
+            // find and report move(s) that could cause this to be uninitialized
+
+            // FIXME: for each move in flow_state.move_outs ...
+            &flow_state.move_outs;
+
+            self.report_use_of_moved();
+        } else {
+            // sanity check: initialized on *some* path, right?
+            assert!(flow_state.inits.curr_state.contains(&mpi));
+        }
     }
 
     fn check_if_assigned_path_is_moved(&mut self,
-                                       _lvalue: &Lvalue<'tcx>,
-                                       _flow_state: &InProgress<'b, 'tcx>) {
-        // recur over lvalue to find if any cases need to to dispatch to check_if_path_is_moved
-        unimplemented!()
+                                       lvalue: &Lvalue<'tcx>,
+                                       flow_state: &InProgress<'b, 'tcx>) {
+        // recur down lvalue; dispatch to check_if_path_is_moved when necessary
+        let mut lvalue = lvalue;
+        loop {
+            match *lvalue {
+                Lvalue::Local(_) | Lvalue::Static(_) => {
+                    // assigning to `x` does not require `x` be initialized.
+                    break;
+                }
+                Lvalue::Projection(ref proj) => {
+                    let Projection { ref base, ref elem } = **proj;
+                    match *elem {
+                        ProjectionElem::Deref |
+                        // assigning to *P requires `P` initialized.
+                        ProjectionElem::Index(_/*operand*/) |
+                        ProjectionElem::ConstantIndex { .. } |
+                        // assigning to P[i] requires `P` initialized.
+                        ProjectionElem::Downcast(_/*adt_def*/, _/*variant_idx*/) =>
+                        // assigning to (P->variant) is okay if assigning to `P` is okay
+                        //
+                        // FIXME: is this true even if P is a adt with a dtor?
+                        { }
+
+                        ProjectionElem::Subslice { .. } => {
+                            panic!("we dont allow assignments to subslices");
+                        }
+
+                        ProjectionElem::Field(..) => {
+                            // if type of `P` has a dtor, then
+                            // assigning to `P.f` requires `P` itself
+                            // be already initialized
+                            let tcx = self.bcx.tcx;
+                            match base.ty(self.mir, tcx).to_ty(tcx).sty {
+                                ty::TyAdt(def, _) if def.has_dtor(tcx) => {
+
+                                    // FIXME: analogous code in
+                                    // check_loans.rs first maps
+                                    // `base` to its base_path.
+
+                                    self.check_if_path_is_moved(base, flow_state);
+
+                                    // (base initialized; no need to
+                                    // recur further)
+                                    break;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+
+                    lvalue = base;
+                    continue;
+                }
+            }
+        }
     }
 
     fn check_for_conflicting_loan(&mut self,
+                                  _location: Location,
+                                  _bk: BorrowKind,
                                   _lvalue: &Lvalue<'tcx>,
-                                  _flow_state: &InProgress<'b, 'tcx>) {
-        // for each borrow in flow_state, ...
+                                  flow_state: &InProgress<'b, 'tcx>) {
+        // NOTE FIXME: The analogous code in old borrowck
+        // check_loans.rs is careful to iterate over every *issued*
+        // loan, as opposed to just the in scope ones.
+        //
+        // (Or if you prefer, all the *other* iterations over loans
+        // only consider loans that are in scope of some given
+        // CodeExtent)
+        //
+        // The (currently skeletal) code here does not encode such a
+        // distinction, which means it is almost certainly over
+        // looking something.
+        //
+        // (It is probably going to reject code that should be
+        // accepted, I suspect, by treated issued-but-out-of-scope
+        // loans as issued-and-in-scope, and thus causing them to
+        // interfere with other loans.)
+        //
+        // However, I just want to get something running, especially
+        // since I am trying to move into new territory with NLL, so
+        // lets get this going first, and then address the issued vs
+        // in-scope distinction later.
+
+        let state = &flow_state.borrows;
+        let data = &state.base_results.operator().borrows();
+
+        // does any loan generated here, conflict with a previously issued loan?
+        for gen in state.elems_generated().map(|g| &data[g]) {
+            for issued in state.elems_incoming().map(|i| &data[i]) {
+                if self.conflicts_with(gen, issued) {
+                    self.report_conflicting_borrow();
+                }
+            }
+        }
+
+        // does any loan generated here conflict with another loan also generated here?
+        for (gen1, gen2) in state.pairs_generated().map(|(g1, g2)| (&data[g1], &data[g2])) {
+            if self.conflicts_with(gen1, gen2) {
+                self.report_conflicting_borrow();
+            }
+        }
+    }
+}
+
+impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
+    fn report_use_of_moved(&mut self) {
+        if true { panic!("use of moved data"); }
+        unimplemented!()
+    }
+
+    fn report_use_while_borrowed(&mut self) {
+        if true { panic!("use of borrowed data"); }
+        unimplemented!()
+    }
+
+    fn report_conflicting_borrow(&mut self) {
+        if true { panic!("conflicting borrows"); }
+        unimplemented!()
+    }
+
+    fn report_illegal_mutation(&mut self) {
+        if true { panic!("illegal mutation"); }
         unimplemented!()
     }
 }
 
 impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
-    fn report_use_while_borrowed(&mut self) {
-        unimplemented!()
+    // FIXME: needs to be able to express errors analogous to check_loans.rs
+    fn conflicts_with(&self, loan1: &BorrowData<'tcx>, loan2: &BorrowData<'tcx>) -> bool {
+        if loan1.compatible_with(loan2.kind) { return false; }
+
+        let loan2_base_path = self.base_path(&loan2.lvalue);
+        for restricted in self.restrictions(&loan1.lvalue) {
+            if restricted != loan2_base_path { continue; }
+            return true;
+        }
+
+        let loan1_base_path = self.base_path(&loan1.lvalue);
+        for restricted in self.restrictions(&loan2.lvalue) {
+            if restricted != loan1_base_path { continue; }
+            return true;
+        }
+
+        return false;
+    }
+
+    // FIXME (#16118): function intended to allow the borrow checker
+    // to be less precise in its handling of Box while still allowing
+    // moves out of a Box. They should be removed when/if we stop
+    // treating Box specially (e.g. when/if DerefMove is added...)
+
+    fn base_path<'c>(&self, lvalue: &'c Lvalue<'tcx>) -> &'c Lvalue<'tcx> {
+        //! Returns the base of the leftmost (deepest) dereference of an
+        //! Box in `lvalue`. If there is no dereference of an Box
+        //! in `lvalue`, then it just returns `lvalue` itself.
+
+        let mut cursor = lvalue;
+        let mut deepest = lvalue;
+        loop {
+            let proj = match *cursor {
+                Lvalue::Local(..) | Lvalue::Static(..) => return deepest,
+                Lvalue::Projection(ref proj) => proj,
+            };
+            if proj.elem == ProjectionElem::Deref &&
+                lvalue.ty(self.mir, self.bcx.tcx).to_ty(self.bcx.tcx).is_box()
+            {
+                deepest = &proj.base;
+            }
+            cursor = &proj.base;
+        }
     }
 }
 
 impl<'tcx> BorrowData<'tcx> {
-    fn compatible_with_mut_borrow(&self) -> bool { unimplemented!() }
+    fn compatible_with(&self, bk: BorrowKind) -> bool {
+        match (self.kind, bk) {
+            (BorrowKind::Shared, BorrowKind::Shared) => true,
 
-    fn compatible_with_imm_borrow(&self) -> bool { unimplemented!() }
-}
-
-impl<'b, 'tcx> InProgress<'b, 'tcx> {
-    fn each_borrow_involving_path<F>(&self, _lvalue: &Lvalue, _op: F)
-        where F: FnMut(BorrowIndex, &BorrowData)
-    {
-        unimplemented!()
+            (BorrowKind::Mut, _) |
+            (BorrowKind::Unique, _) |
+            (_, BorrowKind::Mut) |
+            (_, BorrowKind::Unique) => false,
+        }
     }
 }
+
+impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
+    fn each_borrow_involving_path<F>(&mut self,
+                                     lvalue: &Lvalue<'tcx>,
+                                     flow_state: &InProgress<'b, 'tcx>,
+                                     mut op: F)
+        where F: FnMut(&mut Self, BorrowIndex, &BorrowData<'tcx>)
+    {
+        // FIXME: analogous code in check_loans first maps `lvalue` to
+        // its base_path.
+
+        let domain = flow_state.borrows.base_results.operator();
+        let data = domain.borrows();
+
+        // check for loan restricting path P being used. Accounts for
+        // borrows of P, P.a.b, etc.
+        for i in flow_state.borrows.elems_incoming() {
+            // FIXME: check_loans.rs filtered this to "in scope"
+            // loans; i.e. it took a scope S and checked that each
+            // restriction's kill_scope was a superscope of S.
+            let borrowed = &data[i];
+            for restricted in self.restrictions(&borrowed.lvalue) {
+                if restricted == lvalue {
+                    op(self, i, borrowed);
+                }
+            }
+        }
+
+        // check for loans (not restrictions) on any base path.
+        // e.g. Rejects `{ let x = &mut a.b; let y = a.b.c; }`,
+        // since that moves out of borrowed path `a.b`.
+        //
+        // Limiting to loans (not restrictions) keeps this one
+        // working: `{ let x = &mut a.b; let y = a.c; }`
+        let mut cursor = lvalue;
+        loop {
+            // FIXME: check_loans.rs invoked `op` *before* cursor
+            // shift here.  Might just work (and even avoid redundant
+            // errors?) given code above?  But for now, I want to try
+            // doing what I think is more "natural" check.
+            for i in flow_state.borrows.elems_incoming() {
+                let borrowed = &data[i];
+                if borrowed.lvalue == *cursor {
+                    op(self, i, borrowed);
+                }
+            }
+
+            match *cursor {
+                Lvalue::Local(_) | Lvalue::Static(_) => break,
+                Lvalue::Projection(ref proj) => cursor = &proj.base,
+            }
+        }
+    }
+}
+
+struct Restrictions<'c, 'tcx: 'c> {
+    mir: &'c Mir<'tcx>,
+    tcx: TyCtxt<'c, 'tcx, 'tcx>,
+    lvalue_stack: Vec<&'c Lvalue<'tcx>>,
+}
+
+impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
+    fn restrictions<'c>(&self,
+                        lvalue: &'c Lvalue<'tcx>)
+                        -> Restrictions<'c, 'tcx> where 'b: 'c
+    {
+        Restrictions { lvalue_stack: vec![lvalue], mir: self.mir, tcx: self.bcx.tcx }
+    }
+}
+
+impl<'c, 'tcx> Iterator for Restrictions<'c, 'tcx> {
+    type Item = &'c Lvalue<'tcx>;
+    fn next(&mut self) -> Option<Self::Item> {
+        'pop: loop {
+            let lvalue = match self.lvalue_stack.pop() {
+                None => return None,
+                Some(lvalue) => lvalue,
+            };
+
+            // `lvalue` may not be a restriction itself, but may hold
+            // one further down (e.g. we never return downcasts here,
+            // but may return a base of a downcast).
+            //
+            // Also, we need to enqueue any additional subrestrictions
+            // that it implies, since we can only return from from
+            // this call alone.
+
+            let mut cursor = lvalue;
+            'cursor: loop {
+                let proj = match *cursor {
+                    Lvalue::Local(_) => return Some(cursor), // search yielded this leaf
+                    Lvalue::Static(_) => continue 'pop, // fruitless leaf; try next on stack
+                    Lvalue::Projection(ref proj) => proj,
+                };
+
+                match proj.elem {
+                    ProjectionElem::Field(_/*field*/, _/*ty*/) => {
+                        // FIXME: add union handling
+                        cursor = &proj.base;
+                        continue 'cursor;
+                    }
+                    ProjectionElem::Downcast(..) |
+                    ProjectionElem::Subslice { .. } |
+                    ProjectionElem::ConstantIndex { .. } |
+                    ProjectionElem::Index(Operand::Constant(..)) => {
+                        cursor = &proj.base;
+                        continue 'cursor;
+                    }
+                    ProjectionElem::Index(Operand::Consume(ref index)) => {
+                        self.lvalue_stack.push(index);
+                        cursor = &proj.base;
+                        continue 'cursor;
+                    }
+                    ProjectionElem::Deref => {
+                        // (handled below)
+                    }
+                }
+
+                assert_eq!(proj.elem, ProjectionElem::Deref);
+
+                let ty = proj.base.ty(self.mir, self.tcx).to_ty(self.tcx);
+                match ty.sty {
+                    ty::TyRawPtr(_) => {
+                        // borrowck ignores raw ptrs; treat analogous to imm borrow
+                        continue 'pop;
+                    }
+                    // R-Deref-Imm-Borrowed
+                    ty::TyRef(_/*rgn*/, ty::TypeAndMut { ty: _, mutbl: hir::MutImmutable }) => {
+                        // immutably-borrowed referents do not have
+                        // recursively-implied restrictions (because
+                        // preventing actions on `*LV` does nothing
+                        // about aliases like `*LV1`)
+
+                        // FIXME: do I need to check validity of `_r`
+                        // here though? (I think the original
+                        // check_loans code did, like the readme says)
+
+                        // (And do I *really* not have to recursively
+                        // process the `base` as a further search
+                        // here? Leaving this `if false` here as a
+                        // hint to look at this again later.
+                        //
+                        // Ah, it might be because the restrictions
+                        // are distinct from the path
+                        // substructure. Note that there is a separate
+                        // loop over the path substructure in fn
+                        // each_borrow_involving_path, for better or
+                        // for worse.
+
+                        if false {
+                            cursor = &proj.base;
+                            continue 'cursor;
+                        } else {
+                            continue 'pop;
+                        }
+                    }
+
+                    // R-Deref-Mut-Borrowed
+                    ty::TyRef(_/*rgn*/, ty::TypeAndMut { ty: _, mutbl: hir::MutMutable }) => {
+                        // mutably-borrowed referents are themselves
+                        // restricted.
+
+                        // FIXME: do I need to check validity of `_r`
+                        // here though? (I think the original
+                        // check_loans code did, like the readme says)
+
+                        // schedule base for future iteration.
+                        self.lvalue_stack.push(&proj.base);
+                        return Some(cursor); // search yielded interior node
+                    }
+
+                    // R-Deref-Send-Pointer
+                    ty::TyAdt(..) if ty.is_box() => {
+                        // borrowing interior of a box implies that
+                        // its base can no longer be mutated (o/w box
+                        // storage would be freed)
+                        self.lvalue_stack.push(&proj.base);
+                        return Some(cursor); // search yielded interior node
+                    }
+
+                    _ => panic!("unknown type fed to Projection Deref."),
+                }
+            }
+        }
+    }
+}
+
