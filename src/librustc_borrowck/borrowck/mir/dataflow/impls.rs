@@ -244,10 +244,10 @@ impl<'a, 'tcx> HasMoveData<'tcx> for MovingOutStatements<'a, 'tcx> {
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct BorrowData<'tcx> {
-    location: Location,
-    kind: mir::BorrowKind,
-    region: CodeExtent,
-    lvalue: mir::Lvalue<'tcx>,
+    pub(crate) location: Location,
+    pub(crate) kind: mir::BorrowKind,
+    pub(crate) region: CodeExtent,
+    pub(crate) lvalue: mir::Lvalue<'tcx>,
 }
 
 impl<'tcx> fmt::Display for BorrowData<'tcx> {
