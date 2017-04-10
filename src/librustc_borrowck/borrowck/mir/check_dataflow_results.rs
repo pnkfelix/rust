@@ -19,6 +19,8 @@ use super::gather_moves::{MoveData, MovePathIndex};
 
 use self::MutateMode::{JustWrite, WriteAndRead};
 
+use borrowck::errors::Origin;
+
 use rustc::hir;
 use rustc::mir::{AssertMessage, BasicBlock, BorrowKind, Mir, Location};
 use rustc::mir::{Lvalue, Rvalue, Mutability, Operand, Projection, ProjectionElem};
@@ -27,7 +29,7 @@ use rustc::ty::{self, TyCtxt};
 
 use rustc_data_structures::indexed_set::{self, IdxSetBuf};
 use rustc_data_structures::indexed_vec::{Idx};
-use syntax_pos::DUMMY_SP;
+use syntax_pos::{DUMMY_SP, Span};
 
 struct FlowInProgress<BD> where BD: BitDenotation {
     base_results: DataflowResults<BD>,
@@ -243,34 +245,35 @@ impl<'b, 'a: 'b, 'tcx: 'a> DataflowResultsConsumer<'b, 'tcx> for MirBorrowckCtxt
                              flow_state: &Self::FlowState) {
         let summary = flow_state.summary();
         debug!("MirBorrowckCtxt::process_statement({:?}, {:?}): {}", location, stmt, summary);
+        let span = stmt.source_info.span;
         match stmt.kind {
             StatementKind::Assign(ref lhs, ref rhs) => {
                 self.mutate_lvalue(ContextKind::AssignLhs.new(location),
-                                   lhs, JustWrite, flow_state);
+                                   (lhs, span), JustWrite, flow_state);
                 self.consume_rvalue(ContextKind::AssignRhs.new(location),
-                                    rhs, location, flow_state);
+                                    (rhs, span), location, flow_state);
             }
             StatementKind::SetDiscriminant { ref lvalue, variant_index: _ } => {
                 // FIXME: should this count as a mutate from borrowck POV?
                 self.mutate_lvalue(ContextKind::SetDiscrim.new(location),
-                                   lvalue, JustWrite, flow_state);
+                                   (lvalue, span), JustWrite, flow_state);
             }
             StatementKind::InlineAsm { ref asm, ref outputs, ref inputs } => {
                 for (o, output) in asm.outputs.iter().zip(outputs) {
                     if o.is_indirect {
                         self.consume_lvalue(ContextKind::InlineAsm.new(location),
-                                            output,
+                                            (output, span),
                                             flow_state);
                     } else {
                         self.mutate_lvalue(ContextKind::InlineAsm.new(location),
-                                           output,
+                                           (output, span),
                                            if o.is_rw { WriteAndRead } else { JustWrite },
                                            flow_state);
                     }
                 }
                 for input in inputs {
                     self.consume_operand(ContextKind::InlineAsm.new(location),
-                                         input, flow_state);
+                                         (input, span), flow_state);
                 }
             }
             StatementKind::EndRegion(ref _rgn) => {
@@ -292,39 +295,46 @@ impl<'b, 'a: 'b, 'tcx: 'a> DataflowResultsConsumer<'b, 'tcx> for MirBorrowckCtxt
         let loc = location;
         let summary = flow_state.summary();
         debug!("MirBorrowckCtxt::process_terminator({:?}, {:?}): {}", location, term, summary);
+        let span = term.source_info.span;
         match term.kind {
             TerminatorKind::SwitchInt { ref discr, switch_ty: _, values: _, targets: _ } => {
                 self.consume_operand(ContextKind::SwitchInt.new(loc),
-                                     discr, flow_state);
+                                     (discr, span), flow_state);
             }
-            TerminatorKind::Drop { ref location, target: _, unwind: _ } => {
+            TerminatorKind::Drop { location: ref drop_lvalue, target: _, unwind: _ } => {
                 self.consume_lvalue(ContextKind::Drop.new(loc),
-                                    location, flow_state);
+                                    (drop_lvalue, span), flow_state);
             }
-            TerminatorKind::DropAndReplace { ref location, ref value, target: _, unwind: _ } => {
+            TerminatorKind::DropAndReplace { location: ref drop_lvalue,
+                                             value: ref new_value,
+                                             target: _,
+                                             unwind: _ } => {
                 self.mutate_lvalue(ContextKind::DropAndReplace.new(loc),
-                                   location, JustWrite, flow_state);
+                                   (drop_lvalue, span), JustWrite, flow_state);
                 self.consume_operand(ContextKind::DropAndReplace.new(loc),
-                                     value, flow_state);
+                                     (new_value, span), flow_state);
             }
             TerminatorKind::Call { ref func, ref args, ref destination, cleanup: _ } => {
                 self.consume_operand(ContextKind::CallOperator.new(loc),
-                                     func, flow_state);
+                                     (func, span), flow_state);
                 for arg in args {
                     self.consume_operand(ContextKind::CallOperand.new(loc),
-                                         arg, flow_state);
+                                         (arg, span), flow_state);
                 }
                 if let Some((ref dest, _/*bb*/)) = *destination {
                     self.mutate_lvalue(ContextKind::CallDest.new(loc),
-                                       dest, JustWrite, flow_state);
+                                       (dest, span), JustWrite, flow_state);
                 }
             }
             TerminatorKind::Assert { ref cond, expected: _, ref msg, target: _, cleanup: _ } => {
-                self.consume_operand(ContextKind::Assert.new(loc), cond, flow_state);
+                self.consume_operand(ContextKind::Assert.new(loc),
+                                     (cond, span), flow_state);
                 match *msg {
                     AssertMessage::BoundsCheck { ref len, ref index } => {
-                        self.consume_operand(ContextKind::Assert.new(loc), len, flow_state);
-                        self.consume_operand(ContextKind::Assert.new(loc), index, flow_state);
+                        self.consume_operand(ContextKind::Assert.new(loc),
+                                             (len, span), flow_state);
+                        self.consume_operand(ContextKind::Assert.new(loc),
+                                             (index, span), flow_state);
                     }
                     AssertMessage::Math(_/*const_math_err*/) => {}
                 }
@@ -371,55 +381,56 @@ enum MutateMode { JustWrite, WriteAndRead }
 impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
     fn mutate_lvalue(&mut self,
                      context: Context,
-                     lvalue: &Lvalue<'tcx>,
+                     lvalue_span: (&Lvalue<'tcx>, Span),
                      mode: MutateMode,
                      flow_state: &InProgress<'b, 'tcx>) {
         // Write of P[i] or *P, or WriteAndRead of any P, requires P init'd.
         match mode {
             MutateMode::WriteAndRead => {
-                self.check_if_path_is_moved(context, lvalue, flow_state);
+                self.check_if_path_is_moved(context, lvalue_span, flow_state);
             }
             MutateMode::JustWrite => {
-                self.check_if_assigned_path_is_moved(context, lvalue, flow_state);
+                self.check_if_assigned_path_is_moved(context, lvalue_span, flow_state);
             }
         }
 
         // check we don't invalidate any outstanding loans
         self.each_borrow_involving_path(context,
-                                        lvalue, flow_state, |this, _index, _data| {
-                                            this.report_illegal_mutation(context);
+                                        lvalue_span.0, flow_state, |this, _index, _data| {
+                                            this.report_illegal_mutation(context, lvalue_span);
                                         });
 
         // check for reassignments to immutable local variables
-        self.check_if_reassignment_to_immutable_state(context, lvalue, flow_state);
+        self.check_if_reassignment_to_immutable_state(context, lvalue_span, flow_state);
     }
 
     fn consume_rvalue(&mut self,
                       context: Context,
-                      rvalue: &Rvalue<'tcx>,
+                      (rvalue, span): (&Rvalue<'tcx>, Span),
                       location: Location,
                       flow_state: &InProgress<'b, 'tcx>) {
         match *rvalue {
             Rvalue::Ref(_/*rgn*/, bk, ref lvalue) => {
-                self.borrow(context, location, bk, lvalue, flow_state)
+                self.borrow(context, location, bk, (lvalue, span), flow_state)
             }
 
             Rvalue::Use(ref operand) |
             Rvalue::Repeat(ref operand, _) |
             Rvalue::UnaryOp(_/*un_op*/, ref operand) |
             Rvalue::Cast(_/*cast_kind*/, ref operand, _/*ty*/) => {
-                self.consume_operand(context, operand, flow_state)
+                self.consume_operand(context, (operand, span), flow_state)
             }
 
             Rvalue::Len(ref lvalue) |
             Rvalue::Discriminant(ref lvalue) => {
-                self.consume_lvalue(context, lvalue, flow_state)
+                // len(_)/discriminant(_) merely read, not consume.
+                self.check_if_path_is_moved(context, (lvalue, span), flow_state);
             }
 
             Rvalue::BinaryOp(_bin_op, ref operand1, ref operand2) |
             Rvalue::CheckedBinaryOp(_bin_op, ref operand1, ref operand2) => {
-                self.consume_operand(context, operand1, flow_state);
-                self.consume_operand(context, operand2, flow_state);
+                self.consume_operand(context, (operand1, span), flow_state);
+                self.consume_operand(context, (operand2, span), flow_state);
             }
 
             Rvalue::Box(_ty) => {
@@ -428,7 +439,7 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
 
             Rvalue::Aggregate(ref _aggregate_kind, ref operands) => {
                 for operand in operands {
-                    self.consume_operand(context, operand, flow_state);
+                    self.consume_operand(context, (operand, span), flow_state);
                 }
             }
         }
@@ -436,58 +447,59 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
 
     fn consume_operand(&mut self,
                        context: Context,
-                       operand: &Operand<'tcx>,
+                       (operand, span): (&Operand<'tcx>, Span),
                        flow_state: &InProgress<'b, 'tcx>) {
         match *operand {
             Operand::Consume(ref lvalue) =>
-                self.consume_lvalue(context, lvalue, flow_state),
+                self.consume_lvalue(context, (lvalue, span), flow_state),
             Operand::Constant(_) => {}
         }
     }
 
     fn consume_lvalue(&mut self,
                       context: Context,
-                      lvalue: &Lvalue<'tcx>,
+                      lvalue_span: (&Lvalue<'tcx>, Span),
                       flow_state: &InProgress<'b, 'tcx>) {
+        let lvalue = lvalue_span.0;
         let ty = lvalue.ty(self.mir, self.bcx.tcx).to_ty(self.bcx.tcx);
         let moves_by_default = self.fake_infer_ctxt.type_moves_by_default(ty, DUMMY_SP);
         if moves_by_default {
             // move of lvalue: check if this is move of already borrowed path
-            self.each_borrow_involving_path(context,
-                                            lvalue, flow_state, |this, _idx, borrow| {
-                if !borrow.compatible_with(BorrowKind::Mut) {
-                    this.report_use_while_borrowed(context);
-                }
-            });
+            self.each_borrow_involving_path(
+                context, lvalue_span.0, flow_state, |this, _idx, borrow| {
+                    if !borrow.compatible_with(BorrowKind::Mut) {
+                        this.report_move_out_while_borrowed(context, lvalue_span);
+                    }
+                });
         } else {
             // copy of lvalue: check if this is "copy of frozen path" (FIXME: see check_loans.rs)
-            self.each_borrow_involving_path(context,
-                                            lvalue, flow_state, |this, _idx, borrow| {
-                if !borrow.compatible_with(BorrowKind::Shared) {
-                    this.report_use_while_borrowed(context);
-                }
-            });
+            self.each_borrow_involving_path(
+                context, lvalue_span.0, flow_state, |this, _idx, borrow| {
+                    if !borrow.compatible_with(BorrowKind::Shared) {
+                        this.report_use_while_mutably_borrowed(context, lvalue_span);
+                    }
+                });
         }
 
         // Finally, check if path was already moved.
-        self.check_if_path_is_moved(context, lvalue, flow_state);
+        self.check_if_path_is_moved(context, lvalue_span, flow_state);
     }
 
     fn borrow(&mut self,
               context: Context,
               location: Location,
               bk: BorrowKind,
-              lvalue: &Lvalue<'tcx>,
+              lvalue_span: (&Lvalue<'tcx>, Span),
               flow_state: &InProgress<'b, 'tcx>) {
-        self.check_if_path_is_moved(context, lvalue, flow_state);
-        self.check_for_conflicting_loan(context, location, bk, lvalue, flow_state);
+        self.check_if_path_is_moved(context, lvalue_span, flow_state);
+        self.check_for_conflicting_loan(context, location, bk, lvalue_span, flow_state);
     }
 }
 
 impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
     fn check_if_reassignment_to_immutable_state(&mut self,
                                                 context: Context,
-                                                lvalue: &Lvalue<'tcx>,
+                                                (lvalue, span): (&Lvalue<'tcx>, Span),
                                                 flow_state: &InProgress<'b, 'tcx>) {
         let move_data = flow_state.inits.base_results.operator().move_data();
 
@@ -519,18 +531,18 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
             if flow_state.inits.curr_state.contains(&mpi) {
                 // may already be assigned before reaching this statement;
                 // report error.
-                self.report_illegal_mutation(context);
+                self.report_illegal_mutation(context, (lvalue, span));
             }
         }
     }
 
     fn check_if_path_is_moved(&mut self,
                               context: Context,
-                              lvalue: &Lvalue<'tcx>,
+                              lvalue_span: (&Lvalue<'tcx>, Span),
                               flow_state: &InProgress<'b, 'tcx>) {
         // FIXME: analogous code in check_loans first maps `lvalue` to
         // its base_path ... but is that what we want here?
-        let lvalue = self.base_path(lvalue);
+        let lvalue = self.base_path(lvalue_span.0);
 
         let maybe_uninits = &flow_state.uninits;
         let move_data = maybe_uninits.base_results.operator().move_data();
@@ -541,7 +553,7 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
                 // FIXME: for each move in flow_state.move_outs ...
                 &flow_state.move_outs;
 
-                self.report_use_of_moved(context);
+                self.report_use_of_moved(context, lvalue_span);
             } else {
                 // sanity check: initialized on *some* path, right?
                 assert!(flow_state.inits.curr_state.contains(&mpi));
@@ -567,7 +579,7 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
 
     fn check_if_assigned_path_is_moved(&mut self,
                                        context: Context,
-                                       lvalue: &Lvalue<'tcx>,
+                                       (lvalue, span): (&Lvalue<'tcx>, Span),
                                        flow_state: &InProgress<'b, 'tcx>) {
         // recur down lvalue; dispatch to check_if_path_is_moved when necessary
         let mut lvalue = lvalue;
@@ -592,7 +604,8 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
                         { }
 
                         ProjectionElem::Subslice { .. } => {
-                            panic!("we dont allow assignments to subslices, context: {:?}", context);
+                            panic!("we dont allow assignments to subslices, context: {:?}",
+                                   context);
                         }
 
                         ProjectionElem::Field(..) => {
@@ -608,7 +621,7 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
                                     // `base` to its base_path.
 
                                     self.check_if_path_is_moved(context,
-                                                                base, flow_state);
+                                                                (base, span), flow_state);
 
                                     // (base initialized; no need to
                                     // recur further)
@@ -630,7 +643,7 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
                                   context: Context,
                                   _location: Location,
                                   _bk: BorrowKind,
-                                  _lvalue: &Lvalue<'tcx>,
+                                  lvalue_span: (&Lvalue<'tcx>, Span),
                                   flow_state: &InProgress<'b, 'tcx>) {
         // NOTE FIXME: The analogous code in old borrowck
         // check_loans.rs is careful to iterate over every *issued*
@@ -658,42 +671,148 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
         let data = &state.base_results.operator().borrows();
 
         // does any loan generated here, conflict with a previously issued loan?
-        for gen in state.elems_generated().map(|g| &data[g]) {
-            for issued in state.elems_incoming().map(|i| &data[i]) {
+        for (g, gen) in state.elems_generated().map(|g| (g, &data[g])) {
+            for (i, issued) in state.elems_incoming().map(|i| (i, &data[i])) {
+                debug!("check_for_conflicting_loans gen: {:?} issued: {:?} conflicts: {}",
+                       (g, gen, self.base_path(&gen.lvalue),
+                        self.restrictions(&gen.lvalue).collect::<Vec<_>>()),
+                       (i, issued, self.base_path(&issued.lvalue),
+                        self.restrictions(&issued.lvalue).collect::<Vec<_>>()),
+                       self.conflicts_with(gen, issued));
                 if self.conflicts_with(gen, issued) {
-                    self.report_conflicting_borrow(context);
+                    self.report_conflicting_borrow(context, lvalue_span);
                 }
             }
         }
 
         // does any loan generated here conflict with another loan also generated here?
-        for (gen1, gen2) in state.pairs_generated().map(|(g1, g2)| (&data[g1], &data[g2])) {
+        for ((g1, gen1), (g2, gen2)) in state.pairs_generated()
+            .map(|(g1, g2)| ((g1, &data[g1]), (g2, &data[g2])))
+        {
+            debug!("check_for_conflicting_loans gen1: {:?} gen2: {:?} conflicts: {}",
+                   (g1, gen1, self.base_path(&gen1.lvalue),
+                    self.restrictions(&gen1.lvalue).collect::<Vec<_>>()),
+                   (g2, gen2, self.base_path(&gen2.lvalue),
+                    self.restrictions(&gen2.lvalue).collect::<Vec<_>>()),
+                   self.conflicts_with(gen1, gen2));
             if self.conflicts_with(gen1, gen2) {
-                self.report_conflicting_borrow(context);
+                self.report_conflicting_borrow(context, lvalue_span);
             }
         }
     }
 }
 
 impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
-    fn report_use_of_moved(&mut self, context: Context) {
-        if true { panic!("use of moved data, context: {:?}", context); }
-        unimplemented!()
+    fn report_use_of_moved(&mut self,
+                           _context: Context,
+                           (lvalue, span): (&Lvalue, Span)) {
+        let mut err = self.bcx.cannot_act_on_uninitialized_variable(
+            span, "use", &self.describe_lvalue(lvalue), Origin::Mir);
+        // FIXME: add span_label for use of uninitialized variable
+        err.emit();
     }
 
-    fn report_use_while_borrowed(&mut self, context: Context) {
-        if true { panic!("use of borrowed data, context: {:?}", context); }
-        unimplemented!()
+    fn report_move_out_while_borrowed(&mut self,
+                                      _context: Context,
+                                      (lvalue, span): (&Lvalue, Span)) {
+        let mut err = self.bcx.cannot_move_when_borrowed(
+            span, &self.describe_lvalue(lvalue), Origin::Mir);
+        // FIXME 1: add span_label for "borrow of `()` occurs here"
+        // FIXME 2: add span_label for "move out of `{}` occurs here"
+        err.emit();
     }
 
-    fn report_conflicting_borrow(&mut self, context: Context) {
-        if true { panic!("conflicting borrows, context: {:?}", context); }
-        unimplemented!()
+    fn report_use_while_mutably_borrowed(&mut self,
+                                         _context: Context,
+                                         (lvalue, span): (&Lvalue, Span)) {
+        let mut err = self.bcx.cannot_use_when_mutably_borrowed(
+            span, &self.describe_lvalue(lvalue), Origin::Mir);
+        // FIXME 1: add span_label for "borrow of `()` occurs here"
+        // FIXME 2: add span_label for "use of `{}` occurs here"
+        err.emit();
     }
 
-    fn report_illegal_mutation(&mut self, context: Context) {
-        if true { panic!("illegal mutation, context: {:?}", context); }
-        unimplemented!()
+    fn report_conflicting_borrow(&mut self, _context: Context, (lvalue, span): (&Lvalue, Span)) {
+        // FIXME: supply non-"" `opt_via` when appropriate
+        let mut err = self.bcx.cannot_mutably_borrow_multiply(
+            span, &self.describe_lvalue(lvalue), "", Origin::Mir);
+        // FIXME: add span labels for first and second mutable borrows, as well as end point for first.
+        err.emit();
+    }
+
+    fn report_illegal_mutation(&mut self, _context: Context, (lvalue, span): (&Lvalue, Span)) {
+        let mut err = self.bcx.cannot_assign_to_borrowed(
+            span, &self.describe_lvalue(lvalue), Origin::Mir);
+        // FIXME: add span labels for borrow and assignment points
+        err.emit();
+    }
+}
+
+impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
+    // End-user visible description of `lvalue`
+    fn describe_lvalue(&self, lvalue: &Lvalue) -> String {
+        let mut buf = String::new();
+        self.append_lvalue_to_string(lvalue, &mut buf);
+        buf
+    }
+
+    // Appends end-user visible description of `lvalue` to `buf`.
+    fn append_lvalue_to_string(&self, lvalue: &Lvalue, buf: &mut String) {
+        match *lvalue {
+            Lvalue::Local(local) => {
+                let local = &self.mir.local_decls[local];
+                match local.name {
+                    Some(name) => buf.push_str(&format!("{}", name)),
+                    None => buf.push_str("_"),
+                }
+            }
+            Lvalue::Static(ref static_) => {
+                buf.push_str(&format!("{}", &self.bcx.tcx.item_name(static_.def_id)));
+            }
+            Lvalue::Projection(ref proj) => {
+                let (prefix, suffix, index_operand) = match proj.elem {
+                    ProjectionElem::Deref =>
+                        ("(*", format!(")"), None),
+                    ProjectionElem::Downcast(ref adt_def, index) =>
+                        ("(",  format!(" as {})", adt_def.variants[index].name), None),
+                    ProjectionElem::Field(field, _ty) =>
+                        ("(",  format!(".{})", field.index()), None),
+                    ProjectionElem::Index(ref index) =>
+                        ("",   format!(""), Some(index)),
+                    ProjectionElem::ConstantIndex { offset, min_length, from_end: true } =>
+                        ("",   format!("[{} of {}]", offset, min_length), None),
+                    ProjectionElem::ConstantIndex { offset, min_length, from_end: false } =>
+                        ("",   format!("[-{} of {}]", offset, min_length), None),
+                    ProjectionElem::Subslice { from, to: 0 } =>
+                        ("",   format!("[{}:]", from), None),
+                    ProjectionElem::Subslice { from: 0, to } =>
+                        ("",   format!("[:-{}]", to), None),
+                    ProjectionElem::Subslice { from, to } =>
+                        ("",   format!("[{}:-{}]", from, to), None),
+                };
+                buf.push_str(prefix);
+                self.append_lvalue_to_string(&proj.base, buf);
+                if let Some(index) = index_operand {
+                    buf.push_str("[");
+                    self.append_operand_to_string(index, buf);
+                    buf.push_str("]");
+                } else {
+                    buf.push_str(&suffix);
+                }
+
+            }
+        }
+    }
+
+    fn append_operand_to_string(&self, operand: &Operand, buf: &mut String) {
+        match *operand {
+            Operand::Consume(ref lvalue) => {
+                self.append_lvalue_to_string(lvalue, buf);
+            }
+            Operand::Constant(ref constant) => {
+                buf.push_str(&format!("{:?}", constant));
+            }
+        }
     }
 }
 
@@ -819,11 +938,60 @@ struct Restrictions<'c, 'tcx: 'c> {
 }
 
 impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
+    fn has_restrictions(&self, lvalue: &Lvalue<'tcx>) -> bool {
+        let mut cursor = lvalue;
+        loop {
+            let proj = match *cursor {
+                Lvalue::Local(_) => return true,
+                Lvalue::Static(_) => return false,
+                Lvalue::Projection(ref proj) => proj,
+            };
+            match proj.elem {
+                ProjectionElem::Index(..) |
+                ProjectionElem::ConstantIndex { .. } |
+                ProjectionElem::Downcast(..) |
+                ProjectionElem::Subslice { .. } |
+                ProjectionElem::Field(_/*field*/, _/*ty*/) => {
+                    cursor = &proj.base;
+                    continue;
+                }
+                ProjectionElem::Deref => {
+                    let ty = proj.base.ty(self.mir, self.bcx.tcx).to_ty(self.bcx.tcx);
+                    match ty.sty {
+                        ty::TyRawPtr(_) => {
+                            return false;
+                        }
+                        ty::TyRef(_/*rgn*/, ty::TypeAndMut { ty: _, mutbl: hir::MutImmutable }) => {
+                            // FIXME: do I need to check validity of
+                            // `_r` here though? (I think the original
+                            // check_loans code did, like readme says)
+                            return false;
+                        }
+                        ty::TyRef(_/*rgn*/, ty::TypeAndMut { ty: _, mutbl: hir::MutMutable }) => {
+                            cursor = &proj.base;
+                            continue;
+                        }
+                        ty::TyAdt(..) if ty.is_box() => {
+                            cursor = &proj.base;
+                            continue;
+                        }
+                        _ => {
+                            panic!("unknown type fed to Projection Deref.");
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
     fn restrictions<'c>(&self,
                         lvalue: &'c Lvalue<'tcx>)
                         -> Restrictions<'c, 'tcx> where 'b: 'c
     {
-        Restrictions { lvalue_stack: vec![lvalue], mir: self.mir, tcx: self.bcx.tcx }
+        let lvalue_stack = if self.has_restrictions(lvalue) { vec![lvalue] } else { vec![] };
+        Restrictions { lvalue_stack: lvalue_stack, mir: self.mir, tcx: self.bcx.tcx }
     }
 }
 
@@ -855,8 +1023,8 @@ impl<'c, 'tcx> Iterator for Restrictions<'c, 'tcx> {
                 match proj.elem {
                     ProjectionElem::Field(_/*field*/, _/*ty*/) => {
                         // FIXME: add union handling
-                        cursor = &proj.base;
-                        continue 'cursor;
+                        self.lvalue_stack.push(&proj.base);
+                        return Some(cursor);
                     }
                     ProjectionElem::Downcast(..) |
                     ProjectionElem::Subslice { .. } |
@@ -866,7 +1034,7 @@ impl<'c, 'tcx> Iterator for Restrictions<'c, 'tcx> {
                         continue 'cursor;
                     }
                     ProjectionElem::Index(Operand::Consume(ref index)) => {
-                        self.lvalue_stack.push(index);
+                        self.lvalue_stack.push(index); // FIXME: did old borrowck actually do this?
                         cursor = &proj.base;
                         continue 'cursor;
                     }
