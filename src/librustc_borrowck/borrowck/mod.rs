@@ -20,6 +20,7 @@ pub use self::MovedValueUseKind::*;
 
 pub use self::mir::elaborate_drops::ElaborateDrops;
 
+use self::errors::Origin;
 use self::InteriorKind::*;
 
 use rustc::hir::map as hir_map;
@@ -50,7 +51,7 @@ use rustc::hir;
 use rustc::hir::intravisit::{self, Visitor};
 
 pub mod check_loans;
-
+mod errors;
 pub mod gather_loans;
 
 pub mod move_data;
@@ -536,14 +537,13 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
             move_data::Declared => {
                 // If this is an uninitialized variable, just emit a simple warning
                 // and return.
-                struct_span_err!(
-                    self.tcx.sess, use_span, E0381,
-                    "{} of possibly uninitialized variable: `{}`",
-                    verb,
-                    self.loan_path_to_string(lp))
-                .span_label(use_span, format!("use of possibly uninitialized `{}`",
-                    self.loan_path_to_string(lp)))
-                .emit();
+                self.cannot_act_on_uninitialized_variable(use_span,
+                                                          verb,
+                                                          &self.loan_path_to_string(lp),
+                                                          Origin::Ast)
+                    .span_label(use_span, &format!("use of possibly uninitialized `{}`",
+                                                   self.loan_path_to_string(lp)))
+                    .emit();
                 return;
             }
             _ => {
