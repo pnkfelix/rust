@@ -259,6 +259,12 @@ impl_stable_hash_for!(struct Mir<'tcx> {
     cache
 });
 
+impl<'tcx> Mir<'tcx> {
+    pub fn get(&self, index: BasicBlock) -> Option<&BasicBlockData<'tcx>> {
+        self.basic_blocks().get(index)
+    }
+}
+
 impl<'tcx> Index<BasicBlock> for Mir<'tcx> {
     type Output = BasicBlockData<'tcx>;
 

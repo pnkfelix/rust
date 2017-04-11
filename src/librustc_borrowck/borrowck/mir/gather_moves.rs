@@ -138,7 +138,13 @@ pub trait HasMoveData<'tcx> {
 pub struct LocationMap<T> {
     /// Location-indexed (BasicBlock for outer index, index within BB
     /// for inner index) map.
-    map: IndexVec<BasicBlock, Vec<T>>,
+    pub(crate) map: IndexVec<BasicBlock, Vec<T>>,
+}
+
+impl<T> LocationMap<T> {
+    pub(crate) fn get(&self, index: Location) -> Option<&T> {
+        self.map.get(index.block).and_then(|b| b.get(index.statement_index))
+    }
 }
 
 impl<T> Index<Location> for LocationMap<T> {
