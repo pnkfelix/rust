@@ -699,7 +699,7 @@ impl<'l> TypeckMir<'l> {
 impl<'l, 'tcx> MirPass<'tcx> for TypeckMir<'l> {
     fn run_pass<'a>(&mut self, tcx: TyCtxt<'a, 'tcx, 'tcx>,
                     src: MirSource, mir: &mut Mir<'tcx>) {
-        debug!("run_pass Typeck({}): {}", self.label, tcx.node_path_str(src.item_id()));
+        debug!("run_pass TypeckMir({}): {}", self.label, tcx.node_path_str(src.item_id()));
 
         if tcx.sess.err_count() > 0 {
             // compiling a broken program can obviously result in a
