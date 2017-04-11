@@ -737,11 +737,11 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
     }
 }
 
-pub struct TypeckMir;
+pub struct TypeckMir<'l> { label: &'l str }
 
-impl TypeckMir {
-    pub fn new() -> Self {
-        TypeckMir
+impl<'l> TypeckMir<'l> {
+    pub fn new(label: &'l str) -> Self {
+        TypeckMir { label: label }
     }
 }
 
@@ -752,7 +752,7 @@ impl MirPass for TypeckMir {
                           mir: &mut Mir<'tcx>) {
         let item_id = src.item_id();
         let def_id = tcx.hir.local_def_id(item_id);
-        debug!("run_pass: {:?}", def_id);
+        debug!("run_pass: Typeck({}): {}", self.label, def_id);
 
         if tcx.sess.err_count() > 0 {
             // compiling a broken program can obviously result in a
@@ -773,5 +773,15 @@ impl MirPass for TypeckMir {
             checker.typeck_mir(mir);
             checker.verify_obligations(mir);
         });
+    }
+}
+
+impl<'l> Pass for TypeckMir<'l> {
+    fn disambiguator<'a>(&'a self) -> Option<Box<fmt::Display+'a>> {
+        Some(Box::new(self.label))
+    }
+
+    fn name(&self) -> ::std::borrow::Cow<'static, str> {
+        "TypeckMir".into()
     }
 }
