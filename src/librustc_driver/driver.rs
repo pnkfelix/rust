@@ -922,6 +922,7 @@ pub fn phase_3_run_analysis_passes<'tcx, F, R>(sess: &'tcx Session,
     passes.push_pass(MIR_CONST, mir::transform::type_check::TypeckMir::new("before-promotion"));
 
     // What we need to run borrowck etc.
+    passes.push_pass(MIR_CONST, mir::transform::borrow_check::BorrowckMir);
     passes.push_pass(MIR_VALIDATED, mir::transform::qualify_consts::QualifyAndPromoteConstants);
     passes.push_pass(MIR_VALIDATED, mir::transform::type_check::TypeckMir::new("after-promotion"));
 
