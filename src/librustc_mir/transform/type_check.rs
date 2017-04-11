@@ -745,7 +745,7 @@ impl<'l> TypeckMir<'l> {
     }
 }
 
-impl MirPass for TypeckMir {
+impl<'l> MirPass for TypeckMir<'l> {
     fn run_pass<'a, 'tcx>(&self,
                           tcx: TyCtxt<'a, 'tcx, 'tcx>,
                           src: MirSource,
