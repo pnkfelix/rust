@@ -531,8 +531,12 @@ impl<'a, 'tcx> BitDenotation for MovingOutStatements<'a, 'tcx> {
         let rev_lookup = &move_data.rev_lookup;
 
         debug!("stmt {:?} at loc {:?} moves out of move_indexes {:?}",
-               stmt, loc, &loc_map[loc]);
-        for move_index in &loc_map[loc] {
+               stmt, loc, loc_map.get(loc).unwrap_or_else(|| {
+                   panic!("no BorrowIndex found for location: {:?}", loc);
+               }));
+        for move_index in loc_map.get(loc).unwrap_or_else(|| {
+            panic!("no BorrowIndex found for location: {:?}", loc); })
+        {
             // Every path deinitialized by a *particular move*
             // has corresponding bit, "gen'ed" (i.e. set)
             // here, in dataflow vector
@@ -614,12 +618,19 @@ impl<'a, 'tcx> BitDenotation for Borrows<'a, 'tcx> {
     fn statement_effect(&self,
                         sets: &mut BlockSets<BorrowIndex>,
                         location: Location) {
-        let block = &self.mir[location.block];
-        let stmt = block.statements.get(location.statement_index).unwrap();
+        let block = &self.mir.get(location.block).unwrap_or_else(|| {
+            panic!("could not find block at location {:?}", location);
+        });
+        let stmt = block.statements.get(location.statement_index).unwrap_or_else(|| {
+            panic!("could not find statement at location {:?}");
+        });
         match stmt.kind {
             mir::StatementKind::EndRegion(ref extents) => {
                 for ext in extents {
-                    for idx in &self.ext_map[ext] {
+                    for idx in self.ext_map.get(ext).unwrap_or_else(|| {
+                        panic!("could not find BorrowIndexs for code-extent {:?}", ext);
+                    })
+                    {
                         sets.kill(&idx);
                     }
                 }
@@ -628,8 +639,12 @@ impl<'a, 'tcx> BitDenotation for Borrows<'a, 'tcx> {
             mir::StatementKind::Assign(_, ref rhs) => {
                 if let mir::Rvalue::Ref(&ty::Region::ReScope(extent), _, _) = *rhs {
                     let loc = location;
-                    let idx = self.loc_map[&loc];
-                    assert!(self.ext_map.get(&extent).unwrap().contains(&idx));
+                    let idx = self.loc_map.get(&loc).unwrap_or_else(|| {
+                        panic!("could not find BorrowIndex for location {:?}", loc);
+                    });
+                    assert!(self.ext_map.get(&extent).unwrap_or_else(|| {
+                        panic!("could not find BorrowIndexs for extent {:?}", extent);
+                    }).contains(&idx));
                     sets.gen(&idx);
                 }
             }
