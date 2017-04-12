@@ -8,10 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::{MirBorrowckCtxt, each_bit};
+use super::{MirBorrowckCtxt};
 
-use super::dataflow::{BitDenotation, BlockSets};
-use super::dataflow::{DataflowResults, DataflowResultsConsumer};
 use super::dataflow::{Borrows, BorrowData, MovingOutStatements};
 use super::dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
 use super::gather_moves::{HasMoveData, BorrowIndex, LookupResult};
@@ -27,6 +25,8 @@ use rustc::mir::{Lvalue, Rvalue, Mutability, Operand, Projection, ProjectionElem
 use rustc::mir::{Statement, StatementKind, Terminator, TerminatorKind};
 use rustc::ty::{self, TyCtxt};
 
+use rustc_mir::dataflow::{BitDenotation, BlockSets, DataflowResults, DataflowResultsConsumer};
+
 use rustc_data_structures::indexed_set::{self, IdxSetBuf};
 use rustc_data_structures::indexed_vec::{Idx};
 use syntax_pos::{DUMMY_SP, Span};
@@ -40,11 +40,11 @@ struct FlowInProgress<BD> where BD: BitDenotation {
 
 impl<BD> FlowInProgress<BD> where BD: BitDenotation {
     fn each_state_bit<F>(&self, f: F) where F: FnMut(BD::Idx) {
-        each_bit(&self.curr_state, self.base_results.operator().bits_per_block(), f)
+        self.curr_state.each_bit(self.base_results.operator().bits_per_block(), f)
     }
 
     fn each_gen_bit<F>(&self, f: F) where F: FnMut(BD::Idx) {
-        each_bit(&self.stmt_gen, self.base_results.operator().bits_per_block(), f)
+        self.stmt_gen.each_bit(self.base_results.operator().bits_per_block(), f)
     }
 }
 

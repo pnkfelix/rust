@@ -13,7 +13,6 @@
 use syntax::ast::NodeId;
 use rustc::mir::{BasicBlock, Mir};
 use rustc_data_structures::bitslice::bits_to_string;
-use rustc_data_structures::indexed_set::{IdxSet};
 use rustc_data_structures::indexed_vec::Idx;
 use rustc_mir::util as mir_util;
 
@@ -27,31 +26,9 @@ use std::io::prelude::*;
 use std::marker::PhantomData;
 use std::path::Path;
 
+use rustc_mir::dataflow::{BitDenotation, DataflowState};
+
 use super::super::MirBorrowckCtxtPreDataflow;
-use super::super::{each_bit};
-use super::{BitDenotation, DataflowState};
-
-impl<O: BitDenotation> DataflowState<O> {
-    pub(crate) fn each_bit<F>(&self, words: &IdxSet<O::Idx>, f: F) where F: FnMut(O::Idx) {
-        //! Helper for iterating over the bits in a bitvector.
-        let bits_per_block = self.operator.bits_per_block();
-        each_bit(words, bits_per_block, f)
-    }
-
-    pub fn interpret_set<'c, P>(&self,
-                                o: &'c O,
-                                words: &IdxSet<O::Idx>,
-                                render_idx: &P)
-                                -> Vec<&'c Debug>
-        where P: Fn(&O, O::Idx) -> &Debug
-    {
-        let mut v = Vec::new();
-        self.each_bit(words, |i| {
-            v.push(render_idx(o, i));
-        });
-        v
-    }
-}
 
 pub trait MirWithFlowState<'tcx> {
     type BD: BitDenotation;
@@ -66,7 +43,7 @@ impl<'a, 'tcx: 'a, BD> MirWithFlowState<'tcx> for MirBorrowckCtxtPreDataflow<'a,
     type BD = BD;
     fn node_id(&self) -> NodeId { self.node_id }
     fn mir(&self) -> &Mir<'tcx> { self.flow_state.mir() }
-    fn flow_state(&self) -> &DataflowState<Self::BD> { &self.flow_state.flow_state }
+    fn flow_state(&self) -> &DataflowState<Self::BD> { self.flow_state.flow_state() }
 }
 
 struct Graph<'a, 'tcx, MWF:'a, P> where
@@ -198,7 +175,7 @@ impl<'a, 'tcx, MWF, P> dot::Labeller<'a> for Graph<'a, 'tcx, MWF, P>
             *n, self.mbcx.mir(), &mut v, 4,
             |w| {
                 let flow = self.mbcx.flow_state();
-                let entry_interp = flow.interpret_set(&flow.operator,
+                let entry_interp = flow.interpret_set(flow.operator(),
                                                       flow.sets.on_entry_set_for(i),
                                                       &self.render_idx);
                 chunked_present_left(w, &entry_interp[..], chunk_size)?;
@@ -215,9 +192,9 @@ impl<'a, 'tcx, MWF, P> dot::Labeller<'a> for Graph<'a, 'tcx, MWF, P>
             |w| {
                 let flow = self.mbcx.flow_state();
                 let gen_interp =
-                    flow.interpret_set(&flow.operator, flow.sets.gen_set_for(i), &self.render_idx);
+                    flow.interpret_set(flow.operator(), flow.sets.gen_set_for(i), &self.render_idx);
                 let kill_interp =
-                    flow.interpret_set(&flow.operator, flow.sets.kill_set_for(i), &self.render_idx);
+                    flow.interpret_set(flow.operator(), flow.sets.kill_set_for(i), &self.render_idx);
                 chunked_present_left(w, &gen_interp[..], chunk_size)?;
                 let bits_per_block = flow.sets.bits_per_block();
                 {

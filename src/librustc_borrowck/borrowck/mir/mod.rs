@@ -18,8 +18,6 @@ use rustc::mir::{self, Mir, Location};
 use rustc::session::Session;
 use rustc::ty::{self, TyCtxt};
 use rustc_mir::util::elaborate_drops::DropFlagState;
-use rustc_data_structures::indexed_set::{IdxSet};
-use rustc_data_structures::indexed_vec::{Idx};
 
 mod abs_domain;
 pub mod elaborate_drops;
@@ -28,10 +26,11 @@ mod dataflow;
 mod gather_moves;
 // mod graphviz;
 
-use self::dataflow::{BitDenotation};
-use self::dataflow::{DataflowOperator};
-use self::dataflow::{Dataflow, DataflowAnalysis, DataflowResults};
-use self::dataflow::{DataflowResultsConsumer};
+use rustc_mir::dataflow::{BitDenotation};
+use rustc_mir::dataflow::{DataflowOperator};
+use rustc_mir::dataflow::{Dataflow, DataflowAnalysis, DataflowResults};
+use rustc_mir::dataflow::{DataflowResultsConsumer};
+
 use self::dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
 use self::dataflow::{DefinitelyInitializedLvals};
 use self::check_dataflow_results::{InProgress};
@@ -41,7 +40,6 @@ pub use self::dataflow::{Borrows, MovingOutStatements};
 pub(self) use self::gather_moves::{BorrowIndex};
 
 use std::fmt;
-use std::mem;
 
 fn has_rustc_mir_with(attrs: &[ast::Attribute], name: &str) -> Option<MetaItem> {
     for attr in attrs {
@@ -184,35 +182,6 @@ pub struct MirBorrowckCtxt<'b, 'a: 'b, 'tcx: 'a> {
     move_data: &'b MoveData<'tcx>,
     fake_infer_ctxt: InferCtxt<'a, 'tcx, 'tcx>,
 }
-
-fn each_bit<I: Idx, F>(words: &IdxSet<I>, max_bits: usize, mut f: F) where F: FnMut(I) {
-    let usize_bits: usize = mem::size_of::<usize>() * 8;
-
-    for (word_index, &word) in words.words().iter().enumerate() {
-        if word != 0 {
-            let base_index = word_index * usize_bits;
-            for offset in 0..usize_bits {
-                let bit = 1 << offset;
-                if (word & bit) != 0 {
-                    // NB: we round up the total number of bits
-                    // that we store in any given bit set so that
-                    // it is an even multiple of usize::BITS. This
-                    // means that there may be some stray bits at
-                    // the end that do not correspond to any
-                    // actual value; that's why we first check
-                    // that we are in range of `max_bits`.
-                    let bit_index = base_index + offset as usize;
-                    if bit_index >= max_bits {
-                        return;
-                    } else {
-                        f(Idx::new(bit_index));
-                    }
-                }
-            }
-        }
-    }
-}
-
 
 fn move_path_children_matching<'tcx, F>(move_data: &MoveData<'tcx>,
                                         path: MovePathIndex,

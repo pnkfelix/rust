@@ -50,6 +50,7 @@ pub mod diagnostics;
 
 pub mod build;
 pub mod callgraph;
+pub mod dataflow;
 mod hair;
 mod shim;
 pub mod mir_map;
