@@ -241,3 +241,36 @@ impl<'a, T: Idx> Iterator for Pairs<'a, T> {
     }
 }
 
+impl<I: Idx> IdxSet<I> {
+    pub fn each_bit<F>(&self, max_bits: usize, f: F) where F: FnMut(I) {
+        each_bit(self, max_bits, f)
+    }
+}
+
+fn each_bit<I: Idx, F>(words: &IdxSet<I>, max_bits: usize, mut f: F) where F: FnMut(I) {
+    let usize_bits: usize = mem::size_of::<usize>() * 8;
+
+    for (word_index, &word) in words.words().iter().enumerate() {
+        if word != 0 {
+            let base_index = word_index * usize_bits;
+            for offset in 0..usize_bits {
+                let bit = 1 << offset;
+                if (word & bit) != 0 {
+                    // NB: we round up the total number of bits
+                    // that we store in any given bit set so that
+                    // it is an even multiple of usize::BITS. This
+                    // means that there may be some stray bits at
+                    // the end that do not correspond to any
+                    // actual value; that's why we first check
+                    // that we are in range of `max_bits`.
+                    let bit_index = base_index + offset as usize;
+                    if bit_index >= max_bits {
+                        return;
+                    } else {
+                        f(Idx::new(bit_index));
+                    }
+                }
+            }
+        }
+    }
+}

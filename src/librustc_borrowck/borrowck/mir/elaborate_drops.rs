@@ -10,7 +10,6 @@
 
 use super::gather_moves::{HasMoveData, MoveData, MovePathIndex, LookupResult};
 use super::dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
-use super::dataflow::{DataflowResults};
 use super::{on_all_children_bits, on_all_drop_children_bits};
 use super::{drop_flag_effects_for_location, on_lookup_result_bits};
 use super::MoveDataParamEnv;
@@ -21,6 +20,7 @@ use rustc::middle::const_val::ConstVal;
 use rustc::util::nodemap::FxHashMap;
 use rustc_data_structures::indexed_set::IdxSetBuf;
 use rustc_data_structures::indexed_vec::Idx;
+use rustc_mir::dataflow::{DataflowResults};
 use rustc_mir::util::patch::MirPatch;
 use rustc_mir::util::elaborate_drops::{DropFlagState, Unwind, elaborate_drop};
 use rustc_mir::util::elaborate_drops::{DropElaborator, DropStyle, DropFlagMode};

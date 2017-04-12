@@ -16,9 +16,9 @@ use rustc::ty::{self, TyCtxt};
 use rustc::mir::{self, Mir, Location};
 use rustc_data_structures::indexed_vec::Idx;
 
+use rustc_mir::dataflow::{BitDenotation, BlockSets, DataflowResults};
+
 use super::super::gather_moves::{MovePathIndex, LookupResult};
-use super::BitDenotation;
-use super::DataflowResults;
 use super::super::gather_moves::HasMoveData;
 
 /// This function scans `mir` for all calls to the intrinsic
@@ -60,7 +60,7 @@ fn each_block<'a, 'tcx, O>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                            bb: mir::BasicBlock) where
     O: BitDenotation<Idx=MovePathIndex> + HasMoveData<'tcx>
 {
-    let move_data = results.0.operator.move_data();
+    let move_data = results.operator().move_data();
     let mir::BasicBlockData { ref statements, ref terminator, is_cleanup: _ } = mir[bb];
 
     let (args, span) = match is_rustc_peek(tcx, terminator) {
@@ -82,9 +82,9 @@ fn each_block<'a, 'tcx, O>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         }
     };
 
-    let mut entry = results.0.sets.on_entry_set_for(bb.index()).to_owned();
-    let mut gen = results.0.sets.gen_set_for(bb.index()).to_owned();
-    let mut kill = results.0.sets.kill_set_for(bb.index()).to_owned();
+    let mut entry = results.sets().on_entry_set_for(bb.index()).to_owned();
+    let mut gen = results.sets().gen_set_for(bb.index()).to_owned();
+    let mut kill = results.sets().kill_set_for(bb.index()).to_owned();
 
     // Emulate effect of all statements in the block up to (but not
     // including) the borrow within `peek_arg_lval`. Do *not* include
@@ -92,9 +92,9 @@ fn each_block<'a, 'tcx, O>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     // of the argument at time immediate preceding Call to
     // `rustc_peek`).
 
-    let mut sets = super::BlockSets { on_entry: &mut entry,
-                                      gen_set: &mut gen,
-                                      kill_set: &mut kill };
+    let mut sets = BlockSets { on_entry: &mut entry,
+                               gen_set: &mut gen,
+                               kill_set: &mut kill };
 
     for (j, stmt) in statements.iter().enumerate() {
         debug!("rustc_peek: ({:?},{}) {:?}", bb, j, stmt);
@@ -146,7 +146,7 @@ fn each_block<'a, 'tcx, O>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         // reset GEN and KILL sets before emulating their effect.
         for e in sets.gen_set.words_mut() { *e = 0; }
         for e in sets.kill_set.words_mut() { *e = 0; }
-        results.0.operator.statement_effect(&mut sets, Location { block: bb, statement_index: j });
+        results.operator().statement_effect(&mut sets, Location { block: bb, statement_index: j });
         sets.on_entry.union(sets.gen_set);
         sets.on_entry.subtract(sets.kill_set);
     }
