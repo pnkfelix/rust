@@ -920,6 +920,7 @@ pub fn phase_3_run_analysis_passes<'tcx, F, R>(sess: &'tcx Session,
     // What we need to do constant evaluation.
     passes.push_pass(MIR_CONST, mir::transform::simplify::SimplifyCfg::new("initial"));
     passes.push_pass(MIR_CONST, mir::transform::type_check::TypeckMir::new("before-promotion"));
+    passes.push_pass(MIR_CONST, mir::transform::rustc_peek::SanityCheck);
 
     // What we need to run borrowck etc.
     passes.push_pass(MIR_CONST, mir::transform::borrow_check::BorrowckMir);

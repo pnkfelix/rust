@@ -21,7 +21,6 @@
 #![feature(quote)]
 #![feature(rustc_diagnostic_macros)]
 #![feature(associated_consts)]
-#![feature(nonzero)]
 
 #[macro_use] extern crate log;
 #[macro_use] extern crate syntax;

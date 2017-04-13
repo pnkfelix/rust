@@ -26,12 +26,14 @@ Rust MIR: a lowered representation of Rust. Also: an experiment!
 #![feature(rustc_diagnostic_macros)]
 #![feature(placement_in_syntax)]
 #![feature(collection_placement)]
+#![feature(nonzero)]
 
 #[macro_use] extern crate log;
 extern crate graphviz as dot;
 #[macro_use]
 extern crate rustc;
 extern crate rustc_data_structures;
+extern crate rustc_errors;
 #[macro_use]
 #[no_link]
 extern crate rustc_bitflags;
@@ -40,6 +42,7 @@ extern crate syntax;
 extern crate syntax_pos;
 extern crate rustc_const_math;
 extern crate rustc_const_eval;
+extern crate core; // for NonZero
 
 pub mod diagnostics;
 
@@ -50,9 +53,26 @@ mod shim;
 pub mod transform;
 pub mod util;
 
+use syntax::ast::{self, MetaItem};
+
 use rustc::ty::maps::Providers;
 
 pub fn provide(providers: &mut Providers) {
     shim::provide(providers);
     transform::provide(providers);
+}
+
+fn has_rustc_mir_with(attrs: &[ast::Attribute], name: &str) -> Option<MetaItem> {
+    for attr in attrs {
+        if attr.check_name("rustc_mir") {
+            let items = attr.meta_item_list();
+            for item in items.iter().flat_map(|l| l.iter()) {
+                match item.meta_item() {
+                    Some(mi) if mi.check_name(name) => return Some(mi.clone()),
+                    _ => continue
+                }
+            }
+        }
+    }
+    return None;
 }

@@ -18,9 +18,8 @@ pub use self::bckerr_code::*;
 pub use self::AliasableViolationKind::*;
 pub use self::MovedValueUseKind::*;
 
-pub use self::mir::elaborate_drops::ElaborateDrops;
+pub use rustc_mir::transform::elaborate_drops::ElaborateDrops;
 
-use self::errors::Origin;
 use self::InteriorKind::*;
 
 use rustc::hir::map as hir_map;
@@ -40,6 +39,8 @@ use rustc::middle::free_region::RegionRelations;
 use rustc::ty::{self, TyCtxt};
 use rustc::ty::maps::Providers;
 
+use rustc_mir::util::borrowck_errors::{BorrowckErrors, Origin};
+
 use std::fmt;
 use std::rc::Rc;
 use std::hash::{Hash, Hasher};
@@ -51,12 +52,9 @@ use rustc::hir;
 use rustc::hir::intravisit::{self, Visitor};
 
 pub mod check_loans;
-mod errors;
 pub mod gather_loans;
 
 pub mod move_data;
-
-mod mir;
 
 #[derive(Clone, Copy)]
 pub struct LoanDataFlowOperator;
@@ -108,19 +106,15 @@ fn borrowck<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, owner_def_id: DefId) {
 
     let body = bccx.tcx.hir.body(body_id);
 
-    if bccx.tcx.has_attr(owner_def_id, "rustc_mir_borrowck") {
-        mir::borrowck_mir(bccx, owner_id, &attributes);
-    } else {
-        // Eventually, borrowck will always read the MIR, but at the
-        // moment we do not. So, for now, we always force MIR to be
-        // constructed for a given fn, since this may result in errors
-        // being reported and we want that to happen.
-        //
-        // Note that `mir_validated` is a "stealable" result; the
-        // thief, `optimized_mir()`, forces borrowck, so we know that
-        // is not yet stolen.
-        tcx.mir_validated(owner_def_id).borrow();
-    }
+    // Eventually, borrowck will always read the MIR, but at the
+    // moment we do not. So, for now, we always force MIR to be
+    // constructed for a given fn, since this may result in errors
+    // being reported and we want that to happen.
+    //
+    // Note that `mir_validated` is a "stealable" result; the
+    // thief, `optimized_mir()`, forces borrowck, so we know that
+    // is not yet stolen.
+    tcx.mir_validated(owner_def_id).borrow();
 
     let cfg = cfg::CFG::new(bccx.tcx, &body);
     let AnalysisData { all_loans,
@@ -205,6 +199,17 @@ pub struct BorrowckCtxt<'a, 'tcx: 'a> {
     region_maps: Rc<RegionMaps>,
 
     owner_def_id: DefId,
+}
+
+impl<'b, 'tcx: 'b> BorrowckErrors for BorrowckCtxt<'b, 'tcx> {
+    fn struct_span_err_with_code<'a, S: Into<MultiSpan>>(&'a self,
+                                                         sp: S,
+                                                         msg: &str,
+                                                         code: &str)
+                                                         -> DiagnosticBuilder<'a>
+    {
+        self.tcx.sess.struct_span_err_with_code(sp, msg, code)
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////

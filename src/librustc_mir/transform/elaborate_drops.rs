@@ -54,13 +54,13 @@ impl MirPass for ElaborateDrops {
             };
             let dead_unwinds = find_dead_unwinds(tcx, mir, id, &env);
             let flow_inits =
-                super::do_dataflow(tcx, mir, id, &[], &dead_unwinds,
-                                   MaybeInitializedLvals::new(tcx, mir, &env),
-                                   |bd, p| &bd.move_data().move_paths[p]);
+                do_dataflow(tcx, mir, id, &[], &dead_unwinds,
+                            MaybeInitializedLvals::new(tcx, mir, &env),
+                            |bd, p| &bd.move_data().move_paths[p]);
             let flow_uninits =
-                super::do_dataflow(tcx, mir, id, &[], &dead_unwinds,
-                                   MaybeUninitializedLvals::new(tcx, mir, &env),
-                                   |bd, p| &bd.move_data().move_paths[p]);
+                do_dataflow(tcx, mir, id, &[], &dead_unwinds,
+                            MaybeUninitializedLvals::new(tcx, mir, &env),
+                            |bd, p| &bd.move_data().move_paths[p]);
 
             ElaborateDropsCtxt {
                 tcx: tcx,
@@ -242,7 +242,7 @@ impl<'a, 'b, 'tcx> DropElaborator<'a, 'tcx> for Elaborator<'a, 'b, 'tcx> {
     }
 
     fn field_subpath(&self, path: Self::Path, field: Field) -> Option<Self::Path> {
-        super::move_path_children_matching(self.ctxt.move_data(), path, |p| {
+        move_path_children_matching(self.ctxt.move_data(), path, |p| {
             match p {
                 &Projection {
                     elem: ProjectionElem::Field(idx, _), ..
@@ -253,7 +253,7 @@ impl<'a, 'b, 'tcx> DropElaborator<'a, 'tcx> for Elaborator<'a, 'b, 'tcx> {
     }
 
     fn deref_subpath(&self, path: Self::Path) -> Option<Self::Path> {
-        super::move_path_children_matching(self.ctxt.move_data(), path, |p| {
+        move_path_children_matching(self.ctxt.move_data(), path, |p| {
             match p {
                 &Projection { elem: ProjectionElem::Deref, .. } => true,
                 _ => false
@@ -262,7 +262,7 @@ impl<'a, 'b, 'tcx> DropElaborator<'a, 'tcx> for Elaborator<'a, 'b, 'tcx> {
     }
 
     fn downcast_subpath(&self, path: Self::Path, variant: usize) -> Option<Self::Path> {
-        super::move_path_children_matching(self.ctxt.move_data(), path, |p| {
+        move_path_children_matching(self.ctxt.move_data(), path, |p| {
             match p {
                 &Projection {
                     elem: ProjectionElem::Downcast(_, idx), ..
@@ -560,7 +560,7 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
 
     fn drop_flags_for_args(&mut self) {
         let loc = Location { block: START_BLOCK, statement_index: 0 };
-        super::drop_flag_effects_for_function_entry(
+        drop_flag_effects_for_function_entry(
             self.tcx, self.mir, self.env, |path, ds| {
                 self.set_drop_flag(loc, path, ds);
             }
@@ -605,7 +605,7 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
                     }
                 }
                 let loc = Location { block: bb, statement_index: i };
-                super::drop_flag_effects_for_location(
+                drop_flag_effects_for_location(
                     self.tcx, self.mir, self.env, loc, |path, ds| {
                         if ds == DropFlagState::Absent || allow_initializations {
                             self.set_drop_flag(loc, path, ds)
@@ -631,4 +631,26 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
             }
         }
     }
+}
+
+fn move_path_children_matching<'tcx, F>(move_data: &MoveData<'tcx>,
+                                        path: MovePathIndex,
+                                        mut cond: F)
+                                        -> Option<MovePathIndex>
+    where F: FnMut(&LvalueProjection<'tcx>) -> bool
+{
+    let mut next_child = move_data.move_paths[path].first_child;
+    while let Some(child_index) = next_child {
+        match move_data.move_paths[child_index].lvalue {
+            Lvalue::Projection(ref proj) => {
+                if cond(proj) {
+                    return Some(child_index)
+                }
+            }
+            _ => {}
+        }
+        next_child = move_data.move_paths[child_index].next_sibling;
+    }
+
+    None
 }

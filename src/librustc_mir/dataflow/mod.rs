@@ -1,4 +1,4 @@
-// Copyright 2017 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2017 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -12,16 +12,74 @@ use rustc_data_structures::bitslice::{bitwise, BitwiseOperator};
 use rustc_data_structures::indexed_set::{IdxSet, IdxSetBuf};
 use rustc_data_structures::indexed_vec::Idx;
 
-use rustc::ty::TyCtxt;
+use syntax::ast;
+
+use rustc::session::Session;
+use rustc::ty::{TyCtxt};
 use rustc::mir::{self, Mir, BasicBlock, BasicBlockData, Location, Statement, Terminator};
 
-use std::fmt::Debug;
+use std::fmt;
+use std::io;
 use std::mem;
+use std::path::PathBuf;
 use std::usize;
+
+use has_rustc_mir_with;
+
+pub use self::impls::{MaybeInitializedLvals, MaybeUninitializedLvals, DefinitelyInitializedLvals};
+pub use self::impls::{MovingOutStatements};
+pub use self::impls::{MoveDataParamEnv};
+pub use self::impls::drop_flag_effects;
+
+pub mod borrows;
+pub mod move_paths;
+
+mod graphviz;
+mod impls;
+mod indexes;
+
+pub fn do_dataflow<'a, 'tcx, BD, P>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
+                                    mir: &Mir<'tcx>,
+                                    node_id: ast::NodeId,
+                                    attributes: &[ast::Attribute],
+                                    bd: BD,
+                                    p: P)
+                                    -> DataflowResults<BD>
+    where BD: BitDenotation, P: Fn(&BD, BD::Idx) -> &fmt::Debug
+{
+    let name_found = |sess: &Session, attrs: &[ast::Attribute], name| -> Option<String> {
+        if let Some(item) = has_rustc_mir_with(attrs, name) {
+            if let Some(s) = item.value_str() {
+                return Some(s.to_string())
+            } else {
+                sess.span_err(
+                    item.span,
+                    &format!("{} attribute requires a path", item.name()));
+                return None;
+            }
+        }
+        return None;
+    };
+
+    let print_preflow_to =
+        name_found(tcx.sess, attributes, "borrowck_graphviz_preflow");
+    let print_postflow_to =
+        name_found(tcx.sess, attributes, "borrowck_graphviz_postflow");
+
+    let mut mbcx = MirBorrowckCtxtPreDataflow {
+        node_id: node_id,
+        print_preflow_to: print_preflow_to,
+        print_postflow_to: print_postflow_to,
+        flow_state: DataflowAnalysis::new(tcx, mir, bd),
+    };
+
+    mbcx.dataflow(p);
+    mbcx.flow_state.results()
+}
 
 pub trait Dataflow<BD: BitDenotation> {
     /// Sets up and runs the dataflow problem, using `p` to render results if implementation so chooses.
-    fn dataflow<P>(&mut self, p: P) where P: Fn(&BD, BD::Idx) -> &Debug {
+    fn dataflow<P>(&mut self, p: P) where P: Fn(&BD, BD::Idx) -> &fmt::Debug {
         let _ = p; // default implementation does not instrument process.
         self.build_sets();
         self.propagate();
@@ -32,6 +90,66 @@ pub trait Dataflow<BD: BitDenotation> {
 
     /// Finds a fixed-point solution to this instance of a dataflow problem.
     fn propagate(&mut self);
+}
+
+// FIXME this should either be generalized, renamed, or moved elsewhere
+struct MirBorrowckCtxtPreDataflow<'a, 'tcx: 'a, BD> where BD: BitDenotation
+{
+    node_id: ast::NodeId,
+    flow_state: DataflowAnalysis<'a, 'tcx, BD>,
+    print_preflow_to: Option<String>,
+    print_postflow_to: Option<String>,
+}
+
+impl<'a, 'tcx: 'a, BD> Dataflow<BD> for MirBorrowckCtxtPreDataflow<'a, 'tcx, BD>
+    where BD: BitDenotation
+{
+    fn dataflow<P>(&mut self, p: P) where P: Fn(&BD, BD::Idx) -> &fmt::Debug {
+        self.build_sets();
+        self.pre_dataflow_instrumentation(|c,i| p(c,i)).unwrap();
+        self.propagate();
+        self.post_dataflow_instrumentation(|c,i| p(c,i)).unwrap();
+    }
+
+    fn build_sets(&mut self) { self.flow_state.build_sets(); }
+    fn propagate(&mut self) { self.flow_state.propagate(); }
+}
+
+impl<'a, 'tcx: 'a, BD> MirBorrowckCtxtPreDataflow<'a, 'tcx, BD>
+    where BD: BitDenotation
+{
+    fn pre_dataflow_instrumentation<P>(&self, p: P) -> io::Result<()>
+        where P: Fn(&BD, BD::Idx) -> &fmt::Debug
+    {
+        if let Some(ref path_str) = self.print_preflow_to {
+            let path = dataflow_path(BD::name(), "preflow", path_str);
+            graphviz::print_borrowck_graph_to(self, &path, p)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn post_dataflow_instrumentation<P>(&self, p: P) -> io::Result<()>
+        where P: Fn(&BD, BD::Idx) -> &fmt::Debug
+    {
+        if let Some(ref path_str) = self.print_postflow_to {
+            let path = dataflow_path(BD::name(), "postflow", path_str);
+            graphviz::print_borrowck_graph_to(self, &path, p)
+        } else{
+            Ok(())
+        }
+    }
+}
+
+fn dataflow_path(context: &str, prepost: &str, path: &str) -> PathBuf {
+    format!("{}_{}", context, prepost);
+    let mut path = PathBuf::from(path);
+    let new_file_name = {
+        let orig_file_name = path.file_name().unwrap().to_str().unwrap();
+        format!("{}_{}", context, orig_file_name)
+    };
+    path.set_file_name(new_file_name);
+    path
 }
 
 pub struct DataflowResults<O>(DataflowState<O>) where O: BitDenotation;
@@ -185,8 +303,8 @@ impl<O: BitDenotation> DataflowState<O> {
                                 o: &'c O,
                                 words: &IdxSet<O::Idx>,
                                 render_idx: &P)
-                                -> Vec<&'c Debug>
-        where P: Fn(&O, O::Idx) -> &Debug
+                                -> Vec<&'c fmt::Debug>
+        where P: Fn(&O, O::Idx) -> &fmt::Debug
     {
         let mut v = Vec::new();
         self.each_bit(words, |i| {
