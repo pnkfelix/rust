@@ -20,7 +20,6 @@ use self::UseError::*;
 
 use borrowck::*;
 use borrowck::InteriorKind::{InteriorElement, InteriorField};
-use borrowck::errors::Origin;
 use rustc::middle::expr_use_visitor as euv;
 use rustc::middle::expr_use_visitor::MutateMode;
 use rustc::middle::mem_categorization as mc;
@@ -30,6 +29,7 @@ use rustc::ty::{self, TyCtxt};
 use syntax::ast;
 use syntax_pos::Span;
 use rustc::hir;
+use rustc_mir::util::borrowck_errors::Origin;
 
 use std::rc::Rc;
 

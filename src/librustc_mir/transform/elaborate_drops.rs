@@ -8,11 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::gather_moves::{HasMoveData, MoveData, MovePathIndex, LookupResult};
-use super::dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
-use super::{drop_flag_effects_for_location, on_all_children_bits};
-use super::on_lookup_result_bits;
-use super::MoveDataParamEnv;
 use rustc::ty::{self, TyCtxt};
 use rustc::mir::*;
 use rustc::mir::transform::{Pass, MirPass, MirSource};
@@ -20,10 +15,19 @@ use rustc::middle::const_val::ConstVal;
 use rustc::util::nodemap::FxHashMap;
 use rustc_data_structures::indexed_set::IdxSetBuf;
 use rustc_data_structures::indexed_vec::Idx;
-use rustc_mir::dataflow::{DataflowResults};
-use rustc_mir::util::patch::MirPatch;
-use rustc_mir::util::elaborate_drops::{DropFlagState, elaborate_drop};
-use rustc_mir::util::elaborate_drops::{DropElaborator, DropStyle, DropFlagMode};
+
+use dataflow::{do_dataflow};
+use dataflow::{DataflowResults};
+use dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
+use dataflow::{MoveDataParamEnv};
+use dataflow::drop_flag_effects::{drop_flag_effects_for_location, on_all_children_bits};
+use dataflow::drop_flag_effects::{drop_flag_effects_for_function_entry};
+use dataflow::drop_flag_effects::{on_lookup_result_bits};
+use dataflow::move_paths::{HasMoveData, MoveData, MovePathIndex, LookupResult};
+use util::patch::MirPatch;
+use util::elaborate_drops::{DropFlagState, elaborate_drop};
+use util::elaborate_drops::{DropElaborator, DropStyle, DropFlagMode};
+
 use syntax_pos::Span;
 
 use std::fmt;
@@ -50,11 +54,11 @@ impl<'tcx> MirPass<'tcx> for ElaborateDrops {
                 param_env: param_env
             };
             let flow_inits =
-                super::do_dataflow(tcx, mir, id, &[],
+                do_dataflow(tcx, mir, id, &[],
                                    MaybeInitializedLvals::new(tcx, mir, &env),
                                    |bd, p| &bd.move_data().move_paths[p]);
             let flow_uninits =
-                super::do_dataflow(tcx, mir, id, &[],
+                do_dataflow(tcx, mir, id, &[],
                                    MaybeUninitializedLvals::new(tcx, mir, &env),
                                    |bd, p| &bd.move_data().move_paths[p]);
 
@@ -182,7 +186,7 @@ impl<'a, 'b, 'tcx> DropElaborator<'a, 'tcx> for Elaborator<'a, 'b, 'tcx> {
     }
 
     fn field_subpath(&self, path: Self::Path, field: Field) -> Option<Self::Path> {
-        super::move_path_children_matching(self.ctxt.move_data(), path, |p| {
+        move_path_children_matching(self.ctxt.move_data(), path, |p| {
             match p {
                 &Projection {
                     elem: ProjectionElem::Field(idx, _), ..
@@ -193,7 +197,7 @@ impl<'a, 'b, 'tcx> DropElaborator<'a, 'tcx> for Elaborator<'a, 'b, 'tcx> {
     }
 
     fn deref_subpath(&self, path: Self::Path) -> Option<Self::Path> {
-        super::move_path_children_matching(self.ctxt.move_data(), path, |p| {
+        move_path_children_matching(self.ctxt.move_data(), path, |p| {
             match p {
                 &Projection { elem: ProjectionElem::Deref, .. } => true,
                 _ => false
@@ -202,7 +206,7 @@ impl<'a, 'b, 'tcx> DropElaborator<'a, 'tcx> for Elaborator<'a, 'b, 'tcx> {
     }
 
     fn downcast_subpath(&self, path: Self::Path, variant: usize) -> Option<Self::Path> {
-        super::move_path_children_matching(self.ctxt.move_data(), path, |p| {
+        move_path_children_matching(self.ctxt.move_data(), path, |p| {
             match p {
                 &Projection {
                     elem: ProjectionElem::Downcast(_, idx), ..
@@ -511,7 +515,7 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
 
     fn drop_flags_for_args(&mut self) {
         let loc = Location { block: START_BLOCK, statement_index: 0 };
-        super::drop_flag_effects_for_function_entry(
+        drop_flag_effects_for_function_entry(
             self.tcx, self.mir, self.env, |path, ds| {
                 self.set_drop_flag(loc, path, ds);
             }
@@ -556,7 +560,7 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
                     }
                 }
                 let loc = Location { block: bb, statement_index: i };
-                super::drop_flag_effects_for_location(
+                drop_flag_effects_for_location(
                     self.tcx, self.mir, self.env, loc, |path, ds| {
                         if ds == DropFlagState::Absent || allow_initializations {
                             self.set_drop_flag(loc, path, ds)
@@ -582,4 +586,26 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
             }
         }
     }
+}
+
+fn move_path_children_matching<'tcx, F>(move_data: &MoveData<'tcx>,
+                                        path: MovePathIndex,
+                                        mut cond: F)
+                                        -> Option<MovePathIndex>
+    where F: FnMut(&LvalueProjection<'tcx>) -> bool
+{
+    let mut next_child = move_data.move_paths[path].first_child;
+    while let Some(child_index) = next_child {
+        match move_data.move_paths[child_index].lvalue {
+            Lvalue::Projection(ref proj) => {
+                if cond(proj) {
+                    return Some(child_index)
+                }
+            }
+            _ => {}
+        }
+        next_child = move_data.move_paths[child_index].next_sibling;
+    }
+
+    None
 }

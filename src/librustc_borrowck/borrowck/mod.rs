@@ -18,9 +18,8 @@ pub use self::bckerr_code::*;
 pub use self::AliasableViolationKind::*;
 pub use self::MovedValueUseKind::*;
 
-pub use self::mir::elaborate_drops::ElaborateDrops;
+pub use rustc_mir::transform::elaborate_drops::ElaborateDrops;
 
-use self::errors::Origin;
 use self::InteriorKind::*;
 
 use rustc::dep_graph::DepNode;
@@ -38,6 +37,8 @@ use rustc::middle::mem_categorization::Categorization;
 use rustc::middle::region;
 use rustc::ty::{self, TyCtxt};
 
+use rustc_mir::util::borrowck_errors::{BorrowckErrors, Origin};
+
 use std::fmt;
 use std::rc::Rc;
 use std::hash::{Hash, Hasher};
@@ -49,12 +50,9 @@ use rustc::hir;
 use rustc::hir::intravisit::{self, Visitor};
 
 pub mod check_loans;
-mod errors;
 pub mod gather_loans;
 
 pub mod move_data;
-
-mod mir;
 
 #[derive(Clone, Copy)]
 pub struct LoanDataFlowOperator;
@@ -86,7 +84,6 @@ fn borrowck_fn<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, body_id: hir::BodyId) {
 
     let owner_id = tcx.hir.body_owner(body_id);
     let owner_def_id = tcx.hir.local_def_id(owner_id);
-    let attributes = tcx.get_attrs(owner_def_id);
     let tables = tcx.item_tables(owner_def_id);
 
     let mut bccx = &mut BorrowckCtxt {
@@ -95,10 +92,6 @@ fn borrowck_fn<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, body_id: hir::BodyId) {
     };
 
     let body = bccx.tcx.hir.body(body_id);
-
-    if bccx.tcx.has_attr(owner_def_id, "rustc_mir_borrowck") {
-        mir::borrowck_mir(bccx, owner_id, &attributes);
-    }
 
     let cfg = cfg::CFG::new(bccx.tcx, &body);
     let AnalysisData { all_loans,
@@ -189,6 +182,17 @@ pub struct BorrowckCtxt<'a, 'tcx: 'a> {
     // tables for the current thing we are checking; set to
     // Some in `borrowck_fn` and cleared later
     tables: &'a ty::TypeckTables<'tcx>,
+}
+
+impl<'b, 'tcx: 'b> BorrowckErrors for BorrowckCtxt<'b, 'tcx> {
+    fn struct_span_err_with_code<'a, S: Into<MultiSpan>>(&'a self,
+                                                         sp: S,
+                                                         msg: &str,
+                                                         code: &str)
+                                                         -> DiagnosticBuilder<'a>
+    {
+        self.tcx.sess.struct_span_err_with_code(sp, msg, code)
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////

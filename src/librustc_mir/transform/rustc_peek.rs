@@ -1,4 +1,4 @@
-// Copyright 2012-2016 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2017 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,18 +8,64 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+//! This pass implements the `rustc_peek` intrinsics, which are used
+//! to test the compiler by inspecting the state of dataflow analyses.
+
 use syntax::abi::{Abi};
 use syntax::ast;
 use syntax_pos::Span;
 
+use rustc::mir::{self, Location, Mir};
+use rustc::mir::transform::{MirPass, MirSource, Pass};
 use rustc::ty::{self, TyCtxt};
-use rustc::mir::{self, Mir, Location};
+
 use rustc_data_structures::indexed_vec::Idx;
 
-use rustc_mir::dataflow::{BitDenotation, BlockSets, DataflowResults};
+use dataflow::{do_dataflow};
+use dataflow::{MoveDataParamEnv};
+use dataflow::{BitDenotation, BlockSets, DataflowResults};
+use dataflow::{DefinitelyInitializedLvals, MaybeInitializedLvals, MaybeUninitializedLvals};
+use dataflow::move_paths::{HasMoveData, MoveData, MovePathIndex, LookupResult};
+use has_rustc_mir_with;
 
-use super::super::gather_moves::{MovePathIndex, LookupResult};
-use super::super::gather_moves::HasMoveData;
+pub struct SanityCheck;
+
+impl Pass for SanityCheck { }
+
+impl<'tcx> MirPass<'tcx> for SanityCheck {
+    fn run_pass<'a>(&mut self, tcx: TyCtxt<'a, 'tcx, 'tcx>,
+                    src: MirSource, mir: &mut Mir<'tcx>) {
+        let id = src.item_id();
+        let def_id = tcx.hir.local_def_id(id);
+        debug!("running rustc_peek::SanityCheck on {}", tcx.item_path_str(def_id));
+        let attributes = tcx.get_attrs(def_id);
+        let param_env = ty::ParameterEnvironment::for_item(tcx, id);
+        let move_data = MoveData::gather_moves(mir, tcx, &param_env);
+        let mdpe = MoveDataParamEnv { move_data: move_data, param_env: param_env };
+        let flow_inits =
+            do_dataflow(tcx, mir, id, &attributes, MaybeInitializedLvals::new(tcx, mir, &mdpe),
+                        |bd, i| &bd.move_data().move_paths[i]);
+        let flow_uninits =
+            do_dataflow(tcx, mir, id, &attributes, MaybeUninitializedLvals::new(tcx, mir, &mdpe),
+                        |bd, i| &bd.move_data().move_paths[i]);
+        let flow_def_inits =
+            do_dataflow(tcx, mir, id, &attributes, DefinitelyInitializedLvals::new(tcx, mir, &mdpe),
+                        |bd, i| &bd.move_data().move_paths[i]);
+
+        if has_rustc_mir_with(&attributes, "rustc_peek_maybe_init").is_some() {
+            sanity_check_via_rustc_peek(tcx, mir, id, &attributes, &flow_inits);
+        }
+        if has_rustc_mir_with(&attributes, "rustc_peek_maybe_uninit").is_some() {
+            sanity_check_via_rustc_peek(tcx, mir, id, &attributes, &flow_uninits);
+        }
+        if has_rustc_mir_with(&attributes, "rustc_peek_definite_init").is_some() {
+            sanity_check_via_rustc_peek(tcx, mir, id, &attributes, &flow_def_inits);
+        }
+        if has_rustc_mir_with(&attributes, "stop_after_dataflow").is_some() {
+            tcx.sess.fatal("stop_after_dataflow ended compilation");
+        }
+    }
+}
 
 /// This function scans `mir` for all calls to the intrinsic
 /// `rustc_peek` that have the expression form `rustc_peek(&expr)`.
@@ -37,7 +83,7 @@ use super::super::gather_moves::HasMoveData;
 /// (If there are any calls to `rustc_peek` that do not match the
 /// expression form above, then that emits an error as well, but those
 /// errors are not intended to be used for unit tests.)
-pub fn sanity_check_via_rustc_peek<'a, 'tcx, O>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
+fn sanity_check_via_rustc_peek<'a, 'tcx, O>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                                 mir: &Mir<'tcx>,
                                                 id: ast::NodeId,
                                                 _attributes: &[ast::Attribute],
