@@ -1170,8 +1170,10 @@ impl<'tcx> Debug for Rvalue<'tcx> {
                     BorrowKind::Shared => "",
                     BorrowKind::Mut | BorrowKind::Unique => "mut ",
                 };
+                let region_str = format!("{}", region);
                 // usually region displays as "", but not always (e.g. -Z identify_regions)
-                write!(fmt, "&{}{}{:?}", region, kind_str, lv)
+                let rpad = if region_str.is_empty() { "" } else { " " };
+                write!(fmt, "&{}{}{}{:?}", region_str, rpad, kind_str, lv)
             }
 
             Aggregate(ref kind, ref lvs) => {
