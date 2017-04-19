@@ -177,6 +177,10 @@ impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for mir::StatementKind
             mir::StatementKind::StorageDead(ref lvalue) => {
                 lvalue.hash_stable(hcx, hasher);
             }
+            mir::StatementKind::EndRegion(ref extents) => {
+                extents.hash_stable(hcx, hasher);
+
+            }
             mir::StatementKind::Nop => {}
             mir::StatementKind::InlineAsm { ref asm, ref outputs, ref inputs } => {
                 asm.hash_stable(hcx, hasher);
