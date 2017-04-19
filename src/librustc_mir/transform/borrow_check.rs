@@ -37,12 +37,14 @@ pub struct BorrowckMir;
 
 impl<'tcx> MirPass<'tcx> for BorrowckMir {
     fn run_pass<'a>(&mut self, tcx: TyCtxt<'a, 'tcx, 'tcx>, src: MirSource, mir: &mut Mir<'tcx>) {
-        debug!("run_pass BorrowckMir: {}", tcx.node_path_str(src.item_id()));
-
         if tcx.sess.err_count() > 0 {
             // compiling a broken program can obviously result in a
             // broken MIR, so try not to report duplicate errors.
+            debug!("skipping BorrowckMir: {} since there are already {} errors",
+                   tcx.node_path_str(src.item_id()), tcx.sess.err_count());
             return;
+        } else {
+            debug!("run_pass BorrowckMir: {}", tcx.node_path_str(src.item_id()));
         }
 
         let def_id = tcx.hir.local_def_id(src.item_id());
@@ -230,16 +232,42 @@ impl<'b, 'a: 'b, 'tcx: 'a> DataflowResultsConsumer<'b, 'tcx> for MirBorrowckCtxt
                                      (discr, span), flow_state);
             }
             TerminatorKind::Drop { location: ref drop_lvalue, target: _, unwind: _ } => {
-                self.consume_lvalue(ContextKind::Drop.new(loc),
-                                    (drop_lvalue, span), flow_state);
+                // drop(lval) will dynamically consult drop-flag;
+                // *not* an unconditional consume of `drop_lvalue`
+                //
+                // FIXME: Despite the caveat above, it seems like we
+                // should be checking *something* here. In particular,
+                // it seems like we need to ensure that *if* the value
+                // *is* potentially still here, then we need to make
+                // sure all the necessary conditions hold. So maybe
+                // this code should consult `inits` (and `uninits`?)
+                // and do a check here based on that value?
+
+                let ctxt = ContextKind::Drop.new(loc);
+                let mpi = self.move_path_for_lvalue(ctxt, self.move_data, drop_lvalue).unwrap_or_else(|| {
+                    panic!("no move_path found for drop({:?} loc: {:?})", drop_lvalue, loc);
+                });
+                if flow_state.inits.curr_state.contains(&mpi) {
+                    self.consume_lvalue(ctxt, (drop_lvalue, span), flow_state);
+                }
             }
             TerminatorKind::DropAndReplace { location: ref drop_lvalue,
                                              value: ref new_value,
                                              target: _,
                                              unwind: _ } => {
-                self.mutate_lvalue(ContextKind::DropAndReplace.new(loc),
-                                   (drop_lvalue, span), JustWrite, flow_state);
-                self.consume_operand(ContextKind::DropAndReplace.new(loc),
+                // FIXME: Does DropAndReplace also consult the
+                // drop-flag (analogous to Drop above)? If so, then we
+                // should not *check* it using the usual rules.
+
+                let ctxt = ContextKind::DropAndReplaceDest.new(loc);
+                let mpi = self.move_path_for_lvalue(ctxt, self.move_data, drop_lvalue).unwrap_or_else(|| {
+                    panic!("no move_path found for drop_and_replace({:?}, {:?}) loc: {:?}",
+                           drop_lvalue, new_value, loc);
+                });
+                if flow_state.inits.curr_state.contains(&mpi) {
+                    self.mutate_lvalue(ctxt, (drop_lvalue, span), JustWrite, flow_state);
+                }
+                self.consume_operand(ContextKind::DropAndReplaceSource.new(loc),
                                      (new_value, span), flow_state);
             }
             TerminatorKind::Call { ref func, ref args, ref destination, cleanup: _ } => {
@@ -255,13 +283,13 @@ impl<'b, 'a: 'b, 'tcx: 'a> DataflowResultsConsumer<'b, 'tcx> for MirBorrowckCtxt
                 }
             }
             TerminatorKind::Assert { ref cond, expected: _, ref msg, target: _, cleanup: _ } => {
-                self.consume_operand(ContextKind::Assert.new(loc),
+                self.consume_operand(ContextKind::AssertCond.new(loc),
                                      (cond, span), flow_state);
                 match *msg {
                     AssertMessage::BoundsCheck { ref len, ref index } => {
-                        self.consume_operand(ContextKind::Assert.new(loc),
+                        self.consume_operand(ContextKind::AssertLen.new(loc),
                                              (len, span), flow_state);
-                        self.consume_operand(ContextKind::Assert.new(loc),
+                        self.consume_operand(ContextKind::AssertIndex.new(loc),
                                              (index, span), flow_state);
                     }
                     AssertMessage::Math(_/*const_math_err*/) => {}
@@ -1027,11 +1055,14 @@ enum ContextKind {
     InlineAsm,
     SwitchInt,
     Drop,
-    DropAndReplace,
+    DropAndReplaceDest,
+    DropAndReplaceSource,
     CallOperator,
     CallOperand,
     CallDest,
-    Assert,
+    AssertCond,
+    AssertLen,
+    AssertIndex,
 }
 
 impl ContextKind {
