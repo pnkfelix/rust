@@ -41,7 +41,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             } else {
                 this.ast_block_stmts(destination, block, span, stmts, expr)
             }
-        })
+        });
 
         if let Some(de) = opt_destruction_extent {
             self.pop_scope((de, source_info), unpack!(block_and))
