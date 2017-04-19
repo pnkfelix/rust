@@ -39,7 +39,8 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         let this = self;
 
         if let ExprKind::Scope { extent, value } = expr.kind {
-            return this.in_scope(extent, block, |this| {
+            let source_info = this.source_info(expr.span);
+            return this.in_scope((extent, source_info), block, |this| {
                 this.as_temp(block, temp_lifetime, value)
             });
         }

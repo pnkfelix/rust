@@ -23,7 +23,6 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                      -> BlockAnd<()> {
         let Block { extent, opt_destruction_extent, span, stmts, expr, targeted_by_break } =
             self.hir.mirror(ast_block);
-        let source_info = self.source_info(span);
         if let Some(de) = opt_destruction_extent {
             self.push_scope(de);
         }
@@ -84,11 +83,15 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                     if let Some(de) = opt_destruction_extent {
                         this.push_scope(de);
                     }
-
+                    let source_info = this.source_info(span);
                     unpack!(block = this.in_scope((scope, source_info), block, |this| {
                         let expr = this.hir.mirror(expr);
                         this.stmt_expr(block, expr)
                     }));
+
+                    if let Some(de) = opt_destruction_extent {
+                        unpack!(block = this.pop_scope((de, source_info), block));
+                    }
                 }
                 StmtKind::Let { remainder_scope, init_scope, pattern, initializer } => {
                     let tcx = this.hir.tcx();
@@ -114,6 +117,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                             // FIXME #30046                              ^~~~
                             this.expr_into_pattern(block, pattern, init)
                         }));
+
                         if let Some(de) = opt_destruction_extent {
                             unpack!(block = this.pop_scope((de, source_info), block));
                         }
