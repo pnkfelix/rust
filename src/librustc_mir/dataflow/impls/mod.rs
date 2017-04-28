@@ -299,7 +299,13 @@ impl<'a, 'tcx> BitDenotation for MaybeInitializedLvals<'a, 'tcx> {
         drop_flag_effects_for_location(
             self.tcx, self.mir, self.mdpe,
             location,
-            |path, s| Self::update_bits(sets, path, s)
+            |path, s| {
+                let move_path = &self.mdpe.move_data.move_paths[path];
+                debug!("MaybeInitialized statement_effect update_bits \
+                        path: {:?} lvalue: {:?} state: {:?}",
+                       path, move_path.lvalue, s);
+                Self::update_bits(sets, path, s)
+            }
         )
     }
 

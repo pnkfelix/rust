@@ -71,9 +71,16 @@ pub fn drop_flag_effects_for_location<'a, 'tcx, F>(
             }
             mir::StatementKind::Assign(ref lvalue, _) => {
                 debug!("drop_flag_effects: assignment {:?}", stmt);
-                 on_lookup_result_bits(tcx, mir, move_data,
-                                       move_data.rev_lookup.find(lvalue),
-                                       |moi| callback(moi, DropFlagState::Present))
+                on_lookup_result_bits(
+                    tcx, mir, move_data,
+                    move_data.rev_lookup.find(lvalue),
+                    |mpi| {
+                        let move_path = &move_data.move_paths[mpi];
+                        debug!("drop_flag_effects: assignment lvalue callback \
+                                Present on mpi: {:?} lvalue: {:?}",
+                               mpi, move_path.lvalue);
+                        callback(mpi, DropFlagState::Present)
+                    })
             }
             mir::StatementKind::StorageLive(_) |
             mir::StatementKind::StorageDead(_) |
