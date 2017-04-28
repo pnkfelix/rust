@@ -37,16 +37,20 @@ pub struct BorrowckMir;
 
 impl<'tcx> MirPass<'tcx> for BorrowckMir {
     fn run_pass<'a>(&mut self, tcx: TyCtxt<'a, 'tcx, 'tcx>, src: MirSource, mir: &mut Mir<'tcx>) {
+
+        // let err_count = tcx.sess.err_count();
+        // if err_count > 0 {
+        //     // compiling a broken program can obviously result in a
+        //     // broken MIR, so try not to report duplicate errors.
+        //     debug!("skipping BorrowckMir: {} due to {} previous errors",
+        //            tcx.node_path_str(src.item_id()), err_count);
+        //     return;
+        // }
+
         debug!("run_pass BorrowckMir: {}", tcx.node_path_str(src.item_id()));
 
-        if tcx.sess.err_count() > 0 {
-            // compiling a broken program can obviously result in a
-            // broken MIR, so try not to report duplicate errors.
-            return;
-        }
-
         let def_id = tcx.hir.local_def_id(src.item_id());
-        if tcx.has_attr(def_id, "rustc_mir_borrowck") {
+        if tcx.has_attr(def_id, "rustc_mir_borrowck") || tcx.sess.opts.debugging_opts.borrowck_mir {
             borrowck_mir(tcx, src, mir);
         }
     }
