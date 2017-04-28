@@ -391,11 +391,11 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
     }
 
     fn report_error_if_loan_conflicts_with_restriction(&self,
-                                                           loan1: &Loan<'tcx>,
-                                                           loan2: &Loan<'tcx>,
-                                                           old_loan: &Loan<'tcx>,
-                                                           new_loan: &Loan<'tcx>)
-                                                           -> bool {
+                                                       loan1: &Loan<'tcx>,
+                                                       loan2: &Loan<'tcx>,
+                                                       old_loan: &Loan<'tcx>,
+                                                       new_loan: &Loan<'tcx>)
+                                                       -> bool {
         //! Checks whether the restrictions introduced by `loan1` would
         //! prohibit `loan2`. Returns false if an error is reported.
 
