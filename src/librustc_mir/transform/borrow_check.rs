@@ -31,7 +31,9 @@ use dataflow::{MovingOutStatements};
 use dataflow::borrows::{Borrows, BorrowData, BorrowIndex};
 use dataflow::move_paths::{HasMoveData, MoveData, MovePathIndex, LookupResult};
 use util::borrowck_errors::{BorrowckErrors, Origin};
+
 use self::MutateMode::{JustWrite, WriteAndRead};
+use self::ConsumeKind::{Consume};
 
 pub struct BorrowckMir;
 
@@ -194,6 +196,7 @@ impl<'b, 'a: 'b, 'tcx: 'a> DataflowResultsConsumer<'b, 'tcx> for MirBorrowckCtxt
                 for (o, output) in asm.outputs.iter().zip(outputs) {
                     if o.is_indirect {
                         self.consume_lvalue(ContextKind::InlineAsm.new(location),
+                                            Consume,
                                             (output, span),
                                             flow_state);
                     } else {
@@ -205,6 +208,7 @@ impl<'b, 'a: 'b, 'tcx: 'a> DataflowResultsConsumer<'b, 'tcx> for MirBorrowckCtxt
                 }
                 for input in inputs {
                     self.consume_operand(ContextKind::InlineAsm.new(location),
+                                         Consume,
                                          (input, span), flow_state);
                 }
             }
@@ -231,10 +235,12 @@ impl<'b, 'a: 'b, 'tcx: 'a> DataflowResultsConsumer<'b, 'tcx> for MirBorrowckCtxt
         match term.kind {
             TerminatorKind::SwitchInt { ref discr, switch_ty: _, values: _, targets: _ } => {
                 self.consume_operand(ContextKind::SwitchInt.new(loc),
+                                     Consume,
                                      (discr, span), flow_state);
             }
             TerminatorKind::Drop { location: ref drop_lvalue, target: _, unwind: _ } => {
                 self.consume_lvalue(ContextKind::Drop.new(loc),
+                                    ConsumeKind::Drop,
                                     (drop_lvalue, span), flow_state);
             }
             TerminatorKind::DropAndReplace { location: ref drop_lvalue,
@@ -244,13 +250,16 @@ impl<'b, 'a: 'b, 'tcx: 'a> DataflowResultsConsumer<'b, 'tcx> for MirBorrowckCtxt
                 self.mutate_lvalue(ContextKind::DropAndReplace.new(loc),
                                    (drop_lvalue, span), JustWrite, flow_state);
                 self.consume_operand(ContextKind::DropAndReplace.new(loc),
+                                     ConsumeKind::Drop,
                                      (new_value, span), flow_state);
             }
             TerminatorKind::Call { ref func, ref args, ref destination, cleanup: _ } => {
                 self.consume_operand(ContextKind::CallOperator.new(loc),
+                                     Consume,
                                      (func, span), flow_state);
                 for arg in args {
                     self.consume_operand(ContextKind::CallOperand.new(loc),
+                                         Consume,
                                          (arg, span), flow_state);
                 }
                 if let Some((ref dest, _/*bb*/)) = *destination {
@@ -260,12 +269,15 @@ impl<'b, 'a: 'b, 'tcx: 'a> DataflowResultsConsumer<'b, 'tcx> for MirBorrowckCtxt
             }
             TerminatorKind::Assert { ref cond, expected: _, ref msg, target: _, cleanup: _ } => {
                 self.consume_operand(ContextKind::Assert.new(loc),
+                                     Consume,
                                      (cond, span), flow_state);
                 match *msg {
                     AssertMessage::BoundsCheck { ref len, ref index } => {
                         self.consume_operand(ContextKind::Assert.new(loc),
+                                             Consume,
                                              (len, span), flow_state);
                         self.consume_operand(ContextKind::Assert.new(loc),
+                                             Consume,
                                              (index, span), flow_state);
                     }
                     AssertMessage::Math(_/*const_math_err*/) => {}
@@ -284,6 +296,9 @@ impl<'b, 'a: 'b, 'tcx: 'a> DataflowResultsConsumer<'b, 'tcx> for MirBorrowckCtxt
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum MutateMode { JustWrite, WriteAndRead }
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+enum ConsumeKind { Drop, Consume }
 
 impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
     fn mutate_lvalue(&mut self,
@@ -325,7 +340,7 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
             Rvalue::Repeat(ref operand, _) |
             Rvalue::UnaryOp(_/*un_op*/, ref operand) |
             Rvalue::Cast(_/*cast_kind*/, ref operand, _/*ty*/) => {
-                self.consume_operand(context, (operand, span), flow_state)
+                self.consume_operand(context, Consume, (operand, span), flow_state)
             }
 
             Rvalue::Len(ref lvalue) |
@@ -336,8 +351,8 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
 
             Rvalue::BinaryOp(_bin_op, ref operand1, ref operand2) |
             Rvalue::CheckedBinaryOp(_bin_op, ref operand1, ref operand2) => {
-                self.consume_operand(context, (operand1, span), flow_state);
-                self.consume_operand(context, (operand2, span), flow_state);
+                self.consume_operand(context, Consume, (operand1, span), flow_state);
+                self.consume_operand(context, Consume, (operand2, span), flow_state);
             }
 
             Rvalue::Box(_ty) => {
@@ -346,7 +361,7 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
 
             Rvalue::Aggregate(ref _aggregate_kind, ref operands) => {
                 for operand in operands {
-                    self.consume_operand(context, (operand, span), flow_state);
+                    self.consume_operand(context, Consume, (operand, span), flow_state);
                 }
             }
         }
@@ -354,17 +369,19 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
 
     fn consume_operand(&mut self,
                        context: Context,
+                       consume_via_drop: ConsumeKind,
                        (operand, span): (&Operand<'tcx>, Span),
                        flow_state: &InProgress<'b, 'tcx>) {
         match *operand {
             Operand::Consume(ref lvalue) =>
-                self.consume_lvalue(context, (lvalue, span), flow_state),
+                self.consume_lvalue(context, consume_via_drop, (lvalue, span), flow_state),
             Operand::Constant(_) => {}
         }
     }
 
     fn consume_lvalue(&mut self,
                       context: Context,
+                      consume_via_drop: ConsumeKind,
                       lvalue_span: (&Lvalue<'tcx>, Span),
                       flow_state: &InProgress<'b, 'tcx>) {
         let lvalue = lvalue_span.0;
@@ -389,7 +406,16 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
         }
 
         // Finally, check if path was already moved.
-        self.check_if_path_is_moved(context, lvalue_span, flow_state);
+        match consume_via_drop {
+            ConsumeKind::Drop => {
+                // If path is merely being dropped, then we'll already
+                // check the drop flag to see if it is moved (thus we
+                // skip this check in that case).
+            }
+            ConsumeKind::Consume => {
+                self.check_if_path_is_moved(context, lvalue_span, flow_state);
+            }
+        }
     }
 
     fn borrow(&mut self,
@@ -398,8 +424,10 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
               bk: BorrowKind,
               lvalue_span: (&Lvalue<'tcx>, Span),
               flow_state: &InProgress<'b, 'tcx>) {
+        debug!("borrow location: {:?} lvalue: {:?} span: {:?}",
+               location, lvalue_span.0, lvalue_span.1);
         self.check_if_path_is_moved(context, lvalue_span, flow_state);
-        self.check_for_conflicting_loan(context, location, bk, lvalue_span, flow_state);
+        self.check_for_conflicting_loans(context, location, bk, lvalue_span, flow_state);
     }
 }
 
@@ -546,12 +574,12 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
         }
     }
 
-    fn check_for_conflicting_loan(&mut self,
-                                  context: Context,
-                                  _location: Location,
-                                  _bk: BorrowKind,
-                                  lvalue_span: (&Lvalue<'tcx>, Span),
-                                  flow_state: &InProgress<'b, 'tcx>) {
+    fn check_for_conflicting_loans(&mut self,
+                                   context: Context,
+                                   _location: Location,
+                                   _bk: BorrowKind,
+                                   lvalue_span: (&Lvalue<'tcx>, Span),
+                                   flow_state: &InProgress<'b, 'tcx>) {
         // NOTE FIXME: The analogous code in old borrowck
         // check_loans.rs is careful to iterate over every *issued*
         // loan, as opposed to just the in scope ones.
@@ -577,7 +605,9 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
         let state = &flow_state.borrows;
         let data = &state.base_results.operator().borrows();
 
-        // does any loan generated here, conflict with a previously issued loan?
+        debug!("check_for_conflicting_loans location: {:?}", _location);
+
+        // does any loan generated here conflict with a previously issued loan?
         for (g, gen) in state.elems_generated().map(|g| (g, &data[g])) {
             for (i, issued) in state.elems_incoming().map(|i| (i, &data[i])) {
                 debug!("check_for_conflicting_loans gen: {:?} issued: {:?} conflicts: {}",
@@ -587,7 +617,7 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
                         self.restrictions(&issued.lvalue).collect::<Vec<_>>()),
                        self.conflicts_with(gen, issued));
                 if self.conflicts_with(gen, issued) {
-                    self.report_conflicting_borrow(context, lvalue_span);
+                    self.report_conflicting_borrow(context, lvalue_span, gen, issued);
                 }
             }
         }
@@ -603,7 +633,7 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
                     self.restrictions(&gen2.lvalue).collect::<Vec<_>>()),
                    self.conflicts_with(gen1, gen2));
             if self.conflicts_with(gen1, gen2) {
-                self.report_conflicting_borrow(context, lvalue_span);
+                self.report_conflicting_borrow(context, lvalue_span, gen1, gen2);
             }
         }
     }
@@ -886,11 +916,28 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
         err.emit();
     }
 
-    fn report_conflicting_borrow(&mut self, _context: Context, (lvalue, span): (&Lvalue, Span)) {
+    fn report_conflicting_borrow(&mut self,
+                                 _context: Context,
+                                 (lvalue, span): (&Lvalue, Span),
+                                 loan1: &BorrowData,
+                                 loan2: &BorrowData) {
+        // FIXME: obviously falsifiable. Generalize for non-eq lvalues later.
+        assert_eq!(loan1.lvalue, loan2.lvalue);
+
         // FIXME: supply non-"" `opt_via` when appropriate
-        let mut err = self.tcx.cannot_mutably_borrow_multiply(
-            span, &self.describe_lvalue(lvalue), "", Origin::Mir);
-        // FIXME: add span labels for first and second mutable borrows, as well as end point for first.
+        let mut err = match (loan1.kind, "immutable", "mutable",
+                             loan2.kind, "immutable", "mutable") {
+            (BorrowKind::Shared, lft, _, BorrowKind::Mut, _, rgt) |
+            (BorrowKind::Mut, _, lft, BorrowKind::Shared, rgt, _) |
+            (BorrowKind::Mut, _, lft, BorrowKind::Mut, _, rgt) =>
+                self.tcx.cannot_reborrow_already_borrowed(
+                    span, &self.describe_lvalue(lvalue),
+                    "", lft, "it", rgt, "", Origin::Mir),
+
+            _ =>  self.tcx.cannot_mutably_borrow_multiply(
+                span, &self.describe_lvalue(lvalue), "", Origin::Mir),
+            // FIXME: add span labels for first and second mutable borrows, as well as end point for first.
+        };
         err.emit();
     }
 
@@ -927,10 +974,10 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
                 let (prefix, suffix, index_operand) = match proj.elem {
                     ProjectionElem::Deref =>
                         ("(*", format!(")"), None),
-                    ProjectionElem::Downcast(ref adt_def, index) =>
-                        ("(",  format!(" as {})", adt_def.variants[index].name), None),
+                    ProjectionElem::Downcast(..) =>
+                        ("",   format!(""), None), // (dont emit downcast info)
                     ProjectionElem::Field(field, _ty) =>
-                        ("(",  format!(".{})", field.index()), None),
+                        ("",   format!(".{}", field.index()), None),
                     ProjectionElem::Index(ref index) =>
                         ("",   format!(""), Some(index)),
                     ProjectionElem::ConstantIndex { offset, min_length, from_end: true } =>
