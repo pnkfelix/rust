@@ -319,7 +319,8 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
         // check we don't invalidate any outstanding loans
         self.each_borrow_involving_path(context,
                                         lvalue_span.0, flow_state, |this, _index, _data| {
-                                            this.report_illegal_mutation(context, lvalue_span);
+                                            this.report_illegal_mutation_of_borrowed(context,
+                                                                                     lvalue_span);
                                         });
 
         // check for reassignments to immutable local variables
@@ -466,7 +467,7 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
             if flow_state.inits.curr_state.contains(&mpi) {
                 // may already be assigned before reaching this statement;
                 // report error.
-                self.report_illegal_mutation(context, (lvalue, span));
+                self.report_illegal_reassignment(context, (lvalue, span));
             }
         }
     }
@@ -941,7 +942,14 @@ impl<'b, 'a: 'b, 'tcx: 'a> MirBorrowckCtxt<'b, 'a, 'tcx> {
         err.emit();
     }
 
-    fn report_illegal_mutation(&mut self, _context: Context, (lvalue, span): (&Lvalue, Span)) {
+    fn report_illegal_mutation_of_borrowed(&mut self, _: Context, (lvalue, span): (&Lvalue, Span)) {
+        let mut err = self.tcx.cannot_assign_to_borrowed(
+            span, &self.describe_lvalue(lvalue), Origin::Mir);
+        // FIXME: add span labels for borrow and assignment points
+        err.emit();
+    }
+
+    fn report_illegal_reassignment(&mut self, _context: Context, (lvalue, span): (&Lvalue, Span)) {
         let mut err = self.tcx.cannot_assign_to_borrowed(
             span, &self.describe_lvalue(lvalue), Origin::Mir);
         // FIXME: add span labels for borrow and assignment points

@@ -136,6 +136,14 @@ pub trait BorrowckErrors {
                          "cannot move `{}` into closure because it is borrowed ({})",
                          desc, o)
     }
+
+    fn cannot_reassign_immutable(&self, span: Span, desc: &str, o: Origin)
+                                 -> DiagnosticBuilder
+    {
+        struct_span_err!(self, span, E0384,
+                         "re-assignment of immutable variable `{}` ({})",
+                         desc, o)
+    }
 }
 
 impl<'b, 'tcx, 'gcx> BorrowckErrors for TyCtxt<'b, 'tcx, 'gcx> {

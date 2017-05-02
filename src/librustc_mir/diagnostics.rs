@@ -208,6 +208,28 @@ fn main() {
 ```
 "##,
 
+E0384: r##"
+This error occurs when an attempt is made to reassign an immutable variable.
+For example:
+
+```compile_fail,E0384
+fn main() {
+    let x = 3;
+    x = 5; // error, reassignment of immutable variable
+}
+```
+
+By default, variables in Rust are immutable. To fix this error, add the keyword
+`mut` after the keyword `let` when declaring the variable. For example:
+
+```
+fn main() {
+    let mut x = 3;
+    x = 5;
+}
+```
+"##,
+
 E0394: r##"
 A static was referred to by value by another static.
 

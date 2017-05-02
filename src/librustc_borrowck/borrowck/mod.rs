@@ -674,11 +674,10 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
                                                 lp: &LoanPath<'tcx>,
                                                 assign:
                                                 &move_data::Assignment) {
-        let mut err = struct_span_err!(
-            self.tcx.sess, span, E0384,
-            "re-assignment of immutable variable `{}`",
-            self.loan_path_to_string(lp));
-        err.span_label(span, "re-assignment of immutable variable");
+        let mut err = self.cannot_reassign_immutable(span,
+                                                     &self.loan_path_to_string(lp),
+                                                     Origin::Ast);
+        err.span_label(span, &format!("re-assignment of immutable variable"));
         if span != assign.span {
             err.span_label(assign.span, format!("first assignment to `{}`",
                                               self.loan_path_to_string(lp)));
