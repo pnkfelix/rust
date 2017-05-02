@@ -69,18 +69,9 @@ pub fn drop_flag_effects_for_location<'a, 'tcx, F>(
             mir::StatementKind::SetDiscriminant{ .. } => {
                 span_bug!(stmt.source_info.span, "SetDiscrimant should not exist during borrowck");
             }
-            mir::StatementKind::Assign(ref lvalue, _) => {
+            mir::StatementKind::Assign(ref lvalue, ref rvalue) => {
                 debug!("drop_flag_effects: assignment {:?}", stmt);
-                on_lookup_result_bits(
-                    tcx, mir, move_data,
-                    move_data.rev_lookup.find(lvalue),
-                    |mpi| {
-                        let move_path = &move_data.move_paths[mpi];
-                        debug!("drop_flag_effects: assignment lvalue callback \
-                                Present on mpi: {:?} lvalue: {:?}",
-                               mpi, move_path.lvalue);
-                        callback(mpi, DropFlagState::Present)
-                    })
+                propagate_assignment(tcx, mir, move_data, lvalue, rvalue, callback);
             }
             mir::StatementKind::StorageLive(_) |
             mir::StatementKind::StorageDead(_) |
@@ -101,6 +92,39 @@ pub fn drop_flag_effects_for_location<'a, 'tcx, F>(
                 }
             }
         }
+    }
+}
+
+fn propagate_assignment<'a, 'tcx, F>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
+                                     mir: &Mir<'tcx>,
+                                     move_data: &MoveData<'tcx>,
+                                     lvalue: &mir::Lvalue<'tcx>,
+                                     rvalue: &mir::Rvalue<'tcx>,
+                                     mut callback: F)
+    where F: FnMut(MovePathIndex, DropFlagState)
+{
+    let lookup_result = move_data.rev_lookup.find(lvalue);
+    let path = match lookup_result {
+        LookupResult::Parent(..) => return,
+        LookupResult::Exact(path) => path,
+    };
+
+    // A Box rvalues will not completely initialize the destination,
+    // but the others will (assuming all sub-operands are themselves
+    // already initialized).
+    if let mir::Rvalue::Box(_ty) = *rvalue {
+        // just initialize the `path` alone, not its children.
+        debug!("drop_flag_effects: assignment lvalue Box-top callback \
+                Present on mpi: {:?} lvalue: {:?}",
+               path, move_data.move_paths[path].lvalue);
+        callback(path, DropFlagState::Present);
+    } else {
+        on_all_children_bits(tcx, mir, move_data, path, |mpi| {
+            debug!("drop_flag_effects: assignment lvalue Recur callback \
+                    Present on mpi: {:?} lvalue: {:?}",
+                   mpi, move_data.move_paths[mpi].lvalue);
+            callback(mpi, DropFlagState::Present)
+        })
     }
 }
 
