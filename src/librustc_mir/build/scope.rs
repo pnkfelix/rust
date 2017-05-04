@@ -357,7 +357,9 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                                           self.arg_count));
 
         // If popping off a borrowed scope, end its region.
-        if self.hir.seen_borrows().contains(&scope.extent) {
+        if !self.hir.tcx().sess.opts.debugging_opts.prefilter_end_region ||
+            self.hir.seen_borrows().contains(&scope.extent)
+        {
             self.cfg.push_end_region(block, extent.1, scope.extent);
         }
 
@@ -404,7 +406,9 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                                               self.arg_count));
 
             // If breaking out of a borrowed scope, end its region.
-            if self.hir.seen_borrows().contains(&scope.extent) {
+            if !self.hir.tcx().sess.opts.debugging_opts.prefilter_end_region ||
+                self.hir.seen_borrows().contains(&scope.extent)
+            {
                 self.cfg.push_end_region(block, extent.1, scope.extent);
             }
 
