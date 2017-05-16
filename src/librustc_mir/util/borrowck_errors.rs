@@ -30,6 +30,11 @@ pub trait BorrowckErrors {
                                                          code: &str)
                                                          -> DiagnosticBuilder<'a>;
 
+    fn struct_span_err<'a, S: Into<MultiSpan>>(&'a self,
+                                               sp: S,
+                                               msg: &str)
+                                               -> DiagnosticBuilder<'a>;
+
     fn cannot_move_when_borrowed(&self, span: Span, desc: &str, o: Origin)
                                  -> DiagnosticBuilder
     {
@@ -144,6 +149,13 @@ pub trait BorrowckErrors {
                          "re-assignment of immutable variable `{}` ({})",
                          desc, o)
     }
+
+    fn cannot_assign_static(&self, span: Span, desc: &str, o: Origin)
+                            -> DiagnosticBuilder
+    {
+        self.struct_span_err(span, &format!("cannot assign to immutable static item {} ({})",
+                                            desc, o))
+    }
 }
 
 impl<'b, 'tcx, 'gcx> BorrowckErrors for TyCtxt<'b, 'tcx, 'gcx> {
@@ -154,5 +166,13 @@ impl<'b, 'tcx, 'gcx> BorrowckErrors for TyCtxt<'b, 'tcx, 'gcx> {
                                                          -> DiagnosticBuilder<'a>
     {
         self.sess.struct_span_err_with_code(sp, msg, code)
+    }
+
+    fn struct_span_err<'a, S: Into<MultiSpan>>(&'a self,
+                                               sp: S,
+                                               msg: &str)
+                                               -> DiagnosticBuilder<'a>
+    {
+        self.sess.struct_span_err(sp, msg)
     }
 }
