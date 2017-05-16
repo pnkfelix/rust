@@ -842,6 +842,7 @@ impl<'a, 'gcx, 'tcx> MemCategorizationContext<'a, 'gcx, 'tcx> {
                            span: Span,
                            expr_ty: Ty<'tcx>)
                            -> cmt<'tcx> {
+        // FIXME: look into whether exists test of *this* user exposed biz
         let promotable = self.tcx.rvalue_promotable_to_static.borrow().get(&id).cloned()
                                    .unwrap_or(false);
 
