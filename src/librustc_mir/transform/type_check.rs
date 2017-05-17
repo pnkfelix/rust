@@ -774,14 +774,8 @@ impl<'l> MirPass for TypeckMir<'l> {
             checker.verify_obligations(mir);
         });
     }
-}
-
-impl<'l> Pass for TypeckMir<'l> {
-    fn disambiguator<'a>(&'a self) -> Option<Box<fmt::Display+'a>> {
-        Some(Box::new(self.label))
-    }
 
     fn name(&self) -> ::std::borrow::Cow<'static, str> {
-        "TypeckMir".into()
+        format!("TypeckMir({})", self.label).into()
     }
 }
