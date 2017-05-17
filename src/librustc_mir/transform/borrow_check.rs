@@ -16,7 +16,7 @@ use rustc::ty::{self, TyCtxt};
 use rustc::mir::{AssertMessage, BasicBlock, BorrowKind, Location, Lvalue};
 use rustc::mir::{Mir, Mutability, Operand, Projection, ProjectionElem, Rvalue};
 use rustc::mir::{Statement, StatementKind, Terminator, TerminatorKind};
-use rustc::mir::transform::{MirPass, MirSource, Pass};
+use rustc::mir::transform::{MirPass, MirSource};
 
 use rustc_data_structures::indexed_set::{self, IdxSetBuf};
 use rustc_data_structures::indexed_vec::{Idx};
@@ -38,8 +38,8 @@ use self::ConsumeKind::{Consume};
 
 pub struct BorrowckMir;
 
-impl<'tcx> MirPass<'tcx> for BorrowckMir {
-    fn run_pass<'a>(&mut self, tcx: TyCtxt<'a, 'tcx, 'tcx>, src: MirSource, mir: &mut Mir<'tcx>) {
+impl MirPass for BorrowckMir {
+    fn run_pass<'a, 'tcx>(&self, tcx: TyCtxt<'a, 'tcx, 'tcx>, src: MirSource, mir: &mut Mir<'tcx>) {
 
         // let err_count = tcx.sess.err_count();
         // if err_count > 0 {
@@ -101,9 +101,6 @@ fn borrowck_mir<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, src: MirSource, mir: &Mir
     });
 
     debug!("borrowck_mir done");
-}
-
-impl Pass for BorrowckMir {
 }
 
 #[allow(dead_code)]
