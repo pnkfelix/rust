@@ -187,6 +187,27 @@ pub fn on_lookup_result_bits<'a, 'tcx, F>(
     }
 }
 
+pub fn on_all_drop_children_bits<'a, 'tcx, F>(
+    tcx: TyCtxt<'a, 'tcx, 'tcx>,
+    mir: &Mir<'tcx>,
+    ctxt: &MoveDataParamEnv<'tcx>,
+    path: MovePathIndex,
+    mut each_child: F)
+    where F: FnMut(MovePathIndex)
+{
+    on_all_children_bits(tcx, mir, &ctxt.move_data, path, |child| {
+        let lvalue = &ctxt.move_data.move_paths[path].lvalue;
+        let ty = lvalue.ty(mir, tcx).to_ty(tcx);
+        debug!("on_all_drop_children_bits({:?}, {:?} : {:?})", path, lvalue, ty);
+
+        if ty.needs_drop(tcx, &ctxt.param_env) {
+            each_child(child);
+        } else {
+            debug!("on_all_drop_children_bits - skipping")
+        }
+    })
+}
+
 /// When enumerating the child fragments of a path, don't recurse into
 /// paths (1.) past arrays, slices, and pointers, nor (2.) into a type
 /// that implements `Drop`.
