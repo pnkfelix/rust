@@ -22,7 +22,7 @@ use hair::*;
 use rustc_const_math::{ConstInt, ConstIsize};
 use rustc::middle::const_val::ConstVal;
 use rustc::middle::region::CodeExtent;
-use rustc::ty;
+use rustc::ty::{self, RegionKind};
 use rustc::mir::*;
 use syntax::ast;
 use syntax_pos::Span;
