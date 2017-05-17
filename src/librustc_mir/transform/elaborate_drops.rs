@@ -8,11 +8,18 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::gather_moves::{HasMoveData, MoveData, MovePathIndex, LookupResult};
-use super::dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
-use super::{on_all_children_bits, on_all_drop_children_bits};
-use super::{drop_flag_effects_for_location, on_lookup_result_bits};
-use super::MoveDataParamEnv;
+use dataflow::drop_flag_effects::{on_all_children_bits, on_all_drop_children_bits};
+use dataflow::drop_flag_effects::{drop_flag_effects_for_location, on_lookup_result_bits};
+use dataflow::drop_flag_effects::{drop_flag_effects_for_function_entry};
+use dataflow::{DataflowResults, do_dataflow};
+use dataflow::{MoveDataParamEnv, MaybeInitializedLvals, MaybeUninitializedLvals};
+use dataflow::MovePathIndex;
+use dataflow::move_paths::{MoveData, LookupResult};
+
+use util::patch::MirPatch;
+use util::elaborate_drops::{DropFlagState, elaborate_drop};
+use util::elaborate_drops::{DropElaborator, DropStyle, DropFlagMode};
+
 use rustc::ty::{self, TyCtxt};
 use rustc::mir::*;
 use rustc::mir::transform::{MirPass, MirSource};
@@ -20,10 +27,7 @@ use rustc::middle::const_val::ConstVal;
 use rustc::util::nodemap::FxHashMap;
 use rustc_data_structures::indexed_set::IdxSetBuf;
 use rustc_data_structures::indexed_vec::Idx;
-use rustc_mir::dataflow::{DataflowResults};
-use rustc_mir::util::patch::MirPatch;
-use rustc_mir::util::elaborate_drops::{DropFlagState, Unwind, elaborate_drop};
-use rustc_mir::util::elaborate_drops::{DropElaborator, DropStyle, DropFlagMode};
+
 use syntax::ast;
 use syntax_pos::Span;
 
@@ -91,9 +95,9 @@ fn find_dead_unwinds<'a, 'tcx>(
     // reach cleanup blocks, which can't have unwind edges themselves.
     let mut dead_unwinds = IdxSetBuf::new_empty(mir.basic_blocks().len());
     let flow_inits =
-        super::do_dataflow(tcx, mir, id, &[], &dead_unwinds,
-                           MaybeInitializedLvals::new(tcx, mir, &env),
-                           |bd, p| &bd.move_data().move_paths[p]);
+        do_dataflow(tcx, mir, id, &[], &dead_unwinds,
+                    MaybeInitializedLvals::new(tcx, mir, &env),
+                    |bd, p| &bd.move_data().move_paths[p]);
     for (bb, bb_data) in mir.basic_blocks().iter_enumerated() {
         match bb_data.terminator().kind {
             TerminatorKind::Drop { ref location, unwind: Some(_), .. } |
