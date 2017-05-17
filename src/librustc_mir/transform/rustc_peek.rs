@@ -16,7 +16,7 @@ use syntax::ast;
 use syntax_pos::Span;
 
 use rustc::mir::{self, Location, Mir};
-use rustc::mir::transform::{MirPass, MirSource, Pass};
+use rustc::mir::transform::{MirPass, MirSource};
 use rustc::ty::{self, TyCtxt};
 
 use rustc_data_structures::indexed_vec::Idx;
@@ -30,11 +30,9 @@ use has_rustc_mir_with;
 
 pub struct SanityCheck;
 
-impl Pass for SanityCheck { }
-
-impl<'tcx> MirPass<'tcx> for SanityCheck {
-    fn run_pass<'a>(&mut self, tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                    src: MirSource, mir: &mut Mir<'tcx>) {
+impl MirPass for SanityCheck {
+    fn run_pass<'a, 'tcx>(&self, tcx: TyCtxt<'a, 'tcx, 'tcx>,
+                          src: MirSource, mir: &mut Mir<'tcx>) {
         let id = src.item_id();
         let def_id = tcx.hir.local_def_id(id);
         debug!("running rustc_peek::SanityCheck on {}", tcx.item_path_str(def_id));
