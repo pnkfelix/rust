@@ -252,24 +252,6 @@ fn lvalue_contents_drop_state_cannot_differ<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx
     }
 }
 
-fn on_lookup_result_bits<'a, 'tcx, F>(
-    tcx: TyCtxt<'a, 'tcx, 'tcx>,
-    mir: &Mir<'tcx>,
-    move_data: &MoveData<'tcx>,
-    lookup_result: LookupResult,
-    each_child: F)
-    where F: FnMut(MovePathIndex)
-{
-    match lookup_result {
-        LookupResult::Parent(..) => {
-            // access to untracked value - do not touch children
-        }
-        LookupResult::Exact(e) => {
-            on_all_children_bits(tcx, mir, move_data, e, each_child)
-        }
-    }
-}
-
 fn on_all_children_bits<'a, 'tcx, F>(
     tcx: TyCtxt<'a, 'tcx, 'tcx>,
     mir: &Mir<'tcx>,
@@ -311,27 +293,6 @@ fn on_all_children_bits<'a, 'tcx, F>(
     on_all_children_bits(tcx, mir, move_data, move_path_index, &mut each_child);
 }
 
-fn on_all_drop_children_bits<'a, 'tcx, F>(
-    tcx: TyCtxt<'a, 'tcx, 'tcx>,
-    mir: &Mir<'tcx>,
-    ctxt: &MoveDataParamEnv<'tcx>,
-    path: MovePathIndex,
-    mut each_child: F)
-    where F: FnMut(MovePathIndex)
-{
-    on_all_children_bits(tcx, mir, &ctxt.move_data, path, |child| {
-        let lvalue = &ctxt.move_data.move_paths[path].lvalue;
-        let ty = lvalue.ty(mir, tcx).to_ty(tcx);
-        debug!("on_all_drop_children_bits({:?}, {:?} : {:?})", path, lvalue, ty);
-
-        if ty.needs_drop(tcx, ctxt.param_env) {
-            each_child(child);
-        } else {
-            debug!("on_all_drop_children_bits - skipping")
-        }
-    })
-}
-
 fn drop_flag_effects_for_function_entry<'a, 'tcx, F>(
     tcx: TyCtxt<'a, 'tcx, 'tcx>,
     mir: &Mir<'tcx>,
@@ -346,68 +307,5 @@ fn drop_flag_effects_for_function_entry<'a, 'tcx, F>(
         on_lookup_result_bits(tcx, mir, move_data,
                               lookup_result,
                               |moi| callback(moi, DropFlagState::Present));
-    }
-}
-
-fn drop_flag_effects_for_location<'a, 'tcx, F>(
-    tcx: TyCtxt<'a, 'tcx, 'tcx>,
-    mir: &Mir<'tcx>,
-    ctxt: &MoveDataParamEnv<'tcx>,
-    loc: Location,
-    mut callback: F)
-    where F: FnMut(MovePathIndex, DropFlagState)
-{
-    let move_data = &ctxt.move_data;
-    let param_env = ctxt.param_env;
-    debug!("drop_flag_effects_for_location({:?})", loc);
-
-    // first, move out of the RHS
-    for mi in &move_data.loc_map[loc] {
-        let path = mi.move_path_index(move_data);
-        debug!("moving out of path {:?}", move_data.move_paths[path]);
-
-        // don't move out of non-Copy things
-        let lvalue = &move_data.move_paths[path].lvalue;
-        let ty = lvalue.ty(mir, tcx).to_ty(tcx);
-        if !ty.moves_by_default(tcx, param_env, DUMMY_SP) {
-            continue;
-        }
-
-        on_all_children_bits(tcx, mir, move_data,
-                             path,
-                             |moi| callback(moi, DropFlagState::Absent))
-    }
-
-    let block = &mir[loc.block];
-    match block.statements.get(loc.statement_index) {
-        Some(stmt) => match stmt.kind {
-            mir::StatementKind::SetDiscriminant{ .. } => {
-                span_bug!(stmt.source_info.span, "SetDiscrimant should not exist during borrowck");
-            }
-            mir::StatementKind::Assign(ref lvalue, _) => {
-                debug!("drop_flag_effects: assignment {:?}", stmt);
-                 on_lookup_result_bits(tcx, mir, move_data,
-                                       move_data.rev_lookup.find(lvalue),
-                                       |moi| callback(moi, DropFlagState::Present))
-            }
-            mir::StatementKind::StorageLive(_) |
-            mir::StatementKind::StorageDead(_) |
-            mir::StatementKind::InlineAsm { .. } |
-            mir::StatementKind::EndRegion(_) |
-            mir::StatementKind::Nop => {}
-        },
-        None => {
-            debug!("drop_flag_effects: replace {:?}", block.terminator());
-            match block.terminator().kind {
-                mir::TerminatorKind::DropAndReplace { ref location, .. } => {
-                    on_lookup_result_bits(tcx, mir, move_data,
-                                          move_data.rev_lookup.find(location),
-                                          |moi| callback(moi, DropFlagState::Present))
-                }
-                _ => {
-                    // other terminators do not contain move-ins
-                }
-            }
-        }
     }
 }
