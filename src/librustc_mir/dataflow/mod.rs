@@ -31,6 +31,8 @@ pub use self::impls::{MovingOutStatements};
 pub use self::impls::{MoveDataParamEnv};
 pub use self::impls::drop_flag_effects;
 
+pub use self::indexes::{MovePathIndex, MoveOutIndex, BorrowIndex};
+
 pub mod borrows;
 pub mod move_paths;
 
