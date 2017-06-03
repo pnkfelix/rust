@@ -1,4 +1,4 @@
-// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2017 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,14 +8,17 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// error-pattern: `allocator3` cannot depend on a crate that needs an allocator
-// aux-build:needs_allocator.rs
-// aux-build:allocator3.rs
+#![feature(global_allocator)]
 
-// The needs_allocator crate is a dependency of the allocator crate allocator3,
-// which is not allowed
+extern crate custom;
 
-extern crate allocator3;
+use std::sync::atomic::{ATOMIC_USIZE_INIT, Ordering};
 
-fn main() {
+use custom::A;
+
+#[global_allocator]
+static ALLOCATOR: A = A(ATOMIC_USIZE_INIT);
+
+pub fn get() -> usize {
+    ALLOCATOR.0.load(Ordering::SeqCst)
 }

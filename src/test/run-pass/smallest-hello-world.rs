@@ -21,7 +21,8 @@ extern crate alloc_system;
 extern { fn puts(s: *const u8); }
 extern "rust-intrinsic" { fn transmute<T, U>(t: T) -> U; }
 
-#[lang = "eh_personality"] extern fn eh_personality() {}
+#[no_mangle]
+#[lang = "eh_personality"] pub extern fn rust_eh_personality() {}
 #[lang = "eh_unwind_resume"] extern fn eh_unwind_resume() {}
 #[lang = "panic_fmt"] fn panic_fmt() -> ! { loop {} }
 #[no_mangle] pub extern fn rust_eh_register_frames () {}

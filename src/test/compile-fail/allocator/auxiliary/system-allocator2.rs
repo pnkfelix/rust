@@ -1,4 +1,4 @@
-// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2016 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -10,10 +10,10 @@
 
 // no-prefer-dynamic
 
-#![feature(alloc_system)]
+#![feature(global_allocator, allocator_api)]
+#![crate_type = "rlib"]
 
-extern crate alloc_system;
+use std::heap::System;
 
-fn main() {
-    println!("{:?}", Box::new(3));
-}
+#[global_allocator]
+static A: System = System;

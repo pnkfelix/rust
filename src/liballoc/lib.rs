@@ -86,7 +86,7 @@
 #![cfg_attr(not(test), feature(sort_unstable))]
 #![cfg_attr(not(test), feature(str_checked_slicing))]
 #![cfg_attr(test, feature(rand, test))]
-#![feature(allocator)]
+#![cfg_attr(stage0, feature(allocator))]
 #![feature(allow_internal_unstable)]
 #![feature(box_patterns)]
 #![feature(box_syntax)]
@@ -125,6 +125,7 @@
 #![feature(unicode)]
 #![feature(unique)]
 #![feature(unsize)]
+#![cfg_attr(not(stage0), feature(allocator_internals))]
 
 #![cfg_attr(not(test), feature(fused, fn_traits, placement_new_protocol))]
 #![cfg_attr(test, feature(test, box_heap))]
@@ -169,7 +170,6 @@ mod boxed_test;
 pub mod arc;
 pub mod rc;
 pub mod raw_vec;
-pub mod oom;
 
 // collections modules
 pub mod binary_heap;
@@ -260,8 +260,6 @@ trait SpecExtend<I: IntoIterator> {
     /// Extends `self` with the contents of the given iterator.
     fn spec_extend(&mut self, iter: I);
 }
-
-pub use oom::oom;
 
 #[doc(no_inline)]
 pub use binary_heap::BinaryHeap;

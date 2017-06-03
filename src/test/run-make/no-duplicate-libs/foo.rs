@@ -9,11 +9,15 @@
 // except according to those terms.
 
 #![feature(lang_items, alloc_system, compiler_builtins_lib)]
+#![feature(global_allocator, allocator_api)]
 #![no_std]
 #![crate_type = "dylib"]
 
 extern crate alloc_system;
 extern crate compiler_builtins;
+
+#[global_allocator]
+static A: alloc_system::System = alloc_system::System;
 
 #[no_mangle]
 pub extern fn foo() {}

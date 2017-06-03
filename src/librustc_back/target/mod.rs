@@ -375,9 +375,8 @@ pub struct TargetOptions {
     /// `eh_unwind_resume` lang item.
     pub custom_unwind_resume: bool,
 
-    /// Default crate for allocation symbols to link against
-    pub lib_allocation_crate: String,
-    pub exe_allocation_crate: String,
+    /// If necessary, a different crate to link exe allocators by default
+    pub exe_allocation_crate: Option<String>,
 
     /// Flag indicating whether ELF TLS (e.g. #[thread_local]) is available for
     /// this target.
@@ -453,8 +452,7 @@ impl Default for TargetOptions {
             late_link_args: LinkArgs::new(),
             archive_format: "gnu".to_string(),
             custom_unwind_resume: false,
-            lib_allocation_crate: "alloc_system".to_string(),
-            exe_allocation_crate: "alloc_system".to_string(),
+            exe_allocation_crate: None,
             allow_asm: true,
             has_elf_tls: false,
             obj_is_bitcode: false,
@@ -662,8 +660,7 @@ impl Target {
         key!(archive_format);
         key!(allow_asm, bool);
         key!(custom_unwind_resume, bool);
-        key!(lib_allocation_crate);
-        key!(exe_allocation_crate);
+        key!(exe_allocation_crate, optional);
         key!(has_elf_tls, bool);
         key!(obj_is_bitcode, bool);
         key!(no_integrated_as, bool);
@@ -837,7 +834,6 @@ impl ToJson for Target {
         target_option_val!(archive_format);
         target_option_val!(allow_asm);
         target_option_val!(custom_unwind_resume);
-        target_option_val!(lib_allocation_crate);
         target_option_val!(exe_allocation_crate);
         target_option_val!(has_elf_tls);
         target_option_val!(obj_is_bitcode);
@@ -857,10 +853,10 @@ impl ToJson for Target {
     }
 }
 
-fn maybe_jemalloc() -> String {
+fn maybe_jemalloc() -> Option<String> {
     if cfg!(feature = "jemalloc") {
-        "alloc_jemalloc".to_string()
+        Some("alloc_jemalloc".to_string())
     } else {
-        "alloc_system".to_string()
+        None
     }
 }
