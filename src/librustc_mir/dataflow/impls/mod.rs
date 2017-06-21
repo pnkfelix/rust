@@ -35,7 +35,7 @@ pub mod drop_flag_effects;
 
 pub struct MoveDataParamEnv<'tcx> {
     pub(crate) move_data: MoveData<'tcx>,
-    pub(crate) param_env: ty::ParameterEnvironment<'tcx>,
+    pub(crate) param_env: ty::ParamEnv<'tcx>,
 }
 
 /// `MaybeInitializedLvals` tracks all l-values that might be
