@@ -11,8 +11,7 @@
 //! This pass borrow-checks the MIR to (further) ensure it is not broken.
 
 use rustc::infer::{InferCtxt};
-use rustc::traits::{Reveal};
-use rustc::ty::{self, TyCtxt};
+use rustc::ty::{self, TyCtxt, ParamEnv};
 use rustc::mir::{AssertMessage, BasicBlock, BorrowKind, Location, Lvalue};
 use rustc::mir::{Mir, Mutability, Operand, Projection, ProjectionElem, Rvalue};
 use rustc::mir::{Statement, StatementKind, Terminator, TerminatorKind};
@@ -66,29 +65,31 @@ fn borrowck_mir<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, src: MirSource, mir: &Mir
     debug!("borrowck_mir({}) UNIMPLEMENTED", tcx.item_path_str(def_id));
 
     let attributes = tcx.get_attrs(def_id);
-    let param_env = ty::ParameterEnvironment::for_item(tcx, id);
-    tcx.infer_ctxt(param_env.clone(), Reveal::UserFacing).enter(|_infcx| {
+    let param_env = tcx.param_env(def_id);
+    tcx.infer_ctxt().enter(|_infcx| {
 
-        let move_data = MoveData::gather_moves(mir, tcx, &param_env);
+        let move_data = MoveData::gather_moves(mir, tcx, param_env);
         let mdpe = MoveDataParamEnv { move_data: move_data, param_env: param_env };
-        let flow_borrows = do_dataflow(tcx, mir, id, &attributes, Borrows::new(tcx, mir),
+        let dead_unwinds = IdxSetBuf::new_empty(mir.basic_blocks().len());
+        let flow_borrows = do_dataflow(tcx, mir, id, &attributes, &dead_unwinds,
+                                       Borrows::new(tcx, mir),
                                        |bd, i| bd.location(i));
-        let flow_inits = do_dataflow(tcx, mir, id, &attributes, MaybeInitializedLvals::new(tcx, mir, &mdpe),
+        let flow_inits = do_dataflow(tcx, mir, id, &attributes, &dead_unwinds,
+                                     MaybeInitializedLvals::new(tcx, mir, &mdpe),
                                      |bd, i| &bd.move_data().move_paths[i]);
-        let flow_uninits = do_dataflow(tcx, mir, id, &attributes, MaybeUninitializedLvals::new(tcx, mir, &mdpe),
+        let flow_uninits = do_dataflow(tcx, mir, id, &attributes, &dead_unwinds,
+                                       MaybeUninitializedLvals::new(tcx, mir, &mdpe),
                                        |bd, i| &bd.move_data().move_paths[i]);
-        let flow_move_outs = do_dataflow(tcx, mir, id, &attributes, MovingOutStatements::new(tcx, mir, &mdpe),
+        let flow_move_outs = do_dataflow(tcx, mir, id, &attributes, &dead_unwinds,
+                                         MovingOutStatements::new(tcx, mir, &mdpe),
                                          |bd, i| &bd.move_data().moves[i]);
-
-        // FIXME: would be better to revise interface to avoid clone (and fake_infer_ctxt in general?)
-        let _fake_infer_ctxt =
-            tcx.borrowck_fake_infer_ctxt((tcx.item_tables(def_id), mdpe.param_env.clone()));
 
         let mut mbcx = MirBorrowckCtxt {
             tcx: tcx,
             mir: mir,
             node_id: id,
             move_data: &mdpe.move_data,
+            param_env: param_env,
             fake_infer_ctxt: &_infcx,
         };
 
@@ -109,6 +110,7 @@ pub struct MirBorrowckCtxt<'c, 'b, 'a: 'b+'c, 'gcx: 'a+'tcx, 'tcx: 'a> {
     mir: &'b Mir<'gcx>,
     node_id: ast::NodeId,
     move_data: &'b MoveData<'gcx>,
+    param_env: ParamEnv<'tcx>,
     fake_infer_ctxt: &'c InferCtxt<'c, 'gcx, 'tcx>,
 }
 
@@ -363,8 +365,12 @@ impl<'c, 'b, 'a: 'b+'c, 'gcx, 'tcx: 'a> MirBorrowckCtxt<'c, 'b, 'a, 'gcx, 'tcx> 
                 self.consume_operand(context, Consume, (operand2, span), flow_state);
             }
 
-            Rvalue::Box(_ty) => {
-                // creates an uninitialized box; no borrowck effect.
+            Rvalue::NullaryOp(_op, _ty) => {
+                // nullary ops take no dynamic input; no borrowck effect.
+                //
+                // FIXME: is above actually true? Do we want to track
+                // the fact that uninitialized data can be created via
+                // `NullOp::Box`?
             }
 
             Rvalue::Aggregate(ref _aggregate_kind, ref operands) => {
@@ -394,7 +400,8 @@ impl<'c, 'b, 'a: 'b+'c, 'gcx, 'tcx: 'a> MirBorrowckCtxt<'c, 'b, 'a, 'gcx, 'tcx> 
                       flow_state: &InProgress<'b, 'gcx>) {
         let lvalue = lvalue_span.0;
         let ty = lvalue.ty(self.mir, self.tcx).to_ty(self.tcx);
-        let moves_by_default = self.fake_infer_ctxt.type_moves_by_default(ty, DUMMY_SP);
+        let moves_by_default =
+            self.fake_infer_ctxt.type_moves_by_default(self.param_env, ty, DUMMY_SP);
         if moves_by_default {
             // move of lvalue: check if this is move of already borrowed path
             self.each_borrow_involving_path(
