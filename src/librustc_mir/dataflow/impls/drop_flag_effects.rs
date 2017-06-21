@@ -43,7 +43,6 @@ pub fn drop_flag_effects_for_location<'a, 'tcx, F>(
     where F: FnMut(MovePathIndex, DropFlagState)
 {
     let move_data = &ctxt.move_data;
-    let param_env = &ctxt.param_env;
     debug!("drop_flag_effects_for_location({:?})", loc);
 
     // first, move out of the RHS
@@ -54,7 +53,7 @@ pub fn drop_flag_effects_for_location<'a, 'tcx, F>(
         // don't move out of non-Copy things
         let lvalue = &move_data.move_paths[path].lvalue;
         let ty = lvalue.ty(mir, tcx).to_ty(tcx);
-        if !ty.moves_by_default(tcx, param_env, DUMMY_SP) {
+        if !ty.moves_by_default(tcx, ctxt.param_env, DUMMY_SP) {
             continue;
         }
 
@@ -112,7 +111,7 @@ fn propagate_assignment<'a, 'tcx, F>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     // A Box rvalues will not completely initialize the destination,
     // but the others will (assuming all sub-operands are themselves
     // already initialized).
-    if let mir::Rvalue::Box(_ty) = *rvalue {
+    if let mir::Rvalue::NullaryOp(mir::NullOp::Box, _ty) = *rvalue {
         // just initialize the `path` alone, not its children.
         debug!("drop_flag_effects: assignment lvalue Box-top callback \
                 Present on mpi: {:?} lvalue: {:?}",
@@ -200,7 +199,7 @@ pub fn on_all_drop_children_bits<'a, 'tcx, F>(
         let ty = lvalue.ty(mir, tcx).to_ty(tcx);
         debug!("on_all_drop_children_bits({:?}, {:?} : {:?})", path, lvalue, ty);
 
-        if ty.needs_drop(tcx, &ctxt.param_env) {
+        if ty.needs_drop(tcx, ctxt.param_env) {
             each_child(child);
         } else {
             debug!("on_all_drop_children_bits - skipping")
