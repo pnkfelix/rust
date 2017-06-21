@@ -11,7 +11,8 @@
 use rustc::middle::region::CodeExtent;
 use rustc::mir::{self, Location, Mir};
 use rustc::mir::visit::Visitor;
-use rustc::ty::{self, TyCtxt};
+use rustc::ty::TyCtxt;
+use rustc::ty::RegionKind::ReScope;
 use rustc::util::nodemap::{FxHashMap, FxHashSet};
 
 use rustc_data_structures::bitslice::{BitwiseOperator};
@@ -55,7 +56,7 @@ impl<'a, 'tcx> Borrows<'a, 'tcx> {
             fn visit_rvalue(&mut self,
                             rvalue: &mir::Rvalue<'tcx>,
                             location: mir::Location) {
-                if let mir::Rvalue::Ref(&ty::Region::ReScope(extent), kind, ref lvalue) = *rvalue {
+                if let mir::Rvalue::Ref(&ReScope(extent), kind, ref lvalue) = *rvalue {
                     let borrow = BorrowData {
                         location: location, kind: kind, region: extent, lvalue: lvalue.clone(),
                     };
@@ -96,19 +97,17 @@ impl<'a, 'tcx> BitDenotation for Borrows<'a, 'tcx> {
             panic!("could not find statement at location {:?}");
         });
         match stmt.kind {
-            mir::StatementKind::EndRegion(ref extents) => {
-                for ext in extents {
-                    for idx in self.ext_map.get(ext).unwrap_or_else(|| {
-                        panic!("could not find BorrowIndexs for code-extent {:?}", ext);
-                    })
-                    {
-                        sets.kill(&idx);
-                    }
+            mir::StatementKind::EndRegion(ref extent) => {
+                for idx in self.ext_map.get(extent).unwrap_or_else(|| {
+                    panic!("could not find BorrowIndexs for code-extent {:?}", extent);
+                })
+                {
+                    sets.kill(&idx);
                 }
             }
 
             mir::StatementKind::Assign(_, ref rhs) => {
-                if let mir::Rvalue::Ref(&ty::Region::ReScope(extent), _, _) = *rhs {
+                if let mir::Rvalue::Ref(&ReScope(extent), _, _) = *rhs {
                     let loc = location;
                     let idx = self.loc_map.get(&loc).unwrap_or_else(|| {
                         panic!("could not find BorrowIndex for location {:?}", loc);
