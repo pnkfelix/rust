@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use rustc::mir::{BasicBlock, Local, Location, Lvalue, Mir};
-use rustc::ty::{TyCtxt, ParameterEnvironment};
+use rustc::ty::{TyCtxt, ParamEnv};
 use rustc::util::nodemap::FxHashMap;
 
 use rustc_data_structures::indexed_vec::{IndexVec};
@@ -166,7 +166,7 @@ pub enum LookupResult {
 impl<'a, 'tcx> MoveData<'tcx> {
     pub fn gather_moves(mir: &Mir<'tcx>,
                         tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                        param_env: &ParameterEnvironment<'tcx>)
+                        param_env: ParamEnv<'tcx>)
                         -> Self {
         gather_moves(mir, tcx, param_env)
     }
@@ -174,7 +174,7 @@ impl<'a, 'tcx> MoveData<'tcx> {
 
 fn gather_moves<'a, 'tcx>(mir: &Mir<'tcx>,
                           tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                          param_env: &ParameterEnvironment<'tcx>)
+                          param_env: ParamEnv<'tcx>)
                           -> MoveData<'tcx> {
     let mut builder = MoveDataBuilder::new(mir, tcx, param_env);
 
