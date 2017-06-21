@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use rustc::ty::{self, TyCtxt, ParameterEnvironment};
+use rustc::ty::{self, TyCtxt};
 use rustc::mir::*;
 use rustc::util::nodemap::FxHashMap;
 
@@ -22,7 +22,6 @@ use syntax::codemap::DUMMY_SP;
 
 use std::collections::hash_map::Entry;
 use std::mem;
-use std::ops::{Index, IndexMut};
 
 pub(super) struct MoveDataBuilder<'a, 'tcx: 'a> {
     mir: &'a Mir<'tcx>,
