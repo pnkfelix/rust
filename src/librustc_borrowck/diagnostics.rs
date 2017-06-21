@@ -156,51 +156,6 @@ x = Foo { a: 2 };
 ```
 "##,
 
-E0384: r##"
-This error occurs when an attempt is made to reassign an immutable variable.
-For example:
-
-```compile_fail,E0384
-fn main() {
-    let x = 3;
-    x = 5; // error, reassignment of immutable variable
-}
-```
-
-By default, variables in Rust are immutable. To fix this error, add the keyword
-`mut` after the keyword `let` when declaring the variable. For example:
-
-```
-fn main() {
-    let mut x = 3;
-    x = 5;
-}
-```
-"##,
-
-||||||| merged common ancestors
-E0384: r##"
-This error occurs when an attempt is made to reassign an immutable variable.
-For example:
-
-```compile_fail,E0384
-fn main() {
-    let x = 3;
-    x = 5; // error, reassignment of immutable variable
-}
-```
-
-By default, variables in Rust are immutable. To fix this error, add the keyword
-`mut` after the keyword `let` when declaring the variable. For example:
-
-```
-fn main() {
-    let mut x = 3;
-    x = 5;
-}
-```
-"##,
-
 /*E0386: r##"
 This error occurs when an attempt is made to mutate the target of a mutable
 reference stored inside an immutable container.
