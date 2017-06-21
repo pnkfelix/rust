@@ -19,6 +19,7 @@ use rustc::mir::{self, Location, Mir};
 use rustc::mir::transform::{MirPass, MirSource};
 use rustc::ty::{self, TyCtxt};
 
+use rustc_data_structures::indexed_set::IdxSetBuf;
 use rustc_data_structures::indexed_vec::Idx;
 
 use dataflow::{do_dataflow};
@@ -37,17 +38,21 @@ impl MirPass for SanityCheck {
         let def_id = tcx.hir.local_def_id(id);
         debug!("running rustc_peek::SanityCheck on {}", tcx.item_path_str(def_id));
         let attributes = tcx.get_attrs(def_id);
-        let param_env = ty::ParameterEnvironment::for_item(tcx, id);
-        let move_data = MoveData::gather_moves(mir, tcx, &param_env);
+        let param_env = tcx.param_env(def_id);
+        let move_data = MoveData::gather_moves(mir, tcx, param_env);
         let mdpe = MoveDataParamEnv { move_data: move_data, param_env: param_env };
+        let dead_unwinds = IdxSetBuf::new_empty(mir.basic_blocks().len());
         let flow_inits =
-            do_dataflow(tcx, mir, id, &attributes, MaybeInitializedLvals::new(tcx, mir, &mdpe),
+            do_dataflow(tcx, mir, id, &attributes, &dead_unwinds,
+                        MaybeInitializedLvals::new(tcx, mir, &mdpe),
                         |bd, i| &bd.move_data().move_paths[i]);
         let flow_uninits =
-            do_dataflow(tcx, mir, id, &attributes, MaybeUninitializedLvals::new(tcx, mir, &mdpe),
+            do_dataflow(tcx, mir, id, &attributes, &dead_unwinds,
+                        MaybeUninitializedLvals::new(tcx, mir, &mdpe),
                         |bd, i| &bd.move_data().move_paths[i]);
         let flow_def_inits =
-            do_dataflow(tcx, mir, id, &attributes, DefinitelyInitializedLvals::new(tcx, mir, &mdpe),
+            do_dataflow(tcx, mir, id, &attributes, &dead_unwinds,
+                        DefinitelyInitializedLvals::new(tcx, mir, &mdpe),
                         |bd, i| &bd.move_data().move_paths[i]);
 
         if has_rustc_mir_with(&attributes, "rustc_peek_maybe_init").is_some() {
