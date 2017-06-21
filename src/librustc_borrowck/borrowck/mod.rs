@@ -99,7 +99,6 @@ fn borrowck<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, owner_def_id: DefId) {
     }
 
     let body_id = tcx.hir.body_owned_by(owner_id);
-    let attributes = tcx.get_attrs(owner_def_id);
     let tables = tcx.typeck_tables_of(owner_def_id);
     let region_maps = tcx.region_maps(owner_def_id);
     let mut bccx = &mut BorrowckCtxt { tcx, tables, region_maps, owner_def_id };
@@ -554,8 +553,8 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
                                                           verb,
                                                           &self.loan_path_to_string(lp),
                                                           Origin::Ast)
-                    .span_label(use_span, &format!("use of possibly uninitialized `{}`",
-                                                   self.loan_path_to_string(lp)))
+                    .span_label(use_span, format!("use of possibly uninitialized `{}`",
+                                                  self.loan_path_to_string(lp)))
                     .emit();
                 return;
             }
@@ -685,7 +684,7 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
         let mut err = self.cannot_reassign_immutable(span,
                                                      &self.loan_path_to_string(lp),
                                                      Origin::Ast);
-        err.span_label(span, &format!("re-assignment of immutable variable"));
+        err.span_label(span, format!("re-assignment of immutable variable"));
         if span != assign.span {
             err.span_label(assign.span, format!("first assignment to `{}`",
                                               self.loan_path_to_string(lp)));
