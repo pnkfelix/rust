@@ -14,10 +14,10 @@ use dataflow::drop_flag_effects::{drop_flag_effects_for_function_entry};
 use dataflow::{DataflowResults, do_dataflow};
 use dataflow::{MoveDataParamEnv, MaybeInitializedLvals, MaybeUninitializedLvals};
 use dataflow::MovePathIndex;
-use dataflow::move_paths::{MoveData, LookupResult};
+use dataflow::move_paths::{MoveData, HasMoveData, LookupResult};
 
 use util::patch::MirPatch;
-use util::elaborate_drops::{DropFlagState, elaborate_drop};
+use util::elaborate_drops::{DropFlagState, Unwind, elaborate_drop};
 use util::elaborate_drops::{DropElaborator, DropStyle, DropFlagMode};
 
 use rustc::ty::{self, TyCtxt};
