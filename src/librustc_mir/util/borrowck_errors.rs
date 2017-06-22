@@ -39,7 +39,7 @@ pub trait BorrowckErrors {
                                  -> DiagnosticBuilder
     {
         struct_span_err!(self, span, E0505,
-                         "cannot move out of `{}` becauase it is borrowed ({})",
+                         "cannot move out of `{}` because it is borrowed ({})",
                          desc, o)
     }
 
