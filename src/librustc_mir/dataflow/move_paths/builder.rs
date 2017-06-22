@@ -23,11 +23,32 @@ use syntax::codemap::DUMMY_SP;
 use std::collections::hash_map::Entry;
 use std::mem;
 
+struct MoveErrorCollector<'tcx> {
+    errors: Vec<MoveError<'tcx>>
+}
+
+impl<'tcx> MoveErrorCollector<'tcx> {
+    fn new() -> Self {
+        MoveErrorCollector { errors: Vec::new() }
+    }
+
+    fn add_error(&mut self, error: MoveError<'tcx>) {
+        self.errors.push(error);
+    }
+}
+
+pub struct MoveError<'tcx> {
+    #[allow(dead_code)] // FIXME: someone should be printing out the gathered errors
+    move_from: Lvalue<'tcx>,
+    // move_to: Option<MovePlace<'tcx>>,
+}
+
 pub(super) struct MoveDataBuilder<'a, 'tcx: 'a> {
     mir: &'a Mir<'tcx>,
     tcx: TyCtxt<'a, 'tcx, 'tcx>,
     param_env: ty::ParamEnv<'tcx>,
     data: MoveData<'tcx>,
+    move_error_collector: MoveErrorCollector<'tcx>,
 }
 
 impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
@@ -42,6 +63,7 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
             mir: mir,
             tcx: tcx,
             param_env: param_env,
+            move_error_collector: MoveErrorCollector::new(),
             data: MoveData {
                 moves: IndexVec::new(),
                 loc_map: LocationMap::new(mir),
@@ -280,11 +302,10 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
         let path = match self.move_path_for(lval) {
             Ok(path) | Err(MovePathError::UnionMove { path }) => path,
             Err(MovePathError::IllegalMove) => {
-                // Moving out of a bad path. Eventually, this should be a MIR
-                // borrowck error instead of a bug.
-                span_bug!(self.mir.span,
-                          "Broken MIR: moving out of lvalue {:?}: {:?} at {:?}",
-                          lval, lv_ty, loc);
+                self.move_error_collector.add_error(MoveError {
+                    move_from: lval.clone(),
+                });
+                return;
             }
         };
         let move_out = self.data.moves.push(MoveOut { path: path, source: loc });
