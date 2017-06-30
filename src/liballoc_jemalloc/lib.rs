@@ -118,9 +118,9 @@ mod contents {
         let flags = align_to_flags(align);
         let ptr = mallocx(size as size_t, flags) as *mut u8;
         if ptr.is_null() {
-            let layout = Layout::from_size_align_unchecked(size, align);
+            // let layout = Layout::from_size_align_unchecked(size, align);
             ptr::write(err as *mut AllocErr,
-                       AllocErr::Exhausted { request: layout });
+                       AllocErr);
         }
         ptr
     }
@@ -166,16 +166,16 @@ mod contents {
                                        err: *mut u8) -> *mut u8 {
         if new_align != old_align {
             ptr::write(err as *mut AllocErr,
-                       AllocErr::Unsupported { details: "can't change alignments" });
+                       AllocErr);
             return 0 as *mut u8
         }
 
         let flags = align_to_flags(new_align);
         let ptr = rallocx(ptr as *mut c_void, new_size, flags) as *mut u8;
         if ptr.is_null() {
-            let layout = Layout::from_size_align_unchecked(new_size, new_align);
+            // let layout = Layout::from_size_align_unchecked(new_size, new_align);
             ptr::write(err as *mut AllocErr,
-                       AllocErr::Exhausted { request: layout });
+                       AllocErr);
         }
         ptr
     }
@@ -192,9 +192,9 @@ mod contents {
             mallocx(size as size_t, flags) as *mut u8
         };
         if ptr.is_null() {
-            let layout = Layout::from_size_align_unchecked(size, align);
+            // let layout = Layout::from_size_align_unchecked(size, align);
             ptr::write(err as *mut AllocErr,
-                       AllocErr::Exhausted { request: layout });
+                       AllocErr);
         }
         ptr
     }

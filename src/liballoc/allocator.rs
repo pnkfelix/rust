@@ -328,39 +328,20 @@ impl Layout {
 /// something wrong when combining the given input arguments with this
 /// allocator.
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub enum AllocErr {
-    /// Error due to hitting some resource limit or otherwise running
-    /// out of memory. This condition strongly implies that *some*
-    /// series of deallocations would allow a subsequent reissuing of
-    /// the original allocation request to succeed.
-    Exhausted { request: Layout },
-
-    /// Error due to allocator being fundamentally incapable of
-    /// satisfying the original request. This condition implies that
-    /// such an allocation request will never succeed on the given
-    /// allocator, regardless of environment, memory pressure, or
-    /// other contextual conditions.
-    ///
-    /// For example, an allocator that does not support requests for
-    /// large memory blocks might return this error variant.
-    Unsupported { details: &'static str },
-}
+pub struct AllocErr;
 
 impl AllocErr {
-    pub fn invalid_input(details: &'static str) -> Self {
-        AllocErr::Unsupported { details: details }
+    pub fn invalid_input(_details: &'static str) -> Self {
+        AllocErr
     }
     pub fn is_memory_exhausted(&self) -> bool {
-        if let AllocErr::Exhausted { .. } = *self { true } else { false }
+        true
     }
     pub fn is_request_unsupported(&self) -> bool {
-        if let AllocErr::Unsupported { .. } = *self { true } else { false }
+        false
     }
     pub fn description(&self) -> &str {
-        match *self {
-            AllocErr::Exhausted { .. } => "allocator memory exhausted",
-            AllocErr::Unsupported { .. } => "unsupported allocator request",
-        }
+        "allocator memory exhausted"
     }
 }
 
