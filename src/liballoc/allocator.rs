@@ -207,6 +207,7 @@ impl Layout {
     /// of each element in the array.
     ///
     /// On arithmetic overflow, returns `None`.
+    #[inline]
     pub fn repeat(&self, n: usize) -> Option<(Self, usize)> {
         let padded_size = match self.size.checked_add(self.padding_needed_for(self.align)) {
             None => return None,
@@ -311,6 +312,7 @@ impl Layout {
     /// Creates a layout describing the record for a `[T; n]`.
     ///
     /// On arithmetic overflow, returns `None`.
+    #[inline]
     pub fn array<T>(n: usize) -> Option<Self> {
         Layout::new::<T>()
             .repeat(n)
