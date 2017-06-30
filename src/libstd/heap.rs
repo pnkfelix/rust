@@ -34,7 +34,7 @@ mod default_lib_allocator {
                                      err: *mut u8) -> *mut u8 {
         let layout = Layout::from_size_align_unchecked(size, align);
         match System.alloc(layout) {
-            Ok(p) => p,
+            Ok(p) => p.get(),
             Err(e) => {
                 ptr::write(err as *mut AllocErr, e);
                 0 as *mut u8
@@ -77,7 +77,7 @@ mod default_lib_allocator {
         let old_layout = Layout::from_size_align_unchecked(old_size, old_align);
         let new_layout = Layout::from_size_align_unchecked(new_size, new_align);
         match System.realloc(ptr, old_layout, new_layout) {
-            Ok(p) => p,
+            Ok(p) => p.get(),
             Err(e) => {
                 ptr::write(err as *mut AllocErr, e);
                 0 as *mut u8
@@ -92,7 +92,7 @@ mod default_lib_allocator {
                                             err: *mut u8) -> *mut u8 {
         let layout = Layout::from_size_align_unchecked(size, align);
         match System.alloc_zeroed(layout) {
-            Ok(p) => p,
+            Ok(p) => p.get(),
             Err(e) => {
                 ptr::write(err as *mut AllocErr, e);
                 0 as *mut u8
@@ -110,7 +110,7 @@ mod default_lib_allocator {
         match System.alloc_excess(layout) {
             Ok(p) => {
                 *excess = p.1;
-                p.0
+                (p.0).get()
             }
             Err(e) => {
                 ptr::write(err as *mut AllocErr, e);
@@ -133,7 +133,7 @@ mod default_lib_allocator {
         match System.realloc_excess(ptr, old_layout, new_layout) {
             Ok(p) => {
                 *excess = p.1;
-                p.0
+                (p.0).get()
             }
             Err(e) => {
                 ptr::write(err as *mut AllocErr, e);

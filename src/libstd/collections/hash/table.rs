@@ -782,7 +782,7 @@ impl<K, V> RawTable<K, V> {
                 "capacity overflow");
 
         let buffer = Heap.alloc(Layout::from_size_align(size, alignment).unwrap())
-            .unwrap_or_else(|e| Heap.oom(e));
+            .unwrap_or_else(|e| Heap.oom(e)).get();
 
         let hashes = buffer.offset(hash_offset as isize) as *mut HashUint;
 

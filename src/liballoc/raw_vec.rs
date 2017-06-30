@@ -98,7 +98,7 @@ impl<T, A: Alloc> RawVec<T, A> {
                     a.alloc(Layout::from_size_align(alloc_size, align).unwrap())
                 };
                 match result {
-                    Ok(ptr) => ptr,
+                    Ok(ptr) => ptr.get(),
                     Err(err) => a.oom(err),
                 }
             };

@@ -18,13 +18,14 @@
 use core::cmp;
 use core::fmt;
 use core::mem;
+use core::nonzero::NonZero;
 use core::usize;
 use core::ptr::{self, Unique};
 
 /// Represents the combination of a starting address and
 /// a total capacity of the returned block.
 #[derive(Debug)]
-pub struct Excess(pub *mut u8, pub usize);
+pub struct Excess(pub NonZero<*mut u8>, pub usize);
 
 fn size_align<T>() -> (usize, usize) {
     (mem::size_of::<T>(), mem::align_of::<T>())
@@ -479,7 +480,7 @@ pub unsafe trait Alloc {
     /// Clients wishing to abort computation in response to an
     /// allocation error are encouraged to call the allocator's `oom`
     /// method, rather than directly invoking `panic!` or similar.
-    unsafe fn alloc(&mut self, layout: Layout) -> Result<*mut u8, AllocErr>;
+    unsafe fn alloc(&mut self, layout: Layout) -> Result<NonZero<*mut u8>, AllocErr>;
 
     /// Deallocate the memory referenced by `ptr`.
     ///
@@ -631,25 +632,25 @@ pub unsafe trait Alloc {
     unsafe fn realloc(&mut self,
                       ptr: *mut u8,
                       layout: Layout,
-                      new_layout: Layout) -> Result<*mut u8, AllocErr> {
+                      new_layout: Layout) -> Result<NonZero<*mut u8>, AllocErr> {
         let new_size = new_layout.size();
         let old_size = layout.size();
         let aligns_match = layout.align == new_layout.align;
 
         if new_size >= old_size && aligns_match {
             if let Ok(()) = self.grow_in_place(ptr, layout.clone(), new_layout.clone()) {
-                return Ok(ptr);
+                return Ok(NonZero::new(ptr));
             }
         } else if new_size < old_size && aligns_match {
             if let Ok(()) = self.shrink_in_place(ptr, layout.clone(), new_layout.clone()) {
-                return Ok(ptr);
+                return Ok(NonZero::new(ptr));
             }
         }
 
         // otherwise, fall back on alloc + copy + dealloc.
         let result = self.alloc(new_layout);
         if let Ok(new_ptr) = result {
-            ptr::copy_nonoverlapping(ptr as *const u8, new_ptr, cmp::min(old_size, new_size));
+            ptr::copy_nonoverlapping(ptr as *const u8, new_ptr.get(), cmp::min(old_size, new_size));
             self.dealloc(ptr, layout);
         }
         result
@@ -671,11 +672,11 @@ pub unsafe trait Alloc {
     /// Clients wishing to abort computation in response to an
     /// allocation error are encouraged to call the allocator's `oom`
     /// method, rather than directly invoking `panic!` or similar.
-    unsafe fn alloc_zeroed(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
+    unsafe fn alloc_zeroed(&mut self, layout: Layout) -> Result<NonZero<*mut u8>, AllocErr> {
         let size = layout.size();
         let p = self.alloc(layout);
         if let Ok(p) = p {
-            ptr::write_bytes(p, 0, size);
+            ptr::write_bytes(p.get(), 0, size);
         }
         p
     }
@@ -875,7 +876,7 @@ pub unsafe trait Alloc {
     {
         let k = Layout::new::<T>();
         if k.size() > 0 {
-            unsafe { self.alloc(k).map(|p|Unique::new(*p as *mut T)) }
+            unsafe { self.alloc(k).map(|p|Unique::new(*p.get() as *mut T)) }
         } else {
             Err(AllocErr::invalid_input("zero-sized type invalid for alloc_one"))
         }
@@ -946,7 +947,7 @@ pub unsafe trait Alloc {
                 unsafe {
                     self.alloc(layout.clone())
                         .map(|p| {
-                            Unique::new(p as *mut T)
+                            Unique::new(p.get() as *mut T)
                         })
                 }
             }
@@ -995,7 +996,7 @@ pub unsafe trait Alloc {
         match (Layout::array::<T>(n_old), Layout::array::<T>(n_new), ptr.as_ptr()) {
             (Some(ref k_old), Some(ref k_new), ptr) if k_old.size() > 0 && k_new.size() > 0 => {
                 self.realloc(ptr as *mut u8, k_old.clone(), k_new.clone())
-                    .map(|p|Unique::new(p as *mut T))
+                    .map(|p|Unique::new(p.get() as *mut T))
             }
             _ => {
                 Err(AllocErr::invalid_input("invalid layout for realloc_array"))

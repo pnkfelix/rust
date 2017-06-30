@@ -161,7 +161,7 @@ fn make_place<T>() -> IntermediateBox<T> {
         unsafe {
             Heap.alloc(layout.clone()).unwrap_or_else(|err| {
                 Heap.oom(err)
-            })
+            }).get()
         }
     };
 

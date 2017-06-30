@@ -17,6 +17,7 @@
 
 use core::intrinsics::{min_align_of_val, size_of_val};
 use core::mem::{self, ManuallyDrop};
+use core::nonzero::NonZero;
 use core::usize;
 
 pub use allocator::*;
@@ -68,7 +69,7 @@ pub struct Heap;
 
 unsafe impl Alloc for Heap {
     #[inline]
-    unsafe fn alloc(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
+    unsafe fn alloc(&mut self, layout: Layout) -> Result<NonZero<*mut u8>, AllocErr> {
         let mut err = ManuallyDrop::new(mem::uninitialized::<AllocErr>());
         let ptr = __rust_alloc(layout.size(),
                                layout.align(),
@@ -76,7 +77,7 @@ unsafe impl Alloc for Heap {
         if ptr.is_null() {
             Err(ManuallyDrop::into_inner(err))
         } else {
-            Ok(ptr)
+            Ok(NonZero::new(ptr))
         }
     }
 
@@ -109,7 +110,7 @@ unsafe impl Alloc for Heap {
                       ptr: *mut u8,
                       layout: Layout,
                       new_layout: Layout)
-                      -> Result<*mut u8, AllocErr>
+                      -> Result<NonZero<*mut u8>, AllocErr>
     {
         let mut err = ManuallyDrop::new(mem::uninitialized::<AllocErr>());
         let ptr = __rust_realloc(ptr,
@@ -122,12 +123,12 @@ unsafe impl Alloc for Heap {
             Err(ManuallyDrop::into_inner(err))
         } else {
             mem::forget(err);
-            Ok(ptr)
+            Ok(NonZero::new(ptr))
         }
     }
 
     #[inline]
-    unsafe fn alloc_zeroed(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
+    unsafe fn alloc_zeroed(&mut self, layout: Layout) -> Result<NonZero<*mut u8>, AllocErr> {
         let mut err = ManuallyDrop::new(mem::uninitialized::<AllocErr>());
         let ptr = __rust_alloc_zeroed(layout.size(),
                                       layout.align(),
@@ -135,7 +136,7 @@ unsafe impl Alloc for Heap {
         if ptr.is_null() {
             Err(ManuallyDrop::into_inner(err))
         } else {
-            Ok(ptr)
+            Ok(NonZero::new(ptr))
         }
     }
 
@@ -150,7 +151,7 @@ unsafe impl Alloc for Heap {
         if ptr.is_null() {
             Err(ManuallyDrop::into_inner(err))
         } else {
-            Ok(Excess(ptr, size))
+            Ok(Excess(NonZero::new(ptr), size))
         }
     }
 
@@ -171,7 +172,7 @@ unsafe impl Alloc for Heap {
         if ptr.is_null() {
             Err(ManuallyDrop::into_inner(err))
         } else {
-            Ok(Excess(ptr, size))
+            Ok(Excess(NonZero::new(ptr), size))
         }
     }
 
@@ -236,7 +237,7 @@ unsafe fn exchange_malloc(size: usize, align: usize) -> *mut u8 {
         let layout = Layout::from_size_align_unchecked(size, align);
         Heap.alloc(layout).unwrap_or_else(|err| {
             Heap.oom(err)
-        })
+        }).get()
     }
 }
 

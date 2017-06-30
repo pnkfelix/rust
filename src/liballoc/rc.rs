@@ -463,7 +463,7 @@ impl<T> Rc<[T]> {
             // of a DST from its unsized part.
             let ptr = Heap.alloc(Layout::for_value(&*ptr))
                 .unwrap_or_else(|e| Heap.oom(e));
-            let ptr: *mut RcBox<[T]> = mem::transmute([ptr as usize, value.len()]);
+            let ptr: *mut RcBox<[T]> = mem::transmute([ptr.get() as usize, value.len()]);
 
             // Initialize the new RcBox.
             ptr::write(&mut (*ptr).strong, Cell::new(1));

@@ -23,6 +23,7 @@
 #![cfg_attr(not(stage0), feature(allocator_api))]
 #![cfg_attr(not(stage0), feature(alloc))]
 #![cfg_attr(not(stage0), feature(core_intrinsics))]
+#![cfg_attr(not(stage0), feature(nonzero))]
 #![feature(staged_api)]
 #![cfg_attr(any(unix, target_os = "redox"), feature(libc))]
 
@@ -55,6 +56,7 @@ pub use new::System;
 mod new {
     pub extern crate alloc;
 
+    use core::nonzero::NonZero;
     use self::alloc::heap::{Alloc, AllocErr, Layout, Excess, CannotReallocInPlace};
 
     #[unstable(feature = "allocator_api", issue = "32838")]
@@ -63,13 +65,13 @@ mod new {
     #[unstable(feature = "allocator_api", issue = "32838")]
     unsafe impl Alloc for System {
         #[inline]
-        unsafe fn alloc(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
+        unsafe fn alloc(&mut self, layout: Layout) -> Result<NonZero<*mut u8>, AllocErr> {
             (&*self).alloc(layout)
         }
 
         #[inline]
         unsafe fn alloc_zeroed(&mut self, layout: Layout)
-            -> Result<*mut u8, AllocErr>
+            -> Result<NonZero<*mut u8>, AllocErr>
         {
             (&*self).alloc_zeroed(layout)
         }
@@ -83,7 +85,7 @@ mod new {
         unsafe fn realloc(&mut self,
                           ptr: *mut u8,
                           old_layout: Layout,
-                          new_layout: Layout) -> Result<*mut u8, AllocErr> {
+                          new_layout: Layout) -> Result<NonZero<*mut u8>, AllocErr> {
             (&*self).realloc(ptr, old_layout, new_layout)
         }
 
@@ -132,6 +134,7 @@ mod platform {
     extern crate libc;
 
     use core::cmp;
+    use core::nonzero::NonZero;
     use core::ptr;
 
     use MIN_ALIGN;
@@ -141,14 +144,14 @@ mod platform {
     #[unstable(feature = "allocator_api", issue = "32838")]
     unsafe impl<'a> Alloc for &'a System {
         #[inline]
-        unsafe fn alloc(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
+        unsafe fn alloc(&mut self, layout: Layout) -> Result<NonZero<*mut u8>, AllocErr> {
             let ptr = if layout.align() <= MIN_ALIGN {
                 libc::malloc(layout.size()) as *mut u8
             } else {
                 aligned_malloc(&layout)
             };
             if !ptr.is_null() {
-                Ok(ptr)
+                Ok(NonZero::new(ptr))
             } else {
                 Err(AllocErr)
             }
@@ -156,19 +159,19 @@ mod platform {
 
         #[inline]
         unsafe fn alloc_zeroed(&mut self, layout: Layout)
-            -> Result<*mut u8, AllocErr>
+            -> Result<NonZero<*mut u8>, AllocErr>
         {
             if layout.align() <= MIN_ALIGN {
                 let ptr = libc::calloc(layout.size(), 1) as *mut u8;
                 if !ptr.is_null() {
-                    Ok(ptr)
+                    Ok(NonZero::new(ptr))
                 } else {
                     Err(AllocErr)
                 }
             } else {
                 let ret = self.alloc(layout.clone());
                 if let Ok(ptr) = ret {
-                    ptr::write_bytes(ptr, 0, layout.size());
+                    ptr::write_bytes(ptr.get(), 0, layout.size());
                 }
                 ret
             }
@@ -183,7 +186,7 @@ mod platform {
         unsafe fn realloc(&mut self,
                           ptr: *mut u8,
                           old_layout: Layout,
-                          new_layout: Layout) -> Result<*mut u8, AllocErr> {
+                          new_layout: Layout) -> Result<NonZero<*mut u8>, AllocErr> {
             if old_layout.align() != new_layout.align() {
                 return Err(AllocErr)
             }
@@ -191,7 +194,7 @@ mod platform {
             if new_layout.align() <= MIN_ALIGN {
                 let ptr = libc::realloc(ptr as *mut libc::c_void, new_layout.size());
                 if !ptr.is_null() {
-                    Ok(ptr as *mut u8)
+                    Ok(NonZero::new(ptr as *mut u8))
                 } else {
                     Err(AllocErr)
                 }
@@ -199,7 +202,7 @@ mod platform {
                 let res = self.alloc(new_layout.clone());
                 if let Ok(new_ptr) = res {
                     let size = cmp::min(old_layout.size(), new_layout.size());
-                    ptr::copy_nonoverlapping(ptr, new_ptr, size);
+                    ptr::copy_nonoverlapping(ptr, new_ptr.get(), size);
                     self.dealloc(ptr, old_layout);
                 }
                 res
