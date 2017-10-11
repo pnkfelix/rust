@@ -63,11 +63,14 @@ fn lvalue_contents_drop_state_cannot_differ<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx
                                                       lv: &mir::Lvalue<'tcx>) -> bool {
     let ty = lv.ty(mir, tcx).to_ty(tcx);
     match ty.sty {
-        ty::TyArray(..) | ty::TySlice(..) | ty::TyRef(..) | ty::TyRawPtr(..) => {
+        // (removing ty::TyArray as one of the cases here; one can
+        // have child MovePaths via ProjectionElem::ConstantIndex.
+        ty::TySlice(..) | ty::TyRef(..) | ty::TyRawPtr(..) => {
             debug!("lvalue_contents_drop_state_cannot_differ lv: {:?} ty: {:?} refd => true",
                    lv, ty);
             true
         }
+
         ty::TyAdt(def, _) if (def.has_dtor(tcx) && !def.is_box()) || def.is_union() => {
             debug!("lvalue_contents_drop_state_cannot_differ lv: {:?} ty: {:?} Drop => true",
                    lv, ty);
