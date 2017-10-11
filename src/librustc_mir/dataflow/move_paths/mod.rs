@@ -270,6 +270,18 @@ impl Default for ExcludeMovePaths {
     }
 }
 
+impl ExcludeMovePaths {
+    pub fn borrow_check() -> Self {
+        ExcludeMovePaths {
+            type_is_copy: false,
+            ref_: true,
+            raw_ptr: true,
+            non_box_with_dtor: true,
+            type_is_union: true,
+        }
+    }
+}
+
 impl<'tcx> MoveError<'tcx> {
     fn cannot_move_out_of(span: Span, kind: IllegalMoveOriginKind<'tcx>) -> Self {
         let origin = IllegalMoveOrigin { span, kind };

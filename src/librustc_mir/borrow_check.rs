@@ -60,7 +60,7 @@ fn mir_borrowck<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId) {
     let param_env = tcx.param_env(def_id);
     tcx.infer_ctxt().enter(|_infcx| {
 
-        let excluding = Default::default();
+        let excluding = ExcludeMovePaths::borrow_check();
         let move_data = match MoveData::gather_moves(mir, tcx, param_env, excluding) {
             Ok(move_data) => move_data,
             Err((move_data, move_errors)) => {
