@@ -21,6 +21,7 @@ use std::mem;
 
 use super::abs_domain::Lift;
 
+use super::{ExcludeMovePaths};
 use super::{LocationMap, MoveData, MovePath, MovePathLookup, MovePathIndex, MoveOut, MoveOutIndex};
 use super::{MoveError};
 use super::IllegalMoveOriginKind::*;
@@ -30,13 +31,15 @@ struct MoveDataBuilder<'a, 'tcx: 'a> {
     tcx: TyCtxt<'a, 'tcx, 'tcx>,
     param_env: ty::ParamEnv<'tcx>,
     data: MoveData<'tcx>,
+    excluding: ExcludeMovePaths,
     errors: Vec<MoveError<'tcx>>,
 }
 
 impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
     fn new(mir: &'a Mir<'tcx>,
            tcx: TyCtxt<'a, 'tcx, 'tcx>,
-           param_env: ty::ParamEnv<'tcx>)
+           param_env: ty::ParamEnv<'tcx>,
+           excluding: ExcludeMovePaths)
            -> Self {
         let mut move_paths = IndexVec::new();
         let mut path_map = IndexVec::new();
@@ -45,6 +48,7 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
             mir,
             tcx,
             param_env,
+            excluding,
             errors: Vec::new(),
             data: MoveData {
                 moves: IndexVec::new(),
@@ -89,11 +93,6 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
 impl<'b, 'a, 'tcx> Gatherer<'b, 'a, 'tcx> {
     /// This creates a MovePath for a given lvalue, returning an `MovePathError`
     /// if that lvalue can't be moved from.
-    ///
-    /// NOTE: lvalues behind references *do not* get a move path, which is
-    /// problematic for borrowck.
-    ///
-    /// Maybe we should have separate "borrowck" and "moveck" modes.
     fn move_path_for(&mut self, lval: &Lvalue<'tcx>)
                      -> Result<MovePathIndex, MoveError<'tcx>>
     {
@@ -125,17 +124,21 @@ impl<'b, 'a, 'tcx> Gatherer<'b, 'a, 'tcx> {
         let mir = self.builder.mir;
         let tcx = self.builder.tcx;
         let lv_ty = proj.base.ty(mir, tcx).to_ty(tcx);
+        let exclude = &self.builder.excluding;
         match lv_ty.sty {
-            ty::TyRef(..) | ty::TyRawPtr(..) =>
+            ty::TyRef(..) if exclude.ref_ =>
                 return Err(MoveError::cannot_move_out_of(mir.source_info(self.loc).span,
                                                          BorrowedContent)),
-            ty::TyAdt(adt, _) if adt.has_dtor(tcx) && !adt.is_box() =>
+            ty::TyRawPtr(..) if exclude.raw_ptr =>
+                return Err(MoveError::cannot_move_out_of(mir.source_info(self.loc).span,
+                                                         BorrowedContent)),
+            ty::TyAdt(adt, _) if exclude.non_box_with_dtor && adt.has_dtor(tcx) && !adt.is_box() =>
                 return Err(MoveError::cannot_move_out_of(mir.source_info(self.loc).span,
                                                          InteriorOfTypeWithDestructor {
                     container_ty: lv_ty
                 })),
             // move out of union - always move the entire union
-            ty::TyAdt(adt, _) if adt.is_union() =>
+            ty::TyAdt(adt, _) if exclude.type_is_union && adt.is_union() =>
                 return Err(MoveError::UnionMove { path: base }),
             ty::TySlice(elem_ty) =>
                 return Err(MoveError::cannot_move_out_of(
@@ -199,10 +202,11 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
 
 pub(super) fn gather_moves<'a, 'tcx>(mir: &Mir<'tcx>,
                                      tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                                     param_env: ty::ParamEnv<'tcx>)
+                                     param_env: ty::ParamEnv<'tcx>,
+                                     excluding: ExcludeMovePaths)
                                      -> Result<MoveData<'tcx>,
                                                (MoveData<'tcx>, Vec<MoveError<'tcx>>)> {
-    let mut builder = MoveDataBuilder::new(mir, tcx, param_env);
+    let mut builder = MoveDataBuilder::new(mir, tcx, param_env, excluding);
 
     for (bb, block) in mir.basic_blocks().iter_enumerated() {
         for (i, stmt) in block.statements.iter().enumerate() {
@@ -352,8 +356,9 @@ impl<'b, 'a, 'tcx> Gatherer<'b, 'a, 'tcx> {
         debug!("gather_move({:?}, {:?})", self.loc, lval);
 
         let tcx = self.builder.tcx;
+        let exclude = self.builder.excluding;
         let lv_ty = lval.ty(self.builder.mir, tcx).to_ty(tcx);
-        if !lv_ty.moves_by_default(tcx, self.builder.param_env, DUMMY_SP) {
+        if exclude.type_is_copy && !lv_ty.moves_by_default(tcx, self.builder.param_env, DUMMY_SP) {
             debug!("gather_move({:?}, {:?}) - {:?} is Copy. skipping", self.loc, lval, lv_ty);
             return
         }

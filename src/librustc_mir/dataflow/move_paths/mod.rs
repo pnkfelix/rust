@@ -249,6 +249,27 @@ pub enum MoveError<'tcx> {
     UnionMove { path: MovePathIndex },
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct ExcludeMovePaths {
+    type_is_copy: bool,
+    ref_: bool,
+    raw_ptr: bool,
+    non_box_with_dtor: bool,
+    type_is_union: bool,
+}
+
+impl Default for ExcludeMovePaths {
+    fn default() -> Self {
+        ExcludeMovePaths {
+            type_is_copy: true,
+            ref_: true,
+            raw_ptr: true,
+            non_box_with_dtor: true,
+            type_is_union: true,
+        }
+    }
+}
+
 impl<'tcx> MoveError<'tcx> {
     fn cannot_move_out_of(span: Span, kind: IllegalMoveOriginKind<'tcx>) -> Self {
         let origin = IllegalMoveOrigin { span, kind };
@@ -259,8 +280,9 @@ impl<'tcx> MoveError<'tcx> {
 impl<'a, 'tcx> MoveData<'tcx> {
     pub fn gather_moves(mir: &Mir<'tcx>,
                         tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                        param_env: ty::ParamEnv<'tcx>)
+                        param_env: ty::ParamEnv<'tcx>,
+                        excluding: ExcludeMovePaths)
                         -> Result<Self, (Self, Vec<MoveError<'tcx>>)> {
-        builder::gather_moves(mir, tcx, param_env)
+        builder::gather_moves(mir, tcx, param_env, excluding)
     }
 }

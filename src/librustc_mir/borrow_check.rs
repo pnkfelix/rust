@@ -31,7 +31,7 @@ use dataflow::{BitDenotation, BlockSets, DataflowResults, DataflowResultsConsume
 use dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
 use dataflow::{Borrows, BorrowData, BorrowIndex};
 use dataflow::move_paths::{MoveError, IllegalMoveOriginKind};
-use dataflow::move_paths::{HasMoveData, MoveData, MovePathIndex, LookupResult};
+use dataflow::move_paths::{ExcludeMovePaths, HasMoveData, MoveData, MovePathIndex, LookupResult};
 use util::borrowck_errors::{BorrowckErrors, Origin};
 
 use self::MutateMode::{JustWrite, WriteAndRead};
@@ -60,7 +60,8 @@ fn mir_borrowck<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId) {
     let param_env = tcx.param_env(def_id);
     tcx.infer_ctxt().enter(|_infcx| {
 
-        let move_data = match MoveData::gather_moves(mir, tcx, param_env) {
+        let excluding = Default::default();
+        let move_data = match MoveData::gather_moves(mir, tcx, param_env, excluding) {
             Ok(move_data) => move_data,
             Err((move_data, move_errors)) => {
                 for move_error in move_errors {
