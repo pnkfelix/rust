@@ -506,14 +506,14 @@ impl<'c, 'b, 'a: 'b+'c, 'gcx, 'tcx: 'a> MirBorrowckCtxt<'c, 'b, 'a, 'gcx, 'tcx> 
 
             Rvalue::Len(ref lvalue) |
             Rvalue::Discriminant(ref lvalue) => {
-                let af = match *rvalue {
-                    Rvalue::Len(..) => ArtificialField::ArrayLength,
-                    Rvalue::Discriminant(..) => ArtificialField::Discriminant,
+                let (use_desc, af) = match *rvalue {
+                    Rvalue::Len(..) => ("use (len)", ArtificialField::ArrayLength),
+                    Rvalue::Discriminant(..) => ("use (discr)", ArtificialField::Discriminant),
                     _ => unreachable!(),
                 };
                 self.access_lvalue(
                     context, (lvalue, span), (Shallow(Some(af)), Read(ReadKind::Copy)), flow_state);
-                self.check_if_path_is_moved(context, "use", (lvalue, span), flow_state);
+                self.check_if_path_is_moved(context, use_desc, (lvalue, span), flow_state);
             }
 
             Rvalue::BinaryOp(_bin_op, ref operand1, ref operand2) |
@@ -647,6 +647,8 @@ impl<'c, 'b, 'a: 'b+'c, 'gcx, 'tcx: 'a> MirBorrowckCtxt<'c, 'b, 'a, 'gcx, 'tcx> 
         if let Some(mpi) = self.move_path_for_lvalue(context, move_data, lvalue) {
             if maybe_uninits.curr_state.contains(&mpi) {
                 // find and report move(s) that could cause this to be uninitialized
+                debug!("found {} of moved lvalue: {:?} base of {:?}; reporting",
+                       desired_action, lvalue, lvalue_span.0);
                 self.report_use_of_moved(context, desired_action, lvalue_span);
             } else {
                 // sanity check: initialized on *some* path, right?
@@ -965,8 +967,8 @@ impl<'c, 'b, 'a: 'b+'c, 'gcx, 'tcx: 'a> MirBorrowckCtxt<'c, 'b, 'a, 'gcx, 'tcx> 
                                                       desired_action,
                                                       &self.describe_lvalue(lvalue),
                                                       Origin::Mir)
-                .span_label(span, format!("use of possibly uninitialized `{}`",
-                                          self.describe_lvalue(lvalue)))
+                .span_label(span, format!("{} of possibly uninitialized `{}`",
+                                          desired_action, self.describe_lvalue(lvalue)))
                 .emit();
     }
 
