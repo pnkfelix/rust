@@ -252,20 +252,12 @@ pub enum MoveError<'tcx> {
 #[derive(Copy, Clone, Debug)]
 pub struct ExcludeMovePaths {
     type_is_copy: bool,
-    ref_: bool,
-    raw_ptr: bool,
-    non_box_with_dtor: bool,
-    type_is_union: bool,
 }
 
 impl Default for ExcludeMovePaths {
     fn default() -> Self {
         ExcludeMovePaths {
             type_is_copy: true,
-            ref_: true,
-            raw_ptr: true,
-            non_box_with_dtor: true,
-            type_is_union: true,
         }
     }
 }
@@ -274,10 +266,6 @@ impl ExcludeMovePaths {
     pub fn borrow_check() -> Self {
         ExcludeMovePaths {
             type_is_copy: false,
-            ref_: true,
-            raw_ptr: true,
-            non_box_with_dtor: true,
-            type_is_union: true,
         }
     }
 }
