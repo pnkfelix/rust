@@ -93,7 +93,7 @@ impl<'a, 'tcx> MoveDataBuilder<'a, 'tcx> {
 impl<'b, 'a, 'tcx> Gatherer<'b, 'a, 'tcx> {
     /// This creates a MovePath for a given lvalue, returning an `MovePathError`
     /// if that lvalue can't be moved from.
-    fn move_path_for(&mut self, lval: &Lvalue<'tcx>)
+    fn move_path_for(&mut self, lval: &Lvalue<'tcx>, just_reading: bool)
                      -> Result<MovePathIndex, MoveError<'tcx>>
     {
         debug!("lookup({:?})", lval);
@@ -104,7 +104,7 @@ impl<'b, 'a, 'tcx> Gatherer<'b, 'a, 'tcx> {
                 Err(MoveError::cannot_move_out_of(span, Static))
             }
             Lvalue::Projection(ref proj) => {
-                self.move_path_for_projection(lval, proj)
+                self.move_path_for_projection(lval, proj, just_reading)
             }
         }
     }
@@ -112,31 +112,34 @@ impl<'b, 'a, 'tcx> Gatherer<'b, 'a, 'tcx> {
     fn create_move_path(&mut self, lval: &Lvalue<'tcx>) {
         // This is an assignment, not a move, so this not being a valid
         // move path is OK.
-        let _ = self.move_path_for(lval);
+        let _ = self.move_path_for(lval, false);
     }
 
     fn move_path_for_projection(&mut self,
                                 lval: &Lvalue<'tcx>,
-                                proj: &LvalueProjection<'tcx>)
+                                proj: &LvalueProjection<'tcx>,
+                                just_reading: bool)
                                 -> Result<MovePathIndex, MoveError<'tcx>>
     {
-        let base = try!(self.move_path_for(&proj.base));
+        let base = try!(self.move_path_for(&proj.base, just_reading));
         let mir = self.builder.mir;
         let tcx = self.builder.tcx;
-        let lv_ty = proj.base.ty(mir, tcx).to_ty(tcx);
+        let base_ty = proj.base.ty(mir, tcx).to_ty(tcx);
         let exclude = &self.builder.excluding;
-        match lv_ty.sty {
-            ty::TyRef(..) if exclude.ref_ =>
+        match base_ty.sty {
+            ty::TyRef(..) if !just_reading && exclude.ref_ =>
                 return Err(MoveError::cannot_move_out_of(mir.source_info(self.loc).span,
                                                          BorrowedContent)),
-            ty::TyRawPtr(..) if exclude.raw_ptr =>
+            ty::TyRawPtr(..) if !just_reading && exclude.raw_ptr =>
                 return Err(MoveError::cannot_move_out_of(mir.source_info(self.loc).span,
                                                          BorrowedContent)),
-            ty::TyAdt(adt, _) if exclude.non_box_with_dtor && adt.has_dtor(tcx) && !adt.is_box() =>
+            ty::TyAdt(adt, _) if !just_reading && exclude.non_box_with_dtor && adt.has_dtor(tcx)
+                && !adt.is_box() =>
                 return Err(MoveError::cannot_move_out_of(mir.source_info(self.loc).span,
                                                          InteriorOfTypeWithDestructor {
-                    container_ty: lv_ty
-                })),
+                                                             container_ty: base_ty
+                                                         })),
+
             // move out of union - always move the entire union
             ty::TyAdt(adt, _) if exclude.type_is_union && adt.is_union() =>
                 return Err(MoveError::UnionMove { path: base }),
@@ -358,12 +361,14 @@ impl<'b, 'a, 'tcx> Gatherer<'b, 'a, 'tcx> {
         let tcx = self.builder.tcx;
         let exclude = self.builder.excluding;
         let lv_ty = lval.ty(self.builder.mir, tcx).to_ty(tcx);
-        if exclude.type_is_copy && !lv_ty.moves_by_default(tcx, self.builder.param_env, DUMMY_SP) {
+        let copying = !lv_ty.moves_by_default(tcx, self.builder.param_env, DUMMY_SP);
+        if exclude.type_is_copy && copying {
             debug!("gather_move({:?}, {:?}) - {:?} is Copy. skipping", self.loc, lval, lv_ty);
             return
         }
 
-        let path = match self.move_path_for(lval) {
+        let just_reading = copying;
+        let path = match self.move_path_for(lval, just_reading) {
             Ok(path) | Err(MoveError::UnionMove { path }) => path,
             Err(error @ MoveError::IllegalMove { .. }) => {
                 self.builder.errors.push(error);
