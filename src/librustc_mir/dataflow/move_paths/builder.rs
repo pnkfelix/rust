@@ -134,6 +134,7 @@ impl<'b, 'a, 'tcx> Gatherer<'b, 'a, 'tcx> {
             }
 
             (&ProjectionElem::Field(..), &ty::TyTuple(..)) |
+            (&ProjectionElem::Field(..), &ty::TyGenerator(..)) |
             (&ProjectionElem::Field(..), &ty::TyClosure(..)) => {
                 // okay, fall through
             }
