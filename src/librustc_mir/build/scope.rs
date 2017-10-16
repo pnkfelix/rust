@@ -135,10 +135,9 @@ pub struct Scope<'tcx> {
     /// the `self.drops` stack. But in the general case we might have
     /// some EndRegion statements that take effect first, before we
     /// jump into the drop chain.)
-    unwind: Option<BasicBlock>,
-
-    /// The cache for drop chain on "generator drop" exit.
-    cached_generator_drop: Option<BasicBlock>,
+    ///
+    /// The cache for drop chain on divergent exits, namely the "unwind" and "generator drop" exits.
+    diverge: CachedBlock,
 }
 
 #[derive(Debug)]
@@ -229,8 +228,11 @@ impl<'tcx> Scope<'tcx> {
     fn invalidate_cache(&mut self, unwind: bool) {
         debug!("invalidate_cache(unwind: {}) for Scope: {:?}", unwind, self);
         self.cached_exits.clear();
-        if !unwind { return; }
-        self.unwind = None;
+        if unwind {
+            self.diverge.unwind = None;
+        } else {
+            return;
+        }
         for dropdata in &mut self.drops {
             if let DropKind::Value { ref mut cached_block } = dropdata.kind {
                 cached_block.invalidate();
@@ -365,8 +367,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             region_scope_span: region_scope.1.span,
             needs_cleanup: false,
             drops: vec![],
-            unwind: None,
-            cached_generator_drop: None,
+            diverge: CachedBlock::default(),
             cached_exits: FxHashMap()
         });
     }
@@ -482,13 +483,13 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             if !scope.needs_cleanup {
                 continue;
             }
-            block = if let Some(b) = scope.cached_generator_drop {
+            block = if let Some(b) = scope.diverge.generator_drop {
                 self.cfg.terminate(block, src_info,
                                    TerminatorKind::Goto { target: b });
                 return Some(result);
             } else {
                 let b = self.cfg.start_new_block();
-                scope.cached_generator_drop = Some(b);
+                scope.diverge.generator_drop = Some(b);
                 self.cfg.terminate(block, src_info,
                                    TerminatorKind::Goto { target: b });
                 b
@@ -897,8 +898,6 @@ fn build_diverge_scope<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
                                        generator_drop: bool)
                                        -> BasicBlock
 {
-    assert!(scope.unwind.is_none());
-
     // Build up the drops in **reverse** order. The end result will
     // look like:
     //
@@ -960,15 +959,29 @@ fn build_diverge_scope<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
     // DropKind::Value's to drop), then make a fresh block here for
     // the EndRegion. Either way the EndRegion will be replaced with a
     // no-op after mir-borrowck runs.
-    {
-        let block = cfg.start_new_cleanup_block();
-        cfg.push_end_region(tcx, block, source_info(span), scope.region_scope);
-        cfg.terminate(block, source_info(span), TerminatorKind::Goto { target: target });
-        target = block;
-        scope.unwind = Some(target);
-    }
 
-    debug!("build_diverge_scope scope: {:?} now has unwind target: {:?}", scope, target);
+    let block = cfg.start_new_cleanup_block();
+    cfg.push_end_region(tcx, block, source_info(span), scope.region_scope);
+    cfg.terminate(block, source_info(span), TerminatorKind::Goto { target: target });
+    target = block;
+
+    let (which, old) = {
+        let (which, which_addr) = if generator_drop {
+            ("generator_drop", &mut scope.diverge.generator_drop)
+        } else {
+            ("unwind", &mut scope.diverge.unwind)
+        };
+
+        let old = ::std::mem::replace(which_addr, Some(target));
+        (which, old)
+    };
+    if let Some(block) = old {
+        debug!("build_diverge_scope: scope: {:?} prior {}: {:?} new target: {:?}",
+               scope, which, block, target);
+    } else {
+        debug!("build_diverge_scope: scope: {:?} install {} target: {:?}",
+               scope, which, target);
+    }
 
     target
 }
