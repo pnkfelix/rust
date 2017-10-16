@@ -818,10 +818,12 @@ fn build_scope_drops<'tcx>(cfg: &mut CFG<'tcx>,
                            arg_count: usize,
                            generator_drop: bool)
                            -> BlockAnd<()> {
-    debug!("build_scope_drops({:?} -> {:?})", block, scope);
+    debug!("build_scope_drops({:?} -> {:?}); earlier_scopes: {:?}",
+           block, scope, earlier_scopes);
     let mut iter = scope.drops.iter().rev().peekable();
     while let Some(drop_data) = iter.next() {
         let source_info = scope.source_info(drop_data.span);
+        debug!("build_scope_drops while let drop_data: {:?}", drop_data);
         match drop_data.kind {
             DropKind::Value { .. } => {
                 // Try to find the next block with its cached block
@@ -838,11 +840,13 @@ fn build_scope_drops<'tcx>(cfg: &mut CFG<'tcx>,
                         DropKind::Storage => None
                     }
                 }).next();
+                debug!("build_scope_drops peeked on_diverge: {:?}", on_diverge);
                 // If there’s no `cached_block`s within current scope,
                 // we must look for one in the enclosing scope.
                 let on_diverge = on_diverge.or_else(|| {
                     earlier_scopes.iter().rev().flat_map(|s| s.cached_block(generator_drop)).next()
                 });
+                debug!("build_scope_drops earlier_scopes on_diverge: {:?}", on_diverge);
                 let next = cfg.start_new_block();
                 cfg.terminate(block, source_info, TerminatorKind::Drop {
                     location: drop_data.location.clone(),
