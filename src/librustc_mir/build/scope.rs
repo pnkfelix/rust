@@ -129,6 +129,14 @@ pub struct Scope<'tcx> {
     /// The cache for drop chain on “normal” exit into a particular BasicBlock.
     cached_exits: FxHashMap<(BasicBlock, region::Scope), BasicBlock>,
 
+    /// When filled, this is the block to follow for the unwind path
+    /// from this scope. (If EndRegion emission is off, then this is
+    /// the same as the first filled `cached_block.unwind` (if any) on
+    /// the `self.drops` stack. But in the general case we might have
+    /// some EndRegion statements that take effect first, before we
+    /// jump into the drop chain.)
+    unwind: Option<BasicBlock>,
+
     /// The cache for drop chain on "generator drop" exit.
     cached_generator_drop: Option<BasicBlock>,
 }
@@ -219,8 +227,10 @@ impl<'tcx> Scope<'tcx> {
     ///
     /// `unwind` controls whether caches for the unwind branch are also invalidated.
     fn invalidate_cache(&mut self, unwind: bool) {
+        debug!("invalidate_cache(unwind: {}) for Scope: {:?}", unwind, self);
         self.cached_exits.clear();
         if !unwind { return; }
+        self.unwind = None;
         for dropdata in &mut self.drops {
             if let DropKind::Value { ref mut cached_block } = dropdata.kind {
                 cached_block.invalidate();
@@ -355,6 +365,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             region_scope_span: region_scope.1.span,
             needs_cleanup: false,
             drops: vec![],
+            unwind: None,
             cached_generator_drop: None,
             cached_exits: FxHashMap()
         });
@@ -886,6 +897,8 @@ fn build_diverge_scope<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
                                        generator_drop: bool)
                                        -> BasicBlock
 {
+    assert!(scope.unwind.is_none());
+
     // Build up the drops in **reverse** order. The end result will
     // look like:
     //
@@ -904,8 +917,6 @@ fn build_diverge_scope<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
         span,
         scope: visibility_scope
     };
-
-    let mut made_new_target = false;
 
     // Next, build up the drops. Here we iterate the vector in
     // *forward* order, so that we generate drops[0] first (right to
@@ -935,7 +946,6 @@ fn build_diverge_scope<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
                               unwind: None
                           });
 
-            made_new_target = true;
             *cached_block = Some(block);
             block
         };
@@ -950,14 +960,15 @@ fn build_diverge_scope<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
     // DropKind::Value's to drop), then make a fresh block here for
     // the EndRegion. Either way the EndRegion will be replaced with a
     // no-op after mir-borrowck runs.
-    if made_new_target {
-        cfg.push_end_region(tcx, target, source_info(span), scope.region_scope);
-    } else {
+    {
         let block = cfg.start_new_cleanup_block();
         cfg.push_end_region(tcx, block, source_info(span), scope.region_scope);
         cfg.terminate(block, source_info(span), TerminatorKind::Goto { target: target });
-        target = block
+        target = block;
+        scope.unwind = Some(target);
     }
+
+    debug!("build_diverge_scope scope: {:?} now has unwind target: {:?}", scope, target);
 
     target
 }
