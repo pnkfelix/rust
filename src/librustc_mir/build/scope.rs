@@ -901,6 +901,8 @@ fn build_diverge_scope<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
         scope: visibility_scope
     };
 
+    let mut made_new_target = false;
+
     // Next, build up the drops. Here we iterate the vector in
     // *forward* order, so that we generate drops[0] first (right to
     // left in diagram above).
@@ -928,14 +930,25 @@ fn build_diverge_scope<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
                               target,
                               unwind: None
                           });
+
+            made_new_target = true;
             *cached_block = Some(block);
             block
         };
     }
 
-    // Finally, push the EndRegion block, used by mir-borrowck. (Block
-    // becomes trivial goto after pass that removes all EndRegions.)
-    {
+    // Finally, push the EndRegion statement, used by mir-borrowck.
+    //
+    // If we created a fresh block above, then put the EndRegion there
+    // to ensure that the statement is part of the unwind chain of
+    // blocks held in `cached_block`. If we didn't create a fresh
+    // block (i.e. there were no uncached blocks holding
+    // DropKind::Value's to drop), then make a fresh block here for
+    // the EndRegion. Either way the EndRegion will be replaced with a
+    // no-op after mir-borrowck runs.
+    if made_new_target {
+        cfg.push_end_region(tcx, target, source_info(span), scope.region_scope);
+    } else {
         let block = cfg.start_new_cleanup_block();
         cfg.push_end_region(tcx, block, source_info(span), scope.region_scope);
         cfg.terminate(block, source_info(span), TerminatorKind::Goto { target: target });
