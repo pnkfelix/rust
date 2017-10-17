@@ -586,7 +586,7 @@ pub struct Terminator<'tcx> {
     pub kind: TerminatorKind<'tcx>
 }
 
-#[derive(PartialEq, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Clone, RustcEncodable, RustcDecodable)]
 pub enum TerminatorKind<'tcx> {
     /// block should have one successor in the graph; we jump there
     Goto {
@@ -913,7 +913,7 @@ impl<'tcx> TerminatorKind<'tcx> {
     }
 }
 
-#[derive(PartialEq, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum AssertMessage<'tcx> {
     BoundsCheck {
         len: Operand<'tcx>,

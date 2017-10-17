@@ -129,15 +129,22 @@ pub struct Scope<'tcx> {
     /// The cache for drop chain on “normal” exit into a particular BasicBlock.
     cached_exits: FxHashMap<(BasicBlock, region::Scope), BasicBlock>,
 
+    // FIXME: Look into unifying the `cached_unwind` and
+    // `cached_generator_drop` fields into a single CachedBlock.
+
+    /// The cache for drop chain on "generator drop" exit.
+    cached_generator_drop: Option<BasicBlock>,
+
     /// When filled, this is the block to follow for the unwind path
-    /// from this scope. (If EndRegion emission is off, then this is
-    /// the same as the first filled `cached_block.unwind` (if any) on
-    /// the `self.drops` stack. But in the general case we might have
-    /// some EndRegion statements that take effect first, before we
-    /// jump into the drop chain.)
+    /// from this scope.
     ///
-    /// The cache for drop chain on divergent exits, namely the "unwind" and "generator drop" exits.
-    diverge: CachedBlock,
+    /// Explanation: If EndRegion emission is off and this is filled,
+    /// then this is the same as the first filled
+    /// `cached_block.unwind` (if any) on the `self.drops` stack. But
+    /// in the general case with EndRegion emission on, we might have
+    /// some EndRegion statements that take effect first, before we
+    /// jump into the drop chain.
+    cached_unwind: Option<BasicBlock>,
 }
 
 #[derive(Debug)]
@@ -228,11 +235,8 @@ impl<'tcx> Scope<'tcx> {
     fn invalidate_cache(&mut self, unwind: bool) {
         debug!("invalidate_cache(unwind: {}) for Scope: {:?}", unwind, self);
         self.cached_exits.clear();
-        if unwind {
-            self.diverge.unwind = None;
-        } else {
-            return;
-        }
+        if !unwind { return; }
+        self.cached_unwind = None;
         for dropdata in &mut self.drops {
             if let DropKind::Value { ref mut cached_block } = dropdata.kind {
                 cached_block.invalidate();
@@ -245,10 +249,22 @@ impl<'tcx> Scope<'tcx> {
     /// Precondition: the caches must be fully filled (i.e. diverge_cleanup is called) in order for
     /// this method to work correctly.
     fn cached_block(&self, generator_drop: bool) -> Option<BasicBlock> {
-        if generator_drop {
-            self.diverge.generator_drop
+        if !generator_drop {
+            assert!(self.cached_unwind.is_some());
+            return self.cached_unwind;
+        }
+        let mut drops = self.drops.iter().rev().filter_map(|data| {
+            match data.kind {
+                DropKind::Value { cached_block } => {
+                    Some(cached_block.get(generator_drop))
+                }
+                DropKind::Storage => None
+            }
+        });
+        if let Some(cached_block) = drops.next() {
+            Some(cached_block.expect("drop cache is not filled"))
         } else {
-            self.diverge.unwind
+            None
         }
     }
 
@@ -359,7 +375,8 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             region_scope_span: region_scope.1.span,
             needs_cleanup: false,
             drops: vec![],
-            diverge: CachedBlock::default(),
+            cached_generator_drop: None,
+            cached_unwind: None,
             cached_exits: FxHashMap()
         });
     }
@@ -475,13 +492,13 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             if !scope.needs_cleanup {
                 continue;
             }
-            block = if let Some(b) = scope.diverge.generator_drop {
+            block = if let Some(b) = scope.cached_generator_drop {
                 self.cfg.terminate(block, src_info,
                                    TerminatorKind::Goto { target: b });
                 return Some(result);
             } else {
                 let b = self.cfg.start_new_block();
-                scope.diverge.generator_drop = Some(b);
+                scope.cached_generator_drop = Some(b);
                 self.cfg.terminate(block, src_info,
                                    TerminatorKind::Goto { target: b });
                 b
@@ -936,7 +953,6 @@ fn build_diverge_scope<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
                               target,
                               unwind: None
                           });
-
             *cached_block = Some(block);
             block
         };
@@ -957,22 +973,8 @@ fn build_diverge_scope<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
     cfg.terminate(block, source_info(span), TerminatorKind::Goto { target: target });
     target = block;
 
-    let (which, old) = {
-        let (which, which_addr) = if generator_drop {
-            ("generator_drop", &mut scope.diverge.generator_drop)
-        } else {
-            ("unwind", &mut scope.diverge.unwind)
-        };
-
-        let old = ::std::mem::replace(which_addr, Some(target));
-        (which, old)
-    };
-    if let Some(block) = old {
-        debug!("build_diverge_scope: scope: {:?} prior {}: {:?} new target: {:?}",
-               scope, which, block, target);
-    } else {
-        debug!("build_diverge_scope: scope: {:?} install {} target: {:?}",
-               scope, which, target);
+    if !generator_drop {
+        scope.cached_unwind = Some(target);
     }
 
     target
