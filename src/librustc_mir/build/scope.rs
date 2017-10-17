@@ -245,18 +245,10 @@ impl<'tcx> Scope<'tcx> {
     /// Precondition: the caches must be fully filled (i.e. diverge_cleanup is called) in order for
     /// this method to work correctly.
     fn cached_block(&self, generator_drop: bool) -> Option<BasicBlock> {
-        let mut drops = self.drops.iter().rev().filter_map(|data| {
-            match data.kind {
-                DropKind::Value { cached_block } => {
-                    Some(cached_block.get(generator_drop))
-                }
-                DropKind::Storage => None
-            }
-        });
-        if let Some(cached_block) = drops.next() {
-            Some(cached_block.expect("drop cache is not filled"))
+        if generator_drop {
+            self.diverge.generator_drop
         } else {
-            None
+            self.diverge.unwind
         }
     }
 
