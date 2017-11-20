@@ -62,6 +62,7 @@ pub(crate) mod indexes {
 
     /// Index into Borrows.locations
     new_index!(BorrowIndex, "bw");
+    new_index!(BorrowBitIndex, "bt");
 }
 
 pub use self::indexes::MovePathIndex;

@@ -26,12 +26,12 @@ use rustc_data_structures::indexed_vec::{Idx};
 use syntax::ast::{self};
 use syntax_pos::{DUMMY_SP, Span};
 
-use dataflow::{do_dataflow};
+use dataflow::{do_dataflow, DebugFormatted};
 use dataflow::{MoveDataParamEnv};
 use dataflow::{BitDenotation, BlockSets, DataflowResults, DataflowResultsConsumer};
 use dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
 use dataflow::{MovingOutStatements};
-use dataflow::{Borrows, BorrowData, BorrowIndex};
+use dataflow::{Borrows, BorrowData, BorrowIndex, BorrowBitIndex, BorrowPhase};
 use dataflow::move_paths::{MoveError, IllegalMoveOriginKind};
 use dataflow::move_paths::{HasMoveData, MoveData, MovePathIndex, LookupResult, MoveOutIndex};
 use util::borrowck_errors::{BorrowckErrors, Origin};
@@ -39,6 +39,7 @@ use util::borrowck_errors::{BorrowckErrors, Origin};
 use self::MutateMode::{JustWrite, WriteAndRead};
 use self::ConsumeKind::{Consume};
 
+use std::iter;
 
 pub fn provide(providers: &mut Providers) {
     *providers = Providers {
@@ -453,13 +454,15 @@ impl<'c, 'b, 'a: 'b+'c, 'gcx, 'tcx: 'a> MirBorrowckCtxt<'c, 'b, 'a, 'gcx, 'tcx> 
         self.check_access_permissions(lvalue_span, rw);
 
         self.each_borrow_involving_path(
-            context, (sd, lvalue_span.0), flow_state, |this, _index, borrow, common_prefix| {
-                match (rw, borrow.kind) {
-                    (Read(_), BorrowKind::Shared) => {
+            context, (sd, lvalue_span.0), flow_state,
+            |this, _index, (borrow, phase), common_prefix|
+            {
+                match (rw, borrow.kind, phase) {
+                    (Read(_), BorrowKind::Shared, _) => {
                         Control::Continue
                     }
-                    (Read(kind), BorrowKind::Unique) |
-                    (Read(kind), BorrowKind::Mut) => {
+                    (Read(kind), BorrowKind::Unique, _) |
+                    (Read(kind), BorrowKind::Mut, _) => {
                         match kind {
                             ReadKind::Copy =>
                                 this.report_use_while_mutably_borrowed(
@@ -475,7 +478,7 @@ impl<'c, 'b, 'a: 'b+'c, 'gcx, 'tcx: 'a> MirBorrowckCtxt<'c, 'b, 'a, 'gcx, 'tcx> 
                         }
                         Control::Break
                     }
-                    (Write(kind), _) => {
+                    (Write(kind), _, _) => {
                         match kind {
                             WriteKind::MutableBorrow(bk) => {
                                 let end_issued_loan_span =
@@ -1024,7 +1027,11 @@ impl<'c, 'b, 'a: 'b+'c, 'gcx, 'tcx: 'a> MirBorrowckCtxt<'c, 'b, 'a, 'gcx, 'tcx> 
                                      access_lvalue: (ShallowOrDeep, &Lvalue<'tcx>),
                                      flow_state: &InProgress<'b, 'gcx, 'tcx>,
                                      mut op: F)
-        where F: FnMut(&mut Self, BorrowIndex, &BorrowData<'tcx>, &Lvalue<'tcx>) -> Control
+        where F: FnMut(&mut Self,
+                       BorrowIndex,
+                       (&BorrowData<'tcx>, BorrowPhase),
+                       &Lvalue<'tcx>)
+                       -> Control
     {
         let (access, lvalue) = access_lvalue;
 
@@ -1036,8 +1043,8 @@ impl<'c, 'b, 'a: 'b+'c, 'gcx, 'tcx: 'a> MirBorrowckCtxt<'c, 'b, 'a, 'gcx, 'tcx> 
 
         // check for loan restricting path P being used. Accounts for
         // borrows of P, P.a.b, etc.
-        'next_borrow: for i in flow_state.borrows.elems_incoming() {
-            let borrowed = &data[i];
+        'next_borrow: for (borrow_idx, phase) in flow_state.borrows.fused_elems_incoming() {
+            let borrowed = &data[borrow_idx];
 
             // Is `lvalue` (or a prefix of it) already borrowed? If
             // so, that's relevant.
@@ -1045,9 +1052,9 @@ impl<'c, 'b, 'a: 'b+'c, 'gcx, 'tcx: 'a> MirBorrowckCtxt<'c, 'b, 'a, 'gcx, 'tcx> 
             // FIXME: Differs from AST-borrowck; includes drive-by fix
             // to #38899. Will probably need back-compat mode flag.
             for accessed_prefix in self.prefixes(lvalue, PrefixSet::All) {
-                if *accessed_prefix == borrowed.lvalue {
+                if *accessed_prefix == borrowed.borrowed_lvalue {
                     // FIXME: pass in enum describing case we are in?
-                    let ctrl = op(self, i, borrowed, accessed_prefix);
+                    let ctrl = op(self, borrow_idx, (borrowed, phase), accessed_prefix);
                     if ctrl == Control::Break { return; }
                 }
             }
@@ -1070,10 +1077,10 @@ impl<'c, 'b, 'a: 'b+'c, 'gcx, 'tcx: 'a> MirBorrowckCtxt<'c, 'b, 'a, 'gcx, 'tcx> 
                 Deep => PrefixSet::Supporting,
             };
 
-            for borrowed_prefix in self.prefixes(&borrowed.lvalue, prefix_kind) {
+            for borrowed_prefix in self.prefixes(&borrowed.borrowed_lvalue, prefix_kind) {
                 if borrowed_prefix == lvalue {
                     // FIXME: pass in enum describing case we are in?
-                    let ctrl = op(self, i, borrowed, borrowed_prefix);
+                    let ctrl = op(self, borrow_idx, (borrowed, phase), borrowed_prefix);
                     if ctrl == Control::Break { return; }
                 }
             }
@@ -1300,7 +1307,7 @@ impl<'c, 'b, 'a: 'b+'c, 'gcx, 'tcx: 'a> MirBorrowckCtxt<'c, 'b, 'a, 'gcx, 'tcx> 
                                            Origin::Mir)
                 .span_label(self.retrieve_borrow_span(borrow),
                             format!("borrow of `{}` occurs here",
-                                    self.describe_lvalue(&borrow.lvalue)))
+                                    self.describe_lvalue(&borrow.borrowed_lvalue)))
                 .span_label(span, format!("move out of `{}` occurs here",
                                           self.describe_lvalue(lvalue)))
                 .emit();
@@ -1313,7 +1320,7 @@ impl<'c, 'b, 'a: 'b+'c, 'gcx, 'tcx: 'a> MirBorrowckCtxt<'c, 'b, 'a, 'gcx, 'tcx> 
 
         let mut err = self.tcx.cannot_use_when_mutably_borrowed(
             span, &self.describe_lvalue(lvalue),
-            self.retrieve_borrow_span(borrow), &self.describe_lvalue(&borrow.lvalue),
+            self.retrieve_borrow_span(borrow), &self.describe_lvalue(&borrow.borrowed_lvalue),
             Origin::Mir);
 
         err.emit();
@@ -1393,7 +1400,7 @@ impl<'c, 'b, 'a: 'b+'c, 'gcx, 'tcx: 'a> MirBorrowckCtxt<'c, 'b, 'a, 'gcx, 'tcx> 
         use self::prefixes::IsPrefixOf;
 
         assert!(common_prefix.is_prefix_of(lvalue));
-        assert!(common_prefix.is_prefix_of(&issued_borrow.lvalue));
+        assert!(common_prefix.is_prefix_of(&issued_borrow.borrowed_lvalue));
 
         let issued_span = self.retrieve_borrow_span(issued_borrow);
 
@@ -1734,21 +1741,29 @@ impl<'b, 'gcx, 'tcx> InProgress<'b, 'gcx, 'tcx> {
 
         s.push_str("borrows in effect: [");
         let mut saw_one = false;
-        self.borrows.each_state_bit(|borrow| {
+        self.borrows.each_state_bit(|borrow_bit| {
             if saw_one { s.push_str(", "); };
             saw_one = true;
+            let (borrow, phase) = match borrow_bit.origin() {
+                (b, BorrowPhase::Reservation) => (b, "(reserve)"),
+                (b, BorrowPhase::Activation) =>  (b, "(active)"),
+            };
             let borrow_data = &self.borrows.base_results.operator().borrows()[borrow];
-            s.push_str(&format!("{}", borrow_data));
+            s.push_str(&format!("{} {}", borrow_data, phase));
         });
         s.push_str("] ");
 
         s.push_str("borrows generated: [");
         let mut saw_one = false;
-        self.borrows.each_gen_bit(|borrow| {
+        self.borrows.each_gen_bit(|borrow_bit| {
             if saw_one { s.push_str(", "); };
             saw_one = true;
+            let (borrow, phase) = match borrow_bit.origin() {
+                (b, BorrowPhase::Reservation) => (b, "(reserve)"),
+                (b, BorrowPhase::Activation) =>  (b, "(active)"),
+            };
             let borrow_data = &self.borrows.base_results.operator().borrows()[borrow];
-            s.push_str(&format!("{}", borrow_data));
+            s.push_str(&format!("{} {}", borrow_data, phase));
         });
         s.push_str("] ");
 
@@ -1868,9 +1883,57 @@ impl<BD> FlowInProgress<BD> where BD: BitDenotation {
         self.curr_state.union(&self.stmt_gen);
         self.curr_state.subtract(&self.stmt_kill);
     }
+}
 
-    fn elems_incoming(&self) -> indexed_set::Elems<BD::Idx> {
+impl<'a, 'gcx, 'tcx> FlowInProgress<Borrows<'a, 'gcx, 'tcx>> {
+    fn fused_elems_incoming(&self) -> PhasedBorrows {
         let univ = self.base_results.sets().bits_per_block();
-        self.curr_state.elems(univ)
+        PhasedBorrows(self.curr_state.elems(univ).peekable())
+    }
+}
+
+// This takes advantage of fact that the bits are laid out in
+// [reserve_0, active_0, reserve_1, active_1, ...], are iterated over
+// in that same order, and that whenever the `active_k` bit is set, the
+// corresponding `reserve_k` bit will also be set.
+//
+// Thus, rather than iterating over bit-pairs at a time, we can just
+// peek forward, see if the next element is the corresponding active
+// bit, and if so, skip ahead to that instead in the iteration.
+struct PhasedBorrows<'a>(iter::Peekable<indexed_set::Elems<'a, BorrowBitIndex>>);
+
+impl<'a> Iterator for PhasedBorrows<'a> {
+    type Item = (BorrowIndex, BorrowPhase);
+    fn next(&mut self) -> Option<Self::Item> {
+        let borrow_bit_idx = match self.0.next() {
+            None => return None,
+            Some(borrow_bit_idx) => borrow_bit_idx,
+        };
+
+        let (borrow_idx1, phase1) = borrow_bit_idx.origin();
+
+        // we should never see an Activation without first seeing its
+        // partner reservation first.
+        assert_eq!(phase1, BorrowPhase::Reservation);
+
+        let (borrow_idx2, phase2) = match self.0.peek() {
+            None => return Some((borrow_idx1, phase1)),
+            Some(borrow_bit_idx) => borrow_bit_idx.origin()
+        };
+
+        match phase2 {
+            BorrowPhase::Reservation => {
+                assert_ne!(borrow_idx1, borrow_idx2);
+                return Some((borrow_idx1, phase1));
+            }
+            BorrowPhase::Activation => {
+                assert_eq!(borrow_idx1, borrow_idx2);
+                // discard the peeked value.
+                self.0.next();
+                // return active index (that we just peeked at) as next
+                // elem in the iteration.
+                return Some((borrow_idx1, BorrowPhase::Activation));
+            }
+        }
     }
 }

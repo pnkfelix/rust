@@ -18,7 +18,6 @@ use rustc::ty::{self, TyCtxt};
 use rustc::mir::{self, Mir, BasicBlock, BasicBlockData, Location, Statement, Terminator};
 use rustc::session::Session;
 
-use std::fmt::{self, Debug};
 use std::io;
 use std::mem;
 use std::path::PathBuf;
@@ -27,8 +26,10 @@ use std::usize;
 pub use self::impls::{MaybeStorageLive};
 pub use self::impls::{MaybeInitializedLvals, MaybeUninitializedLvals};
 pub use self::impls::{DefinitelyInitializedLvals, MovingOutStatements};
-pub use self::impls::borrows::{Borrows, BorrowData, BorrowIndex};
+pub(crate) use self::impls::borrows::{Borrows, BorrowData};
+pub(crate) use self::impls::borrows::{BorrowIndex, BorrowBitIndex, BorrowPhase};
 pub(crate) use self::drop_flag_effects::*;
+pub(crate) use self::graphviz::DebugFormatted;
 
 use self::move_paths::MoveData;
 
