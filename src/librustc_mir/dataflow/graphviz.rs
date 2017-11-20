@@ -18,7 +18,7 @@ use rustc_data_structures::indexed_vec::Idx;
 use dot;
 use dot::IntoCow;
 
-use std::fmt::Debug;
+use std::fmt;
 use std::fs::File;
 use std::io;
 use std::io::prelude::*;
@@ -54,13 +54,27 @@ struct Graph<'a, 'tcx, MWF:'a, P> where
     render_idx: P,
 }
 
+pub(crate) struct DebugFormatted(String);
+
+impl DebugFormatted {
+    pub fn new(other: &fmt::Debug) -> DebugFormatted {
+        DebugFormatted(format!("{:?}", other))
+    }
+}
+
+impl fmt::Debug for DebugFormatted {
+    fn fmt(&self, w: &mut fmt::Formatter) -> fmt::Result {
+        write!(w, "{}", self.0)
+    }
+}
+
 pub(crate) fn print_borrowck_graph_to<'a, 'tcx, BD, P>(
     mbcx: &DataflowBuilder<'a, 'tcx, BD>,
     path: &Path,
     render_idx: P)
     -> io::Result<()>
     where BD: BitDenotation,
-          P: Fn(&BD, BD::Idx) -> &Debug
+          P: Fn(&BD, BD::Idx) -> DebugFormatted
 {
     let g = Graph { mbcx: mbcx, phantom: PhantomData, render_idx: render_idx };
     let mut v = Vec::new();
@@ -82,7 +96,7 @@ fn outgoing(mir: &Mir, bb: BasicBlock) -> Vec<Edge> {
 
 impl<'a, 'tcx, MWF, P> dot::Labeller<'a> for Graph<'a, 'tcx, MWF, P>
     where MWF: MirWithFlowState<'tcx>,
-          P: for <'b> Fn(&'b MWF::BD, <MWF::BD as BitDenotation>::Idx) -> &'b Debug,
+          P: Fn(&MWF::BD, <MWF::BD as BitDenotation>::Idx) -> DebugFormatted,
 {
     type Node = Node;
     type Edge = Edge;
@@ -142,7 +156,7 @@ impl<'a, 'tcx, MWF, P> dot::Labeller<'a> for Graph<'a, 'tcx, MWF, P>
         const ALIGN_RIGHT: &'static str = r#"align="right""#;
         const FACE_MONOSPACE: &'static str = r#"FACE="Courier""#;
         fn chunked_present_left<W:io::Write>(w: &mut W,
-                                             interpreted: &[&Debug],
+                                             interpreted: &[DebugFormatted],
                                              chunk_size: usize)
                                              -> io::Result<()>
         {

@@ -119,16 +119,19 @@ fn do_mir_borrowck<'a, 'gcx, 'tcx>(infcx: &InferCtxt<'a, 'gcx, 'tcx>,
     let dead_unwinds = IdxSetBuf::new_empty(mir.basic_blocks().len());
     let flow_borrows = do_dataflow(tcx, mir, id, &attributes, &dead_unwinds,
                                    Borrows::new(tcx, mir, opt_regioncx.as_ref()),
-                                   |bd, i| bd.location(i));
+                                   |bd, i| {
+                                       let (borrow, phase) = i.origin();
+                                       DebugFormatted::new(&(bd.location(borrow), phase))
+                                   });
     let flow_inits = do_dataflow(tcx, mir, id, &attributes, &dead_unwinds,
                                  MaybeInitializedLvals::new(tcx, mir, &mdpe),
-                                 |bd, i| &bd.move_data().move_paths[i]);
+                                 |bd, i| DebugFormatted::new(&bd.move_data().move_paths[i]));
     let flow_uninits = do_dataflow(tcx, mir, id, &attributes, &dead_unwinds,
                                    MaybeUninitializedLvals::new(tcx, mir, &mdpe),
-                                   |bd, i| &bd.move_data().move_paths[i]);
+                                   |bd, i| DebugFormatted::new(&bd.move_data().move_paths[i]));
     let flow_move_outs = do_dataflow(tcx, mir, id, &attributes, &dead_unwinds,
                                      MovingOutStatements::new(tcx, mir, &mdpe),
-                                     |bd, i| &bd.move_data().moves[i]);
+                                     |bd, i| DebugFormatted::new(&bd.move_data().moves[i]));
 
     let mut mbcx = MirBorrowckCtxt {
         tcx: tcx,
