@@ -1075,7 +1075,7 @@ impl<'tcx> Debug for Statement<'tcx> {
 
 /// A path to a value; something that can be evaluated without
 /// changing or disturbing program state.
-#[derive(Clone, PartialEq, RustcEncodable, RustcDecodable)]
+#[derive(Clone, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
 pub enum Lvalue<'tcx> {
     /// local variable
     Local(Local),
@@ -1089,7 +1089,7 @@ pub enum Lvalue<'tcx> {
 
 /// The def-id of a static, along with its normalized type (which is
 /// stored to avoid requiring normalization when reading MIR).
-#[derive(Clone, PartialEq, RustcEncodable, RustcDecodable)]
+#[derive(Clone, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
 pub struct Static<'tcx> {
     pub def_id: DefId,
     pub ty: Ty<'tcx>,
