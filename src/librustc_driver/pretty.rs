@@ -420,7 +420,7 @@ impl<'hir> pprust_hir::PpAnn for IdentifiedAnnotation<'hir> {
             pprust_hir::NodeName(_) => Ok(()),
             pprust_hir::NodeItem(item) => {
                 s.s.space()?;
-                s.synth_comment(item.id.to_string())
+                s.synth_comment(format!("node_id: {} hir_id: {:?}", item.id, item.hir_id))
             }
             pprust_hir::NodeSubItem(id) => {
                 s.s.space()?;
@@ -428,16 +428,16 @@ impl<'hir> pprust_hir::PpAnn for IdentifiedAnnotation<'hir> {
             }
             pprust_hir::NodeBlock(blk) => {
                 s.s.space()?;
-                s.synth_comment(format!("block {}", blk.id))
+                s.synth_comment(format!("block node_id: {} hir_id: {:?}", blk.id, blk.hir_id))
             }
             pprust_hir::NodeExpr(expr) => {
                 s.s.space()?;
-                s.synth_comment(expr.id.to_string())?;
+                s.synth_comment(format!("node_id: {} hir_id: {:?}", expr.id, expr.hir_id))?;
                 s.pclose()
             }
             pprust_hir::NodePat(pat) => {
                 s.s.space()?;
-                s.synth_comment(format!("pat {}", pat.id))
+                s.synth_comment(format!("pat node_id: {} hir_id: {:?}", pat.id, pat.hir_id))
             }
         }
     }
