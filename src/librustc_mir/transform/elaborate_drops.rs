@@ -13,6 +13,7 @@ use dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
 use dataflow::{DataflowResults};
 use dataflow::{on_all_children_bits, on_all_drop_children_bits};
 use dataflow::{drop_flag_effects_for_location, on_lookup_result_bits};
+use dataflow::{place_contents_drop_state_cannot_differ, place_needs_drop};
 use dataflow::MoveDataParamEnv;
 use dataflow::{self, do_dataflow, DebugFormatted};
 use rustc::hir;
@@ -128,10 +129,14 @@ fn find_dead_unwinds<'a, 'tcx>(
         debug!("find_dead_unwinds @ {:?}: path({:?})={:?}", bb, location, path);
 
         let mut maybe_live = false;
-        on_all_drop_children_bits(tcx, mir, &env, path, |child| {
-            let (child_maybe_live, _) = init_data.state(child);
-            maybe_live |= child_maybe_live;
-        });
+        on_all_drop_children_bits(&env.move_data,
+                                  path,
+                                  |lv| place_contents_drop_state_cannot_differ(tcx, mir, lv),
+                                  |lv| place_needs_drop(tcx, mir, env.param_env, lv),
+                                  |child| {
+                                      let (child_maybe_live, _) = init_data.state(child);
+                                      maybe_live |= child_maybe_live;
+                                  });
 
         debug!("find_dead_unwinds @ {:?}: maybe_live={}", bb, maybe_live);
         if !maybe_live {
@@ -154,20 +159,23 @@ impl InitializationData {
                                env: &MoveDataParamEnv<'tcx, 'tcx>,
                                loc: Location)
     {
-        drop_flag_effects_for_location(tcx, mir, env, loc, |path, df| {
-            debug!("at location {:?}: setting {:?} to {:?}",
-                   loc, path, df);
-            match df {
-                DropFlagState::Present => {
-                    self.live.add(&path);
-                    self.dead.remove(&path);
+        drop_flag_effects_for_location(
+            &env.move_data, loc,
+            |lv| place_contents_drop_state_cannot_differ(tcx, mir, lv),
+            |path, df| {
+                debug!("at location {:?}: setting {:?} to {:?}",
+                       loc, path, df);
+                match df {
+                    DropFlagState::Present => {
+                        self.live.add(&path);
+                        self.dead.remove(&path);
+                    }
+                    DropFlagState::Absent => {
+                        self.dead.add(&path);
+                        self.live.remove(&path);
+                    }
                 }
-                DropFlagState::Absent => {
-                    self.dead.add(&path);
-                    self.live.remove(&path);
-                }
-            }
-        });
+            })
     }
 
     fn state(&self, path: MovePathIndex) -> (bool, bool) {
@@ -212,8 +220,13 @@ impl<'a, 'b, 'tcx> DropElaborator<'a, 'tcx> for Elaborator<'a, 'b, 'tcx> {
                 let mut some_live = false;
                 let mut some_dead = false;
                 let mut children_count = 0;
+                let tcx = self.tcx();
+                let mir = self.mir();
                 on_all_drop_children_bits(
-                    self.tcx(), self.mir(), self.ctxt.env, path, |child| {
+                    &self.ctxt.env.move_data, path,
+                    |lv| place_contents_drop_state_cannot_differ(tcx, mir, lv),
+                    |lv| place_needs_drop(tcx, mir, self.param_env(), lv),
+                    |child| {
                         let (live, dead) = self.init_data.state(child);
                         debug!("elaborate_drop: state({:?}) = {:?}",
                                child, (live, dead));
@@ -238,10 +251,13 @@ impl<'a, 'b, 'tcx> DropElaborator<'a, 'tcx> for Elaborator<'a, 'b, 'tcx> {
                 self.ctxt.set_drop_flag(loc, path, DropFlagState::Absent);
             }
             DropFlagMode::Deep => {
-                on_all_children_bits(
-                    self.tcx(), self.mir(), self.ctxt.move_data(), path,
-                    |child| self.ctxt.set_drop_flag(loc, child, DropFlagState::Absent)
-                 );
+                let tcx = self.tcx();
+                let mir = self.mir();
+                on_all_children_bits(self.ctxt.move_data(), path,
+                                     |p| place_contents_drop_state_cannot_differ(tcx, mir, p),
+                                     |child| {
+                                         self.ctxt.set_drop_flag(loc, child, DropFlagState::Absent)
+                                     })
             }
         }
     }
@@ -389,14 +405,19 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
                 }
             };
 
-            on_all_drop_children_bits(self.tcx, self.mir, self.env, path, |child| {
-                let (maybe_live, maybe_dead) = init_data.state(child);
-                debug!("collect_drop_flags: collecting {:?} from {:?}@{:?} - {:?}",
-                       child, location, path, (maybe_live, maybe_dead));
-                if maybe_live && maybe_dead {
-                    self.create_drop_flag(child, terminator.source_info.span)
-                }
-            });
+            let (tcx, mir, param_env) = (self.tcx, self.mir, self.param_env());
+            on_all_drop_children_bits(
+                &self.env.move_data, path,
+                |p| place_contents_drop_state_cannot_differ(tcx, mir, p),
+                |p| place_needs_drop(tcx, mir, param_env, p),
+                |child| {
+                    let (maybe_live, maybe_dead) = init_data.state(child);
+                    debug!("collect_drop_flags: collecting {:?} from {:?}@{:?} - {:?}",
+                           child, location, path, (maybe_live, maybe_dead));
+                    if maybe_live && maybe_dead {
+                        self.create_drop_flag(child, terminator.source_info.span)
+                    }
+                })
         }
     }
 
@@ -515,12 +536,16 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
                     target,
                     Unwind::To(unwind),
                     bb);
-                on_all_children_bits(self.tcx, self.mir, self.move_data(), path, |child| {
-                    self.set_drop_flag(Location { block: target, statement_index: 0 },
-                                       child, DropFlagState::Present);
-                    self.set_drop_flag(Location { block: unwind, statement_index: 0 },
-                                       child, DropFlagState::Present);
-                });
+                let (tcx, mir) = (self.tcx, self.mir);
+                on_all_children_bits(
+                    self.move_data(), path,
+                    |p| place_contents_drop_state_cannot_differ(tcx, mir, p),
+                    |child| {
+                        self.set_drop_flag(Location { block: target, statement_index: 0 },
+                                           child, DropFlagState::Present);
+                        self.set_drop_flag(Location { block: unwind, statement_index: 0 },
+                                           child, DropFlagState::Present);
+                    });
             }
             LookupResult::Parent(parent) => {
                 // drop and replace behind a pointer/array/whatever. The location
@@ -574,21 +599,25 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
 
                 let loc = Location { block: tgt, statement_index: 0 };
                 let path = self.move_data().rev_lookup.find(place);
+                let (tcx, mir) = (self.tcx, self.mir);
                 on_lookup_result_bits(
-                    self.tcx, self.mir, self.move_data(), path,
-                    |child| self.set_drop_flag(loc, child, DropFlagState::Present)
-                );
+                    self.move_data(), path,
+                    |p| place_contents_drop_state_cannot_differ(tcx, mir, p),
+                    |child| self.set_drop_flag(loc, child, DropFlagState::Present));
             }
         }
     }
 
     fn drop_flags_for_args(&mut self) {
         let loc = Location { block: START_BLOCK, statement_index: 0 };
+        let (tcx, mir) = (self.tcx, self.mir);
         dataflow::drop_flag_effects_for_function_entry(
-            self.tcx, self.mir, self.env, |path, ds| {
+            mir,
+            &self.env.move_data,
+            |p| place_contents_drop_state_cannot_differ(tcx, mir, p),
+            |path, ds| {
                 self.set_drop_flag(loc, path, ds);
-            }
-        )
+            })
     }
 
     fn drop_flags_for_locs(&mut self) {
@@ -629,13 +658,15 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
                     }
                 }
                 let loc = Location { block: bb, statement_index: i };
+                let (tcx, mir) = (self.tcx, self.mir);
                 dataflow::drop_flag_effects_for_location(
-                    self.tcx, self.mir, self.env, loc, |path, ds| {
+                    &self.env.move_data, loc,
+                    |p| place_contents_drop_state_cannot_differ(tcx, mir, p),
+                    |path, ds| {
                         if ds == DropFlagState::Absent || allow_initializations {
                             self.set_drop_flag(loc, path, ds)
                         }
-                    }
-                )
+                    })
             }
 
             // There may be a critical edge after this call,
@@ -648,8 +679,10 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
 
                 let loc = Location { block: bb, statement_index: data.statements.len() };
                 let path = self.move_data().rev_lookup.find(place);
+                let (tcx, mir) = (self.tcx, self.mir);
                 on_lookup_result_bits(
-                    self.tcx, self.mir, self.move_data(), path,
+                    self.move_data(), path,
+                    |p| place_contents_drop_state_cannot_differ(tcx, mir, p),
                     |child| self.set_drop_flag(loc, child, DropFlagState::Present)
                 );
             }
