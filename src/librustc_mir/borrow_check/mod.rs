@@ -28,7 +28,8 @@ use syntax_pos::Span;
 
 use dataflow::{do_dataflow, DebugFormatted};
 use dataflow::MoveDataParamEnv;
-use dataflow::{BitDenotation, BlockSets, DataflowResults, DataflowResultsConsumer};
+use dataflow::{SetTriple, BlockSets};
+use dataflow::{BitDenotation, DataflowResults, DataflowResultsConsumer};
 use dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
 use dataflow::{EverInitializedLvals, MovingOutStatements};
 use dataflow::{BorrowData, BorrowIndex, Borrows};
@@ -240,9 +241,7 @@ where
     BD: BitDenotation,
 {
     base_results: DataflowResults<BD>,
-    curr_state: IdxSetBuf<BD::Idx>,
-    stmt_gen: IdxSetBuf<BD::Idx>,
-    stmt_kill: IdxSetBuf<BD::Idx>,
+    sets: SetTriple<IdxSetBuf<BD::Idx>>,
 }
 
 // Check that:
@@ -1021,7 +1020,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
 
         match self.move_path_closest_to(place) {
             Ok(mpi) => for ii in &move_data.init_path_map[mpi] {
-                if flow_state.ever_inits.curr_state.contains(ii) {
+                if flow_state.ever_inits.sets.on_entry.contains(ii) {
                     let first_assign_span = self.move_data.inits[*ii].span;
                     self.report_illegal_reassignment(context, (place, span), first_assign_span);
                     break;
@@ -1056,7 +1055,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
         let place = self.base_path(place_span.0);
 
         let maybe_uninits = &flow_state.uninits;
-        let curr_move_outs = &flow_state.move_outs.curr_state;
+        let curr_move_outs = &flow_state.move_outs.sets.on_entry;
 
         // Bad scenarios:
         //
@@ -1097,7 +1096,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
         debug!("check_if_path_is_moved part1 place: {:?}", place);
         match self.move_path_closest_to(place) {
             Ok(mpi) => {
-                if maybe_uninits.curr_state.contains(&mpi) {
+                if maybe_uninits.sets.on_entry.contains(&mpi) {
                     self.report_use_of_moved_or_uninitialized(
                         context,
                         desired_action,
@@ -2465,7 +2464,7 @@ where
         let mut todo = vec![mpi];
         let mut push_siblings = false; // don't look at siblings of original `mpi`.
         while let Some(mpi) = todo.pop() {
-            if self.curr_state.contains(&mpi) {
+            if self.sets.on_entry.contains(&mpi) {
                 return Some(mpi);
             }
             let move_path = &move_data.move_paths[mpi];
@@ -2495,7 +2494,8 @@ where
     where
         F: FnMut(BD::Idx),
     {
-        self.curr_state
+        self.sets
+            .on_entry
             .each_bit(self.base_results.operator().bits_per_block(), f)
     }
 
@@ -2503,35 +2503,34 @@ where
     where
         F: FnMut(BD::Idx),
     {
-        self.stmt_gen
+        self.sets
+            .gen_set
             .each_bit(self.base_results.operator().bits_per_block(), f)
     }
 
     fn new(results: DataflowResults<BD>) -> Self {
         let bits_per_block = results.sets().bits_per_block();
-        let curr_state = IdxSetBuf::new_empty(bits_per_block);
-        let stmt_gen = IdxSetBuf::new_empty(bits_per_block);
-        let stmt_kill = IdxSetBuf::new_empty(bits_per_block);
+        let on_entry = IdxSetBuf::new_empty(bits_per_block);
+        let gen_set = IdxSetBuf::new_empty(bits_per_block);
+        let kill_set = IdxSetBuf::new_empty(bits_per_block);
         FlowInProgress {
             base_results: results,
-            curr_state: curr_state,
-            stmt_gen: stmt_gen,
-            stmt_kill: stmt_kill,
+            sets: SetTriple { on_entry, gen_set, kill_set },
         }
     }
 
     fn reset_to_entry_of(&mut self, bb: BasicBlock) {
-        (*self.curr_state).clone_from(self.base_results.sets().on_entry_set_for(bb.index()));
+        (*self.sets.on_entry).clone_from(self.base_results.sets().on_entry_set_for(bb.index()));
     }
 
     fn reconstruct_statement_effect(&mut self, loc: Location) {
-        self.stmt_gen.reset_to_empty();
-        self.stmt_kill.reset_to_empty();
+        self.sets.gen_set.reset_to_empty();
+        self.sets.kill_set.reset_to_empty();
         let mut ignored = IdxSetBuf::new_empty(0);
         let mut sets = BlockSets {
             on_entry: &mut ignored,
-            gen_set: &mut self.stmt_gen,
-            kill_set: &mut self.stmt_kill,
+            gen_set: &mut self.sets.gen_set,
+            kill_set: &mut self.sets.kill_set,
         };
         self.base_results
             .operator()
@@ -2539,13 +2538,13 @@ where
     }
 
     fn reconstruct_terminator_effect(&mut self, loc: Location) {
-        self.stmt_gen.reset_to_empty();
-        self.stmt_kill.reset_to_empty();
+        self.sets.gen_set.reset_to_empty();
+        self.sets.kill_set.reset_to_empty();
         let mut ignored = IdxSetBuf::new_empty(0);
         let mut sets = BlockSets {
             on_entry: &mut ignored,
-            gen_set: &mut self.stmt_gen,
-            kill_set: &mut self.stmt_kill,
+            gen_set: &mut self.sets.gen_set,
+            kill_set: &mut self.sets.kill_set,
         };
         self.base_results
             .operator()
@@ -2553,23 +2552,23 @@ where
     }
 
     fn apply_local_effect(&mut self) {
-        self.curr_state.union(&self.stmt_gen);
-        self.curr_state.subtract(&self.stmt_kill);
+        self.sets.on_entry.union(&self.sets.gen_set);
+        self.sets.on_entry.subtract(&self.sets.kill_set);
     }
 
     fn elems_incoming(&self) -> indexed_set::Elems<BD::Idx> {
         let univ = self.base_results.sets().bits_per_block();
-        self.curr_state.elems(univ)
+        self.sets.on_entry.elems(univ)
     }
 
     fn with_elems_outgoing<F>(&self, f: F)
     where
         F: FnOnce(indexed_set::Elems<BD::Idx>),
     {
-        let mut curr_state = self.curr_state.clone();
-        curr_state.union(&self.stmt_gen);
-        curr_state.subtract(&self.stmt_kill);
+        let mut on_entry = self.sets.on_entry.clone();
+        on_entry.union(&self.sets.gen_set);
+        on_entry.subtract(&self.sets.kill_set);
         let univ = self.base_results.sets().bits_per_block();
-        f(curr_state.elems(univ));
+        f(on_entry.elems(univ));
     }
 }

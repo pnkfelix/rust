@@ -481,6 +481,22 @@ pub struct AllSets<E: Idx> {
     on_entry_sets: Bits<E>,
 }
 
+/// Triple of values, typically associated with some block or
+/// statement, corresponding to the three dataflow components:
+///
+/// 1. "current" flow state, 2. elements to add to the state,
+/// 3. elements to remove from the state.
+///
+/// This is just a slight general of `BlockSets` (below).
+pub struct SetTriple<T> {
+    /// Flow state immediately before control flow enters
+    pub(crate) on_entry: T,
+    /// Bits that are set to 1 by the time we exit
+    pub(crate) gen_set: T,
+    /// Bits that are set to 0 by the time we exit
+    pub(crate) kill_set: T,
+}
+
 /// Triple of sets associated with a given block.
 ///
 /// Generally, one sets up `on_entry`, `gen_set`, and `kill_set` for
@@ -495,16 +511,7 @@ pub struct AllSets<E: Idx> {
 /// killed during the iteration. (This is such a good idea that the
 /// `fn gen` and `fn kill` methods that set their state enforce this
 /// for you.)
-pub struct BlockSets<'a, E: Idx> {
-    /// Dataflow state immediately before control flow enters the given block.
-    pub(crate) on_entry: &'a mut IdxSet<E>,
-
-    /// Bits that are set to 1 by the time we exit the given block.
-    pub(crate) gen_set: &'a mut IdxSet<E>,
-
-    /// Bits that are set to 0 by the time we exit the given block.
-    pub(crate) kill_set: &'a mut IdxSet<E>,
-}
+pub type BlockSets<'a, E> = SetTriple<&'a mut IdxSet<E>>;
 
 impl<'a, E:Idx> BlockSets<'a, E> {
     fn gen(&mut self, e: &E) {
