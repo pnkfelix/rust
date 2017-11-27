@@ -192,7 +192,12 @@ impl<'a, 'tcx: 'a, BD> DataflowAnalysis<'a, 'tcx, BD> where BD: BitDenotation
         for (bb, data) in self.mir.basic_blocks().iter_enumerated() {
             let &mir::BasicBlockData { ref statements, ref terminator, is_cleanup: _ } = data;
 
+            let mut interim_state;
             let sets = &mut self.flow_state.sets.for_block(bb.index());
+            if BD::accumulates_intrablock_state() {
+                interim_state = sets.on_entry.to_owned();
+                sets.on_entry = &mut interim_state;
+            }
             for j_stmt in 0..statements.len() {
                 let location = Location { block: bb, statement_index: j_stmt };
                 self.flow_state.operator.statement_effect(sets, location);
@@ -558,6 +563,20 @@ pub trait InitialFlow {
 pub trait BitDenotation: BitwiseOperator {
     /// Specifies what index type is used to access the bitvector.
     type Idx: Idx;
+
+    /// Some analyses want to accumulate knowledge within a block when
+    /// analyzing its statements for building the gen/kill sets. Override
+    /// this method to return true in such cases.
+    ///
+    /// When this returns true, the statement-effect (re)construction
+    /// will clone the `on_entry` state and pass along a reference via
+    /// `SetTriple.on_entry` to that local clone into
+    /// `statement_effect` and `terminator_effect`).
+    ///
+    /// When its false, no local clone is constucted; instead a
+    /// mutable reference directly into `on_entry` is passed along via
+    /// `SetTriple.on_entry` instead.
+    fn accumulates_intrablock_state() -> bool { false }
 
     /// A name describing the dataflow analysis that this
     /// BitDenotation is supporting.  The name should be something
