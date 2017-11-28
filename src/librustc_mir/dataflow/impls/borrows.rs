@@ -42,7 +42,7 @@ pub struct Borrows<'a, 'gcx: 'tcx, 'tcx: 'a> {
 }
 
 // temporarily allow some dead fields: `kind` and `region` will be
-// needed by borrowck; `place` will probably be a MovePathIndex when
+// needed by borrowck; `borrowed_place` will probably be a MovePathIndex when
 // that is extended to include borrowed data paths.
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -50,7 +50,7 @@ pub struct BorrowData<'tcx> {
     pub(crate) location: Location,
     pub(crate) kind: mir::BorrowKind,
     pub(crate) region: Region<'tcx>,
-    pub(crate) place: mir::Place<'tcx>,
+    pub(crate) borrowed_place: mir::Place<'tcx>,
 }
 
 impl<'tcx> fmt::Display for BorrowData<'tcx> {
@@ -62,7 +62,7 @@ impl<'tcx> fmt::Display for BorrowData<'tcx> {
         };
         let region = format!("{}", self.region);
         let region = if region.len() > 0 { format!("{} ", region) } else { region };
-        write!(w, "&{}{}{:?}", region, kind, self.place)
+        write!(w, "&{}{}{:?}", region, kind, self.borrowed_place)
     }
 }
 
@@ -105,7 +105,7 @@ impl<'a, 'gcx, 'tcx> Borrows<'a, 'gcx, 'tcx> {
                     if is_unsafe_place(self.tcx, self.mir, place) { return; }
 
                     let borrow = BorrowData {
-                        location: location, kind: kind, region: region, place: place.clone(),
+                        location, kind, region, borrowed_place: place.clone(),
                     };
                     let idx = self.idx_vec.push(borrow);
                     self.location_map.insert(location, idx);

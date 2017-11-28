@@ -537,7 +537,7 @@ impl<'cx, 'gcx, 'tcx> DataflowResultsConsumer<'cx, 'tcx> for MirBorrowckCtxt<'cx
                     for i in borrows {
                         let borrow = &data[i];
 
-                        if self.place_is_invalidated_at_exit(&borrow.place) {
+                        if self.place_is_invalidated_at_exit(&borrow.borrowed_place) {
                             debug!("borrow conflicts at exit {:?}", borrow);
                             let borrow_span = self.mir.source_info(borrow.location).span;
                             // FIXME: should be talking about the region lifetime instead
@@ -546,7 +546,7 @@ impl<'cx, 'gcx, 'tcx> DataflowResultsConsumer<'cx, 'tcx> for MirBorrowckCtxt<'cx
 
                             self.report_borrowed_value_does_not_live_long_enough(
                                 ContextKind::StorageDead.new(loc),
-                                (&borrow.place, borrow_span),
+                                (&borrow.borrowed_place, borrow_span),
                                 end_span,
                             )
                         }
@@ -1506,7 +1506,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
             // FIXME: Differs from AST-borrowck; includes drive-by fix
             // to #38899. Will probably need back-compat mode flag.
             for accessed_prefix in self.prefixes(place, PrefixSet::All) {
-                if *accessed_prefix == borrowed.place {
+                if *accessed_prefix == borrowed.borrowed_place {
                     // FIXME: pass in enum describing case we are in?
                     let ctrl = op(self, i, borrowed, accessed_prefix);
                     if ctrl == Control::Break {
@@ -1516,7 +1516,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
             }
 
             // Is `place` a prefix (modulo access type) of the
-            // `borrowed.place`? If so, that's relevant.
+            // `borrowed.borrowed_place`? If so, that's relevant.
 
             let prefix_kind = match access {
                 Shallow(Some(ArtificialField::Discriminant)) |
@@ -1533,7 +1533,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                 Deep => PrefixSet::Supporting,
             };
 
-            for borrowed_prefix in self.prefixes(&borrowed.place, prefix_kind) {
+            for borrowed_prefix in self.prefixes(&borrowed.borrowed_place, prefix_kind) {
                 if borrowed_prefix == place {
                     // FIXME: pass in enum describing case we are in?
                     let ctrl = op(self, i, borrowed, borrowed_prefix);
@@ -1801,7 +1801,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
             Some(name) => format!("`{}`", name),
             None => "value".to_owned(),
         };
-        let borrow_msg = match self.describe_place(&borrow.place) {
+        let borrow_msg = match self.describe_place(&borrow.borrowed_place) {
             Some(name) => format!("`{}`", name),
             None => "value".to_owned(),
         };
@@ -1829,7 +1829,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
             span,
             &self.describe_place(place).unwrap_or("_".to_owned()),
             self.retrieve_borrow_span(borrow),
-            &self.describe_place(&borrow.place).unwrap_or("_".to_owned()),
+            &self.describe_place(&borrow.borrowed_place).unwrap_or("_".to_owned()),
             Origin::Mir,
         );
 
@@ -1915,7 +1915,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
         use self::prefixes::IsPrefixOf;
 
         assert!(common_prefix.is_prefix_of(place));
-        assert!(common_prefix.is_prefix_of(&issued_borrow.place));
+        assert!(common_prefix.is_prefix_of(&issued_borrow.borrowed_place));
 
         let issued_span = self.retrieve_borrow_span(issued_borrow);
 
