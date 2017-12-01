@@ -41,6 +41,7 @@ use util::borrowck_errors::{BorrowckErrors, Origin};
 use self::MutateMode::{JustWrite, WriteAndRead};
 
 use std::borrow::Cow;
+use std::iter;
 
 pub(crate) mod nll;
 
@@ -733,9 +734,17 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
             context,
             (sd, place_span.0),
             flow_state,
-            |this, _index, borrow, common_prefix| match (rw, borrow.kind) {
+            |this, index, borrow, common_prefix| match (rw, borrow.kind) {
                 (Read(_), BorrowKind::Shared) => Control::Continue,
+
                 (Read(kind), BorrowKind::Unique) | (Read(kind), BorrowKind::Mut) => {
+                    // Reading from mere reservations of mutable-borrows is OK.
+                    if this.tcx.sess.opts.debugging_opts.two_phase_borrows &&
+                        index.is_reservation()
+                    {
+                        return Control::Continue;
+                    }
+
                     match kind {
                         ReadKind::Copy => {
                             error_reported = true;
@@ -1521,9 +1530,17 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
 
         // check for loan restricting path P being used. Accounts for
         // borrows of P, P.a.b, etc.
-        'next_borrow: for i in flow_state.borrows.elems_incoming() {
-            // FIXME for now, just skip the activation state.
-            if i.is_activation() { continue 'next_borrow; }
+        let mut elems_incoming = flow_state.borrows.elems_incoming();
+        'next_borrow: while let Some(i) = elems_incoming.next() {
+            // Skip any reservation that has a corresponding current
+            // activation.  This way, the traversal will visit each
+            // borrow_index at most once.
+            if let Some(j) = elems_incoming.peek() {
+                if i.is_reservation() && j.is_activation() {
+                    assert_eq!(i.borrow_index(), j.borrow_index());
+                    continue 'next_borrow;
+                }
+            }
 
             let borrowed = &data[i.borrow_index()];
 
@@ -2585,9 +2602,9 @@ where
         self.sets.on_entry.subtract(&self.sets.kill_set);
     }
 
-    fn elems_incoming(&self) -> indexed_set::Elems<BD::Idx> {
+    fn elems_incoming(&self) -> iter::Peekable<indexed_set::Elems<BD::Idx>> {
         let univ = self.base_results.sets().bits_per_block();
-        self.sets.on_entry.elems(univ)
+        self.sets.on_entry.elems(univ).peekable()
     }
 
     fn with_elems_outgoing<F>(&self, f: F)
