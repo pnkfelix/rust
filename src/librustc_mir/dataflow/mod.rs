@@ -18,6 +18,7 @@ use rustc::ty::{self, TyCtxt};
 use rustc::mir::{self, Mir, BasicBlock, BasicBlockData, Location, Statement, Terminator};
 use rustc::session::Session;
 
+use std::borrow::Cow;
 use std::fmt;
 use std::io;
 use std::mem;
@@ -28,7 +29,8 @@ pub use self::impls::{MaybeStorageLive};
 pub use self::impls::{MaybeInitializedLvals, MaybeUninitializedLvals};
 pub use self::impls::{DefinitelyInitializedLvals, MovingOutStatements};
 pub use self::impls::EverInitializedLvals;
-pub use self::impls::borrows::{Borrows, BorrowData, BorrowIndex};
+pub(crate) use self::impls::borrows::{Borrows, BorrowData};
+pub(crate) use self::impls::borrows::{ActiveBorrows, Reservations, ResActIndex};
 pub(crate) use self::drop_flag_effects::*;
 
 use self::move_paths::MoveData;
@@ -117,7 +119,7 @@ pub struct MoveDataParamEnv<'gcx, 'tcx> {
 }
 
 pub(crate) fn do_dataflow<'a, 'gcx, 'tcx, BD, P>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
-                                                 mir: &Mir<'tcx>,
+                                                 mir: &'a Mir<'tcx>,
                                                  node_id: ast::NodeId,
                                                  attributes: &[ast::Attribute],
                                                  dead_unwinds: &IdxSet<BasicBlock>,
@@ -127,34 +129,46 @@ pub(crate) fn do_dataflow<'a, 'gcx, 'tcx, BD, P>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
     where BD: BitDenotation + InitialFlow,
           P: Fn(&BD, BD::Idx) -> DebugFormatted
 {
-    let name_found = |sess: &Session, attrs: &[ast::Attribute], name| -> Option<String> {
-        if let Some(item) = has_rustc_mir_with(attrs, name) {
-            if let Some(s) = item.value_str() {
-                return Some(s.to_string())
-            } else {
-                sess.span_err(
-                    item.span,
-                    &format!("{} attribute requires a path", item.name()));
-                return None;
+    let flow_state = DataflowAnalysis::new(mir, dead_unwinds, bd);
+    flow_state.run(tcx, node_id, attributes, p)
+}
+
+impl<'a, 'gcx: 'tcx, 'tcx: 'a, BD> DataflowAnalysis<'a, 'tcx, BD> where BD: BitDenotation
+{
+    pub(crate) fn run<P>(self,
+                         tcx: TyCtxt<'a, 'gcx, 'tcx>,
+                         node_id: ast::NodeId,
+                         attributes: &[ast::Attribute],
+                         p: P) -> DataflowResults<BD>
+        where P: Fn(&BD, BD::Idx) -> DebugFormatted
+    {
+        let name_found = |sess: &Session, attrs: &[ast::Attribute], name| -> Option<String> {
+            if let Some(item) = has_rustc_mir_with(attrs, name) {
+                if let Some(s) = item.value_str() {
+                    return Some(s.to_string())
+                } else {
+                    sess.span_err(
+                        item.span,
+                        &format!("{} attribute requires a path", item.name()));
+                    return None;
+                }
             }
-        }
-        return None;
-    };
+            return None;
+        };
 
-    let print_preflow_to =
-        name_found(tcx.sess, attributes, "borrowck_graphviz_preflow");
-    let print_postflow_to =
-        name_found(tcx.sess, attributes, "borrowck_graphviz_postflow");
+        let print_preflow_to =
+            name_found(tcx.sess, attributes, "borrowck_graphviz_preflow");
+        let print_postflow_to =
+            name_found(tcx.sess, attributes, "borrowck_graphviz_postflow");
 
-    let mut mbcx = DataflowBuilder {
-        node_id,
-        print_preflow_to,
-        print_postflow_to,
-        flow_state: DataflowAnalysis::new(tcx, mir, dead_unwinds, bd),
-    };
+        let mut mbcx = DataflowBuilder {
+            node_id,
+            print_preflow_to, print_postflow_to, flow_state: self,
+        };
 
-    mbcx.dataflow(p);
-    mbcx.flow_state.results()
+        mbcx.dataflow(p);
+        mbcx.flow_state.results()
+    }
 }
 
 struct PropagationContext<'b, 'a: 'b, 'tcx: 'a, O> where O: 'b + BitDenotation
@@ -178,11 +192,7 @@ impl<'a, 'tcx: 'a, BD> DataflowAnalysis<'a, 'tcx, BD> where BD: BitDenotation
     }
 
     fn build_sets(&mut self) {
-        // First we need to build the entry-, gen- and kill-sets. The
-        // gather_moves information provides a high-level mapping from
-        // mir-locations to the MoveOuts (and those correspond
-        // directly to gen-sets here). But we still need to figure out
-        // the kill-sets.
+        // First we need to build the entry-, gen- and kill-sets.
 
         {
             let sets = &mut self.flow_state.sets.for_block(mir::START_BLOCK.index());
@@ -194,18 +204,26 @@ impl<'a, 'tcx: 'a, BD> DataflowAnalysis<'a, 'tcx, BD> where BD: BitDenotation
 
             let mut interim_state;
             let sets = &mut self.flow_state.sets.for_block(bb.index());
-            if BD::accumulates_intrablock_state() {
+            let track_intrablock = BD::accumulates_intrablock_state();
+            if track_intrablock {
+                debug!("swapping in mutable on_entry, initially {:?}", sets.on_entry);
                 interim_state = sets.on_entry.to_owned();
                 sets.on_entry = &mut interim_state;
             }
             for j_stmt in 0..statements.len() {
                 let location = Location { block: bb, statement_index: j_stmt };
                 self.flow_state.operator.statement_effect(sets, location);
+                if track_intrablock {
+                    sets.apply_local_effect();
+                }
             }
 
             if terminator.is_some() {
                 let location = Location { block: bb, statement_index: statements.len() };
                 self.flow_state.operator.terminator_effect(sets, location);
+                if track_intrablock {
+                    sets.apply_local_effect();
+                }
             }
         }
     }
@@ -268,7 +286,7 @@ impl<'a, 'tcx: 'a, BD> DataflowBuilder<'a, 'tcx, BD> where BD: BitDenotation
 
 /// Maps each block to a set of bits
 #[derive(Debug)]
-struct Bits<E:Idx> {
+pub(crate) struct Bits<E:Idx> {
     bits: IdxSetBuf<E>,
 }
 
@@ -485,6 +503,7 @@ pub struct AllSets<E: Idx> {
 /// 3. elements to remove from the state.
 ///
 /// This is just a slight general of `BlockSets` (below).
+#[derive(Debug)]
 pub struct SetTriple<T> {
     /// Flow state immediately before control flow enters
     pub(crate) on_entry: T,
@@ -519,6 +538,10 @@ impl<'a, E:Idx> BlockSets<'a, E> {
         self.gen_set.remove(e);
         self.kill_set.add(e);
     }
+    fn apply_local_effect(&mut self) {
+        self.on_entry.union(&self.gen_set);
+        self.on_entry.subtract(&self.kill_set);
+    }
 }
 
 impl<E:Idx> AllSets<E> {
@@ -546,6 +569,9 @@ impl<E:Idx> AllSets<E> {
     }
     pub fn on_entry_set_for(&self, block_idx: usize) -> &IdxSet<E> {
         self.lookup_set_for(&self.on_entry_sets, block_idx)
+    }
+    pub(crate) fn entry_set_state(&self) -> &Bits<E> {
+        &self.on_entry_sets
     }
 }
 
@@ -655,29 +681,33 @@ pub trait BitDenotation: BitwiseOperator {
                              dest_place: &mir::Place);
 }
 
-impl<'a, 'gcx, 'tcx: 'a, D> DataflowAnalysis<'a, 'tcx, D> where D: BitDenotation
+impl<'a, 'tcx, D> DataflowAnalysis<'a, 'tcx, D> where D: BitDenotation
 {
-    pub fn new(_tcx: TyCtxt<'a, 'gcx, 'tcx>,
-               mir: &'a Mir<'tcx>,
+    pub fn new(mir: &'a Mir<'tcx>,
                dead_unwinds: &'a IdxSet<mir::BasicBlock>,
                denotation: D) -> Self where D: InitialFlow {
         let bits_per_block = denotation.bits_per_block();
-        let usize_bits = mem::size_of::<usize>() * 8;
-        let words_per_block = (bits_per_block + usize_bits - 1) / usize_bits;
-
-        // (now rounded up to multiple of word size)
-        let bits_per_block = words_per_block * usize_bits;
-
-        let num_blocks = mir.basic_blocks().len();
-        let num_overall = num_blocks * bits_per_block;
-
-        let zeroes = Bits::new(IdxSetBuf::new_empty(num_overall));
+        let num_overall = Self::num_bits_overall(mir, bits_per_block);
         let on_entry = Bits::new(if D::bottom_value() {
             IdxSetBuf::new_filled(num_overall)
         } else {
             IdxSetBuf::new_empty(num_overall)
         });
 
+        Self::new_with_entry_sets(mir, dead_unwinds, Cow::Owned(on_entry), denotation)
+    }
+
+    pub(crate) fn new_with_entry_sets(mir: &'a Mir<'tcx>,
+                                      dead_unwinds: &'a IdxSet<mir::BasicBlock>,
+                                      on_entry: Cow<Bits<D::Idx>>,
+                                      denotation: D)
+                                      -> Self {
+        let bits_per_block = denotation.bits_per_block();
+        let usize_bits = mem::size_of::<usize>() * 8;
+        let words_per_block = (bits_per_block + usize_bits - 1) / usize_bits;
+        let num_overall = Self::num_bits_overall(mir, bits_per_block);
+        assert_eq!(num_overall, on_entry.bits.words().len() * usize_bits);
+        let zeroes = Bits::new(IdxSetBuf::new_empty(num_overall));
         DataflowAnalysis {
             mir,
             dead_unwinds,
@@ -687,12 +717,23 @@ impl<'a, 'gcx, 'tcx: 'a, D> DataflowAnalysis<'a, 'tcx, D> where D: BitDenotation
                     words_per_block,
                     gen_sets: zeroes.clone(),
                     kill_sets: zeroes,
-                    on_entry_sets: on_entry,
+                    on_entry_sets: on_entry.into_owned(),
                 },
                 operator: denotation,
-            },
+            }
         }
+    }
 
+    fn num_bits_overall(mir: &Mir, bits_per_block: usize) -> usize {
+        let usize_bits = mem::size_of::<usize>() * 8;
+        let words_per_block = (bits_per_block + usize_bits - 1) / usize_bits;
+
+        // (now rounded up to multiple of word size)
+        let bits_per_block = words_per_block * usize_bits;
+
+        let num_blocks = mir.basic_blocks().len();
+        let num_overall = num_blocks * bits_per_block;
+        num_overall
     }
 }
 

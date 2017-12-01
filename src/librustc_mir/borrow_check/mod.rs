@@ -29,15 +29,18 @@ use syntax_pos::Span;
 use dataflow::{do_dataflow, DebugFormatted};
 use dataflow::MoveDataParamEnv;
 use dataflow::{SetTriple, BlockSets};
-use dataflow::{BitDenotation, DataflowResults, DataflowResultsConsumer};
+use dataflow::{BitDenotation, DataflowAnalysis, DataflowResults, DataflowResultsConsumer};
 use dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
 use dataflow::{EverInitializedLvals, MovingOutStatements};
-use dataflow::{BorrowData, BorrowIndex, Borrows};
+use dataflow::{Borrows, BorrowData, ResActIndex};
+use dataflow::{ActiveBorrows, Reservations};
 use dataflow::move_paths::{IllegalMoveOriginKind, MoveError};
 use dataflow::move_paths::{HasMoveData, LookupResult, MoveData, MoveOutIndex, MovePathIndex};
 use util::borrowck_errors::{BorrowckErrors, Origin};
 
 use self::MutateMode::{JustWrite, WriteAndRead};
+
+use std::borrow::Cow;
 
 pub(crate) mod nll;
 
@@ -193,18 +196,38 @@ fn do_mir_borrowck<'a, 'gcx, 'tcx>(
         storage_dead_or_drop_error_reported: FxHashSet(),
     };
 
-    let flow_borrows = FlowInProgress::new(do_dataflow(
+    let borrows = Borrows::new(tcx, mir, opt_regioncx);
+    let flow_reservations = do_dataflow(
         tcx,
         mir,
         id,
         &attributes,
         &dead_unwinds,
-        Borrows::new(tcx, mir, opt_regioncx),
-        |bd, i| DebugFormatted::new(bd.location(i)),
-    ));
+        Reservations::new(borrows),
+        |rs, i| {
+            // In principle we could make the dataflow ensure that
+            // only reservation bits show up, and assert so here.
+            //
+            // In practice it is easier to be looser; in particular,
+            // it is okay for the kill-sets to hold activation bits.
+            DebugFormatted::new(&(i.kind(), rs.location(i)))
+        });
+    let flow_active_borrows = {
+        let reservations_on_entry = flow_reservations.0.sets.entry_set_state();
+        let reservations = flow_reservations.0.operator;
+        let a = DataflowAnalysis::new_with_entry_sets(mir,
+                                                      &dead_unwinds,
+                                                      Cow::Borrowed(reservations_on_entry),
+                                                      ActiveBorrows::new(reservations));
+        let results = a.run(tcx,
+                            id,
+                            &attributes,
+                            |ab, i| DebugFormatted::new(&(i.kind(), ab.location(i))));
+        FlowInProgress::new(results)
+    };
 
     let mut state = InProgress::new(
-        flow_borrows,
+        flow_active_borrows,
         flow_inits,
         flow_uninits,
         flow_move_outs,
@@ -229,7 +252,7 @@ pub struct MirBorrowckCtxt<'cx, 'gcx: 'tcx, 'tcx: 'cx> {
 
 // (forced to be `pub` due to its use as an associated type below.)
 pub struct InProgress<'b, 'gcx: 'tcx, 'tcx: 'b> {
-    borrows: FlowInProgress<Borrows<'b, 'gcx, 'tcx>>,
+    borrows: FlowInProgress<ActiveBorrows<'b, 'gcx, 'tcx>>,
     inits: FlowInProgress<MaybeInitializedLvals<'b, 'gcx, 'tcx>>,
     uninits: FlowInProgress<MaybeUninitializedLvals<'b, 'gcx, 'tcx>>,
     move_outs: FlowInProgress<MovingOutStatements<'b, 'gcx, 'tcx>>,
@@ -535,7 +558,8 @@ impl<'cx, 'gcx, 'tcx> DataflowResultsConsumer<'cx, 'tcx> for MirBorrowckCtxt<'cx
                 let data = domain.borrows();
                 flow_state.borrows.with_elems_outgoing(|borrows| {
                     for i in borrows {
-                        let borrow = &data[i];
+                        // FIXME: does this need to care about reserved/active distinction?
+                        let borrow = &data[i.borrow_index()];
 
                         if self.place_is_invalidated_at_exit(&borrow.borrowed_place) {
                             debug!("borrow conflicts at exit {:?}", borrow);
@@ -1485,7 +1509,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
         flow_state: &InProgress<'cx, 'gcx, 'tcx>,
         mut op: F,
     ) where
-        F: FnMut(&mut Self, BorrowIndex, &BorrowData<'tcx>, &Place<'tcx>) -> Control,
+        F: FnMut(&mut Self, ResActIndex, &BorrowData<'tcx>, &Place<'tcx>) -> Control,
     {
         let (access, place) = access_place;
 
@@ -1498,7 +1522,10 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
         // check for loan restricting path P being used. Accounts for
         // borrows of P, P.a.b, etc.
         'next_borrow: for i in flow_state.borrows.elems_incoming() {
-            let borrowed = &data[i];
+            // FIXME for now, just skip the activation state.
+            if i.is_activation() { continue 'next_borrow; }
+
+            let borrowed = &data[i.borrow_index()];
 
             // Is `place` (or a prefix of it) already borrowed? If
             // so, that's relevant.
@@ -2337,7 +2364,7 @@ impl ContextKind {
 
 impl<'b, 'gcx, 'tcx> InProgress<'b, 'gcx, 'tcx> {
     fn new(
-        borrows: FlowInProgress<Borrows<'b, 'gcx, 'tcx>>,
+        borrows: FlowInProgress<ActiveBorrows<'b, 'gcx, 'tcx>>,
         inits: FlowInProgress<MaybeInitializedLvals<'b, 'gcx, 'tcx>>,
         uninits: FlowInProgress<MaybeUninitializedLvals<'b, 'gcx, 'tcx>>,
         move_outs: FlowInProgress<MovingOutStatements<'b, 'gcx, 'tcx>>,
@@ -2360,7 +2387,7 @@ impl<'b, 'gcx, 'tcx> InProgress<'b, 'gcx, 'tcx> {
         mut xform_move_outs: XM,
         mut xform_ever_inits: XE,
     ) where
-        XB: FnMut(&mut FlowInProgress<Borrows<'b, 'gcx, 'tcx>>),
+        XB: FnMut(&mut FlowInProgress<ActiveBorrows<'b, 'gcx, 'tcx>>),
         XI: FnMut(&mut FlowInProgress<MaybeInitializedLvals<'b, 'gcx, 'tcx>>),
         XU: FnMut(&mut FlowInProgress<MaybeUninitializedLvals<'b, 'gcx, 'tcx>>),
         XM: FnMut(&mut FlowInProgress<MovingOutStatements<'b, 'gcx, 'tcx>>),
@@ -2378,25 +2405,25 @@ impl<'b, 'gcx, 'tcx> InProgress<'b, 'gcx, 'tcx> {
 
         s.push_str("borrows in effect: [");
         let mut saw_one = false;
-        self.borrows.each_state_bit(|borrow| {
+        self.borrows.each_state_bit(|ra| {
             if saw_one {
                 s.push_str(", ");
             };
             saw_one = true;
-            let borrow_data = &self.borrows.base_results.operator().borrows()[borrow];
-            s.push_str(&format!("{}", borrow_data));
+            let borrow_data = &self.borrows.base_results.operator().borrows()[ra.borrow_index()];
+            s.push_str(&format!("{} {}", borrow_data, ra.kind()));
         });
         s.push_str("] ");
 
         s.push_str("borrows generated: [");
         let mut saw_one = false;
-        self.borrows.each_gen_bit(|borrow| {
+        self.borrows.each_gen_bit(|ra| {
             if saw_one {
                 s.push_str(", ");
             };
             saw_one = true;
-            let borrow_data = &self.borrows.base_results.operator().borrows()[borrow];
-            s.push_str(&format!("{}", borrow_data));
+            let borrow_data = &self.borrows.base_results.operator().borrows()[ra.borrow_index()];
+            s.push_str(&format!("{} {}", borrow_data, ra.kind()));
         });
         s.push_str("] ");
 
@@ -2526,9 +2553,10 @@ where
     fn reconstruct_statement_effect(&mut self, loc: Location) {
         self.sets.gen_set.reset_to_empty();
         self.sets.kill_set.reset_to_empty();
-        let mut ignored = IdxSetBuf::new_empty(0);
+        // Note BD's that override accumulates_intrablock_state need
+        // sets.on_entry to match state immediately before this stmt.
         let mut sets = BlockSets {
-            on_entry: &mut ignored,
+            on_entry: &mut self.sets.on_entry,
             gen_set: &mut self.sets.gen_set,
             kill_set: &mut self.sets.kill_set,
         };
@@ -2540,9 +2568,10 @@ where
     fn reconstruct_terminator_effect(&mut self, loc: Location) {
         self.sets.gen_set.reset_to_empty();
         self.sets.kill_set.reset_to_empty();
-        let mut ignored = IdxSetBuf::new_empty(0);
+        // Note BD's that override accumulates_intrablock_state need
+        // sets.on_entry to match state immediately before terminator.
         let mut sets = BlockSets {
-            on_entry: &mut ignored,
+            on_entry: &mut self.sets.on_entry,
             gen_set: &mut self.sets.gen_set,
             kill_set: &mut self.sets.kill_set,
         };
