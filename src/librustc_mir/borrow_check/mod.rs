@@ -34,6 +34,7 @@ use dataflow::{MaybeInitializedLvals, MaybeUninitializedLvals};
 use dataflow::{EverInitializedLvals, MovingOutStatements};
 use dataflow::{Borrows, BorrowData, ResActIndex};
 use dataflow::{ActiveBorrows, Reservations};
+use dataflow::indexes::{BorrowIndex};
 use dataflow::move_paths::{IllegalMoveOriginKind, MoveError};
 use dataflow::move_paths::{HasMoveData, LookupResult, MoveData, MoveOutIndex, MovePathIndex};
 use util::borrowck_errors::{BorrowckErrors, Origin};
@@ -195,6 +196,7 @@ fn do_mir_borrowck<'a, 'gcx, 'tcx>(
         move_data: &mdpe.move_data,
         param_env: param_env,
         storage_dead_or_drop_error_reported: FxHashSet(),
+        reservation_error_reported: FxHashSet(),
     };
 
     let borrows = Borrows::new(tcx, mir, opt_regioncx);
@@ -249,6 +251,14 @@ pub struct MirBorrowckCtxt<'cx, 'gcx: 'tcx, 'tcx: 'cx> {
     /// in order to stop duplicate error reporting and identify the conditions required
     /// for a "temporary value dropped here while still borrowed" error. See #45360.
     storage_dead_or_drop_error_reported: FxHashSet<Local>,
+    /// This field keeps track of when borrow conflict errors are reported
+    /// for reservations, so that we don't report seemingly duplicate
+    /// errors for corresponding activations
+    ///
+    /// FIXME: Ideally this would be a set of BorrowIndex, not Places,
+    /// but it is currently inconvenient to track down the BorrowIndex
+    /// at the time we detect and report a reservation error.
+    reservation_error_reported: FxHashSet<Place<'tcx>>,
 }
 
 // (forced to be `pub` due to its use as an associated type below.)
@@ -347,6 +357,9 @@ impl<'cx, 'gcx, 'tcx> DataflowResultsConsumer<'cx, 'tcx> for MirBorrowckCtxt<'cx
             summary
         );
         let span = stmt.source_info.span;
+
+        self.check_activations(location, span, flow_state);
+
         match stmt.kind {
             StatementKind::Assign(ref lhs, ref rhs) => {
                 // NOTE: NLL RFC calls for *shallow* write; using Deep
@@ -454,6 +467,9 @@ impl<'cx, 'gcx, 'tcx> DataflowResultsConsumer<'cx, 'tcx> for MirBorrowckCtxt<'cx
             summary
         );
         let span = term.source_info.span;
+
+        self.check_activations(location, span, flow_state);
+
         match term.kind {
             TerminatorKind::SwitchInt {
                 ref discr,
@@ -600,7 +616,7 @@ enum Control {
 }
 
 use self::ShallowOrDeep::{Deep, Shallow};
-use self::ReadOrWrite::{Read, Write};
+use self::ReadOrWrite::{Activation, Read, Reservation, Write};
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum ArtificialField {
@@ -635,6 +651,12 @@ enum ReadOrWrite {
     /// new values or otherwise invalidated (for example, it could be
     /// de-initialized, as in a move operation).
     Write(WriteKind),
+
+    /// For two-phase borrows, we distinguish a reservation (which is treated
+    /// like a Read) from an activation (which is treated like a write), and
+    /// each of those is furthermore distinguished from Reads/Writes above.
+    Reservation(WriteKind),
+    Activation(WriteKind, BorrowIndex),
 }
 
 /// Kind of read access to a value
@@ -726,6 +748,14 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
             }
         }
 
+        if let Activation(_, borrow_index) = rw {
+            if self.reservation_error_reported.contains(&place_span.0) {
+                debug!("skipping check_place for activation of invalid reservation \
+                        place: {:?} borrow_index: {:?}", place_span.0, borrow_index);
+                return;
+            }
+        }
+
         // Check permissions
         let mut error_reported =
             self.check_access_permissions(place_span, rw, is_local_mutation_allowed);
@@ -735,9 +765,17 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
             (sd, place_span.0),
             flow_state,
             |this, index, borrow, common_prefix| match (rw, borrow.kind) {
-                (Read(_), BorrowKind::Shared) => Control::Continue,
 
-                (Read(kind), BorrowKind::Unique) | (Read(kind), BorrowKind::Mut) => {
+                // Obviously an activation is compatible with its own reservation;
+                // so don't check if they interfere.
+                (Activation(_, activating), _) if index.is_reservation() &&
+                    activating == index.borrow_index() => Control::Continue,
+
+                (Read(_), BorrowKind::Shared) |
+                (Reservation(..), BorrowKind::Shared) => Control::Continue,
+
+                (Read(kind), BorrowKind::Unique) |
+                (Read(kind), BorrowKind::Mut) => {
                     // Reading from mere reservations of mutable-borrows is OK.
                     if this.tcx.sess.opts.debugging_opts.two_phase_borrows &&
                         index.is_reservation()
@@ -769,7 +807,25 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     }
                     Control::Break
                 }
+
+                (Reservation(kind), BorrowKind::Unique) |
+                (Reservation(kind), BorrowKind::Mut) |
+                (Activation(kind, _), _) |
                 (Write(kind), _) => {
+
+                    match rw {
+                        Reservation(_) => {
+                            debug!("recording invalid reservation of \
+                                    place: {:?}", place_span.0);
+                            this.reservation_error_reported.insert(place_span.0.clone());
+                        }
+                        Activation(_, activating) => {
+                            debug!("observing check_place for activation of \
+                                    borrow_index: {:?}", activating);
+                        }
+                        Read(..) | Write(..) => {}
+                    }
+
                     match kind {
                         WriteKind::MutableBorrow(bk) => {
                             let end_issued_loan_span = flow_state
@@ -777,6 +833,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                                 .base_results
                                 .operator()
                                 .opt_region_end_span(&borrow.region);
+
                             error_reported = true;
                             this.report_conflicting_borrow(
                                 context,
@@ -868,9 +925,15 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                 let access_kind = match bk {
                     BorrowKind::Shared => (Deep, Read(ReadKind::Borrow(bk))),
                     BorrowKind::Unique | BorrowKind::Mut => {
-                        (Deep, Write(WriteKind::MutableBorrow(bk)))
+                        let wk = WriteKind::MutableBorrow(bk);
+                        if self.tcx.sess.opts.debugging_opts.two_phase_borrows {
+                            (Deep, Reservation(wk))
+                        } else {
+                            (Deep, Write(wk))
+                        }
                     }
                 };
+
                 self.access_place(
                     context,
                     (place, span),
@@ -878,6 +941,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     LocalMutationIsAllowed::No,
                     flow_state,
                 );
+
                 self.check_if_path_is_moved(
                     context,
                     InitializationRequiringAction::Borrow,
@@ -1030,6 +1094,50 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
 
         self.prefixes(place, prefix_set)
             .any(|prefix| prefix == root_place)
+    }
+
+    fn check_activations(&mut self,
+                         location: Location,
+                         span: Span,
+                         flow_state: &InProgress<'cx, 'gcx, 'tcx>)
+    {
+        if !self.tcx.sess.opts.debugging_opts.two_phase_borrows {
+            return;
+        }
+
+        // Two-phase borrow support: For each activation that is newly
+        // generated at this statement, check if it interferes with
+        // another borrow.
+        let domain = flow_state.borrows.base_results.operator();
+        let data = domain.borrows();
+        let sets = &flow_state.borrows.sets;
+        for gen in sets.gen_set.iter() {
+            if gen.is_activation() && // must be activation,
+                !sets.on_entry.contains(&gen) // and newly generated.
+            {
+                let borrow_index = gen.borrow_index();
+                let borrow = &data[borrow_index];
+                // currently the flow analysis registers
+                // activations for both mutable and immutable
+                // borrows. So make sure we are talking about a
+                // mutable borrow before we check it.
+                match borrow.kind {
+                    BorrowKind::Shared => continue,
+                    BorrowKind::Unique |
+                    BorrowKind::Mut => {}
+                }
+
+                self.access_place(ContextKind::Activation.new(location),
+                                  (&borrow.borrowed_place, span),
+                                  (Deep, Activation(WriteKind::MutableBorrow(borrow.kind),
+                                                    borrow_index)),
+                                  LocalMutationIsAllowed::No,
+                                  flow_state);
+                // We do not need to call `check_if_path_is_moved`
+                // again, as we already called it when we made the
+                // initial reservation.
+            }
+        }
     }
 }
 
@@ -1293,11 +1401,13 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
         );
         let mut error_reported = false;
         match kind {
+            Reservation(WriteKind::MutableBorrow(BorrowKind::Unique)) |
             Write(WriteKind::MutableBorrow(BorrowKind::Unique)) => {
                 if let Err(_place_err) = self.is_unique(place) {
                     span_bug!(span, "&unique borrow for {:?} should not fail", place);
                 }
             }
+            Reservation(WriteKind::MutableBorrow(BorrowKind::Mut)) |
             Write(WriteKind::MutableBorrow(BorrowKind::Mut)) => if let Err(place_err) =
                 self.is_mutable(place, is_local_mutation_allowed)
             {
@@ -1320,6 +1430,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
 
                 err.emit();
             },
+            Reservation(WriteKind::Mutate) |
             Write(WriteKind::Mutate) => {
                 if let Err(place_err) = self.is_mutable(place, is_local_mutation_allowed) {
                     error_reported = true;
@@ -1341,6 +1452,9 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     err.emit();
                 }
             }
+            Reservation(WriteKind::Move) |
+            Reservation(WriteKind::StorageDeadOrDrop) |
+            Reservation(WriteKind::MutableBorrow(BorrowKind::Shared)) |
             Write(WriteKind::Move) |
             Write(WriteKind::StorageDeadOrDrop) |
             Write(WriteKind::MutableBorrow(BorrowKind::Shared)) => {
@@ -1355,6 +1469,9 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     );
                 }
             }
+
+            Activation(..) => {} // permission checks are done at Reservation point.
+
             Read(ReadKind::Borrow(BorrowKind::Unique)) |
             Read(ReadKind::Borrow(BorrowKind::Mut)) |
             Read(ReadKind::Borrow(BorrowKind::Shared)) |
@@ -1892,6 +2009,12 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
         use rustc::hir::ExprClosure;
         use rustc::mir::AggregateKind;
 
+        if location.statement_index == self.mir[location.block].statements.len() {
+            // Code below hasn't been written in a manner to deal with
+            // a terminator location.
+            return None;
+        }
+
         let local = if let StatementKind::Assign(Place::Local(local), _) =
             self.mir[location.block].statements[location.statement_index].kind
         {
@@ -2355,6 +2478,7 @@ struct Context {
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum ContextKind {
+    Activation,
     AssignLhs,
     AssignRhs,
     SetDiscrim,
