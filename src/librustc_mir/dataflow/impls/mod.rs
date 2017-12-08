@@ -29,7 +29,6 @@ use super::{BitDenotation, BlockSets, InitialFlow};
 use super::drop_flag_effects_for_function_entry;
 use super::drop_flag_effects_for_location;
 use super::{on_lookup_result_bits, for_location_inits};
-use super::place_contents_drop_state_cannot_differ;
 
 mod storage_liveness;
 
@@ -336,9 +335,9 @@ impl<'a, 'gcx, 'tcx> BitDenotation for MaybeInitializedLvals<'a, 'gcx, 'tcx> {
     fn start_block_effect(&self, sets: &mut BlockSets<MovePathIndex>)
     {
         drop_flag_effects_for_function_entry(
+            &(self.tcx, self.mir),
             self.mir,
             &self.mdpe.move_data,
-            |lv| place_contents_drop_state_cannot_differ(self.tcx, self.mir, lv),
             |path, s| {
                 assert!(s == DropFlagState::Present);
                 sets.on_entry.add(&path);
@@ -350,9 +349,9 @@ impl<'a, 'gcx, 'tcx> BitDenotation for MaybeInitializedLvals<'a, 'gcx, 'tcx> {
                         location: Location)
     {
         drop_flag_effects_for_location(
+            &(self.tcx, self.mir),
             &self.mdpe.move_data,
             location,
-            |lv| place_contents_drop_state_cannot_differ(self.tcx, self.mir, lv),
             |path, s| Self::update_bits(sets, path, s))
     }
 
@@ -361,9 +360,9 @@ impl<'a, 'gcx, 'tcx> BitDenotation for MaybeInitializedLvals<'a, 'gcx, 'tcx> {
                          location: Location)
     {
         drop_flag_effects_for_location(
+            &(self.tcx, self.mir),
             &self.mdpe.move_data,
             location,
-            |lv| place_contents_drop_state_cannot_differ(self.tcx, self.mir, lv),
             |path, s| Self::update_bits(sets, path, s))
     }
 
@@ -374,10 +373,9 @@ impl<'a, 'gcx, 'tcx> BitDenotation for MaybeInitializedLvals<'a, 'gcx, 'tcx> {
                              dest_place: &mir::Place) {
         // when a call returns successfully, that means we need to set
         // the bits for that dest_place to 1 (initialized).
-        on_lookup_result_bits(self.move_data(),
+        on_lookup_result_bits(&(self.tcx, self.mir),
+                              self.move_data(),
                               self.move_data().rev_lookup.find(dest_place),
-                              |place| place_contents_drop_state_cannot_differ(
-                                  self.tcx, self.mir, place),
                               |mpi| { in_out.add(&mpi); });
     }
 }
@@ -395,8 +393,9 @@ impl<'a, 'gcx, 'tcx> BitDenotation for MaybeUninitializedLvals<'a, 'gcx, 'tcx> {
         for e in sets.on_entry.words_mut() { *e = !0; }
 
         drop_flag_effects_for_function_entry(
-            self.mir, &self.mdpe.move_data,
-            |lv| place_contents_drop_state_cannot_differ(self.tcx, self.mir, lv),
+            &(self.tcx, self.mir),
+            self.mir,
+            &self.mdpe.move_data,
             |path, s| {
                 assert!(s == DropFlagState::Present);
                 sets.on_entry.remove(&path);
@@ -408,9 +407,9 @@ impl<'a, 'gcx, 'tcx> BitDenotation for MaybeUninitializedLvals<'a, 'gcx, 'tcx> {
                         location: Location)
     {
         drop_flag_effects_for_location(
+            &(self.tcx, self.mir),
             &self.mdpe.move_data,
             location,
-            |lv| place_contents_drop_state_cannot_differ(self.tcx, self.mir, lv),
             |path, s| Self::update_bits(sets, path, s))
     }
 
@@ -419,9 +418,9 @@ impl<'a, 'gcx, 'tcx> BitDenotation for MaybeUninitializedLvals<'a, 'gcx, 'tcx> {
                          location: Location)
     {
         drop_flag_effects_for_location(
+            &(self.tcx, self.mir),
             &self.mdpe.move_data,
             location,
-            |lv| place_contents_drop_state_cannot_differ(self.tcx, self.mir, lv),
             |path, s| Self::update_bits(sets, path, s))
     }
 
@@ -432,10 +431,9 @@ impl<'a, 'gcx, 'tcx> BitDenotation for MaybeUninitializedLvals<'a, 'gcx, 'tcx> {
                              dest_place: &mir::Place) {
         // when a call returns successfully, that means we need to set
         // the bits for that dest_place to 0 (initialized).
-        on_lookup_result_bits(self.move_data(),
+        on_lookup_result_bits(&(self.tcx, self.mir),
+                              self.move_data(),
                               self.move_data().rev_lookup.find(dest_place),
-                              |place| place_contents_drop_state_cannot_differ(
-                                  self.tcx, self.mir, place),
                               |mpi| { in_out.remove(&mpi); });
     }
 }
@@ -452,8 +450,9 @@ impl<'a, 'gcx, 'tcx> BitDenotation for DefinitelyInitializedLvals<'a, 'gcx, 'tcx
         for e in sets.on_entry.words_mut() { *e = 0; }
 
         drop_flag_effects_for_function_entry(
-            self.mir, &self.mdpe.move_data,
-            |lv| place_contents_drop_state_cannot_differ(self.tcx, self.mir, lv),
+            &(self.tcx, self.mir),
+            self.mir,
+            &self.mdpe.move_data,
             |path, s| {
                 assert!(s == DropFlagState::Present);
                 sets.on_entry.add(&path);
@@ -465,9 +464,9 @@ impl<'a, 'gcx, 'tcx> BitDenotation for DefinitelyInitializedLvals<'a, 'gcx, 'tcx
                         location: Location)
     {
         drop_flag_effects_for_location(
+            &(self.tcx, self.mir),
             &self.mdpe.move_data,
             location,
-            |lv| place_contents_drop_state_cannot_differ(self.tcx, self.mir, lv),
             |path, s| Self::update_bits(sets, path, s))
     }
 
@@ -476,9 +475,9 @@ impl<'a, 'gcx, 'tcx> BitDenotation for DefinitelyInitializedLvals<'a, 'gcx, 'tcx
                          location: Location)
     {
         drop_flag_effects_for_location(
+            &(self.tcx, self.mir),
             &self.mdpe.move_data,
             location,
-            |lv| place_contents_drop_state_cannot_differ(self.tcx, self.mir, lv),
             |path, s| Self::update_bits(sets, path, s))
     }
 
@@ -489,10 +488,9 @@ impl<'a, 'gcx, 'tcx> BitDenotation for DefinitelyInitializedLvals<'a, 'gcx, 'tcx
                              dest_place: &mir::Place) {
         // when a call returns successfully, that means we need to set
         // the bits for that dest_place to 1 (initialized).
-        on_lookup_result_bits(self.move_data(),
+        on_lookup_result_bits(&(self.tcx, self.mir),
+                              self.move_data(),
                               self.move_data().rev_lookup.find(dest_place),
-                              |place| place_contents_drop_state_cannot_differ(
-                                  self.tcx, self.mir, place),
                               |mpi| { in_out.add(&mpi); });
     }
 }
@@ -535,9 +533,8 @@ impl<'a, 'gcx, 'tcx> BitDenotation for MovingOutStatements<'a, 'gcx, 'tcx> {
             }
         }
 
-        for_location_inits(move_data, location,
-            |place| place_contents_drop_state_cannot_differ(
-                self.tcx, mir, place),
+        for_location_inits(
+            &(self.tcx, self.mir), move_data, location,
             |mpi| for moi in &path_map[mpi] {
                 assert!(moi.index() < bits_per_block);
                 sets.kill_set.add(&moi);
@@ -549,7 +546,7 @@ impl<'a, 'gcx, 'tcx> BitDenotation for MovingOutStatements<'a, 'gcx, 'tcx> {
                          sets: &mut BlockSets<MoveOutIndex>,
                          location: Location)
     {
-        let (tcx, mir, move_data) = (self.tcx, self.mir, self.move_data());
+        let (mir, move_data) = (self.mir, self.move_data());
         let term = mir[location.block].terminator();
         let loc_map = &move_data.loc_map;
         let path_map = &move_data.path_map;
@@ -562,9 +559,8 @@ impl<'a, 'gcx, 'tcx> BitDenotation for MovingOutStatements<'a, 'gcx, 'tcx> {
             zero_to_one(sets.gen_set.words_mut(), *move_index);
         }
 
-        for_location_inits(move_data, location,
-            |place| place_contents_drop_state_cannot_differ(
-                tcx, self.mir, place),
+        for_location_inits(
+            &(self.tcx, self.mir), move_data, location,
             |mpi| for moi in &path_map[mpi] {
                 assert!(moi.index() < bits_per_block);
                 sets.kill_set.add(&moi);
@@ -581,10 +577,9 @@ impl<'a, 'gcx, 'tcx> BitDenotation for MovingOutStatements<'a, 'gcx, 'tcx> {
         let bits_per_block = self.bits_per_block();
 
         let path_map = &move_data.path_map;
-        on_lookup_result_bits(move_data,
+        on_lookup_result_bits(&(self.tcx, self.mir),
+                              move_data,
                               move_data.rev_lookup.find(dest_place),
-                              |place| place_contents_drop_state_cannot_differ(
-                                  self.tcx, self.mir, place),
                               |mpi| for moi in &path_map[mpi] {
                                   assert!(moi.index() < bits_per_block);
                                   in_out.remove(&moi);

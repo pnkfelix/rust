@@ -9,11 +9,43 @@
 // except according to those terms.
 
 use rustc::mir::{self, Mir, Location, Place};
-use rustc::ty::{self, TyCtxt};
+use rustc::ty::{self, TyCtxt, ParamEnv};
 use util::elaborate_drops::DropFlagState;
 
 use super::indexes::MovePathIndex;
 use super::move_paths::{MoveData, LookupResult, InitKind};
+
+pub(crate) trait PlaceOneDropFlag<'tcx> {
+    fn place_contents_drop_state_cannot_differ(&self, &Place<'tcx>) -> bool;
+}
+
+pub(crate) trait PlaceNeedsDrop<'tcx> {
+    fn needs_drop(&self, &Place<'tcx>) -> bool;
+}
+
+impl<'a, 'gcx, 'tcx> PlaceOneDropFlag<'tcx> for (TyCtxt<'a, 'gcx, 'tcx>, &'a Mir<'tcx>) {
+    fn place_contents_drop_state_cannot_differ(&self, place: &Place<'tcx>) -> bool {
+        place_contents_drop_state_cannot_differ(self.0, self.1, place)
+    }
+}
+
+impl<'a, 'gcx, 'tcx> PlaceOneDropFlag<'tcx> for (TyCtxt<'a, 'gcx, 'tcx>,
+                                                 &'a Mir<'tcx>,
+                                                 ParamEnv<'gcx>)
+{
+    fn place_contents_drop_state_cannot_differ(&self, place: &Place<'tcx>) -> bool {
+        place_contents_drop_state_cannot_differ(self.0, self.1, place)
+    }
+}
+
+impl<'a, 'gcx, 'tcx> PlaceNeedsDrop<'tcx> for (TyCtxt<'a, 'gcx, 'tcx>,
+                                               &'a Mir<'tcx>,
+                                               ParamEnv<'gcx>)
+{
+    fn needs_drop(&self, place: &Place<'tcx>) -> bool {
+        place_needs_drop(self.0, self.1, self.2, place)
+    }
+}
 
 pub fn move_path_children_matching<'tcx, F>(move_data: &MoveData<'tcx>,
                                         path: MovePathIndex,
@@ -55,7 +87,7 @@ pub fn move_path_children_matching<'tcx, F>(move_data: &MoveData<'tcx>,
 /// is no need to maintain separate drop flags to track such state.
 ///
 /// FIXME: we have to do something for moving slice patterns.
-pub(crate) fn place_contents_drop_state_cannot_differ<'a, 'gcx, 'tcx>(
+fn place_contents_drop_state_cannot_differ<'a, 'gcx, 'tcx>(
     tcx: TyCtxt<'a, 'gcx, 'tcx>,
     mir: &Mir<'tcx>,
     place: &Place<'tcx>) -> bool
@@ -83,82 +115,77 @@ pub(crate) fn place_contents_drop_state_cannot_differ<'a, 'gcx, 'tcx>(
     }
 }
 
-pub(crate) fn place_needs_drop<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
-                                                mir: &Mir<'tcx>,
-                                                param_env: ty::ParamEnv<'gcx>,
-                                                place: &Place<'tcx>)
-                                                -> bool
+fn place_needs_drop<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
+                                    mir: &Mir<'tcx>,
+                                    param_env: ty::ParamEnv<'gcx>,
+                                    place: &Place<'tcx>)
+                                    -> bool
 {
     let ty = place.ty(mir, tcx).to_ty(tcx);
-    // debug!("on_all_drop_children_bits({:?}, {:?} : {:?})", path, place, ty);
-
     let gcx = tcx.global_tcx();
     let erased_ty = gcx.lift(&tcx.erase_regions(&ty)).unwrap();
     erased_ty.needs_drop(gcx, param_env)
 }
 
-pub(crate) fn on_lookup_result_bits<'tcx, F, U>(move_data: &MoveData<'tcx>,
-                                                lookup_result: LookupResult,
-                                                has_uniform_drop_state: U,
-                                                each_child: F)
-    where F: FnMut(MovePathIndex), U: Fn(&Place<'tcx>) -> bool
+pub(crate) fn on_lookup_result_bits<'tcx, F, PO>(tcx_mir: &PO,
+                                                 move_data: &MoveData<'tcx>,
+                                                 lookup_result: LookupResult,
+                                                 each_child: F)
+    where F: FnMut(MovePathIndex), PO: PlaceOneDropFlag<'tcx>,
 {
     match lookup_result {
         LookupResult::Parent(..) => {
             // access to untracked value - do not touch children
         }
         LookupResult::Exact(e) => {
-            on_all_children_bits(move_data, e, has_uniform_drop_state, each_child)
+            on_all_children_bits(tcx_mir, move_data, e, each_child)
         }
     }
 }
 
-pub(crate) fn on_all_children_bits<'tcx, F, U>(move_data: &MoveData<'tcx>,
-                                               move_path_index: MovePathIndex,
-                                               has_uniform_drop_state: U,
-                                               mut each_child: F)
-    where F: FnMut(MovePathIndex), U: Fn(&Place<'tcx>) -> bool
+pub(crate) fn on_all_children_bits<'tcx, F, PO>(tcx_mir: &PO,
+                                                move_data: &MoveData<'tcx>,
+                                                move_path_index: MovePathIndex,
+                                                mut each_child: F)
+    where F: FnMut(MovePathIndex), PO: PlaceOneDropFlag<'tcx>
 {
-    fn is_terminal_path<'tcx, U>(move_data: &MoveData<'tcx>,
-                                 path: MovePathIndex,
-                                 has_uniform_drop_state: U) -> bool
-        where U: Fn(&Place<'tcx>) -> bool
+    fn is_terminal_path<'tcx, PO>(tcx_mir: &PO,
+                                  move_data: &MoveData<'tcx>,
+                                  path: MovePathIndex) -> bool
+        where PO: PlaceOneDropFlag<'tcx>
     {
-        // lvalue_contents_drop_state_cannot_differ
-        has_uniform_drop_state(&move_data.move_paths[path].place)
+        let place = &move_data.move_paths[path].place;
+        tcx_mir.place_contents_drop_state_cannot_differ(place)
     }
 
-    fn on_all_children_bits<'tcx, F, U>(move_data: &MoveData<'tcx>,
-                                        move_path_index: MovePathIndex,
-                                        has_uniform_drop_state: &U,
-                                        each_child: &mut F)
-        where F: FnMut(MovePathIndex), U: Fn(&Place<'tcx>) -> bool
+    fn on_all_children_bits<'tcx, F, PO>(tcx_mir: &PO,
+                                         move_data: &MoveData<'tcx>,
+                                         move_path_index: MovePathIndex,
+                                         each_child: &mut F)
+        where F: FnMut(MovePathIndex), PO: PlaceOneDropFlag<'tcx>
     {
         each_child(move_path_index);
 
-        if is_terminal_path(move_data, move_path_index, has_uniform_drop_state) {
+        if is_terminal_path(tcx_mir, move_data, move_path_index) {
             return
         }
 
         let mut next_child_index = move_data.move_paths[move_path_index].first_child;
         while let Some(child_index) = next_child_index {
-            on_all_children_bits(move_data, child_index, has_uniform_drop_state, each_child);
+            on_all_children_bits(tcx_mir, move_data, child_index, each_child);
             next_child_index = move_data.move_paths[child_index].next_sibling;
         }
     }
-    on_all_children_bits(move_data, move_path_index, &has_uniform_drop_state, &mut each_child);
+    on_all_children_bits(tcx_mir, move_data, move_path_index, &mut each_child);
 }
 
-pub(crate) fn on_all_drop_children_bits<'tcx, F, U, N>(move_data: &MoveData<'tcx>,
-                                                       path: MovePathIndex,
-                                                       has_uniform_drop_state: U,
-                                                       needs_drop: N,
-                                                       mut each_child: F)
-    where F: FnMut(MovePathIndex),
-          U: Fn(&Place<'tcx>) -> bool,
-          N: Fn(&Place<'tcx>) -> bool,
+pub(crate) fn on_all_drop_children_bits<'tcx, F, PO>(tcx_mir_param_env: &PO,
+                                                     move_data: &MoveData<'tcx>,
+                                                     path: MovePathIndex,
+                                                     mut each_child: F)
+    where F: FnMut(MovePathIndex), PO: PlaceOneDropFlag<'tcx> + PlaceNeedsDrop<'tcx>
 {
-    on_all_children_bits(move_data, path, has_uniform_drop_state, |child| {
+    on_all_children_bits(tcx_mir_param_env, move_data, path, |child| {
         let place = &move_data.move_paths[path].place;
         // let ty = place.ty(mir, tcx).to_ty(tcx);
         // debug!("on_all_drop_children_bits({:?}, {:?} : {:?})", path, place, ty);
@@ -166,7 +193,7 @@ pub(crate) fn on_all_drop_children_bits<'tcx, F, U, N>(move_data: &MoveData<'tcx
         // let gcx = tcx.global_tcx();
         // let erased_ty = gcx.lift(&tcx.erase_regions(&ty)).unwrap();
         // if erased_ty.needs_drop(gcx, ctxt.param_env) {
-        if needs_drop(place) {
+        if tcx_mir_param_env.needs_drop(place) {
             each_child(child);
         } else {
             debug!("on_all_drop_children_bits - skipping")
@@ -174,28 +201,28 @@ pub(crate) fn on_all_drop_children_bits<'tcx, F, U, N>(move_data: &MoveData<'tcx
     })
 }
 
-pub(crate) fn drop_flag_effects_for_function_entry<'tcx, F, U>(
+pub(crate) fn drop_flag_effects_for_function_entry<'tcx, F, PO>(
+          tcx_mir: &PO,
           mir: &Mir<'tcx>,
           move_data: &MoveData<'tcx>,
-          has_uniform_drop_state: U,
           mut callback: F)
-    where F: FnMut(MovePathIndex, DropFlagState), U: Fn(&Place<'tcx>) -> bool
+    where F: FnMut(MovePathIndex, DropFlagState), PO: PlaceOneDropFlag<'tcx>
 {
     for arg in mir.args_iter() {
         let place = Place::Local(arg);
         let lookup_result = move_data.rev_lookup.find(&place);
-        on_lookup_result_bits(move_data,
+        on_lookup_result_bits(tcx_mir,
+                              move_data,
                               lookup_result,
-                              &has_uniform_drop_state,
                               |mpi| callback(mpi, DropFlagState::Present));
     }
 }
 
-pub(crate) fn drop_flag_effects_for_location<'tcx, F, U>(move_data: &MoveData<'tcx>,
-                                                         loc: Location,
-                                                         has_uniform_drop_state: U,
-                                                         mut callback: F)
-    where F: FnMut(MovePathIndex, DropFlagState), U: Fn(&Place<'tcx>) -> bool
+pub(crate) fn drop_flag_effects_for_location<'tcx, F, PO>(tcx_mir: &PO,
+                                                          move_data: &MoveData<'tcx>,
+                                                          loc: Location,
+                                                          mut callback: F)
+    where F: FnMut(MovePathIndex, DropFlagState), PO: PlaceOneDropFlag<'tcx>
 {
     debug!("drop_flag_effects_for_location({:?})", loc);
 
@@ -204,28 +231,28 @@ pub(crate) fn drop_flag_effects_for_location<'tcx, F, U>(move_data: &MoveData<'t
         let path = mi.move_path_index(move_data);
         debug!("moving out of path {:?}", move_data.move_paths[path]);
 
-        on_all_children_bits(move_data,
+        on_all_children_bits(tcx_mir,
+                             move_data,
                              path,
-                             &has_uniform_drop_state,
                              |mpi| callback(mpi, DropFlagState::Absent))
     }
 
     debug!("drop_flag_effects: assignment for location({:?})", loc);
 
     for_location_inits(
+        tcx_mir,
         move_data,
         loc,
-        has_uniform_drop_state,
         |mpi| callback(mpi, DropFlagState::Present)
     );
 }
 
-pub(crate) fn for_location_inits<'tcx, F, U>(
+pub(crate) fn for_location_inits<'tcx, F, PO>(
+    tcx_mir: &PO,
     move_data: &MoveData<'tcx>,
     loc: Location,
-    has_uniform_drop_state: U,
     mut callback: F)
-    where F: FnMut(MovePathIndex), U: Fn(&Place<'tcx>) -> bool
+    where F: FnMut(MovePathIndex), PO: PlaceOneDropFlag<'tcx>
 {
     for ii in &move_data.init_loc_map[loc] {
         let init = move_data.inits[*ii];
@@ -233,9 +260,9 @@ pub(crate) fn for_location_inits<'tcx, F, U>(
             InitKind::Deep => {
                 let path = init.path;
 
-                on_all_children_bits(move_data,
+                on_all_children_bits(tcx_mir,
+                                     move_data,
                                      path,
-                                     &has_uniform_drop_state,
                                      &mut callback)
             },
             InitKind::Shallow => {
