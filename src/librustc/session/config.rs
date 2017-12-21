@@ -414,6 +414,10 @@ pub enum BorrowckMode {
     Ast,
     Mir,
     Compare,
+
+    /// Runs both. Both reject => reject; MIR accepts => accept; MIR
+    /// rejects + AST accepts => warn.
+    Migrate,
 }
 
 impl BorrowckMode {
@@ -422,6 +426,7 @@ impl BorrowckMode {
         match self {
             BorrowckMode::Ast => true,
             BorrowckMode::Compare => true,
+            BorrowckMode::Migrate => true,
             BorrowckMode::Mir => false,
         }
     }
@@ -430,6 +435,7 @@ impl BorrowckMode {
         match self {
             BorrowckMode::Ast => false,
             BorrowckMode::Compare => true,
+            BorrowckMode::Migrate => true,
             BorrowckMode::Mir => true,
         }
     }
@@ -1862,6 +1868,7 @@ pub fn build_session_options_and_crate_config(matches: &getopts::Matches)
         None | Some("ast") => BorrowckMode::Ast,
         Some("mir") => BorrowckMode::Mir,
         Some("compare") => BorrowckMode::Compare,
+        Some("migrate") => BorrowckMode::Migrate,
         Some(m) => {
             early_error(error_format, &format!("unknown borrowck mode `{}`", m))
         },

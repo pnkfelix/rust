@@ -140,6 +140,10 @@ pub struct Session {
 
     /// Metadata about the allocators for the current crate being compiled
     pub has_global_allocator: Cell<bool>,
+
+    /// Was any error signalled by AST borrowck? If not, downgrade
+    /// any error emitted by MIR borrowck to a warning.
+    pub seen_ast_borrowck_errors: Cell<bool>,
 }
 
 pub struct PerfStats {
@@ -469,7 +473,8 @@ impl Session {
     pub fn borrowck_mode(&self) -> BorrowckMode {
         match self.opts.borrowck_mode {
             mode @ BorrowckMode::Mir |
-            mode @ BorrowckMode::Compare => mode,
+            mode @ BorrowckMode::Compare |
+            mode @ BorrowckMode::Migrate => mode,
 
             mode @ BorrowckMode::Ast => {
                 if self.nll() {
@@ -1009,6 +1014,7 @@ pub fn build_session_(sopts: config::Options,
             (*GLOBAL_JOBSERVER).clone()
         },
         has_global_allocator: Cell::new(false),
+        seen_ast_borrowck_errors: Cell::new(false),
     };
 
     sess

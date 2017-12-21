@@ -412,6 +412,10 @@ impl Handler {
         err.cancel();
     }
 
+    pub fn downgrade_to_warning(&self, err: &mut DiagnosticBuilder) {
+        err.downgrade_to_warning();
+    }
+
     fn panic_if_treat_err_as_bug(&self) {
         if self.flags.treat_err_as_bug {
             panic!("encountered error with `-Z treat_err_as_bug");

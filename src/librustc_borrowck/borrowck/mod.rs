@@ -36,6 +36,7 @@ use rustc::middle::mem_categorization::Categorization;
 use rustc::middle::mem_categorization::ImmutabilityBlame;
 use rustc::middle::region;
 use rustc::middle::free_region::RegionRelations;
+use rustc::session::Session;
 use rustc::ty::{self, Ty, TyCtxt};
 use rustc::ty::maps::Providers;
 use rustc_mir::util::borrowck_errors::{BorrowckErrors, Origin};
@@ -270,15 +271,8 @@ impl<'b, 'tcx: 'b> BorrowckErrors for BorrowckCtxt<'b, 'tcx> {
         self.tcx.sess.struct_span_err(sp, msg)
     }
 
-    fn cancel_if_wrong_origin<'a>(&'a self,
-                                mut diag: DiagnosticBuilder<'a>,
-                                o: Origin)
-                                -> DiagnosticBuilder<'a>
-    {
-        if !o.should_emit_errors(self.tcx.sess.borrowck_mode()) {
-            self.tcx.sess.diagnostic().cancel(&mut diag);
-        }
-        diag
+    fn sess(&self) -> &Session {
+        self.tcx.sess
     }
 }
 

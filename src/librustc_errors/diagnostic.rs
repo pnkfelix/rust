@@ -108,6 +108,23 @@ impl Diagnostic {
         self.level == Level::Cancelled
     }
 
+    /// This is like `cancel`, but instead of cancelling the
+    /// diagnostic, it just shifts its level to a warning. The
+    /// diagnostic will still need to be eventually emitted or
+    /// canceled (or it will panic when dropped).
+    ///
+    /// To ensure that this is truly a *downgrade* (and a reasonable
+    /// one at that), we dynamically check that the input level is
+    /// somewhere between a fatal error and a warning.
+    pub fn downgrade_to_warning(&mut self) {
+        match self.level {
+            Level::Bug => panic!("don't downgrade bugs!"),
+            Level::Fatal | Level::PhaseFatal | Level::Error | Level::Warning => {} // okay
+            Level::Note | Level::Help | Level::Cancelled => panic!("these are not downgrades!"),
+        }
+        self.level = Level::Warning
+    }
+
     /// Add a span/label to be included in the resulting snippet.
     /// This is pushed onto the `MultiSpan` that was created when the
     /// diagnostic was first built. If you don't call this function at
