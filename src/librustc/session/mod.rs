@@ -451,6 +451,12 @@ impl Session {
     /// If true, we should use NLL-style region checking instead of
     /// lexical style.
     pub fn nll(&self) -> bool {
+        self.nll_feature() || self.borrowck_mode().nll()
+    }
+
+    /// If true, user has explicitly requested NLL via either `-Z nll`
+    /// or `#[feature(nll)]`.
+    fn nll_feature(&self) -> bool {
         self.features.borrow().nll || self.opts.debugging_opts.nll
     }
 
@@ -486,7 +492,7 @@ impl Session {
             mode @ BorrowckMode::SanityCheck => mode,
 
             mode @ BorrowckMode::Ast => {
-                if self.nll() {
+                if self.nll_feature() {
                     BorrowckMode::Mir
                 } else {
                     mode
