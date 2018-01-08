@@ -248,6 +248,7 @@ pub struct Handler {
     // this handler. These hashes is used to avoid emitting the same error
     // twice.
     emitted_diagnostics: RefCell<FxHashSet<u128>>,
+    emitted_diagnostic_codes: RefCell<FxHashSet<DiagnosticId>>,
 }
 
 #[derive(Default)]
@@ -303,6 +304,7 @@ impl Handler {
             delayed_span_bug: RefCell::new(None),
             tracked_diagnostics: RefCell::new(None),
             emitted_diagnostics: RefCell::new(FxHashSet()),
+            emitted_diagnostic_codes: RefCell::new(FxHashSet()),
         }
     }
 
@@ -413,7 +415,7 @@ impl Handler {
     }
 
     pub fn downgrade_to_warning(&self, err: &mut DiagnosticBuilder) {
-        err.downgrade_to_warning();
+        err.downgrade_to(Level::Warning);
     }
 
     fn panic_if_treat_err_as_bug(&self) {
@@ -595,11 +597,18 @@ impl Handler {
         // Only emit the diagnostic if we haven't already emitted an equivalent
         // one:
         if self.emitted_diagnostics.borrow_mut().insert(diagnostic_hash) {
+            if let Some(ref code) = diagnostic.code {
+                self.emitted_diagnostic_codes.borrow_mut().insert(code.clone());
+            }
             self.emitter.borrow_mut().emit(db);
             if db.is_error() {
                 self.bump_err_count();
             }
         }
+    }
+
+    pub fn was_code_emitted(&self, code: &DiagnosticId) -> bool {
+        self.emitted_diagnostic_codes.borrow().contains(code)
     }
 }
 

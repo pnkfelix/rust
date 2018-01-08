@@ -24,7 +24,7 @@ use util::nodemap::{FxHashMap, FxHashSet};
 use util::common::{duration_to_secs_str, ErrorReported};
 
 use syntax::ast::NodeId;
-use errors::{self, DiagnosticBuilder, DiagnosticId};
+use errors::{self, Diagnostic, DiagnosticBuilder, DiagnosticId};
 use errors::emitter::{Emitter, EmitterWriter};
 use syntax::json::JsonEmitter;
 use syntax::feature_gate;
@@ -144,6 +144,12 @@ pub struct Session {
     /// Was any error signalled by AST borrowck? If not, downgrade
     /// any error emitted by MIR borrowck to a warning.
     pub seen_ast_borrowck_errors: Cell<bool>,
+
+    /// When in borrowck=sanity-check mode, accumulates all emitted
+    /// AST borrowck errors so that we can decide whether to report
+    /// downgraded versions of them later. (Handler field
+    /// emitted_diagnostic_codes is basis for filtering out repeats.)
+    pub delayed_ast_borrowck_errors: RefCell<Vec<Diagnostic>>,
 }
 
 pub struct PerfStats {
@@ -465,7 +471,9 @@ impl Session {
     /// done with either `-Ztwo-phase-borrows` or with
     /// `#![feature(nll)]`.
     pub fn two_phase_borrows(&self) -> bool {
-        self.features.borrow().nll || self.opts.debugging_opts.two_phase_borrows
+        self.features.borrow().nll ||
+            self.opts.debugging_opts.two_phase_borrows ||
+            self.borrowck_mode().two_phase_borrows()
     }
 
     /// What mode(s) of borrowck should we run? AST? MIR? both?
@@ -474,7 +482,8 @@ impl Session {
         match self.opts.borrowck_mode {
             mode @ BorrowckMode::Mir |
             mode @ BorrowckMode::Compare |
-            mode @ BorrowckMode::Migrate => mode,
+            mode @ BorrowckMode::Migrate |
+            mode @ BorrowckMode::SanityCheck => mode,
 
             mode @ BorrowckMode::Ast => {
                 if self.nll() {
@@ -1015,6 +1024,7 @@ pub fn build_session_(sopts: config::Options,
         },
         has_global_allocator: Cell::new(false),
         seen_ast_borrowck_errors: Cell::new(false),
+        delayed_ast_borrowck_errors: RefCell::new(Vec::new()),
     };
 
     sess

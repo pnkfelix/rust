@@ -21,24 +21,27 @@ pub enum Origin { Ast, Mir }
 
 impl fmt::Display for Origin {
     fn fmt(&self, w: &mut fmt::Formatter) -> fmt::Result {
-        // If the user passed `-Z borrowck=compare`, then include
-        // origin info as part of the error report,
-        // otherwise
-        let display_origin = ty::tls::with_opt(|opt_tcx| {
+        // Certain `-Z borrowck=mode` modes force origin information into the diagnsotics. But most
+        // (and importantly, the default mode) cause it to be left out.
+        let mode = ty::tls::with_opt(|opt_tcx| {
             if let Some(tcx) = opt_tcx {
-                tcx.sess.borrowck_mode() == BorrowckMode::Compare
+                tcx.sess.borrowck_mode()
             } else {
-                false
+                // Print no origin info at all.
+                return Ok(())
             }
         });
-        if display_origin {
-            match *self {
-                Origin::Mir => write!(w, " (Mir)"),
-                Origin::Ast => write!(w, " (Ast)"),
-            }
-        } else {
-            // Print no origin info
-            Ok(())
+        match (mode, *self) {
+            // `-Z borrowck=compare` means explicit annotate the source in all cases.
+            (BorrowckMode::Compare, Origin::Mir) => write!(w, " (Mir)"),
+            (BorrowckMode::Compare, Origin::Ast) => write!(w, " (Ast)"),
+
+            // `-Z borrowck=sanity-check` means *note* cases where AST-borrowck would have errored
+            // but new NLL regime does not.
+            (BorrowckMode::SanityCheck, Origin::Ast) => write!(w, " (old lexical borrow error)"),
+
+            // Otherwise print no origin info at all.
+            _ => Ok(()),
         }
     }
 }
@@ -92,7 +95,13 @@ pub trait BorrowckErrors {
                     BorrowckMode::Compare => {} // no downgrade
                     BorrowckMode::Mir |
                     BorrowckMode::Migrate => {
+                        // cancel, but remember that it happened. FIXME
+                        self.sess().diagnostic().cancel(&mut diag);
+                    }
+                    BorrowckMode::SanityCheck => {
                         // cancel, but remember that it happened.
+                        let mut delayed = self.sess().delayed_ast_borrowck_errors.borrow_mut();
+                        delayed.push((*diag).clone());
                         self.sess().diagnostic().cancel(&mut diag);
                     }
                 }
@@ -106,7 +115,8 @@ pub trait BorrowckErrors {
                     BorrowckMode::Mir |
                     BorrowckMode::Compare => {} // no downgrade
 
-                    BorrowckMode::Migrate => { // conditionally downgrade to warning
+                    BorrowckMode::Migrate |
+                    BorrowckMode::SanityCheck => { // conditionally downgrade to warning
                         if !self.sess().seen_ast_borrowck_errors.get() {
                             self.sess().diagnostic().downgrade_to_warning(&mut diag);
                             diag.warn("This code may have been previously accepted by the compiler \

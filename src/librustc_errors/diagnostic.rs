@@ -27,7 +27,7 @@ pub struct Diagnostic {
     pub suggestions: Vec<CodeSuggestion>,
 }
 
-#[derive(Clone, Debug, PartialEq, Hash, RustcEncodable, RustcDecodable)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
 pub enum DiagnosticId {
     Error(String),
     Lint(String),
@@ -109,20 +109,24 @@ impl Diagnostic {
     }
 
     /// This is like `cancel`, but instead of cancelling the
-    /// diagnostic, it just shifts its level to a warning. The
-    /// diagnostic will still need to be eventually emitted or
-    /// canceled (or it will panic when dropped).
+    /// diagnostic, it just shifts its level to a lower priority
+    /// diagnostic (e.g. from error down to warning). The diagnostic
+    /// will still need to be eventually emitted or canceled (or it
+    /// will panic when dropped).
     ///
     /// To ensure that this is truly a *downgrade* (and a reasonable
     /// one at that), we dynamically check that the input level is
-    /// somewhere between a fatal error and a warning.
-    pub fn downgrade_to_warning(&mut self) {
-        match self.level {
-            Level::Bug => panic!("don't downgrade bugs!"),
-            Level::Fatal | Level::PhaseFatal | Level::Error | Level::Warning => {} // okay
-            Level::Note | Level::Help | Level::Cancelled => panic!("these are not downgrades!"),
+    /// higher.
+    pub fn downgrade_to(&mut self, target: Level) {
+        // the sanity check currently only handles downgrade to warning or note.
+        assert!(target == Level::Warning || target == Level::Note);
+        match (self.level, target) {
+            (Level::Bug, _) => panic!("don't downgrade bugs!"),
+            (Level::Fatal, _) | (Level::PhaseFatal, _) | (Level::Error, _) => {} // okay
+            (Level::Warning, Level::Note) => {} // okay
+            (source, target) => panic!("{:?} to {:?} is not a downgrade!", source, target),
         }
-        self.level = Level::Warning
+        self.level = target;
     }
 
     /// Add a span/label to be included in the resulting snippet.

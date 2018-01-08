@@ -1075,6 +1075,22 @@ pub fn phase_3_run_analysis_passes<'tcx, F, R>(control: &CompileController,
              "MIR borrow checking",
              || for def_id in tcx.body_owners() { tcx.mir_borrowck(def_id); });
 
+        let delayed = sess.delayed_ast_borrowck_errors.borrow_mut();
+        // Accumulate first (before actually emitting) so that only
+        // errors emitted via MIR-borrowck are used for filter.
+        let mut will_emit = Vec::with_capacity(delayed.len());
+        for delayed in delayed.iter() {
+            let code = if let Some(ref code) = delayed.code { code } else { continue; };
+            if !sess.diagnostic().was_code_emitted(code) {
+                let mut delayed = delayed.clone();
+                delayed.downgrade_to(::errors::Level::Note);
+                will_emit.push(delayed);
+            }
+        }
+        for delayed in will_emit {
+            ::errors::DiagnosticBuilder::new_diagnostic(sess.diagnostic(), delayed).emit();
+        }
+
         time(time_passes,
              "MIR effect checking",
              || for def_id in tcx.body_owners() {

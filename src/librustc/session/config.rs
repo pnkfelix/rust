@@ -413,11 +413,19 @@ pub enum PrintRequest {
 pub enum BorrowckMode {
     Ast,
     Mir,
+
+    /// Runs both, reporting all diagnostics from each independently
+    /// (with annotations indicating the source of the diagnostic).
     Compare,
 
     /// Runs both. Both reject => reject; MIR accepts => accept; MIR
     /// rejects + AST accepts => warn.
     Migrate,
+
+    /// Runs both. On disagreement: AST rejects + MIR accepts => note;
+    /// AST accepts + MIR rejects => warn. (This mode is intended to
+    /// ease sanity-checking the improvements provided by NLL.)
+    SanityCheck,
 }
 
 impl BorrowckMode {
@@ -428,6 +436,7 @@ impl BorrowckMode {
             BorrowckMode::Compare => true,
             BorrowckMode::Migrate => true,
             BorrowckMode::Mir => false,
+            BorrowckMode::SanityCheck => true,
         }
     }
     /// Should we emit the MIR-based borrow checker errors?
@@ -437,6 +446,35 @@ impl BorrowckMode {
             BorrowckMode::Compare => true,
             BorrowckMode::Migrate => true,
             BorrowckMode::Mir => true,
+            BorrowckMode::SanityCheck => true,
+        }
+    }
+
+    /// Should we use NLL-style region checking instead of lexical style (absent
+    /// user explicit opt-in via `#[feature(nll)]` or `-Z nll`).
+    pub fn nll(self) -> bool {
+        match self {
+            BorrowckMode::Ast |
+            BorrowckMode::Mir | // mir-borrowck on its own does not imply NLL.
+            BorrowckMode::Compare => false,
+
+            // Migration and sanity-check are both meant to include NLL.
+            BorrowckMode::Migrate |
+            BorrowckMode::SanityCheck => true,
+        }
+    }
+
+    /// Should we use two-phase borrows instead of single-phase (absent user
+    /// explicit opt-in via `#[feature(nll)]` or `-Z two-phase-borrows`).
+    pub fn two_phase_borrows(self) -> bool {
+        match self {
+            BorrowckMode::Ast |
+            BorrowckMode::Mir | // mir-borrowck on its own does not imply 2PB.
+            BorrowckMode::Compare => false,
+
+            // Migration and sanity-check are both meant to include 2PB.
+            BorrowckMode::Migrate |
+            BorrowckMode::SanityCheck => true,
         }
     }
 }
@@ -1869,6 +1907,7 @@ pub fn build_session_options_and_crate_config(matches: &getopts::Matches)
         Some("mir") => BorrowckMode::Mir,
         Some("compare") => BorrowckMode::Compare,
         Some("migrate") => BorrowckMode::Migrate,
+        Some("sanity-check") => BorrowckMode::SanityCheck,
         Some(m) => {
             early_error(error_format, &format!("unknown borrowck mode `{}`", m))
         },
