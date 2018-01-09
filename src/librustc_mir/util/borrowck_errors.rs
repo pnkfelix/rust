@@ -23,14 +23,10 @@ impl fmt::Display for Origin {
     fn fmt(&self, w: &mut fmt::Formatter) -> fmt::Result {
         // Certain `-Z borrowck=mode` modes force origin information into the diagnsotics. But most
         // (and importantly, the default mode) cause it to be left out.
-        let mode = ty::tls::with_opt(|opt_tcx| {
-            if let Some(tcx) = opt_tcx {
-                tcx.sess.borrowck_mode()
-            } else {
-                // Print no origin info at all.
-                return Ok(())
-            }
-        });
+        let mode = match ty::tls::with_opt(|opt_tcx| opt_tcx.map(|tcx| tcx.sess.borrowck_mode())) {
+            Some(mode) => mode,
+            None => return Ok(()),
+        };
         match (mode, *self) {
             // `-Z borrowck=compare` means explicit annotate the source in all cases.
             (BorrowckMode::Compare, Origin::Mir) => write!(w, " (Mir)"),
