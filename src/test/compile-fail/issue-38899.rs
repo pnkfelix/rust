@@ -23,11 +23,15 @@ pub struct Block<'a> {
 }
 
 fn bump<'a>(mut block: &mut Block<'a>) {
-    let _x = &mut block;
-    let _p: &'a u8 = &*block.current;
+    let x = &mut block;
+    let p: &'a u8 = &*block.current;
     //[mir]~^      ERROR cannot borrow `*block.current` as immutable because it is also borrowed as mutable [E0502]
     //[migrate]~^^ WARN  cannot borrow `*block.current` as immutable because it is also borrowed as mutable [E0502]
     //[migrate]~|  WARN will become a hard error in a future release
+
+    // artificially extend borrows to end of block.
+    drop(x);
+    drop(p);
 }
 
 #[rustc_error]
