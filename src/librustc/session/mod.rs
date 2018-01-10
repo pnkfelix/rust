@@ -477,9 +477,11 @@ impl Session {
     /// done with either `-Ztwo-phase-borrows` or with
     /// `#![feature(nll)]`.
     pub fn two_phase_borrows(&self) -> bool {
-        self.features.borrow().nll ||
-            self.opts.debugging_opts.two_phase_borrows ||
-            self.borrowck_mode().two_phase_borrows()
+        // No matter what, the `-Z one-phase-borrows` flag kills this.
+        !self.opts.debugging_opts.one_phase_borrows &&
+            (self.features.borrow().nll ||
+             self.opts.debugging_opts.two_phase_borrows ||
+             self.borrowck_mode().two_phase_borrows())
     }
 
     /// What mode(s) of borrowck should we run? AST? MIR? both?
