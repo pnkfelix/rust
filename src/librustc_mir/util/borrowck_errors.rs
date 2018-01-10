@@ -76,6 +76,7 @@ pub trait BorrowckErrors {
                                      o: Origin)
                                      -> DiagnosticBuilder<'a> {
         let mode = self.sess().borrowck_mode();
+        debug!("downgrade_based_on_origin mode: {:?} diag: {:?} o: {:?}", mode, diag, o);
         match o {
             Origin::Ast => {
                 // remember that we saw this (if migrating and its serious)
