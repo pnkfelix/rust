@@ -17,7 +17,8 @@ use rustc::hir::map::definitions::DefPathData;
 use rustc::infer::InferCtxt;
 use rustc::ty::{self, ParamEnv, TyCtxt};
 use rustc::ty::maps::Providers;
-use rustc::mir::{AssertMessage, BasicBlock, BorrowKind, Local, Location, Place};
+use rustc::mir::{AssertMessage, BasicBlock, BorrowMutability};
+use rustc::mir::{Local, Location, Place};
 use rustc::mir::{Mir, Mutability, Operand, Projection, ProjectionElem, Rvalue};
 use rustc::mir::{Field, Statement, StatementKind, Terminator, TerminatorKind};
 use rustc::mir::ClosureRegionRequirements;
@@ -621,7 +622,7 @@ enum ReadOrWrite {
 /// (For informational purposes only)
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum ReadKind {
-    Borrow(BorrowKind),
+    Borrow(BorrowMutability),
     Copy,
 }
 
@@ -630,7 +631,7 @@ enum ReadKind {
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum WriteKind {
     StorageDeadOrDrop,
-    MutableBorrow(BorrowKind),
+    MutableBorrow(BorrowMutability),
     Mutate,
     Move,
 }
@@ -741,7 +742,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
             context,
             (sd, place_span.0),
             flow_state,
-            |this, index, borrow| match (rw, borrow.kind) {
+            |this, index, borrow| match (rw, borrow.kind.mut_kind) {
                 // Obviously an activation is compatible with its own
                 // reservation (or even prior activating uses of same
                 // borrow); so don't check if they interfere.
@@ -761,13 +762,15 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     Control::Continue
                 }
 
-                (Read(_), BorrowKind::Shared) | (Reservation(..), BorrowKind::Shared) => {
+                (Read(_), BorrowMutability::Shared) |
+                (Reservation(..), BorrowMutability::Shared) => {
                     Control::Continue
                 }
 
-                (Read(kind), BorrowKind::Unique) | (Read(kind), BorrowKind::Mut) => {
+                (Read(kind), BorrowMutability::Unique) | (Read(kind), BorrowMutability::Mut) => {
                     // Reading from mere reservations of mutable-borrows is OK.
-                    if this.tcx.sess.two_phase_borrows() && index.is_reservation()
+                    if this.tcx.sess.two_phase_borrows() &&
+                        index.is_reservation()
                     {
                         return Control::Continue;
                     }
@@ -795,8 +798,8 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     Control::Break
                 }
 
-                (Reservation(kind), BorrowKind::Unique)
-                | (Reservation(kind), BorrowKind::Mut)
+                (Reservation(kind), BorrowMutability::Unique)
+                | (Reservation(kind), BorrowMutability::Mut)
                 | (Activation(kind, _), _)
                 | (Write(kind), _) => {
                     match rw {
@@ -911,10 +914,10 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
     ) {
         match *rvalue {
             Rvalue::Ref(_ /*rgn*/, bk, ref place) => {
-                let access_kind = match bk {
-                    BorrowKind::Shared => (Deep, Read(ReadKind::Borrow(bk))),
-                    BorrowKind::Unique | BorrowKind::Mut => {
-                        let wk = WriteKind::MutableBorrow(bk);
+                let access_kind = match bk.mut_kind {
+                    BorrowMutability::Shared => (Deep, Read(ReadKind::Borrow(bk.mut_kind))),
+                    BorrowMutability::Unique | BorrowMutability::Mut => {
+                        let wk = WriteKind::MutableBorrow(bk.mut_kind);
                         if self.tcx.sess.two_phase_borrows() {
                             (Deep, Reservation(wk))
                         } else {
@@ -1122,9 +1125,9 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                 // activations for both mutable and immutable
                 // borrows. So make sure we are talking about a
                 // mutable borrow before we check it.
-                match borrow.kind {
-                    BorrowKind::Shared => return,
-                    BorrowKind::Unique | BorrowKind::Mut => {}
+                match borrow.kind.mut_kind {
+                    BorrowMutability::Shared => return,
+                    BorrowMutability::Unique | BorrowMutability::Mut => {}
                 }
 
                 self.access_place(
@@ -1132,7 +1135,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     (&borrow.borrowed_place, span),
                     (
                         Deep,
-                        Activation(WriteKind::MutableBorrow(borrow.kind), borrow_index),
+                        Activation(WriteKind::MutableBorrow(borrow.kind.mut_kind), borrow_index),
                     ),
                     LocalMutationIsAllowed::No,
                     flow_state,
@@ -1389,14 +1392,14 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
         );
         let mut error_reported = false;
         match kind {
-            Reservation(WriteKind::MutableBorrow(BorrowKind::Unique))
-            | Write(WriteKind::MutableBorrow(BorrowKind::Unique)) => {
+            Reservation(WriteKind::MutableBorrow(BorrowMutability::Unique))
+            | Write(WriteKind::MutableBorrow(BorrowMutability::Unique)) => {
                 if let Err(_place_err) = self.is_mutable(place, LocalMutationIsAllowed::Yes) {
                     span_bug!(span, "&unique borrow for {:?} should not fail", place);
                 }
             }
-            Reservation(WriteKind::MutableBorrow(BorrowKind::Mut))
-            | Write(WriteKind::MutableBorrow(BorrowKind::Mut)) => if let Err(place_err) =
+            Reservation(WriteKind::MutableBorrow(BorrowMutability::Mut))
+            | Write(WriteKind::MutableBorrow(BorrowMutability::Mut)) => if let Err(place_err) =
                 self.is_mutable(place, is_local_mutation_allowed)
             {
                 error_reported = true;
@@ -1441,10 +1444,10 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
             }
             Reservation(WriteKind::Move)
             | Reservation(WriteKind::StorageDeadOrDrop)
-            | Reservation(WriteKind::MutableBorrow(BorrowKind::Shared))
+            | Reservation(WriteKind::MutableBorrow(BorrowMutability::Shared))
             | Write(WriteKind::Move)
             | Write(WriteKind::StorageDeadOrDrop)
-            | Write(WriteKind::MutableBorrow(BorrowKind::Shared)) => {
+            | Write(WriteKind::MutableBorrow(BorrowMutability::Shared)) => {
                 if let Err(_place_err) = self.is_mutable(place, is_local_mutation_allowed) {
                     self.tcx.sess.delay_span_bug(
                         span,
@@ -1459,9 +1462,9 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
 
             Activation(..) => {} // permission checks are done at Reservation point.
 
-            Read(ReadKind::Borrow(BorrowKind::Unique))
-            | Read(ReadKind::Borrow(BorrowKind::Mut))
-            | Read(ReadKind::Borrow(BorrowKind::Shared))
+            Read(ReadKind::Borrow(BorrowMutability::Unique))
+            | Read(ReadKind::Borrow(BorrowMutability::Mut))
+            | Read(ReadKind::Borrow(BorrowMutability::Shared))
             | Read(ReadKind::Copy) => {} // Access authorized
         }
 

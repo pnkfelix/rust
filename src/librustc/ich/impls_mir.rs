@@ -20,7 +20,8 @@ use std::mem;
 impl_stable_hash_for!(struct mir::GeneratorLayout<'tcx> { fields });
 impl_stable_hash_for!(struct mir::SourceInfo { span, scope });
 impl_stable_hash_for!(enum mir::Mutability { Mut, Not });
-impl_stable_hash_for!(enum mir::BorrowKind { Shared, Unique, Mut });
+impl_stable_hash_for!(struct mir::BorrowKind { mut_kind, allows_two_phase_borrow });
+impl_stable_hash_for!(enum mir::BorrowMutability { Shared, Unique, Mut });
 impl_stable_hash_for!(enum mir::LocalKind { Var, Temp, Arg, ReturnPointer });
 impl_stable_hash_for!(struct mir::LocalDecl<'tcx> {
     mutability,

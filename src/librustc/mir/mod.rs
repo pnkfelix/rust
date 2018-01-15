@@ -371,7 +371,15 @@ pub enum Mutability {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable)]
-pub enum BorrowKind {
+pub struct BorrowKind {
+    pub mut_kind: BorrowMutability,
+    /// True if this borrow arose from method-call auto-ref
+    /// (i.e. `adjustment::Adjust::Borrow`)
+    pub allows_two_phase_borrow: bool,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable)]
+pub enum BorrowMutability {
     /// Data must be immutable and is aliasable.
     Shared,
 
@@ -1609,9 +1617,9 @@ impl<'tcx> Debug for Rvalue<'tcx> {
             Discriminant(ref place) => write!(fmt, "discriminant({:?})", place),
             NullaryOp(ref op, ref t) => write!(fmt, "{:?}({:?})", op, t),
             Ref(region, borrow_kind, ref place) => {
-                let kind_str = match borrow_kind {
-                    BorrowKind::Shared => "",
-                    BorrowKind::Mut | BorrowKind::Unique => "mut ",
+                let kind_str = match borrow_kind.mut_kind {
+                    BorrowMutability::Shared => "",
+                    BorrowMutability::Mut | BorrowMutability::Unique => "mut ",
                 };
 
                 // When printing regions, add trailing space if necessary.

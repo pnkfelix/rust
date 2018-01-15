@@ -10,7 +10,7 @@
 
 use syntax_pos::Span;
 use rustc::middle::region::ScopeTree;
-use rustc::mir::{BorrowKind, Field, Local, LocalKind, Location, Operand};
+use rustc::mir::{BorrowMutability, Field, Local, LocalKind, Location, Operand};
 use rustc::mir::{Place, ProjectionElem, Rvalue, Statement, StatementKind};
 use rustc::ty::{self, RegionKind};
 use rustc_data_structures::indexed_vec::Idx;
@@ -232,7 +232,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
         &mut self,
         context: Context,
         (place, span): (&Place<'tcx>, Span),
-        gen_borrow_kind: BorrowKind,
+        gen_borrow_kind: BorrowMutability,
         issued_borrow: &BorrowData,
         end_issued_loan_span: Option<Span>,
     ) {
@@ -252,12 +252,12 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
             gen_borrow_kind,
             "immutable",
             "mutable",
-            issued_borrow.kind,
+            issued_borrow.kind.mut_kind,
             "immutable",
             "mutable",
         ) {
-            (BorrowKind::Shared, lft, _, BorrowKind::Mut, _, rgt) |
-            (BorrowKind::Mut, _, lft, BorrowKind::Shared, rgt, _) => self.tcx
+            (BorrowMutability::Shared, lft, _, BorrowMutability::Mut, _, rgt) |
+            (BorrowMutability::Mut, _, lft, BorrowMutability::Shared, rgt, _) => self.tcx
                 .cannot_reborrow_already_borrowed(
                     span,
                     &desc_place,
@@ -271,7 +271,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     Origin::Mir,
                 ),
 
-            (BorrowKind::Mut, _, _, BorrowKind::Mut, _, _) => self.tcx
+            (BorrowMutability::Mut, _, _, BorrowMutability::Mut, _, _) => self.tcx
                 .cannot_mutably_borrow_multiply(
                     span,
                     &desc_place,
@@ -282,7 +282,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     Origin::Mir,
                 ),
 
-            (BorrowKind::Unique, _, _, BorrowKind::Unique, _, _) => self.tcx
+            (BorrowMutability::Unique, _, _, BorrowMutability::Unique, _, _) => self.tcx
                 .cannot_uniquely_borrow_by_two_closures(
                     span,
                     &desc_place,
@@ -291,18 +291,19 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     Origin::Mir,
                 ),
 
-            (BorrowKind::Unique, _, _, _, _, _) => self.tcx.cannot_uniquely_borrow_by_one_closure(
-                span,
-                &desc_place,
-                "",
-                issued_span,
-                "it",
-                "",
-                end_issued_loan_span,
-                Origin::Mir,
-            ),
+            (BorrowMutability::Unique, _, _, _, _, _) => self.tcx
+                .cannot_uniquely_borrow_by_one_closure(
+                    span,
+                    &desc_place,
+                    "",
+                    issued_span,
+                    "it",
+                    "",
+                    end_issued_loan_span,
+                    Origin::Mir,
+                ),
 
-            (BorrowKind::Shared, lft, _, BorrowKind::Unique, _, _) => self.tcx
+            (BorrowMutability::Shared, lft, _, BorrowMutability::Unique, _, _) => self.tcx
                 .cannot_reborrow_already_uniquely_borrowed(
                     span,
                     &desc_place,
@@ -314,7 +315,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     Origin::Mir,
                 ),
 
-            (BorrowKind::Mut, _, lft, BorrowKind::Unique, _, _) => self.tcx
+            (BorrowMutability::Mut, _, lft, BorrowMutability::Unique, _, _) => self.tcx
                 .cannot_reborrow_already_uniquely_borrowed(
                     span,
                     &desc_place,
@@ -326,7 +327,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     Origin::Mir,
                 ),
 
-            (BorrowKind::Shared, _, _, BorrowKind::Shared, _, _) => unreachable!(),
+            (BorrowMutability::Shared, _, _, BorrowMutability::Shared, _, _) => unreachable!(),
         };
 
         if let Some((_, var_span)) = old_closure_span {

@@ -119,10 +119,10 @@ pub struct BorrowData<'tcx> {
 
 impl<'tcx> fmt::Display for BorrowData<'tcx> {
     fn fmt(&self, w: &mut fmt::Formatter) -> fmt::Result {
-        let kind = match self.kind {
-            mir::BorrowKind::Shared => "",
-            mir::BorrowKind::Unique => "uniq ",
-            mir::BorrowKind::Mut => "mut ",
+        let kind = match self.kind.mut_kind {
+            mir::BorrowMutability::Shared => "",
+            mir::BorrowMutability::Unique => "uniq ",
+            mir::BorrowMutability::Mut => "mut ",
         };
         let region = format!("{}", self.region);
         let region = if region.len() > 0 { format!("{} ", region) } else { region };

@@ -862,7 +862,7 @@ impl<'a, 'tcx> MirConstContext<'a, 'tcx> {
                         } else {
                             self.cx.tcx.data_layout.pointer_align
                         };
-                        if bk == mir::BorrowKind::Mut {
+                        if bk.mut_kind == mir::BorrowMutability::Mut {
                             consts::addr_of_mut(self.cx, llval, align, "ref_mut")
                         } else {
                             consts::addr_of(self.cx, llval, align, "ref")

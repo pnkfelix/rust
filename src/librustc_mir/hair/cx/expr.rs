@@ -21,6 +21,7 @@ use rustc::ty::adjustment::{Adjustment, Adjust, AutoBorrow};
 use rustc::ty::cast::CastKind as TyCastKind;
 use rustc::hir;
 use rustc::hir::def_id::LocalDefId;
+use rustc::mir::{BorrowKind, BorrowMutability};
 
 impl<'tcx> Mirror<'tcx> for &'tcx hir::Expr {
     type Output = Expr<'tcx>;
@@ -111,7 +112,7 @@ fn apply_adjustment<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                 span,
                 kind: ExprKind::Borrow {
                     region: deref.region,
-                    borrow_kind: to_borrow_kind(deref.mutbl),
+                    borrow_kind: to_borrow_kind(deref.mutbl, true),
                     arg: expr.to_ref(),
                 },
             };
@@ -121,7 +122,7 @@ fn apply_adjustment<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
         Adjust::Borrow(AutoBorrow::Ref(r, m)) => {
             ExprKind::Borrow {
                 region: r,
-                borrow_kind: to_borrow_kind(m),
+                borrow_kind: to_borrow_kind(m, true),
                 arg: expr.to_ref(),
             }
         }
@@ -141,7 +142,7 @@ fn apply_adjustment<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                 span,
                 kind: ExprKind::Borrow {
                     region,
-                    borrow_kind: to_borrow_kind(m),
+                    borrow_kind: to_borrow_kind(m, true),
                     arg: expr.to_ref(),
                 },
             };
@@ -255,7 +256,7 @@ fn make_mirror_unadjusted<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
             };
             ExprKind::Borrow {
                 region,
-                borrow_kind: to_borrow_kind(mutbl),
+                borrow_kind: to_borrow_kind(mutbl, false),
                 arg: expr.to_ref(),
             }
         }
@@ -610,10 +611,14 @@ fn method_callee<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
     }
 }
 
-fn to_borrow_kind(m: hir::Mutability) -> BorrowKind {
-    match m {
-        hir::MutMutable => BorrowKind::Mut,
-        hir::MutImmutable => BorrowKind::Shared,
+fn to_borrow_kind(m: hir::Mutability, via_autoref: bool) -> BorrowKind {
+    let mut_kind = match m {
+        hir::MutMutable => BorrowMutability::Mut,
+        hir::MutImmutable => BorrowMutability::Shared,
+    };
+    BorrowKind {
+        mut_kind,
+        allows_two_phase_borrow: via_autoref,
     }
 }
 
@@ -912,10 +917,14 @@ fn capture_freevar<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
     match upvar_capture {
         ty::UpvarCapture::ByValue => captured_var.to_ref(),
         ty::UpvarCapture::ByRef(upvar_borrow) => {
-            let borrow_kind = match upvar_borrow.kind {
-                ty::BorrowKind::ImmBorrow => BorrowKind::Shared,
-                ty::BorrowKind::UniqueImmBorrow => BorrowKind::Unique,
-                ty::BorrowKind::MutBorrow => BorrowKind::Mut,
+            let mut_kind = match upvar_borrow.kind {
+                ty::BorrowKind::ImmBorrow => BorrowMutability::Shared,
+                ty::BorrowKind::UniqueImmBorrow => BorrowMutability::Unique,
+                ty::BorrowKind::MutBorrow => BorrowMutability::Mut,
+            };
+            let borrow_kind = BorrowKind {
+                mut_kind,
+                allows_two_phase_borrow: false,
             };
             Expr {
                 temp_lifetime,

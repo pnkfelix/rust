@@ -442,10 +442,14 @@ impl<'a, 'tcx> CloneShimBuilder<'a, 'tcx> {
         let loc = self.make_place(Mutability::Not, ty);
 
         // `let ref_loc: &ty = &rcvr_field;`
+        let borrow_kind = BorrowKind {
+            mut_kind: BorrowMutability::Shared,
+            allows_two_phase_borrow: false,
+        };
         let statement = self.make_statement(
             StatementKind::Assign(
                 ref_loc.clone(),
-                Rvalue::Ref(tcx.types.re_erased, BorrowKind::Shared, rcvr_field)
+                Rvalue::Ref(tcx.types.re_erased, borrow_kind, rcvr_field)
             )
         );
 
@@ -721,11 +725,15 @@ fn build_call_shim<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                 }),
                 span
             ));
+            let borrow_kind = BorrowKind {
+                mut_kind: BorrowMutability::Mut,
+                allows_two_phase_borrow: false,
+            };
             statements.push(Statement {
                 source_info,
                 kind: StatementKind::Assign(
                     Place::Local(ref_rcvr),
-                    Rvalue::Ref(tcx.types.re_erased, BorrowKind::Mut, rcvr_l)
+                    Rvalue::Ref(tcx.types.re_erased, borrow_kind, rcvr_l)
                 )
             });
             Operand::Move(Place::Local(ref_rcvr))

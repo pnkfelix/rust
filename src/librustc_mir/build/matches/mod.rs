@@ -772,8 +772,10 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             let rvalue = match binding.binding_mode {
                 BindingMode::ByValue =>
                     Rvalue::Use(self.consume_by_copy_or_move(binding.source)),
-                BindingMode::ByRef(region, borrow_kind) =>
-                    Rvalue::Ref(region, borrow_kind, binding.source),
+                BindingMode::ByRef(region, mut_kind) => {
+                    let bk = BorrowKind { mut_kind, allows_two_phase_borrow: false };
+                    Rvalue::Ref(region, bk, binding.source)
+                }
             };
             self.cfg.push_assign(block, source_info, &local, rvalue);
         }

@@ -11,7 +11,7 @@
 use eval;
 
 use rustc::middle::const_val::{ConstEvalErr, ConstVal};
-use rustc::mir::{Field, BorrowKind, Mutability};
+use rustc::mir::{Field, BorrowMutability, Mutability};
 use rustc::ty::{self, TyCtxt, AdtDef, Ty, Region};
 use rustc::ty::subst::{Substs, Kind};
 use rustc::hir::{self, PatKind, RangeEnd};
@@ -34,7 +34,7 @@ pub enum PatternError<'tcx> {
 #[derive(Copy, Clone, Debug)]
 pub enum BindingMode<'tcx> {
     ByValue,
-    ByRef(Region<'tcx>, BorrowKind),
+    ByRef(Region<'tcx>, BorrowMutability),
 }
 
 #[derive(Clone, Debug)]
@@ -131,7 +131,7 @@ impl<'tcx> fmt::Display for Pattern<'tcx> {
                     BindingMode::ByValue => mutability == Mutability::Mut,
                     BindingMode::ByRef(_, bk) => {
                         write!(f, "ref ")?;
-                        bk == BorrowKind::Mut
+                        bk == BorrowMutability::Mut
                     }
                 };
                 if is_mut {
@@ -426,10 +426,10 @@ impl<'a, 'tcx> PatternContext<'a, 'tcx> {
                         (Mutability::Not, BindingMode::ByValue),
                     ty::BindByReference(hir::MutMutable) =>
                         (Mutability::Not, BindingMode::ByRef(
-                            region.unwrap(), BorrowKind::Mut)),
+                            region.unwrap(), BorrowMutability::Mut)),
                     ty::BindByReference(hir::MutImmutable) =>
                         (Mutability::Not, BindingMode::ByRef(
-                            region.unwrap(), BorrowKind::Shared)),
+                            region.unwrap(), BorrowMutability::Shared)),
                 };
 
                 // A ref x pattern is the same node used for x, and as such it has

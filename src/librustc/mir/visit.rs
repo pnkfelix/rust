@@ -942,12 +942,16 @@ impl<'tcx> PlaceContext<'tcx> {
     pub fn is_mutating_use(&self) -> bool {
         match *self {
             PlaceContext::Store | PlaceContext::AsmOutput | PlaceContext::Call |
-            PlaceContext::Borrow { kind: BorrowKind::Mut, .. } |
+            PlaceContext::Borrow {
+                kind: BorrowKind { mut_kind: BorrowMutability::Mut, .. }, .. } |
             PlaceContext::Projection(Mutability::Mut) |
             PlaceContext::Drop => true,
+
             PlaceContext::Inspect |
-            PlaceContext::Borrow { kind: BorrowKind::Shared, .. } |
-            PlaceContext::Borrow { kind: BorrowKind::Unique, .. } |
+            PlaceContext::Borrow {
+                kind: BorrowKind { mut_kind: BorrowMutability::Shared, .. }, .. } |
+            PlaceContext::Borrow {
+                kind: BorrowKind { mut_kind: BorrowMutability::Unique, .. }, .. } |
             PlaceContext::Projection(Mutability::Not) |
             PlaceContext::Copy | PlaceContext::Move |
             PlaceContext::StorageLive | PlaceContext::StorageDead |
@@ -958,11 +962,16 @@ impl<'tcx> PlaceContext<'tcx> {
     /// Returns true if this place context represents a use that does not change the value.
     pub fn is_nonmutating_use(&self) -> bool {
         match *self {
-            PlaceContext::Inspect | PlaceContext::Borrow { kind: BorrowKind::Shared, .. } |
-            PlaceContext::Borrow { kind: BorrowKind::Unique, .. } |
+            PlaceContext::Inspect |
+            PlaceContext::Borrow {
+                kind: BorrowKind { mut_kind: BorrowMutability::Shared, .. }, .. } |
+            PlaceContext::Borrow {
+                kind: BorrowKind { mut_kind: BorrowMutability::Unique, .. }, .. } |
             PlaceContext::Projection(Mutability::Not) |
             PlaceContext::Copy | PlaceContext::Move => true,
-            PlaceContext::Borrow { kind: BorrowKind::Mut, .. } | PlaceContext::Store |
+
+            PlaceContext::Borrow { kind: BorrowKind { mut_kind: BorrowMutability::Mut, .. }, .. } |
+            PlaceContext::Store |
             PlaceContext::AsmOutput |
             PlaceContext::Call | PlaceContext::Projection(Mutability::Mut) |
             PlaceContext::Drop | PlaceContext::StorageLive | PlaceContext::StorageDead |
