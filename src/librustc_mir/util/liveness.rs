@@ -265,6 +265,7 @@ pub fn categorize<'tcx>(context: PlaceContext<'tcx>, mode: LivenessMode) -> Opti
         // and we only care about the result at suspension points. Borrows cannot
         // cross suspension points so this behavior is unproblematic.
         PlaceContext::Borrow { .. } |
+        PlaceContext::BorrowDiscriminant { .. } |
 
         PlaceContext::Inspect |
         PlaceContext::Copy |

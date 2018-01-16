@@ -1124,6 +1124,20 @@ pub enum StatementKind<'tcx> {
     /// Write the RHS Rvalue to the LHS Place.
     Assign(Place<'tcx>, Rvalue<'tcx>),
 
+    /// Signals that we are planning to read the discriminant of
+    /// `place`, in the future, potentially multiple times, and make
+    /// further reads/writes to whatever record we find under the
+    /// assumption that its variants *cannot be changed* until after
+    /// we reach the corresonding `EndBorrowDiscriminant`
+    BorrowDiscriminant { node_id: ast::NodeId, place: Place<'tcx> },
+
+    /// Ends the `BorrowDiscriminant` identified by `node_id`.
+    ///
+    /// FIXME: Does this need the `place` as well? E.g. if we do
+    /// `match (enum1, enum2) { ... }`, is that going to be a single
+    /// `node_id` with distinct places being observed at points?
+    EndBorrowDiscriminant { node_id: ast::NodeId },
+
     /// Write the discriminant for a variant to the enum Place.
     SetDiscriminant { place: Place<'tcx>, variant_index: usize },
 
@@ -1209,6 +1223,12 @@ impl<'tcx> Debug for Statement<'tcx> {
         use self::StatementKind::*;
         match self.kind {
             Assign(ref place, ref rv) => write!(fmt, "{:?} = {:?}", place, rv),
+            BorrowDiscriminant { node_id, ref place } => {
+                write!(fmt, "borrow-discriminant({}, {:?})", node_id, place)
+            }
+            EndBorrowDiscriminant { node_id } => {
+                write!(fmt, "end-borrow-discriminant({})", node_id)
+            }
             // (reuse lifetime rendering policy from ppaux.)
             EndRegion(ref ce) => write!(fmt, "EndRegion({})", ty::ReScope(*ce)),
             Validate(ref op, ref places) => write!(fmt, "Validate({:?}, {:?})", op, places),
@@ -2071,6 +2091,13 @@ impl<'tcx> TypeFoldable<'tcx> for Statement<'tcx> {
 
         let kind = match self.kind {
             Assign(ref place, ref rval) => Assign(place.fold_with(folder), rval.fold_with(folder)),
+            BorrowDiscriminant { node_id, ref place } => BorrowDiscriminant {
+                node_id,
+                place: place.fold_with(folder),
+            },
+            EndBorrowDiscriminant { node_id } => EndBorrowDiscriminant {
+                node_id,
+            },
             SetDiscriminant { ref place, variant_index } => SetDiscriminant {
                 place: place.fold_with(folder),
                 variant_index,
@@ -2106,6 +2133,8 @@ impl<'tcx> TypeFoldable<'tcx> for Statement<'tcx> {
 
         match self.kind {
             Assign(ref place, ref rval) => { place.visit_with(visitor) || rval.visit_with(visitor) }
+            BorrowDiscriminant { node_id: _, ref place } => place.visit_with(visitor),
+            EndBorrowDiscriminant { node_id: _ } => false,
             SetDiscriminant { ref place, .. } => place.visit_with(visitor),
             StorageLive(ref local) |
             StorageDead(ref local) => local.visit_with(visitor),

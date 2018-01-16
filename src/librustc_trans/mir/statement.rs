@@ -82,6 +82,8 @@ impl<'a, 'tcx> MirContext<'a, 'tcx> {
                 asm::trans_inline_asm(&bcx, asm, outputs, input_vals);
                 bcx
             }
+            mir::StatementKind::BorrowDiscriminant { .. } |
+            mir::StatementKind::EndBorrowDiscriminant { .. } |
             mir::StatementKind::EndRegion(_) |
             mir::StatementKind::Validate(..) |
             mir::StatementKind::Nop => bcx,

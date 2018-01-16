@@ -354,6 +354,11 @@ macro_rules! make_mir_visitor {
                                           ref $($mutability)* rvalue) => {
                         self.visit_assign(block, place, rvalue, location);
                     }
+                    StatementKind::BorrowDiscriminant { node_id: _,
+                                                        ref $($mutability)* place } => {
+                        self.visit_place(place, PlaceContext::BorrowDiscriminant, location);
+                    }
+                    StatementKind::EndBorrowDiscriminant { node_id: _ } => {}
                     StatementKind::EndRegion(_) => {}
                     StatementKind::Validate(_, ref $($mutability)* places) => {
                         for operand in places {
@@ -877,6 +882,7 @@ pub enum PlaceContext<'tcx> {
 
     // Being borrowed
     Borrow { region: Region<'tcx>, kind: BorrowKind },
+    BorrowDiscriminant,
 
     // Used as base for another place, e.g. `x` in `x.y`.
     //
@@ -948,6 +954,7 @@ impl<'tcx> PlaceContext<'tcx> {
             PlaceContext::Inspect |
             PlaceContext::Borrow { kind: BorrowKind::Shared, .. } |
             PlaceContext::Borrow { kind: BorrowKind::Unique, .. } |
+            PlaceContext::BorrowDiscriminant |
             PlaceContext::Projection(Mutability::Not) |
             PlaceContext::Copy | PlaceContext::Move |
             PlaceContext::StorageLive | PlaceContext::StorageDead |
@@ -960,6 +967,7 @@ impl<'tcx> PlaceContext<'tcx> {
         match *self {
             PlaceContext::Inspect | PlaceContext::Borrow { kind: BorrowKind::Shared, .. } |
             PlaceContext::Borrow { kind: BorrowKind::Unique, .. } |
+            PlaceContext::BorrowDiscriminant |
             PlaceContext::Projection(Mutability::Not) |
             PlaceContext::Copy | PlaceContext::Move => true,
             PlaceContext::Borrow { kind: BorrowKind::Mut, .. } | PlaceContext::Store |

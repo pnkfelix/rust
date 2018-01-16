@@ -99,6 +99,8 @@ impl<'a, 'tcx> Visitor<'tcx> for UnsafetyChecker<'a, 'tcx> {
         self.source_info = statement.source_info;
         match statement.kind {
             StatementKind::Assign(..) |
+            StatementKind::BorrowDiscriminant { .. } |
+            StatementKind::EndBorrowDiscriminant { .. } |
             StatementKind::SetDiscriminant { .. } |
             StatementKind::StorageLive(..) |
             StatementKind::StorageDead(..) |

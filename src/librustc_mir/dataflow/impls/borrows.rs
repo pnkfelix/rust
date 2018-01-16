@@ -410,6 +410,17 @@ impl<'a, 'gcx, 'tcx> Borrows<'a, 'gcx, 'tcx> {
                 }
             }
 
+            mir::StatementKind::BorrowDiscriminant { node_id: _, ref place } => {
+                // Try to implement a borrow of ArtificialField::Discriminant for `place`,
+                // registering it with the given `node_id`
+                let _ = place;
+                unimplemented!()
+            }
+            mir::StatementKind::EndBorrowDiscriminant { node_id: _ } => {
+                // End any BorrowDiscriminant registered to `node_id`.
+                unimplemented!()
+            }
+
             mir::StatementKind::StorageDead(local) => {
                 // Make sure there are no remaining borrows for locals that
                 // are gone out of scope.
@@ -592,6 +603,11 @@ impl<'a, 'b, 'tcx> FindPlaceUses<'a, 'b, 'tcx> {
             // pure overwrites of an place do not activate it. (note
             // PlaceContext::Call is solely about dest place)
             PlaceContext::Store | PlaceContext::Call => false,
+
+            // A borrow of the discriminant is demarcating an area
+            // where reads may occur, but is not an activation
+            // itself. FIXME Or maybe it should be?
+            PlaceContext::BorrowDiscriminant { .. } |
 
             // reads of an place *do* activate it
             PlaceContext::Move |

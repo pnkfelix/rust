@@ -185,6 +185,7 @@ impl<'mir, 'a, 'tcx> Visitor<'tcx> for LocalAnalyzer<'mir, 'a, 'tcx> {
                 self.mark_assigned(index);
             }
 
+            PlaceContext::BorrowDiscriminant { .. } |
             PlaceContext::StorageLive |
             PlaceContext::StorageDead |
             PlaceContext::Validate |

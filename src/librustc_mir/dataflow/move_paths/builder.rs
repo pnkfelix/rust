@@ -278,6 +278,16 @@ impl<'b, 'a, 'gcx, 'tcx> Gatherer<'b, 'a, 'gcx, 'tcx> {
                 }
                 self.gather_rvalue(rval);
             }
+            StatementKind::BorrowDiscriminant { node_id: _, ref place } => {
+                // FIXME this should probably create a path for the
+                // artificial discriminant field.
+                let _ = place;
+                unimplemented!();
+            }
+            StatementKind::EndBorrowDiscriminant { node_id: _ } => {
+                // (this should never occur without a matching BorrowDiscriminant)
+                unimplemented!();
+            }
             StatementKind::InlineAsm { ref outputs, ref inputs, ref asm } => {
                 for (output, kind) in outputs.iter().zip(&asm.outputs) {
                     if !kind.is_indirect {

@@ -55,6 +55,8 @@ impl RemoveNoopLandingPads {
                 }
 
                 StatementKind::Assign(_, _) |
+                StatementKind::BorrowDiscriminant { .. } |
+                StatementKind::EndBorrowDiscriminant { .. } |
                 StatementKind::SetDiscriminant { .. } |
                 StatementKind::InlineAsm { .. } |
                 StatementKind::Validate { .. } => {

@@ -240,6 +240,13 @@ for mir::StatementKind<'gcx> {
                 place.hash_stable(hcx, hasher);
                 rvalue.hash_stable(hcx, hasher);
             }
+            mir::StatementKind::BorrowDiscriminant { node_id, ref place } => {
+                node_id.hash_stable(hcx, hasher);
+                place.hash_stable(hcx, hasher);
+            }
+            mir::StatementKind::EndBorrowDiscriminant { node_id } => {
+                node_id.hash_stable(hcx, hasher);
+            }
             mir::StatementKind::SetDiscriminant { ref place, variant_index } => {
                 place.hash_stable(hcx, hasher);
                 variant_index.hash_stable(hcx, hasher);

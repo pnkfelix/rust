@@ -102,6 +102,11 @@ impl<'a, 'tcx, M: Machine<'tcx>> EvalContext<'a, 'tcx, M> {
         match stmt.kind {
             Assign(ref place, ref rvalue) => self.eval_rvalue_into_place(rvalue, place)?,
 
+            // These operations are significant for the static
+            // semantics, but they have no dynamic effect.
+            BorrowDiscriminant { .. } => {}
+            EndBorrowDiscriminant { .. } => {}
+
             SetDiscriminant {
                 ref place,
                 variant_index,
