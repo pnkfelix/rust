@@ -17,7 +17,7 @@ use rustc::hir::map::definitions::DefPathData;
 use rustc::infer::InferCtxt;
 use rustc::ty::{self, ParamEnv, TyCtxt};
 use rustc::ty::maps::Providers;
-use rustc::mir::{AssertMessage, BasicBlock, BorrowMutability};
+use rustc::mir::{AssertMessage, BasicBlock, BorrowKind, BorrowMutability};
 use rustc::mir::{Local, Location, Place};
 use rustc::mir::{Mir, Mutability, Operand, Projection, ProjectionElem, Rvalue};
 use rustc::mir::{Field, Statement, StatementKind, Terminator, TerminatorKind};
@@ -687,6 +687,15 @@ impl InitializationRequiringAction {
 }
 
 impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
+    /// Returns true if the borrow represented by `kind` is
+    /// allowed to be split into separate Reservation and
+    /// Activation phases.
+    fn allow_two_phase_borrow(&self, kind: BorrowKind) -> bool {
+        self.tcx.sess.two_phase_borrows() &&
+            (kind.allows_two_phase_borrow ||
+             self.tcx.sess.opts.debugging_opts.two_phase_beyond_autoref)
+    }
+
     /// Checks an access to the given place to see if it is allowed. Examines the set of borrows
     /// that are in scope, as well as which paths have been initialized, to ensure that (a) the
     /// place is initialized and (b) it is not borrowed in some way that would prevent this
@@ -769,7 +778,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
 
                 (Read(kind), BorrowMutability::Unique) | (Read(kind), BorrowMutability::Mut) => {
                     // Reading from mere reservations of mutable-borrows is OK.
-                    if this.tcx.sess.two_phase_borrows() &&
+                    if this.allow_two_phase_borrow(borrow.kind) &&
                         index.is_reservation()
                     {
                         return Control::Continue;
@@ -918,7 +927,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     BorrowMutability::Shared => (Deep, Read(ReadKind::Borrow(bk.mut_kind))),
                     BorrowMutability::Unique | BorrowMutability::Mut => {
                         let wk = WriteKind::MutableBorrow(bk.mut_kind);
-                        if self.tcx.sess.two_phase_borrows() {
+                        if self.allow_two_phase_borrow(bk) {
                             (Deep, Reservation(wk))
                         } else {
                             (Deep, Write(wk))
