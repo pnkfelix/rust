@@ -186,6 +186,7 @@ impl<'mir, 'a, 'tcx> Visitor<'tcx> for LocalAnalyzer<'mir, 'a, 'tcx> {
             }
 
             PlaceContext::BorrowDiscriminant { .. } |
+            PlaceContext::EndBorrowDiscriminant { .. } |
             PlaceContext::StorageLive |
             PlaceContext::StorageDead |
             PlaceContext::Validate |

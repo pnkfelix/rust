@@ -2014,6 +2014,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
         iter.intern_with(|ts| self.mk_ty(TyTuple(self.intern_type_list(ts), defaulted)))
     }
 
+    /// Returns the unit type, aka the empty tuple, aka `()`.
     pub fn mk_nil(self) -> Ty<'tcx> {
         self.intern_tup(&[], false)
     }

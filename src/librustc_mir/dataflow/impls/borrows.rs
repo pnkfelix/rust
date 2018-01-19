@@ -111,10 +111,19 @@ impl<'a, 'gcx, 'tcx> ActiveBorrows<'a, 'gcx, 'tcx> {
 #[derive(Debug)]
 pub struct BorrowData<'tcx> {
     pub(crate) location: Location,
-    pub(crate) kind: mir::BorrowKind,
     pub(crate) region: Region<'tcx>,
-    pub(crate) borrowed_place: mir::Place<'tcx>,
+    pub(crate) borrowed: Borrowed<'tcx>,
     pub(crate) assigned_place: mir::Place<'tcx>,
+}
+
+pub struct Borrowed {
+    pub(crate) kind: BorrowKind,
+    pub(crate) place: mir::Place<'tcx>,
+}
+
+pub enum BorrowKind {
+    Direct(mir::BorrowKind),
+    Discriminant,
 }
 
 impl<'tcx> fmt::Display for BorrowData<'tcx> {
@@ -263,8 +272,30 @@ impl<'a, 'gcx, 'tcx> Borrows<'a, 'gcx, 'tcx> {
                                block: mir::BasicBlock,
                                statement: &mir::Statement<'tcx>,
                                location: Location) {
-                if let mir::StatementKind::EndRegion(region_scope) = statement.kind {
-                    self.region_span_map.insert(ReScope(region_scope), statement.source_info.span);
+                match statement.kind {
+                    mir::StatementKind::EndRegion(region_scope) => {
+                        self.region_span_map.insert(ReScope(region_scope),
+                                                    statement.source_info.span);
+                    }
+                    mir::StatementKind::BorrowDiscriminant { ref borrow_id, ref place } => {
+                        let region = borrow_id.region();
+                        let borrow = BorrowData {
+                            location, kind: BorrowKind::Shared,
+                            region: borrow_id.region(),
+                            borrowed_place: place,
+                            assigned_place: borrow_id.clone(),
+                        };
+                        let idx = self.idx_vec.push(borrow);
+                        self.location_map.insert(location, idx);
+                        insert(&mut self.assigned_map, assigned_place, idx);
+                        if let Some(local) = root_local(borrowed_place) {
+                            insert(&mut self.local_map, &local, idx);
+                        }
+                    }
+                    mir::StatementKind::EndBorrowDiscriminant { ref borrow_id } => {
+
+                    }
+                    _ => {}
                 }
                 return self.super_statement(block, statement, location);
             }
@@ -410,13 +441,13 @@ impl<'a, 'gcx, 'tcx> Borrows<'a, 'gcx, 'tcx> {
                 }
             }
 
-            mir::StatementKind::BorrowDiscriminant { node_id: _, ref place } => {
+            mir::StatementKind::BorrowDiscriminant { borrow_id: _, ref place } => {
                 // Try to implement a borrow of ArtificialField::Discriminant for `place`,
-                // registering it with the given `node_id`
+                // registering it with the given `borrow_id`
                 let _ = place;
                 unimplemented!()
             }
-            mir::StatementKind::EndBorrowDiscriminant { node_id: _ } => {
+            mir::StatementKind::EndBorrowDiscriminant { borrow_id: _ } => {
                 // End any BorrowDiscriminant registered to `node_id`.
                 unimplemented!()
             }
@@ -608,6 +639,7 @@ impl<'a, 'b, 'tcx> FindPlaceUses<'a, 'b, 'tcx> {
             // where reads may occur, but is not an activation
             // itself. FIXME Or maybe it should be?
             PlaceContext::BorrowDiscriminant { .. } |
+            PlaceContext::EndBorrowDiscriminant { .. } |
 
             // reads of an place *do* activate it
             PlaceContext::Move |

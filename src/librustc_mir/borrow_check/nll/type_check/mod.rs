@@ -760,8 +760,8 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
                     );
                 };
             }
-            StatementKind::BorrowDiscriminant { node_id: _, place: _ }
-            | StatementKind::EndBorrowDiscriminant { node_id: _ }
+            StatementKind::BorrowDiscriminant { borrow_id: _, place: _ }
+            | StatementKind::EndBorrowDiscriminant { borrow_id: _ }
             | StatementKind::StorageLive(_)
             | StatementKind::StorageDead(_)
             | StatementKind::InlineAsm { .. }

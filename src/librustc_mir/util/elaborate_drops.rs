@@ -493,6 +493,8 @@ impl<'l, 'b, 'tcx, D> DropCtxt<'l, 'b, 'tcx, D>
         // way lies only trouble.
         let discr_ty = adt.repr.discr_type().to_ty(self.tcx());
         let discr = Place::Local(self.new_temp(discr_ty));
+        debug!("drop {:?} of {} generating `Discriminant({:?})`",
+               self.source_info, self.tcx().type_of(adt.did), self.place);
         let discr_rv = Rvalue::Discriminant(self.place.clone());
         let switch_block = BasicBlockData {
             statements: vec![self.assign(&discr, discr_rv)],

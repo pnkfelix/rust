@@ -278,15 +278,15 @@ impl<'b, 'a, 'gcx, 'tcx> Gatherer<'b, 'a, 'gcx, 'tcx> {
                 }
                 self.gather_rvalue(rval);
             }
-            StatementKind::BorrowDiscriminant { node_id: _, ref place } => {
-                // FIXME this should probably create a path for the
-                // artificial discriminant field.
-                let _ = place;
-                unimplemented!();
-            }
-            StatementKind::EndBorrowDiscriminant { node_id: _ } => {
-                // (this should never occur without a matching BorrowDiscriminant)
-                unimplemented!();
+            StatementKind::BorrowDiscriminant { borrow_id: _, place: _ } |
+            StatementKind::EndBorrowDiscriminant { borrow_id: _ } => {
+                // FIXME if/when we unify move-paths and loan-paths,
+                // BorrowDiscriminant should probably create a path
+                // for the artificial discriminant field. But for now,
+                // BorrowDiscriminant does not move anything.
+                //
+                // (EndBorrowDiscriminant should never occur without a
+                // matching BorrowDiscriminant)
             }
             StatementKind::InlineAsm { ref outputs, ref inputs, ref asm } => {
                 for (output, kind) in outputs.iter().zip(&asm.outputs) {

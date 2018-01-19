@@ -1119,6 +1119,26 @@ impl<'tcx> Statement<'tcx> {
     }
 }
 
+/// Represents a borrow of the discriminants of the match input. One
+/// might think of this as a virtual borrow (we cannot represent
+/// actual references to discriminants stored inline), assigned to a
+/// (zero-sized?) temp.
+#[derive(Clone, Debug, RustcEncodable, RustcDecodable)]
+pub struct MatchBorrowMarker<'tcx> {
+    /// The temp holding the borrow; should be distinct from the
+    /// markers for other matches.
+    pub(crate) local: Local,
+
+    /// The region for the borrow. (Should be derivable from the
+    /// local's type but this is simplest for now.)
+    pub(crate) region: Region<'tcx>,
+}
+
+impl<'tcx> MatchBorrowMarker<'tcx> {
+    pub fn place(&self) -> Place<'tcx> { Place::Local(self.local) }
+    pub fn region(&self) -> Region<'tcx> { self.region }
+}
+
 #[derive(Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum StatementKind<'tcx> {
     /// Write the RHS Rvalue to the LHS Place.
@@ -1129,14 +1149,24 @@ pub enum StatementKind<'tcx> {
     /// further reads/writes to whatever record we find under the
     /// assumption that its variants *cannot be changed* until after
     /// we reach the corresonding `EndBorrowDiscriminant`
-    BorrowDiscriminant { node_id: ast::NodeId, place: Place<'tcx> },
+    BorrowDiscriminant {
+        /// a fake temp identifying which `match` this was generated from.
+        borrow_id: MatchBorrowMarker<'tcx>,
+        /// The actual place used as input to the `match`
+        place: Place<'tcx>,
+    },
 
-    /// Ends the `BorrowDiscriminant` identified by `node_id`.
+    /// Ends the `BorrowDiscriminant` identified by `borrow_id`.
     ///
     /// FIXME: Does this need the `place` as well? E.g. if we do
     /// `match (enum1, enum2) { ... }`, is that going to be a single
-    /// `node_id` with distinct places being observed at points?
-    EndBorrowDiscriminant { node_id: ast::NodeId },
+    /// `borrowid` with distinct places being observed at points?
+    ///
+    /// Note: Niko has suggested that we perhaps have a Projection
+    /// like `x.(.*).Discriminant`to represent "all discriminants
+    /// reachable from traversing place." That seems like one way to
+    /// approach the aforementioned issue.
+    EndBorrowDiscriminant { borrow_id: MatchBorrowMarker<'tcx>, },
 
     /// Write the discriminant for a variant to the enum Place.
     SetDiscriminant { place: Place<'tcx>, variant_index: usize },
@@ -1223,11 +1253,11 @@ impl<'tcx> Debug for Statement<'tcx> {
         use self::StatementKind::*;
         match self.kind {
             Assign(ref place, ref rv) => write!(fmt, "{:?} = {:?}", place, rv),
-            BorrowDiscriminant { node_id, ref place } => {
-                write!(fmt, "borrow-discriminant({}, {:?})", node_id, place)
+            BorrowDiscriminant { ref borrow_id, ref place } => {
+                write!(fmt, "borrow-discriminant({:?}, {:?})", borrow_id, place)
             }
-            EndBorrowDiscriminant { node_id } => {
-                write!(fmt, "end-borrow-discriminant({})", node_id)
+            EndBorrowDiscriminant { ref borrow_id } => {
+                write!(fmt, "end-borrow-discriminant({:?})", borrow_id)
             }
             // (reuse lifetime rendering policy from ppaux.)
             EndRegion(ref ce) => write!(fmt, "EndRegion({})", ty::ReScope(*ce)),
@@ -2085,18 +2115,31 @@ impl<'tcx> TypeFoldable<'tcx> for ValidationOperand<'tcx, Place<'tcx>> {
     }
 }
 
+impl<'tcx> TypeFoldable<'tcx> for MatchBorrowMarker<'tcx> {
+    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
+        MatchBorrowMarker {
+            local: self.local.fold_with(folder),
+            region: self.region.fold_with(folder),
+        }
+    }
+
+    fn super_visit_with<V: TypeVisitor<'tcx>>(&self, visitor: &mut V) -> bool {
+        self.local.visit_with(visitor) || self.region.visit_with(visitor)
+    }
+}
+
 impl<'tcx> TypeFoldable<'tcx> for Statement<'tcx> {
     fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
         use mir::StatementKind::*;
 
         let kind = match self.kind {
             Assign(ref place, ref rval) => Assign(place.fold_with(folder), rval.fold_with(folder)),
-            BorrowDiscriminant { node_id, ref place } => BorrowDiscriminant {
-                node_id,
+            BorrowDiscriminant { ref borrow_id, ref place } => BorrowDiscriminant {
+                borrow_id: borrow_id.fold_with(folder),
                 place: place.fold_with(folder),
             },
-            EndBorrowDiscriminant { node_id } => EndBorrowDiscriminant {
-                node_id,
+            EndBorrowDiscriminant { ref borrow_id } => EndBorrowDiscriminant {
+                borrow_id: borrow_id.fold_with(folder),
             },
             SetDiscriminant { ref place, variant_index } => SetDiscriminant {
                 place: place.fold_with(folder),
@@ -2133,8 +2176,12 @@ impl<'tcx> TypeFoldable<'tcx> for Statement<'tcx> {
 
         match self.kind {
             Assign(ref place, ref rval) => { place.visit_with(visitor) || rval.visit_with(visitor) }
-            BorrowDiscriminant { node_id: _, ref place } => place.visit_with(visitor),
-            EndBorrowDiscriminant { node_id: _ } => false,
+            BorrowDiscriminant { ref borrow_id, ref place } => {
+                borrow_id.visit_with(visitor) || place.visit_with(visitor)
+            }
+            EndBorrowDiscriminant { ref borrow_id } => {
+                borrow_id.visit_with(visitor)
+            }
             SetDiscriminant { ref place, .. } => place.visit_with(visitor),
             StorageLive(ref local) |
             StorageDead(ref local) => local.visit_with(visitor),

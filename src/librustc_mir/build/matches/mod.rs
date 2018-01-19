@@ -37,6 +37,19 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                       arms: Vec<Arm<'tcx>>)
                       -> BlockAnd<()> {
         let discriminant_place = unpack!(block = self.as_place(block, discriminant));
+        let tcx = self.hir.tcx();
+        // FIXME: Either use a more specific region than `'static`, or
+        // switch to just using a temp of type `()` directly.
+        let temp_ty = tcx.mk_ref(tcx.types.re_static,
+                                 ty::TypeAndMut { ty: tcx.mk_nil(), mutbl: hir::MutImmutable });
+        let identifying_temp = self.temp(temp_ty, span);
+        let source_info = self.source_info(span);
+        self.cfg.push(block, Statement {
+            source_info, kind: StatementKind::BorrowDiscriminant {
+                borrow_id: identifying_temp,
+                place: discriminant_place.clone(),
+            },
+        });
 
         let mut arm_blocks = ArmBlocks {
             blocks: arms.iter()

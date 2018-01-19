@@ -211,6 +211,8 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                        num_enum_variants, values, variants);
                 let discr_ty = adt_def.repr.discr_type().to_ty(tcx);
                 let discr = self.temp(discr_ty, test.span);
+                debug!("match {:?} of {} generating `{:?} = Discriminant({:?})`",
+                       source_info, discr_ty, discr, place);
                 self.cfg.push_assign(block, source_info, &discr,
                                      Rvalue::Discriminant(place.clone()));
                 assert_eq!(values.len() + 1, targets.len());

@@ -226,6 +226,8 @@ for mir::AssertMessage<'gcx> {
     }
 }
 
+impl_stable_hash_for!(struct mir::MatchBorrowMarker<'tcx> { local, region });
+
 impl_stable_hash_for!(struct mir::Statement<'tcx> { source_info, kind });
 
 impl<'gcx> HashStable<StableHashingContext<'gcx>>
@@ -240,12 +242,12 @@ for mir::StatementKind<'gcx> {
                 place.hash_stable(hcx, hasher);
                 rvalue.hash_stable(hcx, hasher);
             }
-            mir::StatementKind::BorrowDiscriminant { node_id, ref place } => {
-                node_id.hash_stable(hcx, hasher);
+            mir::StatementKind::BorrowDiscriminant { ref borrow_id, ref place } => {
+                borrow_id.hash_stable(hcx, hasher);
                 place.hash_stable(hcx, hasher);
             }
-            mir::StatementKind::EndBorrowDiscriminant { node_id } => {
-                node_id.hash_stable(hcx, hasher);
+            mir::StatementKind::EndBorrowDiscriminant { ref borrow_id } => {
+                borrow_id.hash_stable(hcx, hasher);
             }
             mir::StatementKind::SetDiscriminant { ref place, variant_index } => {
                 place.hash_stable(hcx, hasher);

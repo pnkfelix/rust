@@ -354,11 +354,20 @@ macro_rules! make_mir_visitor {
                                           ref $($mutability)* rvalue) => {
                         self.visit_assign(block, place, rvalue, location);
                     }
-                    StatementKind::BorrowDiscriminant { node_id: _,
+                    StatementKind::BorrowDiscriminant { ref $($mutability)* borrow_id,
                                                         ref $($mutability)* place } => {
+                        // FIXME: how evil is it to abuse PlaceContext::Store for this here?
+                        self.visit_local(& $($mutability)* borrow_id.local,
+                                         PlaceContext::Store, location);
+                        self.visit_region(& $($mutability)* borrow_id.region, location);
                         self.visit_place(place, PlaceContext::BorrowDiscriminant, location);
                     }
-                    StatementKind::EndBorrowDiscriminant { node_id: _ } => {}
+                    StatementKind::EndBorrowDiscriminant {  ref $($mutability)* borrow_id } => {
+                        // FIXME: how evil is it to abuse PlaceContext::Store for this here?
+                        self.visit_local(& $($mutability)* borrow_id.local,
+                                         PlaceContext::Store, location);
+                        self.visit_region(& $($mutability)* borrow_id.region, location);
+                    }
                     StatementKind::EndRegion(_) => {}
                     StatementKind::Validate(_, ref $($mutability)* places) => {
                         for operand in places {

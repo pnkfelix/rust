@@ -354,11 +354,11 @@ impl<'cx, 'gcx, 'tcx> DataflowResultsConsumer<'cx, 'tcx> for MirBorrowckCtxt<'cx
                 );
             }
 
-            StatementKind::BorrowDiscriminant { node_id: _, ref place } => {
+            StatementKind::BorrowDiscriminant { borrow_id: _, ref place } => {
                 let _ = place;
                 unimplemented!()
             }
-            StatementKind::EndBorrowDiscriminant { node_id: _ } => {
+            StatementKind::EndBorrowDiscriminant { borrow_id: _ } => {
                 unimplemented!()
             }
 
