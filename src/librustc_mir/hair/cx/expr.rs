@@ -122,7 +122,7 @@ fn apply_adjustment<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
         Adjust::Borrow(AutoBorrow::Ref(r, m)) => {
             ExprKind::Borrow {
                 region: r,
-                borrow_kind: to_borrow_kind(m, true),
+                borrow_kind: to_borrow_kind(m.into(), true),
                 arg: expr.to_ref(),
             }
         }
