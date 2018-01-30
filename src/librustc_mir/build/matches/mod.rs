@@ -28,6 +28,10 @@ mod simplify;
 mod test;
 mod util;
 
+fn borrow<'a, 'gcx, 'tcx>(tcx: ty::TyCtxt<'a, 'gcx, 'tcx>, place: Place<'tcx>) -> Rvalue<'tcx> {
+    Rvalue::Ref(tcx.types.re_erased, BorrowKind::Shared, place)
+}
+
 impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
     pub fn match_expr(&mut self,
                       destination: &Place<'tcx>,
@@ -37,11 +41,30 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                       arms: Vec<Arm<'tcx>>)
                       -> BlockAnd<()> {
         let discriminant_place = unpack!(block = self.as_place(block, discriminant));
+        let tcx = self.hir.tcx();
+        let borrowed_input = borrow(tcx, discriminant_place.clone());
+        let borrowed_input_ty = borrowed_input.ty(&self.local_decls, tcx);
+        let borrowed_input_temp = self.temp(borrowed_input_ty, span);
+        let source_info = self.source_info(span);
+        self.cfg.push_assign(block, source_info, &borrowed_input_temp, borrowed_input);
 
         let mut arm_blocks = ArmBlocks {
             blocks: arms.iter()
-                        .map(|_| self.cfg.start_new_block())
-                        .collect(),
+                .map(|_| {
+                    let arm_block = self.cfg.start_new_block();
+
+                    // reborrow the input at the start of each block.
+                    // This should ensure that you cannot change the
+                    // variant for an enum while you are in the midst
+                    // of matching on it.
+                    let discr_reborrow = borrow(tcx, borrowed_input_temp.clone().deref());
+                    let discr_ty = discr_reborrow.ty(&self.local_decls, tcx);
+                    let thrown_away = self.temp(discr_ty, span);
+                    self.cfg.push_assign(arm_block, source_info, &thrown_away, discr_reborrow);
+
+                    arm_block
+                })
+                .collect(),
         };
 
         // Get the arm bodies and their scopes, while declaring bindings.
