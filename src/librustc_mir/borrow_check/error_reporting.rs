@@ -435,7 +435,8 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
             (RegionKind::ReSkolemized(_, _), _) |
             (RegionKind::ReClosureBound(_), _) |
             (RegionKind::ReErased, _) => {
-                span_bug!(drop_span, "region does not make sense in this context");
+                span_bug!(drop_span, "region {:?} does not make sense in this context",
+                          borrow.region);
             },
         }
     }
