@@ -1124,6 +1124,10 @@ pub enum StatementKind<'tcx> {
     /// Write the RHS Rvalue to the LHS Place.
     Assign(Place<'tcx>, Rvalue<'tcx>),
 
+    /// This represents all the reading that a pattern match may do
+    /// (e.g. inspecting constants and discriminant values).
+    ReadForMatch(Place<'tcx>),
+
     /// Write the discriminant for a variant to the enum Place.
     SetDiscriminant { place: Place<'tcx>, variant_index: usize },
 
@@ -1209,6 +1213,7 @@ impl<'tcx> Debug for Statement<'tcx> {
         use self::StatementKind::*;
         match self.kind {
             Assign(ref place, ref rv) => write!(fmt, "{:?} = {:?}", place, rv),
+            ReadForMatch(ref place) => write!(fmt, "ReadForMatch({:?})", place),
             // (reuse lifetime rendering policy from ppaux.)
             EndRegion(ref ce) => write!(fmt, "EndRegion({})", ty::ReScope(*ce)),
             Validate(ref op, ref places) => write!(fmt, "Validate({:?}, {:?})", op, places),
@@ -2071,6 +2076,7 @@ impl<'tcx> TypeFoldable<'tcx> for Statement<'tcx> {
 
         let kind = match self.kind {
             Assign(ref place, ref rval) => Assign(place.fold_with(folder), rval.fold_with(folder)),
+            ReadForMatch(ref place) => ReadForMatch(place.fold_with(folder)),
             SetDiscriminant { ref place, variant_index } => SetDiscriminant {
                 place: place.fold_with(folder),
                 variant_index,
@@ -2106,6 +2112,7 @@ impl<'tcx> TypeFoldable<'tcx> for Statement<'tcx> {
 
         match self.kind {
             Assign(ref place, ref rval) => { place.visit_with(visitor) || rval.visit_with(visitor) }
+            ReadForMatch(ref place) => { place.visit_with(visitor) }
             SetDiscriminant { ref place, .. } => place.visit_with(visitor),
             StorageLive(ref local) |
             StorageDead(ref local) => local.visit_with(visitor),

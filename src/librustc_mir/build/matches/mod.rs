@@ -28,7 +28,13 @@ mod simplify;
 mod test;
 mod util;
 
-fn borrow<'a, 'gcx, 'tcx>(tcx: ty::TyCtxt<'a, 'gcx, 'tcx>, place: Place<'tcx>) -> Rvalue<'tcx> {
+/// Injects a borrow of `place`. The region is unknown at this point; we rely on NLL
+/// inference to find an appropriate one. Therefore you can only call this when NLL
+/// is turned on.
+fn inject_borrow<'a, 'gcx, 'tcx>(tcx: ty::TyCtxt<'a, 'gcx, 'tcx>,
+                                 place: Place<'tcx>)
+                                 -> Rvalue<'tcx> {
+    assert!(tcx.sess.nll());
     Rvalue::Ref(tcx.types.re_erased, BorrowKind::Shared, place)
 }
 
@@ -41,26 +47,34 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                       arms: Vec<Arm<'tcx>>)
                       -> BlockAnd<()> {
         let discriminant_place = unpack!(block = self.as_place(block, discriminant));
+
         let tcx = self.hir.tcx();
-        let borrowed_input = borrow(tcx, discriminant_place.clone());
-        let borrowed_input_ty = borrowed_input.ty(&self.local_decls, tcx);
-        let borrowed_input_temp = self.temp(borrowed_input_ty, span);
         let source_info = self.source_info(span);
-        self.cfg.push_assign(block, source_info, &borrowed_input_temp, borrowed_input);
+        let borrowed_input_temp = if tcx.sess.nll() {
+            let borrowed_input = inject_borrow(tcx, discriminant_place.clone());
+            let borrowed_input_ty = borrowed_input.ty(&self.local_decls, tcx);
+            let borrowed_input_temp = self.temp(borrowed_input_ty, span);
+            self.cfg.push_assign(block, source_info, &borrowed_input_temp, borrowed_input);
+            Some(borrowed_input_temp)
+        } else {
+            None
+        };
 
         let mut arm_blocks = ArmBlocks {
             blocks: arms.iter()
                 .map(|_| {
                     let arm_block = self.cfg.start_new_block();
 
-                    // reborrow the input at the start of each block.
-                    // This should ensure that you cannot change the
-                    // variant for an enum while you are in the midst
-                    // of matching on it.
-                    let discr_reborrow = borrow(tcx, borrowed_input_temp.clone().deref());
-                    let discr_ty = discr_reborrow.ty(&self.local_decls, tcx);
-                    let thrown_away = self.temp(discr_ty, span);
-                    self.cfg.push_assign(arm_block, source_info, &thrown_away, discr_reborrow);
+                    if let Some(borrow_temp) = borrowed_input_temp.clone() {
+                        // reborrow the input at the start of each block.
+                        // This should ensure that you cannot change the
+                        // variant for an enum while you are in the midst
+                        // of matching on it.
+                        let discr_reborrow = inject_borrow(tcx, borrow_temp.deref());
+                        let discr_ty = discr_reborrow.ty(&self.local_decls, tcx);
+                        let thrown_away = self.temp(discr_ty, span);
+                        self.cfg.push_assign(arm_block, source_info, &thrown_away, discr_reborrow);
+                    }
 
                     arm_block
                 })
@@ -98,9 +112,36 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 .zip(pre_binding_blocks.iter().zip(pre_binding_blocks.iter().skip(1)))
                 .map(|((arm_index, pattern, guard),
                        (pre_binding_block, next_candidate_pre_binding_block))| {
+
+                    // One might ask: why not build up the match pair such that it
+                    // matches via `borrowed_input_temp.deref()` instead of
+                    // using the `discriminant_place` directly, as it is doing here?
+                    //
+                    // The basic answer is that if you do that, then you end up with
+                    // accceses to a shared borrow of the input and that conflicts with
+                    // any arms that look like e.g.
+                    //
+                    // match Some(&4) {
+                    //     ref mut foo => {
+                    //         ... /* mutate `foo` in arm body */ ...
+                    //     }
+                    // }
+                    //
+                    // (Perhaps we could further revise the MIR
+                    //  construction here so that it only does a
+                    //  shared borrow at the outset and delays doing
+                    //  the mutable borrow until after the pattern is
+                    //  matched *and* the guard (if any) for the arm
+                    //  has been run.)
+
+                    let input_place = if let Some(borrow_temp) = borrowed_input_temp.clone() {
+                        borrow_temp.deref()
+                    } else {
+                        discriminant_place.clone()
+                    };
                     Candidate {
                         span: pattern.span,
-                        match_pairs: vec![MatchPair::new(discriminant_place.clone(), pattern)],
+                        match_pairs: vec![MatchPair::new(input_place.clone(), pattern)],
                         bindings: vec![],
                         guard,
                         arm_index,

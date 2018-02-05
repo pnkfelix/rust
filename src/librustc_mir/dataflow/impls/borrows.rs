@@ -381,7 +381,14 @@ impl<'a, 'gcx, 'tcx> Borrows<'a, 'gcx, 'tcx> {
                     if let RegionKind::ReEmpty = region {
                         // If the borrowed value is dead, the region for it
                         // can be empty. Don't track the borrow in that case.
+                        debug!("Borrows::statement_effect_on_borrows (is_activations: {}) \
+                                location: {:?} stmt: {:?} has empty region, skipping statement",
+                               is_activations, location, stmt.kind);
                         return
+                    } else {
+                        debug!("Borrows::statement_effect_on_borrows (is_activations: {}) \
+                                location: {:?} stmt: {:?}",
+                               is_activations, location, stmt.kind);
                     }
 
                     let index = self.location_map.get(&location).unwrap_or_else(|| {
@@ -429,6 +436,7 @@ impl<'a, 'gcx, 'tcx> Borrows<'a, 'gcx, 'tcx> {
                 }
             }
 
+            mir::StatementKind::ReadForMatch(..) |
             mir::StatementKind::SetDiscriminant { .. } |
             mir::StatementKind::StorageLive(..) |
             mir::StatementKind::Validate(..) |

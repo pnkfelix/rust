@@ -926,6 +926,7 @@ impl<'a, 'tcx> Visitor<'tcx> for Qualifier<'a, 'tcx, 'tcx> {
                 StatementKind::Assign(ref place, ref rvalue) => {
                     this.visit_assign(bb, place, rvalue, location);
                 }
+                StatementKind::ReadForMatch(..) |
                 StatementKind::SetDiscriminant { .. } |
                 StatementKind::StorageLive(_) |
                 StatementKind::StorageDead(_) |

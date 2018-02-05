@@ -331,6 +331,7 @@ impl<'a, 'tcx> MirConstContext<'a, 'tcx> {
                         add_err(&mut failure, &value);
                         self.store(dest, value, span);
                     }
+                    mir::StatementKind::ReadForMatch(_) |
                     mir::StatementKind::StorageLive(_) |
                     mir::StatementKind::StorageDead(_) |
                     mir::StatementKind::Validate(..) |
