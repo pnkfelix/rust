@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// compile-flags: -Z borrowck=mir
+// compile-flags: -Z borrowck=mir -Z nll
 
 fn guard() -> bool {
     false
