@@ -65,15 +65,19 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 .map(|_| {
                     let arm_block = self.cfg.start_new_block();
 
-                    if let Some(borrow_temp) = borrowed_input_temp.clone() {
-                        // reborrow the input at the start of each block.
-                        // This should ensure that you cannot change the
-                        // variant for an enum while you are in the midst
-                        // of matching on it.
-                        let discr_reborrow = inject_borrow(tcx, borrow_temp.deref());
-                        let discr_ty = discr_reborrow.ty(&self.local_decls, tcx);
-                        let thrown_away = self.temp(discr_ty, span);
-                        self.cfg.push_assign(arm_block, source_info, &thrown_away, discr_reborrow);
+                    if let (true, Some(borrow_temp)) = (tcx.sess.emit_read_for_match(),
+                                                        borrowed_input_temp.clone()) {
+                        // inject a fake read of the borrowed input at
+                        // the start of each block.
+                        //
+                        // This should ensure that you cannot change
+                        // the variant for an enum while you are in
+                        // the midst of matching on it.
+
+                        self.cfg.push(arm_block, Statement {
+                            source_info,
+                            kind: StatementKind::ReadForMatch(borrow_temp.clone()),
+                        });
                     }
 
                     arm_block
@@ -134,10 +138,10 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                     //  matched *and* the guard (if any) for the arm
                     //  has been run.)
 
-                    let input_place = if let Some(borrow_temp) = borrowed_input_temp.clone() {
-                        borrow_temp.deref()
-                    } else {
-                        discriminant_place.clone()
+                    let input_place = match (tcx.sess.read_match_through_borrow_of_input(),
+                                             borrowed_input_temp.clone()) {
+                        (true, Some(borrow_temp)) => borrow_temp.deref(),
+                        _ => discriminant_place.clone()
                     };
                     Candidate {
                         span: pattern.span,
