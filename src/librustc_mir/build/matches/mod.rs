@@ -249,7 +249,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         }
 
         // now apply the bindings, which will also declare the variables
-        self.bind_matched_candidate(block, candidate.bindings);
+        self.bind_matched_candidate_for_arm_body(block, candidate.bindings);
 
         block.unit()
     }
@@ -798,9 +798,15 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                                    imaginary_targets:
                                        vec![candidate.next_candidate_pre_binding_block]});
 
-        self.bind_matched_candidate(block, candidate.bindings);
 
+        let autoref = self.hir.tcx().sess.opts.debugging_opts.nll_autoref_match_guard_bindings;
         if let Some(guard) = candidate.guard {
+            if autoref {
+                self.bind_matched_candidate_for_guard(block, &candidate.bindings);
+            } else {
+                self.bind_matched_candidate_for_arm_body(block, candidate.bindings.clone());
+            }
+
             // the block to branch to if the guard fails; if there is no
             // guard, this block is simply unreachable
             let guard = self.hir.mirror(guard);
@@ -813,6 +819,11 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                                    false_edge_block));
 
             let otherwise = self.cfg.start_new_block();
+
+            if autoref {
+                self.bind_matched_candidate_for_arm_body(block, candidate.bindings);
+            }
+
             self.cfg.terminate(false_edge_block, source_info,
                                TerminatorKind::FalseEdges {
                                    real_target: otherwise,
@@ -820,16 +831,36 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                                        vec![candidate.next_candidate_pre_binding_block] });
             Some(otherwise)
         } else {
+            self.bind_matched_candidate_for_arm_body(block, candidate.bindings);
+
             self.cfg.terminate(block, candidate_source_info,
                                TerminatorKind::Goto { target: arm_block });
             None
         }
     }
 
-    fn bind_matched_candidate(&mut self,
-                              block: BasicBlock,
-                              bindings: Vec<Binding<'tcx>>) {
-        debug!("bind_matched_candidate(block={:?}, bindings={:?})",
+    fn bind_matched_candidate_for_guard(&mut self,
+                                        block: BasicBlock,
+                                        bindings: &[Binding<'tcx>]) {
+        debug!("bind_matched_candidate_for_guard(block={:?}, bindings={:?})",
+               block, bindings);
+
+        // Assign each of the bindings, all autoref'ed; no mutation nor moves allowed in the guard.
+        let re_erased = self.hir.tcx().types.re_erased;
+        for binding in bindings {
+            let source_info = self.source_info(binding.span);
+            let local = self.storage_live_binding(block, binding.var_id, binding.span);
+            // FIXME: why schedule drops if bindings are all shared-&'s?
+            self.schedule_drop_for_binding(binding.var_id, binding.span);
+            let rvalue = Rvalue::Ref(re_erased, BorrowKind::Shared, binding.source.clone());
+            self.cfg.push_assign(block, source_info, &local, rvalue);
+        }
+    }
+
+    fn bind_matched_candidate_for_arm_body(&mut self,
+                                           block: BasicBlock,
+                                           bindings: Vec<Binding<'tcx>>) {
+        debug!("bind_matched_candidate_for_arm_body(block={:?}, bindings={:?})",
                block, bindings);
 
         // Assign each of the bindings. This may trigger moves out of the candidate.
