@@ -70,6 +70,13 @@
 //! basically the point where the "by value" operations are bridged
 //! over to the "by reference" mode (`as_place`).
 
+use build::{Builder, ForGuard};
+
+struct ExprBuilder<'a, 'gcx: 'a+'gcx, 'tcx: 'a> {
+    builder: &'a mut Builder<'a, 'gcx, 'tcx>,
+    for_guard: Option<ForGuard>,
+}
+
 mod as_constant;
 mod as_place;
 mod as_rvalue;

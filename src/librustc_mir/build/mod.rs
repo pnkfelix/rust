@@ -292,7 +292,7 @@ struct Builder<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
     visibility_scope: VisibilityScope,
 
     /// Maps node ids of variable bindings to the `Local`s created for them.
-    var_indices: NodeMap<Local>,
+    var_indices: NodeMap<LocalsForNode>,
     local_decls: IndexVec<Local, LocalDecl<'tcx>>,
     unit_temp: Option<Place<'tcx>>,
 
@@ -303,6 +303,25 @@ struct Builder<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
     cached_return_block: Option<BasicBlock>,
     /// cached block with the UNREACHABLE terminator
     cached_unreachable_block: Option<BasicBlock>,
+}
+
+enum LocalsForNode {
+    One(Local),
+    Two { for_guard: Local, for_arm_body: Local },
+}
+
+/// Option<ForGuard> is isomorphic to a boolean flag.
+#[derive(Copy, Clone, Debug)]
+struct ForGuard;
+
+impl LocalsForNode {
+    fn local_id(&self, for_guard: Option<ForGuard>) -> Local {
+        match (*self, for_guard) {
+            (LocalsForNode::One(local_id), _) => { assert!(for_guard.is_none()); local_id }
+            (LocalsForNode::Two { for_guard: local_id, .. }, Some(ForGuard)) |
+            (LocalsForNode::Two { for_arm_body: local_id, .. }, None) => local_id,
+        }
+    }
 }
 
 struct CFG<'tcx> {
@@ -628,7 +647,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                     // Don't introduce extra copies for simple bindings
                     PatternKind::Binding { mutability, var, mode: BindingMode::ByValue, .. } => {
                         self.local_decls[local].mutability = mutability;
-                        self.var_indices.insert(var, local);
+                        self.var_indices.insert(var, LocalsForNode::One(local));
                     }
                     _ => {
                         scope = self.declare_bindings(scope, ast_body.span,

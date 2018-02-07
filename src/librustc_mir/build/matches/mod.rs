@@ -13,7 +13,7 @@
 //! includes the high-level algorithm, the submodules contain the
 //! details.
 
-use build::{BlockAnd, BlockAndExtension, Builder};
+use build::{BlockAnd, BlockAndExtension, Builder, LocalsForNode};
 use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::bitvec::BitVector;
 use rustc::ty::{self, Ty};
@@ -207,9 +207,9 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             PatternKind::Binding { mode: BindingMode::ByValue,
                                    var,
                                    subpattern: None, .. } => {
-                let place = self.storage_live_binding(block, var, irrefutable_pat.span);
+                let place = self.storage_live_binding(block, var, irrefutable_pat.span, None);
                 unpack!(block = self.into(&place, block, initializer));
-                self.schedule_drop_for_binding(var, irrefutable_pat.span);
+                self.schedule_drop_for_binding(var, irrefutable_pat.span, None);
                 block.unit()
             }
             _ => {
@@ -288,20 +288,26 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         var_scope
     }
 
-    pub fn storage_live_binding(&mut self, block: BasicBlock, var: NodeId, span: Span)
-                            -> Place<'tcx>
+    pub fn storage_live_binding(&mut self,
+                                block: BasicBlock,
+                                var: NodeId,
+                                span: Span,
+                                for_guard: Option<ForGuard>)
+                                -> Place<'tcx>
     {
-        let local_id = self.var_indices[&var];
+        let local_id = self.var_indices[&var].local_id(for_guard);
         let source_info = self.source_info(span);
-        self.cfg.push(block, Statement {
-            source_info,
-            kind: StatementKind::StorageLive(local_id)
-        });
+        self.cfg.push(block, Statement { source_info,
+                                         kind: StatementKind::StorageLive(local_id) });
         Place::Local(local_id)
     }
 
-    pub fn schedule_drop_for_binding(&mut self, var: NodeId, span: Span) {
-        let local_id = self.var_indices[&var];
+    pub fn schedule_drop_for_binding(&mut self,
+                                     var: NodeId,
+                                     span: Span,
+                                     for_guard: Option<ForGuard>)
+    {
+        let local_id = self.var_indices[&var].local_id(for_guard);
         let var_ty = self.local_decls[local_id].ty;
         let hir_id = self.hir.tcx().hir.node_to_hir_id(var);
         let region_scope = self.hir.region_scope_tree.var_scope(hir_id.local_id);
@@ -849,9 +855,10 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         let re_erased = self.hir.tcx().types.re_erased;
         for binding in bindings {
             let source_info = self.source_info(binding.span);
-            let local = self.storage_live_binding(block, binding.var_id, binding.span);
+            let for_guard = Some(ForGuard);
+            let local = self.storage_live_binding(block, binding.var_id, binding.span, for_guard);
             // FIXME: why schedule drops if bindings are all shared-&'s?
-            self.schedule_drop_for_binding(binding.var_id, binding.span);
+            self.schedule_drop_for_binding(binding.var_id, binding.span, for_guard);
             let rvalue = Rvalue::Ref(re_erased, BorrowKind::Shared, binding.source.clone());
             self.cfg.push_assign(block, source_info, &local, rvalue);
         }
@@ -866,8 +873,8 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         // Assign each of the bindings. This may trigger moves out of the candidate.
         for binding in bindings {
             let source_info = self.source_info(binding.span);
-            let local = self.storage_live_binding(block, binding.var_id, binding.span);
-            self.schedule_drop_for_binding(binding.var_id, binding.span);
+            let local = self.storage_live_binding(block, binding.var_id, binding.span, None);
+            self.schedule_drop_for_binding(binding.var_id, binding.span, None);
             let rvalue = match binding.binding_mode {
                 BindingMode::ByValue =>
                     Rvalue::Use(self.consume_by_copy_or_move(binding.source)),
@@ -878,6 +885,12 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         }
     }
 
+    /// Each binding (`ref mut var`/`ref var`/`mut var`/`var`, where
+    /// the bound `var` has type `T` in the arm body) in a pattern
+    /// maps to *two* locals. The first local is a binding for
+    /// occurrences of `var` in the guard, which will all have type
+    /// `&T`. The second local is a binding for occurrences of `var`
+    /// in the arm body, which will have type `T`.
     fn declare_binding(&mut self,
                        source_info: SourceInfo,
                        syntactic_scope: VisibilityScope,
@@ -885,13 +898,13 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                        name: Name,
                        var_id: NodeId,
                        var_ty: Ty<'tcx>)
-                       -> Local
+                       -> (Local, Local)
     {
         debug!("declare_binding(var_id={:?}, name={:?}, var_ty={:?}, source_info={:?}, \
                 syntactic_scope={:?})",
                var_id, name, var_ty, source_info, syntactic_scope);
 
-        let var = self.local_decls.push(LocalDecl::<'tcx> {
+        let for_guard = self.local_decls.push(LocalDecl::<'tcx> {
             mutability,
             ty: var_ty.clone(),
             name: Some(name),
@@ -900,7 +913,16 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             internal: false,
             is_user_variable: true,
         });
-        self.var_indices.insert(var_id, var);
+        let for_arm_body = self.local_decls.push(LocalDecl::<'tcx> {
+            mutability,
+            ty: var_ty.clone(),
+            name: Some(name),
+            source_info,
+            syntactic_scope,
+            internal: false,
+            is_user_variable: true,
+        });
+        self.var_indices.insert(var_id, LocalsForNode::Two { for_guard, for_arm_body });
 
         debug!("declare_binding: var={:?}", var);
 
