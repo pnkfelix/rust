@@ -35,7 +35,7 @@ impl<'a, 'gcx, 'tcx> ExprBuilder<'a, 'gcx, 'tcx> {
                      mut block: BasicBlock,
                      expr: Expr<'tcx>)
                       -> BlockAnd<Place<'tcx>> {
-        debug!("expr_as_place(block={:?}, expr={:?}, for_guard={:?})", block, expr, for_guard);
+        debug!("expr_as_place(block={:?}, expr={:?}) for_guard={:?}", block, expr, self.for_guard);
 
         let this = self;
         let expr_span = expr.span;
