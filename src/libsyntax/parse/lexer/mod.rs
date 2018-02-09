@@ -161,7 +161,7 @@ impl<'a> StringReader<'a> {
     fn new_raw_internal(sess: &'a ParseSess, filemap: Rc<syntax_pos::FileMap>) -> Self {
         if filemap.src.is_none() {
             sess.span_diagnostic.bug(&format!("Cannot lex filemap without source: {}",
-                                              filemap.name));
+                                              filemap.name.display()));
         }
 
         let source_text = (*filemap.src.as_ref().unwrap()).clone();

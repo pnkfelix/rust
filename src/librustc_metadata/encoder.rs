@@ -336,7 +336,7 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
                             filemap.clone()
                         } else {
                             let mut adapted = (**filemap).clone();
-                            adapted.name = Path::new(&working_dir).join(name).into();
+                            adapted.name = FileName::real(Path::new(&working_dir).join(name));
                             adapted.name_hash = {
                                 let mut hasher: StableHasher<u128> = StableHasher::new();
                                 adapted.name.hash(&mut hasher);

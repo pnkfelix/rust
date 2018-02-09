@@ -282,7 +282,7 @@ pub fn compile_input(trans: Box<TransCrate>,
 
 pub fn source_name(input: &Input) -> FileName {
     match *input {
-        Input::File(ref ifile) => ifile.clone().into(),
+        Input::File(ref ifile) => FileName::real(ifile.clone()),
         Input::Str { ref name, .. } => name.clone(),
     }
 }
@@ -1105,7 +1105,7 @@ pub fn phase_4_translate_to_llvm<'a, 'tcx>(trans: &TransCrate,
 fn escape_dep_filename(filename: &FileName) -> String {
     // Apparently clang and gcc *only* escape spaces:
     // http://llvm.org/klaus/clang/commit/9d50634cfc268ecc9a7250226dd5ca0e945240d4
-    filename.to_string().replace(" ", "\\ ")
+    filename.display().to_string().replace(" ", "\\ ")
 }
 
 // Returns all the paths that correspond to generated files.

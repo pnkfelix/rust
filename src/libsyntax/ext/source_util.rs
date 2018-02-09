@@ -71,7 +71,8 @@ pub fn expand_file(cx: &mut ExtCtxt, sp: Span, tts: &[tokenstream::TokenTree])
 
     let topmost = cx.expansion_cause().unwrap_or(sp);
     let loc = cx.codemap().lookup_char_pos(topmost.lo());
-    base::MacEager::expr(cx.expr_str(topmost, Symbol::intern(&loc.file.name.to_string())))
+    base::MacEager::expr(cx.expr_str(topmost,
+                                     Symbol::intern(&loc.file.name.display().to_string())))
 }
 
 pub fn expand_stringify(cx: &mut ExtCtxt, sp: Span, tts: &[tokenstream::TokenTree])
@@ -199,7 +200,8 @@ fn res_rel_file(cx: &mut ExtCtxt, sp: syntax_pos::Span, arg: String) -> PathBuf 
         let callsite = sp.source_callsite();
         let mut path = match cx.codemap().span_to_unmapped_path(callsite) {
             FileName::Real(path) => path,
-            other => panic!("cannot resolve relative path in non-file source `{}`", other),
+            other => panic!("cannot resolve relative path in non-file source `{}`",
+                            other.display()),
         };
         path.pop();
         path.push(arg);

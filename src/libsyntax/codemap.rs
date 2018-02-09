@@ -182,7 +182,7 @@ impl CodeMap {
         let filename = if let Some((ref name, _)) = self.doctest_offset {
             name.clone()
         } else {
-            path.to_owned().into()
+            FileName::real(path.to_owned())
         };
         Ok(self.new_filemap(filename, src))
     }
@@ -244,7 +244,7 @@ impl CodeMap {
 
     /// Creates a new filemap and sets its line information.
     pub fn new_filemap_and_lines(&self, filename: &Path, src: &str) -> Rc<FileMap> {
-        let fm = self.new_filemap(filename.to_owned().into(), src.to_owned());
+        let fm = self.new_filemap(FileName::real(filename.to_owned()), src.to_owned());
         let mut byte_pos: u32 = fm.start_pos.0;
         for line in src.lines() {
             // register the start of this line
@@ -318,7 +318,7 @@ impl CodeMap {
     pub fn mk_substr_filename(&self, sp: Span) -> String {
         let pos = self.lookup_char_pos(sp.lo());
         (format!("<{}:{}:{}>",
-                 pos.file.name,
+                 pos.file.name.display(),
                  pos.line,
                  pos.col.to_usize() + 1)).to_string()
     }
@@ -463,7 +463,7 @@ impl CodeMap {
         let lo = self.lookup_char_pos_adj(sp.lo());
         let hi = self.lookup_char_pos_adj(sp.hi());
         return (format!("{}:{}:{}: {}:{}",
-                        lo.filename,
+                        lo.filename.display(),
                         lo.line,
                         lo.col.to_usize() + 1,
                         hi.line,

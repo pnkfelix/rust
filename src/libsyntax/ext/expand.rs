@@ -223,7 +223,7 @@ impl<'a, 'b> MacroExpander<'a, 'b> {
             mod_path: vec![Ident::from_str(&self.cx.ecfg.crate_name)],
             directory: match self.cx.codemap().span_to_unmapped_path(krate.span) {
                 FileName::Real(path) => path,
-                other => PathBuf::from(other.to_string()),
+                other => PathBuf::from(other.display().to_string()),
             },
         };
         module.directory.pop();
@@ -998,7 +998,7 @@ impl<'a, 'b> Folder for InvocationCollector<'a, 'b> {
                     let path = self.cx.parse_sess.codemap().span_to_unmapped_path(inner);
                     let mut path = match path {
                         FileName::Real(path) => path,
-                        other => PathBuf::from(other.to_string()),
+                        other => PathBuf::from(other.display().to_string()),
                     };
                     let directory_ownership = match path.file_name().unwrap().to_str() {
                         Some("mod.rs") => DirectoryOwnership::Owned { relative: None },

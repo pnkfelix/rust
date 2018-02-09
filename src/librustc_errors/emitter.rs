@@ -1007,7 +1007,7 @@ impl EmitterWriter {
                     buffer.prepend(buffer_msg_line_offset, "--> ", Style::LineNumber);
                     buffer.append(buffer_msg_line_offset,
                                   &format!("{}:{}:{}",
-                                           loc.file.name,
+                                           loc.file.name.display(),
                                            cm.doctest_offset_line(loc.line),
                                            loc.col.0 + 1),
                                   Style::LineAndColumn);
@@ -1017,7 +1017,7 @@ impl EmitterWriter {
                 } else {
                     buffer.prepend(0,
                                    &format!("{}:{}:{} - ",
-                                            loc.file.name,
+                                            loc.file.name.display(),
                                             cm.doctest_offset_line(loc.line),
                                             loc.col.0 + 1),
                                    Style::LineAndColumn);
@@ -1038,11 +1038,11 @@ impl EmitterWriter {
                         "".to_string()
                     };
                     format!("{}:{}{}",
-                            annotated_file.file.name,
+                            annotated_file.file.name.display(),
                             cm.doctest_offset_line(first_line.line_index),
                             col)
                 } else {
-                    annotated_file.file.name.to_string()
+                    annotated_file.file.name.display().to_string()
                 };
                 buffer.append(buffer_msg_line_offset + 1,
                               &loc,

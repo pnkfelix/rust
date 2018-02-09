@@ -44,7 +44,7 @@ impl<'a> SpanUtils<'a> {
                     .join(&path)
                     .display()
                     .to_string(),
-            _ => path.to_string(),
+            _ => path.display().to_string(),
         }
     }
 
@@ -158,7 +158,7 @@ impl<'a> SpanUtils<'a> {
                 "Mis-counted brackets when breaking path? Parsing '{}' \
                  in {}, line {}",
                 self.snippet(span),
-                loc.file.name,
+                loc.file.name.display(),
                 loc.line
             );
         }

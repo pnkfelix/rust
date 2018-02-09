@@ -300,7 +300,7 @@ impl DiagnosticSpan {
         };
 
         DiagnosticSpan {
-            file_name: start.file.name.to_string(),
+            file_name: start.file.name.display().to_string(),
             byte_start: span.lo().0 - start.file.start_pos.0,
             byte_end: span.hi().0 - start.file.start_pos.0,
             line_start: start.line,

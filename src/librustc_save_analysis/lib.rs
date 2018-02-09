@@ -93,7 +93,7 @@ impl<'l, 'tcx: 'l> SaveContext<'l, 'tcx> {
         let end = cm.lookup_char_pos(span.hi());
 
         SpanData {
-            file_name: start.file.name.clone().to_string().into(),
+            file_name: start.file.name.display().to_string().into(),
             byte_start: span.lo().0,
             byte_end: span.hi().0,
             line_start: Row::new_one_indexed(start.line as u32),
@@ -273,7 +273,7 @@ impl<'l, 'tcx: 'l> SaveContext<'l, 'tcx> {
                     name: item.ident.to_string(),
                     qualname,
                     span: self.span_from_span(sub_span.unwrap()),
-                    value: filename.to_string(),
+                    value: filename.display().to_string(),
                     parent: None,
                     children: m.items
                         .iter()

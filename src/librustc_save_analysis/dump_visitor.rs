@@ -1388,7 +1388,7 @@ impl<'l, 'tcx: 'l, 'll, O: DumpOutput + 'll> Visitor<'l> for DumpVisitor<'l, 'tc
                 name: String::new(),
                 qualname,
                 span,
-                value: filename.to_string(),
+                value: filename.display().to_string(),
                 children,
                 parent: None,
                 decl_id: None,

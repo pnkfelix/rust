@@ -677,7 +677,7 @@ pub fn file_metadata(cx: &CodegenCx,
                      file_name: &FileName,
                      defining_crate: CrateNum) -> DIFile {
     debug!("file_metadata: file_name: {}, defining_crate: {}",
-           file_name,
+           file_name.display(),
            defining_crate);
 
     let directory = if defining_crate == LOCAL_CRATE {
@@ -688,7 +688,7 @@ pub fn file_metadata(cx: &CodegenCx,
         Path::new("")
     };
 
-    file_metadata_raw(cx, &file_name.to_string(), &directory.to_string_lossy())
+    file_metadata_raw(cx, &file_name.display().to_string(), &directory.to_string_lossy())
 }
 
 pub fn unknown_file_metadata(cx: &CodegenCx) -> DIFile {

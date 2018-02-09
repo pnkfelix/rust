@@ -32,7 +32,7 @@ use std::cmp::{self, Ordering};
 use std::fmt;
 use std::hash::{Hasher, Hash};
 use std::ops::{Add, Sub};
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 use std::rc::Rc;
 
 use rustc_data_structures::stable_hasher::StableHasher;
@@ -74,10 +74,17 @@ pub enum FileName {
     Custom(String),
 }
 
-impl std::fmt::Display for FileName {
+pub struct Displayed(FileName);
+
+impl FileName {
+    pub fn display(&self) -> Displayed { Displayed(self.clone()) }
+    pub fn display_with_path_prefix(&self, _prefix: &Path) { unimplemented!() }
+}
+
+impl std::fmt::Display for Displayed {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         use self::FileName::*;
-        match *self {
+        match self.0 {
             Real(ref path) => write!(fmt, "{}", path.display()),
             Macros(ref name) => write!(fmt, "<{} macros>", name),
             QuoteExpansion => write!(fmt, "<quote expansion>"),
@@ -90,14 +97,19 @@ impl std::fmt::Display for FileName {
     }
 }
 
-impl From<PathBuf> for FileName {
-    fn from(p: PathBuf) -> Self {
+// impl From<PathBuf> for FileName {
+//     fn from(p: PathBuf) -> Self {
+//         assert!(!p.to_string_lossy().ends_with('>'));
+//         FileName::Real(p)
+//     }
+// }
+
+impl FileName {
+    pub fn real(p: PathBuf) -> Self {
         assert!(!p.to_string_lossy().ends_with('>'));
         FileName::Real(p)
     }
-}
 
-impl FileName {
     pub fn is_real(&self) -> bool {
         use self::FileName::*;
         match *self {
@@ -829,7 +841,7 @@ impl Decodable for FileMap {
 
 impl fmt::Debug for FileMap {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "FileMap({})", self.name)
+        write!(fmt, "FileMap({})", self.name.display())
     }
 }
 
