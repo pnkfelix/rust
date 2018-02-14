@@ -57,10 +57,12 @@ pub struct ParseSess {
 
 impl ParseSess {
     pub fn new(file_path_mapping: FilePathMapping) -> Self {
+        let diagnostic_prefix = file_path_mapping.diagnostic_prefix();
         let cm = Rc::new(CodeMap::new(file_path_mapping));
         let handler = Handler::with_tty_emitter(ColorConfig::Auto,
                                                 true,
                                                 false,
+                                                diagnostic_prefix,
                                                 Some(cm.clone()));
         ParseSess::with_span_handler(handler, cm)
     }

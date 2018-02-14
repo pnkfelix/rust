@@ -74,10 +74,13 @@ pub fn run(input_path: &Path,
         ..config::basic_options().clone()
     };
 
-    let codemap = Rc::new(CodeMap::new(sessopts.file_path_mapping()));
+    let file_path_mapping = sessopts.file_path_mapping();
+    let maybe_diagnostic_prefix = file_path_mapping.diagnostic_prefix();
+    let codemap = Rc::new(CodeMap::new(file_path_mapping));
     let handler =
         errors::Handler::with_tty_emitter(ColorConfig::Auto,
                                           true, false,
+                                          maybe_diagnostic_prefix,
                                           Some(codemap.clone()));
 
     let mut sess = session::build_session_(

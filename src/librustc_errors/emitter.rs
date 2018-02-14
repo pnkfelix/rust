@@ -10,7 +10,7 @@
 
 use self::Destination::*;
 
-use syntax_pos::{DUMMY_SP, FileMap, Span, MultiSpan};
+use syntax_pos::{self, DUMMY_SP, FileMap, Span, MultiSpan};
 
 use {Level, CodeSuggestion, DiagnosticBuilder, SubDiagnostic, CodeMapper, DiagnosticId};
 use snippet::{Annotation, AnnotationType, Line, MultilineAnnotation, StyledString, Style};
@@ -19,6 +19,7 @@ use styled_buffer::StyledBuffer;
 use std::borrow::Cow;
 use std::io::prelude::*;
 use std::io;
+use std::path::PathBuf;
 use std::rc::Rc;
 use term;
 use std::collections::HashMap;
@@ -107,6 +108,7 @@ pub struct EmitterWriter {
     cm: Option<Rc<CodeMapper>>,
     short_message: bool,
     teach: bool,
+    maybe_filename_prefix: Option<PathBuf>,
 }
 
 struct FileWithAnnotatedLines {
@@ -119,7 +121,8 @@ impl EmitterWriter {
     pub fn stderr(color_config: ColorConfig,
                   code_map: Option<Rc<CodeMapper>>,
                   short_message: bool,
-                  teach: bool)
+                  teach: bool,
+                  maybe_filename_prefix: Option<PathBuf>)
                   -> EmitterWriter {
         if color_config.use_color() {
             let dst = Destination::from_stderr();
@@ -128,6 +131,7 @@ impl EmitterWriter {
                 cm: code_map,
                 short_message,
                 teach,
+                maybe_filename_prefix,
             }
         } else {
             EmitterWriter {
@@ -135,6 +139,7 @@ impl EmitterWriter {
                 cm: code_map,
                 short_message,
                 teach,
+                maybe_filename_prefix,
             }
         }
     }
@@ -142,13 +147,16 @@ impl EmitterWriter {
     pub fn new(dst: Box<Write + Send>,
                code_map: Option<Rc<CodeMapper>>,
                short_message: bool,
-               teach: bool)
+               teach: bool,
+               maybe_filename_prefix: Option<PathBuf>)
                -> EmitterWriter {
+        let maybe_filename_prefix = maybe_filename_prefix.map(|p|p.to_owned());
         EmitterWriter {
             dst: Raw(dst),
             cm: code_map,
             short_message,
             teach,
+            maybe_filename_prefix,
         }
     }
 
@@ -931,6 +939,13 @@ impl EmitterWriter {
         }
     }
 
+    fn display_filename(&self, filename: &syntax_pos::FileName) -> syntax_pos::DisplayedFilename {
+        match self.maybe_filename_prefix {
+            Some(ref prefix) => filename.display_with_path_prefix(prefix),
+            None => filename.display(),
+        }
+    }
+
     fn emit_message_default(&mut self,
                             msp: &MultiSpan,
                             msg: &Vec<(String, Style)>,
@@ -1007,7 +1022,7 @@ impl EmitterWriter {
                     buffer.prepend(buffer_msg_line_offset, "--> ", Style::LineNumber);
                     buffer.append(buffer_msg_line_offset,
                                   &format!("{}:{}:{}",
-                                           loc.file.name.display(),
+                                           self.display_filename(&loc.file.name),
                                            cm.doctest_offset_line(loc.line),
                                            loc.col.0 + 1),
                                   Style::LineAndColumn);
@@ -1017,7 +1032,7 @@ impl EmitterWriter {
                 } else {
                     buffer.prepend(0,
                                    &format!("{}:{}:{} - ",
-                                            loc.file.name.display(),
+                                            self.display_filename(&loc.file.name),
                                             cm.doctest_offset_line(loc.line),
                                             loc.col.0 + 1),
                                    Style::LineAndColumn);
@@ -1038,11 +1053,11 @@ impl EmitterWriter {
                         "".to_string()
                     };
                     format!("{}:{}{}",
-                            annotated_file.file.name.display(),
+                            self.display_filename(&annotated_file.file.name),
                             cm.doctest_offset_line(first_line.line_index),
                             col)
                 } else {
-                    annotated_file.file.name.display().to_string()
+                    self.display_filename(&annotated_file.file.name).to_string()
                 };
                 buffer.append(buffer_msg_line_offset + 1,
                               &loc,

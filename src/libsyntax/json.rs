@@ -199,7 +199,15 @@ impl Diagnostic {
         }
         let buf = BufWriter::default();
         let output = buf.clone();
-        EmitterWriter::new(Box::new(buf), Some(je.cm.clone()), false, false).emit(db);
+
+        // We do not attempt to "clean up" JSON output in the same way that
+        // we would for tty diagnostics, so:
+        EmitterWriter::new(Box::new(buf),
+                           Some(je.cm.clone()),
+                           false,        // no long messages ...
+                           false,        // no extended diagnostics, and ...
+                           None)         // no added prefix in diagnostics to map to host cwd
+            .emit(db);
         let output = Arc::try_unwrap(output.0).unwrap().into_inner().unwrap();
         let output = String::from_utf8(output).unwrap();
 

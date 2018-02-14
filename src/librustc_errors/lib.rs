@@ -41,6 +41,7 @@ use rustc_data_structures::stable_hasher::StableHasher;
 use std::borrow::Cow;
 use std::cell::{RefCell, Cell};
 use std::mem;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::{error, fmt};
 use std::sync::atomic::AtomicUsize;
@@ -287,11 +288,13 @@ impl Handler {
     pub fn with_tty_emitter(color_config: ColorConfig,
                             can_emit_warnings: bool,
                             treat_err_as_bug: bool,
+                            maybe_filename_prefix: Option<PathBuf>,
                             cm: Option<Rc<CodeMapper>>)
                             -> Handler {
         Handler::with_tty_emitter_and_flags(
             color_config,
             cm,
+            maybe_filename_prefix,
             HandlerFlags {
                 can_emit_warnings,
                 treat_err_as_bug,
@@ -301,9 +304,11 @@ impl Handler {
 
     pub fn with_tty_emitter_and_flags(color_config: ColorConfig,
                                       cm: Option<Rc<CodeMapper>>,
+                                      maybe_filename_prefix: Option<PathBuf>,
                                       flags: HandlerFlags)
                                       -> Handler {
-        let emitter = Box::new(EmitterWriter::stderr(color_config, cm, false, false));
+        let emitter = Box::new(EmitterWriter::stderr(
+            color_config, cm, false, false, maybe_filename_prefix));
         Handler::with_emitter_and_flags(emitter, flags)
     }
 

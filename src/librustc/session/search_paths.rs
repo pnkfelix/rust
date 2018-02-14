@@ -37,7 +37,7 @@ impl SearchPaths {
         SearchPaths { paths: Vec::new() }
     }
 
-    pub fn add_path(&mut self, path: &str, output: config::ErrorOutputType) {
+    pub fn add_path(&mut self, path: &str, output: &config::ErrorOutputType) {
         let (kind, path) = if path.starts_with("native=") {
             (PathKind::Native, &path["native=".len()..])
         } else if path.starts_with("crate=") {

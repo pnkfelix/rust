@@ -168,7 +168,8 @@ pub fn run<F>(run_compiler: F) -> isize
                         errors::emitter::EmitterWriter::stderr(errors::ColorConfig::Auto,
                                                                None,
                                                                true,
-                                                               false);
+                                                               false,
+                                                               None);
                     let handler = errors::Handler::with_emitter(true, false, Box::new(emitter));
                     handler.emit(&MultiSpan::new(),
                                  "aborting due to previous error(s)",
@@ -195,7 +196,7 @@ fn load_backend_from_dylib(path: &Path) -> fn() -> Box<TransCrate> {
             let err = format!("couldn't load codegen backend {:?}: {:?}",
                               path,
                               err);
-            early_error(ErrorOutputType::default(), &err);
+            early_error(&ErrorOutputType::default(), &err);
         }
     };
     unsafe {
@@ -208,7 +209,7 @@ fn load_backend_from_dylib(path: &Path) -> fn() -> Box<TransCrate> {
                 let err = format!("couldn't load codegen backend as it \
                                    doesn't export the `__rustc_codegen_backend` \
                                    symbol: {:?}", e);
-                early_error(ErrorOutputType::default(), &err);
+                early_error(&ErrorOutputType::default(), &err);
             }
         }
     }
@@ -306,7 +307,7 @@ fn get_trans_sysroot(backend_name: &str) -> fn() -> Box<TransCrate> {
                 .join("\n* ");
             let err = format!("failed to find a `codegen-backends` folder \
                                in the sysroot candidates:\n* {}", candidates);
-            early_error(ErrorOutputType::default(), &err);
+            early_error(&ErrorOutputType::default(), &err);
         }
     };
     info!("probing {} for a codegen backend", sysroot.display());
@@ -316,7 +317,7 @@ fn get_trans_sysroot(backend_name: &str) -> fn() -> Box<TransCrate> {
         Err(e) => {
             let err = format!("failed to load default codegen backend, couldn't \
                                read `{}`: {}", sysroot.display(), e);
-            early_error(ErrorOutputType::default(), &err);
+            early_error(&ErrorOutputType::default(), &err);
         }
     };
 
@@ -341,7 +342,7 @@ fn get_trans_sysroot(backend_name: &str) -> fn() -> Box<TransCrate> {
                 first:  {}\n\
                 second: {}\n\
             ", prev.display(), path.display());
-            early_error(ErrorOutputType::default(), &err);
+            early_error(&ErrorOutputType::default(), &err);
         }
         file = Some(path.clone());
     }
@@ -352,7 +353,7 @@ fn get_trans_sysroot(backend_name: &str) -> fn() -> Box<TransCrate> {
             let err = format!("failed to load default codegen backend for `{}`, \
                                no appropriate codegen dylib found in `{}`",
                                backend_name, sysroot.display());
-            early_error(ErrorOutputType::default(), &err);
+            early_error(&ErrorOutputType::default(), &err);
         }
     }
 
@@ -453,7 +454,7 @@ pub fn run_compiler<'a>(args: &[String],
                                            &sopts,
                                            &cfg,
                                            &descriptions,
-                                           sopts.error_format),
+                                           &sopts.error_format),
                                            None);
 
     let (odir, ofile) = make_output(&matches);
@@ -594,7 +595,7 @@ pub trait CompilerCalls<'a> {
                       _: &config::Options,
                       _: &ast::CrateConfig,
                       _: &errors::registry::Registry,
-                      _: ErrorOutputType)
+                      _: &ErrorOutputType)
                       -> Compilation {
         Compilation::Continue
     }
@@ -676,7 +677,7 @@ fn stdout_isatty() -> bool {
 
 fn handle_explain(code: &str,
                   descriptions: &errors::registry::Registry,
-                  output: ErrorOutputType) {
+                  output: &ErrorOutputType) {
     let normalised = if code.starts_with("E") {
         code.to_string()
     } else {
@@ -754,7 +755,7 @@ impl<'a> CompilerCalls<'a> for RustcDefaultCalls {
                       _: &config::Options,
                       _: &ast::CrateConfig,
                       descriptions: &errors::registry::Registry,
-                      output: ErrorOutputType)
+                      output: &ErrorOutputType)
                       -> Compilation {
         if let Some(ref code) = matches.opt_str("explain") {
             handle_explain(code, descriptions, output);
@@ -799,10 +800,10 @@ impl<'a> CompilerCalls<'a> for RustcDefaultCalls {
                 if should_stop == Compilation::Stop {
                     return None;
                 }
-                early_error(sopts.error_format, "no input filename given");
+                early_error(&sopts.error_format, "no input filename given");
             }
             1 => panic!("make_input should have provided valid inputs"),
-            _ => early_error(sopts.error_format, "multiple input filenames provided"),
+            _ => early_error(&sopts.error_format, "multiple input filenames provided"),
         }
     }
 
@@ -934,7 +935,7 @@ impl RustcDefaultCalls {
                     println!("{}", String::from_utf8(v).unwrap());
                 }
                 &Input::Str { .. } => {
-                    early_error(ErrorOutputType::default(), "cannot list metadata for stdin");
+                    early_error(&ErrorOutputType::default(), "cannot list metadata for stdin");
                 }
             }
             return Compilation::Stop;
@@ -982,7 +983,7 @@ impl RustcDefaultCalls {
                 FileNames | CrateName => {
                     let input = match input {
                         Some(input) => input,
-                        None => early_error(ErrorOutputType::default(), "no input file provided"),
+                        None => early_error(&ErrorOutputType::default(), "no input file provided"),
                     };
                     let attrs = attrs.as_ref().unwrap();
                     let t_outputs = driver::build_output_filenames(input, odir, ofile, attrs, sess);
@@ -1337,7 +1338,7 @@ pub fn handle_options(args: &[String]) -> Option<getopts::Matches> {
     }
     let matches = match options.parse(args) {
         Ok(m) => m,
-        Err(f) => early_error(ErrorOutputType::default(), &f.to_string()),
+        Err(f) => early_error(&ErrorOutputType::default(), &f.to_string()),
     };
 
     // For all options we just parsed, we check a few aspects:
@@ -1379,7 +1380,7 @@ pub fn handle_options(args: &[String]) -> Option<getopts::Matches> {
     }
 
     if cg_flags.iter().any(|x| *x == "no-stack-check") {
-        early_warn(ErrorOutputType::default(),
+        early_warn(&ErrorOutputType::default(),
                    "the --no-stack-check flag is deprecated and does nothing");
     }
 
@@ -1451,7 +1452,8 @@ pub fn monitor<F: FnOnce() + Send + 'static>(f: F) {
                 Box::new(errors::emitter::EmitterWriter::stderr(errors::ColorConfig::Auto,
                                                                 None,
                                                                 false,
-                                                                false));
+                                                                false,
+                                                                None));
             let handler = errors::Handler::with_emitter(true, false, emitter);
 
             // a .span_bug or .bug call has already printed what
@@ -1512,7 +1514,7 @@ pub fn main() {
     let result = run(|| {
         let args = env::args_os().enumerate()
             .map(|(i, arg)| arg.into_string().unwrap_or_else(|arg| {
-                early_error(ErrorOutputType::default(),
+                early_error(&ErrorOutputType::default(),
                             &format!("Argument {} is not valid Unicode: {:?}", i, arg))
             }))
             .collect::<Vec<_>>();

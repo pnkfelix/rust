@@ -906,16 +906,21 @@ pub fn build_session_with_codemap(sopts: config::Options,
     let treat_err_as_bug = sopts.debugging_opts.treat_err_as_bug;
 
     let external_macro_backtrace = sopts.debugging_opts.external_macro_backtrace;
-
-    let emitter: Box<Emitter> = match (sopts.error_format, emitter_dest) {
-        (config::ErrorOutputType::HumanReadable(color_config), None) => {
+    let emitter: Box<Emitter> = match (sopts.error_format.clone(), emitter_dest) {
+        (config::ErrorOutputType::HumanReadable { color: color_config,
+                                                  file_prefix: diagnostic_prefix },
+         None) => {
             Box::new(EmitterWriter::stderr(color_config,
                                            Some(codemap.clone()),
                                            false,
-                                           sopts.debugging_opts.teach))
+                                           sopts.debugging_opts.teach,
+                                           diagnostic_prefix))
         }
-        (config::ErrorOutputType::HumanReadable(_), Some(dst)) => {
-            Box::new(EmitterWriter::new(dst, Some(codemap.clone()), false, false))
+        (config::ErrorOutputType::HumanReadable { color: _,
+                                                  file_prefix: diagnostic_prefix },
+         Some(dst)) => {
+            Box::new(EmitterWriter::new(dst, Some(codemap.clone()),
+                                        false, false, diagnostic_prefix))
         }
         (config::ErrorOutputType::Json(pretty), None) => {
             Box::new(JsonEmitter::stderr(Some(registry), codemap.clone(),
@@ -925,11 +930,17 @@ pub fn build_session_with_codemap(sopts: config::Options,
             Box::new(JsonEmitter::new(dst, Some(registry), codemap.clone(),
                      pretty, sopts.debugging_opts.approximate_suggestions))
         }
-        (config::ErrorOutputType::Short(color_config), None) => {
-            Box::new(EmitterWriter::stderr(color_config, Some(codemap.clone()), true, false))
+        (config::ErrorOutputType::Short { color: color_config,
+                                          file_prefix: diagnostic_prefix },
+         None) => {
+            Box::new(EmitterWriter::stderr(color_config, Some(codemap.clone()),
+                                           true, false, diagnostic_prefix))
         }
-        (config::ErrorOutputType::Short(_), Some(dst)) => {
-            Box::new(EmitterWriter::new(dst, Some(codemap.clone()), true, false))
+        (config::ErrorOutputType::Short { color: _,
+                                          file_prefix: diagnostic_prefix },
+         Some(dst)) => {
+            Box::new(EmitterWriter::new(dst, Some(codemap.clone()),
+                                        true, false, diagnostic_prefix))
         }
     };
 
@@ -943,7 +954,7 @@ pub fn build_session_with_codemap(sopts: config::Options,
                 .. Default::default()
             });
 
-    build_session_(sopts,
+    build_session_(sopts.clone(),
                    local_crate_source_file,
                    diagnostic_handler,
                    codemap)
@@ -1102,14 +1113,14 @@ pub enum IncrCompSession {
     }
 }
 
-pub fn early_error(output: config::ErrorOutputType, msg: &str) -> ! {
-    let emitter: Box<Emitter> = match output {
-        config::ErrorOutputType::HumanReadable(color_config) => {
-            Box::new(EmitterWriter::stderr(color_config, None, false, false))
+pub fn early_error(output: &config::ErrorOutputType, msg: &str) -> ! {
+    let emitter: Box<Emitter> = match *output {
+        config::ErrorOutputType::HumanReadable { color: color_config, ref file_prefix } => {
+            Box::new(EmitterWriter::stderr(color_config, None, false, false, file_prefix.clone()))
         }
         config::ErrorOutputType::Json(pretty) => Box::new(JsonEmitter::basic(pretty)),
-        config::ErrorOutputType::Short(color_config) => {
-            Box::new(EmitterWriter::stderr(color_config, None, true, false))
+        config::ErrorOutputType::Short { color: color_config, ref file_prefix } => {
+            Box::new(EmitterWriter::stderr(color_config, None, true, false, file_prefix.clone()))
         }
     };
     let handler = errors::Handler::with_emitter(true, false, emitter);
@@ -1117,14 +1128,14 @@ pub fn early_error(output: config::ErrorOutputType, msg: &str) -> ! {
     errors::FatalError.raise();
 }
 
-pub fn early_warn(output: config::ErrorOutputType, msg: &str) {
-    let emitter: Box<Emitter> = match output {
-        config::ErrorOutputType::HumanReadable(color_config) => {
-            Box::new(EmitterWriter::stderr(color_config, None, false, false))
+pub fn early_warn(output: &config::ErrorOutputType, msg: &str) {
+    let emitter: Box<Emitter> = match *output {
+        config::ErrorOutputType::HumanReadable { color: color_config, ref file_prefix } => {
+            Box::new(EmitterWriter::stderr(color_config, None, false, false, file_prefix.clone()))
         }
         config::ErrorOutputType::Json(pretty) => Box::new(JsonEmitter::basic(pretty)),
-        config::ErrorOutputType::Short(color_config) => {
-            Box::new(EmitterWriter::stderr(color_config, None, true, false))
+        config::ErrorOutputType::Short { color: color_config, ref file_prefix } => {
+            Box::new(EmitterWriter::stderr(color_config, None, true, false, file_prefix.clone()))
         }
     };
     let handler = errors::Handler::with_emitter(true, false, emitter);

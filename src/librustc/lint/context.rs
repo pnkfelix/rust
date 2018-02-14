@@ -181,7 +181,7 @@ impl LintStore {
                 match (sess, from_plugin) {
                     // We load builtin lints first, so a duplicate is a compiler bug.
                     // Use early_error when handling -W help with no crate.
-                    (None, _) => early_error(config::ErrorOutputType::default(), &msg[..]),
+                    (None, _) => early_error(&config::ErrorOutputType::default(), &msg[..]),
                     (Some(_), false) => bug!("{}", msg),
 
                     // A duplicate name from a plugin is a user error.
@@ -215,7 +215,7 @@ impl LintStore {
             match (sess, from_plugin) {
                 // We load builtin lints first, so a duplicate is a compiler bug.
                 // Use early_error when handling -W help with no crate.
-                (None, _) => early_error(config::ErrorOutputType::default(), &msg[..]),
+                (None, _) => early_error(&config::ErrorOutputType::default(), &msg[..]),
                 (Some(_), false) => bug!("{}", msg),
 
                 // A duplicate name from a plugin is a user error.

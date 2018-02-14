@@ -31,6 +31,7 @@ use std::cell::{Cell, RefCell};
 use std::cmp::{self, Ordering};
 use std::fmt;
 use std::hash::{Hasher, Hash};
+use std::iter::FromIterator;
 use std::ops::{Add, Sub};
 use std::path::{PathBuf, Path};
 use std::rc::Rc;
@@ -74,14 +75,23 @@ pub enum FileName {
     Custom(String),
 }
 
-pub struct Displayed(FileName);
+pub struct DisplayedFilename(FileName);
 
 impl FileName {
-    pub fn display(&self) -> Displayed { Displayed(self.clone()) }
-    pub fn display_with_path_prefix(&self, _prefix: &Path) { unimplemented!() }
+    pub fn display(&self) -> DisplayedFilename {
+        DisplayedFilename(self.clone())
+    }
+    pub fn display_with_path_prefix(&self, prefix: &Path) -> DisplayedFilename {
+        if let FileName::Real(ref path) = *self {
+            let buf = PathBuf::from_iter([prefix, path].iter());
+            DisplayedFilename(FileName::Real(buf))
+        } else {
+            DisplayedFilename(self.clone())
+        }
+    }
 }
 
-impl std::fmt::Display for Displayed {
+impl std::fmt::Display for DisplayedFilename {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         use self::FileName::*;
         match self.0 {

@@ -838,18 +838,21 @@ impl CodeMapper for CodeMap {
 #[derive(Clone)]
 pub struct FilePathMapping {
     mapping: Vec<(PathBuf, PathBuf)>,
+    maybe_diagnostic_prefix: Option<PathBuf>,
 }
 
 impl FilePathMapping {
     pub fn empty() -> FilePathMapping {
         FilePathMapping {
-            mapping: vec![]
+            mapping: vec![],
+            maybe_diagnostic_prefix: None,
         }
     }
 
     pub fn new(mapping: Vec<(PathBuf, PathBuf)>) -> FilePathMapping {
         FilePathMapping {
             mapping,
+            maybe_diagnostic_prefix: None,
         }
     }
 
@@ -867,6 +870,10 @@ impl FilePathMapping {
         }
 
         (path, false)
+    }
+
+    pub fn diagnostic_prefix(&self) -> Option<PathBuf> {
+        self.maybe_diagnostic_prefix.clone()
     }
 }
 
