@@ -2698,10 +2698,12 @@ impl<'test> TestCx<'test> {
             panic!(
                 "Did not find expected line, error: {}\n\
                  Expected Line: {:?}\n\
+                 Test Name: {}\n\
                  Expected:\n{}\n\
                  Actual:\n{}",
                 extra_msg,
                 expected_line,
+                test_name,
                 expected_content,
                 normalize_all
             );
