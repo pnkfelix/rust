@@ -522,6 +522,20 @@ impl Session {
     pub fn meta_stats(&self) -> bool {
         self.opts.debugging_opts.meta_stats
     }
+
+    /// If true, make match MIR codegen read its input via a borrow of
+    /// the input place.
+    pub fn read_match_through_borrow_of_input(&self) -> bool {
+        !self.opts.debugging_opts.nll_no_match_through_borrowed_temp
+    }
+
+    /// If true, make match MIR codegen emit ReadForMatch statements
+    /// (which simulate the maximal effect of executing the patterns
+    /// in a match arm).
+    pub fn emit_read_for_match(&self) -> bool {
+        self.opts.debugging_opts.nll_emit_read_for_match
+    }
+
     pub fn asm_comments(&self) -> bool {
         self.opts.debugging_opts.asm_comments
     }
