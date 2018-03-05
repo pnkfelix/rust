@@ -777,7 +777,8 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
                     );
                 }
             }
-            StatementKind::StorageLive(_)
+            StatementKind::ReadForMatch(_)
+            | StatementKind::StorageLive(_)
             | StatementKind::StorageDead(_)
             | StatementKind::InlineAsm { .. }
             | StatementKind::EndRegion(_)

@@ -85,6 +85,12 @@ impl<'a, 'mir, 'tcx, M: Machine<'mir, 'tcx>> EvalContext<'a, 'mir, 'tcx, M> {
                     M::validation_op(self, op, operand)?;
                 }
             }
+
+            // FIXME: is there some dynamic semantics we should attach to
+            // these? Or am I correct in thinking that the inerpreter
+            // is solely intended for borrowck'ed code?
+            ReadForMatch(..) => {}
+
             EndRegion(ce) => {
                 M::end_region(self, Some(ce))?;
             }

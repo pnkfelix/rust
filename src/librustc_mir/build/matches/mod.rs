@@ -13,7 +13,7 @@
 //! includes the high-level algorithm, the submodules contain the
 //! details.
 
-use build::{BlockAnd, BlockAndExtension, Builder};
+use build::{BlockAnd, BlockAndExtension, Builder, ForGuard, LocalsForNode};
 use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::bitvec::BitVector;
 use rustc::ty::{self, Ty};
@@ -28,6 +28,16 @@ mod simplify;
 mod test;
 mod util;
 
+/// Injects a borrow of `place`. The region is unknown at this point; we rely on NLL
+/// inference to find an appropriate one. Therefore you can only call this when NLL
+/// is turned on.
+fn inject_borrow<'a, 'gcx, 'tcx>(tcx: ty::TyCtxt<'a, 'gcx, 'tcx>,
+                                 place: Place<'tcx>)
+                                 -> Rvalue<'tcx> {
+    assert!(tcx.sess.nll());
+    Rvalue::Ref(tcx.types.re_erased, BorrowKind::Shared, place)
+}
+
 impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
     pub fn match_expr(&mut self,
                       destination: &Place<'tcx>,
@@ -36,6 +46,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                       discriminant: ExprRef<'tcx>,
                       arms: Vec<Arm<'tcx>>)
                       -> BlockAnd<()> {
+        let tcx = self.hir.tcx();
         let discriminant_place = unpack!(block = self.as_place(block, discriminant));
 
         // Matching on a `discriminant_place` with an uninhabited type doesn't
@@ -48,16 +59,49 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         // HACK(eddyb) Work around the above issue by adding a dummy inspection
         // of `discriminant_place`, specifically by applying `Rvalue::Discriminant`
         // (which will work regardless of type) and storing the result in a temp.
+        //
+        // FIXME: would just the borrow into `borrowed_input_temp`
+        // also chieve the desired effect here? TBD.
         let dummy_source_info = self.source_info(span);
         let dummy_access = Rvalue::Discriminant(discriminant_place.clone());
         let dummy_ty = dummy_access.ty(&self.local_decls, self.hir.tcx());
         let dummy_temp = self.temp(dummy_ty, dummy_source_info.span);
         self.cfg.push_assign(block, dummy_source_info, &dummy_temp, dummy_access);
 
+        let source_info = self.source_info(span);
+        let borrowed_input_temp = if tcx.sess.nll() {
+            let borrowed_input = inject_borrow(tcx, discriminant_place.clone());
+            let borrowed_input_ty = borrowed_input.ty(&self.local_decls, tcx);
+            let borrowed_input_temp = self.temp(borrowed_input_ty, span);
+            self.cfg.push_assign(block, source_info, &borrowed_input_temp, borrowed_input);
+            Some(borrowed_input_temp)
+        } else {
+            None
+        };
+
         let mut arm_blocks = ArmBlocks {
             blocks: arms.iter()
-                        .map(|_| self.cfg.start_new_block())
-                        .collect(),
+                .map(|_| {
+                    let arm_block = self.cfg.start_new_block();
+
+                    if let (true, Some(borrow_temp)) = (tcx.sess.emit_read_for_match(),
+                                                        borrowed_input_temp.clone()) {
+                        // inject a fake read of the borrowed input at
+                        // the start of each block.
+                        //
+                        // This should ensure that you cannot change
+                        // the variant for an enum while you are in
+                        // the midst of matching on it.
+
+                        self.cfg.push(arm_block, Statement {
+                            source_info,
+                            kind: StatementKind::ReadForMatch(borrow_temp.clone()),
+                        });
+                    }
+
+                    arm_block
+                })
+                .collect(),
         };
 
         // Get the arm bodies and their scopes, while declaring bindings.
@@ -91,9 +135,35 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 .zip(pre_binding_blocks.iter().zip(pre_binding_blocks.iter().skip(1)))
                 .map(|((arm_index, pattern, guard),
                        (pre_binding_block, next_candidate_pre_binding_block))| {
+                    // One might ask: why not build up the match pair such that it
+                    // matches via `borrowed_input_temp.deref()` instead of
+                    // using the `discriminant_place` directly, as it is doing here?
+                    //
+                    // The basic answer is that if you do that, then you end up with
+                    // accceses to a shared borrow of the input and that conflicts with
+                    // any arms that look like e.g.
+                    //
+                    // match Some(&4) {
+                    //     ref mut foo => {
+                    //         ... /* mutate `foo` in arm body */ ...
+                    //     }
+                    // }
+                    //
+                    // (Perhaps we could further revise the MIR
+                    //  construction here so that it only does a
+                    //  shared borrow at the outset and delays doing
+                    //  the mutable borrow until after the pattern is
+                    //  matched *and* the guard (if any) for the arm
+                    //  has been run.)
+
+                    let input_place = match (tcx.sess.read_match_through_borrow_of_input(),
+                                             borrowed_input_temp.clone()) {
+                        (true, Some(borrow_temp)) => borrow_temp.deref(),
+                        _ => discriminant_place.clone()
+                    };
                     Candidate {
                         span: pattern.span,
-                        match_pairs: vec![MatchPair::new(discriminant_place.clone(), pattern)],
+                        match_pairs: vec![MatchPair::new(input_place.clone(), pattern)],
                         bindings: vec![],
                         guard,
                         arm_index,
@@ -173,14 +243,14 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             PatternKind::Binding { mode: BindingMode::ByValue,
                                    var,
                                    subpattern: None, .. } => {
-                let place = self.storage_live_binding(block, var, irrefutable_pat.span);
+                let place = self.storage_live_binding(block, var, irrefutable_pat.span, None);
 
                 if let Some(ty) = ty {
                     self.user_assert_ty(block, ty, var, irrefutable_pat.span);
                 }
 
                 unpack!(block = self.into(&place, block, initializer));
-                self.schedule_drop_for_binding(var, irrefutable_pat.span);
+                self.schedule_drop_for_binding(var, irrefutable_pat.span, None);
                 block.unit()
             }
             _ => {
@@ -220,7 +290,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         }
 
         // now apply the bindings, which will also declare the variables
-        self.bind_matched_candidate(block, candidate.bindings);
+        self.bind_matched_candidate_for_arm_body(block, &candidate.bindings);
 
         block.unit()
     }
@@ -259,10 +329,14 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         var_scope
     }
 
-    pub fn storage_live_binding(&mut self, block: BasicBlock, var: NodeId, span: Span)
+    pub fn storage_live_binding(&mut self,
+                                block: BasicBlock,
+                                var: NodeId,
+                                span: Span,
+                                for_guard: Option<ForGuard>)
                             -> Place<'tcx>
     {
-        let local_id = self.var_indices[&var];
+        let local_id = self.var_indices[&var].local_id(for_guard);
         let source_info = self.source_info(span);
         self.cfg.push(block, Statement {
             source_info,
@@ -271,8 +345,11 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         Place::Local(local_id)
     }
 
-    pub fn schedule_drop_for_binding(&mut self, var: NodeId, span: Span) {
-        let local_id = self.var_indices[&var];
+    pub fn schedule_drop_for_binding(&mut self,
+                                     var: NodeId,
+                                     span: Span,
+                                     for_guard: Option<ForGuard>) {
+        let local_id = self.var_indices[&var].local_id(for_guard);
         let var_ty = self.local_decls[local_id].ty;
         let hir_id = self.hir.tcx().hir.node_to_hir_id(var);
         let region_scope = self.hir.region_scope_tree.var_scope(hir_id.local_id);
@@ -770,9 +847,15 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                                        vec![candidate.next_candidate_pre_binding_block],
                                });
 
-        self.bind_matched_candidate(block, candidate.bindings);
 
+        let autoref = self.hir.tcx().sess.opts.debugging_opts.nll_autoref_match_guard_bindings;
         if let Some(guard) = candidate.guard {
+            if autoref {
+                self.bind_matched_candidate_for_guard(block, &candidate.bindings);
+            } else {
+                self.bind_matched_candidate_for_arm_body(block, &candidate.bindings);
+            }
+
             // the block to branch to if the guard fails; if there is no
             // guard, this block is simply unreachable
             let guard = self.hir.mirror(guard);
@@ -785,6 +868,9 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                                    false_edge_block));
 
             let otherwise = self.cfg.start_new_block();
+            if autoref {
+                self.bind_matched_candidate_for_arm_body(block, &candidate.bindings);
+            }
             self.cfg.terminate(false_edge_block, source_info,
                                TerminatorKind::FalseEdges {
                                    real_target: otherwise,
@@ -793,33 +879,59 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                                });
             Some(otherwise)
         } else {
+            self.bind_matched_candidate_for_arm_body(block, &candidate.bindings);
             self.cfg.terminate(block, candidate_source_info,
                                TerminatorKind::Goto { target: arm_block });
             None
         }
     }
 
-    fn bind_matched_candidate(&mut self,
-                              block: BasicBlock,
-                              bindings: Vec<Binding<'tcx>>) {
-        debug!("bind_matched_candidate(block={:?}, bindings={:?})",
+    fn bind_matched_candidate_for_guard(&mut self,
+                                        block: BasicBlock,
+                                        bindings: &[Binding<'tcx>]) {
+        debug!("bind_matched_candidate_for_guard(block={:?}, bindings={:?})",
                block, bindings);
+
+        // Assign each of the bindings. This may trigger moves out of the candidate.
+        let re_erased = self.hir.tcx().types.re_erased;
+        for binding in bindings {
+            let source_info = self.source_info(binding.span);
+            let local = self.storage_live_binding(
+                block, binding.var_id, binding.span, Some(ForGuard));
+            // FIXME: why schedule drops if bindings are all shared-&'s?
+            self.schedule_drop_for_binding(binding.var_id, binding.span, Some(ForGuard));
+            let rvalue = Rvalue::Ref(re_erased, BorrowKind::Shared, binding.source.clone());
+            self.cfg.push_assign(block, source_info, &local, rvalue);
+        }
+    }
+
+    fn bind_matched_candidate_for_arm_body(&mut self,
+                                           block: BasicBlock,
+                                           bindings: &[Binding<'tcx>]) {
+        debug!("bind_matched_candidate_for_arm_body(block={:?}, bindings={:?})",
+                block, bindings);
 
         // Assign each of the bindings. This may trigger moves out of the candidate.
         for binding in bindings {
             let source_info = self.source_info(binding.span);
-            let local = self.storage_live_binding(block, binding.var_id, binding.span);
-            self.schedule_drop_for_binding(binding.var_id, binding.span);
+            let local = self.storage_live_binding(block, binding.var_id, binding.span, None);
+            self.schedule_drop_for_binding(binding.var_id, binding.span, None);
             let rvalue = match binding.binding_mode {
                 BindingMode::ByValue =>
-                    Rvalue::Use(self.consume_by_copy_or_move(binding.source)),
+                    Rvalue::Use(self.consume_by_copy_or_move(binding.source.clone())),
                 BindingMode::ByRef(region, borrow_kind) =>
-                    Rvalue::Ref(region, borrow_kind, binding.source),
+                    Rvalue::Ref(region, borrow_kind, binding.source.clone()),
             };
             self.cfg.push_assign(block, source_info, &local, rvalue);
         }
     }
 
+    /// Each binding (`ref mut var`/`ref var`/`mut var`/`var`, where
+    /// the bound `var` has type `T` in the arm body) in a pattern
+    /// maps to *two* locals. The first local is a binding for
+    /// occurrences of `var` in the guard, which will all have type
+    /// `&T`. The second local is a binding for occurrences of `var`
+    /// in the arm body, which will have type `T`.
     fn declare_binding(&mut self,
                        source_info: SourceInfo,
                        syntactic_scope: VisibilityScope,
@@ -827,13 +939,22 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                        name: Name,
                        var_id: NodeId,
                        var_ty: Ty<'tcx>)
-                       -> Local
+                       -> (Local, Local)
     {
         debug!("declare_binding(var_id={:?}, name={:?}, var_ty={:?}, source_info={:?}, \
                 syntactic_scope={:?})",
                var_id, name, var_ty, source_info, syntactic_scope);
 
-        let var = self.local_decls.push(LocalDecl::<'tcx> {
+        let for_guard = self.local_decls.push(LocalDecl::<'tcx> {
+            mutability,
+            ty: var_ty.clone(), // FIXME doesn't this need to be a ref to var_ty?
+            name: Some(name),
+            source_info,
+            syntactic_scope,
+            internal: false,
+            is_user_variable: true,
+        });
+        let for_arm_body = self.local_decls.push(LocalDecl::<'tcx> {
             mutability,
             ty: var_ty.clone(),
             name: Some(name),
@@ -842,10 +963,10 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             internal: false,
             is_user_variable: true,
         });
-        self.var_indices.insert(var_id, var);
+        let locals = LocalsForNode::Two { for_guard, for_arm_body };
+        debug!("declare_binding: vars={:?}", locals);
+        self.var_indices.insert(var_id, locals);
 
-        debug!("declare_binding: var={:?}", var);
-
-        var
+        (for_guard, for_arm_body)
     }
 }

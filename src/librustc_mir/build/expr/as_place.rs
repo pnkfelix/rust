@@ -10,7 +10,7 @@
 
 //! See docs in build/expr/mod.rs
 
-use build::{BlockAnd, BlockAndExtension, Builder};
+use build::{BlockAnd, BlockAndExtension, Builder, ForGuard};
 use build::expr::category::Category;
 use hair::*;
 use rustc::mir::*;
@@ -85,7 +85,13 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 block.and(Place::Local(Local::new(1)))
             }
             ExprKind::VarRef { id } => {
-                let index = this.var_indices[&id];
+                // let index = this.var_indices[&id];
+                let for_guard = if this.is_bound_var_in_guard(id) {
+                    Some(ForGuard)
+                } else {
+                    None
+                };
+                let index = this.var_indices[&id].local_id(for_guard);
                 block.and(Place::Local(index))
             }
             ExprKind::StaticRef { id } => {
