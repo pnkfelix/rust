@@ -110,7 +110,8 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             let body = self.hir.mirror(arm.body.clone());
             let scope = self.declare_bindings(None, body.span,
                                               LintLevel::Inherited,
-                                              &arm.patterns[0]);
+                                              &arm.patterns[0],
+                                              arm.guard.is_some());
             (body, scope.unwrap_or(self.visibility_scope))
         }).collect();
 
@@ -302,7 +303,8 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                             mut var_scope: Option<VisibilityScope>,
                             scope_span: Span,
                             lint_level: LintLevel,
-                            pattern: &Pattern<'tcx>)
+                            pattern: &Pattern<'tcx>,
+                            has_guard: bool)
                             -> Option<VisibilityScope> {
         assert!(!(var_scope.is_some() && lint_level.is_explicit()),
                 "can't have both a var and a lint scope at the same time");
@@ -324,7 +326,8 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 span,
                 scope: var_scope.unwrap()
             };
-            this.declare_binding(source_info, syntactic_scope, mutability, name, var, ty);
+            this.declare_binding(source_info, syntactic_scope, mutability, name, var, ty,
+                                 has_guard);
         });
         var_scope
     }
@@ -938,22 +941,13 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                        mutability: Mutability,
                        name: Name,
                        var_id: NodeId,
-                       var_ty: Ty<'tcx>)
-                       -> (Local, Local)
+                       var_ty: Ty<'tcx>,
+                       has_guard: bool)
     {
         debug!("declare_binding(var_id={:?}, name={:?}, var_ty={:?}, source_info={:?}, \
                 syntactic_scope={:?})",
                var_id, name, var_ty, source_info, syntactic_scope);
 
-        let for_guard = self.local_decls.push(LocalDecl::<'tcx> {
-            mutability,
-            ty: var_ty.clone(), // FIXME doesn't this need to be a ref to var_ty?
-            name: Some(name),
-            source_info,
-            syntactic_scope,
-            internal: false,
-            is_user_variable: true,
-        });
         let for_arm_body = self.local_decls.push(LocalDecl::<'tcx> {
             mutability,
             ty: var_ty.clone(),
@@ -963,10 +957,21 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             internal: false,
             is_user_variable: true,
         });
-        let locals = LocalsForNode::Two { for_guard, for_arm_body };
+        let locals = if has_guard {
+            let for_guard = self.local_decls.push(LocalDecl::<'tcx> {
+                mutability,
+                ty: var_ty.clone(), // FIXME doesn't this need to be a ref to var_ty?
+                name: Some(name),
+                source_info,
+                syntactic_scope,
+                internal: false,
+                is_user_variable: true,
+            });
+            LocalsForNode::Two { for_guard, for_arm_body }
+        } else {
+            LocalsForNode::One(for_arm_body)
+        };
         debug!("declare_binding: vars={:?}", locals);
         self.var_indices.insert(var_id, locals);
-
-        (for_guard, for_arm_body)
     }
 }

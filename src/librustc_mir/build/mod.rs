@@ -688,7 +688,8 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                     }
                     _ => {
                         scope = self.declare_bindings(scope, ast_body.span,
-                                                      LintLevel::Inherited, &pattern);
+                                                      LintLevel::Inherited, &pattern,
+                                                      false);
                         unpack!(block = self.place_into_pattern(block, pattern, &place));
                     }
                 }
