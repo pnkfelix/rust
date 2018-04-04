@@ -13,7 +13,7 @@
 //! includes the high-level algorithm, the submodules contain the
 //! details.
 
-use build::{BlockAnd, BlockAndExtension, Builder, ForGuard, LocalsForNode};
+use build::{BlockAnd, BlockAndExtension, Builder, ForGuard, GuardFrame, LocalsForNode};
 use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::bitvec::BitVector;
 use rustc::ty::{self, Ty};
@@ -34,7 +34,7 @@ mod util;
 fn inject_borrow<'a, 'gcx, 'tcx>(tcx: ty::TyCtxt<'a, 'gcx, 'tcx>,
                                  place: Place<'tcx>)
                                  -> Rvalue<'tcx> {
-    assert!(tcx.sess.nll());
+    assert!(tcx.nll());
     Rvalue::Ref(tcx.types.re_erased, BorrowKind::Shared, place)
 }
 
@@ -69,7 +69,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         self.cfg.push_assign(block, dummy_source_info, &dummy_temp, dummy_access);
 
         let source_info = self.source_info(span);
-        let borrowed_input_temp = if tcx.sess.nll() {
+        let borrowed_input_temp = if tcx.nll() {
             let borrowed_input = inject_borrow(tcx, discriminant_place.clone());
             let borrowed_input_ty = borrowed_input.ty(&self.local_decls, tcx);
             let borrowed_input_temp = self.temp(borrowed_input_ty, span);
@@ -855,6 +855,11 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         if let Some(guard) = candidate.guard {
             if autoref {
                 self.bind_matched_candidate_for_guard(block, &candidate.bindings);
+                let guard_frame = GuardFrame {
+                    locals: candidate.bindings.iter().map(|binding| binding.var_id).collect(),
+                };
+                debug!("Entering guard translation context: {:?}", guard_frame);
+                self.guard_context.push(guard_frame);
             } else {
                 self.bind_matched_candidate_for_arm_body(block, &candidate.bindings);
             }
@@ -864,6 +869,10 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             let guard = self.hir.mirror(guard);
             let source_info = self.source_info(guard.span);
             let cond = unpack!(block = self.as_local_operand(block, guard));
+            if autoref {
+                let guard_frame = self.guard_context.pop().unwrap();
+                debug!("Exiting guard translation context with locals: {:?}", guard_frame);
+            }
 
             let false_edge_block = self.cfg.start_new_block();
             self.cfg.terminate(block, source_info,
