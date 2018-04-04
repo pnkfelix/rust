@@ -625,15 +625,14 @@ impl<'a, 'gcx, 'tcx> BitDenotation for Borrows<'a, 'gcx, 'tcx> {
                     if let RegionKind::ReEmpty = region {
                         // If the borrowed value dies before the borrow is used, the region for
                         // the borrow can be empty. Don't track the borrow in that case.
-                        debug!("Borrows::statement_effect_on_borrows (is_activations: {}) \
+                        debug!("Borrows::statement_effect_on_borrows \
                                 location: {:?} stmt: {:?} has empty region, killing {:?}",
-                               is_activations, location, stmt.kind, index);
+                               location, stmt.kind, index);
                         sets.kill(&ReserveOrActivateIndex::active(*index));
                         return
                     } else {
-                        debug!("Borrows::statement_effect_on_borrows (is_activations: {}) \
-                                location: {:?} stmt: {:?}",
-                               is_activations, location, stmt.kind);
+                        debug!("Borrows::statement_effect_on_borrows location: {:?} stmt: {:?}",
+                               location, stmt.kind);
                     }
 
                     assert!(self.region_map.get(region).unwrap_or_else(|| {
