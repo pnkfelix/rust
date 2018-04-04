@@ -86,13 +86,24 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             }
             ExprKind::VarRef { id } => {
                 // let index = this.var_indices[&id];
+                let autoderef;
                 let for_guard = if this.is_bound_var_in_guard(id) {
+                    autoderef = this.hir.tcx().sess.opts.debugging_opts
+                        .nll_autoref_match_guard_bindings;
                     Some(ForGuard)
                 } else {
+                    autoderef = false;
                     None
                 };
                 let index = this.var_indices[&id].local_id(for_guard);
-                block.and(Place::Local(index))
+                let place = if autoderef {
+                    debug!("VarRef autoderefing in guard, var: {:?}", id);
+                    Place::Local(index).deref()
+                } else {
+                    debug!("VarRef no autoderef for this, var: {:?}", id);
+                    Place::Local(index)
+                };
+                block.and(place)
             }
             ExprKind::StaticRef { id } => {
                 block.and(Place::Static(Box::new(Static { def_id: id, ty: expr.ty })))
