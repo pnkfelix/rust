@@ -323,6 +323,7 @@ enum LocalsForNode {
     Two { for_guard: Local, for_arm_body: Local },
 }
 
+#[derive(Debug)]
 struct GuardFrame {
     /// These are the id's of names that are bound by patterns of the
     /// arm of *this* guard.
