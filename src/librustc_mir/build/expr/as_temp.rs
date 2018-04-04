@@ -47,7 +47,18 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             });
         }
 
-        let expr_ty = expr.ty;
+        let expr_ty = match expr.kind {
+            ExprKind::VarRef { id } if this.is_bound_var_in_guard(id) => {
+                debug!("VarRef {:?} is_bound_var_in_guard so creating indirect ref, \
+                        source_info: {:?}", id, source_info);
+                this.hir.tcx().mk_imm_ref(this.hir.tcx().types.re_erased, expr.ty)
+            }
+            _ => {
+                debug!("ExprKind {:?} not bound var in guard so we use it directly, \
+                        source_info: {:?}", expr.kind, source_info);
+                expr.ty
+            }
+        };
         let temp = this.local_decls.push(LocalDecl::new_temp(expr_ty, expr_span));
 
         if !expr_ty.is_never() {
