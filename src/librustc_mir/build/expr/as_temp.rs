@@ -47,17 +47,22 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             });
         }
 
-        let expr_ty = match expr.kind {
-            ExprKind::VarRef { id } if this.is_bound_var_in_guard(id) => {
-                debug!("VarRef {:?} is_bound_var_in_guard so creating indirect ref, \
-                        source_info: {:?}", id, source_info);
-                this.hir.tcx().mk_imm_ref(this.hir.tcx().types.re_erased, expr.ty)
+        let mut indirect_ref = false;
+        if let ExprKind::VarRef { id } = expr.kind {
+            if let Some(bm) = this.is_bound_var_in_guard(id) {
+                if bm.indirect_ref_in_guard_expression(this.hir.tcx()) {
+                    indirect_ref = true;
+                }
             }
-            _ => {
-                debug!("ExprKind {:?} not bound var in guard so we use it directly, \
-                        source_info: {:?}", expr.kind, source_info);
-                expr.ty
-            }
+        }
+        let expr_ty = if indirect_ref {
+            debug!("expr {:?} is_bound_var_in_guard so creating indirect ref, \
+                    source_info: {:?}", expr.kind, source_info);
+            this.hir.tcx().mk_imm_ref(this.hir.tcx().types.re_erased, expr.ty)
+        } else {
+            debug!("expr {:?} not bound var in guard so we use it directly, \
+                    source_info: {:?}", expr.kind, source_info);
+            expr.ty
         };
         let temp = this.local_decls.push(LocalDecl::new_temp(expr_ty, expr_span));
 

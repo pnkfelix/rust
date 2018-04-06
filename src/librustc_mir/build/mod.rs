@@ -312,8 +312,15 @@ struct Builder<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
 }
 
 impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
-    fn is_bound_var_in_guard(&self, id: ast::NodeId) -> bool {
-        self.guard_context.iter().any(|frame| frame.locals.contains(&id))
+    fn is_bound_var_in_guard(&self, id: ast::NodeId) -> Option<PatternBindingMode> {
+        for frame in &self.guard_context {
+            for GuardFrameLocal { id: local_id, binding_mode } in &frame.locals {
+                if *local_id == id {
+                    return Some(binding_mode.clone());
+                }
+            }
+        }
+        return None;
     }
 }
 
@@ -321,6 +328,45 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
 enum LocalsForNode {
     One(Local),
     Two { for_guard: Local, for_arm_body: Local },
+}
+
+#[derive(Copy, Clone, Debug)]
+enum PatternBindingMode {
+    ByValue,
+    ByRef(BorrowKind),
+}
+
+impl PatternBindingMode {
+    fn new(bm: BindingMode) -> PatternBindingMode {
+        match bm {
+            BindingMode::ByValue => PatternBindingMode::ByValue,
+            BindingMode::ByRef(_, bk) => PatternBindingMode::ByRef(bk),
+        }
+    }
+
+    fn indirect_ref_in_guard_expression(&self, tcx: TyCtxt) -> bool {
+        tcx.sess.opts.debugging_opts.nll_autoref_match_guard_bindings &&
+            match *self {
+                PatternBindingMode::ByValue => true,
+                PatternBindingMode::ByRef(..) => false,
+            }
+    }
+}
+
+
+#[derive(Debug)]
+struct GuardFrameLocal {
+    id: ast::NodeId,
+    binding_mode: PatternBindingMode,
+}
+
+impl GuardFrameLocal {
+    fn new(id: ast::NodeId, binding_mode: BindingMode) -> Self {
+        GuardFrameLocal {
+            id: id,
+            binding_mode: PatternBindingMode::new(binding_mode),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -335,8 +381,8 @@ struct GuardFrame {
     ///      P1(id1) if (... (match E2 { P2(id2) if ... => B2 })) => B1,
     /// }
     ///
-    /// here, when building for
-    locals: Vec<ast::NodeId>,
+    /// here, when building for FIXME
+    locals: Vec<GuardFrameLocal>,
 }
 
 /// Option<ForGuard> is isomorphic to a boolean flag.

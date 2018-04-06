@@ -87,14 +87,14 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             ExprKind::VarRef { id } => {
                 // let index = this.var_indices[&id];
                 let autoderef;
-                let for_guard = if this.is_bound_var_in_guard(id) {
-                    autoderef = this.hir.tcx().sess.opts.debugging_opts
-                        .nll_autoref_match_guard_bindings;
-                    Some(ForGuard)
+                let for_guard;
+                if let Some(binding_mode) = this.is_bound_var_in_guard(id) {
+                    autoderef = binding_mode.indirect_ref_in_guard_expression(this.hir.tcx());
+                    for_guard = Some(ForGuard);
                 } else {
                     autoderef = false;
-                    None
-                };
+                    for_guard = None;
+                }
                 let index = this.var_indices[&id].local_id(for_guard);
                 let place = if autoderef {
                     debug!("VarRef autoderefing in guard, var: {:?}", id);

@@ -135,7 +135,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                             }
                         }
 
-                        this.visit_bindings(&pattern, &mut |this, _, _, node, span, _| {
+                        this.visit_bindings(&pattern, &mut |this, _, _, _, node, span, _| {
                             this.storage_live_binding(block, node, span, None);
                             this.schedule_drop_for_binding(node, span, None);
                         })

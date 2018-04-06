@@ -13,7 +13,8 @@
 //! includes the high-level algorithm, the submodules contain the
 //! details.
 
-use build::{BlockAnd, BlockAndExtension, Builder, ForGuard, GuardFrame, LocalsForNode};
+use build::{BlockAnd, BlockAndExtension, Builder};
+use build::{ForGuard, GuardFrame, GuardFrameLocal, LocalsForNode};
 use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::bitvec::BitVector;
 use rustc::ty::{self, Ty};
@@ -309,7 +310,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         assert!(!(var_scope.is_some() && lint_level.is_explicit()),
                 "can't have both a var and a lint scope at the same time");
         let mut syntactic_scope = self.visibility_scope;
-        self.visit_bindings(pattern, &mut |this, mutability, name, var, span, ty| {
+        self.visit_bindings(pattern, &mut |this, mutability, binding_mode, name, var, span, ty| {
             if var_scope.is_none() {
                 var_scope = Some(this.new_visibility_scope(scope_span,
                                                            LintLevel::Inherited,
@@ -326,8 +327,8 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 span,
                 scope: var_scope.unwrap()
             };
-            this.declare_binding(source_info, syntactic_scope, mutability, name, var, ty,
-                                 has_guard);
+            this.declare_binding(source_info, syntactic_scope, mutability, binding_mode, name, var,
+                                 ty, has_guard);
         });
         var_scope
     }
@@ -360,11 +361,11 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
     }
 
     pub fn visit_bindings<F>(&mut self, pattern: &Pattern<'tcx>, f: &mut F)
-        where F: FnMut(&mut Self, Mutability, Name, NodeId, Span, Ty<'tcx>)
+        where F: FnMut(&mut Self, Mutability, BindingMode<'tcx>, Name, NodeId, Span, Ty<'tcx>)
     {
         match *pattern.kind {
-            PatternKind::Binding { mutability, name, var, ty, ref subpattern, .. } => {
-                f(self, mutability, name, var, pattern.span, ty);
+            PatternKind::Binding { mutability, mode, name, var, ty, ref subpattern, .. } => {
+                f(self, mutability, mode, name, var, pattern.span, ty);
                 if let Some(subpattern) = subpattern.as_ref() {
                     self.visit_bindings(subpattern, f);
                 }
@@ -856,7 +857,9 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             if autoref {
                 self.bind_matched_candidate_for_guard(block, &candidate.bindings);
                 let guard_frame = GuardFrame {
-                    locals: candidate.bindings.iter().map(|binding| binding.var_id).collect(),
+                    locals: candidate.bindings.iter()
+                        .map(|b| GuardFrameLocal::new(b.var_id, b.binding_mode))
+                        .collect(),
                 };
                 debug!("Entering guard translation context: {:?}", guard_frame);
                 self.guard_context.push(guard_frame);
@@ -948,6 +951,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                        source_info: SourceInfo,
                        syntactic_scope: VisibilityScope,
                        mutability: Mutability,
+                       binding_mode: BindingMode<'tcx>,
                        name: Name,
                        var_id: NodeId,
                        var_ty: Ty<'tcx>,
@@ -957,6 +961,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 syntactic_scope={:?})",
                var_id, name, var_ty, source_info, syntactic_scope);
 
+        let tcx = self.hir.tcx();
         let for_arm_body = self.local_decls.push(LocalDecl::<'tcx> {
             mutability,
             ty: var_ty.clone(),
@@ -967,9 +972,21 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             is_user_variable: true,
         });
         let locals = if has_guard {
+            let ty = match binding_mode {
+                // ByValue: introduce level of indirection
+                BindingMode::ByValue => tcx.mk_imm_ref(tcx.types.re_erased, var_ty),
+                // ByRef: force imm ref type variant
+                BindingMode::ByRef(..) => {
+                    if let ty::TyRef(_, ty::TypeAndMut { ty, mutbl: _ }) =  var_ty.sty {
+                        tcx.mk_imm_ref(tcx.types.re_erased, ty)
+                    } else {
+                        bug!("a ByRef binding must carry a TyRef");
+                    }
+                }
+            };
             let for_guard = self.local_decls.push(LocalDecl::<'tcx> {
                 mutability,
-                ty: var_ty.clone(), // FIXME doesn't this need to be a ref to var_ty?
+                ty,
                 name: Some(name),
                 source_info,
                 syntactic_scope,
