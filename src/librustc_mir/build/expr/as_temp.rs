@@ -56,7 +56,10 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             }
         }
         let expr_ty = if indirect_ref {
-            debug!("expr {:?} is_bound_var_in_guard so creating indirect ref, \
+            // FIXME: do I have this backwards? Should I be
+            // derefencing the resulting value, rather than creating a
+            // reference type for it?
+            debug!("expr {:?} is_bound_var_in_guard so creating indirect ref FIXME, \
                     source_info: {:?}", expr.kind, source_info);
             this.hir.tcx().mk_imm_ref(this.hir.tcx().types.re_erased, expr.ty)
         } else {

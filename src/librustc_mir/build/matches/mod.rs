@@ -292,7 +292,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         }
 
         // now apply the bindings, which will also declare the variables
-        self.bind_matched_candidate_for_arm_body(block, &candidate.bindings);
+        self.bind_matched_candidate_for_arm_body(block, &candidate.bindings, false);
 
         block.unit()
     }
@@ -864,7 +864,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 debug!("Entering guard translation context: {:?}", guard_frame);
                 self.guard_context.push(guard_frame);
             } else {
-                self.bind_matched_candidate_for_arm_body(block, &candidate.bindings);
+                self.bind_matched_candidate_for_arm_body(block, &candidate.bindings, false);
             }
 
             // the block to branch to if the guard fails; if there is no
@@ -884,7 +884,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
 
             let otherwise = self.cfg.start_new_block();
             if autoref {
-                self.bind_matched_candidate_for_arm_body(block, &candidate.bindings);
+                self.bind_matched_candidate_for_arm_body(block, &candidate.bindings, true);
             }
             self.cfg.terminate(false_edge_block, source_info,
                                TerminatorKind::FalseEdges {
@@ -894,7 +894,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                                });
             Some(otherwise)
         } else {
-            self.bind_matched_candidate_for_arm_body(block, &candidate.bindings);
+            self.bind_matched_candidate_for_arm_body(block, &candidate.bindings, false);
             self.cfg.terminate(block, candidate_source_info,
                                TerminatorKind::Goto { target: arm_block });
             None
@@ -911,31 +911,84 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         let re_erased = self.hir.tcx().types.re_erased;
         for binding in bindings {
             let source_info = self.source_info(binding.span);
-            let local = self.storage_live_binding(
+            let local_for_guard = self.storage_live_binding(
                 block, binding.var_id, binding.span, Some(ForGuard));
-            // FIXME: why schedule drops if bindings are all shared-&'s?
+            // FIXME: why schedule drops if bindings are all
+            // shared-&'s?  Potential answer: Because
+            // schedule_drop_for_binding also emits StorageDead's.
             self.schedule_drop_for_binding(binding.var_id, binding.span, Some(ForGuard));
-            let rvalue = Rvalue::Ref(re_erased, BorrowKind::Shared, binding.source.clone());
-            self.cfg.push_assign(block, source_info, &local, rvalue);
+            match binding.binding_mode {
+                BindingMode::ByValue => {
+                    let rvalue = Rvalue::Ref(re_erased, BorrowKind::Shared, binding.source.clone());
+                    self.cfg.push_assign(block, source_info, &local_for_guard, rvalue);
+                }
+                BindingMode::ByRef(region, borrow_kind) => {
+                    // NOTE tricky business: For `ref id` and `ref mut
+                    // id` patterns, we want `id` within the guard to
+                    // correspond to a temp of type `& &T` or `& &mut
+                    // T`, while within the arm body it will
+                    // correspond to a temp of type `&T` or `&mut T`,
+                    // as usual.
+                    //
+                    // But to inject the level of indirection, we need
+                    // something to point to.
+                    //
+                    // So:
+                    //
+                    // 1. First set up the local for the arm body
+                    //   (even though we have not yet evaluated the
+                    //   guard itself),
+                    //
+                    // 2. Then setup the local for the guard, which is
+                    //    just a reference to the local from step 1.
+                    //
+                    // Note that since we are setting up the local for
+                    // the arm body a bit eagerly here (and likewise
+                    // scheduling its drop code), we should *not* do
+                    // it redundantly later on.
+                    //
+                    // While we could have kept track of this with a
+                    // flag or collection of such bindings, the
+                    // treatment of all of these cases is uniform, so
+                    // we should be safe just avoiding the code
+                    // without maintaining such state.)
+                    let local_for_arm_body = self.storage_live_binding(
+                        block, binding.var_id, binding.span, None);
+                    self.schedule_drop_for_binding(binding.var_id, binding.span, None);
+                    let rvalue = Rvalue::Ref(region, borrow_kind, binding.source.clone());
+                    self.cfg.push_assign(block, source_info, &local_for_arm_body, rvalue);
+                    let rvalue = Rvalue::Ref(region, BorrowKind::Shared, local_for_arm_body);
+                    self.cfg.push_assign(block, source_info, &local_for_guard, rvalue);
+                }
+            }
         }
     }
 
     fn bind_matched_candidate_for_arm_body(&mut self,
                                            block: BasicBlock,
-                                           bindings: &[Binding<'tcx>]) {
-        debug!("bind_matched_candidate_for_arm_body(block={:?}, bindings={:?})",
-                block, bindings);
+                                           bindings: &[Binding<'tcx>],
+                                           already_initialized_state_for_refs: bool) {
+        debug!("bind_matched_candidate_for_arm_body(block={:?}, bindings={:?}, \
+                already_initialized_state_for_refs={:?})",
+               block, bindings, already_initialized_state_for_refs);
 
         // Assign each of the bindings. This may trigger moves out of the candidate.
         for binding in bindings {
+            if let BindingMode::ByRef(..) = binding.binding_mode {
+                // See "NOTE tricky business" above
+                if already_initialized_state_for_refs { continue; }
+            }
+
             let source_info = self.source_info(binding.span);
             let local = self.storage_live_binding(block, binding.var_id, binding.span, None);
             self.schedule_drop_for_binding(binding.var_id, binding.span, None);
             let rvalue = match binding.binding_mode {
-                BindingMode::ByValue =>
-                    Rvalue::Use(self.consume_by_copy_or_move(binding.source.clone())),
-                BindingMode::ByRef(region, borrow_kind) =>
-                    Rvalue::Ref(region, borrow_kind, binding.source.clone()),
+                BindingMode::ByValue => {
+                    Rvalue::Use(self.consume_by_copy_or_move(binding.source.clone()))
+                }
+                BindingMode::ByRef(region, borrow_kind) => {
+                    Rvalue::Ref(region, borrow_kind, binding.source.clone())
+                }
             };
             self.cfg.push_assign(block, source_info, &local, rvalue);
         }
@@ -971,19 +1024,23 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             internal: false,
             is_user_variable: true,
         });
-        let locals = if has_guard {
-            let ty = match binding_mode {
+        let locals = if has_guard && tcx.sess.opts.debugging_opts.nll_autoref_match_guard_bindings {
+            let ty_under_ref = match binding_mode {
                 // ByValue: introduce level of indirection
-                BindingMode::ByValue => tcx.mk_imm_ref(tcx.types.re_erased, var_ty),
-                // ByRef: force imm ref type variant
-                BindingMode::ByRef(..) => {
-                    if let ty::TyRef(_, ty::TypeAndMut { ty, mutbl: _ }) =  var_ty.sty {
-                        tcx.mk_imm_ref(tcx.types.re_erased, ty)
+                BindingMode::ByValue => var_ty,
+                // ByRef: force imm ref type variant, if using that codegen strategy
+                BindingMode::ByRef(..) =>
+                    if tcx.sess.opts.debugging_opts.nll_distinguish_byref_and_byval {
+                        if let ty::TyRef(_, ty::TypeAndMut { ty, mutbl: _ }) =  var_ty.sty {
+                            ty
+                        } else {
+                            bug!("a ByRef binding must carry a TyRef");
+                        }
                     } else {
-                        bug!("a ByRef binding must carry a TyRef");
+                        var_ty
                     }
-                }
             };
+            let ty = tcx.mk_imm_ref(tcx.types.re_erased, ty_under_ref);
             let for_guard = self.local_decls.push(LocalDecl::<'tcx> {
                 mutability,
                 ty,
