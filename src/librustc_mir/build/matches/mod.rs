@@ -36,7 +36,7 @@ fn inject_borrow<'a, 'gcx, 'tcx>(tcx: ty::TyCtxt<'a, 'gcx, 'tcx>,
                                  place: Place<'tcx>)
                                  -> Rvalue<'tcx> {
     assert!(tcx.nll());
-    Rvalue::Ref(tcx.types.re_erased, BorrowKind::Shared, place)
+    Rvalue::Ref(tcx.types.re_empty, BorrowKind::Shared, place)
 }
 
 impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
@@ -908,7 +908,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                block, bindings);
 
         // Assign each of the bindings. This may trigger moves out of the candidate.
-        let re_erased = self.hir.tcx().types.re_erased;
+        let re_empty = self.hir.tcx().types.re_empty;
         for binding in bindings {
             let source_info = self.source_info(binding.span);
             let local_for_guard = self.storage_live_binding(
@@ -919,7 +919,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             self.schedule_drop_for_binding(binding.var_id, binding.span, Some(ForGuard));
             match binding.binding_mode {
                 BindingMode::ByValue => {
-                    let rvalue = Rvalue::Ref(re_erased, BorrowKind::Shared, binding.source.clone());
+                    let rvalue = Rvalue::Ref(re_empty, BorrowKind::Shared, binding.source.clone());
                     self.cfg.push_assign(block, source_info, &local_for_guard, rvalue);
                 }
                 BindingMode::ByRef(region, borrow_kind) => {
@@ -1042,7 +1042,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                         var_ty
                     }
             };
-            let ty = tcx.mk_imm_ref(tcx.types.re_erased, ty_under_ref);
+            let ty = tcx.mk_imm_ref(tcx.types.re_empty, ty_under_ref);
             let for_guard = self.local_decls.push(LocalDecl::<'tcx> {
                 mutability,
                 ty,
