@@ -47,26 +47,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             });
         }
 
-        let mut indirect_ref = false;
-        if let ExprKind::VarRef { id } = expr.kind {
-            if let Some(bm) = this.is_bound_var_in_guard(id) {
-                if bm.indirect_ref_in_guard_expression(this.hir.tcx()) {
-                    indirect_ref = true;
-                }
-            }
-        }
-        let expr_ty = if indirect_ref {
-            // FIXME: do I have this backwards? Should I be
-            // derefencing the resulting value, rather than creating a
-            // reference type for it?
-            debug!("expr {:?} is_bound_var_in_guard so creating indirect ref FIXME, \
-                    source_info: {:?}", expr.kind, source_info);
-            this.hir.tcx().mk_imm_ref(this.hir.tcx().types.re_erased, expr.ty)
-        } else {
-            debug!("expr {:?} not bound var in guard so we use it directly, \
-                    source_info: {:?}", expr.kind, source_info);
-            expr.ty
-        };
+        let expr_ty = expr.ty;
         let temp = this.local_decls.push(LocalDecl::new_temp(expr_ty, expr_span));
 
         if !expr_ty.is_never() {
