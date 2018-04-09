@@ -852,7 +852,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                                });
 
 
-        let autoref = self.hir.tcx().sess.opts.debugging_opts.nll_autoref_match_guard_bindings;
+        let autoref = !self.hir.tcx().sess.opts.debugging_opts.nll_no_autoref_match_guard_bindings;
         if let Some(guard) = candidate.guard {
             if autoref {
                 self.bind_matched_candidate_for_guard(block, &candidate.bindings);
@@ -1024,7 +1024,9 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             internal: false,
             is_user_variable: true,
         });
-        let locals = if has_guard && tcx.sess.opts.debugging_opts.nll_autoref_match_guard_bindings {
+        let locals = if has_guard &&
+            !tcx.sess.opts.debugging_opts.nll_no_autoref_match_guard_bindings
+        {
             let ty_under_ref = match binding_mode {
                 // ByValue: introduce level of indirection
                 BindingMode::ByValue => var_ty,

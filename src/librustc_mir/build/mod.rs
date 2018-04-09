@@ -345,7 +345,7 @@ impl PatternBindingMode {
     }
 
     fn indirect_ref_in_guard_expression(&self, tcx: TyCtxt) -> bool {
-        if tcx.sess.opts.debugging_opts.nll_autoref_match_guard_bindings {
+        if !tcx.sess.opts.debugging_opts.nll_no_autoref_match_guard_bindings {
             if tcx.sess.opts.debugging_opts.nll_distinguish_byref_and_byval {
                 match *self {
                     PatternBindingMode::ByValue => true,
