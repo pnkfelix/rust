@@ -12,6 +12,7 @@
 use build;
 use hair::cx::Cx;
 use hair::{LintLevel, BindingMode, PatternKind};
+use hair::pattern::BindingInfo;
 use rustc::hir;
 use rustc::hir::def_id::{DefId, LocalDefId};
 use rustc::middle::region;
@@ -678,7 +679,8 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
 
                 match *pattern.kind {
                     // Don't introduce extra copies for simple bindings
-                    PatternKind::Binding { mutability, var, mode: BindingMode::ByValue, .. } => {
+                    PatternKind::Binding { binding_info: BindingInfo {
+                        mutability, var, mode: BindingMode::ByValue, .. }, .. } => {
                         self.local_decls[local].mutability = mutability;
                         self.var_indices.insert(var, LocalsForNode::One(local));
                     }
