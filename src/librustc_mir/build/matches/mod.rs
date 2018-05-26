@@ -18,10 +18,12 @@ use build::{GuardFrame, GuardFrameLocal, LocalsForNode};
 use build::ForGuard::{self, OutsideGuard, WithinGuard};
 use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::bitvec::BitVector;
+use rustc_data_structures::indexed_vec::Idx;
 use rustc::ty::{self, Ty};
 use rustc::mir::*;
 use rustc::hir;
 use hair::*;
+use hair::pattern::BindingInfo;
 use syntax::ast::{Name, NodeId};
 use syntax_pos::Span;
 
@@ -34,6 +36,13 @@ mod util;
 /// a match arm has a guard expression attached to it.
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct ArmHasGuard(pub bool);
+
+// FIXME: Should I instead do something like
+// enum ExpectedTy { NoneExpected, Expect(Ty), PatTyMismatch }
+/// ExpectedTy is a newtyped Ty; we just use it to keep the closure
+/// parameters straight in our visitor.
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct ExpectedTy<'tcx>(pub Ty<'tcx>);
 
 impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
     pub fn match_expr(&mut self,
@@ -178,9 +187,8 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                              -> BlockAnd<()> {
         // optimize the case of `let x = ...`
         match *irrefutable_pat.kind {
-            PatternKind::Binding { mode: BindingMode::ByValue,
-                                   var,
-                                   subpattern: None, .. } => {
+            PatternKind::Binding { binding_info: BindingInfo {
+                mode: BindingMode::ByValue, var, .. }, subpattern: None, .. } => {
                 let place = self.storage_live_binding(block, var, irrefutable_pat.span,
                                                       OutsideGuard);
 
@@ -247,7 +255,8 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         assert!(!(var_scope.is_some() && lint_level.is_explicit()),
                 "can't have both a var and a lint scope at the same time");
         let mut syntactic_scope = self.visibility_scope;
-        self.visit_bindings(pattern, &mut |this, mutability, name, var, span, ty| {
+        self.visit_bindings(pattern, None, &mut |this, binding_info, span, _expected_ty| {
+            let BindingInfo { mutability, name, var, ty, mode: _ } = *binding_info;
             if var_scope.is_none() {
                 var_scope = Some(this.new_visibility_scope(scope_span,
                                                            LintLevel::Inherited,
@@ -297,31 +306,80 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         self.schedule_drop(span, region_scope, &Place::Local(local_id), var_ty);
     }
 
-    pub fn visit_bindings<F>(&mut self, pattern: &Pattern<'tcx>, f: &mut F)
-        where F: FnMut(&mut Self, Mutability, Name, NodeId, Span, Ty<'tcx>)
+    pub fn visit_bindings<F>(&mut self,
+                             pattern: &Pattern<'tcx>,
+                             expected_ty: Option<ExpectedTy<'tcx>>,
+                             f: &mut F)
+        where F: FnMut(&mut Self, &BindingInfo<'tcx>, Span, Option<ExpectedTy<'tcx>>)
     {
+        let expected_sty = expected_ty.as_ref().map(|ty| &ty.0.sty);
         match *pattern.kind {
-            PatternKind::Binding { mutability, name, var, ty, ref subpattern, .. } => {
-                f(self, mutability, name, var, pattern.span, ty);
+            PatternKind::Binding { ref binding_info, ref subpattern } => {
+                f(self, binding_info, pattern.span, expected_ty);
                 if let Some(subpattern) = subpattern.as_ref() {
-                    self.visit_bindings(subpattern, f);
+                    self.visit_bindings(subpattern, expected_ty, f);
                 }
             }
             PatternKind::Array { ref prefix, ref slice, ref suffix } |
             PatternKind::Slice { ref prefix, ref slice, ref suffix } => {
+                let elem_ty = match expected_sty {
+                    Some(ty::TyArray(elem_ty, _)) |
+                    Some(ty::TySlice(elem_ty)) => Some(ExpectedTy(elem_ty)),
+                    None => None,
+                    _ => bug!("pattern/ty mismatch"),
+                };
                 for subpattern in prefix.iter().chain(slice).chain(suffix) {
-                    self.visit_bindings(subpattern, f);
+                    self.visit_bindings(subpattern, elem_ty, f);
                 }
             }
-            PatternKind::Constant { .. } | PatternKind::Range { .. } | PatternKind::Wild => {
+            PatternKind::Constant { .. } |
+            PatternKind::Range { .. } |
+            PatternKind::Wild => {
+
             }
             PatternKind::Deref { ref subpattern } => {
-                self.visit_bindings(subpattern, f);
+                let elem_ty = match expected_sty {
+                    Some(ty::TyRef(_rgn, elem_ty, _mut)) => Some(ExpectedTy(elem_ty)),
+                    None => None,
+                    _ => bug!("pattern/ty mismatch"),
+                };
+                self.visit_bindings(subpattern, elem_ty, f);
             }
-            PatternKind::Leaf { ref subpatterns } |
-            PatternKind::Variant { ref subpatterns, .. } => {
-                for subpattern in subpatterns {
-                    self.visit_bindings(&subpattern.pattern, f);
+            PatternKind::Leaf { ref subpatterns } => {
+                match expected_sty {
+                    Some(ty::TyTuple(ref elem_tys)) => {
+                        assert_eq!(subpatterns.len(), elem_tys.len());
+                        for (subpattern, elem_ty) in subpatterns.iter().zip(elem_tys.iter()) {
+                            self.visit_bindings(&subpattern.pattern, Some(ExpectedTy(elem_ty)), f);
+                        }
+                    }
+                    None => {
+                        for subpattern in subpatterns {
+                            self.visit_bindings(&subpattern.pattern, None, f);
+                        }
+                    }
+                    _ => bug!("pattern/ty mismatch"),
+                }
+            }
+            PatternKind::Variant { ref subpatterns, adt_def: _, variant_index, .. } => {
+                match expected_sty {
+                    Some(ty::TyAdt(adt_def_t, substs)) => {
+                        let variant = &adt_def_t.variants[variant_index];
+                        for i in 0..subpatterns.len() {
+                            if let Some(p) = subpatterns.iter().find(|p| p.field.index() == i) {
+                                let field_ty = variant.fields[i].ty(self.hir.tcx(), substs);
+                                self.visit_bindings(&p.pattern, Some(ExpectedTy(field_ty)), f);
+                            } else {
+                                bug!("yikes");
+                            }
+                        }
+                    }
+                    None => {
+                        for subpattern in subpatterns {
+                            self.visit_bindings(&subpattern.pattern, None, f);
+                        }
+                    }
+                    _ => bug!("pattern/ty mismatch"),
                 }
             }
         }
