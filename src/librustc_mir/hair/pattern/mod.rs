@@ -65,16 +65,21 @@ pub struct Pattern<'tcx> {
 }
 
 #[derive(Clone, Debug)]
+pub struct BindingInfo<'tcx> {
+    pub mutability: Mutability,
+    pub name: ast::Name,
+    pub mode: BindingMode<'tcx>,
+    pub var: ast::NodeId,
+    pub ty: Ty<'tcx>,
+}
+
+#[derive(Clone, Debug)]
 pub enum PatternKind<'tcx> {
     Wild,
 
     /// x, ref x, x @ P, etc
     Binding {
-        mutability: Mutability,
-        name: ast::Name,
-        mode: BindingMode<'tcx>,
-        var: ast::NodeId,
-        ty: Ty<'tcx>,
+        binding_info: BindingInfo<'tcx>,
         subpattern: Option<Pattern<'tcx>>,
     },
 
@@ -134,7 +139,9 @@ impl<'tcx> fmt::Display for Pattern<'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self.kind {
             PatternKind::Wild => write!(f, "_"),
-            PatternKind::Binding { mutability, name, mode, ref subpattern, .. } => {
+            PatternKind::Binding {
+                binding_info: BindingInfo{ mutability, name, mode, .. }, ref subpattern } =>
+            {
                 let is_mut = match mode {
                     BindingMode::ByValue => mutability == Mutability::Mut,
                     BindingMode::ByRef(_, bk) => {
@@ -486,11 +493,13 @@ impl<'a, 'tcx> PatternContext<'a, 'tcx> {
                 }
 
                 PatternKind::Binding {
-                    mutability,
-                    mode,
-                    name: name.node,
-                    var: id,
-                    ty: var_ty,
+                    binding_info: BindingInfo {
+                        mutability,
+                        mode,
+                        name: name.node,
+                        var: id,
+                        ty: var_ty,
+                    },
                     subpattern: self.lower_opt_pattern(sub),
                 }
             }
@@ -962,18 +971,22 @@ impl<'tcx> PatternFoldable<'tcx> for PatternKind<'tcx> {
         match *self {
             PatternKind::Wild => PatternKind::Wild,
             PatternKind::Binding {
-                mutability,
-                name,
-                mode,
-                var,
-                ty,
+                binding_info: BindingInfo {
+                    mutability,
+                    name,
+                    mode,
+                    var,
+                    ty,
+                },
                 ref subpattern,
             } => PatternKind::Binding {
-                mutability: mutability.fold_with(folder),
-                name: name.fold_with(folder),
-                mode: mode.fold_with(folder),
-                var: var.fold_with(folder),
-                ty: ty.fold_with(folder),
+                binding_info: BindingInfo {
+                    mutability: mutability.fold_with(folder),
+                    name: name.fold_with(folder),
+                    mode: mode.fold_with(folder),
+                    var: var.fold_with(folder),
+                    ty: ty.fold_with(folder),
+                },
                 subpattern: subpattern.fold_with(folder),
             },
             PatternKind::Variant {
