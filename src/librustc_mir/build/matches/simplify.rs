@@ -25,6 +25,7 @@
 use build::{BlockAnd, BlockAndExtension, Builder};
 use build::matches::{Binding, MatchPair, Candidate};
 use hair::*;
+use hair::pattern::BindingInfo;
 use rustc::mir::*;
 
 use std::mem;
@@ -68,7 +69,9 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 Ok(())
             }
 
-            PatternKind::Binding { name, mutability, mode, var, ty, ref subpattern } => {
+            PatternKind::Binding {
+                binding_info: BindingInfo { name, mutability, mode, var, ty }, ref subpattern } =>
+            {
                 candidate.bindings.push(Binding {
                     name,
                     mutability,
