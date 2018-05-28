@@ -10,11 +10,11 @@
 
 use build::{BlockAnd, BlockAndExtension, Builder};
 use build::ForGuard::OutsideGuard;
-use build::matches::ArmHasGuard;
+use build::matches::{ArmHasGuard, ExpectedTy};
 use hair::*;
-use hair::pattern::BindingInfo;
 use rustc::mir::*;
 use rustc::hir;
+use rustc::infer::canonical::Canonical;
 use syntax_pos::Span;
 
 impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
@@ -119,6 +119,27 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                     let scope = this.declare_bindings(None, remainder_span, lint_level, &pattern,
                                                       ArmHasGuard(false));
 
+                    let user_provided_tys = this.hir.tables.user_provided_tys();
+                    let c_ty = ty.and_then(|hir_id| user_provided_tys.get(hir_id).clone());
+                    let opt_canonical_variables = c_ty.map(|c_ty| c_ty.variables);
+                    let expected_ty = c_ty.map(|c_ty| ExpectedTy(c_ty.value));
+                    this.visit_bindings(
+                        &pattern, expected_ty, &mut |this, binding_info, _span, exp_ty| {
+                            let node = binding_info.var;
+                            if let Some(ty) = exp_ty {
+                                let c_ty = Canonical {
+                                    variables: opt_canonical_variables.unwrap(),
+                                    value: ty.0,
+                                };
+                                debug!("user_assert_ty: c_ty={:?}", c_ty);
+                                let local_id = this.var_local_id(node, OutsideGuard);
+                                this.cfg.push(block, Statement {
+                                    source_info,
+                                    kind: StatementKind::UserAssertTy(c_ty, local_id),
+                                });
+                            }
+                        });
+
                     // Evaluate the initializer, if present.
                     if let Some(init) = initializer {
                         unpack!(block = this.in_opt_scope(
@@ -129,22 +150,12 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                                 })
                             }));
                     } else {
-                        // FIXME(#47184): We currently only insert `UserAssertTy` statements for
-                        // patterns that are bindings, this is as we do not want to deconstruct
-                        // the type being assertion to match the pattern.
-                        if let PatternKind::Binding { binding_info: BindingInfo {
-                            var, .. }, .. } = *pattern.kind
-                        {
-                            if let Some(ty) = ty {
-                                this.user_assert_ty(block, ty, var, span);
-                            }
-                        }
-
-                        this.visit_bindings(&pattern, None, &mut |this, binding_info, span, _| {
-                            let node = binding_info.var;
-                            this.storage_live_binding(block, node, span, OutsideGuard);
-                            this.schedule_drop_for_binding(node, span, OutsideGuard);
-                        })
+                        this.visit_bindings(
+                            &pattern, expected_ty, &mut |this, binding_info, span, _exp_ty| {
+                                let node = binding_info.var;
+                                this.storage_live_binding(block, node, span, OutsideGuard);
+                                this.schedule_drop_for_binding(node, span, OutsideGuard);
+                            });
                     }
 
                     // Enter the visibility scope, after evaluating the initializer.
