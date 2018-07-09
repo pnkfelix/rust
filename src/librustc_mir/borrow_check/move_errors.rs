@@ -18,9 +18,9 @@ use dataflow::move_paths::{IllegalMoveOrigin, IllegalMoveOriginKind, MoveData};
 use dataflow::move_paths::{LookupResult, MoveError, MovePathIndex};
 use util::borrowck_errors::{BorrowckErrors, Origin};
 
-pub(crate) fn report_move_errors<'gcx, 'tcx>(
+pub(crate) fn report_move_errors<'tcx>(
     mir: &Mir<'tcx>,
-    tcx: TyCtxt<'_, 'gcx, 'tcx>,
+    tcx: TyCtxt<'_, '_, 'tcx>,
     move_errors: Vec<MoveError<'tcx>>,
     move_data: &MoveData<'tcx>,
 ) {
