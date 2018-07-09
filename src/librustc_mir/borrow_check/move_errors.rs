@@ -32,10 +32,10 @@ pub(crate) fn report_move_errors<'gcx, 'tcx>(
 }
 
 #[derive(Copy, Clone)]
-struct MoveErrorCtxt<'a, 'gcx: 'tcx, 'tcx: 'a> {
-    mir: &'a Mir<'tcx>,
-    tcx: TyCtxt<'a, 'gcx, 'tcx>,
-    move_data: &'a MoveData<'tcx>,
+struct MoveErrorCtxt<'cx, 'gcx: 'tcx, 'tcx: 'cx> {
+    mir: &'cx Mir<'tcx>,
+    tcx: TyCtxt<'cx, 'gcx, 'tcx>,
+    move_data: &'cx MoveData<'tcx>,
 }
 
 // Often when desugaring a pattern match we may have many individual moves in
@@ -76,7 +76,7 @@ enum GroupedMoveError<'tcx> {
     },
 }
 
-impl<'a, 'gcx, 'tcx> MoveErrorCtxt<'a, 'gcx, 'tcx> {
+impl<'cx, 'gcx, 'tcx> MoveErrorCtxt<'cx, 'gcx, 'tcx> {
     fn report_errors(self, move_errors: Vec<MoveError<'tcx>>) {
         let grouped_errors = self.group_move_errors(move_errors);
         for error in grouped_errors {
@@ -281,7 +281,7 @@ impl<'a, 'gcx, 'tcx> MoveErrorCtxt<'a, 'gcx, 'tcx> {
     fn add_move_hints(
         self,
         error: GroupedMoveError<'tcx>,
-        err: &mut DiagnosticBuilder<'a>,
+        err: &mut DiagnosticBuilder<'cx>,
         span: Span,
     ) {
         match error {
