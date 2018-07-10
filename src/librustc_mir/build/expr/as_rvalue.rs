@@ -95,7 +95,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 // and therefore is not considered during generator OIBIT
                 // determination. See the comment about `box` at `yield_in_scope`.
                 let result = this.local_decls.push(
-                    LocalDecl::new_internal(expr.ty, expr_span));
+                    LocalDecl::new_internal(expr.ty, expr_span, InternalOrigin::BoxExprAsRvalue));
                 this.cfg.push(block, Statement {
                     source_info,
                     kind: StatementKind::StorageLive(result)

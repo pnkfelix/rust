@@ -162,11 +162,27 @@ impl<'a, 'tcx> Visitor<'tcx> for UnsafetyChecker<'a, 'tcx> {
             }) => {
                 let old_source_info = self.source_info;
                 if let &Place::Local(local) = base {
-                    if self.mir.local_decls[local].internal {
+                    match self.mir.local_decls[local].internal {
                         // Internal locals are used in the `move_val_init` desugaring.
                         // We want to check unsafety against the source info of the
                         // desugaring, rather than the source info of the RHS.
-                        self.source_info = self.mir.local_decls[local].source_info;
+                        Some(InternalOrigin::MoveValInit) |
+                        Some(InternalOrigin::Generator) => {
+                            self.source_info = self.mir.local_decls[local].source_info;
+                        }
+
+                        Some(InternalOrigin::BoxExprAsRvalue) |
+                        Some(InternalOrigin::DropFlag) |
+                        Some(InternalOrigin::Lowered128BitOp) => {
+                            // Taking the conservative tack: other
+                            // internals do not need to skip the
+                            // unsafety check.
+                        }
+
+                        None => {
+                            // here, keep checking unsafety against
+                            // original source info.
+                        }
                     }
                 }
                 let base_ty = base.ty(self.mir, self.tcx).to_ty(self.tcx);

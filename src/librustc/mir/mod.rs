@@ -586,19 +586,27 @@ pub struct LocalDecl<'tcx> {
     /// These locals are not based on types in the source code and are only used
     /// for a few desugarings at the moment.
     ///
-    /// The generator transformation will sanity check the locals which are live
-    /// across a suspension point against the type components of the generator
-    /// which type checking knows are live across a suspension point. We need to
-    /// flag drop flags to avoid triggering this check as they are introduced
-    /// after typeck.
-    ///
-    /// Unsafety checking will also ignore dereferences of these locals,
-    /// so they can be used for raw pointers only used in a desugaring.
+    /// For Generator internals: The generator transformation will
+    /// sanity check the locals which are live across a suspension
+    /// point against the type components of the generator which type
+    /// checking knows are live across a suspension point. We need to
+    /// flag drop flags to avoid triggering this check as they are
+    /// introduced after typeck.
     ///
     /// This should be sound because the drop flags are fully algebraic, and
     /// therefore don't affect the OIBIT or outlives properties of the
     /// generator.
-    pub internal: bool,
+    ///
+    /// Unsafety checking will also ignore dereferences of Generator internal locals.
+    ///
+    /// For MoveValInit internals: we again ignore unsafety checking
+    /// so they can be used for raw pointers only used in the
+    /// move_val_init desugaring.
+    ///
+    /// FIXME: There are a number of other internals beyond generator
+    /// and move_val_init.  It might be good to shift the detailed
+    /// documentation here onto `enum InternalOrigin`.
+    pub internal: Option<InternalOrigin>,
 
     /// Type of this local.
     pub ty: Ty<'tcx>,
@@ -695,6 +703,15 @@ pub struct LocalDecl<'tcx> {
     pub visibility_scope: SourceScope,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable)]
+pub enum InternalOrigin {
+    BoxExprAsRvalue,
+    DropFlag,
+    Generator,
+    Lowered128BitOp,
+    MoveValInit,
+}
+
 impl<'tcx> LocalDecl<'tcx> {
     /// Returns true only if local is a binding that can itself be
     /// made mutable via the addition of the `mut` keyword, namely
@@ -735,6 +752,27 @@ impl<'tcx> LocalDecl<'tcx> {
         }
     }
 
+    /// If this returns true, then this is an internal local injected
+    /// by compiler in a manner that ensures the internal local does
+    /// not need to be included in the generator state.
+    pub fn cannot_live_across_generator_suspension_point(&self) -> bool {
+        match self.internal {
+            Some(InternalOrigin::Generator) => true,
+
+            // (see notes above `ScopeTree` field `yield_in_scope`.)
+            Some(InternalOrigin::BoxExprAsRvalue) => true,
+
+            // FIXME: pnkfelix inherited these cases during
+            // refactoring of the `internal` bool, but it would be
+            // verify their correctness.
+            Some(InternalOrigin::DropFlag) => true,
+            Some(InternalOrigin::Lowered128BitOp) => true,
+            Some(InternalOrigin::MoveValInit) => true,
+
+            None => false,
+        }
+    }
+
     /// Create a new `LocalDecl` for a temporary.
     #[inline]
     pub fn new_temp(ty: Ty<'tcx>, span: Span) -> Self {
@@ -747,14 +785,14 @@ impl<'tcx> LocalDecl<'tcx> {
                 scope: OUTERMOST_SOURCE_SCOPE,
             },
             visibility_scope: OUTERMOST_SOURCE_SCOPE,
-            internal: false,
+            internal: None,
             is_user_variable: None,
         }
     }
 
     /// Create a new `LocalDecl` for a internal temporary.
     #[inline]
-    pub fn new_internal(ty: Ty<'tcx>, span: Span) -> Self {
+    pub fn new_internal(ty: Ty<'tcx>, span: Span, origin: InternalOrigin) -> Self {
         LocalDecl {
             mutability: Mutability::Mut,
             ty,
@@ -764,7 +802,7 @@ impl<'tcx> LocalDecl<'tcx> {
                 scope: OUTERMOST_SOURCE_SCOPE,
             },
             visibility_scope: OUTERMOST_SOURCE_SCOPE,
-            internal: true,
+            internal: Some(origin),
             is_user_variable: None,
         }
     }
@@ -782,7 +820,7 @@ impl<'tcx> LocalDecl<'tcx> {
                 scope: OUTERMOST_SOURCE_SCOPE,
             },
             visibility_scope: OUTERMOST_SOURCE_SCOPE,
-            internal: false,
+            internal: None,
             name: None, // FIXME maybe we do want some name here?
             is_user_variable: None,
         }
@@ -2508,6 +2546,7 @@ CloneTypeFoldableAndLiftImpls! {
     SourceScope,
     SourceScopeData,
     SourceScopeLocalData,
+    InternalOrigin,
 }
 
 BraceStructTypeFoldableImpl! {

@@ -248,7 +248,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                         name: None,
                         source_info,
                         visibility_scope: source_info.scope,
-                        internal: true,
+                        internal: Some(InternalOrigin::MoveValInit),
                         is_user_variable: None,
                     });
                     let ptr_temp = Place::Local(ptr_temp);

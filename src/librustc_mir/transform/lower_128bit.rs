@@ -58,7 +58,8 @@ impl Lower128Bit {
                         None => None,
                         Some(ty) => {
                             let local_decl = LocalDecl::new_internal(
-                                ty, block.statements[i].source_info.span);
+                                ty, block.statements[i].source_info.span,
+                                InternalOrigin::Lowered128BitOp);
                             Some(local_decls.push(local_decl))
                         },
                     };

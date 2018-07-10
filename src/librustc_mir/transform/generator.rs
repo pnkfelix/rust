@@ -302,7 +302,7 @@ fn replace_result_variable<'tcx>(ret_ty: Ty<'tcx>,
         name: None,
         source_info,
         visibility_scope: source_info.scope,
-        internal: false,
+        internal: None,
         is_user_variable: None,
     };
     let new_ret_local = Local::new(mir.local_decls.len());
@@ -485,10 +485,8 @@ fn compute_layout<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 
     for (local, decl) in mir.local_decls.iter_enumerated() {
         // Ignore locals which are internal or not live
-        if !live_locals.contains(&local) || decl.internal {
-            continue;
-        }
-
+        if decl.cannot_live_across_generator_suspension_point() { continue; }
+        if !live_locals.contains(&local) { continue; }
         // Sanity check that typeck knows about the type of locals which are
         // live across a suspension point
         if !allowed.contains(&decl.ty) && !allowed_upvars.contains(&decl.ty) {
@@ -501,7 +499,7 @@ fn compute_layout<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     }
 
     let upvar_len = mir.upvar_decls.len();
-    let dummy_local = LocalDecl::new_internal(tcx.mk_nil(), mir.span);
+    let dummy_local = LocalDecl::new_internal(tcx.mk_nil(), mir.span, InternalOrigin::Generator);
 
     // Gather live locals and their indices replacing values in mir.local_decls with a dummy
     // to avoid changing local indices
@@ -643,7 +641,7 @@ fn create_generator_drop_shim<'a, 'tcx>(
         name: None,
         source_info,
         visibility_scope: source_info.scope,
-        internal: false,
+        internal: None,
         is_user_variable: None,
     };
 
@@ -659,7 +657,7 @@ fn create_generator_drop_shim<'a, 'tcx>(
         name: None,
         source_info,
         visibility_scope: source_info.scope,
-        internal: false,
+        internal: None,
         is_user_variable: None,
     };
 
