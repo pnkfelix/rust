@@ -606,7 +606,7 @@ impl<'a, 'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> EvalContext<'a, 'mir, 'tcx, M
                 )?;
             }
 
-            Ref(_, _, ref place) => {
+            Ref(_, _, _, ref place) => {
                 let src = self.eval_place(place)?;
                 // We ignore the alignment of the place here -- special handling for packed structs ends
                 // at the `&` operator.

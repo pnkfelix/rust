@@ -30,10 +30,11 @@ mod simplify;
 mod test;
 mod util;
 
-/// ArmHasGuard is isomorphic to a boolean flag. It indicates whether
-/// a match arm has a guard expression attached to it.
+/// ArmHasGuard is nearly isomorphic to a boolean flag. It indicates whether
+/// a match arm has a guard expression attached to it; if it does, then it
+/// carries the span of that guard.
 #[derive(Copy, Clone, Debug)]
-pub(crate) struct ArmHasGuard(pub bool);
+pub(crate) struct ArmHasGuard(pub Option<Span>);
 
 impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
     pub fn match_expr(&mut self,
@@ -74,8 +75,10 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             // inference to find an appropriate one. Therefore you can
             // only use this when NLL is turned on.
             assert!(tcx.use_mir_borrowck());
-            let borrowed_input =
-                Rvalue::Ref(tcx.types.re_empty, BorrowKind::Shared, discriminant_place.clone());
+            let borrowed_input = Rvalue::Ref(tcx.types.re_empty,
+                                             BorrowOrigin::MatchInput,
+                                             BorrowKind::Shared,
+                                             discriminant_place.clone());
             let borrowed_input_ty = borrowed_input.ty(&self.local_decls, tcx);
             let borrowed_input_temp = self.temp(borrowed_input_ty, span);
             self.cfg.push_assign(block, source_info, &borrowed_input_temp, borrowed_input);
@@ -97,7 +100,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             let scope = self.declare_bindings(None, body.span,
                                               LintLevel::Inherited,
                                               &arm.patterns[0],
-                                              ArmHasGuard(arm.guard.is_some()),
+                                              ArmHasGuard(arm.guard.as_ref().map(|g|g.span())),
                                               Some((Some(&discriminant_place), discriminant_span)));
             (body, scope.unwrap_or(self.source_scope))
         }).collect();
@@ -1067,7 +1070,10 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             self.schedule_drop_for_binding(binding.var_id, binding.span, RefWithinGuard);
             match binding.binding_mode {
                 BindingMode::ByValue => {
-                    let rvalue = Rvalue::Ref(re_empty, BorrowKind::Shared, binding.source.clone());
+                    let rvalue = Rvalue::Ref(re_empty,
+                                             BorrowOrigin::MatchArmGuard,
+                                             BorrowKind::Shared,
+                                             binding.source.clone());
                     self.cfg.push_assign(block, source_info, &ref_for_guard, rvalue);
                 }
                 BindingMode::ByRef(region, borrow_kind) => {
@@ -1098,9 +1104,15 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                         BorrowKind::Shared | BorrowKind::Unique => borrow_kind,
                         BorrowKind::Mut { .. } => BorrowKind::Mut { allow_two_phase_borrow: true },
                     };
-                    let rvalue = Rvalue::Ref(region, borrow_kind, binding.source.clone());
+                    let rvalue = Rvalue::Ref(region,
+                                             BorrowOrigin::Ref,
+                                             borrow_kind,
+                                             binding.source.clone());
                     self.cfg.push_assign(block, source_info, &val_for_guard, rvalue);
-                    let rvalue = Rvalue::Ref(region, BorrowKind::Shared, val_for_guard);
+                    let rvalue = Rvalue::Ref(region,
+                                             BorrowOrigin::MatchArmGuard,
+                                             BorrowKind::Shared,
+                                             val_for_guard);
                     self.cfg.push_assign(block, source_info, &ref_for_guard, rvalue);
                 }
             }
@@ -1123,7 +1135,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                     Rvalue::Use(self.consume_by_copy_or_move(binding.source.clone()))
                 }
                 BindingMode::ByRef(region, borrow_kind) => {
-                    Rvalue::Ref(region, borrow_kind, binding.source.clone())
+                    Rvalue::Ref(region, BorrowOrigin::Ref, borrow_kind, binding.source.clone())
                 }
             };
             self.cfg.push_assign(block, source_info, &local, rvalue);
@@ -1174,13 +1186,15 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             }))),
         };
         let for_arm_body = self.local_decls.push(local.clone());
-        let locals = if has_guard.0 && tcx.all_pat_vars_are_implicit_refs_within_guards() {
+        let locals = if let (Some(guard_span), true) =
+            (has_guard.0, tcx.all_pat_vars_are_implicit_refs_within_guards())
+        {
             let val_for_guard =  self.local_decls.push(local);
             let ref_for_guard = self.local_decls.push(LocalDecl::<'tcx> {
                 mutability,
                 ty: tcx.mk_imm_ref(tcx.types.re_empty, var_ty),
                 name: Some(name),
-                source_info,
+                source_info: SourceInfo { span: guard_span, ..source_info },
                 visibility_scope,
                 internal: Some(InternalOrigin::MatchRefInArmGuard),
                 is_user_variable: None,

@@ -36,6 +36,9 @@ impl_stable_hash_for!(struct mir::UpvarDecl { debug_name, var_hir_id, by_ref, mu
 impl_stable_hash_for!(struct mir::BasicBlockData<'tcx> { statements, terminator, is_cleanup });
 impl_stable_hash_for!(struct mir::UnsafetyViolation { source_info, description, kind });
 impl_stable_hash_for!(struct mir::UnsafetyCheckResult { violations, unsafe_blocks });
+impl_stable_hash_for!(enum mir::BorrowOrigin {
+    Adjustment, AddrOf, CloneShim, Coercion, DropElaboration, InlinedDest, MatchInput,
+    MatchArmGuard, MatchTest, Ref, Upvar, });
 
 impl<'a> HashStable<StableHashingContext<'a>>
 for mir::BorrowKind {
@@ -421,8 +424,9 @@ impl<'a, 'gcx> HashStable<StableHashingContext<'a>> for mir::Rvalue<'gcx> {
                 operand.hash_stable(hcx, hasher);
                 val.hash_stable(hcx, hasher);
             }
-            mir::Rvalue::Ref(region, borrow_kind, ref place) => {
+            mir::Rvalue::Ref(region, borrow_origin, borrow_kind, ref place) => {
                 region.hash_stable(hcx, hasher);
+                borrow_origin.hash_stable(hcx, hasher);
                 borrow_kind.hash_stable(hcx, hasher);
                 place.hash_stable(hcx, hasher);
             }

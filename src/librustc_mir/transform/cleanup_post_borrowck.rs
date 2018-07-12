@@ -70,7 +70,7 @@ impl<'tcx> Visitor<'tcx> for GatherBorrowedRegions {
                     rvalue: &Rvalue<'tcx>,
                     location: Location) {
         // Gather regions that are used for borrows
-        if let Rvalue::Ref(r, _, _) = *rvalue {
+        if let Rvalue::Ref(r, _, _, _) = *rvalue {
             if let RegionKind::ReScope(ce) = *r {
                 self.seen_regions.insert(ce);
             }

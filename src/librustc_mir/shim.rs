@@ -457,7 +457,7 @@ impl<'a, 'tcx> CloneShimBuilder<'a, 'tcx> {
         let statement = self.make_statement(
             StatementKind::Assign(
                 ref_loc.clone(),
-                Rvalue::Ref(tcx.types.re_erased, BorrowKind::Shared, src)
+                Rvalue::Ref(tcx.types.re_erased, BorrowOrigin::CloneShim, BorrowKind::Shared, src)
             )
         );
 
@@ -715,7 +715,7 @@ fn build_call_shim<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                 source_info,
                 kind: StatementKind::Assign(
                     Place::Local(ref_rcvr),
-                    Rvalue::Ref(tcx.types.re_erased, borrow_kind, rcvr_l)
+                    Rvalue::Ref(tcx.types.re_erased, BorrowOrigin::Adjustment, borrow_kind, rcvr_l)
                 )
             });
             Operand::Move(Place::Local(ref_rcvr))

@@ -388,7 +388,7 @@ impl<'a, 'tcx> Qualifier<'a, 'tcx, 'tcx> {
             match *candidate {
                 Candidate::Ref(Location { block: bb, statement_index: stmt_idx }) => {
                     match self.mir[bb].statements[stmt_idx].kind {
-                        StatementKind::Assign(_, Rvalue::Ref(_, _, Place::Local(index))) => {
+                        StatementKind::Assign(_, Rvalue::Ref(_, _, _, Place::Local(index))) => {
                             promoted_temps.add(&index);
                         }
                         _ => {}
@@ -582,7 +582,7 @@ impl<'a, 'tcx> Visitor<'tcx> for Qualifier<'a, 'tcx, 'tcx> {
 
     fn visit_rvalue(&mut self, rvalue: &Rvalue<'tcx>, location: Location) {
         // Recurse through operands and places.
-        if let Rvalue::Ref(region, kind, ref place) = *rvalue {
+        if let Rvalue::Ref(region, _, kind, ref place) = *rvalue {
             let mut is_reborrow = false;
             if let Place::Projection(ref proj) = *place {
                 if let ProjectionElem::Deref = proj.elem {
@@ -619,7 +619,7 @@ impl<'a, 'tcx> Visitor<'tcx> for Qualifier<'a, 'tcx, 'tcx> {
             Rvalue::Discriminant(..) |
             Rvalue::Len(_) => {}
 
-            Rvalue::Ref(_, kind, ref place) => {
+            Rvalue::Ref(_, _, kind, ref place) => {
                 let ty = place.ty(self.mir, self.tcx).to_ty(self.tcx);
 
                 // Default to forbidding the borrow and/or its promotion,

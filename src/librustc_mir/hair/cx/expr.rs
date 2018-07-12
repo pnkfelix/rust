@@ -111,6 +111,7 @@ fn apply_adjustment<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                 span,
                 kind: ExprKind::Borrow {
                     region: deref.region,
+                    borrow_origin: BorrowOrigin::Adjustment,
                     borrow_kind: deref.mutbl.to_borrow_kind(),
                     arg: expr.to_ref(),
                 },
@@ -121,6 +122,7 @@ fn apply_adjustment<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
         Adjust::Borrow(AutoBorrow::Ref(r, m)) => {
             ExprKind::Borrow {
                 region: r,
+                borrow_origin: BorrowOrigin::Adjustment,
                 borrow_kind: m.to_borrow_kind(),
                 arg: expr.to_ref(),
             }
@@ -141,6 +143,7 @@ fn apply_adjustment<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                 span,
                 kind: ExprKind::Borrow {
                     region,
+                    borrow_origin: BorrowOrigin::Adjustment,
                     borrow_kind: m.to_borrow_kind(),
                     arg: expr.to_ref(),
                 },
@@ -287,6 +290,7 @@ fn make_mirror_unadjusted<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
             };
             ExprKind::Borrow {
                 region,
+                borrow_origin: BorrowOrigin::AddrOf,
                 borrow_kind: mutbl.to_borrow_kind(),
                 arg: expr.to_ref(),
             }
@@ -1043,6 +1047,7 @@ fn capture_freevar<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                 span: closure_expr.span,
                 kind: ExprKind::Borrow {
                     region: upvar_borrow.region,
+                    borrow_origin: BorrowOrigin::Upvar,
                     borrow_kind,
                     arg: captured_var.to_ref(),
                 },

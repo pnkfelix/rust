@@ -188,7 +188,7 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
         debug!("visit_rvalue(rvalue={:?}, location={:?})", rvalue, location);
 
         match rvalue {
-            Rvalue::Ref(region, _borrow_kind, borrowed_place) => {
+            Rvalue::Ref(region, _bo, _borrow_kind, borrowed_place) => {
                 // In some cases, e.g. when borrowing from an unsafe
                 // place, we don't bother to create a loan, since
                 // there are no conditions to validate.

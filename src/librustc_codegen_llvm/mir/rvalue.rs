@@ -361,7 +361,7 @@ impl<'a, 'tcx> FunctionCx<'a, 'tcx> {
                 })
             }
 
-            mir::Rvalue::Ref(_, bk, ref place) => {
+            mir::Rvalue::Ref(_, _, bk, ref place) => {
                 let cg_place = self.codegen_place(&bx, place);
 
                 let ty = cg_place.layout.ty;

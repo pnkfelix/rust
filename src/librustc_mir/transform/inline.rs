@@ -436,6 +436,7 @@ impl<'a, 'tcx> Inliner<'a, 'tcx> {
                     debug!("Creating temp for return destination");
                     let dest = Rvalue::Ref(
                         self.tcx.types.re_erased,
+                        BorrowOrigin::InlinedDest,
                         BorrowKind::Mut { allow_two_phase_borrow: false },
                         destination.0);
 

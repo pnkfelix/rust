@@ -107,7 +107,7 @@ impl<'tcx, 'b, 'c> Visitor<'tcx> for BorrowedLocalsVisitor<'b, 'c> {
     fn visit_rvalue(&mut self,
                     rvalue: &Rvalue<'tcx>,
                     location: Location) {
-        if let Rvalue::Ref(_, _, ref place) = *rvalue {
+        if let Rvalue::Ref(_, _, _, ref place) = *rvalue {
             if let Some(local) = find_local(place) {
                 self.sets.gen(&local);
             }

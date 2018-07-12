@@ -62,9 +62,9 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 let value_operand = unpack!(block = this.as_operand(block, scope, value));
                 block.and(Rvalue::Repeat(value_operand, count))
             }
-            ExprKind::Borrow { region, borrow_kind, arg } => {
+            ExprKind::Borrow { region, borrow_origin, borrow_kind, arg } => {
                 let arg_place = unpack!(block = this.as_place(block, arg));
-                block.and(Rvalue::Ref(region, borrow_kind, arg_place))
+                block.and(Rvalue::Ref(region, borrow_origin, borrow_kind, arg_place))
             }
             ExprKind::Binary { op, lhs, rhs } => {
                 let lhs = unpack!(block = this.as_operand(block, scope, lhs));

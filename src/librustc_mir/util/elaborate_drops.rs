@@ -533,6 +533,7 @@ impl<'l, 'b, 'tcx, D> DropCtxt<'l, 'b, 'tcx, D>
             statements: vec![self.assign(
                 &Place::Local(ref_place),
                 Rvalue::Ref(tcx.types.re_erased,
+                            BorrowOrigin::DropElaboration,
                             BorrowKind::Mut { allow_two_phase_borrow: false },
                             self.place.clone())
             )],
@@ -594,6 +595,7 @@ impl<'l, 'b, 'tcx, D> DropCtxt<'l, 'b, 'tcx, D>
         } else {
             (Rvalue::Ref(
                  tcx.types.re_erased,
+                 BorrowOrigin::DropElaboration,
                  BorrowKind::Mut { allow_two_phase_borrow: false },
                  self.place.clone().index(cur)),
              Rvalue::BinaryOp(BinOp::Add, copy(&Place::Local(cur)), one))
@@ -739,6 +741,7 @@ impl<'l, 'b, 'tcx, D> DropCtxt<'l, 'b, 'tcx, D>
             // end = Offset(cur, len);
             drop_block_stmts.push(self.assign(&tmp, Rvalue::Ref(
                 tcx.types.re_erased,
+                BorrowOrigin::DropElaboration,
                 BorrowKind::Mut { allow_two_phase_borrow: false },
                 self.place.clone()
             )));

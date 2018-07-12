@@ -424,6 +424,32 @@ impl From<Mutability> for hir::Mutability {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable)]
+pub enum BorrowOrigin {
+    /// The most obvious way to introduce a borrow: `&<expr>`
+    AddrOf,
+    Ref,
+
+    Adjustment,
+    CloneShim,
+    Coercion,
+    DropElaboration,
+    InlinedDest,
+    MatchInput,
+    MatchArmGuard,
+    MatchTest,
+    Upvar,
+}
+
+impl BorrowOrigin {
+    pub fn is_direct_from_source(self) -> bool {
+        match self {
+            BorrowOrigin::AddrOf | BorrowOrigin::Ref => true,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable)]
 pub enum BorrowKind {
     /// Data must be immutable and is aliasable.
     Shared,
@@ -1989,7 +2015,7 @@ pub enum Rvalue<'tcx> {
     Repeat(Operand<'tcx>, u64),
 
     /// &x or &mut x
-    Ref(Region<'tcx>, BorrowKind, Place<'tcx>),
+    Ref(Region<'tcx>, BorrowOrigin, BorrowKind, Place<'tcx>),
 
     /// length of a [X] or [X;n] value
     Len(Place<'tcx>),
@@ -2136,7 +2162,7 @@ impl<'tcx> Debug for Rvalue<'tcx> {
             UnaryOp(ref op, ref a) => write!(fmt, "{:?}({:?})", op, a),
             Discriminant(ref place) => write!(fmt, "discriminant({:?})", place),
             NullaryOp(ref op, ref t) => write!(fmt, "{:?}({:?})", op, t),
-            Ref(region, borrow_kind, ref place) => {
+            Ref(region, _borrow_origin, borrow_kind, ref place) => {
                 let kind_str = match borrow_kind {
                     BorrowKind::Shared => "",
                     BorrowKind::Mut { .. } | BorrowKind::Unique => "mut ",
@@ -2833,8 +2859,8 @@ impl<'tcx> TypeFoldable<'tcx> for Rvalue<'tcx> {
         match *self {
             Use(ref op) => Use(op.fold_with(folder)),
             Repeat(ref op, len) => Repeat(op.fold_with(folder), len),
-            Ref(region, bk, ref place) => {
-                Ref(region.fold_with(folder), bk, place.fold_with(folder))
+            Ref(region, bo, bk, ref place) => {
+                Ref(region.fold_with(folder), bo, bk, place.fold_with(folder))
             }
             Len(ref place) => Len(place.fold_with(folder)),
             Cast(kind, ref op, ty) => Cast(kind, op.fold_with(folder), ty.fold_with(folder)),
@@ -2871,7 +2897,7 @@ impl<'tcx> TypeFoldable<'tcx> for Rvalue<'tcx> {
         match *self {
             Use(ref op) => op.visit_with(visitor),
             Repeat(ref op, _) => op.visit_with(visitor),
-            Ref(region, _, ref place) => region.visit_with(visitor) || place.visit_with(visitor),
+            Ref(region, _, _, ref place) => region.visit_with(visitor) || place.visit_with(visitor),
             Len(ref place) => place.visit_with(visitor),
             Cast(_, ref op, ty) => op.visit_with(visitor) || ty.visit_with(visitor),
             BinaryOp(_, ref rhs, ref lhs) | CheckedBinaryOp(_, ref rhs, ref lhs) => {

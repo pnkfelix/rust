@@ -353,7 +353,7 @@ impl<'tcx> Visitor<'tcx> for BorrowedLocals {
     fn visit_rvalue(&mut self,
                     rvalue: &Rvalue<'tcx>,
                     location: Location) {
-        if let Rvalue::Ref(_, _, ref place) = *rvalue {
+        if let Rvalue::Ref(_, _, _, ref place) = *rvalue {
             mark_as_borrowed(place, self);
         }
 

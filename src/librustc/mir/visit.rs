@@ -538,7 +538,7 @@ macro_rules! make_mir_visitor {
                         self.visit_operand(value, location);
                     }
 
-                    Rvalue::Ref(ref $($mutability)* r, bk, ref $($mutability)* path) => {
+                    Rvalue::Ref(ref $($mutability)* r, _bo, bk, ref $($mutability)* path) => {
                         self.visit_region(r, location);
                         self.visit_place(path, PlaceContext::Borrow {
                             region: *r,

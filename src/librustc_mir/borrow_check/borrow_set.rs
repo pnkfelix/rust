@@ -158,7 +158,7 @@ impl<'a, 'gcx, 'tcx> Visitor<'tcx> for GatherBorrows<'a, 'gcx, 'tcx> {
         rvalue: &mir::Rvalue<'tcx>,
         location: mir::Location,
     ) {
-        if let mir::Rvalue::Ref(region, kind, ref borrowed_place) = *rvalue {
+        if let mir::Rvalue::Ref(region, _bo, kind, ref borrowed_place) = *rvalue {
             if borrowed_place.is_unsafe_place(self.tcx, self.mir) {
                 return;
             }
@@ -261,7 +261,7 @@ impl<'a, 'gcx, 'tcx> Visitor<'tcx> for GatherBorrows<'a, 'gcx, 'tcx> {
     }
 
     fn visit_rvalue(&mut self, rvalue: &mir::Rvalue<'tcx>, location: mir::Location) {
-        if let mir::Rvalue::Ref(region, kind, ref place) = *rvalue {
+        if let mir::Rvalue::Ref(region, _bo, kind, ref place) = *rvalue {
             // double-check that we already registered a BorrowData for this
 
             let borrow_index = self.location_map[&location];

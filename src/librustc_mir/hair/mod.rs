@@ -14,7 +14,7 @@
 //! unit-tested and separated from the Rust source and compiler data
 //! structures.
 
-use rustc::mir::{BinOp, BorrowKind, Field, Literal, UnOp};
+use rustc::mir::{BinOp, BorrowKind, BorrowOrigin, Field, Literal, UnOp};
 use rustc::hir::def_id::DefId;
 use rustc::middle::region;
 use rustc::ty::subst::Substs;
@@ -234,6 +234,7 @@ pub enum ExprKind<'tcx> {
     },
     Borrow {
         region: Region<'tcx>,
+        borrow_origin: BorrowOrigin,
         borrow_kind: BorrowKind,
         arg: ExprRef<'tcx>,
     },

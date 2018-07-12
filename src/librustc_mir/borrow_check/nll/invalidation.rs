@@ -405,7 +405,7 @@ impl<'cg, 'cx, 'tcx, 'gcx> InvalidationGenerator<'cg, 'cx, 'tcx, 'gcx> {
         rvalue: &Rvalue<'tcx>,
     ) {
         match *rvalue {
-            Rvalue::Ref(_ /*rgn*/, bk, ref place) => {
+            Rvalue::Ref(_ /*rgn*/, _bo, bk, ref place) => {
                 let access_kind = match bk {
                     BorrowKind::Shared => (Deep, Read(ReadKind::Borrow(bk))),
                     BorrowKind::Unique | BorrowKind::Mut { .. } => {

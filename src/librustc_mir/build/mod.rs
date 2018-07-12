@@ -736,7 +736,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                     _ => {
                         scope = self.declare_bindings(scope, ast_body.span,
                                                       LintLevel::Inherited, &pattern,
-                                                      matches::ArmHasGuard(false),
+                                                      matches::ArmHasGuard(None),
                                                       Some((Some(&place), span)));
                         unpack!(block = self.place_into_pattern(block, pattern, &place, false));
                     }

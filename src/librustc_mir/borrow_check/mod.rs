@@ -16,7 +16,7 @@ use rustc::hir::def_id::DefId;
 use rustc::hir::map::definitions::DefPathData;
 use rustc::infer::InferCtxt;
 use rustc::lint::builtin::UNUSED_MUT;
-use rustc::mir::{self, AggregateKind, BasicBlock, BorrowCheckResult, BorrowKind};
+use rustc::mir::{self, AggregateKind, BasicBlock, BorrowCheckResult, BorrowKind, BorrowOrigin};
 use rustc::mir::{ClearCrossCrate, Local, Location, Mir, Mutability, Operand, Place};
 use rustc::mir::{Field, Projection, ProjectionElem, Rvalue, Statement, StatementKind};
 use rustc::mir::{Terminator, TerminatorKind};
@@ -1113,7 +1113,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
         flow_state: &Flows<'cx, 'gcx, 'tcx>,
     ) {
         match *rvalue {
-            Rvalue::Ref(_ /*rgn*/, bk, ref place) => {
+            Rvalue::Ref(_ /*rgn*/, _bo, bk, ref place) => {
                 let access_kind = match bk {
                     BorrowKind::Shared => (Deep, Read(ReadKind::Borrow(bk))),
                     BorrowKind::Unique | BorrowKind::Mut { .. } => {
@@ -1896,17 +1896,32 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
             // This implementation attempts to emulate AST-borrowck prioritization
             // by trying (3.), then (2.) and finally falling back on (1.).
             let locations = mir.find_assignments(local);
-            if locations.len() > 0 {
-                let assignment_rhs_span = mir.source_info(locations[0]).span;
+            for (i, location) in locations.into_iter().enumerate() {
+                // At this point we have identified some assignment
+                // into the local. If the source RHS for the
+                // assignment is of the form `&EXPR`, then we can
+                // readily suggest `&mut EXPR` as an alternative. But
+                // if the assignment isn't a borrow (e.g. if it is
+                // just `let bar = foo;`), then then we should not
+                // bother attempting to construct a candidate
+                // rewritten expression.
+                let assignment_rhs_span = mir.source_info(location).span;
+                let origin = match mir[location.block].statements[location.statement_index].kind {
+                    StatementKind::Assign(_, Rvalue::Ref(_, origin, _, _)) => origin,
+                    _ => continue,
+                };
                 let snippet = tcx.sess.codemap().span_to_snippet(assignment_rhs_span);
                 if let Ok(src) = snippet {
-                    // pnkfelix inherited code; believes intention is
-                    // highlighted text will always be `&<expr>` and
-                    // thus can transform to `&mut` by slicing off
-                    // first ASCII character and prepending "&mut ".
-                    if src.starts_with('&') {
-                        let borrowed_expr = src[1..].to_string();
-                        return (assignment_rhs_span, format!("&mut {}", borrowed_expr));
+                    debug!("find_place_to_suggest_ampmut identified some assignment[{I}], \
+                            loc: {LOC:?} span: {SP:?} snippet: {SRC}",
+                           I=i, LOC=location, SP=assignment_rhs_span, SRC=src);
+                    match origin {
+                        BorrowOrigin::AddrOf => {
+                            assert!(src.starts_with("&"));
+                            let post_amp_snippet = src["&".len()..].to_string();
+                            return (assignment_rhs_span, format!("&mut {}", post_amp_snippet));
+                        }
+                        _ => continue,
                     }
                 }
             }
