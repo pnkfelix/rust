@@ -1837,8 +1837,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
             Place::Projection(box Projection {
                 base: Place::Local(local),
                 elem: ProjectionElem::Deref,
-            }) if self.mir.local_decls[*local].is_nonref_binding() =>
-            {
+            }) if self.mir.local_decls[*local].can_be_made_into_mutable_borrow() => {
                 let (err_help_span, suggested_code) =
                     find_place_to_suggest_ampmut(self.tcx, self.mir, *local);
                 err.span_suggestion(

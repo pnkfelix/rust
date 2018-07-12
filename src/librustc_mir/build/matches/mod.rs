@@ -1182,8 +1182,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 name: Some(name),
                 source_info,
                 visibility_scope,
-                // FIXME: should these secretly injected ref_for_guard's be marked as `internal`?
-                internal: None,
+                internal: Some(InternalOrigin::MatchRefInArmGuard),
                 is_user_variable: None,
             });
             LocalsForNode::Three { val_for_guard, ref_for_guard, for_arm_body }

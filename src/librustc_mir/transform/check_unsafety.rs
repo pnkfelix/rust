@@ -179,6 +179,7 @@ impl<'a, 'tcx> Visitor<'tcx> for UnsafetyChecker<'a, 'tcx> {
                             // unsafety check.
                         }
 
+                        Some(InternalOrigin::MatchRefInArmGuard) |
                         None => {
                             // here, keep checking unsafety against
                             // original source info.

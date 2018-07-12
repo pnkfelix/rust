@@ -709,6 +709,7 @@ pub enum InternalOrigin {
     DropFlag,
     Generator,
     Lowered128BitOp,
+    MatchRefInArmGuard,
     MoveValInit,
 }
 
@@ -733,6 +734,17 @@ impl<'tcx> LocalDecl<'tcx> {
             // true here for solely the first case).
             _ => false,
         }
+    }
+
+    /// Returns true only if the local is a binding with a
+    /// shared borrow that can be readily made into a mutable
+    /// borrow.
+    ///
+    /// One simple case where this returns false: match arm guards
+    /// have implicit borrows of any match pattern identifiers they
+    /// use; these implicit shared borrows cannot be made mutable.
+    pub fn can_be_made_into_mutable_borrow(&self) -> bool {
+        self.is_user_variable.is_some() && !self.internal.is_some()
     }
 
     /// Returns true if local is definitely not a `ref ident` or
@@ -768,6 +780,11 @@ impl<'tcx> LocalDecl<'tcx> {
             Some(InternalOrigin::DropFlag) => true,
             Some(InternalOrigin::Lowered128BitOp) => true,
             Some(InternalOrigin::MoveValInit) => true,
+
+            // pnkfelix made no attempt to address generators in the
+            // handling of arm-guard semantics, so lets keep doing the
+            // existing sanity check on them.
+            Some(InternalOrigin::MatchRefInArmGuard) => false,
 
             None => false,
         }

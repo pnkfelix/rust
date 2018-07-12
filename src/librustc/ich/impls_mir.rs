@@ -31,7 +31,7 @@ impl_stable_hash_for!(struct mir::LocalDecl<'tcx> {
     is_user_variable
 });
 impl_stable_hash_for!(enum mir::InternalOrigin {
-    BoxExprAsRvalue, DropFlag, Generator, Lowered128BitOp, MoveValInit });
+    BoxExprAsRvalue, DropFlag, Generator, Lowered128BitOp, MatchRefInArmGuard, MoveValInit });
 impl_stable_hash_for!(struct mir::UpvarDecl { debug_name, var_hir_id, by_ref, mutability });
 impl_stable_hash_for!(struct mir::BasicBlockData<'tcx> { statements, terminator, is_cleanup });
 impl_stable_hash_for!(struct mir::UnsafetyViolation { source_info, description, kind });
