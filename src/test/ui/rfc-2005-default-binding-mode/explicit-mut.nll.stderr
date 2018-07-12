@@ -2,7 +2,7 @@ error[E0594]: cannot assign to `*n` which is behind a `&` reference
   --> $DIR/explicit-mut.rs:17:13
    |
 LL |         Some(n) => {
-   |              - help: consider changing this to be a mutable reference: `&mut i32`
+   |              - help: consider changing this to be a mutable reference: `ref mut n`
 LL |             *n += 1; //~ ERROR cannot assign to immutable
    |             ^^^^^^^ `n` is a `&` reference, so the data it refers to cannot be written
 
@@ -10,7 +10,7 @@ error[E0594]: cannot assign to `*n` which is behind a `&` reference
   --> $DIR/explicit-mut.rs:25:13
    |
 LL |         Some(n) => {
-   |              - help: consider changing this to be a mutable reference: `&mut i32`
+   |              - help: consider changing this to be a mutable reference: `ref mut n`
 LL |             *n += 1; //~ ERROR cannot assign to immutable
    |             ^^^^^^^ `n` is a `&` reference, so the data it refers to cannot be written
 
@@ -18,7 +18,7 @@ error[E0594]: cannot assign to `*n` which is behind a `&` reference
   --> $DIR/explicit-mut.rs:33:13
    |
 LL |         Some(n) => {
-   |              - help: consider changing this to be a mutable reference: `&mut i32`
+   |              - help: consider changing this to be a mutable reference: `ref mut n`
 LL |             *n += 1; //~ ERROR cannot assign to immutable
    |             ^^^^^^^ `n` is a `&` reference, so the data it refers to cannot be written
 

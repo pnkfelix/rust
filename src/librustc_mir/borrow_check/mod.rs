@@ -1921,8 +1921,47 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                             let post_amp_snippet = src["&".len()..].to_string();
                             return (assignment_rhs_span, format!("&mut {}", post_amp_snippet));
                         }
+                        BorrowOrigin::Ref => {
+                            if starts_with_ref(&src) {
+                                // If `src` starts with "ref ", then
+                                // suggest adding just `mut`.
+                                let ref_suffix = src["ref".len()..].to_string();
+                                return (assignment_rhs_span, format!("ref mut{}", ref_suffix));
+                            } else {
+                                // If `src` doesn't start with "ref ",
+                                // then it is an implicit ref (RFC
+                                // 2005) and `src` just spans an
+                                // identifier.
+                                //
+                                // For now, suggest `ref mut`.
+                                //
+                                // * Caveat: this suggestion may be
+                                //   undesirable, because that change
+                                //   alone might not fix problem.
+                                //
+                                //   If compiler didn't infer `ref
+                                //   mut`, then source likely needs
+                                //   other changes (e.g. replacing
+                                //   input `&<expr>` with `&mut
+                                //   <expr>`).
+                                //
+                                //   But the fallback (a suggestion
+                                //   like "<src> needs `&mut` type.")
+                                //   seems inferior to incomplete
+                                //   suggestion that probably provides
+                                //   incremental progress towards
+                                //   working code.
+                                return (assignment_rhs_span, format!("ref mut {}", src));
+                            }
+                        }
                         _ => continue,
                     }
+                }
+
+                fn starts_with_ref(src: &str) -> bool {
+                    use core::unicode::property::Pattern_White_Space;
+                    src.starts_with("ref") &&
+                        Pattern_White_Space(src.chars().skip("ref".len()).next().unwrap())
                 }
             }
 

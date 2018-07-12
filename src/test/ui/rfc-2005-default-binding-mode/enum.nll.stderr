@@ -2,7 +2,7 @@ error[E0594]: cannot assign to `*x` which is behind a `&` reference
   --> $DIR/enum.rs:19:5
    |
 LL |     let Wrap(x) = &Wrap(3);
-   |              - help: consider changing this to be a mutable reference: `&mut i32`
+   |              - help: consider changing this to be a mutable reference: `ref mut x`
 LL |     *x += 1; //~ ERROR cannot assign to immutable
    |     ^^^^^^^ `x` is a `&` reference, so the data it refers to cannot be written
 
@@ -10,7 +10,7 @@ error[E0594]: cannot assign to `*x` which is behind a `&` reference
   --> $DIR/enum.rs:23:9
    |
 LL |     if let Some(x) = &Some(3) {
-   |                 - help: consider changing this to be a mutable reference: `&mut i32`
+   |                 - help: consider changing this to be a mutable reference: `ref mut x`
 LL |         *x += 1; //~ ERROR cannot assign to immutable
    |         ^^^^^^^ `x` is a `&` reference, so the data it refers to cannot be written
 
@@ -18,7 +18,7 @@ error[E0594]: cannot assign to `*x` which is behind a `&` reference
   --> $DIR/enum.rs:29:9
    |
 LL |     while let Some(x) = &Some(3) {
-   |                    - help: consider changing this to be a mutable reference: `&mut i32`
+   |                    - help: consider changing this to be a mutable reference: `ref mut x`
 LL |         *x += 1; //~ ERROR cannot assign to immutable
    |         ^^^^^^^ `x` is a `&` reference, so the data it refers to cannot be written
 

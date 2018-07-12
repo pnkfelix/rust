@@ -33,6 +33,7 @@ Rust MIR: a lowered representation of Rust. Also: an experiment!
 #![feature(never_type)]
 #![feature(specialization)]
 #![feature(try_trait)]
+#![feature(unicode_internals)]
 
 #![recursion_limit="256"]
 
@@ -40,6 +41,7 @@ extern crate arena;
 
 #[macro_use]
 extern crate bitflags;
+extern crate core;
 #[macro_use] extern crate log;
 extern crate either;
 extern crate graphviz as dot;
