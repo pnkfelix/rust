@@ -1254,6 +1254,7 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
             // slot or local, so to find all unsized rvalues it is enough
             // to check all temps, return slots and locals.
             if let None = self.reported_errors.replace((ty, span)) {
+                // FIXME
                 span_err!(
                     self.tcx().sess,
                     span,

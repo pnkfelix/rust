@@ -506,6 +506,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
             if let Some(lower_bound_region) = lower_bound_region {
                 let region_scope_tree = &tcx.region_scope_tree(mir_def_id);
                 let type_test_span = type_test.locations.span(mir);
+                // FIXME
                 infcx.report_generic_bound_failure(
                     region_scope_tree,
                     type_test_span,
@@ -524,6 +525,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
                 // iterating over the universal regions and reporting
                 // an error that multiple bounds are required.
                 let type_test_span = type_test.locations.span(mir);
+                // FIXME
                 tcx.sess.span_err(
                     type_test_span,
                     &format!("`{}` does not live long enough", type_test.generic_kind,),
