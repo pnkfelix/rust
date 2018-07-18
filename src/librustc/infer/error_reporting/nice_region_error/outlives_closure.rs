@@ -18,6 +18,7 @@ use hir::{Expr, ExprKind::Closure};
 use hir::map::NodeExpr;
 use util::common::ErrorReported;
 use infer::lexical_region_resolve::RegionResolutionError::SubSupConflict;
+use errors::Emit;
 
 impl<'a, 'gcx, 'tcx> NiceRegionError<'a, 'gcx, 'tcx> {
     /// Print the error message for lifetime errors when binding excapes a closure.

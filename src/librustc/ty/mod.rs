@@ -37,6 +37,7 @@ use ty::walk::TypeWalker;
 use util::captures::Captures;
 use util::nodemap::{NodeSet, DefIdMap, FxHashMap};
 use arena::SyncDroplessArena;
+use errors::Emit;
 
 use serialize::{self, Encodable, Encoder};
 use std::cell::RefCell;

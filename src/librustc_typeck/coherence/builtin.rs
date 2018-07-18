@@ -21,6 +21,7 @@ use rustc::ty::TypeFoldable;
 use rustc::ty::adjustment::CoerceUnsizedInfo;
 use rustc::ty::util::CopyImplementationError;
 use rustc::infer;
+use errors::Emit;
 
 use rustc::hir::def_id::DefId;
 use rustc::hir::map as hir_map;

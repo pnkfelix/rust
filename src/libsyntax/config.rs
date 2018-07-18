@@ -16,6 +16,7 @@ use codemap::Spanned;
 use edition::Edition;
 use parse::{token, ParseSess};
 
+use errors::Emit;
 use ptr::P;
 use util::small_vector::SmallVector;
 

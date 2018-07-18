@@ -22,6 +22,8 @@ use rustc::ty::{self, Ty, TyCtxt};
 use rustc::ty::adjustment::{Adjust, Adjustment};
 use rustc::ty::fold::{TypeFoldable, TypeFolder, BottomUpFolder};
 use rustc::util::nodemap::DefIdSet;
+use errors::Emit;
+
 use syntax::ast;
 use syntax_pos::Span;
 use std::mem;

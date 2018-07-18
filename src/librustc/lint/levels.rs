@@ -11,6 +11,7 @@
 use std::cmp;
 
 use errors::{Applicability, DiagnosticBuilder};
+use errors::Emit;
 use hir::HirId;
 use ich::StableHashingContext;
 use lint::builtin;

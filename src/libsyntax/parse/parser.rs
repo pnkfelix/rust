@@ -56,6 +56,7 @@ use parse::PResult;
 use tokenstream::{self, Delimited, ThinTokenStream, TokenTree, TokenStream};
 use symbol::{Symbol, keywords};
 use util::ThinVec;
+use errors::Emit;
 
 use std::borrow::Cow;
 use std::cmp;

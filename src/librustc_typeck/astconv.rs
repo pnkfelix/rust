@@ -29,6 +29,7 @@ use require_c_abi_if_variadic;
 use util::common::ErrorReported;
 use util::nodemap::{FxHashSet, FxHashMap};
 use errors::FatalError;
+use errors::Emit;
 
 use std::iter;
 use syntax::ast;

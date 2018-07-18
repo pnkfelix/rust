@@ -22,6 +22,7 @@ use syntax::ptr::P;
 use syntax::symbol::Symbol;
 use syntax_pos::{Span, DUMMY_SP};
 use syntax::tokenstream;
+use errors::Emit;
 
 use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::Entry;

@@ -11,6 +11,7 @@
 use std::mem;
 
 use errors;
+use errors::Emit;
 
 use syntax::ast::{self, Ident};
 use syntax::attr;

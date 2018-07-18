@@ -53,6 +53,7 @@ use rustc_data_structures::indexed_vec::IndexVec;
 use session::Session;
 use util::common::FN_OUTPUT_NAME;
 use util::nodemap::{DefIdMap, NodeMap};
+use errors::Emit;
 
 use std::collections::{BTreeMap, HashSet};
 use std::fmt::Debug;

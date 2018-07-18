@@ -11,6 +11,7 @@
 //! Error Reporting for Anonymous Region Lifetime Errors
 //! where both the regions are anonymous.
 
+use errors::Emit;
 use infer::error_reporting::nice_region_error::NiceRegionError;
 use infer::error_reporting::nice_region_error::util::AnonymousArgInfo;
 use util::common::ErrorReported;

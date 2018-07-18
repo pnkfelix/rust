@@ -20,6 +20,7 @@ use rustc::ty::adjustment::{Adjustment, Adjust, AllowTwoPhase, AutoBorrow, AutoB
 use rustc_target::spec::abi;
 use syntax::ast::Ident;
 use syntax_pos::Span;
+use errors::Emit;
 
 use rustc::hir;
 

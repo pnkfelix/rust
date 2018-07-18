@@ -13,6 +13,7 @@
 use dep_graph::DepGraph;
 use dep_graph::{DepNode, DepConstructor};
 use errors::DiagnosticBuilder;
+use errors::Emit;
 use session::Session;
 use session::config::{BorrowckMode, OutputFilenames, OptLevel};
 use session::config::CrateType::*;

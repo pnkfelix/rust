@@ -264,6 +264,7 @@ impl error::Error for ExplicitBug {
 
 pub use diagnostic::{Diagnostic, SubDiagnostic, DiagnosticStyledString, DiagnosticId};
 pub use diagnostic_builder::DiagnosticBuilder;
+pub use diagnostic_builder::Emit;
 
 /// A handler deals with errors; certain errors
 /// (fatal, bug, unimpl) may cause immediate exit,

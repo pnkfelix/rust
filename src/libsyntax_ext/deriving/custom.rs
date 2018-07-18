@@ -10,6 +10,7 @@
 
 use std::panic;
 
+use errors::Emit;
 use errors::FatalError;
 use proc_macro::{TokenStream, __internal};
 use syntax::ast::{self, ItemKind, Attribute, Mac};

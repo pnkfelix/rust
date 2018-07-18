@@ -13,6 +13,7 @@
 use infer::error_reporting::nice_region_error::NiceRegionError;
 use ty;
 use util::common::ErrorReported;
+use errors::Emit;
 
 impl<'a, 'gcx, 'tcx> NiceRegionError<'a, 'gcx, 'tcx> {
     /// When given a `ConcreteFailure` for a function with arguments containing a named region and

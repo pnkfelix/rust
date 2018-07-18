@@ -14,6 +14,7 @@ use infer::error_reporting::nice_region_error::NiceRegionError;
 use infer::lexical_region_resolve::RegionResolutionError;
 use ty::{BoundRegion, FreeRegion, RegionKind};
 use util::common::ErrorReported;
+use errors::Emit;
 
 impl<'a, 'gcx, 'tcx> NiceRegionError<'a, 'gcx, 'tcx> {
     /// Print the error message for lifetime errors when the return type is a static impl Trait.

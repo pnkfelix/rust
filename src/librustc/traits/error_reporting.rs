@@ -28,6 +28,7 @@ use super::{
 };
 
 use errors::{Applicability, DiagnosticBuilder};
+use errors::Emit;
 use hir;
 use hir::def_id::DefId;
 use infer::{self, InferCtxt};

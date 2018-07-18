@@ -17,6 +17,7 @@ use errors::DiagnosticBuilder;
 use errors::Level;
 use errors::Diagnostic;
 use errors::FatalError;
+use errors::Emit;
 use ty::tls;
 use ty::{TyCtxt};
 use ty::query::Query;

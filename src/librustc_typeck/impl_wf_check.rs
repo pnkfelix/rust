@@ -25,6 +25,7 @@ use rustc::hir::def_id::DefId;
 use rustc::ty::{self, TyCtxt};
 use rustc::util::nodemap::{FxHashMap, FxHashSet};
 use std::collections::hash_map::Entry::{Occupied, Vacant};
+use errors::Emit;
 
 use syntax_pos::Span;
 

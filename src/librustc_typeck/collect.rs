@@ -39,6 +39,7 @@ use rustc::ty::util::Discr;
 use rustc::util::captures::Captures;
 use rustc::util::nodemap::FxHashMap;
 use rustc_target::spec::abi;
+use errors::Emit;
 
 use syntax::ast;
 use syntax::ast::MetaItemKind;

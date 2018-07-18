@@ -22,6 +22,7 @@ use str::char_at;
 use symbol::Symbol;
 use tokenstream::{TokenStream, TokenTree};
 use diagnostics::plugin::ErrorMap;
+use errors::Emit;
 
 use std::borrow::Cow;
 use std::collections::HashSet;

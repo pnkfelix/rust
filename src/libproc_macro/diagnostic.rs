@@ -11,6 +11,7 @@
 use Span;
 
 use rustc_errors as rustc;
+use rustc_errors::Emit;
 
 /// An enum representing a diagnostic level.
 #[unstable(feature = "proc_macro_diagnostic", issue = "38356")]

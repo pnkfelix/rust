@@ -14,6 +14,7 @@
 #![allow(unused_imports)]
 
 use self::HasTestSignature::*;
+use errors::Emit;
 
 use std::iter;
 use std::slice;

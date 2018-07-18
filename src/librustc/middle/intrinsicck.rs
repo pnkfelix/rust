@@ -12,6 +12,7 @@ use hir::def::Def;
 use hir::def_id::DefId;
 use ty::{self, Ty, TyCtxt};
 use ty::layout::{LayoutError, Pointer, SizeSkeleton};
+use errors::Emit;
 
 use rustc_target::spec::abi::Abi::RustIntrinsic;
 use syntax_pos::Span;

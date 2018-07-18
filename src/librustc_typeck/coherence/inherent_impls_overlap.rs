@@ -14,6 +14,7 @@ use rustc::hir;
 use rustc::hir::itemlikevisit::ItemLikeVisitor;
 use rustc::traits::{self, IntercrateMode};
 use rustc::ty::TyCtxt;
+use errors::Emit;
 
 use lint;
 

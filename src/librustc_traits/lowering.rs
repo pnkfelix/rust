@@ -19,6 +19,7 @@ use rustc::traits::{
 use rustc::ty::query::Providers;
 use rustc::ty::{self, Slice, TyCtxt};
 use rustc_data_structures::fx::FxHashSet;
+use syntax::errors::Emit;
 use std::mem;
 use syntax::ast;
 

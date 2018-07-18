@@ -22,6 +22,7 @@ use hir::{GenericArg, GenericParam, ItemLocalId, LifetimeName, ParamName};
 use ty::{self, TyCtxt, GenericParamDefKind};
 
 use errors::DiagnosticBuilder;
+use errors::Emit;
 use rustc::lint;
 use rustc_data_structures::sync::Lrc;
 use session::Session;

@@ -8,6 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use errors::Emit;
 use hir::def_id::DefId;
 use hir;
 use infer::{self, InferCtxt, InferOk, TypeVariableOrigin};

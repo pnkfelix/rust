@@ -63,6 +63,7 @@
 
 use hir::def_id::CrateNum;
 
+use errors::Emit;
 use session;
 use session::config;
 use ty::TyCtxt;

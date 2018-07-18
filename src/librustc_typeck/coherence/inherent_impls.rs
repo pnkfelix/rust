@@ -23,6 +23,7 @@ use rustc::hir;
 use rustc::hir::itemlikevisit::ItemLikeVisitor;
 use rustc::ty::{self, CrateInherentImpls, TyCtxt};
 use rustc::util::nodemap::DefIdMap;
+use errors::Emit;
 
 use rustc_data_structures::sync::Lrc;
 use syntax::ast;

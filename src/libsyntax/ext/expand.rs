@@ -32,6 +32,7 @@ use syntax_pos::hygiene::ExpnFormat;
 use tokenstream::{TokenStream, TokenTree};
 use util::small_vector::SmallVector;
 use visit::{self, Visitor};
+use errors::Emit;
 
 use std::collections::HashMap;
 use std::fs::File;

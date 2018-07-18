@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-
+use errors::Emit;
 use hir::map as hir_map;
 use hir::def_id::{CRATE_DEF_INDEX};
 use session::{config, Session};

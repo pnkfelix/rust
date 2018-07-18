@@ -26,7 +26,7 @@ use syntax::ast;
 use syntax::util::lev_distance::find_best_match_for_name;
 use errors::DiagnosticBuilder;
 use syntax_pos::{Span, FileName};
-
+use errors::Emit;
 
 use rustc::hir::def_id::LOCAL_CRATE;
 use rustc::hir;

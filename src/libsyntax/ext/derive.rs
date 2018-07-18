@@ -16,6 +16,7 @@ use ext::build::AstBuilder;
 use parse::parser::PathStyle;
 use symbol::Symbol;
 use syntax_pos::Span;
+use errors::Emit;
 
 use std::collections::HashSet;
 

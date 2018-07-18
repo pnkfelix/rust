@@ -30,6 +30,8 @@ use syntax::util::lev_distance::{lev_distance, find_best_match_for_name};
 use syntax_pos::{Span, symbol::Symbol};
 use rustc::hir;
 use rustc::lint;
+use errors::Emit;
+
 use std::mem;
 use std::ops::Deref;
 use std::rc::Rc;

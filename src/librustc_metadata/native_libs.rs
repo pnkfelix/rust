@@ -19,6 +19,7 @@ use syntax::attr;
 use syntax::codemap::Span;
 use syntax::feature_gate::{self, GateIssue};
 use syntax::symbol::Symbol;
+use errors::Emit;
 
 pub fn collect<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>) -> Vec<NativeLibrary> {
     let mut collector = Collector {

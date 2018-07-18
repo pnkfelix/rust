@@ -103,6 +103,7 @@ use rustc::ty::fold::TypeFoldable;
 use rustc::ty::query::Providers;
 use rustc::ty::util::{Representability, IntTypeExt, Discr};
 use errors::{DiagnosticBuilder, DiagnosticId};
+use errors::Emit;
 
 use require_c_abi_if_variadic;
 use session::{CompileIncomplete, config, Session};

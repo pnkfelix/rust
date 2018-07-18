@@ -29,6 +29,7 @@ use rustc_data_structures::fx::FxHashSet;
 use rustc_data_structures::indexed_set::IdxSetBuf;
 use rustc_data_structures::indexed_vec::Idx;
 use rustc_data_structures::small_vec::SmallVec;
+use rustc_errors::Emit;
 
 use std::rc::Rc;
 

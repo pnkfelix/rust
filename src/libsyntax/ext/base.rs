@@ -24,6 +24,7 @@ use parse::token;
 use ptr::P;
 use symbol::{keywords, Ident, Symbol};
 use util::small_vector::SmallVector;
+use errors::Emit;
 
 use std::collections::HashMap;
 use std::iter;

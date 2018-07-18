@@ -14,6 +14,7 @@
 //! conflicts between multiple such attributes attached to the same
 //! item.
 
+use errors::Emit;
 use syntax_pos::Span;
 use ty::TyCtxt;
 

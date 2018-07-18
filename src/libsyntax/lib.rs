@@ -56,6 +56,7 @@ macro_rules! panictry {
     ($e:expr) => ({
         use std::result::Result::{Ok, Err};
         use errors::FatalError;
+        use errors::Emit;
         match $e {
             Ok(e) => e,
             Err(mut e) => {

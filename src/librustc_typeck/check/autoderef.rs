@@ -19,6 +19,7 @@ use rustc::traits;
 use rustc::ty::{self, Ty, TraitRef};
 use rustc::ty::{ToPredicate, TypeFoldable};
 use rustc::ty::adjustment::{Adjustment, Adjust, OverloadedDeref};
+use errors::Emit;
 
 use syntax_pos::Span;
 use syntax::ast::Ident;

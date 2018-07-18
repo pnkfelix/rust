@@ -10,6 +10,7 @@
 
 use std::panic;
 
+use errors::Emit;
 use errors::FatalError;
 
 use syntax::codemap::Span;

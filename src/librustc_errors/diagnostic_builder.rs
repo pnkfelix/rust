@@ -77,9 +77,15 @@ impl<'a> DerefMut for DiagnosticBuilder<'a> {
     }
 }
 
+pub trait Emit {
+    fn emit(&mut self);
+}
+
+impl<'a> Emit for DiagnosticBuilder<'a> { fn emit(&mut self) { self.emit_(); } }
+
 impl<'a> DiagnosticBuilder<'a> {
     /// Emit the diagnostic.
-    pub fn emit(&mut self) {
+    fn emit_(&mut self) {
         if self.cancelled() {
             return;
         }

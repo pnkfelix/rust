@@ -26,6 +26,7 @@ use std::iter;
 use rustc_target::spec::abi::Abi;
 use syntax::codemap::Span;
 use rustc::hir;
+use errors::Emit;
 
 /// What signature do we *expect* the closure to have from context?
 #[derive(Debug)]

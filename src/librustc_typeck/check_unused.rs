@@ -21,6 +21,7 @@ use rustc::hir;
 use rustc::util::nodemap::DefIdSet;
 
 use rustc_data_structures::fx::FxHashMap;
+use errors::Emit;
 
 pub fn check_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>) {
     let mut used_trait_imports = DefIdSet();

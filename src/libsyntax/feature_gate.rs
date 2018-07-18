@@ -35,6 +35,7 @@ use errors::{DiagnosticBuilder, Handler, FatalError};
 use visit::{self, FnKind, Visitor};
 use parse::ParseSess;
 use symbol::{keywords, Symbol};
+use errors::Emit;
 
 use std::{env, path};
 

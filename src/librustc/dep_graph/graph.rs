@@ -9,6 +9,7 @@
 // except according to those terms.
 
 use errors::DiagnosticBuilder;
+use errors::Emit;
 use rustc_data_structures::stable_hasher::{HashStable, StableHasher};
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_data_structures::indexed_vec::{Idx, IndexVec};

@@ -27,6 +27,7 @@ use rustc_target::spec::{Target, TargetTriple};
 use rustc_data_structures::stable_hasher::ToStableHashKey;
 use lint;
 use middle::cstore;
+use errors::Emit;
 
 use syntax::ast::{self, IntTy, UintTy};
 use syntax::codemap::{FileName, FilePathMapping};

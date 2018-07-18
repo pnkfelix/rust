@@ -25,6 +25,7 @@ use rustc::middle::cstore::LoadedMacro;
 use rustc::hir::def::*;
 use rustc::hir::def_id::{BUILTIN_MACROS_CRATE, CRATE_DEF_INDEX, LOCAL_CRATE, DefId};
 use rustc::ty;
+use errors::Emit;
 
 use std::cell::Cell;
 use rustc_data_structures::sync::Lrc;

@@ -18,6 +18,7 @@ use rustc::ty::subst::{Subst, Substs, UnpackedKind};
 use rustc::ty::{self, Ty, TyCtxt};
 use rustc::traits::{ObligationCause, TraitEngine, TraitEngineExt};
 use util::common::ErrorReported;
+use errors::Emit;
 
 use syntax::ast;
 use syntax_pos::Span;

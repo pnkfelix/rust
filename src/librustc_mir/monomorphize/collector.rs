@@ -207,6 +207,7 @@ use rustc::mir::interpret::{Scalar, GlobalId, AllocType};
 use monomorphize::{self, Instance};
 use rustc::util::nodemap::{FxHashSet, FxHashMap, DefIdMap};
 use rustc::util::common::time;
+use syntax::errors::Emit;
 
 use monomorphize::item::{MonoItemExt, DefPathBasedNames, InstantiationMode};
 

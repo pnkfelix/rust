@@ -13,6 +13,7 @@
 use syntax::ast;
 use syntax::attr;
 use errors;
+use errors::Emit;
 use syntax_pos::Span;
 use rustc::hir::map::Map;
 use rustc::hir::itemlikevisit::ItemLikeVisitor;

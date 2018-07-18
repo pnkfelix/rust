@@ -76,6 +76,7 @@ use errors::DiagnosticBuilder;
 use syntax::feature_gate;
 use syntax::ptr::P;
 use syntax_pos;
+use errors::Emit;
 
 use std::collections::VecDeque;
 use std::ops::Deref;

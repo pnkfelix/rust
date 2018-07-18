@@ -67,6 +67,7 @@ use syntax::ptr::P;
 
 use syntax_pos::{Span, DUMMY_SP, MultiSpan};
 use errors::{DiagnosticBuilder, DiagnosticId};
+use errors::Emit;
 
 use std::cell::{Cell, RefCell};
 use std::cmp;

@@ -14,6 +14,7 @@ use hir::def_id::DefId;
 use ty::{self, TyCtxt, GenericParamDefKind};
 use util::common::ErrorReported;
 use util::nodemap::FxHashMap;
+use errors::Emit;
 
 use syntax::ast::{MetaItem, NestedMetaItem};
 use syntax::attr;

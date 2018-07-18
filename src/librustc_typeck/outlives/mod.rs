@@ -15,6 +15,7 @@ use rustc::ty::query::Providers;
 use rustc::ty::subst::UnpackedKind;
 use rustc::ty::{self, CratePredicatesMap, TyCtxt};
 use rustc_data_structures::sync::Lrc;
+use errors::Emit;
 
 mod explicit;
 mod implicit_infer;

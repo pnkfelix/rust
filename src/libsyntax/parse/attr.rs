@@ -15,6 +15,7 @@ use parse::{SeqSep, PResult};
 use parse::token::{self, Nonterminal};
 use parse::parser::{Parser, TokenType, PathStyle};
 use tokenstream::TokenStream;
+use errors::Emit;
 
 #[derive(Debug)]
 enum InnerAttributeParsePolicy<'a> {

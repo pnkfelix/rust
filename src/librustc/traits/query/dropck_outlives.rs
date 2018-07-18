@@ -8,6 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use errors::Emit;
 use infer::at::At;
 use infer::InferOk;
 use rustc_data_structures::small_vec::SmallVec;

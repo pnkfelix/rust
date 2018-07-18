@@ -22,6 +22,7 @@
 use super::{SelectionContext, FulfillmentContext};
 use super::util::impl_trait_ref_and_oblig;
 
+use errors::Emit;
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use hir::def_id::DefId;
 use infer::{InferCtxt, InferOk};

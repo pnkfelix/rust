@@ -16,6 +16,7 @@ use feature_gate::{Features, GatedCfg};
 use parse::ParseSess;
 use syntax_pos::{symbol::Symbol, Span};
 
+use errors::Emit;
 use super::{list_contains_name, mark_used, MetaItemKind};
 
 enum AttrError {

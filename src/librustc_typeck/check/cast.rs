@@ -54,6 +54,7 @@ use rustc::middle::lang_items;
 use syntax::ast;
 use syntax_pos::Span;
 use util::common::ErrorReported;
+use errors::Emit;
 
 /// Reifies a cast check to be checked once we have full type information for
 /// a function context.

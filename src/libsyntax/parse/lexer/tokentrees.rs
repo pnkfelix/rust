@@ -12,6 +12,7 @@ use print::pprust::token_to_string;
 use parse::lexer::StringReader;
 use parse::{token, PResult};
 use tokenstream::{Delimited, TokenStream, TokenTree};
+use errors::Emit;
 
 impl<'a> StringReader<'a> {
     // Parse a stream of tokens into a list of `TokenTree`s, up to an `Eof`.

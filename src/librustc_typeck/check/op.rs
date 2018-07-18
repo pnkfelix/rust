@@ -20,6 +20,7 @@ use errors;
 use syntax_pos::Span;
 use syntax::ast::Ident;
 use rustc::hir;
+use errors::Emit;
 
 impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
     /// Check a `a <op>= b`

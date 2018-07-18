@@ -110,6 +110,7 @@ use hir::def::*;
 use ty::{self, TyCtxt};
 use lint;
 use errors::Applicability;
+use errors::Emit;
 use util::nodemap::{NodeMap, HirIdMap, HirIdSet};
 
 use std::collections::VecDeque;

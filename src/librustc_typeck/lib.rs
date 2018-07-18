@@ -116,6 +116,7 @@ use util::common::time;
 use syntax::ast;
 use rustc_target::spec::abi::Abi;
 use syntax_pos::Span;
+use errors::Emit;
 
 use std::iter;
 

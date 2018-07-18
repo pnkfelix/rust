@@ -18,6 +18,7 @@ use rustc::ty::{self, Ty, TypeFoldable};
 use check::{FnCtxt, Expectation, Diverges, Needs};
 use check::coercion::CoerceMany;
 use util::nodemap::FxHashMap;
+use errors::Emit;
 
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::cmp;

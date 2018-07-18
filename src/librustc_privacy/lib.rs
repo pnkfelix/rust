@@ -39,6 +39,7 @@ use rustc::util::nodemap::NodeSet;
 use syntax::ast::{self, CRATE_NODE_ID, Ident};
 use syntax::symbol::keywords;
 use syntax_pos::Span;
+use syntax::errors::Emit;
 
 use std::cmp;
 use std::mem::replace;

@@ -24,6 +24,7 @@ use rustc::hir::def_id::{CRATE_DEF_INDEX, DefId};
 use rustc::hir::def::*;
 use rustc::session::DiagnosticMessageId;
 use rustc::util::nodemap::{FxHashMap, FxHashSet};
+use errors::Emit;
 
 use syntax::ast::{Ident, Name, NodeId, CRATE_NODE_ID};
 use syntax::ext::base::Determinacy::{self, Determined, Undetermined};

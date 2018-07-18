@@ -25,6 +25,7 @@ use rustc::ty::subst::Substs;
 use rustc::lint;
 use rustc_errors::{Applicability, DiagnosticBuilder};
 use rustc::util::common::ErrorReported;
+use rustc_errors::Emit;
 
 use rustc::hir::def::*;
 use rustc::hir::def_id::DefId;

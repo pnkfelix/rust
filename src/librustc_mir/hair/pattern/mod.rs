@@ -27,6 +27,7 @@ use rustc::hir::def::{Def, CtorKind};
 use rustc::hir::pat_util::EnumerateAndAdjustIterator;
 
 use rustc_data_structures::indexed_vec::Idx;
+use rustc_errors::Emit;
 
 use std::cmp::Ordering;
 use std::fmt;

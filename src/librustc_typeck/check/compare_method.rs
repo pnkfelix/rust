@@ -16,6 +16,7 @@ use rustc::traits::{self, ObligationCause, ObligationCauseCode, Reveal};
 use rustc::ty::error::{ExpectedFound, TypeError};
 use rustc::ty::subst::{Subst, Substs};
 use rustc::util::common::ErrorReported;
+use errors::Emit;
 
 use syntax_pos::Span;
 

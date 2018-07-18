@@ -38,6 +38,7 @@ use session::{config, early_error, Session};
 use ty::{self, TyCtxt, Ty};
 use ty::layout::{LayoutError, LayoutOf, TyLayout};
 use util::nodemap::FxHashMap;
+use errors::Emit;
 
 use std::default::Default as StdDefault;
 use syntax::ast;

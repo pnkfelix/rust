@@ -24,6 +24,7 @@ use syntax::ast;
 use syntax::feature_gate::{self, GateIssue};
 use syntax_pos::Span;
 use errors::{DiagnosticBuilder, DiagnosticId};
+use errors::Emit;
 
 use rustc::hir::intravisit::{self, Visitor, NestedVisitorMap};
 use rustc::hir;

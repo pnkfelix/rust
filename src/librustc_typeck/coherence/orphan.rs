@@ -15,6 +15,7 @@ use rustc::traits;
 use rustc::ty::{self, TyCtxt};
 use rustc::hir::itemlikevisit::ItemLikeVisitor;
 use rustc::hir;
+use errors::Emit;
 
 pub fn check<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>) {
     let mut orphan = OrphanChecker { tcx: tcx };

@@ -95,6 +95,7 @@ use print::pprust;
 use symbol::keywords;
 use tokenstream::TokenStream;
 use util::small_vector::SmallVector;
+use errors::Emit;
 
 use std::mem;
 use std::ops::{Deref, DerefMut};

@@ -14,6 +14,7 @@ use syntax::ext::build::AstBuilder;
 use syntax::symbol::Symbol;
 use syntax::tokenstream;
 use syntax_pos;
+use errors::Emit;
 
 use std::string::String;
 

@@ -4,6 +4,7 @@ use mir;
 use ty::{FnSig, Ty, layout};
 use ty::layout::{Size, Align};
 use rustc_data_structures::sync::Lrc;
+use errors::Emit;
 
 use super::{
     Pointer, Lock, AccessKind

@@ -36,6 +36,7 @@ use syntax::symbol::{Symbol, keywords};
 use syntax::tokenstream::{TokenStream, TokenTree, Delimited};
 use syntax::util::lev_distance::find_best_match_for_name;
 use syntax_pos::{Span, DUMMY_SP};
+use errors::Emit;
 
 use std::cell::Cell;
 use std::mem;

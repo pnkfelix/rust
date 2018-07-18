@@ -19,6 +19,7 @@ use hir::def_id::{DefId, LOCAL_CRATE};
 use rustc::traits;
 use rustc::ty::{self, TyCtxt, TypeFoldable};
 use rustc::ty::query::Providers;
+use errors::Emit;
 
 use syntax::ast;
 

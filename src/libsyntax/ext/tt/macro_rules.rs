@@ -26,6 +26,7 @@ use parse::token::{self, NtTT};
 use parse::token::Token::*;
 use symbol::Symbol;
 use tokenstream::{TokenStream, TokenTree};
+use errors::Emit;
 
 use std::borrow::Cow;
 use std::collections::HashMap;

@@ -71,6 +71,7 @@ use ty::error::TypeError;
 use syntax::ast::DUMMY_NODE_ID;
 use syntax_pos::{Pos, Span};
 use errors::{Applicability, DiagnosticBuilder, DiagnosticStyledString};
+use errors::Emit;
 
 use rustc_data_structures::indexed_vec::Idx;
 

@@ -237,6 +237,7 @@ use errors::DiagnosticBuilder;
 use syntax::symbol::Symbol;
 use syntax_pos::Span;
 use rustc_target::spec::{Target, TargetTriple};
+use errors::Emit;
 
 use std::cmp;
 use std::collections::HashSet;

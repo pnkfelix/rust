@@ -19,6 +19,7 @@ use rustc::hir::def_id::DefId;
 use rustc::lint::builtin::{SAFE_EXTERN_STATICS, SAFE_PACKED_BORROWS, UNUSED_UNSAFE};
 use rustc::mir::*;
 use rustc::mir::visit::{PlaceContext, Visitor};
+use syntax::errors::Emit;
 
 use syntax::ast;
 use syntax::symbol::Symbol;

@@ -25,6 +25,7 @@ use hir::def_id::DefId;
 use ty::{self, TyCtxt};
 use middle::weak_lang_items;
 use util::nodemap::FxHashMap;
+use errors::Emit;
 
 use syntax::ast;
 use syntax::symbol::Symbol;

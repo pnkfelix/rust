@@ -34,6 +34,7 @@ use syntax::attr;
 use syntax::ast::LitKind;
 use syntax::feature_gate::{UnstableFeatures, feature_err, emit_feature_err, GateIssue};
 use syntax_pos::{Span, DUMMY_SP};
+use syntax::errors::Emit;
 
 use std::fmt;
 use rustc_data_structures::sync::Lrc;
