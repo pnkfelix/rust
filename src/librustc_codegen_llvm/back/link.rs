@@ -33,6 +33,7 @@ use rustc_target::spec::{PanicStrategy, RelroLevel, LinkerFlavor};
 use rustc_data_structures::fx::FxHashSet;
 use context::get_reloc_model;
 use llvm;
+use errors::Emit;
 
 use std::ascii;
 use std::char;

@@ -86,6 +86,7 @@ use rustc_metadata::cstore::CStore;
 use rustc_metadata::dynamic_lib::DynamicLibrary;
 use rustc::util::common::{time, ErrorReported};
 use rustc_codegen_utils::codegen_backend::CodegenBackend;
+use errors::Emit;
 
 use serialize::json::ToJson;
 

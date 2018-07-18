@@ -74,6 +74,7 @@ use type_of::LayoutLlvmExt;
 use rustc::util::nodemap::{FxHashMap, FxHashSet, DefIdSet};
 use CrateInfo;
 use rustc_data_structures::sync::Lrc;
+use errors::Emit;
 
 use std::any::Any;
 use std::ffi::CString;

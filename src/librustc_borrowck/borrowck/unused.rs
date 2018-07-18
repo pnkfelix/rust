@@ -15,6 +15,7 @@ use rustc::ty;
 use rustc::util::nodemap::{FxHashMap, FxHashSet};
 use std::slice;
 use syntax::ptr::P;
+use errors::Emit;
 
 use borrowck::BorrowckCtxt;
 

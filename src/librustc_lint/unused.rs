@@ -22,6 +22,7 @@ use syntax::print::pprust;
 use syntax::symbol::keywords;
 use syntax::util::parser;
 use syntax_pos::Span;
+use syntax::errors::Emit;
 
 use rustc::hir;
 

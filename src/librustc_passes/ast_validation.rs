@@ -25,6 +25,7 @@ use syntax::symbol::keywords;
 use syntax::visit::{self, Visitor};
 use syntax_pos::Span;
 use errors;
+use errors::Emit;
 
 struct AstValidator<'a> {
     session: &'a Session,

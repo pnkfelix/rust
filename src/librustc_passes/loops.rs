@@ -16,6 +16,7 @@ use rustc::hir::intravisit::{self, Visitor, NestedVisitorMap};
 use rustc::hir::{self, Destination};
 use syntax::ast;
 use syntax_pos::Span;
+use errors::Emit;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum LoopKind {

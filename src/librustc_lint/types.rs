@@ -25,6 +25,7 @@ use syntax::{ast, attr};
 use rustc_target::spec::abi::Abi;
 use syntax_pos::Span;
 use syntax::codemap;
+use syntax::errors::Emit;
 
 use rustc::hir;
 

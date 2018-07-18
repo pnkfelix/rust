@@ -39,6 +39,7 @@ use rustc_plugin::registry::Registry;
 use rustc_plugin as plugin;
 use rustc_passes::{self, ast_validation, hir_stats, loops, rvalue_promotion};
 use super::Compilation;
+use errors::Emit;
 
 use serialize::json;
 

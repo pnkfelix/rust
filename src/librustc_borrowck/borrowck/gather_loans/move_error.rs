@@ -19,6 +19,7 @@ use syntax::ast;
 use syntax_pos;
 use errors::DiagnosticBuilder;
 use borrowck::gather_loans::gather_moves::PatternSource;
+use errors::Emit;
 
 pub struct MoveErrorCollector<'tcx> {
     errors: Vec<MoveError<'tcx>>

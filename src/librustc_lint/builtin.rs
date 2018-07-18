@@ -50,6 +50,7 @@ use syntax::feature_gate::{AttributeGate, AttributeType, Stability, deprecated_a
 use syntax_pos::{BytePos, Span, SyntaxContext};
 use syntax::symbol::keywords;
 use syntax::errors::{Applicability, DiagnosticBuilder};
+use syntax::errors::Emit;
 
 use rustc::hir::{self, GenericParamKind, PatKind};
 use rustc::hir::intravisit::FnKind;

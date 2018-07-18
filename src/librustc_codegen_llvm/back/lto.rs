@@ -22,6 +22,7 @@ use rustc::session::config::{self, Lto};
 use rustc::util::common::time_ext;
 use time_graph::Timeline;
 use {ModuleCodegen, ModuleLlvm, ModuleKind, ModuleSource};
+use errors::Emit;
 
 use libc;
 

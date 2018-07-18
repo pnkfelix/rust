@@ -50,6 +50,7 @@ use std::hash::{Hash, Hasher};
 use syntax::ast;
 use syntax_pos::{MultiSpan, Span};
 use errors::{DiagnosticBuilder, DiagnosticId};
+use errors::Emit;
 
 use rustc::hir;
 use rustc::hir::intravisit::{self, Visitor};
