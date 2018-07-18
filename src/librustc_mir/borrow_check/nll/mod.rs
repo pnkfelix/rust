@@ -322,7 +322,6 @@ fn dump_annotation<'a, 'gcx, 'tcx>(
     closure_region_requirements: &Option<ClosureRegionRequirements>,
     errors_buffer: &mut Vec<DiagnosticBuilder<'a>>,
 ) {
-    use syntax::errors::Emit;
     let tcx = infcx.tcx;
     let base_def_id = tcx.closure_base_def_id(mir_def_id);
     if !tcx.has_attr(base_def_id, "rustc_regions") {
