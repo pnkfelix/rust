@@ -18,24 +18,26 @@ use dataflow::move_paths::{IllegalMoveOrigin, IllegalMoveOriginKind, MoveData};
 use dataflow::move_paths::{LookupResult, MoveError, MovePathIndex};
 use util::borrowck_errors::{BorrowckErrors, Origin};
 
-pub(crate) fn report_move_errors<'tcx>(
+pub(crate) fn report_move_errors<'cx, 'tcx>(
     mir: &Mir<'tcx>,
-    tcx: TyCtxt<'_, '_, 'tcx>,
+    tcx: TyCtxt<'cx, '_, 'tcx>,
     move_errors: Vec<MoveError<'tcx>>,
     move_data: &MoveData<'tcx>,
+    errors_buffer: &mut Vec<DiagnosticBuilder<'cx>>,
 ) {
     MoveErrorCtxt {
         mir,
         tcx,
         move_data,
+        errors_buffer,
     }.report_errors(move_errors);
 }
 
-#[derive(Copy, Clone)]
-struct MoveErrorCtxt<'cx, 'gcx: 'tcx, 'tcx: 'cx> {
-    mir: &'cx Mir<'tcx>,
+struct MoveErrorCtxt<'mec, 'cx: 'mec, 'gcx: 'tcx, 'tcx: 'cx> {
+    mir: &'mec Mir<'tcx>,
     tcx: TyCtxt<'cx, 'gcx, 'tcx>,
-    move_data: &'cx MoveData<'tcx>,
+    move_data: &'mec MoveData<'tcx>,
+    errors_buffer: &'mec mut Vec<DiagnosticBuilder<'cx>>,
 }
 
 // Often when desugaring a pattern match we may have many individual moves in
@@ -76,15 +78,15 @@ enum GroupedMoveError<'tcx> {
     },
 }
 
-impl<'cx, 'gcx, 'tcx> MoveErrorCtxt<'cx, 'gcx, 'tcx> {
-    fn report_errors(self, move_errors: Vec<MoveError<'tcx>>) {
+impl<'mec, 'cx, 'gcx, 'tcx> MoveErrorCtxt<'mec, 'cx, 'gcx, 'tcx> {
+    fn report_errors(&mut self, move_errors: Vec<MoveError<'tcx>>) {
         let grouped_errors = self.group_move_errors(move_errors);
         for error in grouped_errors {
             self.report(error);
         }
     }
 
-    fn group_move_errors(self, errors: Vec<MoveError<'tcx>>) -> Vec<GroupedMoveError<'tcx>> {
+    fn group_move_errors(&self, errors: Vec<MoveError<'tcx>>) -> Vec<GroupedMoveError<'tcx>> {
         let mut grouped_errors = Vec::new();
         for error in errors {
             self.append_to_grouped_errors(&mut grouped_errors, error);
@@ -93,7 +95,7 @@ impl<'cx, 'gcx, 'tcx> MoveErrorCtxt<'cx, 'gcx, 'tcx> {
     }
 
     fn append_to_grouped_errors(
-        self,
+        &self,
         grouped_errors: &mut Vec<GroupedMoveError<'tcx>>,
         error: MoveError<'tcx>,
     ) {
@@ -158,7 +160,7 @@ impl<'cx, 'gcx, 'tcx> MoveErrorCtxt<'cx, 'gcx, 'tcx> {
     }
 
     fn append_binding_error(
-        self,
+        &self,
         grouped_errors: &mut Vec<GroupedMoveError<'tcx>>,
         kind: IllegalMoveOriginKind<'tcx>,
         move_from: &Place<'tcx>,
@@ -236,7 +238,7 @@ impl<'cx, 'gcx, 'tcx> MoveErrorCtxt<'cx, 'gcx, 'tcx> {
         };
     }
 
-    fn report(self, error: GroupedMoveError<'tcx>) {
+    fn report(&mut self, error: GroupedMoveError<'tcx>) {
         let (mut err, err_span) = {
             let (span, kind): (Span, &IllegalMoveOriginKind) = match error {
                 GroupedMoveError::MovesFromMatchPlace { span, ref kind, .. }
@@ -275,11 +277,11 @@ impl<'cx, 'gcx, 'tcx> MoveErrorCtxt<'cx, 'gcx, 'tcx> {
         };
 
         self.add_move_hints(error, &mut err, err_span);
-        err.emit();
+        self.errors_buffer.push(err);
     }
 
     fn add_move_hints(
-        self,
+        &self,
         error: GroupedMoveError<'tcx>,
         err: &mut DiagnosticBuilder<'cx>,
         span: Span,
@@ -365,7 +367,7 @@ impl<'cx, 'gcx, 'tcx> MoveErrorCtxt<'cx, 'gcx, 'tcx> {
         }
     }
 
-    fn suitable_to_remove_deref(self, proj: &PlaceProjection<'tcx>, snippet: &str) -> bool {
+    fn suitable_to_remove_deref(&self, proj: &PlaceProjection<'tcx>, snippet: &str) -> bool {
         let is_shared_ref = |ty: ty::Ty| match ty.sty {
             ty::TypeVariants::TyRef(.., hir::Mutability::MutImmutable) => true,
             _ => false,

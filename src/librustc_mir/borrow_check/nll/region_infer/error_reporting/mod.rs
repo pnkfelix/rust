@@ -18,6 +18,7 @@ use rustc::mir::{self, Location, Mir, Place, Rvalue, StatementKind, TerminatorKi
 use rustc::ty::RegionVid;
 use rustc_data_structures::fx::FxHashSet;
 use rustc_data_structures::indexed_vec::IndexVec;
+use rustc_errors::DiagnosticBuilder;
 use std::fmt;
 use syntax_pos::Span;
 
@@ -179,14 +180,15 @@ impl<'tcx> RegionInferenceContext<'tcx> {
     /// ```
     ///
     /// Here we would be invoked with `fr = 'a` and `outlived_fr = `'b`.
-    pub(super) fn report_error(
+    pub(super) fn report_error<'cx>(
         &self,
         mir: &Mir<'tcx>,
-        infcx: &InferCtxt<'_, '_, 'tcx>,
+        infcx: &InferCtxt<'cx, '_, 'tcx>,
         mir_def_id: DefId,
         fr: RegionVid,
         outlived_fr: RegionVid,
         blame_span: Span,
+        errors_buffer: &mut Vec<DiagnosticBuilder<'cx>>,
     ) {
         debug!("report_error(fr={:?}, outlived_fr={:?})", fr, outlived_fr);
 
@@ -218,21 +220,21 @@ impl<'tcx> RegionInferenceContext<'tcx> {
 
         // Get a span
         let (category, span) = categorized_path.first().unwrap();
-        let diag = &mut infcx.tcx.sess.struct_span_err(
+        let mut diag = infcx.tcx.sess.struct_span_err(
             *span,
             &format!("unsatisfied lifetime constraints"), // FIXME
         );
 
         // Figure out how we can refer
         let counter = &mut 1;
-        let fr_name = self.give_region_a_name(infcx.tcx, mir, mir_def_id, fr, counter, diag);
+        let fr_name = self.give_region_a_name(infcx.tcx, mir, mir_def_id, fr, counter, &mut diag);
         let outlived_fr_name = self.give_region_a_name(
             infcx.tcx,
             mir,
             mir_def_id,
             outlived_fr,
             counter,
-            diag,
+            &mut diag,
         );
 
         diag.span_label(
@@ -243,7 +245,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
             ),
         );
 
-        diag.emit();
+        errors_buffer.push(diag);
     }
 
     // Find some constraint `X: Y` where:

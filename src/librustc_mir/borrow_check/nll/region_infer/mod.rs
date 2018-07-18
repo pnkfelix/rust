@@ -30,6 +30,7 @@ use rustc::util::common;
 use rustc_data_structures::graph::scc::Sccs;
 use rustc_data_structures::indexed_set::{IdxSet, IdxSetBuf};
 use rustc_data_structures::indexed_vec::IndexVec;
+use rustc_errors::DiagnosticBuilder;
 
 use std::rc::Rc;
 
@@ -355,24 +356,26 @@ impl<'tcx> RegionInferenceContext<'tcx> {
     /// Perform region inference and report errors if we see any
     /// unsatisfiable constraints. If this is a closure, returns the
     /// region requirements to propagate to our creator, if any.
-    pub(super) fn solve<'gcx>(
+    pub(super) fn solve<'cx, 'gcx>(
         &mut self,
-        infcx: &InferCtxt<'_, 'gcx, 'tcx>,
+        infcx: &InferCtxt<'cx, 'gcx, 'tcx>,
         mir: &Mir<'tcx>,
         mir_def_id: DefId,
+        errors_buffer: &mut Vec<DiagnosticBuilder<'cx>>,
     ) -> Option<ClosureRegionRequirements<'gcx>> {
         common::time(
             infcx.tcx.sess,
             &format!("solve_nll_region_constraints({:?})", mir_def_id),
-            || self.solve_inner(infcx, mir, mir_def_id),
+            || self.solve_inner(infcx, mir, mir_def_id, errors_buffer),
         )
     }
 
-    fn solve_inner<'gcx>(
+    fn solve_inner<'cx, 'gcx>(
         &mut self,
-        infcx: &InferCtxt<'_, 'gcx, 'tcx>,
+        infcx: &InferCtxt<'cx, 'gcx, 'tcx>,
         mir: &Mir<'tcx>,
         mir_def_id: DefId,
+        errors_buffer: &mut Vec<DiagnosticBuilder<'cx>>,
     ) -> Option<ClosureRegionRequirements<'gcx>> {
         self.propagate_constraints(mir);
 
@@ -389,7 +392,8 @@ impl<'tcx> RegionInferenceContext<'tcx> {
 
         self.check_type_tests(infcx, mir, mir_def_id, outlives_requirements.as_mut());
 
-        self.check_universal_regions(infcx, mir, mir_def_id, outlives_requirements.as_mut());
+        self.check_universal_regions(
+            infcx, mir, mir_def_id, outlives_requirements.as_mut(), errors_buffer);
 
         let outlives_requirements = outlives_requirements.unwrap_or(vec![]);
 
@@ -828,12 +832,13 @@ impl<'tcx> RegionInferenceContext<'tcx> {
     /// If `propagated_outlives_requirements` is `Some`, then we will
     /// push unsatisfied obligations into there. Otherwise, we'll
     /// report them as errors.
-    fn check_universal_regions<'gcx>(
+    fn check_universal_regions<'cx, 'gcx>(
         &self,
-        infcx: &InferCtxt<'_, 'gcx, 'tcx>,
+        infcx: &InferCtxt<'cx, 'gcx, 'tcx>,
         mir: &Mir<'tcx>,
         mir_def_id: DefId,
         mut propagated_outlives_requirements: Option<&mut Vec<ClosureOutlivesRequirement<'gcx>>>,
+        errors_buffer: &mut Vec<DiagnosticBuilder<'cx>>,
     ) {
         // The universal regions are always found in a prefix of the
         // full list.
@@ -851,6 +856,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
                 mir_def_id,
                 fr,
                 &mut propagated_outlives_requirements,
+                errors_buffer,
             );
         }
     }
@@ -863,13 +869,14 @@ impl<'tcx> RegionInferenceContext<'tcx> {
     ///
     /// Things that are to be propagated are accumulated into the
     /// `outlives_requirements` vector.
-    fn check_universal_region<'gcx>(
+    fn check_universal_region<'cx, 'gcx>(
         &self,
-        infcx: &InferCtxt<'_, 'gcx, 'tcx>,
+        infcx: &InferCtxt<'cx, 'gcx, 'tcx>,
         mir: &Mir<'tcx>,
         mir_def_id: DefId,
         longer_fr: RegionVid,
         propagated_outlives_requirements: &mut Option<&mut Vec<ClosureOutlivesRequirement<'gcx>>>,
+        errors_buffer: &mut Vec<DiagnosticBuilder<'cx>>,
     ) {
         debug!("check_universal_region(fr={:?})", longer_fr);
 
@@ -924,7 +931,8 @@ impl<'tcx> RegionInferenceContext<'tcx> {
             // Note: in this case, we use the unapproximated regions
             // to report the error. This gives better error messages
             // in some cases.
-            self.report_error(mir, infcx, mir_def_id, longer_fr, shorter_fr, blame_span);
+            self.report_error(
+                mir, infcx, mir_def_id, longer_fr, shorter_fr, blame_span, errors_buffer);
         }
     }
 }

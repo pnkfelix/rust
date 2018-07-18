@@ -311,7 +311,7 @@ impl<E:Idx> Bits<E> {
 /// underlying flow analysis results, because it needs to handle cases
 /// where we are combining the results of *multiple* flow analyses
 /// (e.g. borrows + inits + uninits).
-pub(crate) trait DataflowResultsConsumer<'a, 'tcx: 'a> {
+pub(crate) trait DataflowResultsConsumer<'cx, 'tcx: 'cx> {
     type FlowState: FlowsAtLocation;
 
     // Observation Hooks: override (at least one of) these to get analysis feedback.
@@ -364,7 +364,7 @@ pub(crate) trait DataflowResultsConsumer<'a, 'tcx: 'a> {
 
     // Delegated Hooks: Provide access to the MIR and process the flow state.
 
-    fn mir(&self) -> &'a Mir<'tcx>;
+    fn mir(&self) -> &'cx Mir<'tcx>;
 }
 
 pub fn state_for_location<'tcx, T: BitDenotation>(loc: Location,
