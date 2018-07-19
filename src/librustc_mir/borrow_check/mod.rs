@@ -29,7 +29,6 @@ use rustc_data_structures::fx::FxHashSet;
 use rustc_data_structures::indexed_set::IdxSetBuf;
 use rustc_data_structures::indexed_vec::Idx;
 use rustc_data_structures::small_vec::SmallVec;
-use rustc_errors::Emit;
 
 use std::rc::Rc;
 
@@ -131,6 +130,8 @@ fn do_mir_borrowck<'a, 'gcx, 'tcx>(
     input_mir: &Mir<'gcx>,
     def_id: DefId,
 ) -> BorrowCheckResult<'gcx> {
+    use rustc_errors::Emit; // keep emission contained to this method.
+
     debug!("do_mir_borrowck(def_id = {:?})", def_id);
 
     let tcx = infcx.tcx;
