@@ -34,6 +34,7 @@ use syntax::print::{pprust};
 use syntax::print::pprust::PrintState;
 use syntax::ptr::P;
 use syntax::util::small_vector::SmallVector;
+use syntax::util::ThinVec;
 use syntax_pos::{self, FileName};
 
 use graphviz as dot;
@@ -650,18 +651,31 @@ impl UserIdentifiedItem {
 // [#34511]: https://github.com/rust-lang/rust/issues/34511#issuecomment-322340401
 pub struct ReplaceBodyWithLoop<'a> {
     within_static_or_const: bool,
+    nested_items: Option<ast::Block>,
     sess: &'a Session,
 }
 
 impl<'a> ReplaceBodyWithLoop<'a> {
     pub fn new(sess: &'a Session) -> ReplaceBodyWithLoop<'a> {
-        ReplaceBodyWithLoop { within_static_or_const: false, sess }
+        ReplaceBodyWithLoop { within_static_or_const: false, nested_items: None, sess }
     }
 
     fn run<R, F: FnOnce(&mut Self) -> R>(&mut self, is_const: bool, action: F) -> R {
         let old_const = mem::replace(&mut self.within_static_or_const, is_const);
+
+        // when processing any sort of item, save and reset the
+        // accumulator for each one so that we inject `loop { }` into
+        // method bodies.
+        let old_nested_items = mem::replace(&mut self.nested_items, None);
+
         let ret = action(self);
+
+        // we don't need to do anything with the items newly
+        // accumulated during the recursive fold; if we saw a fn then
+        // they were already used for its body.
+        self.nested_items = old_nested_items;
         self.within_static_or_const = old_const;
+
         ret
     }
 
@@ -708,6 +722,16 @@ impl<'a> ReplaceBodyWithLoop<'a> {
     }
 }
 
+fn new_empty_block(sess: &Session) -> ast::Block {
+    ast::Block {
+        stmts: Vec::new(),
+        rules: BlockCheckMode::Default,
+        id: sess.next_node_id(),
+        span: syntax_pos::DUMMY_SP,
+        recovered: false,
+    }
+}
+
 impl<'a> fold::Folder for ReplaceBodyWithLoop<'a> {
     fn fold_item_kind(&mut self, i: ast::ItemKind) -> ast::ItemKind {
         let is_const = match i {
@@ -736,34 +760,81 @@ impl<'a> fold::Folder for ReplaceBodyWithLoop<'a> {
                 header.constness.node == ast::Constness::Const || Self::should_ignore_fn(decl),
             _ => false,
         };
+
         self.run(is_const, |s| fold::noop_fold_impl_item(i, s))
     }
 
-    fn fold_block(&mut self, b: P<ast::Block>) -> P<ast::Block> {
-        fn expr_to_block(rules: ast::BlockCheckMode,
-                         recovered: bool,
-                         e: Option<P<ast::Expr>>,
-                         sess: &Session) -> P<ast::Block> {
-            P(ast::Block {
-                stmts: e.map(|e| {
-                        ast::Stmt {
-                            id: sess.next_node_id(),
-                            span: e.span,
-                            node: ast::StmtKind::Expr(e),
-                        }
-                    })
-                    .into_iter()
-                    .collect(),
-                rules,
-                id: sess.next_node_id(),
-                span: syntax_pos::DUMMY_SP,
-                recovered,
-            })
+    fn fold_stmt(&mut self, s: ast::Stmt) -> SmallVector<ast::Stmt> {
+        match s.node {
+            ast::StmtKind::Item(..) => {
+                return fold::noop_fold_stmt(s, self);
+            }
+            ast::StmtKind::Local(..) |
+            ast::StmtKind::Expr(..) |
+            ast::StmtKind::Semi(..) |
+            ast::StmtKind::Mac(..) => {
+                // fall-through to general case, where we accumulate blocks of items
+            }
         }
 
-        if !self.within_static_or_const {
+        // mark that we are procesing new level in tree of blocks.
+        let old_nested_items = mem::replace(&mut self.nested_items,
+                                            Some(new_empty_block(self.sess)));
 
-            let empty_block = expr_to_block(BlockCheckMode::Default, false, None, self.sess);
+        // recursively process the statement and discard the result;
+        // we'll use the the nested_items block as the resulting statment.
+        let _ = fold::noop_fold_stmt(s, self);
+        let my_nested_items = mem::replace(&mut self.nested_items, old_nested_items);
+        // we inserted Some in mem::replace above; must be Some now.
+        let my_nested_items = my_nested_items.unwrap();
+
+        if my_nested_items.stmts.len() == 0 {
+            SmallVector::new()
+        } else {
+            SmallVector::one(ast::Stmt {
+                id: self.sess.next_node_id(),
+                span: syntax_pos::DUMMY_SP,
+                node: ast::StmtKind::Expr(P(ast::Expr {
+                    id: self.sess.next_node_id(),
+                    span: syntax_pos::DUMMY_SP,
+                    attrs: ThinVec::new(),
+                    node: ast::ExprKind::Block(P(my_nested_items), None),
+                }))
+            })
+        }
+    }
+
+    fn fold_block(&mut self, b: P<ast::Block>) -> P<ast::Block> {
+        // we don't support everybody_loops in statics or consts, so
+        // just fold without any special handling of this block during the fold.
+        if self.within_static_or_const {
+            return fold::noop_fold_block(b, self);
+        }
+
+        // mark that we are procesing new level in tree of blocks.
+        let old_nested_items = mem::replace(&mut self.nested_items,
+                                            Some(new_empty_block(self.sess)));
+
+        // recursively process the block.
+        let folded_block = fold::noop_fold_block(b, self);
+
+        // put back the original accumulator
+        mem::replace(&mut self.nested_items, old_nested_items);
+
+        // Either this is the first block we encounter (i.e the fn
+        // body), or it is a nested block. We can tell the difference
+        // based on whether `my_nested_blocks` (the original setting
+        // for `self.nested_blocks`) is filled in.
+
+        if self.nested_items.is_some() {
+            // this is not the first block. just return the newly built block
+            folded_block
+        } else {
+            // this is the first (i.e. outermost) block in an
+            // item. Take the newly built block inject a `loop { }`
+            // into the end.
+            let empty_block = P(new_empty_block(self.sess));
+
             let loop_expr = P(ast::Expr {
                 node: ast::ExprKind::Loop(empty_block, None),
                 id: self.sess.next_node_id(),
@@ -771,10 +842,15 @@ impl<'a> fold::Folder for ReplaceBodyWithLoop<'a> {
                 attrs: ast::ThinVec::new(),
             });
 
-            expr_to_block(b.rules, b.recovered, Some(loop_expr), self.sess)
-
-        } else {
-            fold::noop_fold_block(b, self)
+            folded_block.map(|mut block| {
+                block.stmts.push(
+                    ast::Stmt {
+                        id: self.sess.next_node_id(),
+                        span: syntax_pos::DUMMY_SP,
+                        node: ast::StmtKind::Expr(loop_expr),
+                    });
+                block
+            })
         }
     }
 
