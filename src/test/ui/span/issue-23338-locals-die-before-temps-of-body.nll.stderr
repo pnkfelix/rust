@@ -4,7 +4,17 @@ error[E0597]: `y` does not live long enough
 LL |     y.borrow().clone()
    |     ^ borrowed value does not live long enough
 LL | }
-   | - `y` dropped here while still borrowed
+   | -
+   | |
+   | `y` dropped here while still borrowed
+   | borrow later used here, when temporary is dropped
+   |
+note: temporary is formed when evaluating this expresion
+  --> $DIR/issue-23338-locals-die-before-temps-of-body.rs:20:5
+   |
+LL |     y.borrow().clone()
+   |     ^^^^^^^^^^
+   = note: temporary is part of a block-tail expression. Consider adding semicolon to drop its temporaries sooner
 
 error[E0597]: `y` does not live long enough
   --> $DIR/issue-23338-locals-die-before-temps-of-body.rs:27:9
@@ -12,7 +22,16 @@ error[E0597]: `y` does not live long enough
 LL |         y.borrow().clone()
    |         ^ borrowed value does not live long enough
 LL |     };
-   |     - `y` dropped here while still borrowed
+   |     -- borrow later used here, when temporary is dropped
+   |     |
+   |     `y` dropped here while still borrowed
+   |
+note: temporary is formed when evaluating this expresion
+  --> $DIR/issue-23338-locals-die-before-temps-of-body.rs:27:9
+   |
+LL |         y.borrow().clone()
+   |         ^^^^^^^^^^
+   = note: temporary is part of a block-tail expression. Consider adding semicolon to drop its temporaries sooner
 
 error: aborting due to 2 previous errors
 

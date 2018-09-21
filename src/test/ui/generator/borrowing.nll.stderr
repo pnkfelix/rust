@@ -5,7 +5,16 @@ LL |         unsafe { (|| yield &a).resume() }
    |                  ^^^^^^^^^^^^^ borrowed value does not live long enough
 LL |         //~^ ERROR: `a` does not live long enough
 LL |     };
-   |     - `a` dropped here while still borrowed
+   |     -- borrow later used here, when temporary is dropped
+   |     |
+   |     `a` dropped here while still borrowed
+   |
+note: temporary is formed when evaluating this expresion
+  --> $DIR/borrowing.rs:18:18
+   |
+LL |         unsafe { (|| yield &a).resume() }
+   |                  ^^^^^^^^^^^^^
+   = note: temporary is part of a block-tail expression. Consider adding semicolon to drop its temporaries sooner
 
 error[E0597]: `a` does not live long enough
   --> $DIR/borrowing.rs:24:9

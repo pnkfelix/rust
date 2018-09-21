@@ -4,7 +4,16 @@ error[E0597]: `*a` does not live long enough
 LL |         *a.borrow() + 1
    |          ^ borrowed value does not live long enough
 LL |     }; //~^ ERROR `*a` does not live long enough
-   |     - `*a` dropped here while still borrowed
+   |     -- borrow later used here, when temporary is dropped
+   |     |
+   |     `*a` dropped here while still borrowed
+   |
+note: temporary is formed when evaluating this expresion
+  --> $DIR/destructor-restrictions.rs:18:10
+   |
+LL |         *a.borrow() + 1
+   |          ^^^^^^^^^^
+   = note: temporary is part of a block-tail expression. Consider adding semicolon to drop its temporaries sooner
 
 error: aborting due to previous error
 
