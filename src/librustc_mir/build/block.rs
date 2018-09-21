@@ -9,6 +9,7 @@
 // except according to those terms.
 
 use build::{BlockAnd, BlockAndExtension, Builder};
+use build::BlockFrame;
 use build::ForGuard::OutsideGuard;
 use build::matches::ArmHasGuard;
 use hair::*;
@@ -88,6 +89,8 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         let outer_unpushed_unsafe = this.unpushed_unsafe;
         this.update_source_scope_for_safety_mode(span, safety_mode);
 
+        this.block_context.push(BlockFrame::Statement);
+
         let source_info = this.source_info(span);
         for stmt in stmts {
             let Stmt { kind, opt_destruction_scope } = this.hir.mirror(stmt);
@@ -156,10 +159,18 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 }
             }
         }
+
+        let popped = this.block_context.pop();
+        assert_eq!(popped, Some(BlockFrame::Statement));
+
         // Then, the block may have an optional trailing expression which is a “return” value
         // of the block.
         if let Some(expr) = expr {
+            this.block_context.push(BlockFrame::TailExpr);
             unpack!(block = this.into(destination, block, expr));
+            let popped = this.block_context.pop();
+
+            assert_eq!(popped, Some(BlockFrame::TailExpr));
         } else {
             // If a block has no trailing expression, then it is given an implicit return type.
             // This return type is usually `()`, unless the block is diverging, in which case the

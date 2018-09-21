@@ -637,6 +637,12 @@ pub struct LocalDecl<'tcx> {
     /// generator.
     pub internal: bool,
 
+    /// If this is a temporary and `is_block_tail` is true, then it is
+    /// a temporary created for evaluation of some subexpression of
+    /// some block's tail expression (with no intervening statement
+    /// context).
+    pub is_block_tail: bool,
+
     /// Type of this local.
     pub ty: Ty<'tcx>,
 
@@ -786,10 +792,18 @@ impl<'tcx> LocalDecl<'tcx> {
         Self::new_local(ty, Mutability::Mut, false, span)
     }
 
-    /// Create a new immutable `LocalDecl` for a temporary.
+    /// Converts `self` into same `LocalDecl` except tagged as immutable.
     #[inline]
-    pub fn new_immutable_temp(ty: Ty<'tcx>, span: Span) -> Self {
-        Self::new_local(ty, Mutability::Not, false, span)
+    pub fn immutable(mut self) -> Self {
+        self.mutability = Mutability::Not;
+        self
+    }
+
+    /// Converts `self` into same `LocalDecl` except tagged as internal temporary.
+    #[inline]
+    pub fn block_tail(mut self) -> Self {
+        self.is_block_tail = true;
+        self
     }
 
     /// Create a new `LocalDecl` for a internal temporary.
@@ -817,6 +831,7 @@ impl<'tcx> LocalDecl<'tcx> {
             visibility_scope: OUTERMOST_SOURCE_SCOPE,
             internal,
             is_user_variable: None,
+            is_block_tail: false,
         }
     }
 
@@ -835,6 +850,7 @@ impl<'tcx> LocalDecl<'tcx> {
             },
             visibility_scope: OUTERMOST_SOURCE_SCOPE,
             internal: false,
+            is_block_tail: false,
             name: None, // FIXME maybe we do want some name here?
             is_user_variable: None,
         }
@@ -2624,6 +2640,7 @@ BraceStructTypeFoldableImpl! {
         user_ty,
         name,
         source_info,
+        is_block_tail,
         visibility_scope,
     }
 }

@@ -1438,6 +1438,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             source_info,
             visibility_scope,
             internal: false,
+            is_block_tail: false,
             is_user_variable: Some(ClearCrossCrate::Set(BindingForm::Var(VarBindingForm {
                 binding_mode,
                 // hypothetically, `visit_bindings` could try to unzip
@@ -1471,6 +1472,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 visibility_scope,
                 // FIXME: should these secretly injected ref_for_guard's be marked as `internal`?
                 internal: false,
+                is_block_tail: false,
                 is_user_variable: Some(ClearCrossCrate::Set(BindingForm::RefForGuard)),
             });
             LocalsForNode::ForGuard {
