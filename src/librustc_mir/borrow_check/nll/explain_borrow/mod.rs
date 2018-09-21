@@ -121,7 +121,7 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
         use self::BorrowContainsPointReason::*;
 
         debug!(
-            "find_why_borrow_contains_point(reason={:?}, kind_place={:?})",
+            "report_why_borrow_contains_point(reason={:?}, kind_place={:?})",
             reason, kind_place,
         );
 
@@ -170,7 +170,21 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     }
                 }
 
-                None => {}
+                None => {
+                    debug!("DropLiveness for unnamed local[{:?}]: {:?} experimental explanation",
+                           local, &mir.local_decls[local]);
+                    err.span_label(
+                        mir.source_info(location).span,
+                        format!("borrow later used here, when temporary is dropped"));
+                    err.span_note(
+                        mir.local_decls[local].source_info.span,
+                        "temporary is formed when evaluating this expresion");
+                    if mir.local_decls[local].is_block_tail {
+                        err.note(
+                            "temporary is part of a block-tail expression. \
+                             Consider adding semicolon to drop its temporaries sooner");
+                    }
+                }
             }
             OutlivesFreeRegion { outlived_region: Some(region) } => {
                 self.tcx.note_and_explain_free_region(
@@ -180,7 +194,10 @@ impl<'cx, 'gcx, 'tcx> MirBorrowckCtxt<'cx, 'gcx, 'tcx> {
                     "...",
                 );
             }
-            OutlivesFreeRegion { outlived_region: None } => (),
+            OutlivesFreeRegion { outlived_region: None } => {
+                debug!("OutlivesFreeRegion for untracked region \
+                        cannot be explained yet :sad face:");
+            },
         }
     }
 
