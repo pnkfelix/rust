@@ -16,7 +16,7 @@
 // the candidates based on the result.
 
 use build::Builder;
-use build::matches::{Candidate, MatchPair, Test, TestKind};
+use build::matches::{Candidate, MatchPair, ProjectedAscriptions, Test, TestKind};
 use hair::*;
 use rustc_data_structures::bit_set::BitSet;
 use rustc_data_structures::fx::FxHashMap;
@@ -662,6 +662,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         self.prefix_slice_suffix(
             &mut new_candidate.match_pairs,
             &candidate.match_pairs[match_pair_index].place,
+            &ProjectedAscriptions::none(), // FIXME
             prefix,
             opt_slice,
             suffix);
@@ -690,7 +691,10 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                            let place = downcast_place.clone().field(subpattern.field,
                                                                       subpattern.pattern.ty);
                            // e.g., `(x as Variant).0 @ P1`
-                           MatchPair::new(place, &subpattern.pattern)
+                           MatchPair::new(place,
+                                          &subpattern.pattern,
+                                          ProjectedAscriptions::none(), // FIXME
+                           )
                        });
 
         // In addition, we need all the other match pairs from the old candidate.

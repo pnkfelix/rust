@@ -23,7 +23,7 @@
 //! testing a value against a constant.
 
 use build::{BlockAnd, BlockAndExtension, Builder};
-use build::matches::{Ascription, Binding, MatchPair, Candidate};
+use build::matches::{Ascription, Binding, MatchPair, Candidate, Projectable};
 use hair::*;
 use rustc::mir::*;
 
@@ -64,13 +64,27 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                                  -> Result<(), MatchPair<'pat, 'tcx>> {
         match *match_pair.pattern.kind {
             PatternKind::AscribeUserType { ref subpattern, user_ty } => {
+                // #54570: we attach ascriptions to both the top/mid-level
+                // place denoted by the pattern *and* to any bindings
+                // introduced within subpatterns.
+                //
+                // Could we get away with *only* attaching ascriptions
+                // to bindings alone? (Probably not; e.g. consider the
+                // use of `let _: T<'static> = <expr>;` to check some
+                // invariant...)
                 candidate.ascriptions.push(Ascription {
                     span: match_pair.pattern.span,
-                    user_ty,
+                    user_ty: CanonicalTyProjection::from_base(user_ty),
                     source: match_pair.place.clone(),
                 });
 
-                candidate.match_pairs.push(MatchPair::new(match_pair.place, subpattern));
+                // add `user_ty` to the any existing ascriptions that
+                // `match_pair.place` must meet as we descend into its
+                // subpattern.
+                let mut accum = match_pair.ascriptions.clone();
+                accum.add(user_ty);
+
+                candidate.match_pairs.push(MatchPair::new(match_pair.place, subpattern, accum));
 
                 Ok(())
             }
@@ -91,9 +105,16 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                     binding_mode: mode,
                 });
 
+                // FIXME: This is where we could inject an Ascription
+                // that applies to the binding, looping over all
+                // elements of match_pair.ascribed_ty_proj
+
                 if let Some(subpattern) = subpattern.as_ref() {
                     // this is the `x @ P` case; have to keep matching against `P` now
-                    candidate.match_pairs.push(MatchPair::new(match_pair.place, subpattern));
+                    candidate.match_pairs.push(MatchPair::new(
+                        match_pair.place,
+                        subpattern,
+                        match_pair.ascriptions.clone()));
                 }
 
                 Ok(())
@@ -113,6 +134,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                     // irrefutable
                     self.prefix_slice_suffix(&mut candidate.match_pairs,
                                              &match_pair.place,
+                                             &match_pair.ascriptions,
                                              prefix,
                                              slice.as_ref(),
                                              suffix);
@@ -131,8 +153,10 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                     }
                 });
                 if irrefutable {
-                    let place = match_pair.place.downcast(adt_def, variant_index);
-                    candidate.match_pairs.extend(self.field_match_pairs(place, subpatterns));
+                    let (place, ascriptions) = match_pair.downcast(adt_def, variant_index);
+                    candidate.match_pairs.extend(self.field_match_pairs(place,
+                                                                        &ascriptions,
+                                                                        subpatterns));
                     Ok(())
                 } else {
                     Err(match_pair)
@@ -142,6 +166,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             PatternKind::Array { ref prefix, ref slice, ref suffix } => {
                 self.prefix_slice_suffix(&mut candidate.match_pairs,
                                          &match_pair.place,
+                                         &match_pair.ascriptions,
                                          prefix,
                                          slice.as_ref(),
                                          suffix);
@@ -151,13 +176,15 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             PatternKind::Leaf { ref subpatterns } => {
                 // tuple struct, match subpats (if any)
                 candidate.match_pairs
-                         .extend(self.field_match_pairs(match_pair.place, subpatterns));
+                    .extend(self.field_match_pairs(match_pair.place,
+                                                   &match_pair.ascriptions,
+                                                   subpatterns));
                 Ok(())
             }
 
             PatternKind::Deref { ref subpattern } => {
-                let place = match_pair.place.deref();
-                candidate.match_pairs.push(MatchPair::new(place, subpattern));
+                let (place, ascriptions) = match_pair.deref();
+                candidate.match_pairs.push(MatchPair::new(place, subpattern, ascriptions));
                 Ok(())
             }
         }

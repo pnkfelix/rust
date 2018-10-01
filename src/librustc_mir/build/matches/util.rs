@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use build::Builder;
-use build::matches::MatchPair;
+use build::matches::{ProjectedAscriptions, MatchPair};
 use hair::*;
 use rustc::mir::*;
 use std::u32;
@@ -17,13 +17,19 @@ use std::u32;
 impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
     pub fn field_match_pairs<'pat>(&mut self,
                                    place: Place<'tcx>,
+                                   place_ascriptions: &ProjectedAscriptions<'tcx>,
                                    subpatterns: &'pat [FieldPattern<'tcx>])
                                    -> Vec<MatchPair<'pat, 'tcx>> {
+
+        assert!(place_ascriptions.is_empty()); // FIXME bogus placeholder for real handling.
+
         subpatterns.iter()
                    .map(|fieldpat| {
                        let place = place.clone().field(fieldpat.field,
-                                                         fieldpat.pattern.ty);
-                       MatchPair::new(place, &fieldpat.pattern)
+                                                       fieldpat.pattern.ty);
+                       let ascriptions = place_ascriptions.field(fieldpat.field,
+                                                                 fieldpat.pattern.ty);
+                       MatchPair::new(place, &fieldpat.pattern, ascriptions)
                    })
                    .collect()
     }
@@ -31,12 +37,15 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
     pub fn prefix_slice_suffix<'pat>(&mut self,
                                      match_pairs: &mut Vec<MatchPair<'pat, 'tcx>>,
                                      place: &Place<'tcx>,
+                                     place_ascriptions: &ProjectedAscriptions<'tcx>,
                                      prefix: &'pat [Pattern<'tcx>],
                                      opt_slice: Option<&'pat Pattern<'tcx>>,
                                      suffix: &'pat [Pattern<'tcx>]) {
         let min_length = prefix.len() + suffix.len();
         assert!(min_length < u32::MAX as usize);
         let min_length = min_length as u32;
+
+        assert!(place_ascriptions.is_empty()); // FIXME placeholder for actual handling
 
         match_pairs.extend(
             prefix.iter()
@@ -47,17 +56,20 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                           min_length,
                           from_end: false,
                       };
+                      let ascriptions = place_ascriptions.elem(&elem);
                       let place = place.clone().elem(elem);
-                      MatchPair::new(place, subpattern)
+                      MatchPair::new(place, subpattern, ascriptions)
                   })
         );
 
         if let Some(subslice_pat) = opt_slice {
-            let subslice = place.clone().elem(ProjectionElem::Subslice {
+            let elem = ProjectionElem::Subslice {
                 from: prefix.len() as u32,
                 to: suffix.len() as u32
-            });
-            match_pairs.push(MatchPair::new(subslice, subslice_pat));
+            };
+            let subslice_ascriptions = place_ascriptions.elem(&elem);
+            let subslice = place.clone().elem(elem);
+            match_pairs.push(MatchPair::new(subslice, subslice_pat, subslice_ascriptions));
         }
 
         match_pairs.extend(
@@ -70,18 +82,24 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                           min_length,
                           from_end: true,
                       };
+                      let ascriptions = place_ascriptions.elem(&elem);
                       let place = place.clone().elem(elem);
-                      MatchPair::new(place, subpattern)
+                      MatchPair::new(place, subpattern, ascriptions)
                   })
         );
     }
 }
 
 impl<'pat, 'tcx> MatchPair<'pat, 'tcx> {
-    pub fn new(place: Place<'tcx>, pattern: &'pat Pattern<'tcx>) -> MatchPair<'pat, 'tcx> {
+    pub fn new(place: Place<'tcx>,
+               pattern: &'pat Pattern<'tcx>,
+               ascriptions: ProjectedAscriptions<'tcx>,
+    ) -> MatchPair<'pat, 'tcx>
+    {
         MatchPair {
             place,
             pattern,
+            ascriptions,
             slice_len_checked: false,
         }
     }

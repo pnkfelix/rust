@@ -314,6 +314,9 @@ impl<'a, 'gcx> HashStable<StableHashingContext<'a>> for mir::Place<'gcx> {
     }
 }
 
+impl_stable_hash_for!(struct mir::CanonicalTyProjection<'tcx> { base, elems });
+
+
 impl<'a, 'gcx, B, V, T> HashStable<StableHashingContext<'a>>
 for mir::Projection<'gcx, B, V, T>
     where B: HashStable<StableHashingContext<'a>>,

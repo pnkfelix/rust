@@ -152,7 +152,10 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
 
                     Candidate {
                         span: pattern.span,
-                        match_pairs: vec![MatchPair::new(discriminant_place.clone(), pattern)],
+                        match_pairs: vec![
+                            MatchPair::new(discriminant_place.clone(),
+                                           pattern,
+                                           ProjectedAscriptions::none())],
                         bindings: vec![],
                         ascriptions: vec![],
                         guard,
@@ -305,7 +308,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                         kind: StatementKind::AscribeUserType(
                             place.clone(),
                             ty::Variance::Invariant,
-                            ascription_user_ty,
+                            CanonicalTyProjection::from_base(ascription_user_ty),
                         ),
                     },
                 );
@@ -339,7 +342,9 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         // create a dummy candidate
         let mut candidate = Candidate {
             span: irrefutable_pat.span,
-            match_pairs: vec![MatchPair::new(initializer.clone(), &irrefutable_pat)],
+            match_pairs: vec![MatchPair::new(initializer.clone(),
+                                             &irrefutable_pat,
+                                             ProjectedAscriptions::none())],
             bindings: vec![],
             ascriptions: vec![],
             guard: None,
@@ -625,7 +630,47 @@ struct Binding<'tcx> {
 struct Ascription<'tcx> {
     span: Span,
     source: Place<'tcx>,
-    user_ty: CanonicalTy<'tcx>,
+    user_ty: CanonicalTyProjection<'tcx>,
+}
+
+/// Represents a set of ascriptions that are applied to a place if it
+/// matches a given pattern.
+///
+/// (We wrap this to ease addition of convenience methods for
+/// e.g. uniform extension, and also to ease experimentation with the
+/// underlying representation.
+#[derive(Clone, Debug)]
+pub struct ProjectedAscriptions<'tcx> {
+    /// FIXME: Should this be `Box<[_]>` instead of a `Vec<_>`? To
+    /// answer that, need to know: What percentage of the time is this
+    /// non-empty? And if the percentage is significant, could we
+    /// decrease it to insignificance, e.g. by skipping the
+    /// ascriptions for region-free types?
+    ///
+    /// FIXME: Beyond the minor suggestion above, it seems plausible
+    /// that there is going to be a *lot* of redundancy in the
+    /// elements in the suffix of this `Vec` as we desecnd further
+    /// into a pattern. Should we consider some representation that
+    /// factors that out in some manner?
+    elems: Vec<CanonicalTyProjection<'tcx>>
+}
+
+impl<'tcx> ProjectedAscriptions<'tcx> {
+    fn none() -> Self { ProjectedAscriptions { elems: vec![] } }
+    fn is_empty(&self) -> bool { self.elems.is_empty() }
+    fn add(&mut self, ty: CanonicalTy<'tcx>) {
+        self.elems.push(CanonicalTyProjection { base: ty, elems: vec![], });
+    }
+    fn field(&self, f: Field, ty: Ty<'tcx>) -> Self {
+        self.elem(&ProjectionElem::Field(f, ty))
+    }
+    fn elem(&self, elem: &PlaceElem<'tcx>) -> Self {
+        let mut s = self.clone();
+        for proj in &mut s.elems {
+            proj.elems.push(elem.clone());
+        }
+        s
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -636,12 +681,45 @@ pub struct MatchPair<'pat, 'tcx: 'pat> {
     // ... must match this pattern.
     pattern: &'pat Pattern<'tcx>,
 
+    /// Holds all the ascriptions that apply to `self.place`.
+    ///
+    /// Each element `(ty, projs)` comes from some parent pattern that
+    /// was ascribed the type `ty`; `self.place` must have the type
+    /// that results from applying projections `projs` to it.
+    ///
+    /// (Note that RFC #2522 explicitly allows for nesting of
+    /// ascriptions; e.g. it shows the example of `Wrapping(count:
+    /// usize): Wrapping<usize>`. Therefore we use a collection here
+    /// rather than the `Option` you might have expected.)
+    ascriptions: ProjectedAscriptions<'tcx>,
+
     // HACK(eddyb) This is used to toggle whether a Slice pattern
     // has had its length checked. This is only necessary because
     // the "rest" part of the pattern right now has type &[T] and
     // as such, it requires an Rvalue::Slice to be generated.
     // See RFC 495 / issue #23121 for the eventual (proper) solution.
     slice_len_checked: bool,
+}
+
+trait Projectable<'tcx> {
+    type Result;
+    fn deref(&self) -> Self::Result {
+        self.elem(&ProjectionElem::Deref)
+    }
+    fn field(&self, f: Field, ty: Ty<'tcx>) -> Self::Result {
+        self.elem(&ProjectionElem::Field(f, ty))
+    }
+    fn downcast(&self, adt_def: &'tcx ty::AdtDef, variant_index: usize) -> Self::Result {
+        self.elem(&ProjectionElem::Downcast(adt_def, variant_index))
+    }
+    fn elem(&self, elem: &PlaceElem<'tcx>) -> Self::Result;
+}
+
+impl<'pat, 'tcx: 'pat> Projectable<'tcx> for MatchPair<'pat, 'tcx> {
+    type Result = (Place<'tcx>, ProjectedAscriptions<'tcx>);
+    fn elem(&self, elem: &PlaceElem<'tcx>) -> Self::Result {
+        (self.place.clone().elem(elem.clone()), self.ascriptions.elem(elem))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1314,7 +1392,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                     kind: StatementKind::AscribeUserType(
                         ascription.source.clone(),
                         ty::Variance::Covariant,
-                        ascription.user_ty,
+                        ascription.user_ty.clone(),
                     ),
                 },
             );

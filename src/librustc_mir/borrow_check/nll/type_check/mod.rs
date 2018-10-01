@@ -256,7 +256,7 @@ impl<'a, 'b, 'gcx, 'tcx> Visitor<'tcx> for TypeVerifier<'a, 'b, 'gcx, 'tcx> {
             if let Err(terr) = self.cx.relate_type_and_user_type(
                 constant.ty,
                 ty::Variance::Invariant,
-                user_ty,
+                &CanonicalTyProjection::from_base(user_ty),
                 location.to_locations(),
                 ConstraintCategory::Boring,
             ) {
@@ -286,7 +286,7 @@ impl<'a, 'b, 'gcx, 'tcx> Visitor<'tcx> for TypeVerifier<'a, 'b, 'gcx, 'tcx> {
             if let Err(terr) = self.cx.relate_type_and_user_type(
                 local_decl.ty,
                 ty::Variance::Invariant,
-                user_ty,
+                &CanonicalTyProjection::from_base(user_ty),
                 Locations::All(local_decl.source_info.span),
                 ConstraintCategory::TypeAnnotation,
             ) {
@@ -929,7 +929,7 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
         &mut self,
         a: Ty<'tcx>,
         v: ty::Variance,
-        b: CanonicalTy<'tcx>,
+        b: &CanonicalTyProjection<'tcx>,
         locations: Locations,
         category: ConstraintCategory,
     ) -> Fallible<()> {
@@ -1093,7 +1093,7 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
                     if let Err(terr) = self.relate_type_and_user_type(
                         rv_ty,
                         ty::Variance::Invariant,
-                        user_ty,
+                        &CanonicalTyProjection::from_base(user_ty),
                         location.to_locations(),
                         ConstraintCategory::Boring,
                     ) {
@@ -1146,7 +1146,7 @@ impl<'a, 'gcx, 'tcx> TypeChecker<'a, 'gcx, 'tcx> {
                     );
                 };
             }
-            StatementKind::AscribeUserType(ref place, variance, c_ty) => {
+            StatementKind::AscribeUserType(ref place, variance, ref c_ty) => {
                 let place_ty = place.ty(mir, tcx).to_ty(tcx);
                 if let Err(terr) =
                     self.relate_type_and_user_type(

@@ -9,8 +9,9 @@
 // except according to those terms.
 
 use rustc::ty::subst::Substs;
-use rustc::ty::{self, CanonicalTy, ClosureSubsts, GeneratorSubsts, Ty, TypeFoldable};
-use rustc::mir::{BasicBlock, Location, Mir, Place, Statement, StatementKind};
+use rustc::ty::{self, ClosureSubsts, GeneratorSubsts, Ty, TypeFoldable};
+use rustc::mir::{BasicBlock, CanonicalTyProjection, Location};
+use rustc::mir::{Mir, Place, Statement, StatementKind};
 use rustc::mir::visit::{MutVisitor, TyContext};
 use rustc::infer::{InferCtxt, NLLRegionVariableOrigin};
 
@@ -116,7 +117,7 @@ impl<'a, 'gcx, 'tcx> MutVisitor<'tcx> for NLLVisitor<'a, 'gcx, 'tcx> {
         &mut self,
         _place: &mut Place<'tcx>,
         _variance: &mut ty::Variance,
-        _c_ty: &mut CanonicalTy<'tcx>,
+        _c_ty: &mut CanonicalTyProjection<'tcx>,
         _location: Location,
     ) {
         // User-assert-ty statements represent types that the user added explicitly.

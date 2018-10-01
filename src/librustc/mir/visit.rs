@@ -147,7 +147,7 @@ macro_rules! make_mir_visitor {
             fn visit_ascribe_user_ty(&mut self,
                                      place: & $($mutability)* Place<'tcx>,
                                      variance: & $($mutability)* ty::Variance,
-                                     c_ty: & $($mutability)* CanonicalTy<'tcx>,
+                                     c_ty: & $($mutability)* CanonicalTyProjection<'tcx>,
                                      location: Location) {
                 self.super_ascribe_user_ty(place, variance, c_ty, location);
             }
@@ -215,6 +215,13 @@ macro_rules! make_mir_visitor {
 
             fn visit_canonical_ty(&mut self, ty: & $($mutability)* CanonicalTy<'tcx>) {
                 self.super_canonical_ty(ty);
+            }
+
+            fn visit_canonical_ty_proj(&mut self,
+                                       ty_proj: & $($mutability)* CanonicalTyProjection<'tcx>,
+                                       loc: Location)
+            {
+                self.super_canonical_ty_proj(ty_proj, loc);
             }
 
             fn visit_region(&mut self,
@@ -635,10 +642,10 @@ macro_rules! make_mir_visitor {
             fn super_ascribe_user_ty(&mut self,
                                      place: & $($mutability)* Place<'tcx>,
                                      _variance: & $($mutability)* ty::Variance,
-                                     c_ty: & $($mutability)* CanonicalTy<'tcx>,
+                                     c_ty_proj: & $($mutability)* CanonicalTyProjection<'tcx>,
                                      location: Location) {
                 self.visit_place(place, PlaceContext::Validate, location);
-                self.visit_canonical_ty(c_ty);
+                self.visit_canonical_ty_proj(c_ty_proj, location);
             }
 
             fn super_place(&mut self,
@@ -780,6 +787,15 @@ macro_rules! make_mir_visitor {
             }
 
             fn super_canonical_ty(&mut self, _ty: & $($mutability)* CanonicalTy<'tcx>) {
+            }
+
+            fn super_canonical_ty_proj(&mut self,
+                                       ty_proj: & $($mutability)* CanonicalTyProjection<'tcx>,
+                                       loc: Location) {
+                self.visit_canonical_ty(& $($mutability)* ty_proj.base);
+                for elem in & $($mutability)* ty_proj.elems {
+                    self.visit_projection_elem(elem, loc);
+                }
             }
 
             fn super_ty(&mut self, _ty: & $($mutability)* Ty<'tcx>) {

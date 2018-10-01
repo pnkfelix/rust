@@ -16,11 +16,11 @@ use borrow_check::nll::region_infer::values::LivenessValues;
 use rustc::infer::InferCtxt;
 use rustc::mir::visit::TyContext;
 use rustc::mir::visit::Visitor;
-use rustc::mir::{BasicBlock, BasicBlockData, Location, Mir, Place, Rvalue};
+use rustc::mir::{BasicBlock, BasicBlockData, CanonicalTyProjection, Location, Mir, Place, Rvalue};
 use rustc::mir::{Statement, Terminator};
 use rustc::ty::fold::TypeFoldable;
 use rustc::ty::subst::Substs;
-use rustc::ty::{self, CanonicalTy, ClosureSubsts, GeneratorSubsts, RegionVid};
+use rustc::ty::{self, ClosureSubsts, GeneratorSubsts, RegionVid};
 
 pub(super) fn generate_constraints<'cx, 'gcx, 'tcx>(
     infcx: &InferCtxt<'cx, 'gcx, 'tcx>,
@@ -179,9 +179,10 @@ impl<'cg, 'cx, 'gcx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'gcx
         &mut self,
         _place: &Place<'tcx>,
         _variance: &ty::Variance,
-        _c_ty: &CanonicalTy<'tcx>,
+        _c_ty: &CanonicalTyProjection<'tcx>,
         _location: Location,
     ) {
+        // FIXME: it would be good to at least document why this is a no-op.
     }
 }
 

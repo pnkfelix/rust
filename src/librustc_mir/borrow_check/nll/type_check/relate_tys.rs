@@ -14,11 +14,12 @@ use borrow_check::nll::universal_regions::UniversalRegions;
 use borrow_check::nll::ToRegionVid;
 use rustc::infer::canonical::{Canonical, CanonicalVarInfos};
 use rustc::infer::{InferCtxt, NLLRegionVariableOrigin};
+use rustc::mir::CanonicalTyProjection;
 use rustc::traits::query::Fallible;
 use rustc::ty::fold::{TypeFoldable, TypeVisitor};
 use rustc::ty::relate::{self, Relate, RelateResult, TypeRelation};
 use rustc::ty::subst::Kind;
-use rustc::ty::{self, CanonicalTy, CanonicalVar, RegionVid, Ty, TyCtxt};
+use rustc::ty::{self, CanonicalVar, RegionVid, Ty, TyCtxt};
 use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::indexed_vec::IndexVec;
 
@@ -71,7 +72,7 @@ pub(super) fn relate_type_and_user_type<'tcx>(
     infcx: &InferCtxt<'_, '_, 'tcx>,
     a: Ty<'tcx>,
     v: ty::Variance,
-    b: CanonicalTy<'tcx>,
+    b: &CanonicalTyProjection<'tcx>,
     locations: Locations,
     category: ConstraintCategory,
     borrowck_context: Option<&mut BorrowCheckContext<'_, 'tcx>>,
@@ -80,10 +81,12 @@ pub(super) fn relate_type_and_user_type<'tcx>(
         "sub_type_and_user_type(a={:?}, b={:?}, locations={:?})",
         a, b, locations
     );
+
+    assert!(b.elems.is_empty());
     let Canonical {
         variables: b_variables,
         value: b_value,
-    } = b;
+    } = b.base;
 
     // The `TypeRelating` code assumes that the "canonical variables"
     // appear in the "a" side, so flip `Contravariant` ambient

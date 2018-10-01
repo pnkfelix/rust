@@ -1679,10 +1679,36 @@ pub enum StatementKind<'tcx> {
     /// - `Contravariant` -- requires that `T_y :> T`
     /// - `Invariant` -- requires that `T_y == T`
     /// - `Bivariant` -- no effect
-    AscribeUserType(Place<'tcx>, ty::Variance, CanonicalTy<'tcx>),
+    AscribeUserType(Place<'tcx>, ty::Variance, CanonicalTyProjection<'tcx>),
 
     /// No-op. Useful for deleting instructions without affecting statement indices.
     Nop,
+}
+
+/// Corresponds to `PlaceProjection`, except that 1. this has a
+/// `CanonicalTy` as its base element, and 2. it is structured
+/// differently.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
+pub struct CanonicalTyProjection<'tcx> {
+    pub base: CanonicalTy<'tcx>,
+    pub elems: Vec<PlaceElem<'tcx>>,
+}
+
+#[allow(dead_code)] // FIXME: use or kill each of these.
+impl<'tcx> CanonicalTyProjection<'tcx> {
+    pub fn from_base(base: CanonicalTy<'tcx>) -> Self { Self::new(base, vec![]) }
+
+    pub fn new(base: CanonicalTy<'tcx>, elems: Vec<PlaceElem<'tcx>>) -> Self {
+        CanonicalTyProjection { base, elems }
+    }
+
+    pub fn push(&mut self, elem: PlaceElem<'tcx>) { self.elems.push(elem); }
+
+    pub fn extend(&self, elem: PlaceElem<'tcx>) -> Self {
+        let mut s = self.clone();
+        s.push(elem);
+        s
+    }
 }
 
 /// The `FakeReadCause` describes the type of pattern why a `FakeRead` statement exists.
@@ -3008,6 +3034,54 @@ impl<'tcx> TypeFoldable<'tcx> for Operand<'tcx> {
     }
 }
 
+// FIXME: I wanted to share code for the implementation of TypeFoldable between
+// Projection and CanonicalTyProjection. The more obvious and cleaner thing to do
+// would have been to just implement TypeFoldable for ProjectionElem. But I am
+// currently conservatively assuming that there is some reason why we were not
+// *already* doing that.
+impl<'tcx, V, T> ProjectionElem<'tcx, V, T> where
+    V: TypeFoldable<'tcx>,
+    T: TypeFoldable<'tcx>,
+{
+    fn fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
+        use mir::ProjectionElem::*;
+
+        match self {
+            Field(f, ref ty) => Field(*f, ty.fold_with(folder)),
+            Index(ref v) => Index(v.fold_with(folder)),
+
+            elem @ Deref |
+            elem @ ConstantIndex { .. } |
+            elem @ Subslice { .. } |
+            elem @ Downcast(..) => elem.clone(),
+        }
+    }
+
+    fn visit_with<Vs: TypeVisitor<'tcx>>(&self, visitor: &mut Vs) -> bool {
+        use mir::ProjectionElem::*;
+
+        match self {
+            Field(_, ref ty) => ty.visit_with(visitor),
+            Index(ref v) => v.visit_with(visitor),
+
+            Deref | ConstantIndex { .. } | Subslice { .. } | Downcast(..) => false,
+        }
+    }
+}
+
+
+impl<'tcx> TypeFoldable<'tcx> for CanonicalTyProjection<'tcx> {
+    fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
+        let base = self.base.fold_with(folder);
+        let elems = self.elems.iter().map(|elem| elem.fold_with(folder)).collect();
+        CanonicalTyProjection { base, elems }
+    }
+
+    fn super_visit_with<Vs: TypeVisitor<'tcx>>(&self, visitor: &mut Vs) -> bool {
+        self.base.visit_with(visitor) || self.elems.iter().all(|elem| elem.visit_with(visitor))
+    }
+}
+
 impl<'tcx, B, V, T> TypeFoldable<'tcx> for Projection<'tcx, B, V, T>
 where
     B: TypeFoldable<'tcx>,
@@ -3015,27 +3089,13 @@ where
     T: TypeFoldable<'tcx>,
 {
     fn super_fold_with<'gcx: 'tcx, F: TypeFolder<'gcx, 'tcx>>(&self, folder: &mut F) -> Self {
-        use mir::ProjectionElem::*;
-
         let base = self.base.fold_with(folder);
-        let elem = match self.elem {
-            Deref => Deref,
-            Field(f, ref ty) => Field(f, ty.fold_with(folder)),
-            Index(ref v) => Index(v.fold_with(folder)),
-            ref elem => elem.clone(),
-        };
-
+        let elem = self.elem.fold_with(folder);
         Projection { base, elem }
     }
 
     fn super_visit_with<Vs: TypeVisitor<'tcx>>(&self, visitor: &mut Vs) -> bool {
-        use mir::ProjectionElem::*;
-
-        self.base.visit_with(visitor) || match self.elem {
-            Field(_, ref ty) => ty.visit_with(visitor),
-            Index(ref v) => v.visit_with(visitor),
-            _ => false,
-        }
+        self.base.visit_with(visitor) || self.elem.visit_with(visitor)
     }
 }
 
