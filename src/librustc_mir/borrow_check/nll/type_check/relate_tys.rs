@@ -14,12 +14,12 @@ use borrow_check::nll::universal_regions::UniversalRegions;
 use borrow_check::nll::ToRegionVid;
 use rustc::infer::canonical::{Canonical, CanonicalVarInfos};
 use rustc::infer::{InferCtxt, NLLRegionVariableOrigin};
-use rustc::mir::CanonicalTyProjection;
+use rustc::mir::{CanonicalTyProjection, ProjectionElem};
 use rustc::traits::query::Fallible;
 use rustc::ty::fold::{TypeFoldable, TypeVisitor};
 use rustc::ty::relate::{self, Relate, RelateResult, TypeRelation};
 use rustc::ty::subst::Kind;
-use rustc::ty::{self, CanonicalVar, RegionVid, Ty, TyCtxt};
+use rustc::ty::{self, CanonicalVar, RegionVid, Ty, TyCtxt, TyKind, VariantDef};
 use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::indexed_vec::IndexVec;
 
@@ -82,11 +82,72 @@ pub(super) fn relate_type_and_user_type<'tcx>(
         a, b, locations
     );
 
-    assert!(b.elems.is_empty());
     let Canonical {
         variables: b_variables,
         value: b_value,
     } = b.base;
+
+    let b_value = {
+
+        // FIXME: If this loop ends up actually working, it raises the
+        // question of "Why not do it this way at the point in the
+        // compiler source code when we originally ascribe the
+        // pattern, ratter than adding the CanonicalTyProjection
+        // machinery?"
+        //
+        // (pnkfelix suspects the answer is going to be that this loop
+        // does not work)
+
+        enum TyOrVariant<'a, 'tcx> { Ty(Ty<'tcx>), Variant(&'a VariantDef) }
+
+        let mut last_ty = b_value;
+        let mut tov = TyOrVariant::Ty(b_value);
+
+        for proj in &b.elems {
+            match (proj, tov) {
+                (ProjectionElem::Deref, TyOrVariant::Ty(t)) => {
+                    last_ty = t.builtin_deref(true).unwrap().ty;
+                    tov = TyOrVariant::Ty(last_ty);
+                }
+                (ProjectionElem::Field(_field, t), TyOrVariant::Ty(_)) => {
+                    // FIXME: shouldn't we be checking that LHS meets constraint from RHS?
+                    last_ty = t;
+                    tov = TyOrVariant::Ty(last_ty);
+                }
+                (ProjectionElem::Field(_field, t), TyOrVariant::Variant(_)) => {
+                    // FIXME: shouldn't we be checking that LHS meets constraint from RHS?
+                    last_ty = t;
+                    tov = TyOrVariant::Ty(last_ty);
+                }
+                (ProjectionElem::Index(_local), TyOrVariant::Ty(t)) => {
+                    last_ty = t.builtin_index().unwrap();
+                    tov = TyOrVariant::Ty(last_ty);
+                }
+                (ProjectionElem::ConstantIndex { .. }, TyOrVariant::Ty(t)) => {
+                    last_ty = t.builtin_index().unwrap();
+                    tov = TyOrVariant::Ty(last_ty);
+                }
+                (ProjectionElem::Subslice { .. }, moved_tov) => {
+                    // subslice is just same type
+                    tov = moved_tov;
+                }
+                (ProjectionElem::Downcast(adt_def, index), TyOrVariant::Ty(t)) => {
+                    if let TyKind::Adt(def, _substs) = t.sty {
+                        assert_eq!(adt_def.did, def.did);
+                        tov = TyOrVariant::Variant(&def.variants[*index]);
+                    } else {
+                        bug!("downcast on non-adt");
+                    }
+                }
+
+                (_, TyOrVariant::Variant(v)) =>
+                    bug!("unhandled combination of projection {:?} on variant {:?} \
+                          when relating_type_and_user_type {:?} {:?}", proj, v, a, b),
+            }
+        }
+
+        last_ty
+    };
 
     // The `TypeRelating` code assumes that the "canonical variables"
     // appear in the "a" side, so flip `Contravariant` ambient

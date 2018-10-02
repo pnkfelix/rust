@@ -20,9 +20,6 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                                    place_ascriptions: &ProjectedAscriptions<'tcx>,
                                    subpatterns: &'pat [FieldPattern<'tcx>])
                                    -> Vec<MatchPair<'pat, 'tcx>> {
-
-        assert!(place_ascriptions.is_empty()); // FIXME bogus placeholder for real handling.
-
         subpatterns.iter()
                    .map(|fieldpat| {
                        let place = place.clone().field(fieldpat.field,
@@ -44,8 +41,6 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         let min_length = prefix.len() + suffix.len();
         assert!(min_length < u32::MAX as usize);
         let min_length = min_length as u32;
-
-        assert!(place_ascriptions.is_empty()); // FIXME placeholder for actual handling
 
         match_pairs.extend(
             prefix.iter()

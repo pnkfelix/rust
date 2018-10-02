@@ -82,7 +82,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 // `match_pair.place` must meet as we descend into its
                 // subpattern.
                 let mut accum = match_pair.ascriptions.clone();
-                accum.add(user_ty);
+                accum.add(user_ty, match_pair.pattern.span);
 
                 candidate.match_pairs.push(MatchPair::new(match_pair.place, subpattern, accum));
 
@@ -105,9 +105,15 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                     binding_mode: mode,
                 });
 
-                // FIXME: This is where we could inject an Ascription
-                // that applies to the binding, looping over all
-                // elements of match_pair.ascribed_ty_proj
+                // inject an Ascription that applies to the binding,
+                // looping over match_pair.ascriptions
+                for &(span, ref proj_ascription) in &match_pair.ascriptions.elems {
+                    candidate.ascriptions.push(Ascription {
+                        span,
+                        source: match_pair.place.clone(),
+                        user_ty: proj_ascription.clone(),
+                    });
+                }
 
                 if let Some(subpattern) = subpattern.as_ref() {
                     // this is the `x @ P` case; have to keep matching against `P` now

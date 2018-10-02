@@ -652,21 +652,20 @@ pub struct ProjectedAscriptions<'tcx> {
     /// elements in the suffix of this `Vec` as we desecnd further
     /// into a pattern. Should we consider some representation that
     /// factors that out in some manner?
-    elems: Vec<CanonicalTyProjection<'tcx>>
+    elems: Vec<(Span, CanonicalTyProjection<'tcx>)>
 }
 
 impl<'tcx> ProjectedAscriptions<'tcx> {
     fn none() -> Self { ProjectedAscriptions { elems: vec![] } }
-    fn is_empty(&self) -> bool { self.elems.is_empty() }
-    fn add(&mut self, ty: CanonicalTy<'tcx>) {
-        self.elems.push(CanonicalTyProjection { base: ty, elems: vec![], });
+    fn add(&mut self, ty: CanonicalTy<'tcx>, span: Span) {
+        self.elems.push((span, CanonicalTyProjection { base: ty, elems: vec![], }));
     }
     fn field(&self, f: Field, ty: Ty<'tcx>) -> Self {
         self.elem(&ProjectionElem::Field(f, ty))
     }
     fn elem(&self, elem: &PlaceElem<'tcx>) -> Self {
         let mut s = self.clone();
-        for proj in &mut s.elems {
+        for &mut (_span, ref mut proj) in &mut s.elems {
             proj.elems.push(elem.clone());
         }
         s
