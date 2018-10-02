@@ -102,15 +102,8 @@ fn static_to_a_to_static_through_variable<'a>(x: &'a u32) -> &'static u32 {
 }
 
 fn static_to_a_to_static_through_tuple<'a>(x: &'a u32) -> &'static u32 {
-    // FIXME(#47187): The fact that this type-checks is perhaps surprising.
-    // What happens is that the right-hand side is constrained to have
-    // type `&'a u32`, which is possible, because it has type
-    // `&'static u32`. The variable `y` is then forced to have type
-    // `&'static u32`, but it is constrained only by the right-hand
-    // side, not the ascribed type, and hence it passes.
-
     let (y, _z): (&'a u32, u32) = (&22, 44);
-    y
+    y //~ ERROR
 }
 
 fn a_to_static_then_static<'a>(x: &'a u32) -> &'static u32 {

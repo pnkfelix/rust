@@ -131,14 +131,23 @@ LL |     y //~ ERROR
    |     ^ returning this value requires that `'a` must outlive `'static`
 
 error: unsatisfied lifetime constraints
-  --> $DIR/patterns.rs:117:9
+  --> $DIR/patterns.rs:106:5
+   |
+LL | fn static_to_a_to_static_through_tuple<'a>(x: &'a u32) -> &'static u32 {
+   |                                        -- lifetime `'a` defined here
+LL |     let (y, _z): (&'a u32, u32) = (&22, 44);
+LL |     y //~ ERROR
+   |     ^ returning this value requires that `'a` must outlive `'static`
+
+error: unsatisfied lifetime constraints
+  --> $DIR/patterns.rs:110:41
    |
 LL | fn a_to_static_then_static<'a>(x: &'a u32) -> &'static u32 {
    |                            -- lifetime `'a` defined here
 LL |     let (y, _z): (&'static u32, u32) = (x, 44); //~ ERROR
-   |         ^^^^^^^ type annotation requires that `'a` must outlive `'static`
+   |                                         ^ requires that `'a` must outlive `'static`
 
-error: aborting due to 14 previous errors
+error: aborting due to 15 previous errors
 
 Some errors occurred: E0597, E0716.
 For more information about an error, try `rustc --explain E0597`.
