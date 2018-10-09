@@ -15,11 +15,12 @@ use borrow_check::nll::ToRegionVid;
 use rustc::infer::canonical::{Canonical, CanonicalVarInfos};
 use rustc::infer::{InferCtxt, NLLRegionVariableOrigin};
 use rustc::mir::{CanonicalTyProjection, ProjectionElem};
+use rustc::mir::tcx::PlaceTy;
 use rustc::traits::query::Fallible;
 use rustc::ty::fold::{TypeFoldable, TypeVisitor};
 use rustc::ty::relate::{self, Relate, RelateResult, TypeRelation};
 use rustc::ty::subst::Kind;
-use rustc::ty::{self, CanonicalVar, RegionVid, Ty, TyCtxt, TyKind, VariantDef};
+use rustc::ty::{self, CanonicalVar, RegionVid, Ty, TyCtxt, TyKind};
 use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::indexed_vec::IndexVec;
 
@@ -98,51 +99,73 @@ pub(super) fn relate_type_and_user_type<'tcx>(
         // (pnkfelix suspects the answer is going to be that this loop
         // does not work)
 
-        enum TyOrVariant<'a, 'tcx> { Ty(Ty<'tcx>), Variant(&'a VariantDef) }
-
         let mut last_ty = b_value;
-        let mut tov = TyOrVariant::Ty(b_value);
+        let mut ty_or_variant = PlaceTy::Ty { ty: b_value };
 
         for proj in &b.elems {
-            match (proj, tov) {
-                (ProjectionElem::Deref, TyOrVariant::Ty(t)) => {
-                    last_ty = t.builtin_deref(true).unwrap().ty;
-                    tov = TyOrVariant::Ty(last_ty);
+            match (proj, ty_or_variant) {
+                (ProjectionElem::Deref, PlaceTy::Ty { ty }) => {
+                    last_ty = ty.builtin_deref(true).unwrap().ty;
+                    ty_or_variant = PlaceTy::Ty { ty: last_ty };
                 }
-                (ProjectionElem::Field(_field, t), TyOrVariant::Ty(_)) => {
-                    // FIXME: shouldn't we be checking that LHS meets constraint from RHS?
-                    last_ty = t;
-                    tov = TyOrVariant::Ty(last_ty);
+
+                (ProjectionElem::Field(field, _), PlaceTy::Ty { ty }) => {
+                    match &ty.sty {
+                        ty::Adt(adt_def, substs) => {
+                            let field = &adt_def.non_enum_variant().fields[field.index()];
+                            last_ty = field.ty(infcx.tcx, substs);
+                        }
+                        ty::Tuple(tys) => {
+                            last_ty = tys[field.index()];
+                        }
+                        _ => bug!("proj: {:?} took field of non-adt: {:?}", proj, ty),
+                    }
+                    ty_or_variant = PlaceTy::Ty { ty: last_ty };
                 }
-                (ProjectionElem::Field(_field, t), TyOrVariant::Variant(_)) => {
-                    // FIXME: shouldn't we be checking that LHS meets constraint from RHS?
-                    last_ty = t;
-                    tov = TyOrVariant::Ty(last_ty);
+
+                (ProjectionElem::Field(field, _t),
+                 PlaceTy::Downcast { adt_def, substs, variant_index }) => {
+                    let field = &adt_def.variants[variant_index].fields[field.index()];
+                    last_ty = field.ty(infcx.tcx, substs);
+                    ty_or_variant = PlaceTy::Ty { ty: last_ty };
                 }
-                (ProjectionElem::Index(_local), TyOrVariant::Ty(t)) => {
-                    last_ty = t.builtin_index().unwrap();
-                    tov = TyOrVariant::Ty(last_ty);
+
+                (ProjectionElem::Index(..), PlaceTy::Ty { ty }) |
+                (ProjectionElem::ConstantIndex { .. }, PlaceTy::Ty { ty }) => {
+                    last_ty = ty.builtin_index().unwrap();
+                    ty_or_variant = PlaceTy::Ty { ty: last_ty };
                 }
-                (ProjectionElem::ConstantIndex { .. }, TyOrVariant::Ty(t)) => {
-                    last_ty = t.builtin_index().unwrap();
-                    tov = TyOrVariant::Ty(last_ty);
+
+                (ProjectionElem::Subslice { from, to }, PlaceTy::Ty { ty }) => {
+                    match ty.sty {
+                        ty::Array(inner, size) => {
+                            let size = size.unwrap_usize(infcx.tcx);
+                            let len = size - (*from as u64) - (*to as u64);
+                            last_ty = infcx.tcx.mk_array(inner, len);
+                        }
+                        ty::Slice(..) => {
+                            last_ty = ty;
+                        }
+                        _ => {
+                            bug!("cannot subslice non-array type `{:?}`", ty);
+                        }
+                    }
+                    ty_or_variant = PlaceTy::Ty { ty: last_ty };
                 }
-                (ProjectionElem::Subslice { .. }, moved_tov) => {
-                    // subslice is just same type
-                    tov = moved_tov;
-                }
-                (ProjectionElem::Downcast(adt_def, index), TyOrVariant::Ty(t)) => {
-                    if let TyKind::Adt(def, _substs) = t.sty {
+
+                (&ProjectionElem::Downcast(adt_def, variant_index), PlaceTy::Ty { ty }) => {
+                    if let TyKind::Adt(def, substs) = ty.sty {
                         assert_eq!(adt_def.did, def.did);
-                        tov = TyOrVariant::Variant(&def.variants[*index]);
+                        ty_or_variant = PlaceTy::Downcast { adt_def, substs, variant_index };
                     } else {
                         bug!("downcast on non-adt");
                     }
                 }
 
-                (_, TyOrVariant::Variant(v)) =>
-                    bug!("unhandled combination of projection {:?} on variant {:?} \
-                          when relating_type_and_user_type {:?} {:?}", proj, v, a, b),
+                (_, PlaceTy::Downcast { .. }) => {
+                    bug!("unhandled combination of projection {:?} on downcast {:?} \
+                          when relating_type_and_user_type {:?} {:?}", proj, ty_or_variant, a, b);
+                }
             }
         }
 

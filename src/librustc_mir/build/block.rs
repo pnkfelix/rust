@@ -135,6 +135,9 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                             opt_destruction_scope.map(|de|(de, source_info)), block, |this| {
                                 let scope = (init_scope, source_info);
                                 this.in_scope(scope, lint_level, block, |this| {
+                                    // `expr_into_pattern` inserts
+                                    // AscribeUserType; but should
+                                    // `declare_bindings` do it ...?
                                     this.expr_into_pattern(block, pattern, init)
                                 })
                             }));
@@ -143,7 +146,10 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                             None, remainder_span, lint_level, slice::from_ref(&pattern),
                             ArmHasGuard(false), None);
 
+                        // N.B. the None here is a lack of pattern_user_ty (but if present,
+                        // it will be attached to the `pattern`...)
                         this.visit_bindings(&pattern, None, &mut |this, _, _, _, node, span, _, _| {
+                            // ... or maybe just insert AscribeUserType here?
                             this.storage_live_binding(block, node, span, OutsideGuard);
                             this.schedule_drop_for_binding(node, span, OutsideGuard);
                         })

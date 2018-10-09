@@ -1545,8 +1545,8 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
     ) {
         debug!(
             "declare_binding(var_id={:?}, name={:?}, mode={:?}, var_ty={:?}, \
-             visibility_scope={:?}, source_info={:?})",
-            var_id, name, mode, var_ty, visibility_scope, source_info
+             user_var_ty={:?}, visibility_scope={:?}, source_info={:?})",
+            var_id, name, mode, var_ty, user_var_ty, visibility_scope, source_info
         );
 
         let tcx = self.hir.tcx();
