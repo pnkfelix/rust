@@ -8,9 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use rustc::infer::canonical::Canonical;
 use rustc::ty::subst::Substs;
-use rustc::ty::{self, ClosureSubsts, GeneratorSubsts, Ty, TypeFoldable};
-use rustc::mir::{Location, Mir, UserTypeAnnotation};
+use rustc::ty::{
+    self, ClosureSubsts, GeneratorSubsts, Ty, TypeFoldable, UserTypeAnnotation,
+    UserTypeAnnotationIndex,
+};
+use rustc::mir::{Location, Mir};
 use rustc::mir::visit::{MutVisitor, TyContext};
 use rustc::infer::{InferCtxt, NLLRegionVariableOrigin};
 
@@ -65,7 +69,11 @@ impl<'a, 'gcx, 'tcx> MutVisitor<'tcx> for NLLVisitor<'a, 'gcx, 'tcx> {
         debug!("visit_ty: ty={:?}", ty);
     }
 
-    fn visit_user_type_annotation(&mut self, _ty: &mut UserTypeAnnotation<'tcx>) {
+    fn visit_user_type_annotation(
+        &mut self,
+        _index: UserTypeAnnotationIndex,
+        _ty: &mut Canonical<'tcx, UserTypeAnnotation<'tcx>>,
+    ) {
         // User type annotations represent the types that the user
         // wrote in the progarm. We don't want to erase the regions
         // from these types: rather, we want to add them as
