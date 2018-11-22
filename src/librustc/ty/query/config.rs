@@ -15,7 +15,8 @@ use mir::interpret::GlobalId;
 use traits;
 use traits::query::{
     CanonicalPredicateGoal, CanonicalProjectionGoal, CanonicalTyGoal,
-    CanonicalTypeOpAscribeUserTypeGoal, CanonicalTypeOpEqGoal, CanonicalTypeOpNormalizeGoal,
+    CanonicalTypeOpAscribeUserTypeGoal, CanonicalTypeOpAscribeUserTypeWellFormedGoal,
+    CanonicalTypeOpEqGoal, CanonicalTypeOpNormalizeGoal,
     CanonicalTypeOpProvePredicateGoal, CanonicalTypeOpSubtypeGoal,
 };
 use ty::{self, ParamEnvAnd, Ty, TyCtxt};
@@ -122,6 +123,15 @@ impl<'tcx> QueryDescription<'tcx> for queries::type_op_ascribe_user_type<'tcx> {
         goal: CanonicalTypeOpAscribeUserTypeGoal<'tcx>,
     ) -> Cow<'static, str> {
         format!("evaluating `type_op_ascribe_user_type` `{:?}`", goal).into()
+    }
+}
+
+impl<'tcx> QueryDescription<'tcx> for queries::type_op_ascribe_user_type_well_formed<'tcx> {
+    fn describe(
+        _tcx: TyCtxt<'_, '_, '_>,
+        goal: CanonicalTypeOpAscribeUserTypeWellFormedGoal<'tcx>,
+    ) -> Cow<'static, str> {
+        format!("evaluating `type_op_ascribe_user_type_well_formed` `{:?}`", goal).into()
     }
 }
 
