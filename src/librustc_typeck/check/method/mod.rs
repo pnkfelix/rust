@@ -365,16 +365,22 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         })
     }
 
-    pub fn resolve_ufcs(&self,
-                        span: Span,
-                        method_name: ast::Ident,
-                        self_ty: Ty<'tcx>,
-                        expr_id: ast::NodeId)
-                        -> Result<Def, MethodError<'tcx>> {
+    pub fn resolve_ufcs(
+        &self,
+        span: Span,
+        method_name: ast::Ident,
+        self_ty: Ty<'tcx>,
+        expr_id: ast::NodeId
+    ) -> Result<Def, MethodError<'tcx>> {
+        debug!(
+            "resolve_ufcs: method_name={:?} self_ty={:?} expr_id={:?}",
+            method_name, self_ty, expr_id
+        );
         let mode = probe::Mode::Path;
         let pick = self.probe_for_name(span, mode, method_name, IsSuggestion(false),
                                        self_ty, expr_id, ProbeScope::TraitsInScope)?;
 
+        debug!("resolve_ufcs: pick={:?}", pick);
         if let Some(import_id) = pick.import_id {
             let import_def_id = self.tcx.hir().local_def_id(import_id);
             debug!("used_trait_import: {:?}", import_def_id);
@@ -383,6 +389,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         }
 
         let def = pick.item.def();
+        debug!("resolve_ufcs: def={:?}", def);
         self.tcx.check_stability(def.def_id(), Some(expr_id), span);
 
         Ok(def)

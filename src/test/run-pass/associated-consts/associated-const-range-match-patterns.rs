@@ -9,7 +9,7 @@
 // except according to those terms.
 
 // run-pass
-#![allow(dead_code)]
+#![allow(dead_code, unreachable_patterns)]
 
 struct Foo;
 
