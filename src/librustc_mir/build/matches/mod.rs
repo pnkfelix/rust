@@ -419,6 +419,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         );
         let mut scope = self.source_scope;
         let num_patterns = patterns.len();
+        debug!("declare_bindings: patterns={:?}", patterns);
         self.visit_bindings(
             &patterns[0],
             &PatternTypeProjections::none(),
@@ -509,6 +510,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             &PatternTypeProjections<'tcx>,
         ),
     ) {
+        debug!("visit_bindings: pattern={:?} pattern_user_ty={:?}", pattern, pattern_user_ty);
         match *pattern.kind {
             PatternKind::Binding {
                 mutability,
@@ -519,19 +521,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 ref subpattern,
                 ..
             } => {
-                let pattern_ref_binding; // sidestep temp lifetime limitations.
-                let binding_user_ty = match mode {
-                    BindingMode::ByValue => { pattern_user_ty }
-                    BindingMode::ByRef(..) => {
-                        // If this is a `ref` binding (e.g., `let ref
-                        // x: T = ..`), then the type of `x` is not
-                        // `T` but rather `&T`.
-                        pattern_ref_binding = pattern_user_ty.ref_binding();
-                        &pattern_ref_binding
-                    }
-                };
-
-                f(self, mutability, name, mode, var, pattern.span, ty, binding_user_ty);
+                f(self, mutability, name, mode, var, pattern.span, ty, pattern_user_ty);
                 if let Some(subpattern) = subpattern.as_ref() {
                     self.visit_bindings(subpattern, pattern_user_ty, f);
                 }
@@ -575,6 +565,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             PatternKind::Leaf { ref subpatterns } => {
                 for subpattern in subpatterns {
                     let subpattern_user_ty = pattern_user_ty.leaf(subpattern.field);
+                    debug!("visit_bindings: subpattern_user_ty={:?}", subpattern_user_ty);
                     self.visit_bindings(&subpattern.pattern, &subpattern_user_ty, f);
                 }
             }
