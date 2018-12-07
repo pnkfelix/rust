@@ -21,6 +21,7 @@ impl<'a, T> Foo<'a> for T {
 fn main() {
     let a = 22;
     let b = Some(Cell::new(&a));
+    //~^ ERROR `a` does not live long enough [E0597]
     match b {
         <() as Foo<'static>>::C => { }
         _ => { }
