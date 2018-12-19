@@ -554,6 +554,16 @@ impl<I: Idx, T> IndexVec<I, T> {
         self.raw.pop()
     }
 
+    /// Searches for an element from the start of this vector, returning its index.
+    pub fn position(&self, predicate: impl FnMut(&T) -> bool) -> Option<I> {
+        self.iter().position(predicate).map(I::new)
+    }
+
+    /// Searches for an element from the end of this vector, returning its index.
+    pub fn rposition(&self, predicate: impl FnMut(&T) -> bool) -> Option<I> {
+        self.iter().rposition(predicate).map(I::new)
+    }
+
     #[inline]
     pub fn len(&self) -> usize {
         self.raw.len()
