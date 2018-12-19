@@ -179,7 +179,12 @@ impl<'tcx> PatternTypeProjection<'tcx> {
         annotations: &mut CanonicalUserTypeAnnotations<'tcx>,
         span: Span,
     ) -> UserTypeProjection<'tcx> {
-        let annotation_index = annotations.push((span, self.base));
+        let annotation = (span, self.base);
+        let annotation_index = if let Some(index) = annotations.position(|a| a == &annotation) {
+            index
+        } else {
+            annotations.push(annotation)
+        };
         UserTypeProjection {
             base: annotation_index,
             projs: self.projs
