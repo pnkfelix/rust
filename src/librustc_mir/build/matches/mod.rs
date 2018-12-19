@@ -472,7 +472,20 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             },
         );
         let place = Place::Local(local_id);
-        let var_ty = self.local_decls[local_id].ty;
+        let local_decl = &self.local_decls[local_id];
+        for (user_ty, ascription_span) in local_decl.user_ty.projections_and_spans() {
+            self.cfg.push(
+                block,
+                Statement {
+                    source_info: self.source_info(*ascription_span),
+                    kind: StatementKind::AscribeUserType(
+                        Place::Local(local_id),
+                        ty::Variance::Invariant,
+                        Box::new(user_ty.clone()),
+                    ),
+                });
+        }
+        let var_ty = local_decl.ty;
         let hir_id = self.hir.tcx().hir().node_to_hir_id(var);
         let region_scope = self.hir.region_scope_tree.var_scope(hir_id.local_id);
         self.schedule_drop(span, region_scope, &place, var_ty, DropKind::Storage);
