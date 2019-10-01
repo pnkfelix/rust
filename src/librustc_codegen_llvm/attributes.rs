@@ -262,21 +262,7 @@ pub fn from_fn_attrs(
             llvm::AttributePlace::ReturnValue, llfn);
     }
 
-    unwind(llfn, if cx.tcx.sess.panic_strategy() != PanicStrategy::Unwind {
-        // In panic=abort mode we assume nothing can unwind anywhere, so
-        // optimize based on this!
-        false
-    } else if codegen_fn_attrs.flags.contains(CodegenFnAttrFlags::UNWIND) {
-        // If a specific #[unwind] attribute is present, use that.
-        true
-    } else if codegen_fn_attrs.flags.contains(CodegenFnAttrFlags::RUSTC_ALLOCATOR_NOUNWIND) {
-        // Special attribute for allocator functions, which can't unwind
-        false
-    } else {
-        // assume this can possibly unwind, avoiding the application of a
-        // `nounwind` attribute below.
-        true
-    });
+    unwind(llfn, can_unwind(cx, &codegen_fn_attrs));
 
     // Always annotate functions with the target-cpu they are compiled for.
     // Without this, ThinLTO won't inline Rust functions into Clang generated
@@ -318,6 +304,31 @@ pub fn from_fn_attrs(
             }
         }
     }
+}
+
+fn can_unwind(cx: &CodegenCx<'ll, 'tcx>, codegen_fn_attrs: &CodegenFnAttrs) -> bool {
+    let can_unwind: bool;
+
+    if cx.tcx.sess.panic_strategy() != PanicStrategy::Unwind {
+        // In panic=abort mode we assume nothing can unwind anywhere, so optimize based on this!
+        debug!("can_unwind true :- panic_strategy: {:?}", cx.tcx.sess.panic_strategy());
+        can_unwind = false
+    } else if codegen_fn_attrs.flags.contains(CodegenFnAttrFlags::UNWIND) {
+        // If a specific #[unwind] attribute is present, use that.
+        debug!("can_unwind true :- flags: {:?} contains unwind", codegen_fn_attrs.flags);
+        can_unwind = true
+    } else if codegen_fn_attrs.flags.contains(CodegenFnAttrFlags::RUSTC_ALLOCATOR_NOUNWIND) {
+        // Special attribute for allocator functions, which can't unwind
+        debug!("can_unwind false :- flags: {:?} contains rustc_allocator_nounwind", codegen_fn_attrs.flags);
+        can_unwind = false
+    } else {
+        // assume this can possibly unwind, avoiding the application of a
+        // `nounwind` attribute below.
+        debug!("can_unwind true :- default for decls/items");
+        can_unwind = true;
+    }
+
+    return can_unwind;
 }
 
 pub fn provide(providers: &mut Providers<'_>) {
