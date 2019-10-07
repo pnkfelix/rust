@@ -126,6 +126,32 @@ pub trait Unsize<T: ?Sized> {
     // Empty.
 }
 
+/// Types that can be used in constants within pattern matches.
+///
+/// Any type that derives `PartialEq` automatically implements this trait.
+///
+/// If a `const` item contains some type that does not implement this trait,
+/// then that type either (1.) does not implement `PartialEq` (which means the
+/// constant will not provide that comparison method, which code generation
+/// assumes is available), or (2.) it implements *its own* version of
+/// `PartialEq` (which we assume does not conform to a structural-equality
+/// comparison).
+///
+/// In either of the two scenarios above, we reject usage of such a constant in
+/// a pattern match.
+///
+/// See also the [structural match RFC][RFC1445], and [issue 63438][] which
+/// motivated migrating from attribute-based design to this `Structural` trait.
+///
+/// [RFC1445]: https://github.com/rust-lang/rfcs/blob/master/text/1445-restrict-constants-in-patterns.md
+/// [issue 63438]: https://github.com/rust-lang/rust/issues/63438
+#[cfg(not(bootstrap))]
+#[unstable(feature = "structural_match", issue = "31434")]
+#[lang = "structural_match"]
+pub trait Structural {
+    // Empty.
+}
+
 /// Types whose values can be duplicated simply by copying bits.
 ///
 /// By default, variable bindings have 'move semantics.' In other

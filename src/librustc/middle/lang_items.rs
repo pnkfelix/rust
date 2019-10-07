@@ -297,6 +297,7 @@ language_item_table! {
 
     SizedTraitLangItem,          "sized",              sized_trait,             Target::Trait;
     UnsizeTraitLangItem,         "unsize",             unsize_trait,            Target::Trait;
+    StructuralTraitLangItem,     "structural_match",   structural_trait,        Target::Trait;
     CopyTraitLangItem,           "copy",               copy_trait,              Target::Trait;
     CloneTraitLangItem,          "clone",              clone_trait,             Target::Trait;
     SyncTraitLangItem,           "sync",               sync_trait,              Target::Trait;

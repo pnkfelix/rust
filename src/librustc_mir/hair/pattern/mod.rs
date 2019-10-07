@@ -14,6 +14,7 @@ use rustc::lint;
 use rustc::mir::{Field, BorrowKind, Mutability};
 use rustc::mir::{UserTypeProjection};
 use rustc::mir::interpret::{GlobalId, ConstValue, get_slice_bytes, sign_extend};
+use rustc::traits::{self, ConstPatternStructural, TraitEngine};
 use rustc::traits::{ObligationCause, PredicateObligation};
 use rustc::ty::{self, Region, TyCtxt, AdtDef, Ty, UserType, DefIdTree};
 use rustc::ty::{CanonicalUserType, CanonicalUserTypeAnnotation, CanonicalUserTypeAnnotations};
@@ -1003,7 +1004,9 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
         if self.include_lint_checks && !saw_error {
             // If we were able to successfully convert the const to some pat, double-check
             // that the type of the const obeys `#[structural_match]` constraint.
-            if let Some(adt_def) = search_for_adt_without_structural_match(self.tcx, cv.ty) {
+            if let Some(adt_def) =
+                search_for_adt_without_structural_match(self.tcx, cv.ty, id, span)
+            {
 
                 let path = self.tcx.def_path_str(adt_def.did);
                 let msg = format!(
@@ -1173,8 +1176,8 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
 }
 
 /// This method traverses the structure of `ty`, trying to find an
-/// instance of an ADT (i.e. struct or enum) that was declared without
-/// the `#[structural_match]` attribute.
+/// instance of an ADT (i.e. struct or enum) that does not implement
+/// the `Structural` trait.
 ///
 /// The "structure of a type" includes all components that would be
 /// considered when doing a pattern match on a constant of that
@@ -1188,16 +1191,18 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
 ///    instantiated generic like `PhantomData<T>`.
 ///
 /// The reason we do this search is Rust currently require all ADT's
-/// reachable from a constant's type to be annotated with
-/// `#[structural_match]`, an attribute which essentially says that
-/// the implementation of `PartialEq::eq` behaves *equivalently* to a
-/// comparison against the unfolded structure.
+/// reachable from a constant's type to implement `Structural`, a
+/// trait which essentially says that the implementation of
+/// `PartialEq::eq` behaves *equivalently* to a comparison against
+/// the unfolded structure.
 ///
 /// For more background on why Rust has this requirement, and issues
 /// that arose when the requirement was not enforced completely, see
 /// Rust RFC 1445, rust-lang/rust#61188, and rust-lang/rust#62307.
 fn search_for_adt_without_structural_match<'tcx>(tcx: TyCtxt<'tcx>,
-                                                 ty: Ty<'tcx>)
+                                                 ty: Ty<'tcx>,
+                                                 id: hir::HirId,
+                                                 span: Span)
                                                  -> Option<&'tcx AdtDef>
 {
     // Import here (not mod level), because `TypeFoldable::fold_with`
@@ -1205,14 +1210,16 @@ fn search_for_adt_without_structural_match<'tcx>(tcx: TyCtxt<'tcx>,
     use crate::rustc::ty::fold::TypeVisitor;
     use crate::rustc::ty::TypeFoldable;
 
-    let mut search = Search { tcx, found: None, seen: FxHashSet::default() };
+    let mut search = Search { tcx, id, span, found: None, seen: FxHashSet::default() };
     ty.visit_with(&mut search);
     return search.found;
 
     struct Search<'tcx> {
         tcx: TyCtxt<'tcx>,
+        id: hir::HirId,
+        span: Span,
 
-        // records the first ADT we find without `#[structural_match`
+        // records the first ADT we find that does not implement `Structural`.
         found: Option<&'tcx AdtDef>,
 
         // tracks ADT's previously encountered during search, so that
@@ -1251,16 +1258,32 @@ fn search_for_adt_without_structural_match<'tcx>(tcx: TyCtxt<'tcx>,
                 }
             };
 
-            if !self.tcx.has_attr(adt_def.did, sym::structural_match) {
-                self.found = Some(&adt_def);
-                debug!("Search found adt_def: {:?}", adt_def);
-                return true // Halt visiting!
-            }
-
             if self.seen.contains(adt_def) {
                 debug!("Search already seen adt_def: {:?}", adt_def);
                 // let caller continue its search
                 return false;
+            }
+
+            let non_structural = self.tcx.infer_ctxt().enter(|infcx| {
+                let cause = ObligationCause::new(self.span, self.id, ConstPatternStructural);
+                let mut fulfillment_cx = traits::FulfillmentContext::new();
+                let structural_def_id = self.tcx.lang_items().structural_trait().unwrap();
+                fulfillment_cx.register_bound(
+                    &infcx, ty::ParamEnv::empty(), ty, structural_def_id, cause);
+                if let Err(_err) = fulfillment_cx.select_all_or_error(&infcx) {
+                    // initial prototype: don't report any trait fulfillment error here.
+                    //
+                    // infcx.report_fulfillment_errors(&err, None, false);
+                    true
+                } else {
+                    false
+                }
+            });
+
+            if non_structural {
+                debug!("Search found ty: {:?}", ty);
+                self.found = Some(&adt_def);
+                return true // Halt visiting!
             }
 
             self.seen.insert(adt_def);

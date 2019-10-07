@@ -25,3 +25,6 @@ fn main() { //[with_gate]~ ERROR compilation successful
         _ => { }
     }
 }
+
+#[cfg(with_gate)]
+impl std::marker::Structural for Foo { }
