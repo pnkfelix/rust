@@ -1001,49 +1001,68 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
         let mut saw_error = false;
         let inlined_const_as_pat = self.const_to_pat_inner(instance, cv, id, span, &mut saw_error);
 
-        if self.include_lint_checks && !saw_error {
-            // If we were able to successfully convert the const to some pat, double-check
-            // that the type of the const obeys `#[structural_match]` constraint.
-            if let Some(adt_def) =
-                search_for_adt_without_structural_match(self.tcx, cv.ty, id, span)
-            {
+        // Don't bother with remaining checks if we already reported an error
+        if saw_error {
+            return inlined_const_as_pat;
+        }
 
-                let path = self.tcx.def_path_str(adt_def.did);
-                let msg = format!(
-                    "to use a constant of type `{}` in a pattern, \
-                     `{}` must be annotated with `#[derive(PartialEq, Eq)]`",
-                    path,
-                    path,
-                );
+        // double-check there even *is* a semantic PartialEq to dispatch to.
+        let ty_is_partial_eq: bool = {
+            let partial_eq_trait_id = self.tcx.lang_items().eq_trait().unwrap();
+            let obligation: PredicateObligation<'_> =
+                self.tcx.predicate_for_trait_def(self.param_env,
+                                                 ObligationCause::misc(span, id),
+                                                 partial_eq_trait_id,
+                                                 0,
+                                                 cv.ty,
+                                                 &[]);
+            // FIXME: should this call a `predicate_must_hold` variant instead?
+            self.tcx
+                .infer_ctxt()
+                .enter(|infcx| infcx.predicate_may_hold(&obligation))
+        };
 
-                // before issuing lint, double-check there even *is* a
-                // semantic PartialEq for us to dispatch to.
-                //
-                // (If there isn't, then we can safely issue a hard
-                // error, because that's never worked, due to compiler
-                // using PartialEq::eq in this scenario in the past.)
+        // Don't bother wtih remaining checks if the type is `PartialEq` and the lint is off.
+        if ty_is_partial_eq && !self.include_lint_checks {
+            return inlined_const_as_pat;
+        }
 
-                let ty_is_partial_eq: bool = {
-                    let partial_eq_trait_id = self.tcx.lang_items().eq_trait().unwrap();
-                    let obligation: PredicateObligation<'_> =
-                        self.tcx.predicate_for_trait_def(self.param_env,
-                                                         ObligationCause::misc(span, id),
-                                                         partial_eq_trait_id,
-                                                         0,
-                                                         cv.ty,
-                                                         &[]);
-                    self.tcx
-                        .infer_ctxt()
-                        .enter(|infcx| infcx.predicate_may_hold(&obligation))
-                };
+        // If we were able to successfully convert the const to some pat, double-check
+        // that all types in the const implement `Structural`.
+        if let Some(adt_def) =
+            search_for_adt_without_structural_match(self.tcx, cv.ty, id, span)
+        {
+            let path = self.tcx.def_path_str(adt_def.did);
+            let msg = format!(
+                "to use a constant of type `{}` in a pattern, \
+                 `{}` must be annotated with `#[derive(PartialEq, Eq)]`",
+                path,
+                path,
+            );
 
-                if !ty_is_partial_eq {
-                    // span_fatal avoids ICE from resolution of non-existent method (rare case).
-                    self.tcx.sess.span_fatal(span, &msg);
-                } else {
-                    self.tcx.lint_hir(lint::builtin::INDIRECT_STRUCTURAL_MATCH, id, span, &msg);
-                }
+            if !ty_is_partial_eq {
+                // span_fatal avoids ICE from resolution of non-existent method (rare case).
+                self.tcx.sess.span_fatal(span, &msg);
+            } else {
+                self.tcx.lint_hir(lint::builtin::INDIRECT_STRUCTURAL_MATCH, id, span, &msg);
             }
+        } else if !ty_is_partial_eq {
+            // if all ADTs in the const were structurally matchable, then we
+            // really should have had a type that implements `PartialEq`. But
+            // cases like rust-lang/rust#61188 show cases where this did not
+            // hold, because the structural_match analysis will not necessariy
+            // observe the type parameters, while deriving `PartialEq` always
+            // requires the parameters to themselves implement `PartialEq`.
+            //
+            // So: Just report a hard error in this case.
+            let msg = format!(
+                "to use a constant of type `{}` in a pattern, \
+                 all of its types must be annotated with `#[derive(PartialEq, Eq)]`",
+                cv.ty,
+            );
+
+            // span_fatal avoids ICE from resolution of non-existent method (rare case).
+            self.tcx.sess.span_fatal(span, &msg);
         }
 
         inlined_const_as_pat
@@ -1270,10 +1289,8 @@ fn search_for_adt_without_structural_match<'tcx>(tcx: TyCtxt<'tcx>,
                 let structural_def_id = self.tcx.lang_items().structural_trait().unwrap();
                 fulfillment_cx.register_bound(
                     &infcx, ty::ParamEnv::empty(), ty, structural_def_id, cause);
-                if let Err(_err) = fulfillment_cx.select_all_or_error(&infcx) {
-                    // initial prototype: don't report any trait fulfillment error here.
-                    //
-                    // infcx.report_fulfillment_errors(&err, None, false);
+                if let Err(err) = fulfillment_cx.select_all_or_error(&infcx) {
+                    infcx.report_fulfillment_errors(&err, None, false);
                     true
                 } else {
                     false
