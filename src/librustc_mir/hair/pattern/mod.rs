@@ -1196,9 +1196,6 @@ fn is_partial_eq(tcx: TyCtxt<'tcx>,
 }
 
 #[derive(Copy, Clone)]
-struct SawNonScalar;
-
-#[derive(Copy, Clone)]
 enum CheckConstForStructuralPattern {
     // The check succeeded. The const followed the rules for use in a pattern
     // (or at least all rules from lints are currently checking), and codegen
@@ -1265,7 +1262,6 @@ fn check_const_is_okay_for_structural_pattern(
         fulfillment_cx: traits::FulfillmentContext::new(),
         found: None,
         seen: FxHashSet::default(),
-        saw_non_scalar: None,
     };
 
     // FIXME (#62614): instead of this traversal of the type, we should probably
@@ -1343,14 +1339,6 @@ fn check_const_is_okay_for_structural_pattern(
         // tracks ADT's previously encountered during search, so that
         // we will not recur on them again.
         seen: FxHashSet<&'tcx AdtDef>,
-
-        // records first non-PartialEq non-ADT non-scalar we encounter during
-        // our search for a non-structural ADT.
-        //
-        // Codegen for non-scalars dispatches to `PartialEq::eq`, which means it
-        // is (and has always been) a hard-error to leave `PartialEq`
-        // unimplemented for this case.
-        saw_non_scalar: Option<SawNonScalar>,
     }
 
     impl<'a, 'tcx> Search<'a, 'tcx> {
@@ -1386,10 +1374,6 @@ fn check_const_is_okay_for_structural_pattern(
                 }
                 _ => {
                     if !ty.is_scalar() {
-                        if !self.is_partial_eq(ty) {
-                            self.saw_non_scalar = Some(SawNonScalar);
-                        }
-
                         let cause = ObligationCause::new(self.span, self.id,
                                                          ConstPatternStructural);
                         let partial_eq_def_id = self.tcx.lang_items().eq_trait().unwrap();
