@@ -11,12 +11,13 @@ use crate::hair::util::UserAnnotatedTyHelpers;
 use crate::hair::constant::*;
 
 use rustc::lint;
+use rustc::infer::InferCtxt;
 use rustc::mir::{Field, BorrowKind, Mutability};
 use rustc::mir::{UserTypeProjection};
 use rustc::mir::interpret::{GlobalId, ConstValue, get_slice_bytes, sign_extend};
 use rustc::traits::{self, ConstPatternStructural, TraitEngine};
 use rustc::traits::{ObligationCause, PredicateObligation};
-use rustc::ty::{self, Region, TyCtxt, AdtDef, Ty, UserType, DefIdTree};
+use rustc::ty::{self, Region, TyCtxt, AdtDef, Ty, UserType, DefIdTree, ToPredicate};
 use rustc::ty::{CanonicalUserType, CanonicalUserTypeAnnotation, CanonicalUserTypeAnnotations};
 use rustc::ty::subst::{SubstsRef, GenericArg};
 use rustc::ty::layout::VariantIdx;
@@ -1006,66 +1007,46 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
             return inlined_const_as_pat;
         }
 
-        // double-check there even *is* a semantic PartialEq to dispatch to.
-        let ty_is_partial_eq: bool = {
-            let partial_eq_trait_id = self.tcx.lang_items().eq_trait().unwrap();
-            let obligation: PredicateObligation<'_> =
-                self.tcx.predicate_for_trait_def(self.param_env,
-                                                 ObligationCause::misc(span, id),
-                                                 partial_eq_trait_id,
-                                                 0,
-                                                 cv.ty,
-                                                 &[]);
-            // FIXME: should this call a `predicate_must_hold` variant instead?
-            self.tcx
-                .infer_ctxt()
-                .enter(|infcx| infcx.predicate_may_hold(&obligation))
-        };
+        let tcx = self.tcx;
+        let param_env = self.param_env;
+        let include_lint_checks = self.include_lint_checks;
 
-        // Don't bother wtih remaining checks if the type is `PartialEq` and the lint is off.
-        if ty_is_partial_eq && !self.include_lint_checks {
-            return inlined_const_as_pat;
-        }
+        let check = tcx.infer_ctxt().enter(|infcx| -> CheckConstForStructuralPattern {
+            // double-check there even *is* a semantic PartialEq to dispatch to.
+            let ty_is_partial_eq: bool = is_partial_eq(tcx, param_env, &infcx, cv.ty, id, span);
 
-        // If we were able to successfully convert the const to some pat, double-check
-        // that all types in the const implement `Structural`.
-        if let Some(adt_def) =
-            search_for_adt_without_structural_match(self.tcx, cv.ty, id, span)
-        {
-            let path = self.tcx.def_path_str(adt_def.did);
-            let msg = format!(
-                "to use a constant of type `{}` in a pattern, \
-                 `{}` must be annotated with `#[derive(PartialEq, Eq)]`",
-                path,
-                path,
-            );
-
-            if !ty_is_partial_eq {
-                // span_fatal avoids ICE from resolution of non-existent method (rare case).
-                self.tcx.sess.span_fatal(span, &msg);
-            } else {
-                self.tcx.lint_hir(lint::builtin::INDIRECT_STRUCTURAL_MATCH, id, span, &msg);
+            // Don't bother wtih remaining checks if the type is `PartialEq` and the lint is off.
+            if ty_is_partial_eq && !include_lint_checks {
+                return CheckConstForStructuralPattern::Ok;
             }
-        } else if !ty_is_partial_eq {
-            // if all ADTs in the const were structurally matchable, then we
-            // really should have had a type that implements `PartialEq`. But
-            // cases like rust-lang/rust#61188 show cases where this did not
-            // hold, because the structural_match analysis will not necessariy
-            // observe the type parameters, while deriving `PartialEq` always
-            // requires the parameters to themselves implement `PartialEq`.
-            //
-            // So: Just report a hard error in this case.
-            let msg = format!(
-                "to use a constant of type `{}` in a pattern, \
-                 all of its types must be annotated with `#[derive(PartialEq, Eq)]`",
-                cv.ty,
-            );
 
-            // span_fatal avoids ICE from resolution of non-existent method (rare case).
-            self.tcx.sess.span_fatal(span, &msg);
+            // If we were able to successfully convert the const to some pat,
+            // double-check that all ADT types in the const implement
+            // `Structural`.
+            check_const_is_okay_for_structural_pattern(tcx, param_env, infcx, cv, id, span)
+        });
+
+        match check {
+            // For all three of these cases, we should return the pattern
+            // structure created from the constant (because we may need to go
+            // through with code generation for it).
+            CheckConstForStructuralPattern::Ok |
+            CheckConstForStructuralPattern::ReportedRecoverableLint |
+            CheckConstForStructuralPattern::UnreportedNonpartialEq => {
+                // FIXME: we should probably start reporting the currently
+                // unreported case, either here or in the
+                // `check_const_is_okay_for_structural_pattern` code.
+                inlined_const_as_pat
+            }
+
+            // For *this* case, trying to codegen the pattern structure from the
+            // constant is almost certainly going to ICE. Luckily, we already
+            // reported an error (or will report a delayed one in the future),
+            // so we do not have to worry about erroneous code generation; so
+            // just return a wild pattern instead.
+            CheckConstForStructuralPattern::ReportedNonrecoverableError =>
+                Pat { kind: Box::new(PatKind::Wild), ..inlined_const_as_pat },
         }
-
-        inlined_const_as_pat
     }
 
     /// Recursive helper for `const_to_pat`; invoke that (instead of calling this directly).
@@ -1194,6 +1175,51 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
     }
 }
 
+fn is_partial_eq(tcx: TyCtxt<'tcx>,
+                 param_env: ty::ParamEnv<'tcx>,
+                 infcx: &InferCtxt<'a, 'tcx>,
+                 ty: Ty<'tcx>,
+                 id: hir::HirId,
+                 span: Span)
+                 -> bool
+{
+    let partial_eq_trait_id = tcx.lang_items().eq_trait().unwrap();
+    let obligation: PredicateObligation<'_> =
+        tcx.predicate_for_trait_def(param_env,
+                                    ObligationCause::misc(span, id),
+                                    partial_eq_trait_id,
+                                    0,
+                                    ty,
+                                    &[]);
+    // FIXME: should this call a `predicate_must_hold` variant instead?
+    infcx.predicate_may_hold(&obligation)
+}
+
+#[derive(Copy, Clone)]
+struct SawNonScalar<'tcx>(Ty<'tcx>);
+
+#[derive(Copy, Clone)]
+enum CheckConstForStructuralPattern {
+    // The check succeeded. The const followed the rules for use in a pattern
+    // (or at least all rules from lints are currently checking), and codegen
+    // should be fine.
+    Ok,
+
+    // Reported an error that has always been unrecoverable (i.e. causes codegen
+    // problems). In this case, can just produce a wild pattern and move along
+    // (rather than ICE'ing further down).
+    ReportedNonrecoverableError,
+
+    // Reported a diagnostic that rustc can recover from (e.g. the current
+    // requirement that `const` in patterns uses structural equality)
+    ReportedRecoverableLint,
+
+    // The given constant does not actually implement `PartialEq`. This
+    // unfortunately has been allowed in certain scenarios in stable Rust, and
+    // therefore we cannot currently treat it as an error.
+    UnreportedNonpartialEq,
+}
+
 /// This method traverses the structure of `ty`, trying to find an
 /// instance of an ADT (i.e. struct or enum) that does not implement
 /// the `Structural` trait.
@@ -1218,23 +1244,112 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
 /// For more background on why Rust has this requirement, and issues
 /// that arose when the requirement was not enforced completely, see
 /// Rust RFC 1445, rust-lang/rust#61188, and rust-lang/rust#62307.
-fn search_for_adt_without_structural_match<'tcx>(tcx: TyCtxt<'tcx>,
-                                                 ty: Ty<'tcx>,
-                                                 id: hir::HirId,
-                                                 span: Span)
-                                                 -> Option<&'tcx AdtDef>
+fn check_const_is_okay_for_structural_pattern(
+    tcx: TyCtxt<'tcx>,
+    param_env: ty::ParamEnv<'tcx>,
+    infcx: InferCtxt<'a, 'tcx>,
+    cv: &'tcx ty::Const<'tcx>,
+    id: hir::HirId,
+    span: Span)
+    -> CheckConstForStructuralPattern
 {
     // Import here (not mod level), because `TypeFoldable::fold_with`
     // conflicts with `PatternFoldable::fold_with`
     use crate::rustc::ty::fold::TypeVisitor;
     use crate::rustc::ty::TypeFoldable;
 
-    let mut search = Search { tcx, id, span, found: None, seen: FxHashSet::default() };
-    ty.visit_with(&mut search);
-    return search.found;
+    let ty_is_partial_eq: bool = is_partial_eq(tcx, param_env, &infcx, cv.ty, id, span);
 
-    struct Search<'tcx> {
+    let mut search = Search {
+        tcx, param_env, infcx, id, span,
+        found: None,
+        seen: FxHashSet::default(),
+        saw_non_scalar: None,
+    };
+
+    // FIXME (#62614): instead of this traversal of the type, we should probably
+    // traverse the `const` definition and query (solely) the types that occur
+    // in the definition itself.
+    cv.ty.visit_with(&mut search);
+
+    let check_result = if let Some(adt_def) = search.found {
+        let path = tcx.def_path_str(adt_def.did);
+        let msg = format!(
+            "to use a constant of type `{}` in a pattern, \
+             `{}` must be annotated with `#[derive(PartialEq, Eq)]`",
+            path,
+            path,
+        );
+
+        if !search.is_partial_eq(cv.ty) {
+            // span_fatal avoids ICE from resolution of non-existent method (rare case).
+            tcx.sess.span_fatal(span, &msg);
+        } else {
+            tcx.lint_hir(lint::builtin::INDIRECT_STRUCTURAL_MATCH, id, span, &msg);
+            CheckConstForStructuralPattern::ReportedRecoverableLint
+        }
+    } else if let Some(SawNonScalar(_non_scalar_ty)) = search.saw_non_scalar {
+        // if all ADTs in the const were structurally matchable, then we really
+        // should have had a type that implements `PartialEq`. But cases like
+        // rust-lang/rust#61188 show cases where this did not hold, because the
+        // structural_match analysis will not necessariy observe the type
+        // parameters, while deriving `PartialEq` always requires the parameters
+        // to themselves implement `PartialEq`.
+        //
+        // So: Just report a hard error in this case.
+        assert!(!ty_is_partial_eq);
+
+        // FIXME: maybe move this whole block directly to the spot where
+        // saw_non_scalar is set in the first place?
+
+        let cause = ObligationCause::new(span, id, ConstPatternStructural);
+        let mut fulfillment_cx = traits::FulfillmentContext::new();
+        let partial_eq_def_id = tcx.lang_items().eq_trait().unwrap();
+
+        // Note: Cannot use register_bound here, because it requires (but does
+        // not check) that the given trait has no type parameters apart from
+        // `Self`, but `PartialEq` has a type parameter that defaults to `Self`.
+        let trait_ref = ty::TraitRef {
+            def_id: partial_eq_def_id,
+            substs: search.infcx.tcx.mk_substs_trait(cv.ty, &[cv.ty.into()]),
+        };
+        fulfillment_cx.register_predicate_obligation(&search.infcx, traits::Obligation {
+            cause,
+            recursion_depth: 0,
+            param_env: search.param_env,
+            predicate: trait_ref.to_predicate(),
+        });
+
+        let err = fulfillment_cx.select_all_or_error(&search.infcx).err().unwrap();
+        search.infcx.report_fulfillment_errors(&err, None, false);
+        CheckConstForStructuralPattern::ReportedNonrecoverableError
+    } else {
+        // if all ADTs in the const were structurally matchable and all
+        // non-scalars implement `PartialEq`, then you would think we were
+        // definitely in a case where the type itself must implement
+        // `PartialEq` (and therefore could safely `assert!(ty_is_partial_eq)`
+        // here).
+        //
+        // However, exceptions to this exist (like `fn(&T)`, which is sugar
+        // for `for <'a> fn(&'a T)`); see rust-lang/rust#46989.
+        //
+        // For now, let compilation continue, under assumption that compiler
+        // will ICE if codegen is actually impossible.
+
+        if ty_is_partial_eq {
+            CheckConstForStructuralPattern::Ok
+        } else {
+            CheckConstForStructuralPattern::UnreportedNonpartialEq
+        }
+    };
+
+    return check_result;
+
+    struct Search<'a, 'tcx> {
         tcx: TyCtxt<'tcx>,
+        param_env: ty::ParamEnv<'tcx>,
+        infcx: InferCtxt<'a, 'tcx>,
+
         id: hir::HirId,
         span: Span,
 
@@ -1244,9 +1359,23 @@ fn search_for_adt_without_structural_match<'tcx>(tcx: TyCtxt<'tcx>,
         // tracks ADT's previously encountered during search, so that
         // we will not recur on them again.
         seen: FxHashSet<&'tcx AdtDef>,
+
+        // records first non-PartialEq non-ADT non-scalar we encounter during
+        // our search for a non-structural ADT.
+        //
+        // Codegen for non-scalars dispatches to `PartialEq::eq`, which means it
+        // is (and has always been) a hard-error to leave `PartialEq`
+        // unimplemented for this case.
+        saw_non_scalar: Option<SawNonScalar<'tcx>>,
     }
 
-    impl<'tcx> TypeVisitor<'tcx> for Search<'tcx> {
+    impl<'a, 'tcx> Search<'a, 'tcx> {
+        fn is_partial_eq(&self, ty: Ty<'tcx>) -> bool {
+            is_partial_eq(self.tcx, self.param_env, &self.infcx, ty, self.id, self.span)
+        }
+    }
+
+    impl<'a, 'tcx> TypeVisitor<'tcx> for Search<'a, 'tcx> {
         fn visit_ty(&mut self, ty: Ty<'tcx>) -> bool {
             debug!("Search visiting ty: {:?}", ty);
 
@@ -1272,7 +1401,14 @@ fn search_for_adt_without_structural_match<'tcx>(tcx: TyCtxt<'tcx>,
                     return false;
                 }
                 _ => {
+                    if self.saw_non_scalar.is_none() && !ty.is_scalar() {
+                        if !self.is_partial_eq(ty) {
+                            self.saw_non_scalar = Some(SawNonScalar(ty));
+                        }
+                    }
+
                     ty.super_visit_with(self);
+
                     return false;
                 }
             };
@@ -1283,24 +1419,23 @@ fn search_for_adt_without_structural_match<'tcx>(tcx: TyCtxt<'tcx>,
                 return false;
             }
 
-            let non_structural = self.tcx.infer_ctxt().enter(|infcx| {
+            {
                 let cause = ObligationCause::new(self.span, self.id, ConstPatternStructural);
                 let mut fulfillment_cx = traits::FulfillmentContext::new();
                 let structural_def_id = self.tcx.lang_items().structural_trait().unwrap();
                 fulfillment_cx.register_bound(
-                    &infcx, ty::ParamEnv::empty(), ty, structural_def_id, cause);
-                if let Err(err) = fulfillment_cx.select_all_or_error(&infcx) {
-                    infcx.report_fulfillment_errors(&err, None, false);
-                    true
-                } else {
-                    false
-                }
-            });
+                    &self.infcx, self.param_env, ty, structural_def_id, cause);
 
-            if non_structural {
-                debug!("Search found ty: {:?}", ty);
-                self.found = Some(&adt_def);
-                return true // Halt visiting!
+                // We deliberately do not report fulfillment errors related to
+                // this check, becase we want the diagnostics to be controlled
+                // by a future-compatibility lint. (Also current implementation
+                // is conservative and would flag too many false positives; see
+                // e.g. rust-lang/rust#62614.)
+                if fulfillment_cx.select_all_or_error(&self.infcx).is_err() {
+                    debug!("Search found ty: {:?}", ty);
+                    self.found = Some(&adt_def);
+                    return true // Halt visiting!
+                }
             }
 
             self.seen.insert(adt_def);
@@ -1315,12 +1450,13 @@ fn search_for_adt_without_structural_match<'tcx>(tcx: TyCtxt<'tcx>,
             // want to skip substs when only uses of generic are
             // behind unsafe pointers `*const T`/`*mut T`.)
 
-            // even though we skip super_visit_with, we must recur on
-            // fields of ADT.
+            // even though we skip super_visit_with, we must recur on fields of
+            // ADT (at least while we traversing type structure rather than
+            // const definition).
             let tcx = self.tcx;
             for field_ty in adt_def.all_fields().map(|field| field.ty(tcx, substs)) {
                 if field_ty.visit_with(self) {
-                    // found an ADT without `#[structural_match]`; halt visiting!
+                    // found a non-structural ADT; halt visiting!
                     assert!(self.found.is_some());
                     return true;
                 }
