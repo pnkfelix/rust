@@ -463,6 +463,10 @@ macro_rules! impls{
                 $t
             }
         }
+
+        #[cfg(not(bootstrap))]
+        #[unstable(feature = "structural_match", issue = "31434")]
+        impl<T: ?Sized> Structural for $t<T> { }
         )
 }
 
