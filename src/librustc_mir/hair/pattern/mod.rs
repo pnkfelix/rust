@@ -32,7 +32,6 @@ use rustc_data_structures::fx::FxHashSet;
 use std::cmp::Ordering;
 use std::fmt;
 use syntax::ast;
-use syntax::symbol::sym;
 use syntax_pos::Span;
 
 #[derive(Clone, Debug)]
@@ -41,6 +40,7 @@ pub enum PatternError {
     StaticInPattern(Span),
     FloatBug,
     NonConstPath(Span),
+    NonStructuralConst(Span),
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -365,6 +365,7 @@ impl<'a, 'tcx> Pat<'tcx> {
         tables: &'a ty::TypeckTables<'tcx>,
         pat: &'tcx hir::Pat,
     ) -> Self {
+        debug!("Pat::from_hir pat: {:?}", pat);
         let mut pcx = PatCtxt::new(tcx, param_env_and_substs, tables);
         let result = pcx.lower_pattern(pat);
         if !pcx.errors.is_empty() {
@@ -449,6 +450,8 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
     }
 
     fn lower_pattern_unadjusted(&mut self, pat: &'tcx hir::Pat) -> Pat<'tcx> {
+        debug!("lower_pattern_unadjusted pat: {:?}", pat);
+
         let mut ty = self.tables.node_type(pat.hir_id);
 
         let kind = match pat.kind {
@@ -541,6 +544,7 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
             }
 
             hir::PatKind::Path(ref qpath) => {
+                debug!("lower_pattern_unadjusted qpath: {:?}", qpath);
                 return self.lower_path(qpath, pat.hir_id, pat.span);
             }
 
@@ -857,9 +861,11 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
             Res::Def(DefKind::AssocConst, _) => true,
             _ => false,
         };
+        debug!("lower_path entry id: {:?} qpath: {:?}  ty: {}", id, qpath, ty);
         let kind = match res {
             Res::Def(DefKind::Const, def_id) | Res::Def(DefKind::AssocConst, def_id) => {
                 let substs = self.tables.node_substs(id);
+                debug!("lower_path some const id: {:?} res: {:?} def_id: {:?}", id, res, def_id);
                 match ty::Instance::resolve(
                     self.tcx,
                     self.param_env,
@@ -867,31 +873,55 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
                     substs,
                 ) {
                     Some(instance) => {
+                        debug!("lower_path resolved const \
+                                id: {:?} res: {:?} def_id: {:?}", id, res, def_id);
                         let cid = GlobalId {
                             instance,
                             promoted: None,
                         };
                         match self.tcx.at(span).const_eval(self.param_env.and(cid)) {
                             Ok(value) => {
-                                // We wait until after const_eval to do this
-                                // check (even though we don't need the
-                                // resulting `value` to run this code), so that
-                                // users with erroneous const-eval code get
+                                debug!("lower_path post-eval check const \
+                                        id: {:?} res: {:?} def_id: {:?}", id, res, def_id);
+
+                                let pattern = self.const_to_pat(instance, value, id, span);
+
+                                // We wait until after const_eval (and even
+                                // const_to_pat!) to do this check (even though
+                                // we don't need the resulting `value` to run
+                                // this code), so that users with erroneous
+                                // const-eval code or long-standing errors get
                                 // those diagnostics alone, rather than noise
-                                // about structural match.
-                                self.tcx.infer_ctxt().enter(|infcx| {
+                                // about the structural match lint.
+                                let check = self.tcx.infer_ctxt().enter(|infcx| {
                                     let const_def_id = instance.def_id();
                                     if const_def_id.is_local() {
                                         walk_const_definition_looking_for_nonstructural_adt(
-                                            &infcx, self.param_env, const_def_id, id, span);
+                                            self.include_lint_checks,
+                                            &infcx, self.param_env, const_def_id, id, span)
                                     } else {
-                                        // FIXME: do we need to inspect result of this call?
                                         check_const_ty_is_okay_for_structural_pattern(
-                                            infcx.tcx, self.param_env, &infcx, ty, id, span);
+                                            self.include_lint_checks,
+                                            &infcx, self.param_env, ty, id, span)
                                     }
                                 });
 
-                                let pattern = self.const_to_pat(instance, value, id, span);
+                                // FIXME agh line length limits
+                                use CheckConstForStructuralPattern::*;
+                                match check {
+                                    UnreportedNonrecoverableError(span) => {
+                                        self.errors.push(PatternError::NonStructuralConst(span));
+                                        return Pat { span, ty, kind: Box::new(PatKind::Wild) };
+                                    }
+                                    ReportedNonrecoverableError(span) => {
+                                        self.errors.push(PatternError::NonStructuralConst(span));
+                                        return Pat { span, ty, kind: Box::new(PatKind::Wild) };
+                                    }
+                                    UnreportedNonpartialEq |
+                                    ReportedRecoverableLint |
+                                    CheckConstForStructuralPattern::Ok => {}
+                                }
+
                                 if !is_associated_const {
                                     return pattern;
                                 }
@@ -953,6 +983,7 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
     /// which would overflow if we tried to evaluate `128_i8` and then negate
     /// afterwards.
     fn lower_lit(&mut self, expr: &'tcx hir::Expr) -> PatKind<'tcx> {
+        debug!("lower_lit expr: {:?}", expr);
         match expr.kind {
             hir::ExprKind::Lit(ref lit) => {
                 let ty = self.tables.expr_ty(expr);
@@ -971,7 +1002,10 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
                     Err(LitToConstError::Reported) => PatKind::Wild,
                 }
             },
-            hir::ExprKind::Path(ref qpath) => *self.lower_path(qpath, expr.hir_id, expr.span).kind,
+            hir::ExprKind::Path(ref qpath) => {
+                debug!("lower_lit qpath: {:?}", qpath);
+                *self.lower_path(qpath, expr.hir_id, expr.span).kind
+            }
             hir::ExprKind::Unary(hir::UnNeg, ref expr) => {
                 let ty = self.tables.expr_ty(expr);
                 let lit = match expr.kind {
@@ -1055,7 +1089,6 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
             }).collect::<Vec<_>>()
         };
 
-
         let kind = match cv.ty.kind {
             ty::Float(_) => {
                 self.tcx.lint_hir(
@@ -1074,6 +1107,8 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
                 self.tcx.sess.span_err(span, "cannot use unions in constant patterns");
                 PatKind::Wild
             }
+
+            /*
             // keep old code until future-compat upgraded to errors.
             ty::Adt(adt_def, _) if !self.tcx.has_attr(adt_def.did, sym::structural_match) => {
                 let path = self.tcx.def_path_str(adt_def.did);
@@ -1103,6 +1138,7 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
                 self.tcx.sess.span_err(span, &msg);
                 PatKind::Wild
             }
+             */
             ty::Adt(adt_def, substs) if adt_def.is_enum() => {
                 let variant_index = const_variant_index(self.tcx, self.param_env, cv);
                 let subpatterns = adt_subpatterns(
@@ -1154,11 +1190,12 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
 // FIXME Move `struct ExprVisitor` out here and then make this a method on it,
 // so that the hir::intravisit::Visitor::visit_expr method can recursively call
 // it directly. (All args but `def_id` can be part of `self` then.)
-fn walk_const_definition_looking_for_nonstructural_adt(infcx: &'a InferCtxt<'a, 'tcx>,
+fn walk_const_definition_looking_for_nonstructural_adt(include_lint_checks: bool,
+                                                       infcx: &InferCtxt<'a, 'tcx>,
                                                        param_env: ty::ParamEnv<'tcx>,
                                                        def_id: hir::def_id::DefId,
                                                        id: hir::HirId,
-                                                       span: Span)
+                                                       span: Span) -> CheckConstForStructuralPattern
 {
     // Traverses right-hand side of const definition, looking for:
     //
@@ -1179,27 +1216,47 @@ fn walk_const_definition_looking_for_nonstructural_adt(infcx: &'a InferCtxt<'a, 
     let body_tables = infcx.tcx.body_tables(body_id);
     let body = infcx.tcx.hir().body(body_id);
     let mut v = ExprVisitor {
+        include_lint_checks,
         infcx, param_env, body_tables, id, span,
-        fulfillment_cx: traits::FulfillmentContext::new(),
+        structure_fulfillment_cx: traits::FulfillmentContext::new(),
+        partialeq_fulfillment_cx: traits::FulfillmentContext::new(),
     };
     v.visit_body(body);
-    if let Err(err) = v.fulfillment_cx.select_all_or_error(&v.infcx) {
-        v.infcx.report_fulfillment_errors(&err, None, false);
-    }
-    return;
 
-    struct ExprVisitor<'a, 'tcx> {
-        infcx: &'a InferCtxt<'a, 'tcx>,
+    return if let Err(err) = v.partialeq_fulfillment_cx.select_all_or_error(&v.infcx) {
+        v.infcx.report_fulfillment_errors(&err, None, false);
+        CheckConstForStructuralPattern::ReportedNonrecoverableError(span)
+    } else if let Err(_err) = v.structure_fulfillment_cx.select_all_or_error(&v.infcx) {
+        // v.infcx.report_fulfillment_errors(&err, None, false);
+        CheckConstForStructuralPattern::UnreportedNonrecoverableError(span)
+
+         /*
+        // We deliberately do not report fulfillment errors related to
+        // this check, becase we want the diagnostics to be controlled
+        // by a future-compatibility lint.
+        v.infcx.tcx.lint_hir(lint::builtin::INDIRECT_STRUCTURAL_MATCH, id, span, &format!(
+            "to use this const in a pattern, all types used to define the const \
+             must be annotated with `#[derive(PartialEq, Eq)]`"));
+        CheckConstForStructuralPattern::ReportedRecoverableLint
+         */
+    } else {
+        CheckConstForStructuralPattern::Ok
+    };
+
+    struct ExprVisitor<'b, 'a, 'tcx> {
+        include_lint_checks: bool,
+        infcx: &'b InferCtxt<'a, 'tcx>,
         param_env: ty::ParamEnv<'tcx>,
         body_tables: &'a ty::TypeckTables<'tcx>,
-        fulfillment_cx: traits::FulfillmentContext<'tcx>,
+        structure_fulfillment_cx: traits::FulfillmentContext<'tcx>,
+        partialeq_fulfillment_cx: traits::FulfillmentContext<'tcx>,
         id: hir::HirId,
         span: Span,
     }
 
     use hir::intravisit::{self, Visitor, NestedVisitorMap};
 
-    impl<'a, 'v, 'tcx> Visitor<'v> for ExprVisitor<'a, 'tcx> {
+    impl<'b, 'a, 'v, 'tcx> Visitor<'v> for ExprVisitor<'b, 'a, 'tcx> {
         fn nested_visit_map<'this>(&'this mut self) -> NestedVisitorMap<'this, 'v>
         {
             NestedVisitorMap::None
@@ -1209,15 +1266,17 @@ fn walk_const_definition_looking_for_nonstructural_adt(infcx: &'a InferCtxt<'a, 
             let ty = self.body_tables.expr_ty(ex);
             debug!("walk_const_value_looking_for_nonstructural_adt ExprVisitor ex: {:?} ty: {}",
                    ex, ty);
-            if let hir::ExprKind::Struct(..) = ex.kind {
+
+            #[cfg(try_turning_this_off_to_see_what_changes)] // FIXME
+            { if let hir::ExprKind::Struct(..) = ex.kind {
                 debug!("walk_const_value_looking_for_nonstructural_adt \
                         ExprKind::Struct: registering Structural bound");
 
                 let cause = ObligationCause::new(self.span, self.id, ConstPatternStructural);
                 let structural_def_id = self.infcx.tcx.lang_items().structural_trait().unwrap();
-                self.fulfillment_cx.register_bound(
+                self.structure_fulfillment_cx.register_bound(
                     &self.infcx, self.param_env, ty, structural_def_id, cause);
-            }
+            } }
 
             // When we inspect the expression, we may or may not choose to
             // inspecting its type recursively. If we do inspect the type, then
@@ -1227,7 +1286,7 @@ fn walk_const_definition_looking_for_nonstructural_adt(infcx: &'a InferCtxt<'a, 
             //
             // FIXME the requirement being imposed here may or may not need to
             // be treated as a lint (rather than a hard requirement).
-            let mut checked_ty = false;
+            let mut _checked_ty = false;
 
             debug!("walk_const_value_looking_for_nonstructural_adt ex.kind: {:?}", ex.kind);
 
@@ -1249,19 +1308,20 @@ fn walk_const_definition_looking_for_nonstructural_adt(infcx: &'a InferCtxt<'a, 
                                 let const_def_id = instance.def_id();
                                 if const_def_id.is_local() {
                                     debug!("walk_const_value_looking_for_nonstructural_adt \
-                                            recursively check instance: {:?} def_id: {:?}",
-                                           instance, def_id);
+                                            recursively check instance: {:?} const_def_id: {:?}",
+                                           instance, const_def_id);
                                     walk_const_definition_looking_for_nonstructural_adt(
+                                        self.include_lint_checks,
                                         &self.infcx, self.param_env, const_def_id,
                                         self.id, self.span);
                                 } else {
                                     // FIXME: do we need to inspect result of this call?
                                     debug!("walk_const_value_looking_for_nonstructural_adt \
-                                            use type analysis on instance: {:?} def_id: {:?}",
-                                           instance, def_id);
+                                            use type analysis on instance: {:?} const_def_id: {:?}",
+                                           instance, const_def_id);
                                     check_const_ty_is_okay_for_structural_pattern(
-                                        self.infcx.tcx, self.param_env, &self.infcx, ty,
-                                        self.id, self.span);
+                                        self.include_lint_checks,
+                                        &self.infcx, self.param_env, ty, self.id, self.span);
                                 }
                             } else {
                                 debug!("walk_const_value_looking_for_nonstructural_adt \
@@ -1276,12 +1336,14 @@ fn walk_const_definition_looking_for_nonstructural_adt(infcx: &'a InferCtxt<'a, 
                             debug!("walk_const_value_looking_for_nonstructural_adt \
                                     ExprKind::Path res: {:?} registering Structural bound", res);
 
-                            let cause = ObligationCause::new(
-                                self.span, self.id, ConstPatternStructural);
-                            let structural_def_id =
-                                self.infcx.tcx.lang_items().structural_trait().unwrap();
-                            self.fulfillment_cx.register_bound(
-                                &self.infcx, self.param_env, ty, structural_def_id, cause);
+                            if self.include_lint_checks {
+                                let cause = ObligationCause::new(
+                                    self.span, self.id, ConstPatternStructural);
+                                let structural_def_id =
+                                    self.infcx.tcx.lang_items().structural_trait().unwrap();
+                                self.structure_fulfillment_cx.register_bound(
+                                    &self.infcx, self.param_env, ty, structural_def_id, cause);
+                            }
                         }
 
                         _ => {
@@ -1290,11 +1352,30 @@ fn walk_const_definition_looking_for_nonstructural_adt(infcx: &'a InferCtxt<'a, 
                         }
                     }
                 }
+                hir::ExprKind::Struct(..) => {
+                    // struct literal, potentially with sub-structs.
+                    debug!("walk_const_value_looking_for_nonstructural_adt \
+                            add pre-req Structural bound and recur");
 
+                    if self.include_lint_checks {
+                        let cause = ObligationCause::new(self.span, self.id,
+                                                         ConstPatternStructural);
+                        let structural_def_id =
+                            self.infcx.tcx.lang_items().structural_trait().unwrap();
+                        self.structure_fulfillment_cx.register_bound(
+                            &self.infcx, self.param_env, ty, structural_def_id, cause);
+                    }
+
+                    // leave `checked_ty` set to false; that way, if the ADT
+                    // does not even *implement* `PartialEq` (let alone derive
+                    // it), we will signal an error about it.
+
+                    // continue expression-based traversal
+                    intravisit::walk_expr(self, ex)
+                }
                 hir::ExprKind::Box(..) |
                 hir::ExprKind::Array(..) |
                 hir::ExprKind::Repeat(..) |
-                hir::ExprKind::Struct(..) |
                 hir::ExprKind::Tup(..) |
                 hir::ExprKind::Type(..) |
                 hir::ExprKind::DropTemps(..) |
@@ -1321,8 +1402,8 @@ fn walk_const_definition_looking_for_nonstructural_adt(infcx: &'a InferCtxt<'a, 
                     }
                 }
 
-                hir::ExprKind::Loop(..) |
                 hir::ExprKind::Call(..) |
+                hir::ExprKind::Loop(..) |
                 hir::ExprKind::MethodCall(..) |
                 hir::ExprKind::Binary(..) |
                 hir::ExprKind::Unary(..) |
@@ -1346,12 +1427,14 @@ fn walk_const_definition_looking_for_nonstructural_adt(infcx: &'a InferCtxt<'a, 
 
                     // FIXME: merge the two visitor structs, unify the result codes.
                     check_const_ty_is_okay_for_structural_pattern(
-                        self.infcx.tcx, self.param_env, &self.infcx, ty, self.id, self.span);
-                    checked_ty = true;
+                        self.include_lint_checks,
+                        &self.infcx, self.param_env, ty, self.id, self.span);
+                    _checked_ty = true;
                 }
             }
 
-            if !checked_ty && !ty.is_scalar() {
+            // #[cfg(try_turning_this_off_to_see_what_changes)] // FIXME
+            { if !_checked_ty && !ty.is_scalar() {
                 debug!("walk_const_value_looking_for_nonstructural_adt \
                         non-scalar ty: registering PartialEq bound");
 
@@ -1367,7 +1450,7 @@ fn walk_const_definition_looking_for_nonstructural_adt(infcx: &'a InferCtxt<'a, 
                     def_id: partial_eq_def_id,
                     substs: self.infcx.tcx.mk_substs_trait(ty, &[ty.into()]),
                 };
-                self.fulfillment_cx.register_predicate_obligation(
+                self.partialeq_fulfillment_cx.register_predicate_obligation(
                     &self.infcx,
                     traits::Obligation {
                         cause,
@@ -1375,7 +1458,7 @@ fn walk_const_definition_looking_for_nonstructural_adt(infcx: &'a InferCtxt<'a, 
                         param_env: self.param_env,
                         predicate: trait_ref.to_predicate(),
                     });
-            }
+            } }
         }
     }
 }
@@ -1401,16 +1484,20 @@ fn is_partial_eq(tcx: TyCtxt<'tcx>,
 }
 
 #[derive(Copy, Clone)]
+// #[must_use]
 enum CheckConstForStructuralPattern {
     // The check succeeded. The const followed the rules for use in a pattern
     // (or at least all rules from lints are currently checking), and codegen
     // should be fine.
     Ok,
 
+    // Encountered an error that caller must report.
+    UnreportedNonrecoverableError(Span),
+
     // Reported an error that has always been unrecoverable (i.e. causes codegen
     // problems). In this case, can just produce a wild pattern and move along
     // (rather than ICE'ing further down).
-    ReportedNonrecoverableError,
+    ReportedNonrecoverableError(Span),
 
     // Reported a diagnostic that rustc can recover from (e.g. the current
     // requirement that `const` in patterns uses structural equality)
@@ -1447,9 +1534,9 @@ enum CheckConstForStructuralPattern {
 /// that arose when the requirement was not enforced completely, see
 /// Rust RFC 1445, rust-lang/rust#61188, and rust-lang/rust#62307.
 fn check_const_ty_is_okay_for_structural_pattern(
-    tcx: TyCtxt<'tcx>, // FIXME if we pass infcx then remove this param
+    include_lint_checks: bool,
+    infcx: &InferCtxt<'a, 'tcx>,
     param_env: ty::ParamEnv<'tcx>,
-    infcx: &'a InferCtxt<'a, 'tcx>,
     ty: Ty<'tcx>,
     id: hir::HirId,
     span: Span)
@@ -1460,86 +1547,57 @@ fn check_const_ty_is_okay_for_structural_pattern(
     use crate::rustc::ty::fold::TypeVisitor;
     use crate::rustc::ty::TypeFoldable;
 
+    let tcx = infcx.tcx;
+
     let ty_is_partial_eq: bool = is_partial_eq(tcx, param_env, infcx, ty, id, span);
 
     let mut search = Search {
+        include_lint_checks,
         tcx, param_env, infcx, id, span,
-        fulfillment_cx: traits::FulfillmentContext::new(),
+        structure_fulfillment_cx: traits::FulfillmentContext::new(),
+        partialeq_fulfillment_cx: traits::FulfillmentContext::new(),
         found: None,
         seen: FxHashSet::default(),
     };
 
-    // FIXME (#62614): instead of this traversal of the type, we should probably
-    // traverse the `const` definition and query (solely) the types that occur
-    // in the definition itself.
     ty.visit_with(&mut search);
 
-    let reported_fulfillment_errors;
-    match search.fulfillment_cx.select_all_or_error(search.infcx) {
-        Err(err) => {
-            assert!(!ty_is_partial_eq);
-            search.infcx.report_fulfillment_errors(&err, None, false);
-            reported_fulfillment_errors = true;
-        }
-        Ok(_) => {
-            reported_fulfillment_errors = false;
-        }
-    }
-
-    let check_result = if let Some(adt_def) = search.found {
-        let path = tcx.def_path_str(adt_def.did);
-        let msg = format!(
-            "to use a constant of type `{}` in a pattern, \
-             `{}` must be annotated with `#[derive(PartialEq, Eq)]`",
-            path,
-            path,
-        );
-
-        // FIXME: maybe use reported_fulfillment_errors as the boolean test here.
-        if !search.is_partial_eq(ty) {
-            // span_fatal avoids ICE from resolution of non-existent method (rare case).
-            tcx.sess.span_fatal(span, &msg);
-        } else {
-            tcx.lint_hir(lint::builtin::INDIRECT_STRUCTURAL_MATCH, id, span, &msg);
-            CheckConstForStructuralPattern::ReportedRecoverableLint
-        }
+    return if let Err(err) = search.partialeq_fulfillment_cx.select_all_or_error(search.infcx) {
+        assert!(!ty_is_partial_eq);
+        search.infcx.report_fulfillment_errors(&err, None, false);
+        CheckConstForStructuralPattern::ReportedNonrecoverableError(span)
+    } else if let Err(_err) = search.structure_fulfillment_cx.select_all_or_error(search.infcx) {
+        // We deliberately do not report fulfillment errors related to this
+        // check, becase we want the diagnostics to be controlled by a
+        // future-compatibility lint.
+        tcx.lint_hir(lint::builtin::INDIRECT_STRUCTURAL_MATCH, id, span, &format!(
+            "to use a constant of type `{T}` in a pattern, all types used to define `{T}` \
+             must be annotated with `#[derive(PartialEq, Eq)]`", T=ty));
+        CheckConstForStructuralPattern::ReportedRecoverableLint
     } else {
-        // if all ADTs in the const were structurally matchable, then we would
-        // like to conclude the type must implement `PartialEq`. But cases like
-        // rust-lang/rust#61188 show cases where this did not hold, because the
-        // structural_match analysis will not necessariy observe the type
-        // parameters, while deriving `PartialEq` always requires the parameters
-        // to themselves implement `PartialEq`.
-
-        if reported_fulfillment_errors {
-            // If we *did* report an error, then we don't need to try to produce
-            // backwards-compatible code-gen.
-            CheckConstForStructuralPattern::ReportedNonrecoverableError
-        } else if ty_is_partial_eq {
-            // if all ADTs in the const were structurally matchable and all
-            // non-scalars implement `PartialEq`, then you would think we were
-            // definitely in a case where the type itself must implement
-            // `PartialEq` (and therefore could safely `assert!(ty_is_partial_eq)`
-            // here).
-            //
-            // However, exceptions to this exist (like `fn(&T)`, which is sugar
-            // for `for <'a> fn(&'a T)`); see rust-lang/rust#46989.
-            //
-            // For now, let compilation continue, under assumption that compiler
-            // will ICE if codegen is actually impossible.
+        // if all ADTs in the const were structurally matchable and all
+        // non-scalars implement `PartialEq`, then you would think we were
+        // definitely in case where type itself must implement `PartialEq`
+        // (and therefore could `assert!(ty_is_partial_eq)` here) ...
+        if ty_is_partial_eq {
             CheckConstForStructuralPattern::Ok
         } else {
+            // ... however, exceptions to this exist (like `fn(&T)`, which
+            // is sugar for `for <'a> fn(&'a T)`); see rust-lang/rust#46989.
+            //
+            // For now, let compilation continue, under assumption that
+            // compiler will ICE if codegen is actually impossible.
             CheckConstForStructuralPattern::UnreportedNonpartialEq
         }
     };
 
-    return check_result;
-
-    struct Search<'a, 'tcx> {
+    struct Search<'b, 'a, 'tcx> {
+        include_lint_checks: bool,
         tcx: TyCtxt<'tcx>,
         param_env: ty::ParamEnv<'tcx>,
-        infcx: &'a InferCtxt<'a, 'tcx>,
-        fulfillment_cx: traits::FulfillmentContext<'tcx>,
+        infcx: &'b InferCtxt<'a, 'tcx>,
+        partialeq_fulfillment_cx: traits::FulfillmentContext<'tcx>,
+        structure_fulfillment_cx: traits::FulfillmentContext<'tcx>,
 
         id: hir::HirId,
         span: Span,
@@ -1552,13 +1610,7 @@ fn check_const_ty_is_okay_for_structural_pattern(
         seen: FxHashSet<&'tcx AdtDef>,
     }
 
-    impl<'a, 'tcx> Search<'a, 'tcx> {
-        fn is_partial_eq(&self, ty: Ty<'tcx>) -> bool {
-            is_partial_eq(self.tcx, self.param_env, &self.infcx, ty, self.id, self.span)
-        }
-    }
-
-    impl<'a, 'tcx> TypeVisitor<'tcx> for Search<'a, 'tcx> {
+    impl<'b, 'a, 'tcx> TypeVisitor<'tcx> for Search<'b, 'a, 'tcx> {
         fn visit_ty(&mut self, ty: Ty<'tcx>) -> bool {
             debug!("Search visiting ty: {:?}", ty);
 
@@ -1599,7 +1651,7 @@ fn check_const_ty_is_okay_for_structural_pattern(
                             def_id: partial_eq_def_id,
                             substs: self.tcx.mk_substs_trait(ty, &[ty.into()]),
                         };
-                        self.fulfillment_cx.register_predicate_obligation(
+                        self.partialeq_fulfillment_cx.register_predicate_obligation(
                             &self.infcx,
                             traits::Obligation {
                                 cause,
@@ -1620,24 +1672,26 @@ fn check_const_ty_is_okay_for_structural_pattern(
                 return false;
             }
 
-            {
+            if self.include_lint_checks {
                 debug!("Search registering Structural bound for adt ty: {}", ty);
 
                 let cause = ObligationCause::new(self.span, self.id, ConstPatternStructural);
                 let structural_def_id = self.tcx.lang_items().structural_trait().unwrap();
-                self.fulfillment_cx.register_bound(
+                self.structure_fulfillment_cx.register_bound(
                     &self.infcx, self.param_env, ty, structural_def_id, cause);
 
+                /*
                 // We deliberately do not report fulfillment errors related to
                 // this check, becase we want the diagnostics to be controlled
                 // by a future-compatibility lint. (Also current implementation
                 // is conservative and would flag too many false positives; see
                 // e.g. rust-lang/rust#62614.)
-                if self.fulfillment_cx.select_all_or_error(&self.infcx).is_err() {
+                if self.structure_fulfillment_cx.select_all_or_error(&self.infcx).is_err() {
                     debug!("Search found ty: {:?}", ty);
                     self.found = Some(&adt_def);
                     return true // Halt visiting!
                 }
+                 */
             }
 
             self.seen.insert(adt_def);

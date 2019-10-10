@@ -106,6 +106,9 @@ impl PatCtxt<'_, '_> {
                         "runtime values cannot be referenced in patterns",
                     ).emit();
                 }
+                PatternError::NonStructuralConst(span) => {
+                    self.span_e0158(span, "constants in patterns must derive `#[PartialEq, Eq]`")
+                }
             }
         }
     }
