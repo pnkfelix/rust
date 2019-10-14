@@ -13,9 +13,9 @@ fn main() {
     let b = Some(Cell::new(&a));
     //~^ ERROR `a` does not live long enough [E0597]
     match b {
+        // Below line used to cause structural match check to fire, before
+        // rust-lang/rust#62614 was addressed.
         <() as Foo<'static>>::C => { }
-        //~^ WARN must be annotated with `#[derive(PartialEq, Eq)]`
-        //~| WARN will become a hard error in a future release
         _ => { }
     }
 }
