@@ -73,6 +73,7 @@ fn mirror_stmts<'a, 'tcx>(
                         region::FirstStatementIndex::new(index)),
                 };
 
+                debug!("mirror_stmts pattern_from_hir local: {:?}", local);
                 let mut pattern = cx.pattern_from_hir(&local.pat);
 
                 if let Some(ty) = &local.ty {

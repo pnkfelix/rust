@@ -861,6 +861,7 @@ impl ToBorrowKind for hir::Mutability {
 }
 
 fn convert_arm<'tcx>(cx: &mut Cx<'_, 'tcx>, arm: &'tcx hir::Arm) -> Arm<'tcx> {
+    debug!("convert_arm pattern_from_hir arm: {:?}", arm);
     Arm {
         pattern: cx.pattern_from_hir(&arm.pat),
         guard: match arm.guard {

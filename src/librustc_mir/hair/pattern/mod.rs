@@ -5,7 +5,7 @@ mod check_match;
 
 pub(crate) use self::check_match::check_match;
 
-use crate::const_eval::const_variant_index;
+use crate::const_eval::{self, const_variant_index};
 
 use crate::hair::util::UserAnnotatedTyHelpers;
 use crate::hair::constant::*;
@@ -1053,6 +1053,8 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
         debug!("const_to_pat: cv={:#?} id={:?}", cv, id);
         debug!("const_to_pat: cv.ty={:?} span={:?}", cv.ty, span);
 
+        self.inspect_const_value_for_nonstructural_adt(cv);
+
         let mut saw_error = false;
         let inlined_const_as_pat = self.const_to_pat_inner(instance, cv, id, span, &mut saw_error);
 
@@ -1185,6 +1187,27 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
             kind: Box::new(kind),
         }
     }
+
+    fn inspect_const_value_for_nonstructural_adt(&self, cv: &'tcx ty::Const<'tcx>, span: Span) {
+        let param_env_and_ty = ty::ParamEnvAnd { param_env: self.param_env, value: cv.ty };
+        let ty_layout = self.tcx.at(span).layout_of(param_env_and_ty).unwrap();
+        let ecx = const_eval::mk_eval_cx(self.tcx, span, self.param_env);
+        let operand = ecx.eval_const_to_op(cv, Some(ty_layout)).unwrap();
+
+        struct Inspector { ecx: const_eval::CompileTimeEvalContext<'mir, 'tcx> }
+        impl<'mir, 'tcx: 'mir, M> crate::interpret::ValueVisitor<'mir, 'tcx, M> for Inspector
+            where M: Machine<'mir, 'tcx>
+        {
+            fn ecx(&self) -> &const_eval::CompileTimeEvalContext<'mir, 'tcx> {
+                &self.ecx
+            }
+            fn visit_value(&mut self, v: Self::V) -> InterpResult<'tcx>
+            {
+                self.walk_value(v)
+            }
+        }
+    }
+
 }
 
 // FIXME Move `struct ExprVisitor` out here and then make this a method on it,

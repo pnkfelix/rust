@@ -1065,7 +1065,7 @@ fn compute_missing_ctors<'tcx>(
 /// relation to preceding patterns, it is not reachable) and exhaustiveness
 /// checking (if a wildcard pattern is useful in relation to a matrix, the
 /// matrix isn't exhaustive).
-pub fn is_useful<'p, 'a, 'tcx>(
+pub(super) fn is_useful<'p, 'a, 'tcx>(
     cx: &mut MatchCheckCtxt<'a, 'tcx>,
     matrix: &Matrix<'p, 'tcx>,
     v: &[&Pat<'tcx>],

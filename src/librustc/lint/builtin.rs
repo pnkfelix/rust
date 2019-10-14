@@ -351,7 +351,7 @@ declare_lint! {
 declare_lint! {
     pub INDIRECT_STRUCTURAL_MATCH,
     // defaulting to allow until rust-lang/rust#62614 is fixed.
-    Allow,
+    Warn,
     "pattern with const indirectly referencing non-`#[structural_match]` type"
 }
 

@@ -155,6 +155,7 @@ impl<'tcx> MatchVisitor<'_, 'tcx> {
                         self.tables
                     );
                     patcx.include_lint_checks();
+                    debug!("check_irrefutable call lower_pattern pat: {:?}", pat);
                     let pattern = expand_pattern(cx, patcx.lower_pattern(&pat));
                     if !patcx.errors.is_empty() {
                         patcx.report_inlining_errors(pat.span);
@@ -252,6 +253,7 @@ impl<'tcx> MatchVisitor<'_, 'tcx> {
                                                 self.param_env.and(self.identity_substs),
                                                 self.tables);
             patcx.include_lint_checks();
+            debug!("check_irrefutable call lower_pattern pat: {:?}", pat);
             let pattern = patcx.lower_pattern(pat);
             let pattern_ty = pattern.ty;
             let pats: Matrix<'_, '_> = vec![smallvec![

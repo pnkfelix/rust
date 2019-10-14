@@ -838,6 +838,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             );
 
             if let Some(arg) = arg_opt {
+                debug!("args_and_body pattern_from_hir arg: {:?}", arg);
                 let pattern = self.hir.pattern_from_hir(&arg.pat);
                 let original_source_scope = self.source_scope;
                 let span = pattern.span;
