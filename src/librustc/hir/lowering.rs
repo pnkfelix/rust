@@ -64,7 +64,6 @@ use syntax::ast;
 use syntax::ptr::P as AstP;
 use syntax::ast::*;
 use syntax::errors;
-use syntax::expand::SpecialDerives;
 use syntax::print::pprust;
 use syntax::parse::token::{self, Nonterminal, Token};
 use syntax::tokenstream::{TokenStream, TokenTree};
@@ -182,8 +181,6 @@ pub trait Resolver {
         components: &[Symbol],
         ns: Namespace,
     ) -> (ast::Path, Res<NodeId>);
-
-    fn has_derives(&self, node_id: NodeId, derives: SpecialDerives) -> bool;
 }
 
 type NtToTokenstream = fn(&Nonterminal, &ParseSess, Span) -> TokenStream;
