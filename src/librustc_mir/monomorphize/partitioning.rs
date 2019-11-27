@@ -778,6 +778,23 @@ fn numbered_codegen_unit_name(
     name_builder.build_cgu_name_no_mangle(LOCAL_CRATE, &["cgu"], Some(index))
 }
 
+fn sorted_cgus<'a, 'tcx: 'a>(cgus: impl Iterator<Item = &'a CodegenUnit<'tcx>>)
+                             -> impl Iterator<Item = &'a CodegenUnit<'tcx>> {
+    let mut v: Vec<_> = cgus.collect();
+    v.sort_by_key(|cgu| cgu.name());
+    v.into_iter()
+}
+
+fn sorted_items<'a, 'tcx: 'a>(
+    tcx: TyCtxt<'tcx>,
+    items: impl Iterator<Item = (&'a MonoItem<'tcx>, &'a (Linkage, Visibility))>)
+    -> impl Iterator<Item = (&'a MonoItem<'tcx>, &'a (Linkage, Visibility))>
+{
+    let mut v: Vec<_> = items.collect();
+    v.sort_by_key(|(item, _)| item.symbol_name(tcx));
+    v.into_iter()
+}
+
 fn debug_dump<'a, 'tcx, I>(tcx: TyCtxt<'tcx>, label: &str, cgus: I)
 where
     I: Iterator<Item = &'a CodegenUnit<'tcx>>,
@@ -785,10 +802,10 @@ where
 {
     if cfg!(debug_assertions) {
         debug!("{}", label);
-        for cgu in cgus {
+        for cgu in sorted_cgus(cgus) {
             debug!("CodegenUnit {} estimated size {} :", cgu.name(), cgu.size_estimate());
 
-            for (mono_item, linkage) in cgu.items() {
+            for (mono_item, linkage) in sorted_items(tcx, cgu.items().iter()) {
                 let symbol_name = mono_item.symbol_name(tcx).name.as_str();
                 let symbol_hash_start = symbol_name.rfind('h');
                 let symbol_hash = symbol_hash_start.map(|i| &symbol_name[i ..])
