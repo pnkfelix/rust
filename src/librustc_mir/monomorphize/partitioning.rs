@@ -125,7 +125,7 @@ fn fallback_cgu_name(name_builder: &mut CodegenUnitNameBuilder<'_>) -> Symbol {
     name_builder.build_cgu_name(LOCAL_CRATE, &["fallback"], Some("cgu"))
 }
 
-pub fn partition<'tcx, I>(
+fn partition<'tcx, I>(
     tcx: TyCtxt<'tcx>,
     mono_items: I,
     strategy: PartitioningStrategy,
@@ -172,7 +172,17 @@ where
 
     // Next we try to make as many symbols "internal" as possible, so LLVM has
     // more freedom to optimize.
-    if !tcx.sess.opts.cg.link_dead_code {
+    //
+    // `-C link-dead-code` forces compiler to preserve linkage of otherwise
+    // hidden symbols, so that flag disables the internalze_symbols pass.
+    //
+    // rust-lang/rust#59535: products reused by incremental-compilation may have
+    // been (link-time) optimized relying on prior External categorization, so
+    // pnkfelix tries making incremental compilation disable internalize_symbols.
+    let do_internalize_symbols = !tcx.sess.opts.cg.link_dead_code &&
+        (tcx.sess.opts.incremental.is_none() ||
+         !tcx.sess.opts.debugging_opts.incremental_dont_internalize_symbols);
+    if do_internalize_symbols {
         let _prof_timer =
             tcx.prof.generic_activity("cgu_partitioning_internalize_symbols");
         internalize_symbols(tcx, &mut post_inlining, inlining_map);
@@ -647,20 +657,32 @@ fn internalize_symbols<'tcx>(
 
             if let Some(accessors) = accessor_map.get(accessee) {
                 if accessors.iter()
-                            .filter_map(|accessor| {
-                                // Some accessors might not have been
-                                // instantiated. We can safely ignore those.
-                                mono_item_placements.get(accessor)
-                            })
-                            .any(|placement| *placement != home_cgu) {
-                    // Found an accessor from another CGU, so skip to the next
-                    // item without marking this one as internal.
+                    .filter_map(|accessor| {
+                        // Some accessors might not have been
+                        // instantiated. We can safely ignore those.
+                        mono_item_placements.get(accessor).map(|placement| (placement, accessor))
+                    })
+                    .any(|(placement, accessor)| {
+                        let found = *placement != home_cgu;
+                        // Found an accessor from another CGU, so skip to the next
+                        // item without marking this one as internal.
+                        if found {
+                            info!("internalize_symbols preserving linkage of {} (in {:?}) as {:?} \
+                                   due to access from {} (in {:?})",
+                                  accessee.symbol_name(_tcx), home_cgu, linkage_and_visibility.0,
+                                  accessor.symbol_name(_tcx), placement);
+                        }
+                        found
+                    })
+                {
                     continue
                 }
             }
 
             // If we got here, we did not find any accesses from other CGUs,
             // so it's fine to make this monomorphization internal.
+            info!("internalize_symbols revising linkage of {} to internal",
+                  accessee.symbol_name(_tcx));
             *linkage_and_visibility = (Linkage::Internal, Visibility::Default);
         }
     }
