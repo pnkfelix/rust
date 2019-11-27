@@ -474,6 +474,10 @@ extern { pub type ThinLTOData; }
 /// LLVMRustThinLTOBuffer
 extern { pub type ThinLTOBuffer; }
 
+// LLVMRustModuleLoopCallback
+pub type ThinLTOModuleLoopCallback =
+    unsafe extern "C" fn(*mut c_void, *const c_char);
+
 // LLVMRustModuleNameCallback
 pub type ThinLTOModuleNameCallback =
     unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char);
@@ -1848,6 +1852,7 @@ extern "C" {
     ) -> bool;
     pub fn LLVMRustGetThinLTOModuleImports(
         Data: *const ThinLTOData,
+        ModuleLoopCallback: ThinLTOModuleLoopCallback,
         ModuleNameCallback: ThinLTOModuleNameCallback,
         CallbackPayload: *mut c_void,
     );

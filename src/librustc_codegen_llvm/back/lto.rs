@@ -506,7 +506,12 @@ fn thin_lto(cgcx: &CodegenContext<LlvmCodegenBackend>,
             if green_modules.contains_key(module_name) {
                 let imports_all_green = import_map.modules_imported_by(module_name)
                     .iter()
-                    .all(|imported_module| green_modules.contains_key(imported_module));
+                    .all(|imported_module| {
+                        let import_is_green = green_modules.contains_key(imported_module);
+                        debug!("module {} has import {}, green: {:?}",
+                               module_name, imported_module, import_is_green);
+                        import_is_green
+                    });
 
                 if imports_all_green {
                     let work_product = green_modules[module_name].clone();
@@ -832,6 +837,14 @@ impl ThinLTOImports {
 
     /// Loads the ThinLTO import map from ThinLTOData.
     unsafe fn from_thin_lto_data(data: *const llvm::ThinLTOData) -> ThinLTOImports {
+        unsafe extern "C" fn importing_module_callback(payload: *mut libc::c_void,
+                                                       importing_module_name: *const libc::c_char) {
+            let importing_module_name = CStr::from_ptr(importing_module_name);
+            let importing_module_name = module_name_to_str(&importing_module_name);
+
+            debug!("importing_module_callback importing_module_name: {}", importing_module_name);
+        }
+
         unsafe extern "C" fn imported_module_callback(payload: *mut libc::c_void,
                                                       importing_module_name: *const libc::c_char,
                                                       imported_module_name: *const libc::c_char) {
@@ -840,6 +853,9 @@ impl ThinLTOImports {
             let importing_module_name = module_name_to_str(&importing_module_name);
             let imported_module_name = CStr::from_ptr(imported_module_name);
             let imported_module_name = module_name_to_str(&imported_module_name);
+
+            debug!("imported_module_callback importing_module_name: {} imported_module_name: {}",
+                   importing_module_name, imported_module_name);
 
             if !map.imports.contains_key(importing_module_name) {
                 map.imports.insert(importing_module_name.to_owned(), vec![]);
@@ -852,6 +868,7 @@ impl ThinLTOImports {
         }
         let mut map = ThinLTOImports::default();
         llvm::LLVMRustGetThinLTOModuleImports(data,
+                                              importing_module_callback,
                                               imported_module_callback,
                                               &mut map as *mut _ as *mut libc::c_void);
         map
