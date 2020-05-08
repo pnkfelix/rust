@@ -565,6 +565,9 @@ declare_features! (
     /// Allow conditional compilation depending on rust version
     (active, cfg_version, "1.45.0", Some(64796), None),
 
+    /// Allows unsized fn parameters.
+    (active, unsized_fn_params, "1.45.0", Some(48055), None),
+
     // -------------------------------------------------------------------------
     // feature-group-end: actual feature gates
     // -------------------------------------------------------------------------
