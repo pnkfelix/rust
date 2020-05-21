@@ -585,4 +585,5 @@ pub const INCOMPLETE_FEATURES: &[Symbol] = &[
     sym::const_trait_impl,
     sym::const_trait_bound_opt_out,
     sym::unsized_locals,
+    sym::unsized_fn_params,
 ];
