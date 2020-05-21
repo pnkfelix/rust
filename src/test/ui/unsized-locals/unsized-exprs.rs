@@ -1,6 +1,6 @@
-#![feature(unsized_tuple_coercion, unsized_locals)]
+#![feature(unsized_tuple_coercion, unsized_locals, unsized_fn_params)]
 //~^ WARN the feature `unsized_locals` is incomplete and may cause the compiler to crash
-
+//~| WARN the feature `unsized_fn_params` is incomplete and may cause the compiler to crash
 struct A<X: ?Sized>(X);
 
 fn udrop<T: ?Sized>(_x: T) {}

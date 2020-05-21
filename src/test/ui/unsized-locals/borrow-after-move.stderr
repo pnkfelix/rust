@@ -1,10 +1,16 @@
 warning: the feature `unsized_locals` is incomplete and may cause the compiler to crash
   --> $DIR/borrow-after-move.rs:1:12
    |
-LL | #![feature(unsized_locals)]
+LL | #![feature(unsized_locals, unsized_fn_params)]
    |            ^^^^^^^^^^^^^^
    |
    = note: `#[warn(incomplete_features)]` on by default
+
+warning: the feature `unsized_fn_params` is incomplete and may cause the compiler to crash
+  --> $DIR/borrow-after-move.rs:1:28
+   |
+LL | #![feature(unsized_locals, unsized_fn_params)]
+   |                            ^^^^^^^^^^^^^^^^^
 
 error[E0382]: borrow of moved value: `x`
   --> $DIR/borrow-after-move.rs:21:24
@@ -60,6 +66,6 @@ LL |         x.foo();
 LL |         println!("{}", &x);
    |                        ^^ value borrowed here after move
 
-error: aborting due to 5 previous errors; 1 warning emitted
+error: aborting due to 5 previous errors; 2 warnings emitted
 
 For more information about this error, try `rustc --explain E0382`.

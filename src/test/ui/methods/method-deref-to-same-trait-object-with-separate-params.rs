@@ -1,6 +1,6 @@
-#![feature(arbitrary_self_types, coerce_unsized, dispatch_from_dyn, unsize, unsized_locals)]
+#![feature(arbitrary_self_types, coerce_unsized, dispatch_from_dyn, unsize, unsized_locals, unsized_fn_params)]
 //~^ WARN the feature `unsized_locals` is incomplete and may cause the compiler to crash
-
+//~| WARN the feature `unsized_fn_params` is incomplete and may cause the compiler to crash
 // This tests a few edge-cases around `arbitrary_self_types`. Most specifically,
 // it checks that the `ObjectCandidate` you get from method matching can't
 // match a trait with the same DefId as a supertrait but a bad type parameter.

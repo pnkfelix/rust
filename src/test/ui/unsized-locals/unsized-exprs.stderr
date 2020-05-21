@@ -1,10 +1,16 @@
 warning: the feature `unsized_locals` is incomplete and may cause the compiler to crash
   --> $DIR/unsized-exprs.rs:1:36
    |
-LL | #![feature(unsized_tuple_coercion, unsized_locals)]
+LL | #![feature(unsized_tuple_coercion, unsized_locals, unsized_fn_params)]
    |                                    ^^^^^^^^^^^^^^
    |
    = note: `#[warn(incomplete_features)]` on by default
+
+warning: the feature `unsized_fn_params` is incomplete and may cause the compiler to crash
+  --> $DIR/unsized-exprs.rs:1:52
+   |
+LL | #![feature(unsized_tuple_coercion, unsized_locals, unsized_fn_params)]
+   |                                                    ^^^^^^^^^^^^^^^^^
 
 error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
   --> $DIR/unsized-exprs.rs:23:26
@@ -39,6 +45,6 @@ LL |     udrop::<A<[u8]>>(A(*foo()));
    = note: required because it appears within the type `A<[u8]>`
    = note: the return type of a function must have a statically known size
 
-error: aborting due to 3 previous errors; 1 warning emitted
+error: aborting due to 3 previous errors; 2 warnings emitted
 
 For more information about this error, try `rustc --explain E0277`.

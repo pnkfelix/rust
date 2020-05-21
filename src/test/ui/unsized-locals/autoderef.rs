@@ -1,7 +1,7 @@
 // run-pass
 
 #![allow(incomplete_features)]
-#![feature(unsized_locals)]
+#![feature(unsized_locals, unsized_fn_params)]
 
 pub trait Foo {
     fn foo(self) -> String;
