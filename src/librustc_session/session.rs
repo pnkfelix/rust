@@ -17,7 +17,7 @@ use rustc_data_structures::sync::{
 };
 use rustc_errors::annotate_snippet_emitter_writer::AnnotateSnippetEmitterWriter;
 use rustc_errors::emitter::{Emitter, EmitterWriter, HumanReadableErrorType};
-use rustc_errors::json::JsonEmitter;
+use rustc_errors::json::{FutureIncompatReportEntry, JsonEmitter};
 use rustc_errors::registry::Registry;
 use rustc_errors::{Applicability, DiagnosticBuilder, DiagnosticId, ErrorReported};
 use rustc_span::edition::Edition;
@@ -37,6 +37,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
+
+use log::debug;
 
 pub struct OptimizationFuel {
     /// If `-zfuel=crate=n` is specified, initially set to `n`, otherwise `0`.
@@ -119,6 +121,9 @@ pub struct Session {
     /// (sub)diagnostics that have been set once, but should not be set again,
     /// in order to avoid redundantly verbose output (Issue #24690, #44953).
     pub one_time_diagnostics: Lock<FxHashSet<(DiagnosticMessageId, Option<Span>, String)>>,
+
+    signalled_future_incompat: Lock<FxHashMap<&'static str, FxHashSet<MultiSpan>>>,
+
     crate_types: OnceCell<Vec<CrateType>>,
     /// The `crate_disambiguator` is constructed out of all the `-C metadata`
     /// arguments passed to the compiler. Its value together with the crate-name
@@ -523,6 +528,81 @@ impl Session {
             message,
             Some(span),
         );
+    }
+
+    pub fn signal_future_incompat(&self, lint: &'static lint::Lint, span: Option<MultiSpan>) {
+        // For initial deployment of cargo report-future-incompat, we will
+        // allowlist a few specific future-incompatibility lints. Eventually,
+        // this guard will go away and all future-incompat lints will be
+        // registered via this path.
+        //
+        // FIXME: pnkfelix tried to use a manually-constructed LintId for this,
+        // but for some reason it did not work. So instead we just compare the
+        // names and trust that this case is uncommon enough that the overhead
+        // won't matter.
+
+        static ALLOW_LIST: &[&'static str] = &[lint::builtin::SAFE_PACKED_BORROWS.name];
+
+        if !ALLOW_LIST.contains(&lint.name) {
+            debug!("skipping record of lint {} because it is not on allow-list", lint.name);
+            return;
+        }
+
+        // It doesn't make sense to signal future-incompatibilty issue
+        // downstream from a crate when the lint itself defaults to allow, since
+        // the crate author themselves is not currently being warned about the
+        // lint. (Note the use of the *default* level here. If the user has
+        // overridden a default level with their own allow, then we definitely
+        // want to signal that case; that, in tandem with cap-lints, are the
+        // main motiviations for report-future-incompat.)
+        //
+        // (One example of a future-incompat lint that currently has
+        // default level Allow is INDIRECT_STRUCTURAL_MATCH, at least until
+        // #62614 is fixed.)
+        if lint.default_level == lint::Level::Allow {
+            debug!("skipping record of lint {} because its level defaults to allow", lint.name);
+            return;
+        }
+
+        let mut map = self.signalled_future_incompat.borrow_mut();
+        let spans = map.entry(lint.name).or_insert(Default::default());
+        if let Some(span) = span {
+            spans.insert(span.into());
+        }
+    }
+
+    pub fn report_any_future_incompat(&self) {
+        let mut emitter = match self.opts.error_format {
+            config::ErrorOutputType::HumanReadable(_) => {
+                // At this level, we emit nothing for human-readble error
+                // output; these signals are meant to be seen by higher level
+                // drivers that are using json for error output.
+                return;
+            }
+            config::ErrorOutputType::Json { pretty, json_rendered } => Box::new(JsonEmitter::new(
+                Box::new(std::io::BufWriter::new(std::io::stderr())),
+                None,
+                self.parse_sess.clone_source_map(),
+                pretty,
+                json_rendered,
+                false,
+            )),
+        };
+
+        let map = self.signalled_future_incompat.borrow();
+        for (name, spans) in map.iter() {
+            let mut sorted_spans: Vec<MultiSpan> = spans.iter().cloned().collect();
+            sorted_spans.sort_by(|a, b| {
+                a.primary_span().map(|s| s.data()).cmp(&b.primary_span().map(|s| s.data()))
+            });
+            for span in sorted_spans {
+                emitter.emit_future_incompat_instance(&FutureIncompatReportEntry::new(
+                    name,
+                    span.clone(),
+                    &emitter,
+                ));
+            }
+        }
     }
 
     #[inline]
@@ -1251,6 +1331,7 @@ pub fn build_session(
         local_crate_source_file,
         working_dir,
         one_time_diagnostics: Default::default(),
+        signalled_future_incompat: Default::default(),
         crate_types: OnceCell::new(),
         crate_disambiguator: OnceCell::new(),
         features: OnceCell::new(),
