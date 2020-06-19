@@ -10,12 +10,15 @@
 //~| hard error
 //~^^^ ERROR `#[derive]` can't be used
 //~| hard error
+//~^^^^^ FUTURE-INCOMPAT SAFE_PACKED_BORROWS
+//~|     FUTURE-INCOMPAT SAFE_PACKED_BORROWS
 #[repr(packed)]
 pub struct Foo<T>(T, T, T);
 
 #[derive(PartialEq, Eq)]
 //~^ ERROR `#[derive]` can't be used
 //~| hard error
+//~^^^ FUTURE-INCOMPAT SAFE_PACKED_BORROWS
 #[repr(packed)]
 pub struct Bar(u32, u32, u32);
 
@@ -25,6 +28,7 @@ struct Y(usize);
 #[derive(PartialEq)]
 //~^ ERROR `#[derive]` can't be used
 //~| hard error
+//~^^^ FUTURE-INCOMPAT SAFE_PACKED_BORROWS
 #[repr(packed)]
 struct X(Y);
 

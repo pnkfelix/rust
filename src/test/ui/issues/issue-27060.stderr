@@ -14,7 +14,7 @@ LL | #[deny(safe_packed_borrows)]
    = note: fields of packed structs might be misaligned: dereferencing a misaligned pointer or even just creating a misaligned reference is undefined behavior
 
 error: borrow of packed field is unsafe and requires unsafe function or block (error E0133)
-  --> $DIR/issue-27060.rs:23:13
+  --> $DIR/issue-27060.rs:24:13
    |
 LL |     let _ = &good.data2[0];
    |             ^^^^^^^^^^^^^^
@@ -25,3 +25,7 @@ LL |     let _ = &good.data2[0];
 
 error: aborting due to 2 previous errors
 
+(json only) future-incompat: SAFE_PACKED_BORROWS
+  --> $DIR/issue-27060.rs:21:13
+(json only) future-incompat: SAFE_PACKED_BORROWS
+  --> $DIR/issue-27060.rs:24:13

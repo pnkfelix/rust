@@ -18,6 +18,7 @@ pub enum ErrorKind {
     Note,
     Suggestion,
     Warning,
+    FutureIncompat,
 }
 
 impl FromStr for ErrorKind {
@@ -31,6 +32,7 @@ impl FromStr for ErrorKind {
             "NOTE" => Ok(ErrorKind::Note),
             "SUGGESTION" => Ok(ErrorKind::Suggestion),
             "WARN" | "WARNING" => Ok(ErrorKind::Warning),
+            "FUTURE-INCOMPAT" => Ok(ErrorKind::FutureIncompat),
             _ => Err(()),
         }
     }
@@ -44,6 +46,7 @@ impl fmt::Display for ErrorKind {
             ErrorKind::Note => write!(f, "note"),
             ErrorKind::Suggestion => write!(f, "suggestion"),
             ErrorKind::Warning => write!(f, "warning"),
+            ErrorKind::FutureIncompat => write!(f, "future incompatibility"),
         }
     }
 }

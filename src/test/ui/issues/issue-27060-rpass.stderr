@@ -1,0 +1,4 @@
+(json only) future-incompat: SAFE_PACKED_BORROWS
+  --> $DIR/issue-27060-rpass.rs:20:13
+(json only) future-incompat: SAFE_PACKED_BORROWS
+  --> $DIR/issue-27060-rpass.rs:21:13

@@ -19,6 +19,15 @@ struct Diagnostic {
 }
 
 #[derive(Deserialize)]
+struct FutureIncompat {
+    #[allow(dead_code)]
+    future_incompat_instance: (),
+    name: String,
+    #[allow(dead_code)]
+    spans: Vec<DiagnosticSpan>,
+}
+
+#[derive(Deserialize)]
 struct ArtifactNotification {
     #[allow(dead_code)]
     artifact: PathBuf,
@@ -77,11 +86,21 @@ pub fn extract_rendered(output: &str) -> String {
                 if let Ok(diagnostic) = serde_json::from_str::<Diagnostic>(line) {
                     diagnostic.rendered
                 } else if let Ok(_) = serde_json::from_str::<ArtifactNotification>(line) {
-                    // Ignore the notification.
+                    // Ignore the notification.xxxx
                     None
+                } else if let Ok(diagnostic) = serde_json::from_str::<FutureIncompat>(line) {
+                    if let Some(span) = diagnostic.spans.get(0) {
+                        Some(format!(
+                            "(json only) future-incompat: {}\n  --> {}:{}:{}\n",
+                            diagnostic.name, span.file_name, span.line_start, span.column_start
+                        ))
+                    } else {
+                        Some(format!("(json only) future-incompat: {}\n", diagnostic.name))
+                    }
                 } else {
                     print!(
-                        "failed to decode compiler output as json: line: {}\noutput: {}",
+                        "extract_rendered \
+                         failed to decode compiler output as json: line: {}\noutput: {}",
                         line, output
                     );
                     panic!()
@@ -109,8 +128,17 @@ fn parse_line(file_name: &str, line: &str, output: &str, proc_res: &ProcRes) -> 
                 expected_errors
             }
             Err(error) => {
+                // Before we give up entirely, check if this is a future-incompat report.
+                if let Ok(diagnostic) = serde_json::from_str::<FutureIncompat>(line) {
+                    return vec![Error {
+                        line_num: diagnostic.spans[0].line_start,
+                        kind: Some(ErrorKind::FutureIncompat),
+                        msg: diagnostic.name,
+                    }];
+                }
+                // Otherwise, just return the original error.
                 proc_res.fatal(Some(&format!(
-                    "failed to decode compiler output as json: \
+                    "parse_line failed to decode compiler output as json: \
                      `{}`\nline: {}\noutput: {}",
                     error, line, output
                 )));

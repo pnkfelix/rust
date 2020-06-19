@@ -207,6 +207,12 @@ pub fn struct_lint_level<'s, 'd>(
         span: Option<MultiSpan>,
         decorate: Box<dyn for<'b> FnOnce(LintDiagnosticBuilder<'b>) + 'd>,
     ) {
+        // Check for future incompatibility lints and signal it unconditinoially.
+        let future_incompatible = lint.future_incompatible;
+        if let Some(_info) = lint.future_incompatible {
+            sess.signal_future_incompat(lint, span.clone());
+        }
+
         let mut err = match (level, span) {
             (Level::Allow, _) => {
                 return;
@@ -216,10 +222,6 @@ pub fn struct_lint_level<'s, 'd>(
             (Level::Deny | Level::Forbid, Some(span)) => sess.struct_span_err(span, ""),
             (Level::Deny | Level::Forbid, None) => sess.struct_err(""),
         };
-
-        // Check for future incompatibility lints and issue a stronger warning.
-        let lint_id = LintId::of(lint);
-        let future_incompatible = lint.future_incompatible;
 
         // If this code originates in a foreign macro, aka something that this crate
         // did not itself author, then it's likely that there's nothing this crate
@@ -305,6 +307,8 @@ pub fn struct_lint_level<'s, 'd>(
         err.code(DiagnosticId::Lint(name));
 
         if let Some(future_incompatible) = future_incompatible {
+            let lint_id = LintId::of(lint);
+
             const STANDARD_MESSAGE: &str = "this was previously accepted by the compiler but is being phased out; \
                  it will become a hard error";
 

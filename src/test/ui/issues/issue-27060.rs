@@ -20,8 +20,10 @@ fn main() {
 
     let _ = &good.data; //~ ERROR borrow of packed field is unsafe
                         //~| hard error
+                        //~^^ FUTURE-INCOMPAT SAFE_PACKED_BORROWS
     let _ = &good.data2[0]; //~ ERROR borrow of packed field is unsafe
                             //~| hard error
+                            //~^^ FUTURE-INCOMPAT SAFE_PACKED_BORROWS
     let _ = &*good.data; // ok, behind a pointer
     let _ = &good.aligned; // ok, has align 1
     let _ = &good.aligned[2]; // ok, has align 1

@@ -11,18 +11,21 @@ const PACKED: Packed = Packed { data: &0 };
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn allow_allow() {
     &PACKED.data; // allowed
+    //~^ FUTURE-INCOMPAT SAFE_PACKED_BORROWS
 }
 
 #[allow(safe_packed_borrows)]
 #[warn(unsafe_op_in_unsafe_fn)]
 unsafe fn allow_warn() {
     &PACKED.data; // allowed
+    //~^ FUTURE-INCOMPAT SAFE_PACKED_BORROWS
 }
 
 #[allow(safe_packed_borrows)]
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe fn allow_deny() {
     &PACKED.data; // allowed
+    //~^ FUTURE-INCOMPAT SAFE_PACKED_BORROWS
 }
 
 #[warn(safe_packed_borrows)]
@@ -36,6 +39,7 @@ unsafe fn warn_allow() {
 unsafe fn warn_warn() {
     &PACKED.data; //~ WARN
     //~| WARNING this was previously accepted by the compiler but is being phased out
+    //~^^ FUTURE-INCOMPAT SAFE_PACKED_BORROWS
 }
 
 #[warn(safe_packed_borrows)]
@@ -43,6 +47,7 @@ unsafe fn warn_warn() {
 unsafe fn warn_deny() {
     &PACKED.data; //~ WARN
     //~| WARNING this was previously accepted by the compiler but is being phased out
+    //~^^ FUTURE-INCOMPAT SAFE_PACKED_BORROWS
 }
 
 #[deny(safe_packed_borrows)]
@@ -62,6 +67,7 @@ unsafe fn deny_warn() {
 unsafe fn deny_deny() {
     &PACKED.data; //~ ERROR
     //~| WARNING this was previously accepted by the compiler but is being phased out
+    //~^^ FUTURE-INCOMPAT SAFE_PACKED_BORROWS
 }
 
 fn main() {}

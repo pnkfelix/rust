@@ -1498,6 +1498,7 @@ impl<'test> TestCx<'test> {
             Some(ErrorKind::Help) => expect_help,
             Some(ErrorKind::Note) => expect_note,
             Some(ErrorKind::Error) | Some(ErrorKind::Warning) => true,
+            Some(ErrorKind::FutureIncompat) => true,
             Some(ErrorKind::Suggestion) | None => false,
         }
     }

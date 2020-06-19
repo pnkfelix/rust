@@ -288,6 +288,10 @@ impl Session {
     pub fn finish_diagnostics(&self, registry: &Registry) {
         self.check_miri_unleashed_features();
         self.diagnostic().print_error_count(registry);
+
+        // If there were future-incompatibilities signalled, emit them
+        // in one place (near the end) here.
+        self.report_any_future_incompat();
     }
 
     pub fn local_crate_disambiguator(&self) -> CrateDisambiguator {
