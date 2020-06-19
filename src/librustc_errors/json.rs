@@ -136,6 +136,37 @@ impl Emitter for JsonEmitter {
     }
 }
 
+#[derive(RustcEncodable)]
+pub struct FutureIncompatReportEntry {
+    future_incompat_instance: (),
+    name: &'static str,
+    spans: Vec<DiagnosticSpan>,
+}
+
+impl FutureIncompatReportEntry {
+    pub fn new(name: &'static str, spans: MultiSpan, je: &JsonEmitter) -> Self {
+        FutureIncompatReportEntry {
+            future_incompat_instance: (),
+            name,
+            spans: DiagnosticSpan::from_multispan(&spans, je),
+        }
+    }
+}
+
+impl JsonEmitter {
+    pub fn emit_future_incompat_instance(&mut self, entry: &FutureIncompatReportEntry) {
+        let result = if self.pretty {
+            writeln!(&mut self.dst, "{}", as_pretty_json(&entry))
+        } else {
+            writeln!(&mut self.dst, "{}", as_json(&entry))
+        }
+        .and_then(|_| self.dst.flush());
+        if let Err(e) = result {
+            panic!("failed to print notification: {:?}", e);
+        }
+    }
+}
+
 // The following data types are provided just for serialisation.
 
 #[derive(RustcEncodable)]
