@@ -1916,7 +1916,13 @@ fn sidebar_assoc_items(cx: &Context<'_>, out: &mut Buffer, it: &clean::Item) {
     }
 }
 
-fn sidebar_deref_methods(cx: &Context<'_>, out: &mut Buffer, impl_: &Impl, v: &Vec<Impl>, mut already_seen: FxHashSet<DefId>) {
+fn sidebar_deref_methods(
+    cx: &Context<'_>,
+    out: &mut Buffer,
+    impl_: &Impl,
+    v: &Vec<Impl>,
+    mut already_seen: FxHashSet<DefId>,
+) {
     let c = cx.cache();
 
     debug!("found Deref: {:?}", impl_);
@@ -1983,7 +1989,13 @@ fn sidebar_deref_methods(cx: &Context<'_>, out: &mut Buffer, impl_: &Impl, v: &V
                     .find(|i| i.inner_impl().trait_.def_id_full(c) == c.deref_trait_did)
                 {
                     if already_seen.insert(target_did.clone()) {
-                        sidebar_deref_methods(cx, out, target_deref_impl, target_impls, already_seen);
+                        sidebar_deref_methods(
+                            cx,
+                            out,
+                            target_deref_impl,
+                            target_impls,
+                            already_seen,
+                        );
                     }
                 }
             }
