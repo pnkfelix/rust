@@ -1910,13 +1910,13 @@ fn sidebar_assoc_items(cx: &Context<'_>, out: &mut Buffer, it: &clean::Item) {
                 .filter(|i| i.inner_impl().trait_.is_some())
                 .find(|i| i.inner_impl().trait_.def_id_full(cache) == cx.cache.deref_trait_did)
             {
-                sidebar_deref_methods(cx, out, impl_, v);
+                sidebar_deref_methods(cx, out, impl_, v, FxHashSet::default());
             }
         }
     }
 }
 
-fn sidebar_deref_methods(cx: &Context<'_>, out: &mut Buffer, impl_: &Impl, v: &Vec<Impl>) {
+fn sidebar_deref_methods(cx: &Context<'_>, out: &mut Buffer, impl_: &Impl, v: &Vec<Impl>, mut already_seen: FxHashSet<DefId>) {
     let c = cx.cache();
 
     debug!("found Deref: {:?}", impl_);
@@ -1982,7 +1982,9 @@ fn sidebar_deref_methods(cx: &Context<'_>, out: &mut Buffer, impl_: &Impl, v: &V
                     .filter(|i| i.inner_impl().trait_.is_some())
                     .find(|i| i.inner_impl().trait_.def_id_full(c) == c.deref_trait_did)
                 {
-                    sidebar_deref_methods(cx, out, target_deref_impl, target_impls);
+                    if already_seen.insert(target_did.clone()) {
+                        sidebar_deref_methods(cx, out, target_deref_impl, target_impls, already_seen);
+                    }
                 }
             }
         }
