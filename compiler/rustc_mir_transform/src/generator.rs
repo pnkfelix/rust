@@ -655,7 +655,10 @@ fn compute_storage_conflicts<'mir, 'tcx>(
     assert_eq!(body.local_decls.len(), saved_locals.domain_size());
 
     debug!("compute_storage_conflicts({:?})", body.span);
-    debug!("always_live = {:?}", always_live_locals);
+    for (j, local) in always_live_locals.iter().enumerate() {
+        let local_ty = body.local_decls[local].ty;
+        debug!("always_live[{j}] = {:?}: {:?}", local, local_ty);
+    }
 
     // Locals that are always live or ones that need to be stored across
     // suspension points are not eligible for overlap.
@@ -818,8 +821,9 @@ fn compute_layout<'tcx>(
     let mut tys = IndexVec::<GeneratorSavedLocal, _>::new();
     for (saved_local, local) in saved_locals.iter_enumerated() {
         locals.push(local);
-        tys.push(body.local_decls[local].ty);
-        debug!("generator saved local {:?} => {:?}", saved_local, local);
+        let local_ty = body.local_decls[local].ty;
+        tys.push(local_ty);
+        debug!("generator saved local {:?} => {:?}: {:?}", saved_local, local, local_ty);
     }
 
     // Leave empty variants for the UNRESUMED, RETURNED, and POISONED states.
@@ -1284,7 +1288,7 @@ impl<'tcx> MirPass<'tcx> for StateTransform {
             ty::Generator(_, substs, movability) => {
                 let substs = substs.as_generator();
                 (
-                    substs.upvar_tys().collect(),
+                    substs.upvar_tys().collect::<Vec<_>>(),
                     substs.witness(),
                     substs.discr_ty(tcx),
                     movability == hir::Movability::Movable,
@@ -1344,6 +1348,9 @@ impl<'tcx> MirPass<'tcx> for StateTransform {
         let liveness_info =
             locals_live_across_suspend_points(tcx, body, &always_live_locals, movable);
 
+        for (j, upvar) in upvars.iter().enumerate() {
+            debug!("upvar[{j}]: {upvar:?}");
+        }
         sanitize_witness(tcx, body, interior, upvars, &liveness_info.saved_locals);
 
         if tcx.sess.opts.unstable_opts.validate_mir {
