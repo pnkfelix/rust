@@ -742,6 +742,12 @@ pub const BUILTIN_ATTRIBUTES: &[BuiltinAttribute] = &[
          for reserving for `for<T> From<!> for T` impl"
     ),
     rustc_attr!(
+        rustc_reuse_upvar_slot, Normal,
+        template!(Word), WarnFollowing,
+        "the `#[rustc_reuse_upvar_slot]` attribute is used to experiment with \
+         generator layout strategies"
+    ),
+    rustc_attr!(
         rustc_test_marker, Normal, template!(NameValueStr: "name"), WarnFollowing,
         "the `#[rustc_test_marker]` attribute is used internally to track tests",
     ),
