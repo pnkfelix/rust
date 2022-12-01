@@ -2217,6 +2217,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             user_ty: if user_ty.is_empty() { None } else { Some(Box::new(user_ty)) },
             source_info,
             internal: false,
+            reuse_upvar: None,
             is_block_tail: None,
             local_info: Some(Box::new(LocalInfo::User(ClearCrossCrate::Set(BindingForm::Var(
                 VarBindingForm {
@@ -2246,6 +2247,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 user_ty: None,
                 source_info,
                 internal: false,
+                reuse_upvar: None,
                 is_block_tail: None,
                 local_info: Some(Box::new(LocalInfo::User(ClearCrossCrate::Set(
                     BindingForm::RefForGuard,

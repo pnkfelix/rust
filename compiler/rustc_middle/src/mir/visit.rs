@@ -811,6 +811,7 @@ macro_rules! make_mir_visitor {
                     user_ty,
                     source_info,
                     internal: _,
+                    reuse_upvar: _,
                     local_info: _,
                     is_block_tail: _,
                 } = local_decl;

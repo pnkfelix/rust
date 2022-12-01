@@ -812,6 +812,8 @@ pub struct LocalDecl<'tcx> {
     /// generator.
     pub internal: bool,
 
+    pub reuse_upvar: Option<usize>,
+
     /// If this local is a temporary and `is_block_tail` is `Some`,
     /// then it is a temporary created for evaluation of some
     /// subexpression of some block's tail expression (with no
@@ -1025,16 +1027,23 @@ impl<'tcx> LocalDecl<'tcx> {
     /// Creates a new `LocalDecl` for a temporary: mutable, non-internal.
     #[inline]
     pub fn new(ty: Ty<'tcx>, span: Span) -> Self {
-        Self::with_source_info(ty, SourceInfo::outermost(span))
+        Self::with_source_info_core(ty, SourceInfo::outermost(span))
     }
 
     /// Like `LocalDecl::new`, but takes a `SourceInfo` instead of a `Span`.
     #[inline]
     pub fn with_source_info(ty: Ty<'tcx>, source_info: SourceInfo) -> Self {
+        Self::with_source_info_core(ty, source_info)
+    }
+
+    /// Like `LocalDecl::new`, but takes a `SourceInfo` instead of a `Span`.
+    #[inline]
+    fn with_source_info_core(ty: Ty<'tcx>, source_info: SourceInfo) -> Self {
         LocalDecl {
             mutability: Mutability::Mut,
             local_info: None,
             internal: false,
+            reuse_upvar: None,
             is_block_tail: None,
             ty,
             user_ty: None,
