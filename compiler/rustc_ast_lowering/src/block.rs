@@ -1,6 +1,7 @@
 use crate::{ImplTraitContext, ImplTraitPosition, LoweringContext};
 use rustc_ast::{Block, BlockCheckMode, Local, LocalKind, Stmt, StmtKind};
 use rustc_hir as hir;
+use rustc_span::symbol::sym;
 
 use smallvec::SmallVec;
 
@@ -96,8 +97,37 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         };
         let span = self.lower_span(l.span);
         let source = hir::LocalSource::Normal;
-        self.lower_attrs(hir_id, &l.attrs);
-        self.arena.alloc(hir::Local { hir_id, ty, pat, init, els, span, source })
+        let attrs = self.lower_attrs(hir_id, &l.attrs);
+        debug!("lower_local hir_id={hir_id:?} attrs={attrs:?}");
+        let reuse_slot = attrs
+            .map(|attrs| attrs.iter().any(|attr| attr.has_name(sym::rustc_reuse_upvar_slot)))
+            .unwrap_or(false);
+        let reuse_slot = if reuse_slot {
+            if let Some(hir::Expr {
+                kind: hir::ExprKind::Path(hir::QPath::Resolved(
+                    None, hir::Path { res: hir::def::Res::Local(hir_id), .. })), .. }) = init
+            {
+                Some(*hir_id)
+            } else {
+                if init.is_some() {
+                    panic!("init fed to let was not a simple upvar");
+                } else {
+                    panic!("with no init expression I cannot know what slot to use");
+                }
+            }
+        } else {
+            None
+        };
+        /*
+        Some(Expr { hir_id: HirId { owner: OwnerId { def_id: DefId(0:5 ~ example_89213_c[f670]::wait) }, local_id: 8 },
+                        kind: Path(Resolved(None, Path { span: example-89213-c.rs:9:53: 9:61 (#0), res: Local(HirId { owner: OwnerId { def_id: DefId(0:5 ~ example_89213_c[f670]::wait) }, local_id: 2 }), segments: [PathSegment { ident: an_upvar#0, hir_id: HirId { owner: OwnerId { def_id: DefId(0:5 ~ example_89213_c[f670]::wait) }, local_id: 7 }, res: Local(HirId { owner: OwnerId { def_id: DefId(0:5 ~ example_89213_c[f670]::wait) }, local_id: 2 }), args: None, infer_args: true }] })),
+                        span: example-89213-c.rs:9:53: 9:61 (#0) })
+
+         */
+        debug!("lower_local reuse_slot={reuse_slot:?} init={init:?}");
+        let local = self.arena.alloc(hir::Local { hir_id, ty, pat, init, els, reuse_slot, span, source });
+        debug!(?local);
+        local
     }
 
     fn lower_block_check_mode(&mut self, b: &BlockCheckMode) -> hir::BlockCheckMode {

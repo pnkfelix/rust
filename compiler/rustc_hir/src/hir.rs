@@ -1355,6 +1355,7 @@ pub struct Local<'hir> {
     pub init: Option<&'hir Expr<'hir>>,
     /// Else block for a `let...else` binding.
     pub els: Option<&'hir Block<'hir>>,
+    pub reuse_slot: Option<HirId>,
     pub hir_id: HirId,
     pub span: Span,
     /// Can be `ForLoopDesugar` if the `let` statement is part of a `for` loop

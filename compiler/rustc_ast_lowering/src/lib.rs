@@ -2362,6 +2362,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             init,
             pat,
             els: None,
+            reuse_slot: None,
             source,
             span: self.lower_span(span),
             ty: None,
