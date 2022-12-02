@@ -645,7 +645,9 @@ impl<'a> Parser<'a> {
     }
 
     pub(super) fn mk_stmt(&self, span: Span, kind: StmtKind) -> Stmt {
-        Stmt { id: DUMMY_NODE_ID, kind, span }
+        let stmt = Stmt { id: DUMMY_NODE_ID, kind, span };
+        debug!(?stmt);
+        stmt
     }
 
     pub(super) fn mk_stmt_err(&self, span: Span) -> Stmt {
