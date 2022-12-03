@@ -6,6 +6,7 @@ use rustc_middle::{mir::*, ty};
 use rustc_span::Span;
 
 impl<'a, 'tcx> Builder<'a, 'tcx> {
+    #[instrument(skip(self), level = "debug")]
     pub(crate) fn ast_block(
         &mut self,
         destination: Place<'tcx>,
@@ -282,6 +283,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     else_block: None,
                     reuse_upvar_slot,
                 } => {
+                    debug!("ast_block_stmts StmtKind::Let pattern: {pattern:?} reuse_upvar_slot: {reuse_upvar_slot:?}");
                     let ignores_expr_result = matches!(pattern.kind, PatKind::Wild);
                     this.block_context.push(BlockFrame::Statement { ignores_expr_result });
 

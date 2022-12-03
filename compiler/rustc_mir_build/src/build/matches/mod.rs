@@ -1779,6 +1779,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         // FIXME does this need a potential reuse_var_slot parameter? When is this lowering path used?
         reuse_upvar_slot: Option<UpvarRef>,
     ) -> BlockAnd<()> {
+        debug!("lower_let_expr expr: {expr:?} pat: {pat:?} reuse_upvar_slot: {reuse_upvar_slot:?}");
         let expr_span = expr.span;
         let expr_place_builder = unpack!(block = self.lower_scrutinee(block, expr, expr_span));
         let wildcard = Pat::wildcard_from_ty(pat.ty);
@@ -2219,6 +2220,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         pat_span: Span,
         reuse_upvar: Option<UpvarRef>,
     ) {
+        debug!("declare_binding var_id: {var_id:?} var_ty: {var_ty:?} reuse_upvar: {reuse_upvar:?}");
         let tcx = self.tcx;
         let debug_source_info = SourceInfo { span: source_info.span, scope: visibility_scope };
         let binding_mode = match mode {
