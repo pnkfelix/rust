@@ -116,6 +116,21 @@ impl<'tcx> Cx<'tcx> {
                                 initializer: local.init.map(|init| self.mirror_expr(init)),
                                 else_block,
                                 lint_level: LintLevel::Explicit(local.hir_id),
+                                reuse_upvar_slot: {
+                                    let tcx = self.tcx;
+                                    let body_owner = self.body_owner;
+                                    local.reuse_slot.map(|hir_id| {
+                                        tcx.upvars_mentioned(body_owner)
+                                            .iter()
+                                            .for_each(|upvars| {
+                                                assert!(upvars.contains_key(&hir_id));
+                                            });
+                                        UpvarRef {
+                                            closure_def_id: self.body_owner,
+                                            var_hir_id: LocalVarId(hir_id),
+                                        }
+                                    })
+                                },
                             },
                             opt_destruction_scope: opt_dxn_ext,
                         };

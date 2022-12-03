@@ -173,6 +173,7 @@ pub fn walk_stmt<'a, 'tcx: 'a, V: Visitor<'a, 'tcx>>(visitor: &mut V, stmt: &Stm
             remainder_scope: _,
             init_scope: _,
             ref pattern,
+            reuse_upvar_slot: _,
             lint_level: _,
             else_block,
         } => {

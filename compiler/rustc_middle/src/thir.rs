@@ -205,11 +205,22 @@ pub enum StmtKind<'tcx> {
         /// `let pat: ty = <INIT> else { <ELSE> }`
         else_block: Option<BlockId>,
 
+        reuse_upvar_slot: Option<UpvarRef>,
+
         /// The lint level for this `let` statement.
         lint_level: LintLevel,
     },
 }
 
+#[derive(Copy, Clone, Debug, HashStable)]
+pub struct UpvarRef {
+    /// DefId of the closure/generator
+    pub closure_def_id: DefId,
+
+    /// HirId of the root variable
+    pub var_hir_id: LocalVarId,
+}
+    
 #[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, HashStable, TyEncodable, TyDecodable)]
 #[derive(TypeFoldable, TypeVisitable)]
 pub struct LocalVarId(pub hir::HirId);
