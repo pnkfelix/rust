@@ -5,7 +5,7 @@
 //! This also includes code for pattern bindings in `let` statements and
 //! function parameters.
 
-use crate::build::expr::as_place::PlaceBuilder;
+use crate::build::expr::as_place::{PlaceBase, PlaceBuilder};
 use crate::build::scope::DropKind;
 use crate::build::ForGuard::{self, OutsideGuard, RefWithinGuard};
 use crate::build::{BlockAnd, BlockAndExtension, Builder};
@@ -85,6 +85,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 Some(variable_source_info.scope),
                 variable_source_info.span,
                 true,
+                None,
             ),
             _ => {
                 let temp_scope = temp_scope_override.unwrap_or_else(|| this.local_scope());
@@ -354,6 +355,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                         &arm.pattern,
                         arm.guard.as_ref(),
                         opt_scrutinee_place,
+                        None,
                     );
 
                     let arm_block = this.bind_pattern(
@@ -640,6 +642,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         pattern: &Pat<'tcx>,
         guard: Option<&Guard<'tcx>>,
         opt_match_place: Option<(Option<&Place<'tcx>>, Span)>,
+        opt_reuse_upvar_slot: Option<UpvarRef>,
     ) -> Option<SourceScope> {
         self.visit_primary_bindings(
             &pattern,
@@ -663,12 +666,13 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     ArmHasGuard(guard.is_some()),
                     opt_match_place.map(|(x, y)| (x.cloned(), y)),
                     pattern.span,
+                    opt_reuse_upvar_slot,
                 );
             },
         );
         if let Some(Guard::IfLet(guard_pat, _)) = guard {
             // FIXME: pass a proper `opt_match_place`
-            self.declare_bindings(visibility_scope, scope_span, guard_pat, None, None);
+            self.declare_bindings(visibility_scope, scope_span, guard_pat, None, None, None);
         }
         visibility_scope
     }
@@ -1772,6 +1776,8 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         source_scope: Option<SourceScope>,
         span: Span,
         declare_bindings: bool,
+        // FIXME does this need a potential reuse_var_slot parameter? When is this lowering path used?
+        reuse_upvar_slot: Option<UpvarRef>,
     ) -> BlockAnd<()> {
         let expr_span = expr.span;
         let expr_place_builder = unpack!(block = self.lower_scrutinee(block, expr, expr_span));
@@ -1792,7 +1798,14 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         self.break_for_else(otherwise_post_guard_block, else_target, self.source_info(expr_span));
 
         if declare_bindings {
-            self.declare_bindings(source_scope, pat.span.to(span), pat, None, opt_expr_place);
+            self.declare_bindings(
+                source_scope,
+                pat.span.to(span),
+                pat,
+                None,
+                opt_expr_place,
+                reuse_upvar_slot
+            );
         }
 
         let post_guard_block = self.bind_pattern(
@@ -1974,7 +1987,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     Guard::IfLet(ref pat, scrutinee) => {
                         let s = &this.thir[scrutinee];
                         guard_span = s.span;
-                        this.lower_let_expr(block, s, pat, match_scope, None, arm.span, false)
+                        this.lower_let_expr(block, s, pat, match_scope, None, arm.span, false, None)
                     }
                 });
 
@@ -2204,6 +2217,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         has_guard: ArmHasGuard,
         opt_match_place: Option<(Option<Place<'tcx>>, Span)>,
         pat_span: Span,
+        reuse_upvar: Option<UpvarRef>,
     ) {
         let tcx = self.tcx;
         let debug_source_info = SourceInfo { span: source_info.span, scope: visibility_scope };
@@ -2217,7 +2231,10 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             user_ty: if user_ty.is_empty() { None } else { Some(Box::new(user_ty)) },
             source_info,
             internal: false,
-            reuse_upvar: None,
+            reuse_upvar: reuse_upvar.map(|thir::UpvarRef { closure_def_id, var_hir_id }| {
+                let closure_def_id = closure_def_id.expect_local();
+                PlaceBuilder::from(PlaceBase::Upvar { var_hir_id, closure_def_id }).to_place(self)
+            }),
             is_block_tail: None,
             local_info: Some(Box::new(LocalInfo::User(ClearCrossCrate::Set(BindingForm::Var(
                 VarBindingForm {

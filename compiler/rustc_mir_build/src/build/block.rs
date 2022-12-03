@@ -115,6 +115,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     initializer: Some(initializer),
                     lint_level,
                     else_block: Some(else_block),
+                    reuse_upvar_slot: _,
                 } => {
                     // When lowering the statement `let <pat> = <expr> else { <else> };`,
                     // the `<else>` block is nested in the parent scope enclosing this statement.
@@ -232,6 +233,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                         pattern,
                                         None,
                                         Some((None, initializer_span)),
+                                        None,
                                     );
                                     this.visit_primary_bindings(
                                         pattern,
@@ -278,6 +280,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     initializer,
                     lint_level,
                     else_block: None,
+                    reuse_upvar_slot,
                 } => {
                     let ignores_expr_result = matches!(pattern.kind, PatKind::Wild);
                     this.block_context.push(BlockFrame::Statement { ignores_expr_result });
@@ -309,6 +312,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                             pattern,
                                             None,
                                             Some((None, initializer_span)),
+                                            None,
                                         );
                                         this.expr_into_pattern(block, &pattern, init)
                                         // irrefutable pattern
@@ -317,12 +321,14 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                             )
                         )
                     } else {
+                        assert!(reuse_upvar_slot.is_none());
                         let scope = (*init_scope, source_info);
                         unpack!(this.in_scope(scope, *lint_level, |this| {
                             this.declare_bindings(
                                 visibility_scope,
                                 remainder_span,
                                 pattern,
+                                None,
                                 None,
                                 None,
                             );

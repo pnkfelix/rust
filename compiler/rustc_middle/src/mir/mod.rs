@@ -812,7 +812,7 @@ pub struct LocalDecl<'tcx> {
     /// generator.
     pub internal: bool,
 
-    pub reuse_upvar: Option<usize>,
+    pub reuse_upvar: Option<Place<'tcx>>,
 
     /// If this local is a temporary and `is_block_tail` is `Some`,
     /// then it is a temporary created for evaluation of some

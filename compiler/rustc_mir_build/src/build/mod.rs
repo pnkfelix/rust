@@ -926,6 +926,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                         &pat,
                         None,
                         Some((Some(&place), span)),
+                        None,
                     );
                     let place_builder = PlaceBuilder::from(local);
                     unpack!(block = self.place_into_pattern(block, &pat, place_builder, false));
