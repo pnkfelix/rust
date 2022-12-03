@@ -234,7 +234,9 @@ struct TransformVisitor<'tcx> {
     // A list of suspension points, generated during the transform
     suspension_points: Vec<SuspensionPoint<'tcx>>,
 
-    // The set of locals that have no `StorageLive`/`StorageDead` annotations.
+    // The set of locals that have no `StorageLive`/`StorageDead` annotations,
+    // or are otherwise determined to be profitable to keep alive across all
+    // generator variants.
     always_live_locals: BitSet<Local>,
 
     // The original RETURN_PLACE local
