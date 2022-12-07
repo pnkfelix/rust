@@ -3101,7 +3101,7 @@ mod size_asserts {
     use rustc_data_structures::static_assert_size;
     // tidy-alphabetical-start
     static_assert_size!(BasicBlockData<'_>, 144);
-    static_assert_size!(LocalDecl<'_>, 56);
+    static_assert_size!(LocalDecl<'_>, 72); // FIXME: add separate side-table and bring this back to 56
     static_assert_size!(Statement<'_>, 32);
     static_assert_size!(StatementKind<'_>, 16);
     static_assert_size!(Terminator<'_>, 112);

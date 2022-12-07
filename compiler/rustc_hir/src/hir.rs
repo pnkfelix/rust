@@ -3599,7 +3599,7 @@ mod size_asserts {
     static_assert_size!(ImplItemKind<'_>, 32);
     static_assert_size!(Item<'_>, 80);
     static_assert_size!(ItemKind<'_>, 48);
-    static_assert_size!(Local<'_>, 64);
+    static_assert_size!(Local<'_>, 72); // FIXME: add separate side-table and bring this back to 64
     static_assert_size!(Param<'_>, 32);
     static_assert_size!(Pat<'_>, 72);
     static_assert_size!(Path<'_>, 40);

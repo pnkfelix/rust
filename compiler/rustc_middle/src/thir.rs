@@ -864,7 +864,7 @@ mod size_asserts {
     static_assert_size!(ExprKind<'_>, 40);
     static_assert_size!(Pat<'_>, 72);
     static_assert_size!(PatKind<'_>, 56);
-    static_assert_size!(Stmt<'_>, 48);
-    static_assert_size!(StmtKind<'_>, 40);
+    static_assert_size!(Stmt<'_>, 64); // FIXME: add separate side-table and bring this back to 48
+    static_assert_size!(StmtKind<'_>, 56); // FIXME: add separate side table and bring this back to 40.
     // tidy-alphabetical-end
 }
