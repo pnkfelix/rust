@@ -15,11 +15,11 @@ pub fn always_storage_live_locals(body: &mir::Body<'_>) -> BitSet<Local> {
                 // since that will simplify things.
                 let local_decl = &body.local_decls[l];
                 if let Some(reuse_upvar) = local_decl.reuse_upvar {
-                    debug!("treating local_decl: {local_decl:?} as always live \
+                    debug!("treating local_decl[{l:?}]: {local_decl:?} as always live \
                             due to reuse_upvar: {reuse_upvar:?}");
                     continue;
                 }
-                debug!("removing local_decl: {local_decl:?} from \
+                debug!("removing local_decl[{l:?}]: {local_decl:?} from \
                         always_live_locals due to statement: {statement:?}");
                 always_live_locals.remove(l);
             }
