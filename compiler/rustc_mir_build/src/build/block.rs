@@ -314,7 +314,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                             pattern,
                                             None,
                                             Some((None, initializer_span)),
-                                            None,
+                                            *reuse_upvar_slot,
                                         );
                                         this.expr_into_pattern(block, &pattern, init)
                                         // irrefutable pattern
