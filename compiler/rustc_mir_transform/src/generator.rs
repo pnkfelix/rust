@@ -215,6 +215,13 @@ struct SuspensionPoint<'tcx> {
     storage_liveness: GrowableBitSet<Local>,
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+enum GeneratorSlot {
+    #[allow(dead_code)]
+    Upvar(usize),
+    Local(usize),
+}
+
 struct TransformVisitor<'tcx> {
     tcx: TyCtxt<'tcx>,
     is_async_kind: bool,
@@ -226,7 +233,7 @@ struct TransformVisitor<'tcx> {
 
     // Mapping from Local to (type of local, generator struct index)
     // FIXME(eddyb) This should use `IndexVec<Local, Option<_>>`.
-    remap: FxHashMap<Local, (Ty<'tcx>, VariantIdx, usize)>,
+    remap: FxHashMap<Local, (Ty<'tcx>, VariantIdx, GeneratorSlot)>,
 
     // A map from a suspension point in a block to the locals which have live storage at that point
     storage_liveness: IndexVec<BasicBlock, Option<BitSet<Local>>>,
@@ -298,13 +305,23 @@ impl<'tcx> TransformVisitor<'tcx> {
     }
 
     // Create a Place referencing a generator struct field
-    fn make_field(&self, variant_index: VariantIdx, idx: usize, ty: Ty<'tcx>) -> Place<'tcx> {
+    fn make_field(&self, variant_index: VariantIdx, slot: GeneratorSlot, ty: Ty<'tcx>) -> Place<'tcx> {
         let self_place = Place::from(SELF_ARG);
-        let base = self.tcx.mk_place_downcast_unnamed(self_place, variant_index);
-        let mut projection = base.projection.to_vec();
-        projection.push(ProjectionElem::Field(Field::new(idx), ty));
+        match slot {
+            GeneratorSlot::Local(idx) => {
+                let base = self.tcx.mk_place_downcast_unnamed(self_place, variant_index);
+                let mut projection = base.projection.to_vec();
+                projection.push(ProjectionElem::Field(Field::new(idx), ty));
 
-        Place { local: base.local, projection: self.tcx.intern_place_elems(&projection) }
+                Place { local: base.local, projection: self.tcx.intern_place_elems(&projection) }
+            }
+            GeneratorSlot::Upvar(idx) => {
+                let projection = self.tcx.intern_place_elems(&[ProjectionElem::Field(Field::new(idx), ty)]);
+                let ret = Place { local: SELF_ARG, projection };
+                debug!("make_field converting generator field Upvar({idx:?}) into place {ret:?}");
+                ret
+            }
+        }
     }
 
     // Create a statement which changes the discriminant
@@ -806,7 +823,7 @@ fn compute_layout<'tcx>(
     liveness: LivenessInfo,
     body: &mut Body<'tcx>,
 ) -> (
-    FxHashMap<Local, (Ty<'tcx>, VariantIdx, usize)>,
+    FxHashMap<Local, (Ty<'tcx>, VariantIdx, GeneratorSlot)>,
     GeneratorLayout<'tcx>,
     IndexVec<BasicBlock, Option<BitSet<Local>>>,
 ) {
@@ -850,12 +867,23 @@ fn compute_layout<'tcx>(
         let variant_index = VariantIdx::from(RESERVED_VARIANTS + suspension_point_idx);
         let mut fields = IndexVec::new();
         for (idx, saved_local) in live_locals.iter().enumerate() {
-            fields.push(saved_local);
-            // Note that if a field is included in multiple variants, we will
-            // just use the first one here. That's fine; fields do not move
-            // around inside generators, so it doesn't matter which variant
-            // index we access them by.
-            remap.entry(locals[saved_local]).or_insert((tys[saved_local], variant_index, idx));
+            let local_decl = &body.local_decls[locals[saved_local]];
+            debug!("compute_layout saved_local: {saved_local:?} {local_decl:?}");
+            if let Some(_upvar_place) = local_decl.reuse_upvar {
+                // FIXME the hard-coded zero here is just proof-of-concept, there's no way its the right thing.
+                remap.entry(locals[saved_local])
+                    .or_insert((tys[saved_local], variant_index, GeneratorSlot::Upvar(0 /*_upvar_place.local.index()*/)));
+            } else {
+                // FIXME: would things be better if we coupled the vairant_index
+                // into the GeneratorSlot::Local?
+                fields.push(saved_local);
+                // Note that if a field is included in multiple variants, we will
+                // just use the first one here. That's fine; fields do not move
+                // around inside generators, so it doesn't matter which variant
+                // index we access them by.
+                remap.entry(locals[saved_local])
+                    .or_insert((tys[saved_local], variant_index, GeneratorSlot::Local(idx)));
+            }
         }
         variant_fields.push(fields);
         variant_source_info.push(source_info_at_suspension_points[suspension_point_idx]);
