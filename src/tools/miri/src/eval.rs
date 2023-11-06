@@ -82,7 +82,7 @@ pub enum BacktraceStyle {
 }
 
 /// Configuration needed to spawn a Miri instance.
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct MiriConfig {
     /// The host environment snapshot to use as basis for what is provided to the interpreted program.
     /// (This is still subject to isolation as well as `forwarded_env_vars`.)

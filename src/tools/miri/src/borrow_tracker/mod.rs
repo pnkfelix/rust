@@ -140,7 +140,7 @@ impl fmt::Display for AccessKind {
 }
 
 /// Policy on whether to recurse into fields to retag
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum RetagFields {
     /// Don't retag any fields.
     No,

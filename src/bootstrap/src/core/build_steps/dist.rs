@@ -1246,12 +1246,7 @@ impl Step for Miri {
     }
 
     fn run(self, builder: &Builder<'_>) -> Option<GeneratedTarball> {
-        // This prevents miri from being built for "dist" or "install"
-        // on the stable/beta channels. It is a nightly-only tool and should
-        // not be included.
-        if !builder.build.unstable_features() {
-            return None;
-        }
+        // Experiment: add miri to the Rust distribution. XXX do not push to rust-lang/rust
         let compiler = self.compiler;
         let target = self.target;
 

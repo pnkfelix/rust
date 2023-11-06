@@ -326,6 +326,7 @@ fn main() {
     // Parse our arguments and split them across `rustc` and `miri`.
     let mut miri_config = miri::MiriConfig::default();
     miri_config.env = env_snapshot;
+    let mut stable_miri_config = miri_config.clone();
 
     let mut rustc_args = vec![];
     let mut after_dashdash = false;
@@ -579,6 +580,10 @@ fn main() {
         );
     }
 
+    stable_miri_config.args = miri_config.args.clone();
+    if stable_miri_config != miri_config {
+        show_error!("-Z flags are unstable and subject to removal or change in every Rust release. Please inform the team about your need for the flag.");
+    }
     debug!("rustc arguments: {:?}", rustc_args);
     debug!("crate arguments: {:?}", miri_config.args);
     run_compiler(rustc_args, /* target_crate: */ true, &mut MiriCompilerCalls { miri_config }, using_internal_features)
