@@ -17,7 +17,7 @@
 use rustc_ast::Recovered;
 use rustc_data_structures::captures::Captures;
 use rustc_data_structures::fx::{FxHashSet, FxIndexMap};
-use rustc_data_structures::unord::UnordMap;
+use rustc_data_structures::unord::{UnordMap, UnordSet};
 use rustc_errors::{Applicability, Diag, ErrorGuaranteed, StashKey};
 use rustc_hir as hir;
 use rustc_hir::def::DefKind;
@@ -41,6 +41,7 @@ use rustc_trait_selection::traits::ObligationCtxt;
 use std::cell::Cell;
 use std::iter;
 use std::ops::Bound;
+use std::ops::ControlFlow;
 
 use crate::check::intrinsic::intrinsic_operation_unsafety;
 use crate::errors;
@@ -1290,12 +1291,12 @@ fn fn_sig(tcx: TyCtxt<'_>, def_id: LocalDefId) -> ty::EarlyBinder<'_, ty::PolyFn
             kind: TraitItemKind::Fn(sig, TraitFn::Provided(_)),
             generics,
             ..
-        })
-        | Item(hir::Item { kind: ItemKind::Fn(sig, generics, _), .. }) => {
-            infer_return_ty_for_fn_sig(tcx, sig, generics, def_id, &icx)
+        }) => infer_return_ty_for_fn_sig(tcx, sig, generics, def_id, None, &icx),
+        Item(hir::Item { kind: ItemKind::Fn(sig, generics, body_id), .. }) => {
+            infer_return_ty_for_fn_sig(tcx, sig, generics, def_id, Some(*body_id), &icx)
         }
 
-        ImplItem(hir::ImplItem { kind: ImplItemKind::Fn(sig, _), generics, .. }) => {
+        ImplItem(hir::ImplItem { kind: ImplItemKind::Fn(sig, body_id), generics, .. }) => {
             // Do not try to infer the return type for a impl method coming from a trait
             if let Item(hir::Item { kind: ItemKind::Impl(i), .. }) = tcx.parent_hir_node(hir_id)
                 && i.of_trait.is_some()
@@ -1309,7 +1310,7 @@ fn fn_sig(tcx: TyCtxt<'_>, def_id: LocalDefId) -> ty::EarlyBinder<'_, ty::PolyFn
                     None,
                 )
             } else {
-                infer_return_ty_for_fn_sig(tcx, sig, generics, def_id, &icx)
+                infer_return_ty_for_fn_sig(tcx, sig, generics, def_id, Some(*body_id), &icx)
             }
         }
 
@@ -1364,6 +1365,7 @@ fn infer_return_ty_for_fn_sig<'tcx>(
     sig: &hir::FnSig<'tcx>,
     generics: &hir::Generics<'_>,
     def_id: LocalDefId,
+    body_id: Option<hir::BodyId>,
     icx: &ItemCtxt<'tcx>,
 ) -> ty::PolyFnSig<'tcx> {
     let hir_id = tcx.local_def_id_to_hir_id(def_id);
@@ -1371,6 +1373,7 @@ fn infer_return_ty_for_fn_sig<'tcx>(
     match sig.decl.output.get_infer_ret_ty() {
         Some(ty) => {
             let fn_sig = tcx.typeck(def_id).liberated_fn_sigs()[hir_id];
+            let keep_erased_ret_ty = fn_sig.output();
             // Typeck doesn't expect erased regions to be returned from `type_of`.
             let fn_sig = tcx.fold_regions(fn_sig, |r, _| match *r {
                 ty::ReErased => tcx.lifetimes.re_static,
@@ -1380,6 +1383,78 @@ fn infer_return_ty_for_fn_sig<'tcx>(
             let mut visitor = HirPlaceholderCollector::default();
             visitor.visit_ty(ty);
 
+            // When the return value of a Function is one of its params,
+            // we shouldn't change the `Erased` lifetime to `Static` lifetime.
+            // For example:
+            // fn main() {
+            //     fn f1(s: S<'_>) -> _ {
+            //         s
+            //     }
+            // }
+            // -----------------------^--
+            //           We should suggest replace `_` with `S<'_>`.
+            let mut keep_erased_lifetime = false;
+            if let Some(body_id) = body_id {
+                struct RetVisitor {
+                    res_hir_ids: UnordSet<hir::HirId>,
+                }
+
+                impl<'v> Visitor<'v> for RetVisitor {
+                    type Result = ControlFlow<()>;
+
+                    fn visit_expr(&mut self, ex: &'v hir::Expr<'v>) -> Self::Result {
+                        if let hir::ExprKind::Path(hir::QPath::Resolved(_, path)) = ex.kind
+                            && let hir::def::Res::Local(hir_id) = path.res
+                            && self.res_hir_ids.contains(&hir_id)
+                        {
+                            ControlFlow::Break(())
+                        } else if let hir::ExprKind::If(_, expr, _) = ex.kind
+                            && let hir::ExprKind::Block(block, _) = expr.kind
+                        {
+                            self.visit_block(block)
+                        } else {
+                            ControlFlow::Continue(())
+                        }
+                    }
+
+                    fn visit_block(&mut self, b: &'v hir::Block<'v>) -> Self::Result {
+                        if let Some(ret) = b.expr {
+                            self.visit_expr(ret)
+                        } else if let Some(ret) = b.stmts.last() {
+                            self.visit_stmt(ret)
+                        } else {
+                            ControlFlow::Continue(())
+                        }
+                    }
+
+                    fn visit_stmt(&mut self, s: &'v hir::Stmt<'v>) -> Self::Result {
+                        if let hir::StmtKind::Semi(expr) = s.kind
+                            && let hir::ExprKind::Ret(Some(ret)) = expr.kind
+                        {
+                            self.visit_expr(ret)
+                        } else {
+                            ControlFlow::Continue(())
+                        }
+                    }
+
+                    fn visit_item(&mut self, _i: &'v hir::Item<'v>) -> Self::Result {
+                        ControlFlow::Continue(())
+                    }
+                }
+
+                let body = tcx.hir().body(body_id);
+                if let hir::ExprKind::Block(b, _) = body.value.kind {
+                    let mut res_hir_ids = UnordSet::new();
+                    for param in body.params {
+                        res_hir_ids.insert(param.pat.hir_id);
+                    }
+                    let mut ret_visitor = RetVisitor { res_hir_ids };
+                    if let ControlFlow::Break(()) = ret_visitor.visit_block(b) {
+                        keep_erased_lifetime = true;
+                    }
+                }
+            }
+
             let mut diag = bad_placeholder(tcx, visitor.0, "return type");
             let ret_ty = fn_sig.output();
             // Don't leak types into signatures unless they're nameable!
@@ -1388,13 +1463,20 @@ fn infer_return_ty_for_fn_sig<'tcx>(
             let mut recovered_ret_ty = None;
 
             if let Some(suggestable_ret_ty) = ret_ty.make_suggestable(tcx, false, None) {
+                recovered_ret_ty = Some(suggestable_ret_ty);
+
                 diag.span_suggestion(
                     ty.span,
                     "replace with the correct return type",
-                    suggestable_ret_ty,
+                    if keep_erased_lifetime
+                        && let Some(ty) = keep_erased_ret_ty.make_suggestable(tcx, false, None)
+                    {
+                        ty
+                    } else {
+                        suggestable_ret_ty
+                    },
                     Applicability::MachineApplicable,
                 );
-                recovered_ret_ty = Some(suggestable_ret_ty);
             } else if let Some(sugg) =
                 suggest_impl_trait(&tcx.infer_ctxt().build(), tcx.param_env(def_id), ret_ty)
             {
