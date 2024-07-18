@@ -620,6 +620,8 @@ symbols! {
         const_try,
         constant,
         constructor,
+        contract_check,
+        contract_check_with_arg,
         convert_identity,
         copy,
         copy_closures,
