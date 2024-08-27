@@ -918,6 +918,18 @@ pub const BUILTIN_ATTRIBUTES: &[BuiltinAttribute] = &[
         unboxed_closures, "unboxed_closures are still evolving",
     ),
     rustc_attr!(
+        rustc_contracts_ensures, Normal, template!(List: "|return_var| postcondition expression"), DuplicatesOk, EncodeCrossCrate::Yes,
+        "the `#[rustc_contracts_ensures]` attribute is a precursor to a proper \
+        mechanism for specifying contractual preconditions and will itself never \
+        be stable",
+    ),
+    rustc_attr!(
+        rustc_contracts_requires, Normal, template!(List: "precondition expression"), DuplicatesOk, EncodeCrossCrate::Yes,
+        "the `#[rustc_contracts_requires]` attribute is a precursor to a proper \
+        mechanism for specifying contractual preconditions and will itself never \
+        be stable",
+    ),
+    rustc_attr!(
         rustc_inherit_overflow_checks, Normal, template!(Word), WarnFollowing, EncodeCrossCrate::No,
         "the `#[rustc_inherit_overflow_checks]` attribute is just used to control \
         overflow checking behavior of several libcore functions that are inlined \
