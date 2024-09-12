@@ -961,7 +961,7 @@ impl<'a> Visitor<'a> for AstValidator<'a> {
                 walk_list!(self, visit_attribute, &item.attrs);
                 return; // Avoid visiting again.
             }
-            ItemKind::Fn(box Fn { defaultness, sig, generics, body }) => {
+            ItemKind::Fn(box Fn { defaultness, sig, generics, contract, body }) => {
                 self.check_defaultness(item.span, *defaultness);
 
                 if body.is_none() {
@@ -989,6 +989,7 @@ impl<'a> Visitor<'a> for AstValidator<'a> {
 
                 self.visit_vis(&item.vis);
                 self.visit_ident(item.ident);
+                self.visit_contract(contract);
                 let kind =
                     FnKind::Fn(FnCtxt::Free, item.ident, sig, &item.vis, generics, body.as_deref());
                 self.visit_fn(kind, item.span, item.id);

@@ -34,8 +34,8 @@ impl<'a> State<'a> {
         self.maybe_print_comment(span.lo());
         self.print_outer_attributes(attrs);
         match kind {
-            ast::ForeignItemKind::Fn(box ast::Fn { defaultness, sig, generics, body }) => {
-                self.print_fn_full(sig, ident, generics, vis, *defaultness, body.as_deref(), attrs);
+            ast::ForeignItemKind::Fn(box ast::Fn { defaultness, sig, generics, contract, body }) => {
+                self.print_fn_full(sig, ident, generics, vis, *defaultness, contract, body.as_deref(), attrs);
             }
             ast::ForeignItemKind::Static(box ast::StaticItem { ty, mutability, expr, safety }) => {
                 self.print_safety(*safety);
@@ -195,13 +195,14 @@ impl<'a> State<'a> {
                     *defaultness,
                 );
             }
-            ast::ItemKind::Fn(box ast::Fn { defaultness, sig, generics, body }) => {
+            ast::ItemKind::Fn(box ast::Fn { defaultness, sig, generics, contract, body }) => {
                 self.print_fn_full(
                     sig,
                     item.ident,
                     generics,
                     &item.vis,
                     *defaultness,
+                    contract,
                     body.as_deref(),
                     &item.attrs,
                 );
@@ -538,8 +539,8 @@ impl<'a> State<'a> {
         self.maybe_print_comment(span.lo());
         self.print_outer_attributes(attrs);
         match kind {
-            ast::AssocItemKind::Fn(box ast::Fn { defaultness, sig, generics, body }) => {
-                self.print_fn_full(sig, ident, generics, vis, *defaultness, body.as_deref(), attrs);
+            ast::AssocItemKind::Fn(box ast::Fn { defaultness, sig, generics, contract, body }) => {
+                self.print_fn_full(sig, ident, generics, vis, *defaultness, contract, body.as_deref(), attrs);
             }
             ast::AssocItemKind::Const(box ast::ConstItem { defaultness, generics, ty, expr }) => {
                 self.print_item_const(
@@ -653,6 +654,7 @@ impl<'a> State<'a> {
         generics: &ast::Generics,
         vis: &ast::Visibility,
         defaultness: ast::Defaultness,
+        contract: &ast::FnContract,
         body: Option<&ast::Block>,
         attrs: &[ast::Attribute],
     ) {
@@ -662,11 +664,23 @@ impl<'a> State<'a> {
         self.print_visibility(vis);
         self.print_defaultness(defaultness);
         self.print_fn(&sig.decl, sig.header, Some(name), generics);
+        self.print_contract(contract);
         if let Some(body) = body {
             self.nbsp();
             self.print_block_with_attrs(body, attrs);
         } else {
             self.word(";");
+        }
+    }
+
+    fn print_contract(&mut self, contract: &ast::FnContract) {
+        if let Some(pred) = &contract.requires {
+            self.word("rustc_requires");
+            self.print_expr(pred, FixupContext::default());
+        }
+        if let Some(pred) = &contract.ensures {
+            self.word("rustc_ensures");
+            self.print_expr(pred, FixupContext::default());
         }
     }
 

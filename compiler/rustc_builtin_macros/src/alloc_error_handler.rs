@@ -1,6 +1,7 @@
 use rustc_ast::ptr::P;
 use rustc_ast::{
-    self as ast, Fn, FnHeader, FnSig, Generics, ItemKind, Safety, Stmt, StmtKind, TyKind,
+    self as ast, Fn, FnContract, FnHeader, FnSig, Generics, ItemKind,
+    Safety, Stmt, StmtKind, TyKind,
 };
 use rustc_expand::base::{Annotatable, ExtCtxt};
 use rustc_span::Span;
@@ -86,6 +87,7 @@ fn generate_handler(cx: &ExtCtxt<'_>, handler: Ident, span: Span, sig_span: Span
         defaultness: ast::Defaultness::Final,
         sig,
         generics: Generics::default(),
+        contract: FnContract::default(),
         body,
     }));
 

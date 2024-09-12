@@ -1043,6 +1043,7 @@ impl<'a> MethodDef<'a> {
                 defaultness,
                 sig,
                 generics: fn_generics,
+                contract: ast::FnContract::default(),
                 body: Some(body_block),
             })),
             tokens: None,

@@ -119,6 +119,10 @@ pub trait MutVisitor: Sized {
         walk_flat_map_item(self, i)
     }
 
+    fn visit_contract(&mut self, c: &mut FnContract) {
+        walk_contract(self, c);
+    }
+
     fn visit_fn_decl(&mut self, d: &mut P<FnDecl>) {
         walk_fn_decl(self, d);
     }
@@ -898,6 +902,15 @@ fn walk_fn<T: MutVisitor>(vis: &mut T, kind: FnKind<'_>) {
     }
 }
 
+fn walk_contract<T: MutVisitor>(vis: &mut T, contract: &mut FnContract) {
+    if let Some(pred) = &mut contract.requires {
+        vis.visit_expr(pred);
+    }
+    if let Some(pred) = &mut contract.ensures {
+        vis.visit_expr(pred);
+    }
+}
+
 fn walk_fn_decl<T: MutVisitor>(vis: &mut T, decl: &mut P<FnDecl>) {
     let FnDecl { inputs, output } = decl.deref_mut();
     inputs.flat_map_in_place(|param| vis.flat_map_param(param));
@@ -1100,8 +1113,9 @@ impl WalkItemKind for ItemKind {
             ItemKind::Const(item) => {
                 visit_const_item(item, vis);
             }
-            ItemKind::Fn(box Fn { defaultness, generics, sig, body }) => {
+            ItemKind::Fn(box Fn { defaultness, generics, sig, contract, body }) => {
                 visit_defaultness(vis, defaultness);
+                vis.visit_contract(contract);
                 vis.visit_fn(FnKind::Fn(sig, generics, body), span, id);
             }
             ItemKind::Mod(safety, mod_kind) => {
@@ -1206,8 +1220,9 @@ impl WalkItemKind for AssocItemKind {
             AssocItemKind::Const(item) => {
                 visit_const_item(item, visitor);
             }
-            AssocItemKind::Fn(box Fn { defaultness, generics, sig, body }) => {
+            AssocItemKind::Fn(box Fn { defaultness, generics, sig, contract, body }) => {
                 visit_defaultness(visitor, defaultness);
+                visitor.visit_contract(contract);
                 visitor.visit_fn(FnKind::Fn(sig, generics, body), span, id);
             }
             AssocItemKind::Type(box TyAlias {
@@ -1311,8 +1326,9 @@ impl WalkItemKind for ForeignItemKind {
                 visitor.visit_ty(ty);
                 visit_opt(expr, |expr| visitor.visit_expr(expr));
             }
-            ForeignItemKind::Fn(box Fn { defaultness, generics, sig, body }) => {
+            ForeignItemKind::Fn(box Fn { defaultness, generics, sig, contract, body }) => {
                 visit_defaultness(visitor, defaultness);
+                visitor.visit_contract(contract);
                 visitor.visit_fn(FnKind::Fn(sig, generics, body), span, id);
             }
             ForeignItemKind::TyAlias(box TyAlias {

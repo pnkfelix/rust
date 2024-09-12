@@ -295,6 +295,21 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// Parses an optional fn contract (`requires XXX ensures YYY``)
+    pub(super) fn parse_contract(&mut self) -> PResult<'a, ast::FnContract> {
+        let pre_cond = if self.eat_keyword(kw::RustcContractRequires) {
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+        let post_cond = if self.eat_keyword(kw::RustcContractEnsures) {
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+        Ok(ast::FnContract { requires: pre_cond, ensures: post_cond })
+    }
+
     /// Parses an optional where-clause.
     ///
     /// ```ignore (only-for-syntax-highlight)

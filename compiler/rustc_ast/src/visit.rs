@@ -188,6 +188,9 @@ pub trait Visitor<'ast>: Sized {
     fn visit_closure_binder(&mut self, b: &'ast ClosureBinder) -> Self::Result {
         walk_closure_binder(self, b)
     }
+    fn visit_contract(&mut self, c: &'ast FnContract) -> Self::Result {
+        walk_contract(self, c)
+    }
     fn visit_where_predicate(&mut self, p: &'ast WherePredicate) -> Self::Result {
         walk_where_predicate(self, p)
     }
@@ -359,8 +362,9 @@ impl WalkItemKind for ItemKind {
                 try_visit!(visitor.visit_ty(ty));
                 visit_opt!(visitor, visit_expr, expr);
             }
-            ItemKind::Fn(box Fn { defaultness: _, generics, sig, body }) => {
+            ItemKind::Fn(box Fn { defaultness: _, generics, sig, contract, body }) => {
                 let kind = FnKind::Fn(FnCtxt::Free, *ident, sig, vis, generics, body.as_deref());
+                try_visit!(visitor.visit_contract(contract));
                 try_visit!(visitor.visit_fn(kind, *span, *id));
             }
             ItemKind::Mod(_unsafety, mod_kind) => match mod_kind {
@@ -695,8 +699,9 @@ impl WalkItemKind for ForeignItemKind {
                 try_visit!(visitor.visit_ty(ty));
                 visit_opt!(visitor, visit_expr, expr);
             }
-            ForeignItemKind::Fn(box Fn { defaultness: _, generics, sig, body }) => {
+            ForeignItemKind::Fn(box Fn { defaultness: _, generics, sig, contract, body }) => {
                 let kind = FnKind::Fn(FnCtxt::Foreign, ident, sig, vis, generics, body.as_deref());
+                try_visit!(visitor.visit_contract(contract));                
                 try_visit!(visitor.visit_fn(kind, span, id));
             }
             ForeignItemKind::TyAlias(box TyAlias {
@@ -784,6 +789,21 @@ pub fn walk_closure_binder<'a, V: Visitor<'a>>(
     V::Result::output()
 }
 
+pub fn walk_contract<'a, V: Visitor<'a>>(
+    visitor: &mut V,
+    c: &'a FnContract,
+) -> V::Result {
+    let FnContract { requires, ensures } = c;
+    if let Some(pred) = requires {
+        visitor.visit_expr(pred);
+    }
+    if let Some(pred) = ensures {
+        visitor.visit_expr(pred);
+    }
+    V::Result::output()
+}
+
+
 pub fn walk_where_predicate<'a, V: Visitor<'a>>(
     visitor: &mut V,
     predicate: &'a WherePredicate,
@@ -859,7 +879,8 @@ impl WalkItemKind for AssocItemKind {
                 try_visit!(visitor.visit_ty(ty));
                 visit_opt!(visitor, visit_expr, expr);
             }
-            AssocItemKind::Fn(box Fn { defaultness: _, generics, sig, body }) => {
+            AssocItemKind::Fn(box Fn { defaultness: _, generics, sig, contract, body }) => {
+                try_visit!(visitor.visit_contract(contract));
                 let kind =
                     FnKind::Fn(FnCtxt::Assoc(ctxt), ident, sig, vis, generics, body.as_deref());
                 try_visit!(visitor.visit_fn(kind, span, id));
