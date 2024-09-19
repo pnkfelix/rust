@@ -66,7 +66,7 @@ impl BoundKind {
 #[derive(Copy, Clone, Debug)]
 pub enum FnKind<'a> {
     /// E.g., `fn foo()`, `fn foo(&self)`, or `extern "Abi" fn foo()`.
-    Fn(FnCtxt, Ident, &'a FnSig, &'a Visibility, &'a Generics, Option<&'a Block>),
+    Fn(FnCtxt, Ident, &'a FnSig, &'a Visibility, &'a Generics, &'a FnContract, Option<&'a Block>),
 
     /// E.g., `|x, y| body`.
     Closure(&'a ClosureBinder, &'a Option<CoroutineKind>, &'a FnDecl, &'a Expr),
@@ -75,7 +75,7 @@ pub enum FnKind<'a> {
 impl<'a> FnKind<'a> {
     pub fn header(&self) -> Option<&'a FnHeader> {
         match *self {
-            FnKind::Fn(_, _, sig, _, _, _) => Some(&sig.header),
+            FnKind::Fn(_, _, sig, _, _, _, _) => Some(&sig.header),
             FnKind::Closure(..) => None,
         }
     }
@@ -89,7 +89,7 @@ impl<'a> FnKind<'a> {
 
     pub fn decl(&self) -> &'a FnDecl {
         match self {
-            FnKind::Fn(_, _, sig, _, _, _) => &sig.decl,
+            FnKind::Fn(_, _, sig, _, _, _, _) => &sig.decl,
             FnKind::Closure(_, _, decl, _) => decl,
         }
     }
@@ -363,8 +363,8 @@ impl WalkItemKind for ItemKind {
                 visit_opt!(visitor, visit_expr, expr);
             }
             ItemKind::Fn(box Fn { defaultness: _, generics, sig, contract, body }) => {
-                let kind = FnKind::Fn(FnCtxt::Free, *ident, sig, vis, generics, body.as_deref());
-                try_visit!(visitor.visit_contract(contract));
+                let kind = FnKind::Fn(FnCtxt::Free, *ident, sig, vis, generics, &contract, body.as_deref());
+                // try_visit!(visitor.visit_contract(contract));
                 try_visit!(visitor.visit_fn(kind, *span, *id));
             }
             ItemKind::Mod(_unsafety, mod_kind) => match mod_kind {
@@ -700,8 +700,8 @@ impl WalkItemKind for ForeignItemKind {
                 visit_opt!(visitor, visit_expr, expr);
             }
             ForeignItemKind::Fn(box Fn { defaultness: _, generics, sig, contract, body }) => {
-                let kind = FnKind::Fn(FnCtxt::Foreign, ident, sig, vis, generics, body.as_deref());
-                try_visit!(visitor.visit_contract(contract));                
+                let kind = FnKind::Fn(FnCtxt::Foreign, ident, sig, vis, generics, contract, body.as_deref());
+                // try_visit!(visitor.visit_contract(contract));                
                 try_visit!(visitor.visit_fn(kind, span, id));
             }
             ForeignItemKind::TyAlias(box TyAlias {
@@ -849,11 +849,15 @@ pub fn walk_fn_decl<'a, V: Visitor<'a>>(
 
 pub fn walk_fn<'a, V: Visitor<'a>>(visitor: &mut V, kind: FnKind<'a>) -> V::Result {
     match kind {
-        FnKind::Fn(_ctxt, _ident, FnSig { header, decl, span: _ }, _vis, generics, body) => {
+        FnKind::Fn(_ctxt, _ident, 
+            FnSig { header, decl, span: _ }, 
+            _vis, generics, contract, body,
+        ) => {
             // Identifier and visibility are visited as a part of the item.
             try_visit!(visitor.visit_fn_header(header));
             try_visit!(visitor.visit_generics(generics));
             try_visit!(walk_fn_decl(visitor, decl));
+            try_visit!(visitor.visit_contract(contract));
             visit_opt!(visitor, visit_block, body);
         }
         FnKind::Closure(binder, _coroutine_kind, decl, body) => {
@@ -882,7 +886,7 @@ impl WalkItemKind for AssocItemKind {
             AssocItemKind::Fn(box Fn { defaultness: _, generics, sig, contract, body }) => {
                 try_visit!(visitor.visit_contract(contract));
                 let kind =
-                    FnKind::Fn(FnCtxt::Assoc(ctxt), ident, sig, vis, generics, body.as_deref());
+                    FnKind::Fn(FnCtxt::Assoc(ctxt), ident, sig, vis, generics, contract, body.as_deref());
                 try_visit!(visitor.visit_fn(kind, span, id));
             }
             AssocItemKind::Type(box TyAlias {
