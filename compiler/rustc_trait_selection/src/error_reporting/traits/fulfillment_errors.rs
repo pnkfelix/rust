@@ -898,7 +898,7 @@ impl<'a, 'tcx> TypeErrCtxt<'a, 'tcx> {
         }
         let hir_id = self.tcx.local_def_id_to_hir_id(obligation.cause.body_id);
         let body_id = match self.tcx.hir_node(hir_id) {
-            hir::Node::Item(hir::Item { kind: hir::ItemKind::Fn(_, _, body_id), .. }) => body_id,
+            hir::Node::Item(hir::Item { kind: hir::ItemKind::Fn(_, _, _, body_id), .. }) => body_id,
             _ => return false,
         };
         let ControlFlow::Break(expr) = (FindMethodSubexprOfTry { search_span: span })

@@ -3,8 +3,8 @@ use rustc_errors::codes::*;
 use rustc_errors::{Diag, EmissionGuarantee, ErrorGuaranteed, StashKey, Suggestions};
 use rustc_hir as hir;
 use rustc_hir::def::{DefKind, Res};
-use rustc_lint_defs::Applicability;
 use rustc_lint_defs::builtin::BARE_TRAIT_OBJECTS;
+use rustc_lint_defs::Applicability;
 use rustc_span::Span;
 use rustc_trait_selection::error_reporting::traits::suggestions::NextTypeParamName;
 
@@ -189,7 +189,7 @@ impl<'tcx> dyn HirTyLowerer<'tcx> + '_ {
         // 2. Functions inside trait blocks
         // 3. Functions inside impl blocks
         let (sig, generics) = match tcx.hir_node_by_def_id(parent_id) {
-            hir::Node::Item(hir::Item { kind: hir::ItemKind::Fn(sig, generics, _), .. }) => {
+            hir::Node::Item(hir::Item { kind: hir::ItemKind::Fn(sig, generics, _, _), .. }) => {
                 (sig, generics)
             }
             hir::Node::TraitItem(hir::TraitItem {

@@ -3,11 +3,11 @@ use rustc_hir as hir;
 use rustc_lint::{LateContext, LintContext};
 use rustc_middle::lint::in_external_macro;
 use rustc_middle::ty::{self, Ty};
-use rustc_span::{Span, sym};
+use rustc_span::{sym, Span};
 
 use clippy_utils::diagnostics::{span_lint_and_help, span_lint_and_then};
 use clippy_utils::trait_ref_of_method;
-use clippy_utils::ty::{AdtVariantInfo, approx_ty_size, is_type_diagnostic_item};
+use clippy_utils::ty::{approx_ty_size, is_type_diagnostic_item, AdtVariantInfo};
 
 use super::{RESULT_LARGE_ERR, RESULT_UNIT_ERR};
 
@@ -35,7 +35,7 @@ fn result_err_ty<'tcx>(
 }
 
 pub(super) fn check_item<'tcx>(cx: &LateContext<'tcx>, item: &hir::Item<'tcx>, large_err_threshold: u64) {
-    if let hir::ItemKind::Fn(ref sig, _generics, _) = item.kind
+    if let hir::ItemKind::Fn(ref sig, _generics, _, _) = item.kind
         && let Some((hir_ty, err_ty)) = result_err_ty(cx, sig.decl, item.owner_id.def_id, item.span)
     {
         if cx.effective_visibilities.is_exported(item.owner_id.def_id) {

@@ -206,6 +206,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
             ItemKind::Fn(box Fn {
                 sig: FnSig { decl, header, span: fn_sig_span },
                 generics,
+                contract,
                 body,
                 ..
             }) => {
@@ -240,7 +241,8 @@ impl<'hir> LoweringContext<'_, 'hir> {
                         header: this.lower_fn_header(*header, hir::Safety::Safe),
                         span: this.lower_span(*fn_sig_span),
                     };
-                    hir::ItemKind::Fn(sig, generics, body_id)
+                    let contract_ids = this.lower_contract(contract);
+                    hir::ItemKind::Fn(sig, generics, Some(contract_ids), body_id)
                 })
             }
             ItemKind::Mod(_, mod_kind) => match mod_kind {
@@ -457,6 +459,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                 hir::ItemKind::Fn(
                     delegation_results.sig,
                     delegation_results.generics,
+                    None,
                     delegation_results.body_id,
                 )
             }
@@ -1126,6 +1129,15 @@ impl<'hir> LoweringContext<'_, 'hir> {
                 None => this.expr_err(span, this.dcx().span_delayed_bug(span, "no block")),
             })
         })
+    }
+
+    fn lower_contract(&mut self, contract: &ast::FnContract) -> &'hir hir::FnContractIds {
+        let precond_expr = contract.requires.as_ref().map(|e| self.lower_expr(&e));
+        let postcond_expr = contract.ensures.as_ref().map(|e| self.lower_expr(&e));
+        let precond_hir_id: Option<hir::HirId> = precond_expr.map(|e| e.hir_id);
+        let postcond_hir_id: Option<hir::HirId> = postcond_expr.map(|e| e.hir_id);
+        
+        self.arena.alloc(hir::FnContractIds { precond_hir_id, postcond_hir_id, })
     }
 
     /// Takes what may be the body of an `async fn` or a `gen fn` and wraps it in an `async {}` or

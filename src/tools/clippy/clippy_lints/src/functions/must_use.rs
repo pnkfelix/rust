@@ -8,7 +8,7 @@ use rustc_infer::infer::TyCtxtInferExt;
 use rustc_lint::{LateContext, LintContext};
 use rustc_middle::lint::in_external_macro;
 use rustc_middle::ty::{self, Ty};
-use rustc_span::{Span, sym};
+use rustc_span::{sym, Span};
 
 use clippy_utils::attrs::is_proc_macro;
 use clippy_utils::diagnostics::{span_lint_and_help, span_lint_and_then};
@@ -25,7 +25,7 @@ use super::{DOUBLE_MUST_USE, MUST_USE_CANDIDATE, MUST_USE_UNIT};
 pub(super) fn check_item<'tcx>(cx: &LateContext<'tcx>, item: &'tcx hir::Item<'_>) {
     let attrs = cx.tcx.hir().attrs(item.hir_id());
     let attr = cx.tcx.get_attr(item.owner_id, sym::must_use);
-    if let hir::ItemKind::Fn(ref sig, _generics, ref body_id) = item.kind {
+    if let hir::ItemKind::Fn(ref sig, _generics, _contracts, ref body_id) = item.kind {
         let is_public = cx.effective_visibilities.is_exported(item.owner_id.def_id);
         let fn_header_span = item.span.with_hi(sig.decl.output.span().hi());
         if let Some(attr) = attr {

@@ -313,6 +313,9 @@ pub trait Visitor<'v>: Sized {
     fn visit_id(&mut self, _hir_id: HirId) -> Self::Result {
         Self::Result::output()
     }
+    fn visit_contract_ids(&mut self, _fn_contract_ids: &FnContractIds) -> Self::Result {
+        Self::Result::output()
+    }
     fn visit_name(&mut self, _name: Symbol) -> Self::Result {
         Self::Result::output()
     }
@@ -513,8 +516,11 @@ pub fn walk_item<'v, V: Visitor<'v>>(visitor: &mut V, item: &'v Item<'v>) -> V::
             try_visit!(visitor.visit_generics(generics));
             try_visit!(visitor.visit_nested_body(body));
         }
-        ItemKind::Fn(ref sig, ref generics, body_id) => {
+        ItemKind::Fn(ref sig, ref generics, fn_contract_ids, body_id) => {
             try_visit!(visitor.visit_id(item.hir_id()));
+            if let Some(fn_contract_ids) = fn_contract_ids {
+                try_visit!(visitor.visit_contract_ids(fn_contract_ids));
+            }
             try_visit!(visitor.visit_fn(
                 FnKind::ItemFn(item.ident, generics, sig.header),
                 sig.decl,

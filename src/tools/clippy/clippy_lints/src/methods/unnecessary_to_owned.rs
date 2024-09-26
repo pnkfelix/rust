@@ -2,7 +2,7 @@ use super::implicit_clone::is_clone_like;
 use super::unnecessary_iter_cloned::{self, is_into_iter};
 use clippy_config::msrvs::{self, Msrv};
 use clippy_utils::diagnostics::{span_lint_and_sugg, span_lint_and_then};
-use clippy_utils::source::{SpanRangeExt, snippet};
+use clippy_utils::source::{snippet, SpanRangeExt};
 use clippy_utils::ty::{get_iterator_item_ty, implements_trait, is_copy, is_type_diagnostic_item, is_type_lang_item};
 use clippy_utils::visitors::find_all_ret_expressions;
 use clippy_utils::{
@@ -19,7 +19,7 @@ use rustc_middle::ty::adjustment::{Adjust, Adjustment, OverloadedDeref};
 use rustc_middle::ty::{
     self, ClauseKind, GenericArg, GenericArgKind, GenericArgsRef, ParamTy, ProjectionPredicate, TraitPredicate, Ty,
 };
-use rustc_span::{Symbol, sym};
+use rustc_span::{sym, Symbol};
 use rustc_trait_selection::traits::query::evaluate_obligation::InferCtxtExt as _;
 use rustc_trait_selection::traits::{Obligation, ObligationCause};
 
@@ -496,7 +496,7 @@ fn can_change_type<'a>(cx: &LateContext<'a>, mut expr: &'a Expr<'a>, mut ty: Ty<
             Node::Stmt(_) => return true,
             Node::Block(..) => continue,
             Node::Item(item) => {
-                if let ItemKind::Fn(_, _, body_id) = &item.kind
+                if let ItemKind::Fn(_, _, _, body_id) = &item.kind
                     && let output_ty = return_ty(cx, item.owner_id)
                     && rustc_hir_typeck::can_coerce(cx.tcx, cx.param_env, item.owner_id.def_id, ty, output_ty)
                 {

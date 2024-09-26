@@ -1315,7 +1315,7 @@ fn fn_sig(tcx: TyCtxt<'_>, def_id: LocalDefId) -> ty::EarlyBinder<'_, ty::PolyFn
             generics,
             ..
         })
-        | Item(hir::Item { kind: ItemKind::Fn(sig, generics, _), .. }) => {
+        | Item(hir::Item { kind: ItemKind::Fn(sig, generics, _, _), .. }) => {
             infer_return_ty_for_fn_sig(sig, generics, def_id, &icx)
         }
 

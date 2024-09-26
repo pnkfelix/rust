@@ -380,7 +380,7 @@ impl<'a, 'tcx> Visitor<'tcx> for Annotator<'a, 'tcx> {
                     )
                 }
             }
-            hir::ItemKind::Fn(ref item_fn_sig, _, _) => {
+            hir::ItemKind::Fn(ref item_fn_sig, _, _, _) => {
                 fn_sig = Some(item_fn_sig);
             }
             _ => {}

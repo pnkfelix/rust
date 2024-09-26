@@ -308,7 +308,7 @@ impl<'a, 'tcx> TypeErrCtxt<'a, 'tcx> {
                     ..
                 })
                 | hir::Node::Item(hir::Item {
-                    kind: hir::ItemKind::Fn(fn_sig, generics, _), ..
+                    kind: hir::ItemKind::Fn(fn_sig, generics, _, _), ..
                 }) if projection.is_some() => {
                     // Missing restriction on associated type of type parameter (unmet projection).
                     suggest_restriction(
@@ -352,7 +352,7 @@ impl<'a, 'tcx> TypeErrCtxt<'a, 'tcx> {
                         | hir::ItemKind::Union(_, generics)
                         | hir::ItemKind::Trait(_, _, generics, ..)
                         | hir::ItemKind::Impl(hir::Impl { generics, .. })
-                        | hir::ItemKind::Fn(_, generics, _)
+                        | hir::ItemKind::Fn(_, generics, _, _)
                         | hir::ItemKind::TyAlias(_, generics)
                         | hir::ItemKind::Const(_, generics, _)
                         | hir::ItemKind::TraitAlias(generics, _),
@@ -418,7 +418,7 @@ impl<'a, 'tcx> TypeErrCtxt<'a, 'tcx> {
                         | hir::ItemKind::Union(_, generics)
                         | hir::ItemKind::Trait(_, _, generics, ..)
                         | hir::ItemKind::Impl(hir::Impl { generics, .. })
-                        | hir::ItemKind::Fn(_, generics, _)
+                        | hir::ItemKind::Fn(_, generics, _, _)
                         | hir::ItemKind::TyAlias(_, generics)
                         | hir::ItemKind::Const(_, generics, _)
                         | hir::ItemKind::TraitAlias(generics, _),
@@ -1729,7 +1729,7 @@ impl<'a, 'tcx> TypeErrCtxt<'a, 'tcx> {
     ) -> bool {
         let hir = self.tcx.hir();
         let node = self.tcx.hir_node_by_def_id(obligation.cause.body_id);
-        if let hir::Node::Item(hir::Item { kind: hir::ItemKind::Fn(sig, _, body_id), .. }) = node
+        if let hir::Node::Item(hir::Item { kind: hir::ItemKind::Fn(sig, _, _, body_id), .. }) = node
             && let hir::ExprKind::Block(blk, _) = &hir.body(*body_id).value.kind
             && sig.decl.output.span().overlaps(span)
             && blk.expr.is_none()
@@ -1877,7 +1877,7 @@ impl<'a, 'tcx> TypeErrCtxt<'a, 'tcx> {
 
         let hir = self.tcx.hir();
         let node = self.tcx.hir_node_by_def_id(obligation.cause.body_id);
-        if let hir::Node::Item(hir::Item { kind: hir::ItemKind::Fn(_, _, body_id), .. }) = node {
+        if let hir::Node::Item(hir::Item { kind: hir::ItemKind::Fn(_, _, _, body_id), .. }) = node {
             let body = hir.body(*body_id);
             // Point at all the `return`s in the function as they have failed trait bounds.
             let mut visitor = ReturnsVisitor::default();
@@ -4668,7 +4668,7 @@ impl<'a, 'tcx> TypeErrCtxt<'a, 'tcx> {
             node: hir::Node<'hir>,
         ) -> Option<(&'hir hir::FnDecl<'hir>, hir::BodyId)> {
             match node {
-                hir::Node::Item(item) if let hir::ItemKind::Fn(sig, _, body_id) = item.kind => {
+                hir::Node::Item(item) if let hir::ItemKind::Fn(sig, _, _, body_id) = item.kind => {
                     Some((sig.decl, body_id))
                 }
                 hir::Node::ImplItem(item)

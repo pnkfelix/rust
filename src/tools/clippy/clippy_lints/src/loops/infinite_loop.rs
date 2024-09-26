@@ -1,6 +1,6 @@
 use clippy_utils::diagnostics::span_lint_and_then;
 use clippy_utils::{fn_def_id, is_from_proc_macro, is_lint_allowed};
-use hir::intravisit::{Visitor, walk_expr};
+use hir::intravisit::{walk_expr, Visitor};
 use hir::{Expr, ExprKind, FnRetTy, FnSig, Node};
 use rustc_ast::Label;
 use rustc_errors::Applicability;
@@ -69,7 +69,7 @@ fn get_parent_fn_ret_ty<'tcx>(cx: &LateContext<'tcx>, expr: &Expr<'_>) -> Option
     for (_, parent_node) in cx.tcx.hir().parent_iter(expr.hir_id) {
         match parent_node {
             Node::Item(hir::Item {
-                kind: hir::ItemKind::Fn(FnSig { decl, .. }, _, _),
+                kind: hir::ItemKind::Fn(FnSig { decl, .. }, _, _, _),
                 ..
             })
             | Node::TraitItem(hir::TraitItem {

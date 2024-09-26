@@ -1729,7 +1729,7 @@ impl<'a, 'tcx> TypeErrCtxt<'a, 'tcx> {
             return None;
         };
         let tykind = match self.tcx.hir_node_by_def_id(trace.cause.body_id) {
-            hir::Node::Item(hir::Item { kind: hir::ItemKind::Fn(_, _, body_id), .. }) => {
+            hir::Node::Item(hir::Item { kind: hir::ItemKind::Fn(_, _, _, body_id), .. }) => {
                 let body = hir.body(*body_id);
                 struct LetVisitor {
                     span: Span,

@@ -3,25 +3,25 @@ use clippy_utils::trait_ref_of_method;
 use itertools::Itertools;
 use rustc_data_structures::fx::{FxHashSet, FxIndexMap, FxIndexSet};
 use rustc_errors::Applicability;
-use rustc_hir::FnRetTy::Return;
 use rustc_hir::intravisit::nested_filter::{self as hir_nested_filter, NestedFilter};
 use rustc_hir::intravisit::{
-    Visitor, walk_fn_decl, walk_generic_args, walk_generics, walk_impl_item_ref, walk_param_bound,
-    walk_poly_trait_ref, walk_trait_ref, walk_ty, walk_where_predicate,
+    walk_fn_decl, walk_generic_args, walk_generics, walk_impl_item_ref, walk_param_bound, walk_poly_trait_ref,
+    walk_trait_ref, walk_ty, walk_where_predicate, Visitor,
 };
+use rustc_hir::FnRetTy::Return;
 use rustc_hir::{
-    BareFnTy, BodyId, FnDecl, FnSig, GenericArg, GenericArgs, GenericBound, GenericParam, GenericParamKind, Generics,
-    Impl, ImplItem, ImplItemKind, Item, ItemKind, Lifetime, LifetimeName, LifetimeParamKind, Node, PolyTraitRef,
-    PredicateOrigin, TraitFn, TraitItem, TraitItemKind, Ty, TyKind, WherePredicate, lang_items,
+    lang_items, BareFnTy, BodyId, FnDecl, FnSig, GenericArg, GenericArgs, GenericBound, GenericParam, GenericParamKind,
+    Generics, Impl, ImplItem, ImplItemKind, Item, ItemKind, Lifetime, LifetimeName, LifetimeParamKind, Node,
+    PolyTraitRef, PredicateOrigin, TraitFn, TraitItem, TraitItemKind, Ty, TyKind, WherePredicate,
 };
 use rustc_lint::{LateContext, LateLintPass, LintContext};
 use rustc_middle::hir::map::Map;
 use rustc_middle::hir::nested_filter as middle_nested_filter;
 use rustc_middle::lint::in_external_macro;
 use rustc_session::declare_lint_pass;
-use rustc_span::Span;
 use rustc_span::def_id::LocalDefId;
-use rustc_span::symbol::{Ident, kw};
+use rustc_span::symbol::{kw, Ident};
+use rustc_span::Span;
 use std::ops::ControlFlow;
 
 declare_clippy_lint! {
@@ -93,7 +93,7 @@ declare_lint_pass!(Lifetimes => [NEEDLESS_LIFETIMES, EXTRA_UNUSED_LIFETIMES]);
 
 impl<'tcx> LateLintPass<'tcx> for Lifetimes {
     fn check_item(&mut self, cx: &LateContext<'tcx>, item: &'tcx Item<'_>) {
-        if let ItemKind::Fn(ref sig, generics, id) = item.kind {
+        if let ItemKind::Fn(ref sig, generics, _, id) = item.kind {
             check_fn_inner(cx, sig, Some(id), None, generics, item.span, true);
         } else if let ItemKind::Impl(impl_) = item.kind {
             if !item.span.from_expansion() {

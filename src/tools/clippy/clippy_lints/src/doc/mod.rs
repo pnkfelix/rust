@@ -23,12 +23,12 @@ use rustc_middle::hir::nested_filter;
 use rustc_middle::lint::in_external_macro;
 use rustc_middle::ty;
 use rustc_resolve::rustdoc::{
-    DocFragment, add_doc_fragment, attrs_to_doc_fragments, main_body_opts, source_span_for_markdown_range,
-    span_of_fragments,
+    add_doc_fragment, attrs_to_doc_fragments, main_body_opts, source_span_for_markdown_range, span_of_fragments,
+    DocFragment,
 };
 use rustc_session::impl_lint_pass;
 use rustc_span::edition::Edition;
-use rustc_span::{Span, sym};
+use rustc_span::{sym, Span};
 use std::ops::Range;
 use url::Url;
 
@@ -579,7 +579,7 @@ impl<'tcx> LateLintPass<'tcx> for Documentation {
                     self.check_private_items,
                 );
                 match item.kind {
-                    ItemKind::Fn(sig, _, body_id) => {
+                    ItemKind::Fn(sig, _, _, body_id) => {
                         if !(is_entrypoint_fn(cx, item.owner_id.to_def_id())
                             || in_external_macro(cx.tcx.sess, item.span))
                         {

@@ -521,7 +521,7 @@ impl<'a, 'tcx> Visitor<'tcx> for BoundVarContext<'a, 'tcx> {
             _ => {}
         }
         match item.kind {
-            hir::ItemKind::Fn(_, generics, _) => {
+            hir::ItemKind::Fn(_, generics, _, _) => {
                 self.visit_early_late(item.hir_id(), generics, |this| {
                     intravisit::walk_item(this, item);
                 });

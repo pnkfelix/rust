@@ -8,8 +8,8 @@ use rustc_hir::def::DefKind;
 use rustc_hir::def_id::LocalDefId;
 use rustc_middle::ty::{self, TyCtxt};
 use rustc_session::lint;
+use rustc_span::symbol::{kw, Symbol};
 use rustc_span::Span;
-use rustc_span::symbol::{Symbol, kw};
 use tracing::{debug, instrument};
 
 use crate::delegation::inherit_generics_for_delegation_item;
@@ -326,7 +326,8 @@ pub(super) fn generics_of(tcx: TyCtxt<'_>, def_id: LocalDefId) -> ty::Generics {
         prev + type_start
     };
 
-    const TYPE_DEFAULT_NOT_ALLOWED: &'static str = "defaults for type parameters are only allowed in \
+    const TYPE_DEFAULT_NOT_ALLOWED: &'static str =
+        "defaults for type parameters are only allowed in \
     `struct`, `enum`, `type`, or `trait` definitions";
 
     own_params.extend(hir_generics.params.iter().filter_map(|param| match param.kind {
