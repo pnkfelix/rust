@@ -598,7 +598,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         let current_attrs = std::mem::take(&mut self.attrs);
         let current_bodies = std::mem::take(&mut self.bodies);
         let current_node_ids = std::mem::take(&mut self.node_id_to_local_id);
-        let current_trait_map = std::mem::take(&mut self.trait_map);
+        let current_trait_map: rustc_data_structures::unord::UnordMap<rustc_hir::ItemLocalId, Box<[TraitCandidate]>> = std::mem::take(&mut self.trait_map);
         let current_owner =
             std::mem::replace(&mut self.current_hir_id_owner, hir::OwnerId { def_id });
         let current_local_counter =

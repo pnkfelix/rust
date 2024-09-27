@@ -224,6 +224,9 @@ impl<'hir> LoweringContext<'_, 'hir> {
                         coroutine_kind,
                         body.as_deref(),
                     );
+                    let last_recorded_body = this.bodies.last().unwrap();
+                    assert_eq!(last_recorded_body.0, body_id.hir_id.local_id);
+                    let contract_params: &'hir [hir::Param<'hir>] = last_recorded_body.1.params;
 
                     let itctx = ImplTraitContext::Universal;
                     let (generics, decl) =
@@ -241,7 +244,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                         header: this.lower_fn_header(*header, hir::Safety::Safe),
                         span: this.lower_span(*fn_sig_span),
                     };
-                    let contract_ids = this.lower_contract(contract);
+                    let contract_ids = this.lower_contract(contract_params, contract);
                     hir::ItemKind::Fn(sig, generics, Some(contract_ids), body_id)
                 })
             }
@@ -1131,13 +1134,23 @@ impl<'hir> LoweringContext<'_, 'hir> {
         })
     }
 
-    fn lower_contract(&mut self, contract: &ast::FnContract) -> &'hir hir::FnContractIds {
-        let precond_expr = contract.requires.as_ref().map(|e| self.lower_expr(&e));
-        let postcond_expr = contract.ensures.as_ref().map(|e| self.lower_expr(&e));
-        let precond_hir_id: Option<hir::HirId> = precond_expr.map(|e| e.hir_id);
-        let postcond_hir_id: Option<hir::HirId> = postcond_expr.map(|e| e.hir_id);
+    fn lower_contract(&mut self, params: &'hir [hir::Param<'hir>], contract: &ast::FnContract) -> &'hir hir::FnContractIds {
+        let precond: Option<&P<Expr>> = contract.requires.as_ref();
+        let postcond: Option<&P<Expr>> = contract.ensures.as_ref();
+        let precond: Option<hir::BodyId> = precond.map(|e| {
+            self.lower_body(|this| {
+                (params,
+                 this.lower_expr_mut(e))
+            })
+        });
+        let postcond: Option<hir::BodyId> = postcond.map(|e| {
+            self.lower_body(|this| {
+                (params,
+                 this.lower_expr_mut(e))
+            })
+        });
         
-        self.arena.alloc(hir::FnContractIds { precond_hir_id, postcond_hir_id, })
+        self.arena.alloc(hir::FnContractIds { precond, postcond, })
     }
 
     /// Takes what may be the body of an `async fn` or a `gen fn` and wraps it in an `async {}` or

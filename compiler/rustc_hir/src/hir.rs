@@ -1443,8 +1443,8 @@ pub struct BodyId {
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, HashStable_Generic)]
 pub struct FnContractIds {
-    pub precond_hir_id: Option<HirId>,
-    pub postcond_hir_id: Option<HirId>,
+    pub precond: Option<BodyId>,
+    pub postcond: Option<BodyId>,
 }
 
 /// The body of a function, closure, or constant value. In the case of
