@@ -1985,7 +1985,9 @@ impl<'a> State<'a> {
         self.pclose();
 
         self.print_fn_output(decl);
-        if let Some(contract_ids) = fn_contract_ids { self.print_contracts(contract_ids); }
+        if let Some(contract_ids) = fn_contract_ids {
+            self.print_contracts(contract_ids);
+        }
         self.print_where_clause(generics)
     }
 
@@ -2152,10 +2154,18 @@ impl<'a> State<'a> {
 
     fn print_contracts(&mut self, fn_contract_ids: &hir::FnContractIds) {
         if let Some(precond) = fn_contract_ids.precond {
+            self.space();
+            self.word("rustc_contract_requires");
+            self.popen();
             self.ann.nested(self, Nested::Body(precond));
+            self.pclose();
         }
         if let Some(postcond) = fn_contract_ids.postcond {
+            self.space();
+            self.word("rustc_contract_ensures");
+            self.popen();
             self.ann.nested(self, Nested::Body(postcond));
+            self.pclose();
         }
     }
 

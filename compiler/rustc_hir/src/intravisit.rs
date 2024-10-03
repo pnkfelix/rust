@@ -313,7 +313,15 @@ pub trait Visitor<'v>: Sized {
     fn visit_id(&mut self, _hir_id: HirId) -> Self::Result {
         Self::Result::output()
     }
-    fn visit_contract_ids(&mut self, _fn_contract_ids: &FnContractIds) -> Self::Result {
+    fn visit_contract_ids(&mut self, fn_contract_ids: &FnContractIds) -> Self::Result {
+        // TODO this should probably all live in a walk_contract_ids function
+
+        if let Some(precond_id) = fn_contract_ids.precond {
+            try_visit!(self.visit_nested_body(precond_id));
+        }
+        if let Some(postcond_id) = fn_contract_ids.postcond {
+            try_visit!(self.visit_nested_body(postcond_id));
+        }
         Self::Result::output()
     }
     fn visit_name(&mut self, _name: Symbol) -> Self::Result {
