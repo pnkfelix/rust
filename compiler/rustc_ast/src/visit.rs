@@ -15,8 +15,8 @@
 
 pub use rustc_ast_ir::visit::VisitorResult;
 pub use rustc_ast_ir::{try_visit, visit_opt, walk_list, walk_visitable_list};
-use rustc_span::Span;
 use rustc_span::symbol::Ident;
+use rustc_span::Span;
 
 use crate::ast::*;
 use crate::ptr::P;
@@ -363,8 +363,15 @@ impl WalkItemKind for ItemKind {
                 visit_opt!(visitor, visit_expr, expr);
             }
             ItemKind::Fn(box Fn { defaultness: _, generics, sig, contract, body }) => {
-                let kind = FnKind::Fn(FnCtxt::Free, *ident, sig, vis, generics, &contract, body.as_deref());
-                // try_visit!(visitor.visit_contract(contract));
+                let kind = FnKind::Fn(
+                    FnCtxt::Free,
+                    *ident,
+                    sig,
+                    vis,
+                    generics,
+                    &contract,
+                    body.as_deref(),
+                );
                 try_visit!(visitor.visit_fn(kind, *span, *id));
             }
             ItemKind::Mod(_unsafety, mod_kind) => match mod_kind {
@@ -700,8 +707,15 @@ impl WalkItemKind for ForeignItemKind {
                 visit_opt!(visitor, visit_expr, expr);
             }
             ForeignItemKind::Fn(box Fn { defaultness: _, generics, sig, contract, body }) => {
-                let kind = FnKind::Fn(FnCtxt::Foreign, ident, sig, vis, generics, contract, body.as_deref());
-                // try_visit!(visitor.visit_contract(contract));                
+                let kind = FnKind::Fn(
+                    FnCtxt::Foreign,
+                    ident,
+                    sig,
+                    vis,
+                    generics,
+                    contract,
+                    body.as_deref(),
+                );
                 try_visit!(visitor.visit_fn(kind, span, id));
             }
             ForeignItemKind::TyAlias(box TyAlias {
@@ -789,10 +803,7 @@ pub fn walk_closure_binder<'a, V: Visitor<'a>>(
     V::Result::output()
 }
 
-pub fn walk_contract<'a, V: Visitor<'a>>(
-    visitor: &mut V,
-    c: &'a FnContract,
-) -> V::Result {
+pub fn walk_contract<'a, V: Visitor<'a>>(visitor: &mut V, c: &'a FnContract) -> V::Result {
     let FnContract { requires, ensures } = c;
     if let Some(pred) = requires {
         visitor.visit_expr(pred);
@@ -802,7 +813,6 @@ pub fn walk_contract<'a, V: Visitor<'a>>(
     }
     V::Result::output()
 }
-
 
 pub fn walk_where_predicate<'a, V: Visitor<'a>>(
     visitor: &mut V,
@@ -849,9 +859,14 @@ pub fn walk_fn_decl<'a, V: Visitor<'a>>(
 
 pub fn walk_fn<'a, V: Visitor<'a>>(visitor: &mut V, kind: FnKind<'a>) -> V::Result {
     match kind {
-        FnKind::Fn(_ctxt, _ident, 
-            FnSig { header, decl, span: _ }, 
-            _vis, generics, contract, body,
+        FnKind::Fn(
+            _ctxt,
+            _ident,
+            FnSig { header, decl, span: _ },
+            _vis,
+            generics,
+            contract,
+            body,
         ) => {
             // Identifier and visibility are visited as a part of the item.
             try_visit!(visitor.visit_fn_header(header));
