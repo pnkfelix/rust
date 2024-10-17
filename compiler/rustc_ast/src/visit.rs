@@ -884,9 +884,15 @@ impl WalkItemKind for AssocItemKind {
                 visit_opt!(visitor, visit_expr, expr);
             }
             AssocItemKind::Fn(box Fn { defaultness: _, generics, sig, contract, body }) => {
-                try_visit!(visitor.visit_contract(contract));
-                let kind =
-                    FnKind::Fn(FnCtxt::Assoc(ctxt), ident, sig, vis, generics, contract, body.as_deref());
+                let kind = FnKind::Fn(
+                    FnCtxt::Assoc(ctxt),
+                    ident,
+                    sig,
+                    vis,
+                    generics,
+                    contract,
+                    body.as_deref(),
+                );
                 try_visit!(visitor.visit_fn(kind, span, id));
             }
             AssocItemKind::Type(box TyAlias {
