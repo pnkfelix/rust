@@ -314,15 +314,7 @@ pub trait Visitor<'v>: Sized {
         Self::Result::output()
     }
     fn visit_contract_ids(&mut self, fn_contract_ids: &FnContractIds) -> Self::Result {
-        // TODO this should probably all live in a walk_contract_ids function
-
-        if let Some(precond_id) = fn_contract_ids.precond {
-            try_visit!(self.visit_nested_body(precond_id));
-        }
-        if let Some(postcond_id) = fn_contract_ids.postcond {
-            try_visit!(self.visit_nested_body(postcond_id));
-        }
-        Self::Result::output()
+        walk_contract_ids(self, fn_contract_ids)
     }
     fn visit_name(&mut self, _name: Symbol) -> Self::Result {
         Self::Result::output()
@@ -496,6 +488,19 @@ pub trait Visitor<'v>: Sized {
     fn visit_inline_asm(&mut self, asm: &'v InlineAsm<'v>, id: HirId) -> Self::Result {
         walk_inline_asm(self, asm, id)
     }
+}
+
+pub fn walk_contract_ids<'v, V: Visitor<'v>>(
+    visitor: &mut V,
+    fn_contract_ids: &FnContractIds,
+) -> V::Result {
+    if let Some(precond_id) = fn_contract_ids.precond {
+        try_visit!(visitor.visit_nested_body(precond_id));
+    }
+    if let Some(postcond_id) = fn_contract_ids.postcond {
+        try_visit!(visitor.visit_nested_body(postcond_id));
+    }
+    V::Result::output()
 }
 
 pub fn walk_param<'v, V: Visitor<'v>>(visitor: &mut V, param: &'v Param<'v>) -> V::Result {
