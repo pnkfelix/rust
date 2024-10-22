@@ -313,8 +313,11 @@ pub trait Visitor<'v>: Sized {
     fn visit_id(&mut self, _hir_id: HirId) -> Self::Result {
         Self::Result::output()
     }
-    fn visit_contract_ids(&mut self, fn_contract_ids: &FnContractIds) -> Self::Result {
-        walk_contract_ids(self, fn_contract_ids)
+    fn visit_contract(&mut self, contract: &Contract) -> Self::Result {
+        self.visit_nested_body(contract.body_id)
+    }
+    fn visit_fn_contract_ids(&mut self, fn_contract_ids: &FnContractIds) -> Self::Result {
+        walk_fn_contract_ids(self, fn_contract_ids)
     }
     fn visit_name(&mut self, _name: Symbol) -> Self::Result {
         Self::Result::output()
@@ -490,15 +493,15 @@ pub trait Visitor<'v>: Sized {
     }
 }
 
-pub fn walk_contract_ids<'v, V: Visitor<'v>>(
+pub fn walk_fn_contract_ids<'v, V: Visitor<'v>>(
     visitor: &mut V,
     fn_contract_ids: &FnContractIds,
 ) -> V::Result {
-    if let Some(precond_id) = fn_contract_ids.precond {
-        try_visit!(visitor.visit_nested_body(precond_id));
+    if let Some(precond) = &fn_contract_ids.precond {
+        try_visit!(visitor.visit_contract(precond));
     }
-    if let Some(postcond_id) = fn_contract_ids.postcond {
-        try_visit!(visitor.visit_nested_body(postcond_id));
+    if let Some(postcond) = &fn_contract_ids.postcond {
+        try_visit!(visitor.visit_contract(postcond));
     }
     V::Result::output()
 }
@@ -532,7 +535,7 @@ pub fn walk_item<'v, V: Visitor<'v>>(visitor: &mut V, item: &'v Item<'v>) -> V::
         ItemKind::Fn(ref sig, ref generics, fn_contract_ids, body_id) => {
             try_visit!(visitor.visit_id(item.hir_id()));
             if let Some(fn_contract_ids) = fn_contract_ids {
-                try_visit!(visitor.visit_contract_ids(fn_contract_ids));
+                try_visit!(visitor.visit_fn_contract_ids(fn_contract_ids));
             }
             try_visit!(visitor.visit_fn(
                 FnKind::ItemFn(item.ident, generics, sig.header),

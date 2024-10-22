@@ -652,6 +652,7 @@ symbols! {
         const_try,
         constant,
         constructor,
+        contract,
         convert_identity,
         copy,
         copy_closures,

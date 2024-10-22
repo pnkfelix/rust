@@ -291,6 +291,8 @@ pub enum DefPathData {
     OpaqueTy,
     /// An anonymous struct or union type i.e. `struct { foo: Type }` or `union { bar: Type }`
     AnonAdt,
+    /// A contract attached to a function definition
+    Contract,
 }
 
 impl Definitions {
@@ -415,7 +417,7 @@ impl DefPathData {
             TypeNs(name) | ValueNs(name) | MacroNs(name) | LifetimeNs(name) => Some(name),
 
             Impl | ForeignMod | CrateRoot | Use | GlobalAsm | Closure | Ctor | AnonConst
-            | OpaqueTy | AnonAdt => None,
+            | OpaqueTy | AnonAdt | Contract => None,
         }
     }
 
@@ -439,6 +441,7 @@ impl DefPathData {
             AnonConst => DefPathDataName::Anon { namespace: sym::constant },
             OpaqueTy => DefPathDataName::Anon { namespace: sym::opaque },
             AnonAdt => DefPathDataName::Anon { namespace: sym::anon_adt },
+            Contract => DefPathDataName::Anon { namespace: sym::contract },
         }
     }
 }

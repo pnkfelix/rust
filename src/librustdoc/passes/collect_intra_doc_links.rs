@@ -1866,6 +1866,7 @@ fn resolution_failure(
                             Variant
                             | Field
                             | Closure
+                            | Contract
                             | AssocTy
                             | AssocConst
                             | AssocFn

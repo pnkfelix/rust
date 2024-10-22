@@ -163,6 +163,7 @@ impl ItemType {
             | DefKind::GlobalAsm
             | DefKind::Impl { .. }
             | DefKind::Closure
+            | DefKind::Contract
             | DefKind::SyntheticCoroutineBody => Self::ForeignType,
         }
     }

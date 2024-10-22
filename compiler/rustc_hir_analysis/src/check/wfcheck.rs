@@ -2234,7 +2234,8 @@ fn lint_redundant_lifetimes<'tcx>(
         | DefKind::LifetimeParam
         | DefKind::GlobalAsm
         | DefKind::Closure
-        | DefKind::SyntheticCoroutineBody => return,
+        | DefKind::SyntheticCoroutineBody 
+        | DefKind::Contract => return,
     }
 
     // The ordering of this lifetime map is a bit subtle.

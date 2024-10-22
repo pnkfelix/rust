@@ -17,18 +17,18 @@ use rustc_macros::{Decodable, Encodable, HashStable_Generic};
 use rustc_span::def_id::LocalDefId;
 use rustc_span::hygiene::MacroKind;
 use rustc_span::source_map::Spanned;
-use rustc_span::symbol::{Ident, Symbol, kw, sym};
-use rustc_span::{BytePos, DUMMY_SP, ErrorGuaranteed, Span};
+use rustc_span::symbol::{kw, sym, Ident, Symbol};
+use rustc_span::{BytePos, ErrorGuaranteed, Span, DUMMY_SP};
 use rustc_target::asm::InlineAsmRegOrRegClass;
 use rustc_target::spec::abi::Abi;
 use smallvec::SmallVec;
 use tracing::debug;
 
-use crate::LangItem;
 use crate::def::{CtorKind, DefKind, Res};
 use crate::def_id::{DefId, LocalDefIdMap};
 pub(crate) use crate::hir_id::{HirId, ItemLocalId, ItemLocalMap, OwnerId};
 use crate::intravisit::FnKind;
+use crate::LangItem;
 
 #[derive(Debug, Copy, Clone, HashStable_Generic)]
 pub struct Lifetime {
@@ -127,7 +127,11 @@ impl LifetimeName {
 
 impl fmt::Display for Lifetime {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.ident.name != kw::Empty { self.ident.name.fmt(f) } else { "'_".fmt(f) }
+        if self.ident.name != kw::Empty {
+            self.ident.name.fmt(f)
+        } else {
+            "'_".fmt(f)
+        }
     }
 }
 
@@ -1266,7 +1270,11 @@ impl DotDotPos {
     }
 
     pub fn as_opt_usize(&self) -> Option<usize> {
-        if self.0 == u32::MAX { None } else { Some(self.0 as usize) }
+        if self.0 == u32::MAX {
+            None
+        } else {
+            Some(self.0 as usize)
+        }
     }
 }
 
@@ -1442,9 +1450,15 @@ pub struct BodyId {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, HashStable_Generic)]
+pub struct Contract {
+    pub def_id: LocalDefId,
+    pub body_id: BodyId,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, HashStable_Generic)]
 pub struct FnContractIds {
-    pub precond: Option<BodyId>,
-    pub postcond: Option<BodyId>,
+    pub precond: Option<Contract>,
+    pub postcond: Option<Contract>,
 }
 
 /// The body of a function, closure, or constant value. In the case of
@@ -2602,10 +2616,10 @@ impl<'hir> Ty<'hir> {
             fn visit_ty(&mut self, t: &'v Ty<'v>) {
                 if matches!(
                     &t.kind,
-                    TyKind::Path(QPath::Resolved(_, Path {
-                        res: crate::def::Res::SelfTyAlias { .. },
-                        ..
-                    },))
+                    TyKind::Path(QPath::Resolved(
+                        _,
+                        Path { res: crate::def::Res::SelfTyAlias { .. }, .. },
+                    ))
                 ) {
                     self.0.push(t.span);
                     return;
@@ -2948,11 +2962,10 @@ impl<'hir> InlineAsmOperand<'hir> {
     }
 
     pub fn is_clobber(&self) -> bool {
-        matches!(self, InlineAsmOperand::Out {
-            reg: InlineAsmRegOrRegClass::Reg(_),
-            late: _,
-            expr: None
-        })
+        matches!(
+            self,
+            InlineAsmOperand::Out { reg: InlineAsmRegOrRegClass::Reg(_), late: _, expr: None }
+        )
     }
 }
 

@@ -109,6 +109,8 @@ pub enum DefKind {
     Use,
     /// An `extern` block.
     ForeignMod,
+    /// A contract associated with a function definition
+    Contract,
     /// Anonymous constant, e.g. the `1 + 2` in `[u8; 1 + 2]`
     AnonConst,
     /// An inline constant, e.g. `const { 1 + 2 }`
@@ -173,6 +175,7 @@ impl DefKind {
             DefKind::LifetimeParam => "lifetime parameter",
             DefKind::Use => "import",
             DefKind::ForeignMod => "foreign module",
+            DefKind::Contract => "contract",
             DefKind::AnonConst => "constant expression",
             DefKind::InlineConst => "inline constant",
             DefKind::Field => "field",
@@ -230,7 +233,8 @@ impl DefKind {
             DefKind::Macro(..) => Some(Namespace::MacroNS),
 
             // Not namespaced.
-            DefKind::AnonConst
+            DefKind::Contract
+            | DefKind::AnonConst
             | DefKind::InlineConst
             | DefKind::Field
             | DefKind::LifetimeParam
@@ -282,6 +286,7 @@ impl DefKind {
             DefKind::Impl { .. } => DefPathData::Impl,
             DefKind::Closure => DefPathData::Closure,
             DefKind::SyntheticCoroutineBody => DefPathData::Closure,
+            DefKind::Contract => DefPathData::Contract,
         }
     }
 
@@ -323,6 +328,7 @@ impl DefKind {
             | DefKind::TyParam
             | DefKind::ConstParam
             | DefKind::LifetimeParam
+            | DefKind::Contract
             | DefKind::AnonConst
             | DefKind::InlineConst
             | DefKind::GlobalAsm

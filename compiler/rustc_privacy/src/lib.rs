@@ -20,12 +20,12 @@ use errors::{
     ItemIsPrivate, PrivateInterfacesOrBoundsLint, ReportEffectiveVisibility, UnnameableTypesLint,
     UnnamedItemIsPrivate,
 };
+use rustc_ast::visit::{try_visit, VisitorResult};
 use rustc_ast::MacroDef;
-use rustc_ast::visit::{VisitorResult, try_visit};
 use rustc_data_structures::fx::FxHashSet;
 use rustc_data_structures::intern::Interned;
 use rustc_hir::def::{DefKind, Res};
-use rustc_hir::def_id::{CRATE_DEF_ID, DefId, LocalDefId, LocalModDefId};
+use rustc_hir::def_id::{DefId, LocalDefId, LocalModDefId, CRATE_DEF_ID};
 use rustc_hir::intravisit::{self, Visitor};
 use rustc_hir::{AssocItemKind, ForeignItemKind, ItemId, ItemKind, PatKind};
 use rustc_middle::middle::privacy::{EffectiveVisibilities, EffectiveVisibility, Level};
@@ -37,9 +37,9 @@ use rustc_middle::ty::{
 };
 use rustc_middle::{bug, span_bug};
 use rustc_session::lint;
-use rustc_span::Span;
 use rustc_span::hygiene::Transparency;
-use rustc_span::symbol::{Ident, kw, sym};
+use rustc_span::symbol::{kw, sym, Ident};
+use rustc_span::Span;
 use tracing::debug;
 use {rustc_attr as attr, rustc_hir as hir};
 
@@ -75,7 +75,7 @@ pub trait DefIdVisitor<'tcx> {
 
     fn tcx(&self) -> TyCtxt<'tcx>;
     fn visit_def_id(&mut self, def_id: DefId, kind: &str, descr: &dyn fmt::Display)
-    -> Self::Result;
+        -> Self::Result;
 
     /// Not overridden, but used to actually visit types and traits.
     fn skeleton(&mut self) -> DefIdVisitorSkeleton<'_, 'tcx, Self> {
@@ -116,7 +116,11 @@ where
             "trait",
             &trait_ref.print_only_trait_path()
         ));
-        if V::SHALLOW { V::Result::output() } else { args.visit_with(self) }
+        if V::SHALLOW {
+            V::Result::output()
+        } else {
+            args.visit_with(self)
+        }
     }
 
     fn visit_projection_term(&mut self, projection: ty::AliasTerm<'tcx>) -> V::Result {
@@ -201,9 +205,10 @@ where
                 // so we need to visit the self type additionally.
                 if let Some(assoc_item) = tcx.opt_associated_item(def_id) {
                     if let Some(impl_def_id) = assoc_item.impl_container(tcx) {
-                        try_visit!(
-                            tcx.type_of(impl_def_id).instantiate_identity().visit_with(self)
-                        );
+                        try_visit!(tcx
+                            .type_of(impl_def_id)
+                            .instantiate_identity()
+                            .visit_with(self));
                     }
                 }
             }
@@ -291,7 +296,11 @@ where
             }
         }
 
-        if V::SHALLOW { V::Result::output() } else { ty.super_visit_with(self) }
+        if V::SHALLOW {
+            V::Result::output()
+        } else {
+            ty.super_visit_with(self)
+        }
     }
 
     fn visit_const(&mut self, c: Const<'tcx>) -> Self::Result {
@@ -301,7 +310,11 @@ where
 }
 
 fn min(vis1: ty::Visibility, vis2: ty::Visibility, tcx: TyCtxt<'_>) -> ty::Visibility {
-    if vis1.is_at_least(vis2, tcx) { vis2 } else { vis1 }
+    if vis1.is_at_least(vis2, tcx) {
+        vis2
+    } else {
+        vis1
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -607,6 +620,7 @@ impl<'tcx> EmbargoVisitor<'tcx> {
             DefKind::AssocConst
             | DefKind::AssocTy
             | DefKind::ConstParam
+            | DefKind::Contract
             | DefKind::Ctor(_, _)
             | DefKind::Enum
             | DefKind::ForeignTy

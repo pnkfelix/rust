@@ -111,6 +111,7 @@ pub fn walk_types<'tcx, V: SpannedTypeVisitor<'tcx>>(
         | DefKind::Variant
         | DefKind::TyParam
         | DefKind::ConstParam
+        | DefKind::Contract
         | DefKind::Ctor(_, _)
         | DefKind::Field
         | DefKind::LifetimeParam => {

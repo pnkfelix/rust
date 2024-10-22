@@ -2157,14 +2157,14 @@ impl<'a> State<'a> {
             self.space();
             self.word("rustc_contract_requires");
             self.popen();
-            self.ann.nested(self, Nested::Body(precond));
+            self.ann.nested(self, Nested::Body(precond.body_id));
             self.pclose();
         }
         if let Some(postcond) = fn_contract_ids.postcond {
             self.space();
             self.word("rustc_contract_ensures");
             self.popen();
-            self.ann.nested(self, Nested::Body(postcond));
+            self.ann.nested(self, Nested::Body(postcond.body_id));
             self.pclose();
         }
     }

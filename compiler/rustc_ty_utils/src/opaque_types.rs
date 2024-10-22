@@ -2,7 +2,7 @@ use rustc_data_structures::fx::FxHashSet;
 use rustc_hir::def::DefKind;
 use rustc_hir::def_id::LocalDefId;
 use rustc_hir::intravisit::Visitor;
-use rustc_hir::{CRATE_HIR_ID, intravisit};
+use rustc_hir::{intravisit, CRATE_HIR_ID};
 use rustc_middle::bug;
 use rustc_middle::query::Providers;
 use rustc_middle::ty::util::{CheckRegions, NotUniqueParam};
@@ -348,6 +348,7 @@ fn opaque_types_defined_by<'tcx>(
         | DefKind::Field
         | DefKind::LifetimeParam
         | DefKind::GlobalAsm
+        | DefKind::Contract
         | DefKind::Impl { .. }
         | DefKind::SyntheticCoroutineBody => {}
         // Closures and coroutines are type checked with their parent, so we need to allow all

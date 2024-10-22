@@ -1,16 +1,16 @@
-use rustc_ast::visit::{VisitorResult, walk_list};
+use rustc_ast::visit::{walk_list, VisitorResult};
 use rustc_data_structures::fingerprint::Fingerprint;
 use rustc_data_structures::stable_hasher::{HashStable, StableHasher};
 use rustc_data_structures::svh::Svh;
-use rustc_data_structures::sync::{DynSend, DynSync, par_for_each_in, try_par_for_each_in};
+use rustc_data_structures::sync::{par_for_each_in, try_par_for_each_in, DynSend, DynSync};
 use rustc_hir::def::{DefKind, Res};
-use rustc_hir::def_id::{DefId, LOCAL_CRATE, LocalDefId, LocalModDefId};
+use rustc_hir::def_id::{DefId, LocalDefId, LocalModDefId, LOCAL_CRATE};
 use rustc_hir::definitions::{DefKey, DefPath, DefPathHash};
 use rustc_hir::intravisit::Visitor;
 use rustc_hir::*;
 use rustc_middle::hir::nested_filter;
 use rustc_span::def_id::StableCrateId;
-use rustc_span::symbol::{Ident, Symbol, kw, sym};
+use rustc_span::symbol::{kw, sym, Ident, Symbol};
 use rustc_span::{ErrorGuaranteed, Span};
 use rustc_target::spec::abi::Abi;
 use {rustc_ast as ast, rustc_hir_pretty as pprust_hir};
@@ -1350,6 +1350,17 @@ impl<'hir> Visitor<'hir> for ItemCollector<'hir> {
     fn visit_foreign_item(&mut self, item: &'hir ForeignItem<'hir>) {
         self.foreign_items.push(item.foreign_item_id());
         intravisit::walk_foreign_item(self, item)
+    }
+
+    fn visit_fn_contract_ids(&mut self, c: &FnContractIds) {
+        if let Some(precond) = c.precond {
+            self.body_owners.push(precond.def_id);
+        }
+        if let Some(postcond) = c.postcond {
+            self.body_owners.push(postcond.def_id);
+        }
+        // TODO: add contract ids to self.body_owners, analogous to items and consts.
+        intravisit::walk_fn_contract_ids(self, c)
     }
 
     fn visit_anon_const(&mut self, c: &'hir AnonConst) {
