@@ -1152,6 +1152,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         let precond: Option<&P<Expr>> = contract.requires.as_ref();
         let postcond: Option<&P<Expr>> = contract.ensures.as_ref();
         let precond: Option<hir::Contract> = precond.map(|e| {
+            let parent_node_hir_id = self.lower_node_id(parent_node_id);
             let contract_node_id = self.next_node_id();
 
             let def_id = self.create_def(
@@ -1161,11 +1162,12 @@ impl<'hir> LoweringContext<'_, 'hir> {
                 DefKind::Contract,
                 e.span,
             );
-
+            self.children.push((def_id, hir::MaybeOwner::NonOwner(parent_node_hir_id)));
             let body_id = self.lower_body(|this| (params, this.lower_expr_mut(e)));
             hir::Contract { def_id, body_id }
         });
         let postcond: Option<hir::Contract> = postcond.map(|e| {
+            let parent_node_hir_id = self.lower_node_id(parent_node_id);
             let contract_node_id = self.next_node_id();
             let def_id = self.create_def(
                 self.local_def_id(parent_node_id),
@@ -1174,6 +1176,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                 DefKind::Contract,
                 e.span,
             );
+            self.children.push((def_id, hir::MaybeOwner::NonOwner(parent_node_hir_id)));
             let body_id = self.lower_body(|this| (params, this.lower_expr_mut(e)));
             hir::Contract { def_id, body_id }
         });
