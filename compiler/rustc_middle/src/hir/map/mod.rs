@@ -311,6 +311,7 @@ impl<'hir> Map<'hir> {
             DefKind::Static { safety: _, mutability, nested: false } => {
                 BodyOwnerKind::Static(mutability)
             }
+            DefKind::Contract => BodyOwnerKind::Contract,
             dk => bug!("{:?} is not a body node: {:?}", def_id, dk),
         }
     }
@@ -334,6 +335,7 @@ impl<'hir> Map<'hir> {
             }
             BodyOwnerKind::Fn if self.tcx.is_const_default_method(def_id) => ConstContext::ConstFn,
             BodyOwnerKind::Fn | BodyOwnerKind::Closure => return None,
+            BodyOwnerKind::Contract => return None,
         };
 
         Some(ccx)

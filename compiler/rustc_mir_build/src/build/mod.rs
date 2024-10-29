@@ -1,6 +1,6 @@
 use itertools::Itertools;
-use rustc_apfloat::Float;
 use rustc_apfloat::ieee::{Double, Half, Quad, Single};
+use rustc_apfloat::Float;
 use rustc_ast::attr;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::sorted_map::SortedIndexMultiMap;
@@ -57,6 +57,7 @@ pub(crate) fn mir_build<'tcx>(tcx: TyCtxtAt<'tcx>, def: LocalDefId) -> Body<'tcx
             let build_mir = |thir: &Thir<'tcx>| match thir.body_type {
                 thir::BodyTy::Fn(fn_sig) => construct_fn(tcx, def, thir, expr, fn_sig),
                 thir::BodyTy::Const(ty) => construct_const(tcx, def, thir, expr, ty),
+                thir::BodyTy::Contract => construct_contract(tcx, def, thir, expr),
             };
 
             // this must run before MIR dump, because
@@ -590,6 +591,35 @@ fn construct_const<'a, 'tcx>(
 
     builder.build_drop_trees();
 
+    builder.finish()
+}
+
+fn construct_contract<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    def: LocalDefId,
+    thir: &Thir<'tcx>,
+    expr: ExprId,
+) -> Body<'tcx> {
+    let span = tcx.def_span(def);
+    let hir_id = tcx.local_def_id_to_hir_id(def);
+    let infcx = tcx.infer_ctxt().build();
+    let fn_decl = tcx
+        .hir()
+        .fn_decl_by_hir_id(hir_id)
+        .unwrap_or_else(|| span_bug!(span, "can't build MIR for {:?}", def));
+    let span_with_body = tcx.hir().span_with_body(hir_id);
+    let return_ty_span = fn_decl.output.span();
+    let return_ty = tcx.types.bool;
+    let mut builder =
+        Builder::new(thir, infcx, def, hir_id, span_with_body, 0, return_ty, return_ty_span, None);
+    let arguments = &thir.params;
+    let body = tcx.hir().body_owned_by(def);
+    let arg_scope =
+        region::Scope { id: body.id().hir_id.local_id, data: region::ScopeData::Arguments };
+    let block = builder.args_and_body(START_BLOCK, arguments, arg_scope, expr).into_block();
+    let source_info = builder.source_info(span_with_body);
+    builder.cfg.terminate(block, source_info, TerminatorKind::Return);
+    builder.build_drop_trees();
     builder.finish()
 }
 

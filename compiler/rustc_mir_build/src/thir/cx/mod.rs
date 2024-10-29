@@ -5,10 +5,10 @@
 use rustc_data_structures::steal::Steal;
 use rustc_errors::ErrorGuaranteed;
 use rustc_hir as hir;
-use rustc_hir::HirId;
 use rustc_hir::def::DefKind;
 use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_hir::lang_items::LangItem;
+use rustc_hir::HirId;
 use rustc_middle::bug;
 use rustc_middle::middle::region;
 use rustc_middle::thir::*;
@@ -79,6 +79,8 @@ impl<'tcx> Cx<'tcx> {
             // fetch the fully liberated fn signature (that is, all bound
             // types/lifetimes replaced)
             BodyTy::Fn(typeck_results.liberated_fn_sigs()[hir_id])
+        } else if let hir::BodyOwnerKind::Contract = hir.body_owner_kind(def) {
+            BodyTy::Contract
         } else {
             // Get the revealed type of this const. This is *not* the adjusted
             // type of its body, which may be a subtype of this type. For
@@ -182,11 +184,9 @@ impl<'tcx> Cx<'tcx> {
             let ty = if fn_decl.c_variadic && index == fn_decl.inputs.len() {
                 let va_list_did = self.tcx.require_lang_item(LangItem::VaList, Some(param.span));
 
-                self.tcx.type_of(va_list_did).instantiate(self.tcx, &[self
-                    .tcx
-                    .lifetimes
-                    .re_erased
-                    .into()])
+                self.tcx
+                    .type_of(va_list_did)
+                    .instantiate(self.tcx, &[self.tcx.lifetimes.re_erased.into()])
             } else {
                 fn_sig.inputs()[index]
             };

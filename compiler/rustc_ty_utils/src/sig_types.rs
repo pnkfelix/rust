@@ -47,6 +47,7 @@ pub fn walk_types<'tcx, V: SpannedTypeVisitor<'tcx>>(
         // Walk over the type behind the alias
         DefKind::TyAlias { .. } | DefKind::AssocTy |
         // Walk over the type of the item
+	DefKind::Contract |
         DefKind::Static { .. } | DefKind::Const | DefKind::AssocConst | DefKind::AnonConst => {
             if let Some(ty) = tcx.hir_node_by_def_id(item).ty() {
                 // If the type of the item uses `_`, we're gonna error out anyway, but
@@ -111,7 +112,6 @@ pub fn walk_types<'tcx, V: SpannedTypeVisitor<'tcx>>(
         | DefKind::Variant
         | DefKind::TyParam
         | DefKind::ConstParam
-        | DefKind::Contract
         | DefKind::Ctor(_, _)
         | DefKind::Field
         | DefKind::LifetimeParam => {

@@ -1617,13 +1617,18 @@ pub enum BodyOwnerKind {
 
     /// Initializer of a `static` item.
     Static(Mutability),
+
+    /// Contract attached to a function
+    Contract,
 }
 
 impl BodyOwnerKind {
     pub fn is_fn_or_closure(self) -> bool {
         match self {
             BodyOwnerKind::Fn | BodyOwnerKind::Closure => true,
-            BodyOwnerKind::Const { .. } | BodyOwnerKind::Static(_) => false,
+            BodyOwnerKind::Const { .. } | BodyOwnerKind::Static(_) | BodyOwnerKind::Contract => {
+                false
+            }
         }
     }
 }

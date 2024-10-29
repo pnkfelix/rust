@@ -82,7 +82,7 @@ impl Context {
                 }
                 self.const_span = Some(body_span);
             },
-            hir::BodyOwnerKind::Fn | hir::BodyOwnerKind::Closure => (),
+            hir::BodyOwnerKind::Contract | hir::BodyOwnerKind::Fn | hir::BodyOwnerKind::Closure => (),
         }
     }
 

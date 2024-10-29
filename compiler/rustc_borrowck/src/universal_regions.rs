@@ -20,9 +20,9 @@ use std::iter;
 
 use rustc_data_structures::fx::FxIndexMap;
 use rustc_errors::Diag;
-use rustc_hir::BodyOwnerKind;
 use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_hir::lang_items::LangItem;
+use rustc_hir::BodyOwnerKind;
 use rustc_index::IndexVec;
 use rustc_infer::infer::NllRegionVariableOrigin;
 use rustc_macros::extension;
@@ -37,8 +37,8 @@ use rustc_span::symbol::{kw, sym};
 use rustc_span::{ErrorGuaranteed, Symbol};
 use tracing::{debug, instrument};
 
-use crate::BorrowckInferCtxt;
 use crate::renumber::RegionCtxt;
+use crate::BorrowckInferCtxt;
 
 #[derive(Debug)]
 pub(crate) struct UniversalRegions<'tcx> {
@@ -98,6 +98,9 @@ pub(crate) struct UniversalRegions<'tcx> {
 /// appear bound in the signature.
 #[derive(Copy, Clone, Debug)]
 pub(crate) enum DefiningTy<'tcx> {
+    /// The MIR is a contract.
+    Contract(DefId, GenericArgsRef<'tcx>),
+
     /// The MIR is a closure. The signature is found via
     /// `ClosureArgs::closure_sig_ty`.
     Closure(DefId, GenericArgsRef<'tcx>),
@@ -138,9 +141,10 @@ impl<'tcx> DefiningTy<'tcx> {
             DefiningTy::Closure(_, args) => args.as_closure().upvar_tys(),
             DefiningTy::CoroutineClosure(_, args) => args.as_coroutine_closure().upvar_tys(),
             DefiningTy::Coroutine(_, args) => args.as_coroutine().upvar_tys(),
-            DefiningTy::FnDef(..) | DefiningTy::Const(..) | DefiningTy::InlineConst(..) => {
-                ty::List::empty()
-            }
+            DefiningTy::Contract(..)
+            | DefiningTy::FnDef(..)
+            | DefiningTy::Const(..)
+            | DefiningTy::InlineConst(..) => ty::List::empty(),
         }
     }
 
@@ -152,6 +156,7 @@ impl<'tcx> DefiningTy<'tcx> {
             DefiningTy::Closure(..)
             | DefiningTy::CoroutineClosure(..)
             | DefiningTy::Coroutine(..) => 1,
+            DefiningTy::Contract(..) => 0, // FIXME: this should probably be a 0 for precond and 1 for postcond.
             DefiningTy::FnDef(..) | DefiningTy::Const(..) | DefiningTy::InlineConst(..) => 0,
         }
     }
@@ -167,6 +172,7 @@ impl<'tcx> DefiningTy<'tcx> {
     pub(crate) fn def_id(&self) -> DefId {
         match *self {
             DefiningTy::Closure(def_id, ..)
+            | DefiningTy::Contract(def_id, ..)
             | DefiningTy::CoroutineClosure(def_id, ..)
             | DefiningTy::Coroutine(def_id, ..)
             | DefiningTy::FnDef(def_id, ..)
@@ -356,12 +362,10 @@ impl<'tcx> UniversalRegions<'tcx> {
     pub(crate) fn annotate(&self, tcx: TyCtxt<'tcx>, err: &mut Diag<'_, ()>) {
         match self.defining_ty {
             DefiningTy::Closure(def_id, args) => {
-                let v = with_no_trimmed_paths!(
-                    args[tcx.generics_of(def_id).parent_count..]
-                        .iter()
-                        .map(|arg| arg.to_string())
-                        .collect::<Vec<_>>()
-                );
+                let v = with_no_trimmed_paths!(args[tcx.generics_of(def_id).parent_count..]
+                    .iter()
+                    .map(|arg| arg.to_string())
+                    .collect::<Vec<_>>());
                 err.note(format!(
                     "defining type: {} with closure args [\n    {},\n]",
                     tcx.def_path_str_with_args(def_id, args),
@@ -377,16 +381,14 @@ impl<'tcx> UniversalRegions<'tcx> {
                     err.note(format!("late-bound region is {:?}", self.to_region_vid(r)));
                 });
             }
-            DefiningTy::CoroutineClosure(..) => {
+            DefiningTy::Contract(..) | DefiningTy::CoroutineClosure(..) => {
                 todo!()
             }
             DefiningTy::Coroutine(def_id, args) => {
-                let v = with_no_trimmed_paths!(
-                    args[tcx.generics_of(def_id).parent_count..]
-                        .iter()
-                        .map(|arg| arg.to_string())
-                        .collect::<Vec<_>>()
-                );
+                let v = with_no_trimmed_paths!(args[tcx.generics_of(def_id).parent_count..]
+                    .iter()
+                    .map(|arg| arg.to_string())
+                    .collect::<Vec<_>>());
                 err.note(format!(
                     "defining type: {} with coroutine args [\n    {},\n]",
                     tcx.def_path_str_with_args(def_id, args),
@@ -629,14 +631,21 @@ impl<'cx, 'tcx> UniversalRegionsBuilder<'cx, 'tcx> {
                     let ty = tcx
                         .typeck(self.mir_def)
                         .node_type(tcx.local_def_id_to_hir_id(self.mir_def));
-                    let args = InlineConstArgs::new(tcx, InlineConstArgsParts {
-                        parent_args: identity_args,
-                        ty,
-                    })
+                    let args = InlineConstArgs::new(
+                        tcx,
+                        InlineConstArgsParts { parent_args: identity_args, ty },
+                    )
                     .args;
                     let args = self.infcx.replace_free_regions_with_nll_infer_vars(FR, args);
                     DefiningTy::InlineConst(self.mir_def.to_def_id(), args)
                 }
+            }
+            BodyOwnerKind::Contract => {
+                let identity_args = GenericArgs::identity_for_item(tcx, typeck_root_def_id);
+                debug!("identity_args: {:?}", identity_args);
+                assert_eq!(self.mir_def.to_def_id(), typeck_root_def_id);
+                let args = self.infcx.replace_free_regions_with_nll_infer_vars(FR, identity_args);
+                DefiningTy::Contract(self.mir_def.to_def_id(), args)
             }
         }
     }
@@ -670,7 +679,9 @@ impl<'cx, 'tcx> UniversalRegionsBuilder<'cx, 'tcx> {
                 args
             }
 
-            DefiningTy::FnDef(_, args) | DefiningTy::Const(_, args) => args,
+            DefiningTy::Contract(_, args)
+            | DefiningTy::FnDef(_, args)
+            | DefiningTy::Const(_, args) => args,
         };
 
         let global_mapping = iter::once((tcx.lifetimes.re_static, fr_static));
@@ -787,6 +798,10 @@ impl<'cx, 'tcx> UniversalRegionsBuilder<'cx, 'tcx> {
                     ),
                     bound_vars,
                 )
+            }
+
+            DefiningTy::Contract(_def_id, _) => {
+                todo!()
             }
 
             DefiningTy::FnDef(def_id, _) => {

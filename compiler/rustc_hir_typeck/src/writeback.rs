@@ -7,16 +7,16 @@ use std::mem;
 use rustc_data_structures::unord::ExtendUnord;
 use rustc_errors::{ErrorGuaranteed, StashKey};
 use rustc_hir as hir;
-use rustc_hir::HirId;
 use rustc_hir::intravisit::{self, Visitor};
+use rustc_hir::HirId;
 use rustc_middle::span_bug;
 use rustc_middle::traits::ObligationCause;
 use rustc_middle::ty::adjustment::{Adjust, Adjustment, PointerCoercion};
 use rustc_middle::ty::fold::{TypeFoldable, TypeFolder};
 use rustc_middle::ty::visit::TypeVisitableExt;
 use rustc_middle::ty::{self, Ty, TyCtxt, TypeSuperFoldable};
-use rustc_span::Span;
 use rustc_span::symbol::sym;
+use rustc_span::Span;
 use rustc_trait_selection::error_reporting::infer::need_type_info::TypeAnnotationNeeded;
 use rustc_trait_selection::solve;
 use tracing::{debug, instrument};
@@ -56,7 +56,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 let item_hir_id = self.tcx.local_def_id_to_hir_id(item_def_id);
                 wbcx.visit_node_id(body.value.span, item_hir_id);
             }
-            hir::BodyOwnerKind::Closure | hir::BodyOwnerKind::Fn => (),
+            hir::BodyOwnerKind::Contract | hir::BodyOwnerKind::Closure | hir::BodyOwnerKind::Fn => {
+                ()
+            }
         }
         wbcx.visit_body(body);
         wbcx.visit_min_capture_map();
