@@ -1,3 +1,5 @@
+use std::panic::Location;
+
 use crate::stable_hasher::{HashStable, StableHasher};
 use crate::sync::{MappedReadGuard, ReadGuard, RwLock};
 
@@ -24,18 +26,25 @@ use crate::sync::{MappedReadGuard, ReadGuard, RwLock};
 #[derive(Debug)]
 pub struct Steal<T> {
     value: RwLock<Option<T>>,
+    prev_stolen_by: RwLock<Option<&'static Location<'static>>>,
 }
 
 impl<T> Steal<T> {
     pub fn new(value: T) -> Self {
-        Steal { value: RwLock::new(Some(value)) }
+        Steal { value: RwLock::new(Some(value)), prev_stolen_by: RwLock::new(None) }
     }
 
     #[track_caller]
     pub fn borrow(&self) -> MappedReadGuard<'_, T> {
         let borrow = self.value.borrow();
         if borrow.is_none() {
-            panic!("attempted to read from stolen value: {}", std::any::type_name::<T>());
+            panic!(
+                "attempted to read from stolen value: {}, last stolen by: {}",
+                std::any::type_name::<T>(),
+                self.prev_stolen_by
+                    .read()
+                    .expect("if its stolen then prev_stolen_by should be set"),
+            );
         }
         ReadGuard::map(borrow, |opt| opt.as_ref().unwrap())
     }
@@ -47,9 +56,24 @@ impl<T> Steal<T> {
 
     #[track_caller]
     pub fn steal(&self) -> T {
+        let caller = Location::caller();
+        tracing::debug!(
+            "starting steal of {T} *{ADDR:x} initiated by {caller}",
+            T = std::any::type_name::<T>(),
+            ADDR = (self as *const _ as u64),
+        );
         let value_ref = &mut *self.value.try_write().expect("stealing value which is locked");
         let value = value_ref.take();
-        value.expect("attempt to steal from stolen value")
+        let mut prev_stolen_by = self.prev_stolen_by.write();
+        let ret = value.unwrap_or_else(|| {
+            panic!(
+                "attempt to steal from stolen value, last stolen by: {}",
+                prev_stolen_by.expect("if its stolen then prev_stolen_by should be set")
+            );
+        });
+        assert_eq!(*prev_stolen_by, None);
+        *prev_stolen_by = Some(caller);
+        ret
     }
 
     /// Writers of rustc drivers often encounter stealing issues. This function makes it possible to
