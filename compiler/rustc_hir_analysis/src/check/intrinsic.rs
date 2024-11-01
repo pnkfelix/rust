@@ -2,7 +2,7 @@
 //! intrinsics that the compiler exposes.
 
 use rustc_errors::codes::*;
-use rustc_errors::{DiagMessage, struct_span_code_err};
+use rustc_errors::{struct_span_code_err, DiagMessage};
 use rustc_hir as hir;
 use rustc_middle::bug;
 use rustc_middle::traits::{ObligationCause, ObligationCauseCode};
@@ -145,6 +145,10 @@ pub fn intrinsic_operation_unsafety(tcx: TyCtxt<'_>, intrinsic_id: LocalDefId) -
         | sym::fmul_algebraic
         | sym::fdiv_algebraic
         | sym::frem_algebraic
+        | sym::contract_check_requires
+        | sym::contract_check_ensures
+        | sym::contract_check_requires_2
+        | sym::contract_check_ensures_2
         | sym::const_eval_select => hir::Safety::Safe,
         _ => hir::Safety::Unsafe,
     };
@@ -164,15 +168,24 @@ pub fn intrinsic_operation_unsafety(tcx: TyCtxt<'_>, intrinsic_id: LocalDefId) -
 
 /// Remember to add all intrinsics here, in `compiler/rustc_codegen_llvm/src/intrinsic.rs`,
 /// and in `library/core/src/intrinsics.rs`.
-pub fn check_intrinsic_type(
-    tcx: TyCtxt<'_>,
+pub fn check_intrinsic_type<'tcx>(
+    tcx: TyCtxt<'tcx>,
     intrinsic_id: LocalDefId,
     span: Span,
     intrinsic_name: Symbol,
     abi: Abi,
 ) {
+    // Note: generics_of will include the early-bound lifetimes
+    // (e.g. lifetimes that are referenced in where-clauses), but not
+    // late-bound lifetimes.
     let generics = tcx.generics_of(intrinsic_id);
-    let param = |n| {
+
+    let ref_early_lt_param = #[track_caller] |n: u32, payload_ty: Ty<'tcx>| {
+	let p = generics.param_at(n as usize, tcx);
+	let r = ty::Region::new_early_param(tcx, p.to_early_bound_region_data());
+        Ty::new_imm_ref(tcx, r, payload_ty)
+    };
+    let param = #[track_caller] |n| {
         if let &ty::GenericParamDef { name, kind: ty::GenericParamDefKind::Type { .. }, .. } =
             generics.param_at(n as usize, tcx)
         {
@@ -226,6 +239,43 @@ pub fn check_intrinsic_type(
             }
         };
         (n_tps, 0, 0, inputs, output, hir::Safety::Unsafe)
+    } else if name_str.starts_with("contract_check") {
+	let (n_tps, n_lts, inputs, output) = match intrinsic_name {
+            // `requires::<C>(c)`, where c is `|| pred()`
+            sym::contract_check_requires => (1, 0, vec![param(0)], tcx.types.unit),
+            // `requires2::<Old, C, O>(c, o)`, where c is `|| pred()` and o is `|| make_old()`
+            sym::contract_check_requires_2 => (3, 0, vec![param(1), param(2)], param(0)),
+            // `ensures::<Ret, C>(ret, c)` where ret: &Ret and c is `|ret| pred(ret)`.
+            sym::contract_check_ensures => {
+		// variant with late bound lifetime
+                let br = ty::BoundRegion { var: ty::BoundVar::ZERO, kind: ty::BrAnon };
+		let ref_ret = Ty::new_imm_ref(tcx, ty::Region::new_bound(tcx, ty::INNERMOST, br), param(0));
+                (2, 0, vec![ref_ret, param(1)], tcx.types.unit)
+            }
+            // `ensures::<'a, Ret, C>(ret, c)` where ret: &'a Ret and c is `|ret| pred(ret)`.
+	    sym::contract_check_ensures_lt => {
+		// variant with early bound lifetime
+                let ref_ret = ref_early_lt_param(0, param(1));
+                (2, 1, vec![ref_ret, param(2)], tcx.types.unit)
+            }
+            // `ensures2::<'r, Old, Ret, C>(old, ret, c)` where old: Old, ret: &'r Ret and c is `|old, ret| pred(old, ret)`
+            sym::contract_check_ensures_2 => {
+		// variant with late bound lifetime
+                let br = ty::BoundRegion { var: ty::BoundVar::ZERO, kind: ty::BrAnon };
+		let ref_ret = Ty::new_imm_ref(tcx, ty::Region::new_bound(tcx, ty::INNERMOST, br), param(1));
+                (3, 0, vec![param(0), ref_ret, param(2)], tcx.types.unit)
+            }
+            sym::contract_check_ensures_lt_2 => {
+		// variant with early bound lifetime
+                let ref_ret = ref_early_lt_param(0, param(2));
+                (3, 1, vec![param(1), ref_ret, param(3)], tcx.types.unit)
+            }
+            other => {
+                tcx.dcx().emit_err(UnrecognizedIntrinsicFunction { span, name: other });
+                return;
+            }
+        };
+        (n_tps, n_lts, 0, inputs, output, hir::Safety::Safe)
     } else {
         let safety = intrinsic_operation_unsafety(tcx, intrinsic_id);
         let (n_tps, n_cts, inputs, output) = match intrinsic_name {

@@ -3048,6 +3048,54 @@ pub const unsafe fn const_deallocate(_ptr: *mut u8, _size: usize, _align: usize)
     // Runtime NOP
 }
 
+#[cfg(not(bootstrap))]
+#[rustc_nounwind]
+#[unstable(feature = "rustc_contracts", issue = "none" /* compiler-team#759 */)]
+#[rustc_intrinsic]
+pub fn contract_check_requires<C: FnOnce() -> bool>(c: C) {
+    c();
+}
+
+#[cfg(not(bootstrap))]
+#[rustc_nounwind]
+#[unstable(feature = "rustc_contracts", issue = "none" /* compiler-team#759 */)]
+#[rustc_intrinsic]
+pub fn contract_check_requires_2<Old, C: FnOnce() -> bool, O: FnOnce() -> Old>(c: C, o: O) -> Old {
+    c(); o()
+}
+
+#[cfg(not(bootstrap))]
+#[rustc_nounwind]
+#[unstable(feature = "rustc_contracts", issue = "none" /* compiler-team#759 */)]
+#[rustc_intrinsic]
+pub fn contract_check_ensures<Ret, C: for<'a> FnOnce(&'a Ret) -> bool>(ret: &Ret, c: C) {
+    c(ret);
+}
+
+#[cfg(not(bootstrap))]
+#[rustc_nounwind]
+#[unstable(feature = "rustc_contracts", issue = "none" /* compiler-team#759 */)]
+#[rustc_intrinsic]
+pub fn contract_check_ensures_lt<'r, Ret, C: FnOnce(&'r Ret) -> bool>(ret: &'r Ret, c: C) {
+    c(ret);
+}
+
+#[cfg(not(bootstrap))]
+#[rustc_nounwind]
+#[unstable(feature = "rustc_contracts", issue = "none" /* compiler-team#759 */)]
+#[rustc_intrinsic]
+pub fn contract_check_ensures_2<Old, Ret, C: for<'a> FnOnce(Old, &'a Ret) -> bool>(old: Old, ret: &Ret, c: C) {
+    c(old, ret);
+}
+
+#[cfg(not(bootstrap))]
+#[rustc_nounwind]
+#[unstable(feature = "rustc_contracts", issue = "none" /* compiler-team#759 */)]
+#[rustc_intrinsic]
+pub fn contract_check_ensures_lt_2<'r, Old, Ret, C: FnOnce(Old, &'r Ret) -> bool>(old: Old, ret: &'r Ret, c: C) {
+    c(old, ret);
+}
+
 /// The intrinsic will return the size stored in that vtable.
 ///
 /// # Safety
