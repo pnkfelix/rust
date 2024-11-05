@@ -386,7 +386,7 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
         let indent = self.block_indent;
         let block;
         let rewrite = match fk {
-            visit::FnKind::Fn(_, ident, _, _, _, Some(ref b)) => {
+            visit::FnKind::Fn(_, ident, _, _, _, _, Some(ref b)) => {
                 block = b;
                 self.rewrite_fn_before_block(
                     indent,
@@ -538,6 +538,7 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
                         defaultness,
                         ref sig,
                         ref generics,
+			ref contract,
                         ref body,
                     } = **fn_kind;
                     if let Some(ref body) = body {
@@ -553,6 +554,7 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
                                 sig,
                                 &item.vis,
                                 generics,
+				contract.as_deref(),
                                 Some(body),
                             ),
                             &sig.decl,
@@ -646,13 +648,14 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
                     defaultness,
                     ref sig,
                     ref generics,
+		    ref contract,
                     ref body,
                 } = **fn_kind;
                 if let Some(ref body) = body {
                     let inner_attrs = inner_attributes(&ai.attrs);
                     let fn_ctxt = visit::FnCtxt::Assoc(assoc_ctxt);
                     self.visit_fn(
-                        visit::FnKind::Fn(fn_ctxt, ai.ident, sig, &ai.vis, generics, Some(body)),
+                        visit::FnKind::Fn(fn_ctxt, ai.ident, sig, &ai.vis, generics, contract.as_deref(), Some(body)),
                         &sig.decl,
                         ai.span,
                         defaultness,

@@ -295,6 +295,36 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// Parses an optional fn contract (`requires(WWW) captures(X = YYY) ensures(ZZZ)`)
+    pub(super) fn parse_contract(&mut self) -> PResult<'a, Option<rustc_ast::ptr::P<ast::FnContract>>> {
+	let pre_cond = if self.eat_keyword(kw::RustcContractRequires) {
+	    Some(self.parse_expr()?)
+	} else {
+	    None
+	};
+	let captures = if self.eat_keyword(kw::RustcContractCaptures) {
+	    let ident = self.parse_ident()?;
+	    if self.eat(&token::Eq) {
+		vec![(ident, self.parse_expr()?)]
+	    } else {
+		// FIXME: replace this with a proper parse error.
+		panic!("Malformed captures clause on contract");
+	    }
+	} else {
+	    vec![]
+	};
+	let post_cond = if self.eat_keyword(kw::RustcContractEnsures) {
+	    Some(self.parse_expr()?)
+	} else {
+	    None
+	};
+	if pre_cond.is_none() && captures.is_empty() && post_cond.is_none() {
+	    Ok(None)
+	} else {
+	    Ok(Some(rustc_ast::ptr::P(ast::FnContract { requires: pre_cond, captures, ensures: post_cond })))
+	}
+    }
+
     /// Parses an optional where-clause.
     ///
     /// ```ignore (only-for-syntax-highlight)

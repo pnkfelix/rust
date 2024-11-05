@@ -291,7 +291,8 @@ pub fn eq_block(l: &Block, r: &Block) -> bool {
 }
 
 pub fn eq_stmt(l: &Stmt, r: &Stmt) -> bool {
-    use StmtKind::*;
+    
+use StmtKind::*;
     match (&l.kind, &r.kind) {
         (Let(l), Let(r)) => {
             eq_pat(&l.pat, &r.pat)
@@ -362,18 +363,21 @@ pub fn eq_item_kind(l: &ItemKind, r: &ItemKind) -> bool {
                 defaultness: ld,
                 sig: lf,
                 generics: lg,
+		contract: lc,
                 body: lb,
             }),
             Fn(box ast::Fn {
                 defaultness: rd,
                 sig: rf,
                 generics: rg,
+		contract: rc,
                 body: rb,
             }),
         ) => {
             eq_defaultness(*ld, *rd)
                 && eq_fn_sig(lf, rf)
                 && eq_generics(lg, rg)
+		&& both(lc.as_ref(), rc.as_ref(), |l, r| eq_contract(l, r))
                 && both(lb.as_ref(), rb.as_ref(), |l, r| eq_block(l, r))
         },
         (Mod(lu, lmk), Mod(ru, rmk)) => {
@@ -497,18 +501,21 @@ pub fn eq_foreign_item_kind(l: &ForeignItemKind, r: &ForeignItemKind) -> bool {
                 defaultness: ld,
                 sig: lf,
                 generics: lg,
+		contract: lc,
                 body: lb,
             }),
             Fn(box ast::Fn {
                 defaultness: rd,
                 sig: rf,
                 generics: rg,
+		contract: rc,
                 body: rb,
             }),
         ) => {
             eq_defaultness(*ld, *rd)
                 && eq_fn_sig(lf, rf)
                 && eq_generics(lg, rg)
+		&& both(lc.as_ref(), rc.as_ref(), |l, r| eq_contract(l, r))
                 && both(lb.as_ref(), rb.as_ref(), |l, r| eq_block(l, r))
         },
         (
@@ -559,18 +566,21 @@ pub fn eq_assoc_item_kind(l: &AssocItemKind, r: &AssocItemKind) -> bool {
                 defaultness: ld,
                 sig: lf,
                 generics: lg,
+		contract: lc,
                 body: lb,
             }),
             Fn(box ast::Fn {
                 defaultness: rd,
                 sig: rf,
                 generics: rg,
+		contract: rc,
                 body: rb,
             }),
         ) => {
             eq_defaultness(*ld, *rd)
                 && eq_fn_sig(lf, rf)
                 && eq_generics(lg, rg)
+		&& both(lc.as_ref(), rc.as_ref(), |l, r| eq_contract(l, r))
                 && both(lb.as_ref(), rb.as_ref(), |l, r| eq_block(l, r))
         },
         (
@@ -675,6 +685,34 @@ pub fn eq_where_predicate(l: &WherePredicate, r: &WherePredicate) -> bool {
         (EqPredicate(l), EqPredicate(r)) => eq_ty(&l.lhs_ty, &r.lhs_ty) && eq_ty(&l.rhs_ty, &r.rhs_ty),
         _ => false,
     }
+}
+
+pub fn eq_contract(l: &FnContract, r: &FnContract) -> bool {
+    let req_cmp = match (&l.requires, &r.requires) {
+        (Some(l_expr), Some(r_expr)) => eq_expr(l_expr, r_expr),
+        (None, None) => true,
+        _ => return false,
+    };
+    { 
+	let mut lcap = l.captures.iter();
+	let mut rcap = r.captures.iter();
+	// if control breaks out of loop, then l and r have equal captures.
+	loop {
+	    let (li, le, ri, re) = match (lcap.next(), rcap.next()) {
+		(None, None) => break,
+		(Some((li, le)), Some((ri, re))) => (li, le, ri, re),
+		(Some(_), None) | (None, Some(_)) => return false,
+	    };
+	    if li != ri { return false; }
+	    if !eq_expr(le, re) { return false; }
+	}
+    };
+    let ens_cmp = match (&l.ensures, &r.ensures) {
+        (Some(l_expr), Some(r_expr)) => eq_expr(l_expr, r_expr),
+        (None, None) => true,
+        _ => return false,
+    };
+    req_cmp && ens_cmp
 }
 
 pub fn eq_use_tree(l: &UseTree, r: &UseTree) -> bool {

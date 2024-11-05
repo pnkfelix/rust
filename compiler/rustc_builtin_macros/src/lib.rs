@@ -36,6 +36,7 @@ mod compile_error;
 mod concat;
 mod concat_bytes;
 mod concat_idents;
+mod contracts;
 mod derive;
 mod deriving;
 mod edition_panic;
@@ -135,4 +136,10 @@ pub fn register_builtin_macros(resolver: &mut dyn ResolverExpand) {
 
     let client = proc_macro::bridge::client::Client::expand1(proc_macro::quote);
     register(sym::quote, SyntaxExtensionKind::Bang(Box::new(BangProcMacro { client })));
+    let requires = SyntaxExtensionKind::Attr(Box::new(contracts::ExpandRequires));
+    register(sym::contracts_requires, requires);
+    let captures = SyntaxExtensionKind::Attr(Box::new(contracts::ExpandCaptures));
+    register(sym::contracts_captures, captures);
+    let ensures = SyntaxExtensionKind::Attr(Box::new(contracts::ExpandEnsures));
+    register(sym::contracts_ensures, ensures);
 }

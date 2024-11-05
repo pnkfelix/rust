@@ -1043,6 +1043,7 @@ impl<'a> MethodDef<'a> {
                 defaultness,
                 sig,
                 generics: fn_generics,
+		contract: None,
                 body: Some(body_block),
             })),
             tokens: None,
