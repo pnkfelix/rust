@@ -270,6 +270,15 @@ pub mod assert_matches {
     pub use crate::macros::{assert_matches, debug_assert_matches};
 }
 
+#[cfg(not(bootstrap))]
+/// Unstable module containin the unstable contracts attribute macros.
+#[unstable(feature = "rustc_contracts", issue = "none")]
+pub mod contracts {
+    pub use crate::macros::builtin::contracts_ensures;
+    pub use crate::macros::builtin::contracts_captures;
+    pub use crate::macros::builtin::contracts_requires;
+}
+
 #[unstable(feature = "cfg_match", issue = "115585")]
 pub use crate::macros::cfg_match;
 

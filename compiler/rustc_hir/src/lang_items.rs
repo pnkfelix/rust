@@ -423,6 +423,10 @@ language_item_table! {
     EffectsIntersectionOutput, sym::EffectsIntersectionOutput, effects_intersection_output, Target::AssocTy, GenericRequirement::None;
     EffectsCompat,           sym::EffectsCompat,       effects_compat,             Target::Trait,          GenericRequirement::Exact(1);
     EffectsTyCompat,         sym::EffectsTyCompat,     effects_ty_compat,          Target::Trait,          GenericRequirement::Exact(1);
+
+    ContractCheckCaptures,   sym::contract_check_captures, contract_check_captures_fn, Target::Fn, GenericRequirement::None;
+    ContractCheckEnsures,    sym::contract_check_ensures,  contract_check_ensures_fn,  Target::Fn, GenericRequirement::None;
+    ContractCheckRequires,   sym::contract_check_requires, contract_check_requires_fn, Target::Fn, GenericRequirement::None;
 }
 
 pub enum GenericRequirement {

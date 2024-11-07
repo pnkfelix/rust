@@ -653,6 +653,7 @@ symbols! {
         const_try,
         constant,
         constructor,
+        contract_check_captures, // FIXME we do not need this, do we?
         contract_check_ensures,
         contract_check_ensures_2,
         contract_check_ensures_lt,

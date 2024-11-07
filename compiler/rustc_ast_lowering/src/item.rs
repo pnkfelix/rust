@@ -207,8 +207,50 @@ impl<'hir> LoweringContext<'_, 'hir> {
                 sig: FnSig { decl, header, span: fn_sig_span },
                 generics,
                 body,
+                contract: _contract,
                 ..
             }) => {
+		// `fn foo(ARGS) -> RET requires(PRE) captures(o = OLD) ensures(|ret| POST) { ... }`
+		//
+		// ==>
+		//
+		// fn foo_with_contract(ARGS) -> RET {
+		//     check!(|| PRE); let o = OLD; let r = foo(ARGS); check!((|ret| POST)(&r)); r
+		// }
+		// fn foo(ARGS) -> RET { ... }
+		let _contract_id = _contract.as_ref().map(|contract| {
+		    self.with_new_scopes(*fn_sig_span, |this| {
+			let lit_true = |this: &mut LoweringContext<'_, 'hir>| {
+			    this.expr(*fn_sig_span, hir::ExprKind::Lit(this.arena.alloc(hir::Lit {
+				span: *fn_sig_span,
+				node: ast::LitKind::Bool(true),
+			    })))
+			};
+			let req = if let Some(req) = &contract.requires {
+			    this.lower_expr_mut(req)
+			} else {
+			    lit_true(this)
+			};
+			let _precond = this.expr_call_lang_item_fn_mut(
+			    req.span,
+			    hir::LangItem::ContractCheckRequires,
+			    arena_vec![this; req], // FIXME: needs to build closure around `req`
+			);
+
+			// FIXME: need to construct `let o = OLD` and the inner call still.
+
+			let ens = if let Some(ens) = &contract.ensures {
+			    this.lower_expr_mut(ens)
+			} else {
+			    lit_true(this) // FIXME: needs to build closure of `|old, ret| true` instead
+			};
+			let _postcond = this.expr_call_lang_item_fn_mut(
+			    ens.span,
+			    hir::LangItem::ContractCheckEnsures,
+			    arena_vec![self; ens],
+			);
+		    })
+		});
                 self.with_new_scopes(*fn_sig_span, |this| {
                     // Note: we don't need to change the return type from `T` to
                     // `impl Future<Output = T>` here because lower_body
