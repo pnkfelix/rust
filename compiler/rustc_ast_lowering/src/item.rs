@@ -210,48 +210,156 @@ impl<'hir> LoweringContext<'_, 'hir> {
                 contract: _contract,
                 ..
             }) => {
-		// `fn foo(ARGS) -> RET requires(PRE) captures(o = OLD) ensures(|ret| POST) { ... }`
+
+		// `fn foo<G, ...>(a: A, ...) -> RET requires(PRE) captures(o = OLD) ensures(|ret| POST) { ... }`
 		//
 		// ==>
 		//
-		// fn foo_with_contract(ARGS) -> RET {
-		//     check!(|| PRE); let o = OLD; let r = foo(ARGS); check!((|ret| POST)(&r)); r
+		// fn foo_with_contract<G, ...>(a: A, ...) -> RET {
+		//     check_requires(|| PRE); let o = OLD; let r = foo::<G, ...>(a, ...); check_ensures((|ret| POST)(&r)); r
 		// }
-		// fn foo(ARGS) -> RET { ... }
-		let _contract_id = _contract.as_ref().map(|contract| {
-		    self.with_new_scopes(*fn_sig_span, |this| {
-			let lit_true = |this: &mut LoweringContext<'_, 'hir>| {
+		// fn foo<G, ...>(a: A, ...) -> RET { ... }
+		let _contract_ids = _contract
+		    .as_ref()
+		    .map(|_contract| {
+			let contract_node_id = self.next_node_id();
+			let contract_def_id = self.create_def(
+			    self.local_def_id(id),
+			    contract_node_id,
+			    kw::Empty,
+			    DefKind::Fn,
+			    *fn_sig_span,
+			);
+			let _lit_true = |this: &mut LoweringContext<'_, 'hir>| {
 			    this.expr(*fn_sig_span, hir::ExprKind::Lit(this.arena.alloc(hir::Lit {
 				span: *fn_sig_span,
 				node: ast::LitKind::Bool(true),
 			    })))
 			};
-			let req = if let Some(req) = &contract.requires {
-			    this.lower_expr_mut(req)
-			} else {
-			    lit_true(this)
+			let lit_unit = |this: &mut LoweringContext<'_, 'hir>| {
+			    this.expr(*fn_sig_span, hir::ExprKind::Tup(&[]))
 			};
-			let _precond = this.expr_call_lang_item_fn_mut(
-			    req.span,
-			    hir::LangItem::ContractCheckRequires,
-			    arena_vec![this; req], // FIXME: needs to build closure around `req`
-			);
 
-			// FIXME: need to construct `let o = OLD` and the inner call still.
-
-			let ens = if let Some(ens) = &contract.ensures {
-			    this.lower_expr_mut(ens)
-			} else {
-			    lit_true(this) // FIXME: needs to build closure of `|old, ret| true` instead
+			let contract_ast_fn_decl = {
+			    let inputs = decl.inputs.clone();
+			    FnDecl {
+				inputs,
+				// FIXME: at some point the wrapper should call
+				// to the wrapped function (perhaps passed as
+				// a parameter) and return its result. But
+				// lets hold off on that for now.
+				output: FnRetTy::Default(*fn_sig_span),
+			    }
 			};
-			let _postcond = this.expr_call_lang_item_fn_mut(
-			    ens.span,
-			    hir::LangItem::ContractCheckEnsures,
-			    arena_vec![self; ens],
+
+			let contract_hir_fn_decl = self.lower_fn_decl(
+			    &contract_ast_fn_decl,
+			    id,
+			    *fn_sig_span,
+			    FnDeclKind::Fn,
+			    None,
 			);
-		    })
+								      
+			let contract_body_id = self.lower_fn_body(&contract_ast_fn_decl, |this| {
+			    // rustc_contract_requires(|| PRECOND);
+			    // let o = OLD;
+			    // let r = the_real_thing();
+			    // rustc_contract_ensures(o, r, |o, r| POSTCOND);
+			    // r
+
+			    // lit_true(this)
+			    lit_unit(this)
+			});
+			(contract_def_id, contract_hir_fn_decl, contract_body_id)
+		    });
+
+/*
+		let _contract_id = _contract.as_ref().map(|contract| {
+		    let body_id = self.with_new_scopes(*fn_sig_span, |this| {
+			this.lower_fn_body(decl, |this| {
+			    let lit_true = |this: &mut LoweringContext<'_, 'hir>| {
+				this.expr(*fn_sig_span, hir::ExprKind::Lit(this.arena.alloc(hir::Lit {
+				    span: *fn_sig_span,
+				    node: ast::LitKind::Bool(true),
+				})))
+			    };
+			    let req = if let Some(req) = &contract.requires {
+				this.lower_expr_mut(req)
+			    } else {
+				lit_true(this)
+			    };
+			    let _precond = this.arena.alloc(this.expr_call_lang_item_fn_mut(
+				req.span,
+				hir::LangItem::ContractCheckRequires,
+				arena_vec![this; req], // FIXME: needs to build closure around `req`
+			    ));
+
+			    // FIXME: need to construct `let o = OLD` and the inner call still.
+
+			    // FIXME: need to construct `let r = foo::<G, ...>(a, ...);`
+
+			    let _postcond = {
+				let ens = if let Some(ens) = &contract.ensures {
+				    this.lower_expr_mut(ens)
+				} else {
+				    lit_true(this) // FIXME: needs to build closure of `|old, ret| true` instead
+				};
+				this.arena.alloc(this.expr_call_lang_item_fn_mut(
+				    ens.span,
+				    hir::LangItem::ContractCheckEnsures,
+				    arena_vec![self; ens],
+				))
+			    };
+
+			    let contract_span = Span::new(
+				std::cmp::min(_precond.span.lo(), _postcond.span.lo()),
+				std::cmp::max(_precond.span.hi(), _postcond.span.hi()),
+				// FIXME: should this computed/inherited from the
+				// contexts attached to precond and postcond?
+				rustc_span::SyntaxContext::root(),
+				None,
+			    );
+            
+			    tracing::debug!("_precond: {:?}", &_precond);
+			    tracing::debug!("_postcond: {:?}", &_postcond);
+			    tracing::debug!("contract_span: {:?}", &contract_span);
+			    let _precond_span = _precond.span;
+			    let _precond = hir::StmtKind::Expr(_precond);
+			    let _postcond_span = _postcond.span;
+			    let _postcond = hir::StmtKind::Expr(_postcond);
+
+			    let stmts =
+				arena_vec![
+				    this;
+				    this.stmt(_precond_span, _precond),
+				    this.stmt(_postcond_span, _postcond)
+				];
+
+			    let block = this.block_all(
+				contract_span,
+				stmts,
+				None, // FIXME: this needs to be returning the let-bound `r` that holds the value returned by the wrapped call.
+			    );
+			    let block = hir::ExprKind::Block(block, None);
+			    let block = this.expr(contract_span, block);
+			    block
+			})
+			    
+			// let contract_body: hir::Body = unimplemented!();
+
+			// this.lower_maybe_coroutine_body(*fn_sig_span, , contract_span, fn_id, decl.clone(), None, body)
+
+		    });
+
+		    tracing::debug!("body_id: {:?}", body_id);
+		    body_id
 		});
-                self.with_new_scopes(*fn_sig_span, |this| {
+		 */
+
+		tracing::debug!("_contract_ids: {:?}", _contract_ids);
+
+	    
+                let fn_item = self.with_new_scopes(*fn_sig_span, |this| {
                     // Note: we don't need to change the return type from `T` to
                     // `impl Future<Output = T>` here because lower_body
                     // only cares about the input argument patterns in the function
@@ -277,14 +385,18 @@ impl<'hir> LoweringContext<'_, 'hir> {
                                 coroutine_kind,
                             )
                         });
+		    let contract_info: Option<hir::FnContractInfo<'_>> = _contract_ids.map(|(_, wrapper_decl, wrapper_body_id)| hir::FnContractInfo { wrapper_decl, wrapper_body_id } );
                     let sig = hir::FnSig {
                         decl,
                         header: this.lower_fn_header(*header, hir::Safety::Safe),
                         span: this.lower_span(*fn_sig_span),
+			contract_info,
                     };
                     hir::ItemKind::Fn(sig, generics, body_id)
-                })
-            }
+                });
+
+		fn_item
+	    }
             ItemKind::Mod(_, mod_kind) => match mod_kind {
                 ModKind::Loaded(items, _, spans) => {
                     hir::ItemKind::Mod(self.lower_mod(items, spans))
@@ -295,7 +407,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                 abi: fm.abi.map_or(abi::Abi::FALLBACK, |abi| self.lower_abi(abi)),
                 items: self
                     .arena
-                    .alloc_from_iter(fm.items.iter().map(|x| self.lower_foreign_item_ref(x))),
+		    .alloc_from_iter(fm.items.iter().map(|x| self.lower_foreign_item_ref(x))),
             },
             ItemKind::GlobalAsm(asm) => hir::ItemKind::GlobalAsm(self.lower_inline_asm(span, asm)),
             ItemKind::TyAlias(box TyAlias { generics, where_clauses, ty, .. }) => {
@@ -723,7 +835,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                     let header = self.lower_fn_header(sig.header, hir::Safety::Unsafe);
 
                     hir::ForeignItemKind::Fn(
-                        hir::FnSig { header, decl, span: self.lower_span(sig.span) },
+                        hir::FnSig { header, decl, span: self.lower_span(sig.span), opt_contract_id: None },
                         fn_args,
                         generics,
                     )
@@ -1424,7 +1536,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
             self.lower_generics(generics, constness, kind == FnDeclKind::Impl, id, itctx, |this| {
                 this.lower_fn_decl(&sig.decl, id, sig.span, kind, coroutine_kind)
             });
-        (generics, hir::FnSig { header, decl, span: self.lower_span(sig.span) })
+        (generics, hir::FnSig { header, decl, span: self.lower_span(sig.span), opt_contract_id: None })
     }
 
     pub(super) fn lower_fn_header(

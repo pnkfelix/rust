@@ -148,7 +148,7 @@ fn typeck_with_fallback<'tcx>(
     }
     let mut fcx = FnCtxt::new(&root_ctxt, param_env, def_id);
 
-    if let Some(hir::FnSig { header, decl, .. }) = node.fn_sig() {
+    if let Some(hir::FnSig { header, decl, opt_contract_id, .. }) = node.fn_sig() {
         let fn_sig = if decl.output.get_infer_ret_ty().is_some() {
             fcx.lowerer().lower_fn_ty(id, header.safety, header.abi, decl, None, None)
         } else {
@@ -160,6 +160,13 @@ fn typeck_with_fallback<'tcx>(
         // Compute the function signature from point of view of inside the fn.
         let fn_sig = tcx.liberate_late_bound_regions(def_id.to_def_id(), fn_sig);
         let fn_sig = fcx.normalize(body.value.span, fn_sig);
+
+	if let Some(contract_id) = opt_contract_id {
+	    let contract_body = tcx.hir().body(*contract_id);
+	    // FIXME probably need to create a distinct fn_sig.
+	    check_fn(&mut fcx, fn_sig, None, decl, def_id, contract_body, tcx.features().unsized_fn_params);
+	}
+	
 
         check_fn(&mut fcx, fn_sig, None, decl, def_id, body, tcx.features().unsized_fn_params);
     } else {

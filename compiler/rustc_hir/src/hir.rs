@@ -2306,6 +2306,12 @@ pub struct MutTy<'hir> {
     pub mutbl: Mutability,
 }
 
+#[derive(Debug, Clone, Copy, HashStable_Generic)]
+pub struct FnContractInfo<'hir> {
+    pub wrapper_decl: &'hir FnDecl<'hir>,
+    pub wrapper_body_id: BodyId,
+}
+
 /// Represents a function's signature in a trait declaration,
 /// trait implementation, or a free function.
 #[derive(Debug, Clone, Copy, HashStable_Generic)]
@@ -2313,6 +2319,8 @@ pub struct FnSig<'hir> {
     pub header: FnHeader,
     pub decl: &'hir FnDecl<'hir>,
     pub span: Span,
+    // FIXME: turn this into a reference to save space
+    pub contract_info: Option<FnContractInfo<'hir>>,
 }
 
 // The bodies for items are stored "out of line", in a separate
@@ -4082,16 +4090,16 @@ mod size_asserts {
     static_assert_size!(Expr<'_>, 64);
     static_assert_size!(ExprKind<'_>, 48);
     static_assert_size!(FnDecl<'_>, 40);
-    static_assert_size!(ForeignItem<'_>, 88);
-    static_assert_size!(ForeignItemKind<'_>, 56);
+    static_assert_size!(ForeignItem<'_>, 104);
+    static_assert_size!(ForeignItemKind<'_>, 72);
     static_assert_size!(GenericArg<'_>, 16);
     static_assert_size!(GenericBound<'_>, 48);
     static_assert_size!(Generics<'_>, 56);
     static_assert_size!(Impl<'_>, 80);
-    static_assert_size!(ImplItem<'_>, 88);
-    static_assert_size!(ImplItemKind<'_>, 40);
-    static_assert_size!(Item<'_>, 88);
-    static_assert_size!(ItemKind<'_>, 56);
+    static_assert_size!(ImplItem<'_>, 104);
+    static_assert_size!(ImplItemKind<'_>, 56);
+    static_assert_size!(Item<'_>, 96);
+    static_assert_size!(ItemKind<'_>, 64);
     static_assert_size!(LetStmt<'_>, 64);
     static_assert_size!(Param<'_>, 32);
     static_assert_size!(Pat<'_>, 72);
@@ -4102,8 +4110,8 @@ mod size_asserts {
     static_assert_size!(Res, 12);
     static_assert_size!(Stmt<'_>, 32);
     static_assert_size!(StmtKind<'_>, 16);
-    static_assert_size!(TraitItem<'_>, 88);
-    static_assert_size!(TraitItemKind<'_>, 48);
+    static_assert_size!(TraitItem<'_>, 104);
+    static_assert_size!(TraitItemKind<'_>, 64);
     static_assert_size!(Ty<'_>, 48);
     static_assert_size!(TyKind<'_>, 32);
     // tidy-alphabetical-end

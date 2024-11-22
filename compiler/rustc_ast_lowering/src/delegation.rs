@@ -205,7 +205,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                 abi: sig.abi,
             }
         };
-        hir::FnSig { decl, header, span }
+        hir::FnSig { decl, header, span, contract_info: None }
     }
 
     fn generate_param(&mut self, span: Span) -> (hir::Param<'hir>, NodeId) {
@@ -376,7 +376,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         });
 
         let header = self.generate_header_error();
-        let sig = hir::FnSig { decl, header, span };
+        let sig = hir::FnSig { decl, header, span, contract_info: None };
 
         let body_id = self.lower_body(|this| (&[], this.mk_expr(hir::ExprKind::Err(err), span)));
         DelegationResults { generics, body_id, sig }
