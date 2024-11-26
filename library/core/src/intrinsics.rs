@@ -3050,6 +3050,13 @@ pub const unsafe fn const_deallocate(_ptr: *mut u8, _size: usize, _align: usize)
 
 #[cfg(not(bootstrap))]
 #[unstable(feature = "rustc_contracts", issue = "none" /* compiler-team#759 */)]
+#[lang = "contract_check_requires"]
+pub fn lang_item_contract_check_requires<C: FnOnce() -> bool>(c: C) {
+    contract_check_requires(c)
+}
+
+#[cfg(not(bootstrap))]
+#[unstable(feature = "rustc_contracts", issue = "none" /* compiler-team#759 */)]
 #[rustc_intrinsic]
 pub fn contract_check_requires<C: FnOnce() -> bool>(c: C) {
     assert!(c());
@@ -3061,6 +3068,14 @@ pub fn contract_check_requires<C: FnOnce() -> bool>(c: C) {
 pub fn contract_check_requires_2<Old, C: FnOnce() -> bool, O: FnOnce() -> Old>(c: C, o: O) -> Old {
     assert!(c()); o()
 }
+
+#[cfg(not(bootstrap))]
+#[unstable(feature = "rustc_contracts", issue = "none" /* compiler-team#759 */)]
+#[lang = "contract_check_ensures"]
+pub fn lang_item_contract_check_ensures<Ret, C: for<'a> FnOnce(&'a Ret) -> bool>(ret: &Ret, c: C) {
+    contract_check_ensures(ret, c)
+}
+
 
 #[cfg(not(bootstrap))]
 #[unstable(feature = "rustc_contracts", issue = "none" /* compiler-team#759 */)]

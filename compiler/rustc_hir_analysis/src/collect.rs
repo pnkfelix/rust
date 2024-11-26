@@ -1338,7 +1338,7 @@ fn fn_sig(tcx: TyCtxt<'_>, def_id: LocalDefId) -> ty::EarlyBinder<'_, ty::PolyFn
         }
 
         TraitItem(hir::TraitItem {
-            kind: TraitItemKind::Fn(FnSig { header, decl, span: _, opt_contract_id: _ }, _),
+            kind: TraitItemKind::Fn(FnSig { header, decl, span: _ }, _),
             generics,
             ..
         }) => {

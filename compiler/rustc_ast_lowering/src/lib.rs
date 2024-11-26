@@ -105,6 +105,8 @@ struct LoweringContext<'a, 'hir> {
     /// Collect items that were created by lowering the current owner.
     children: Vec<(LocalDefId, hir::MaybeOwner<'hir>)>,
 
+    contract: Option<hir::FnContractLoweringInfo<'hir>>,
+    
     coroutine_kind: Option<hir::CoroutineKind>,
 
     /// When inside an `async` context, this is the `HirId` of the
@@ -175,6 +177,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             bodies: Vec::new(),
             attrs: SortedMap::default(),
             children: Vec::default(),
+	    contract: None,
             current_hir_id_owner: hir::CRATE_OWNER_ID,
             current_def_id_parent: CRATE_DEF_ID,
             item_local_id_counter: hir::ItemLocalId::ZERO,

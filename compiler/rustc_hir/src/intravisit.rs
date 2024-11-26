@@ -514,9 +514,6 @@ pub fn walk_item<'v, V: Visitor<'v>>(visitor: &mut V, item: &'v Item<'v>) -> V::
             try_visit!(visitor.visit_nested_body(body));
         }
         ItemKind::Fn(ref sig, ref generics, body_id) => {
-	    if let Some(contract_info) = sig.contract_info {
-		try_visit!(visitor.visit_nested_body(contract_info.wrapper_body_id));
-	    }
             try_visit!(visitor.visit_id(item.hir_id()));
             try_visit!(visitor.visit_fn(
                 FnKind::ItemFn(item.ident, generics, sig.header),

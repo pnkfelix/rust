@@ -210,7 +210,19 @@ impl<'hir> LoweringContext<'_, 'hir> {
                 contract: _contract,
                 ..
             }) => {
-
+		// `fn foo(...) -> RET requires(P) captures(o = O) ensures(|ret| Q) { ... [return E] ... }`
+		//
+		// ==>
+		//
+		// ```
+		// fn foo(...) -> RET {
+		//      check_requires(|| P);
+		//      let o = O;
+		//      let check_ret = |ret| Q;
+		//      { ... [{let r = E; check_ret(&r); return r}] ...}
+                // }
+		// ```
+		
 		// `fn foo<G, ...>(a: A, ...) -> RET requires(PRE) captures(o = OLD) ensures(|ret| POST) { ... }`
 		//
 		// ==>
@@ -219,6 +231,20 @@ impl<'hir> LoweringContext<'_, 'hir> {
 		//     check_requires(|| PRE); let o = OLD; let r = foo::<G, ...>(a, ...); check_ensures((|ret| POST)(&r)); r
 		// }
 		// fn foo<G, ...>(a: A, ...) -> RET { ... }
+		if let Some(contract) = _contract {
+		    assert!(self.contract.is_none());
+		    let requires = contract.requires.as_ref().map(|e| self.lower_expr(&*e));
+		    let captures: &[(&Ident, &hir::Expr<'hir>)] = self.arena.alloc_from_iter([]); // FIXME
+		    // let ensures = contract.ensures.as_ref().map(|e| self.lower_expr(&*e));
+		    self.contract.replace(hir::FnContractLoweringInfo {
+			requires,
+			captures,
+			ensures: None, // FIXME
+		    });
+		}
+
+		let _contract_ids: Option<(LocalDefId, &'hir hir::FnDecl<'hir>, hir::BodyId)> = None;
+		/*
 		let _contract_ids = _contract
 		    .as_ref()
 		    .map(|_contract| {
@@ -272,7 +298,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
 			});
 			(contract_def_id, contract_hir_fn_decl, contract_body_id)
 		    });
-
+*/
 /*
 		let _contract_id = _contract.as_ref().map(|contract| {
 		    let body_id = self.with_new_scopes(*fn_sig_span, |this| {
@@ -356,7 +382,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
 		});
 		 */
 
-		tracing::debug!("_contract_ids: {:?}", _contract_ids);
+//		tracing::debug!("_contract_ids: {:?}", _contract_ids);
 
 	    
                 let fn_item = self.with_new_scopes(*fn_sig_span, |this| {
@@ -385,12 +411,11 @@ impl<'hir> LoweringContext<'_, 'hir> {
                                 coroutine_kind,
                             )
                         });
-		    let contract_info: Option<hir::FnContractInfo<'_>> = _contract_ids.map(|(_, wrapper_decl, wrapper_body_id)| hir::FnContractInfo { wrapper_decl, wrapper_body_id } );
+		    let _contract_info: Option<hir::FnContractInfo<'_>> = _contract_ids.map(|(_, wrapper_decl, wrapper_body_id)| hir::FnContractInfo { wrapper_decl, wrapper_body_id } );
                     let sig = hir::FnSig {
                         decl,
                         header: this.lower_fn_header(*header, hir::Safety::Safe),
                         span: this.lower_span(*fn_sig_span),
-			contract_info,
                     };
                     hir::ItemKind::Fn(sig, generics, body_id)
                 });
@@ -835,7 +860,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                     let header = self.lower_fn_header(sig.header, hir::Safety::Unsafe);
 
                     hir::ForeignItemKind::Fn(
-                        hir::FnSig { header, decl, span: self.lower_span(sig.span), opt_contract_id: None },
+                        hir::FnSig { header, decl, span: self.lower_span(sig.span) },
                         fn_args,
                         generics,
                     )
@@ -1227,7 +1252,12 @@ impl<'hir> LoweringContext<'_, 'hir> {
         let prev_coroutine_kind = self.coroutine_kind.take();
         let task_context = self.task_context.take();
         let (parameters, result) = f(self);
-        let body_id = self.record_body(parameters, result);
+
+	
+        // let o = OLD;
+	// let postcond_closure = |r| { POSTCOND };
+
+	let body_id = self.record_body(parameters, result);
         self.task_context = task_context;
         self.coroutine_kind = prev_coroutine_kind;
         body_id
@@ -1250,10 +1280,32 @@ impl<'hir> LoweringContext<'_, 'hir> {
         body: impl FnOnce(&mut Self) -> hir::Expr<'hir>,
     ) -> hir::BodyId {
         self.lower_body(|this| {
-            (
-                this.arena.alloc_from_iter(decl.inputs.iter().map(|x| this.lower_param(x))),
-                body(this),
-            )
+	    let params =  this.arena.alloc_from_iter(decl.inputs.iter().map(|x| this.lower_param(x)));
+
+	    let contract = this.contract.take();
+	    let result = body(this);
+
+	    // rustc_contract_requires(PRECOND)
+	    let result: hir::Expr<'hir> = if let Some(_contract) = contract
+		&& let Some(req) = _contract.requires
+	    {
+		let precond = this.expr_call_lang_item_fn_mut(
+		    req.span,
+		    hir::LangItem::ContractCheckRequires,
+		    arena_vec![this; req.clone()], // FIXME: needs to build closure around `req`
+		);
+		let precond = this.stmt_expr(req.span, precond);
+		let block = this.block_all(
+		    req.span,
+		    arena_vec![this; precond],
+		    Some(this.arena.alloc(result))
+		);
+		this.expr_block(block)
+	    } else {
+		result
+	    };
+
+	    (params, result)
         })
     }
 
@@ -1536,7 +1588,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
             self.lower_generics(generics, constness, kind == FnDeclKind::Impl, id, itctx, |this| {
                 this.lower_fn_decl(&sig.decl, id, sig.span, kind, coroutine_kind)
             });
-        (generics, hir::FnSig { header, decl, span: self.lower_span(sig.span), opt_contract_id: None })
+        (generics, hir::FnSig { header, decl, span: self.lower_span(sig.span) })
     }
 
     pub(super) fn lower_fn_header(
