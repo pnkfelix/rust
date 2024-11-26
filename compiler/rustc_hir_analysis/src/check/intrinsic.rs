@@ -241,16 +241,16 @@ pub fn check_intrinsic_type<'tcx>(
         (n_tps, 0, 0, inputs, output, hir::Safety::Unsafe)
     } else if name_str.starts_with("contract_check") {
 	let (n_tps, n_lts, inputs, output) = match intrinsic_name {
-            // `requires::<C>(c)`, where c is `|| pred()`
-            sym::contract_check_requires => (1, 0, vec![param(0)], tcx.types.unit),
+            // `requires::<C>(c) -> bool`, where c is `|| pred()`
+            sym::contract_check_requires => (1, 0, vec![param(0)], tcx.types.bool),
             // `requires2::<Old, C, O>(c, o)`, where c is `|| pred()` and o is `|| make_old()`
             sym::contract_check_requires_2 => (3, 0, vec![param(1), param(2)], param(0)),
-            // `ensures::<Ret, C>(ret, c)` where ret: &Ret and c is `|ret| pred(ret)`.
+            // `ensures::<Ret, C>(ret, c) -> bool` where ret: &Ret and c is `|ret| pred(ret)`.
             sym::contract_check_ensures => {
 		// variant with late bound lifetime
                 let br = ty::BoundRegion { var: ty::BoundVar::ZERO, kind: ty::BrAnon };
 		let ref_ret = Ty::new_imm_ref(tcx, ty::Region::new_bound(tcx, ty::INNERMOST, br), param(0));
-                (2, 0, vec![ref_ret, param(1)], tcx.types.unit)
+                (2, 0, vec![ref_ret, param(1)], tcx.types.bool)
             }
             // `ensures::<'a, Ret, C>(ret, c)` where ret: &'a Ret and c is `|ret| pred(ret)`.
 	    sym::contract_check_ensures_lt => {

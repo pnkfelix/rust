@@ -2307,13 +2307,6 @@ pub struct MutTy<'hir> {
 }
 
 #[derive(Debug, Clone, Copy, HashStable_Generic)]
-pub struct FnContractLoweringInfo<'hir> {
-    pub requires: Option<&'hir Expr<'hir>>,
-    pub captures: &'hir [(&'hir Ident, &'hir Expr<'hir>)],
-    pub ensures: Option<&'hir Expr<'hir>>,
-}
-
-#[derive(Debug, Clone, Copy, HashStable_Generic)]
 pub struct FnContractInfo<'hir> {
     pub wrapper_decl: &'hir FnDecl<'hir>,
     pub wrapper_body_id: BodyId,

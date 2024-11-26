@@ -19,8 +19,8 @@ use tracing::instrument;
 
 use super::errors::{InvalidAbi, InvalidAbiReason, InvalidAbiSuggestion, MisplacedRelaxTraitBound};
 use super::{
-    AstOwner, FnDeclKind, ImplTraitContext, ImplTraitPosition, LoweringContext, ParamMode,
-    ResolverAstLoweringExt,
+    AstOwner, FnContractLoweringInfo, FnDeclKind, ImplTraitContext, ImplTraitPosition,
+    LoweringContext, ParamMode, ResolverAstLoweringExt,
 };
 
 pub(super) struct ItemLowerer<'a, 'hir> {
@@ -233,12 +233,10 @@ impl<'hir> LoweringContext<'_, 'hir> {
 		// fn foo<G, ...>(a: A, ...) -> RET { ... }
 		if let Some(contract) = _contract {
 		    assert!(self.contract.is_none());
-		    let requires = contract.requires.as_ref().map(|e| self.lower_expr(&*e));
-		    let captures: &[(&Ident, &hir::Expr<'hir>)] = self.arena.alloc_from_iter([]); // FIXME
-		    // let ensures = contract.ensures.as_ref().map(|e| self.lower_expr(&*e));
-		    self.contract.replace(hir::FnContractLoweringInfo {
+		    let requires = contract.requires.clone();
+		    self.contract.replace(FnContractLoweringInfo {
 			requires,
-			captures,
+			captures: None, // FIXME
 			ensures: None, // FIXME
 		    });
 		}
@@ -1289,10 +1287,11 @@ impl<'hir> LoweringContext<'_, 'hir> {
 	    let result: hir::Expr<'hir> = if let Some(_contract) = contract
 		&& let Some(req) = _contract.requires
 	    {
+		let lowered_req = this.lower_expr_mut(&req);
 		let precond = this.expr_call_lang_item_fn_mut(
 		    req.span,
 		    hir::LangItem::ContractCheckRequires,
-		    arena_vec![this; req.clone()], // FIXME: needs to build closure around `req`
+		    &*arena_vec![this; lowered_req]
 		);
 		let precond = this.stmt_expr(req.span, precond);
 		let block = this.block_all(
