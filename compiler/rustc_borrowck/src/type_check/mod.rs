@@ -1956,6 +1956,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                 );
             }
             &Rvalue::NullaryOp(NullOp::UbChecks, _) => {}
+            &Rvalue::NullaryOp(NullOp::ContractChecks, _) => {}
 
             Rvalue::ShallowInitBox(operand, ty) => {
                 self.check_operand(operand, location);

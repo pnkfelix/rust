@@ -399,6 +399,8 @@ declare_features! (
     (unstable, cfg_target_thread_local, "1.7.0", Some(29594)),
     /// Allows the use of `#[cfg(ub_checks)` to check if UB checks are enabled.
     (unstable, cfg_ub_checks, "1.79.0", Some(123499)),
+    /// Allows the use of `#[cfg(contract_checks)` to check if contract checks are enabled.
+    (unstable, cfg_contract_checks, "1.9999999.0", None),
     /// Allow conditional compilation depending on rust version
     (unstable, cfg_version, "1.45.0", Some(64796)),
     /// Allows to use the `#[cfi_encoding = ""]` attribute.

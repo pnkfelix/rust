@@ -606,7 +606,8 @@ impl Rvalue {
             Rvalue::NullaryOp(NullOp::SizeOf | NullOp::AlignOf | NullOp::OffsetOf(..), _) => {
                 Ok(Ty::usize_ty())
             }
-            Rvalue::NullaryOp(NullOp::UbChecks, _) => Ok(Ty::bool_ty()),
+            Rvalue::NullaryOp(NullOp::UbChecks, _) |
+            Rvalue::NullaryOp(NullOp::ContractChecks, _) => Ok(Ty::bool_ty()),
             Rvalue::Aggregate(ak, ops) => match *ak {
                 AggregateKind::Array(ty) => Ty::try_new_array(ty, ops.len() as u64),
                 AggregateKind::Tuple => Ok(Ty::new_tuple(
@@ -983,6 +984,8 @@ pub enum NullOp {
     OffsetOf(Vec<(VariantIdx, FieldIdx)>),
     /// cfg!(ub_checks), but at codegen time
     UbChecks,
+    /// cfg!(contract_checks), but at codegen time
+    ContractChecks,
 }
 
 impl Operand {

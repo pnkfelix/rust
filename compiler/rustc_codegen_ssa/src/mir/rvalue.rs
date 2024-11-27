@@ -712,8 +712,12 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                     mir::NullOp::UbChecks => {
                         let val = bx.tcx().sess.ub_checks();
                         bx.cx().const_bool(val)
-                    }
-                };
+		    }
+                    mir::NullOp::ContractChecks => {
+                        let val = bx.tcx().sess.contract_checks();
+                        bx.cx().const_bool(val)
+		    }
+		};
                 let tcx = self.cx.tcx();
                 OperandRef {
                     val: OperandValue::Immediate(val),

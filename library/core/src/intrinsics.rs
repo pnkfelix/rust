@@ -3010,6 +3010,16 @@ pub const fn ub_checks() -> bool {
     cfg!(ub_checks)
 }
 
+#[cfg(not(bootstrap))]
+#[rustc_const_unstable(feature = "rustc_contracts", issue = "none" /* compiler-team#759 */)]
+#[unstable(feature = "rustc_contracts", issue = "none" /* compiler-team#759 */)]
+#[inline(always)]
+#[rustc_intrinsic]
+pub const fn contract_checks() -> bool {
+    // cfg!(contract_checks)
+    false
+}
+
 /// Allocates a block of memory at compile time.
 /// At runtime, just returns a null pointer.
 ///
@@ -3053,7 +3063,9 @@ pub const unsafe fn const_deallocate(_ptr: *mut u8, _size: usize, _align: usize)
 #[lang = "contract_check_requires"]
 #[track_caller]
 pub fn lang_item_contract_check_requires<C: FnOnce() -> bool>(c: C) {
-    assert!(contract_check_requires(c));
+    if contract_checks() {
+	assert!(contract_check_requires(c), "requirement failed");
+    }
 }
 
 #[cfg(not(bootstrap))]

@@ -146,6 +146,8 @@ fn expand_requires_tts(
 	|new_tts| {
             new_tts.push(TokenTree::Token(token::Token::from_ast_ident(Ident::new(kw::RustcContractRequires, attr_span)),
 					  Spacing::Joint));
+	    new_tts.push(TokenTree::Token(token::Token::new(token::TokenKind::OrOr, attr_span),
+					  Spacing::Alone));
 	    new_tts.push(TokenTree::Delimited(DelimSpan::from_single(attr_span),
 					      DelimSpacing::new(Spacing::JointHidden, Spacing::JointHidden),
 					      token::Delimiter::Parenthesis,
