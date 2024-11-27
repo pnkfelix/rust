@@ -3064,7 +3064,7 @@ pub const unsafe fn const_deallocate(_ptr: *mut u8, _size: usize, _align: usize)
 #[track_caller]
 pub fn lang_item_contract_check_requires<C: FnOnce() -> bool>(c: C) {
     if contract_checks() {
-	assert!(contract_check_requires(c), "requirement failed");
+	assert!(contract_check_requires(c), "failed requires check");
     }
 }
 
@@ -3087,7 +3087,7 @@ pub fn contract_check_requires_2<Old, C: FnOnce() -> bool, O: FnOnce() -> Old>(c
 #[lang = "contract_check_ensures"]
 #[track_caller]
 pub fn lang_item_contract_check_ensures<Ret, C: for<'a> FnOnce(&'a Ret) -> bool>(ret: &Ret, c: C) {
-    assert!(contract_check_ensures(ret, c));
+    assert!(contract_check_ensures(ret, c), "failed ensures check");
 }
 
 #[cfg(not(bootstrap))]
