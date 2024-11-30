@@ -46,7 +46,7 @@ impl AttrProcMacro for ExpandEnsures {
         annotation: TokenStream,
         annotated: TokenStream,
     ) -> Result<TokenStream, ErrorGuaranteed> {
-        todo!()
+        expand_ensures_tts(ecx, span, annotation, annotated)
     }
 }
 
@@ -148,6 +148,28 @@ fn expand_requires_tts(
 					  Spacing::Joint));
 	    new_tts.push(TokenTree::Token(token::Token::new(token::TokenKind::OrOr, attr_span),
 					  Spacing::Alone));
+	    new_tts.push(TokenTree::Delimited(DelimSpan::from_single(attr_span),
+					      DelimSpacing::new(Spacing::JointHidden, Spacing::JointHidden),
+					      token::Delimiter::Parenthesis,
+					      annotation));
+	    Ok(())
+	},
+    )
+}
+
+fn expand_ensures_tts(
+    _ecx: &mut ExtCtxt<'_>,
+    attr_span: Span,
+    annotation: TokenStream,
+    annotated: TokenStream,
+) -> Result<TokenStream, ErrorGuaranteed> {
+    expand_injecting_circa_where_clause(
+	_ecx,
+	attr_span,
+	annotated,
+	|new_tts| {
+            new_tts.push(TokenTree::Token(token::Token::from_ast_ident(Ident::new(kw::RustcContractEnsures, attr_span)),
+					  Spacing::Joint));
 	    new_tts.push(TokenTree::Delimited(DelimSpan::from_single(attr_span),
 					      DelimSpacing::new(Spacing::JointHidden, Spacing::JointHidden),
 					      token::Delimiter::Parenthesis,
