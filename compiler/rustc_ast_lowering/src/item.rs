@@ -210,16 +210,15 @@ impl<'hir> LoweringContext<'_, 'hir> {
                 contract: _contract,
                 ..
             }) => {
-		// `fn foo(...) -> RET requires(P) captures(o = O) ensures(|ret| Q) { ... [return E] ... }`
+		// `fn foo(...) -> RET requires(P) captures(o = O) ensures(|ret| Q) { ... return E1 ...; E2 }`
 		//
 		// ==>
 		//
 		// ```
 		// fn foo(...) -> RET {
-		//      check_requires(|| P);
-		//      let o = O;
-		//      let check_ret = |ret| Q;
-		//      { ... [{let r = E; check_ret(&r); return r}] ...}
+		//      lang_item::check_requires(|| P);
+		//      let check_ret = { let o = O; |r| { lang_item::check_ensures(&r, |ret| Q); r } };
+		//      { ... return check_ret(E1); ...; check_ret(E2) }
                 // }
 		// ```
 		
@@ -234,10 +233,31 @@ impl<'hir> LoweringContext<'_, 'hir> {
 		if let Some(contract) = _contract {
 		    assert!(self.contract.is_none());
 		    let requires = contract.requires.clone();
+		    let ensures = contract.ensures.clone();
+
+		    let ensures = if let Some(ens) = ensures {
+			// FIXME: this needs to be a fresh (or illegal) identifier to prevent
+			// accidental capture of a parameter or global variable.
+			let checker_ident: Ident = Ident::from_str_and_span("__ensures_checker", ens.span);
+			let (checker_pat, checker_hir_id) = self.pat_ident_binding_mode_mut(
+			    ens.span,
+			    checker_ident,
+			    hir::BindingMode::NONE,
+			);
+
+			Some(crate::FnContractLoweringEnsures {
+			    expr: ens,
+			    fresh_ident: (checker_ident, checker_pat, checker_hir_id),
+			})
+		    } else {
+			None
+		    };
+		    
 		    self.contract.replace(FnContractLoweringInfo {
+			span,
 			requires,
 			captures: None, // FIXME
-			ensures: None, // FIXME
+			ensures,
 		    });
 		}
 
@@ -1280,23 +1300,60 @@ impl<'hir> LoweringContext<'_, 'hir> {
         self.lower_body(|this| {
 	    let params =  this.arena.alloc_from_iter(decl.inputs.iter().map(|x| this.lower_param(x)));
 
-	    let contract = this.contract.take();
 	    let result = body(this);
+	    let contract = this.contract.take();
 
-	    // rustc_contract_requires(PRECOND)
-	    let result: hir::Expr<'hir> = if let Some(_contract) = contract
-		&& let Some(req) = _contract.requires
-	    {
-		let lowered_req = this.lower_expr_mut(&req);
-		let precond = this.expr_call_lang_item_fn_mut(
-		    req.span,
-		    hir::LangItem::ContractCheckRequires,
-		    &*arena_vec![this; lowered_req]
-		);
-		let precond = this.stmt_expr(req.span, precond);
+	    // { body }
+	    // ==> 
+	    // { rustc_contract_requires(PRECOND); { body } }
+	    let result: hir::Expr<'hir> = if let Some(_contract) = contract {
+		let lit_unit = |this: &mut LoweringContext<'_, 'hir>| {
+		    this.expr(_contract.span, hir::ExprKind::Tup(&[]))
+		};
+		let precond: hir::Stmt<'hir> = if let Some(req) = _contract.requires {
+		    let lowered_req = this.lower_expr_mut(&req);
+		    let precond = this.expr_call_lang_item_fn_mut(
+			req.span,
+			hir::LangItem::ContractCheckRequires,
+			&*arena_vec![this; lowered_req]
+		    );
+		    this.stmt_expr(req.span, precond)
+		} else {
+		    let u = lit_unit(this);
+		    this.stmt_expr(_contract.span, u)
+		};
+		let (postcond_checker, _opt_ident, result) = if let Some(ens) = _contract.ensures {
+		    let crate::FnContractLoweringEnsures { expr: ens, fresh_ident } = ens;
+		    let lowered_ens = this.lower_expr_mut(&ens);
+		    let postcond_checker = this.expr_call_lang_item_fn(
+			ens.span,
+			hir::LangItem::ContractBuildCheckEnsures,
+			&*arena_vec![this; lowered_ens],
+		    );
+		    let pat = fresh_ident.1;
+		    (this.stmt_let_pat(
+			None,
+			ens.span,
+			Some(postcond_checker),
+			this.arena.alloc(pat),
+			hir::LocalSource::Contract,
+		    ),
+		     Some((fresh_ident.0, fresh_ident.2)),
+		     {
+			 let checker_fn = this.expr_ident(ens.span, fresh_ident.0, fresh_ident.2);
+			 this.expr_call_mut(ens.span, checker_fn, std::slice::from_ref(this.arena.alloc(result)))
+		     }
+		    )
+		} else {
+		    let u = lit_unit(this);
+		    (this.stmt_expr(_contract.span, u),
+		     None,
+		     result)
+		};
+
 		let block = this.block_all(
-		    req.span,
-		    arena_vec![this; precond],
+		    _contract.span,
+		    arena_vec![this; precond, postcond_checker],
 		    Some(this.arena.alloc(result))
 		);
 		this.expr_block(block)

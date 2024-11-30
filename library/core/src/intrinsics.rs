@@ -3092,6 +3092,18 @@ pub fn lang_item_contract_check_ensures<Ret, C: for<'a> FnOnce(&'a Ret) -> bool>
 
 #[cfg(not(bootstrap))]
 #[unstable(feature = "rustc_contracts", issue = "none" /* compiler-team#759 */)]
+#[lang = "contract_build_check_ensures"]
+#[track_caller]
+pub fn lang_item_contract_build_check_ensures<Ret, C: for<'a> FnOnce(&'a Ret) -> bool + Copy + 'static>(c: C) -> impl (FnOnce(Ret) -> Ret) + Copy {
+    #[track_caller]
+    move |ret| {
+	assert!(contract_check_ensures(&ret, c), "failed ensures check");
+	ret
+    }
+}
+
+#[cfg(not(bootstrap))]
+#[unstable(feature = "rustc_contracts", issue = "none" /* compiler-team#759 */)]
 #[rustc_intrinsic]
 pub fn contract_check_ensures<Ret, C: for<'a> FnOnce(&'a Ret) -> bool>(ret: &Ret, c: C) -> bool {
     c(ret)

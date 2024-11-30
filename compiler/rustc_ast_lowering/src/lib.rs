@@ -92,10 +92,18 @@ mod path;
 rustc_fluent_macro::fluent_messages! { "../messages.ftl" }
 
 #[derive(Debug, Clone)]
-pub struct FnContractLoweringInfo {
+struct FnContractLoweringInfo<'hir> {
+    pub span: Span,
     pub requires: Option<ast::ptr::P<ast::Expr>>,
+    #[allow(dead_code)]
     pub captures: Option<(Ident, ast::ptr::P<ast::Expr>)>,
-    pub ensures: Option<ast::ptr::P<ast::Expr>>,
+    pub ensures: Option<FnContractLoweringEnsures<'hir>>,
+}
+
+#[derive(Debug, Clone)]
+struct FnContractLoweringEnsures<'hir> {
+    expr: ast::ptr::P<ast::Expr>,
+    fresh_ident: (Ident, hir::Pat<'hir>, HirId),
 }
 
 struct LoweringContext<'a, 'hir> {
@@ -112,7 +120,7 @@ struct LoweringContext<'a, 'hir> {
     /// Collect items that were created by lowering the current owner.
     children: Vec<(LocalDefId, hir::MaybeOwner<'hir>)>,
 
-    contract: Option<FnContractLoweringInfo>,
+    contract: Option<FnContractLoweringInfo<'hir>>,
     
     coroutine_kind: Option<hir::CoroutineKind>,
 
