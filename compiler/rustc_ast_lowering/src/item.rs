@@ -1341,7 +1341,12 @@ impl<'hir> LoweringContext<'_, 'hir> {
 		     Some((fresh_ident.0, fresh_ident.2)),
 		     {
 			 let checker_fn = this.expr_ident(ens.span, fresh_ident.0, fresh_ident.2);
-			 this.expr_call_mut(ens.span, checker_fn, std::slice::from_ref(this.arena.alloc(result)))
+			 let span = this.mark_span_with_reason(
+			     DesugaringKind::Contract,
+			     ens.span,
+			     None
+			 );
+			 this.expr_call_mut(span, checker_fn, std::slice::from_ref(this.arena.alloc(result)))
 		     }
 		    )
 		} else {
