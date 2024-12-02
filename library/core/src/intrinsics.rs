@@ -3097,7 +3097,9 @@ pub fn lang_item_contract_check_ensures<Ret, C: for<'a> FnOnce(&'a Ret) -> bool>
 pub fn lang_item_contract_build_check_ensures<Ret, C: for<'a> FnOnce(&'a Ret) -> bool + Copy + 'static>(c: C) -> impl (FnOnce(Ret) -> Ret) + Copy {
     #[track_caller]
     move |ret| {
-	assert!(contract_check_ensures(&ret, c), "failed ensures check");
+	if contract_checks() {
+	    assert!(contract_check_ensures(&ret, c), "failed ensures check");
+	}
 	ret
     }
 }
