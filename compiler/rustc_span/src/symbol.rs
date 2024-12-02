@@ -651,6 +651,7 @@ symbols! {
         const_try,
         constant,
         constructor,
+        contract_build_check_ensures,
         contract_check_ensures,
         contract_check_requires,
         contract_checks,

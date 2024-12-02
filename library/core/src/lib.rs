@@ -109,6 +109,7 @@
 // tidy-alphabetical-start
 #![feature(array_ptr_get)]
 #![feature(asm_experimental_arch)]
+#![feature(closure_track_caller)]
 #![feature(const_align_of_val)]
 #![feature(const_align_of_val_raw)]
 #![feature(const_align_offset)]
@@ -269,6 +270,10 @@ pub mod assert_matches {
     #[unstable(feature = "assert_matches", issue = "82775")]
     pub use crate::macros::{assert_matches, debug_assert_matches};
 }
+
+#[cfg(not(bootstrap))]
+#[unstable(feature = "rustc_contracts", issue = "none")]
+pub mod contracts;
 
 #[unstable(feature = "cfg_match", issue = "115585")]
 pub use crate::macros::cfg_match;
