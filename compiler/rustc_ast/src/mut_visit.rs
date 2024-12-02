@@ -907,7 +907,7 @@ fn walk_contract<T: MutVisitor>(vis: &mut T, contract: &mut P<FnContract>) {
     if let Some(pred) = requires {
 	vis.visit_expr(pred);
     }
-    for (ident, expr) in captures.iter_mut() {
+    if let Some((ident, expr)) = captures {
 	vis.visit_ident(ident);
 	vis.visit_expr(expr);
     }
