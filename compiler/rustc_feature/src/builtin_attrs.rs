@@ -25,6 +25,7 @@ const GATED_CFGS: &[GatedCfg] = &[
     // (name in cfg, feature, function to check if the feature is enabled)
     (sym::overflow_checks, sym::cfg_overflow_checks, cfg_fn!(cfg_overflow_checks)),
     (sym::ub_checks, sym::cfg_ub_checks, cfg_fn!(cfg_ub_checks)),
+    (sym::contract_checks, sym::cfg_contract_checks, cfg_fn!(cfg_contract_checks)),
     (sym::target_thread_local, sym::cfg_target_thread_local, cfg_fn!(cfg_target_thread_local)),
     (
         sym::target_has_atomic_equal_alignment,
