@@ -1325,17 +1325,38 @@ impl<'hir> LoweringContext<'_, 'hir> {
 		let (postcond_checker, _opt_ident, result) = if let Some(ens) = _contract.ensures {
 		    let crate::FnContractLoweringEnsures { expr: ens, fresh_ident } = ens;
 		    let lowered_ens = this.lower_expr_mut(&ens);
+		    let lowered_ens: hir::Expr<'hir> = if let Some(capture) = _contract.captures {
+			let old_init = this.lower_expr(&capture.1);
+			let old_span = _contract.span; // FIXME: should be span for captures attribute.
+			let (old_ident, _old_hir_id) = this.pat_ident_binding_mode(old_span, capture.0, hir::BindingMode::NONE);
+			let binding_for_old = this.stmt_let_pat(
+			    None,
+			    old_span,
+			    Some(old_init),
+			    old_ident,
+			    hir::LocalSource::Contract,
+			);
+			let lowered_ens = this.arena.alloc(lowered_ens);
+			let lowered_ens = this.block_all(
+			    _contract.span,
+			    arena_vec![this; binding_for_old],
+			    Some(lowered_ens),
+			);
+			this.expr_block(lowered_ens)
+		    } else {
+			lowered_ens
+		    };
 		    let postcond_checker = this.expr_call_lang_item_fn(
 			ens.span,
 			hir::LangItem::ContractBuildCheckEnsures,
 			&*arena_vec![this; lowered_ens],
 		    );
-		    let pat = fresh_ident.1;
+		    let checker_binding_pat = fresh_ident.1;
 		    (this.stmt_let_pat(
 			None,
 			ens.span,
 			Some(postcond_checker),
-			this.arena.alloc(pat),
+			this.arena.alloc(checker_binding_pat),
 			hir::LocalSource::Contract,
 		    ),
 		     Some((fresh_ident.0, fresh_ident.2)),
