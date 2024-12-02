@@ -305,20 +305,20 @@ impl<'a> Parser<'a> {
 	let captures = if self.eat_keyword(kw::RustcContractCaptures) {
 	    let ident = self.parse_ident()?;
 	    if self.eat(&token::Eq) {
-		vec![(ident, self.parse_expr()?)]
+		Some((ident, self.parse_expr()?))
 	    } else {
 		// FIXME: replace this with a proper parse error.
 		panic!("Malformed captures clause on contract");
 	    }
 	} else {
-	    vec![]
+	    None
 	};
 	let post_cond = if self.eat_keyword(kw::RustcContractEnsures) {
 	    Some(self.parse_expr()?)
 	} else {
 	    None
 	};
-	if pre_cond.is_none() && captures.is_empty() && post_cond.is_none() {
+	if pre_cond.is_none() && captures.is_none() && post_cond.is_none() {
 	    Ok(None)
 	} else {
 	    Ok(Some(rustc_ast::ptr::P(ast::FnContract { requires: pre_cond, captures, ensures: post_cond })))

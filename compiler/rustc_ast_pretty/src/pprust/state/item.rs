@@ -683,7 +683,7 @@ impl<'a> State<'a> {
 	    self.print_expr(pred, FixupContext::default());
 	    self.pclose();
 	}
-	for (ident, expr) in &contract.captures {
+	if let Some((ident, expr)) = &contract.captures {
 	    self.word("rustc_captures");
 	    self.popen();
 	    self.print_ident(*ident);

@@ -794,7 +794,7 @@ pub fn walk_contract<'a, V:Visitor<'a>>(visitor: &mut V, c: &'a FnContract) -> V
     if let Some(pred) = requires {
 	visitor.visit_expr(pred);
     }
-    for (ident, expr) in captures {
+    if let Some((ident, expr)) = captures {
 	visitor.visit_ident(*ident);
 	visitor.visit_expr(expr);
     }

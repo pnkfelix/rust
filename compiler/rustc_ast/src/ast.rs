@@ -3249,7 +3249,7 @@ pub struct Impl {
 #[derive(Clone, Encodable, Decodable, Debug, Default)]
 pub struct FnContract {
     pub requires: Option<P<Expr>>,
-    pub captures: Vec<(Ident, P<Expr>)>,
+    pub captures: Option<(Ident, P<Expr>)>,
     pub ensures: Option<P<Expr>>,
 }
 
