@@ -233,6 +233,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
 		if let Some(contract) = _contract {
 		    assert!(self.contract.is_none());
 		    let requires = contract.requires.clone();
+		    let captures = contract.captures.clone();
 		    let ensures = contract.ensures.clone();
 
 		    let ensures = if let Some(ens) = ensures {
@@ -256,7 +257,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
 		    self.contract.replace(FnContractLoweringInfo {
 			span,
 			requires,
-			captures: None, // FIXME
+			captures,
 			ensures,
 		    });
 		}
@@ -1324,18 +1325,27 @@ impl<'hir> LoweringContext<'_, 'hir> {
 		};
 		let (postcond_checker, _opt_ident, result) = if let Some(ens) = _contract.ensures {
 		    let crate::FnContractLoweringEnsures { expr: ens, fresh_ident } = ens;
-		    let lowered_ens = this.lower_expr_mut(&ens);
 		    let lowered_ens: hir::Expr<'hir> = if let Some(capture) = _contract.captures {
 			let old_init = this.lower_expr(&capture.1);
 			let old_span = _contract.span; // FIXME: should be span for captures attribute.
-			let (old_ident, _old_hir_id) = this.pat_ident_binding_mode(old_span, capture.0, hir::BindingMode::NONE);
+
+			let (old_ident, old_hir_id): (&hir::Pat<'hir>, rustc_hir::HirId) =
+			    this.pat_ident_binding_mode(old_span, capture.0, hir::BindingMode::NONE);
+			let binding_for_old =
+			    hir::LetStmt { hir_id: old_hir_id, ty: None, pat: old_ident, init: Some(old_init), els: None, span: old_span, source: hir::LocalSource::Contract };
+			let binding_for_old = this.arena.alloc(binding_for_old);
+			let binding_for_old = hir::StmtKind::Let(binding_for_old);
+			let binding_for_old = this.stmt(old_span, binding_for_old);
+			/*
 			let binding_for_old = this.stmt_let_pat(
 			    None,
 			    old_span,
 			    Some(old_init),
 			    old_ident,
 			    hir::LocalSource::Contract,
-			);
+		    );
+			 */
+			let lowered_ens = this.lower_expr_mut(&ens);
 			let lowered_ens = this.arena.alloc(lowered_ens);
 			let lowered_ens = this.block_all(
 			    _contract.span,
@@ -1344,6 +1354,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
 			);
 			this.expr_block(lowered_ens)
 		    } else {
+			let lowered_ens = this.lower_expr_mut(&ens);
 			lowered_ens
 		    };
 		    let postcond_checker = this.expr_call_lang_item_fn(
