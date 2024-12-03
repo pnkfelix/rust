@@ -157,7 +157,7 @@ impl<'a, T: EarlyLintPass> ast_visit::Visitor<'a> for EarlyContextAndPass<'a, T>
 
         // Explicitly check for lints associated with 'closure_id', since
         // it does not have a corresponding AST node
-        if let ast_visit::FnKind::Fn(_, _, sig, _, _, _) = fk {
+        if let ast_visit::FnKind::Fn(_, _, sig, _, _, _, _) = fk {
             if let Some(coroutine_kind) = sig.header.coroutine_kind {
                 self.check_id(coroutine_kind.closure_id());
             }

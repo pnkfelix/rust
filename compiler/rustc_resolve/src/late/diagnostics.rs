@@ -3169,7 +3169,7 @@ impl<'ast, 'ra: 'ast, 'tcx> LateResolutionVisitor<'_, 'ast, 'ra, 'tcx> {
                     {
                         let pre = if lt.kind == MissingLifetimeKind::Ampersand
                             && let Some((kind, _span)) = self.diag_metadata.current_function
-                            && let FnKind::Fn(_, _, sig, _, _, _) = kind
+                            && let FnKind::Fn(_, _, sig, _, _, _, _) = kind
                             && !sig.decl.inputs.is_empty()
                             && let sugg = sig
                                 .decl
@@ -3210,7 +3210,7 @@ impl<'ast, 'ra: 'ast, 'tcx> LateResolutionVisitor<'_, 'ast, 'ra, 'tcx> {
                         } else if (lt.kind == MissingLifetimeKind::Ampersand
                             || lt.kind == MissingLifetimeKind::Underscore)
                             && let Some((kind, _span)) = self.diag_metadata.current_function
-                            && let FnKind::Fn(_, _, sig, _, _, _) = kind
+                            && let FnKind::Fn(_, _, sig, _, _, _, _) = kind
                             && let ast::FnRetTy::Ty(ret_ty) = &sig.decl.output
                             && !sig.decl.inputs.is_empty()
                             && let arg_refs = sig
@@ -3270,7 +3270,7 @@ impl<'ast, 'ra: 'ast, 'tcx> LateResolutionVisitor<'_, 'ast, 'ra, 'tcx> {
                         let mut owned_sugg = lt.kind == MissingLifetimeKind::Ampersand;
                         let mut sugg = vec![(lt.span, String::new())];
                         if let Some((kind, _span)) = self.diag_metadata.current_function
-                            && let FnKind::Fn(_, _, sig, _, _, _) = kind
+                            && let FnKind::Fn(_, _, sig, _, _, _, _) = kind
                             && let ast::FnRetTy::Ty(ty) = &sig.decl.output
                         {
                             let mut lt_finder =

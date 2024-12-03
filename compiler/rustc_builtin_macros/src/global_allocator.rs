@@ -82,6 +82,7 @@ impl AllocFnFactory<'_, '_> {
             defaultness: ast::Defaultness::Final,
             sig,
             generics: Generics::default(),
+	    contract: None,
             body,
         }));
         let item = self.cx.item(

@@ -91,6 +91,19 @@ mod path;
 
 rustc_fluent_macro::fluent_messages! { "../messages.ftl" }
 
+#[derive(Debug, Clone)]
+struct FnContractLoweringInfo<'hir> {
+    pub span: Span,
+    pub requires: Option<ast::ptr::P<ast::Expr>>,
+    pub ensures: Option<FnContractLoweringEnsures<'hir>>,
+}
+
+#[derive(Debug, Clone)]
+struct FnContractLoweringEnsures<'hir> {
+    expr: ast::ptr::P<ast::Expr>,
+    fresh_ident: (Ident, hir::Pat<'hir>, HirId),
+}
+
 struct LoweringContext<'a, 'hir> {
     tcx: TyCtxt<'hir>,
     resolver: &'a mut ResolverAstLowering,
@@ -104,6 +117,8 @@ struct LoweringContext<'a, 'hir> {
     attrs: SortedMap<hir::ItemLocalId, &'hir [Attribute]>,
     /// Collect items that were created by lowering the current owner.
     children: Vec<(LocalDefId, hir::MaybeOwner<'hir>)>,
+
+    contract: Option<FnContractLoweringInfo<'hir>>,
 
     coroutine_kind: Option<hir::CoroutineKind>,
 
@@ -175,6 +190,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             bodies: Vec::new(),
             attrs: SortedMap::default(),
             children: Vec::default(),
+	    contract: None,
             current_hir_id_owner: hir::CRATE_OWNER_ID,
             current_def_id_parent: CRATE_DEF_ID,
             item_local_id_counter: hir::ItemLocalId::ZERO,
