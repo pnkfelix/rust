@@ -16,13 +16,15 @@
 //@ [chk_fail_pre] compile-flags: -Zcontract-checks=yes
 //@ [chk_fail_post] compile-flags: -Zcontract-checks=yes
 
-#![feature(rustc_contracts)]
+#![feature(rustc_contracts_internals)]
 
-fn tail(x: Baz) -> i32
+fn nest(x: Baz) -> i32
     rustc_contract_requires(|| x.baz > 0)
     rustc_contract_ensures(|ret| *ret > 100)
 {
-    x.baz + 50
+    loop {
+	return x.baz + 50;
+    }
 }
 
 struct Baz { baz: i32 }
@@ -34,9 +36,9 @@ const BAZ_FAIL_POST: Baz = Baz { baz: 10 };
 const BAZ_FAIL_PRE: Baz = Baz { baz: -10 };
 
 fn main() {
-    assert_eq!(tail(BAZ_PASS_PRE_POST), 150);
+    assert_eq!(nest(BAZ_PASS_PRE_POST), 150);
     #[cfg(any(unchk_fail_pre, chk_fail_pre))]
-    tail(BAZ_FAIL_PRE);
+    nest(BAZ_FAIL_PRE);
     #[cfg(any(unchk_fail_post, chk_fail_post))]
-    tail(BAZ_FAIL_POST);
+    nest(BAZ_FAIL_POST);
 }

@@ -37,7 +37,7 @@ impl AttrProcMacro for ExpandEnsures {
 }
 
 fn expand_injecting_circa_where_clause(
-    _ecx: &mut ExtCtxt<'_>,
+    ecx: &mut ExtCtxt<'_>,
     attr_span: Span,
     annotated: TokenStream,
     inject: impl FnOnce(&mut Vec<TokenTree>) -> Result<(), ErrorGuaranteed>,
@@ -119,6 +119,8 @@ fn expand_injecting_circa_where_clause(
         new_tts.push(tt.clone());
     }
 
+    ecx.psess().contract_attribute_spans.push(attr_span);
+    
     Ok(TokenStream::new(new_tts))
 }
 

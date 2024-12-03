@@ -1673,6 +1673,8 @@ symbols! {
         rustc_const_panic_str,
         rustc_const_stable,
         rustc_const_unstable,
+        rustc_contracts,
+        rustc_contracts_internals,
         rustc_conversion_suggestion,
         rustc_deallocator,
         rustc_def_path,
